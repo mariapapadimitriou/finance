@@ -277,7 +277,6 @@ main{padding:1.2rem 1.6rem 4rem;position:relative;z-index:1}
 
 <div class="tabs">
   <button class="tab active" data-tab="equities">Equities</button>
-  <button class="tab" data-tab="factors">Factor Spreads</button>
   <button class="tab" data-tab="fixedincome">Fixed Income</button>
   <button class="tab" data-tab="difficulty">Trading Difficulty</button>
 </div>
@@ -309,19 +308,10 @@ main{padding:1.2rem 1.6rem 4rem;position:relative;z-index:1}
     </div>
   </div>
 
-  <div class="slabel"><em>//</em> DAILY RETURN HEATMAP</div>
-  <div class="card">
-    <div class="ctitle">DAILY RETURNS BY SECTOR</div>
-    <div id="heatmapGrid"></div>
-  </div>
-</div>
-
-<!-- ═══════════════ FACTOR SPREADS ═══════════════ -->
-<div class="panel" id="tab-factors">
   <div class="slabel"><em>//</em> FACTOR SPREAD OVERVIEW</div>
   <div class="g4" id="factorCardGrid"></div>
 
-  <div class="slabel"><em>//</em> SPREAD TIME SERIES</div>
+  <div class="slabel"><em>//</em> FACTOR SPREAD TIME SERIES</div>
   <div class="g3" id="factorChartGrid"></div>
 </div>
 
@@ -509,7 +499,6 @@ async function loadEquities() {
 
   renderSectReturns(retData);
   renderRetLine(retData);
-  renderHeatmap(retData);
 
   let volSectors = volD?.sectors;
   if (!volSectors) {
@@ -524,6 +513,7 @@ async function loadEquities() {
   }
   renderVolFlow(volSectors);
   renderVolBar(volSectors);
+  loadFactors();
 }
 
 function renderSectReturns(d) {
@@ -1136,8 +1126,7 @@ function hexToRgba(hex, a) {
 
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 function refreshAll() {
-  if (S.tab==="equities")    loadEquities();
-  else if(S.tab==="factors")     loadFactors();
+  if (S.tab==="equities")        loadEquities();
   else if(S.tab==="fixedincome") loadFixedIncome();
   else if(S.tab==="difficulty")  loadDifficulty();
 }
