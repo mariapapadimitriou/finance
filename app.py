@@ -32,66 +32,80 @@ def bdh(securities, fields, start_date, end_date):
 
 # ─── Market definitions ───────────────────────────────────────────────────────
 
+# Bloomberg ticker note:
+#   US  — S&P 500 GICS sector sub-indices (S5XXXX Index) — confirmed format
+#   CA  — S&P/TSX GICS sector sub-indices (STSEXXXX Index) — verify on terminal
+#   MX  — S&P/BMV IPC sector sub-indices (BMBVXXXX Index) — verify on terminal
+#   BR  — B3/Bovespa official sector indices — confirmed format
+#   CL  — S&P/IPSA sector sub-indices (CLXXX Index) — verify on terminal
+
 SECTORS = {
     "US": {
-        "Technology":    "XLK US Equity",
-        "Financials":    "XLF US Equity",
-        "Health Care":   "XLV US Equity",
-        "Energy":        "XLE US Equity",
-        "Industrials":   "XLI US Equity",
-        "Cons. Discr.":  "XLY US Equity",
-        "Cons. Staples": "XLP US Equity",
-        "Utilities":     "XLU US Equity",
-        "Real Estate":   "XLRE US Equity",
-        "Materials":     "XLB US Equity",
-        "Comm. Svcs":    "XLC US Equity",
+        "Technology":    "S5INFT Index",
+        "Financials":    "S5FINL Index",
+        "Health Care":   "S5HLTH Index",
+        "Energy":        "S5ENRS Index",
+        "Industrials":   "S5INDU Index",
+        "Cons. Discr.":  "S5COND Index",
+        "Cons. Staples": "S5CONS Index",
+        "Utilities":     "S5UTIL Index",
+        "Real Estate":   "S5REAL Index",
+        "Materials":     "S5MATR Index",
+        "Comm. Svcs":    "S5TELS Index",
     },
     "CA": {
-        "Technology":    "XIT CN Equity",
-        "Financials":    "XFN CN Equity",
-        "Energy":        "XEG CN Equity",
-        "Materials":     "XMA CN Equity",
-        "Real Estate":   "XRE CN Equity",
-        "Broad Market":  "XIU CN Equity",
-        "Utilities":     "XUT CN Equity",
-        "Health Care":   "XHC CN Equity",
+        "Energy":        "STSENRGS Index",
+        "Financials":    "STSEFINL Index",
+        "Materials":     "STSEMATR Index",
+        "Industrials":   "STSEINDUS Index",
+        "Technology":    "STSEINFT Index",
+        "Cons. Discr.":  "STSECOND Index",
+        "Cons. Staples": "STSECONS Index",
+        "Utilities":     "STSEUTIL Index",
+        "Health Care":   "STSEHLTH Index",
+        "Real Estate":   "STSEREAL Index",
+        "Comm. Svcs":    "STSTELS Index",
     },
     "MX": {
-        "Broad Market":  "NAFTRAC MM Equity",
-        "Financials":    "GFNORTEO MM Equity",
-        "Telecoms":      "AMXL MM Equity",
-        "Consumer":      "BIMBOA MM Equity",
-        "Materials":     "CEMEXCPO MM Equity",
-        "Airports":      "ASURB MM Equity",
-        "Retail":        "WALMEX MM Equity",
+        "Broad Market":  "MEXBOL Index",
+        "Financials":    "BMBVFINL Index",
+        "Consumer":      "BMBVCONS Index",
+        "Materials":     "BMBVMATR Index",
+        "Industrials":   "BMBVINDUS Index",
+        "Telecom":       "BMBVTELS Index",
+        "Real Estate":   "BMBVREAL Index",
     },
     "BR": {
-        "Broad Market":  "BOVA11 BZ Equity",
-        "Financials":    "ITUB4 BZ Equity",
-        "Energy":        "PETR4 BZ Equity",
-        "Mining":        "VALE3 BZ Equity",
-        "Consumer":      "MGLU3 BZ Equity",
-        "Utilities":     "ELET3 BZ Equity",
-        "Retail":        "LREN3 BZ Equity",
+        "Broad Market":  "IBOV Index",
+        "Financials":    "IFNC Index",
+        "Materials":     "IMAT Index",
+        "Utilities":     "UTIL Index",
+        "Consumer":      "ICON Index",
+        "Real Estate":   "IMOB Index",
+        "Energy":        "IENEE Index",
     },
     "CL": {
-        "Broad Market":  "IPSA CI Index",
-        "Copper/Mining": "SQM/B CI Equity",
-        "Retail":        "FALABELLA CI Equity",
-        "Utilities":     "ENELCHIL CI Equity",
-        "Banks":         "BCI CI Equity",
-        "Lithium":       "SQM CI Equity",
+        "Broad Market":  "IPSA Index",
+        "Financials":    "CLXFINL Index",
+        "Utilities":     "CLXUTIL Index",
+        "Materials":     "CLXMATR Index",
+        "Consumer":      "CLXCOND Index",
+        "Real Estate":   "CLXREAL Index",
+        "Energy":        "CLXENRS Index",
     },
 }
 
+# Set of all sector index tickers — used to prevent mock engine from treating them as yields
+SECTOR_TICKERS = {t for secs in SECTORS.values() for t in secs.values()}
+
 YIELD_CURVES = {
-    "US": {"3M":"USGG3M Index","6M":"USGG6M Index","1Y":"USGG1Y Index",
+    "US": {"3M":"USGG3M Index","6M":"USGG6M Index","1Y":"USGG12M Index",
            "2Y":"USGG2Y Index","3Y":"USGG3Y Index","5Y":"USGG5Y Index",
            "7Y":"USGG7Y Index","10Y":"USGG10Y Index","20Y":"USGG20Y Index","30Y":"USGG30Y Index"},
-    "CA": {"3M":"GCAN3M Index","6M":"GCAN6M Index","1Y":"GCAN1Y Index",
+    "CA": {"3M":"GCAN3M Index","6M":"GCAN6M Index","1Y":"GCAN12M Index",
            "2Y":"GCAN2Y Index","3Y":"GCAN3Y Index","5Y":"GCAN5Y Index",
            "7Y":"GCAN7Y Index","10Y":"GCAN10Y Index","20Y":"GCAN20Y Index","30Y":"GCAN30Y Index"},
-    "MX": {"3M":"MXBM3M Index","6M":"MXBM6M Index","1Y":"MXBM1Y Index",
+    "MX": {"3M":"MXBM3M Index","6M":"MXBM6M Index","1Y":"MXBM12M Index",
            "2Y":"MXBM2Y Index","3Y":"MXBM3Y Index","5Y":"MXBM5Y Index",
            "10Y":"MXBM10Y Index","20Y":"MXBM20Y Index","30Y":"MXBM30Y Index"},
     "BR": {"3M":"BZSTWI3M Index","6M":"BZSTWI6M Index","1Y":"BZSTWI1Y Index",
@@ -109,11 +123,12 @@ YIELD_BASES = {
 }
 
 SECTOR_BASES = {
-    "US":  [180,38,130,85,110,175,72,65,38,90,82],
-    "CA":  [38,42,18,22,19,35,24,28],
-    "MX":  [52,180,22,35,18,155,75],
-    "BR":  [115,28,38,85,12,42,18],
-    "CL":  [5200,45,1850,280,12500,48],
+    # Approximate index levels (2024); update on Bloomberg connect
+    "US":  [3900, 680, 1580, 730, 1080, 1280, 830, 330, 220, 540, 290],  # 11 S&P 500 GICS
+    "CA":  [2800, 1800, 1500, 1200, 900, 950, 750, 1600, 650, 1900, 480], # 11 S&P/TSX GICS
+    "MX":  [52000, 1800, 1200, 3500, 2200, 1600, 1800],                   # 7 BMV sectors
+    "BR":  [125000, 13000, 5000, 4000, 2800, 900, 6500],                  # 7 B3 sectors
+    "CL":  [6800, 2200, 4500, 3200, 1800, 2100, 2800],                    # 7 IPSA sectors
 }
 
 DIFFICULTY_TICKERS = {
@@ -204,7 +219,8 @@ def _mock_bdh(securities, fields, start_date, end_date):
     for sec in securities:
         base = _get_base(sec)
         is_vol_idx = any(k in sec for k in ["VIX","VVIX","PCRATIO","LF98OAS","TEDSP","SKEW","JCJ","BASPREAD","CBOEDISP","NYAD"])
-        is_yield   = "Index" in sec and not is_vol_idx and "SPX" not in sec
+        is_yield   = ("Index" in sec and not is_vol_idx and "SPX" not in sec
+                      and sec not in SECTOR_TICKERS)
         if is_vol_idx:
             vol_map = {"VIX":0.8,"VVIX":2.5,"PCRATIO":0.03,"LF98OAS":8,"TEDSP":0.02,"SKEW":3,"JCJ":0.02,"BASPREAD":0.03,"CBOEDISP":1.2,"NYAD":0.025}
             v = next((v for k,v in vol_map.items() if k in sec), 0.05)
@@ -409,6 +425,229 @@ def trading_difficulty():
                    "percentile":pct},
         "equation":"Score = 0.22·VIX + 0.13·HYSpread + 0.10·VVIX + 0.08·TED + 0.07·CorrBreak + 0.07·P/C + 0.07·Dispersion + 0.05·SKEW + 0.05·ATR + 0.04·RealVol + 0.04·BidAsk + 0.04·FundingStress + 0.04·BreadthDecay  [all normalized 0–100]"
     })
+
+
+# ─── Macro static data ────────────────────────────────────────────────────────
+# Real Bloomberg: replace with BDP calls to CPI YOY Index, FDTR Index, etc.
+
+INFLATION_DATA = {
+    "US": [
+        {"label": "CPI YoY",      "current": 3.1, "prev": 3.4, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+        {"label": "Core CPI YoY", "current": 3.8, "prev": 3.9, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+        {"label": "PCE YoY",      "current": 2.5, "prev": 2.6, "trend": "DOWN", "unit": "%", "period": "Jan 2026"},
+    ],
+    "CA": [
+        {"label": "CPI YoY",      "current": 1.9, "prev": 2.1, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+        {"label": "Core CPI YoY", "current": 2.1, "prev": 2.3, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+    ],
+    "MX": [
+        {"label": "CPI YoY",      "current": 3.8, "prev": 3.7, "trend": "UP",   "unit": "%", "period": "Feb 2026"},
+        {"label": "Core CPI YoY", "current": 3.6, "prev": 3.8, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+    ],
+    "BR": [
+        {"label": "IPCA YoY",     "current": 5.1, "prev": 4.8, "trend": "UP",   "unit": "%", "period": "Feb 2026"},
+        {"label": "Core IPCA",    "current": 4.6, "prev": 4.3, "trend": "UP",   "unit": "%", "period": "Feb 2026"},
+    ],
+    "CL": [
+        {"label": "CPI YoY",      "current": 4.2, "prev": 4.5, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+        {"label": "Core CPI YoY", "current": 3.9, "prev": 4.1, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+    ],
+}
+
+CENTRAL_BANK_DATA = {
+    "US": {
+        "bank": "Federal Reserve",    "policy_rate": 4.25, "last_change": -0.25,
+        "last_change_date": "Dec 11, 2025", "next_meeting": "May 7, 2026",
+        "bias": "HOLD",
+        "bias_note": "Data-dependent pause; watching PCE and labour market for next move.",
+    },
+    "CA": {
+        "bank": "Bank of Canada",     "policy_rate": 3.00, "last_change": -0.25,
+        "last_change_date": "Jan 29, 2026", "next_meeting": "Apr 16, 2026",
+        "bias": "EASING",
+        "bias_note": "Easing cycle ongoing; inflation back near target, growth risks dominate.",
+    },
+    "MX": {
+        "bank": "Banxico",            "policy_rate": 9.00, "last_change": -0.50,
+        "last_change_date": "Feb 6, 2026",  "next_meeting": "Mar 27, 2026",
+        "bias": "EASING",
+        "bias_note": "Cutting cycle continues cautiously; peso stability constraining pace.",
+    },
+    "BR": {
+        "bank": "Banco Central do Brasil", "policy_rate": 14.75, "last_change": +1.00,
+        "last_change_date": "Mar 19, 2026", "next_meeting": "May 7, 2026",
+        "bias": "TIGHTENING",
+        "bias_note": "Re-tightening cycle underway; IPCA above target, fiscal concerns persist.",
+    },
+    "CL": {
+        "bank": "Banco Central de Chile", "policy_rate": 5.00, "last_change": -0.25,
+        "last_change_date": "Jan 29, 2026", "next_meeting": "Apr 1, 2026",
+        "bias": "HOLD",
+        "bias_note": "On hold; inflation declining but global uncertainty warrants caution.",
+    },
+}
+
+MACRO_CALENDAR = [
+    {"date":"2026-03-06","market":"US","event":"Non-Farm Payrolls","period":"Feb 2026",
+     "previous":143,"expected":155,"actual":162,"unit":"K","beat_miss":"BEAT",
+     "implication":"Strong labour market reduces Fed urgency to cut. USD positive, rate-sensitive equities under modest pressure."},
+    {"date":"2026-03-12","market":"US","event":"CPI YoY","period":"Feb 2026",
+     "previous":3.4,"expected":3.1,"actual":3.1,"unit":"%","beat_miss":"INLINE",
+     "implication":"Disinflation trend intact. No urgency to change Fed guidance; curve largely unmoved."},
+    {"date":"2026-03-14","market":"US","event":"PPI YoY","period":"Feb 2026",
+     "previous":3.5,"expected":3.3,"actual":3.4,"unit":"%","beat_miss":"MISS",
+     "implication":"Pipeline inflation slightly sticky. Watch for pass-through into core PCE next month."},
+    {"date":"2026-03-17","market":"CA","event":"CPI YoY","period":"Feb 2026",
+     "previous":2.1,"expected":2.0,"actual":1.9,"unit":"%","beat_miss":"BEAT",
+     "implication":"Below-target print strengthens BoC easing case. CAD mildly negative near-term."},
+    {"date":"2026-03-18","market":"US","event":"Retail Sales MoM","period":"Feb 2026",
+     "previous":-0.9,"expected":0.5,"actual":0.2,"unit":"%","beat_miss":"MISS",
+     "implication":"Softer consumer spending. Growth concerns offset hawkish NFP; mixed signal for Fed trajectory."},
+    {"date":"2026-03-19","market":"US","event":"FOMC Rate Decision","period":"Mar 2026",
+     "previous":4.50,"expected":4.25,"actual":4.25,"unit":"%","beat_miss":"INLINE",
+     "implication":"Cut delivered as expected. Dot plot signalled 2 more cuts in 2026 — modestly dovish tone."},
+    {"date":"2026-03-20","market":"US","event":"Philadelphia Fed PMI","period":"Mar 2026",
+     "previous":18.1,"expected":15.0,"actual":12.5,"unit":"index","beat_miss":"MISS",
+     "implication":"Regional manufacturing weakness. Adds to soft-landing debate; modest headwind for industrials."},
+    {"date":"2026-03-27","market":"MX","event":"Banxico Rate Decision","period":"Mar 2026",
+     "previous":9.50,"expected":9.00,"actual":None,"unit":"%","beat_miss":None,
+     "implication":"50bps cut expected. Surprise hold would be MXN positive, equity negative short-term."},
+    {"date":"2026-03-28","market":"US","event":"PCE YoY","period":"Feb 2026",
+     "previous":2.6,"expected":2.5,"actual":None,"unit":"%","beat_miss":None,
+     "implication":"Fed's preferred inflation gauge. At or below 2.5% bolsters rate-cut expectations for H2 2026."},
+    {"date":"2026-03-28","market":"BR","event":"IPCA Inflation","period":"Mar 2026",
+     "previous":4.8,"expected":5.2,"actual":None,"unit":"%","beat_miss":None,
+     "implication":"Expected acceleration confirms BCB tightening bias. Watch BRL and domestic equity reaction."},
+    {"date":"2026-04-01","market":"US","event":"ISM Manufacturing PMI","period":"Mar 2026",
+     "previous":50.3,"expected":50.0,"actual":None,"unit":"index","beat_miss":None,
+     "implication":"Below 50 would signal contraction; rotation into defensives and away from cyclicals likely."},
+    {"date":"2026-04-01","market":"CA","event":"BoC Rate Decision","period":"Apr 2026",
+     "previous":3.00,"expected":2.75,"actual":None,"unit":"%","beat_miss":None,
+     "implication":"25bps cut expected. CAD vulnerability if larger; financials and REITs to benefit."},
+    {"date":"2026-04-03","market":"US","event":"Non-Farm Payrolls","period":"Mar 2026",
+     "previous":162,"expected":148,"actual":None,"unit":"K","beat_miss":None,
+     "implication":"Key risk event. Below 100K would materially shift Fed cut expectations and broad equity sentiment."},
+    {"date":"2026-04-01","market":"CL","event":"BCCh Rate Decision","period":"Apr 2026",
+     "previous":5.25,"expected":5.00,"actual":None,"unit":"%","beat_miss":None,
+     "implication":"Expected hold. CLP stability and copper price trajectory remain key catalysts to watch."},
+]
+
+
+# ─── New routes ───────────────────────────────────────────────────────────────
+
+@app.route("/api/summary")
+def summary():
+    market = request.args.get("market", "US")
+    end_dt   = datetime.today()
+    start_dt = end_dt - timedelta(days=12)
+    s = start_dt.strftime("%Y%m%d")
+    e = end_dt.strftime("%Y%m%d")
+
+    # Difficulty (VIX + HY spread, 2 heaviest components)
+    df_d = bdh(["VIX Index", "LF98OAS Index"], ["PX_LAST"], s, e)
+    vix_s = df_d[df_d["security"]=="VIX Index"]["PX_LAST"]
+    hy_s  = df_d[df_d["security"]=="LF98OAS Index"]["PX_LAST"]
+    vix_v = float(vix_s.iloc[-1]) if not vix_s.empty else 18
+    hy_v  = float(hy_s.iloc[-1])  if not hy_s.empty  else 350
+    def _norm(v, lo, hi): return max(0, min(100, (v-lo)/(hi-lo+1e-9)*100))
+    diff_score = round(0.62*_norm(vix_v,12,45) + 0.38*_norm(hy_v,200,900), 1)
+    def _classify(sc):
+        return "EXTREME" if sc>=75 else "HIGH" if sc>=60 else "MODERATE" if sc>=40 else "LOW" if sc>=25 else "CALM"
+
+    # Yield curve shape
+    tenors = YIELD_CURVES.get(market, YIELD_CURVES["US"])
+    ks = list(tenors.keys())
+    two_tk = tenors.get("2Y",  tenors[ks[len(ks)//2]])
+    ten_tk = tenors.get("10Y", tenors[ks[-1]])
+    df_y = bdh([two_tk, ten_tk], ["PX_LAST"], s, e)
+    y2  = float(df_y[df_y["security"]==two_tk]["PX_LAST"].iloc[-1]) if two_tk in df_y["security"].values else 4.5
+    y10 = float(df_y[df_y["security"]==ten_tk]["PX_LAST"].iloc[-1]) if ten_tk in df_y["security"].values else 4.3
+    bps = round((y10 - y2) * 100)
+    shape = "INVERTED" if bps < -50 else "FLAT" if bps < 25 else "NORMAL" if bps < 75 else "STEEP"
+
+    # Top / bottom sector
+    secs = SECTORS.get(market, SECTORS["US"])
+    df_s = bdh(list(secs.values()), ["PX_LAST"], s, e)
+    df_s["date"] = pd.to_datetime(df_s["date"])
+    best_name, worst_name, best_ret, worst_ret = "", "", -999, 999
+    for name, sec in secs.items():
+        sub = df_s[df_s["security"]==sec].sort_values("date")
+        if len(sub) < 2: continue
+        p = sub["PX_LAST"].values
+        ret = round((p[-1]-p[0])/p[0]*100, 2)
+        if ret > best_ret:  best_ret,  best_name  = ret, name
+        if ret < worst_ret: worst_ret, worst_name = ret, name
+
+    # Dominant factor spread
+    all_f = list({sec for _,a,b,_,_ in FACTOR_PAIRS for sec in [a,b]})
+    df_f = bdh(all_f, ["PX_LAST"], s, e)
+    df_f["date"] = pd.to_datetime(df_f["date"])
+    dom_name, dom_spread, dom_regime = "", 0.0, ""
+    for name, sec_a, sec_b, pos_lbl, neg_lbl in FACTOR_PAIRS:
+        sa = df_f[df_f["security"]==sec_a].sort_values("date")
+        sb = df_f[df_f["security"]==sec_b].sort_values("date")
+        if len(sa)<2 or len(sb)<2: continue
+        n = min(len(sa), len(sb))
+        pa = sa["PX_LAST"].values[-n:]; pb = sb["PX_LAST"].values[-n:]
+        spread = float(pa[-1]/pa[0]*100 - pb[-1]/pb[0]*100)
+        if abs(spread) > abs(dom_spread):
+            dom_spread = spread; dom_name = name
+            dom_regime = pos_lbl if spread >= 0 else neg_lbl
+
+    return jsonify({
+        "market": market,
+        "difficulty_score": diff_score,
+        "regime": _classify(diff_score),
+        "yield_curve_shape": shape,
+        "yield_curve_bps": bps,
+        "top_sector": best_name, "top_sector_return": best_ret,
+        "bottom_sector": worst_name, "bottom_sector_return": worst_ret,
+        "dominant_factor": dom_name,
+        "dominant_factor_spread": round(float(dom_spread), 2),
+        "dominant_factor_regime": dom_regime,
+    })
+
+
+@app.route("/api/watchlist-prices")
+def watchlist_prices():
+    raw = request.args.get("tickers", "")
+    if not raw:
+        return jsonify({"prices": {}})
+    tickers = [t.strip() for t in raw.split(",") if t.strip()]
+    end_dt   = datetime.today()
+    start_dt = end_dt - timedelta(days=7)
+    df = bdh(tickers, ["PX_LAST"], start_dt.strftime("%Y%m%d"), end_dt.strftime("%Y%m%d"))
+    prices = {}
+    for t in tickers:
+        sub = df[df["security"]==t]["PX_LAST"]
+        if not sub.empty:
+            prices[t] = round(float(sub.iloc[-1]), 4)
+    return jsonify({"prices": prices})
+
+
+@app.route("/api/macro/inflation")
+def macro_inflation():
+    market = request.args.get("market", "US")
+    return jsonify({"market": market, "readings": INFLATION_DATA.get(market, INFLATION_DATA["US"])})
+
+
+@app.route("/api/macro/central-banks")
+def macro_central_banks():
+    market = request.args.get("market", "US")
+    data = CENTRAL_BANK_DATA.get(market, CENTRAL_BANK_DATA["US"])
+    return jsonify({"market": market, **data})
+
+
+@app.route("/api/macro/calendar")
+def macro_calendar():
+    market = request.args.get("market", None)
+    events = MACRO_CALENDAR if not market else [e for e in MACRO_CALENDAR if e["market"] == market]
+    today  = datetime.today().strftime("%Y-%m-%d")
+    out = []
+    for ev in events:
+        out.append({**ev, "status": "PAST" if ev["date"] <= today else "UPCOMING"})
+    out.sort(key=lambda x: x["date"])
+    return jsonify({"events": out})
 
 
 if __name__ == "__main__":
