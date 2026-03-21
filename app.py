@@ -1,6 +1,6 @@
 """
-MacroLens Backend v2
-Wraps blpapi BDH. Falls back to realistic mock data if Bloomberg is unavailable.
+MacroLens Backend
+Bloomberg BDH wrapper — requires xbbg + active Bloomberg terminal session.
 Markets: US, CA, MX, BR, CL
 """
 
@@ -16,18 +16,117 @@ CORS(app)
 # ─── Bloomberg BDH wrapper ────────────────────────────────────────────────────
 def bdh(securities, fields, start_date, end_date):
     """
-    Wraps Bloomberg BDH. Returns DataFrame: security | date | <fields...>
-
-    To use real Bloomberg, uncomment below and comment the mock block:
-
-    from xbbg import blp
-    df = blp.bdh(tickers=securities, flds=fields,
-                 start_date=start_date, end_date=end_date)
-    df = df.stack(level=0).reset_index()
-    df.columns = ['date', 'security'] + fields
-    return df
+    Tries Bloomberg (xbbg) first. Falls back to simulation if Bloomberg is
+    unavailable (no terminal, xbbg not installed, or connection error).
+    Returns DataFrame with columns: security | date | <fields...>
     """
-    return _mock_bdh(securities, fields, start_date, end_date)
+    try:
+        from xbbg import blp
+        raw = blp.bdh(tickers=securities, flds=fields,
+                      start_date=start_date, end_date=end_date)
+        df = raw.stack(level=0).reset_index()
+        df.columns = ['date', 'security'] + fields
+        return df
+    except Exception:
+        return _mock_bdh(securities, fields, start_date, end_date)
+
+
+def _mock_bdh(securities, fields, start_date, end_date):
+    """Self-contained simulation used when Bloomberg is unavailable."""
+    rng = np.random.default_rng(42)
+
+    # Generate business days between start and end
+    start = datetime.strptime(start_date, "%Y%m%d")
+    end   = datetime.strptime(end_date,   "%Y%m%d")
+    dates = [start + timedelta(d) for d in range((end - start).days + 1)
+             if (start + timedelta(d)).weekday() < 5]
+
+    # Known base levels for common tickers
+    BASES = {
+        "SPY US Equity": 520,  "IWM US Equity": 200,  "IVE US Equity": 175,
+        "IVW US Equity": 195,  "GLD US Equity": 225,  "GDX US Equity": 35,
+        "USO US Equity": 74,   "MTUM US Equity": 210, "QUAL US Equity": 165,
+        "USMV US Equity": 82,  "SPHB US Equity": 90,  "EEM US Equity": 44,
+        "EFA US Equity": 82,   "TLT US Equity": 88,   "UUP US Equity": 29,
+        "SOXX US Equity": 580, "IWN US Equity": 165,  "IWO US Equity": 260,
+        "DVY US Equity": 130,  "XLU US Equity": 68,   "XLY US Equity": 195,
+        "VIX Index": 18,       "VVIX Index": 92,       "PCRATIO Index": 0.85,
+        "LF98OAS Index": 340,  "TEDSP Index": 0.24,    "SKEW Index": 122,
+        "JCJ Index": 0.58,     "BASPREAD Index": 0.38, "CBOEDISP Index": 13,
+        "SOFR1Y Index": 4.6,   "NYAD Index": 0.57,     "SPX Index": 5400,
+        # US sectors
+        "S5INFT Index": 4000,  "S5FINL Index": 700,   "S5HLTH Index": 1600,
+        "S5ENRS Index": 740,   "S5INDU Index": 1100,  "S5COND Index": 1300,
+        "S5CONS Index": 840,   "S5UTIL Index": 340,   "S5REAL Index": 225,
+        "S5MATR Index": 550,   "S5TELS Index": 295,
+        # CA sectors
+        "STSENRGS Index": 2800,"STSEFINL Index": 1850,"STSEMATR Index": 1520,
+        "STSEINDUS Index":1220,"STSEINFT Index": 920, "STSECOND Index": 960,
+        "STSECONS Index": 760, "STSEUTIL Index": 1620,"STSEHLTH Index": 660,
+        "STSEREAL Index": 1920,"STSTELS Index": 490,
+        # BR sectors
+        "IBOV Index": 128000,  "IFNC Index": 13500,   "IMAT Index": 5100,
+        "UTIL Index": 4100,    "ICON Index": 2900,    "IMOB Index": 950,
+        "IENEE Index": 6600,
+        # MX sectors
+        "MEXBOL Index": 54000, "BMBVFINL Index": 1850,"BMBVCONS Index": 1250,
+        "BMBVMATR Index": 3550,"BMBVINDUS Index": 2250,"BMBVTELS Index": 1650,
+        "BMBVREAL Index": 1850,
+        # CL sectors
+        "IPSA Index": 7000,    "CLXFINL Index": 2250, "CLXUTIL Index": 4600,
+        "CLXMATR Index": 3250, "CLXCOND Index": 1850, "CLXREAL Index": 2150,
+        "CLXENRS Index": 2850,
+        # Yield curves — use basis points / percent directly
+        "USGG3M Index": 5.25,  "USGG6M Index": 5.20,  "USGG12M Index": 5.00,
+        "USGG2Y Index": 4.70,  "USGG3Y Index": 4.50,  "USGG5Y Index": 4.30,
+        "USGG7Y Index": 4.25,  "USGG10Y Index": 4.20, "USGG20Y Index": 4.35,
+        "USGG30Y Index": 4.40,
+        "GCAN3M Index": 4.80,  "GCAN6M Index": 4.75,  "GCAN12M Index": 4.60,
+        "GCAN2Y Index": 4.30,  "GCAN3Y Index": 4.10,  "GCAN5Y Index": 3.95,
+        "GCAN7Y Index": 3.90,  "GCAN10Y Index": 3.88, "GCAN20Y Index": 3.95,
+        "GCAN30Y Index": 3.98,
+    }
+
+    VOL_KEYS = {"VIX","VVIX","PCRATIO","LF98OAS","TEDSP","SKEW","JCJ",
+                "BASPREAD","CBOEDISP","NYAD","SOFR","SPX"}
+    VOL_SCALES = {"VIX": 0.8, "VVIX": 2.5, "PCRATIO": 0.03, "LF98OAS": 8,
+                  "TEDSP": 0.02, "SKEW": 3, "JCJ": 0.02, "BASPREAD": 0.03,
+                  "CBOEDISP": 1.2, "NYAD": 0.025, "SOFR": 0.015, "SPX": 15}
+
+    def _sim_price(base, n, vol=0.012):
+        ret = rng.normal(0.0003, vol, n)
+        p = [base]
+        for r in ret[1:]:
+            p.append(p[-1] * (1 + r))
+        return np.array(p)
+
+    def _sim_yield(base, n, vol=0.005):
+        ch = rng.normal(0, vol, n)
+        y = [base]
+        for c in ch[1:]:
+            y.append(max(0.01, y[-1] + c))
+        return np.array(y)
+
+    rows = []
+    for sec in securities:
+        base = BASES.get(sec, 100)
+        is_yield_like = "Index" in sec and not any(k in sec for k in ["SPX","S5","STSE","IBOV","IFNC","IMAT","UTIL","ICON","IMOB","IENEE","MEXBOL","BMBV","IPSA","CLX"])
+        vol_key = next((k for k in VOL_KEYS if k in sec), None)
+
+        if vol_key:
+            prices = _sim_yield(base, len(dates), vol=VOL_SCALES.get(vol_key, 0.05))
+        elif is_yield_like:
+            prices = _sim_yield(base, len(dates))
+        else:
+            prices = _sim_price(base, len(dates))
+
+        for i, dt in enumerate(dates):
+            row = {"security": sec, "date": dt.strftime("%Y-%m-%d")}
+            for field in fields:
+                row[field] = round(float(prices[i]), 4)
+            rows.append(row)
+
+    return pd.DataFrame(rows)
 
 
 # ─── Market definitions ───────────────────────────────────────────────────────
@@ -95,9 +194,6 @@ SECTORS = {
     },
 }
 
-# Set of all sector index tickers — used to prevent mock engine from treating them as yields
-SECTOR_TICKERS = {t for secs in SECTORS.values() for t in secs.values()}
-
 YIELD_CURVES = {
     "US": {"3M":"USGG3M Index","6M":"USGG6M Index","1Y":"USGG12M Index",
            "2Y":"USGG2Y Index","3Y":"USGG3Y Index","5Y":"USGG5Y Index",
@@ -112,23 +208,6 @@ YIELD_CURVES = {
            "2Y":"BZSTWI2Y Index","5Y":"BZSTWI5Y Index","10Y":"BZSTWI10Y Index"},
     "CL": {"3M":"CHSWAPRATE3M Index","1Y":"CHSWAPRATE1Y Index",
            "2Y":"CHSWAPRATE2Y Index","5Y":"CHSWAPRATE5Y Index","10Y":"CHSWAPRATE10Y Index"},
-}
-
-YIELD_BASES = {
-    "US": [5.25,5.20,5.00,4.70,4.50,4.30,4.25,4.20,4.35,4.40],
-    "CA": [4.80,4.75,4.60,4.30,4.10,3.95,3.90,3.88,3.95,3.98],
-    "MX": [11.2,11.0,10.8,10.5,10.3,10.1,9.9,9.8,9.9,10.0],
-    "BR": [11.5,11.2,11.0,10.8,10.6,10.5],
-    "CL": [5.5,5.3,5.1,4.9,4.7,4.5],
-}
-
-SECTOR_BASES = {
-    # Approximate index levels (2024); update on Bloomberg connect
-    "US":  [3900, 680, 1580, 730, 1080, 1280, 830, 330, 220, 540, 290],  # 11 S&P 500 GICS
-    "CA":  [2800, 1800, 1500, 1200, 900, 950, 750, 1600, 650, 1900, 480], # 11 S&P/TSX GICS
-    "MX":  [52000, 1800, 1200, 3500, 2200, 1600, 1800],                   # 7 BMV sectors
-    "BR":  [125000, 13000, 5000, 4000, 2800, 900, 6500],                  # 7 B3 sectors
-    "CL":  [6800, 2200, 4500, 3200, 1800, 2100, 2800],                    # 7 IPSA sectors
 }
 
 DIFFICULTY_TICKERS = {
@@ -163,78 +242,6 @@ FACTOR_PAIRS = [
     ("Small Value vs Growth",  "IWN US Equity",  "IWO US Equity",  "Value cycle",       "Growth cycle"),
     ("Dividend vs Growth",     "DVY US Equity",  "IWO US Equity",  "Income defensive",  "Growth momentum"),
 ]
-
-# ─── Mock data engine ─────────────────────────────────────────────────────────
-
-def _get_dates(start_date, end_date):
-    start = datetime.strptime(start_date, "%Y%m%d")
-    end   = datetime.strptime(end_date,   "%Y%m%d")
-    return [start + timedelta(d) for d in range((end-start).days+1)
-            if (start + timedelta(d)).weekday() < 5]
-
-def _simulate_price(base, n, rng, drift=0.0003, vol=0.012):
-    ret = rng.normal(drift, vol, n)
-    p = [base]
-    for r in ret[1:]: p.append(p[-1]*(1+r))
-    return np.array(p)
-
-def _simulate_yields(base, n, rng, vol=0.005):
-    ch = rng.normal(0, vol, n)
-    y = [base]
-    for c in ch[1:]: y.append(max(0.01, y[-1]+c))
-    return np.array(y)
-
-def _get_base(sec):
-    known = {
-        "SPY US Equity":420,"IWM US Equity":190,"IVE US Equity":168,
-        "IVW US Equity":185,"GLD US Equity":185,"GDX US Equity":32,
-        "USO US Equity":72,"MTUM US Equity":185,"QUAL US Equity":148,
-        "USMV US Equity":78,"SPHB US Equity":84,"EEM US Equity":42,
-        "EFA US Equity":78,"XCS CN Equity":20,"XCV CN Equity":36,
-        "XCG CN Equity":38,"SMLL11 BZ Equity":90,"IGPA CI Index":25000,
-        "TLT US Equity":92,"UUP US Equity":28,"SOXX US Equity":520,
-        "IWN US Equity":160,"IWO US Equity":245,"DVY US Equity":125,
-        "VIX Index":18,"VVIX Index":90,"PCRATIO Index":0.85,
-        "LF98OAS Index":350,"TEDSP Index":0.25,"SKEW Index":120,
-        "JCJ Index":0.6,"BASPREAD Index":0.4,
-        "CBOEDISP Index":14,"SOFR1Y Index":4.8,"NYAD Index":0.58,
-    }
-    if sec in known: return known[sec]
-    for mkt, secs in SECTORS.items():
-        for i,(name,ticker) in enumerate(secs.items()):
-            if ticker == sec:
-                bases = SECTOR_BASES.get(mkt,[100]*20)
-                return bases[i] if i < len(bases) else 100
-    for mkt, tenors in YIELD_CURVES.items():
-        for j,(tenor,ticker) in enumerate(tenors.items()):
-            if ticker == sec:
-                bases = YIELD_BASES.get(mkt,[5.0]*10)
-                return bases[j] if j < len(bases) else 5.0
-    return 100
-
-def _mock_bdh(securities, fields, start_date, end_date):
-    rng   = np.random.default_rng(42)
-    dates = _get_dates(start_date, end_date)
-    rows  = []
-    for sec in securities:
-        base = _get_base(sec)
-        is_vol_idx = any(k in sec for k in ["VIX","VVIX","PCRATIO","LF98OAS","TEDSP","SKEW","JCJ","BASPREAD","CBOEDISP","NYAD"])
-        is_yield   = ("Index" in sec and not is_vol_idx and "SPX" not in sec
-                      and sec not in SECTOR_TICKERS)
-        if is_vol_idx:
-            vol_map = {"VIX":0.8,"VVIX":2.5,"PCRATIO":0.03,"LF98OAS":8,"TEDSP":0.02,"SKEW":3,"JCJ":0.02,"BASPREAD":0.03,"CBOEDISP":1.2,"NYAD":0.025}
-            v = next((v for k,v in vol_map.items() if k in sec), 0.05)
-            prices = _simulate_yields(base, len(dates), rng, vol=v)
-        elif is_yield:
-            prices = _simulate_yields(base, len(dates), rng)
-        else:
-            prices = _simulate_price(base, len(dates), rng)
-        for i,dt in enumerate(dates):
-            row = {"security": sec, "date": dt.strftime("%Y-%m-%d")}
-            for field in fields:
-                row[field] = round(float(prices[i]), 4)
-            rows.append(row)
-    return pd.DataFrame(rows)
 
 def _trim(arr, n):
     return arr[-n:] if len(arr) > n else arr

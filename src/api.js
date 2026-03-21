@@ -46,16 +46,21 @@ export function sortTenors(tenors) {
 }
 
 // ─── Chart option helpers ─────────────────────────────────────────────────────
+// Read chart-specific CSS vars at call time so charts respect dark/light theme
+export function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
 export function tooltipStyle(labelFn) {
   return {
     tooltip: {
-      backgroundColor: '#090e14',
-      borderColor: '#1e2f42',
+      backgroundColor: cssVar('--chart-bg'),
+      borderColor:     cssVar('--chart-border'),
       borderWidth: 1,
-      titleColor: '#4a6880',
-      bodyColor: '#c8dff0',
-      titleFont: { family: 'IBM Plex Mono', size: 11 },
-      bodyFont: { family: 'IBM Plex Mono', size: 13 },
+      titleColor:  cssVar('--chart-dim'),
+      bodyColor:   cssVar('--chart-text'),
+      titleFont: { family: 'IBM Plex Mono', size: 14 },
+      bodyFont:  { family: 'IBM Plex Mono', size: 15 },
       callbacks: {
         label: typeof labelFn === 'function'
           ? ctx => { const r = labelFn(ctx); return r !== null && r !== undefined ? r : undefined; }
@@ -66,24 +71,26 @@ export function tooltipStyle(labelFn) {
 }
 
 export function lineOpts({ yCallback, tooltipCallback, legend = false }) {
+  const dim    = cssVar('--chart-dim');
+  const grid   = cssVar('--chart-grid');
   return {
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: legend
-        ? { labels: { color: '#4a6880', font: { family: 'IBM Plex Mono', size: 12 } } }
+        ? { labels: { color: dim, font: { family: 'IBM Plex Mono', size: 14 } } }
         : { display: false },
       ...tooltipStyle(tooltipCallback || null),
     },
     scales: {
       x: {
-        ticks: { color: '#4a6880', font: { family: 'IBM Plex Mono', size: 11 }, maxTicksLimit: 6 },
-        grid: { color: '#172230' },
+        ticks: { color: dim, font: { family: 'IBM Plex Mono', size: 14 }, maxTicksLimit: 6 },
+        grid:  { color: grid },
       },
       y: {
-        ticks: { color: '#4a6880', font: { family: 'IBM Plex Mono', size: 11 }, callback: yCallback || undefined },
-        grid: { color: '#172230' },
+        ticks: { color: dim, font: { family: 'IBM Plex Mono', size: 14 }, callback: yCallback || undefined },
+        grid:  { color: grid },
       },
     },
   };
@@ -135,6 +142,7 @@ export async function loadCentralBanksData(market) {
   return apiFetch(`/api/macro/central-banks?market=${market}`);
 }
 
-export async function loadCalendarData() {
-  return apiFetch('/api/macro/calendar');
+export async function loadCalendarData(market) {
+  const qs = market ? `?market=${market}` : '';
+  return apiFetch(`/api/macro/calendar${qs}`);
 }

@@ -6,6 +6,7 @@ import {
   sortTenors,
   tooltipStyle,
   lineOpts,
+  cssVar,
 } from '../api.js';
 
 const SECTION_TIPS = {
@@ -16,7 +17,7 @@ const SECTION_TIPS = {
   aiAnalysis: 'AI-generated narrative using the actual spread data for this market and period. Covers curve dynamics, likely macro drivers, credit market implications, and the key risk or signal to watch.',
 };
 
-export default function FixedIncomePanel({ market, lookback }) {
+export default function FixedIncomePanel({ market, lookback, theme }) {
   const [data, setData]         = useState(null);
   const [aiText, setAiText]     = useState('');
   const [aiLoading, setAiLoading] = useState(true);
@@ -84,12 +85,12 @@ export default function FixedIncomePanel({ market, lookback }) {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { labels: { color: '#4a6880', font: { family: 'IBM Plex Mono', size: 10 } } },
+          legend: { labels: { color: cssVar("--chart-dim"), font: { family: 'IBM Plex Mono', size: 16 } } },
           ...tooltipStyle(c => `${c.dataset.label}: ${c.parsed.y.toFixed(2)}%`),
         },
         scales: {
-          x: { ticks: { color: '#4a6880', font: { family: 'IBM Plex Mono', size: 10 } }, grid: { color: '#172230' } },
-          y: { ticks: { color: '#4a6880', font: { family: 'IBM Plex Mono', size: 10 }, callback: v => v.toFixed(2) + '%' }, grid: { color: '#172230' } },
+          x: { ticks: { color: cssVar("--chart-dim"), font: { family: 'IBM Plex Mono', size: 16 } }, grid: { color: cssVar("--chart-grid") } },
+          y: { ticks: { color: cssVar("--chart-dim"), font: { family: 'IBM Plex Mono', size: 16 }, callback: v => v.toFixed(2) + '%' }, grid: { color: cssVar("--chart-grid") } },
         },
       },
     };
@@ -218,7 +219,7 @@ export default function FixedIncomePanel({ market, lookback }) {
         <div className="card">
           <div className="ctitle">YIELD CURVE — START VS END <InfoTooltip text={SECTION_TIPS.yieldCurve} /></div>
           {data && (
-            <ChartCanvas buildConfig={buildYC} deps={[data, market, lookback]} height={300} />
+            <ChartCanvas buildConfig={buildYC} deps={[data, market, lookback, theme]} height={300} />
           )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '.8rem' }}>
@@ -237,7 +238,7 @@ export default function FixedIncomePanel({ market, lookback }) {
       <div className="card" style={{ marginBottom: '1rem' }}>
         <div className="ctitle">2s10s SPREAD — TIME SERIES (BPS) <InfoTooltip text={SECTION_TIPS.spr2s10s} /></div>
         {data && (
-          <ChartCanvas buildConfig={buildSpr2s10s} deps={[data, market, lookback]} height={190} />
+          <ChartCanvas buildConfig={buildSpr2s10s} deps={[data, market, lookback, theme]} height={190} />
         )}
       </div>
 

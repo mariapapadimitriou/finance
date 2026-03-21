@@ -5,6 +5,7 @@ import {
   loadDifficultyData,
   COMP_COLORS,
   tooltipStyle,
+  cssVar,
 } from '../api.js';
 
 const SECTION_TIPS = {
@@ -30,7 +31,7 @@ const COMP_TIPS = {
   BreadthDecay: 'Market breadth proxy (advance/decline). Narrow rallies driven by few stocks signal fragile conditions with elevated reversal and whipsaw risk.',
 };
 
-export default function DifficultyPanel({ market, lookback }) {
+export default function DifficultyPanel({ market, lookback, theme }) {
   const [data, setData]   = useState(null);
   const [error, setError] = useState(null);
 
@@ -117,14 +118,14 @@ export default function DifficultyPanel({ market, lookback }) {
         },
         scales: {
           x: {
-            ticks: { color: '#4a6880', font: { family: 'IBM Plex Mono', size: 9 }, maxTicksLimit: 7 },
-            grid: { color: '#172230' },
+            ticks: { color: cssVar("--chart-dim"), font: { family: 'IBM Plex Mono', size: 16 }, maxTicksLimit: 7 },
+            grid: { color: cssVar("--chart-grid") },
           },
           y: {
             min: 0,
             max: 100,
-            ticks: { color: '#4a6880', font: { family: 'IBM Plex Mono', size: 9 }, stepSize: 25, callback: v => v },
-            grid: { color: '#172230' },
+            ticks: { color: cssVar("--chart-dim"), font: { family: 'IBM Plex Mono', size: 16 }, stepSize: 25, callback: v => v },
+            grid: { color: cssVar("--chart-grid") },
           },
         },
       },
@@ -170,16 +171,16 @@ export default function DifficultyPanel({ market, lookback }) {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { labels: { color: '#4a6880', font: { family: 'IBM Plex Mono', size: 10 } } },
+          legend: { labels: { color: cssVar("--chart-dim"), font: { family: 'IBM Plex Mono', size: 16 } } },
           ...tooltipStyle(c => ` ${c.label}: ${c.parsed.r.toFixed(1)}`),
         },
         scales: {
           r: {
             min: 0,
             max: 100,
-            ticks: { color: '#4a6880', font: { family: 'IBM Plex Mono', size: 9 }, backdropColor: 'transparent', stepSize: 25 },
+            ticks: { color: cssVar("--chart-dim"), font: { family: 'IBM Plex Mono', size: 16 }, backdropColor: 'transparent', stepSize: 25 },
             grid: { color: 'rgba(23,34,48,.8)' },
-            pointLabels: { color: '#c8dff0', font: { family: 'IBM Plex Mono', size: 9 } },
+            pointLabels: { color: cssVar("--chart-text"), font: { family: 'IBM Plex Mono', size: 16 } },
             angleLines: { color: 'rgba(23,34,48,.8)' },
           },
         },
@@ -254,7 +255,7 @@ export default function DifficultyPanel({ market, lookback }) {
           <div className="card">
             <div className="ctitle">TRADING DIFFICULTY INDEX — TIME SERIES <InfoTooltip text={SECTION_TIPS.timeSeries} /></div>
             {data && (
-              <ChartCanvas buildConfig={buildDiffChart} deps={[data, market, lookback]} height={220} />
+              <ChartCanvas buildConfig={buildDiffChart} deps={[data, market, lookback, theme]} height={220} />
             )}
           </div>
           <div className="card">
@@ -304,7 +305,7 @@ export default function DifficultyPanel({ market, lookback }) {
       <div className="card">
         <div className="ctitle">ALL COMPONENTS — NORMALIZED (0–100) <InfoTooltip text={SECTION_TIPS.radar} /></div>
         {data && (
-          <ChartCanvas buildConfig={buildRadar} deps={[data, market, lookback]} height={240} />
+          <ChartCanvas buildConfig={buildRadar} deps={[data, market, lookback, theme]} height={240} />
         )}
       </div>
     </>

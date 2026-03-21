@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Header from './components/Header.jsx';
 import TabNav from './components/TabNav.jsx';
 import RegimeSummaryBar from './components/RegimeSummaryBar.jsx';
@@ -9,9 +9,17 @@ import MorningBriefPanel from './panels/MorningBriefPanel.jsx';
 import MacroPanel from './panels/MacroPanel.jsx';
 
 export default function App() {
-  const [market, setMarket] = useState('US');
+  const [market, setMarket]   = useState('US');
   const [lookback, setLookback] = useState(20);
-  const [tab, setTab] = useState('morning');
+  const [tab, setTab]         = useState('morning');
+  const [theme, setTheme]     = useState('dark');
+
+  // Apply theme to root element so CSS vars take effect everywhere
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
   return (
     <>
@@ -20,15 +28,17 @@ export default function App() {
         onMarket={setMarket}
         lookback={lookback}
         onLookback={setLookback}
+        theme={theme}
+        onThemeToggle={toggleTheme}
       />
       <TabNav tab={tab} onTab={setTab} />
-      <RegimeSummaryBar market={market} />
+      <RegimeSummaryBar market={market} theme={theme} />
       <main>
-        {tab === 'morning'     && <MorningBriefPanel market={market} />}
-        {tab === 'equities'    && <EquitiesPanel    market={market} lookback={lookback} />}
-        {tab === 'fixedincome' && <FixedIncomePanel market={market} lookback={lookback} />}
-        {tab === 'difficulty'  && <DifficultyPanel  market={market} lookback={lookback} />}
-        {tab === 'macro'       && <MacroPanel       market={market} />}
+        {tab === 'morning'     && <MorningBriefPanel market={market} theme={theme} />}
+        {tab === 'equities'    && <EquitiesPanel    market={market} lookback={lookback} theme={theme} />}
+        {tab === 'fixedincome' && <FixedIncomePanel market={market} lookback={lookback} theme={theme} />}
+        {tab === 'difficulty'  && <DifficultyPanel  market={market} lookback={lookback} theme={theme} />}
+        {tab === 'macro'       && <MacroPanel       market={market} theme={theme} />}
       </main>
     </>
   );

@@ -26,7 +26,7 @@ export default function MacroPanel({ market }) {
     Promise.all([
       loadInflationData(market),
       loadCentralBanksData(market),
-      loadCalendarData(),
+      loadCalendarData(market),
       Promise.all(ALL_MARKETS.map(m => loadCentralBanksData(m))),
       Promise.all(ALL_MARKETS.map(m => loadInflationData(m))),
     ]).then(([infl, cbData, cal, cbs, infls]) => {

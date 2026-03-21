@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import ChartCanvas from '../components/ChartCanvas.jsx';
 import InfoTooltip from '../components/InfoTooltip.jsx';
 import {
@@ -10,6 +10,7 @@ import {
   FACTOR_COLORS,
   lineOpts,
   tooltipStyle,
+  cssVar,
 } from '../api.js';
 
 const SECTION_TIPS = {
@@ -38,22 +39,18 @@ const FACTOR_TIPS = {
   'Dividend vs Growth':    'DVY vs IWO. Positive = defensive income-seeking posture dominating. Negative = growth momentum and risk appetite in control.',
 };
 
-export default function EquitiesPanel({ market, lookback }) {
+export default function EquitiesPanel({ market, lookback, theme }) {
   const [sectors, setSectors]           = useState(null);
   const [volSectors, setVolSectors]     = useState(null);
   const [factors, setFactors]           = useState(null);
   const [selectedFactor, setSelectedFactor] = useState(0);
-  const [aiText, setAiText]       = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [error, setError]         = useState(null);
+  const [error, setError]                   = useState(null);
 
   useEffect(() => {
     setSectors(null);
     setVolSectors(null);
     setFactors(null);
     setSelectedFactor(0);
-    setAiText('');
-    setAiLoading(false);
     setError(null);
 
     let cancelled = false;
@@ -73,18 +70,11 @@ export default function EquitiesPanel({ market, lookback }) {
     return () => { cancelled = true; };
   }, [market, lookback]);
 
-  // ── AI analysis when selected factor changes ─────────────────────────────
-  useEffect(() => {
-    if (!factors) return;
+  const spreadAnalysis = useMemo(() => {
+    if (!factors) return '';
     const f = factors[selectedFactor];
-    if (!f) return;
-    let cancelled = false;
-    setAiText('');
-    setAiLoading(true);
-    runFactorAI(f, market, lookback).then(txt => {
-      if (!cancelled) { setAiText(txt); setAiLoading(false); }
-    });
-    return () => { cancelled = true; };
+    if (!f) return '';
+    return computeSpreadAnalysis(f, market, lookback);
   }, [selectedFactor, factors, market, lookback]);
 
   const loading = !error && (!sectors || !volSectors || !factors);
@@ -145,8 +135,8 @@ export default function EquitiesPanel({ market, lookback }) {
           ...tooltipStyle(c => `$${c.parsed.x.toFixed(2)}Bn`),
         },
         scales: {
-          x: { ticks: { color: '#4a6880', font: { family: 'IBM Plex Mono', size: 9 } }, grid: { color: '#172230' } },
-          y: { ticks: { color: '#c8dff0', font: { family: 'IBM Plex Mono', size: 9 } }, grid: { display: false } },
+          x: { ticks: { color: cssVar("--chart-dim"), font: { family: 'IBM Plex Mono', size: 16 } }, grid: { color: cssVar("--chart-grid") } },
+          y: { ticks: { color: cssVar("--chart-text"), font: { family: 'IBM Plex Mono', size: 16 } }, grid: { display: false } },
         },
       },
     };
@@ -256,14 +246,16 @@ export default function EquitiesPanel({ market, lookback }) {
             </div>
           )}
         </div>
-        <div className="card">
+        <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="ctitle">INDEXED PERFORMANCE (REBASED TO 100) <InfoTooltip text={SECTION_TIPS.indexedPerf} /></div>
           {!loading && (
-            <ChartCanvas
-              buildConfig={buildRetLine}
-              deps={[sectors, market, lookback]}
-              height={280}
-            />
+            <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+              <ChartCanvas
+                buildConfig={buildRetLine}
+                deps={[sectors, market, lookback, theme]}
+                height="100%"
+              />
+            </div>
           )}
         </div>
       </div>
@@ -277,14 +269,16 @@ export default function EquitiesPanel({ market, lookback }) {
             <div style={{ color: 'var(--dim)', fontSize: '.7rem' }}>Loading…</div>
           ) : renderVolFlow()}
         </div>
-        <div className="card">
+        <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="ctitle">AVG DAILY DOLLAR VOLUME <InfoTooltip text={SECTION_TIPS.volBar} /></div>
           {!loading && (
-            <ChartCanvas
-              buildConfig={buildVolBar}
-              deps={[volSectors, market, lookback]}
-              height={260}
-            />
+            <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+              <ChartCanvas
+                buildConfig={buildVolBar}
+                deps={[volSectors, market, lookback, theme]}
+                height="100%"
+              />
+            </div>
           )}
         </div>
       </div>
@@ -349,16 +343,15 @@ export default function EquitiesPanel({ market, lookback }) {
                 </div>
                 <ChartCanvas
                   buildConfig={buildFactorChart(f, selectedFactor)}
-                  deps={[selectedFactor, f.spread, f.dates, market, lookback]}
+                  deps={[selectedFactor, f.spread, f.dates, market, lookback, theme]}
                   height={300}
                 />
                 <div className="ai-box" style={{ marginTop: '.9rem' }}>
                   <div className="ai-hdr">
-                    <div className="aidot" />
-                    FACTOR ANALYSIS — {f.name.toUpperCase()}
+                    SPREAD ANALYSIS — {f.name.toUpperCase()}
                   </div>
-                  <div className={`ai-txt${aiLoading ? ' loading' : ''}`} style={{ whiteSpace: 'pre-wrap' }}>
-                    {aiLoading ? 'Analysing factor data…' : aiText}
+                  <div className="ai-txt" style={{ whiteSpace: 'pre-wrap' }}>
+                    {spreadAnalysis}
                   </div>
                 </div>
               </div>
@@ -370,8 +363,8 @@ export default function EquitiesPanel({ market, lookback }) {
   );
 }
 
-// ── AI factor analysis ────────────────────────────────────────────────────────
-function runFactorAI(f, market, lookback) {
+// ── Spread analysis ───────────────────────────────────────────────────────────
+function computeSpreadAnalysis(f, market, lookback) {
   const spread = f.spread || [];
   const n = spread.length;
   const recent = spread.slice(-Math.min(10, n));
@@ -389,9 +382,9 @@ function runFactorAI(f, market, lookback) {
     ? `The positive spread of ${f.current?.toFixed(2)}% confirms the first-named asset is outperforming over this period.`
     : `The negative spread of ${f.current?.toFixed(2)}% indicates the second asset has taken the lead, consistent with a regime shift.`;
 
-  return Promise.resolve(`The ${f.name} spread has ${dir} by ${absChg}% over the past ${lookback} trading days, currently reading ${f.current?.toFixed(2)}%. ${regimeTxt}
+  return `The ${f.name} spread has ${dir} by ${absChg}% over the past ${lookback} trading days, currently reading ${f.current?.toFixed(2)}%. ${regimeTxt}
 
 The spread has traded between ${min}% and ${max}% over the period, with a mean of ${avg}%. ${zeroCrossings > 2 ? `The ${zeroCrossings} zero-line crossings suggest an unstable, choppy regime with no clear directional conviction.` : zeroCrossings === 0 ? 'No zero-line crossings indicate a persistent, one-directional regime throughout the lookback window.' : 'A single zero-line crossing marks a potential regime transition worth monitoring.'}
 
-The recent ${trend} trend is the key signal to track. A sustained move back through zero would confirm a full regime reversal; watch for confirmation from complementary factors before adjusting positioning.`);
+The recent ${trend} trend is the key signal to track. A sustained move back through zero would confirm a full regime reversal; watch for confirmation from complementary factors before adjusting positioning.`;
 }

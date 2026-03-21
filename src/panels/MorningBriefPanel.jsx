@@ -70,7 +70,7 @@ export default function MorningBriefPanel({ market }) {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    Promise.all([loadSummaryData(market), loadCalendarData()])
+    Promise.all([loadSummaryData(market), loadCalendarData(market)])
       .then(([s, c]) => { setSummary(s); setCalendar(c); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); });
   }, [market]);

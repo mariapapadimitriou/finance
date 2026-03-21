@@ -1,4 +1,4 @@
-export default function Header({ market, onMarket, lookback, onLookback }) {
+export default function Header({ market, onMarket, lookback, onLookback, theme, onThemeToggle }) {
   const markets = [
     { code: 'US', flag: '🇺🇸' },
     { code: 'CA', flag: '🇨🇦' },
@@ -18,16 +18,13 @@ export default function Header({ market, onMarket, lookback, onLookback }) {
   return (
     <header>
       <div className="logo">
-        MACRO<span style={{ color: 'var(--dim)' }}>LENS</span>
-        <sub>v2.0</sub>
+        RED<span style={{ color: 'var(--dim)' }}>EYE</span>
+        <sub>equity</sub>
       </div>
       <div className="hbar-right">
         <div className="lkb">
           <span>PERIOD</span>
-          <select
-            value={lookback}
-            onChange={e => onLookback(parseInt(e.target.value))}
-          >
+          <select value={lookback} onChange={e => onLookback(parseInt(e.target.value))}>
             {periods.map(p => (
               <option key={p.value} value={p.value}>{p.label}</option>
             ))}
@@ -44,10 +41,10 @@ export default function Header({ market, onMarket, lookback, onLookback }) {
             </button>
           ))}
         </div>
-        <div className="status">
-          <div className="sdot" />
-          <span>MOCK DATA</span>
-        </div>
+        <button className="theme-toggle" onClick={onThemeToggle} title="Toggle dark / light mode">
+          <span className="theme-toggle-icon">{theme === 'dark' ? '☀' : '☾'}</span>
+          {theme === 'dark' ? 'LIGHT' : 'DARK'}
+        </button>
       </div>
     </header>
   );
