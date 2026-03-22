@@ -1,10 +1,9 @@
 export default function TabNav({ tab, onTab }) {
   const tabs = [
-    { id: 'morning',     label: 'Morning Brief' },
+    { id: 'macro',       label: 'Macro' },
     { id: 'equities',    label: 'Equities' },
     { id: 'fixedincome', label: 'Fixed Income' },
     { id: 'difficulty',  label: 'Trading Difficulty' },
-    { id: 'macro',       label: 'Macro' },
   ];
 
   return (

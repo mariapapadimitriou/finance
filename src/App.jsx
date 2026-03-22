@@ -5,13 +5,12 @@ import RegimeSummaryBar from './components/RegimeSummaryBar.jsx';
 import EquitiesPanel from './panels/EquitiesPanel.jsx';
 import FixedIncomePanel from './panels/FixedIncomePanel.jsx';
 import DifficultyPanel from './panels/DifficultyPanel.jsx';
-import MorningBriefPanel from './panels/MorningBriefPanel.jsx';
 import MacroPanel from './panels/MacroPanel.jsx';
 
 export default function App() {
   const [market, setMarket]   = useState('US');
   const [lookback, setLookback] = useState(20);
-  const [tab, setTab]         = useState('morning');
+  const [tab, setTab]         = useState('macro');
   const [theme, setTheme]     = useState('dark');
 
   // Apply theme to root element so CSS vars take effect everywhere
@@ -34,7 +33,6 @@ export default function App() {
       <TabNav tab={tab} onTab={setTab} />
       <RegimeSummaryBar market={market} theme={theme} />
       <main>
-        {tab === 'morning'     && <MorningBriefPanel market={market} theme={theme} />}
         {tab === 'equities'    && <EquitiesPanel    market={market} lookback={lookback} theme={theme} />}
         {tab === 'fixedincome' && <FixedIncomePanel market={market} lookback={lookback} theme={theme} />}
         {tab === 'difficulty'  && <DifficultyPanel  market={market} lookback={lookback} theme={theme} />}

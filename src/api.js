@@ -146,3 +146,7 @@ export async function loadCalendarData(market) {
   const qs = market ? `?market=${market}` : '';
   return apiFetch(`/api/macro/calendar${qs}`);
 }
+
+export async function loadIndicatorHistory(ticker, months = 36) {
+  return apiFetch(`/api/macro/indicator-history?ticker=${encodeURIComponent(ticker)}&months=${months}`);
+}

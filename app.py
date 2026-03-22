@@ -76,6 +76,15 @@ def _mock_bdh(securities, fields, start_date, end_date):
         "IPSA Index": 7000,    "CLXFINL Index": 2250, "CLXUTIL Index": 4600,
         "CLXMATR Index": 3250, "CLXCOND Index": 1850, "CLXREAL Index": 2150,
         "CLXENRS Index": 2850,
+        # Inflation indicators (% YoY) — used by /api/macro/indicator-history
+        "CPI YOY Index": 3.5,    "CPUPXCHG Index": 3.9,    "PCE DEFY Index": 2.7,
+        "CACPI YOY Index": 2.2,  "CACPIXFE YOY Index": 2.4,
+        "MXCPIYOY Index": 3.9,   "MXCPIXFE YOY Index": 3.7,
+        "BRCPIYOY Index": 5.0,   "BRCPCORE Index": 4.5,
+        "CLCPIYOY Index": 4.3,   "CLCPXENE YOY Index": 4.0,
+        # Central bank policy rates
+        "FDTR Index": 4.25,      "CABROVER Index": 3.00,
+        "MXONOVR Index": 9.00,   "BZSELBID Index": 14.75,  "CHOVRATE Index": 5.00,
         # Yield curves — use basis points / percent directly
         "USGG3M Index": 5.25,  "USGG6M Index": 5.20,  "USGG12M Index": 5.00,
         "USGG2Y Index": 4.70,  "USGG3Y Index": 4.50,  "USGG5Y Index": 4.30,
@@ -439,25 +448,25 @@ def trading_difficulty():
 
 INFLATION_DATA = {
     "US": [
-        {"label": "CPI YoY",      "current": 3.1, "prev": 3.4, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
-        {"label": "Core CPI YoY", "current": 3.8, "prev": 3.9, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
-        {"label": "PCE YoY",      "current": 2.5, "prev": 2.6, "trend": "DOWN", "unit": "%", "period": "Jan 2026"},
+        {"label": "CPI YoY",      "ticker": "CPI YOY Index",    "current": 3.1, "prev": 3.4, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+        {"label": "Core CPI YoY", "ticker": "CPUPXCHG Index",   "current": 3.8, "prev": 3.9, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+        {"label": "PCE YoY",      "ticker": "PCE DEFY Index",   "current": 2.5, "prev": 2.6, "trend": "DOWN", "unit": "%", "period": "Jan 2026"},
     ],
     "CA": [
-        {"label": "CPI YoY",      "current": 1.9, "prev": 2.1, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
-        {"label": "Core CPI YoY", "current": 2.1, "prev": 2.3, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+        {"label": "CPI YoY",      "ticker": "CACPI YOY Index",    "current": 1.9, "prev": 2.1, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+        {"label": "Core CPI YoY", "ticker": "CACPIXFE YOY Index", "current": 2.1, "prev": 2.3, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
     ],
     "MX": [
-        {"label": "CPI YoY",      "current": 3.8, "prev": 3.7, "trend": "UP",   "unit": "%", "period": "Feb 2026"},
-        {"label": "Core CPI YoY", "current": 3.6, "prev": 3.8, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+        {"label": "CPI YoY",      "ticker": "MXCPIYOY Index",    "current": 3.8, "prev": 3.7, "trend": "UP",   "unit": "%", "period": "Feb 2026"},
+        {"label": "Core CPI YoY", "ticker": "MXCPIXFE YOY Index","current": 3.6, "prev": 3.8, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
     ],
     "BR": [
-        {"label": "IPCA YoY",     "current": 5.1, "prev": 4.8, "trend": "UP",   "unit": "%", "period": "Feb 2026"},
-        {"label": "Core IPCA",    "current": 4.6, "prev": 4.3, "trend": "UP",   "unit": "%", "period": "Feb 2026"},
+        {"label": "IPCA YoY",     "ticker": "BRCPIYOY Index",   "current": 5.1, "prev": 4.8, "trend": "UP",   "unit": "%", "period": "Feb 2026"},
+        {"label": "Core IPCA",    "ticker": "BRCPCORE Index",   "current": 4.6, "prev": 4.3, "trend": "UP",   "unit": "%", "period": "Feb 2026"},
     ],
     "CL": [
-        {"label": "CPI YoY",      "current": 4.2, "prev": 4.5, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
-        {"label": "Core CPI YoY", "current": 3.9, "prev": 4.1, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+        {"label": "CPI YoY",      "ticker": "CLCPIYOY Index",      "current": 4.2, "prev": 4.5, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
+        {"label": "Core CPI YoY", "ticker": "CLCPXENE YOY Index",  "current": 3.9, "prev": 4.1, "trend": "DOWN", "unit": "%", "period": "Feb 2026"},
     ],
 }
 
@@ -467,30 +476,35 @@ CENTRAL_BANK_DATA = {
         "last_change_date": "Dec 11, 2025", "next_meeting": "May 7, 2026",
         "bias": "HOLD",
         "bias_note": "Data-dependent pause; watching PCE and labour market for next move.",
+        "rate_ticker": "FDTR Index",
     },
     "CA": {
         "bank": "Bank of Canada",     "policy_rate": 3.00, "last_change": -0.25,
         "last_change_date": "Jan 29, 2026", "next_meeting": "Apr 16, 2026",
         "bias": "EASING",
         "bias_note": "Easing cycle ongoing; inflation back near target, growth risks dominate.",
+        "rate_ticker": "CABROVER Index",
     },
     "MX": {
         "bank": "Banxico",            "policy_rate": 9.00, "last_change": -0.50,
         "last_change_date": "Feb 6, 2026",  "next_meeting": "Mar 27, 2026",
         "bias": "EASING",
         "bias_note": "Cutting cycle continues cautiously; peso stability constraining pace.",
+        "rate_ticker": "MXONOVR Index",
     },
     "BR": {
         "bank": "Banco Central do Brasil", "policy_rate": 14.75, "last_change": +1.00,
         "last_change_date": "Mar 19, 2026", "next_meeting": "May 7, 2026",
         "bias": "TIGHTENING",
         "bias_note": "Re-tightening cycle underway; IPCA above target, fiscal concerns persist.",
+        "rate_ticker": "BZSELBID Index",
     },
     "CL": {
         "bank": "Banco Central de Chile", "policy_rate": 5.00, "last_change": -0.25,
         "last_change_date": "Jan 29, 2026", "next_meeting": "Apr 1, 2026",
         "bias": "HOLD",
         "bias_note": "On hold; inflation declining but global uncertainty warrants caution.",
+        "rate_ticker": "CHOVRATE Index",
     },
 }
 
@@ -655,6 +669,30 @@ def macro_calendar():
         out.append({**ev, "status": "PAST" if ev["date"] <= today else "UPCOMING"})
     out.sort(key=lambda x: x["date"])
     return jsonify({"events": out})
+
+
+@app.route("/api/macro/indicator-history")
+def indicator_history():
+    ticker = request.args.get("ticker", "")
+    months = int(request.args.get("months", 36))
+    if not ticker:
+        return jsonify({"ticker": "", "dates": [], "values": []})
+    end_dt   = datetime.today()
+    start_dt = end_dt - timedelta(days=months * 32)
+    df = bdh([ticker], ["PX_LAST"], start_dt.strftime("%Y%m%d"), end_dt.strftime("%Y%m%d"))
+    sub = df[df["security"] == ticker].copy()
+    if sub.empty:
+        return jsonify({"ticker": ticker, "dates": [], "values": []})
+    sub["date"] = pd.to_datetime(sub["date"])
+    sub = sub.sort_values("date")
+    sub["ym"] = sub["date"].dt.to_period("M")
+    monthly = sub.groupby("ym")["PX_LAST"].last().reset_index()
+    monthly["date_ts"] = monthly["ym"].dt.to_timestamp()
+    return jsonify({
+        "ticker": ticker,
+        "dates":  monthly["date_ts"].dt.strftime("%Y-%m").tolist(),
+        "values": [round(float(v), 4) for v in monthly["PX_LAST"].values],
+    })
 
 
 if __name__ == "__main__":
