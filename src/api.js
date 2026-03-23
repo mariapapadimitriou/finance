@@ -150,3 +150,19 @@ export async function loadCalendarData(market) {
 export async function loadIndicatorHistory(ticker, months = 36) {
   return apiFetch(`/api/macro/indicator-history?ticker=${encodeURIComponent(ticker)}&months=${months}`);
 }
+
+export async function loadGrowthData(market) {
+  return apiFetch(`/api/macro/growth?market=${market}`);
+}
+
+export async function loadFXData(market) {
+  return apiFetch(`/api/macro/fx?market=${market}`);
+}
+
+export async function loadCreditSpreadsData(market) {
+  return apiFetch(`/api/fixedincome/credit-spreads?market=${market}`);
+}
+
+export async function loadRealYieldsData(market) {
+  return apiFetch(`/api/fixedincome/real-yields?market=${market}`);
+}

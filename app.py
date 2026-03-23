@@ -94,13 +94,37 @@ def _mock_bdh(securities, fields, start_date, end_date):
         "GCAN2Y Index": 4.30,  "GCAN3Y Index": 4.10,  "GCAN5Y Index": 3.95,
         "GCAN7Y Index": 3.90,  "GCAN10Y Index": 3.88, "GCAN20Y Index": 3.95,
         "GCAN30Y Index": 3.98,
+        # Growth indicators
+        "GDPA Index": 2.8,       "CAGDPYOY Index": 1.8,   "MXGDPYOY Index": 1.5,
+        "BRGDPYOY Index": 2.1,   "CLGDPYOY Index": 2.2,
+        "USURTOT Index": 4.1,    "CAURTOT Index": 6.7,    "MXURTOT Index": 2.8,
+        "BRURTOT Index": 6.5,    "CLURTOT Index": 8.2,
+        "MPMIUSMA Index": 51.6,  "CAIMPMIT Index": 50.8,  "MXIMPMIT Index": 50.2,
+        "BRIMPMIT Index": 52.3,  "CLIMPMIT Index": 49.8,
+        "NAPMSPMIT Index": 53.5,
+        # TIPS / real yields
+        "USGGT05Y Index": 1.85,  "USGGT10Y Index": 1.92,  "USGGT30Y Index": 2.05,
+        # Credit spreads (OAS, bps)
+        "LUACOAS Index": 92,     "LF97OAS Index": 245,
+        "CACOAS Index": 95,      "CAHYOAS Index": 335,
+        "MXEMBI Index": 320,     "BREMBI Index": 420,     "CLEMBI Index": 125,
     }
 
     VOL_KEYS = {"VIX","VVIX","PCRATIO","LF98OAS","TEDSP","SKEW","JCJ",
-                "BASPREAD","CBOEDISP","NYAD","SOFR","SPX"}
+                "BASPREAD","CBOEDISP","NYAD","SOFR","SPX",
+                # Growth
+                "GDPA","GDPYOY","URTOT","MPMIUSMA","CAIMP","MXIMP","BRIMP","CLIMP","NAPSPM",
+                # Real yields & credit spreads
+                "USGGT","COAS","LF97O","CAHYO","EMBI"}
     VOL_SCALES = {"VIX": 0.8, "VVIX": 2.5, "PCRATIO": 0.03, "LF98OAS": 8,
                   "TEDSP": 0.02, "SKEW": 3, "JCJ": 0.02, "BASPREAD": 0.03,
-                  "CBOEDISP": 1.2, "NYAD": 0.025, "SOFR": 0.015, "SPX": 15}
+                  "CBOEDISP": 1.2, "NYAD": 0.025, "SOFR": 0.015, "SPX": 15,
+                  # Growth — moderate drift so charts look realistic over 3yr
+                  "GDPA": 0.02, "GDPYOY": 0.02, "URTOT": 0.015,
+                  "MPMIUSMA": 0.3, "CAIMP": 0.3, "MXIMP": 0.3, "BRIMP": 0.3, "CLIMP": 0.3,
+                  "NAPSPM": 0.3,
+                  # Real yields & spreads
+                  "USGGT": 0.008, "COAS": 1.2, "LF97O": 2.0, "CAHYO": 2.5, "EMBI": 4.0}
 
     def _sim_price(base, n, vol=0.012):
         ret = rng.normal(0.0003, vol, n)
@@ -472,40 +496,160 @@ INFLATION_DATA = {
 
 CENTRAL_BANK_DATA = {
     "US": {
-        "bank": "Federal Reserve",    "policy_rate": 4.25, "last_change": -0.25,
+        "bank": "Federal Reserve", "policy_rate": 4.25, "last_change": -0.25,
         "last_change_date": "Dec 11, 2025", "next_meeting": "May 7, 2026",
-        "bias": "HOLD",
+        "bias": "HOLD", "rate_ticker": "FDTR Index",
         "bias_note": "Data-dependent pause; watching PCE and labour market for next move.",
-        "rate_ticker": "FDTR Index",
+        "rate_history": [
+            {"date": "Dec 11, 2025", "rate": 4.25,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Nov 7, 2025",  "rate": 4.50,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Sep 18, 2025", "rate": 4.75,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Jul 30, 2025", "rate": 5.00,  "change":  0.00, "expected_change":  0.00, "decision": "HOLD"},
+            {"date": "Jun 12, 2025", "rate": 5.00,  "change":  0.00, "expected_change": -0.25, "decision": "HOLD"},
+            {"date": "May 1, 2025",  "rate": 5.00,  "change":  0.00, "expected_change":  0.00, "decision": "HOLD"},
+        ],
     },
     "CA": {
-        "bank": "Bank of Canada",     "policy_rate": 3.00, "last_change": -0.25,
+        "bank": "Bank of Canada", "policy_rate": 3.00, "last_change": -0.25,
         "last_change_date": "Jan 29, 2026", "next_meeting": "Apr 16, 2026",
-        "bias": "EASING",
+        "bias": "EASING", "rate_ticker": "CABROVER Index",
         "bias_note": "Easing cycle ongoing; inflation back near target, growth risks dominate.",
-        "rate_ticker": "CABROVER Index",
+        "rate_history": [
+            {"date": "Jan 29, 2026", "rate": 3.00,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Dec 11, 2025", "rate": 3.25,  "change": -0.50, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Oct 23, 2025", "rate": 3.75,  "change": -0.50, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Sep 4, 2025",  "rate": 4.25,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Jul 24, 2025", "rate": 4.50,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Jun 5, 2025",  "rate": 4.75,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+        ],
     },
     "MX": {
-        "bank": "Banxico",            "policy_rate": 9.00, "last_change": -0.50,
-        "last_change_date": "Feb 6, 2026",  "next_meeting": "Mar 27, 2026",
-        "bias": "EASING",
+        "bank": "Banxico", "policy_rate": 9.00, "last_change": -0.50,
+        "last_change_date": "Feb 6, 2026", "next_meeting": "Mar 27, 2026",
+        "bias": "EASING", "rate_ticker": "MXONOVR Index",
         "bias_note": "Cutting cycle continues cautiously; peso stability constraining pace.",
-        "rate_ticker": "MXONOVR Index",
+        "rate_history": [
+            {"date": "Feb 6, 2026",  "rate": 9.00,  "change": -0.50, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Dec 19, 2025", "rate": 9.50,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Nov 7, 2025",  "rate": 9.75,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Sep 26, 2025", "rate":10.00,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Aug 8, 2025",  "rate":10.25,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Jun 27, 2025", "rate":10.50,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+        ],
     },
     "BR": {
         "bank": "Banco Central do Brasil", "policy_rate": 14.75, "last_change": +1.00,
         "last_change_date": "Mar 19, 2026", "next_meeting": "May 7, 2026",
-        "bias": "TIGHTENING",
+        "bias": "TIGHTENING", "rate_ticker": "BZSELBID Index",
         "bias_note": "Re-tightening cycle underway; IPCA above target, fiscal concerns persist.",
-        "rate_ticker": "BZSELBID Index",
+        "rate_history": [
+            {"date": "Mar 19, 2026", "rate":14.75,  "change": +1.00, "expected_change": +0.75, "decision": "HIKE"},
+            {"date": "Jan 29, 2026", "rate":13.75,  "change": +1.00, "expected_change": +1.00, "decision": "HIKE"},
+            {"date": "Dec 11, 2025", "rate":12.75,  "change": +0.75, "expected_change": +0.50, "decision": "HIKE"},
+            {"date": "Nov 6, 2025",  "rate":12.00,  "change": +0.50, "expected_change": +0.50, "decision": "HIKE"},
+            {"date": "Sep 17, 2025", "rate":11.50,  "change": +0.25, "expected_change": +0.25, "decision": "HIKE"},
+            {"date": "Jul 30, 2025", "rate":11.25,  "change":  0.00, "expected_change":  0.00, "decision": "HOLD"},
+        ],
     },
     "CL": {
         "bank": "Banco Central de Chile", "policy_rate": 5.00, "last_change": -0.25,
         "last_change_date": "Jan 29, 2026", "next_meeting": "Apr 1, 2026",
-        "bias": "HOLD",
+        "bias": "HOLD", "rate_ticker": "CHOVRATE Index",
         "bias_note": "On hold; inflation declining but global uncertainty warrants caution.",
-        "rate_ticker": "CHOVRATE Index",
+        "rate_history": [
+            {"date": "Jan 29, 2026", "rate": 5.00,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Dec 17, 2025", "rate": 5.25,  "change":  0.00, "expected_change":  0.00, "decision": "HOLD"},
+            {"date": "Oct 29, 2025", "rate": 5.25,  "change":  0.00, "expected_change": -0.25, "decision": "HOLD"},
+            {"date": "Sep 3, 2025",  "rate": 5.25,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Jul 16, 2025", "rate": 5.50,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+            {"date": "Jun 3, 2025",  "rate": 5.75,  "change": -0.25, "expected_change": -0.25, "decision": "CUT"},
+        ],
     },
+}
+
+GROWTH_DATA = {
+    "US": [
+        {"label": "GDP YoY",      "ticker": "GDPA Index",       "current":  2.8, "prev":  3.1, "trend": "DOWN", "unit": "%",  "period": "Q4 2025"},
+        {"label": "Unemployment", "ticker": "USURTOT Index",    "current":  4.1, "prev":  4.0, "trend": "UP",   "unit": "%",  "period": "Feb 2026"},
+        {"label": "Mfg PMI",      "ticker": "MPMIUSMA Index",   "current": 50.3, "prev": 49.3, "trend": "UP",   "unit": "",   "period": "Feb 2026"},
+        {"label": "Svcs PMI",     "ticker": "NAPMSPMIT Index",  "current": 53.5, "prev": 52.8, "trend": "UP",   "unit": "",   "period": "Feb 2026"},
+    ],
+    "CA": [
+        {"label": "GDP YoY",      "ticker": "CAGDPYOY Index",   "current":  1.7, "prev":  2.0, "trend": "DOWN", "unit": "%",  "period": "Q4 2025"},
+        {"label": "Unemployment", "ticker": "CAURTOT Index",    "current":  6.7, "prev":  6.8, "trend": "DOWN", "unit": "%",  "period": "Feb 2026"},
+        {"label": "Mfg PMI",      "ticker": "CAIMPMIT Index",   "current": 47.8, "prev": 47.1, "trend": "UP",   "unit": "",   "period": "Feb 2026"},
+    ],
+    "MX": [
+        {"label": "GDP YoY",      "ticker": "MXGDPYOY Index",   "current": -0.6, "prev":  1.1, "trend": "DOWN", "unit": "%",  "period": "Q4 2025"},
+        {"label": "Unemployment", "ticker": "MXURTOT Index",    "current":  2.8, "prev":  2.9, "trend": "DOWN", "unit": "%",  "period": "Jan 2026"},
+        {"label": "Mfg PMI",      "ticker": "MXIMPMIT Index",   "current": 46.5, "prev": 47.4, "trend": "DOWN", "unit": "",   "period": "Feb 2026"},
+    ],
+    "BR": [
+        {"label": "GDP YoY",      "ticker": "BRGDPYOY Index",   "current":  3.5, "prev":  4.0, "trend": "DOWN", "unit": "%",  "period": "Q3 2025"},
+        {"label": "Unemployment", "ticker": "BRURTOT Index",    "current":  6.5, "prev":  6.2, "trend": "UP",   "unit": "%",  "period": "Jan 2026"},
+        {"label": "Mfg PMI",      "ticker": "BRIMPMIT Index",   "current": 52.1, "prev": 52.5, "trend": "DOWN", "unit": "",   "period": "Feb 2026"},
+    ],
+    "CL": [
+        {"label": "GDP YoY",      "ticker": "CLGDPYOY Index",   "current":  2.4, "prev":  2.1, "trend": "UP",   "unit": "%",  "period": "Q3 2025"},
+        {"label": "Unemployment", "ticker": "CLURTOT Index",    "current":  8.2, "prev":  8.0, "trend": "UP",   "unit": "%",  "period": "Jan 2026"},
+        {"label": "Mfg PMI",      "ticker": "CLIMPMIT Index",   "current": 48.6, "prev": 49.1, "trend": "DOWN", "unit": "",   "period": "Feb 2026"},
+    ],
+}
+
+FX_DATA = {
+    "CA": {"pair": "USD/CAD", "ticker": "USDCAD Curncy", "rate": 1.3582, "prev": 1.3720, "trend": "DOWN",
+           "note": "CAD firm on BoC nearing end of easing cycle; oil prices and trade flows supportive near-term."},
+    "MX": {"pair": "USD/MXN", "ticker": "USDMXN Curncy", "rate": 20.15, "prev": 19.90, "trend": "UP",
+           "note": "Peso under pressure from Banxico cuts compressing carry; tariff risk and nearshoring uncertainty."},
+    "BR": {"pair": "USD/BRL", "ticker": "USDBRL Curncy", "rate": 5.852, "prev": 5.610, "trend": "UP",
+           "note": "BRL weaker on fiscal concerns and BCB tightening cycle — market focused on primary surplus trajectory."},
+    "CL": {"pair": "USD/CLP", "ticker": "USDCLP Curncy", "rate": 940.5, "prev": 955.0, "trend": "DOWN",
+           "note": "CLP recovering on higher copper prices; BCCh on hold, current account improving."},
+}
+
+CREDIT_SPREAD_DATA = {
+    "US": {
+        "real_yield_10y": round(4.20 - 3.1, 2),
+        "spreads": [
+            {"label": "IG OAS",   "ticker": "LUACOAS Index", "current":  92, "prev":  88, "trend": "UP",   "unit": "bps"},
+            {"label": "HY OAS",   "ticker": "LF98OAS Index", "current": 340, "prev": 315, "trend": "UP",   "unit": "bps"},
+            {"label": "BB OAS",   "ticker": "LF97OAS Index", "current": 245, "prev": 225, "trend": "UP",   "unit": "bps"},
+        ],
+    },
+    "CA": {
+        "real_yield_10y": round(3.88 - 1.9, 2),
+        "spreads": [
+            {"label": "IG OAS",   "ticker": "CACOAS Index",  "current": 110, "prev": 102, "trend": "UP",   "unit": "bps"},
+            {"label": "HY OAS",   "ticker": "CAHYOAS Index", "current": 380, "prev": 352, "trend": "UP",   "unit": "bps"},
+        ],
+    },
+    "MX": {
+        "real_yield_10y": round(9.50 - 3.8, 2),
+        "spreads": [
+            {"label": "EMBI Sov Spread", "ticker": "MXEMBI Index", "current": 320, "prev": 295, "trend": "UP", "unit": "bps"},
+        ],
+    },
+    "BR": {
+        "real_yield_10y": round(14.75 - 5.1, 2),
+        "spreads": [
+            {"label": "EMBI Sov Spread", "ticker": "BREMBI Index", "current": 420, "prev": 395, "trend": "UP", "unit": "bps"},
+        ],
+    },
+    "CL": {
+        "real_yield_10y": round(5.50 - 4.2, 2),
+        "spreads": [
+            {"label": "EMBI Sov Spread", "ticker": "CLEMBI Index", "current": 125, "prev": 118, "trend": "UP", "unit": "bps"},
+        ],
+    },
+}
+
+REAL_YIELD_DATA = {
+    "US": [
+        {"label": "5Y TIPS Real Yield",  "ticker": "USGGT05Y Index", "current": 1.85, "prev": 1.78, "trend": "UP", "unit": "%"},
+        {"label": "10Y TIPS Real Yield", "ticker": "USGGT10Y Index", "current": 1.92, "prev": 1.88, "trend": "UP", "unit": "%"},
+        {"label": "30Y TIPS Real Yield", "ticker": "USGGT30Y Index", "current": 2.05, "prev": 2.02, "trend": "UP", "unit": "%"},
+    ],
+    "CA": [], "MX": [], "BR": [], "CL": [],
 }
 
 MACRO_CALENDAR = [
@@ -669,6 +813,31 @@ def macro_calendar():
         out.append({**ev, "status": "PAST" if ev["date"] <= today else "UPCOMING"})
     out.sort(key=lambda x: x["date"])
     return jsonify({"events": out})
+
+
+@app.route("/api/macro/growth")
+def macro_growth():
+    market = request.args.get("market", "US")
+    return jsonify({"market": market, "readings": GROWTH_DATA.get(market, [])})
+
+
+@app.route("/api/macro/fx")
+def macro_fx():
+    market = request.args.get("market", "US")
+    return jsonify({"market": market, "fx": FX_DATA.get(market, None)})
+
+
+@app.route("/api/fixedincome/credit-spreads")
+def fi_credit_spreads():
+    market = request.args.get("market", "US")
+    data = CREDIT_SPREAD_DATA.get(market, CREDIT_SPREAD_DATA["US"])
+    return jsonify({"market": market, **data})
+
+
+@app.route("/api/fixedincome/real-yields")
+def fi_real_yields():
+    market = request.args.get("market", "US")
+    return jsonify({"market": market, "real_yields": REAL_YIELD_DATA.get(market, [])})
 
 
 @app.route("/api/macro/indicator-history")
