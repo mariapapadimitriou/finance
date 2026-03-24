@@ -2,7 +2,5 @@ flask>=3.0.0
 flask-cors>=4.0.0
 pandas>=2.0.0
 numpy>=1.26.0
-
-# Bloomberg (uncomment when running on a Bloomberg Terminal machine)
-# blpapi>=3.19.0
-# xbbg>=0.7.9
+blpapi>=3.19.0
+xbbg>=0.7.9

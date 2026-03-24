@@ -14,152 +14,30 @@ app = Flask(__name__)
 CORS(app)
 
 # ─── Bloomberg BDH wrapper ────────────────────────────────────────────────────
+try:
+    from xbbg import blp as _blp
+except ImportError as e:
+    raise ImportError(
+        "xbbg is required. Install it with: pip install blpapi xbbg"
+    ) from e
+
+
 def bdh(securities, fields, start_date, end_date):
     """
-    Tries Bloomberg (xbbg) first. Falls back to simulation if Bloomberg is
-    unavailable (no terminal, xbbg not installed, or connection error).
+    Fetches historical data from a live Bloomberg Terminal via xbbg.
+    Requires an active Bloomberg Terminal session and blpapi/xbbg installed.
     Returns DataFrame with columns: security | date | <fields...>
     """
-    try:
-        from xbbg import blp
-        raw = blp.bdh(tickers=securities, flds=fields,
-                      start_date=start_date, end_date=end_date)
-        df = raw.stack(level=0).reset_index()
-        df.columns = ['date', 'security'] + fields
-        return df
-    except Exception:
-        return _mock_bdh(securities, fields, start_date, end_date)
-
-
-def _mock_bdh(securities, fields, start_date, end_date):
-    """Self-contained simulation used when Bloomberg is unavailable."""
-    rng = np.random.default_rng(42)
-
-    # Generate business days between start and end
-    start = datetime.strptime(start_date, "%Y%m%d")
-    end   = datetime.strptime(end_date,   "%Y%m%d")
-    dates = [start + timedelta(d) for d in range((end - start).days + 1)
-             if (start + timedelta(d)).weekday() < 5]
-
-    # Known base levels for common tickers
-    BASES = {
-        "SPY US Equity": 520,  "IWM US Equity": 200,  "IVE US Equity": 175,
-        "IVW US Equity": 195,  "GLD US Equity": 225,  "GDX US Equity": 35,
-        "USO US Equity": 74,   "MTUM US Equity": 210, "QUAL US Equity": 165,
-        "USMV US Equity": 82,  "SPHB US Equity": 90,  "EEM US Equity": 44,
-        "EFA US Equity": 82,   "TLT US Equity": 88,   "UUP US Equity": 29,
-        "SOXX US Equity": 580, "IWN US Equity": 165,  "IWO US Equity": 260,
-        "DVY US Equity": 130,  "XLU US Equity": 68,   "XLY US Equity": 195,
-        "VIX Index": 18,       "VVIX Index": 92,       "PCRATIO Index": 0.85,
-        "LF98OAS Index": 340,  "TEDSP Index": 0.24,    "SKEW Index": 122,
-        "JCJ Index": 0.58,     "BASPREAD Index": 0.38, "CBOEDISP Index": 13,
-        "SOFR1Y Index": 4.6,   "NYAD Index": 0.57,     "SPX Index": 5400,
-        # US sectors
-        "S5INFT Index": 4000,  "S5FINL Index": 700,   "S5HLTH Index": 1600,
-        "S5ENRS Index": 740,   "S5INDU Index": 1100,  "S5COND Index": 1300,
-        "S5CONS Index": 840,   "S5UTIL Index": 340,   "S5REAL Index": 225,
-        "S5MATR Index": 550,   "S5TELS Index": 295,
-        # CA sectors
-        "STSENRGS Index": 2800,"STSEFINL Index": 1850,"STSEMATR Index": 1520,
-        "STSEINDUS Index":1220,"STSEINFT Index": 920, "STSECOND Index": 960,
-        "STSECONS Index": 760, "STSEUTIL Index": 1620,"STSEHLTH Index": 660,
-        "STSEREAL Index": 1920,"STSTELS Index": 490,
-        # BR sectors
-        "IBOV Index": 128000,  "IFNC Index": 13500,   "IMAT Index": 5100,
-        "UTIL Index": 4100,    "ICON Index": 2900,    "IMOB Index": 950,
-        "IENEE Index": 6600,
-        # MX sectors
-        "MEXBOL Index": 54000, "BMBVFINL Index": 1850,"BMBVCONS Index": 1250,
-        "BMBVMATR Index": 3550,"BMBVINDUS Index": 2250,"BMBVTELS Index": 1650,
-        "BMBVREAL Index": 1850,
-        # CL sectors
-        "IPSA Index": 7000,    "CLXFINL Index": 2250, "CLXUTIL Index": 4600,
-        "CLXMATR Index": 3250, "CLXCOND Index": 1850, "CLXREAL Index": 2150,
-        "CLXENRS Index": 2850,
-        # Inflation indicators (% YoY) — used by /api/macro/indicator-history
-        "CPI YOY Index": 3.5,    "CPUPXCHG Index": 3.9,    "PCE DEFY Index": 2.7,
-        "CACPI YOY Index": 2.2,  "CACPIXFE YOY Index": 2.4,
-        "MXCPIYOY Index": 3.9,   "MXCPIXFE YOY Index": 3.7,
-        "BRCPIYOY Index": 5.0,   "BRCPCORE Index": 4.5,
-        "CLCPIYOY Index": 4.3,   "CLCPXENE YOY Index": 4.0,
-        # Central bank policy rates
-        "FDTR Index": 4.25,      "CABROVER Index": 3.00,
-        "MXONOVR Index": 9.00,   "BZSELBID Index": 14.75,  "CHOVRATE Index": 5.00,
-        # Yield curves — use basis points / percent directly
-        "USGG3M Index": 5.25,  "USGG6M Index": 5.20,  "USGG12M Index": 5.00,
-        "USGG2Y Index": 4.70,  "USGG3Y Index": 4.50,  "USGG5Y Index": 4.30,
-        "USGG7Y Index": 4.25,  "USGG10Y Index": 4.20, "USGG20Y Index": 4.35,
-        "USGG30Y Index": 4.40,
-        "GCAN3M Index": 4.80,  "GCAN6M Index": 4.75,  "GCAN12M Index": 4.60,
-        "GCAN2Y Index": 4.30,  "GCAN3Y Index": 4.10,  "GCAN5Y Index": 3.95,
-        "GCAN7Y Index": 3.90,  "GCAN10Y Index": 3.88, "GCAN20Y Index": 3.95,
-        "GCAN30Y Index": 3.98,
-        # Growth indicators
-        "GDPA Index": 2.8,       "CAGDPYOY Index": 1.8,   "MXGDPYOY Index": 1.5,
-        "BRGDPYOY Index": 2.1,   "CLGDPYOY Index": 2.2,
-        "USURTOT Index": 4.1,    "CAURTOT Index": 6.7,    "MXURTOT Index": 2.8,
-        "BRURTOT Index": 6.5,    "CLURTOT Index": 8.2,
-        "MPMIUSMA Index": 51.6,  "CAIMPMIT Index": 50.8,  "MXIMPMIT Index": 50.2,
-        "BRIMPMIT Index": 52.3,  "CLIMPMIT Index": 49.8,
-        "NAPMSPMIT Index": 53.5,
-        # TIPS / real yields
-        "USGGT05Y Index": 1.85,  "USGGT10Y Index": 1.92,  "USGGT30Y Index": 2.05,
-        # Credit spreads (OAS, bps)
-        "LUACOAS Index": 92,     "LF97OAS Index": 245,
-        "CACOAS Index": 95,      "CAHYOAS Index": 335,
-        "MXEMBI Index": 320,     "BREMBI Index": 420,     "CLEMBI Index": 125,
-    }
-
-    VOL_KEYS = {"VIX","VVIX","PCRATIO","LF98OAS","TEDSP","SKEW","JCJ",
-                "BASPREAD","CBOEDISP","NYAD","SOFR","SPX",
-                # Growth
-                "GDPA","GDPYOY","URTOT","MPMIUSMA","CAIMP","MXIMP","BRIMP","CLIMP","NAPSPM",
-                # Real yields & credit spreads
-                "USGGT","COAS","LF97O","CAHYO","EMBI"}
-    VOL_SCALES = {"VIX": 0.8, "VVIX": 2.5, "PCRATIO": 0.03, "LF98OAS": 8,
-                  "TEDSP": 0.02, "SKEW": 3, "JCJ": 0.02, "BASPREAD": 0.03,
-                  "CBOEDISP": 1.2, "NYAD": 0.025, "SOFR": 0.015, "SPX": 15,
-                  # Growth — moderate drift so charts look realistic over 3yr
-                  "GDPA": 0.02, "GDPYOY": 0.02, "URTOT": 0.015,
-                  "MPMIUSMA": 0.3, "CAIMP": 0.3, "MXIMP": 0.3, "BRIMP": 0.3, "CLIMP": 0.3,
-                  "NAPSPM": 0.3,
-                  # Real yields & spreads
-                  "USGGT": 0.008, "COAS": 1.2, "LF97O": 2.0, "CAHYO": 2.5, "EMBI": 4.0}
-
-    def _sim_price(base, n, vol=0.012):
-        ret = rng.normal(0.0003, vol, n)
-        p = [base]
-        for r in ret[1:]:
-            p.append(p[-1] * (1 + r))
-        return np.array(p)
-
-    def _sim_yield(base, n, vol=0.005):
-        ch = rng.normal(0, vol, n)
-        y = [base]
-        for c in ch[1:]:
-            y.append(max(0.01, y[-1] + c))
-        return np.array(y)
-
-    rows = []
-    for sec in securities:
-        base = BASES.get(sec, 100)
-        is_yield_like = "Index" in sec and not any(k in sec for k in ["SPX","S5","STSE","IBOV","IFNC","IMAT","UTIL","ICON","IMOB","IENEE","MEXBOL","BMBV","IPSA","CLX"])
-        vol_key = next((k for k in VOL_KEYS if k in sec), None)
-
-        if vol_key:
-            prices = _sim_yield(base, len(dates), vol=VOL_SCALES.get(vol_key, 0.05))
-        elif is_yield_like:
-            prices = _sim_yield(base, len(dates))
-        else:
-            prices = _sim_price(base, len(dates))
-
-        for i, dt in enumerate(dates):
-            row = {"security": sec, "date": dt.strftime("%Y-%m-%d")}
-            for field in fields:
-                row[field] = round(float(prices[i]), 4)
-            rows.append(row)
-
-    return pd.DataFrame(rows)
+    raw = _blp.bdh(tickers=securities, flds=fields,
+                   start_date=start_date, end_date=end_date)
+    if raw is None or raw.empty:
+        raise RuntimeError(
+            f"Bloomberg returned no data for {securities}. "
+            "Ensure the Bloomberg Terminal is running and the tickers are valid."
+        )
+    df = raw.stack(level=0).reset_index()
+    df.columns = ['date', 'security'] + fields
+    return df
 
 
 # ─── Market definitions ───────────────────────────────────────────────────────
