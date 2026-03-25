@@ -1,6 +1,6 @@
 """
 MacroLens Backend
-Bloomberg Terminal interface via bbg.py — requires an active Bloomberg session.
+Bloomberg BDH wrapper — requires xbbg + active Bloomberg terminal session.
 Markets: US, CA, MX, BR, CL
 """
 
@@ -9,10 +9,32 @@ from flask_cors import CORS
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from bbg import bdh, bdp  # noqa: F401  (bdp available for future use)
+from xbbg import blp as _blp
 
 app = Flask(__name__)
 CORS(app)
+
+
+# ─── Bloomberg BDH wrapper ────────────────────────────────────────────────────
+_missing_securities: set = set()
+
+
+def bdh(securities, fields, start_date, end_date):
+    """
+    Fetches historical data from a live Bloomberg Terminal via xbbg.
+    Returns DataFrame with columns: security | date | <fields...>
+    Securities with no data are silently skipped and recorded in _missing_securities.
+    """
+    raw = _blp.bdh(tickers=securities, flds=fields,
+                   start_date=start_date, end_date=end_date)
+    if raw is None or raw.empty:
+        _missing_securities.update(securities)
+        return pd.DataFrame(columns=['date', 'security'] + fields)
+    df = raw.stack(level=0).reset_index()
+    df.columns = ['date', 'security'] + fields
+    returned = set(df['security'].unique())
+    _missing_securities.update(s for s in securities if s not in returned)
+    return df
 
 
 # ─── Market definitions ───────────────────────────────────────────────────────
@@ -715,6 +737,11 @@ def indicator_history():
         "dates":  monthly["date_ts"].dt.strftime("%Y-%m").tolist(),
         "values": [round(float(v), 4) for v in monthly["PX_LAST"].values],
     })
+
+
+@app.route("/api/missing-securities")
+def missing_securities():
+    return jsonify(sorted(_missing_securities))
 
 
 if __name__ == "__main__":
