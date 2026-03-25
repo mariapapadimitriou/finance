@@ -16,18 +16,24 @@ CORS(app)
 
 
 # ─── Bloomberg BDH wrapper ────────────────────────────────────────────────────
+_missing_securities: set = set()
+
+
 def bdh(securities, fields, start_date, end_date):
     """
     Fetches historical data from a live Bloomberg Terminal via xbbg.
     Returns DataFrame with columns: security | date | <fields...>
-    Securities with no data are silently skipped.
+    Securities with no data are silently skipped and recorded in _missing_securities.
     """
     raw = _blp.bdh(tickers=securities, flds=fields,
                    start_date=start_date, end_date=end_date)
     if raw is None or raw.empty:
+        _missing_securities.update(securities)
         return pd.DataFrame(columns=['date', 'security'] + fields)
     df = raw.stack(level=0).reset_index()
     df.columns = ['date', 'security'] + fields
+    returned = set(df['security'].unique())
+    _missing_securities.update(s for s in securities if s not in returned)
     return df
 
 
@@ -731,6 +737,11 @@ def indicator_history():
         "dates":  monthly["date_ts"].dt.strftime("%Y-%m").tolist(),
         "values": [round(float(v), 4) for v in monthly["PX_LAST"].values],
     })
+
+
+@app.route("/api/missing-securities")
+def missing_securities():
+    return jsonify(sorted(_missing_securities))
 
 
 if __name__ == "__main__":
