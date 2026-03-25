@@ -1,6 +1,6 @@
 """
 MacroLens Backend
-Bloomberg Terminal interface via bbg.py — requires an active Bloomberg session.
+Bloomberg BDH wrapper — requires xbbg + active Bloomberg terminal session.
 Markets: US, CA, MX, BR, CL
 """
 
@@ -9,10 +9,26 @@ from flask_cors import CORS
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from bbg import bdh, bdp  # noqa: F401  (bdp available for future use)
+from xbbg import blp as _blp
 
 app = Flask(__name__)
 CORS(app)
+
+
+# ─── Bloomberg BDH wrapper ────────────────────────────────────────────────────
+def bdh(securities, fields, start_date, end_date):
+    """
+    Fetches historical data from a live Bloomberg Terminal via xbbg.
+    Returns DataFrame with columns: security | date | <fields...>
+    Securities with no data are silently skipped.
+    """
+    raw = _blp.bdh(tickers=securities, flds=fields,
+                   start_date=start_date, end_date=end_date)
+    if raw is None or raw.empty:
+        return pd.DataFrame(columns=['date', 'security'] + fields)
+    df = raw.stack(level=0).reset_index()
+    df.columns = ['date', 'security'] + fields
+    return df
 
 
 # ─── Market definitions ───────────────────────────────────────────────────────
