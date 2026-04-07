@@ -15,13 +15,13 @@ app = Flask(__name__)
 CORS(app)
 
 
-# ─── Bloomberg BDH wrapper ────────────────────────────────────────────────────
+# ─── Bloomberg wrappers ───────────────────────────────────────────────────────
 _missing_securities: set = set()
 
 
 def bdh(securities, fields, start_date, end_date):
     """
-    Fetches historical data from a live Bloomberg Terminal via xbbg.
+    Historical time-series via xbbg.
     Returns DataFrame with columns: security | date | <fields...>
     Securities with no data are silently skipped and recorded in _missing_securities.
     """
@@ -35,6 +35,23 @@ def bdh(securities, fields, start_date, end_date):
     returned = set(df['security'].unique())
     _missing_securities.update(s for s in securities if s not in returned)
     return df
+
+
+def bdp(securities, fields):
+    """
+    Current / reference data via xbbg.
+    Returns dict: {security: {FIELD: value}}
+    Securities with no data are silently skipped and recorded in _missing_securities.
+    """
+    raw = _blp.bdp(tickers=securities, flds=fields)
+    if raw is None or raw.empty:
+        _missing_securities.update(securities)
+        return {}
+    raw.columns = [c.upper() for c in raw.columns]
+    result = raw.to_dict(orient='index')
+    returned = set(raw.index)
+    _missing_securities.update(s for s in securities if s not in returned)
+    return result
 
 
 # ─── Market definitions ───────────────────────────────────────────────────────
@@ -342,8 +359,8 @@ def trading_difficulty():
     })
 
 
-# ─── Macro static data ────────────────────────────────────────────────────────
-# Real Bloomberg: replace with BDP calls to CPI YOY Index, FDTR Index, etc.
+# ─── Macro reference data (metadata) ─────────────────────────────────────────
+# `current` fields are placeholders — live values are fetched via bdp() at request time.
 
 INFLATION_DATA = {
     "US": [
@@ -668,13 +685,27 @@ def watchlist_prices():
 @app.route("/api/macro/inflation")
 def macro_inflation():
     market = request.args.get("market", "US")
-    return jsonify({"market": market, "readings": INFLATION_DATA.get(market, INFLATION_DATA["US"])})
+    readings = INFLATION_DATA.get(market, INFLATION_DATA["US"])
+    tickers = [r["ticker"] for r in readings]
+    live = bdp(tickers, ["PX_LAST"])
+    out = []
+    for r in readings:
+        row = dict(r)
+        val = live.get(r["ticker"], {}).get("PX_LAST")
+        if val is not None:
+            row["current"] = round(float(val), 2)
+        out.append(row)
+    return jsonify({"market": market, "readings": out})
 
 
 @app.route("/api/macro/central-banks")
 def macro_central_banks():
     market = request.args.get("market", "US")
-    data = CENTRAL_BANK_DATA.get(market, CENTRAL_BANK_DATA["US"])
+    data = dict(CENTRAL_BANK_DATA.get(market, CENTRAL_BANK_DATA["US"]))
+    live = bdp([data["rate_ticker"]], ["PX_LAST"])
+    val = live.get(data["rate_ticker"], {}).get("PX_LAST")
+    if val is not None:
+        data["policy_rate"] = round(float(val), 4)
     return jsonify({"market": market, **data})
 
 
@@ -693,26 +724,74 @@ def macro_calendar():
 @app.route("/api/macro/growth")
 def macro_growth():
     market = request.args.get("market", "US")
-    return jsonify({"market": market, "readings": GROWTH_DATA.get(market, [])})
+    readings = GROWTH_DATA.get(market, [])
+    tickers = [r["ticker"] for r in readings]
+    live = bdp(tickers, ["PX_LAST"]) if tickers else {}
+    out = []
+    for r in readings:
+        row = dict(r)
+        val = live.get(r["ticker"], {}).get("PX_LAST")
+        if val is not None:
+            row["current"] = round(float(val), 2)
+        out.append(row)
+    return jsonify({"market": market, "readings": out})
 
 
 @app.route("/api/macro/fx")
 def macro_fx():
     market = request.args.get("market", "US")
-    return jsonify({"market": market, "fx": FX_DATA.get(market, None)})
+    fx = FX_DATA.get(market, None)
+    if fx:
+        fx = dict(fx)
+        live = bdp([fx["ticker"]], ["PX_LAST"])
+        val = live.get(fx["ticker"], {}).get("PX_LAST")
+        if val is not None:
+            fx["rate"] = round(float(val), 4)
+    return jsonify({"market": market, "fx": fx})
 
 
 @app.route("/api/fixedincome/credit-spreads")
 def fi_credit_spreads():
     market = request.args.get("market", "US")
     data = CREDIT_SPREAD_DATA.get(market, CREDIT_SPREAD_DATA["US"])
-    return jsonify({"market": market, **data})
+    spread_tickers = [s["ticker"] for s in data["spreads"]]
+    # Also fetch the 10Y nominal yield and first CPI ticker to compute real_yield_10y
+    tenors = YIELD_CURVES.get(market, YIELD_CURVES["US"])
+    y10_ticker = tenors.get("10Y")
+    cpi_ticker = INFLATION_DATA.get(market, INFLATION_DATA["US"])
+    cpi_ticker = cpi_ticker[0]["ticker"] if cpi_ticker else None
+    extra = [t for t in [y10_ticker, cpi_ticker] if t]
+    live = bdp(spread_tickers + extra, ["PX_LAST"])
+    out_spreads = []
+    for s in data["spreads"]:
+        row = dict(s)
+        val = live.get(s["ticker"], {}).get("PX_LAST")
+        if val is not None:
+            row["current"] = round(float(val), 2)
+        out_spreads.append(row)
+    real_yield_10y = data["real_yield_10y"]
+    if y10_ticker and cpi_ticker:
+        y10 = live.get(y10_ticker, {}).get("PX_LAST")
+        cpi = live.get(cpi_ticker, {}).get("PX_LAST")
+        if y10 is not None and cpi is not None:
+            real_yield_10y = round(float(y10) - float(cpi), 2)
+    return jsonify({"market": market, "spreads": out_spreads, "real_yield_10y": real_yield_10y})
 
 
 @app.route("/api/fixedincome/real-yields")
 def fi_real_yields():
     market = request.args.get("market", "US")
-    return jsonify({"market": market, "real_yields": REAL_YIELD_DATA.get(market, [])})
+    readings = REAL_YIELD_DATA.get(market, [])
+    tickers = [r["ticker"] for r in readings]
+    live = bdp(tickers, ["PX_LAST"]) if tickers else {}
+    out = []
+    for r in readings:
+        row = dict(r)
+        val = live.get(r["ticker"], {}).get("PX_LAST")
+        if val is not None:
+            row["current"] = round(float(val), 4)
+        out.append(row)
+    return jsonify({"market": market, "real_yields": out})
 
 
 @app.route("/api/macro/indicator-history")
