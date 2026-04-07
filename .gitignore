@@ -1,0 +1,5 @@
+missing_securities.txt
+__pycache__/
+*.pyc
+node_modules/
+dist/

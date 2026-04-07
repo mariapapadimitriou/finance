@@ -19,7 +19,6 @@ export default function Header({ market, onMarket, lookback, onLookback, theme, 
     <header>
       <div className="logo">
         RED<span style={{ color: 'var(--dim)' }}>EYE</span>
-        <sub>equity</sub>
       </div>
       <div className="hbar-right">
         <div className="lkb">
