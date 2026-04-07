@@ -8,8 +8,8 @@ html { font-size: 22px; }
   --s3:       #111d2b;
   --border:   #172230;
   --border2:  #1e2f42;
-  --acc:      #00d4ff;
-  --acc2:     #ff4d6d;
+  --acc:      #e0192a;
+  --acc2:     #ff6b35;
   --acc3:     #7fff6a;
   --gold:     #ffd24d;
   --purple:   #b47fff;
@@ -38,8 +38,8 @@ html { font-size: 22px; }
   --s3:       #edf2f7;
   --border:   #cdd8e8;
   --border2:  #b4c6da;
-  --acc:      #0070cc;
-  --acc2:     #e83050;
+  --acc:      #c01020;
+  --acc2:     #e05020;
   --acc3:     #1a9e5c;
   --gold:     #b07a00;
   --purple:   #7c44c8;
@@ -67,7 +67,7 @@ body{
 /* ── Scanline — dark only ── */
 :root body::before{
   content:'';position:fixed;inset:0;
-  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,212,255,.012) 2px,rgba(0,212,255,.012) 4px);
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(224,25,42,.015) 2px,rgba(224,25,42,.015) 4px);
   pointer-events:none;z-index:0
 }
 [data-theme="light"] body::before{ display:none }
