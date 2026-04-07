@@ -17,23 +17,35 @@ CORS(app)
 
 # ─── Bloomberg wrappers ───────────────────────────────────────────────────────
 _missing_securities: set = set()
+_MISSING_FILE = "missing_securities.txt"
+
+
+def _record_missing(securities):
+    """Add securities to the missing set and rewrite the txt file."""
+    if not securities:
+        return
+    _missing_securities.update(securities)
+    with open(_MISSING_FILE, "w") as f:
+        f.write("# Tickers that returned no data from Bloomberg — replace or remove these\n")
+        for sec in sorted(_missing_securities):
+            f.write(f"{sec}\n")
 
 
 def bdh(securities, fields, start_date, end_date):
     """
     Historical time-series via xbbg.
     Returns DataFrame with columns: security | date | <fields...>
-    Securities with no data are silently skipped and recorded in _missing_securities.
+    Securities with no data are silently skipped and recorded in missing_securities.txt.
     """
     raw = _blp.bdh(tickers=securities, flds=fields,
                    start_date=start_date, end_date=end_date)
     if raw is None or raw.empty:
-        _missing_securities.update(securities)
+        _record_missing(securities)
         return pd.DataFrame(columns=['date', 'security'] + fields)
     df = raw.stack(level=0).reset_index()
     df.columns = ['date', 'security'] + fields
     returned = set(df['security'].unique())
-    _missing_securities.update(s for s in securities if s not in returned)
+    _record_missing([s for s in securities if s not in returned])
     return df
 
 
@@ -41,16 +53,16 @@ def bdp(securities, fields):
     """
     Current / reference data via xbbg.
     Returns dict: {security: {FIELD: value}}
-    Securities with no data are silently skipped and recorded in _missing_securities.
+    Securities with no data are silently skipped and recorded in missing_securities.txt.
     """
     raw = _blp.bdp(tickers=securities, flds=fields)
     if raw is None or raw.empty:
-        _missing_securities.update(securities)
+        _record_missing(securities)
         return {}
     raw.columns = [c.upper() for c in raw.columns]
     result = raw.to_dict(orient='index')
     returned = set(raw.index)
-    _missing_securities.update(s for s in securities if s not in returned)
+    _record_missing([s for s in securities if s not in returned])
     return result
 
 
