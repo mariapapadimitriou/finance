@@ -34,6 +34,65 @@ def _record_missing(securities):
             f.write(f"{sec}\n")
 
 
+def _parse_bdh_raw(raw, securities, fields):
+    """
+    Robustly reshape whatever xbbg.bdh() returns into
+    date | security | <fields...>  regardless of column structure.
+    """
+    if not isinstance(raw, pd.DataFrame) or raw.empty:
+        return None
+
+    cols = raw.columns
+
+    # ── Case A: MultiIndex columns (ticker, field) ────────────────────────────
+    if isinstance(cols, pd.MultiIndex):
+        level0 = cols.get_level_values(0).unique().tolist()
+        level1 = cols.get_level_values(1).unique().tolist()
+
+        # Determine which level holds the tickers
+        # (some xbbg versions put field at level 0, ticker at level 1)
+        tickers_at_0 = any(s in level0 for s in securities)
+        tickers_at_1 = any(s in level1 for s in securities)
+
+        if not tickers_at_0 and tickers_at_1:
+            raw = raw.swaplevel(axis=1)         # normalise to (ticker, field)
+
+        present = raw.columns.get_level_values(0).unique().tolist()
+        frames = []
+        for sec in present:
+            sub = raw[sec]
+            if isinstance(sub, pd.Series):
+                sub = sub.to_frame(name=fields[0])
+            sub = sub.copy()
+            sub.index.name = 'date'
+            sub = sub.reset_index()
+            sub['date'] = pd.to_datetime(sub['date']).dt.strftime('%Y-%m-%d')
+            sub.insert(1, 'security', sec)
+            for f in fields:
+                if f not in sub.columns:
+                    sub[f] = None
+            frames.append(sub[['date', 'security'] + fields])
+        return pd.concat(frames, ignore_index=True) if frames else None
+
+    # ── Case B: flat columns — only one ticker came back ─────────────────────
+    present_fields = [c.upper() for c in cols]
+    if not any(f.upper() in present_fields for f in fields):
+        return None
+
+    # Map whichever ticker produced this result
+    sec = next((s for s in securities if s in (raw.index.tolist() or [])), securities[0])
+    raw = raw.copy()
+    raw.columns = [c.upper() for c in raw.columns]
+    raw.index.name = 'date'
+    raw = raw.reset_index()
+    raw['date'] = pd.to_datetime(raw['date']).dt.strftime('%Y-%m-%d')
+    raw.insert(1, 'security', sec)
+    for f in fields:
+        if f not in raw.columns:
+            raw[f] = None
+    return raw[['date', 'security'] + fields]
+
+
 def bdh(securities, fields, start_date, end_date):
     """
     Historical time-series via xbbg.
@@ -49,33 +108,11 @@ def bdh(securities, fields, start_date, end_date):
         _record_missing(securities)
         return pd.DataFrame(columns=['date', 'security'] + fields)
 
-    if not isinstance(raw, pd.DataFrame) or raw.empty:
+    df = _parse_bdh_raw(raw, securities, fields)
+    if df is None or df.empty:
         _record_missing(securities)
         return pd.DataFrame(columns=['date', 'security'] + fields)
 
-    # xbbg returns MultiIndex columns (ticker, field).
-    # Avoid stack() — its pandas 2.x behaviour changed and silently drops rows.
-    present = raw.columns.get_level_values(0).unique().tolist()
-    frames = []
-    for sec in present:
-        sub = raw[sec]
-        if isinstance(sub, pd.Series):
-            sub = sub.to_frame(name=fields[0])
-        sub = sub.copy()
-        sub.index.name = 'date'
-        sub = sub.reset_index()
-        sub['date'] = pd.to_datetime(sub['date']).dt.strftime('%Y-%m-%d')
-        sub.insert(1, 'security', sec)
-        for f in fields:
-            if f not in sub.columns:
-                sub[f] = None
-        frames.append(sub[['date', 'security'] + fields])
-
-    if not frames:
-        _record_missing(securities)
-        return pd.DataFrame(columns=['date', 'security'] + fields)
-
-    df = pd.concat(frames, ignore_index=True)
     returned = set(df['security'].unique())
     _record_missing([s for s in securities if s not in returned])
     return df
@@ -107,37 +144,50 @@ def bdp(securities, fields):
 
 @app.route("/api/bloomberg-status")
 def bloomberg_status():
-    """
-    Diagnostic endpoint — calls bdh and bdp on SPX Index and returns the raw
-    xbbg output so you can see exactly what the library is returning.
-    Hit this first to verify Bloomberg connectivity.
-    """
+    """Diagnostic endpoint — read off each field individually to diagnose xbbg."""
     global _last_bbg_error
     ticker = "SPX Index"
     end_dt = datetime.today()
     start_dt = end_dt - timedelta(days=5)
     s, e = start_dt.strftime("%Y%m%d"), end_dt.strftime("%Y%m%d")
 
-    bdh_raw, bdh_err, bdh_type = None, None, None
+    bdh_info, bdh_err = {}, None
     try:
         raw = _blp.bdh(tickers=[ticker], flds=["PX_LAST"], start_date=s, end_date=e)
-        bdh_type = type(raw).__name__
-        bdh_raw = raw.to_string() if isinstance(raw, pd.DataFrame) else repr(raw)
+        if isinstance(raw, pd.DataFrame):
+            bdh_info = {
+                "return_type": "DataFrame",
+                "shape": list(raw.shape),
+                "columns": [str(c) for c in raw.columns.tolist()],
+                "columns_is_multiindex": isinstance(raw.columns, pd.MultiIndex),
+                "index_name": str(raw.index.name),
+                "first_row": raw.iloc[0].to_dict() if not raw.empty else None,
+            }
+        else:
+            bdh_info = {"return_type": type(raw).__name__, "repr": repr(raw)[:500]}
     except Exception:
         bdh_err = traceback.format_exc()
 
-    bdp_raw, bdp_err, bdp_type = None, None, None
+    bdp_info, bdp_err = {}, None
     try:
         raw2 = _blp.bdp(tickers=[ticker], flds=["PX_LAST"])
-        bdp_type = type(raw2).__name__
-        bdp_raw = raw2.to_string() if isinstance(raw2, pd.DataFrame) else repr(raw2)
+        if isinstance(raw2, pd.DataFrame):
+            bdp_info = {
+                "return_type": "DataFrame",
+                "shape": list(raw2.shape),
+                "columns": [str(c) for c in raw2.columns.tolist()],
+                "index_values": raw2.index.tolist()[:5],
+                "first_row": raw2.iloc[0].to_dict() if not raw2.empty else None,
+            }
+        else:
+            bdp_info = {"return_type": type(raw2).__name__, "repr": repr(raw2)[:500]}
     except Exception:
         bdp_err = traceback.format_exc()
 
     return jsonify({
         "ticker_tested": ticker,
-        "bdh": {"return_type": bdh_type, "output": bdh_raw, "error": bdh_err},
-        "bdp": {"return_type": bdp_type, "output": bdp_raw, "error": bdp_err},
+        "bdh": {**bdh_info, "error": bdh_err},
+        "bdp": {**bdp_info, "error": bdp_err},
         "last_bbg_error": _last_bbg_error or None,
     })
 
