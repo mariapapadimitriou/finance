@@ -34,7 +34,7 @@ def _record_missing(securities):
 def bdh(securities, fields, start_date, end_date):
     """
     Historical time-series via xbbg.
-    Returns DataFrame with columns: security | date | <fields...>
+    Returns DataFrame with columns: date | security | <fields...>
     Securities with no data are silently skipped and recorded in missing_securities.txt.
     """
     raw = _blp.bdh(tickers=securities, flds=fields,
@@ -42,8 +42,31 @@ def bdh(securities, fields, start_date, end_date):
     if not isinstance(raw, pd.DataFrame) or raw.empty:
         _record_missing(securities)
         return pd.DataFrame(columns=['date', 'security'] + fields)
-    df = raw.stack(level=0).reset_index()
-    df.columns = ['date', 'security'] + fields
+
+    # xbbg returns MultiIndex columns (ticker, field).
+    # Avoid stack() — its pandas 2.x behaviour changed and silently drops rows.
+    # Instead iterate over each ticker slice explicitly.
+    present = raw.columns.get_level_values(0).unique().tolist()
+    frames = []
+    for sec in present:
+        sub = raw[sec]
+        if isinstance(sub, pd.Series):          # single-field edge case
+            sub = sub.to_frame(name=fields[0])
+        sub = sub.copy()
+        sub.index.name = 'date'
+        sub = sub.reset_index()
+        sub['date'] = pd.to_datetime(sub['date']).dt.strftime('%Y-%m-%d')
+        sub.insert(1, 'security', sec)
+        for f in fields:                         # guarantee all fields present
+            if f not in sub.columns:
+                sub[f] = None
+        frames.append(sub[['date', 'security'] + fields])
+
+    if not frames:
+        _record_missing(securities)
+        return pd.DataFrame(columns=['date', 'security'] + fields)
+
+    df = pd.concat(frames, ignore_index=True)
     returned = set(df['security'].unique())
     _record_missing([s for s in securities if s not in returned])
     return df
