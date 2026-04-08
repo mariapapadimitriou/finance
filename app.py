@@ -4,6 +4,8 @@ Bloomberg BDH wrapper — requires xbbg + active Bloomberg terminal session.
 Markets: US, CA, MX, BR, CL
 """
 
+import traceback
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import pandas as pd
@@ -18,6 +20,7 @@ CORS(app)
 # ─── Bloomberg wrappers ───────────────────────────────────────────────────────
 _missing_securities: set = set()
 _MISSING_FILE = "missing_securities.txt"
+_last_bbg_error: str = ""
 
 
 def _record_missing(securities):
@@ -37,27 +40,33 @@ def bdh(securities, fields, start_date, end_date):
     Returns DataFrame with columns: date | security | <fields...>
     Securities with no data are silently skipped and recorded in missing_securities.txt.
     """
-    raw = _blp.bdh(tickers=securities, flds=fields,
-                   start_date=start_date, end_date=end_date)
+    global _last_bbg_error
+    try:
+        raw = _blp.bdh(tickers=securities, flds=fields,
+                       start_date=start_date, end_date=end_date)
+    except Exception:
+        _last_bbg_error = traceback.format_exc()
+        _record_missing(securities)
+        return pd.DataFrame(columns=['date', 'security'] + fields)
+
     if not isinstance(raw, pd.DataFrame) or raw.empty:
         _record_missing(securities)
         return pd.DataFrame(columns=['date', 'security'] + fields)
 
     # xbbg returns MultiIndex columns (ticker, field).
     # Avoid stack() — its pandas 2.x behaviour changed and silently drops rows.
-    # Instead iterate over each ticker slice explicitly.
     present = raw.columns.get_level_values(0).unique().tolist()
     frames = []
     for sec in present:
         sub = raw[sec]
-        if isinstance(sub, pd.Series):          # single-field edge case
+        if isinstance(sub, pd.Series):
             sub = sub.to_frame(name=fields[0])
         sub = sub.copy()
         sub.index.name = 'date'
         sub = sub.reset_index()
         sub['date'] = pd.to_datetime(sub['date']).dt.strftime('%Y-%m-%d')
         sub.insert(1, 'security', sec)
-        for f in fields:                         # guarantee all fields present
+        for f in fields:
             if f not in sub.columns:
                 sub[f] = None
         frames.append(sub[['date', 'security'] + fields])
@@ -78,7 +87,14 @@ def bdp(securities, fields):
     Returns dict: {security: {FIELD: value}}
     Securities with no data are silently skipped and recorded in missing_securities.txt.
     """
-    raw = _blp.bdp(tickers=securities, flds=fields)
+    global _last_bbg_error
+    try:
+        raw = _blp.bdp(tickers=securities, flds=fields)
+    except Exception:
+        _last_bbg_error = traceback.format_exc()
+        _record_missing(securities)
+        return {}
+
     if not isinstance(raw, pd.DataFrame) or raw.empty:
         _record_missing(securities)
         return {}
@@ -87,6 +103,43 @@ def bdp(securities, fields):
     returned = set(raw.index)
     _record_missing([s for s in securities if s not in returned])
     return result
+
+
+@app.route("/api/bloomberg-status")
+def bloomberg_status():
+    """
+    Diagnostic endpoint — calls bdh and bdp on SPX Index and returns the raw
+    xbbg output so you can see exactly what the library is returning.
+    Hit this first to verify Bloomberg connectivity.
+    """
+    global _last_bbg_error
+    ticker = "SPX Index"
+    end_dt = datetime.today()
+    start_dt = end_dt - timedelta(days=5)
+    s, e = start_dt.strftime("%Y%m%d"), end_dt.strftime("%Y%m%d")
+
+    bdh_raw, bdh_err, bdh_type = None, None, None
+    try:
+        raw = _blp.bdh(tickers=[ticker], flds=["PX_LAST"], start_date=s, end_date=e)
+        bdh_type = type(raw).__name__
+        bdh_raw = raw.to_string() if isinstance(raw, pd.DataFrame) else repr(raw)
+    except Exception:
+        bdh_err = traceback.format_exc()
+
+    bdp_raw, bdp_err, bdp_type = None, None, None
+    try:
+        raw2 = _blp.bdp(tickers=[ticker], flds=["PX_LAST"])
+        bdp_type = type(raw2).__name__
+        bdp_raw = raw2.to_string() if isinstance(raw2, pd.DataFrame) else repr(raw2)
+    except Exception:
+        bdp_err = traceback.format_exc()
+
+    return jsonify({
+        "ticker_tested": ticker,
+        "bdh": {"return_type": bdh_type, "output": bdh_raw, "error": bdh_err},
+        "bdp": {"return_type": bdp_type, "output": bdp_raw, "error": bdp_err},
+        "last_bbg_error": _last_bbg_error or None,
+    })
 
 
 # ─── Market definitions ───────────────────────────────────────────────────────
