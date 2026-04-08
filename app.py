@@ -36,30 +36,39 @@ def _record_missing(securities):
 
 def _parse_bdh_raw(raw, securities, fields):
     """
-    Robustly reshape whatever xbbg.bdh() returns into
-    date | security | <fields...>  regardless of column structure.
+    Reshape xbbg.bdh() output into date | security | <fields...>
+    Handles the long format xbbg actually returns: ticker | date | field | value
     """
     if not isinstance(raw, pd.DataFrame) or raw.empty:
         return None
 
-    cols = raw.columns
+    norm = {c.lower(): c for c in raw.columns}
 
-    # ── Case A: MultiIndex columns (ticker, field) ────────────────────────────
-    if isinstance(cols, pd.MultiIndex):
-        level0 = cols.get_level_values(0).unique().tolist()
-        level1 = cols.get_level_values(1).unique().tolist()
+    # ── Long format: ticker / date / field / value ────────────────────────────
+    if 'ticker' in norm and 'value' in norm:
+        df = raw.rename(columns={norm['ticker']: 'security',
+                                  norm['date']:   'date',
+                                  norm['field']:  'field',
+                                  norm['value']:  'value'})
+        df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
+        df['field'] = df['field'].str.upper()
+        df = df.pivot_table(index=['date', 'security'],
+                            columns='field', values='value',
+                            aggfunc='last').reset_index()
+        df.columns.name = None
+        for f in fields:
+            if f not in df.columns:
+                df[f] = None
+        return df[['date', 'security'] + fields]
 
-        # Determine which level holds the tickers
-        # (some xbbg versions put field at level 0, ticker at level 1)
-        tickers_at_0 = any(s in level0 for s in securities)
-        tickers_at_1 = any(s in level1 for s in securities)
-
-        if not tickers_at_0 and tickers_at_1:
-            raw = raw.swaplevel(axis=1)         # normalise to (ticker, field)
-
-        present = raw.columns.get_level_values(0).unique().tolist()
+    # ── MultiIndex columns (ticker, field) or (field, ticker) ────────────────
+    if isinstance(raw.columns, pd.MultiIndex):
+        level0 = raw.columns.get_level_values(0).unique().tolist()
+        level1 = raw.columns.get_level_values(1).unique().tolist()
+        if not any(s in level0 for s in securities) and any(s in level1 for s in securities):
+            raw = raw.swaplevel(axis=1)
         frames = []
-        for sec in present:
+        for sec in raw.columns.get_level_values(0).unique():
             sub = raw[sec]
             if isinstance(sub, pd.Series):
                 sub = sub.to_frame(name=fields[0])
@@ -74,19 +83,13 @@ def _parse_bdh_raw(raw, securities, fields):
             frames.append(sub[['date', 'security'] + fields])
         return pd.concat(frames, ignore_index=True) if frames else None
 
-    # ── Case B: flat columns — only one ticker came back ─────────────────────
-    present_fields = [c.upper() for c in cols]
-    if not any(f.upper() in present_fields for f in fields):
-        return None
-
-    # Map whichever ticker produced this result
-    sec = next((s for s in securities if s in (raw.index.tolist() or [])), securities[0])
+    # ── Flat columns — field names only, single ticker ────────────────────────
     raw = raw.copy()
     raw.columns = [c.upper() for c in raw.columns]
     raw.index.name = 'date'
     raw = raw.reset_index()
     raw['date'] = pd.to_datetime(raw['date']).dt.strftime('%Y-%m-%d')
-    raw.insert(1, 'security', sec)
+    raw.insert(1, 'security', securities[0])
     for f in fields:
         if f not in raw.columns:
             raw[f] = None
@@ -135,6 +138,19 @@ def bdp(securities, fields):
     if not isinstance(raw, pd.DataFrame) or raw.empty:
         _record_missing(securities)
         return {}
+
+    norm = {c.lower(): c for c in raw.columns}
+
+    # Long format: ticker / field / value
+    if 'ticker' in norm and 'value' in norm:
+        raw = raw.rename(columns={norm['ticker']: 'security',
+                                   norm['field']:  'field',
+                                   norm['value']:  'value'})
+        raw['field'] = raw['field'].str.upper()
+        raw = raw.pivot_table(index='security', columns='field',
+                               values='value', aggfunc='last')
+        raw.columns.name = None
+
     raw.columns = [c.upper() for c in raw.columns]
     result = raw.to_dict(orient='index')
     returned = set(raw.index)
