@@ -144,52 +144,53 @@ def bdp(securities, fields):
 
 @app.route("/api/bloomberg-status")
 def bloomberg_status():
-    """Diagnostic endpoint — read off each field individually to diagnose xbbg."""
+    """Diagnostic endpoint — prints full detail to the terminal running app.py."""
     global _last_bbg_error
     ticker = "SPX Index"
     end_dt = datetime.today()
     start_dt = end_dt - timedelta(days=5)
     s, e = start_dt.strftime("%Y%m%d"), end_dt.strftime("%Y%m%d")
 
-    bdh_info, bdh_err = {}, None
+    print("\n" + "="*60)
+    print("BLOOMBERG STATUS CHECK")
+    print("="*60)
+
+    bdh_err = None
     try:
         raw = _blp.bdh(tickers=[ticker], flds=["PX_LAST"], start_date=s, end_date=e)
+        print(f"bdh() return type : {type(raw)}")
+        print(f"bdh() value       : {repr(raw)}")
         if isinstance(raw, pd.DataFrame):
-            bdh_info = {
-                "return_type": "DataFrame",
-                "shape": list(raw.shape),
-                "columns": [str(c) for c in raw.columns.tolist()],
-                "columns_is_multiindex": isinstance(raw.columns, pd.MultiIndex),
-                "index_name": str(raw.index.name),
-                "first_row": raw.iloc[0].to_dict() if not raw.empty else None,
-            }
-        else:
-            bdh_info = {"return_type": type(raw).__name__, "repr": repr(raw)[:500]}
+            print(f"bdh() shape       : {raw.shape}")
+            print(f"bdh() columns     : {raw.columns.tolist()}")
+            print(f"bdh() MultiIndex  : {isinstance(raw.columns, pd.MultiIndex)}")
+            print(f"bdh() index name  : {raw.index.name}")
+            print(f"bdh() head:\n{raw.head()}")
     except Exception:
         bdh_err = traceback.format_exc()
+        print(f"bdh() EXCEPTION:\n{bdh_err}")
 
-    bdp_info, bdp_err = {}, None
+    print("-"*60)
+
+    bdp_err = None
     try:
         raw2 = _blp.bdp(tickers=[ticker], flds=["PX_LAST"])
+        print(f"bdp() return type : {type(raw2)}")
+        print(f"bdp() value       : {repr(raw2)}")
         if isinstance(raw2, pd.DataFrame):
-            bdp_info = {
-                "return_type": "DataFrame",
-                "shape": list(raw2.shape),
-                "columns": [str(c) for c in raw2.columns.tolist()],
-                "index_values": raw2.index.tolist()[:5],
-                "first_row": raw2.iloc[0].to_dict() if not raw2.empty else None,
-            }
-        else:
-            bdp_info = {"return_type": type(raw2).__name__, "repr": repr(raw2)[:500]}
+            print(f"bdp() shape       : {raw2.shape}")
+            print(f"bdp() columns     : {raw2.columns.tolist()}")
+            print(f"bdp() index       : {raw2.index.tolist()}")
+            print(f"bdp() head:\n{raw2.head()}")
     except Exception:
         bdp_err = traceback.format_exc()
+        print(f"bdp() EXCEPTION:\n{bdp_err}")
 
-    return jsonify({
-        "ticker_tested": ticker,
-        "bdh": {**bdh_info, "error": bdh_err},
-        "bdp": {**bdp_info, "error": bdp_err},
-        "last_bbg_error": _last_bbg_error or None,
-    })
+    print("="*60 + "\n")
+
+    return jsonify({"message": "Check your terminal for the full diagnostic output.",
+                    "bdh_error": bdh_err,
+                    "bdp_error": bdp_err})
 
 
 # ─── Market definitions ───────────────────────────────────────────────────────
