@@ -39,7 +39,7 @@ def bdh(securities, fields, start_date, end_date):
     """
     raw = _blp.bdh(tickers=securities, flds=fields,
                    start_date=start_date, end_date=end_date)
-    if raw is None or raw.empty:
+    if not isinstance(raw, pd.DataFrame) or raw.empty:
         _record_missing(securities)
         return pd.DataFrame(columns=['date', 'security'] + fields)
     df = raw.stack(level=0).reset_index()
@@ -56,7 +56,7 @@ def bdp(securities, fields):
     Securities with no data are silently skipped and recorded in missing_securities.txt.
     """
     raw = _blp.bdp(tickers=securities, flds=fields)
-    if raw is None or raw.empty:
+    if not isinstance(raw, pd.DataFrame) or raw.empty:
         _record_missing(securities)
         return {}
     raw.columns = [c.upper() for c in raw.columns]
