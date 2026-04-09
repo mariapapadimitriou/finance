@@ -83,7 +83,7 @@ export default function EquitiesPanel({ market, lookback, theme }) {
 
   // ── Sector returns bar list ──────────────────────────────────────────────
   const retLbl = `${lookback}D · ${market}`;
-  const mx = sectors ? Math.max(...sectors.map(s => Math.abs(s.return_pct))) : 1;
+  const mx = (sectors && sectors.length) ? Math.max(...sectors.map(s => Math.abs(s.return_pct))) : 1;
 
   // ── Rebased line chart ───────────────────────────────────────────────────
   const buildRetLine = ctx => {
@@ -145,8 +145,8 @@ export default function EquitiesPanel({ market, lookback, theme }) {
   // ── Vol flow list ────────────────────────────────────────────────────────
   const renderVolFlow = () => {
     if (!volSectors) return null;
-    const mx_up = Math.max(...volSectors.map(s => s.up_volume));
-    const mx_dn = Math.max(...volSectors.map(s => s.down_volume));
+    const mx_up = volSectors.length ? Math.max(...volSectors.map(s => s.up_volume)) : 1;
+    const mx_dn = volSectors.length ? Math.max(...volSectors.map(s => s.down_volume)) : 1;
     return (
       <div>
         <div className="vrow" style={{ fontSize: '.58rem', color: 'var(--dim)', letterSpacing: '.07em' }}>

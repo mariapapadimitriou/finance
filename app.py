@@ -17,6 +17,11 @@ app = Flask(__name__)
 CORS(app)
 
 
+@app.errorhandler(Exception)
+def handle_exception(e):
+    return jsonify({"error": str(e)}), 500
+
+
 # ─── Bloomberg wrappers ───────────────────────────────────────────────────────
 _missing_securities: set = set()
 _MISSING_FILE = "missing_securities.txt"
@@ -422,9 +427,18 @@ def fixed_income_yields():
         curve_end[label]   = round(float(vals[-1]),4)
         time_series[label] = {"dates":dates[-n:],"yields":[round(float(v),4) for v in vals[-n:]]}
     ks, ke = curve_start, curve_end
-    sk = "3M" if "3M" in ks else list(ks.keys())[0]
-    lk = "10Y" if "10Y" in ks else list(ks.keys())[-1]
-    mk = "2Y"  if "2Y"  in ks else list(ks.keys())[len(ks)//2]
+    if not ks:
+        return jsonify({
+            "market": market, "lookback": lookback,
+            "curve_start": {}, "curve_end": {}, "time_series": {},
+            "spreads": {"2s10s_start": 0, "2s10s_end": 0,
+                        "3m10y_start": 0, "3m10y_end": 0,
+                        "steepening": False, "inverted": False}
+        })
+    keys = list(ks.keys())
+    sk = "3M" if "3M" in ks else keys[0]
+    lk = "10Y" if "10Y" in ks else keys[-1]
+    mk = "2Y"  if "2Y"  in ks else keys[len(keys)//2]
     def spr(c,a,b): return round(c.get(b,0)-c.get(a,0),4)
     return jsonify({
         "market":market,"lookback":lookback,

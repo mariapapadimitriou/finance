@@ -98,9 +98,13 @@ export function lineOpts({ yCallback, tooltipCallback, legend = false }) {
 
 // ─── API loaders ──────────────────────────────────────────────────────────────
 async function apiFetch(path) {
-  const r = await fetch(`${API}${path}`);
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.json();
+  try {
+    const r = await fetch(`${API}${path}`);
+    if (!r.ok) return null;
+    return r.json();
+  } catch {
+    return null;
+  }
 }
 
 export async function loadEquitiesData(market, lookback) {
@@ -109,16 +113,20 @@ export async function loadEquitiesData(market, lookback) {
     apiFetch(`/api/equities/returns${qs}`),
     apiFetch(`/api/equities/volume${qs}`),
   ]);
-  return { sectors: retD.sectors, volSectors: volD.sectors };
+  return { sectors: retD?.sectors ?? [], volSectors: volD?.sectors ?? [] };
 }
 
 export async function loadFactorsData(market, lookback) {
   const d = await apiFetch(`/api/equities/factors?market=${market}&lookback=${lookback}`);
-  return d.factors;
+  return d?.factors ?? [];
 }
 
 export async function loadFIData(market, lookback) {
-  return apiFetch(`/api/fixedincome/yields?market=${market}&lookback=${lookback}`);
+  const d = await apiFetch(`/api/fixedincome/yields?market=${market}&lookback=${lookback}`);
+  return d ?? { curve_start: {}, curve_end: {}, time_series: {},
+                spreads: { '2s10s_start': 0, '2s10s_end': 0,
+                           '3m10y_start': 0, '3m10y_end': 0,
+                           steepening: false, inverted: false } };
 }
 
 export async function loadDifficultyData(market, lookback) {
@@ -131,7 +139,8 @@ export async function loadSummaryData(market) {
 
 export async function loadWatchlistPrices(tickers) {
   if (!tickers.length) return { prices: {} };
-  return apiFetch(`/api/watchlist-prices?tickers=${encodeURIComponent(tickers.join(','))}`);
+  const d = await apiFetch(`/api/watchlist-prices?tickers=${encodeURIComponent(tickers.join(','))}`);
+  return d ?? { prices: {} };
 }
 
 export async function loadInflationData(market) {
@@ -144,11 +153,13 @@ export async function loadCentralBanksData(market) {
 
 export async function loadCalendarData(market) {
   const qs = market ? `?market=${market}` : '';
-  return apiFetch(`/api/macro/calendar${qs}`);
+  const d = await apiFetch(`/api/macro/calendar${qs}`);
+  return d ?? { events: [] };
 }
 
 export async function loadIndicatorHistory(ticker, months = 36) {
-  return apiFetch(`/api/macro/indicator-history?ticker=${encodeURIComponent(ticker)}&months=${months}`);
+  const d = await apiFetch(`/api/macro/indicator-history?ticker=${encodeURIComponent(ticker)}&months=${months}`);
+  return d ?? { ticker, dates: [], values: [] };
 }
 
 export async function loadGrowthData(market) {
