@@ -1,6 +1,7 @@
 {
-  "name": "macrolens",
-  "version": "2.0.0",
+  "name": "ledger",
+  "version": "1.0.0",
+  "description": "Personal finance and budgeting across every credit card",
   "type": "module",
   "scripts": {
     "dev": "vite",

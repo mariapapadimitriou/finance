@@ -1,5 +1,11 @@
-missing_securities.txt
 __pycache__/
 *.pyc
 node_modules/
 dist/
+
+# Your financial data — never commit this.
+ledger.db
+*.db
+
+# Generated sample statements (recreate with: python -m sample_data.generate)
+sample_data/*.csv
