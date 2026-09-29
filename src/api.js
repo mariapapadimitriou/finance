@@ -1,168 +1,92 @@
-// ─── Config ──────────────────────────────────────────────────────────────────
-export const API = 'http://localhost:5050';
+// API client and shared formatting helpers.
 
-export const PALETTE = [
-  '#00d4ff','#ff4d6d','#3dffa0','#ffd24d','#b47fff',
-  '#ff8c42','#7ec8e3','#ff6b9d','#6aff8c','#ffb347','#c084fc'
-];
+export const API = import.meta.env?.VITE_API || 'http://localhost:5050';
 
-export const FACTOR_COLORS = [
-  '#00d4ff','#ff4d6d','#ffd24d','#3dffa0','#b47fff','#ff8c42',
-  '#7ec8e3','#ff6b9d','#6aff8c','#f97316','#38bdf8','#a3e635',
-  '#c084fc','#facc15'
-];
-
-export const COMP_COLORS = {
-  VIX:          '#ff3d5e',
-  VVIX:         '#ff8c42',
-  PutCall:      '#ffd24d',
-  HYSpread:     '#b47fff',
-  TED:          '#00d4ff',
-  SkewIndex:    '#7ec8e3',
-  CorrelBreak:  '#3dffa0',
-  ATR_SPX:      '#ff6b9d',
-  RealizedVol:  '#c084fc',
-  BidAskProxy:  '#6aff8c',
-  Dispersion:   '#f97316',
-  FundingStress:'#38bdf8',
-  BreadthDecay: '#a3e635',
-};
-
-// ─── Utilities ───────────────────────────────────────────────────────────────
-export function fmt(n, d = 2) {
-  return (n >= 0 ? '+' : '') + n.toFixed(d);
+async function req(path, options = {}) {
+  const r = await fetch(`${API}${path}`, options);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || `${r.status} ${r.statusText}`);
+  return body;
 }
 
-export function hexToRgba(hex, a) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${a})`;
+const json = (method, path, payload) =>
+  req(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+export const getSummary      = () => req('/api/summary');
+export const getInsights     = () => req('/api/insights');
+export const getRecurring    = () => req('/api/recurring');
+export const getAccounts     = () => req('/api/accounts');
+export const getCategories   = () => req('/api/categories');
+export const getSources      = () => req('/api/sources');
+export const getImports      = () => req('/api/imports');
+export const getBudgets      = (month) =>
+  req(`/api/budgets${month ? `?month=${month}` : ''}`);
+
+export const getBreakdown = (month, days = 90) =>
+  req(`/api/breakdown?${new URLSearchParams({ ...(month ? { month } : {}), days })}`);
+
+export function getTransactions(filters = {}) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== '' && v !== null && v !== undefined) params.set(k, v);
+  });
+  return req(`/api/transactions?${params}`);
 }
 
-export function sortTenors(tenors) {
-  const toYrs = t => t.endsWith('M') ? parseFloat(t) / 12 : parseFloat(t);
-  return [...tenors].sort((a, b) => toYrs(a) - toYrs(b));
+export const importFiles   = (files) => json('POST', '/api/import', { files });
+export const setBudgets    = (budgets) => json('PUT', '/api/budgets', { budgets });
+export const setCategory   = (id, category, applyToMerchant = false) =>
+  json('PATCH', `/api/transactions/${id}`, {
+    category, apply_to_merchant: applyToMerchant,
+  });
+
+export const dismissFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'POST' });
+export const restoreFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'DELETE' });
+export const runNarrative   = () => req('/api/narrative', { method: 'POST' });
+export const clearLedger    = (account) =>
+  req(`/api/transactions${account ? `?account=${encodeURIComponent(account)}` : ''}`,
+      { method: 'DELETE' });
+
+// ── Formatting ───────────────────────────────────────────────────────────────
+
+export function money(n, { cents = false, sign = false } = {}) {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  const abs = Math.abs(n);
+  const text = abs.toLocaleString(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: cents ? 2 : 0,
+    maximumFractionDigits: cents ? 2 : 0,
+  });
+  if (n < 0) return `−${text}`;
+  return sign ? `+${text}` : text;
 }
 
-// ─── Chart option helpers ─────────────────────────────────────────────────────
-// Read chart-specific CSS vars at call time so charts respect dark/light theme
+export function pct(n, digits = 0) {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  return `${(n * 100).toFixed(digits)}%`;
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export function monthLabel(month, { long = false } = {}) {
+  if (!month) return '—';
+  const [y, m] = month.split('-').map(Number);
+  const name = MONTH_NAMES[m - 1] ?? month;
+  return long ? `${name} ${y}` : `${name} '${String(y).slice(2)}`;
+}
+
+export function dateLabel(iso) {
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${MONTH_NAMES[m - 1]} ${d}`;
+}
+
 export function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
-
-export function tooltipStyle(labelFn) {
-  return {
-    tooltip: {
-      backgroundColor: cssVar('--chart-bg'),
-      borderColor:     cssVar('--chart-border'),
-      borderWidth: 1,
-      titleColor:  cssVar('--chart-dim'),
-      bodyColor:   cssVar('--chart-text'),
-      titleFont: { family: 'IBM Plex Mono', size: 14 },
-      bodyFont:  { family: 'IBM Plex Mono', size: 15 },
-      callbacks: {
-        label: typeof labelFn === 'function'
-          ? ctx => { const r = labelFn(ctx); return r !== null && r !== undefined ? r : undefined; }
-          : ctx => ` ${ctx.parsed.y}`,
-      },
-    },
-  };
-}
-
-export function lineOpts({ yCallback, tooltipCallback, legend = false }) {
-  const dim    = cssVar('--chart-dim');
-  const grid   = cssVar('--chart-grid');
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-      legend: legend
-        ? { labels: { color: dim, font: { family: 'IBM Plex Mono', size: 14 } } }
-        : { display: false },
-      ...tooltipStyle(tooltipCallback || null),
-    },
-    scales: {
-      x: {
-        ticks: { color: dim, font: { family: 'IBM Plex Mono', size: 14 }, maxTicksLimit: 6 },
-        grid:  { color: grid },
-      },
-      y: {
-        ticks: { color: dim, font: { family: 'IBM Plex Mono', size: 14 }, callback: yCallback || undefined },
-        grid:  { color: grid },
-      },
-    },
-  };
-}
-
-// ─── API loaders ──────────────────────────────────────────────────────────────
-async function apiFetch(path) {
-  const r = await fetch(`${API}${path}`);
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.json();
-}
-
-export async function loadEquitiesData(market, lookback) {
-  const qs = `?market=${market}&lookback=${lookback}`;
-  const [retD, volD] = await Promise.all([
-    apiFetch(`/api/equities/returns${qs}`),
-    apiFetch(`/api/equities/volume${qs}`),
-  ]);
-  return { sectors: retD.sectors, volSectors: volD.sectors };
-}
-
-export async function loadFactorsData(market, lookback) {
-  const d = await apiFetch(`/api/equities/factors?market=${market}&lookback=${lookback}`);
-  return d.factors;
-}
-
-export async function loadFIData(market, lookback) {
-  return apiFetch(`/api/fixedincome/yields?market=${market}&lookback=${lookback}`);
-}
-
-export async function loadDifficultyData(market, lookback) {
-  return apiFetch(`/api/difficulty?market=${market}&lookback=${lookback}`);
-}
-
-export async function loadSummaryData(market) {
-  return apiFetch(`/api/summary?market=${market}`);
-}
-
-export async function loadWatchlistPrices(tickers) {
-  if (!tickers.length) return { prices: {} };
-  return apiFetch(`/api/watchlist-prices?tickers=${encodeURIComponent(tickers.join(','))}`);
-}
-
-export async function loadInflationData(market) {
-  return apiFetch(`/api/macro/inflation?market=${market}`);
-}
-
-export async function loadCentralBanksData(market) {
-  return apiFetch(`/api/macro/central-banks?market=${market}`);
-}
-
-export async function loadCalendarData(market) {
-  const qs = market ? `?market=${market}` : '';
-  return apiFetch(`/api/macro/calendar${qs}`);
-}
-
-export async function loadIndicatorHistory(ticker, months = 36) {
-  return apiFetch(`/api/macro/indicator-history?ticker=${encodeURIComponent(ticker)}&months=${months}`);
-}
-
-export async function loadGrowthData(market) {
-  return apiFetch(`/api/macro/growth?market=${market}`);
-}
-
-export async function loadFXData(market) {
-  return apiFetch(`/api/macro/fx?market=${market}`);
-}
-
-export async function loadCreditSpreadsData(market) {
-  return apiFetch(`/api/fixedincome/credit-spreads?market=${market}`);
-}
-
-export async function loadRealYieldsData(market) {
-  return apiFetch(`/api/fixedincome/real-yields?market=${market}`);
 }

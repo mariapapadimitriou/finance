@@ -1,6 +1,10 @@
+# Runtime — the analysis engine is pure standard library.
 flask>=3.0.0
 flask-cors>=4.0.0
-pandas>=2.0.0
-numpy>=1.26.0
-blpapi>=3.19.0
-xbbg>=0.7.9
+
+# Tests
+pytest>=8.0.0
+
+# Optional extras, both feature-detected at runtime:
+#   anthropic>=0.40.0     # the written Claude summary on the Savings tab
+#   plaid-python>=20.0.0  # live bank sync instead of CSV exports
