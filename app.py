@@ -38,6 +38,11 @@ DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000",
                "http://localhost:5173", "http://127.0.0.1:5173"]
 
 
+def _is_hosted() -> bool:
+    """True when running on a serverless host rather than a developer machine."""
+    return bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+
+
 def _hosted_db_path() -> str | None:
     """On a serverless host, the only writable directory is /tmp.
 
@@ -52,14 +57,19 @@ def _hosted_db_path() -> str | None:
     """
     if os.environ.get("LEDGER_DB"):
         return None  # explicit configuration wins
-    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    if _is_hosted():
         return "/tmp/ledger.db"
     return None
 
 
 def create_app(db_path: str | None = None) -> Flask:
     app = Flask(__name__)
-    CORS(app, origins=DEV_ORIGINS)
+
+    # CORS exists only for local development, where the Vite dev server and the
+    # API sit on different ports. A built deployment serves both from one
+    # origin, so sending these headers there would be noise at best.
+    if not _is_hosted():
+        CORS(app, origins=DEV_ORIGINS)
 
     app.config["STORE"] = Store(db_path or _hosted_db_path() or DEFAULT_DB)
     app.register_blueprint(bp)
