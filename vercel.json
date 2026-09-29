@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "flask",
+  "buildCommand": "npm install && npm run build",
+  "outputDirectory": "public",
+  "env": {
+    "LEDGER_DB": "/tmp/ledger.db",
+    "SEED_DEMO": "1"
+  },
+  "functions": {
+    "app.py": {
+      "maxDuration": 30
+    }
+  }
+}
