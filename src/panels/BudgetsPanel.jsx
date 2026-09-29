@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Card, Empty, ErrorNote, Loading, StatusPill } from '../components/ui.jsx';
+import { Badge, Card, Empty, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
+import { categoryIcon } from '../icons.js';
 import { getBudgets, money, monthLabel, pct, setBudgets } from '../api.js';
 
 /** Over budget, on pace to go over, or fine — status colour plus an icon and a word. */
@@ -96,7 +97,7 @@ export default function BudgetsPanel({ month, summary }) {
               </button>
             </>
           ) : (
-            <Empty title="Not enough history to suggest budgets">
+            <Empty title="Not enough history to suggest budgets" emoji="🌱">
               Import a few months of statements first.
             </Empty>
           )}
@@ -104,11 +105,11 @@ export default function BudgetsPanel({ month, summary }) {
       ) : (
         <>
           {partial && (
-            <div className="notice">
+            <Notice icon="⏳">
               {monthLabel(month, { long: true })} is still in progress. &ldquo;On
               pace&rdquo; projects your spending so far across the whole month, so
               you can act before the month closes rather than after.
-            </div>
+            </Notice>
           )}
 
           <Card title={`Budgets — ${monthLabel(month, { long: true })}`}
@@ -119,7 +120,8 @@ export default function BudgetsPanel({ month, summary }) {
                 const used = Math.min(r.used, 1);
                 return (
                   <div key={r.category}>
-                    <div className="row" style={{ marginBottom: 6 }}>
+                    <div className="row" style={{ marginBottom: 8 }}>
+                      <Badge icon={categoryIcon(r.category)} label={r.category} />
                       <strong>{r.category}</strong>
                       <StatusPill state={s}>{STATE_TEXT[s]}</StatusPill>
                       <span className="spacer" />

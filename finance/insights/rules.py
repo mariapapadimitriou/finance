@@ -75,7 +75,15 @@ def generate_findings(transactions: list[Transaction],
     findings += subscription_price_creep(recurring)
     findings += zombie_subscriptions(recurring, rows)
     findings += overlapping_subscriptions(recurring)
-    findings += small_frequent_habits(rows, months)
+
+    merchant_habits = small_frequent_habits(rows, months)
+    findings += merchant_habits
+    # Don't bill the same spending twice: a category already reported through a
+    # specific merchant is skipped by the category-level rule.
+    findings += category_habit(
+        rows, months, covered={f.category for f in merchant_habits}
+    )
+
     findings += delivery_premium(rows, months)
     findings += category_above_baseline(transactions)
     findings += subscription_load(recurring, rows, months)
@@ -393,6 +401,101 @@ def small_frequent_habits(rows: list[Transaction], months: float) -> list[Findin
 
     out.sort(key=lambda f: f.annual_saving, reverse=True)
     return out[:5]
+
+
+# ── Rule 6b: a habit spread across many merchants ────────────────────────────
+
+# Categories where a high share of spending across many small purchases is a
+# habit rather than a fixed cost.
+_CONCENTRATION_CATEGORIES = {"Dining", "Coffee", "Food Delivery",
+                             "Alcohol & Bars", "Shopping", "Entertainment"}
+
+CONCENTRATION_MIN_TXNS = 12
+CONCENTRATION_MIN_SHARE = 0.15
+
+
+def category_habit(rows: list[Transaction], months: float,
+                   covered: set[str]) -> list[Finding]:
+    """A category eating a large share of spending across many merchants.
+
+    The per-merchant habit rule only catches someone who goes to the *same*
+    place repeatedly. Plenty of people never repeat a merchant but eat out
+    constantly — ninety different restaurants, no single one frequent enough to
+    notice. The pattern is identical and so is the money; only the grouping
+    differs, so it is measured at the category level too.
+
+    `covered` names categories already reported per-merchant, so the same
+    spending is never counted twice.
+    """
+    if months < 2:
+        return []
+
+    total = sum(t.amount for t in rows if t.amount > 0)
+    if total <= 0:
+        return []
+
+    grouped: dict[str, list[Transaction]] = defaultdict(list)
+    for t in rows:
+        if t.amount > 0 and t.category in _CONCENTRATION_CATEGORIES:
+            grouped[t.category].append(t)
+
+    out = []
+    for category, txns in grouped.items():
+        if category in covered or len(txns) < CONCENTRATION_MIN_TXNS:
+            continue
+
+        spent = sum(t.amount for t in txns)
+        share = spent / total
+        if share < CONCENTRATION_MIN_SHARE:
+            continue
+
+        merchants = {t.merchant for t in txns}
+        per_month = spent / months
+        annual = per_month * 12
+        avg = spent / len(txns)
+
+        # A category dominated by one or two large purchases is an event, not a
+        # habit. Two concert tickets can make Entertainment look like a quarter
+        # of your spending, and "trim it by 25%" is useless advice for something
+        # you bought once. The claim here is that many small purchases add up,
+        # so it only holds when they actually do.
+        amounts = sorted((t.amount for t in txns), reverse=True)
+        if sum(amounts[:2]) / spent > 0.5:
+            continue
+
+        # A quarter, not a half: a whole category is harder to move than a
+        # single daily habit, and the estimate should be the one you'd actually
+        # hit rather than the one that sounds impressive.
+        saving = round(annual * 0.25, 2)
+        if saving < MIN_ANNUAL_SAVING:
+            continue
+
+        out.append(Finding(
+            id=_fid("catfit", category),
+            kind="category_habit",
+            title=f"{category} is {share * 100:.0f}% of your spending — "
+                  f"${per_month:,.0f}/month",
+            detail=f"{len(txns)} purchases across {len(merchants)} different "
+                   f"places over {months:.0f} months, averaging ${avg:,.2f} each "
+                   f"— ${spent:,.2f} in total. No single merchant shows up often "
+                   f"enough to stand out, which is exactly why this is easy to "
+                   f"miss: the habit is the category, not the place. Trimming it "
+                   f"by a quarter frees about ${saving:,.0f} a year.",
+            annual_saving=saving,
+            monthly_saving=round(saving / 12, 2),
+            confidence=0.7,
+            effort="habit",
+            category=category,
+            merchants=sorted(merchants,
+                             key=lambda m: -sum(t.amount for t in txns
+                                                if t.merchant == m))[:5],
+            evidence=[_ev(t) for t in sorted(txns, key=lambda t: -t.amount)[:6]],
+            assumption="Assumes cutting spending in this category by a quarter; "
+                       "the totals and counts are exact.",
+        ))
+
+    out.sort(key=lambda f: f.annual_saving, reverse=True)
+    return out[:3]
 
 
 # ── Rule 7: the delivery premium ─────────────────────────────────────────────

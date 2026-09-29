@@ -84,7 +84,13 @@ RULES: list[tuple[str, str]] = [
     (r"\b(atm fee|service charge|monthly fee|maintenance fee|overdraft)\b", "Fees & Interest"),
 
     # Payments & transfers
-    (r"\b(payment thank you|autopay|online payment|payment received|直)\b", "Transfers"),
+    # Card payments come in many spellings; all of them are money moving onto
+    # the card, never a purchase. Missing one silently nets it against your
+    # spending and makes the month look almost free.
+    (r"\b(payment thank you|payment received|payment from|payment -|autopay|"
+     r"online payment|pre-?authorized payment|pmt thank you)\b", "Transfers"),
+    (r"\b(scene\+? points|points for credit|rewards? redemption|"
+     r"cash ?back redemption|credit bal(?:ance)? refund)\b", "Transfers"),
     (r"\b(e-?transfer|interac|zelle|venmo|wise|remitly|western union)\b", "Transfers"),
     (r"\b(transfer to|transfer from|internal transfer|balance transfer)\b", "Transfers"),
     (r"\b(payroll|direct deposit|salary|dep\s+payroll|refund)\b", "Income"),
@@ -181,7 +187,56 @@ RULES: list[tuple[str, str]] = [
      r"lululemon|nike|adidas|foot locker|winners|marshalls|tj ?maxx|"
      r"hudson'?s bay|sport chek|mec\b|rei\b|apple store)\b", "Shopping"),
 
-    # Pets, education, gifts, taxes, cash
+    # ── Toronto & Canada ─────────────────────────────────────────────────────
+    # Local independents dominate a real Canadian statement and none of the
+    # chain lists above touch them. Ordered before the generic rules so a
+    # specific venue wins over a stray keyword in its name.
+
+    (r"\b(bike share toronto|presto|ttc|go transit|via rail|up express)\b|\bomny",
+     "Transport"),
+    (r"\b(sweat and tonic|altea|f45|barry'?s bootcamp|spinco|orangetheory)\b",
+     "Fitness"),
+    (r"\b(shoppers dru|rexall|pharmaprix|duane reade|cvs)\b", "Health"),
+    (r"\b(rabba|longo'?s|farm boy|fortinos|freshco|food basics|galleria|"
+     r"little harvest market|world mart)\b", "Groceries"),
+    (r"\b(simons|dynamite|garage|victoria'?s secret|urban outfitters|"
+     r"ralph lauren|vintage twin|aritzia|roots canada|sporting life|"
+     r"hudson'?s bay|the bay street)\b|\burbanoutfitters",
+     "Shopping"),
+    (r"\b(olfactory|sephora|deciem|the ordinary)\b", "Personal Care"),
+    (r"\b(scotiabank arena|scotiabank north|ca wonderland|canada'?s wonderland|"
+     r"metropolitan museum|rendezviews|stackt market|ripley'?s)\b",
+     "Entertainment"),
+    (r"\b(moxy|the drake hotel|gladstone)\b", "Lodging"),
+    # No trailing \\b: these appear glued to other words in card descriptors
+    # ("CAPITALIZEFORKIDSFOUND", "WWW.URBANOUTFITTERS.CO", "OMNYPYG").
+    (r"\b(capitalizeforkids|children'?s (?:aid|wish)|sickkids|united way)",
+     "Gifts & Charity"),
+
+    # Coffee shops — %Arabica and the local roasters.
+    (r"(%\s*)?\barabica\b|\b(mos mos|dineen|neo coffee|a-ok cafe|cha cha matcha|"
+     r"the roasted nut|boxcar social|jimmy'?s coffee|dark horse)\b", "Coffee"),
+    (r"\bcafe\d*\b|\bcaf[ée]\b", "Coffee"),
+
+    # Bars & nightlife
+    (r"\b(king taps|dream baby|cherry'?s high dive|locals only|central taps|"
+     r"hooters|the well bar|apres ski)\b", "Alcohol & Bars"),
+
+    # Restaurants, food halls and the quick-service places that make up most
+    # of a downtown lunch habit.
+    (r"\b(locanda verde|anejo|zen kyoto|nutbar|soup nutsy|iq food|azul|chop hop|"
+     r"pumpernickels|z-?teca|miznon|poulet rouge|villa madina|olly frescos|"
+     r"big league food|patties express|freshly squeezed|booster juice|"
+     r"craig'?s cookies|black seed|time out market|urban backyard|ruby soho|"
+     r"local adelaide|grand bizzare|aera|daon|haydn'?s|nord lyon|vereda|"
+     r"columbus eaton|queen'?s cross|chefs hall|rosie'?s burgers|belly busters|"
+     r"the agora|mandys|impact kitchen|peter pan bistro|national bowl|"
+     r"bowery bay|shg -|lcc toronto)\b", "Dining"),
+    # Generic food-service words, last so a named venue above wins first.
+    (r"\b(food hall|food co|foods|bowl|bagel|cookie|juice|matcha|soup|"
+     r"taps|cocina|bistro|taverna|creamery|patisserie)\b", "Dining"),
+
+
     (r"\b(petsmart|petco|pet valu|chewy|veterinar|vet clinic|animal hospital)\b", "Pets"),
     (r"\b(tuition|university|college|coursera|udemy|skillshare|masterclass|"
      r"duolingo|textbook|student loan)\b", "Education"),

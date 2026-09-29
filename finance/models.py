@@ -27,7 +27,7 @@ from datetime import date
 
 _PROCESSOR_PREFIXES = [
     r"^SQ\s*\*",            # Square
-    r"^TST\*\s*",           # Toast
+    r"^TST[\*\-]\s*",       # Toast — both the TST* and TST- spellings
     r"^SP\s+",              # Shopify / Shop Pay
     r"^PY\s*\*",            # Paysafe
     r"^PAYPAL\s*\*",
@@ -36,6 +36,7 @@ _PROCESSOR_PREFIXES = [
     r"^EIG\*\s*",
     r"^WPY\*\s*",           # WePay
     r"^CKO\*\s*",           # Checkout.com
+    r"^EB\s*\*",            # Eventbrite
     r"^POS\s+(?:PURCHASE\s+)?",
     r"^PURCHASE\s+(?:AUTHORIZED\s+ON\s+)?",
     r"^DEBIT\s+CARD\s+PURCHASE\s+",
@@ -104,7 +105,7 @@ def normalize_merchant(description: str) -> str:
     for pat in _PROCESSOR_PREFIXES:
         s = re.sub(pat, " ", s)
 
-    s = _LOCATION_TAIL.sub("", s)
+    s = _strip_location_tail(s)
 
     for pat in _NOISE_PATTERNS:
         s = re.sub(pat, " ", s)
@@ -141,11 +142,36 @@ def normalize_merchant(description: str) -> str:
     return _titlecase(s)
 
 
-_ALL_CAPS_KEEP = {
-    "AMC", "AMEX", "ATM", "AT&T", "BP", "CVS", "DMV", "EA", "GM", "H&M",
+# Same tail, but a single-word city — the fallback when the two-word form
+# would consume the merchant name entirely.
+_LOCATION_TAIL_SHORT = re.compile(
+    r"\s+[A-Z][A-Z\.\-']{0,17},?\s+"
+    r"(?:A[LKZR]|C[AOT]|D[EC]|FL|GA|HI|I[DLNA]|K[SY]|LA|M[EDAINSOT]|"
+    r"N[EVHJMYCD]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[TA]|W[AVIY]|"
+    r"AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT)"
+    r"(?:\s+(?:US|USA|CA|CAN))?\s*$"
+)
+
+_ALL_CAPS_KEEP = {"AMC", "AMEX", "ATM", "AT&T", "BP", "CVS", "DMV", "EA", "GM", "H&M",
     "HBO", "IGA", "IKEA", "KFC", "LCBO", "MTA", "NYC", "PG&E", "REI",
     "SFO", "TD", "TTC", "UPS", "USPS", "AWS", "IRS", "CRA", "SAQ", "GO",
 }
+
+
+def _strip_location_tail(s: str) -> str:
+    """Remove a trailing "CITY ST" without swallowing the merchant name.
+
+    The city may be two words ("SAN FRANCISCO", "NEW YORK"), but a two-word
+    match can also reach back over the whole name — "GREENHOUSE MISSISSAUGA ON"
+    would leave nothing at all. So a strip that empties the string is retried
+    against a one-word city, and abandoned if that empties it too.
+    """
+    stripped = _LOCATION_TAIL.sub("", s).strip()
+    if stripped:
+        return stripped
+
+    stripped = _LOCATION_TAIL_SHORT.sub("", s).strip()
+    return stripped or s
 
 
 def _titlecase(s: str) -> str:

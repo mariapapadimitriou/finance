@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Card, ErrorNote, Loading } from '../components/ui.jsx';
+import { Badge, Card, ErrorNote, Loading } from '../components/ui.jsx';
+import { categoryIcon } from '../icons.js';
 import { dateLabel, getTransactions, money, setCategory } from '../api.js';
 
 const PAGE = 100;
@@ -99,8 +100,15 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                     <tr key={t.id}>
                       <td className="muted">{dateLabel(t.date)}</td>
                       <td className="merchant">
-                        {t.merchant}
-                        <div className="desc" title={t.description}>{t.description}</div>
+                        <span className="cell-merchant">
+                          <Badge icon={categoryIcon(t.category)} label={t.category} />
+                          <span>
+                            {t.merchant}
+                            <div className="desc" title={t.description}>
+                              {t.description}
+                            </div>
+                          </span>
+                        </span>
                       </td>
                       <td>
                         {editing === t.id ? (

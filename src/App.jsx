@@ -11,12 +11,12 @@ import {
 } from './api.js';
 
 const TABS = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'savings', label: 'Savings' },
-  { key: 'subscriptions', label: 'Subscriptions' },
-  { key: 'transactions', label: 'Transactions' },
-  { key: 'budgets', label: 'Budgets' },
-  { key: 'import', label: 'Import' },
+  { key: 'overview', label: 'Overview', icon: '📊' },
+  { key: 'savings', label: 'Savings', icon: '💸' },
+  { key: 'subscriptions', label: 'Subscriptions', icon: '🔁' },
+  { key: 'transactions', label: 'Transactions', icon: '🧾' },
+  { key: 'budgets', label: 'Budgets', icon: '🎯' },
+  { key: 'import', label: 'Import', icon: '📥' },
 ];
 
 export default function App() {
@@ -65,7 +65,7 @@ export default function App() {
           <strong>Can&apos;t reach the Ledger API.</strong> {String(error.message)}
           <br />
           Start it with <code>python app.py</code> (or{' '}
-          <code>python app.py --demo</code> to load sample data first), then{' '}
+          <code>python app.py</code>), then{' '}
           <button className="btn quiet" onClick={load}>retry</button>.
         </div>
       </Shell>
@@ -83,20 +83,16 @@ export default function App() {
     return (
       <Shell theme={theme} setTheme={setTheme} tab={tab} onTab={setTab}
              findingCount={findingCount}>
-        <Empty title="No transactions yet">
+        <Empty title="Let's see where the money goes" emoji="🫧">
           <p>
-            Import CSV exports from your cards and this fills in — spending by
-            category, subscriptions you&apos;ve forgotten about, and a ranked list
-            of what to cut.
+            Drop in your card statements — PDF or CSV — and this fills in:
+            spending by category, subscriptions you&apos;ve forgotten about, and a
+            ranked list of what to cut.
           </p>
           <button className="btn primary" onClick={() => setTab('import')}
-                  style={{ marginTop: 12 }}>
+                  style={{ marginTop: 14 }}>
             Import statements
           </button>
-          <p className="small muted" style={{ marginTop: 20 }}>
-            Just exploring? Run <code>python app.py --demo</code> to load 14 months
-            of realistic sample data across three cards.
-          </p>
         </Empty>
       </Shell>
     );
@@ -132,8 +128,11 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
       <header>
         <div className="header-inner">
           <div className="brand">
-            <h1>Ledger</h1>
-            <span className="sub">every card, one picture</span>
+            <span className="mark" aria-hidden="true">L</span>
+            <div>
+              <h1>Ledger</h1>
+              <div className="sub">every card, one picture</div>
+            </div>
           </div>
 
           {showMonth && months.length > 0 && (
@@ -166,6 +165,7 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
                 aria-selected={tab === t.key}
                 onClick={() => onTab(t.key)}
               >
+                <span aria-hidden="true">{t.icon}</span>
                 {t.label}
                 {t.key === 'savings' && findingCount > 0 && (
                   <span className="badge">{findingCount}</span>

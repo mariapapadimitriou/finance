@@ -15,13 +15,14 @@ from .analytics import (
     by_category,
     by_merchant,
     daily_series,
+    fixed_vs_discretionary,
     month_over_month,
     monthly_totals,
     summary as build_summary,
     weekday_profile,
 )
 from .categorize import CATEGORIES
-from .ingest import all_sources, get_source, parse_csv
+from .ingest import all_sources, get_source, parse_csv, parse_statement
 from .insights import detect_recurring, findings_summary, generate_findings, recurring_summary
 from .pipeline import ingest, recategorize_all
 from .store import Store
@@ -68,25 +69,31 @@ def categories():
 
 @bp.post("/import")
 def import_files():
-    """Accept one or more CSV uploads (multipart) or inline CSV text (JSON)."""
-    payloads = []
+    """Accept CSV or PDF statements.
+
+    Multipart is the real path — PDFs are binary and must not be decoded. The
+    JSON form is kept for CSV text and for tests, and accepts base64 for
+    binary payloads.
+    """
+    payloads: list[dict] = []
 
     if request.files:
         for f in request.files.getlist("files") or list(request.files.values()):
             data = f.read()
             if len(data) > MAX_UPLOAD_BYTES:
                 return jsonify({"error": f"{f.filename} exceeds the 25 MB limit."}), 413
-            payloads.append({
-                "name": f.filename or "upload.csv",
-                "content": _decode(data),
-                "account_name": request.form.get("account_name") or None,
-            })
+            payloads.append({"name": f.filename or "upload", "data": data,
+                             "account_name": request.form.get("account_name") or None})
     else:
         body = request.get_json(silent=True) or {}
         for item in body.get("files", []):
+            content = item.get("content", "")
+            if item.get("encoding") == "base64":
+                import base64
+                content = base64.b64decode(content)
             payloads.append({
                 "name": item.get("name", "upload.csv"),
-                "content": item.get("content", ""),
+                "data": content,
                 "account_name": item.get("account_name"),
             })
 
@@ -95,16 +102,35 @@ def import_files():
 
     results = []
     for p in payloads:
-        parsed = parse_csv(
-            content=p["content"], filename=p["name"], account_name=p.get("account_name")
-        )
-        results.append(ingest(store(), parsed, filename=p["name"]))
+        results.append(ingest(store(), _parse_upload(p), filename=p["name"]))
 
     return jsonify({
         "results": results,
         "imported": sum(r["imported"] for r in results),
         "duplicates": sum(r["duplicates"] for r in results),
     })
+
+
+def _is_pdf(name: str, data) -> bool:
+    if name.lower().endswith(".pdf"):
+        return True
+    head = data[:5] if isinstance(data, bytes) else data[:5].encode("latin-1", "ignore")
+    return head.startswith(b"%PDF")
+
+
+def _parse_upload(payload: dict):
+    """Route an uploaded file to the importer that understands it."""
+    name, data = payload["name"], payload["data"]
+
+    if _is_pdf(name, data):
+        if isinstance(data, str):
+            data = data.encode("latin-1", "ignore")
+        return parse_statement(data, filename=name,
+                               account_name=payload.get("account_name"))
+
+    text = _decode(data) if isinstance(data, bytes) else data
+    return parse_csv(content=text, filename=name,
+                     account_name=payload.get("account_name"))
 
 
 def _decode(data: bytes) -> str:
@@ -218,6 +244,7 @@ def breakdown():
     month = request.args.get("month")
     return jsonify({
         "month": month,
+        "split": fixed_vs_discretionary(txns, month),
         "categories": by_category(txns, month),
         "merchants": by_merchant(txns, month, limit=int(request.args.get("limit", 25))),
         "changes": month_over_month(txns, month) if month else [],

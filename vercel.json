@@ -3,8 +3,7 @@
   "framework": "flask",
   "buildCommand": "npm install && npm run build",
   "env": {
-    "LEDGER_DB": "/tmp/ledger.db",
-    "SEED_DEMO": "1"
+    "LEDGER_DB": "/tmp/ledger.db"
   },
   "functions": {
     "app.py": {

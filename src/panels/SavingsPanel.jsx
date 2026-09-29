@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Card, Empty } from '../components/ui.jsx';
+import { Card, Empty, Notice } from '../components/ui.jsx';
+import { categoryIcon, effortIcon } from '../icons.js';
 import { dateLabel, dismissFinding, money, pct, restoreFinding, runNarrative } from '../api.js';
 
 const EFFORT = {
@@ -44,7 +45,7 @@ export default function SavingsPanel({ insights, onRefresh }) {
 
   if (findings.length === 0) {
     return (
-      <Empty title="Nothing to cut that we can see">
+      <Empty title="Nothing to cut that we can see" emoji="🎉">
         Either your spending is already tight, or there isn&apos;t enough history
         yet. Most rules need three or more months to tell a habit from a
         one-off — import a longer date range and check back.
@@ -58,7 +59,7 @@ export default function SavingsPanel({ insights, onRefresh }) {
 
   return (
     <div className="stack">
-      <Card>
+      <div className="hero-card">
         <div className="hero">
           <div className="figure num">{money(summary.weighted_annual ?? 0)}</div>
           <div className="caption">
@@ -68,12 +69,13 @@ export default function SavingsPanel({ insights, onRefresh }) {
             the weighted figure is the honest one.
           </div>
         </div>
-        <p className="small muted" style={{ marginTop: 14, marginBottom: 0 }}>
-          Every figure below is computed from your own transactions. Each finding
-          states what it assumes, because a recommendation you can&apos;t audit is
-          just a guess — open the evidence to see the exact charges behind it.
+        <p className="small" style={{ marginTop: 18, marginBottom: 0,
+                                      color: 'var(--ink-2)' }}>
+          Every figure comes from your own transactions. Each finding states what
+          it assumes, because a recommendation you can&apos;t audit is just a
+          guess — open the evidence to see the exact charges behind it.
         </p>
-      </Card>
+      </div>
 
       {(claude.available || narrative) && (
         <Card
@@ -87,7 +89,7 @@ export default function SavingsPanel({ insights, onRefresh }) {
             </button>
           }
         >
-          {narrativeError && <div className="notice error">{String(narrativeError.message)}</div>}
+          {narrativeError && <Notice kind="error" icon="⚠️">{String(narrativeError.message)}</Notice>}
           {narrative?.text
             ? <div className="narrative">{narrative.text}</div>
             : <p className="muted small" style={{ margin: 0 }}>
@@ -98,16 +100,19 @@ export default function SavingsPanel({ insights, onRefresh }) {
       )}
 
       {!claude.available && (
-        <div className="notice">
+        <Notice icon="🤖">
           <strong>Optional Claude summary is off.</strong> {claude.detail} The rule
           engine below works entirely offline and needs no key.
-        </div>
+        </Notice>
       )}
 
       {grouped.map(([effort, list]) => (
         <div key={effort} className="stack">
           <div className="row">
-            <h2>{EFFORT[effort]?.label ?? effort}</h2>
+            <h2>
+              <span aria-hidden="true">{effortIcon(effort)}</span>{' '}
+              {EFFORT[effort]?.label ?? effort}
+            </h2>
             <span className="muted small">{EFFORT[effort]?.hint}</span>
             <span className="spacer" />
             <span className="muted small num">
@@ -130,7 +135,12 @@ function Finding({ finding: f, busy, onDismiss }) {
     <section className={`card finding effort-${f.effort}`}>
       <div className="top">
         <div>
-          <h3>{f.title}</h3>
+          <h3>
+            {f.category && (
+              <span aria-hidden="true">{categoryIcon(f.category)} </span>
+            )}
+            {f.title}
+          </h3>
           <p>{f.detail}</p>
           <div className="meta">
             <span className="pill">{CONFIDENCE(f.confidence)} · {pct(f.confidence)}</span>
