@@ -1,6 +1,10 @@
 // API client and shared formatting helpers.
 
-export const API = import.meta.env?.VITE_API || 'http://localhost:5050';
+// In dev the UI runs on Vite's server and the API on its own port. In a built
+// deployment both are served from one origin, so requests go to a relative
+// path and no host needs hard-coding. VITE_API overrides either way.
+export const API = import.meta.env?.VITE_API
+  ?? (import.meta.env?.DEV ? 'http://localhost:5050' : '');
 
 async function req(path, options = {}) {
   const r = await fetch(`${API}${path}`, options);

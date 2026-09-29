@@ -3,6 +3,9 @@ __pycache__/
 node_modules/
 dist/
 
+# Frontend build output (npm run build)
+public/
+
 # Your financial data — never commit this.
 ledger.db
 *.db
