@@ -41,7 +41,12 @@ export function getTransactions(filters = {}) {
   return req(`/api/transactions?${params}`);
 }
 
-export const importFiles   = (files) => json('POST', '/api/import', { files });
+export const importFiles = (payload) =>
+  // FormData carries binary PDFs correctly; the browser sets the boundary
+  // header itself, so we must not set Content-Type here.
+  (payload instanceof FormData
+    ? req('/api/import', { method: 'POST', body: payload })
+    : json('POST', '/api/import', { files: payload }));
 export const setBudgets    = (budgets) => json('PUT', '/api/budgets', { budgets });
 export const setCategory   = (id, category, applyToMerchant = false) =>
   json('PATCH', `/api/transactions/${id}`, {

@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Chart from '../components/Chart.jsx';
-import { BarRow, Card, Legend, Tile } from '../components/ui.jsx';
+import { BarRow, Card, Legend, Notice, Tile } from '../components/ui.jsx';
+import { categoryIcon } from '../icons.js';
 import { dailySpendConfig, monthlyTrendConfig } from '../charts.js';
-import { cssVar, money, monthLabel, pct } from '../api.js';
+import { cssVar, getBreakdown, money, monthLabel, pct } from '../api.js';
 
 export default function OverviewPanel({ summary, insights, theme, month, onMonth }) {
   const [showTable, setShowTable] = useState(false);
@@ -12,53 +13,84 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
   const dailyConfig = useMemo(() => dailySpendConfig(summary.daily ?? []),
                               [summary.daily, theme]);
 
-  const categories = (summary.categories ?? []).filter((c) => c.amount > 0);
+  // Server-rendered summary describes the latest month; anything month-specific
+  // is refetched when the selector changes.
+  const [breakdown, setBreakdown] = useState(null);
+
+  useEffect(() => {
+    if (!month) return undefined;
+    let cancelled = false;
+    getBreakdown(month)
+      .then((d) => { if (!cancelled) setBreakdown(d); })
+      .catch(() => { if (!cancelled) setBreakdown(null); });
+    return () => { cancelled = true; };
+  }, [month]);
+
+  const categories = (breakdown?.categories ?? []).filter((c) => c.amount > 0);
   const maxCategory = categories[0]?.amount ?? 0;
-  const merchants = summary.merchants ?? [];
+  const merchants = breakdown?.merchants ?? [];
   const maxMerchant = merchants[0]?.amount ?? 0;
-  const split = summary.split ?? {};
+  const split = breakdown?.split ?? {};
   const partial = month === summary.latest_month && !summary.latest_month_complete;
+  const gaps = summary.coverage_gaps ?? [];
 
   const savings = insights?.summary?.weighted_annual ?? 0;
+  const observedMonths = monthly.filter((m) => m.transactions > 0).length;
   const weekday = summary.weekday ?? [];
   const maxWeekday = Math.max(...weekday.map((d) => d.average), 0);
 
   return (
     <div className="stack">
+      {gaps.length > 0 && (
+        <Notice icon="🧩">
+          <strong>{gaps.length} month{gaps.length === 1 ? '' : 's'} missing
+          between {monthLabel(summary.months[0])} and{' '}
+          {monthLabel(summary.months.at(-1))}.</strong>{' '}
+          Averages and trends here only count the months you actually imported,
+          so they stay honest — but a subscription whose charges straddle a gap
+          can be missed entirely. Import the statements in between for the full
+          picture.
+        </Notice>
+      )}
+
       {partial && (
-        <div className="notice">
+        <Notice icon="⏳">
           {monthLabel(month, { long: true })} is still in progress — your data runs
           to day {summary.date_range?.[1]?.slice(8)}. Comparisons against full
           months will read low until the month closes.
-        </div>
+        </Notice>
       )}
 
       <div className="grid cols-4">
         <Tile
+          tint="blue" icon="📅"
           label={monthLabel(month, { long: true })}
           value={money(currentMonthSpend(summary, month))}
           delta={month === summary.latest_month ? summary.vs_average : undefined}
           note="vs your monthly average"
         />
         <Tile
+          tint="peach" icon="⚖️"
           label="Monthly average"
           value={money(summary.average_monthly_spend)}
-          note={`across ${monthly.length} months of history`}
+          note={`across ${observedMonths} month${observedMonths === 1 ? '' : 's'} of data`}
         />
         <Tile
+          tint="lilac" icon="🎈"
           label="Discretionary"
           value={pct(split.discretionary_share ?? 0)}
           note={`${money(split.discretionary ?? 0)} of ${money(split.total ?? 0)}`}
         />
         <Tile
-          label="Savings identified"
+          tint="mint" icon="💸"
+          label="Could save"
           value={money(savings)}
           note="per year, confidence-weighted"
         />
       </div>
 
       <Card
-        title="Monthly spending"
+        title="Month by month"
         hint="Card payments, transfers and refunds excluded; refunds net against their category"
         actions={
           <button className="btn quiet" onClick={() => setShowTable((v) => !v)}>
@@ -94,9 +126,12 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
       </Card>
 
       <div className="grid cols-2">
-        <Card title="Where it went" hint={monthLabel(month, { long: true })}>
+        <Card title="Where it went 🍰" hint={monthLabel(month, { long: true })}>
           {categories.length === 0 ? (
-            <p className="muted">No spending recorded this month.</p>
+            <p className="muted">
+              {breakdown ? 'No spending recorded in this month.'
+                         : 'Loading…'}
+            </p>
           ) : (
             <div className="bars">
               {categories.slice(0, 10).map((c) => (
@@ -112,15 +147,18 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
           )}
         </Card>
 
-        <Card title="Biggest merchants" hint={monthLabel(month, { long: true })}>
+        <Card title="Your top spots 🏆" hint={monthLabel(month, { long: true })}>
           {merchants.length === 0 ? (
-            <p className="muted">Nothing to show yet.</p>
+            <p className="muted">
+              {breakdown ? 'No merchants in this month.' : 'Loading…'}
+            </p>
           ) : (
             <div className="bars">
               {merchants.slice(0, 10).map((m) => (
                 <BarRow
                   key={m.merchant}
                   name={m.merchant}
+                  icon={categoryIcon(m.category)}
                   sub={`${m.category} · ${m.transactions}× · ${money(m.avg)} avg`}
                   value={m.amount}
                   max={maxMerchant}
@@ -152,13 +190,13 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
           </p>
         </Card>
 
-        <Card title="Spending by day of week" hint="Average per active day, all history">
+        <Card title="Which days cost you 📆" hint="Average per active day, all history">
           {weekday.length === 0 ? (
             <p className="muted">Not enough data yet.</p>
           ) : (
             <div className="bars">
               {weekday.map((d) => (
-                <BarRow key={d.day} name={d.day} value={d.average} max={maxWeekday} />
+                <BarRow key={d.day} name={d.day} icon="📅" value={d.average} max={maxWeekday} />
               ))}
             </div>
           )}
@@ -171,7 +209,7 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
         </div>
       </Card>
 
-      <Card title="Cards" hint="Spending aggregated across every card you've imported">
+      <Card title="Your cards 💳" hint="Spending aggregated across every card you've imported">
         <div className="table-wrap">
           <table>
             <thead>

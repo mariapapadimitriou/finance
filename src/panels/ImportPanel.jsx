@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Card, ErrorNote } from '../components/ui.jsx';
+import { Card, ErrorNote, Notice } from '../components/ui.jsx';
 import { clearLedger, getImports, getSources, importFiles, money } from '../api.js';
 
 export default function ImportPanel({ accounts, onImported }) {
@@ -27,11 +27,10 @@ export default function ImportPanel({ accounts, onImported }) {
     setError(null);
     setResults(null);
     try {
-      const payload = await Promise.all(files.map(async (f) => ({
-        name: f.name,
-        content: await f.text(),
-      })));
-      const r = await importFiles(payload);
+      // Multipart, not text: reading a PDF with file.text() would mangle it.
+      const form = new FormData();
+      files.forEach((f) => form.append('files', f, f.name));
+      const r = await importFiles(form);
       setResults(r.results);
       await refresh();
       await onImported();
@@ -68,16 +67,17 @@ export default function ImportPanel({ accounts, onImported }) {
           handleFiles(e.dataTransfer.files);
         }}
       >
-        <h3>{busy ? 'Importing…' : 'Drop your card statements here'}</h3>
-        <p style={{ margin: '6px 0 14px' }}>
-          CSV exports from any card. The issuer&apos;s format is detected
+        <span className="emoji" aria-hidden="true">{busy ? '⏳' : '🫧'}</span>
+        <h3>{busy ? 'Reading your statements…' : 'Drop your statements here'}</h3>
+        <p style={{ margin: '8px auto 18px', maxWidth: '46ch' }}>
+          PDF statements or CSV exports, from any card. The format is detected
           automatically, and re-importing an overlapping date range is safe —
           duplicates are dropped, not double-counted.
         </p>
         <input
           ref={inputRef}
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv,.pdf,text/csv,application/pdf"
           multiple
           onChange={(e) => handleFiles(e.target.files)}
           style={{ display: 'none' }}
@@ -119,25 +119,25 @@ export default function ImportPanel({ accounts, onImported }) {
             </table>
           </div>
           {results.flatMap((r) => (r.warnings ?? []).map((w) => (
-            <div className="notice" key={`${r.filename}-${w}`} style={{ marginTop: 10 }}>
-              <strong>{r.filename}:</strong> {w}
+            <div key={`${r.filename}-${w}`} style={{ marginTop: 12 }}>
+              <Notice icon="⚠️"><strong>{r.filename}:</strong> {w}</Notice>
             </div>
           )))}
         </Card>
       )}
 
       <div className="grid cols-2">
-        <Card title="How to get your CSVs" hint={csv?.detail}>
+        <Card title="Getting your statements 📄" hint={csv?.detail}>
           <ol className="steps">
             {(csv?.setup_steps ?? []).map((s) => <li key={s}>{s}</li>)}
           </ol>
-          <p className="small muted" style={{ marginTop: 14, marginBottom: 0 }}>
-            Everything is parsed locally and stored in a SQLite file on this
-            machine. Nothing is uploaded anywhere.
+          <p className="small muted" style={{ marginTop: 16, marginBottom: 0 }}>
+            🔒 Everything is parsed on this machine and stored in a local SQLite
+            file. Nothing is uploaded anywhere.
           </p>
         </Card>
 
-        <Card title="Automatic sync" hint="Alternatives to downloading CSVs by hand">
+        <Card title="Automatic sync ⚡" hint="Alternatives to downloading CSVs by hand">
           {others.map((s) => (
             <div key={s.key} style={{ marginBottom: 14 }}>
               <div className="row">
@@ -168,7 +168,7 @@ export default function ImportPanel({ accounts, onImported }) {
       </div>
 
       {accounts.length > 0 && (
-        <Card title="Cards in your ledger">
+        <Card title="Your cards 💳">
           <div className="table-wrap">
             <table>
               <thead>
@@ -193,7 +193,7 @@ export default function ImportPanel({ accounts, onImported }) {
       )}
 
       {history.length > 0 && (
-        <Card title="Import history">
+        <Card title="Recent imports 🕑">
           <div className="table-wrap">
             <table>
               <thead>

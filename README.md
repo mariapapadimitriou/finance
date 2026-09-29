@@ -54,17 +54,29 @@ project forward so you can act before the month closes rather than after.
 
 ## Importing your statements
 
-Every major issuer lets you export CSV: sign in, find **Statements & Activity →
-Download**, pick CSV and the widest date range offered. Then drag the files onto
-the Import tab.
+Drag PDF statements or CSV exports onto the Import tab. The format is detected
+automatically and re-importing the same file is safe and idempotent.
 
-Recognized formats: American Express, Chase, Capital One, Citi, Discover, Bank of
+**PDF statements.** Scotiabank's layout is implemented: the statement period
+supplies the year that transaction lines omit, wallet markers like `(APPLE PAY)`
+are ignored, and a trailing minus marks a credit. Every import is reconciled
+against the statement's own declared purchase and credit totals. Text-based
+statements only — a scanned image needs OCR first, and the importer says so
+rather than silently returning nothing.
+
+**CSV exports.** American Express, Chase, Capital One, Citi, Discover, Bank of
 America, RBC, Scotiabank, Wells Fargo and TD (both headerless). Anything else
 falls back to keyword matching on the column names, which handles most exports;
-the import report tells you how confident the match was and flags anything that
-looks off.
+the import report says how confident the match was.
 
-Re-importing the same file is safe and idempotent.
+### Gaps matter
+
+Statements are usually downloaded a few at a time, which leaves holes. A hole
+quietly corrupts anything that reasons about months — a monthly average divides
+by months you never imported, and a subscription whose charges straddle a gap
+looks quarterly rather than monthly. So gaps are detected, excluded from
+averages, and shown at the top of the Overview rather than left to distort the
+numbers silently.
 
 ### Correcting a category
 
@@ -77,7 +89,7 @@ and every future import.
 
 ## How the savings figures are calculated
 
-Nine rules run over your ledger. Each states its assumption, and every estimate
+Ten rules run over your ledger. Each states its assumption, and every estimate
 errs low:
 
 | Finding | What it looks for | Assumes |
@@ -90,6 +102,7 @@ errs low:
 | Frequent small habits | ≥4×/month, under $40 each | Halving the frequency |
 | Delivery premium | Food delivery orders | 35% markup vs. pickup |
 | Category drift | Two straight months ≥30% over your median | The new level persists |
+| Category habit | A category ≥15% of spending over 12+ purchases | Trimming it by a quarter |
 | Subscription load | 4+ discretionary subscriptions | Cancelling a quarter by value |
 
 The headline figure on the Savings tab is **confidence-weighted**. The raw sum is
@@ -159,7 +172,8 @@ finance/
   ingest/
     base.py                 The source interface every importer implements
     schemas.py              Per-issuer CSV column layouts and detection
-    csv_source.py           CSV / statement import
+    csv_source.py           CSV export import
+    pdf_source.py           PDF statement import
     plaid_source.py         Plaid adapter (implemented, needs credentials)
   dedupe.py                 Cross-export de-duplication, double-charge detection
   categorize.py             Category rules, issuer mapping, user overrides
@@ -172,8 +186,9 @@ finance/
   store.py                  SQLite persistence
   api.py                    HTTP routes
 src/                        React UI (Vite)
+  icons.js                  Category iconography — identity colour can't carry
 sample_data/generate.py     Realistic sample statements in three issuer formats
-tests/                      139 tests
+tests/                      168 tests
 ```
 
 ## Tests

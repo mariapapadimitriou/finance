@@ -292,6 +292,19 @@ def fixed_vs_discretionary(transactions: list[Transaction], month: str | None = 
     }
 
 
+def coverage_gaps(transactions: list[Transaction]) -> list[str]:
+    """Months inside the data's range that contain no transactions at all.
+
+    Statements are often imported with holes in them — you download a few, not
+    every one. Those holes quietly corrupt anything that reasons about months:
+    a monthly average divides by months you never imported, and a subscription
+    whose charges straddle a gap looks quarterly rather than monthly. Callers
+    surface this so the numbers can be read with it in mind.
+    """
+    present = {t.month for t in transactions}
+    return [m for m in month_range(transactions) if m not in present]
+
+
 def summary(transactions: list[Transaction], budgets: dict[str, float] | None = None) -> dict:
     """The overview payload: headline numbers plus every breakdown the UI draws."""
     if not transactions:
@@ -304,9 +317,13 @@ def summary(transactions: list[Transaction], budgets: dict[str, float] | None = 
     latest = months[-1] if months else None
     monthly = monthly_totals(transactions)
 
-    complete = [m for m in monthly if m["month"] != latest]
+    # Average over months that actually contain data: a gap is a month we
+    # never imported, not a month of zero spending, and averaging it in would
+    # understate the true monthly figure.
+    observed = [m for m in monthly if m["transactions"] > 0]
+    complete = [m for m in observed if m["month"] != latest]
     avg_spend = round(statistics.fmean([m["spend"] for m in complete]), 2) if complete else (
-        monthly[-1]["spend"] if monthly else 0.0
+        round(statistics.fmean([m["spend"] for m in observed]), 2) if observed else 0.0
     )
 
     latest_spend = next((m["spend"] for m in monthly if m["month"] == latest), 0.0)
@@ -318,6 +335,7 @@ def summary(transactions: list[Transaction], budgets: dict[str, float] | None = 
         "latest_month": latest,
         "latest_month_complete": is_month_complete(transactions, latest) if latest else False,
         "last_complete_month": last_complete_month(transactions),
+        "coverage_gaps": coverage_gaps(transactions),
         "monthly": monthly,
         "latest_spend": latest_spend,
         "average_monthly_spend": avg_spend,

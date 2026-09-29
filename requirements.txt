@@ -1,6 +1,8 @@
-# Runtime — the analysis engine is pure standard library.
+# Runtime. The analysis engine itself is pure standard library;
+# pdfplumber is only needed to read PDF statements.
 flask>=3.0.0
 flask-cors>=4.0.0
+pdfplumber>=0.11.0
 
 # Tests
 pytest>=8.0.0
