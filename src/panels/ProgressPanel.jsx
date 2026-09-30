@@ -14,15 +14,16 @@ import { getProgress, money, monthLabel } from '../api.js';
  * a day outside the imported range reads *no data*, never "no spending". A
  * quiet-day badge for a month that was never imported would be a lie.
  */
-export default function ProgressPanel({ month }) {
+export default function ProgressPanel({ month, version = 0 }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
+  // `version` changes on an import, which is exactly when the scoring changes.
   useEffect(() => {
     let live = true;
     getProgress(month).then((d) => live && setData(d)).catch((e) => live && setError(e));
     return () => { live = false; };
-  }, [month]);
+  }, [month, version]);
 
   if (!data && !error) return <Loading what="your streak" />;
   if (!data) return <ErrorNote error={error} />;

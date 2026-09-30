@@ -66,15 +66,20 @@ export default function App() {
     () => localStorage.getItem('spendie-theme') || 'dark'
   );
   const [tab, setTab] = useState('today');
+  // Both month values hold *your* choice, and empty means "follow the data".
+  // They are deliberately not seeded from the first load: a seeded value would
+  // survive an import that added newer months, leaving the dashboard pinned to
+  // a month you never picked and the Today tab insisting nothing was imported
+  // for this month when it just was. Derived at render instead, so new data
+  // moves them and an explicit pick still sticks.
   const [month, setMonth] = useState('');
-  // The plan's month is tracked separately from the dashboard's, because "safe
-  // to spend today" is about today while the dashboard opens on the last month
-  // with data. Empty means "whatever month it actually is"; it only gets set to
-  // something else when this month has no statements imported, since landing on
-  // a month with nothing in it would show a budget nobody has spent against.
   const [planMonth, setPlanMonth] = useState('');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  // Bumped on every reload so panels that fetch their own data — Today,
+  // Progress, Projections — refetch after an import instead of showing what
+  // they loaded when they mounted.
+  const [version, setVersion] = useState(0);
 
   // Applied during render rather than in an effect, on purpose. Charts read
   // their colours from CSS custom properties when they build, and React runs
@@ -98,12 +103,7 @@ export default function App() {
         accounts: accounts.accounts ?? [],
         categories: categories.categories ?? [],
       });
-      setMonth((m) => m || defaultMonth(summary));
-
-      const thisMonth = new Date().toISOString().slice(0, 10).slice(0, 7);
-      const liveMonth = (summary.monthly ?? [])
-        .some((m) => m.month === thisMonth && m.transactions > 0);
-      setPlanMonth((p) => p || (liveMonth ? '' : defaultMonth(summary)));
+      setVersion((v) => v + 1);
     } catch (e) {
       setError(e);
     }
@@ -132,6 +132,21 @@ export default function App() {
   const { summary, insights, recurring, accounts, categories } = data;
   const findingCount = insights?.findings?.length ?? 0;
 
+  // Your pick wins while the month still exists — clearing a card or an account
+  // can remove it — and otherwise both fall back to the data, so an import that
+  // brings in newer months moves them without a reload.
+  const autoMonth = defaultMonth(summary);
+  const shownMonth = (month && summary.months?.includes(month)) ? month : autoMonth;
+
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const thisMonthHasData = (summary.monthly ?? [])
+    .some((m) => m.month === thisMonth && m.transactions > 0);
+  // Empty means "whatever month it actually is", which is what the plan wants
+  // as soon as there is anything to measure this month against. Until then it
+  // falls back to the last month with spending, because a safe-to-spend figure
+  // for a month holding no transactions is a budget nobody has spent against.
+  const shownPlanMonth = planMonth || (thisMonthHasData ? '' : autoMonth);
+
   if (summary.empty && tab !== 'import') {
     return (
       <Shell theme={theme} setTheme={setTheme} tab={tab} onTab={setTab}
@@ -155,23 +170,29 @@ export default function App() {
     <Shell
       theme={theme} setTheme={setTheme} tab={tab} onTab={setTab}
       findingCount={findingCount}
-      months={summary.months} month={month} onMonth={setMonth}
+      months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(tab)}
     >
-      {tab === 'today' && <TodayPanel month={planMonth} onMonth={setPlanMonth} />}
+      {tab === 'today' && (
+        <TodayPanel month={shownPlanMonth} onMonth={setPlanMonth} version={version} />
+      )}
       {tab === 'overview' && (
         <OverviewPanel summary={summary} insights={insights} theme={theme}
-                       month={month} onMonth={setMonth} />
+                       month={shownMonth} onMonth={setMonth} version={version} />
       )}
       {tab === 'savings' && <SavingsPanel insights={insights} onRefresh={load} />}
-      {tab === 'projections' && <ProjectionsPanel insights={insights} />}
-      {tab === 'progress' && <ProgressPanel month={planMonth} />}
+      {tab === 'projections' && (
+        <ProjectionsPanel insights={insights} version={version} />
+      )}
+      {tab === 'progress' && <ProgressPanel month={shownPlanMonth} version={version} />}
       {tab === 'subscriptions' && <SubscriptionsPanel recurring={recurring} />}
       {tab === 'transactions' && (
         <TransactionsPanel summary={summary} categories={categories}
                            accounts={accounts} onChanged={load} />
       )}
-      {tab === 'budgets' && <BudgetsPanel month={month} summary={summary} />}
+      {tab === 'budgets' && (
+        <BudgetsPanel month={shownMonth} summary={summary} version={version} />
+      )}
       {tab === 'trips' && <TripsPanel onChanged={load} />}
       {tab === 'import' && <ImportPanel accounts={accounts} onImported={load} />}
     </Shell>

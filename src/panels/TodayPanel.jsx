@@ -13,11 +13,14 @@ import {
  * what today has already used. A safe-to-spend figure you can't reconstruct is
  * indistinguishable from one that was made up.
  */
-export default function TodayPanel({ month, onMonth }) {
+export default function TodayPanel({ month, onMonth, version = 0 }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
+  // `version` is in the dependency list on purpose: it changes when a statement
+  // is imported, and the plan has to be recomputed against the new ledger even
+  // though the month it is showing hasn't changed.
   const load = useCallback(async () => {
     setError(null);
     try {
@@ -25,7 +28,7 @@ export default function TodayPanel({ month, onMonth }) {
     } catch (e) {
       setError(e);
     }
-  }, [month]);
+  }, [month, version]);
 
   useEffect(() => { load(); }, [load]);
 

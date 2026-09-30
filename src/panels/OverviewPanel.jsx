@@ -4,7 +4,8 @@ import { BarRow, Card, Legend, Notice, Tile } from '../components/ui.jsx';
 import { dailySpendConfig, monthlyTrendConfig } from '../charts.js';
 import { cssVar, getBreakdown, money, monthLabel, pct } from '../api.js';
 
-export default function OverviewPanel({ summary, insights, theme, month, onMonth }) {
+export default function OverviewPanel({ summary, insights, theme, month, onMonth,
+                                        version = 0 }) {
   const [showTable, setShowTable] = useState(false);
 
   const monthly = summary.monthly ?? [];
@@ -23,7 +24,9 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
       .then((d) => { if (!cancelled) setBreakdown(d); })
       .catch(() => { if (!cancelled) setBreakdown(null); });
     return () => { cancelled = true; };
-  }, [month]);
+    // `version` changes on an import, so the breakdown follows the new ledger
+    // even when the selected month itself hasn't moved.
+  }, [month, version]);
 
   const categories = (breakdown?.categories ?? []).filter((c) => c.amount > 0);
   const maxCategory = categories[0]?.amount ?? 0;

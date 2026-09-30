@@ -12,7 +12,7 @@ import { projectionConfig } from '../charts.js';
  * arithmetic on a trend, and the honest part is saying how thin that trend is,
  * so the months behind the numbers travel with them.
  */
-export default function ProjectionsPanel({ insights }) {
+export default function ProjectionsPanel({ insights, version = 0 }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [target, setTarget] = useState('');
@@ -28,7 +28,8 @@ export default function ProjectionsPanel({ insights }) {
     } catch (e) {
       setError(e);
     }
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version]);   // an import changes the spend history the projection rests on
 
   useEffect(() => { load(target); }, [load, target]);
 
