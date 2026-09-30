@@ -99,7 +99,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
         {!data ? <Loading what="transactions" /> : (
           <>
             <div className="table-wrap">
-              <table>
+              <table className="stacked">
                 <thead>
                   <tr>
                     <th>Date</th>
