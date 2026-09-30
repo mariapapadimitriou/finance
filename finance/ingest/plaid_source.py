@@ -181,8 +181,25 @@ def map_plaid_transaction(item: dict, accounts: dict | None = None) -> Transacti
         account_name=name,
         currency=item.get("iso_currency_code") or "USD",
         source="plaid",
-        raw={"issuer_category": detail, "plaid_id": item.get("transaction_id", "")},
+        # The account's type is kept on the row because it is the only place it
+        # survives: Plaid reports it alongside the transactions, not with them,
+        # and after the sync there is nothing left to ask.
+        raw={"issuer_category": detail,
+             "plaid_id": item.get("transaction_id", ""),
+             "account_type": acct.get("type", ""),
+             "account_subtype": acct.get("subtype", "")},
     )
+
+
+# Linking a bank hands over every account it holds — chequing, savings, an
+# investment account, a mortgage. This app is about card spending, and a
+# chequing account's transfers would double-count what the card already
+# records, so only credit accounts are kept by default.
+CREDIT_TYPES = ("credit",)
+
+
+def is_credit_account(account: dict) -> bool:
+    return str(account.get("type", "")).lower() in CREDIT_TYPES
 
 
 def group_plaid_transactions(items: list[dict], accounts: dict) -> list[IngestResult]:

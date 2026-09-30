@@ -37,6 +37,9 @@ export const getSummary      = () => req('/api/summary');
 export const getInsights     = () => req('/api/insights');
 export const getRecurring    = () => req('/api/recurring');
 export const getAccounts     = () => req('/api/accounts');
+export const deleteAccount   = (id) =>
+  req(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export const getDuplicateAudit = () => req('/api/audit/duplicates');
 export const getCategories   = () => req('/api/categories');
 export const getSources      = () => req('/api/sources');
 

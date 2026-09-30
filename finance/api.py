@@ -237,7 +237,38 @@ def update_transaction(txn_id: str):
 
 @bp.get("/accounts")
 def accounts():
-    return jsonify({"accounts": store().accounts()})
+    st = store()
+    kinds = st.account_kinds()
+    rows = []
+    for a in st.accounts():
+        kind = kinds.get(a["account_id"], {})
+        rows.append({
+            **a,
+            "plaid_type": kind.get("type", ""),
+            "plaid_subtype": kind.get("subtype", ""),
+            # Only Plaid rows carry a type, so an imported statement is never
+            # mislabelled as "not a card" for want of one.
+            "is_card": kind.get("type", "credit" if a.get("source") != "plaid"
+                                else "") == "credit",
+        })
+    return jsonify({"accounts": rows})
+
+
+@bp.get("/audit/duplicates")
+def audit_duplicates():
+    """Rows that may describe the same purchase under two account ids."""
+    from . import audit
+    return jsonify(audit.report(_txns()))
+
+
+@bp.delete("/accounts/<path:account_id>")
+def delete_account(account_id: str):
+    """Remove an account and everything imported from it."""
+    st = store()
+    if not any(a["account_id"] == account_id for a in st.accounts()):
+        return jsonify({"error": "No such account."}), 404
+    removed = st.clear_transactions(account_id)
+    return jsonify({"ok": True, "removed": removed})
 
 
 @bp.delete("/transactions")

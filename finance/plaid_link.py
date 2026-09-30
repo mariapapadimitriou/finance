@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import os
 
-from .ingest.plaid_source import group_plaid_transactions
+from .ingest.plaid_source import group_plaid_transactions, is_credit_account
 from .pipeline import ingest
 
 # Canada only. Both cards here are Canadian, and a narrower country list gives
@@ -186,6 +186,21 @@ def _sync_one(store, item: dict) -> dict:
     modified_ids = [m.get("transaction_id") for m in modified if m.get("transaction_id")]
     store.delete_transactions_from(modified_ids)
 
+    # Only card accounts, unless that is turned off. A linked bank hands over
+    # everything it holds, and a chequing account's rows would double-count the
+    # card spending they settle.
+    cards_only = store.setting("plaid_cards_only", "1") != "0"
+    if cards_only:
+        keep = {aid for aid, a in accounts.items() if is_credit_account(a)}
+        skipped_accounts = sorted(
+            (a.get("official_name") or a.get("name") or aid)
+            for aid, a in accounts.items() if aid not in keep
+        )
+        added = [t for t in added if t.get("account_id") in keep]
+        modified = [t for t in modified if t.get("account_id") in keep]
+    else:
+        skipped_accounts = []
+
     imported = 0
     results = group_plaid_transactions(added + modified, accounts)
     for result in results:
@@ -200,6 +215,7 @@ def _sync_one(store, item: dict) -> dict:
         "removed": len(removed),
         "deleted": deleted,
         "imported": imported,
+        "skipped_accounts": skipped_accounts,
     }
 
 

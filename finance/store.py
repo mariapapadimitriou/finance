@@ -244,6 +244,7 @@ class Store:
                 """SELECT account_id,
                           MAX(account_name) AS account_name,
                           MAX(currency)     AS currency,
+                          MAX(source)       AS source,
                           COUNT(*) AS transactions,
                           MIN(date) AS first_date, MAX(date) AS last_date,
                           SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) AS total_spend
@@ -252,6 +253,32 @@ class Store:
                    ORDER BY total_spend DESC"""
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def account_kinds(self) -> dict[str, dict]:
+        """The Plaid account type behind each account, where one is known.
+
+        Read off the rows because that is where it was recorded — Plaid gives
+        the type alongside a sync's transactions, not with them, so once the
+        sync is over the ledger is the only copy.
+        """
+        out: dict[str, dict] = {}
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT account_id, raw FROM transactions "
+                "WHERE source = 'plaid' AND raw IS NOT NULL"
+            ).fetchall()
+        for row in rows:
+            if row["account_id"] in out:
+                continue
+            try:
+                raw = json.loads(row["raw"] or "{}")
+            except (ValueError, TypeError):
+                continue
+            kind = raw.get("account_type")
+            if kind:
+                out[row["account_id"]] = {
+                    "type": kind, "subtype": raw.get("account_subtype", "")}
+        return out
 
     def clear_transactions(self, account_id: str | None = None) -> int:
         # Import history goes with the transactions it describes; left behind,
