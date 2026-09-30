@@ -10,6 +10,7 @@ import BudgetsPanel from './panels/BudgetsPanel.jsx';
 import TripsPanel from './panels/TripsPanel.jsx';
 import ImportPanel from './panels/ImportPanel.jsx';
 import BanksPanel from './panels/BanksPanel.jsx';
+import AccountsPanel from './panels/AccountsPanel.jsx';
 import Login from './Login.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
@@ -51,6 +52,8 @@ const TABS = [
     icon: 'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8z' },
   { key: 'trips', label: 'Trips', hint: 'Date ranges whose spending counts as Travel',
     icon: 'M3 11l18-6-6 18-2.5-7.5L5 13z' },
+  { key: 'accounts', label: 'Accounts', hint: 'Every card in the ledger, and anything counted twice',
+    icon: 'M3 10h18M3 10a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2M3 10v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8M7 15h4' },
   { key: 'banks', label: 'Banks', hint: 'Connect a card through Plaid and let it sync itself',
     icon: 'M3 21h18M4 10h16M5 10V7l7-4 7 4v3M7 10v11M12 10v11M17 10v11' },
   { key: 'import', label: 'Import', hint: 'Add statements from any card',
@@ -232,6 +235,7 @@ export default function App() {
         <BudgetsPanel month={shownMonth} summary={summary} version={version} />
       )}
       {tab === 'trips' && <TripsPanel onChanged={load} />}
+      {tab === 'accounts' && <AccountsPanel onChanged={load} />}
       {tab === 'banks' && <BanksPanel onChanged={load} />}
       {tab === 'import' && <ImportPanel accounts={accounts} onImported={load} />}
     </Shell>

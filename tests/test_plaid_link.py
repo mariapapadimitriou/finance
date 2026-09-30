@@ -35,7 +35,19 @@ def txn(tid, date, name, amount, account="acc1"):
             "personal_finance_category": {"primary": "FOOD_AND_DRINK"}}
 
 
-ACCOUNTS = [{"account_id": "acc1", "name": "TD Cash Back Visa", "mask": "4321"}]
+ACCOUNTS = [{"account_id": "acc1", "name": "TD Cash Back Visa", "mask": "4321",
+             "type": "credit", "subtype": "credit card"}]
+
+# What linking a bank actually hands over: the card, plus everything else the
+# institution holds.
+MIXED_ACCOUNTS = ACCOUNTS + [
+    {"account_id": "chq", "name": "TD Everyday Chequing", "mask": "1111",
+     "type": "depository", "subtype": "checking"},
+    {"account_id": "sav", "name": "TD Savings", "mask": "2222",
+     "type": "depository", "subtype": "savings"},
+    {"account_id": "inv", "name": "Wealthsimple TFSA", "mask": "3333",
+     "type": "investment", "subtype": "tfsa"},
+]
 
 
 def _as_dict(request):
@@ -289,6 +301,71 @@ class TestPlaidApi:
 
     def test_unlinking_something_that_is_not_linked_is_a_404(self, client):
         assert client.delete("/api/plaid/items/nope").status_code == 404
+
+
+class TestOnlyCreditCards:
+    """Linking a bank hands over chequing, savings and investment accounts too.
+
+    This app is about card spending. A chequing account records the payment
+    that settles the card, so importing both counts the same money twice — and
+    an investment account's activity is not spending at all.
+    """
+
+    def _pages(self, fake):
+        return fake([{
+            "accounts": MIXED_ACCOUNTS,
+            "added": [
+                txn("t1", "2026-01-05", "MOS MOS COFFEE", 6.40, account="acc1"),
+                txn("t2", "2026-01-06", "PAYMENT - THANK YOU", 500.00, account="chq"),
+                txn("t3", "2026-01-07", "INTERAC E-TRANSFER", 80.00, account="sav"),
+                txn("t4", "2026-01-08", "DIVIDEND", 12.00, account="inv"),
+            ],
+            "next_cursor": "c1",
+        }])
+
+    def test_only_the_card_is_imported(self, store, fake):
+        self._pages(fake)
+        store.add_plaid_item("item-1", "tok", "TD")
+        out = plaid_link.sync_all(store)
+        assert out["imported"] == 1
+        assert {t.account_id for t in store.all_transactions()} == {"acc1"}
+
+    def test_the_skipped_accounts_are_named(self, store, fake):
+        """Silently dropping three of four accounts would look like a bug."""
+        self._pages(fake)
+        store.add_plaid_item("item-1", "tok", "TD")
+        skipped = plaid_link.sync_all(store)["items"][0]["skipped_accounts"]
+        assert "TD Everyday Chequing" in skipped
+        assert "Wealthsimple TFSA" in skipped
+        assert "TD Cash Back Visa" not in skipped
+
+    def test_turning_the_filter_off_imports_everything(self, store, fake):
+        self._pages(fake)
+        store.set_setting("plaid_cards_only", "0")
+        store.add_plaid_item("item-1", "tok", "TD")
+        assert plaid_link.sync_all(store)["imported"] == 4
+
+    def test_the_account_type_is_recorded_on_the_row(self, store, fake):
+        """Plaid reports the type beside the transactions, not on them; after
+        the sync there is nothing left to ask."""
+        self._pages(fake)
+        store.add_plaid_item("item-1", "tok", "TD")
+        plaid_link.sync_all(store)
+        row = store.all_transactions()[0]
+        assert row.raw["account_type"] == "credit"
+        assert row.raw["account_subtype"] == "credit card"
+
+    @pytest.mark.parametrize("acct,expected", [
+        ({"type": "credit"}, True),
+        ({"type": "Credit"}, True),
+        ({"type": "depository"}, False),
+        ({"type": "investment"}, False),
+        ({"type": "loan"}, False),
+        ({}, False),
+    ])
+    def test_what_counts_as_a_card(self, acct, expected):
+        from finance.ingest.plaid_source import is_credit_account
+        assert is_credit_account(acct) is expected
 
 
 # ── Configuration mistakes ───────────────────────────────────────────────────

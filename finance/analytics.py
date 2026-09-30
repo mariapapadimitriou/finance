@@ -293,16 +293,41 @@ def fixed_vs_discretionary(transactions: list[Transaction], month: str | None = 
 
 
 def coverage_gaps(transactions: list[Transaction]) -> list[str]:
-    """Months inside the data's range that contain no transactions at all.
+    """Months where a card that was being tracked has no transactions.
 
     Statements are often imported with holes in them — you download a few, not
     every one. Those holes quietly corrupt anything that reasons about months:
     a monthly average divides by months you never imported, and a subscription
     whose charges straddle a gap looks quarterly rather than monthly. Callers
     surface this so the numbers can be read with it in mind.
+
+    Measured per account, then combined, which matters as soon as there is
+    more than one card. Taken across the whole ledger, a card closed last year
+    and a card connected last week make every month between them look missing
+    — when in truth nothing was being tracked then, and there is no statement
+    to go and find. A month is a gap only for a card that has data on both
+    sides of it.
     """
-    present = {t.month for t in transactions}
-    return [m for m in month_range(transactions) if m not in present]
+    by_account: dict[str, set[str]] = {}
+    for t in transactions:
+        by_account.setdefault(t.account_id, set()).add(t.month)
+
+    gaps: set[str] = set()
+    for months in by_account.values():
+        gaps.update(m for m in _months_between(min(months), max(months))
+                    if m not in months)
+    return sorted(gaps)
+
+
+def _months_between(first: str, last: str) -> list[str]:
+    out, y, m = [], int(first[:4]), int(first[5:7])
+    ly, lm = int(last[:4]), int(last[5:7])
+    while (y, m) <= (ly, lm):
+        out.append(f"{y:04d}-{m:02d}")
+        m += 1
+        if m > 12:
+            y, m = y + 1, 1
+    return out
 
 
 def summary(transactions: list[Transaction], budgets: dict[str, float] | None = None) -> dict:

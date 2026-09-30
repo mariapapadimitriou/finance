@@ -145,12 +145,41 @@ class TestCreditsAreNotSpending:
 
 class TestCoverageGaps:
     def test_missing_months_are_reported(self, parsed):
+        """A hole in one card's own history: statements either side, none
+        for the months between."""
         from finance.models import Transaction
         rows = list(parsed.transactions)
+        account = rows[0].account_id
         rows.append(Transaction(date="2025-06-04", description="NUTBAR",
-                                amount=12.0, account_id="a"))
+                                amount=12.0, account_id=account))
         apply_categories(rows)
         assert coverage_gaps(rows) == ["2025-04", "2025-05"]
+
+    def test_a_closed_card_and_a_new_one_leave_no_gap_between_them(self, parsed):
+        """The months between a card you stopped using and a card you started
+        are not missing statements — nothing was being tracked then, and
+        there is nothing to go and find."""
+        from finance.models import Transaction
+        rows = list(parsed.transactions)          # a card ending early 2025
+        rows.append(Transaction(date="2026-09-04", description="TIM HORTONS",
+                                amount=4.85, account_id="td_card"))
+        apply_categories(rows)
+        assert coverage_gaps(rows) == []
+
+    def test_each_card_is_measured_against_its_own_range(self, parsed):
+        from finance.models import Transaction
+        rows = [
+            Transaction(date="2025-01-10", description="A", amount=10.0,
+                        account_id="card1"),
+            Transaction(date="2025-03-10", description="B", amount=10.0,
+                        account_id="card1"),          # card1 is missing Feb
+            Transaction(date="2026-05-10", description="C", amount=10.0,
+                        account_id="card2"),
+            Transaction(date="2026-07-10", description="D", amount=10.0,
+                        account_id="card2"),          # card2 is missing Jun
+        ]
+        apply_categories(rows)
+        assert coverage_gaps(rows) == ["2025-02", "2026-06"]
 
     def test_gaps_are_excluded_from_the_monthly_average(self, parsed):
         """A month never imported is not a month of zero spending."""

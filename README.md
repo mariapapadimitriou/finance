@@ -274,6 +274,21 @@ is stable across serverless instances without a second variable to keep in
 sync — and changing your password signs every existing session out, which is
 what you would want it to do.
 
+### Only the cards
+
+Linking a bank hands over everything it holds — chequing, savings, an
+investment account. Syncing keeps only credit accounts, because a chequing
+account records the payment that settles the card and importing both counts
+the same money twice. Set `plaid_cards_only` to `0` to take everything.
+
+The **Accounts** tab lists every account in the ledger with its kind, where it
+came from and what it holds, and removes the ones that shouldn't be there. It
+also reports possible overlap: the same amount within five days under two
+different account ids, which is what a card imported by statement *and* later
+connected through Plaid looks like. The importer never merges across accounts
+— two $12 lunches on two cards are two lunches — so these are reported and you
+decide.
+
 ### Connecting a bank
 
 Plaid Link handles the bank login; Spendie never sees your credentials. What it
@@ -346,6 +361,7 @@ finance/
   auth.py                   The single password in front of everything
   secrets_box.py            Encrypts Plaid tokens before they are stored
   plaid_link.py             Linking a bank, and the incremental sync
+  audit.py                  Charges that may be in the ledger twice
   api.py                    HTTP routes
 src/                        React UI (Vite)
   components/Logo.jsx       The Spendie mark, inline SVG
@@ -354,7 +370,7 @@ seed_data/
   transactions.json         The committed ledger — public by design
   export.py                 Write it from the local ledger, and load it back
 sample_data/generate.py     Realistic sample statements in three issuer formats
-tests/                      345 tests
+tests/                      379 tests
 ```
 
 ## Tests
