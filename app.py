@@ -24,6 +24,7 @@ from flask import Flask, abort, jsonify, send_from_directory
 from flask_cors import CORS
 
 from finance.api import bp
+from finance.db import database_url, storage_mode  # noqa: F401
 from finance.store import DEFAULT_DB, Store
 
 PORT = int(os.environ.get("PORT", 5050))
@@ -44,18 +45,19 @@ def _is_hosted() -> bool:
 
 
 def _hosted_db_path() -> str | None:
-    """On a serverless host, the only writable directory is /tmp.
+    """On a serverless host without a database, the only writable dir is /tmp.
 
     Returns None when running normally, so the local SQLite file is used.
 
-    Worth being blunt about what this implies: /tmp belongs to one function
-    instance and is discarded when that instance is recycled. The ledger that
-    ships in seed_data is reloaded on every cold start, so the deployment
-    always shows the same spending — but anything *added* there (an upload, a
-    budget, a recategorization) lives only as long as the instance that
-    received it. Making edits durable means moving `store.py` onto a hosted
-    database.
+    /tmp belongs to one function instance and is discarded when that instance
+    is recycled, so anything added there — an upload, a budget, a category you
+    corrected — lives only as long as that instance, and a second request
+    served by a different instance never sees it at all. Set `DATABASE_URL` to
+    a hosted Postgres and none of that applies: `finance/db.py` takes over, the
+    path below is ignored, and edits persist and are shared across instances.
     """
+    if database_url():
+        return None  # Postgres is in charge; the path is unused
     if os.environ.get("LEDGER_DB"):
         return None  # explicit configuration wins
     if _is_hosted():
@@ -75,9 +77,10 @@ def create_app(db_path: str | None = None) -> Flask:
     app.config["STORE"] = Store(db_path or _hosted_db_path() or DEFAULT_DB)
     app.register_blueprint(bp)
 
-    # A hosted instance boots with an empty /tmp, so the committed ledger is
-    # loaded into it. Without this every cold start would show an empty
-    # dashboard, since nothing uploaded to a serverless instance outlives it.
+    # A hosted instance boots with an empty database, so the committed ledger is
+    # loaded into it. On /tmp that happens on every cold start; on Postgres it
+    # happens once, because `seed_ledger_if_empty` does nothing to a store that
+    # already holds transactions — which is what lets an upload there survive.
     if _is_hosted() or os.environ.get("SEED_LEDGER") == "1":
         seed_ledger_if_empty(app.config["STORE"])
     elif os.environ.get("SEED_DEMO") == "1":
@@ -133,7 +136,8 @@ def seed_ledger_if_empty(store: Store) -> int:
     return load(store)
 
 
-# Imported by WSGI hosts. Safe at import time: it only opens a SQLite file.
+# Imported by WSGI hosts. Safe at import time: it opens the ledger and,
+# on a hosted instance, seeds an empty one.
 app = create_app()
 
 

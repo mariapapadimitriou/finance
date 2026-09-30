@@ -26,6 +26,7 @@ export const getRecurring    = () => req('/api/recurring');
 export const getAccounts     = () => req('/api/accounts');
 export const getCategories   = () => req('/api/categories');
 export const getSources      = () => req('/api/sources');
+export const getHealth       = () => req('/api/health');
 export const getImports      = () => req('/api/imports');
 export const getTrips        = () => req('/api/trips');
 export const addTrip         = (trip) => json('POST', '/api/trips', trip);

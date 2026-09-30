@@ -1,17 +1,23 @@
-"""SQLite persistence.
+"""Ledger persistence.
 
-Everything lives in one local file (default `ledger.db` beside the code, or
-wherever `LEDGER_DB` points). Your transaction history never leaves the machine
-unless you explicitly ask for the optional Claude narrative.
+Locally everything lives in one SQLite file (default `ledger.db` beside the
+code, or wherever `LEDGER_DB` points) and your transaction history never leaves
+the machine unless you explicitly ask for the optional Claude narrative.
+
+Set `DATABASE_URL` to a Postgres instance and the same store runs against that
+instead — which is what a serverless deployment needs, since its disk is
+discarded when the function instance is recycled. Every query below is written
+once, in SQLite's dialect; `db.py` translates the few constructs Postgres
+spells differently.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import sqlite3
 from contextlib import contextmanager
 
+from . import db
 from .models import Transaction
 
 DEFAULT_DB = os.environ.get(
@@ -103,19 +109,21 @@ CREATE TABLE IF NOT EXISTS dismissed_insights (
 
 
 class Store:
-    def __init__(self, path: str = DEFAULT_DB):
+    def __init__(self, path: str = DEFAULT_DB, url: str | None = None):
         self.path = path
+        # Resolved once, at construction, so a Store keeps talking to the
+        # database it was opened against even if the environment changes.
+        self.url = url if url is not None else db.database_url()
         self._init()
 
     @contextmanager
     def conn(self):
-        c = sqlite3.connect(self.path)
-        c.row_factory = sqlite3.Row
-        try:
+        with db.connect(self.path, self.url) as c:
             yield c
-            c.commit()
-        finally:
-            c.close()
+
+    @property
+    def is_postgres(self) -> bool:
+        return bool(self.url)
 
     def _init(self) -> None:
         with self.conn() as c:
@@ -204,7 +212,15 @@ class Store:
     def accounts(self) -> list[dict]:
         with self.conn() as c:
             rows = c.execute(
-                """SELECT account_id, account_name, currency,
+                # account_name and currency are aggregated rather than
+                # grouped on: SQLite would happily return a bare column here and
+                # pick a row at random, but Postgres rejects it outright, and
+                # adding them to GROUP BY would split one card into several rows
+                # if a name were ever re-exported differently. One row per card
+                # is what this is for.
+                """SELECT account_id,
+                          MAX(account_name) AS account_name,
+                          MAX(currency)     AS currency,
                           COUNT(*) AS transactions,
                           MIN(date) AS first_date, MAX(date) AS last_date,
                           SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) AS total_spend
@@ -379,6 +395,17 @@ class Store:
 
     def add_trip(self, name: str, start_date: str, end_date: str) -> int:
         with self.conn() as c:
+            # The only query in the store that needs the new row's id back, and
+            # the only one that can't be written once for both databases:
+            # Postgres has no lastrowid. RETURNING would work on both, but only
+            # on SQLite 3.35 and newer, and this stays a local-first app.
+            if self.is_postgres:
+                cur = c.execute(
+                    "INSERT INTO trips (name, start_date, end_date) "
+                    "VALUES (?,?,?) RETURNING id",
+                    (name.strip(), start_date, end_date),
+                )
+                return cur.fetchone()["id"]
             cur = c.execute(
                 "INSERT INTO trips (name, start_date, end_date) VALUES (?,?,?)",
                 (name.strip(), start_date, end_date),
