@@ -231,6 +231,28 @@ instance sees the same data. `/api/health` reports which mode is live:
 Locally nothing changes: with no `DATABASE_URL` set the ledger is still a SQLite
 file that never leaves the machine.
 
+### On a phone
+
+Below 860px the sidebar becomes a tab bar fixed to the bottom of the screen,
+where a thumb can reach it, and the icons come back because at that size they
+are what you navigate by. The ledger stops being a five-column table and
+becomes two lines a row — what it was and what it cost, then the details
+underneath — while staying a real table, so its headers still reach a screen
+reader.
+
+Three iOS specifics the layout accounts for. Safari zooms the page when you
+focus an input whose text is under 16px, so form controls are exactly 16px
+there. `100vh` is the height with the browser chrome hidden, which leaves a
+strip you can scroll to but never see, so the shell uses `100dvh`. And
+`viewport-fit=cover` plus `env(safe-area-inset-bottom)` keeps the tab bar clear
+of the home indicator.
+
+The bug worth naming, because it is the one that makes a layout "not
+responsive" while every media query looks right: a flex or grid item defaults
+to `min-width: auto` and refuses to shrink below its content. A row of eleven
+tabs with `overflow-x: auto` therefore forced the entire page three times wider
+than the phone. `min-width: 0` on the strip is what fixes it.
+
 ### Locking the deployment
 
 Everything — the UI and every API route — sits behind one password. Not a user

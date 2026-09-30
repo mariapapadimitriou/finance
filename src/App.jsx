@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import OverviewPanel from './panels/OverviewPanel.jsx';
 import TodayPanel from './panels/TodayPanel.jsx';
 import ProgressPanel from './panels/ProgressPanel.jsx';
@@ -242,6 +242,16 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
                  months = [], month, onMonth, showMonth = false, onSignOut,
                  children }) {
   const current = TABS.find((t) => t.key === tab);
+  const navRef = useRef(null);
+
+  // On a phone the nav is a scrolling strip, and eleven destinations don't
+  // fit. Without this, opening the app on a tab that sits off the right edge
+  // shows a bar with nothing selected in it.
+  useEffect(() => {
+    const selected = navRef.current?.querySelector('[aria-selected="true"]');
+    selected?.scrollIntoView({ inline: 'center', block: 'nearest',
+                               behavior: 'smooth' });
+  }, [tab]);
 
   return (
     <div className="app">
@@ -252,7 +262,8 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
         </div>
 
         {onTab && (
-          <nav className="nav" role="tablist" aria-orientation="vertical">
+          <nav className="nav" role="tablist" aria-orientation="vertical"
+               ref={navRef}>
             {TABS.map((t) => (
               <button
                 key={t.key}

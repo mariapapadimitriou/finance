@@ -147,13 +147,16 @@ a { color: var(--brand); text-underline-offset: 3px; }
 .app {
   display: grid;
   grid-template-columns: var(--sidebar) minmax(0, 1fr);
-  min-height: 100vh;
+  /* dvh rather than vh: on iOS, vh is the height with the browser chrome
+     hidden, so a 100vh layout is taller than the visible page and leaves a
+     strip you can scroll to but never see. */
+  min-height: 100dvh;
 }
 
 .sidebar {
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -171,7 +174,7 @@ a { color: var(--brand); text-underline-offset: 3px; }
 }
 .brand .name { font-weight: 650; font-size: 1.02rem; letter-spacing: -0.015em; }
 
-.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .nav button {
   background: transparent;
   border: none;
@@ -233,33 +236,121 @@ a { color: var(--brand); text-underline-offset: 3px; }
 
 main { max-width: 1180px; margin: 0 auto; padding: 4px 32px 80px; }
 
-@media (max-width: 920px) {
-  .app { grid-template-columns: 1fr; }
+/* ── Phone layout ────────────────────────────────────────────────────────
+ *
+ * Below 860px the sidebar becomes a tab bar fixed to the bottom of the
+ * screen, where a thumb can actually reach it. With eleven destinations it
+ * scrolls horizontally, so the icons come back — at a glance they are what
+ * you navigate by, and the label underneath confirms it.
+ *
+ * `min-width: 0` on the scrolling strip is the load-bearing line. A flex or
+ * grid item defaults to `min-width: auto`, meaning it refuses to shrink below
+ * its content; a row of eleven tabs then forces the whole page wider than the
+ * phone, and every screen scrolls sideways. Same reason `.app` and `.content`
+ * carry `minmax(0, 1fr)` and `min-width: 0`.
+ *
+ * Safe-area insets keep the bar clear of the home indicator, paired with
+ * viewport-fit=cover in the document head.
+ */
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+
   .sidebar {
-    position: sticky;
-    z-index: 30;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    top: auto;
+    z-index: 40;
     height: auto;
     flex-direction: row;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
+    align-items: stretch;
+    gap: 0;
+    padding: 0;
     border-right: none;
-    border-bottom: 1px solid var(--border);
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    backdrop-filter: blur(14px);
+    padding-bottom: env(safe-area-inset-bottom, 0);
   }
-  .brand { padding: 0; }
+
+  /* The wordmark belongs at the top of the page on a phone, not in the bar. */
+  .sidebar .brand { display: none; }
+
   .nav {
     flex-direction: row;
     overflow-x: auto;
+    overscroll-behavior-x: contain;
     scrollbar-width: none;
-    flex: 1;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 0;
+    padding: 6px 4px 4px;
   }
   .nav::-webkit-scrollbar { display: none; }
-  .nav button svg { display: none; }
-  .sidebar-foot { margin: 0; }
+
+  .nav button {
+    /* The count badge below is absolutely positioned; without this it
+       anchors to the nearest positioned ancestor instead of its own tab and
+       floats over whichever button happens to be there. */
+    position: relative;
+    flex: 0 0 auto;
+    scroll-snap-align: center;
+    flex-direction: column;
+    gap: 3px;
+    /* 56px clears Apple's 44pt minimum touch target with room to spare. */
+    min-width: 62px;
+    min-height: 52px;
+    padding: 6px 8px;
+    font-size: .68rem;
+    font-weight: 560;
+    text-align: center;
+    border-radius: var(--r-sm);
+    white-space: nowrap;
+  }
+  .nav button svg { display: block; width: 21px; height: 21px; opacity: .85; }
+  .nav button[aria-selected="true"] { background: transparent; color: var(--brand); }
+  .nav button[aria-selected="true"] svg { opacity: 1; }
+  .nav .count {
+    position: absolute;
+    top: 2px;
+    left: 50%;
+    transform: translateX(4px);
+    margin: 0;
+    background: var(--brand);
+    color: var(--on-brand);
+    font-size: .62rem;
+    padding: 0 5px;
+    line-height: 1.5;
+  }
+
+  .sidebar-foot {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    border-left: 1px solid var(--border);
+    padding: 6px 4px 4px;
+    flex: none;
+  }
+  .sidebar-foot .btn {
+    width: auto;
+    min-width: 46px;
+    min-height: 52px;
+    flex-direction: column;
+    justify-content: center;
+    padding: 6px;
+  }
   .sidebar-foot .btn .label { display: none; }
-  .topbar { position: static; }
-  .topbar-inner { padding: 18px 16px 12px; }
-  main { padding: 4px 16px 64px; }
+
+  .content { min-width: 0; }
+  .topbar { position: sticky; top: 0; }
+  .topbar-inner { padding: 16px 16px 12px; }
+  .topbar h1 { font-size: 1.28rem; }
+
+  /* Room for the fixed bar, plus the home indicator below it. */
+  main {
+    padding: 4px 16px calc(96px + env(safe-area-inset-bottom, 0));
+  }
 }
 
 /* ── Controls ────────────────────────────────────────────────────────────── */
@@ -489,7 +580,7 @@ td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top:
 /* ── The password gate ───────────────────────────────────────────────────── */
 
 .gate {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
   padding: 24px;
@@ -683,6 +774,129 @@ details.evidence[open] summary::before { transform: rotate(90deg); }
 
 .steps { margin: 12px 0 0; padding-left: 20px; color: var(--ink-2); font-size: .88rem; }
 .steps li { margin: 6px 0; }
+
+/* ── Phone: content ──────────────────────────────────────────────────────
+ *
+ * Mostly about two things iOS does that desktop doesn't. Safari zooms the
+ * page when you focus an input whose text is under 16px, which leaves you
+ * scrolled sideways on a layout that was fine a moment ago — so form controls
+ * go to 16px here regardless of the surrounding scale. And a finger is not a
+ * cursor, so anything tappable gets real height.
+ */
+@media (max-width: 640px) {
+  select, input[type="text"], input[type="search"], input[type="number"],
+  input[type="date"], input[type="password"] {
+    /* 16px exactly: below it Safari zooms on focus. */
+    font-size: 16px;
+    min-height: 44px;
+    width: 100%;
+  }
+  .controls { gap: 8px; }
+  /* Controls stack rather than wrapping into orphaned half-rows. */
+  .controls > input, .controls > select, .controls > .btn { flex: 1 1 100%; }
+  .controls label { flex: 1 1 100%; margin-bottom: -2px; }
+
+  .btn { min-height: 44px; padding: 10px 16px; }
+  .btn.quiet { min-height: 40px; }
+
+  .card { padding: 16px; border-radius: var(--r); }
+  .card-head { flex-direction: column; align-items: flex-start; gap: 10px; }
+
+  h1 { font-size: 1.28rem; }
+  .safe .figure { font-size: 2.3rem; }
+  .hero .figure { font-size: 2.2rem; }
+  .streak { text-align: left; }
+
+  /* The safe-to-spend sum reads as a column on a narrow screen; laid out
+     sideways it either overflows or shrinks past legibility. The operators
+     stay, because the arithmetic is the point of showing it at all. */
+  .sum { flex-direction: column; align-items: stretch; gap: 8px; }
+  .sum .op { text-align: center; line-height: 1; }
+  .sum .term { min-width: 0; }
+  .sum .term .n { max-width: none; }
+
+  .figure-cell .fv { font-size: 1.35rem; }
+
+  .option { flex-direction: column; align-items: stretch; gap: 10px; }
+  .option .btn { width: 100%; justify-content: center; }
+
+  .bucket { grid-template-columns: 1fr auto; row-gap: 4px; }
+  .bucket .btn { grid-column: 2; }
+
+  .badges { grid-template-columns: 1fr; }
+
+  /* Tables scroll inside their card instead of widening the page. The
+     negative margin lets a row reach the card edge so the scroll feels like
+     the table rather than a box inside it. */
+  .table-wrap { margin: 0 -16px; padding: 0 16px; }
+  table { font-size: .84rem; }
+  th, td { white-space: nowrap; }
+  td.merchant { white-space: normal; min-width: 150px; }
+
+  /* The ledger, on a phone.
+   *
+   * Five columns in 393px is a grid of abbreviations. The same row reads
+   * fine as two lines — what it was and what it cost, then the details
+   * underneath — so the table keeps its markup (still a table, still
+   * navigable by a screen reader with its headers) and only the layout
+   * changes. Order is set explicitly because the visual order stops
+   * matching the column order.
+   */
+  table.stacked thead { display: none; }
+  table.stacked tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 3px 10px;
+    padding: 12px 2px;
+    border-top: 1px solid var(--border);
+  }
+  table.stacked tbody tr:first-child { border-top: none; }
+  table.stacked td { border: none; padding: 0; white-space: normal; }
+
+  /* Merchant and amount are sized to fill the first line between them, which
+     is what pushes the date, category and card onto the second. Letting them
+     merely wrap put the date beside the amount whenever it happened to fit —
+     two numbers competing for the same corner. */
+  table.stacked td:nth-child(2) { order: 1; flex: 1 1 55%; min-width: 0; }
+  table.stacked td:nth-child(5) {
+    order: 2; flex: 1 1 0; text-align: right;
+    font-weight: 680; font-size: .96rem;
+  }
+  table.stacked td:nth-child(1) { order: 3; font-size: .8rem; }
+  table.stacked td:nth-child(3) { order: 4; }
+  table.stacked td:nth-child(4) { order: 5; font-size: .78rem; }
+  table.stacked td:nth-child(6) { order: 6; margin-left: auto; }
+
+  /* One line of raw descriptor, not three. The merchant name above it is the
+     part you read; this is here to disambiguate, and it can be tapped open on
+     a wider screen if it matters. */
+  table.stacked td .desc {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* The category is a button; it needs to read as one at a glance here,
+     where there is no column header explaining the row. */
+  table.stacked td:nth-child(3) .btn.quiet {
+    min-height: 0;
+    padding: 2px 8px;
+    font-size: .76rem;
+    background: var(--surface-2);
+    border-radius: 999px;
+  }
+
+  .day-month .days { gap: 3px; }
+  .day { width: 13px; height: 13px; }
+
+  .legend { gap: 12px; font-size: .8rem; }
+  .gate-card { max-width: none; }
+
+  /* A chart shorter than this is unreadable; taller pushes everything else
+     off the first screen. */
+  .chart { height: 220px; }
+}
 
 /* ── Misc ────────────────────────────────────────────────────────────────── */
 
