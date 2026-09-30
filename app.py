@@ -227,12 +227,19 @@ def seed_demo_if_empty(store: Store) -> int:
 
 
 def seed_ledger_if_empty(store: Store) -> int:
-    """Load the committed ledger into an empty store.
+    """Load the committed ledger into an empty store, if there is one.
 
     This is what makes a hosted deployment show real spending rather than an
-    empty state. Everything in seed_data/transactions.json is public by design;
-    see that package's docstring.
+    empty state on its first boot. Anything in seed_data/transactions.json is
+    public by design; see that package's docstring.
+
+    An empty ledger is not always a new one. After a deliberate reset it is
+    empty because someone emptied it, and reloading the committed file on the
+    next cold start would silently undo that — so the reset leaves a marker
+    and this respects it.
     """
+    if store.seed_suppressed():
+        return 0
     from seed_data.export import load
     return load(store)
 
