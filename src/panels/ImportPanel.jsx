@@ -159,9 +159,15 @@ export default function ImportPanel({ accounts, onImported }) {
           <ol className="steps">
             {(csv?.setup_steps ?? []).map((s) => <li key={s}>{s}</li>)}
           </ol>
+          {/* The privacy claim has to match where the data actually goes:
+              on a deployment it is not "this machine", and saying so anyway
+              would be the one kind of inaccuracy that really matters here. */}
           <p className="small muted" style={{ marginTop: 16, marginBottom: 0 }}>
-            Everything is parsed on this machine and stored in a local SQLite
-            file. Nothing is uploaded anywhere.
+            {storage === 'sqlite'
+              ? 'Everything is parsed on this machine and stored in a local '
+                + 'SQLite file. Nothing is uploaded anywhere.'
+              : 'Statements are parsed on the server and stored in this '
+                + "deployment's own database. They are not sent anywhere else."}
           </p>
         </Card>
 

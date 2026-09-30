@@ -24,7 +24,8 @@ from flask import Flask, abort, jsonify, send_from_directory
 from flask_cors import CORS
 
 from finance.api import bp
-from finance.db import database_url, storage_mode  # noqa: F401
+# storage_mode is re-exported for convenience; /api/health reads it from db.
+from finance.db import database_url, is_hosted as _is_hosted, storage_mode  # noqa: F401
 from finance.store import DEFAULT_DB, Store
 
 PORT = int(os.environ.get("PORT", 5050))
@@ -37,11 +38,6 @@ FRONTEND_DIR = os.path.join(HERE, "public")
 # Local dev runs the UI on Vite's dev server against the API on another port.
 DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000",
                "http://localhost:5173", "http://127.0.0.1:5173"]
-
-
-def _is_hosted() -> bool:
-    """True when running on a serverless host rather than a developer machine."""
-    return bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
 
 
 def _hosted_db_path() -> str | None:
