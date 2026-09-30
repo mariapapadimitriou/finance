@@ -17,8 +17,14 @@ import json
 import os
 from contextlib import contextmanager
 
+from datetime import datetime, timezone
+
 from . import db
 from .models import Transaction
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 DEFAULT_DB = os.environ.get(
     "LEDGER_DB", os.path.join(os.path.dirname(os.path.dirname(__file__)), "ledger.db")
@@ -100,6 +106,23 @@ CREATE TABLE IF NOT EXISTS bucket_draws (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_draw_month ON bucket_draws(month);
+
+-- One row per bank connection made through Plaid Link.
+--
+-- `access_token` is stored encrypted (see finance/secrets_box.py) because it
+-- is a live credential, not a record of something that already happened.
+-- `cursor` is Plaid's position in the change feed for this item: /transactions
+-- /sync returns everything added, modified or removed since it, so the cursor
+-- is what makes a sync incremental rather than a re-download.
+CREATE TABLE IF NOT EXISTS plaid_items (
+    item_id      TEXT PRIMARY KEY,
+    access_token TEXT NOT NULL,
+    institution  TEXT,
+    cursor       TEXT,
+    last_synced  TEXT,
+    last_error   TEXT,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE IF NOT EXISTS dismissed_insights (
     insight_id TEXT PRIMARY KEY,
@@ -427,6 +450,84 @@ class Store:
             return cur.rowcount > 0
 
     # ── Dismissed insights ───────────────────────────────────────────────────
+    # ── Plaid items ──────────────────────────────────────────────────────────
+    # The access token is encrypted on the way in and decrypted on the way out,
+    # so it exists in plaintext only inside a request that is about to use it.
+
+    def plaid_items(self) -> list[dict]:
+        """Linked institutions, without their tokens.
+
+        Everything the UI needs to show a connection and nothing that could
+        authenticate as one, so this is safe to serialise straight to JSON.
+        """
+        with self.conn() as c:
+            rows = c.execute(
+                """SELECT item_id, institution, cursor, last_synced, last_error,
+                          created_at
+                   FROM plaid_items ORDER BY created_at"""
+            ).fetchall()
+        return [{**dict(r), "synced_before": bool(r["cursor"])} for r in rows]
+
+    def plaid_token(self, item_id: str) -> str | None:
+        from . import secrets_box
+        with self.conn() as c:
+            row = c.execute(
+                "SELECT access_token FROM plaid_items WHERE item_id = ?", (item_id,)
+            ).fetchone()
+        return secrets_box.decrypt(row["access_token"]) if row else None
+
+    def add_plaid_item(self, item_id: str, access_token: str,
+                       institution: str = "") -> None:
+        from . import secrets_box
+        token = secrets_box.encrypt(access_token)
+        with self.conn() as c:
+            c.execute(
+                """INSERT INTO plaid_items (item_id, access_token, institution)
+                   VALUES (?,?,?)
+                   ON CONFLICT(item_id) DO UPDATE SET
+                       access_token = excluded.access_token,
+                       institution  = excluded.institution""",
+                (item_id, token, institution),
+            )
+
+    def set_plaid_cursor(self, item_id: str, cursor: str) -> None:
+        with self.conn() as c:
+            c.execute(
+                """UPDATE plaid_items
+                   SET cursor = ?, last_synced = ?, last_error = NULL
+                   WHERE item_id = ?""",
+                (cursor, _now(), item_id),
+            )
+
+    def set_plaid_error(self, item_id: str, message: str) -> None:
+        with self.conn() as c:
+            c.execute("UPDATE plaid_items SET last_error = ? WHERE item_id = ?",
+                      (message[:500], item_id))
+
+    def delete_plaid_item(self, item_id: str) -> bool:
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM plaid_items WHERE item_id = ?", (item_id,))
+            return cur.rowcount > 0
+
+    def delete_transactions_from(self, plaid_ids: list[str]) -> int:
+        """Remove rows Plaid has told us no longer exist.
+
+        A pending charge that posts comes back as a removal plus an addition,
+        so without this the ledger would keep the pending copy forever and
+        count the purchase twice.
+        """
+        if not plaid_ids:
+            return 0
+        removed = 0
+        with self.conn() as c:
+            for pid in plaid_ids:
+                cur = c.execute(
+                    "DELETE FROM transactions WHERE raw LIKE ?",
+                    (f'%"plaid_id": "{pid}"%',),
+                )
+                removed += cur.rowcount
+        return removed
+
     def dismissed(self) -> set[str]:
         with self.conn() as c:
             rows = c.execute("SELECT insight_id FROM dismissed_insights").fetchall()

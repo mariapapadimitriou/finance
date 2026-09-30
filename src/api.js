@@ -6,9 +6,22 @@
 export const API = import.meta.env?.VITE_API
   ?? (import.meta.env?.DEV ? 'http://localhost:5050' : '');
 
+// Anything that needs the session cookie has to send it, and in dev the UI is
+// on a different origin from the API, where cookies are not sent by default.
+const CREDENTIALS = { credentials: 'include' };
+
+/** Notified when the server says the session is gone, so the app can show the
+ *  login screen instead of a wall of failed panels. */
+let onUnauthorized = () => {};
+export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn; };
+
 async function req(path, options = {}) {
-  const r = await fetch(`${API}${path}`, options);
+  const r = await fetch(`${API}${path}`, { ...CREDENTIALS, ...options });
   const body = await r.json().catch(() => ({}));
+  if (r.status === 401 && body.unauthorized) {
+    onUnauthorized();
+    throw new Error('Signed out.');
+  }
   if (!r.ok) throw new Error(body.error || `${r.status} ${r.statusText}`);
   return body;
 }
@@ -26,6 +39,32 @@ export const getRecurring    = () => req('/api/recurring');
 export const getAccounts     = () => req('/api/accounts');
 export const getCategories   = () => req('/api/categories');
 export const getSources      = () => req('/api/sources');
+
+// ── Signing in ───────────────────────────────────────────────────────────────
+export const getAuthStatus   = () => req('/api/auth/status');
+export const logout          = () => json('POST', '/api/auth/logout', {});
+
+/** Kept out of `req` so a wrong password reads as an answer, not a crash. */
+export async function login(password) {
+  const r = await fetch(`${API}/api/auth/login`, {
+    ...CREDENTIALS,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  const body = await r.json().catch(() => ({}));
+  return { ok: r.ok, ...body };
+}
+
+// ── Plaid ────────────────────────────────────────────────────────────────────
+export const getPlaidItems   = () => req('/api/plaid/items');
+export const createLinkToken = () => json('POST', '/api/plaid/link-token', {});
+export const exchangePublicToken = (publicToken, institution) =>
+  json('POST', '/api/plaid/exchange',
+       { public_token: publicToken, institution });
+export const syncPlaid       = () => json('POST', '/api/plaid/sync', {});
+export const unlinkBank      = (id) =>
+  req(`/api/plaid/items/${id}`, { method: 'DELETE' });
 export const getHealth       = () => req('/api/health');
 export const getImports      = () => req('/api/imports');
 export const getTrips        = () => req('/api/trips');

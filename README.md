@@ -231,6 +231,53 @@ instance sees the same data. `/api/health` reports which mode is live:
 Locally nothing changes: with no `DATABASE_URL` set the ledger is still a SQLite
 file that never leaves the machine.
 
+### Locking the deployment
+
+Everything — the UI and every API route — sits behind one password. Not a user
+system: there is one person here, so there is one secret, and no accounts,
+signup or reset flow to get wrong.
+
+```bash
+python -c "from finance.auth import hash_password; print(hash_password('your password'))"
+```
+
+Put the result in `SPENDIE_PASSWORD_HASH` and redeploy. A hosted deployment
+with no password set **refuses to serve anything** rather than quietly staying
+open, because forgetting the variable is the likely mistake and it must not be
+the one that leaves a bank connection exposed. Running locally is unaffected:
+no password set means no password asked for.
+
+The session cookie is signed with a key derived from the password hash, so it
+is stable across serverless instances without a second variable to keep in
+sync — and changing your password signs every existing session out, which is
+what you would want it to do.
+
+### Connecting a bank
+
+Plaid Link handles the bank login; Spendie never sees your credentials. What it
+stores is an access token that can read transactions, and that token is
+encrypted before it reaches the database — so a leaked database dump yields
+ciphertext, since the key lives in the environment instead.
+
+```bash
+python -m finance.secrets_box      # generate SPENDIE_SECRET_KEY
+```
+
+Set `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` (`sandbox` or `production`)
+and `SPENDIE_SECRET_KEY`, redeploy, then connect each card on the **Banks** tab.
+Linking is refused outright if the encryption key is missing — storing a bank
+credential in the clear is not a fallback.
+
+Syncing uses `/transactions/sync`, which returns only what changed since a
+stored cursor. That matters for more than speed: when a pending charge posts,
+Plaid removes the pending row and adds the posted one, and an importer that
+only ever added would keep both and count the purchase twice. The cursor
+advances only once the rows it covers are stored, so a failed sync re-fetches
+its window rather than skipping it — a repeat is caught by the fingerprint,
+where a gap would be silent and permanent.
+
+`PLAID_COUNTRY_CODES` defaults to `CA`.
+
 ### One store, two databases
 
 Every query is written once, in SQLite's dialect, and `finance/db.py` rewrites
@@ -274,6 +321,9 @@ finance/
   pipeline.py               source → dedupe → categorize → store
   db.py                     SQLite locally, Postgres when DATABASE_URL is set
   store.py                  Persistence, written once in SQLite's dialect
+  auth.py                   The single password in front of everything
+  secrets_box.py            Encrypts Plaid tokens before they are stored
+  plaid_link.py             Linking a bank, and the incremental sync
   api.py                    HTTP routes
 src/                        React UI (Vite)
   components/Logo.jsx       The Spendie mark, inline SVG
@@ -282,7 +332,7 @@ seed_data/
   transactions.json         The committed ledger — public by design
   export.py                 Write it from the local ledger, and load it back
 sample_data/generate.py     Realistic sample statements in three issuer formats
-tests/                      285 tests
+tests/                      330 tests
 ```
 
 ## Tests
@@ -301,15 +351,19 @@ come in "under budget".
 
 ## API
 
-`GET /api/health` (reports the storage mode) · `/api/summary` · `/api/breakdown` · `/api/transactions` · `/api/recurring` ·
+`GET /api/health` (reports the storage mode) · `/api/auth/status` ·
+`/api/plaid/items` · `/api/summary` · `/api/breakdown` · `/api/transactions` · `/api/recurring` ·
 `/api/insights` · `/api/budgets` · `/api/accounts` · `/api/sources` ·
 `/api/imports` · `/api/trips` · `/api/plan` · `/api/progress` · `/api/projections`
 `POST /api/import` · `/api/sync/<source>` · `/api/narrative` ·
 `/api/insights/<id>/dismiss` · `/api/transactions` · `/api/trips` ·
-`/api/plan/simulate` · `/api/buckets/<id>/cover`
+`/api/plan/simulate` · `/api/buckets/<id>/cover` · `/api/auth/login` ·
+`/api/auth/logout` · `/api/plaid/link-token` · `/api/plaid/exchange` ·
+`/api/plaid/sync`
 `PATCH /api/transactions/<id>` · `/api/trips/<id>`
 `PUT /api/budgets` · `/api/plan` · `/api/buckets` · `/api/projections/income`
 `DELETE /api/transactions` · `/api/transactions/<id>` · `/api/trips/<id>` ·
-`/api/buckets/<id>`
+`/api/buckets/<id>` · `/api/plaid/items/<id>`
 
-The server binds to `127.0.0.1` and is not intended to face a network.
+Every route is behind the password when one is configured, which a hosted
+deployment always is.

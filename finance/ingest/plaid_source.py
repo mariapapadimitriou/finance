@@ -84,11 +84,14 @@ class PlaidSource(TransactionSource):
             detail="Not configured — " + "; ".join(problems) + ".",
             setup_url="https://dashboard.plaid.com/signup",
             setup_steps=[
-                "Create a Plaid developer account (sandbox is free)",
-                "pip install plaid-python",
-                "export PLAID_CLIENT_ID and PLAID_SECRET",
-                "Run Plaid Link to connect each card and store its access token",
-                "Production access requires Plaid's approval and is billed per item",
+                "Create a Plaid account — the Trial plan is free and covers "
+                "10 connected banks",
+                "Copy the client ID and secret from the Plaid dashboard",
+                "Set PLAID_CLIENT_ID, PLAID_SECRET and PLAID_ENV in the "
+                "deployment's environment",
+                "Set SPENDIE_SECRET_KEY so access tokens can be encrypted "
+                "before they are stored",
+                "Then connect each card on the Banks tab",
             ],
         )
 
