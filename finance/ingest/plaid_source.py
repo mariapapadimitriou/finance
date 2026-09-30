@@ -24,6 +24,27 @@ from .base import IngestResult, SourceStatus, TransactionSource, register
 
 _ENV_KEYS = ("PLAID_CLIENT_ID", "PLAID_SECRET")
 
+# Plaid decommissioned Development in June 2024; these are the two that exist.
+VALID_ENVIRONMENTS = ("sandbox", "production")
+
+
+def plaid_environment() -> str:
+    """Which Plaid environment to talk to.
+
+    An unrecognised value used to fall through to Sandbox silently, which is
+    the worst possible default: production credentials would be sent to the
+    sandbox host and come back as INVALID_API_KEYS, pointing the blame at the
+    keys rather than at the environment name. Now it says so.
+    """
+    env = os.environ.get("PLAID_ENV", "sandbox").strip().lower()
+    if env not in VALID_ENVIRONMENTS:
+        raise RuntimeError(
+            f"PLAID_ENV is set to {env!r}, which is not a Plaid environment. "
+            f"Use 'sandbox' or 'production'. (Plaid retired 'development' in "
+            f"June 2024.)"
+        )
+    return env
+
 
 class PlaidSource(TransactionSource):
     key = "plaid"
@@ -45,15 +66,19 @@ class PlaidSource(TransactionSource):
         from plaid.configuration import Configuration, Environment
         from plaid.api_client import ApiClient
 
-        env = os.environ.get("PLAID_ENV", "sandbox").lower()
+        # Stripped, because these are pasted into a dashboard field and a
+        # trailing newline is invisible there. Plaid rejects the whole request
+        # as INVALID_API_KEYS, which reads as "wrong credentials" rather than
+        # "your credentials have a space on the end".
+        env = plaid_environment()
         host = {
             "sandbox": Environment.Sandbox,
             "production": Environment.Production,
-        }.get(env, Environment.Sandbox)
+        }[env]
 
         config = Configuration(host=host, api_key={
-            "clientId": os.environ["PLAID_CLIENT_ID"],
-            "secret": os.environ["PLAID_SECRET"],
+            "clientId": os.environ.get("PLAID_CLIENT_ID", "").strip(),
+            "secret": os.environ.get("PLAID_SECRET", "").strip(),
         })
         return plaid_api.PlaidApi(ApiClient(config))
 

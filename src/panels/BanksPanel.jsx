@@ -150,6 +150,15 @@ export default function BanksPanel({ onChanged }) {
         </Notice>
       )}
 
+      {configured && !['sandbox', 'production'].includes(environment) && (
+        <Notice kind="error">
+          <strong>PLAID_ENV is set to &ldquo;{environment}&rdquo;</strong>, which
+          isn&apos;t a Plaid environment. Use <code>sandbox</code> or{' '}
+          <code>production</code> — Plaid retired <code>development</code> in
+          June 2024. A value with a stray space or newline lands here too.
+        </Notice>
+      )}
+
       {configured && environment === 'sandbox' && (
         <Notice>
           Running against Plaid&apos;s <strong>sandbox</strong>, so you&apos;ll
@@ -161,7 +170,9 @@ export default function BanksPanel({ onChanged }) {
 
       <Card
         title="Connected banks"
-        hint="Linked through Plaid — transactions arrive without downloading a statement"
+        hint={configured
+          ? `Linked through Plaid · ${environment} environment`
+          : 'Linked through Plaid — transactions arrive without downloading a statement'}
         actions={
           <div className="row" style={{ gap: 8 }}>
             {items.length > 0 && (

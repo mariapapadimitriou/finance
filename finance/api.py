@@ -532,7 +532,8 @@ def plaid_link_token():
     try:
         return jsonify(plaid_link.create_link_token())
     except Exception as exc:                          # noqa: BLE001
-        return jsonify({"error": f"Plaid refused to start a link: {exc}"}), 502
+        return jsonify({"error": plaid_link.explain(exc),
+                        "environment": plaid_link.environment()}), 502
 
 
 @bp.post("/plaid/exchange")
@@ -552,7 +553,7 @@ def plaid_exchange():
         item = plaid_link.exchange_public_token(
             store(), public_token, (body.get("institution") or "").strip())
     except Exception as exc:                          # noqa: BLE001
-        return jsonify({"error": f"Couldn't finish linking: {exc}"}), 502
+        return jsonify({"error": plaid_link.explain(exc)}), 502
 
     # Pull straight away so the card isn't linked-but-empty.
     try:
