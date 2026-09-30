@@ -51,6 +51,30 @@ under your median — a nudge, not a cliff — while essentials start at your me
 since deciding to use less electricity doesn't make it so. Mid-month, budgets
 project forward so you can act before the month closes rather than after.
 
+**One number for today, with the arithmetic shown.** A daily allowance that rolls
+over: underspend on Monday and Tuesday's number is bigger, and the carried-in
+amount is displayed as its own term so the figure is never magic. Overspending
+gets two honest options rather than a warning — spread the shortfall across the
+days left, or cover it from a named bucket (Fun, Savings), each with the
+consequence spelled out. Only discretionary spending counts, because no amount of
+restraint on a Tuesday changes the hydro bill.
+
+**Streaks and badges that can only be earned by spending less.** Points come from
+days under the allowance, days with nothing spent, and months finished inside
+budget. Nothing pays out for spending, so the mechanics can never nudge you
+toward a purchase; and a day outside the imported range reads as *no data*, never
+as a quiet day, so no badge is ever awarded for a statement you didn't upload.
+
+**Projections, with their own error bars.** Two lines — your current pace, and the
+same pace with the found cuts applied — plus how many months of data are behind
+them. The surplus is stated as a ceiling, because spending that never touches an
+imported card isn't in it.
+
+**Typing a purchase in before it posts.** Manual entries run the same duplicate
+check an import runs, only looser, and report near-matches instead of silently
+merging them. Going the other way, a statement row supersedes the placeholder you
+typed — the statement knows the real date, descriptor and card.
+
 ---
 
 ## Importing your statements
@@ -208,6 +232,11 @@ finance/
   insights/
     recurring.py            Subscription and recurring-bill detection
     rules.py                The savings engine
+  trips.py                  Declared date ranges whose spending reads as Travel
+  spend_plan.py             Safe to spend: the rolling daily allowance
+  gamify.py                 Streaks, points and badges — restraint only
+  projections.py            Forward projections under two scenarios
+  manual.py                 Hand-typed rows, and keeping imports off them
   narrative.py              Optional Claude layer
   pipeline.py               source → dedupe → categorize → store
   store.py                  SQLite persistence
@@ -219,7 +248,7 @@ seed_data/
   transactions.json         The committed ledger — public by design
   export.py                 Write it from the local ledger, and load it back
 sample_data/generate.py     Realistic sample statements in three issuer formats
-tests/                      168 tests
+tests/                      265 tests
 ```
 
 ## Tests
@@ -231,14 +260,22 @@ python -m pytest
 Covers the per-issuer sign conventions, messy and headerless CSVs, de-duplication
 across overlapping exports, categorization precedence, recurring detection
 including the price-change case, every savings rule, and the API end to end.
+`tests/test_plan.py` covers the newer half: rollover arithmetic, spreading and
+bucket covering, manual entry colliding with an import in both directions, and
+the honesty rules in the scoring — chiefly that a partly-imported month can never
+come in "under budget".
 
 ## API
 
 `GET /api/summary` · `/api/breakdown` · `/api/transactions` · `/api/recurring` ·
 `/api/insights` · `/api/budgets` · `/api/accounts` · `/api/sources` ·
-`/api/imports`
+`/api/imports` · `/api/trips` · `/api/plan` · `/api/progress` · `/api/projections`
 `POST /api/import` · `/api/sync/<source>` · `/api/narrative` ·
-`/api/insights/<id>/dismiss`
-`PATCH /api/transactions/<id>` · `PUT /api/budgets` · `DELETE /api/transactions`
+`/api/insights/<id>/dismiss` · `/api/transactions` · `/api/trips` ·
+`/api/plan/simulate` · `/api/buckets/<id>/cover`
+`PATCH /api/transactions/<id>` · `/api/trips/<id>`
+`PUT /api/budgets` · `/api/plan` · `/api/buckets` · `/api/projections/income`
+`DELETE /api/transactions` · `/api/transactions/<id>` · `/api/trips/<id>` ·
+`/api/buckets/<id>`
 
 The server binds to `127.0.0.1` and is not intended to face a network.

@@ -6,6 +6,7 @@ loader) goes through identical normalization and produces identical reporting.
 
 from __future__ import annotations
 
+from . import manual
 from .categorize import apply_categories
 from .dedupe import dedupe_batch, split_new
 from .ingest.base import IngestResult
@@ -24,6 +25,17 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
     # Declared trips outrank the merchant rules: a restaurant on holiday is
     # travel spending, not dining.
     apply_trips(new, store.trips())
+
+    # A row typed in by hand was a placeholder for a charge that hadn't posted.
+    # Now it has, so the statement's version replaces it — carrying across the
+    # only thing the placeholder knew better, a category set by hand.
+    replaced = manual.supersedes(new, existing)
+    for imported, placeholder in replaced:
+        if placeholder.category_source == "user":
+            imported.category = placeholder.category
+            imported.category_source = "user"
+        store.delete_transaction(placeholder.fingerprint)
+
     inserted = store.add_transactions(new)
 
     duplicate_count = len(dupes) + self_dupes
@@ -34,6 +46,7 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
         "filename": filename,
         "imported": inserted,
         "duplicates": duplicate_count,
+        "replaced_manual": len(replaced),
         "date_range": (
             [min(t.date for t in new), max(t.date for t in new)] if new else None
         ),

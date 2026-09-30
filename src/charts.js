@@ -11,6 +11,8 @@ import { money, cssVar, monthLabel, dateLabel } from './api.js';
 function ink() {
   return {
     series: cssVar('--series-1'),
+    series3: cssVar('--series-3'),
+    series3Soft: cssVar('--series-3-soft'),
     soft: cssVar('--series-1-soft'),
     grid: cssVar('--grid'),
     axis: cssVar('--axis'),
@@ -88,6 +90,85 @@ export function monthlyTrendConfig(monthly) {
           ticks: {
             color: c.muted, font: AXIS_FONT, maxRotation: 0, autoSkipPadding: 12,
             callback(i) { return monthLabel(this.getLabelForValue(i)); },
+          },
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: c.grid, drawTicks: false },
+          border: { display: false },
+          ticks: {
+            color: c.muted, font: AXIS_FONT, padding: 8, maxTicksLimit: 5,
+            callback: (v) => money(v),
+          },
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Cumulative savings under two scenarios.
+ *
+ * The only two-series chart in the app, and it earns the second series: the gap
+ * between the lines *is* the message. Slots 1 and 3 of the validated set, which
+ * are the furthest apart of the three under every simulated colour vision
+ * deficiency — and both lines are named in a direct legend beside their end
+ * values, so the hues are reinforcement rather than the only key.
+ *
+ * The area between them is filled, because the found cuts are usually small
+ * beside the surplus and two bare strokes at that ratio read as one line. The
+ * band doesn't exaggerate the gap — it is exactly the gap — it just gives it a
+ * shape you can see at a glance instead of a second stroke you can't.
+ */
+export function projectionConfig(series) {
+  const c = ink();
+  const line = (data, color) => ({
+    data,
+    borderColor: color,
+    borderWidth: 2,
+    fill: false,
+    tension: 0.25,
+    pointRadius: 0,
+    pointHoverRadius: 5,
+    pointHoverBorderWidth: 2,
+    pointHoverBorderColor: c.surface,
+    pointHoverBackgroundColor: color,
+    pointHitRadius: 16,
+  });
+
+  return {
+    type: 'line',
+    data: {
+      labels: series.map((r) => r.month),
+      datasets: [
+        {
+          ...line(series.map((r) => r.with_cuts), c.series3),
+          label: 'With cuts',
+          // Fill down to the current-pace line below it, not to the axis.
+          fill: { target: 1, above: c.series3Soft },
+        },
+        { ...line(series.map((r) => r.current), c.series), label: 'Current pace' },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: tooltip(c, {
+          title: (items) => `Month ${items[0].label}`,
+          label: (ctx) => `${ctx.dataset.label}: ${money(ctx.parsed.y)}`,
+        }),
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { color: c.axis },
+          ticks: {
+            color: c.muted, font: AXIS_FONT, maxRotation: 0,
+            callback(i) { return `M${this.getLabelForValue(i)}`; },
           },
         },
         y: {
