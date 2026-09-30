@@ -49,7 +49,62 @@ def configured() -> bool:
 
 
 def environment() -> str:
-    return os.environ.get("PLAID_ENV", "sandbox").lower()
+    from .ingest.plaid_source import plaid_environment
+    try:
+        return plaid_environment()
+    except RuntimeError:
+        # Reported rather than raised: the Banks tab shows this, and a bad
+        # value should be visible there rather than blanking the page.
+        return os.environ.get("PLAID_ENV", "").strip().lower() or "unset"
+
+
+def explain(exc: Exception) -> str:
+    """Turn a Plaid failure into something you can act on.
+
+    plaid-python stringifies an ApiException as status line, every response
+    header, then the JSON body — which buries the one sentence that matters
+    under a wall of nginx trivia. The common failures each have a specific
+    cause worth naming, and the environment is named too, because the most
+    likely cause of bad keys is keys from the other one.
+    """
+    body = str(exc)
+    env = environment()
+
+    if "INVALID_API_KEYS" in body:
+        return (
+            f"Plaid rejected the credentials for the {env} environment. "
+            f"The client ID is the same everywhere but the secret is not — "
+            f"each environment has its own, so a sandbox secret fails against "
+            f"production and vice versa. Check that PLAID_SECRET is the "
+            f"{env} secret from the Plaid dashboard, and that neither value "
+            f"picked up a stray space or newline when it was pasted."
+        )
+    if "INVALID_FIELD" in body or "INVALID_BODY" in body:
+        return f"Plaid rejected the request as malformed ({env} environment): {_plaid_message(body)}"
+    if "PRODUCTS_NOT_SUPPORTED" in body or "INVALID_PRODUCT" in body:
+        return ("This Plaid account isn't enabled for Transactions yet. "
+                "Enable the Transactions product in the Plaid dashboard.")
+    if "ITEM_LOGIN_REQUIRED" in body:
+        return "The bank needs you to sign in again. Reconnect it on this tab."
+    if "RATE_LIMIT" in body:
+        return "Plaid is rate-limiting this account. Wait a minute and retry."
+
+    return _plaid_message(body) or f"Plaid returned an error ({env} environment)."
+
+
+def _plaid_message(body: str) -> str:
+    """Pull error_message out of a stringified ApiException, if it's in there."""
+    import json
+    import re
+    match = re.search(r"\{.*\}", body, re.S)
+    if match:
+        try:
+            payload = json.loads(match.group(0))
+            return (payload.get("error_message")
+                    or payload.get("display_message") or "").strip()
+        except (ValueError, AttributeError):
+            pass
+    return body.strip()[:300]
 
 
 def create_link_token(user_id: str = "spendie-user") -> dict:
@@ -168,10 +223,11 @@ def sync_all(store) -> dict:
         try:
             out.append(_sync_one(store, item))
         except Exception as exc:                     # noqa: BLE001
-            store.set_plaid_error(item["item_id"], str(exc))
+            message = explain(exc)
+            store.set_plaid_error(item["item_id"], message)
             out.append({"item_id": item["item_id"],
                         "institution": item.get("institution") or "",
-                        "error": str(exc)})
+                        "error": message})
     return {
         "items": out,
         "imported": sum(o.get("imported", 0) for o in out),

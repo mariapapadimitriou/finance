@@ -332,7 +332,7 @@ seed_data/
   transactions.json         The committed ledger — public by design
   export.py                 Write it from the local ledger, and load it back
 sample_data/generate.py     Realistic sample statements in three issuer formats
-tests/                      330 tests
+tests/                      345 tests
 ```
 
 ## Tests

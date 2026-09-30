@@ -207,7 +207,8 @@ class TestSync:
         out = plaid_link.sync_all(store)
         assert out["imported"] == 3
         assert len(out["errors"]) == 1
-        assert "ITEM_LOGIN_REQUIRED" in store.plaid_items()[0]["last_error"]
+        # Stored translated, not raw: this string is shown on the Banks tab.
+        assert "sign in again" in store.plaid_items()[0]["last_error"].lower()
 
     def test_the_cursor_does_not_advance_when_a_sync_fails(self, store, fake):
         """A gap would be silent and permanent; a repeat is caught by the
@@ -288,3 +289,89 @@ class TestPlaidApi:
 
     def test_unlinking_something_that_is_not_linked_is_a_404(self, client):
         assert client.delete("/api/plaid/items/nope").status_code == 404
+
+
+# ── Configuration mistakes ───────────────────────────────────────────────────
+
+class TestEnvironmentAndCredentials:
+    """The failures that look like bad keys but aren't.
+
+    A value pasted into a dashboard field can carry a trailing newline that is
+    invisible there, and an unrecognised PLAID_ENV used to fall through to
+    Sandbox silently — sending production credentials to the sandbox host and
+    getting back INVALID_API_KEYS, which blames the keys.
+    """
+
+    def test_a_trailing_newline_in_the_environment_is_tolerated(self, monkeypatch):
+        from finance.ingest.plaid_source import plaid_environment
+        monkeypatch.setenv("PLAID_ENV", "production\n")
+        assert plaid_environment() == "production"
+
+    def test_surrounding_whitespace_and_case_are_tolerated(self, monkeypatch):
+        from finance.ingest.plaid_source import plaid_environment
+        monkeypatch.setenv("PLAID_ENV", "  Sandbox  ")
+        assert plaid_environment() == "sandbox"
+
+    def test_an_unknown_environment_raises_rather_than_defaulting(self, monkeypatch):
+        """Silently becoming sandbox is how production keys get rejected."""
+        from finance.ingest.plaid_source import plaid_environment
+        monkeypatch.setenv("PLAID_ENV", "development")
+        with pytest.raises(RuntimeError, match="not a Plaid environment"):
+            plaid_environment()
+
+    def test_the_default_is_sandbox(self, monkeypatch):
+        from finance.ingest.plaid_source import plaid_environment
+        monkeypatch.delenv("PLAID_ENV", raising=False)
+        assert plaid_environment() == "sandbox"
+
+    def test_credentials_are_stripped_before_they_are_sent(self, monkeypatch):
+        """A newline on the end of a secret reads to Plaid as a wrong secret."""
+        from finance.ingest.plaid_source import PlaidSource
+        monkeypatch.setenv("PLAID_ENV", "sandbox")
+        monkeypatch.setenv("PLAID_CLIENT_ID", "  client-123\n")
+        monkeypatch.setenv("PLAID_SECRET", "secret-456\n")
+        client = PlaidSource()._client()
+        api_key = client.api_client.configuration.api_key
+        assert api_key["clientId"] == "client-123"
+        assert api_key["secret"] == "secret-456"
+
+
+class TestErrorMessages:
+    """plaid-python stringifies a failure as status line, every response
+    header, then the body — the useful sentence is buried."""
+
+    RAW_INVALID_KEYS = (
+        "(400)\nReason: Bad Request\nHTTP response headers: HTTPHeaderDict("
+        "{'Server': 'nginx'})\nHTTP response body: {\"display_message\": null, "
+        "\"error_code\": \"INVALID_API_KEYS\", \"error_message\": "
+        "\"invalid client_id or secret provided\", \"error_type\": "
+        "\"INVALID_INPUT\", \"request_id\": \"abc\"}"
+    )
+
+    def test_invalid_keys_names_the_environment_and_the_likely_cause(
+            self, monkeypatch):
+        monkeypatch.setenv("PLAID_ENV", "production")
+        msg = plaid_link.explain(Exception(self.RAW_INVALID_KEYS))
+        assert "production" in msg
+        assert "secret" in msg.lower()
+        assert "nginx" not in msg and "HTTPHeaderDict" not in msg
+
+    def test_it_says_the_secret_differs_per_environment(self, monkeypatch):
+        """The actual fix, most of the time."""
+        monkeypatch.setenv("PLAID_ENV", "sandbox")
+        msg = plaid_link.explain(Exception(self.RAW_INVALID_KEYS))
+        assert "each environment has its own" in msg
+
+    def test_an_unrecognised_error_still_yields_the_plaid_message(self):
+        raw = ('(400)\nHTTP response body: {"error_code": "SOMETHING_NEW", '
+               '"error_message": "the useful sentence"}')
+        assert plaid_link.explain(Exception(raw)) == "the useful sentence"
+
+    def test_a_login_required_error_says_what_to_do(self):
+        msg = plaid_link.explain(Exception('{"error_code": "ITEM_LOGIN_REQUIRED"}'))
+        assert "sign in again" in msg.lower()
+
+    def test_a_bad_environment_is_reported_not_raised(self, monkeypatch):
+        """The Banks tab renders this; a bad value must not blank the page."""
+        monkeypatch.setenv("PLAID_ENV", "nonsense")
+        assert plaid_link.environment() == "nonsense"
