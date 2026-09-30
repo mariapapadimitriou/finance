@@ -1,7 +1,7 @@
 {
-  "name": "ledger",
+  "name": "spendie",
   "version": "1.0.0",
-  "description": "Personal finance and budgeting across every credit card",
+  "description": "Spendie — personal finance and budgeting across every credit card",
   "type": "module",
   "scripts": {
     "dev": "vite",

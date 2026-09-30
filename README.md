@@ -1,13 +1,14 @@
-# Ledger
+# Spendie
 
 Personal finance and budgeting across every credit card you own. Import the CSV
-exports from each card, and Ledger normalizes them into one ledger, works out
+exports from each card, and Spendie normalizes them into one ledger, works out
 where the money actually goes, and tells you specifically what to cut — with the
 transactions behind every recommendation.
 
-Everything runs locally. Your transaction history lives in a SQLite file on your
-machine and never leaves it, apart from one optional feature that is off by
-default and says exactly what it sends.
+Runs locally against a SQLite file, and deploys to Vercel. The deployed build
+ships a committed copy of the ledger in `seed_data/transactions.json`, which is
+**public by design** — see [Deploying](#deploying). Anything you import locally
+stays local until you export it there.
 
 ```bash
 pip install -r requirements.txt
@@ -25,7 +26,7 @@ Drop `--demo` once you're importing your own statements.
 
 **Aggregates every card.** Amex writes purchases as positive numbers, Chase
 writes them as negative, Capital One splits them across two columns, and several
-banks ship no header row at all. Ledger detects the issuer's layout, normalizes
+banks ship no header row at all. Spendie detects the issuer's layout, normalizes
 the sign convention, and cleans `SQ *BLUE BOTTLE COFFEE 4471 OAKLAND CA` down to
 `Blue Bottle Coffee` — so the same shop groups together across three cards and
 two payment processors.
@@ -123,7 +124,7 @@ Two deliberate choices worth knowing about:
 
 ## Adding live sync
 
-CSV import is the working path and needs no accounts or keys. Ledger is built so
+CSV import is the working path and needs no accounts or keys. Spendie is built so
 sync is a configuration change rather than a rewrite: every source implements one
 interface (`finance/ingest/base.py`), and nothing downstream — de-duplication,
 categorization, analytics, insights — knows where a transaction came from.
@@ -163,6 +164,32 @@ asserts that no raw descriptors or account numbers can appear in it.
 
 ---
 
+## Deploying
+
+The app runs on Vercel as a single origin: Flask serves the API, and the built
+frontend is packaged into the function.
+
+A serverless filesystem is read-only apart from `/tmp`, which belongs to one
+instance and is discarded when that instance recycles — so a deployment with
+nothing committed would show an empty dashboard to every visitor. The ledger
+is therefore committed to `seed_data/transactions.json` and loaded on cold
+start.
+
+**That file is public.** It holds dates, merchants, amounts and categories —
+deliberately not names, addresses or account numbers, none of which reach the
+ledger in the first place. Regenerate it after importing new statements:
+
+```bash
+python -m seed_data.export        # rewrite the committed ledger
+python -m seed_data.export --check  # see what would be written first
+```
+
+Edits made on the deployment — an upload, a budget, a recategorization — last
+only as long as the instance that received them. Making those durable means
+moving `store.py` onto a hosted database.
+
+---
+
 ## Layout
 
 ```
@@ -186,7 +213,11 @@ finance/
   store.py                  SQLite persistence
   api.py                    HTTP routes
 src/                        React UI (Vite)
-  icons.js                  Category iconography — identity colour can't carry
+  components/Logo.jsx       The Spendie mark, inline SVG
+static/favicon.svg          Favicon, copied into the build
+seed_data/
+  transactions.json         The committed ledger — public by design
+  export.py                 Write it from the local ledger, and load it back
 sample_data/generate.py     Realistic sample statements in three issuer formats
 tests/                      168 tests
 ```

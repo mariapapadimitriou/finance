@@ -1,4 +1,4 @@
-"""Ledger — local-first personal finance and budgeting.
+"""Spendie — personal finance and budgeting across every card.
 
 Aggregates transactions across every credit card you own, works out where the
 money actually goes, and tells you specifically what to cut.
@@ -49,11 +49,12 @@ def _hosted_db_path() -> str | None:
     Returns None when running normally, so the local SQLite file is used.
 
     Worth being blunt about what this implies: /tmp belongs to one function
-    instance and is discarded when that instance is recycled. A hosted
-    deployment is therefore a demo you can click through, not somewhere to keep
-    real statements — imports and budget edits survive only as long as the
-    instance that received them. Persisting properly means moving `store.py`
-    onto a hosted database.
+    instance and is discarded when that instance is recycled. The ledger that
+    ships in seed_data is reloaded on every cold start, so the deployment
+    always shows the same spending — but anything *added* there (an upload, a
+    budget, a recategorization) lives only as long as the instance that
+    received it. Making edits durable means moving `store.py` onto a hosted
+    database.
     """
     if os.environ.get("LEDGER_DB"):
         return None  # explicit configuration wins
@@ -74,9 +75,12 @@ def create_app(db_path: str | None = None) -> Flask:
     app.config["STORE"] = Store(db_path or _hosted_db_path() or DEFAULT_DB)
     app.register_blueprint(bp)
 
-    # A hosted demo starts with an empty /tmp, so seed it with sample data —
-    # otherwise every cold start would greet you with the empty state.
-    if os.environ.get("SEED_DEMO") == "1":
+    # A hosted instance boots with an empty /tmp, so the committed ledger is
+    # loaded into it. Without this every cold start would show an empty
+    # dashboard, since nothing uploaded to a serverless instance outlives it.
+    if _is_hosted() or os.environ.get("SEED_LEDGER") == "1":
+        seed_ledger_if_empty(app.config["STORE"])
+    elif os.environ.get("SEED_DEMO") == "1":
         seed_demo_if_empty(app.config["STORE"])
 
     @app.get("/", defaults={"path": ""})
@@ -98,7 +102,7 @@ def create_app(db_path: str | None = None) -> Flask:
             return send_from_directory(FRONTEND_DIR, "index.html")
 
         return jsonify({
-            "app": "Ledger",
+            "app": "Spendie",
             "note": "No frontend build found. Run `npm run build`, "
                     "or `npm run dev` for the dev server.",
             "endpoints": sorted(
@@ -111,11 +115,22 @@ def create_app(db_path: str | None = None) -> Flask:
 
 
 def seed_demo_if_empty(store: Store) -> int:
-    """Load sample data into an empty ledger. Never touches existing data."""
+    """Load generated sample data into an empty ledger. Never touches existing data."""
     if store.all_transactions():
         return 0
     from sample_data.generate import load_demo
     return load_demo(store)
+
+
+def seed_ledger_if_empty(store: Store) -> int:
+    """Load the committed ledger into an empty store.
+
+    This is what makes a hosted deployment show real spending rather than an
+    empty state. Everything in seed_data/transactions.json is public by design;
+    see that package's docstring.
+    """
+    from seed_data.export import load
+    return load(store)
 
 
 # Imported by WSGI hosts. Safe at import time: it only opens a SQLite file.
@@ -123,7 +138,7 @@ app = create_app()
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Ledger — personal finance API")
+    parser = argparse.ArgumentParser(description="Spendie — personal finance API")
     parser.add_argument("--port", type=int, default=PORT)
     parser.add_argument("--db", default=DEFAULT_DB, help="path to the SQLite ledger")
     parser.add_argument("--demo", action="store_true",
@@ -142,8 +157,8 @@ def main() -> int:
         from sample_data.generate import load_demo
         print(f"Loaded {load_demo(store)} sample transactions across 3 cards.")
 
-    print(f"Ledger API → http://localhost:{args.port}")
-    print(f"Ledger DB  → {args.db}")
+    print(f"Spendie API → http://localhost:{args.port}")
+    print(f"Spendie DB  → {args.db}")
     local.run(host="127.0.0.1", port=args.port, debug=False)
     return 0
 

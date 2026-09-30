@@ -6,6 +6,7 @@ import TransactionsPanel from './panels/TransactionsPanel.jsx';
 import BudgetsPanel from './panels/BudgetsPanel.jsx';
 import ImportPanel from './panels/ImportPanel.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
+import Logo from './components/Logo.jsx';
 import {
   getAccounts, getCategories, getInsights, getRecurring, getSummary, monthLabel,
 } from './api.js';
@@ -37,7 +38,7 @@ function Icon({ d }) {
 
 export default function App() {
   const [theme, setTheme] = useState(
-    () => localStorage.getItem('ledger-theme') || 'dark'
+    () => localStorage.getItem('spendie-theme') || 'dark'
   );
   const [tab, setTab] = useState('overview');
   const [month, setMonth] = useState('');
@@ -53,7 +54,7 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme);
   }
 
-  useEffect(() => { localStorage.setItem('ledger-theme', theme); }, [theme]);
+  useEffect(() => { localStorage.setItem('spendie-theme', theme); }, [theme]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -78,7 +79,7 @@ export default function App() {
     return (
       <Shell theme={theme} setTheme={setTheme}>
         <div className="notice error" style={{ marginTop: 24 }}>
-          <strong>Can&apos;t reach the Ledger API.</strong> {String(error.message)}
+          <strong>Can&apos;t reach the Spendie API.</strong> {String(error.message)}
           <br />
           Start it with <code>python app.py</code> (or{' '}
           <code>python app.py</code>), then{' '}
@@ -89,7 +90,7 @@ export default function App() {
   }
 
   if (!data) {
-    return <Shell theme={theme} setTheme={setTheme}><Loading what="your ledger" /></Shell>;
+    return <Shell theme={theme} setTheme={setTheme}><Loading what="your spending" /></Shell>;
   }
 
   const { summary, insights, recurring, accounts, categories } = data;
@@ -145,9 +146,9 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <span className="mark" aria-hidden="true">L</span>
+          <Logo size={34} />
           <div>
-            <div className="name">Ledger</div>
+            <div className="name">Spendie</div>
             <div className="sub">every card, one picture</div>
           </div>
         </div>
@@ -187,7 +188,7 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
         <div className="topbar">
           <div className="topbar-inner">
             <div className="title">
-              <h1>{current?.label ?? 'Ledger'}</h1>
+              <h1>{current?.label ?? 'Spendie'}</h1>
               {current && <div className="hint">{current.hint}</div>}
             </div>
 
