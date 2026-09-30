@@ -162,3 +162,84 @@ class TestRunningLocally:
         assert c.get("/api/summary").status_code == 401
         assert c.post("/api/auth/login", json={"password": "local"}).status_code == 200
         assert c.get("/api/summary").status_code == 200
+
+class TestSessionsSurviveAcrossInstances:
+    """The bug this class exists for: signing in worked, and then the login
+    screen came straight back.
+
+    A serverless deployment runs many instances and any request can land on
+    any of them. The session key is derived from the password hash, so if two
+    instances compute different hashes for the same password they sign cookies
+    with different keys — the login succeeds on the instance that answered it
+    and every request after that is rejected. Nothing errors; it just looks
+    like a password that will not take.
+
+    Two app objects stand in for two instances, because that is exactly the
+    difference between them: a fresh process reading the same environment.
+    """
+
+    def two_instances(self, tmp_path, monkeypatch, password, as_hash):
+        # Both read one environment variable with one value, which is what
+        # two serverless instances of the same deployment actually do. Hashing
+        # separately per instance would be testing the fixture, not the app.
+        if as_hash:
+            monkeypatch.setenv(auth.HASH_ENV, auth.hash_password(password))
+        else:
+            monkeypatch.setenv(auth.PASSWORD_ENV, password)
+        a = client_for(tmp_path / "a", monkeypatch, hosted=True)
+        b = client_for(tmp_path / "b", monkeypatch, hosted=True)
+        return a, b
+
+    def test_a_plain_password_gives_every_instance_the_same_key(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setenv(auth.PASSWORD_ENV, "hunter2")
+        assert auth.configured_hash() == auth.configured_hash()
+
+    def test_a_session_from_one_instance_works_on_another(
+            self, tmp_path, monkeypatch):
+        (tmp_path / "a").mkdir(); (tmp_path / "b").mkdir()
+        a, b = self.two_instances(tmp_path, monkeypatch,
+                                  password="hunter2", as_hash=False)
+
+        assert a.post("/api/auth/login", json={"password": "hunter2"}).status_code == 200
+        cookie = a.get_cookie("session")
+        assert cookie is not None, "logging in should have set a session cookie"
+
+        b.set_cookie("session", cookie.value, domain="localhost")
+        assert b.get("/api/summary").status_code == 200, \
+            "the next request can land on any instance; all of them must accept it"
+
+    def test_the_same_holds_for_a_pre_computed_hash(self, tmp_path, monkeypatch):
+        (tmp_path / "a").mkdir(); (tmp_path / "b").mkdir()
+        a, b = self.two_instances(tmp_path, monkeypatch,
+                                  password="hunter2", as_hash=True)
+        a.post("/api/auth/login", json={"password": "hunter2"})
+        b.set_cookie("session", a.get_cookie("session").value, domain="localhost")
+        assert b.get("/api/summary").status_code == 200
+
+    def test_a_different_password_does_not_share_a_session(
+            self, tmp_path, monkeypatch):
+        """Stability must not become a key that is the same everywhere."""
+        (tmp_path / "a").mkdir(); (tmp_path / "b").mkdir()
+        a = client_for(tmp_path / "a", monkeypatch, hosted=True,
+                       password="hunter2", as_hash=False)
+        a.post("/api/auth/login", json={"password": "hunter2"})
+        stolen = a.get_cookie("session").value
+
+        monkeypatch.setenv(auth.PASSWORD_ENV, "something-else")
+        b = client_for(tmp_path / "b", monkeypatch, hosted=True)
+        b.set_cookie("session", stolen, domain="localhost")
+        assert b.get("/api/summary").status_code == 401
+
+    def test_changing_the_password_signs_existing_sessions_out(
+            self, tmp_path, monkeypatch):
+        (tmp_path / "a").mkdir(); (tmp_path / "b").mkdir()
+        a = client_for(tmp_path / "a", monkeypatch, hosted=True,
+                       password="old-one", as_hash=False)
+        a.post("/api/auth/login", json={"password": "old-one"})
+        old_cookie = a.get_cookie("session").value
+
+        monkeypatch.setenv(auth.PASSWORD_ENV, "new-one")
+        b = client_for(tmp_path / "b", monkeypatch, hosted=True)
+        b.set_cookie("session", old_cookie, domain="localhost")
+        assert b.get("/api/summary").status_code == 401
