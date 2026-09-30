@@ -15,7 +15,7 @@ const STATE_TEXT = {
   good: 'On track',
 };
 
-export default function BudgetsPanel({ month, summary }) {
+export default function BudgetsPanel({ month, summary, version = 0 }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [draft, setDraft] = useState({});
@@ -30,7 +30,8 @@ export default function BudgetsPanel({ month, summary }) {
     }
   }
 
-  useEffect(() => { load(); }, [month]);
+  // `version` changes on an import, which changes what has been spent.
+  useEffect(() => { load(); }, [month, version]);
 
   async function save() {
     setSaving(true);
