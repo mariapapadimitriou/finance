@@ -7,7 +7,7 @@ suite against a live server (see conftest).
 
 import pytest
 
-from finance.db import database_url, to_postgres
+from finance.db import URL_KEYS, database_url, to_postgres
 
 
 class TestPlaceholders:
@@ -65,23 +65,66 @@ class TestSchemaTypes:
         assert "now()::text" in out
 
 
+def _clear(monkeypatch):
+    for k in list(URL_KEYS) + ["POSTGRES_PRISMA_URL"]:
+        monkeypatch.delenv(k, raising=False)
+
+
 class TestDatabaseUrl:
     def test_no_url_configured_means_sqlite(self, monkeypatch):
-        for k in ("DATABASE_URL_POOLED", "POSTGRES_PRISMA_URL", "POSTGRES_URL",
-                  "DATABASE_URL"):
-            monkeypatch.delenv(k, raising=False)
+        _clear(monkeypatch)
         assert database_url() is None
 
     def test_a_pooled_url_wins(self, monkeypatch):
         """A serverless function opens a connection per request, so the pooled
         endpoint is the one that survives traffic."""
-        monkeypatch.setenv("DATABASE_URL", "postgres://direct/db")
+        monkeypatch.setenv("DATABASE_URL_UNPOOLED", "postgres://direct/db")
         monkeypatch.setenv("DATABASE_URL_POOLED", "postgres://pooled/db")
         assert database_url() == "postgres://pooled/db"
 
+    def test_neons_database_url_is_preferred_over_the_direct_one(self, monkeypatch):
+        _clear(monkeypatch)
+        monkeypatch.setenv("DATABASE_URL", "postgres://pooled/db")
+        monkeypatch.setenv("DATABASE_URL_UNPOOLED", "postgres://direct/db")
+        assert database_url() == "postgres://pooled/db"
+
+    def test_the_prisma_url_is_never_used(self, monkeypatch):
+        """Connecting Neon injects POSTGRES_PRISMA_URL: the same pooled host
+        with Prisma's own options glued on. libpq rejects the entire connection
+        string on the first option it doesn't recognise, so picking this one
+        would fail every request."""
+        _clear(monkeypatch)
+        monkeypatch.setenv("POSTGRES_PRISMA_URL",
+                           "postgres://h/db?pgbouncer=true&connect_timeout=15")
+        assert database_url() is None
+
+        monkeypatch.setenv("DATABASE_URL", "postgres://pooled/db?sslmode=require")
+        assert database_url() == "postgres://pooled/db?sslmode=require"
+
+
+class TestDriverOnlyParameters:
+    """Options that belong to an ORM, not to libpq."""
+
+    def test_pgbouncer_is_stripped(self, monkeypatch):
+        _clear(monkeypatch)
+        monkeypatch.setenv("DATABASE_URL",
+                           "postgres://h/db?sslmode=require&pgbouncer=true")
+        assert database_url() == "postgres://h/db?sslmode=require"
+
+    def test_real_libpq_options_survive(self, monkeypatch):
+        """sslmode and channel_binding are Neon's, and required to connect."""
+        _clear(monkeypatch)
+        url = "postgres://u:p@h/db?sslmode=require&channel_binding=require"
+        monkeypatch.setenv("DATABASE_URL", url)
+        assert database_url() == url
+
+    def test_a_url_with_no_query_is_untouched(self, monkeypatch):
+        _clear(monkeypatch)
+        monkeypatch.setenv("DATABASE_URL", "postgres://u:p@h/db")
+        assert database_url() == "postgres://u:p@h/db"
+
     @pytest.mark.parametrize("value", ["", "file:///tmp/x", "mysql://h/db"])
     def test_anything_that_is_not_postgres_is_ignored(self, monkeypatch, value):
-        for k in ("DATABASE_URL_POOLED", "POSTGRES_PRISMA_URL", "POSTGRES_URL"):
-            monkeypatch.delenv(k, raising=False)
+        _clear(monkeypatch)
         monkeypatch.setenv("DATABASE_URL", value)
         assert database_url() is None

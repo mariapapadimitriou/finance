@@ -30,21 +30,52 @@ import os
 import re
 import sqlite3
 from contextlib import contextmanager
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+
+# Connecting a database on Vercel injects a dozen aliases of the same
+# credentials, and they are not interchangeable. These are tried in order:
+# pooled first, because a serverless function opens a connection per request and
+# an unpooled Postgres runs out of connection slots long before anything else
+# gives way. Neon's DATABASE_URL is already the pooled endpoint.
+#
+# POSTGRES_PRISMA_URL is deliberately absent. It is the same pooled host with
+# Prisma's own options glued on, and libpq rejects the whole connection string
+# on the first one it doesn't recognise.
+URL_KEYS = (
+    "DATABASE_URL_POOLED",       # some providers spell it this way
+    "DATABASE_URL",              # Neon: pooled
+    "POSTGRES_URL",              # Vercel Postgres: pooled
+    "DATABASE_URL_UNPOOLED",     # last resorts — direct connections
+    "POSTGRES_URL_NON_POOLING",
+)
+
+# Query parameters that belong to an ORM rather than to libpq. Passing any of
+# them to psycopg raises `invalid URI query parameter`, which would take every
+# request down, so they are dropped rather than trusted.
+_DRIVER_ONLY_PARAMS = frozenset({
+    "pgbouncer", "schema", "connection_limit", "pool_timeout",
+    "statement_cache_size", "prepare_threshold", "prepareThreshold",
+    "sslaccept", "supa",
+})
+
+
+def _strip_driver_params(url: str) -> str:
+    """Remove options libpq doesn't understand, keeping everything it does."""
+    split = urlsplit(url)
+    if not split.query:
+        return url
+    kept = [(k, v) for k, v in parse_qsl(split.query, keep_blank_values=True)
+            if k not in _DRIVER_ONLY_PARAMS]
+    return urlunsplit(split._replace(query=urlencode(kept)))
 
 
 def database_url() -> str | None:
-    """The hosted Postgres URL, if one is configured.
-
-    Vercel's Postgres integrations inject several aliases. The pooled URL is
-    preferred: a serverless function opens a connection per request, and an
-    unpooled Postgres runs out of connection slots long before it runs out of
-    anything else.
-    """
-    for key in ("DATABASE_URL_POOLED", "POSTGRES_PRISMA_URL", "POSTGRES_URL",
-                "DATABASE_URL"):
+    """The hosted Postgres URL, if one is configured."""
+    for key in URL_KEYS:
         value = os.environ.get(key)
         if value and value.startswith(("postgres://", "postgresql://")):
-            return value
+            return _strip_driver_params(value)
     return None
 
 
