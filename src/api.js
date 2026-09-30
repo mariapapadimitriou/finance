@@ -40,6 +40,8 @@ export const getAccounts     = () => req('/api/accounts');
 export const deleteAccount   = (id) =>
   req(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export const getDuplicateAudit = () => req('/api/audit/duplicates');
+export const resetLedger     = (keepBanks) =>
+  json('POST', '/api/reset', { confirm: 'erase', keep_banks: keepBanks });
 export const getCategories   = () => req('/api/categories');
 export const getSources      = () => req('/api/sources');
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
-  dateLabel, deleteAccount, getAccounts, getDuplicateAudit, money,
+  dateLabel, deleteAccount, getAccounts, getDuplicateAudit, money, resetLedger,
 } from '../api.js';
 
 /**
@@ -55,6 +55,7 @@ export default function AccountsPanel({ onChanged }) {
   if (!accounts) return <ErrorNote error={error} onRetry={load} />;
 
   const notCards = accounts.filter((a) => !a.is_card);
+  const total = accounts.reduce((n, a) => n + a.transactions, 0);
   const overlaps = audit?.account_overlaps ?? [];
   const dupes = audit?.duplicates ?? [];
 
@@ -126,6 +127,11 @@ export default function AccountsPanel({ onChanged }) {
           disconnect the bank first, or turn the account off at the source.
         </p>
       </Card>
+
+      <StartFresh total={total} busy={busy} setBusy={setBusy}
+                  setError={setError} onDone={async () => {
+                    await load(); await onChanged?.();
+                  }} />
 
       <Card title="Possible overlap"
             hint="The same purchase arriving under two different accounts">
@@ -229,5 +235,95 @@ export default function AccountsPanel({ onChanged }) {
         </p>
       </Card>
     </div>
+  );
+}
+
+/**
+ * Emptying the ledger.
+ *
+ * Irreversible against a hosted database, so it asks for the word in writing
+ * rather than offering a button that does it on one click. The list of what
+ * goes is spelled out because "start fresh" means different things to
+ * different people, and the difference here is a year of spending.
+ */
+function StartFresh({ total, busy, setBusy, setError, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [word, setWord] = useState('');
+  const [keepBanks, setKeepBanks] = useState(true);
+  const [done, setDone] = useState(null);
+
+  async function go(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      setDone(await resetLedger(keepBanks));
+      setWord('');
+      setOpen(false);
+      await onDone();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title="Start fresh"
+          hint="Empty the ledger and everything worked out from it"
+          actions={!open && (
+            <button className="btn" onClick={() => setOpen(true)}>
+              Start fresh…
+            </button>
+          )}>
+      {done ? (
+        <Notice kind="good">
+          Removed {done.transactions_removed} transaction
+          {done.transactions_removed === 1 ? '' : 's'}. {done.note}
+        </Notice>
+      ) : !open ? (
+        <p className="small muted" style={{ margin: 0 }}>
+          The ledger currently holds {total.toLocaleString()} transaction
+          {total === 1 ? '' : 's'}. Starting fresh removes all of them, along
+          with your budgets, trips, buckets, merchant corrections and dismissed
+          findings. Your password and bank credentials are untouched.
+        </p>
+      ) : (
+        <form onSubmit={go}>
+          <Notice kind="error">
+            <strong>This cannot be undone.</strong> It removes{' '}
+            {total.toLocaleString()} transaction{total === 1 ? '' : 's'}, every
+            budget, trip, bucket, merchant correction and dismissed finding.
+            What stays: your password, your Plaid credentials, and — unless you
+            untick below — your bank connections.
+          </Notice>
+
+          <label className="row" style={{ marginTop: 14, gap: 8 }}>
+            <input type="checkbox" checked={keepBanks}
+                   onChange={(e) => setKeepBanks(e.target.checked)} />
+            <span className="small">
+              Keep TD and Wealthsimple connected. Their sync position is
+              rewound either way, so the next sync re-fetches the full history
+              rather than reporting nothing new against an empty ledger.
+            </span>
+          </label>
+
+          <div className="controls" style={{ marginTop: 14 }}>
+            <label htmlFor="erase">Type <code>erase</code> to confirm</label>
+            <input id="erase" type="text" value={word} autoComplete="off"
+                   onChange={(e) => setWord(e.target.value)}
+                   style={{ width: 140 }} />
+            <button className="btn" type="submit"
+                    disabled={busy || word.trim().toLowerCase() !== 'erase'}>
+              {busy ? 'Erasing…' : 'Erase everything'}
+            </button>
+            <button type="button" className="btn quiet"
+                    onClick={() => { setOpen(false); setWord(''); }}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </Card>
   );
 }

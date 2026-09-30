@@ -292,6 +292,64 @@ class Store:
                 c.execute("DELETE FROM imports")
             return cur.rowcount
 
+    # ── Starting over ────────────────────────────────────────────────────────
+    def reset(self, keep_banks: bool = True) -> dict:
+        """Empty the ledger and everything derived from it.
+
+        Deliberately explicit about what it touches rather than dropping the
+        schema: a reset that quietly took your password with it, or left a
+        stale Plaid cursor pointing past transactions that no longer exist,
+        would be worse than no reset at all.
+
+        `keep_banks` keeps the connections but rewinds their cursors, so the
+        next sync re-fetches the full history into the empty ledger instead of
+        resuming from where it left off and importing nothing.
+        """
+        removed = {}
+        tables = [
+            ("transactions", "transactions"),
+            ("imports", "import history"),
+            ("merchant_overrides", "merchant overrides"),
+            ("budgets", "budgets"),
+            ("trips", "trips"),
+            ("bucket_draws", "bucket draws"),
+            ("buckets", "buckets"),
+            ("dismissed_insights", "dismissed findings"),
+        ]
+        with self.conn() as c:
+            for table, label in tables:
+                cur = c.execute(f"DELETE FROM {table}")
+                removed[label] = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+
+            if keep_banks:
+                # The cursor is Plaid's position in the change feed. Left
+                # alone against an empty ledger, the next sync would report
+                # "nothing new" and the cards would stay empty forever.
+                c.execute("UPDATE plaid_items SET cursor = NULL, "
+                          "last_synced = NULL, last_error = NULL")
+            else:
+                cur = c.execute("DELETE FROM plaid_items")
+                removed["bank connections"] = max(cur.rowcount, 0)
+
+            # Settings hold the spending plan and take-home pay, which are
+            # yours rather than imported. The seed flag is the exception: it
+            # records that this emptiness was deliberate.
+            c.execute("DELETE FROM settings WHERE key IN "
+                      "('monthly_amount', 'monthly_income')")
+            c.execute(
+                """INSERT INTO settings (key, value) VALUES ('seeded', 'done')
+                   ON CONFLICT(key) DO UPDATE SET value = excluded.value""")
+        return removed
+
+    def seed_suppressed(self) -> bool:
+        """Whether an empty ledger is empty on purpose.
+
+        Without this the committed ledger would reload on the next cold start
+        and undo the reset — the seeder only checks whether the store is
+        empty, and after a reset it very much is.
+        """
+        return self.setting("seeded", "") == "done"
+
     # ── Merchant overrides ───────────────────────────────────────────────────
     def overrides(self) -> dict[str, str]:
         with self.conn() as c:

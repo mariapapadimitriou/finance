@@ -199,9 +199,12 @@ nothing committed would show an empty dashboard to every visitor. The ledger
 is therefore committed to `seed_data/transactions.json` and loaded on cold
 start.
 
-**That file is public.** It holds dates, merchants, amounts and categories —
-deliberately not names, addresses or account numbers, none of which reach the
-ledger in the first place. Regenerate it after importing new statements:
+No ledger is committed now — that was needed when the deployment had no
+durable disk, and stopped being needed when it moved onto Postgres, where an
+upload persists on its own. The exporter still works and is useful for moving
+a ledger between machines. **Anything you do commit is public**: it holds
+dates, merchants, amounts and categories — deliberately not names, addresses
+or account numbers, none of which reach the ledger in the first place.
 
 ```bash
 python -m seed_data.export        # rewrite the committed ledger
@@ -273,6 +276,23 @@ The session cookie is signed with a key derived from the password hash, so it
 is stable across serverless instances without a second variable to keep in
 sync — and changing your password signs every existing session out, which is
 what you would want it to do.
+
+### Starting fresh
+
+The **Accounts** tab can empty the ledger: every transaction, and the budgets,
+trips, buckets, merchant corrections and dismissed findings worked out from
+them. Your password and Plaid credentials are untouched, and bank connections
+are kept unless you say otherwise — but their sync cursors are rewound either
+way, since a cursor pointing past an emptied ledger would make the next sync
+report nothing new and leave the cards empty for good.
+
+It asks you to type `erase`, because against a hosted database there is no
+undo.
+
+One subtlety it has to handle: the seeder loads a committed ledger into an
+*empty* database on cold start, and after a reset the database is very much
+empty. So a reset leaves a marker and the seeder respects it; otherwise a
+serverless instance starting cold would quietly put everything back.
 
 ### Only the cards
 
@@ -370,7 +390,7 @@ seed_data/
   transactions.json         The committed ledger — public by design
   export.py                 Write it from the local ledger, and load it back
 sample_data/generate.py     Realistic sample statements in three issuer formats
-tests/                      379 tests
+tests/                      393 tests
 ```
 
 ## Tests

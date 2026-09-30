@@ -254,6 +254,31 @@ def accounts():
     return jsonify({"accounts": rows})
 
 
+@bp.post("/reset")
+def reset_ledger():
+    """Empty the ledger. Irreversible, so it asks for the word in writing."""
+    body = request.get_json(silent=True) or {}
+    if str(body.get("confirm", "")).strip().lower() != "erase":
+        return jsonify({
+            "error": 'Type "erase" to confirm. This cannot be undone.',
+            "needs_confirmation": True,
+        }), 400
+
+    st = store()
+    keep_banks = bool(body.get("keep_banks", True))
+    before = len(st.all_transactions())
+    removed = st.reset(keep_banks=keep_banks)
+    return jsonify({
+        "ok": True,
+        "transactions_removed": before,
+        "removed": removed,
+        "banks_kept": keep_banks,
+        "note": ("Bank connections kept, and their sync positions rewound so "
+                 "the next sync re-fetches everything."
+                 if keep_banks else "Bank connections removed too."),
+    })
+
+
 @bp.get("/audit/duplicates")
 def audit_duplicates():
     """Rows that may describe the same purchase under two account ids."""
