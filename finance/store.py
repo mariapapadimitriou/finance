@@ -63,6 +63,15 @@ CREATE TABLE IF NOT EXISTS imports (
     created_at   TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS trips (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date   TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_trip_dates ON trips(start_date, end_date);
+
 CREATE TABLE IF NOT EXISTS dismissed_insights (
     insight_id TEXT PRIMARY KEY,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -250,6 +259,39 @@ class Store:
                 "SELECT * FROM imports ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Trips ────────────────────────────────────────────────────────────────
+    def trips(self) -> list:
+        from .trips import Trip
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT id, name, start_date, end_date FROM trips "
+                "ORDER BY start_date DESC"
+            ).fetchall()
+        return [Trip(id=r["id"], name=r["name"], start_date=r["start_date"],
+                     end_date=r["end_date"]) for r in rows]
+
+    def add_trip(self, name: str, start_date: str, end_date: str) -> int:
+        with self.conn() as c:
+            cur = c.execute(
+                "INSERT INTO trips (name, start_date, end_date) VALUES (?,?,?)",
+                (name.strip(), start_date, end_date),
+            )
+            return cur.lastrowid
+
+    def update_trip(self, trip_id: int, name: str, start_date: str,
+                    end_date: str) -> bool:
+        with self.conn() as c:
+            cur = c.execute(
+                "UPDATE trips SET name = ?, start_date = ?, end_date = ? WHERE id = ?",
+                (name.strip(), start_date, end_date, trip_id),
+            )
+            return cur.rowcount > 0
+
+    def delete_trip(self, trip_id: int) -> bool:
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM trips WHERE id = ?", (trip_id,))
+            return cur.rowcount > 0
 
     # ── Dismissed insights ───────────────────────────────────────────────────
     def dismissed(self) -> set[str]:

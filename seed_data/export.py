@@ -39,10 +39,18 @@ def export(db_path: str = "ledger.db", out: str = SEED_FILE) -> int:
             row["ref"] = ref
         rows.append(row)
 
+    # Trips travel with the ledger: without them a hosted instance would show
+    # Travel spending it could not explain, and an empty Trips tab.
+    trips = [
+        {"name": t.name, "start_date": t.start_date, "end_date": t.end_date}
+        for t in Store(db_path).trips()
+    ]
+
     payload = {
         "note": "Transactions shipped with the app. Public by design — see "
                 "seed_data/__init__.py.",
         "count": len(rows),
+        "trips": trips,
         "transactions": rows,
     }
     with open(out, "w", encoding="utf-8") as fh:
@@ -62,6 +70,9 @@ def load(store) -> int:
 
     with open(SEED_FILE, encoding="utf-8") as fh:
         payload = json.load(fh)
+
+    for t in payload.get("trips", []):
+        store.add_trip(t["name"], t["start_date"], t["end_date"])
 
     rows = []
     for r in payload.get("transactions", []):

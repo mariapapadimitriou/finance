@@ -27,6 +27,11 @@ export const getAccounts     = () => req('/api/accounts');
 export const getCategories   = () => req('/api/categories');
 export const getSources      = () => req('/api/sources');
 export const getImports      = () => req('/api/imports');
+export const getTrips        = () => req('/api/trips');
+export const addTrip         = (trip) => json('POST', '/api/trips', trip);
+export const updateTrip      = (id, trip) => json('PATCH', `/api/trips/${id}`, trip);
+export const deleteTrip      = (id) => req(`/api/trips/${id}`, { method: 'DELETE' });
+
 export const getBudgets      = (month) =>
   req(`/api/budgets${month ? `?month=${month}` : ''}`);
 
