@@ -512,8 +512,16 @@ def plaid_items():
         "configured": plaid_link.configured(),
         "environment": plaid_link.environment(),
         "encryption_ready": secrets_box.available(),
+        "credentials": plaid_link.credential_shape(),
         "items": st.plaid_items(),
     })
+
+
+@bp.post("/plaid/check")
+def plaid_check():
+    """Does Plaid accept these keys? Answered without creating an Item."""
+    from . import plaid_link
+    return jsonify(plaid_link.check_credentials())
 
 
 @bp.post("/plaid/link-token")

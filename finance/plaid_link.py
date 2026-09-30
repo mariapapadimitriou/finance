@@ -256,3 +256,59 @@ def unlink(store, item_id: str) -> bool:
             revoked = False
     store.delete_plaid_item(item_id)
     return revoked
+
+def credential_shape() -> dict:
+    """What the credentials look like, without saying what they are.
+
+    "Check your secret" is unhelpful when you cannot see the value you set.
+    Length and character class give away nothing usable — a 24-character
+    lowercase-hex string is every Plaid credential ever issued — but they
+    immediately catch a value that is the wrong thing entirely: a truncated
+    paste, a swapped pair, or an API key from somewhere else.
+    """
+    import re
+
+    def shape(name: str) -> dict:
+        raw = os.environ.get(name, "")
+        value = raw.strip()
+        return {
+            "set": bool(value),
+            "length": len(value),
+            # Reported separately so a value that only *looks* fine but was
+            # pasted with whitespace is visible even now it is stripped out.
+            "had_surrounding_whitespace": raw != value,
+            "hex_only": bool(value) and bool(re.fullmatch(r"[0-9a-f]+", value)),
+        }
+
+    return {"client_id": shape("PLAID_CLIENT_ID"), "secret": shape("PLAID_SECRET")}
+
+
+def check_credentials() -> dict:
+    """Ask Plaid whether these keys work, without creating anything.
+
+    /institutions/get is authenticated, cheap, and has no side effects — no
+    Item, no quota, nothing to clean up — so it can be run as often as it
+    takes to get the configuration right.
+    """
+    if not configured():
+        return {"ok": False, "error": "Plaid isn't configured on this deployment."}
+
+    from plaid.model.country_code import CountryCode
+    from plaid.model.institutions_get_request import InstitutionsGetRequest
+
+    try:
+        resp = _client().institutions_get(InstitutionsGetRequest(
+            count=1, offset=0,
+            country_codes=[CountryCode(c) for c in COUNTRY_CODES],
+        )).to_dict()
+    except Exception as exc:                          # noqa: BLE001
+        return {"ok": False, "environment": environment(),
+                "error": explain(exc), "shape": credential_shape()}
+
+    return {
+        "ok": True,
+        "environment": environment(),
+        "message": (f"These credentials work against Plaid's {environment()} "
+                    f"environment."),
+        "institutions_visible": resp.get("total", 0),
+    }
