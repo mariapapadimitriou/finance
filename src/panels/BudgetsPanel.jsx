@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Badge, Card, Empty, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
-import { categoryIcon } from '../icons.js';
+import { Card, Empty, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import { getBudgets, money, monthLabel, pct, setBudgets } from '../api.js';
 
 /** Over budget, on pace to go over, or fine — status colour plus an icon and a word. */
@@ -97,7 +96,7 @@ export default function BudgetsPanel({ month, summary }) {
               </button>
             </>
           ) : (
-            <Empty title="Not enough history to suggest budgets" emoji="🌱">
+            <Empty title="Not enough history to suggest budgets">
               Import a few months of statements first.
             </Empty>
           )}
@@ -105,7 +104,7 @@ export default function BudgetsPanel({ month, summary }) {
       ) : (
         <>
           {partial && (
-            <Notice icon="⏳">
+            <Notice>
               {monthLabel(month, { long: true })} is still in progress. &ldquo;On
               pace&rdquo; projects your spending so far across the whole month, so
               you can act before the month closes rather than after.
@@ -121,7 +120,6 @@ export default function BudgetsPanel({ month, summary }) {
                 return (
                   <div key={r.category}>
                     <div className="row" style={{ marginBottom: 8 }}>
-                      <Badge icon={categoryIcon(r.category)} label={r.category} />
                       <strong>{r.category}</strong>
                       <StatusPill state={s}>{STATE_TEXT[s]}</StatusPill>
                       <span className="spacer" />
@@ -133,7 +131,7 @@ export default function BudgetsPanel({ month, summary }) {
                     </div>
                     <div className="track" style={{
                       background: 'var(--surface-2)', borderRadius: 4,
-                      height: 14, overflow: 'hidden',
+                      height: 8, overflow: 'hidden',
                     }}>
                       <div style={{
                         width: `${used * 100}%`,

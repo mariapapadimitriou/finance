@@ -97,7 +97,7 @@ def parse_csv(content: str, filename: str = "upload.csv",
     else:
         headers = []
         data_rows = rows
-        schema, confidence = schemas.detect(None, sample_row=first)
+        schema, confidence = schemas.detect(None, sample_rows=rows)
         pos = schema.positional or {0: "date", 1: "description", 2: "amount"}
         records = []
         for r in data_rows:
@@ -134,7 +134,7 @@ def parse_csv(content: str, filename: str = "upload.csv",
         else:
             description = str(get(rec, "description")).strip()
         if not description:
-            description = "(no description)"
+            description = str(get(rec, "description_fallback")).strip() or "(no description)"
 
         post_iso = parse_date(str(get(rec, "post_date"))) if headers else None
         issuer_cat = str(get(rec, "category")).strip() if headers else ""
@@ -217,21 +217,28 @@ def _resolve_account(filename, schema, records, cols_card,
                 break
 
     stem = re.sub(r"\.csv$", "", filename, flags=re.I)
+    # Repeat downloads of one card arrive as "accountactivity (8).csv" or
+    # "activities-2026-09-29.csv". The copy number and export date say nothing
+    # about which card it is, and keeping them would file each download under
+    # its own account, where overlapping rows are never de-duplicated.
+    stem = re.sub(r"\s*\(\d+\)\s*$", "", stem)
+    stem = re.sub(r"[-_ ]*\d{4}-\d{2}-\d{2}", "", stem)
     stem = _ACCT_CLEAN.sub(" ", stem).strip()
     stem = " ".join(w.capitalize() if w.islower() else w for w in stem.split())
+    label = re.sub(r"\s*\(headerless\)$", "", schema.label)
 
     if last4:
-        name = f"{schema.label} ••{last4}"
+        name = f"{label} ••{last4}"
         aid = f"{schema.key}_{last4}"
     elif stem:
         # "chase_sapphire.csv" from a Chase export should read "Chase Sapphire",
         # not "Chase — Chase Sapphire".
-        issuer_word = schema.label.split()[0].lower()
+        issuer_word = label.split()[0].lower()
         redundant = issuer_word in stem.lower() or schema.key == "generic"
-        name = stem if redundant else f"{schema.label} — {stem}"
+        name = stem if redundant else f"{label} — {stem}"
         aid = _ACCT_CLEAN.sub("_", f"{schema.key} {stem}").strip("_").lower()
     else:
-        name = schema.label
+        name = label
         aid = schema.key
 
     return aid, name

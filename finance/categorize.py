@@ -87,8 +87,13 @@ RULES: list[tuple[str, str]] = [
     # Card payments come in many spellings; all of them are money moving onto
     # the card, never a purchase. Missing one silently nets it against your
     # spending and makes the month look almost free.
-    (r"\b(payment thank you|payment received|payment from|payment -|autopay|"
+    # "payment\W*thank you" also covers TD's "PAYMENT - THANK YOU", which a
+    # literal "payment -" never matched: no word boundary follows the dash.
+    (r"\b(payment\W*thank you|payment received|payment from|autopay|"
      r"online payment|pre-?authorized payment|pmt thank you)\b", "Transfers"),
+    # Wealthsimple leaves the merchant blank on payments; the row reads just
+    # "Payment". Anchored to the whole merchant so "Payment Depot" still shops.
+    (r"^payments?\s*\|\|", "Transfers"),
     (r"\b(scene\+? points|points for credit|rewards? redemption|"
      r"cash ?back redemption|credit bal(?:ance)? refund)\b", "Transfers"),
     (r"\b(e-?transfer|interac|zelle|venmo|wise|remitly|western union)\b", "Transfers"),
@@ -278,6 +283,25 @@ ISSUER_CATEGORY_MAP = {
     "insurance": "Insurance",
     "home": "Home",
     "professional services": "Other",
+    # Wealthsimple
+    "coffee": "Coffee",
+    "bars and nightlife": "Alcohol & Bars",
+    "takeout and delivery": "Food Delivery",
+    "other food and drink": "Dining",
+    "public transit": "Transport",
+    "taxis and rideshares": "Transport",
+    "gas, parking, and tolls": "Gas & Fuel",
+    "flights": "Travel",
+    "other travel": "Travel",
+    "hotels": "Lodging",
+    "internet and phone": "Phone & Internet",
+    "clothing": "Shopping",
+    "other shopping": "Shopping",
+    "beauty": "Personal Care",
+    "fitness": "Fitness",
+    "other health": "Health",
+    "gifts": "Gifts & Charity",
+    "donations": "Gifts & Charity",
 }
 
 

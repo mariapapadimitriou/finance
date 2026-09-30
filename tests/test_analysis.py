@@ -91,6 +91,17 @@ class TestDedupe:
         assert new == []
         assert len(dupes) == 1
 
+    def test_repeat_purchases_within_one_file_are_all_kept(self):
+        """The same coffee on Monday and Wednesday, both on one statement."""
+        incoming = [
+            txn("2026-04-11", "ARABICA (EATON) 001", 8.98),
+            txn("2026-04-12", "ARABICA (EATON) 001", 8.98),
+            txn("2026-04-14", "ARABICA (EATON) 001", 8.98),
+        ]
+        new, dupes = split_new(incoming, [])
+        assert len(new) == 3
+        assert dupes == []
+
     def test_a_distant_repeat_purchase_is_not_a_duplicate(self):
         existing = [txn("2026-07-01", "BLUE BOTTLE COFFEE", 6.40)]
         incoming = [txn("2026-07-20", "BLUE BOTTLE COFFEE", 6.40)]

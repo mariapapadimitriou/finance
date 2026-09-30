@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Chart from '../components/Chart.jsx';
 import { BarRow, Card, Legend, Notice, Tile } from '../components/ui.jsx';
-import { categoryIcon } from '../icons.js';
 import { dailySpendConfig, monthlyTrendConfig } from '../charts.js';
 import { cssVar, getBreakdown, money, monthLabel, pct } from '../api.js';
 
@@ -42,7 +41,7 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
   return (
     <div className="stack">
       {gaps.length > 0 && (
-        <Notice icon="🧩">
+        <Notice>
           <strong>{gaps.length} month{gaps.length === 1 ? '' : 's'} missing
           between {monthLabel(summary.months[0])} and{' '}
           {monthLabel(summary.months.at(-1))}.</strong>{' '}
@@ -54,7 +53,7 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
       )}
 
       {partial && (
-        <Notice icon="⏳">
+        <Notice>
           {monthLabel(month, { long: true })} is still in progress — your data runs
           to day {summary.date_range?.[1]?.slice(8)}. Comparisons against full
           months will read low until the month closes.
@@ -63,26 +62,22 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
 
       <div className="grid cols-4">
         <Tile
-          tint="blue" icon="📅"
           label={monthLabel(month, { long: true })}
           value={money(currentMonthSpend(summary, month))}
           delta={month === summary.latest_month ? summary.vs_average : undefined}
           note="vs your monthly average"
         />
         <Tile
-          tint="peach" icon="⚖️"
           label="Monthly average"
           value={money(summary.average_monthly_spend)}
           note={`across ${observedMonths} month${observedMonths === 1 ? '' : 's'} of data`}
         />
         <Tile
-          tint="lilac" icon="🎈"
           label="Discretionary"
           value={pct(split.discretionary_share ?? 0)}
           note={`${money(split.discretionary ?? 0)} of ${money(split.total ?? 0)}`}
         />
         <Tile
-          tint="mint" icon="💸"
           label="Could save"
           value={money(savings)}
           note="per year, confidence-weighted"
@@ -126,7 +121,7 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
       </Card>
 
       <div className="grid cols-2">
-        <Card title="Where it went 🍰" hint={monthLabel(month, { long: true })}>
+        <Card title="Where it went" hint={monthLabel(month, { long: true })}>
           {categories.length === 0 ? (
             <p className="muted">
               {breakdown ? 'No spending recorded in this month.'
@@ -147,7 +142,7 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
           )}
         </Card>
 
-        <Card title="Your top spots 🏆" hint={monthLabel(month, { long: true })}>
+        <Card title="Top merchants" hint={monthLabel(month, { long: true })}>
           {merchants.length === 0 ? (
             <p className="muted">
               {breakdown ? 'No merchants in this month.' : 'Loading…'}
@@ -158,7 +153,6 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
                 <BarRow
                   key={m.merchant}
                   name={m.merchant}
-                  icon={categoryIcon(m.category)}
                   sub={`${m.category} · ${m.transactions}× · ${money(m.avg)} avg`}
                   value={m.amount}
                   max={maxMerchant}
@@ -190,13 +184,13 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
           </p>
         </Card>
 
-        <Card title="Which days cost you 📆" hint="Average per active day, all history">
+        <Card title="Spend by weekday" hint="Average per active day, all history">
           {weekday.length === 0 ? (
             <p className="muted">Not enough data yet.</p>
           ) : (
             <div className="bars">
               {weekday.map((d) => (
-                <BarRow key={d.day} name={d.day} icon="📅" value={d.average} max={maxWeekday} />
+                <BarRow key={d.day} name={d.day} value={d.average} max={maxWeekday} />
               ))}
             </div>
           )}
@@ -209,7 +203,7 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
         </div>
       </Card>
 
-      <Card title="Your cards 💳" hint="Spending aggregated across every card you've imported">
+      <Card title="Your cards" hint="Spending aggregated across every card you've imported">
         <div className="table-wrap">
           <table>
             <thead>

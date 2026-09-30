@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Card, Empty, Notice } from '../components/ui.jsx';
-import { categoryIcon, effortIcon } from '../icons.js';
 import { dateLabel, dismissFinding, money, pct, restoreFinding, runNarrative } from '../api.js';
 
 const EFFORT = {
@@ -45,7 +44,7 @@ export default function SavingsPanel({ insights, onRefresh }) {
 
   if (findings.length === 0) {
     return (
-      <Empty title="Nothing to cut that we can see" emoji="🎉">
+      <Empty title="Nothing to cut that we can see">
         Either your spending is already tight, or there isn&apos;t enough history
         yet. Most rules need three or more months to tell a habit from a
         one-off — import a longer date range and check back.
@@ -59,7 +58,7 @@ export default function SavingsPanel({ insights, onRefresh }) {
 
   return (
     <div className="stack">
-      <div className="hero-card">
+      <div className="card hero-card">
         <div className="hero">
           <div className="figure num">{money(summary.weighted_annual ?? 0)}</div>
           <div className="caption">
@@ -89,7 +88,7 @@ export default function SavingsPanel({ insights, onRefresh }) {
             </button>
           }
         >
-          {narrativeError && <Notice kind="error" icon="⚠️">{String(narrativeError.message)}</Notice>}
+          {narrativeError && <Notice kind="error">{String(narrativeError.message)}</Notice>}
           {narrative?.text
             ? <div className="narrative">{narrative.text}</div>
             : <p className="muted small" style={{ margin: 0 }}>
@@ -100,7 +99,7 @@ export default function SavingsPanel({ insights, onRefresh }) {
       )}
 
       {!claude.available && (
-        <Notice icon="🤖">
+        <Notice>
           <strong>Optional Claude summary is off.</strong> {claude.detail} The rule
           engine below works entirely offline and needs no key.
         </Notice>
@@ -108,11 +107,8 @@ export default function SavingsPanel({ insights, onRefresh }) {
 
       {grouped.map(([effort, list]) => (
         <div key={effort} className="stack">
-          <div className="row">
-            <h2>
-              <span aria-hidden="true">{effortIcon(effort)}</span>{' '}
-              {EFFORT[effort]?.label ?? effort}
-            </h2>
+          <div className="section-head">
+            <h2>{EFFORT[effort]?.label ?? effort}</h2>
             <span className="muted small">{EFFORT[effort]?.hint}</span>
             <span className="spacer" />
             <span className="muted small num">
@@ -135,12 +131,7 @@ function Finding({ finding: f, busy, onDismiss }) {
     <section className={`card finding effort-${f.effort}`}>
       <div className="top">
         <div>
-          <h3>
-            {f.category && (
-              <span aria-hidden="true">{categoryIcon(f.category)} </span>
-            )}
-            {f.title}
-          </h3>
+          <h3>{f.title}</h3>
           <p>{f.detail}</p>
           <div className="meta">
             <span className="pill">{CONFIDENCE(f.confidence)} · {pct(f.confidence)}</span>

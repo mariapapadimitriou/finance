@@ -47,9 +47,15 @@ export default function ImportPanel({ accounts, onImported }) {
       'Delete every imported transaction? Budgets and category corrections are kept. '
       + 'This cannot be undone, but you can re-import your CSVs.'
     )) return;
-    await clearLedger();
-    await refresh();
-    await onImported();
+    setError(null);
+    setResults(null);
+    try {
+      await clearLedger();
+      await refresh();
+      await onImported();
+    } catch (e) {
+      setError(e);
+    }
   }
 
   const csv = sources?.sources?.find((s) => s.key === 'csv');
@@ -67,7 +73,6 @@ export default function ImportPanel({ accounts, onImported }) {
           handleFiles(e.dataTransfer.files);
         }}
       >
-        <span className="emoji" aria-hidden="true">{busy ? '⏳' : '🫧'}</span>
         <h3>{busy ? 'Reading your statements…' : 'Drop your statements here'}</h3>
         <p style={{ margin: '8px auto 18px', maxWidth: '46ch' }}>
           PDF statements or CSV exports, from any card. The format is detected
@@ -120,24 +125,24 @@ export default function ImportPanel({ accounts, onImported }) {
           </div>
           {results.flatMap((r) => (r.warnings ?? []).map((w) => (
             <div key={`${r.filename}-${w}`} style={{ marginTop: 12 }}>
-              <Notice icon="⚠️"><strong>{r.filename}:</strong> {w}</Notice>
+              <Notice><strong>{r.filename}:</strong> {w}</Notice>
             </div>
           )))}
         </Card>
       )}
 
       <div className="grid cols-2">
-        <Card title="Getting your statements 📄" hint={csv?.detail}>
+        <Card title="Getting your statements" hint={csv?.detail}>
           <ol className="steps">
             {(csv?.setup_steps ?? []).map((s) => <li key={s}>{s}</li>)}
           </ol>
           <p className="small muted" style={{ marginTop: 16, marginBottom: 0 }}>
-            🔒 Everything is parsed on this machine and stored in a local SQLite
+            Everything is parsed on this machine and stored in a local SQLite
             file. Nothing is uploaded anywhere.
           </p>
         </Card>
 
-        <Card title="Automatic sync ⚡" hint="Alternatives to downloading CSVs by hand">
+        <Card title="Automatic sync" hint="Alternatives to downloading CSVs by hand">
           {others.map((s) => (
             <div key={s.key} style={{ marginBottom: 14 }}>
               <div className="row">
@@ -168,7 +173,7 @@ export default function ImportPanel({ accounts, onImported }) {
       </div>
 
       {accounts.length > 0 && (
-        <Card title="Your cards 💳">
+        <Card title="Your cards">
           <div className="table-wrap">
             <table>
               <thead>
@@ -193,7 +198,7 @@ export default function ImportPanel({ accounts, onImported }) {
       )}
 
       {history.length > 0 && (
-        <Card title="Recent imports 🕑">
+        <Card title="Recent imports">
           <div className="table-wrap">
             <table>
               <thead>

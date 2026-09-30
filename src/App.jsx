@@ -10,14 +10,30 @@ import {
   getAccounts, getCategories, getInsights, getRecurring, getSummary, monthLabel,
 } from './api.js';
 
+// Icons are 24×24 stroke paths, drawn in currentColor.
 const TABS = [
-  { key: 'overview', label: 'Overview', icon: '📊' },
-  { key: 'savings', label: 'Savings', icon: '💸' },
-  { key: 'subscriptions', label: 'Subscriptions', icon: '🔁' },
-  { key: 'transactions', label: 'Transactions', icon: '🧾' },
-  { key: 'budgets', label: 'Budgets', icon: '🎯' },
-  { key: 'import', label: 'Import', icon: '📥' },
+  { key: 'overview', label: 'Overview', hint: 'Spending across every card',
+    icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
+  { key: 'savings', label: 'Savings', hint: 'What to cut, ranked by what it saves',
+    icon: 'M12 3v18M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
+  { key: 'subscriptions', label: 'Subscriptions', hint: 'Recurring charges found in your history',
+    icon: 'M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M18 2v4h-4M6 22v-4h4' },
+  { key: 'transactions', label: 'Transactions', hint: 'Every charge, searchable and correctable',
+    icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
+  { key: 'budgets', label: 'Budgets', hint: 'Spent against budget, projected to month end',
+    icon: 'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8z' },
+  { key: 'import', label: 'Import', hint: 'Add statements from any card',
+    icon: 'M12 3v12M7 10l5 5 5-5M4 21h16' },
 ];
+
+function Icon({ d }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  );
+}
 
 export default function App() {
   const [theme, setTheme] = useState(
@@ -83,7 +99,7 @@ export default function App() {
     return (
       <Shell theme={theme} setTheme={setTheme} tab={tab} onTab={setTab}
              findingCount={findingCount}>
-        <Empty title="Let's see where the money goes" emoji="🫧">
+        <Empty title="Let's see where the money goes">
           <p>
             Drop in your card statements — PDF or CSV — and this fills in:
             spending by category, subscriptions you&apos;ve forgotten about, and a
@@ -123,41 +139,21 @@ export default function App() {
 
 function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
                  months = [], month, onMonth, showMonth = false, children }) {
+  const current = TABS.find((t) => t.key === tab);
+
   return (
-    <>
-      <header>
-        <div className="header-inner">
-          <div className="brand">
-            <span className="mark" aria-hidden="true">L</span>
-            <div>
-              <h1>Ledger</h1>
-              <div className="sub">every card, one picture</div>
-            </div>
+    <div className="app">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="mark" aria-hidden="true">L</span>
+          <div>
+            <div className="name">Ledger</div>
+            <div className="sub">every card, one picture</div>
           </div>
-
-          {showMonth && months.length > 0 && (
-            <>
-              <label htmlFor="month-select" className="sr-only">Month</label>
-              <select id="month-select" value={month}
-                      onChange={(e) => onMonth(e.target.value)}>
-                {[...months].reverse().map((m) => (
-                  <option key={m} value={m}>{monthLabel(m, { long: true })}</option>
-                ))}
-              </select>
-            </>
-          )}
-
-          <button
-            className="btn quiet"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-          >
-            {theme === 'dark' ? '☀' : '☾'}
-          </button>
         </div>
 
         {onTab && (
-          <nav className="tabs" role="tablist">
+          <nav className="nav" role="tablist" aria-orientation="vertical">
             {TABS.map((t) => (
               <button
                 key={t.key}
@@ -165,17 +161,51 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
                 aria-selected={tab === t.key}
                 onClick={() => onTab(t.key)}
               >
-                <span aria-hidden="true">{t.icon}</span>
+                <Icon d={t.icon} />
                 {t.label}
                 {t.key === 'savings' && findingCount > 0 && (
-                  <span className="badge">{findingCount}</span>
+                  <span className="count">{findingCount}</span>
                 )}
               </button>
             ))}
           </nav>
         )}
-      </header>
-      <main>{children}</main>
-    </>
+
+        <div className="sidebar-foot">
+          <button
+            className="btn quiet"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+          >
+            <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
+            <span className="label">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+          </button>
+        </div>
+      </aside>
+
+      <div className="content">
+        <div className="topbar">
+          <div className="topbar-inner">
+            <div className="title">
+              <h1>{current?.label ?? 'Ledger'}</h1>
+              {current && <div className="hint">{current.hint}</div>}
+            </div>
+
+            {showMonth && months.length > 0 && (
+              <>
+                <label htmlFor="month-select" className="sr-only">Month</label>
+                <select id="month-select" value={month}
+                        onChange={(e) => onMonth(e.target.value)}>
+                  {[...months].reverse().map((m) => (
+                    <option key={m} value={m}>{monthLabel(m, { long: true })}</option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+        </div>
+        <main>{children}</main>
+      </div>
+    </div>
   );
 }

@@ -1,7 +1,6 @@
 // Small shared presentation pieces.
 
 import { money } from '../api.js';
-import { categoryIcon } from '../icons.js';
 
 export function Card({ title, hint, actions, children, className = '' }) {
   return (
@@ -21,13 +20,10 @@ export function Card({ title, hint, actions, children, className = '' }) {
 }
 
 /** A single number that is the whole story — no chart needed. */
-export function Tile({ label, icon, value, note, delta, tint = 'blue' }) {
+export function Tile({ label, value, note, delta }) {
   return (
-    <div className={`card tile t-${tint}`}>
-      <div className="label">
-        {icon && <span aria-hidden="true">{icon}</span>}
-        {label}
-      </div>
+    <div className="card tile">
+      <div className="label">{label}</div>
       <div className="value num">{value}</div>
       {delta !== undefined && delta !== null && (
         <div className="note">
@@ -42,26 +38,16 @@ export function Tile({ label, icon, value, note, delta, tint = 'blue' }) {
   );
 }
 
-/** A circular emoji badge — how categories tell themselves apart. */
-export function Badge({ icon, label }) {
-  return (
-    <span className="badge-icon" role="img" aria-label={label || ''}>
-      {icon}
-    </span>
-  );
-}
-
 /**
  * One horizontal bar with a direct label.
  *
  * Built in HTML rather than on a canvas so the value always sits beside the
  * bar at full contrast, never clipped inside a short one.
  */
-export function BarRow({ name, sub, value, max, formatted, icon, alt = false }) {
+export function BarRow({ name, sub, value, max, formatted, alt = false }) {
   const width = max > 0 ? Math.max((value / max) * 100, 1) : 0;
   return (
     <div className="bar-row">
-      <Badge icon={icon ?? categoryIcon(name)} label={name} />
       <div>
         <div className="name" title={name}>{name}</div>
         {sub && <div className="sub">{sub}</div>}
@@ -92,26 +78,19 @@ export function StatusPill({ state, children }) {
   const icon = { good: '✓', warning: '!', critical: '✕' }[state] ?? '•';
   return (
     <span className={`pill ${state}`}>
-      <span className="status-dot" aria-hidden="true" />
       <span aria-hidden="true">{icon}</span>
       {children}
     </span>
   );
 }
 
-export function Notice({ kind = '', icon = '💡', children }) {
-  return (
-    <div className={`notice ${kind}`}>
-      <span className="ico" aria-hidden="true">{icon}</span>
-      <div>{children}</div>
-    </div>
-  );
+export function Notice({ kind = '', children }) {
+  return <div className={`notice ${kind}`}>{children}</div>;
 }
 
-export function Empty({ title, emoji = '👋', children }) {
+export function Empty({ title, children }) {
   return (
     <div className="empty">
-      <span className="emoji" aria-hidden="true">{emoji}</span>
       <h2>{title}</h2>
       <div>{children}</div>
     </div>
@@ -125,7 +104,7 @@ export function Loading({ what = 'data' }) {
 export function ErrorNote({ error, onRetry }) {
   if (!error) return null;
   return (
-    <Notice kind="error" icon="⚠️">
+    <Notice kind="error">
       {String(error.message || error)}
       {onRetry && (
         <>

@@ -38,6 +38,23 @@ WELLS_FARGO = """07/14/2026,-42.10,*,,SAFEWAY STORE 1842
 07/15/2026,-8.75,*,,PEETS COFFEE 0231
 """
 
+# Also headerless and also five columns wide, so column count alone can't
+# tell it from Wells Fargo: date, description, debit, credit, balance.
+TD = """04/05/2026,UBER   *TRIP,17.31,,3581.38
+04/04/2026,BEANFIELD FIBRE 1 L.P.,73.45,,3564.07
+03/30/2026,PAYMENT - THANK YOU,,1047.86,3286.59
+03/17/2026,WWW.HOSTELWORLD.COM,,3.03,2906.84
+03/04/2026,"CURSOR, AI POWERED IDE",31.87,,1272.96
+"""
+
+WEALTHSIMPLE = """transaction_date,transaction_type,status,merchant,amount,currency,notes,category
+2026-09-27,Purchase,Completed,Presto Fare/Sq5Sk6Qzkk,-3.30,CAD,,Public transit
+2026-09-26,Purchase,Completed,Quantum Coffee,-10.17,CAD,,Coffee
+2026-09-17,Payment,Completed,,205.06,CAD,,Uncategorized
+2026-08-26,Purchase,Completed,Chipotle Online,-14.35,CAD,,Restaurants
+2026-08-23,Purchase,Completed,Chipotle 5323,-14.35,CAD,,Restaurants
+"""
+
 
 class TestFormatDetection:
     def test_amex(self):
@@ -68,6 +85,22 @@ class TestFormatDetection:
         r = parse_csv(WELLS_FARGO, "wf.csv")
         assert len(r.transactions) == 2
         assert r.transactions[0].description == "SAFEWAY STORE 1842"
+        assert r.format_key == "wells_fargo"
+
+    def test_td_is_not_mistaken_for_wells_fargo(self):
+        r = parse_csv(TD, "accountactivity.csv")
+        assert r.format_key == "td_canada"
+        assert r.skipped_rows == 0
+        assert [t.amount for t in r.transactions] == [17.31, 73.45, -1047.86, -3.03, 31.87]
+        assert r.transactions[4].description == "CURSOR, AI POWERED IDE"
+
+    def test_wealthsimple(self):
+        r = parse_csv(WEALTHSIMPLE, "credit-card-activities-2026-09-29.csv")
+        assert r.format_key == "wealthsimple"
+        assert r.transactions[0].amount == 3.30          # purchases flip positive
+        payment = r.transactions[2]
+        assert payment.amount == -205.06
+        assert payment.description == "Payment"          # blank merchant falls back
 
 
 class TestSignConventions:
@@ -124,6 +157,17 @@ class TestAccountResolution:
         a = parse_csv(CAPITAL_ONE, "jan.csv")
         b = parse_csv(CAPITAL_ONE, "feb.csv")
         assert a.account_id == b.account_id
+
+    def test_repeat_downloads_land_in_one_account(self):
+        """Browsers number repeat downloads; issuers stamp the export date."""
+        a = parse_csv(TD, "accountactivity.csv")
+        b = parse_csv(TD, "accountactivity (8).csv")
+        assert a.account_id == b.account_id
+        assert a.account_name == "TD Canada — Accountactivity"
+
+        c = parse_csv(WEALTHSIMPLE, "credit-card-activities-2026-09-21.csv")
+        d = parse_csv(WEALTHSIMPLE, "credit-card-activities-2026-09-29.csv")
+        assert c.account_id == d.account_id
 
 
 class TestMessyInput:

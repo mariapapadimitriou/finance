@@ -178,11 +178,15 @@ class Store:
         return [dict(r) for r in rows]
 
     def clear_transactions(self, account_id: str | None = None) -> int:
+        # Import history goes with the transactions it describes; left behind,
+        # it lists files whose data no longer exists.
         with self.conn() as c:
             if account_id:
                 cur = c.execute("DELETE FROM transactions WHERE account_id = ?", (account_id,))
+                c.execute("DELETE FROM imports WHERE account_id = ?", (account_id,))
             else:
                 cur = c.execute("DELETE FROM transactions")
+                c.execute("DELETE FROM imports")
             return cur.rowcount
 
     # ── Merchant overrides ───────────────────────────────────────────────────

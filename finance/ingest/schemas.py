@@ -26,6 +26,8 @@ class CsvSchema:
     credit: list[str] = field(default_factory=list)
     category: list[str] = field(default_factory=list)
     card: list[str] = field(default_factory=list)
+    # Read when the description is blank, e.g. payment rows with no merchant.
+    description_fallback: list[str] = field(default_factory=list)
     # +1: the amount column is already positive-for-spending.
     # -1: the issuer writes purchases as negatives; flip them.
     sign: int = 1
@@ -122,6 +124,19 @@ SCHEMAS: list[CsvSchema] = [
         currency="CAD",
     ),
     CsvSchema(
+        key="wealthsimple",
+        label="Wealthsimple",
+        signature=["transaction date", "transaction type", "status", "merchant",
+                   "amount", "currency"],
+        date=["transaction date"],
+        description=["merchant"],
+        description_fallback=["transaction type"],
+        amount=["amount"],
+        category=["category"],
+        sign=-1,  # purchases negative, payments positive
+        currency="CAD",
+    ),
+    CsvSchema(
         key="wells_fargo",
         label="Wells Fargo (headerless)",
         positional={0: "date", 1: "amount", 4: "description"},
@@ -163,7 +178,8 @@ _HEADER_TOKENS = {
 
 
 def normalize_header(h: str) -> str:
-    return re.sub(r"\s+", " ", (h or "").strip().lower().lstrip("﻿"))
+    # snake_case headers (Wealthsimple's "transaction_date") read as words.
+    return re.sub(r"[\s_]+", " ", (h or "").strip().lower().lstrip("﻿"))
 
 
 def looks_like_header_row(cells: list[str]) -> bool:
@@ -189,7 +205,7 @@ def score_schema(schema: CsvSchema, headers: list[str]) -> float:
     return coverage if hits >= 2 else coverage * 0.5
 
 
-def detect(headers: list[str] | None, sample_row: list[str] | None = None
+def detect(headers: list[str] | None, sample_rows: list[list[str]] | None = None
            ) -> tuple[CsvSchema, float]:
     """Pick the best schema for a file. Returns (schema, confidence)."""
     if headers:
@@ -206,13 +222,41 @@ def detect(headers: list[str] | None, sample_row: list[str] | None = None
         # Generic still works as long as we can find a date and an amount.
         return GENERIC, _generic_confidence(norm)
 
-    # Headerless: match on column count and the shape of the first data row.
-    if sample_row:
-        n = len(sample_row)
+    # Headerless: several layouts share a column count (TD and Wells Fargo are
+    # both five wide), so score each on whether its columns hold the right kind
+    # of value across a sample of rows.
+    if sample_rows:
+        n = len(sample_rows[0])
+        best, best_score = None, 0.0
         for schema in SCHEMAS:
-            if schema.positional and schema.columns == n:
-                return schema, 0.55
+            if not schema.positional or schema.columns != n:
+                continue
+            s = _positional_fit(schema, sample_rows[:20])
+            if s > best_score:
+                best, best_score = schema, s
+        if best and best_score >= 0.8:
+            return best, round(0.55 + 0.4 * (best_score - 0.8) / 0.2, 2)
     return GENERIC, 0.0
+
+
+def _positional_fit(schema: CsvSchema, rows: list[list[str]]) -> float:
+    """Share of sampled cells that hold the kind of value their role expects."""
+    from ..models import parse_amount, parse_date
+    hits = total = 0
+    for row in rows:
+        for idx, role in (schema.positional or {}).items():
+            cell = row[idx].strip() if idx < len(row) else ""
+            total += 1
+            if role == "date":
+                hits += parse_date(cell) is not None
+            elif role in ("amount", "debit", "credit"):
+                # Debit/credit pairs leave one side blank on every row.
+                hits += (not cell and role != "amount") or parse_amount(cell) is not None
+            else:
+                # parse_amount is lenient enough to read "STORE 1842" as a
+                # number, so a description is recognized by having letters.
+                hits += bool(re.search(r"[A-Za-z]", cell))
+    return hits / total if total else 0.0
 
 
 def _generic_confidence(headers: list[str]) -> float:
@@ -254,6 +298,8 @@ def resolve_columns(schema: CsvSchema, headers: list[str]) -> dict[str, str | li
     pick("credit", GENERIC.credit)
     pick("category", GENERIC.category)
     pick("card", GENERIC.card)
+    if schema.description_fallback:
+        pick("description_fallback", schema.description_fallback)
 
     # Description can span several columns (RBC splits it across two).
     desc_cands = schema.description or GENERIC.description

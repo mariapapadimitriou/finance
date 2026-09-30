@@ -1,5 +1,4 @@
-import { Badge, Card, Empty, StatusPill, Tile } from '../components/ui.jsx';
-import { categoryIcon } from '../icons.js';
+import { Card, Empty, StatusPill, Tile } from '../components/ui.jsx';
 import { dateLabel, money, pct } from '../api.js';
 
 const CADENCE_LABEL = {
@@ -13,7 +12,7 @@ export default function SubscriptionsPanel({ recurring }) {
 
   if (items.length === 0) {
     return (
-      <Empty title="No recurring charges detected yet" emoji="🔍">
+      <Empty title="No recurring charges detected yet">
         A charge needs to appear at least three times on a regular cadence before
         it counts as recurring. Import a longer history and subscriptions will
         surface here automatically.
@@ -27,13 +26,13 @@ export default function SubscriptionsPanel({ recurring }) {
   return (
     <div className="stack">
       <div className="grid cols-4">
-        <Tile tint="blue" icon="🔁" label="Active subscriptions" value={summary.count ?? 0}
+        <Tile label="Active subscriptions" value={summary.count ?? 0}
               note="detected from charge regularity, not merchant names" />
-        <Tile tint="peach" icon="🗓️" label="Every month" value={money(summary.monthly_total ?? 0)}
+        <Tile label="Every month" value={money(summary.monthly_total ?? 0)}
               note="renewing without a decision" />
-        <Tile tint="lilac" icon="📈" label="Every year" value={money(summary.annual_total ?? 0)}
+        <Tile label="Every year" value={money(summary.annual_total ?? 0)}
               note="total committed annually" />
-        <Tile tint="mint" icon="💤" label="Lapsed" value={inactive.length}
+        <Tile label="Lapsed" value={inactive.length}
               note="past due for their next charge" />
       </div>
 
@@ -58,10 +57,7 @@ export default function SubscriptionsPanel({ recurring }) {
               {active.map((r) => (
                 <tr key={`${r.merchant}-${r.amount}`}>
                   <td className="merchant">
-                    <span className="cell-merchant">
-                      <Badge icon={categoryIcon(r.category)} label={r.category} />
-                      <span>{r.merchant}</span>
-                    </span>
+                    {r.merchant}
                     {r.price_change?.direction === 'increase' && (
                       <div className="desc" style={{ color: 'var(--critical)' }}>
                         ↑ {money(r.price_change.from, { cents: true })} →{' '}

@@ -67,22 +67,22 @@ def split_new(incoming: list[Transaction], existing: list[Transaction]
 
     new: list[Transaction] = []
     dupes: list[Transaction] = []
-    # Rows accepted in this batch also become candidates, so a file containing
-    # its own near-duplicate does not sneak both copies in.
-    accepted_index = dict(index)
 
     for t in incoming:
         if t.fingerprint in existing_fps:
             dupes.append(t)
             continue
 
-        if _has_near_match(t, accepted_index.get((t.account_id, f"{t.amount:.2f}"), [])):
+        # Near-matching looks only at earlier imports, never at the rest of this
+        # batch. One export does not list a charge twice under shifted dates, so
+        # a same-amount repeat inside a file is a real repeat purchase: the same
+        # $8.98 coffee on Monday and Wednesday.
+        if _has_near_match(t, index.get((t.account_id, f"{t.amount:.2f}"), [])):
             dupes.append(t)
             continue
 
         new.append(t)
         existing_fps.add(t.fingerprint)
-        accepted_index.setdefault((t.account_id, f"{t.amount:.2f}"), []).append(t)
 
     return new, dupes
 
