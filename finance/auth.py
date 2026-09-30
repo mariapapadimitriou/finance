@@ -61,6 +61,11 @@ def hash_password(password: str, salt: bytes | None = None) -> str:
     return f"scrypt${salt.hex()}${key.hex()}"
 
 
+def _env_salt(password: str) -> bytes:
+    """A salt fixed by the password, so every instance derives the same hash."""
+    return hashlib.sha256(b"spendie.env-salt.v1|" + password.encode()).digest()[:16]
+
+
 def verify_password(password: str, stored: str) -> bool:
     """Check a password against a stored hash, in constant time."""
     try:
@@ -88,9 +93,19 @@ def configured_hash() -> str | None:
         return stored
     plain = os.environ.get(PASSWORD_ENV, "").strip()
     if plain:
-        # Salted per boot. The hash never leaves the process, so a fixed salt
-        # would buy nothing, and a random one keeps it out of any log.
-        return hash_password(plain)
+        # The salt is derived from the password rather than drawn at random,
+        # and that is load-bearing: the session signing key comes from this
+        # hash, so a per-boot salt gives every serverless instance a different
+        # key. Signing in then succeeds on the instance that answered the login
+        # and fails on the next one, which reads to the person as a password
+        # screen that will not go away.
+        #
+        # A deterministic salt is weaker in the abstract — it cannot frustrate
+        # a precomputed table. It costs nothing here, because this hash is
+        # computed in memory from an environment variable and never stored,
+        # logged or transmitted; anyone who can read it can already read the
+        # password sitting next to it.
+        return hash_password(plain, salt=_env_salt(plain))
     return None
 
 
