@@ -10,6 +10,7 @@ from .categorize import apply_categories
 from .dedupe import dedupe_batch, split_new
 from .ingest.base import IngestResult
 from .store import Store
+from .trips import apply_trips
 
 
 def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
@@ -20,6 +21,9 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
     new, dupes = split_new(batch, existing)
 
     apply_categories(new, store.overrides())
+    # Declared trips outrank the merchant rules: a restaurant on holiday is
+    # travel spending, not dining.
+    apply_trips(new, store.trips())
     inserted = store.add_transactions(new)
 
     duplicate_count = len(dupes) + self_dupes
@@ -44,6 +48,7 @@ def recategorize_all(store: Store) -> int:
     transactions = store.all_transactions()
     overrides = store.overrides()
     apply_categories(transactions, overrides)
+    apply_trips(transactions, store.trips())
 
     updated = 0
     with store.conn() as c:

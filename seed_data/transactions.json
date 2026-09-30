@@ -1,6 +1,13 @@
 {
  "note": "Transactions shipped with the app. Public by design — see seed_data/__init__.py.",
  "count": 227,
+ "trips": [
+  {
+   "name": "New York",
+   "start_date": "2025-05-15",
+   "end_date": "2025-05-19"
+  }
+ ],
  "transactions": [
   {
    "date": "2025-02-19",
@@ -1466,8 +1473,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Coffee",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "035"
@@ -1481,8 +1488,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Dining",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "037"
@@ -1496,8 +1503,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Dining",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "040"
@@ -1511,8 +1518,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Dining",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "039"
@@ -1526,8 +1533,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Shopping",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "036"
@@ -1541,8 +1548,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Other",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "038"
@@ -1556,8 +1563,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Coffee",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "041"
@@ -1571,8 +1578,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Alcohol & Bars",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "047"
@@ -1586,8 +1593,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Alcohol & Bars",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "046"
@@ -1601,8 +1608,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Health",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "045"
@@ -1616,8 +1623,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Entertainment",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "043"
@@ -1631,8 +1638,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Shopping",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "044"
@@ -1646,8 +1653,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Dining",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "042"
@@ -1661,8 +1668,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Lodging",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "049"
@@ -1676,8 +1683,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Personal Care",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "048"
@@ -1691,8 +1698,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Transport",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "050"
@@ -1706,8 +1713,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Groceries",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "051"
@@ -1721,8 +1728,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Dining",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "053"
@@ -1736,8 +1743,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Lodging",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "054"
@@ -1751,8 +1758,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Dining",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "055"
@@ -1766,8 +1773,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Dining",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "052"
@@ -1781,8 +1788,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Coffee",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "057"
@@ -1796,8 +1803,8 @@
    "currency": "CAD",
    "account_id": "scotiabank_04876",
    "account_name": "Scotiabank Gold Amex ••4876",
-   "category": "Coffee",
-   "category_source": "rule",
+   "category": "Travel",
+   "category_source": "trip",
    "seq": 0,
    "source": "seed",
    "ref": "056"

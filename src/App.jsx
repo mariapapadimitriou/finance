@@ -4,6 +4,7 @@ import SavingsPanel from './panels/SavingsPanel.jsx';
 import SubscriptionsPanel from './panels/SubscriptionsPanel.jsx';
 import TransactionsPanel from './panels/TransactionsPanel.jsx';
 import BudgetsPanel from './panels/BudgetsPanel.jsx';
+import TripsPanel from './panels/TripsPanel.jsx';
 import ImportPanel from './panels/ImportPanel.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
@@ -36,6 +37,8 @@ const TABS = [
     icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
   { key: 'budgets', label: 'Budgets', hint: 'Spent against budget, projected to month end',
     icon: 'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8z' },
+  { key: 'trips', label: 'Trips', hint: 'Date ranges whose spending counts as Travel',
+    icon: 'M3 11l18-6-6 18-2.5-7.5L5 13z' },
   { key: 'import', label: 'Import', hint: 'Add statements from any card',
     icon: 'M12 3v12M7 10l5 5 5-5M4 21h16' },
 ];
@@ -146,6 +149,7 @@ export default function App() {
                            accounts={accounts} onChanged={load} />
       )}
       {tab === 'budgets' && <BudgetsPanel month={month} summary={summary} />}
+      {tab === 'trips' && <TripsPanel onChanged={load} />}
       {tab === 'import' && <ImportPanel accounts={accounts} onImported={load} />}
     </Shell>
   );
@@ -160,10 +164,7 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
       <aside className="sidebar">
         <div className="brand">
           <Logo size={34} />
-          <div>
-            <div className="name">Spendie</div>
-            <div className="sub">every card, one picture</div>
-          </div>
+          <div className="name">Spendie</div>
         </div>
 
         {onTab && (

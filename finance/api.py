@@ -25,6 +25,7 @@ from .categorize import CATEGORIES
 from .ingest import all_sources, get_source, parse_csv, parse_statement
 from .insights import detect_recurring, findings_summary, generate_findings, recurring_summary
 from .pipeline import ingest, recategorize_all
+from .trips import summarize, validate
 from .store import Store
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -304,6 +305,66 @@ def run_narrative():
     except Exception as exc:  # noqa: BLE001 - surface API failures to the UI
         return jsonify({"available": False, "text": "",
                         "detail": f"Claude request failed: {exc}"}), 502
+
+
+# ── Trips ────────────────────────────────────────────────────────────────
+# Declared date ranges whose spending is reclassified as Travel. See
+# finance/trips.py for why this is declared rather than inferred.
+
+@bp.get("/trips")
+def trips():
+    st = store()
+    txns = st.all_transactions()
+    rows = [t.to_dict(summarize(t, txns)) for t in st.trips()]
+    travel = [t for t in txns if t.category == "Travel" and t.amount > 0]
+    return jsonify({
+        "trips": rows,
+        "summary": {
+            "count": len(rows),
+            "total": round(sum(r["total"] for r in rows), 2),
+            "travel_spend": round(sum(t.amount for t in travel), 2),
+        },
+    })
+
+
+@bp.post("/trips")
+def add_trip():
+    body = request.get_json(silent=True) or {}
+    name = body.get("name", "")
+    start, end = body.get("start_date", ""), body.get("end_date", "")
+
+    problem = validate(name, start, end)
+    if problem:
+        return jsonify({"error": problem}), 400
+
+    trip_id = store().add_trip(name, start, end)
+    # Recategorize immediately so the dashboard reflects the trip at once.
+    updated = recategorize_all(store())
+    return jsonify({"ok": True, "id": trip_id, "recategorized": updated})
+
+
+@bp.patch("/trips/<int:trip_id>")
+def edit_trip(trip_id: int):
+    body = request.get_json(silent=True) or {}
+    name = body.get("name", "")
+    start, end = body.get("start_date", ""), body.get("end_date", "")
+
+    problem = validate(name, start, end)
+    if problem:
+        return jsonify({"error": problem}), 400
+
+    if not store().update_trip(trip_id, name, start, end):
+        return jsonify({"error": "No such trip."}), 404
+
+    return jsonify({"ok": True, "recategorized": recategorize_all(store())})
+
+
+@bp.delete("/trips/<int:trip_id>")
+def remove_trip(trip_id: int):
+    if not store().delete_trip(trip_id):
+        return jsonify({"error": "No such trip."}), 404
+    # Rows fall back to their merchant category once the trip is gone.
+    return jsonify({"ok": True, "recategorized": recategorize_all(store())})
 
 
 # ── Budgets ──────────────────────────────────────────────────────────────────

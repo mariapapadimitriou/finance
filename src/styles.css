@@ -1,10 +1,16 @@
-/* Ledger — a calm card dashboard.
+/* Spendie — a calm card dashboard, in the brand's colours.
  *
- * The shell is a sidebar plus a grid of soft-edged cards on a neutral page:
- * moderate radii, hairline borders, low shadows, no pills and no pastel
- * bubbles. The data marks are the loud part: series colours are a validated
- * set whose colourblind separation and lightness band were checked, and whose
- * contrast was re-checked against these surfaces.
+ * The shell is a sidebar plus a grid of soft-edged cards: moderate radii,
+ * hairline borders, low shadows. The neutrals are not grey — they are stepped
+ * from the logo's navy (#0f1e52), so the whole surface sits in the same family
+ * as the mark instead of next to it.
+ *
+ * The brand blue IS the primary data colour. Keeping them separate put two
+ * near-identical blues on screen (1.05:1 apart) meaning different things; one
+ * blue removes the ambiguity. The full categorical set was re-validated with it
+ * in slot 1 against these exact surfaces — lightness band, chroma floor, CVD
+ * separation and contrast all pass in both modes, with dark getting its own
+ * step rather than an automatic flip.
  *
  * Category identity is carried by its written label, never by hue. With ~30
  * spending categories no palette stays distinguishable, so bars encode
@@ -14,31 +20,35 @@
 :root {
   color-scheme: light;
 
-  /* Neutrals */
-  --page:        #f3f4f6;
+  /* Neutrals, stepped from the brand navy rather than pure grey */
+  --page:        #eef1f8;
   --surface:     #ffffff;
-  --surface-2:   #f4f5f7;
-  --surface-3:   #e9ebef;
-  --ink:         #111318;   /* 18.4:1 on white */
-  --ink-2:       #4b5160;   /*  8.1:1 */
-  --muted:       #858b98;   /*  3.5:1 */
-  --border:      rgba(17, 19, 24, .07);
-  --border-firm: rgba(17, 19, 24, .14);
-  --grid:        rgba(17, 19, 24, .06);
-  --axis:        rgba(17, 19, 24, .16);
+  --surface-2:   #f2f5fc;
+  --surface-3:   #e4eaf6;
+  --ink:         #0f1e52;   /* the logo navy — 15.8:1 on white */
+  --ink-2:       #4a5578;   /*  7.3:1 */
+  --muted:       #767f98;   /*  4.0:1 on card, 3.5:1 on page */
+  --border:      rgba(15, 30, 82, .09);
+  --border-firm: rgba(15, 30, 82, .17);
+  --grid:        rgba(15, 30, 82, .07);
+  --axis:        rgba(15, 30, 82, .18);
 
-  /* Data series — validated set, fixed order, never cycled */
-  --series-1:    #2a78d6;
+  /* Brand */
+  --brand:       #556ff8;
+  --brand-tint:  #d3e6fd;
+  --on-brand:    #ffffff;
+
+  /* Data series — validated with the brand blue in slot 1, never cycled */
+  --series-1:    #556ff8;
   --series-2:    #eb6834;
   --series-3:    #1baf7a;
-  --series-1-soft: rgba(42, 120, 214, .12);
+  --series-1-soft: rgba(85, 111, 248, .13);
 
   /* Status — reserved for state, always with an icon and a word */
   --good:        #0ca30c;
   --warning:     #fab219;
   --critical:    #d03b3b;
   --good-text:   #0a7a0a;
-
   --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --r-sm: 8px;
@@ -54,21 +64,24 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --page:        #0e1014;
-    --surface:     #171a20;
-    --surface-2:   #1f232a;
-    --surface-3:   #2a2f38;
-    --ink:         #f4f5f7;
-    --ink-2:       #b9bec9;
-    --muted:       #868c98;
-    --border:      rgba(255, 255, 255, .07);
-    --border-firm: rgba(255, 255, 255, .14);
-    --grid:        rgba(255, 255, 255, .06);
-    --axis:        rgba(255, 255, 255, .18);
-    --series-1:    #3987e5;
+    --page:        #0a0f1f;
+    --surface:     #141a2b;
+    --surface-2:   #1d2540;
+    --surface-3:   #29324f;
+    --ink:         #eef1f8;
+    --ink-2:       #b6bfd6;
+    --muted:       #8891ad;
+    --border:      rgba(233, 238, 250, .09);
+    --border-firm: rgba(233, 238, 250, .17);
+    --grid:        rgba(233, 238, 250, .07);
+    --axis:        rgba(233, 238, 250, .19);
+    --brand:       #6b81fa;
+    --brand-tint:  #1d2a52;
+    --on-brand:    #0a0f1f;
+    --series-1:    #6b81fa;
     --series-2:    #d95926;
     --series-3:    #199e70;
-    --series-1-soft: rgba(57, 135, 229, .16);
+    --series-1-soft: rgba(107, 129, 250, .18);
     --good-text:   #34c759;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
     --shadow:    0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
@@ -77,21 +90,24 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page:        #0e1014;
-  --surface:     #171a20;
-  --surface-2:   #1f232a;
-  --surface-3:   #2a2f38;
-  --ink:         #f4f5f7;
-  --ink-2:       #b9bec9;
-  --muted:       #868c98;
-  --border:      rgba(255, 255, 255, .07);
-  --border-firm: rgba(255, 255, 255, .14);
-  --grid:        rgba(255, 255, 255, .06);
-  --axis:        rgba(255, 255, 255, .18);
-  --series-1:    #3987e5;
+  --page:        #0a0f1f;
+  --surface:     #141a2b;
+  --surface-2:   #1d2540;
+  --surface-3:   #29324f;
+  --ink:         #eef1f8;
+  --ink-2:       #b6bfd6;
+  --muted:       #8891ad;
+  --border:      rgba(233, 238, 250, .09);
+  --border-firm: rgba(233, 238, 250, .17);
+  --grid:        rgba(233, 238, 250, .07);
+  --axis:        rgba(233, 238, 250, .19);
+  --brand:       #6b81fa;
+  --brand-tint:  #1d2a52;
+  --on-brand:    #0a0f1f;
+  --series-1:    #6b81fa;
   --series-2:    #d95926;
   --series-3:    #199e70;
-  --series-1-soft: rgba(57, 135, 229, .16);
+  --series-1-soft: rgba(107, 129, 250, .18);
   --good-text:   #34c759;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
   --shadow:    0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
@@ -119,7 +135,7 @@ h1 { font-size: 1.45rem; }
 h2 { font-size: 1.02rem; }
 h3 { font-size: .98rem; }
 
-a { color: var(--series-1); text-underline-offset: 3px; }
+a { color: var(--brand); text-underline-offset: 3px; }
 
 .num { font-variant-numeric: tabular-nums; }
 
@@ -147,13 +163,10 @@ a { color: var(--series-1); text-underline-offset: 3px; }
 .brand .mark {
   width: 34px; height: 34px;
   border-radius: var(--r-sm);
-  background: var(--series-1);
   display: grid; place-items: center;
-  color: #fff; font-weight: 700; font-size: .95rem;
   flex: none;
 }
 .brand .name { font-weight: 650; font-size: 1.02rem; letter-spacing: -0.015em; }
-.brand .sub { color: var(--muted); font-size: .78rem; }
 
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav button {
@@ -175,11 +188,11 @@ a { color: var(--series-1); text-underline-offset: 3px; }
 .nav button svg { width: 18px; height: 18px; flex: none; opacity: .8; }
 .nav button:hover { background: var(--surface-2); color: var(--ink); }
 .nav button[aria-selected="true"] {
-  background: var(--surface-2);
+  background: var(--brand-tint);
   color: var(--ink);
   font-weight: 600;
 }
-.nav button[aria-selected="true"] svg { color: var(--series-1); opacity: 1; }
+.nav button[aria-selected="true"] svg { color: var(--brand); opacity: 1; }
 .nav .count {
   margin-left: auto;
   background: var(--surface-3);
@@ -231,7 +244,6 @@ main { max-width: 1180px; margin: 0 auto; padding: 4px 32px 80px; }
     border-bottom: 1px solid var(--border);
   }
   .brand { padding: 0; }
-  .brand .sub { display: none; }
   .nav {
     flex-direction: row;
     overflow-x: auto;
@@ -259,7 +271,7 @@ select, input[type="text"], input[type="search"], input[type="number"] {
 }
 select:hover, input:hover { border-color: var(--ink-2); }
 select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-visible {
-  outline: 2px solid var(--series-1);
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
 
@@ -278,9 +290,9 @@ select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-v
 }
 .btn:hover { background: var(--surface-2); }
 .btn.primary {
-  background: var(--ink); border-color: var(--ink); color: var(--surface);
+  background: var(--brand); border-color: var(--brand); color: var(--on-brand);
 }
-.btn.primary:hover { background: var(--ink); opacity: .88; }
+.btn.primary:hover { background: var(--brand); opacity: .9; }
 .btn.quiet { border-color: transparent; background: transparent; color: var(--ink-2); }
 .btn.quiet:hover { background: var(--surface-2); color: var(--ink); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -499,7 +511,7 @@ td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top:
 
 details.evidence { margin-top: 14px; }
 details.evidence summary {
-  cursor: pointer; color: var(--series-1);
+  cursor: pointer; color: var(--brand);
   font-size: .86rem; font-weight: 550;
   list-style: none; display: inline-flex; align-items: center; gap: 6px;
 }
@@ -519,7 +531,7 @@ details.evidence[open] summary::before { transform: rotate(90deg); }
   transition: background .15s, border-color .15s;
 }
 .dropzone.over {
-  border-color: var(--series-1);
+  border-color: var(--brand);
   background: var(--series-1-soft);
 }
 .dropzone h3 { margin-bottom: 6px; color: var(--ink); font-size: 1.08rem; }
