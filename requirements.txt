@@ -9,9 +9,14 @@ pdfplumber>=0.11.0
 # Running locally on SQLite never imports this.
 psycopg[binary]>=3.1.0
 
+# Bank connections. plaid-python talks to Plaid; cryptography encrypts the
+# access tokens before they reach the database, and linking is refused rather
+# than storing one in the clear, so this is required rather than optional.
+plaid-python>=18.0.0
+cryptography>=42.0.0
+
 # Tests
 pytest>=8.0.0
 
-# Optional extras, both feature-detected at runtime:
+# Optional extra, feature-detected at runtime:
 #   anthropic>=0.40.0     # the written Claude summary on the Savings tab
-#   plaid-python>=20.0.0  # live bank sync instead of CSV exports

@@ -167,6 +167,13 @@ def sync_source(source_key: str):
     if not status.available:
         return jsonify({"error": status.detail, "setup": status.to_dict()}), 501
 
+    # Plaid has its own endpoints, which read the stored token rather than
+    # taking one from the caller. Routing it here keeps one way to sync and
+    # stops this generic path from accepting an arbitrary access token.
+    if source_key == "plaid":
+        from . import plaid_link
+        return jsonify(plaid_link.sync_all(store()))
+
     body = request.get_json(silent=True) or {}
     try:
         results = src.fetch(**body)
@@ -490,6 +497,88 @@ def set_income():
         return jsonify({"error": "Income cannot be negative."}), 400
     store().set_setting("monthly_income", income)
     return jsonify({"ok": True, "monthly_income": income})
+
+
+# ── Plaid ────────────────────────────────────────────────────────────────
+# The access token never crosses this boundary. Link hands the browser a
+# public token, the browser hands it here, and what comes back is an item id.
+# See finance/plaid_link.py.
+
+@bp.get("/plaid/items")
+def plaid_items():
+    from . import plaid_link, secrets_box
+    st = store()
+    return jsonify({
+        "configured": plaid_link.configured(),
+        "environment": plaid_link.environment(),
+        "encryption_ready": secrets_box.available(),
+        "items": st.plaid_items(),
+    })
+
+
+@bp.post("/plaid/link-token")
+def plaid_link_token():
+    from . import plaid_link, secrets_box
+    if not plaid_link.configured():
+        return jsonify({"error": "Plaid isn't configured on this deployment."}), 501
+    # Checked before Link opens rather than after: finishing the bank login
+    # only to be told the token can't be stored would be a wasted trip, and
+    # the alternative — storing it unencrypted — is not on the table.
+    if not secrets_box.available():
+        return jsonify({
+            "error": "No encryption key is set, so a bank token can't be "
+                     "stored safely. Set SPENDIE_SECRET_KEY and redeploy.",
+        }), 503
+    try:
+        return jsonify(plaid_link.create_link_token())
+    except Exception as exc:                          # noqa: BLE001
+        return jsonify({"error": f"Plaid refused to start a link: {exc}"}), 502
+
+
+@bp.post("/plaid/exchange")
+def plaid_exchange():
+    from . import plaid_link, secrets_box
+    if not plaid_link.configured():
+        return jsonify({"error": "Plaid isn't configured on this deployment."}), 501
+    if not secrets_box.available():
+        return jsonify({"error": "No encryption key is set."}), 503
+
+    body = request.get_json(silent=True) or {}
+    public_token = (body.get("public_token") or "").strip()
+    if not public_token:
+        return jsonify({"error": "No public_token supplied."}), 400
+
+    try:
+        item = plaid_link.exchange_public_token(
+            store(), public_token, (body.get("institution") or "").strip())
+    except Exception as exc:                          # noqa: BLE001
+        return jsonify({"error": f"Couldn't finish linking: {exc}"}), 502
+
+    # Pull straight away so the card isn't linked-but-empty.
+    try:
+        synced = plaid_link.sync_all(store())
+    except Exception as exc:                          # noqa: BLE001
+        return jsonify({**item, "linked": True,
+                        "sync_error": str(exc)})
+    return jsonify({**item, "linked": True, "sync": synced})
+
+
+@bp.post("/plaid/sync")
+def plaid_sync():
+    from . import plaid_link
+    if not plaid_link.configured():
+        return jsonify({"error": "Plaid isn't configured on this deployment."}), 501
+    return jsonify(plaid_link.sync_all(store()))
+
+
+@bp.delete("/plaid/items/<item_id>")
+def plaid_unlink(item_id: str):
+    from . import plaid_link
+    st = store()
+    if not any(i["item_id"] == item_id for i in st.plaid_items()):
+        return jsonify({"error": "No such linked bank."}), 404
+    revoked = plaid_link.unlink(st, item_id)
+    return jsonify({"ok": True, "revoked_at_plaid": revoked})
 
 
 # ── Manual transactions ──────────────────────────────────────────────────

@@ -486,6 +486,32 @@ td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top:
 }
 .hero .caption { color: var(--ink-2); font-size: .92rem; padding-bottom: 4px; max-width: 52ch; }
 
+/* ── The password gate ───────────────────────────────────────────────────── */
+
+.gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--page);
+}
+.gate-card { width: 100%; max-width: 380px; }
+.gate-card .brand { display: flex; align-items: center; gap: 11px; }
+.gate-card .brand .name { font-size: 1.3rem; font-weight: 680; letter-spacing: -.02em; }
+.gate-card input[type="password"] {
+  width: 100%;
+  margin-top: 7px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-firm);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.gate-card input[type="password"]:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
 /* ── Safe to spend ───────────────────────────────────────────────────────── */
 /* The hero keeps the green edge; a month running behind switches it to the
  * critical colour, and the pill beside the number says "over by" in words so

@@ -18,11 +18,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import secrets
 import sys
+from datetime import timedelta
 
-from flask import Flask, abort, jsonify, send_from_directory
+from flask import Flask, abort, jsonify, request, send_from_directory, session
 from flask_cors import CORS
 
+from finance import auth
 from finance.api import bp
 # storage_mode is re-exported for convenience; /api/health reads it from db.
 from finance.db import database_url, is_hosted as _is_hosted, storage_mode  # noqa: F401
@@ -61,6 +64,107 @@ def _hosted_db_path() -> str | None:
     return None
 
 
+# ── The password gate ────────────────────────────────────────────────────────
+# Registered before the blueprint so it covers every route, present and future.
+# See finance/auth.py for why it fails closed when hosted.
+
+# Reachable without a session: the login endpoints themselves, and the static
+# files the login screen is made of. Everything else, including every /api
+# route and the frontend shell, needs one.
+_OPEN_PATHS = frozenset({"/api/auth/status", "/api/auth/login"})
+
+
+def _is_static_asset(path: str) -> bool:
+    return path.startswith("/assets/") or path in ("/favicon.svg", "/favicon.ico")
+
+
+def _install_auth(app: Flask) -> None:
+    password_hash = auth.configured_hash()
+    app.config["AUTH_REQUIRED"] = auth.required(_is_hosted())
+    app.config["AUTH_HASH"] = password_hash
+
+    # Cookie hardening. Secure only when hosted, because a local dev server is
+    # http and a Secure cookie would simply never be sent.
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=_is_hosted(),
+        PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+    )
+
+    if password_hash:
+        app.secret_key = auth.session_secret(password_hash)
+    else:
+        # No password, so nothing is signed that matters. A random key keeps
+        # Flask happy and guarantees nothing is silently carried over if a
+        # password is added later.
+        app.secret_key = secrets.token_bytes(32)
+
+    @app.before_request
+    def _require_password():
+        if not app.config["AUTH_REQUIRED"]:
+            return None
+
+        if not app.config["AUTH_HASH"]:
+            # Hosted with no password configured. Serving the app would expose
+            # it; serving nothing at least says why.
+            return jsonify({
+                "error": "This deployment has no password set, so it will not "
+                         "serve anything. Set SPENDIE_PASSWORD_HASH in the "
+                         "project's environment variables and redeploy.",
+                "setup_required": True,
+            }), 503
+
+        path = request.path
+        if path in _OPEN_PATHS or _is_static_asset(path):
+            return None
+        if session.get("ok") is True:
+            return None
+
+        if path.startswith("/api/"):
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+
+        # A browser asking for a page gets the app shell, which renders the
+        # login screen once /api/auth/status tells it to. Redirecting would
+        # break deep links for no benefit.
+        index = os.path.join(FRONTEND_DIR, "index.html")
+        if os.path.isfile(index):
+            return send_from_directory(FRONTEND_DIR, "index.html")
+        return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+
+    @app.get("/api/auth/status")
+    def _auth_status():
+        return jsonify({
+            "required": bool(app.config["AUTH_REQUIRED"]),
+            "configured": bool(app.config["AUTH_HASH"]),
+            "signed_in": (not app.config["AUTH_REQUIRED"]) or session.get("ok") is True,
+        })
+
+    @app.post("/api/auth/login")
+    def _auth_login():
+        if not app.config["AUTH_REQUIRED"]:
+            return jsonify({"ok": True, "signed_in": True})
+        stored = app.config["AUTH_HASH"]
+        if not stored:
+            return jsonify({"error": "No password is configured."}), 503
+
+        body = request.get_json(silent=True) or {}
+        if not auth.verify_password(str(body.get("password", "")), stored):
+            # The same message whatever went wrong, so it never confirms a
+            # partially-right guess.
+            return jsonify({"error": "That password isn't right."}), 401
+
+        session.clear()
+        session["ok"] = True
+        session.permanent = True
+        return jsonify({"ok": True, "signed_in": True})
+
+    @app.post("/api/auth/logout")
+    def _auth_logout():
+        session.clear()
+        return jsonify({"ok": True, "signed_in": False})
+
+
 def create_app(db_path: str | None = None) -> Flask:
     app = Flask(__name__)
 
@@ -71,6 +175,7 @@ def create_app(db_path: str | None = None) -> Flask:
         CORS(app, origins=DEV_ORIGINS)
 
     app.config["STORE"] = Store(db_path or _hosted_db_path() or DEFAULT_DB)
+    _install_auth(app)
     app.register_blueprint(bp)
 
     # A hosted instance boots with an empty database, so the committed ledger is

@@ -181,6 +181,12 @@ export default function ImportPanel({ accounts, onImported }) {
                 </span>
               </div>
               <p className="small muted" style={{ margin: '6px 0' }}>{s.detail}</p>
+              {s.key === 'plaid' && (
+                <p className="small" style={{ margin: '6px 0' }}>
+                  Connecting and syncing banks lives on the{' '}
+                  <strong>Banks</strong> tab.
+                </p>
+              )}
               {!s.available && s.setup_steps?.length > 0 && (
                 <details>
                   <summary className="small" style={{ cursor: 'pointer', color: 'var(--series-1)' }}>

@@ -9,10 +9,13 @@ import TransactionsPanel from './panels/TransactionsPanel.jsx';
 import BudgetsPanel from './panels/BudgetsPanel.jsx';
 import TripsPanel from './panels/TripsPanel.jsx';
 import ImportPanel from './panels/ImportPanel.jsx';
+import BanksPanel from './panels/BanksPanel.jsx';
+import Login from './Login.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import {
-  getAccounts, getCategories, getInsights, getRecurring, getSummary, monthLabel,
+  getAccounts, getAuthStatus, getCategories, getInsights, getRecurring,
+  getSummary, logout, monthLabel, setUnauthorizedHandler,
 } from './api.js';
 
 // Icons are 24×24 stroke paths, drawn in currentColor.
@@ -48,6 +51,8 @@ const TABS = [
     icon: 'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8z' },
   { key: 'trips', label: 'Trips', hint: 'Date ranges whose spending counts as Travel',
     icon: 'M3 11l18-6-6 18-2.5-7.5L5 13z' },
+  { key: 'banks', label: 'Banks', hint: 'Connect a card through Plaid and let it sync itself',
+    icon: 'M3 21h18M4 10h16M5 10V7l7-4 7 4v3M7 10v11M12 10v11M17 10v11' },
   { key: 'import', label: 'Import', hint: 'Add statements from any card',
     icon: 'M12 3v12M7 10l5 5 5-5M4 21h16' },
 ];
@@ -76,6 +81,9 @@ export default function App() {
   const [planMonth, setPlanMonth] = useState('');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  // null while we're still asking; the app renders nothing rather than
+  // flashing a dashboard at someone who then gets bounced to a login.
+  const [signedIn, setSignedIn] = useState(null);
   // Bumped on every reload so panels that fetch their own data — Today,
   // Progress, Projections — refetch after an import instead of showing what
   // they loaded when they mounted.
@@ -91,6 +99,27 @@ export default function App() {
   }
 
   useEffect(() => { localStorage.setItem('spendie-theme', theme); }, [theme]);
+
+  // A 401 from any request means the session went away — a password change,
+  // or a cookie that expired while the tab sat open. Returning to the login
+  // screen is better than every panel failing with its own error.
+  useEffect(() => {
+    setUnauthorizedHandler(() => setSignedIn(false));
+  }, []);
+
+  const checkAuth = useCallback(async () => {
+    try {
+      const s = await getAuthStatus();
+      setSignedIn(s.signed_in);
+      return s.signed_in;
+    } catch (e) {
+      setError(e);
+      setSignedIn(false);
+      return false;
+    }
+  }, []);
+
+  useEffect(() => { checkAuth(); }, [checkAuth]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -109,7 +138,15 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (signedIn) load(); }, [load, signedIn]);
+
+  if (signedIn === null) {
+    return <Shell theme={theme} setTheme={setTheme}><Loading what="Spendie" /></Shell>;
+  }
+
+  if (!signedIn) {
+    return <Login onSignedIn={() => { setSignedIn(true); setError(null); }} />;
+  }
 
   if (error) {
     return (
@@ -172,6 +209,7 @@ export default function App() {
       findingCount={findingCount}
       months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(tab)}
+      onSignOut={async () => { await logout(); setSignedIn(false); }}
     >
       {tab === 'today' && (
         <TodayPanel month={shownPlanMonth} onMonth={setPlanMonth} version={version} />
@@ -194,13 +232,15 @@ export default function App() {
         <BudgetsPanel month={shownMonth} summary={summary} version={version} />
       )}
       {tab === 'trips' && <TripsPanel onChanged={load} />}
+      {tab === 'banks' && <BanksPanel onChanged={load} />}
       {tab === 'import' && <ImportPanel accounts={accounts} onImported={load} />}
     </Shell>
   );
 }
 
 function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
-                 months = [], month, onMonth, showMonth = false, children }) {
+                 months = [], month, onMonth, showMonth = false, onSignOut,
+                 children }) {
   const current = TABS.find((t) => t.key === tab);
 
   return (
@@ -231,6 +271,12 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
         )}
 
         <div className="sidebar-foot">
+          {onSignOut && (
+            <button className="btn quiet" onClick={onSignOut}>
+              <span aria-hidden="true">⎋</span>
+              <span className="label">Sign out</span>
+            </button>
+          )}
           <button
             className="btn quiet"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
