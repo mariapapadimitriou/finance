@@ -59,6 +59,7 @@ export async function login(password) {
 // ── Plaid ────────────────────────────────────────────────────────────────────
 export const getPlaidItems   = () => req('/api/plaid/items');
 export const createLinkToken = () => json('POST', '/api/plaid/link-token', {});
+export const checkPlaidKeys  = () => json('POST', '/api/plaid/check', {});
 export const exchangePublicToken = (publicToken, institution) =>
   json('POST', '/api/plaid/exchange',
        { public_token: publicToken, institution });

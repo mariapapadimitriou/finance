@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
-  createLinkToken, exchangePublicToken, getPlaidItems, syncPlaid, unlinkBank,
+  checkPlaidKeys, createLinkToken, exchangePublicToken, getPlaidItems,
+  syncPlaid, unlinkBank,
 } from '../api.js';
 
 const LINK_SCRIPT = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js';
@@ -37,6 +38,7 @@ export default function BanksPanel({ onChanged }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
+  const [keyCheck, setKeyCheck] = useState(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -92,6 +94,19 @@ export default function BanksPanel({ onChanged }) {
     }
   }
 
+  async function check() {
+    setBusy(true);
+    setError(null);
+    setKeyCheck(null);
+    try {
+      setKeyCheck(await checkPlaidKeys());
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function sync() {
     setBusy(true);
     setError(null);
@@ -127,7 +142,8 @@ export default function BanksPanel({ onChanged }) {
   if (!data && !error) return <Loading what="your bank connections" />;
   if (!data) return <ErrorNote error={error} onRetry={load} />;
 
-  const { configured, environment, encryption_ready: encrypted, items } = data;
+  const { configured, environment, encryption_ready: encrypted, items,
+          credentials } = data;
 
   return (
     <div className="stack">
@@ -166,6 +182,59 @@ export default function BanksPanel({ onChanged }) {
           <code>PLAID_ENV</code> to <code>production</code> when you&apos;re ready
           for the real thing.
         </Notice>
+      )}
+
+      {configured && (
+        <Card title="Plaid credentials"
+              hint={`Checked against the ${environment} environment`}
+              actions={
+                <button className="btn" onClick={check} disabled={busy}>
+                  {busy ? 'Checking…' : 'Check credentials'}
+                </button>
+              }>
+          {/* Length and character class, never any of the value. Enough to
+              spot a truncated paste or a swapped pair; useless to anyone
+              reading over your shoulder. */}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Variable</th><th>Length</th><th>Characters</th><th /></tr>
+              </thead>
+              <tbody>
+                {[['PLAID_CLIENT_ID', credentials?.client_id],
+                  ['PLAID_SECRET', credentials?.secret]].map(([name, c]) => (
+                  <tr key={name}>
+                    <td className="merchant"><code>{name}</code></td>
+                    <td>{c?.set ? `${c.length} chars` : 'not set'}</td>
+                    <td className="muted">
+                      {c?.set ? (c.hex_only ? 'hex' : 'mixed') : '—'}
+                    </td>
+                    <td>
+                      {!c?.set
+                        ? <StatusPill state="critical">Missing</StatusPill>
+                        : c.had_surrounding_whitespace
+                          ? <StatusPill state="warning">Had whitespace</StatusPill>
+                          : <StatusPill state="good">Set</StatusPill>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {keyCheck && (
+            <Notice kind={keyCheck.ok ? 'good' : 'error'}>
+              {keyCheck.ok ? keyCheck.message : keyCheck.error}
+            </Notice>
+          )}
+
+          <p className="assumption" style={{ marginBottom: 0 }}>
+            Plaid issues one client ID for your whole account and a{' '}
+            <strong>separate secret per environment</strong>. Both are 24
+            lowercase hex characters. A secret of any other length or shape is
+            the wrong value rather than the wrong environment.
+          </p>
+        </Card>
       )}
 
       <Card

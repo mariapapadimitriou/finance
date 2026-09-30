@@ -375,3 +375,81 @@ class TestErrorMessages:
         """The Banks tab renders this; a bad value must not blank the page."""
         monkeypatch.setenv("PLAID_ENV", "nonsense")
         assert plaid_link.environment() == "nonsense"
+
+
+class TestCredentialDiagnostics:
+    """Reporting enough to find the mistake, without disclosing the value."""
+
+    def test_the_shape_never_contains_the_credential(self, monkeypatch):
+        import json
+        monkeypatch.setenv("PLAID_CLIENT_ID", "65f1a2b3c4d5e6f7a8b9c0d1")
+        monkeypatch.setenv("PLAID_SECRET", "deadbeefdeadbeefdeadbeef")
+        blob = json.dumps(plaid_link.credential_shape())
+        assert "65f1a2b3c4d5e6f7a8b9c0d1" not in blob
+        assert "deadbeef" not in blob
+
+    def test_it_reports_length_and_character_class(self, monkeypatch):
+        monkeypatch.setenv("PLAID_SECRET", "deadbeefdeadbeefdeadbeef")
+        secret = plaid_link.credential_shape()["secret"]
+        assert secret == {"set": True, "length": 24,
+                          "had_surrounding_whitespace": False, "hex_only": True}
+
+    def test_a_value_of_the_wrong_shape_is_visible_as_such(self, monkeypatch):
+        """A key from somewhere else is a different length and not hex."""
+        monkeypatch.setenv("PLAID_SECRET", "sk_live_something_else_entirely")
+        secret = plaid_link.credential_shape()["secret"]
+        assert secret["hex_only"] is False
+        assert secret["length"] != 24
+
+    def test_whitespace_is_reported_even_though_it_is_stripped(self, monkeypatch):
+        """Stripping fixed the request; saying so explains a past failure."""
+        monkeypatch.setenv("PLAID_CLIENT_ID", "  65f1a2b3c4d5e6f7a8b9c0d1\n")
+        shape = plaid_link.credential_shape()["client_id"]
+        assert shape["had_surrounding_whitespace"] is True
+        assert shape["length"] == 24
+
+    def test_a_missing_variable_reads_as_unset(self, monkeypatch):
+        monkeypatch.delenv("PLAID_SECRET", raising=False)
+        assert plaid_link.credential_shape()["secret"]["set"] is False
+
+    def test_the_check_reports_failure_in_plain_words(self, monkeypatch):
+        class Broken:
+            def institutions_get(self, request):
+                raise Exception(TestErrorMessages.RAW_INVALID_KEYS)
+
+        monkeypatch.setenv("PLAID_ENV", "sandbox")
+        monkeypatch.setattr(plaid_link, "configured", lambda: True)
+        monkeypatch.setattr(plaid_link, "_client", lambda: Broken())
+        out = plaid_link.check_credentials()
+        assert out["ok"] is False
+        assert "sandbox" in out["error"]
+        assert "shape" in out, "a failure should come with the diagnostic"
+
+    def test_the_check_confirms_working_keys(self, monkeypatch):
+        class Fine:
+            def institutions_get(self, request):
+                return _Resp({"institutions": [{}], "total": 4200})
+
+        monkeypatch.setenv("PLAID_ENV", "production")
+        monkeypatch.setattr(plaid_link, "configured", lambda: True)
+        monkeypatch.setattr(plaid_link, "_client", lambda: Fine())
+        out = plaid_link.check_credentials()
+        assert out["ok"] is True
+        assert "production" in out["message"]
+
+    def test_the_check_creates_nothing(self, monkeypatch):
+        """It must be safe to run repeatedly — no Item, no quota consumed."""
+        calls = []
+
+        class Watch:
+            def institutions_get(self, request):
+                calls.append("institutions_get")
+                return _Resp({"institutions": [], "total": 0})
+
+            def __getattr__(self, name):
+                raise AssertionError(f"check_credentials must not call {name}")
+
+        monkeypatch.setattr(plaid_link, "configured", lambda: True)
+        monkeypatch.setattr(plaid_link, "_client", lambda: Watch())
+        plaid_link.check_credentials()
+        assert calls == ["institutions_get"]
