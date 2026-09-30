@@ -12,6 +12,19 @@ import {
 } from './api.js';
 
 // Icons are 24×24 stroke paths, drawn in currentColor.
+/**
+ * The month to open on.
+ *
+ * Not simply the latest month in range: a ledger can end with a month that
+ * holds only a closing credit, or a gap, and landing there shows an empty
+ * dashboard that looks broken. Open on the most recent month that has
+ * spending in it.
+ */
+function defaultMonth(summary) {
+  const withSpending = (summary.monthly ?? []).filter((m) => m.transactions > 0);
+  return withSpending.at(-1)?.month ?? summary.latest_month ?? '';
+}
+
 const TABS = [
   { key: 'overview', label: 'Overview', hint: 'Spending across every card',
     icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
@@ -67,7 +80,7 @@ export default function App() {
         accounts: accounts.accounts ?? [],
         categories: categories.categories ?? [],
       });
-      setMonth((m) => m || summary.latest_month || '');
+      setMonth((m) => m || defaultMonth(summary));
     } catch (e) {
       setError(e);
     }
