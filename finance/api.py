@@ -25,7 +25,11 @@ from .categorize import CATEGORIES
 from .ingest import all_sources, get_source, parse_csv, parse_statement
 from .insights import detect_recurring, findings_summary, generate_findings, recurring_summary
 from .pipeline import ingest, recategorize_all
+from .categorize import apply_categories
+from .dedupe import split_new
+from .trips import apply_trips
 from .trips import summarize, validate
+from . import gamify, manual, projections, spend_plan
 from .store import Store
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -305,6 +309,234 @@ def run_narrative():
     except Exception as exc:  # noqa: BLE001 - surface API failures to the UI
         return jsonify({"available": False, "text": "",
                         "detail": f"Claude request failed: {exc}"}), 502
+
+
+# ── Spend plan: safe to spend, buckets, "how am I doing" ─────────────────
+# See finance/spend_plan.py for the model and why only discretionary spending
+# counts toward it.
+
+def _plan_month(default_from_data: bool = True) -> str:
+    """The month the plan is being asked about. Defaults to the real one."""
+    asked = request.args.get("month")
+    if asked:
+        return asked
+    from datetime import date as _d
+    return _d.today().strftime("%Y-%m")
+
+
+def _plan_state(st, month: str) -> dict:
+    txns = st.all_transactions()
+    amount = st.float_setting("monthly_amount", 0.0)
+    if amount <= 0:
+        amount = spend_plan.suggest_monthly_amount(txns)
+    return spend_plan.compute(txns, amount, month, covered=st.covered_in(month))
+
+
+@bp.get("/plan")
+def plan():
+    st = store()
+    txns = st.all_transactions()
+    month = _plan_month()
+    state = _plan_state(st, month)
+
+    months_with_data = sorted({t.month for t in txns})
+    baseline = None
+    prior = [m for m in months_with_data if m < month]
+    if prior:
+        import statistics
+        sums = [round(sum(t.amount for t in txns
+                          if t.month == m and spend_plan.counts_toward_plan(t)), 2)
+                for m in prior]
+        baseline = round(statistics.median(sums), 2)
+
+    return jsonify({
+        "state": state,
+        "status": spend_plan.how_am_i_doing(state, baseline),
+        "buckets": [b.to_dict() for b in st.buckets()],
+        "draws": st.draws(month),
+        "configured": st.float_setting("monthly_amount", 0.0) > 0,
+        "suggested": spend_plan.suggest_monthly_amount(txns),
+        "has_data_this_month": month in months_with_data,
+        "months_with_data": months_with_data,
+    })
+
+
+@bp.put("/plan")
+def set_plan():
+    body = request.get_json(silent=True) or {}
+    try:
+        amount = float(body.get("monthly_amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Monthly amount must be a number."}), 400
+    if amount < 0:
+        return jsonify({"error": "Monthly amount cannot be negative."}), 400
+
+    store().set_setting("monthly_amount", amount)
+    return jsonify({"ok": True, "monthly_amount": amount})
+
+
+@bp.post("/plan/simulate")
+def simulate_purchase():
+    """Can I buy this, and what does it cost me if not."""
+    body = request.get_json(silent=True) or {}
+    try:
+        amount = float(body.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Amount must be a number."}), 400
+    if amount <= 0:
+        return jsonify({"error": "Enter an amount above zero."}), 400
+
+    st = store()
+    month = _plan_month()
+    state = _plan_state(st, month)
+    return jsonify(spend_plan.simulate(state, amount, st.buckets()))
+
+
+@bp.put("/buckets")
+def set_bucket():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Give the bucket a name."}), 400
+    try:
+        balance = float(body.get("balance", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Balance must be a number."}), 400
+
+    return jsonify({"ok": True, "id": store().set_bucket(name, balance)})
+
+
+@bp.delete("/buckets/<int:bucket_id>")
+def remove_bucket(bucket_id: int):
+    if not store().delete_bucket(bucket_id):
+        return jsonify({"error": "No such bucket."}), 404
+    return jsonify({"ok": True})
+
+
+@bp.post("/buckets/<int:bucket_id>/cover")
+def cover_from_bucket(bucket_id: int):
+    """Draw on a bucket to cover this month's overspend."""
+    body = request.get_json(silent=True) or {}
+    try:
+        amount = float(body.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Amount must be a number."}), 400
+    if amount <= 0:
+        return jsonify({"error": "Enter an amount above zero."}), 400
+
+    st = store()
+    month = body.get("month") or _plan_month()
+    if not st.draw_from_bucket(bucket_id, month, amount, body.get("note", "")):
+        return jsonify({"error": "That bucket doesn't have enough in it."}), 400
+    return jsonify({"ok": True, "state": _plan_state(st, month)})
+
+
+# ── Gamification ─────────────────────────────────────────────────────────
+# Every reward is for restraint; nothing pays out for spending. See
+# finance/gamify.py.
+
+@bp.get("/progress")
+def progress():
+    st = store()
+    txns = st.all_transactions()
+    month = _plan_month()
+    state = _plan_state(st, month)
+    return jsonify(gamify.profile(txns, state["flat_daily"], st.trips()))
+
+
+# ── Projections ──────────────────────────────────────────────────────────
+
+@bp.get("/projections")
+def projection():
+    st = store()
+    txns = st.all_transactions()
+    income = st.float_setting("monthly_income", 0.0) or None
+
+    findings = generate_findings(txns, st.dismissed())
+    weighted = findings_summary(findings).get("weighted_annual", 0.0)
+
+    result = projections.project(txns, income, weighted,
+                                 int(request.args.get("months", 12)))
+    target = request.args.get("target")
+    if target:
+        try:
+            result["goal"] = projections.goal_eta(result, float(target))
+        except (TypeError, ValueError):
+            pass
+    # Kept separate from the projection's own `monthly_income`, which may have
+    # been inferred from payroll landing on an imported card. This one is the
+    # figure you typed, and is null until you do.
+    result["configured_income"] = income
+    return jsonify(result)
+
+
+@bp.put("/projections/income")
+def set_income():
+    body = request.get_json(silent=True) or {}
+    try:
+        income = float(body.get("monthly_income", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Income must be a number."}), 400
+    if income < 0:
+        return jsonify({"error": "Income cannot be negative."}), 400
+    store().set_setting("monthly_income", income)
+    return jsonify({"ok": True, "monthly_income": income})
+
+
+# ── Manual transactions ──────────────────────────────────────────────────
+
+@bp.post("/transactions")
+def add_manual_transaction():
+    """Add a purchase by hand, refusing to create a duplicate silently."""
+    body = request.get_json(silent=True) or {}
+
+    candidate = manual.build(
+        body.get("date", ""), body.get("description", ""), body.get("amount"),
+        category=body.get("category", ""),
+    )
+    if candidate is None:
+        return jsonify({"error": "Need a valid date, description and amount."}), 400
+    if body.get("category") and body["category"] not in CATEGORIES:
+        return jsonify({"error": f"Unknown category '{body['category']}'."}), 400
+
+    st = store()
+    existing = st.all_transactions()
+
+    # An exact match is a duplicate outright; anything looser is reported so
+    # you can decide, unless you already said to add it anyway.
+    new, dupes = split_new([candidate], existing)
+    if not new:
+        return jsonify({
+            "error": "That looks like a transaction already in your ledger.",
+            "duplicate": True,
+            "matches": manual.find_possible_duplicates(candidate, existing),
+        }), 409
+
+    matches = manual.find_possible_duplicates(candidate, existing)
+    if matches and not body.get("confirm"):
+        return jsonify({
+            "needs_confirmation": True,
+            "message": "Found something similar already — add it anyway?",
+            "matches": matches,
+            "preview": {"merchant": candidate.merchant, "date": candidate.date,
+                        "amount": candidate.amount},
+        }), 409
+
+    if not candidate.category:
+        apply_categories([candidate], st.overrides())
+    apply_trips([candidate], st.trips())
+    st.add_transactions([candidate])
+
+    return jsonify({"ok": True, "id": candidate.fingerprint,
+                    "merchant": candidate.merchant,
+                    "category": candidate.category})
+
+
+@bp.delete("/transactions/<txn_id>")
+def delete_transaction(txn_id: str):
+    if not store().delete_transaction(txn_id):
+        return jsonify({"error": "No such transaction."}), 404
+    return jsonify({"ok": True})
 
 
 # ── Trips ────────────────────────────────────────────────────────────────

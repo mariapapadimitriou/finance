@@ -32,6 +32,47 @@ export const addTrip         = (trip) => json('POST', '/api/trips', trip);
 export const updateTrip      = (id, trip) => json('PATCH', `/api/trips/${id}`, trip);
 export const deleteTrip      = (id) => req(`/api/trips/${id}`, { method: 'DELETE' });
 
+export const getPlan         = (month) =>
+  req(`/api/plan${month ? `?month=${month}` : ''}`);
+export const setPlanAmount   = (amount) =>
+  json('PUT', '/api/plan', { monthly_amount: amount });
+export const simulateSpend   = (amount, month) =>
+  json('POST', `/api/plan/simulate${month ? `?month=${month}` : ''}`, { amount });
+export const setBucket       = (name, balance) =>
+  json('PUT', '/api/buckets', { name, balance });
+export const deleteBucket    = (id) => req(`/api/buckets/${id}`, { method: 'DELETE' });
+export const coverFromBucket = (id, amount, month) =>
+  json('POST', `/api/buckets/${id}/cover`, { amount, month });
+
+export const getProgress     = (month) =>
+  req(`/api/progress${month ? `?month=${month}` : ''}`);
+
+export const getProjections  = (target) =>
+  req(`/api/projections${target ? `?target=${target}` : ''}`);
+export const setIncome       = (income) =>
+  json('PUT', '/api/projections/income', { monthly_income: income });
+
+/**
+ * Add a transaction by hand.
+ *
+ * A 409 is not a failure here — it is the duplicate check reporting what it
+ * found, so the body travels with the thrown error for the form to show.
+ */
+export async function addTransaction(entry) {
+  const r = await fetch(`${API}/api/transactions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (r.status === 409) return { conflict: true, ...body };
+  if (!r.ok) throw new Error(body.error || `${r.status} ${r.statusText}`);
+  return { conflict: false, ...body };
+}
+
+export const deleteTransaction = (id) =>
+  req(`/api/transactions/${id}`, { method: 'DELETE' });
+
 export const getBudgets      = (month) =>
   req(`/api/budgets${month ? `?month=${month}` : ''}`);
 

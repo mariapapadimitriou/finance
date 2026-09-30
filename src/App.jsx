@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import OverviewPanel from './panels/OverviewPanel.jsx';
+import TodayPanel from './panels/TodayPanel.jsx';
+import ProgressPanel from './panels/ProgressPanel.jsx';
+import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import SavingsPanel from './panels/SavingsPanel.jsx';
 import SubscriptionsPanel from './panels/SubscriptionsPanel.jsx';
 import TransactionsPanel from './panels/TransactionsPanel.jsx';
@@ -27,10 +30,16 @@ function defaultMonth(summary) {
 }
 
 const TABS = [
+  { key: 'today', label: 'Today', hint: 'What you can spend today, and why that number',
+    icon: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z' },
   { key: 'overview', label: 'Overview', hint: 'Spending across every card',
     icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
   { key: 'savings', label: 'Savings', hint: 'What to cut, ranked by what it saves',
     icon: 'M12 3v18M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
+  { key: 'projections', label: 'Projections', hint: 'Where this lands, at this pace and with the cuts',
+    icon: 'M3 17l6-6 4 4 8-8M21 7h-5M21 7v5' },
+  { key: 'progress', label: 'Progress', hint: 'Streaks and badges, all earned by spending less',
+    icon: 'M8 21h8M12 17v4M12 17a5 5 0 0 0 5-5V3H7v9a5 5 0 0 0 5 5zM17 5h3v3a3 3 0 0 1-3 3M7 5H4v3a3 3 0 0 0 3 3' },
   { key: 'subscriptions', label: 'Subscriptions', hint: 'Recurring charges found in your history',
     icon: 'M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M18 2v4h-4M6 22v-4h4' },
   { key: 'transactions', label: 'Transactions', hint: 'Every charge, searchable and correctable',
@@ -56,8 +65,14 @@ export default function App() {
   const [theme, setTheme] = useState(
     () => localStorage.getItem('spendie-theme') || 'dark'
   );
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState('today');
   const [month, setMonth] = useState('');
+  // The plan's month is tracked separately from the dashboard's, because "safe
+  // to spend today" is about today while the dashboard opens on the last month
+  // with data. Empty means "whatever month it actually is"; it only gets set to
+  // something else when this month has no statements imported, since landing on
+  // a month with nothing in it would show a budget nobody has spent against.
+  const [planMonth, setPlanMonth] = useState('');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
@@ -84,6 +99,11 @@ export default function App() {
         categories: categories.categories ?? [],
       });
       setMonth((m) => m || defaultMonth(summary));
+
+      const thisMonth = new Date().toISOString().slice(0, 10).slice(0, 7);
+      const liveMonth = (summary.monthly ?? [])
+        .some((m) => m.month === thisMonth && m.transactions > 0);
+      setPlanMonth((p) => p || (liveMonth ? '' : defaultMonth(summary)));
     } catch (e) {
       setError(e);
     }
@@ -138,11 +158,14 @@ export default function App() {
       months={summary.months} month={month} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(tab)}
     >
+      {tab === 'today' && <TodayPanel month={planMonth} onMonth={setPlanMonth} />}
       {tab === 'overview' && (
         <OverviewPanel summary={summary} insights={insights} theme={theme}
                        month={month} onMonth={setMonth} />
       )}
       {tab === 'savings' && <SavingsPanel insights={insights} onRefresh={load} />}
+      {tab === 'projections' && <ProjectionsPanel insights={insights} />}
+      {tab === 'progress' && <ProgressPanel month={planMonth} />}
       {tab === 'subscriptions' && <SubscriptionsPanel recurring={recurring} />}
       {tab === 'transactions' && (
         <TransactionsPanel summary={summary} categories={categories}

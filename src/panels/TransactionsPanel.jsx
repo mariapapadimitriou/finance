@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Card, ErrorNote, Loading } from '../components/ui.jsx';
-import { dateLabel, getTransactions, money, setCategory } from '../api.js';
+import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
+import {
+  addTransaction, dateLabel, deleteTransaction, getTransactions, money, setCategory,
+} from '../api.js';
 
 const PAGE = 100;
+
+const today = () => new Date().toISOString().slice(0, 10);
 
 export default function TransactionsPanel({ summary, categories, accounts, onChanged }) {
   const [filters, setFilters] = useState({ month: '', category: '', account: '', q: '' });
@@ -10,6 +14,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -18,7 +23,14 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
       .then((d) => { if (!cancelled) setData(d); })
       .catch((e) => { if (!cancelled) setError(e); });
     return () => { cancelled = true; };
-  }, [filters, page]);
+  }, [filters, page, reload]);
+
+  async function removeRow(txn) {
+    if (!window.confirm(`Delete ${txn.merchant} ${money(txn.amount, { cents: true })}?`)) return;
+    await deleteTransaction(txn.id);
+    setReload((n) => n + 1);
+    onChanged?.();
+  }
 
   function update(key, value) {
     setPage(0);
@@ -39,6 +51,9 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
 
   return (
     <div className="stack">
+      <AddByHand categories={categories}
+                 onAdded={() => { setReload((n) => n + 1); onChanged?.(); }} />
+
       {/* Filters sit in one row above the data, as a single control group. */}
       <Card>
         <div className="controls">
@@ -92,6 +107,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                     <th>Category</th>
                     <th>Card</th>
                     <th className="r">Amount</th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
@@ -100,6 +116,9 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                       <td className="muted">{dateLabel(t.date)}</td>
                       <td className="merchant">
                         {t.merchant}
+                        {t.source === 'manual' && (
+                          <span className="pill" style={{ marginLeft: 8 }}>by hand</span>
+                        )}
                         <div className="desc" title={t.description}>
                           {t.description}
                         </div>
@@ -124,6 +143,16 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                       <td className="r" style={t.amount < 0 ? { color: 'var(--good-text)' } : undefined}>
                         {money(t.amount, { cents: true })}
                       </td>
+                      <td className="r">
+                        {/* Only hand-typed rows are deletable. An imported row
+                            would come straight back on the next import, so
+                            offering to delete it would be a lie. */}
+                        {t.source === 'manual' && (
+                          <button className="btn quiet" onClick={() => removeRow(t)}>
+                            Delete
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -145,6 +174,163 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
         )}
       </Card>
     </div>
+  );
+}
+
+/**
+ * Add a purchase before the statement arrives.
+ *
+ * The hazard is obvious — the statement shows up later carrying the same
+ * purchase — and it is handled in both directions. Entering one runs the same
+ * duplicate check an import runs, only looser, because a hand-typed date drifts
+ * a day or two and the descriptor never matches the card's. A near match is
+ * *shown*, not silently merged: this form reports what it found and you decide.
+ * Going the other way, the statement's version replaces what you typed.
+ */
+function AddByHand({ categories, onAdded }) {
+  const blank = { date: today(), description: '', amount: '', category: '' };
+  const [draft, setDraft] = useState(blank);
+  const [open, setOpen] = useState(false);
+  const [conflict, setConflict] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [added, setAdded] = useState(null);
+
+  async function submit(e, confirm = false) {
+    e?.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await addTransaction({
+        ...draft, amount: Number(draft.amount), confirm,
+      });
+      if (r.conflict) {
+        setConflict(r);
+        return;
+      }
+      setAdded(r);
+      setConflict(null);
+      setDraft({ ...blank });
+      onAdded?.();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const set = (k) => (e) => {
+    setConflict(null);
+    setAdded(null);
+    setDraft({ ...draft, [k]: e.target.value });
+  };
+
+  if (!open) {
+    return (
+      <div className="row">
+        <button className="btn primary" onClick={() => setOpen(true)}>
+          + Add a transaction by hand
+        </button>
+        <span className="muted small">
+          For cash, or a charge that hasn&apos;t posted yet
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <Card title="Add a transaction by hand"
+          hint="Checked against your ledger first, so the statement doesn't add it twice later"
+          actions={<button className="btn quiet" onClick={() => setOpen(false)}>Close</button>}>
+      <form className="controls" onSubmit={(e) => submit(e, false)}>
+        <label htmlFor="m-date">Date</label>
+        <input id="m-date" type="date" required value={draft.date} onChange={set('date')} />
+
+        <input type="text" required value={draft.description} onChange={set('description')}
+               placeholder="What was it?" aria-label="Description"
+               style={{ flex: '1 1 200px' }} />
+
+        <label htmlFor="m-amount">Amount</label>
+        <input id="m-amount" type="number" step="0.01" required value={draft.amount}
+               onChange={set('amount')} placeholder="0.00" style={{ width: 110 }} />
+
+        <select value={draft.category} onChange={set('category')} aria-label="Category">
+          <option value="">Categorize it for me</option>
+          {categories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+        </select>
+
+        <button className="btn primary" type="submit" disabled={busy}>
+          {busy ? 'Checking…' : 'Add'}
+        </button>
+      </form>
+
+      <p className="assumption">
+        A positive amount is money out. Enter a refund as a negative number.
+      </p>
+
+      <ErrorNote error={error} />
+
+      {added && (
+        <Notice kind="good">
+          Added, filed under <strong>{added.category}</strong> as{' '}
+          <strong>{added.merchant}</strong>.
+        </Notice>
+      )}
+
+      {conflict && (
+        <div className="verdict">
+          <div className="line">
+            <StatusPill state={conflict.duplicate ? 'critical' : 'warning'}>
+              {conflict.duplicate ? 'Already there' : 'Looks familiar'}
+            </StatusPill>
+            <span>
+              {conflict.duplicate
+                ? conflict.error
+                : 'Found something matching the amount already in your ledger.'}
+            </span>
+          </div>
+
+          <div className="table-wrap" style={{ marginTop: 10 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th><th>Merchant</th><th>Card</th>
+                  <th className="r">Amount</th><th>Match</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(conflict.matches ?? []).map((m) => (
+                  <tr key={m.id}>
+                    <td className="muted">{dateLabel(m.date)}</td>
+                    <td className="merchant">{m.merchant}</td>
+                    <td className="muted">{m.account}</td>
+                    <td className="r num">{money(m.amount, { cents: true })}</td>
+                    <td>
+                      <span className={`pill ${m.confidence === 'high' ? 'warning' : ''}`}>
+                        {m.days_apart === 0 ? 'same day'
+                          : `${m.days_apart} day${m.days_apart === 1 ? '' : 's'} apart`}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {!conflict.duplicate && (
+            <div className="row" style={{ marginTop: 14 }}>
+              <button className="btn primary" disabled={busy}
+                      onClick={(e) => submit(e, true)}>
+                It&apos;s a different purchase — add it
+              </button>
+              <button className="btn quiet" onClick={() => setConflict(null)}>
+                Never mind
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

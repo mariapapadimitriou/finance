@@ -72,6 +72,29 @@ CREATE TABLE IF NOT EXISTS trips (
 );
 CREATE INDEX IF NOT EXISTS idx_trip_dates ON trips(start_date, end_date);
 
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS buckets (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    name    TEXT NOT NULL UNIQUE,
+    balance REAL NOT NULL DEFAULT 0
+);
+
+-- Money drawn from a bucket to cover a day's overspend. Kept per month so the
+-- spend plan can add it back to that month's budget and nowhere else.
+CREATE TABLE IF NOT EXISTS bucket_draws (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    bucket_id INTEGER NOT NULL,
+    month     TEXT NOT NULL,
+    amount    REAL NOT NULL,
+    note      TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_draw_month ON bucket_draws(month);
+
 CREATE TABLE IF NOT EXISTS dismissed_insights (
     insight_id TEXT PRIMARY KEY,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -173,6 +196,11 @@ class Store:
             row = c.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
         return Transaction.from_row(dict(row)) if row else None
 
+    def delete_transaction(self, txn_id: str) -> bool:
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
+            return cur.rowcount > 0
+
     def accounts(self) -> list[dict]:
         with self.conn() as c:
             rows = c.execute(
@@ -259,6 +287,84 @@ class Store:
                 "SELECT * FROM imports ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Settings ─────────────────────────────────────────────────────────────
+    def setting(self, key: str, default=None):
+        with self.conn() as c:
+            row = c.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def set_setting(self, key: str, value) -> None:
+        with self.conn() as c:
+            c.execute(
+                """INSERT INTO settings (key, value) VALUES (?, ?)
+                   ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+                (key, str(value)),
+            )
+
+    def float_setting(self, key: str, default: float = 0.0) -> float:
+        try:
+            return float(self.setting(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    # ── Buckets ──────────────────────────────────────────────────────────────
+    def buckets(self) -> list:
+        from .spend_plan import Bucket
+        with self.conn() as c:
+            rows = c.execute("SELECT id, name, balance FROM buckets ORDER BY name").fetchall()
+        return [Bucket(id=r["id"], name=r["name"], balance=r["balance"]) for r in rows]
+
+    def set_bucket(self, name: str, balance: float) -> int:
+        with self.conn() as c:
+            c.execute(
+                """INSERT INTO buckets (name, balance) VALUES (?, ?)
+                   ON CONFLICT(name) DO UPDATE SET balance = excluded.balance""",
+                (name.strip(), float(balance)),
+            )
+            row = c.execute("SELECT id FROM buckets WHERE name = ?", (name.strip(),)).fetchone()
+            return row["id"]
+
+    def delete_bucket(self, bucket_id: int) -> bool:
+        with self.conn() as c:
+            c.execute("DELETE FROM bucket_draws WHERE bucket_id = ?", (bucket_id,))
+            cur = c.execute("DELETE FROM buckets WHERE id = ?", (bucket_id,))
+            return cur.rowcount > 0
+
+    def draw_from_bucket(self, bucket_id: int, month: str, amount: float,
+                         note: str = "") -> bool:
+        """Take money from a bucket to cover a month's overspend."""
+        with self.conn() as c:
+            row = c.execute("SELECT balance FROM buckets WHERE id = ?",
+                            (bucket_id,)).fetchone()
+            if row is None or row["balance"] < amount:
+                return False
+            c.execute("UPDATE buckets SET balance = balance - ? WHERE id = ?",
+                      (amount, bucket_id))
+            c.execute(
+                "INSERT INTO bucket_draws (bucket_id, month, amount, note) VALUES (?,?,?,?)",
+                (bucket_id, month, float(amount), note),
+            )
+            return True
+
+    def covered_in(self, month: str) -> float:
+        with self.conn() as c:
+            row = c.execute(
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM bucket_draws WHERE month = ?",
+                (month,),
+            ).fetchone()
+        return round(row["total"], 2)
+
+    def draws(self, month: str | None = None) -> list[dict]:
+        sql = ("SELECT d.id, d.month, d.amount, d.note, d.created_at, b.name "
+               "FROM bucket_draws d JOIN buckets b ON b.id = d.bucket_id")
+        params = []
+        if month:
+            sql += " WHERE d.month = ?"
+            params.append(month)
+        sql += " ORDER BY d.id DESC"
+        with self.conn() as c:
+            return [dict(r) for r in c.execute(sql, params).fetchall()]
 
     # ── Trips ────────────────────────────────────────────────────────────────
     def trips(self) -> list:
