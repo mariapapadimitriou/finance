@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Card, ErrorNote, Notice } from '../components/ui.jsx';
-import { clearLedger, getImports, getSources, importFiles, money } from '../api.js';
+import {
+  clearLedger, getHealth, getImports, getSources, importFiles, money,
+} from '../api.js';
 
 export default function ImportPanel({ accounts, onImported }) {
   const [sources, setSources] = useState(null);
+  const [storage, setStorage] = useState(null);
   const [history, setHistory] = useState([]);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
@@ -12,9 +15,12 @@ export default function ImportPanel({ accounts, onImported }) {
   const inputRef = useRef(null);
 
   async function refresh() {
-    const [s, h] = await Promise.all([getSources(), getImports()]);
+    const [s, h, health] = await Promise.all([
+      getSources(), getImports(), getHealth().catch(() => null),
+    ]);
     setSources(s);
     setHistory(h.imports ?? []);
+    setStorage(health?.storage ?? null);
   }
 
   useEffect(() => { refresh().catch(setError); }, []);
@@ -63,6 +69,23 @@ export default function ImportPanel({ accounts, onImported }) {
 
   return (
     <div className="stack">
+      {/* Said before the upload, not after it. On a serverless instance with
+          no database the ledger lives in that instance's /tmp, so an upload
+          can disappear when the instance is recycled and a request served by a
+          different instance never sees it. Connecting a Postgres removes this
+          notice by removing the problem. */}
+      {storage === 'ephemeral' && (
+        <Notice>
+          <strong>Uploads here are temporary.</strong> This deployment has no
+          database attached, so a statement you add lives on one server for as
+          long as that server does — usually minutes to hours — and may not be
+          visible on another device at all. The spending already shown is
+          committed to the repository and always loads. To make uploads
+          permanent, attach a Postgres database in the Vercel project
+          (Storage → Create Database) and redeploy; nothing else needs changing.
+        </Notice>
+      )}
+
       <div
         className={`dropzone${over ? ' over' : ''}`}
         onDragOver={(e) => { e.preventDefault(); setOver(true); }}

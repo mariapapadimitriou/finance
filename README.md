@@ -208,9 +208,42 @@ python -m seed_data.export        # rewrite the committed ledger
 python -m seed_data.export --check  # see what would be written first
 ```
 
-Edits made on the deployment — an upload, a budget, a recategorization — last
-only as long as the instance that received them. Making those durable means
-moving `store.py` onto a hosted database.
+### Making uploads durable
+
+Without a database, edits made on the deployment — an upload, a budget, a
+recategorization — last only as long as the instance that received them, and a
+request served by a different instance never sees them at all. The Import tab
+says so in as many words when it detects that state, because an upload that
+quietly disappears an hour later is worse than one that is refused.
+
+Attaching a Postgres fixes it, and needs no code change:
+
+1. In the Vercel project: **Storage → Create Database → Postgres** (Neon's free
+   tier is ample — this ledger is a few hundred rows).
+2. Connect it to the project. Vercel injects `DATABASE_URL` itself.
+3. Redeploy.
+
+`finance/db.py` picks the connection string up, `/tmp` stops being used, and the
+committed ledger seeds the database once — after which uploads persist and every
+instance sees the same data. `/api/health` reports which mode is live:
+`postgres`, `ephemeral` or `sqlite`.
+
+Locally nothing changes: with no `DATABASE_URL` set the ledger is still a SQLite
+file that never leaves the machine.
+
+### One store, two databases
+
+Every query is written once, in SQLite's dialect, and `finance/db.py` rewrites
+the handful of constructs Postgres spells differently — placeholders,
+`INSERT OR IGNORE`, `AUTOINCREMENT`, `REAL`, and `LIKE` (SQLite's ignores ASCII
+case and Postgres' does not, so the merchant search would quietly stop
+matching). The rewriter is unit-tested rule by rule, and the whole suite can be
+run against a live server, which is how the two differences a rewriter can't
+see were found:
+
+```bash
+SPENDIE_TEST_DATABASE_URL=postgresql://... python -m pytest
+```
 
 ---
 
@@ -239,7 +272,8 @@ finance/
   manual.py                 Hand-typed rows, and keeping imports off them
   narrative.py              Optional Claude layer
   pipeline.py               source → dedupe → categorize → store
-  store.py                  SQLite persistence
+  db.py                     SQLite locally, Postgres when DATABASE_URL is set
+  store.py                  Persistence, written once in SQLite's dialect
   api.py                    HTTP routes
 src/                        React UI (Vite)
   components/Logo.jsx       The Spendie mark, inline SVG
@@ -248,7 +282,7 @@ seed_data/
   transactions.json         The committed ledger — public by design
   export.py                 Write it from the local ledger, and load it back
 sample_data/generate.py     Realistic sample statements in three issuer formats
-tests/                      265 tests
+tests/                      280 tests
 ```
 
 ## Tests
@@ -267,7 +301,7 @@ come in "under budget".
 
 ## API
 
-`GET /api/summary` · `/api/breakdown` · `/api/transactions` · `/api/recurring` ·
+`GET /api/health` (reports the storage mode) · `/api/summary` · `/api/breakdown` · `/api/transactions` · `/api/recurring` ·
 `/api/insights` · `/api/budgets` · `/api/accounts` · `/api/sources` ·
 `/api/imports` · `/api/trips` · `/api/plan` · `/api/progress` · `/api/projections`
 `POST /api/import` · `/api/sync/<source>` · `/api/narrative` ·

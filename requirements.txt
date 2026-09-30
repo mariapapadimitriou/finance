@@ -4,6 +4,11 @@ flask>=3.0.0
 flask-cors>=4.0.0
 pdfplumber>=0.11.0
 
+# Only used when DATABASE_URL points at a Postgres, which is what a serverless
+# deployment needs — its disk is discarded when the instance is recycled.
+# Running locally on SQLite never imports this.
+psycopg[binary]>=3.1.0
+
 # Tests
 pytest>=8.0.0
 

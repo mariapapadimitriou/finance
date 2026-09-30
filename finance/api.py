@@ -22,6 +22,7 @@ from .analytics import (
     weekday_profile,
 )
 from .categorize import CATEGORIES
+from .db import storage_mode
 from .ingest import all_sources, get_source, parse_csv, parse_statement
 from .insights import detect_recurring, findings_summary, generate_findings, recurring_summary
 from .pipeline import ingest, recategorize_all
@@ -49,7 +50,15 @@ def _txns():
 
 @bp.get("/health")
 def health():
-    return jsonify({"ok": True, "transactions": len(_txns())})
+    # `storage` is what the Import tab reads before it promises anything: on a
+    # serverless instance with no database, an upload survives only until that
+    # instance is recycled, and the UI has to say so rather than let it vanish
+    # quietly an hour later.
+    return jsonify({
+        "ok": True,
+        "transactions": len(_txns()),
+        "storage": storage_mode(),
+    })
 
 
 @bp.get("/sources")
