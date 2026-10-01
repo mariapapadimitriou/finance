@@ -121,3 +121,92 @@ class TestStatus:
         monkeypatch.delenv("PLAID_CLIENT_ID", raising=False)
         with pytest.raises(RuntimeError):
             PlaidSource().fetch(access_token="token")
+
+
+class TestCardPaymentsAreNotSpending:
+    """A payment to the card read as a purchase subtracts from the month.
+
+    It is a negative amount, so landing it in a spending category does not
+    merely mislabel it — it nets against real spending and makes the month
+    look cheaper than it was. Of all the ways to get a category wrong, this is
+    the one that flatters you, so it is worth more than one defence.
+    """
+
+    CARD = {"card": {"name": "TD Cash Back Visa", "type": "credit",
+                     "subtype": "credit card", "mask": "4242"}}
+
+    def _row(self, name, pfc, amount, accounts=None):
+        from finance.categorize import apply_categories
+        from finance.ingest.plaid_source import map_plaid_transaction
+        raw = {
+            "transaction_id": "x", "date": "2026-05-01", "name": name,
+            "amount": amount, "account_id": "card",
+            "personal_finance_category": (
+                {"detailed": pfc, "primary": pfc.split("_")[0]} if pfc else None),
+        }
+        t = map_plaid_transaction(raw, accounts or self.CARD)
+        apply_categories([t])
+        return t
+
+    @pytest.mark.parametrize("descriptor", [
+        "PAYMENT - THANK YOU",
+        "Payment Thank You-Mobile",
+        "ONLINE BANKING PAYMENT",
+        "AUTOMATIC PAYMENT - THANK YOU",
+        "TD VISA PREAUTH PYMT",
+        "CAPITAL ONE MOBILE PYMT",
+        "CREDIT CARD PAYMENT",
+    ])
+    def test_plaids_own_code_settles_it(self, descriptor):
+        from finance.categorize import NON_SPEND
+        t = self._row(descriptor, "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", -500.00)
+        assert t.category == "Transfers", f"{descriptor} -> {t.category}"
+        assert t.category in NON_SPEND
+
+    def test_a_transfer_in_is_not_spending_either(self):
+        t = self._row("Wealthsimple", "TRANSFER_IN_ACCOUNT_TRANSFER", -200.00)
+        assert t.category == "Transfers"
+
+    def test_an_unrecognized_inflow_on_a_card_is_not_spending(self):
+        """The backstop: a bank whose wording nothing here has ever seen."""
+        t = self._row("ZZQ BILL PAY REF 88812", "", -412.00)
+        assert t.category == "Transfers"
+        assert t.category_source == "card_inflow"
+
+    def test_a_refund_still_nets_against_its_own_category(self):
+        """Returning a coffee is not a card payment; it belongs to Coffee."""
+        t = self._row("STARBUCKS STORE 08812", "FOOD_AND_DRINK_COFFEE", -6.40)
+        assert t.category == "Coffee"
+        assert t.amount == -6.40
+
+    def test_an_ordinary_purchase_is_untouched(self):
+        t = self._row("UBER TRIP", "TRANSPORTATION_TAXI", 24.10)
+        assert t.category == "Transport"
+
+    def test_the_backstop_leaves_other_account_types_alone(self):
+        """An unrecognized outflow on a chequing account may be real spending."""
+        chequing = {"card": {"name": "TD Chequing", "type": "depository",
+                             "subtype": "checking", "mask": "1111"}}
+        t = self._row("ZZQ SOMETHING", "", -412.00, accounts=chequing)
+        assert t.category == "Other"
+
+    def test_payments_do_not_reduce_the_spending_total(self):
+        """The whole point, measured the way the app measures it."""
+        from finance.categorize import NON_SPEND, apply_categories
+        from finance.ingest.plaid_source import map_plaid_transaction
+        rows = []
+        for i, (name, pfc, amt) in enumerate([
+            ("UBER TRIP", "TRANSPORTATION_TAXI", 24.10),
+            ("STARBUCKS", "FOOD_AND_DRINK_COFFEE", 6.40),
+            ("TD VISA PREAUTH PYMT", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", -500.00),
+            ("ZZQ MYSTERY PAYMENT", "", -300.00),
+        ]):
+            rows.append(map_plaid_transaction({
+                "transaction_id": f"t{i}", "date": "2026-05-01", "name": name,
+                "amount": amt, "account_id": "card",
+                "personal_finance_category": (
+                    {"detailed": pfc, "primary": pfc.split("_")[0]} if pfc else None),
+            }, self.CARD))
+        apply_categories(rows)
+        spend = sum(t.amount for t in rows if t.category not in NON_SPEND)
+        assert spend == 30.50          # not 30.50 - 800.00
