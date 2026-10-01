@@ -125,6 +125,42 @@ def import_files():
     })
 
 
+@bp.get("/import/bundled")
+def bundled_available():
+    """Statement sets shipped with the app, and whether each is already loaded."""
+    from seed_data.bundled import available
+    s = store()
+    loaded = {a["account_id"] for a in s.accounts()}
+    return jsonify({"bundled": [{**b, "loaded": b["account_id"] in loaded}
+                                for b in available()]})
+
+
+@bp.post("/import/bundled")
+def bundled_import():
+    """Load one shipped statement set into the ledger.
+
+    Separate from the upload route because there is no file to choose: a closed
+    card's history is fixed, and the account it belongs to is decided here
+    rather than guessed from a filename. Safe to call twice — the rows go
+    through the same pipeline as an upload, so the second call finds duplicates
+    and inserts nothing.
+    """
+    from seed_data.bundled import read
+
+    key = (request.get_json(silent=True) or {}).get("key", "")
+    try:
+        text, entry = read(key)
+    except KeyError:
+        return jsonify({"error": f"No statements are bundled under '{key}'."}), 404
+    except FileNotFoundError:
+        return jsonify({"error": "The bundled file is missing from this build."}), 410
+
+    result = parse_csv(content=text, filename=entry["file"],
+                       account_name=entry["account_name"],
+                       account_id=entry["account_id"])
+    out = ingest(store(), result, filename=f"{entry['label']} (bundled)")
+    return jsonify(out)
+
 def _is_pdf(name: str, data) -> bool:
     if name.lower().endswith(".pdf"):
         return True

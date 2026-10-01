@@ -265,3 +265,143 @@ class TestMerchantNormalization:
     def test_never_returns_empty(self):
         assert normalize_merchant("") == "Unknown"
         assert normalize_merchant("###") == "Unknown"
+
+
+# Scotiabank's own export, as downloaded: three columns, the description headed
+# "Details", and purchases written positive. The schema table had it as
+# negative-for-purchases, which is a real convention for some of their exports
+# and the opposite of this one.
+SCOTIA_POSITIVE = """Date,Details,Amount
+2025-03-19,QUEEN'S CROSS FOOD HALL TORONTO ON (APPLE PAY),19.21
+2025-03-20,LONGO'S # 18 TORONTO TORONTO ON (APPLE PAY),66.92
+2025-03-21,SCENE+ POINTS FOR CREDIT,-300.00
+2025-03-23,PAYMENT FROM-*****10*6822,-1886.04
+2025-03-23,BAR POMPETTE TORONTO ON (APPLE PAY),224.01
+"""
+
+# The mirror image: same layout, purchases negative, payment positive.
+SCOTIA_NEGATIVE = """Date,Details,Amount
+2025-03-19,QUEEN'S CROSS FOOD HALL TORONTO ON (APPLE PAY),-19.21
+2025-03-20,LONGO'S # 18 TORONTO TORONTO ON (APPLE PAY),-66.92
+2025-03-23,PAYMENT FROM-*****10*6822,1886.04
+2025-03-23,BAR POMPETTE TORONTO ON (APPLE PAY),-224.01
+"""
+
+
+class TestDescriptionColumnFallback:
+    """A schema naming a column the file lacks must not cost the description."""
+
+    def test_details_column_is_read_when_the_schema_says_description(self):
+        r = parse_csv(SCOTIA_POSITIVE, filename="all_transactions.csv")
+        assert r.format_key == "scotiabank"
+        descriptions = [t.description for t in r.transactions]
+        assert "(no description)" not in descriptions
+        assert descriptions[0].startswith("QUEEN'S CROSS FOOD HALL")
+
+    def test_the_merchant_survives_the_round_trip(self):
+        r = parse_csv(SCOTIA_POSITIVE, filename="all_transactions.csv")
+        assert r.transactions[0].merchant == "Queen's Cross Food Hall"
+
+
+class TestSignInferredFromThePayments:
+    """The file decides which way round it is, not the schema table."""
+
+    def test_purchases_stay_positive_when_the_export_writes_them_positive(self):
+        r = parse_csv(SCOTIA_POSITIVE, filename="scotia.csv")
+        by_desc = {t.description: t.amount for t in r.transactions}
+        assert by_desc["QUEEN'S CROSS FOOD HALL TORONTO ON (APPLE PAY)"] == 19.21
+        assert by_desc["PAYMENT FROM-*****10*6822"] == -1886.04
+        assert by_desc["SCENE+ POINTS FOR CREDIT"] == -300.00
+
+    def test_the_override_is_reported_rather_than_silent(self):
+        r = parse_csv(SCOTIA_POSITIVE, filename="scotia.csv")
+        assert any("opposite" in w for w in r.warnings), r.warnings
+
+    def test_the_declared_sign_still_holds_for_the_other_direction(self):
+        r = parse_csv(SCOTIA_NEGATIVE, filename="scotia.csv")
+        by_desc = {t.description: t.amount for t in r.transactions}
+        assert by_desc["QUEEN'S CROSS FOOD HALL TORONTO ON (APPLE PAY)"] == 19.21
+        assert by_desc["PAYMENT FROM-*****10*6822"] == -1886.04
+        assert not any("opposite" in w for w in r.warnings)
+
+    def test_a_file_with_no_payment_row_keeps_the_declared_sign(self):
+        from finance.ingest.csv_source import infer_sign
+        rows = [("LONGO'S", 66.92), ("BAR POMPETTE", 224.01)]
+        assert infer_sign(rows, -1) == (-1, None)
+
+    def test_contradictory_payment_rows_are_not_trusted(self):
+        """A chequing export has payments going both ways; it proves nothing."""
+        from finance.ingest.csv_source import infer_sign
+        rows = [("PAYMENT FROM-1234", -500.0), ("PAYMENT THANK YOU", 40.0),
+                ("LONGO'S", 66.92)]
+        assert infer_sign(rows, -1) == (-1, None)
+
+    def test_a_wrongly_inverted_file_is_flagged_even_without_a_payment_row(self):
+        no_payments = """Date,Details,Amount
+2025-03-19,QUEEN'S CROSS FOOD HALL TORONTO ON,19.21
+2025-03-20,LONGO'S # 18 TORONTO TORONTO ON,66.92
+2025-03-23,BAR POMPETTE TORONTO ON,224.01
+"""
+        r = parse_csv(no_payments, filename="scotia.csv")
+        # sign=-1 stands with no evidence against it, so every row reads as an
+        # inflow -- which is exactly what the warning is for.
+        assert all(t.amount < 0 for t in r.transactions)
+        assert any("money coming in" in w for w in r.warnings), r.warnings
+
+    def test_the_issuers_with_a_known_sign_are_unaffected(self):
+        """The inference agrees with every schema it was checked against."""
+        amex = parse_csv(AMEX, filename="amex.csv")
+        chase = parse_csv(CHASE, filename="chase.csv")
+        ws = parse_csv(WEALTHSIMPLE, filename="ws.csv")
+        for r in (amex, chase, ws):
+            assert not any("opposite" in w for w in r.warnings), r.warnings
+        assert [t for t in amex.transactions if t.amount < 0][0].amount == -1200.00
+        assert [t for t in chase.transactions if t.amount < 0][0].amount == -1200.00
+        assert [t for t in ws.transactions if t.amount < 0][0].amount == -205.06
+
+
+class TestWalletTags:
+    """Tap-to-pay tags sit after the city, so they block the city stripping."""
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("QUEEN'S CROSS FOOD HALL TORONTO ON (APPLE PAY)", "Queen's Cross Food Hall"),
+        ("ZEN KYOTO 001 TORONTO ON (APPLE PAY)", "Zen Kyoto"),
+        ("TST-CHAMBERLAIN'S PONY TORONTO ON (APPLE PAY)", "Chamberlain's Pony"),
+        ("METRO 759 TORONTO ON (GOOGLE PAY)", "Metro"),
+        # A trailing "CO" is read as Colorado by an older rule; documented
+        # here so the wallet fix is not blamed for it.
+        ("DINEEN COFFEE CO TORONTO ON (APPLE PAY)", "Dineen Coffee"),
+    ])
+    def test_the_tag_and_the_city_both_come_off(self, raw, expected):
+        assert normalize_merchant(raw) == expected
+
+    def test_a_two_word_city_is_still_stripped(self):
+        assert normalize_merchant("UBER TRIP SAN FRANCISCO CA") == "Uber Trip"
+        assert normalize_merchant("SQ *BLUE BOTTLE COFFEE OAKLAND CA") \
+            == "Blue Bottle Coffee"
+
+    def test_the_last_word_of_a_name_is_not_mistaken_for_a_city(self):
+        """"FOOD HALL TORONTO ON" reads as a two-word city if nothing stops it."""
+        assert normalize_merchant("PAGE ONE CAFE TORONTO ON") == "Page One Cafe"
+        assert normalize_merchant("BAR POMPETTE TORONTO ON") == "Bar Pompette"
+
+
+class TestLoyaltyRedemptions:
+    """A credit booked as negative spending makes the month look cheaper."""
+
+    @pytest.mark.parametrize("descriptor", [
+        "SCENE+ POINTS FOR CREDIT",
+        "SCENE+ TRAVEL CREDIT",
+        "STATEMENT CREDIT",
+        "AEROPLAN POINTS CREDIT",
+        "CREDIT BAL REFUND",
+    ])
+    def test_a_redemption_is_not_spending(self, descriptor):
+        from finance.categorize import NON_SPEND, categorize
+        from finance.models import normalize_merchant
+        category = categorize(normalize_merchant(descriptor), descriptor)[0]
+        assert category in NON_SPEND, f"{descriptor} counted as {category}"
+
+    def test_the_word_credit_alone_does_not_make_a_transfer(self):
+        from finance.categorize import categorize
+        assert categorize("Credit Suisse Coffee", "CREDIT SUISSE COFFEE")[0] != "Transfers"

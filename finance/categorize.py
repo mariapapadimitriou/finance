@@ -94,8 +94,16 @@ RULES: list[tuple[str, str]] = [
     # Wealthsimple leaves the merchant blank on payments; the row reads just
     # "Payment". Anchored to the whole merchant so "Payment Depot" still shops.
     (r"^payments?\s*\|\|", "Transfers"),
+    # Loyalty redemptions are not spending, and a redemption booked as a
+    # negative in a spending category is worse than merely miscategorized: it
+    # nets against the month and makes it look cheaper than it was. Matching
+    # only the word "points" missed "SCENE+ TRAVEL CREDIT", so the programs are
+    # named and any "... CREDIT" of theirs counts.
     (r"\b(scene\+? points|points for credit|rewards? redemption|"
-     r"cash ?back redemption|credit bal(?:ance)? refund)\b", "Transfers"),
+     r"cash ?back redemption|credit bal(?:ance)? refund|"
+     r"statement credit|travel credit|"
+     r"(?:scene|aeroplan|air ?miles|pc optimum|petro[- ]?points)\b[\w\s+]*"
+     r"\bcredit)\b", "Transfers"),
     (r"\b(e-?transfer|interac|zelle|venmo|wise|remitly|western union)\b", "Transfers"),
     (r"\b(transfer to|transfer from|internal transfer|balance transfer)\b", "Transfers"),
     (r"\b(payroll|direct deposit|salary|dep\s+payroll|refund)\b", "Income"),

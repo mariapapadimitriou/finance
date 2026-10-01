@@ -113,9 +113,32 @@ def parse_csv(content: str, filename: str = "upload.csv",
         account_name=account_name, account_id=account_id,
     )
 
+    def row_description(rec) -> str:
+        if headers and isinstance(desc_roles, list):
+            parts = [str(rec.get(c, "")).strip() for c in desc_roles]
+            text = " ".join(p for p in parts if p)
+        else:
+            text = str(get(rec, "description")).strip()
+        if not text:
+            text = str(get(rec, "description_fallback")).strip() or "(no description)"
+        return re.sub(r"\s+", " ", text)
+
     transactions: list[Transaction] = []
     skipped = 0
     warnings: list[str] = []
+
+    # Which way round this file writes spending is a property of the file, not
+    # of one row, so it is settled before any row is converted.
+    sign, sign_warning = schema.sign, None
+    if not (cols.get("debit") and cols.get("credit") if headers else False):
+        raws = []
+        for rec in records:
+            raw = parse_amount(get(rec, "amount"))
+            if raw is not None:
+                raws.append((row_description(rec), raw))
+        sign, sign_warning = infer_sign(raws, schema.sign)
+    if sign_warning:
+        warnings.append(sign_warning)
 
     for rec in records:
         iso = parse_date(str(get(rec, "date")))
@@ -123,26 +146,19 @@ def parse_csv(content: str, filename: str = "upload.csv",
             skipped += 1
             continue
 
-        amount = _row_amount(rec, get, schema, headers)
+        amount = _row_amount(rec, get, schema, headers, sign)
         if amount is None:
             skipped += 1
             continue
 
-        if headers and isinstance(desc_roles, list):
-            parts = [str(rec.get(c, "")).strip() for c in desc_roles]
-            description = " ".join(p for p in parts if p)
-        else:
-            description = str(get(rec, "description")).strip()
-        if not description:
-            description = str(get(rec, "description_fallback")).strip() or "(no description)"
-
+        description = row_description(rec)
         post_iso = parse_date(str(get(rec, "post_date"))) if headers else None
         issuer_cat = str(get(rec, "category")).strip() if headers else ""
 
         transactions.append(Transaction(
             date=iso,
             post_date=post_iso,
-            description=re.sub(r"\s+", " ", description),
+            description=description,
             amount=amount,
             account_id=acct_id,
             account_name=acct_name,
@@ -159,10 +175,12 @@ def parse_csv(content: str, filename: str = "upload.csv",
         warnings.append(
             "Column layout was matched loosely — spot-check a few amounts and dates."
         )
-    if transactions and all(t.amount <= 0 for t in transactions):
+    inflows = sum(1 for t in transactions if t.amount <= 0)
+    if transactions and inflows > len(transactions) * 0.8:
         warnings.append(
-            "Every row parsed as an inflow. If these are purchases, the sign "
-            "convention for this export may be inverted."
+            f"{inflows} of {len(transactions)} rows parsed as money coming in. "
+            "If these are purchases, the sign convention for this export is "
+            "inverted — check a row you remember against the statement."
         )
 
     return IngestResult(
@@ -177,7 +195,75 @@ def parse_csv(content: str, filename: str = "upload.csv",
     )
 
 
-def _row_amount(rec, get, schema: schemas.CsvSchema, headers) -> float | None:
+# A card payment is the one row on a credit-card export whose direction is never
+# in doubt: it is money arriving to reduce the balance, never a purchase. That
+# makes it a reference point for reading the rest of the file — whichever sign
+# the issuer gave this row is the sign it uses for inflows, so spending is the
+# other one.
+#
+# Kept deliberately narrow. "Pre-authorized payment" is an outflow on a
+# chequing account and an inflow on a card, so it is left out; a hint that is
+# sometimes backwards is worse than no hint.
+_CARD_PAYMENT = re.compile(
+    r"""(?xi)
+      ^ payments? $                     # Wealthsimple writes it in a type column
+    | \b payment \s* [-–—]* \s*
+          (?: thank \s* you | from | received | web | online | cheque | check )
+    | \b thank \s* you \s* [-–—]* \s* payment \b
+    | \b pmt \s* thank \s* you \b
+    | \b auto \s* -? \s* pay (?: ment )? \b
+    """
+)
+
+
+def infer_sign(rows: list[tuple[str, float]], declared: int) -> tuple[int, str | None]:
+    """Work out which direction this file calls spending.
+
+    `rows` is (description, raw amount) as written in the file, before any sign
+    is applied. Returns the sign to multiply by, and a warning when the file
+    contradicts what the schema expected.
+
+    The schema's sign is a prior: a note on what an issuer did when the layout
+    was added. The file in front of us is evidence, and when the two disagree
+    the file wins — issuers change their exports, and the same bank hands out
+    different ones for cards and for chequing. Guessing wrong inverts every
+    amount in the ledger, so the disagreement is reported rather than absorbed.
+    """
+    payments = [amt for desc, amt in rows if amt and _CARD_PAYMENT.search(desc or "")]
+    if not payments:
+        return declared, None
+
+    # Contradictory evidence means this is not the clean signal we hoped for —
+    # most likely a chequing export, where "payment" rows go both ways.
+    if not (all(a > 0 for a in payments) or all(a < 0 for a in payments)):
+        return declared, None
+
+    # Inflows carry the payment rows' sign, so spending is the opposite.
+    inferred = -1 if payments[0] > 0 else 1
+
+    # Cross-check against the bulk of the file. On a card statement purchases
+    # outnumber credits heavily, so if most other rows share the payments' sign
+    # the reference point is not what we think it is.
+    others = [amt for desc, amt in rows
+              if amt and not _CARD_PAYMENT.search(desc or "")]
+    if others:
+        same_way = sum(1 for a in others if (a > 0) == (payments[0] > 0))
+        if same_way > len(others) / 2:
+            return declared, None
+
+    if inferred == declared:
+        return declared, None
+    return inferred, (
+        f"This export writes purchases as "
+        f"{'positives' if inferred == 1 else 'negatives'}, which is the "
+        f"opposite of what this issuer's layout usually does. The payment rows "
+        f"were used to tell which way round it is, so spending is counted as "
+        f"spending — but spot-check a few amounts."
+    )
+
+
+def _row_amount(rec, get, schema: schemas.CsvSchema, headers,
+                sign: int | None = None) -> float | None:
     """Resolve one row's amount into the positive-is-spending convention."""
     debit = parse_amount(get(rec, "debit")) if (schema.debit or not headers) else None
     credit = parse_amount(get(rec, "credit")) if (schema.credit or not headers) else None
@@ -189,7 +275,7 @@ def _row_amount(rec, get, schema: schemas.CsvSchema, headers) -> float | None:
     raw = parse_amount(get(rec, "amount"))
     if raw is None:
         return None
-    return round(raw * schema.sign, 2)
+    return round(raw * (schema.sign if sign is None else sign), 2)
 
 
 _ACCT_CLEAN = re.compile(r"[^A-Za-z0-9]+")

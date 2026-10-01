@@ -229,3 +229,60 @@ class TestSources:
         blob = str(payload)
         assert "31004" not in blob          # no account numbers
         assert "SQ *BLUE BOTTLE" not in blob  # no raw descriptors
+
+
+class TestBundledStatements:
+    """A closed card's statements: loaded on request, never by themselves."""
+
+    def test_the_set_is_listed_with_its_size(self, client):
+        body = client.get("/api/import/bundled").get_json()
+        scotia = next(b for b in body["bundled"] if b["key"] == "scotiabank_amex")
+        assert scotia["rows"] == 207
+        assert scotia["loaded"] is False
+
+    def test_loading_brings_the_rows_in(self, client):
+        r = client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        body = r.get_json()
+        assert r.status_code == 200
+        assert body["imported"] == 207
+        assert body["date_range"] == ["2025-03-19", "2026-08-05"]
+
+    def test_loading_twice_adds_nothing(self, client):
+        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        again = client.post("/api/import/bundled",
+                            json={"key": "scotiabank_amex"}).get_json()
+        assert again["imported"] == 0
+        assert again["duplicates"] == 207
+
+    def test_the_rows_land_in_one_named_account(self, client):
+        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        accounts = client.get("/api/accounts").get_json()["accounts"]
+        assert len(accounts) == 1
+        assert accounts[0]["account_id"] == "scotiabank_amex"
+        assert accounts[0]["account_name"] == "Scotiabank Amex (closed)"
+
+    def test_the_listing_says_so_once_it_is_loaded(self, client):
+        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        body = client.get("/api/import/bundled").get_json()
+        assert body["bundled"][0]["loaded"] is True
+
+    def test_an_unknown_set_is_a_404(self, client):
+        assert client.post("/api/import/bundled",
+                           json={"key": "nonesuch"}).status_code == 404
+
+    def test_purchases_are_spending_and_payments_are_not(self, client):
+        """The export writes purchases positive; the schema said otherwise."""
+        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        rows = client.get("/api/transactions?limit=500").get_json()["transactions"]
+        by_desc = {t["description"]: t for t in rows}
+        assert by_desc["QUEEN'S CROSS FOOD HALL TORONTO ON (APPLE PAY)"]["amount"] > 0
+        payment = by_desc["PAYMENT FROM-**********"]
+        assert payment["amount"] < 0
+        assert payment["category"] == "Transfers"
+
+    def test_a_redemption_does_not_reduce_the_spending_total(self, client):
+        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        rows = client.get("/api/transactions?limit=500").get_json()["transactions"]
+        credits = [t for t in rows if "SCENE+" in t["description"]]
+        assert len(credits) == 2
+        assert all(t["category"] == "Transfers" for t in credits), credits

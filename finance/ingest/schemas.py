@@ -286,8 +286,7 @@ def resolve_columns(schema: CsvSchema, headers: list[str]) -> dict[str, str | li
     cols: dict[str, str | list[str]] = {}
 
     def pick(role: str, fallback: list[str]) -> None:
-        candidates = getattr(schema, role) or fallback
-        found = _find(norm, candidates)
+        found = _find(norm, getattr(schema, role)) or _find(norm, fallback)
         if found:
             cols[role] = found[0]
 
@@ -302,8 +301,13 @@ def resolve_columns(schema: CsvSchema, headers: list[str]) -> dict[str, str | li
         pick("description_fallback", schema.description_fallback)
 
     # Description can span several columns (RBC splits it across two).
-    desc_cands = schema.description or GENERIC.description
-    desc_cols = _find(norm, desc_cands)
+    #
+    # The schema's own names are tried first, then the generic ones. A schema
+    # naming a column the file does not have is not a reason to give up on the
+    # description: Scotiabank's export heads it "Details", and dropping to
+    # "(no description)" for every row loses the merchant, the category and
+    # the de-duplication key in one go, silently.
+    desc_cols = _find(norm, schema.description) or _find(norm, GENERIC.description)
     if desc_cols:
         cols["description"] = desc_cols[:2]
 

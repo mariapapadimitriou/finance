@@ -64,6 +64,14 @@ _NOISE_PATTERNS = [
     r"\b\d{1,2}:\d{2}\s*(?:AM|PM)?\b",
 ]
 
+# A wallet tag sits *after* the city and province, so it has to come off before
+# the location tail is looked for — otherwise "TORONTO ON" is no longer at the
+# end of the string and every tap-to-pay row keeps its city in the merchant
+# name. Scotiabank appends it to almost every row.
+_WALLET_TAIL = re.compile(
+    r"\s*\(?\b(?:APPLE|GOOGLE|SAMSUNG|GARMIN|FITBIT)\s*-?\s*PAY\b\)?\s*$"
+)
+
 _STATES = {
     "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI",
     "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN",
@@ -92,6 +100,17 @@ _LOCATION_TAIL = re.compile(
     r"(?:\s+(?:US|USA|CA|CAN))?\s*$"
 )
 
+# Words that start a two-word city and are never the last word of a merchant
+# name. Only with one of these trailing does the two-word city reading win.
+_CITY_LEAD = {
+    "SAN", "SANTA", "SANTO", "LOS", "LAS", "NEW", "NORTH", "SOUTH", "EAST",
+    "WEST", "PORT", "SAINT", "ST", "FORT", "FT", "LAKE", "MOUNT", "MT",
+    "GRAND", "SALT", "DES", "EL", "THOUSAND", "NIAGARA", "THUNDER", "SAULT",
+    "OKLAHOMA", "KANSAS", "SIOUX", "BATON", "LITTLE", "CORAL", "PALM", "BOCA",
+    "CEDAR", "RICHMOND", "COLORADO", "SURREY", "OWEN", "SWIFT", "MEDICINE",
+    "PRINCE", "RED", "MOOSE", "CHESTNUT", "BAY", "WHITE", "LONG", "HIGH",
+}
+
 _AMAZON_KEY = re.compile(r"\bAM(?:AZ)?ON\b|\bAMZN\b")
 
 
@@ -105,6 +124,7 @@ def normalize_merchant(description: str) -> str:
     for pat in _PROCESSOR_PREFIXES:
         s = re.sub(pat, " ", s)
 
+    s = _WALLET_TAIL.sub("", s).strip() or s
     s = _strip_location_tail(s)
 
     for pat in _NOISE_PATTERNS:
@@ -162,16 +182,27 @@ def _strip_location_tail(s: str) -> str:
     """Remove a trailing "CITY ST" without swallowing the merchant name.
 
     The city may be two words ("SAN FRANCISCO", "NEW YORK"), but a two-word
-    match can also reach back over the whole name — "GREENHOUSE MISSISSAUGA ON"
-    would leave nothing at all. So a strip that empties the string is retried
-    against a one-word city, and abandoned if that empties it too.
-    """
-    stripped = _LOCATION_TAIL.sub("", s).strip()
-    if stripped:
-        return stripped
+    match cannot tell a two-word city from a one-word city preceded by the last
+    word of the name: "QUEEN'S CROSS FOOD HALL TORONTO ON" fits the pattern
+    just as well as "UBER TRIP SAN FRANCISCO CA", and reading it that way
+    leaves "Queen's Cross Food".
 
-    stripped = _LOCATION_TAIL_SHORT.sub("", s).strip()
-    return stripped or s
+    So the one-word city is tried first and kept unless what it leaves behind
+    ends in a word that only ever begins a city name. Those words are listed
+    rather than guessed, because the alternative is a rule that quietly trims a
+    word off a merchant.
+    """
+    short = _LOCATION_TAIL_SHORT.sub("", s).strip()
+    if short:
+        if short.split()[-1].rstrip(".") in _CITY_LEAD:
+            longer = _LOCATION_TAIL.sub("", s).strip()
+            if longer:
+                return longer
+        return short
+
+    # The one-word form consumed everything, so the name itself must be inside
+    # what looked like the city.
+    return _LOCATION_TAIL.sub("", s).strip() or s
 
 
 def _titlecase(s: str) -> str:
