@@ -186,21 +186,25 @@ export default function AccountsPanel({ onChanged }) {
                   }} />
 
       <Card title="Possible overlap"
-            hint="The same purchase arriving under two different accounts">
+            hint="One card that may have been imported under two accounts">
         {overlaps.length === 0 && dupes.length === 0 ? (
           <Notice kind="good">
-            Nothing overlapping. No two accounts share a date range and a set of
-            amounts, and no single charge appears under two of them within five
-            days.
+            Nothing overlapping. No two accounts look like the same card under
+            two ids. Two different cards buying the same thing for the same
+            price in the same week is not counted as a duplicate — that is two
+            purchases, and at the rate it happens, flagging it would bury
+            anything real.
           </Notice>
         ) : (
           <>
             {overlaps.length > 0 && (
               <>
                 <p className="small muted" style={{ marginTop: 0 }}>
-                  These pairs of accounts cover the same months and share
-                  amounts. A high overlap usually means one card was imported
-                  twice — from statements and again through Plaid.
+                  These pairs cover the same months and share most of their
+                  amounts, which is what one card imported twice looks like —
+                  from statements, and again through Plaid. Two different
+                  cards never reach this bar, so a pair here is worth
+                  resolving by removing one of them.
                 </p>
                 <div className="table-wrap">
                   <table>
