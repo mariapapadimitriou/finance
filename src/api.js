@@ -80,6 +80,7 @@ export const getHealth       = () => req('/api/health');
 export const getImports      = () => req('/api/imports');
 export const getTrips        = () => req('/api/trips');
 export const addTrip         = (trip) => json('POST', '/api/trips', trip);
+export const getTripSuggestions = () => req('/api/trips/suggestions');
 export const updateTrip      = (id, trip) => json('PATCH', `/api/trips/${id}`, trip);
 export const deleteTrip      = (id) => req(`/api/trips/${id}`, { method: 'DELETE' });
 

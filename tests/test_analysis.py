@@ -391,3 +391,68 @@ class TestSavingsRules:
         findings = generate_findings(rows)
         scores = [f["annual_saving"] * max(f["confidence"], 0.3) for f in findings]
         assert scores == sorted(scores, reverse=True)
+
+
+class TestMonthCompleteness:
+    """"Complete" and "still running" are different questions.
+
+    Conflating them described a finished September as "still in progress" all
+    through October, and called a month incomplete whenever the last weekend
+    happened to be quiet — which, with a spending plan, is the goal.
+    """
+
+    def rows(self, *dates):
+        from finance.models import Transaction
+        return [Transaction(date=d, description="X", amount=10.0,
+                            account_id="a", account_name="a", source="csv")
+                for d in dates]
+
+    def test_reaching_the_last_day_is_complete(self):
+        from finance.analytics import is_month_complete
+        assert is_month_complete(self.rows("2026-09-01", "2026-09-30"), "2026-09")
+
+    def test_a_quiet_last_weekend_is_still_complete(self):
+        """Proved by the data running on past the month, not by a charge."""
+        from finance.analytics import is_month_complete
+        rows = self.rows("2026-09-01", "2026-09-27", "2026-10-02")
+        assert is_month_complete(rows, "2026-09")
+
+    def test_data_that_stops_mid_month_is_not_complete(self):
+        from finance.analytics import is_month_complete
+        assert not is_month_complete(self.rows("2026-09-01", "2026-09-14"),
+                                     "2026-09")
+
+    def test_a_month_with_nothing_in_it_is_not_complete(self):
+        from finance.analytics import is_month_complete
+        assert not is_month_complete(self.rows("2026-08-01"), "2026-09")
+
+    def test_only_the_current_month_is_running(self):
+        from finance.analytics import is_month_running
+        assert is_month_running("2026-09", today="2026-09-14")
+        assert not is_month_running("2026-09", today="2026-10-01")
+        assert not is_month_running("2026-08", today="2026-09-14")
+
+
+class TestStreakIsNotTheSameAsDaysUnder:
+    """The hero figure is the current run, and was labelled as the total."""
+
+    def test_a_run_ending_in_an_over_day_is_zero_while_good_days_remain(self):
+        from finance.gamify import current_streak, month_stats
+        from finance.models import Transaction
+        from datetime import date
+
+        rows = []
+        for day in range(1, 11):                       # ten quiet days
+            rows.append(Transaction(date=f"2026-09-{day:02d}", description="X",
+                                    amount=1.0, account_id="a", account_name="a",
+                                    source="csv", category="Dining"))
+        rows.append(Transaction(date="2026-09-11", description="BIG",
+                                amount=900.0, account_id="a", account_name="a",
+                                source="csv", category="Dining"))
+        streak = current_streak(rows, 30.0, today=date(2026, 9, 11))
+        stats = month_stats(rows, "2026-09", 30.0, today=date(2026, 9, 11))
+
+        assert streak["days"] == 0
+        # Meanwhile ten days really were under, which is why one number
+        # cannot carry both labels.
+        assert stats["under"] == 10

@@ -33,7 +33,11 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
   const merchants = breakdown?.merchants ?? [];
   const maxMerchant = merchants[0]?.amount ?? 0;
   const split = breakdown?.split ?? {};
+  // Two different situations that used to share one message. A month that
+  // is still running will fill up on its own; a finished month the data
+  // stops short of will not, and needs a sync rather than patience.
   const partial = month === summary.latest_month && !summary.latest_month_complete;
+  const running = partial && summary.latest_month_running;
   const gaps = summary.coverage_gaps ?? [];
 
   const savings = insights?.summary?.weighted_annual ?? 0;
@@ -57,9 +61,23 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
 
       {partial && (
         <Notice>
-          {monthLabel(month, { long: true })} is still in progress — your data runs
-          to day {summary.date_range?.[1]?.slice(8)}. Comparisons against full
-          months will read low until the month closes.
+          {running ? (
+            <>
+              {monthLabel(month, { long: true })} is still in progress — your
+              data runs to day {summary.date_range?.[1]?.slice(8)}. Comparisons
+              against full months will read low until the month closes.
+            </>
+          ) : (
+            <>
+              <strong>
+                {monthLabel(month, { long: true })} is over, but the data stops
+                at day {summary.date_range?.[1]?.slice(8)}.
+              </strong>{' '}
+              That is either a quiet end to the month or a sync that hasn&apos;t
+              run since — they look identical from here. Sync on the Banks tab
+              to be sure before reading anything into this month.
+            </>
+          )}
         </Notice>
       )}
 

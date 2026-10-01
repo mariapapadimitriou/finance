@@ -21,7 +21,10 @@ export default function SubscriptionsPanel({ recurring }) {
   }
 
   const active = items.filter((r) => r.active);
-  const inactive = items.filter((r) => !r.active);
+  // A lapse is a claim that you cancelled something, and three similar
+  // charges that stopped describe a café you visited a few times just as
+  // well. Only the regular ones are worth saying it about.
+  const inactive = items.filter((r) => !r.active && r.confidence >= 0.6);
 
   return (
     <div className="stack">

@@ -62,6 +62,7 @@ export default function BudgetsPanel({ month, summary, version = 0 }) {
   const rows = data.status ?? [];
   const suggested = Object.entries(data.suggested ?? {});
   const partial = month === summary.latest_month && !summary.latest_month_complete;
+  const running = partial && summary.latest_month_running;
 
   return (
     <div className="stack">
@@ -106,9 +107,21 @@ export default function BudgetsPanel({ month, summary, version = 0 }) {
         <>
           {partial && (
             <Notice>
-              {monthLabel(month, { long: true })} is still in progress. &ldquo;On
-              pace&rdquo; projects your spending so far across the whole month, so
-              you can act before the month closes rather than after.
+              {running ? (
+                <>
+                  {monthLabel(month, { long: true })} is still in progress.
+                  &ldquo;On pace&rdquo; projects your spending so far across the
+                  whole month, so you can act before the month closes rather
+                  than after.
+                </>
+              ) : (
+                <>
+                  {monthLabel(month, { long: true })} is over, but the data
+                  stops short of its last day — so these totals may be missing
+                  the end of the month. Sync on the Banks tab before treating
+                  them as final.
+                </>
+              )}
             </Notice>
           )}
 

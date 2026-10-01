@@ -405,3 +405,27 @@ class TestLoyaltyRedemptions:
     def test_the_word_credit_alone_does_not_make_a_transfer(self):
         from finance.categorize import categorize
         assert categorize("Credit Suisse Coffee", "CREDIT SUISSE COFFEE")[0] != "Transfers"
+
+
+class TestAmazonDescriptors:
+    """Amazon writes its name a dozen ways; all of them are Amazon."""
+
+    @pytest.mark.parametrize("raw", [
+        "AMZN MKTP CA", "AMZN MKTP CA*1A2B3", "AMZN MKTP US",
+        "AMAZON.CA", "AMAZON.COM*RT4XY", "AMAZON MKTPLACE PMTS",
+    ])
+    def test_every_storefront_lands_in_one_bucket(self, raw):
+        assert normalize_merchant(raw) == "Amazon"
+
+    def test_the_country_code_is_not_the_merchant(self):
+        """"AMZN MKTP" was stripped as a prefix, leaving a merchant "Ca"."""
+        assert normalize_merchant("AMZN MKTP CA") != "Ca"
+
+    def test_prime_and_aws_keep_their_own_names(self):
+        assert normalize_merchant("AMAZON PRIME MEMBERSHIP") == "Amazon Prime"
+        assert normalize_merchant("AMAZON WEB SERVICES AWS.AMAZON.CO") \
+            == "Amazon Web Services"
+
+    def test_a_merchant_that_merely_starts_the_same_is_left_alone(self):
+        assert normalize_merchant("AMAZONIA RESTAURANT TORONTO ON") \
+            == "Amazonia Restaurant"
