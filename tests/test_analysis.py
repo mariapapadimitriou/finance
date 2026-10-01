@@ -431,28 +431,3 @@ class TestMonthCompleteness:
         assert is_month_running("2026-09", today="2026-09-14")
         assert not is_month_running("2026-09", today="2026-10-01")
         assert not is_month_running("2026-08", today="2026-09-14")
-
-
-class TestStreakIsNotTheSameAsDaysUnder:
-    """The hero figure is the current run, and was labelled as the total."""
-
-    def test_a_run_ending_in_an_over_day_is_zero_while_good_days_remain(self):
-        from finance.gamify import current_streak, month_stats
-        from finance.models import Transaction
-        from datetime import date
-
-        rows = []
-        for day in range(1, 11):                       # ten quiet days
-            rows.append(Transaction(date=f"2026-09-{day:02d}", description="X",
-                                    amount=1.0, account_id="a", account_name="a",
-                                    source="csv", category="Dining"))
-        rows.append(Transaction(date="2026-09-11", description="BIG",
-                                amount=900.0, account_id="a", account_name="a",
-                                source="csv", category="Dining"))
-        streak = current_streak(rows, 30.0, today=date(2026, 9, 11))
-        stats = month_stats(rows, "2026-09", 30.0, today=date(2026, 9, 11))
-
-        assert streak["days"] == 0
-        # Meanwhile ten days really were under, which is why one number
-        # cannot carry both labels.
-        assert stats["under"] == 10

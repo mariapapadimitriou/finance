@@ -55,15 +55,12 @@ project forward so you can act before the month closes rather than after.
 over: underspend on Monday and Tuesday's number is bigger, and the carried-in
 amount is displayed as its own term so the figure is never magic. Overspending
 gets two honest options rather than a warning — spread the shortfall across the
-days left, or cover it from a named bucket (Fun, Savings), each with the
-consequence spelled out. Only discretionary spending counts, because no amount of
-restraint on a Tuesday changes the hydro bill.
-
-**Streaks and badges that can only be earned by spending less.** Points come from
-days under the allowance, days with nothing spent, and months finished inside
-budget. Nothing pays out for spending, so the mechanics can never nudge you
-toward a purchase; and a day outside the imported range reads as *no data*, never
-as a quiet day, so no badge is ever awarded for a statement you didn't upload.
+days left, or borrow it from a piggy bank, each with the consequence spelled
+out. Only discretionary spending counts, because no amount of restraint on a
+Tuesday changes the hydro bill. The figure itself is derived from the Plan tab
+on every request rather than stored, so changing your pay or a commitment moves
+it immediately — and the page shows the whole chain from the plan's leftover
+down to the daily number, since those are different figures on purpose.
 
 **Projections, with their own error bars.** Two lines — your current pace, and the
 same pace with the found cuts applied — plus how many months of data are behind
@@ -106,7 +103,7 @@ numbers silently.
 ### Correcting a category
 
 Categorization is rules plus your corrections. When something lands in the wrong
-bucket, click its category on the Transactions tab and choose **All \<merchant\>** —
+category, click it on the Transactions tab and choose **All \<merchant\>** —
 that becomes a permanent override applied to every past charge from that merchant
 and every future import.
 
@@ -143,6 +140,48 @@ Two deliberate choices worth knowing about:
   export pulled on the 21st would otherwise manufacture a "you're spending less!"
   story every single month. Trend detection uses complete months only, and the UI
   labels the current month as in progress.
+- **Spending charged to a piggy bank is excluded too**, because it was budgeted
+  over the months leading up to it. See below.
+
+Alongside the rules, the Savings tab shows **observations about the plan itself**
+— that your commitments are 65% of your pay, that last month ran over, that a
+year of travel is budgeted nowhere. These are written in advance in
+`finance/insights/profile.py`, each with the condition that makes it true, and
+shown only when it holds. They cost nothing to run, say the same thing twice when
+asked twice, and take their figures from the same functions as the tab each one
+links to, so following one never lands you on a page that contradicts it.
+
+---
+
+## Piggy banks
+
+A monthly budget handles rent well and a holiday badly. The holiday costs $3,000
+once a year, so eleven months report a surplus that isn't real and the twelfth
+reports a catastrophe that was entirely predictable. Car maintenance, insurance
+paid annually, Christmas and a dentist you see twice a year all have the same
+shape.
+
+A piggy bank fixes both halves of that:
+
+- **Going in.** The target is divided by the months available and that share is
+  subtracted from every month's budget, exactly like rent — so it reduces the
+  Plan's leftover and with it the daily number. A holiday in June is a bill you
+  are already paying.
+- **Coming out.** A charge allocated to a bank on the Transactions tab leaves the
+  month it fell in: it is not in the Overview, the budgets, the trends or the
+  daily number. June doesn't look like a disaster, because June was never asked
+  to pay for the holiday.
+
+Both figures are derived rather than stored — the monthly contribution from the
+target and the horizon, the balance from how many months have passed less what
+has been charged — so there is no number anywhere that has to be kept up to
+date. Two shapes, because two shapes of cost: `annual` recurs forever and
+refills after it is spent (target ÷ 12), and `once` has a date and stops
+collecting when it arrives (what is still needed ÷ months left).
+
+Spending ahead of a bank is allowed — sometimes you have to fly before you have
+finished saving for the flight — and reported, because the overdraft comes out of
+the month after all.
 
 ---
 
@@ -167,37 +206,6 @@ is billed per connected account, which is why CSV remains the default.
 
 To add a different source, implement `TransactionSource.status()` and `.fetch()`,
 return `Transaction` objects, and call `register()`.
-
----
-
-## The optional Claude bot
-
-Every number in the app is computed locally and the whole thing runs offline.
-The Savings tab additionally offers a bot — a written read of your spending, and
-a box to ask it questions. It is the only feature that needs a key:
-
-```bash
-pip install anthropic                 # already in requirements.txt
-export ANTHROPIC_API_KEY=sk-ant-...   # from console.anthropic.com
-```
-
-Without the key `advisor.status()` reports it as off, the tab says so, and
-nothing else changes. `CLAUDE_MODEL` overrides the model (default
-`claude-opus-5-5`).
-
-On Vercel, add `ANTHROPIC_API_KEY` under Settings → Environment Variables
-(Production, marked Sensitive) and redeploy — environment variables are read at
-build time, so an existing deployment will not pick it up.
-
-**This is the only feature that sends anything anywhere**, and what it can send
-is bounded by its tools rather than by a payload we assemble. `finance/advisor.py`
-gives the model eight read-only functions over the ledger — category totals,
-top merchants, charge lookups, subscriptions, budgets, the plan, the findings —
-and it sees only what those return. None of them can write, and none returns a
-name, an address or an account number, because none of those reach the ledger in
-the first place. `tests/test_api.py` walks every tool's reply field by field
-against an allowlist, so a new tool that leaked a raw descriptor would fail the
-suite rather than ship.
 
 ---
 
@@ -293,8 +301,10 @@ what you would want it to do.
 ### Starting fresh
 
 The **Accounts** tab can empty the ledger: every transaction, and the budgets,
-trips, buckets, merchant corrections and dismissed findings worked out from
-them. Your password and Plaid credentials are untouched, and bank connections
+trips, merchant corrections and dismissed findings worked out from them. Your
+piggy banks survive, since they are decisions about the future rather than a
+record of the past, but whatever was charged to them goes with the
+transactions. Your password and Plaid credentials are untouched, and bank connections
 are kept unless you say otherwise — but their sync cursors are rewound either
 way, since a cursor pointing past an emptied ledger would make the next sync
 report nothing new and leave the cards empty for good.
@@ -381,13 +391,13 @@ finance/
   analytics.py              Aggregations: monthly, category, merchant, baselines
   insights/
     recurring.py            Subscription and recurring-bill detection
+    profile.py              Insights written in advance, shown when they apply
     rules.py                The savings engine
   trips.py                  Declared date ranges whose spending reads as Travel
   spend_plan.py             Safe to spend: the rolling daily allowance
-  gamify.py                 Streaks, points and badges — restraint only
   projections.py            Forward projections under two scenarios
   manual.py                 Hand-typed rows, and keeping imports off them
-  advisor.py                The Savings bot: Claude over read-only tools
+  piggy.py                  Piggy banks: annual costs collected monthly
   pipeline.py               source → dedupe → categorize → store
   db.py                     SQLite locally, Postgres when DATABASE_URL is set
   store.py                  Persistence, written once in SQLite's dialect
@@ -416,25 +426,34 @@ Covers the per-issuer sign conventions, messy and headerless CSVs, de-duplicatio
 across overlapping exports, categorization precedence, recurring detection
 including the price-change case, every savings rule, and the API end to end.
 `tests/test_plan.py` covers the newer half: rollover arithmetic, spreading and
-bucket covering, manual entry colliding with an import in both directions, and
-the honesty rules in the scoring — chiefly that a partly-imported month can never
-come in "under budget".
+borrowing from a piggy bank, manual entry colliding with an import in both
+directions, and the honesty rules — chiefly that a partly-imported month can
+never come in "under budget". `tests/test_piggy.py` covers the piggy-bank
+arithmetic and, more importantly, that a charge allocated to one leaves every
+total that should no longer include it. `tests/test_consistency.py` covers the
+figures agreeing across tabs after an edit, including that the daily number
+follows the plan without anything being re-applied.
 
 ## API
 
 `GET /api/health` (reports the storage mode) · `/api/auth/status` ·
 `/api/plaid/items` · `/api/summary` · `/api/breakdown` · `/api/transactions` · `/api/recurring` ·
 `/api/insights` · `/api/budgets` · `/api/accounts` · `/api/sources` ·
-`/api/imports` · `/api/trips` · `/api/plan` · `/api/progress` · `/api/projections`
-`POST /api/import` · `/api/sync/<source>` · `/api/narrative` ·
-`/api/insights/<id>/dismiss` · `/api/transactions` · `/api/trips` ·
-`/api/plan/simulate` · `/api/buckets/<id>/cover` · `/api/auth/login` ·
-`/api/auth/logout` · `/api/plaid/link-token` · `/api/plaid/exchange` ·
-`/api/plaid/sync`
-`PATCH /api/transactions/<id>` · `/api/trips/<id>`
-`PUT /api/budgets` · `/api/plan` · `/api/buckets` · `/api/projections/income`
+`/api/imports` · `/api/trips` · `/api/plan` · `/api/plan/setup` · `/api/piggy` ·
+`/api/projections` · `/api/nudge`
+`POST /api/import` · `/api/sync/<source>` · `/api/insights/<id>/dismiss` ·
+`/api/transactions` · `/api/trips` · `/api/plan/simulate` ·
+`/api/plan/setup/apply` · `/api/piggy` · `/api/piggy/<id>/allocate` ·
+`/api/piggy/<id>/cover` · `/api/auth/login` · `/api/auth/logout` ·
+`/api/plaid/link-token` · `/api/plaid/exchange` · `/api/plaid/sync`
+`PATCH /api/transactions/<id>` · `/api/trips/<id>` · `/api/piggy/<id>`
+`PUT /api/budgets` · `/api/plan/setup` · `/api/projections/income`
 `DELETE /api/transactions` · `/api/transactions/<id>` · `/api/trips/<id>` ·
-`/api/buckets/<id>` · `/api/plaid/items/<id>`
+`/api/piggy/<id>` · `/api/piggy/allocations/<txn_id>` · `/api/plaid/items/<id>`
+
+There is deliberately no route that sets the daily spending figure. It is
+derived from the plan on every request — see `money_plan.monthly_allowance` —
+because a stored copy went stale the moment income or a commitment changed.
 
 Every route is behind the password when one is configured, which a hosted
 deployment always is.

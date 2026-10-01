@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
-  coverFromBucket, deleteBucket, getNudge, getPlan, money, monthLabel, setBucket,
+  coverFromBank, getNudge, getPlan, money, monthLabel,
   simulateSpend,
 } from '../api.js';
 
@@ -42,7 +42,7 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
   if (!data && !error) return <Loading what="today's number" />;
   if (!data) return <ErrorNote error={error} onRetry={load} />;
 
-  const { state, status, buckets, draws, configured, suggested } = data;
+  const { state, status, banks, draws, configured, derivation } = data;
   const thisMonth = new Date().toISOString().slice(0, 7);
   // Showing a month that has already ended is a different question — "what was
   // left on the last day" rather than "what can I spend now" — and the panel
@@ -95,13 +95,14 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
 
       <SafeToSpend state={state} live={live} />
       <ThisMonth status={status} state={state} live={live} />
-      <CanIBuyThis month={state.month} buckets={buckets} onCovered={load} />
+      <CanIBuyThis month={state.month} banks={banks} onCovered={load}
+                   onTab={onTab} />
 
       <div className="grid cols-2">
-        <Buckets buckets={buckets} draws={draws} busy={busy} setBusy={setBusy}
-                 onChanged={load} setError={setError} />
+        <PiggyBanks banks={banks} draws={draws}
+                    allocated={data.allocated_this_month} onTab={onTab} />
         <MonthlyAmount state={state} configured={configured}
-                       suggested={suggested} onTab={onTab} />
+                       derivation={derivation} onTab={onTab} />
       </div>
     </div>
   );
@@ -214,16 +215,16 @@ function SafeToSpend({ state, live }) {
                 {money(-state.remaining, { cents: true })}
               </strong>{' '}
               past its budget, so spreading can&apos;t rescue it — there is
-              nothing left to divide. Cover it from a bucket, or let it be a
-              month that went over.
+              nothing left to divide. Borrow it from a piggy bank, or let it
+              be a month that went over.
             </>
           )}
         </p>
       )}
       {state.covered > 0 && (
         <p className="assumption" style={{ marginBottom: 0 }}>
-          Includes {money(state.covered, { cents: true })} drawn from your buckets
-          this month.
+          Includes {money(state.covered, { cents: true })} borrowed from your
+          piggy banks this month.
         </p>
       )}
     </Card>
@@ -299,7 +300,7 @@ function Figure({ label, value, note, tone }) {
 
 /* ── Can I buy this ─────────────────────────────────────────────────────── */
 
-function CanIBuyThis({ month, buckets, onCovered }) {
+function CanIBuyThis({ month, banks, onCovered, onTab }) {
   const [amount, setAmount] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -323,7 +324,7 @@ function CanIBuyThis({ month, buckets, onCovered }) {
     setBusy(true);
     setError(null);
     try {
-      await coverFromBucket(option.bucket_id, result.short_by, month);
+      await coverFromBank(option.bank_id, result.short_by, month);
       setResult(null);
       setAmount('');
       await onCovered();
@@ -387,10 +388,15 @@ function CanIBuyThis({ month, buckets, onCovered }) {
                   </div>
                 ))}
               </div>
-              {buckets.length === 0 && (
+              {banks.length === 0 && (
                 <p className="assumption" style={{ marginBottom: 0 }}>
-                  Add a bucket below — Fun, Savings, whatever you keep aside — and
-                  covering an overspend from it becomes an option here.
+                  Open a piggy bank{onTab && (
+                    <> on the{' '}
+                      <button className="link" onClick={() => onTab('piggy')}>
+                        Piggy banks tab
+                      </button></>
+                  )} and borrowing from one to cover an overspend becomes an
+                  option here too.
                 </p>
               )}
             </>
@@ -401,80 +407,56 @@ function CanIBuyThis({ month, buckets, onCovered }) {
   );
 }
 
-/* ── Buckets ────────────────────────────────────────────────────────────── */
+/* ── Piggy banks, as seen from here ─────────────────────────────────────── */
 
-function Buckets({ buckets, draws, busy, setBusy, onChanged, setError }) {
-  const [draft, setDraft] = useState({ name: '', balance: '' });
-
-  async function add(e) {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      await setBucket(draft.name, Number(draft.balance || 0));
-      setDraft({ name: '', balance: '' });
-      await onChanged();
-    } catch (err) {
-      setError(err);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(b) {
-    const drawn = (draws ?? []).filter((d) => d.name === b.name);
-    // Removing a bucket removes what was drawn from it, which raises this
-    // month's budget back up. Worth saying out loud before it happens.
-    if (drawn.length && !window.confirm(
-      `"${b.name}" covered ${money(drawn.reduce((s, d) => s + d.amount, 0),
-        { cents: true })} this month. Removing it takes that back out of the `
-      + 'budget. Go ahead?'
-    )) return;
-    setBusy(true);
-    try {
-      await deleteBucket(b.id);
-      await onChanged();
-    } catch (err) {
-      setError(err);
-    } finally {
-      setBusy(false);
-    }
-  }
-
+/**
+ * Read-only on purpose. Piggy banks are opened and edited on their own tab,
+ * and a second form here that could change a target would be a second place
+ * deciding the same number.
+ */
+function PiggyBanks({ banks, draws, allocated, onTab }) {
   return (
-    <Card title="Buckets" hint="Money set aside that an overspend can come out of">
-      {buckets.length === 0 ? (
+    <Card title="Piggy banks"
+          hint="What they hold, and what an overspend could borrow from">
+      {banks.length === 0 ? (
         <p className="small muted" style={{ marginTop: 0 }}>
-          No buckets yet. A bucket is real money you already have somewhere —
-          drawing on one reduces it, because the money has to come from
-          somewhere.
+          None yet. A piggy bank turns a cost that arrives once a year into a
+          monthly one — and lets you charge the spending to it instead of to the
+          month it happened in.{onTab && (
+            <>{' '}
+              <button className="link" onClick={() => onTab('piggy')}>
+                Open one
+              </button>.
+            </>
+          )}
         </p>
       ) : (
         <div className="bars" style={{ marginBottom: 14 }}>
-          {buckets.map((b) => (
+          {banks.map((b) => (
             <div className="bucket" key={b.id}>
-              <div className="name">{b.name}</div>
+              <div className="name">
+                {b.name}
+                <div className="desc">{money(b.monthly)} a month</div>
+              </div>
               <div className="num val">{money(b.balance, { cents: true })}</div>
-              <button className="btn quiet" disabled={busy}
-                      onClick={() => remove(b)}>Remove</button>
             </div>
           ))}
         </div>
       )}
 
-      <form className="controls" onSubmit={add}>
-        <input type="text" value={draft.name} required placeholder="Fun, Savings…"
-               aria-label="Bucket name" style={{ flex: '1 1 130px' }}
-               onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-        <input type="number" min="0" step="0.01" value={draft.balance}
-               placeholder="0.00" aria-label="Bucket balance" style={{ width: 110 }}
-               onChange={(e) => setDraft({ ...draft, balance: e.target.value })} />
-        <button className="btn" type="submit" disabled={busy}>Save</button>
-      </form>
+      {allocated > 0 && (
+        <p className="small" style={{ margin: '0 0 12px' }}>
+          <strong>{money(allocated, { cents: true })}</strong> of this
+          month&apos;s spending was charged to a piggy bank, so it is not in the
+          figures above or in the daily number. That is the point of them: the
+          money was budgeted over the preceding months instead.
+        </p>
+      )}
 
       {draws?.length > 0 && (
-        <table style={{ marginTop: 16 }}>
+        <table>
           <thead>
-            <tr><th>Drawn this month</th><th className="r">Amount</th></tr>
+            <tr><th>Borrowed this month</th><th className="r">Amount</th></tr>
           </thead>
           <tbody>
             {draws.map((d, i) => (
@@ -486,50 +468,85 @@ function Buckets({ buckets, draws, busy, setBusy, onChanged, setError }) {
           </tbody>
         </table>
       )}
+
+      {onTab && banks.length > 0 && (
+        <button className="btn quiet" style={{ marginTop: 14 }}
+                onClick={() => onTab('piggy')}>
+          Manage piggy banks
+        </button>
+      )}
     </Card>
   );
 }
 
 /* ── The monthly amount everything is measured against ──────────────────── */
 
-function MonthlyAmount({ state, configured, suggested, onTab }) {
+function MonthlyAmount({ state, configured, derivation, onTab }) {
+  const d = derivation ?? {};
+  const planTab = onTab
+    ? <button className="link" onClick={() => onTab('plan')}>Plan tab</button>
+    : <strong>Plan tab</strong>;
+
   return (
     <Card title="Where the daily number comes from"
           hint="Calculated on the Plan tab, not typed here">
-      {/* No input. The figure is income minus commitments minus savings,
-          and a box here that could overwrite it meant two tabs disagreeing
-          about the same month with nothing to say which was right. */}
-      <div className="sum">
-        <SumTerm label="Discretionary budget" value={state.monthly_amount}
-                 note="your leftover, less the essentials" />
-        <span className="op" aria-hidden="true">÷</span>
-        <SumTerm label="Days this month" value={state.days_in_month}
-                 money={false} />
-        <span className="op" aria-hidden="true">=</span>
-        <SumTerm label="A day" value={state.flat_daily} strong />
-      </div>
+      {/* No input. The figure is derived from the plan on every request, so
+          there is nothing here that could overwrite it and no stored copy to
+          fall out of date. */}
 
-      {!configured && suggested > 0 ? (
-        <p className="assumption" style={{ marginBottom: 0 }}>
-          This is a stand-in: <strong>{money(suggested)}</strong>, your own
-          median month of discretionary spending, because no plan has been set
-          up yet. Fill in your pay and commitments on the{' '}
-          {onTab
-            ? <button className="link" onClick={() => onTab('plan')}>Plan tab</button>
-            : <strong>Plan tab</strong>}{' '}
-          and this becomes a figure you decided rather than one you happened to
-          spend.
-        </p>
+      {configured && d.from_plan ? (
+        <>
+          {/* The chain in full. Showing only the last step is what made this
+              tab look as though it disagreed with the Plan: "yours to spend"
+              still has the groceries in it, and the daily number deliberately
+              does not. */}
+          <div className="sum" style={{ marginBottom: 14 }}>
+            <SumTerm label="Yours to spend" value={d.leftover}
+                     note="the Plan tab's figure" />
+            <span className="op" aria-hidden="true">−</span>
+            <SumTerm label="Essentials" value={d.essentials}
+                     note="groceries, transport — budgeted, not daily" />
+            <span className="op" aria-hidden="true">=</span>
+            <SumTerm label="Day to day" value={d.discretionary} />
+          </div>
+          <div className="sum">
+            <SumTerm label="Day to day" value={state.monthly_amount} />
+            <span className="op" aria-hidden="true">÷</span>
+            <SumTerm label="Days this month" value={state.days_in_month}
+                     money={false} />
+            <span className="op" aria-hidden="true">=</span>
+            <SumTerm label="A day" value={state.flat_daily} strong />
+          </div>
+          <p className="assumption" style={{ marginBottom: 0 }}>
+            Every term above is read from your plan when this page loads, so
+            changing your pay, a commitment, your savings or a piggy bank on
+            the {planTab} moves this number immediately — there is no copy of
+            it stored anywhere to go stale.
+            {d.banks > 0 && (
+              <> Piggy banks are taking {money(d.banks)} a month out before the
+                 leftover is worked out.</>
+            )}
+          </p>
+        </>
       ) : (
-        <p className="assumption" style={{ marginBottom: 0 }}>
-          Change your pay, a commitment or what you&apos;re saving on the{' '}
-          {onTab
-            ? <button className="link" onClick={() => onTab('plan')}>Plan tab</button>
-            : <strong>Plan tab</strong>}{' '}
-          and this follows. It is the discretionary slice of what&apos;s left —
-          groceries and the other essentials are budgeted separately, since no
-          amount of restraint on a Tuesday changes the grocery bill.
-        </p>
+        <>
+          <div className="sum">
+            <SumTerm label="Discretionary budget" value={state.monthly_amount}
+                     note="a stand-in, from your own history" />
+            <span className="op" aria-hidden="true">÷</span>
+            <SumTerm label="Days this month" value={state.days_in_month}
+                     money={false} />
+            <span className="op" aria-hidden="true">=</span>
+            <SumTerm label="A day" value={state.flat_daily} strong />
+          </div>
+          <p className="assumption" style={{ marginBottom: 0 }}>
+            This is a stand-in: your own median month of discretionary
+            spending, because the plan has no take-home pay in it yet. That
+            describes your habits rather than deciding anything. Fill in your
+            pay and commitments on the {planTab} and this becomes a figure you
+            chose.
+          </p>
+        </>
       )}
     </Card>
   );

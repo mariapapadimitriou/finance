@@ -23,13 +23,14 @@ from .analytics import (
 from .categorize import CATEGORIES
 from .db import storage_mode
 from .ingest import all_sources, get_source, parse_csv, parse_statement
-from .insights import detect_recurring, findings_summary, generate_findings, recurring_summary
+from .insights import (detect_recurring, findings_summary, generate_findings,
+                       observe, recurring_summary)
 from .pipeline import ingest, recategorize_all
 from .categorize import apply_categories
 from .dedupe import split_new
 from .trips import apply_trips
 from .trips import summarize, validate
-from . import gamify, manual, projections, spend_plan
+from . import manual, projections, spend_plan
 from .store import Store
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -64,7 +65,6 @@ def health():
 def sources():
     return jsonify({
         "sources": [s.status().to_dict() for s in all_sources()],
-        "narrative": _advisor_status(),
     })
 
 
@@ -502,13 +502,76 @@ def recurring():
 
 @bp.get("/insights")
 def insights():
+    st = store()
     txns = _txns()
-    findings = generate_findings(txns, store().dismissed())
+    dismissed = st.dismissed()
+    findings = generate_findings(txns, dismissed)
+    summary = findings_summary(findings)
     return jsonify({
         "findings": findings,
-        "summary": findings_summary(findings),
-        "narrative": _advisor_status(),
+        "summary": summary,
+        # Written in advance, shown when they apply. See
+        # finance/insights/profile.py — this is what replaced the paid bot.
+        "observations": observe(_profile(st, txns, summary), dismissed),
     })
+
+
+def _profile(st, txns, findings_summary_: dict):
+    """Assemble what the pre-written observations are allowed to look at.
+
+    Every figure comes from the function the corresponding tab uses, so an
+    observation cannot contradict the page it sends you to.
+    """
+    from . import money_plan, piggy
+    from .analytics import last_complete_month
+    from .insights.profile import Profile
+    from .insights.recurring import detect_recurring, recurring_summary
+
+    income = st.float_setting("monthly_income", 0.0)
+    savings = st.float_setting("savings_target", 0.0)
+    fixed = st.fixed_costs()
+    bank_monthly = _bank_monthly(st)
+    result = money_plan.plan(income, fixed, savings, bank_monthly)
+    shares = money_plan.variable_shares(txns)
+    discretionary = money_plan.discretionary_shares(txns)
+
+    allowance, from_plan = _allowance(st, txns)
+    last = last_complete_month(txns) or ""
+    last_spend = round(sum(t.amount for t in txns if t.month == last
+                           and spend_plan.counts_toward_plan(t)), 2)
+
+    months = sorted({t.month for t in txns})
+    recent = set(months[-12:])
+    travel = round(sum(t.amount for t in txns if t.month in recent
+                       and t.amount > 0 and (t.category or "") == "Travel"), 2)
+
+    charged = st.charged_to_banks()
+    banks = [b.to_dict(piggy.status(b, charged.get(b.id, 0.0)))
+             for b in st.piggy_banks()]
+
+    return Profile(
+        income=income,
+        fixed_total=result["fixed_total"],
+        savings=savings,
+        bank_monthly=bank_monthly,
+        leftover=result["leftover"],
+        daily=round(allowance / 30.44, 2) if allowance > 0 else 0.0,
+        months_of_history=len(months),
+        last_month=last,
+        last_month_discretionary=last_spend,
+        # Only compare spending against a budget the plan actually decided. A
+        # fallback drawn from past spending would be comparing your history
+        # with itself, which can never be over.
+        discretionary_budget=allowance if from_plan else 0.0,
+        shares=discretionary,
+        uncategorised_share=shares.get("Other", 0.0),
+        subscriptions_monthly=recurring_summary(
+            detect_recurring(txns))["monthly_total"],
+        budgets_set=len(st.budgets()),
+        banks=banks,
+        travel_last_year=travel,
+        findings_weighted_annual=findings_summary_.get("weighted_annual", 0.0),
+    )
 
 
 @bp.post("/insights/<insight_id>/dismiss")
@@ -523,19 +586,7 @@ def restore_insight(insight_id: str):
     return jsonify({"ok": True})
 
 
-@bp.post("/narrative")
-def run_narrative():
-    """The written read on the Savings tab.
-
-    One Claude surface, two ways in: this asks the question for you, and
-    /api/ask takes your own. Both use the same read-only tools over the
-    ledger, so neither can quote a figure the tabs disagree with.
-    """
-    from . import advisor
-    return jsonify(advisor.summarise(store()))
-
-
-# ── Spend plan: safe to spend, buckets, "how am I doing" ─────────────────
+# ── Spend plan: safe to spend, and "how am I doing" ──────────────────────
 # See finance/spend_plan.py for the model and why only discretionary spending
 # counts toward it.
 
@@ -548,12 +599,74 @@ def _plan_month(default_from_data: bool = True) -> str:
     return _d.today().strftime("%Y-%m")
 
 
+def _bank_monthly(st) -> float:
+    """What the piggy banks take out of this month, for the plan's arithmetic."""
+    from . import piggy
+    return piggy.total_monthly(st.piggy_banks())
+
+
+def _allowance(st, txns=None) -> tuple[float, bool]:
+    """What may be spent day to day this month, and whether the plan set it.
+
+    Derived from the plan every time it is asked for, so the Today tab and the
+    Plan tab cannot drift apart: change your income, add a commitment or open a
+    piggy bank and the daily number moves with it.
+
+    Before the plan has an income in it there is nothing to derive, and a brand
+    new ledger should still show something, so the fallback is your own median
+    discretionary month. The second return value says which of the two you are
+    looking at, because a budget taken from last year's spending deserves to be
+    labelled as one.
+    """
+    from . import money_plan
+
+    txns = st.all_transactions() if txns is None else txns
+    income = st.float_setting("monthly_income", 0.0)
+    if income > 0:
+        amount = money_plan.monthly_allowance(
+            income, st.fixed_costs(), st.float_setting("savings_target", 0.0),
+            _bank_monthly(st), money_plan.variable_shares(txns))
+        if amount > 0:
+            return amount, True
+    return spend_plan.suggest_monthly_amount(txns), False
+
+
 def _plan_state(st, month: str) -> dict:
     txns = st.all_transactions()
-    amount = st.float_setting("monthly_amount", 0.0)
-    if amount <= 0:
-        amount = spend_plan.suggest_monthly_amount(txns)
+    amount, _ = _allowance(st, txns)
     return spend_plan.compute(txns, amount, month, covered=st.covered_in(month))
+
+
+def _derivation(st, txns, allowance: float, from_plan: bool) -> dict:
+    """How the Plan tab's leftover becomes Today's daily number.
+
+    Four terms, in the order they apply. Reporting only the last one is what
+    made the two tabs look inconsistent: the Plan's leftover has to cover
+    groceries and the other essentials, and the daily allowance deliberately
+    does not, so the figures differ by exactly that amount and nothing said so.
+    """
+    from . import money_plan
+
+    if not from_plan:
+        return {"from_plan": False, "fallback": allowance}
+
+    income = st.float_setting("monthly_income", 0.0)
+    result = money_plan.plan(income, st.fixed_costs(),
+                             st.float_setting("savings_target", 0.0),
+                             _bank_monthly(st))
+    shares = money_plan.variable_shares(txns)
+    budgets = money_plan.category_budgets(result["leftover"], shares)
+    return {
+        "from_plan": True,
+        "income": result["income"],
+        "fixed_total": result["fixed_total"],
+        "savings": result["savings"],
+        "banks": result["banks"],
+        # "Yours to spend" on the Plan tab.
+        "leftover": result["leftover"],
+        "essentials": round(result["leftover"] - allowance, 2),
+        "discretionary": allowance,
+    }
 
 
 @bp.get("/plan")
@@ -573,30 +686,25 @@ def plan():
                 for m in prior]
         baseline = round(statistics.median(sums), 2)
 
+    allowance, from_plan = _allowance(st, txns)
     return jsonify({
         "state": state,
         "status": spend_plan.how_am_i_doing(state, baseline),
-        "buckets": [b.to_dict() for b in st.buckets()],
+        "banks": _bank_status(st),
         "draws": st.draws(month),
-        "configured": st.float_setting("monthly_amount", 0.0) > 0,
-        "suggested": spend_plan.suggest_monthly_amount(txns),
+        "allocated_this_month": st.allocated_in(month),
+        # The whole chain from the Plan tab's figure down to the daily number,
+        # so the two pages can be read against each other. They are not the
+        # same number and used to look as though they should be: what the Plan
+        # calls "yours to spend" has the groceries still in it.
+        "derivation": _derivation(st, txns, allowance, from_plan),
+        # "Configured" now means the plan can derive the number, rather than
+        # that somebody once typed one in. There is no longer anywhere to type
+        # one: the Plan tab is the only place a budget is decided.
+        "configured": from_plan,
         "has_data_this_month": month in months_with_data,
         "months_with_data": months_with_data,
     })
-
-
-@bp.put("/plan")
-def set_plan():
-    body = request.get_json(silent=True) or {}
-    try:
-        amount = float(body.get("monthly_amount", 0))
-    except (TypeError, ValueError):
-        return jsonify({"error": "Monthly amount must be a number."}), 400
-    if amount < 0:
-        return jsonify({"error": "Monthly amount cannot be negative."}), 400
-
-    store().set_setting("monthly_amount", amount)
-    return jsonify({"ok": True, "monthly_amount": amount})
 
 
 @bp.post("/plan/simulate")
@@ -610,62 +718,17 @@ def simulate_purchase():
     if amount <= 0:
         return jsonify({"error": "Enter an amount above zero."}), 400
 
+    from . import piggy
+
     st = store()
     month = _plan_month()
     state = _plan_state(st, month)
-    return jsonify(spend_plan.simulate(state, amount, st.buckets()))
-
-
-@bp.put("/buckets")
-def set_bucket():
-    body = request.get_json(silent=True) or {}
-    name = (body.get("name") or "").strip()
-    if not name:
-        return jsonify({"error": "Give the bucket a name."}), 400
-    try:
-        balance = float(body.get("balance", 0))
-    except (TypeError, ValueError):
-        return jsonify({"error": "Balance must be a number."}), 400
-
-    return jsonify({"ok": True, "id": store().set_bucket(name, balance)})
-
-
-@bp.delete("/buckets/<int:bucket_id>")
-def remove_bucket(bucket_id: int):
-    if not store().delete_bucket(bucket_id):
-        return jsonify({"error": "No such bucket."}), 404
-    return jsonify({"ok": True})
-
-
-@bp.post("/buckets/<int:bucket_id>/cover")
-def cover_from_bucket(bucket_id: int):
-    """Draw on a bucket to cover this month's overspend."""
-    body = request.get_json(silent=True) or {}
-    try:
-        amount = float(body.get("amount", 0))
-    except (TypeError, ValueError):
-        return jsonify({"error": "Amount must be a number."}), 400
-    if amount <= 0:
-        return jsonify({"error": "Enter an amount above zero."}), 400
-
-    st = store()
-    month = body.get("month") or _plan_month()
-    if not st.draw_from_bucket(bucket_id, month, amount, body.get("note", "")):
-        return jsonify({"error": "That bucket doesn't have enough in it."}), 400
-    return jsonify({"ok": True, "state": _plan_state(st, month)})
-
-
-# ── Gamification ─────────────────────────────────────────────────────────
-# Every reward is for restraint; nothing pays out for spending. See
-# finance/gamify.py.
-
-@bp.get("/progress")
-def progress():
-    st = store()
-    txns = st.all_transactions()
-    month = _plan_month()
-    state = _plan_state(st, month)
-    return jsonify(gamify.profile(txns, state["flat_daily"], st.trips()))
+    charged = st.charged_to_banks()
+    # Only a bank with something in it can cover anything, and the balance it
+    # is measured against is the derived one, not a stored figure.
+    pots = [(b, piggy.status(b, charged.get(b.id, 0.0))["balance"])
+            for b in st.piggy_banks()]
+    return jsonify(spend_plan.simulate(state, amount, pots))
 
 
 # ── Projections ──────────────────────────────────────────────────────────
@@ -871,7 +934,8 @@ def plan_setup():
     savings = st.float_setting("savings_target", 0.0)
     fixed = st.fixed_costs()
 
-    result = money_plan.plan(income, fixed, savings)
+    banks = _bank_monthly(st)
+    result = money_plan.plan(income, fixed, savings, banks)
     shares = money_plan.variable_shares(txns)
     historical = _typical_by_category(txns)
     typical_total = round(sum(historical.get(c, 0.0) for c in shares), 2)
@@ -891,6 +955,9 @@ def plan_setup():
         "has_history": bool(shares),
         "uncategorised": money_plan.uncategorised_warning(shares),
         "current_budgets": st.budgets(),
+        # Each bank's contribution beside the total, so a leftover that looks
+        # small can be traced to the holiday it is paying for.
+        "bank_lines": _bank_status(st),
     })
 
 
@@ -923,7 +990,7 @@ def apply_plan_budgets():
     st = store()
     income = st.float_setting("monthly_income", 0.0)
     savings = st.float_setting("savings_target", 0.0)
-    result = money_plan.plan(income, st.fixed_costs(), savings)
+    result = money_plan.plan(income, st.fixed_costs(), savings, _bank_monthly(st))
     if result["leftover"] <= 0:
         return jsonify({"error": "There is nothing left to budget. "
                                  "Check your income and commitments."}), 400
@@ -938,12 +1005,187 @@ def apply_plan_budgets():
         st.set_budget(category, amount)
 
     # The budgets cover everything the leftover has to pay for; the daily
-    # number governs only the discretionary slice of it.
-    daily_pool = money_plan.discretionary_pool(budgets)
-    st.set_setting("monthly_amount", daily_pool)
+    # number governs only the discretionary slice of it. That slice is not
+    # saved — Today derives it from this same arithmetic on every request, so
+    # there is no copy of it to fall out of date.
     return jsonify({"ok": True, "budgets": budgets,
-                    "monthly_amount": daily_pool,
+                    "monthly_amount": money_plan.discretionary_pool(budgets),
                     "leftover": result["leftover"]})
+
+
+# ── Piggy banks ──────────────────────────────────────────────────────────────
+# Annual costs turned into a monthly commitment, and spending charged to them
+# instead of to the month it fell in. See finance/piggy.py for the arithmetic.
+
+def _bank_status(st) -> list[dict]:
+    """Every bank with its derived figures, biggest contribution first."""
+    from . import piggy
+
+    charged = st.charged_to_banks()
+    rows = [b.to_dict(piggy.status(b, charged.get(b.id, 0.0)))
+            for b in st.piggy_banks()]
+    rows.sort(key=lambda r: (-r["monthly"], r["name"]))
+    return rows
+
+
+@bp.get("/piggy")
+def list_banks():
+    st = store()
+    rows = _bank_status(st)
+    return jsonify({
+        "banks": rows,
+        "monthly_total": round(sum(r["monthly"] for r in rows), 2),
+        "balance_total": round(sum(r["balance"] for r in rows), 2),
+        # What opening one costs the month, so the Plan tab's leftover and this
+        # page quote the same figure.
+        "income": st.float_setting("monthly_income", 0.0),
+    })
+
+
+@bp.post("/piggy")
+def add_bank():
+    from . import piggy
+
+    body = request.get_json(silent=True) or {}
+    name = str(body.get("name", "")).strip()
+    cadence = str(body.get("cadence") or piggy.ANNUAL)
+    target_date = (str(body.get("target_date")).strip()
+                   if body.get("target_date") else None)
+    try:
+        target = float(body.get("target", 0))
+        opening = float(body.get("opening", 0) or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Amounts must be numbers."}), 400
+
+    error = piggy.validate(name, target, cadence, target_date)
+    if error:
+        return jsonify({"error": error}), 400
+    if opening < 0:
+        return jsonify({"error": "What is already set aside cannot be negative."}), 400
+    if opening > target:
+        return jsonify({"error": "That is already more than the target. "
+                                 "Raise the target, or lower what is set aside."}), 400
+
+    from datetime import date as _d
+    st = store()
+    if any(b.name.lower() == name.lower() for b in st.piggy_banks()):
+        return jsonify({"error": f"You already have a piggy bank called {name}."}), 400
+
+    bank_id = st.add_piggy_bank(
+        name, target, cadence, target_date if cadence == piggy.ONCE else None,
+        _d.today().isoformat()[:7], opening, str(body.get("note") or ""))
+    return jsonify({"ok": True, "id": bank_id})
+
+
+@bp.patch("/piggy/<int:bank_id>")
+def edit_bank(bank_id: int):
+    from . import piggy
+
+    body = request.get_json(silent=True) or {}
+    st = store()
+    bank = st.piggy_bank(bank_id)
+    if bank is None:
+        return jsonify({"error": "No such piggy bank."}), 404
+
+    name = str(body.get("name", bank.name)).strip()
+    cadence = str(body.get("cadence") or bank.cadence)
+    target_date = body.get("target_date", bank.target_date)
+    target_date = str(target_date).strip() if target_date else None
+    try:
+        target = float(body.get("target", bank.target))
+        opening = float(body.get("opening", bank.opening) or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Amounts must be numbers."}), 400
+
+    # A bank already past its date keeps that date on an unrelated edit:
+    # re-validating it would reject renaming a trip you have come back from.
+    check_date = target_date if target_date != bank.target_date else None
+    error = piggy.validate(name, target, cadence,
+                           target_date if cadence == piggy.ONCE else None,
+                           today=None if check_date else bank.start_month + "-01")
+    if error:
+        return jsonify({"error": error}), 400
+    if any(b.name.lower() == name.lower() and b.id != bank_id
+           for b in st.piggy_banks()):
+        return jsonify({"error": f"You already have a piggy bank called {name}."}), 400
+
+    st.update_piggy_bank(bank_id, name, target, cadence,
+                         target_date if cadence == piggy.ONCE else None,
+                         opening, str(body.get("note", bank.note) or ""))
+    return jsonify({"ok": True})
+
+
+@bp.delete("/piggy/<int:bank_id>")
+def remove_bank(bank_id: int):
+    """Close a bank, putting whatever was charged to it back into its months."""
+    st = store()
+    charged = st.charged_to_banks().get(bank_id, 0.0)
+    if not st.delete_piggy_bank(bank_id):
+        return jsonify({"error": "No such piggy bank."}), 404
+    return jsonify({"ok": True, "released": round(charged, 2)})
+
+
+@bp.post("/piggy/<int:bank_id>/allocate")
+def allocate_to_bank(bank_id: int):
+    """Charge one transaction to a bank instead of to the month it fell in."""
+    body = request.get_json(silent=True) or {}
+    txn_id = str(body.get("txn_id", "")).strip()
+    if not txn_id:
+        return jsonify({"error": "Which transaction?"}), 400
+
+    st = store()
+    if st.piggy_bank(bank_id) is None:
+        return jsonify({"error": "No such piggy bank."}), 404
+    txn = st.get_transaction(txn_id)
+    if txn is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if txn.amount <= 0:
+        return jsonify({"error": "Only a charge can come out of a piggy bank. "
+                                 "A refund or a payment is money coming back."}), 400
+
+    st.allocate(txn_id, bank_id)
+    return jsonify({"ok": True})
+
+
+@bp.delete("/piggy/allocations/<txn_id>")
+def unallocate_from_bank(txn_id: str):
+    """Put a charge back into the month it happened in."""
+    if not store().unallocate(txn_id):
+        return jsonify({"error": "That charge isn't allocated to a piggy bank."}), 404
+    return jsonify({"ok": True})
+
+
+@bp.post("/piggy/<int:bank_id>/cover")
+def cover_from_bank(bank_id: int):
+    """Draw on a bank to cover this month's overspend.
+
+    Distinct from allocating a charge: this is not "the holiday paid for the
+    flights", it is "the month went over and the holiday fund is lending it
+    the difference". Both empty the bank, so both are checked against what is
+    actually in it.
+    """
+    from . import piggy
+
+    body = request.get_json(silent=True) or {}
+    try:
+        amount = float(body.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Amount must be a number."}), 400
+    if amount <= 0:
+        return jsonify({"error": "Enter an amount above zero."}), 400
+
+    st = store()
+    bank = st.piggy_bank(bank_id)
+    if bank is None:
+        return jsonify({"error": "No such piggy bank."}), 404
+
+    month = str(body.get("month") or _plan_month())
+    available = piggy.status(bank, st.charged_to_banks().get(bank_id, 0.0))["balance"]
+    if not st.draw_from_bank(bank_id, month, amount, available,
+                             str(body.get("note") or "")):
+        return jsonify({"error": f"{bank.name} only has "
+                                 f"${available:,.2f} in it."}), 400
+    return jsonify({"ok": True})
 
 
 @bp.get("/plan/fixed")
@@ -1003,11 +1245,7 @@ def nudge():
     st = store()
     txns = st.all_transactions()
     month = _date.today().strftime("%Y-%m")
-    amount = st.float_setting("monthly_amount", 0.0)
-    if not amount:
-        from .spend_plan import suggest_monthly_amount
-        amount = suggest_monthly_amount(txns)
-
+    amount, _ = _allowance(st, txns)
     state = compute(txns, amount, month)
     return jsonify({"nudge": nudge_mod.for_yesterday(txns, state)})
 
@@ -1021,79 +1259,16 @@ def _typical_by_category(transactions) -> dict[str, float]:
     comparison that makes a budget believable.
     """
     import statistics
-    from .categorize import is_spend_category
+    from .analytics import counts_as_spending
 
     per: dict[str, dict[str, float]] = {}
     for t in transactions:
         category = t.category or "Other"
-        if t.amount <= 0 or not is_spend_category(category):
+        if t.amount <= 0 or not counts_as_spending(t):
             continue
         per.setdefault(category, {})
         per[category][t.month] = per[category].get(t.month, 0.0) + t.amount
     return {c: round(statistics.median(m.values()), 2) for c, m in per.items() if m}
-
-@bp.get("/ask")
-def ask_status():
-    from . import advisor
-    return jsonify(advisor.status())
-
-
-@bp.post("/ask")
-def ask():
-    """Answer one question about the ledger, with the tools to look it up.
-
-    Advisory only. Nothing here writes to the ledger, and every number on
-    every other tab is computed locally without it.
-    """
-    from . import advisor
-
-    body = request.get_json(silent=True) or {}
-    question = str(body.get("question", "")).strip()
-    if not question:
-        return jsonify({"error": "Ask something."}), 400
-    if len(question) > 2000:
-        return jsonify({"error": "That question is too long."}), 400
-
-    # Only the shape the API expects, and only the recent turns: an unbounded
-    # history is an unbounded bill.
-    history = [
-        {"role": m["role"], "content": str(m["content"])[:4000]}
-        for m in (body.get("history") or [])[-8:]
-        if isinstance(m, dict) and m.get("role") in ("user", "assistant")
-        and str(m.get("content", "")).strip()
-    ]
-
-    try:
-        return jsonify(advisor.ask(store(), question, history))
-    except Exception as exc:                             # noqa: BLE001
-        current_app.logger.exception("advisor failed")
-        return jsonify({"available": True, "answer": "",
-                        "error": _explain_advisor_error(exc)}), 502
-
-
-def _advisor_status() -> dict:
-    from . import advisor
-    return advisor.status()
-
-
-def _explain_advisor_error(exc: Exception) -> str:
-    """Say which of the few things that can go wrong actually did."""
-    import anthropic
-
-    if isinstance(exc, anthropic.AuthenticationError):
-        return ("Anthropic rejected the API key. Check ANTHROPIC_API_KEY in "
-                "the project's environment variables.")
-    if isinstance(exc, anthropic.RateLimitError):
-        return "Rate limited by Anthropic. Try again in a moment."
-    if isinstance(exc, anthropic.APIConnectionError):
-        return "Couldn't reach Anthropic. This deployment may have no outbound network."
-    if isinstance(exc, anthropic.APIStatusError):
-        if exc.status_code >= 500:
-            return "Anthropic had a server error. Try again shortly."
-        return f"Anthropic refused the request: {exc.message}"
-    if isinstance(exc, ImportError):
-        return "The anthropic package isn't installed in this deployment."
-    return "Something went wrong asking the question."
 
 @bp.get("/trips/suggestions")
 def trip_suggestions():

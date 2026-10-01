@@ -160,6 +160,13 @@ export default function PlanPanel({ onChanged }) {
                 note={`${data.fixed.length} item${data.fixed.length === 1 ? '' : 's'}`} />
           <span className="op" aria-hidden="true">−</span>
           <Term label="Saving" value={data.savings} />
+          {data.banks > 0 && (
+            <>
+              <span className="op" aria-hidden="true">−</span>
+              <Term label="Piggy banks" value={data.banks}
+                    note={`${data.bank_lines.length} bank${data.bank_lines.length === 1 ? '' : 's'}`} />
+            </>
+          )}
           <span className="op" aria-hidden="true">=</span>
           <Term label="Yours to spend" value={data.leftover} strong
                 tone={data.leftover > 0 ? 'good' : 'bad'}

@@ -247,6 +247,11 @@ class Transaction:
     source: str = "csv"              # which adapter produced this row
     seq: int = 0                     # nth identical row within its own export
     raw: dict = field(default_factory=dict)
+    # Set when this charge has been assigned to a piggy bank, which takes it
+    # out of the month it fell in — see finance/piggy.py. Deliberately not part
+    # of the fingerprint: allocating a charge does not make it a different
+    # charge, and a re-import must not create a second copy of it.
+    bank_id: int | None = None
 
     def __post_init__(self):
         if not self.merchant:
@@ -306,6 +311,7 @@ class Transaction:
             source=row.get("source", "csv"),
             seq=int(row.get("seq", 0) or 0),
             raw=raw,
+            bank_id=row.get("bank_id"),
         )
 
 

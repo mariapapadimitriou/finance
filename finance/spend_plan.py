@@ -14,9 +14,9 @@ options are offered instead, both with the arithmetic shown:
   *spread*  — the shortfall is divided across the days left in the month, so
               every remaining day gets slightly less and the month still
               balances. Nothing is hidden; the daily number just drops.
-  *cover*   — the shortfall comes out of a named bucket (Fun, Savings). The
-              money is real and has to come from somewhere, so drawing on a
-              bucket reduces that bucket.
+  *cover*   — the shortfall comes out of a piggy bank. The money is real and
+              has to come from somewhere, so borrowing from the holiday fund
+              leaves less in the holiday fund.
 
 Only discretionary spending counts. Rent and utilities are already committed;
 including them would make the daily number meaningless, and no amount of
@@ -29,17 +29,8 @@ import calendar
 from dataclasses import dataclass
 from datetime import date
 
-from .categorize import is_discretionary, is_spend_category
-
-
-@dataclass
-class Bucket:
-    id: int | None
-    name: str
-    balance: float
-
-    def to_dict(self) -> dict:
-        return {"id": self.id, "name": self.name, "balance": round(self.balance, 2)}
+from .analytics import counts_as_spending
+from .categorize import is_discretionary
 
 
 def days_in_month(month: str) -> int:
@@ -48,10 +39,9 @@ def days_in_month(month: str) -> int:
 
 def counts_toward_plan(t) -> bool:
     """Discretionary spending only — the part a daily number can influence."""
-    category = t.category or "Other"
     return (t.amount > 0
-            and is_spend_category(category)
-            and is_discretionary(category))
+            and counts_as_spending(t)
+            and is_discretionary(t.category or "Other"))
 
 
 def _spent(transactions, month: str, upto_day: int | None = None,
@@ -148,8 +138,14 @@ def _money(value: float) -> str:
     return f"{'−' if value < 0 else ''}${abs(value):,.2f}"
 
 
-def simulate(state: dict, amount: float, buckets: list[Bucket] | None = None) -> dict:
-    """Answer "can I buy this?" with the consequence either way."""
+def simulate(state: dict, amount: float, pots=None) -> dict:
+    """Answer "can I buy this?" with the consequence either way.
+
+    `pots` is a list of (piggy bank, available balance) pairs. The balance is
+    passed in rather than read off the bank because it is derived — months
+    accrued less what has been charged — and the one place that derives it is
+    finance/piggy.py.
+    """
     amount = round(float(amount), 2)
     safe = state["safe_today"]
     after = round(safe - amount, 2)
@@ -188,14 +184,14 @@ def simulate(state: dict, amount: float, buckets: list[Bucket] | None = None) ->
         "viable": new_daily >= 0,
     }]
 
-    for b in (buckets or []):
+    for bank, available in (pots or []):
         options.append({
             "kind": "cover",
-            "bucket_id": b.id,
-            "label": f"Cover {_money(short)} from {b.name}",
-            "detail": f"{b.name} goes from {_money(b.balance)} to "
-                      f"{_money(round(b.balance - short, 2))}.",
-            "viable": b.balance >= short,
+            "bank_id": bank.id,
+            "label": f"Cover {_money(short)} from {bank.name}",
+            "detail": f"{bank.name} goes from {_money(available)} to "
+                      f"{_money(round(available - short, 2))}.",
+            "viable": available >= short,
         })
 
     if safe < 0:

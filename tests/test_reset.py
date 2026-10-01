@@ -27,9 +27,10 @@ def store(tmp_path):
     st.set_override("mos mos coffee", "Coffee")
     st.set_budget("Dining", 200.0)
     st.add_trip("Lisbon", "2025-11-01", "2025-11-07")
-    st.set_bucket("Fun", 400.0)
+    bank = st.add_piggy_bank("Fun", 400.0, "annual", None, "2025-11", 400.0)
+    st.allocate(st.all_transactions()[0].fingerprint, bank)
     st.dismiss("finding-1")
-    st.set_setting("monthly_amount", 510.0)
+    st.set_setting("monthly_income", 4200.0)
     return st
 
 
@@ -45,8 +46,10 @@ class TestReset:
         assert store.overrides() == {}
         assert store.budgets() == {}
         assert store.trips() == []
-        assert store.buckets() == []
         assert store.dismissed() == set()
+        # The piggy banks themselves are a standing decision and survive, but
+        # what was charged to them cannot: those transactions are gone.
+        assert store.allocations() == {}
 
     def test_it_reports_what_it_removed(self, store):
         removed = store.reset()
@@ -57,7 +60,7 @@ class TestReset:
         """Yours rather than imported, but a plan sized to a ledger that no
         longer exists is a number with nothing behind it."""
         store.reset()
-        assert store.float_setting("monthly_amount", 0.0) == 0.0
+        assert store.float_setting("monthly_income", 0.0) == 0.0
 
 
 class TestSeedingAfterReset:

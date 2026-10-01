@@ -4,7 +4,8 @@ from datetime import date
 
 import pytest
 
-from finance import gamify, manual, projections, spend_plan
+from finance import manual, projections, spend_plan
+from finance.piggy import Bank
 from finance.categorize import apply_categories
 from finance.models import Transaction
 
@@ -142,15 +143,16 @@ class TestCanIBuyThis:
         spread = next(o for o in r["options"] if o["kind"] == "spread")
         assert spread["new_daily"] < self._state()["flat_daily"]
 
-    def test_it_offers_a_bucket_that_can_cover_it(self):
-        buckets = [spend_plan.Bucket(id=1, name="Fun", balance=200.0)]
-        r = spend_plan.simulate(self._state(), 100.0, buckets)
+    def test_it_offers_a_piggy_bank_that_can_cover_it(self):
+        bank = Bank(id=1, name="Fun", target=200.0, opening=200.0)
+        r = spend_plan.simulate(self._state(), 100.0, [(bank, 200.0)])
         cover = next(o for o in r["options"] if o["kind"] == "cover")
         assert cover["viable"] is True
+        assert cover["bank_id"] == 1
 
-    def test_a_bucket_that_is_too_small_is_shown_as_not_viable(self):
-        buckets = [spend_plan.Bucket(id=1, name="Fun", balance=10.0)]
-        r = spend_plan.simulate(self._state(), 100.0, buckets)
+    def test_a_bank_that_is_too_small_is_shown_as_not_viable(self):
+        bank = Bank(id=1, name="Fun", target=200.0, opening=10.0)
+        r = spend_plan.simulate(self._state(), 100.0, [(bank, 10.0)])
         cover = next(o for o in r["options"] if o["kind"] == "cover")
         assert cover["viable"] is False
 
@@ -212,92 +214,6 @@ class TestHowAmIDoing:
         # $40 over 4 days, carried across 31 days.
         assert spend_plan.how_am_i_doing(state)["projected_month_end"] == pytest.approx(310.0)
 
-
-# ── Gamification ─────────────────────────────────────────────────────────────
-
-class TestGamification:
-    def test_points_only_come_from_restraint(self):
-        """Nothing in the scoring can reward a purchase."""
-        quiet = gamify.month_stats([txn("2025-01-01", "X", 0.0)], "2025-01", 10.0,
-                                   today=date(2025, 1, 1))
-        rows = [dining("2025-01-01", 500.0)]
-        apply_categories(rows)
-        heavy = gamify.month_stats(rows, "2025-01", 10.0, today=date(2025, 1, 1))
-        assert heavy["points"] <= quiet["points"]
-
-    def test_a_day_outside_the_imported_range_is_not_a_no_spend_day(self):
-        """Never award restraint for a month that was simply never imported."""
-        rows = [dining("2025-01-20", 5.0)]
-        apply_categories(rows)
-        stats = gamify.month_stats(rows, "2025-01", 10.0, today=date(2025, 1, 31))
-        assert all(d["state"] == "no-data" for d in stats["days"] if d["day"] < 20)
-        assert stats["no_spend"] == 0
-
-    def test_a_streak_counts_consecutive_days_under_the_allowance(self):
-        rows = [dining(f"2025-01-{d:02d}", 5.0) for d in range(1, 11)]
-        apply_categories(rows)
-        streak = gamify.current_streak(rows, 10.0, today=date(2025, 1, 10))
-        assert streak["days"] == 10
-
-    def test_a_streak_breaks_on_an_over_day(self):
-        rows = [dining(f"2025-01-{d:02d}", 5.0) for d in range(1, 11)]
-        rows.append(dining("2025-01-08", 500.0))
-        apply_categories(rows)
-        streak = gamify.current_streak(rows, 10.0, today=date(2025, 1, 10))
-        assert streak["days"] == 2      # the 10th and 9th only
-
-    def test_levels_rise_with_points(self):
-        assert gamify.level_for(0)["name"] == "Getting started"
-        assert gamify.level_for(5000)["name"] == "Spendie master"
-        assert gamify.level_for(300)["progress"] < 1.0
-
-    def test_badges_carry_the_fact_that_earned_them(self):
-        rows = [dining("2025-01-01", 5.0)]
-        apply_categories(rows)
-        p = gamify.profile(rows, 10.0, [], today=date(2025, 1, 2))
-        first = next(b for b in p["badges"] if b["key"] == "first-import")
-        assert first["earned"] and first["detail"]
-
-    def test_a_half_imported_month_is_never_under_budget(self):
-        """The failure mode: a statement covering the 18th to the 31st always
-        comes in under, because two thirds of the month is missing."""
-        rows = [dining(f"2025-01-{d:02d}", 5.0) for d in range(18, 32)]
-        apply_categories(rows)
-        stats = gamify.month_stats(rows, "2025-01", 10.0, today=date(2025, 2, 5))
-        assert stats["spent"] < stats["budget"]     # it does look under
-        assert stats["fully_observed"] is False
-        assert stats["complete"] is False
-        assert stats["points"] < gamify.POINTS_UNDER_MONTH
-
-    def test_a_fully_imported_month_under_budget_earns_the_bonus(self):
-        rows = [dining(f"2025-01-{d:02d}", 5.0) for d in range(1, 32)]
-        apply_categories(rows)
-        stats = gamify.month_stats(rows, "2025-01", 10.0, today=date(2025, 2, 5))
-        assert stats["fully_observed"] is True
-        assert stats["points"] >= gamify.POINTS_UNDER_MONTH
-
-    def test_a_quiet_first_and_last_day_still_counts_as_a_full_month(self):
-        """Coverage is inferred from the first and last charge, so a month that
-        opens or closes with a couple of quiet days must not lose its badge."""
-        rows = [dining(f"2025-01-{d:02d}", 5.0) for d in range(3, 30)]
-        apply_categories(rows)
-        stats = gamify.month_stats(rows, "2025-01", 10.0, today=date(2025, 2, 5))
-        assert stats["fully_observed"] is True
-
-    def test_a_month_with_one_stray_charge_earns_no_badge(self):
-        rows = [dining("2026-08-04", 5.0)]
-        apply_categories(rows)
-        p = gamify.profile(rows, 17.0, [], today=date(2026, 9, 30))
-        under = next(b for b in p["badges"] if b["key"] == "month-under")
-        assert under["earned"] is False
-
-    def test_an_empty_ledger_scores_nothing(self):
-        p = gamify.profile([], 10.0, [], today=date(2025, 1, 2))
-        assert p["level"]["points"] == 0
-        assert p["streak"]["days"] == 0
-
-
-# ── Projections ──────────────────────────────────────────────────────────────
 
 class TestProjections:
     def test_a_card_payment_is_not_income(self):
@@ -494,34 +410,37 @@ class TestPlanApi:
 
     def test_plan_endpoint_shape(self, client):
         body = client.get("/api/plan").get_json()
-        assert "state" in body and "status" in body and "buckets" in body
+        assert "state" in body and "status" in body and "banks" in body
 
-    def test_setting_a_budget_sticks(self, client):
-        client.put("/api/plan", json={"monthly_amount": 600})
-        assert client.get("/api/plan").get_json()["state"]["monthly_amount"] == 600
+    def test_there_is_nowhere_left_to_type_a_daily_number(self, client):
+        """It is derived from the Plan tab, so the setter is gone rather than
+        deprecated: two ways to decide one figure is how they drift apart."""
+        assert client.put("/api/plan", json={"monthly_amount": 600}).status_code == 405
 
-    def test_a_negative_budget_is_refused(self, client):
-        assert client.put("/api/plan", json={"monthly_amount": -5}).status_code == 400
-
-    def test_buckets_round_trip_and_cover(self, client):
-        client.put("/api/plan", json={"monthly_amount": 300})
-        bucket_id = client.put("/api/buckets",
-                               json={"name": "Fun", "balance": 100}).get_json()["id"]
-        r = client.post(f"/api/buckets/{bucket_id}/cover",
+    def test_banks_round_trip_and_cover(self, client):
+        bank_id = client.post("/api/piggy", json={
+            "name": "Fun", "target": 1200, "cadence": "annual", "opening": 100,
+        }).get_json()["id"]
+        r = client.post(f"/api/piggy/{bank_id}/cover",
                         json={"amount": 50, "month": "2025-01"})
         assert r.status_code == 200
-        buckets = client.get("/api/plan").get_json()["buckets"]
-        assert buckets[0]["balance"] == pytest.approx(50.0)
 
-    def test_covering_more_than_the_bucket_holds_is_refused(self, client):
-        bucket_id = client.put("/api/buckets",
-                               json={"name": "Fun", "balance": 10}).get_json()["id"]
-        r = client.post(f"/api/buckets/{bucket_id}/cover", json={"amount": 500})
+        bank = client.get("/api/plan").get_json()["banks"][0]
+        # $100 was already in it and $50 came out, against a contribution of
+        # (1200 - 100) / 12 for each month since it opened.
+        assert bank["charged"] == pytest.approx(50.0)
+        assert bank["balance"] == pytest.approx(bank["accrued"] - 50.0)
+
+    def test_covering_more_than_the_bank_holds_is_refused(self, client):
+        bank_id = client.post("/api/piggy", json={
+            "name": "Fun", "target": 120, "cadence": "annual", "opening": 10,
+        }).get_json()["id"]
+        r = client.post(f"/api/piggy/{bank_id}/cover", json={"amount": 500})
         assert r.status_code == 400
+        assert "only has" in r.get_json()["error"]
 
     def test_simulate_needs_a_positive_amount(self, client):
         assert client.post("/api/plan/simulate", json={"amount": 0}).status_code == 400
 
-    def test_progress_and_projections_respond(self, client):
-        assert client.get("/api/progress").status_code == 200
+    def test_projections_respond(self, client):
         assert client.get("/api/projections").status_code == 200

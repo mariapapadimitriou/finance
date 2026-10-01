@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
-  addTransaction, dateLabel, deleteTransaction, getTransactions, money, setCategory,
+  addTransaction, allocateToBank, dateLabel, deleteTransaction, getBanks,
+  getTransactions, money, setCategory, unallocate,
 } from '../api.js';
 
 const PAGE = 100;
@@ -14,7 +15,14 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [charging, setCharging] = useState(null);
+  const [banks, setBanks] = useState([]);
   const [reload, setReload] = useState(0);
+
+  // Loaded once: the list of banks changes on its own tab, not here.
+  useEffect(() => {
+    getBanks().then((d) => setBanks(d.banks ?? [])).catch(() => setBanks([]));
+  }, [reload]);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,6 +32,12 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
       .catch((e) => { if (!cancelled) setError(e); });
     return () => { cancelled = true; };
   }, [filters, page, reload]);
+
+  /** Refetch this page and let the rest of the app know the totals moved. */
+  function bump() {
+    setReload((n) => n + 1);
+    onChanged?.();
+  }
 
   async function removeRow(txn) {
     if (!window.confirm(`Delete ${txn.merchant} ${money(txn.amount, { cents: true })}?`)) return;
@@ -106,6 +120,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                     <th>Merchant</th>
                     <th>Category</th>
                     <th>Card</th>
+                    <th>Piggy bank</th>
                     <th className="r">Amount</th>
                     <th />
                   </tr>
@@ -140,6 +155,14 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                         )}
                       </td>
                       <td className="muted">{t.account_name}</td>
+                      <td>
+                        <BankCell
+                          txn={t} banks={banks}
+                          open={charging === t.id}
+                          onOpen={() => setCharging(charging === t.id ? null : t.id)}
+                          onDone={() => { setCharging(null); bump(); }}
+                        />
+                      </td>
                       <td className="r" style={t.amount < 0 ? { color: 'var(--good-text)' } : undefined}>
                         {money(t.amount, { cents: true })}
                       </td>
@@ -349,6 +372,81 @@ function CategoryEditor({ current, merchant, categories, onSave, onCancel }) {
         All {merchant}
       </button>
       <button className="btn quiet" onClick={onCancel}>Cancel</button>
+    </div>
+  );
+}
+
+/**
+ * Charging one transaction to a piggy bank, or putting it back.
+ *
+ * This is the gesture that makes piggy banks worth having. A charge allocated
+ * to a bank leaves the month it fell in — it is not in the Overview, the
+ * budgets, or the daily number — because it was already paid for over the
+ * months leading up to it. Putting it back is one click, and the month gets it
+ * again.
+ *
+ * Only outflows can be charged: a refund or a card payment is money coming
+ * back, and there is nothing to take out of a bank.
+ */
+function BankCell({ txn, banks, open, onOpen, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const bank = banks.find((b) => b.id === txn.bank_id);
+
+  async function charge(id) {
+    setBusy(true);
+    setError(null);
+    try {
+      if (id) await allocateToBank(Number(id), txn.id);
+      else await unallocate(txn.id);
+      onDone();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (txn.amount <= 0) {
+    return <span className="muted small">—</span>;
+  }
+
+  if (banks.length === 0) {
+    return <span className="muted small">—</span>;
+  }
+
+  if (bank && !open) {
+    return (
+      <button className="btn quiet" onClick={onOpen} disabled={busy}
+              title={`Charged to ${bank.name} — not counted in this month`}>
+        {bank.name} ✓
+      </button>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button className="btn quiet" onClick={onOpen} disabled={busy}>
+        Charge…
+      </button>
+    );
+  }
+
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <select value={txn.bank_id ?? ''} disabled={busy}
+              aria-label="Charge this to a piggy bank"
+              onChange={(e) => charge(e.target.value)}>
+        <option value="">Count against this month</option>
+        {banks.map((b) => (
+          <option key={b.id} value={b.id}>{b.name}</option>
+        ))}
+      </select>
+      <button className="btn quiet" onClick={onOpen} disabled={busy}>Close</button>
+      {error && <span className="small" style={{ color: 'var(--critical)' }}>
+        {error.message}
+      </span>}
     </div>
   );
 }
