@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Card, Empty, Notice } from '../components/ui.jsx';
+import AskPanel from './AskPanel.jsx';
 import { dateLabel, dismissFinding, money, pct, restoreFinding, runNarrative } from '../api.js';
 
 const EFFORT = {
@@ -44,11 +45,16 @@ export default function SavingsPanel({ insights, onRefresh }) {
 
   if (findings.length === 0) {
     return (
-      <Empty title="Nothing to cut that we can see">
-        Either your spending is already tight, or there isn&apos;t enough history
-        yet. Most rules need three or more months to tell a habit from a
-        one-off — import a longer date range and check back.
-      </Empty>
+      <div className="stack">
+        <Empty title="Nothing to cut that we can see">
+          Either your spending is already tight, or there isn&apos;t enough
+          history yet. Most rules need three or more months to tell a habit
+          from a one-off — import a longer date range and check back.
+        </Empty>
+        {/* Worth more here than anywhere: the rules found nothing, and the
+            question "why not" is exactly what they cannot answer. */}
+        <AskPanel />
+      </div>
     );
   }
 
@@ -58,6 +64,8 @@ export default function SavingsPanel({ insights, onRefresh }) {
 
   return (
     <div className="stack">
+      <AskPanel />
+
       <div className="card hero-card">
         <div className="hero">
           <div className="figure num">{money(summary.weighted_annual ?? 0)}</div>

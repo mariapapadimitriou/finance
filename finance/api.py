@@ -1044,6 +1044,64 @@ def _typical_by_category(transactions) -> dict[str, float]:
         per[category][t.month] = per[category].get(t.month, 0.0) + t.amount
     return {c: round(statistics.median(m.values()), 2) for c, m in per.items() if m}
 
+@bp.get("/ask")
+def ask_status():
+    from . import advisor
+    return jsonify(advisor.status())
+
+
+@bp.post("/ask")
+def ask():
+    """Answer one question about the ledger, with the tools to look it up.
+
+    Advisory only. Nothing here writes to the ledger, and every number on
+    every other tab is computed locally without it.
+    """
+    from . import advisor
+
+    body = request.get_json(silent=True) or {}
+    question = str(body.get("question", "")).strip()
+    if not question:
+        return jsonify({"error": "Ask something."}), 400
+    if len(question) > 2000:
+        return jsonify({"error": "That question is too long."}), 400
+
+    # Only the shape the API expects, and only the recent turns: an unbounded
+    # history is an unbounded bill.
+    history = [
+        {"role": m["role"], "content": str(m["content"])[:4000]}
+        for m in (body.get("history") or [])[-8:]
+        if isinstance(m, dict) and m.get("role") in ("user", "assistant")
+        and str(m.get("content", "")).strip()
+    ]
+
+    try:
+        return jsonify(advisor.ask(store(), question, history))
+    except Exception as exc:                             # noqa: BLE001
+        current_app.logger.exception("advisor failed")
+        return jsonify({"available": True, "answer": "",
+                        "error": _explain_advisor_error(exc)}), 502
+
+
+def _explain_advisor_error(exc: Exception) -> str:
+    """Say which of the few things that can go wrong actually did."""
+    import anthropic
+
+    if isinstance(exc, anthropic.AuthenticationError):
+        return ("Anthropic rejected the API key. Check ANTHROPIC_API_KEY in "
+                "the project's environment variables.")
+    if isinstance(exc, anthropic.RateLimitError):
+        return "Rate limited by Anthropic. Try again in a moment."
+    if isinstance(exc, anthropic.APIConnectionError):
+        return "Couldn't reach Anthropic. This deployment may have no outbound network."
+    if isinstance(exc, anthropic.APIStatusError):
+        if exc.status_code >= 500:
+            return "Anthropic had a server error. Try again shortly."
+        return f"Anthropic refused the request: {exc.message}"
+    if isinstance(exc, ImportError):
+        return "The anthropic package isn't installed in this deployment."
+    return "Something went wrong asking the question."
+
 @bp.get("/trips/suggestions")
 def trip_suggestions():
     """Trips the ledger can see, which nobody has had to remember.
