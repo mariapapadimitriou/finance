@@ -9,6 +9,7 @@ import TransactionsPanel from './panels/TransactionsPanel.jsx';
 import BudgetsPanel from './panels/BudgetsPanel.jsx';
 import TripsPanel from './panels/TripsPanel.jsx';
 import ImportPanel from './panels/ImportPanel.jsx';
+import PlanPanel from './panels/PlanPanel.jsx';
 import BanksPanel from './panels/BanksPanel.jsx';
 import AccountsPanel from './panels/AccountsPanel.jsx';
 import Login from './Login.jsx';
@@ -44,6 +45,8 @@ const HIDDEN_TABS = [
 ];
 
 const TABS = [
+  { key: 'plan', label: 'Plan', hint: 'Income, commitments, and what is left to spend',
+    icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
   { key: 'today', label: 'Today', hint: 'What you can spend today, and why that number',
     icon: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z' },
   { key: 'overview', label: 'Overview', hint: 'Spending across every card',
@@ -71,7 +74,7 @@ const TABS = [
 // Panels worth opening with nothing in the ledger: the two that bring data
 // in, and the one that decides what keeps arriving — which is also where the
 // ledger gets emptied, so it is reachable immediately afterwards.
-const WORKS_WHEN_EMPTY = ['banks', 'import', 'accounts'];
+const WORKS_WHEN_EMPTY = ['banks', 'import', 'accounts', 'plan'];
 
 // Everywhere that needs to name a tab rather than offer it.
 const ALL_TABS = [...TABS, ...HIDDEN_TABS];
@@ -242,6 +245,7 @@ export default function App() {
       showMonth={['overview', 'budgets'].includes(tab)}
       onSignOut={async () => { await logout(); setSignedIn(false); }}
     >
+      {tab === 'plan' && <PlanPanel onChanged={load} />}
       {tab === 'today' && (
         <TodayPanel month={shownPlanMonth} onMonth={setPlanMonth} version={version} />
       )}

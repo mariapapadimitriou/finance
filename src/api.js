@@ -96,6 +96,18 @@ export const deleteBucket    = (id) => req(`/api/buckets/${id}`, { method: 'DELE
 export const coverFromBucket = (id, amount, month) =>
   json('POST', `/api/buckets/${id}/cover`, { amount, month });
 
+// The money plan: income in, commitments and savings out, the rest budgeted.
+export const getPlanSetup    = () => req('/api/plan/setup');
+export const savePlanSetup   = (income, savings) =>
+  json('PUT', '/api/plan/setup', { income, savings });
+export const applyPlanBudgets = () => json('POST', '/api/plan/setup/apply', {});
+export const addFixedCost    = (cost) => json('POST', '/api/plan/fixed', cost);
+export const updateFixedCost = (id, cost) =>
+  json('PATCH', `/api/plan/fixed/${id}`, cost);
+export const deleteFixedCost = (id) =>
+  req(`/api/plan/fixed/${id}`, { method: 'DELETE' });
+export const getNudge        = () => req('/api/nudge');
+
 export const getProgress     = (month) =>
   req(`/api/progress${month ? `?month=${month}` : ''}`);
 

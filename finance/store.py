@@ -129,6 +129,21 @@ CREATE TABLE IF NOT EXISTS dismissed_insights (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- The fixed monthly commitments the plan subtracts from income.
+--
+-- Declared rather than detected. The recurring-charge detector finds a lot
+-- of these on its own, but a commitment you have decided on is not the same
+-- as a pattern noticed in the data: rent paid from a chequing account this
+-- app never sees is still a commitment, and a gym membership detected
+-- correctly is still yours to call fixed or not.
+CREATE TABLE IF NOT EXISTS fixed_costs (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    name     TEXT NOT NULL,
+    amount   REAL NOT NULL,
+    category TEXT DEFAULT 'Other',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Whether each account a bank handed over should be synced.
 --
 -- A bank's consent screen is all-or-nothing at some institutions: you grant
@@ -522,6 +537,40 @@ class Store:
         return [dict(r) for r in rows]
 
     # ── Settings ─────────────────────────────────────────────────────────────
+    # ── Fixed monthly commitments ────────────────────────────────────────
+
+    def fixed_costs(self) -> list:
+        from .money_plan import FixedCost
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT id, name, amount, category FROM fixed_costs"
+                " ORDER BY amount DESC").fetchall()
+        return [FixedCost(id=r["id"], name=r["name"], amount=float(r["amount"]),
+                          category=r["category"] or "Other") for r in rows]
+
+    def add_fixed_cost(self, name: str, amount: float,
+                       category: str = "Other") -> int:
+        sql = "INSERT INTO fixed_costs (name, amount, category) VALUES (?, ?, ?)"
+        args = (name.strip(), float(amount), category)
+        with self.conn() as c:
+            # Postgres has no lastrowid; see add_trip for the same split.
+            if self.is_postgres:
+                return c.execute(sql + " RETURNING id", args).fetchone()["id"]
+            return c.execute(sql, args).lastrowid
+
+    def update_fixed_cost(self, cost_id: int, name: str, amount: float,
+                          category: str = "Other") -> bool:
+        with self.conn() as c:
+            cur = c.execute(
+                "UPDATE fixed_costs SET name = ?, amount = ?, category = ?"
+                " WHERE id = ?", (name, float(amount), category, cost_id))
+            return bool(cur.rowcount and cur.rowcount > 0)
+
+    def delete_fixed_cost(self, cost_id: int) -> bool:
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM fixed_costs WHERE id = ?", (cost_id,))
+            return bool(cur.rowcount and cur.rowcount > 0)
+
     # ── Where the ledger starts ──────────────────────────────────────────
 
     def ledger_start(self) -> str:

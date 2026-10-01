@@ -103,6 +103,21 @@ def compute(transactions, monthly_amount: float, month: str,
     # the rest of the month, today included.
     spread_daily = round(remaining / days_left, 2)
 
+    # Which number to lead with.
+    #
+    # Strict rollover puts the whole of a bad day onto the next one, which can
+    # make tomorrow's allowance negative before breakfast. That is arithmetically
+    # honest and useless as guidance: an allowance you have already failed is
+    # one you stop reading.
+    #
+    # So a shortfall is spread over the days that remain — the month still has
+    # to balance, every day just gets a little less — while a surplus still
+    # rolls straight onto today, because carrying your own restraint forward
+    # is the reward the whole plan is built around. The strict figure stays in
+    # the response, and the breakdown on screen still shows it.
+    behind = carried_in < 0
+    effective = spread_daily if behind else safe_today
+
     return {
         "month": month,
         "day": day,
@@ -117,9 +132,13 @@ def compute(transactions, monthly_amount: float, month: str,
         "spent_today": spent_today,
         "spent_mtd": spent_mtd,
         "remaining": remaining,
-        "safe_today": safe_today,
         "spread_daily": spread_daily,
-        "over": safe_today < 0,
+        "safe_today": safe_today,
+        "safe_today_effective": round(effective, 2),
+        "behind": behind,
+        "recovering": behind and remaining > 0,
+        "over": effective < 0,
+        "over_strict": safe_today < 0,
         "pace": round(spent_mtd / (flat_daily * day), 4) if flat_daily and day else None,
     }
 

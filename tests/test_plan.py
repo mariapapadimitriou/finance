@@ -38,12 +38,49 @@ class TestSafeToSpend:
         assert state["safe_today"] == pytest.approx(10.0)
 
     def test_overspending_shows_a_negative_number_not_a_lie(self):
+        """The strict arithmetic is still reported, and still unflattering."""
         rows = [dining("2025-01-01", 100.0)]
         apply_categories(rows)
         state = spend_plan.compute(rows, 310.0, "2025-01", today=date(2025, 1, 2))
         assert state["carried_in"] == pytest.approx(-90.0)
         assert state["safe_today"] == pytest.approx(-80.0)
+        assert state["over_strict"] is True
+
+    def test_a_shortfall_is_spread_rather_than_dumped_on_tomorrow(self):
+        """What the day leads with after you go over.
+
+        Strict rollover would have today start at −$80, which is honest and
+        unusable: an allowance already failed before breakfast is one you
+        stop reading. The month still has to balance, so the shortfall is
+        divided over the days that remain instead.
+        """
+        rows = [dining("2025-01-01", 100.0)]
+        apply_categories(rows)
+        state = spend_plan.compute(rows, 310.0, "2025-01", today=date(2025, 1, 2))
+
+        assert state["behind"] is True
+        assert state["recovering"] is True
+        assert state["safe_today_effective"] == pytest.approx(7.0)
+        # The figure shown is usable, so the day does not read as already lost.
+        assert state["over"] is False
+
+    def test_a_surplus_still_rolls_straight_onto_today(self):
+        """Carrying your own restraint forward is the point of the plan."""
+        rows = [dining("2025-01-01", 1.0)]
+        apply_categories(rows)
+        state = spend_plan.compute(rows, 310.0, "2025-01", today=date(2025, 1, 2))
+        assert state["behind"] is False
+        assert state["safe_today_effective"] == pytest.approx(state["safe_today"])
+        assert state["safe_today"] > state["flat_daily"]
+
+    def test_a_month_past_its_budget_is_over_either_way(self):
+        """Spreading cannot rescue a month with nothing left to divide."""
+        rows = [dining("2025-01-01", 400.0)]
+        apply_categories(rows)
+        state = spend_plan.compute(rows, 310.0, "2025-01", today=date(2025, 1, 2))
+        assert state["recovering"] is False
         assert state["over"] is True
+        assert state["over_strict"] is True
 
     def test_spreading_divides_the_shortfall_over_the_days_left(self):
         rows = [dining("2025-01-01", 100.0)]

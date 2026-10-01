@@ -860,6 +860,166 @@ def delete_transaction(txn_id: str):
 # Declared date ranges whose spending is reclassified as Travel. See
 # finance/trips.py for why this is declared rather than inferred.
 
+# ── The money plan: income, commitments, and what is left ────────────────────
+
+@bp.get("/plan/setup")
+def plan_setup():
+    """The arithmetic behind the budget, and what it implies per category."""
+    from . import money_plan
+
+    st = store()
+    txns = st.all_transactions()
+    income = st.float_setting("monthly_income", 0.0)
+    savings = st.float_setting("savings_target", 0.0)
+    fixed = st.fixed_costs()
+
+    result = money_plan.plan(income, fixed, savings)
+    shares = money_plan.discretionary_shares(txns)
+    historical = _typical_by_category(txns)
+    typical_total = round(sum(historical.get(c, 0.0) for c in shares), 2)
+
+    return jsonify({
+        **result,
+        "typical_total": typical_total,
+        "headroom": money_plan.headroom(result["leftover"], typical_total),
+        "shares": shares,
+        "categories": money_plan.explain(result["leftover"], shares, historical),
+        "suggested_budgets": money_plan.category_budgets(result["leftover"], shares),
+        "has_history": bool(shares),
+        "uncategorised": money_plan.uncategorised_warning(shares),
+        "current_budgets": st.budgets(),
+    })
+
+
+@bp.put("/plan/setup")
+def save_plan_setup():
+    """Income and the savings figure. Commitments have their own endpoints."""
+    body = request.get_json(silent=True) or {}
+    st = store()
+    for key, field in (("monthly_income", "income"),
+                       ("savings_target", "savings")):
+        if field in body:
+            try:
+                value = max(float(body[field]), 0.0)
+            except (TypeError, ValueError):
+                return jsonify({"error": f"{field} must be a number."}), 400
+            st.set_setting(key, value)
+    return jsonify({"ok": True})
+
+
+@bp.post("/plan/setup/apply")
+def apply_plan_budgets():
+    """Adopt the category budgets the plan implies.
+
+    Separate from saving the figures, because turning the arithmetic into
+    budgets replaces whatever is there — a choice worth making deliberately
+    rather than as a side effect of editing your rent.
+    """
+    from . import money_plan
+
+    st = store()
+    income = st.float_setting("monthly_income", 0.0)
+    savings = st.float_setting("savings_target", 0.0)
+    result = money_plan.plan(income, st.fixed_costs(), savings)
+    if result["leftover"] <= 0:
+        return jsonify({"error": "There is nothing left to budget. "
+                                 "Check your income and commitments."}), 400
+
+    shares = money_plan.discretionary_shares(st.all_transactions())
+    budgets = money_plan.category_budgets(result["leftover"], shares)
+    if not budgets:
+        return jsonify({"error": "Not enough spending history yet to know how "
+                                 "to divide it. Import a month or two first."}), 400
+
+    for category, amount in budgets.items():
+        st.set_budget(category, amount)
+    # The daily number divides the same pool, so it moves with the budgets.
+    st.set_setting("monthly_amount", result["leftover"])
+    return jsonify({"ok": True, "budgets": budgets,
+                    "monthly_amount": result["leftover"]})
+
+
+@bp.get("/plan/fixed")
+def list_fixed():
+    return jsonify({"fixed": [f.to_dict() for f in store().fixed_costs()]})
+
+
+@bp.post("/plan/fixed")
+def add_fixed():
+    body = request.get_json(silent=True) or {}
+    name = str(body.get("name", "")).strip()
+    if not name:
+        return jsonify({"error": "Give the commitment a name."}), 400
+    try:
+        amount = float(body.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Amount must be a number."}), 400
+    if amount <= 0:
+        return jsonify({"error": "A commitment costs more than nothing."}), 400
+
+    cost_id = store().add_fixed_cost(name, amount,
+                                     str(body.get("category") or "Other"))
+    return jsonify({"ok": True, "id": cost_id})
+
+
+@bp.patch("/plan/fixed/<int:cost_id>")
+def edit_fixed(cost_id: int):
+    body = request.get_json(silent=True) or {}
+    existing = next((f for f in store().fixed_costs() if f.id == cost_id), None)
+    if existing is None:
+        return jsonify({"error": "No such commitment."}), 404
+    try:
+        amount = float(body.get("amount", existing.amount))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Amount must be a number."}), 400
+    store().update_fixed_cost(
+        cost_id, str(body.get("name") or existing.name), amount,
+        str(body.get("category") or existing.category))
+    return jsonify({"ok": True})
+
+
+@bp.delete("/plan/fixed/<int:cost_id>")
+def remove_fixed(cost_id: int):
+    if not store().delete_fixed_cost(cost_id):
+        return jsonify({"error": "No such commitment."}), 404
+    return jsonify({"ok": True})
+
+
+@bp.get("/nudge")
+def nudge():
+    """One sentence about yesterday, or nothing at all."""
+    from datetime import date as _date
+
+    from . import nudge as nudge_mod
+    from .spend_plan import compute
+
+    st = store()
+    txns = st.all_transactions()
+    month = _date.today().strftime("%Y-%m")
+    amount = st.float_setting("monthly_amount", 0.0)
+    if not amount:
+        from .spend_plan import suggest_monthly_amount
+        amount = suggest_monthly_amount(txns)
+
+    state = compute(txns, amount, month)
+    return jsonify({"nudge": nudge_mod.for_yesterday(txns, state)})
+
+
+def _typical_by_category(transactions) -> dict[str, float]:
+    """Median monthly spend per category — shown beside the new budget."""
+    import statistics
+    from .categorize import is_discretionary, is_spend_category
+
+    per: dict[str, dict[str, float]] = {}
+    for t in transactions:
+        category = t.category or "Other"
+        if t.amount <= 0 or not (is_spend_category(category)
+                                 and is_discretionary(category)):
+            continue
+        per.setdefault(category, {})
+        per[category][t.month] = per[category].get(t.month, 0.0) + t.amount
+    return {c: round(statistics.median(m.values()), 2) for c, m in per.items() if m}
+
 @bp.get("/trips/suggestions")
 def trip_suggestions():
     """Trips the ledger can see, which nobody has had to remember.
