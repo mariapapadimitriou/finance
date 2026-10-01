@@ -273,20 +273,60 @@ def update_transaction(txn_id: str):
 
 @bp.get("/accounts")
 def accounts():
+    """Every account this app knows about, and whether it syncs.
+
+    Two sets that mostly overlap: accounts with transactions in the ledger,
+    and accounts a bank has handed over. An account can be in either alone —
+    an imported statement has rows but no bank behind it, and an account
+    switched off before its first sync has a decision recorded and no rows.
+    Both belong in one list, because the question being asked of it is "what
+    is in here, and what keeps arriving", and a list missing the second kind
+    cannot answer why a removed account came back.
+    """
     st = store()
     kinds = st.account_kinds()
+    rules = st.account_sync_rules()
+
     rows = []
     for a in st.accounts():
         kind = kinds.get(a["account_id"], {})
+        rule = rules.get(a["account_id"])
+        plaid_type = kind.get("type", "") or (rule or {}).get("account_type", "")
         rows.append({
             **a,
-            "plaid_type": kind.get("type", ""),
-            "plaid_subtype": kind.get("subtype", ""),
+            "plaid_type": plaid_type,
+            "plaid_subtype": (kind.get("subtype", "")
+                              or (rule or {}).get("account_subtype", "")),
             # Only Plaid rows carry a type, so an imported statement is never
             # mislabelled as "not a card" for want of one.
-            "is_card": kind.get("type", "credit" if a.get("source") != "plaid"
-                                else "") == "credit",
+            "is_card": (plaid_type or ("credit" if a.get("source") != "plaid"
+                                       else "")) == "credit",
+            "syncs": rule["enabled"] if rule else None,
+            "decided_by": (rule or {}).get("decided_by", ""),
+            "item_id": (rule or {}).get("item_id", ""),
         })
+
+    seen = {a["account_id"] for a in rows}
+    for aid, rule in rules.items():
+        if aid in seen:
+            continue
+        rows.append({
+            "account_id": aid,
+            "account_name": rule["account_name"],
+            "transactions": 0,
+            "first_date": None,
+            "last_date": None,
+            "total_spend": 0.0,
+            "currency": "",
+            "source": "plaid",
+            "plaid_type": rule["account_type"],
+            "plaid_subtype": rule["account_subtype"],
+            "is_card": rule["account_type"] == "credit",
+            "syncs": rule["enabled"],
+            "decided_by": rule["decided_by"],
+            "item_id": rule["item_id"],
+        })
+
     return jsonify({"accounts": rows})
 
 
@@ -324,12 +364,49 @@ def audit_duplicates():
 
 @bp.delete("/accounts/<path:account_id>")
 def delete_account(account_id: str):
-    """Remove an account and everything imported from it."""
+    """Remove an account and everything imported from it.
+
+    Deleting the rows is only half of it for a connected account: the bank
+    still holds it, and the next sync fetches the lot again. So removal also
+    records that this account is not to be synced, which is what the person
+    meant. `stop_syncing=0` deletes the rows and leaves the connection alone.
+    """
     st = store()
-    if not any(a["account_id"] == account_id for a in st.accounts()):
+    known = any(a["account_id"] == account_id for a in st.accounts())
+    rules = st.account_sync_rules()
+    if not known and account_id not in rules:
         return jsonify({"error": "No such account."}), 404
-    removed = st.clear_transactions(account_id)
-    return jsonify({"ok": True, "removed": removed})
+
+    stop = request.args.get("stop_syncing", "1") != "0"
+    removed = st.clear_transactions(account_id) if known else 0
+    if stop:
+        st.set_account_sync(account_id, False,
+                            name=rules.get(account_id, {}).get("account_name", ""),
+                            item_id=rules.get(account_id, {}).get("item_id", ""))
+    return jsonify({"ok": True, "removed": removed, "stopped_syncing": stop})
+
+
+@bp.put("/accounts/<path:account_id>/sync")
+def set_account_sync(account_id: str):
+    """Turn syncing for one account on or off.
+
+    Recorded as the person's decision, which the per-sync defaults will not
+    revise — so switching a chequing account back on survives the next sync,
+    and switching a card off survives it too.
+    """
+    body = request.get_json(silent=True) or {}
+    if "enabled" not in body:
+        return jsonify({"error": "Send {\"enabled\": true} or false."}), 400
+
+    st = store()
+    rule = st.account_sync_rules().get(account_id, {})
+    name = rule.get("account_name") or next(
+        (a["account_name"] for a in st.accounts()
+         if a["account_id"] == account_id), "")
+    st.set_account_sync(account_id, bool(body["enabled"]),
+                        name=name, item_id=rule.get("item_id", ""))
+    return jsonify({"ok": True, "account_id": account_id,
+                    "enabled": bool(body["enabled"])})
 
 
 @bp.delete("/transactions")

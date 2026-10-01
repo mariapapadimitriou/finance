@@ -335,9 +335,12 @@ class TestOnlyCreditCards:
         self._pages(fake)
         store.add_plaid_item("item-1", "tok", "TD")
         skipped = plaid_link.sync_all(store)["items"][0]["skipped_accounts"]
-        assert "TD Everyday Chequing" in skipped
-        assert "Wealthsimple TFSA" in skipped
-        assert "TD Cash Back Visa" not in skipped
+        # The mask is part of the name: two cards at one bank are otherwise
+        # told apart only by an opaque id, and deciding which to drop needs
+        # more than "Credit Card" listed twice.
+        assert "TD Everyday Chequing ••1111" in skipped
+        assert "Wealthsimple TFSA ••3333" in skipped
+        assert not any("Cash Back Visa" in name for name in skipped)
 
     def test_turning_the_filter_off_imports_everything(self, store, fake):
         self._pages(fake)
@@ -530,3 +533,91 @@ class TestCredentialDiagnostics:
         monkeypatch.setattr(plaid_link, "_client", lambda: Watch())
         plaid_link.check_credentials()
         assert calls == ["institutions_get"]
+
+
+class TestRemovingAnAccountSticks:
+    """Some banks grant the whole login or nothing, so the choosing is here.
+
+    Deleting an account's rows is not a removal while the bank still holds it:
+    the next sync fetches the lot again, and the account reappears with every
+    transaction it had. The decision has to outlive the rows.
+    """
+
+    def _pages(self, fake):
+        return fake([{
+            "accounts": MIXED_ACCOUNTS,
+            "added": [
+                txn("t1", "2026-01-05", "MOS MOS COFFEE", 6.40, account="acc1"),
+                txn("t2", "2026-01-06", "PAYMENT - THANK YOU", 500.00, account="chq"),
+            ],
+            "next_cursor": "c1",
+        }])
+
+    def test_an_account_turned_off_is_not_imported_again(self, store, fake):
+        self._pages(fake)
+        store.add_plaid_item("item-1", "tok", "TD")
+        plaid_link.sync_all(store)
+        assert {t.account_id for t in store.all_transactions()} == {"acc1"}
+
+        # Remove the card, the way the app does it, and sync from scratch.
+        store.clear_transactions("acc1")
+        store.set_account_sync("acc1", False)
+        store.set_plaid_cursor("item-1", "")
+        self._pages(fake)
+        out = plaid_link.sync_all(store)
+
+        assert out["imported"] == 0
+        assert store.all_transactions() == []
+
+    def test_without_the_decision_it_comes_straight_back(self, store, fake):
+        """The bug this exists to prevent: deleting rows alone achieves nothing."""
+        self._pages(fake)
+        store.add_plaid_item("item-1", "tok", "TD")
+        plaid_link.sync_all(store)
+        store.clear_transactions("acc1")
+        store.set_plaid_cursor("item-1", "")
+        self._pages(fake)
+        plaid_link.sync_all(store)
+        assert {t.account_id for t in store.all_transactions()} == {"acc1"}
+
+    def test_a_non_card_turned_on_stays_on(self, store, fake):
+        """A choice outranks the default, in both directions."""
+        self._pages(fake)
+        store.add_plaid_item("item-1", "tok", "TD")
+        plaid_link.sync_all(store)          # records the defaults
+        store.set_account_sync("chq", True)
+        store.set_plaid_cursor("item-1", "")
+        self._pages(fake)
+        plaid_link.sync_all(store)
+        assert "chq" in {t.account_id for t in store.all_transactions()}
+
+    def test_every_account_the_bank_sent_is_recorded(self, store, fake):
+        """Including the ones skipped — they cannot be chosen if unlisted."""
+        self._pages(fake)
+        store.add_plaid_item("item-1", "tok", "TD")
+        plaid_link.sync_all(store)
+        rules = store.account_sync_rules()
+        assert set(rules) == {"acc1", "chq", "sav", "inv"}
+        assert rules["acc1"]["enabled"] is True
+        assert rules["chq"]["enabled"] is False
+        assert all(r["decided_by"] == "auto" for r in rules.values())
+        assert rules["chq"]["item_id"] == "item-1"
+
+    def test_a_default_never_overwrites_a_choice(self, store, fake):
+        self._pages(fake)
+        store.add_plaid_item("item-1", "tok", "TD")
+        plaid_link.sync_all(store)
+        store.set_account_sync("acc1", False)
+        store.set_plaid_cursor("item-1", "")
+        self._pages(fake)
+        plaid_link.sync_all(store)
+        rule = store.account_sync_rules()["acc1"]
+        assert rule["decided_by"] == "user"
+        assert rule["enabled"] is False
+
+    def test_unlinking_the_bank_forgets_its_accounts(self, store, fake):
+        self._pages(fake)
+        store.add_plaid_item("item-1", "tok", "TD")
+        plaid_link.sync_all(store)
+        plaid_link.unlink(store, "item-1")
+        assert store.account_sync_rules() == {}

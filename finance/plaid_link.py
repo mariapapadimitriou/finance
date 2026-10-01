@@ -186,20 +186,32 @@ def _sync_one(store, item: dict) -> dict:
     modified_ids = [m.get("transaction_id") for m in modified if m.get("transaction_id")]
     store.delete_transactions_from(modified_ids)
 
-    # Only card accounts, unless that is turned off. A linked bank hands over
-    # everything it holds, and a chequing account's rows would double-count the
-    # card spending they settle.
+    # Which of this bank's accounts to keep.
+    #
+    # Some banks' consent screens are all-or-nothing: you grant the whole
+    # login, and the chequing, savings and investment accounts arrive beside
+    # the card you wanted. So every account the bank hands over is recorded
+    # the first time it is seen, with a default — keep the cards, skip the
+    # rest — and from then on the stored decision governs. Removing an account
+    # in the app writes a decision here, which is what stops the next sync
+    # fetching it all over again.
     cards_only = store.setting("plaid_cards_only", "1") != "0"
-    if cards_only:
-        keep = {aid for aid, a in accounts.items() if is_credit_account(a)}
-        skipped_accounts = sorted(
-            (a.get("official_name") or a.get("name") or aid)
-            for aid, a in accounts.items() if aid not in keep
+    for aid, a in accounts.items():
+        store.note_account(
+            aid,
+            name=_account_label(a, aid),
+            item_id=item_id,
+            enabled=(is_credit_account(a) or not cards_only),
+            account_type=str(a.get("type") or ""),
+            subtype=str(a.get("subtype") or ""),
         )
-        added = [t for t in added if t.get("account_id") in keep]
-        modified = [t for t in modified if t.get("account_id") in keep]
-    else:
-        skipped_accounts = []
+
+    rules = store.account_sync_rules()
+    blocked = {aid for aid in accounts if not rules.get(aid, {}).get("enabled", True)}
+    skipped_accounts = sorted(_account_label(accounts[aid], aid) for aid in blocked)
+    if blocked:
+        added = [t for t in added if t.get("account_id") not in blocked]
+        modified = [t for t in modified if t.get("account_id") not in blocked]
 
     imported = 0
     results = group_plaid_transactions(added + modified, accounts)
@@ -217,6 +229,19 @@ def _sync_one(store, item: dict) -> dict:
         "imported": imported,
         "skipped_accounts": skipped_accounts,
     }
+
+
+def _account_label(account: dict, fallback: str = "") -> str:
+    """What to call an account in a list the person reads.
+
+    The mask is part of the name because two cards at one bank are otherwise
+    told apart only by an opaque id, and deciding which to drop needs more
+    than "Credit Card" twice.
+    """
+    name = (account.get("official_name") or account.get("name")
+            or fallback or "Account")
+    mask = account.get("mask")
+    return f"{name} ••{mask}" if mask else name
 
 
 def _accounts_from(resp: dict) -> dict:
@@ -271,6 +296,10 @@ def unlink(store, item_id: str) -> bool:
         except Exception:                            # noqa: BLE001
             revoked = False
     store.delete_plaid_item(item_id)
+    # The per-account decisions describe accounts this app can no longer see.
+    # Keeping them would mean a relink silently inherits choices made about
+    # ids nobody can now inspect.
+    store.forget_account_rules(item_id)
     return revoked
 
 def credential_shape() -> dict:
