@@ -45,10 +45,15 @@ export default function ProgressPanel({ month, version = 0 }) {
                 : ' · top level'}
             </div>
           </div>
+          {/* The current run, which is not the same as the count of good
+              days below it. Labelling both "days under the allowance" put a
+              0 next to a 60 and made the page look broken. */}
           <div className="streak">
             <div className="big num">{streak.days}</div>
             <div className="tile-label">
-              day{streak.days === 1 ? '' : 's'} under the allowance
+              {streak.days === 0
+                ? 'day streak — the last day went over'
+                : `day${streak.days === 1 ? '' : 's'} in a row under`}
             </div>
           </div>
         </div>

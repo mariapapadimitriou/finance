@@ -26,6 +26,14 @@ CADENCES = [
 ]
 
 MIN_OCCURRENCES = 3          # two points make a line, three make a pattern
+
+# Claiming something has lapsed needs better evidence than claiming one is
+# live. A charge that is still arriving corroborates itself every month; one
+# that stopped has only its history, and "three similar charges that stopped"
+# describes a coffee shop you went to a few times exactly as well as it
+# describes a cancelled subscription. Telling someone they cancelled
+# something they never subscribed to is a worse error than staying quiet.
+MIN_CONFIDENCE_FOR_LAPSED = 0.6
 AMOUNT_TOLERANCE = 0.18      # how much a "same" charge may drift, proportionally
 MAX_INTERVAL_CV = 0.35       # coefficient of variation above which it's not regular
 
@@ -240,11 +248,18 @@ def _price_change(cluster: list[Transaction]) -> dict | None:
     }
 
 
+def is_claimable_lapse(rec: dict) -> bool:
+    """Is this regular enough that calling it cancelled is a fair claim?"""
+    return (not rec["active"]
+            and rec.get("confidence", 0) >= MIN_CONFIDENCE_FOR_LAPSED)
+
+
 def recurring_summary(recurring: list[dict]) -> dict:
     active = [r for r in recurring if r["active"]]
+    lapsed = [r for r in recurring if is_claimable_lapse(r)]
     return {
         "count": len(active),
-        "inactive_count": len(recurring) - len(active),
+        "inactive_count": len(lapsed),
         "monthly_total": round(sum(r["monthly_cost"] for r in active), 2),
         "annual_total": round(sum(r["annual_cost"] for r in active), 2),
     }

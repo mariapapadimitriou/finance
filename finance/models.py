@@ -42,8 +42,6 @@ _PROCESSOR_PREFIXES = [
     r"^DEBIT\s+CARD\s+PURCHASE\s+",
     r"^VISA\s+DEBIT\s+",
     r"^INTERAC\s+(?:E-TRANSFER\s+)?",
-    r"^AMZN\s+MKTP\b",      # collapse Amazon's many storefront descriptors
-    r"^AMAZON\s+MKTPL?\b",
 ]
 
 _NOISE_PATTERNS = [
@@ -121,6 +119,20 @@ def normalize_merchant(description: str) -> str:
 
     s = description.upper().strip()
 
+    # Amazon first, against the descriptor as written.
+    #
+    # It used to be collapsed by stripping "AMZN MKTP" as though it were a
+    # processor prefix, which removed the only word identifying Amazon —
+    # leaving "AMZN MKTP CA" as the country code alone, a merchant called
+    # "Ca". The key below is the thing that recognises Amazon, so it has to
+    # see the descriptor before anything is taken off it.
+    if _AMAZON_KEY.search(s):
+        if "PRIME" in s and "VIDEO" not in s:
+            return "Amazon Prime"
+        if "WEB SERVICES" in s or "AWS" in s.split():
+            return "Amazon Web Services"
+        return "Amazon"
+
     for pat in _PROCESSOR_PREFIXES:
         s = re.sub(pat, " ", s)
 
@@ -134,14 +146,6 @@ def normalize_merchant(description: str) -> str:
     s = re.sub(r"[*_|]+", " ", s)
     s = re.sub(r"[^\w&'\-\s]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
-
-    # Amazon shows up a dozen ways; one key keeps its spend in one bucket.
-    if _AMAZON_KEY.search(s):
-        if "PRIME" in s and "VIDEO" not in s:
-            return "Amazon Prime"
-        if "WEB SERVICES" in s or s.startswith("AWS"):
-            return "Amazon Web Services"
-        return "Amazon"
 
     if not s:
         return "Unknown"

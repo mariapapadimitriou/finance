@@ -40,18 +40,41 @@ def month_range(transactions: list[Transaction]) -> list[str]:
     return out
 
 
-def is_month_complete(transactions: list[Transaction], month: str) -> bool:
+def is_month_complete(transactions: list[Transaction], month: str,
+                      today: str | None = None) -> bool:
     """Does the data actually cover this month to its end?
 
     An export pulled on the 21st leaves the current month two-thirds full.
     Comparing that against full-month baselines would manufacture a "you're
-    spending less!" story every single month, so anything doing comparisons
-    needs to know.
+    spending less!" story every month, so anything doing comparisons needs
+    to know.
+
+    Reaching the final day is sufficient but not necessary. A quiet last
+    weekend is not missing data, and requiring a charge dated the 31st called
+    a finished month incomplete whenever someone happened to buy nothing —
+    which, with a few cards and a spending plan, is the goal. So a month is
+    also complete once the ledger holds anything dated after it: that is
+    proof the data runs past the month's end, whatever happened inside it.
     """
     dates = [t.date for t in transactions if t.month == month]
     if not dates:
         return False
-    return int(max(dates)[8:10]) >= _days_in_month(month)
+    if int(max(dates)[8:10]) >= _days_in_month(month):
+        return True
+    return any(t.month > month for t in transactions)
+
+
+def is_month_running(month: str, today: str | None = None) -> bool:
+    """Is this month the one happening now?
+
+    Distinct from completeness, and conflating the two is how a finished
+    September came to be described as "still in progress" in October. Only
+    the current month can still be in progress; a past month with a quiet
+    last week is a different situation and reads differently.
+    """
+    from datetime import date as _date
+    now = today or _date.today().isoformat()
+    return month == now[:7]
 
 
 def last_complete_month(transactions: list[Transaction]) -> str | None:
@@ -359,6 +382,10 @@ def summary(transactions: list[Transaction], budgets: dict[str, float] | None = 
         "months": months,
         "latest_month": latest,
         "latest_month_complete": is_month_complete(transactions, latest) if latest else False,
+        # Whether the month is still running, which is not the same question:
+        # a finished month whose last few days were quiet is complete, and a
+        # finished month the data stops short of is neither.
+        "latest_month_running": is_month_running(latest) if latest else False,
         "last_complete_month": last_complete_month(transactions),
         "coverage_gaps": coverage_gaps(transactions),
         "monthly": monthly,

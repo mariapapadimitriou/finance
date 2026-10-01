@@ -860,6 +860,22 @@ def delete_transaction(txn_id: str):
 # Declared date ranges whose spending is reclassified as Travel. See
 # finance/trips.py for why this is declared rather than inferred.
 
+@bp.get("/trips/suggestions")
+def trip_suggestions():
+    """Trips the ledger can see, which nobody has had to remember.
+
+    Suggested only. Declaring a trip recategorises every charge inside it, so
+    the dates and the charges behind them are shown and the decision stays
+    with the person.
+    """
+    from .trip_finder import suggest_trips
+
+    st = store()
+    found = suggest_trips(st.all_transactions(),
+                          declared=[t.to_dict() for t in st.trips()])
+    return jsonify({"suggestions": found})
+
+
 @bp.get("/trips")
 def trips():
     st = store()
