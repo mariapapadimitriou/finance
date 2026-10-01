@@ -86,8 +86,6 @@ export const deleteTrip      = (id) => req(`/api/trips/${id}`, { method: 'DELETE
 
 export const getPlan         = (month) =>
   req(`/api/plan${month ? `?month=${month}` : ''}`);
-export const setPlanAmount   = (amount) =>
-  json('PUT', '/api/plan', { monthly_amount: amount });
 export const simulateSpend   = (amount, month) =>
   json('POST', `/api/plan/simulate${month ? `?month=${month}` : ''}`, { amount });
 export const setBucket       = (name, balance) =>
@@ -102,8 +100,6 @@ export const savePlanSetup   = (income, savings) =>
   json('PUT', '/api/plan/setup', { income, savings });
 export const applyPlanBudgets = () => json('POST', '/api/plan/setup/apply', {});
 export const addFixedCost    = (cost) => json('POST', '/api/plan/fixed', cost);
-export const updateFixedCost = (id, cost) =>
-  json('PATCH', `/api/plan/fixed/${id}`, cost);
 export const deleteFixedCost = (id) =>
   req(`/api/plan/fixed/${id}`, { method: 'DELETE' });
 export const getNudge        = () => req('/api/nudge');
@@ -179,16 +175,13 @@ export const recategorizeAll = () => json('POST', '/api/recategorize', {});
 
 export const dismissFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'POST' });
 export const restoreFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'DELETE' });
-export const runNarrative   = () => req('/api/narrative', { method: 'POST' });
+export const getRead        = () => req('/api/narrative', { method: 'POST' });
 
 // The Savings-tab bot: read-only, advisory, and entirely optional — every
 // number on every tab is computed locally without it.
 export const getAskStatus   = () => req('/api/ask');
 export const ask            = (question, history) =>
   json('POST', '/api/ask', { question, history });
-export const clearLedger    = (account) =>
-  req(`/api/transactions${account ? `?account=${encodeURIComponent(account)}` : ''}`,
-      { method: 'DELETE' });
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 
@@ -205,7 +198,6 @@ export const clearLedger    = (account) =>
  */
 let LEDGER_CURRENCY = '';
 export const setLedgerCurrency = (code) => { LEDGER_CURRENCY = code || ''; };
-export const ledgerCurrency = () => LEDGER_CURRENCY;
 
 export function money(n, { cents = false, sign = false, currency } = {}) {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';

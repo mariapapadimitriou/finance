@@ -251,7 +251,8 @@ export default function App() {
     >
       {tab === 'plan' && <PlanPanel onChanged={load} />}
       {tab === 'today' && (
-        <TodayPanel month={shownPlanMonth} onMonth={setPlanMonth} version={version} />
+        <TodayPanel month={shownPlanMonth} onMonth={setPlanMonth}
+                    onTab={setTab} version={version} />
       )}
       {tab === 'overview' && (
         <OverviewPanel summary={summary} insights={insights} theme={theme}
@@ -268,7 +269,7 @@ export default function App() {
                            accounts={accounts} onChanged={load} />
       )}
       {tab === 'budgets' && (
-        <BudgetsPanel month={shownMonth} summary={summary} version={version} />
+        <BudgetsPanel onTab={setTab} month={shownMonth} summary={summary} version={version} />
       )}
       {tab === 'trips' && <TripsPanel onChanged={load} />}
       {tab === 'accounts' && <AccountsPanel onChanged={load} />}

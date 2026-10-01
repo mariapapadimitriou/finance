@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, ErrorNote, Notice } from '../components/ui.jsx';
 import {
-  clearLedger, getBundled, getHealth, getImports, getSources, importBundled,
+  getBundled, getHealth, getImports, getSources, importBundled,
   importFiles, money,
 } from '../api.js';
 
@@ -49,21 +49,6 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
     }
   }
 
-  async function reset() {
-    if (!window.confirm(
-      'Delete every imported transaction? Budgets and category corrections are kept. '
-      + 'This cannot be undone, but you can re-import your CSVs.'
-    )) return;
-    setError(null);
-    setResults(null);
-    try {
-      await clearLedger();
-      await refresh();
-      await onImported();
-    } catch (e) {
-      setError(e);
-    }
-  }
 
   const csv = sources?.sources?.find((s) => s.key === 'csv');
   const others = sources?.sources?.filter((s) => s.key !== 'csv') ?? [];
@@ -223,30 +208,6 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
         </Card>
       </div>
 
-      {accounts.length > 0 && (
-        <Card title="Your cards">
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Card</th><th className="r">Transactions</th>
-                  <th>Covers</th><th className="r">Total spend</th>
-                </tr>
-              </thead>
-              <tbody>
-                {accounts.map((a) => (
-                  <tr key={a.account_id}>
-                    <td className="merchant">{a.account_name}</td>
-                    <td className="r">{a.transactions}</td>
-                    <td className="muted">{a.first_date} → {a.last_date}</td>
-                    <td className="r">{money(a.total_spend)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
 
       {history.length > 0 && (
         <Card title="Recent imports">
@@ -270,10 +231,6 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
                 ))}
               </tbody>
             </table>
-          </div>
-          <div className="row" style={{ marginTop: 16 }}>
-            <span className="spacer" />
-            <button className="btn quiet" onClick={reset}>Clear all transactions</button>
           </div>
         </Card>
       )}

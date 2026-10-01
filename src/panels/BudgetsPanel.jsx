@@ -15,7 +15,7 @@ const STATE_TEXT = {
   good: 'On track',
 };
 
-export default function BudgetsPanel({ month, summary, version = 0 }) {
+export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [draft, setDraft] = useState({});
@@ -46,61 +46,33 @@ export default function BudgetsPanel({ month, summary, version = 0 }) {
     }
   }
 
-  async function seed() {
-    setSaving(true);
-    try {
-      await setBudgets(data.suggested);
-      await load();
-    } finally {
-      setSaving(false);
-    }
-  }
 
   if (error) return <ErrorNote error={error} onRetry={load} />;
   if (!data) return <Loading what="budgets" />;
 
   const rows = data.status ?? [];
-  const suggested = Object.entries(data.suggested ?? {});
   const partial = month === summary.latest_month && !summary.latest_month_complete;
   const running = partial && summary.latest_month_running;
 
+  // No second budget suggester on this tab. Budgets come from the Plan
+  // tab's arithmetic — income less commitments less savings, divided in your
+  // own proportions. A rival one seeded from past spending could never ask
+  // for less than last month, which is the whole point of the plan.
   return (
     <div className="stack">
       {rows.length === 0 ? (
         <Card title="No budgets set yet">
           <p className="muted">
-            Budgets here are seeded from what you actually spend rather than a
-            generic template. Discretionary categories are proposed 10% below
-            your own median — a nudge, not a cliff — while essentials are set at
-            your median, since deciding to use less electricity doesn&apos;t make
-            it so.
+            Budgets are worked out on the Plan tab: what you take home, less
+            your commitments and what you&apos;re saving, divided across
+            categories in the proportions you already spend them. That way the
+            total is a decision and only the split comes from your history.
           </p>
-          {suggested.length > 0 ? (
-            <>
-              <div className="table-wrap" style={{ marginTop: 12 }}>
-                <table>
-                  <thead>
-                    <tr><th>Category</th><th className="r">Suggested monthly budget</th></tr>
-                  </thead>
-                  <tbody>
-                    {suggested.map(([cat, amt]) => (
-                      <tr key={cat}>
-                        <td>{cat}</td>
-                        <td className="r">{money(amt)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <button className="btn primary" onClick={seed} disabled={saving}
-                      style={{ marginTop: 14 }}>
-                {saving ? 'Setting…' : `Use these ${suggested.length} budgets`}
-              </button>
-            </>
-          ) : (
-            <Empty title="Not enough history to suggest budgets">
-              Import a few months of statements first.
-            </Empty>
+          {onTab && (
+            <button className="btn primary" style={{ marginTop: 14 }}
+                    onClick={() => onTab('plan')}>
+              Set up your plan
+            </button>
           )}
         </Card>
       ) : (
@@ -209,7 +181,7 @@ export default function BudgetsPanel({ month, summary, version = 0 }) {
                           aria-label={`${r.category} monthly budget`}
                         />
                       </td>
-                      <td className="r muted">{money(data.suggested?.[r.category] ?? 0)}</td>
+                      <td className="r muted">{money(data.typical?.[r.category] ?? 0)}</td>
                     </tr>
                   ))}
                 </tbody>

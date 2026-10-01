@@ -2,14 +2,13 @@
 
 Every route is read-only against your local SQLite file except the import,
 category and budget endpoints. Nothing here reaches the network apart from the
-optional /api/narrative call and a Plaid sync you explicitly configure.
+optional Claude call on the Savings tab and a Plaid sync you configure.
 """
 
 from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify, request
 
-from . import narrative
 from .analytics import (
     budget_status,
     by_category,
@@ -65,7 +64,7 @@ def health():
 def sources():
     return jsonify({
         "sources": [s.status().to_dict() for s in all_sources()],
-        "narrative": narrative.status(),
+        "narrative": _advisor_status(),
     })
 
 
@@ -508,7 +507,7 @@ def insights():
     return jsonify({
         "findings": findings,
         "summary": findings_summary(findings),
-        "narrative": narrative.status(),
+        "narrative": _advisor_status(),
     })
 
 
@@ -526,25 +525,14 @@ def restore_insight(insight_id: str):
 
 @bp.post("/narrative")
 def run_narrative():
-    """Optional Claude read. Sends aggregates only — see finance/narrative.py."""
-    txns = _txns()
-    if not txns:
-        return jsonify({"available": False, "text": "",
-                        "detail": "Import some transactions first."})
+    """The written read on the Savings tab.
 
-    s = build_summary(txns, store().budgets())
-    found = generate_findings(txns, store().dismissed())
-    rec = detect_recurring(txns)
-
-    if request.args.get("preview") == "1":
-        return jsonify({"payload": narrative.build_payload(s, found, rec),
-                        **narrative.status()})
-
-    try:
-        return jsonify(narrative.analyze(s, found, rec))
-    except Exception as exc:  # noqa: BLE001 - surface API failures to the UI
-        return jsonify({"available": False, "text": "",
-                        "detail": f"Claude request failed: {exc}"}), 502
+    One Claude surface, two ways in: this asks the question for you, and
+    /api/ask takes your own. Both use the same read-only tools over the
+    ledger, so neither can quote a figure the tabs disagree with.
+    """
+    from . import advisor
+    return jsonify(advisor.summarise(store()))
 
 
 # ── Spend plan: safe to spend, buckets, "how am I doing" ─────────────────
@@ -1083,6 +1071,11 @@ def ask():
                         "error": _explain_advisor_error(exc)}), 502
 
 
+def _advisor_status() -> dict:
+    from . import advisor
+    return advisor.status()
+
+
 def _explain_advisor_error(exc: Exception) -> str:
     """Say which of the few things that can go wrong actually did."""
     import anthropic
@@ -1199,7 +1192,10 @@ def budgets():
         "budgets": b,
         "month": month,
         "status": status,
-        "suggested": _suggest_budgets(txns),
+        # What you usually spend, beside each budget. The old "suggested"
+        # figure was a rival budget seeded from past spending, which could
+        # never ask for less than last month; the Plan tab owns budgets now.
+        "typical": _typical_by_category(txns),
         "covered_spend": covered,
         "month_spend": everything,
         "unbudgeted_spend": round(everything - covered, 2),
@@ -1223,25 +1219,3 @@ def set_budgets():
             return jsonify({"error": f"Invalid amount for '{category}'."}), 400
 
     return jsonify({"ok": True, "budgets": store().budgets()})
-
-
-def _suggest_budgets(txns) -> dict:
-    """Seed budgets from what you actually spend, not from a generic template.
-
-    Discretionary categories are seeded 10% under your median as a nudge;
-    essentials are seeded at the median, since you can't decide to use less
-    electricity by writing a smaller number down.
-    """
-    from .analytics import category_baselines
-    from .categorize import is_discretionary
-
-    base = category_baselines(txns)
-    out = {}
-    for category, stats in base.items():
-        # Fees and interest get no budget line: budgeting for them normalizes
-        # something the savings engine is trying to get to zero.
-        if stats["median"] < 20 or category in {"Income", "Transfers", "Fees & Interest"}:
-            continue
-        factor = 0.9 if is_discretionary(category) else 1.0
-        out[category] = round(stats["median"] * factor, -1) or round(stats["median"], 2)
-    return out
