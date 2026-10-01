@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
-  coverFromBucket, deleteBucket, getPlan, money, monthLabel, setBucket,
+  coverFromBucket, deleteBucket, getNudge, getPlan, money, monthLabel, setBucket,
   setPlanAmount, simulateSpend,
 } from '../api.js';
 
@@ -15,6 +15,7 @@ import {
  */
 export default function TodayPanel({ month, onMonth, version = 0 }) {
   const [data, setData] = useState(null);
+  const [nudge, setNudge] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -25,6 +26,12 @@ export default function TodayPanel({ month, onMonth, version = 0 }) {
     setError(null);
     try {
       setData(await getPlan(month));
+      // The server decides whether there is anything to say: it speaks only
+      // about the current month, never on the 1st, and never about a day it
+      // has no data for. Gating again here on which month is being *viewed*
+      // silenced it entirely, because the panel falls back to the last month
+      // with statements whenever this one is still empty.
+      setNudge((await getNudge().catch(() => null))?.nudge ?? null);
     } catch (e) {
       setError(e);
     }
@@ -46,6 +53,12 @@ export default function TodayPanel({ month, onMonth, version = 0 }) {
   return (
     <div className="stack">
       <ErrorNote error={error} onRetry={load} />
+
+      {nudge && (
+        <Notice kind={nudge.kind === 'over' ? 'error' : 'good'}>
+          <strong>{nudge.headline}</strong> {nudge.detail}
+        </Notice>
+      )}
 
       {!live && (
         <Notice>
@@ -101,7 +114,12 @@ const ordinal = (n) =>
 /* ── The number ──────────────────────────────────────────────────────────── */
 
 function SafeToSpend({ state, live }) {
-  const over = state.safe_today < 0;
+  // The number to act on. A shortfall is spread over the days that remain
+  // rather than dumped on today, so the headline stays a figure you can use;
+  // the strict rollover is still shown in the breakdown underneath.
+  const headline = state.safe_today_effective ?? state.safe_today;
+  const over = headline < 0;
+  const recovering = state.recovering;
   const carried = state.carried_in;
 
   return (
@@ -113,7 +131,7 @@ function SafeToSpend({ state, live }) {
                   : `Left on the last day of ${monthLabel(state.month)}`}
           </div>
           <div className={`figure num${over ? ' bad' : ''}`}>
-            {money(state.safe_today, { cents: true })}
+            {money(headline, { cents: true })}
           </div>
           <div className="caption">
             Day {state.day} of {state.days_in_month} ·{' '}
@@ -123,11 +141,13 @@ function SafeToSpend({ state, live }) {
               : `${money(state.remaining, { cents: true })} left of ${money(state.budget)}`}
           </div>
         </div>
-        {over && (
+        {over ? (
           <StatusPill state="critical">
-            Over by {money(-state.safe_today, { cents: true })}
+            Over by {money(-headline, { cents: true })}
           </StatusPill>
-        )}
+        ) : recovering ? (
+          <StatusPill state="warning">Catching up</StatusPill>
+        ) : null}
       </div>
 
       <div className="sum">
@@ -147,9 +167,34 @@ function SafeToSpend({ state, live }) {
                  value={state.spent_today}
                  note={`discretionary charges dated the ${state.day}${ordinal(state.day)}`} />
         <span className="op" aria-hidden="true">=</span>
-        <SumTerm label={live ? 'Safe to spend' : 'What was left'}
-                 value={state.safe_today} strong tone={over ? 'bad' : 'good'} />
+        <SumTerm label={recovering ? 'Strictly, today' : live ? 'Safe to spend' : 'What was left'}
+                 value={state.safe_today}
+                 tone={state.safe_today < 0 ? 'bad' : 'good'}
+                 strong={!recovering} />
       </div>
+
+      {recovering && (
+        <div className="sum" style={{ marginTop: 10 }}>
+          <SumTerm label="Left this month" value={state.remaining}
+                   note={`${money(state.budget)} − ${money(state.spent_mtd)} spent`} />
+          <span className="op" aria-hidden="true">÷</span>
+          <SumTerm label="Days left" value={state.days_left} money={false}
+                   note="today included" />
+          <span className="op" aria-hidden="true">=</span>
+          <SumTerm label="Spread over the rest" value={headline} strong
+                   tone="good" />
+        </div>
+      )}
+
+      {recovering && (
+        <p className="assumption" style={{ marginBottom: 0 }}>
+          You went over earlier in the month, so the shortfall is spread across
+          the days that are left rather than all landing on today. Strictly
+          you are {money(-state.safe_today, { cents: true })} behind; every
+          remaining day takes a small share of that instead, and the month
+          still balances.
+        </p>
+      )}
 
       {over && (
         <p className="assumption" style={{ marginBottom: 0 }}>
@@ -185,12 +230,12 @@ function SafeToSpend({ state, live }) {
   );
 }
 
-function SumTerm({ label, value, note, strong = false, tone }) {
+function SumTerm({ label, value, note, strong = false, tone, money: asMoney = true }) {
   return (
     <div className={`term${strong ? ' strong' : ''}`}>
       <div className="k">{label}</div>
       <div className={`v num${tone ? ` ${tone}` : ''}`}>
-        {money(value, { cents: true })}
+        {asMoney ? money(value, { cents: true }) : value}
       </div>
       {note && <div className="n">{note}</div>}
     </div>
