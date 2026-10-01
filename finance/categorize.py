@@ -90,7 +90,9 @@ RULES: list[tuple[str, str]] = [
     # "payment\W*thank you" also covers TD's "PAYMENT - THANK YOU", which a
     # literal "payment -" never matched: no word boundary follows the dash.
     (r"\b(payment\W*thank you|payment received|payment from|autopay|"
-     r"online payment|pre-?authorized payment|pmt thank you)\b", "Transfers"),
+     r"online payment|online banking payment|credit card payment|"
+     r"pre-?authorized payment|pre-?auth\w*\s*pymt|mobile\s*pymt|"
+     r"automatic payment\W*thank|pmt thank you)\b", "Transfers"),
     # Wealthsimple leaves the merchant blank on payments; the row reads just
     # "Payment". Anchored to the whole merchant so "Payment Depot" still shops.
     (r"^payments?\s*\|\|", "Transfers"),
@@ -260,6 +262,21 @@ RULES: list[tuple[str, str]] = [
 
 _COMPILED = [(re.compile(p, re.I), cat) for p, cat in RULES]
 
+# Issuer codes trusted ahead of the descriptor rules.
+#
+# Normally a descriptor rule beats the issuer's own label, because this app's
+# rules are specific and an issuer's categories are coarse. These three are
+# the exception: the issuer is reporting a fact about the transaction rather
+# than guessing at a merchant, and getting one wrong does not mislabel
+# spending, it moves money. A card payment read as a purchase is a negative in
+# a spending category, which subtracts from the month and makes it look
+# cheaper than it was — the one error here that flatters you.
+AUTHORITATIVE_ISSUER_CATEGORIES = {
+    "loan_payments_credit_card_payment": "Transfers",
+    "transfer_in_account_transfer": "Transfers",
+    "transfer_out_account_transfer": "Transfers",
+}
+
 # The issuer's own label, when we have nothing better to go on.
 ISSUER_CATEGORY_MAP = {
     "food & drink": "Dining",
@@ -321,6 +338,10 @@ def categorize(merchant: str, description: str = "", issuer_category: str = "",
     if overrides and key in overrides:
         return overrides[key], "merchant_override"
 
+    code = (issuer_category or "").strip().lower()
+    if code in AUTHORITATIVE_ISSUER_CATEGORIES:
+        return AUTHORITATIVE_ISSUER_CATEGORIES[code], "issuer"
+
     haystack = f"{merchant} || {description}"
     for pattern, category in _COMPILED:
         if pattern.search(haystack):
@@ -348,3 +369,28 @@ def apply_categories(transactions, overrides: dict[str, str] | None = None) -> N
         t.category, t.category_source = categorize(
             t.merchant, t.description, issuer_cat, overrides
         )
+        if _is_unrecognized_card_inflow(t):
+            t.category, t.category_source = "Transfers", "card_inflow"
+
+
+def _is_unrecognized_card_inflow(t) -> bool:
+    """Money arriving on a credit card that nothing recognized.
+
+    Every bank spells a card payment differently and the list is open-ended,
+    so a rule per spelling will always be one bank behind. This is the backstop
+    underneath them: on a credit card, a negative amount is money coming in,
+    and the three things it can be are a payment, a refund and a credit.
+
+    A refund is recognizable — it carries the merchant it came from, so it
+    lands in that merchant's category and nets against it, which is right. A
+    payment carries no merchant and lands in "Other". So an inflow that
+    nothing could identify is a payment, and counting it as spending would
+    subtract it from the month.
+
+    Deliberately limited to accounts Plaid has told us are credit. On a
+    chequing account an unrecognized outflow really can be spending, and
+    guessing there would hide it.
+    """
+    if t.amount >= 0 or t.category != "Other":
+        return False
+    return str((t.raw or {}).get("account_type", "")).lower() == "credit"

@@ -107,11 +107,25 @@ def _plaid_message(body: str) -> str:
     return body.strip()[:300]
 
 
+# How much history to ask the bank for when a card is first connected.
+#
+# Plaid's default is 90 days, which is not enough to see a yearly subscription
+# renew, to compare this December with the last one, or to average a category
+# over anything but a quarter. 730 days is the maximum Plaid allows.
+#
+# This is fixed at the moment the Item is created and cannot be raised
+# afterwards: Plaid's own guidance is that extending an existing Item's
+# history means removing it and linking again. So asking for the maximum up
+# front costs nothing and saves a relink later.
+DAYS_REQUESTED = 730
+
+
 def create_link_token(user_id: str = "spendie-user") -> dict:
     """A short-lived token that authorises one run of Plaid Link."""
     from plaid.model.country_code import CountryCode
     from plaid.model.link_token_create_request import LinkTokenCreateRequest
     from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+    from plaid.model.link_token_transactions import LinkTokenTransactions
     from plaid.model.products import Products
 
     resp = _client().link_token_create(LinkTokenCreateRequest(
@@ -120,6 +134,7 @@ def create_link_token(user_id: str = "spendie-user") -> dict:
         products=[Products("transactions")],
         country_codes=[CountryCode(c) for c in COUNTRY_CODES],
         language="en",
+        transactions=LinkTokenTransactions(days_requested=DAYS_REQUESTED),
     )).to_dict()
     return {"link_token": resp["link_token"], "expiration": str(resp.get("expiration", ""))}
 

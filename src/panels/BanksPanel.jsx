@@ -148,13 +148,22 @@ export default function BanksPanel({ onChanged, onTab }) {
   return (
     <div className="stack">
       <ErrorNote error={error} onRetry={load} />
+      {error && configured && (
+        <Credentials shape={credentials} environment={environment}
+                     check={check} checking={busy} result={keyCheck} />
+      )}
 
       {!configured && (
         <Notice>
           <strong>Plaid isn&apos;t set up on this deployment yet.</strong> Add{' '}
           <code>PLAID_CLIENT_ID</code>, <code>PLAID_SECRET</code> and{' '}
           <code>PLAID_ENV</code> to the project&apos;s environment variables and
-          redeploy. Until then you can still import statements on the Import tab.
+          redeploy. Until then you can still{' '}
+          {onTab ? (
+            <button className="link" onClick={() => onTab('import')}>
+              import statements from a file
+            </button>
+          ) : 'import statements from a file'}.
         </Notice>
       )}
 
@@ -182,59 +191,6 @@ export default function BanksPanel({ onChanged, onTab }) {
           <code>PLAID_ENV</code> to <code>production</code> when you&apos;re ready
           for the real thing.
         </Notice>
-      )}
-
-      {configured && (
-        <Card title="Plaid credentials"
-              hint={`Checked against the ${environment} environment`}
-              actions={
-                <button className="btn" onClick={check} disabled={busy}>
-                  {busy ? 'Checking…' : 'Check credentials'}
-                </button>
-              }>
-          {/* Length and character class, never any of the value. Enough to
-              spot a truncated paste or a swapped pair; useless to anyone
-              reading over your shoulder. */}
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Variable</th><th>Length</th><th>Characters</th><th /></tr>
-              </thead>
-              <tbody>
-                {[['PLAID_CLIENT_ID', credentials?.client_id],
-                  ['PLAID_SECRET', credentials?.secret]].map(([name, c]) => (
-                  <tr key={name}>
-                    <td className="merchant"><code>{name}</code></td>
-                    <td>{c?.set ? `${c.length} chars` : 'not set'}</td>
-                    <td className="muted">
-                      {c?.set ? (c.hex_only ? 'hex' : 'mixed') : '—'}
-                    </td>
-                    <td>
-                      {!c?.set
-                        ? <StatusPill state="critical">Missing</StatusPill>
-                        : c.had_surrounding_whitespace
-                          ? <StatusPill state="warning">Had whitespace</StatusPill>
-                          : <StatusPill state="good">Set</StatusPill>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {keyCheck && (
-            <Notice kind={keyCheck.ok ? 'good' : 'error'}>
-              {keyCheck.ok ? keyCheck.message : keyCheck.error}
-            </Notice>
-          )}
-
-          <p className="assumption" style={{ marginBottom: 0 }}>
-            Plaid issues one client ID for your whole account and a{' '}
-            <strong>separate secret per environment</strong>. Both are 24
-            lowercase hex characters. A secret of any other length or shape is
-            the wrong value rather than the wrong environment.
-          </p>
-        </Card>
       )}
 
       <Card
@@ -361,5 +317,72 @@ function Skipped({ items, onTab }) {
       ) : 'Choose which accounts to sync on the Accounts tab'}
       {' '}— the choice sticks, so a card you switch off stays off.
     </div>
+  );
+}
+
+/**
+ * What the credentials look like, shown only when something has gone wrong.
+ *
+ * Length and character class, never any part of a value: enough to catch a
+ * truncated paste, a swapped pair or a secret from the wrong environment,
+ * and useless to anyone reading over your shoulder.
+ *
+ * It used to sit on the page permanently, which was right while the keys were
+ * being set up and clutter once they worked. A diagnostic belongs where the
+ * fault is, so it appears with the error and nowhere else.
+ */
+function Credentials({ shape, environment, check, checking, result }) {
+  return (
+    <details className="card" style={{ padding: '14px 18px' }}>
+      <summary className="small" style={{ cursor: 'pointer' }}>
+        Check the Plaid keys for the <strong>{environment}</strong> environment
+      </summary>
+
+      <div className="table-wrap" style={{ marginTop: 12 }}>
+        <table>
+          <thead>
+            <tr><th>Variable</th><th>Length</th><th>Characters</th><th /></tr>
+          </thead>
+          <tbody>
+            {[['PLAID_CLIENT_ID', shape?.client_id],
+              ['PLAID_SECRET', shape?.secret]].map(([name, c]) => (
+              <tr key={name}>
+                <td className="merchant"><code>{name}</code></td>
+                <td>{c?.set ? `${c.length} chars` : 'not set'}</td>
+                <td className="muted">
+                  {c?.set ? (c.hex_only ? 'hex' : 'mixed') : '—'}
+                </td>
+                <td>
+                  {!c?.set
+                    ? <StatusPill state="critical">Missing</StatusPill>
+                    : c.had_surrounding_whitespace
+                      ? <StatusPill state="warning">Had whitespace</StatusPill>
+                      : <StatusPill state="good">Set</StatusPill>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="controls" style={{ marginTop: 12 }}>
+        <button className="btn" onClick={check} disabled={checking}>
+          {checking ? 'Checking…' : 'Test these against Plaid'}
+        </button>
+      </div>
+
+      {result && (
+        <Notice kind={result.ok ? 'good' : 'error'}>
+          {result.ok ? result.message : result.error}
+        </Notice>
+      )}
+
+      <p className="assumption" style={{ marginBottom: 0 }}>
+        Plaid issues one client ID for your whole account and a{' '}
+        <strong>separate secret per environment</strong>. Both are 24 lowercase
+        hex characters; any other length or shape is the wrong value rather
+        than the wrong environment.
+      </p>
+    </details>
   );
 }

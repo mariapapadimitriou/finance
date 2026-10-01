@@ -62,6 +62,7 @@ class FakePlaid:
         self.pages = list(pages)
         self.calls = []
         self.removed_items = []
+        self.link_requests = []
 
     def transactions_sync(self, request):
         self.calls.append(_as_dict(request))
@@ -77,6 +78,7 @@ class FakePlaid:
         return _Resp({"removed": True})
 
     def link_token_create(self, request):
+        self.link_requests.append(_as_dict(request))
         return _Resp({"link_token": "link-sandbox-123", "expiration": "2026-01-01"})
 
 
@@ -621,3 +623,17 @@ class TestRemovingAnAccountSticks:
         plaid_link.sync_all(store)
         plaid_link.unlink(store, "item-1")
         assert store.account_sync_rules() == {}
+
+
+class TestHistoryRequested:
+    """Ninety days is not enough to see a year-on-year anything."""
+
+    def test_two_years_are_asked_for_at_link_time(self, store, fake):
+        client = fake([])
+        plaid_link.create_link_token()
+        sent = client.link_requests[0]
+        assert sent["transactions"]["days_requested"] == 730
+
+    def test_it_is_the_most_plaid_allows(self):
+        """Higher is rejected outright, and the window cannot be raised later."""
+        assert plaid_link.DAYS_REQUESTED == 730
