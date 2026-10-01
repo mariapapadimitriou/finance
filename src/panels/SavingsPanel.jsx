@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Card, Empty, Notice } from '../components/ui.jsx';
 import AskPanel from './AskPanel.jsx';
-import { dateLabel, dismissFinding, money, pct, restoreFinding, runNarrative } from '../api.js';
+import { dateLabel, dismissFinding, money, pct, restoreFinding } from '../api.js';
 
 const EFFORT = {
   'one-off': { label: 'One-off action', hint: 'Cancel, dispute or switch once and it stays saved.' },
@@ -14,12 +14,9 @@ const CONFIDENCE = (c) =>
 
 export default function SavingsPanel({ insights, onRefresh }) {
   const [busy, setBusy] = useState(null);
-  const [narrative, setNarrative] = useState(null);
-  const [narrativeError, setNarrativeError] = useState(null);
 
   const findings = insights?.findings ?? [];
   const summary = insights?.summary ?? {};
-  const claude = insights?.narrative ?? {};
 
   async function dismiss(id) {
     setBusy(id);
@@ -31,17 +28,6 @@ export default function SavingsPanel({ insights, onRefresh }) {
     }
   }
 
-  async function askClaude() {
-    setBusy('narrative');
-    setNarrativeError(null);
-    try {
-      setNarrative(await runNarrative());
-    } catch (e) {
-      setNarrativeError(e);
-    } finally {
-      setBusy(null);
-    }
-  }
 
   if (findings.length === 0) {
     return (
@@ -84,34 +70,6 @@ export default function SavingsPanel({ insights, onRefresh }) {
         </p>
       </div>
 
-      {(claude.available || narrative) && (
-        <Card
-          title="Written read"
-          hint={claude.available
-            ? 'Optional — sends category totals and merchant names to Claude, never individual transactions'
-            : ''}
-          actions={
-            <button className="btn" onClick={askClaude} disabled={busy === 'narrative'}>
-              {busy === 'narrative' ? 'Thinking…' : narrative ? 'Regenerate' : 'Ask Claude'}
-            </button>
-          }
-        >
-          {narrativeError && <Notice kind="error">{String(narrativeError.message)}</Notice>}
-          {narrative?.text
-            ? <div className="narrative">{narrative.text}</div>
-            : <p className="muted small" style={{ margin: 0 }}>
-                The findings below stand on their own; this adds a written summary
-                that ranks them for you.
-              </p>}
-        </Card>
-      )}
-
-      {!claude.available && (
-        <Notice>
-          <strong>Optional Claude summary is off.</strong> {claude.detail} The rule
-          engine below works entirely offline and needs no key.
-        </Notice>
-      )}
 
       {grouped.map(([effort, list]) => (
         <div key={effort} className="stack">

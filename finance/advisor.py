@@ -186,6 +186,28 @@ def _tools(store):
             subscriptions, budgets, the_plan, savings_findings]
 
 
+# The unprompted read. Phrased as a question because that is what it is —
+# the same tools, the same rules, just one nobody had to type.
+SUMMARY_REQUEST = (
+    "Give me a read on my spending. Look at the months I have, where the money "
+    "goes, what has changed recently, what is renewing without a decision, and "
+    "how that sits against my plan. Tell me the two or three things that "
+    "actually matter and why, in under 250 words. If the honest answer is that "
+    "nothing is wrong, say that."
+)
+
+
+def summarise(store) -> dict:
+    """The written read, unprompted.
+
+    The same tools and the same rules as a question — it is one. Keeping a
+    second code path for it meant a second system prompt, a second model
+    choice, and a hand-built payload that could quote figures no tab agreed
+    with; this one looks them up like everything else.
+    """
+    return ask(store, SUMMARY_REQUEST)
+
+
 def ask(store, question: str, history: list[dict] | None = None) -> dict:
     """Answer one question, looking things up as needed.
 

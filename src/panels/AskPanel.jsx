@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, ErrorNote, Notice } from '../components/ui.jsx';
-import { ask, getAskStatus } from '../api.js';
+import { ask, getAskStatus, getRead } from '../api.js';
 
 /**
- * Ask about your own spending.
+ * Claude on the Savings tab: one surface, two ways in.
+ *
+ * "Give me a read" asks the question for you; the box takes your own. Both
+ * run the same read-only tools over the ledger, which is why they are one
+ * component — the written summary used to be a separate feature with its own
+ * prompt, its own model and a hand-built payload that could quote figures no
+ * tab agreed with.
  *
  * The rule engine below finds what it was written to find. This is for the
  * rest — the questions nobody could enumerate in advance, and the follow-up
@@ -42,6 +48,26 @@ export default function AskPanel() {
   useEffect(() => {
     if (turns.length) endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [turns]);
+
+  /** The unprompted read. Same tools, same rules; nobody had to type it. */
+  async function readMySpending() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setTurns([{ role: 'user', content: 'Give me a read on my spending.' }]);
+    try {
+      const r = await getRead();
+      if (r.error) setError(new Error(r.error));
+      else setTurns((t) => [...t, {
+        role: 'assistant', content: r.answer,
+        consulted: r.consulted, truncated: r.truncated,
+      }]);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function send(question) {
     const text = (question ?? draft).trim();
@@ -92,6 +118,10 @@ export default function AskPanel() {
         <>
           {turns.length === 0 && (
             <div className="controls" style={{ marginBottom: 14 }}>
+              <button className="btn primary" disabled={busy}
+                      onClick={readMySpending}>
+                Give me a read
+              </button>
               {SUGGESTIONS.map((q) => (
                 <button key={q} className="btn quiet" disabled={busy}
                         onClick={() => send(q)}>

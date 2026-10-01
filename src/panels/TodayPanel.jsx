@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
   coverFromBucket, deleteBucket, getNudge, getPlan, money, monthLabel, setBucket,
-  setPlanAmount, simulateSpend,
+  simulateSpend,
 } from '../api.js';
 
 /**
@@ -13,7 +13,7 @@ import {
  * what today has already used. A safe-to-spend figure you can't reconstruct is
  * indistinguishable from one that was made up.
  */
-export default function TodayPanel({ month, onMonth, version = 0 }) {
+export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
   const [data, setData] = useState(null);
   const [nudge, setNudge] = useState(null);
   const [error, setError] = useState(null);
@@ -100,8 +100,8 @@ export default function TodayPanel({ month, onMonth, version = 0 }) {
       <div className="grid cols-2">
         <Buckets buckets={buckets} draws={draws} busy={busy} setBusy={setBusy}
                  onChanged={load} setError={setError} />
-        <MonthlyAmount state={state} configured={configured} suggested={suggested}
-                       onChanged={load} setError={setError} />
+        <MonthlyAmount state={state} configured={configured}
+                       suggested={suggested} onTab={onTab} />
       </div>
     </div>
   );
@@ -492,47 +492,45 @@ function Buckets({ buckets, draws, busy, setBusy, onChanged, setError }) {
 
 /* ── The monthly amount everything is measured against ──────────────────── */
 
-function MonthlyAmount({ state, configured, suggested, onChanged, setError }) {
-  const [value, setValue] = useState(String(state.monthly_amount || ''));
-  const [busy, setBusy] = useState(false);
-
-  async function save(e) {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      await setPlanAmount(Number(value || 0));
-      await onChanged();
-    } catch (err) {
-      setError(err);
-    } finally {
-      setBusy(false);
-    }
-  }
-
+function MonthlyAmount({ state, configured, suggested, onTab }) {
   return (
-    <Card title="Monthly spending plan"
-          hint="The figure the daily number divides up">
-      <form className="controls" onSubmit={save}>
-        <label htmlFor="plan-amount">Each month I want to keep discretionary spending under</label>
-        <input id="plan-amount" type="number" min="0" step="10" value={value}
-               onChange={(e) => setValue(e.target.value)} style={{ width: 130 }} />
-        <button className="btn primary" type="submit" disabled={busy}>
-          {busy ? 'Saving…' : 'Save'}
-        </button>
-      </form>
+    <Card title="Where the daily number comes from"
+          hint="Calculated on the Plan tab, not typed here">
+      {/* No input. The figure is income minus commitments minus savings,
+          and a box here that could overwrite it meant two tabs disagreeing
+          about the same month with nothing to say which was right. */}
+      <div className="sum">
+        <SumTerm label="Discretionary budget" value={state.monthly_amount}
+                 note="your leftover, less the essentials" />
+        <span className="op" aria-hidden="true">÷</span>
+        <SumTerm label="Days this month" value={state.days_in_month}
+                 money={false} />
+        <span className="op" aria-hidden="true">=</span>
+        <SumTerm label="A day" value={state.flat_daily} strong />
+      </div>
 
-      {!configured && suggested > 0 && (
-        <p className="assumption">
-          Using <strong>{money(suggested)}</strong> for now — your own median
-          month of discretionary spending, so the daily number starts from what
-          you actually do rather than a template. Set your own above and it
-          stops guessing.
+      {!configured && suggested > 0 ? (
+        <p className="assumption" style={{ marginBottom: 0 }}>
+          This is a stand-in: <strong>{money(suggested)}</strong>, your own
+          median month of discretionary spending, because no plan has been set
+          up yet. Fill in your pay and commitments on the{' '}
+          {onTab
+            ? <button className="link" onClick={() => onTab('plan')}>Plan tab</button>
+            : <strong>Plan tab</strong>}{' '}
+          and this becomes a figure you decided rather than one you happened to
+          spend.
+        </p>
+      ) : (
+        <p className="assumption" style={{ marginBottom: 0 }}>
+          Change your pay, a commitment or what you&apos;re saving on the{' '}
+          {onTab
+            ? <button className="link" onClick={() => onTab('plan')}>Plan tab</button>
+            : <strong>Plan tab</strong>}{' '}
+          and this follows. It is the discretionary slice of what&apos;s left —
+          groceries and the other essentials are budgeted separately, since no
+          amount of restraint on a Tuesday changes the grocery bill.
         </p>
       )}
-      <p className="assumption" style={{ marginBottom: 0 }}>
-        {money(state.monthly_amount)} ÷ {state.days_in_month} days ={' '}
-        <strong className="num">{money(state.flat_daily, { cents: true })}</strong> a day.
-      </p>
     </Card>
   );
 }
