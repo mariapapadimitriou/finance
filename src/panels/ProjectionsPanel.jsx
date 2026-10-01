@@ -24,7 +24,11 @@ export default function ProjectionsPanel({ insights, version = 0 }) {
     try {
       const d = await getProjections(goal || undefined);
       setData(d);
-      setIncomeDraft((v) => v || (d.configured_income ? String(d.configured_income) : ''));
+      // Always the stored figure, never a sticky local copy. This is the
+      // same `monthly_income` the Plan tab writes, so keeping whatever was
+      // typed here meant the two tabs could show different pay for the same
+      // person until the page was reloaded.
+      setIncomeDraft(d.configured_income ? String(d.configured_income) : '');
     } catch (e) {
       setError(e);
     }
@@ -65,6 +69,10 @@ export default function ProjectionsPanel({ insights, version = 0 }) {
             {busy ? 'Saving…' : 'Save'}
           </button>
         </form>
+        <p className="assumption" style={{ marginBottom: 0 }}>
+          The same figure the Plan tab uses — change it in either place and
+          both follow.
+        </p>
       </Card>
 
       {!data?.available ? (
