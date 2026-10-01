@@ -522,6 +522,23 @@ class Store:
         return [dict(r) for r in rows]
 
     # ── Settings ─────────────────────────────────────────────────────────────
+    # ── Where the ledger starts ──────────────────────────────────────────
+
+    def ledger_start(self) -> str:
+        """The earliest date that counts, or "" for no limit."""
+        return (self.setting("ledger_start", "") or "").strip()
+
+    def set_ledger_start(self, iso_date: str) -> None:
+        self.set_setting("ledger_start", (iso_date or "").strip())
+
+    def delete_before(self, iso_date: str) -> int:
+        """Remove every transaction earlier than a date."""
+        if not iso_date:
+            return 0
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM transactions WHERE date < ?", (iso_date,))
+            return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+
     def setting(self, key: str, default=None):
         with self.conn() as c:
             row = c.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()

@@ -352,3 +352,80 @@ class TestAccountSyncDecisions:
         rows = client.get("/api/accounts").get_json()["accounts"]
         scotia = next(r for r in rows if r["account_id"] == "scotiabank_amex")
         assert scotia["syncs"] is None
+
+
+class TestWhereTheLedgerStarts:
+    """Months where only some cards were imported read as restraint.
+
+    They are not restraint, they are months with cards missing, and averaged
+    in with complete ones they drag every trend down. Cutting them has to
+    persist: a fresh Plaid link backfills two years, so a one-time deletion
+    would be undone by the next sync.
+    """
+
+    def _loaded(self, client):
+        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+
+    def test_it_reports_what_is_there_before_anything_is_set(self, client):
+        self._loaded(client)
+        body = client.get("/api/ledger/start").get_json()
+        assert body["start"] == ""
+        assert body["earliest"] == "2025-03-19"
+        assert body["latest"] == "2026-08-05"
+        assert body["total"] == 207
+
+    def test_setting_a_date_alone_removes_nothing(self, client):
+        self._loaded(client)
+        r = client.put("/api/ledger/start", json={"start": "2026-03-01"})
+        assert r.get_json()["removed"] == 0
+        assert client.get("/api/ledger/start").get_json()["total"] == 207
+
+    def test_trimming_removes_what_precedes_it(self, client):
+        self._loaded(client)
+        r = client.put("/api/ledger/start",
+                       json={"start": "2026-03-01", "trim": True})
+        assert r.get_json()["removed"] == 92
+        after = client.get("/api/ledger/start").get_json()
+        assert after["total"] == 115
+        assert after["earliest"] >= "2026-03-01"
+        assert after["before_start"] == 0
+
+    def test_a_later_import_cannot_put_them_back(self, client):
+        """The whole point. A one-time deletion would not survive a sync."""
+        self._loaded(client)
+        client.put("/api/ledger/start",
+                   json={"start": "2026-03-01", "trim": True})
+        again = client.post("/api/import/bundled",
+                            json={"key": "scotiabank_amex"}).get_json()
+        assert again["imported"] == 0
+        assert again["before_start"] == 92
+        assert client.get("/api/ledger/start").get_json()["total"] == 115
+
+    def test_an_upload_is_filtered_the_same_way(self, client):
+        client.put("/api/ledger/start", json={"start": "2026-07-01"})
+        r = upload(client, AMEX, "amex.csv").get_json()
+        assert r["results"][0]["before_start"] == 0   # AMEX fixture is July 2026
+        client.put("/api/ledger/start", json={"start": "2027-01-01"})
+        r = upload(client, CHASE, "chase.csv").get_json()
+        assert r["imported"] == 0
+        assert r["results"][0]["before_start"] > 0
+
+    def test_a_bad_date_is_refused(self, client):
+        assert client.put("/api/ledger/start",
+                          json={"start": "March 2026"}).status_code == 400
+
+    def test_clearing_the_date_lets_everything_count_again(self, client):
+        self._loaded(client)
+        client.put("/api/ledger/start", json={"start": "2026-03-01"})
+        client.put("/api/ledger/start", json={"start": ""})
+        assert client.get("/api/ledger/start").get_json()["start"] == ""
+        # The rows were never deleted, so they count again immediately.
+        assert client.get("/api/ledger/start").get_json()["total"] == 207
+
+    def test_trends_use_only_what_remains(self, client):
+        self._loaded(client)
+        before = client.get("/api/summary").get_json()["total_spend"]
+        client.put("/api/ledger/start",
+                   json={"start": "2026-03-01", "trim": True})
+        after = client.get("/api/summary").get_json()["total_spend"]
+        assert after < before
