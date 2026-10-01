@@ -286,7 +286,16 @@ class Store:
                           MAX(source)       AS source,
                           COUNT(*) AS transactions,
                           MIN(date) AS first_date, MAX(date) AS last_date,
-                          SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) AS total_spend
+                          -- "Spend" has to mean the same thing here as it
+                          -- does everywhere else, or the Accounts table and
+                          -- the Overview disagree about the same card. A
+                          -- card payment and a loyalty credit are positive
+                          -- on some statements and are not spending.
+                          SUM(CASE WHEN amount > 0
+                                    AND category NOT IN ('Income', 'Transfers')
+                                   THEN amount ELSE 0 END) AS total_spend,
+                          SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END)
+                              AS total_inflows
                    FROM transactions
                    GROUP BY account_id
                    ORDER BY total_spend DESC"""

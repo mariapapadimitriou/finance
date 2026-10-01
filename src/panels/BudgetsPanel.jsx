@@ -125,6 +125,23 @@ export default function BudgetsPanel({ month, summary, version = 0 }) {
             </Notice>
           )}
 
+          {data.unbudgeted_spend > 1 && (
+            <Notice>
+              <strong>
+                {money(data.unbudgeted_spend)} of this month&apos;s{' '}
+                {money(data.month_spend)} isn&apos;t covered by any budget line.
+              </strong>{' '}
+              The bars below only count categories you have a budget for, so
+              they will always read lower than the Overview until everything
+              has one.{data.unbudgeted?.length > 0 && (
+                <> Missing:{' '}
+                  {data.unbudgeted.slice(0, 5).map((r) => r.category).join(', ')}
+                  {data.unbudgeted.length > 5
+                    && ` and ${data.unbudgeted.length - 5} more`}.</>
+              )}
+            </Notice>
+          )}
+
           <Card title={`Budgets — ${monthLabel(month, { long: true })}`}
                 hint="Spent against budget, with a projection for how the month is likely to end">
             <div className="stack" style={{ gap: 18 }}>

@@ -88,9 +88,18 @@ def last_complete_month(transactions: list[Transaction]) -> str | None:
 
 
 def monthly_totals(transactions: list[Transaction]) -> list[dict]:
-    """Net spend per month, plus the transfers/income excluded from it."""
+    """Net spend per month, and the money that arrived alongside it.
+
+    Income and inflows are kept apart, because they are not the same thing
+    and conflating them was wrong in a way that flattered the numbers. Every
+    negative amount used to count as income, which made a $2,600 card payment
+    read as a $2,600 salary — projecting savings out of your own debt
+    repayment. Only the Income category is income; everything else arriving
+    is an inflow, which is worth reporting and is not earnings.
+    """
     spend = defaultdict(float)
     income = defaultdict(float)
+    inflows = defaultdict(float)
     counts = defaultdict(int)
 
     for t in transactions:
@@ -99,18 +108,44 @@ def monthly_totals(transactions: list[Transaction]) -> list[dict]:
             spend[t.month] += t.amount
             if t.amount > 0:
                 counts[t.month] += 1
-        elif cat == "Income" or t.amount < 0:
+        elif cat == "Income" and t.amount < 0:
             income[t.month] += abs(t.amount)
+        elif t.amount < 0:
+            inflows[t.month] += abs(t.amount)
 
     return [
         {
             "month": m,
             "spend": round(spend.get(m, 0.0), 2),
             "income": round(income.get(m, 0.0), 2),
+            "inflows": round(inflows.get(m, 0.0), 2),
             "transactions": counts.get(m, 0),
         }
         for m in month_range(transactions)
     ]
+
+
+def typical_month_spend(transactions: list[Transaction]) -> float:
+    """What a normal month costs, by the one definition the app uses.
+
+    There were two. The Overview quoted a mean over complete months; the
+    Projections tab quoted a median including the latest, possibly partial,
+    one — and the two disagreed by half on the same ledger while both being
+    labelled the typical month. Either is defensible; having both is not.
+
+    Median, because one holiday should not redefine normal, and complete
+    months only, because a month four days in is not a cheap month.
+    """
+    monthly = monthly_totals(transactions)
+    months = month_range(transactions)
+    latest = months[-1] if months else None
+
+    observed = [m for m in monthly if m["transactions"] > 0]
+    complete = [m for m in observed if m["month"] != latest]
+    rows = complete or observed
+    if not rows:
+        return 0.0
+    return round(statistics.median([m["spend"] for m in rows]), 2)
 
 
 def by_category(transactions: list[Transaction], month: str | None = None) -> list[dict]:
@@ -178,20 +213,28 @@ def by_merchant(transactions: list[Transaction], month: str | None = None,
 
 
 def by_account(transactions: list[Transaction], month: str | None = None) -> list[dict]:
-    rows = spend_only(transactions)
-    if month:
-        rows = [t for t in rows if t.month == month]
+    """Spending per card, and how many rows that card holds.
+
+    The two figures are counted over different sets on purpose, and the
+    column names have to say so. `amount` is spending, so transfers are
+    excluded; `transactions` is every row on the card, because that is what
+    the Accounts tab counts and what removing the card would delete. Counting
+    only the spend rows here put 199 under one heading and 207 under the
+    same heading elsewhere.
+    """
+    scope = [t for t in transactions if not month or t.month == month]
+    spending = {id(t) for t in spend_only(scope)}
 
     agg: dict[str, dict] = {}
-    for t in rows:
+    for t in scope:
         e = agg.setdefault(t.account_id, {
             "account_id": t.account_id,
             "account_name": t.account_name or t.account_id,
             "amount": 0.0, "transactions": 0,
         })
-        e["amount"] += t.amount
-        if t.amount > 0:
-            e["transactions"] += 1
+        e["transactions"] += 1
+        if id(t) in spending:
+            e["amount"] += t.amount
 
     out = [{**e, "amount": round(e["amount"], 2)} for e in agg.values()]
     out.sort(key=lambda r: r["amount"], reverse=True)
@@ -365,14 +408,10 @@ def summary(transactions: list[Transaction], budgets: dict[str, float] | None = 
     latest = months[-1] if months else None
     monthly = monthly_totals(transactions)
 
-    # Average over months that actually contain data: a gap is a month we
-    # never imported, not a month of zero spending, and averaging it in would
-    # understate the true monthly figure.
-    observed = [m for m in monthly if m["transactions"] > 0]
-    complete = [m for m in observed if m["month"] != latest]
-    avg_spend = round(statistics.fmean([m["spend"] for m in complete]), 2) if complete else (
-        round(statistics.fmean([m["spend"] for m in observed]), 2) if observed else 0.0
-    )
+    # Months that actually contain data: a gap is a month we never imported,
+    # not a month of zero spending, and averaging it in would understate the
+    # true monthly figure.
+    avg_spend = typical_month_spend(transactions)
 
     latest_spend = next((m["spend"] for m in monthly if m["month"] == latest), 0.0)
     spend_rows = [t for t in spend_only(transactions) if t.amount > 0]
@@ -391,6 +430,8 @@ def summary(transactions: list[Transaction], budgets: dict[str, float] | None = 
         "monthly": monthly,
         "latest_spend": latest_spend,
         "average_monthly_spend": avg_spend,
+        # Same number, under the name the rest of the app uses for it.
+        "typical_monthly_spend": avg_spend,
         "vs_average": round(latest_spend - avg_spend, 2),
         "total_spend": round(sum(t.amount for t in spend_only(transactions)), 2),
         "transaction_count": len(transactions),

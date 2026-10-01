@@ -46,8 +46,10 @@ def project(transactions, monthly_income: float | None = None,
         return {"available": False,
                 "reason": "No transactions yet — import statements to project."}
 
-    spends = [totals[m]["all_spend"] for m in observed]
-    typical_spend = round(statistics.median(spends), 2)
+    # The same definition the Overview quotes, so the two tabs cannot
+    # disagree about what a normal month costs.
+    from .analytics import typical_month_spend
+    typical_spend = typical_month_spend(transactions)
 
     # Income is only visible when payroll lands on an imported card. Credit card
     # statements usually show none, so it is an input rather than a deduction.
