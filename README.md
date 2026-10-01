@@ -170,21 +170,34 @@ return `Transaction` objects, and call `register()`.
 
 ---
 
-## The optional Claude summary
+## The optional Claude bot
 
-The rule engine computes every number on its own and runs entirely offline. If
-you want the findings turned into a written read, set:
+Every number in the app is computed locally and the whole thing runs offline.
+The Savings tab additionally offers a bot — a written read of your spending, and
+a box to ask it questions. It is the only feature that needs a key:
 
 ```bash
-pip install anthropic
-export ANTHROPIC_API_KEY=...
+pip install anthropic                 # already in requirements.txt
+export ANTHROPIC_API_KEY=sk-ant-...   # from console.anthropic.com
 ```
 
-**This is the only feature that sends anything anywhere.** It sends category
-totals, merchant names and the finding summaries — never individual transactions,
-account numbers, or raw card descriptors. `GET /api/narrative?preview=1` returns
-the exact payload so you can inspect it before enabling anything, and a test
-asserts that no raw descriptors or account numbers can appear in it.
+Without the key `advisor.status()` reports it as off, the tab says so, and
+nothing else changes. `CLAUDE_MODEL` overrides the model (default
+`claude-opus-5-5`).
+
+On Vercel, add `ANTHROPIC_API_KEY` under Settings → Environment Variables
+(Production, marked Sensitive) and redeploy — environment variables are read at
+build time, so an existing deployment will not pick it up.
+
+**This is the only feature that sends anything anywhere**, and what it can send
+is bounded by its tools rather than by a payload we assemble. `finance/advisor.py`
+gives the model eight read-only functions over the ledger — category totals,
+top merchants, charge lookups, subscriptions, budgets, the plan, the findings —
+and it sees only what those return. None of them can write, and none returns a
+name, an address or an account number, because none of those reach the ledger in
+the first place. `tests/test_api.py` walks every tool's reply field by field
+against an allowlist, so a new tool that leaked a raw descriptor would fail the
+suite rather than ship.
 
 ---
 
@@ -374,7 +387,7 @@ finance/
   gamify.py                 Streaks, points and badges — restraint only
   projections.py            Forward projections under two scenarios
   manual.py                 Hand-typed rows, and keeping imports off them
-  narrative.py              Optional Claude layer
+  advisor.py                The Savings bot: Claude over read-only tools
   pipeline.py               source → dedupe → categorize → store
   db.py                     SQLite locally, Postgres when DATABASE_URL is set
   store.py                  Persistence, written once in SQLite's dialect
