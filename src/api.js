@@ -133,6 +133,12 @@ export function getTransactions(filters = {}) {
   return req(`/api/transactions?${params}`);
 }
 
+// Statements shipped with the app for a card that cannot be connected. Safe to
+// call twice: the server runs them through the same de-duplication as an upload.
+export const getBundled    = () => req('/api/import/bundled');
+export const importBundled = (key) =>
+  json('POST', '/api/import/bundled', { key });
+
 export const importFiles = (payload) =>
   // FormData carries binary PDFs correctly; the browser sets the boundary
   // header itself, so we must not set Content-Type here.

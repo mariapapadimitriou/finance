@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, ErrorNote, Notice } from '../components/ui.jsx';
 import {
-  clearLedger, getHealth, getImports, getSources, importFiles, money,
+  clearLedger, getBundled, getHealth, getImports, getSources, importBundled,
+  importFiles, money,
 } from '../api.js';
 
-export default function ImportPanel({ accounts, onImported }) {
+export default function ImportPanel({ accounts, onImported, onTab }) {
   const [sources, setSources] = useState(null);
   const [storage, setStorage] = useState(null);
   const [history, setHistory] = useState([]);
@@ -69,6 +70,21 @@ export default function ImportPanel({ accounts, onImported }) {
 
   return (
     <div className="stack">
+      {onTab && (
+        <Notice>
+          <strong>Connecting a card is the better way in.</strong> A connection
+          keeps itself up to date and never has to be downloaded again, so this
+          page is for what a connection can&apos;t reach: a closed account, or a
+          bank Plaid doesn&apos;t support.{' '}
+          <button className="link" onClick={() => onTab('banks')}>
+            Connect a card instead
+          </button>
+          .
+        </Notice>
+      )}
+
+      <BundledStatements onImported={onImported} />
+
       {/* Said before the upload, not after it. On a serverless instance with
           no database the ledger lives in that instance's /tmp, so an upload
           can disappear when the instance is recycled and a request served by a
@@ -79,9 +95,9 @@ export default function ImportPanel({ accounts, onImported }) {
           <strong>Uploads here are temporary.</strong> This deployment has no
           database attached, so a statement you add lives on one server for as
           long as that server does — usually minutes to hours — and may not be
-          visible on another device at all. The spending already shown is
-          committed to the repository and always loads. To make uploads
-          permanent, attach a Postgres database in the Vercel project
+          visible on another device at all. Nothing is committed to the
+          repository to fall back on. To make uploads permanent, attach a
+          Postgres database in the Vercel project
           (Storage → Create Database) and redeploy; nothing else needs changing.
         </Notice>
       )}
@@ -262,5 +278,100 @@ export default function ImportPanel({ accounts, onImported }) {
         </Card>
       )}
     </div>
+  );
+}
+
+/**
+ * Statements shipped with the app, for a card that cannot be connected.
+ *
+ * A closed account has no feed to sync: its history is complete, it will never
+ * change, and the only copy that survives a database being emptied is the one
+ * committed alongside the code. That makes this the one import worth offering
+ * as a button rather than a file picker — there is no file to choose, and the
+ * account it lands in is already decided.
+ *
+ * Loading twice is harmless and the button says so, because a button that
+ * might double a year of spending is a button nobody dares press.
+ */
+function BundledStatements({ onImported }) {
+  const [sets, setSets] = useState([]);
+  const [busy, setBusy] = useState(null);
+  const [done, setDone] = useState(null);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      setSets((await getBundled()).bundled ?? []);
+    } catch {
+      setSets([]);          // an older build has no such route; say nothing
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function run(key) {
+    setBusy(key);
+    setError(null);
+    try {
+      const r = await importBundled(key);
+      setDone(r);
+      await load();
+      await onImported();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (sets.length === 0) return null;
+
+  return (
+    <Card title="Statements included with the app"
+          hint="For a card that can't be connected">
+      <ErrorNote error={error} />
+
+      {sets.map((b) => (
+        <div key={b.key} className="row"
+             style={{ justifyContent: 'space-between', alignItems: 'flex-start',
+                      gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="merchant">{b.label}</div>
+            <div className="desc">
+              {b.rows} transactions · {b.period}
+            </div>
+            <p className="small muted" style={{ margin: '6px 0 0', maxWidth: '54ch' }}>
+              {b.note}
+            </p>
+          </div>
+          <button className={`btn${b.loaded ? ' quiet' : ' primary'}`}
+                  disabled={busy === b.key}
+                  onClick={() => run(b.key)}>
+            {busy === b.key ? 'Loading…'
+              : b.loaded ? 'Loaded — check again' : 'Load these'}
+          </button>
+        </div>
+      ))}
+
+      {done && (
+        <Notice kind="good">
+          {done.imported > 0
+            ? `Added ${done.imported} transaction${done.imported === 1 ? '' : 's'}.`
+            : 'Nothing to add — all of them were already in the ledger.'}
+          {done.duplicates > 0 && ` ${done.duplicates} were already there.`}
+          {done.warnings?.length > 0 && (
+            <div className="small" style={{ marginTop: 8 }}>
+              {done.warnings.join(' ')}
+            </div>
+          )}
+        </Notice>
+      )}
+
+      <p className="assumption" style={{ marginBottom: 0 }}>
+        These go through the same checks as an upload, so pressing this twice
+        adds nothing the second time. They are the only transactions that come
+        back after the ledger is emptied — and only when you ask for them.
+      </p>
+    </Card>
   );
 }

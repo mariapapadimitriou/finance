@@ -33,6 +33,16 @@ function defaultMonth(summary) {
   return withSpending.at(-1)?.month ?? summary.latest_month ?? '';
 }
 
+// The Import panel is deliberately absent from this list. Connecting a bank
+// is how data arrives; uploading a file is the exception, for a card that
+// cannot be connected at all. It stays reachable at the 'import' key, linked
+// from the Banks tab, so hiding it costs nothing but prominence.
+const HIDDEN_TABS = [
+  { key: 'import', label: 'Import',
+    hint: 'Statements from a file, for a card that can\'t be connected',
+    icon: 'M12 3v12M7 10l5 5 5-5M4 21h16' },
+];
+
 const TABS = [
   { key: 'today', label: 'Today', hint: 'What you can spend today, and why that number',
     icon: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z' },
@@ -56,9 +66,10 @@ const TABS = [
     icon: 'M3 10h18M3 10a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2M3 10v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8M7 15h4' },
   { key: 'banks', label: 'Banks', hint: 'Connect a card through Plaid and let it sync itself',
     icon: 'M3 21h18M4 10h16M5 10V7l7-4 7 4v3M7 10v11M12 10v11M17 10v11' },
-  { key: 'import', label: 'Import', hint: 'Add statements from any card',
-    icon: 'M12 3v12M7 10l5 5 5-5M4 21h16' },
 ];
+
+// Everywhere that needs to name a tab rather than offer it.
+const ALL_TABS = [...TABS, ...HIDDEN_TABS];
 
 function Icon({ d }) {
   return (
@@ -193,14 +204,22 @@ export default function App() {
              findingCount={findingCount}>
         <Empty title="Let's see where the money goes">
           <p>
-            Drop in your card statements — PDF or CSV — and this fills in:
-            spending by category, subscriptions you&apos;ve forgotten about, and a
-            ranked list of what to cut.
+            Connect a card and this fills in by itself: spending by category,
+            subscriptions you&apos;ve forgotten about, and a ranked list of what
+            to cut. The connection keeps itself up to date, so this is the last
+            time you have to think about where the data comes from.
           </p>
-          <button className="btn primary" onClick={() => setTab('import')}
+          <button className="btn primary" onClick={() => setTab('banks')}
                   style={{ marginTop: 14 }}>
-            Import statements
+            Connect a card
           </button>
+          <p className="small muted" style={{ marginTop: 16, marginBottom: 0 }}>
+            For a card that can&apos;t be connected — a closed account, or a bank
+            Plaid doesn&apos;t reach —{' '}
+            <button className="link" onClick={() => setTab('import')}>
+              import statements from a file
+            </button>.
+          </p>
         </Empty>
       </Shell>
     );
@@ -236,8 +255,10 @@ export default function App() {
       )}
       {tab === 'trips' && <TripsPanel onChanged={load} />}
       {tab === 'accounts' && <AccountsPanel onChanged={load} />}
-      {tab === 'banks' && <BanksPanel onChanged={load} />}
-      {tab === 'import' && <ImportPanel accounts={accounts} onImported={load} />}
+      {tab === 'banks' && <BanksPanel onChanged={load} onTab={setTab} />}
+      {tab === 'import' && (
+        <ImportPanel accounts={accounts} onImported={load} onTab={setTab} />
+      )}
     </Shell>
   );
 }
@@ -245,7 +266,7 @@ export default function App() {
 function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
                  months = [], month, onMonth, showMonth = false, onSignOut,
                  children }) {
-  const current = TABS.find((t) => t.key === tab);
+  const current = ALL_TABS.find((t) => t.key === tab);
   const navRef = useRef(null);
 
   // On a phone the nav is a scrolling strip, and eleven destinations don't
@@ -253,6 +274,8 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
   // shows a bar with nothing selected in it.
   useEffect(() => {
     const selected = navRef.current?.querySelector('[aria-selected="true"]');
+    // A hidden tab has no button in the strip; leaving it where it is beats
+    // scrolling to a destination the reader did not choose.
     selected?.scrollIntoView({ inline: 'center', block: 'nearest',
                                behavior: 'smooth' });
   }, [tab]);

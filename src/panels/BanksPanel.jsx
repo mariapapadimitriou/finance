@@ -33,7 +33,7 @@ function loadPlaidScript() {
   });
 }
 
-export default function BanksPanel({ onChanged }) {
+export default function BanksPanel({ onChanged, onTab }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -322,6 +322,18 @@ export default function BanksPanel({ onChanged }) {
           rather than left beside the real one.
         </p>
       </Card>
+
+      {onTab && (
+        <p className="small muted" style={{ textAlign: 'center', margin: 0 }}>
+          A card you can&apos;t connect — closed, or at a bank Plaid doesn&apos;t
+          reach —{' '}
+          <button className="link" onClick={() => onTab('import')}>
+            can be imported from a file
+          </button>
+          . Connecting is better where it&apos;s possible: it stays current, and
+          nothing has to be downloaded again.
+        </p>
+      )}
     </div>
   );
 }
