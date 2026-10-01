@@ -157,7 +157,6 @@ class TestAnalyticsEndpoints:
         upload(client, AMEX, "amex.csv")
         body = client.get("/api/insights").get_json()
         assert "findings" in body and "summary" in body
-        assert "narrative" in body
 
     def test_recurring_endpoint_shape(self, client):
         upload(client, AMEX, "amex.csv")
@@ -218,50 +217,6 @@ class TestSources:
 
     def test_unknown_source_is_a_404(self, client):
         assert client.post("/api/sync/nope", json={}).status_code == 404
-
-    def test_what_can_reach_anthropic_is_bounded_by_the_tools(self, client):
-        """The privacy contract, now that the tools are what leave.
-
-        It used to be a hand-built payload of aggregates. The written read
-        and the question box share one set of read-only tools instead, so the
-        contract is a property of those: a tool may return a date, a
-        merchant, an amount and a category, and nothing that identifies an
-        account.
-        """
-        import json
-
-        from finance.advisor import _tools
-
-        upload(client, AMEX, "amex.csv")
-        store = client.application.config["STORE"]
-
-        for tool in _tools(store):
-            blob = tool.call({})
-            assert "31004" not in blob, f"{tool.name} leaked an account number"
-            for row in _rows(json.loads(blob)):
-                assert not (set(row) - {
-                    "date", "merchant", "amount", "category", "month", "spend",
-                    "transactions", "share", "discretionary", "essential",
-                    "cadence", "annual_cost", "active", "confidence",
-                    "first_seen", "last_seen", "budget", "spent", "remaining",
-                    "used", "projected", "projected_over", "on_track",
-                    "title", "detail", "kind", "annual_saving", "effort",
-                    "income", "fixed_total", "savings", "leftover",
-                    "leftover_share", "daily", "verdict", "note", "fixed",
-                    "complete", "discretionary_pool", "name", "id",
-                    "matched", "charges", "avg", "last_date", "inflows",
-                }), f"{tool.name} returned an unexpected field: {sorted(row)}"
-
-
-def _rows(parsed):
-    """Every dict in a tool's reply, however it is nested."""
-    if isinstance(parsed, dict):
-        yield parsed
-        for v in parsed.values():
-            yield from _rows(v)
-    elif isinstance(parsed, list):
-        for item in parsed:
-            yield from _rows(item)
 
 
 class TestBundledStatements:

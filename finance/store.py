@@ -89,14 +89,60 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT
 );
 
+-- Piggy banks: the costs that do not arrive monthly. See finance/piggy.py.
+--
+-- `target` and the horizon are what you decide; the monthly contribution and
+-- the balance are derived from them and from the calendar, never stored, so
+-- they cannot drift from what the Plan has been subtracting.
+--
+-- `opening` is money already set aside when the bank was made. It reduces
+-- what has to be collected rather than adding to the target.
+CREATE TABLE IF NOT EXISTS piggy_banks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    target      REAL NOT NULL,
+    cadence     TEXT NOT NULL DEFAULT 'annual',
+    target_date TEXT,
+    start_month TEXT NOT NULL,
+    opening     REAL NOT NULL DEFAULT 0,
+    note        TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Spending charged to a bank instead of to the month it fell in.
+--
+-- A row here is a decision about an existing transaction, like a merchant
+-- override, so it is keyed by the transaction and survives a re-import: the
+-- id is the fingerprint, which is stable across exports.
+CREATE TABLE IF NOT EXISTS piggy_allocations (
+    txn_id     TEXT PRIMARY KEY,
+    bank_id    INTEGER NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_alloc_bank ON piggy_allocations(bank_id);
+
+-- Money drawn from a bank to cover a month's overspend, as opposed to a
+-- specific charge allocated to it. Kept per month so the spend plan can add
+-- it back to that month's budget and nowhere else.
+CREATE TABLE IF NOT EXISTS piggy_draws (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_id   INTEGER NOT NULL,
+    month     TEXT NOT NULL,
+    amount    REAL NOT NULL,
+    note      TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_draw_month ON piggy_draws(month);
+
+-- The two tables piggy banks replaced. They exist only so the one-time copy
+-- in `_migrate_buckets` has something to read on a database that predates
+-- them; the copy empties them, so on every database made since they stay
+-- empty. Nothing else reads or writes them.
 CREATE TABLE IF NOT EXISTS buckets (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     name    TEXT NOT NULL UNIQUE,
     balance REAL NOT NULL DEFAULT 0
 );
-
--- Money drawn from a bucket to cover a day's overspend. Kept per month so the
--- spend plan can add it back to that month's budget and nowhere else.
 CREATE TABLE IF NOT EXISTS bucket_draws (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     bucket_id INTEGER NOT NULL,
@@ -105,7 +151,6 @@ CREATE TABLE IF NOT EXISTS bucket_draws (
     note      TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_draw_month ON bucket_draws(month);
 
 -- One row per bank connection made through Plaid Link.
 --
@@ -190,6 +235,55 @@ class Store:
     def _init(self) -> None:
         with self.conn() as c:
             c.executescript(SCHEMA)
+        self._migrate_buckets()
+
+    def _migrate_buckets(self) -> None:
+        """Carry the buckets that piggy banks replaced into piggy banks.
+
+        A bucket was a name and a balance: money already set aside, drawn on
+        to cover an overspent month. That is a piggy bank whose target has
+        already been met, so it becomes one — target and opening both the old
+        balance, which derives a monthly contribution of zero and leaves the
+        balance exactly where it was. Nothing is asked of the next month on
+        account of a pot that is already full.
+
+        Runs on every open and does nothing after the first, because it
+        empties what it copies.
+        """
+        from datetime import date
+
+        with self.conn() as c:
+            old = c.execute("SELECT id, name, balance FROM buckets").fetchall()
+            if not old:
+                return
+
+            this_month = date.today().isoformat()[:7]
+            moved: dict[int, int] = {}
+            for row in old:
+                c.execute(
+                    """INSERT INTO piggy_banks
+                           (name, target, cadence, target_date, start_month,
+                            opening, note)
+                       VALUES (?, ?, 'annual', NULL, ?, ?, ?)
+                       ON CONFLICT(name) DO NOTHING""",
+                    (row["name"], row["balance"], this_month, row["balance"],
+                     "Carried over from the bucket of the same name."),
+                )
+                new_row = c.execute("SELECT id FROM piggy_banks WHERE name = ?",
+                                    (row["name"],)).fetchone()
+                if new_row:
+                    moved[row["id"]] = new_row["id"]
+
+            for old_id, new_id in moved.items():
+                c.execute(
+                    """INSERT INTO piggy_draws (bank_id, month, amount, note)
+                       SELECT ?, month, amount, note
+                         FROM bucket_draws WHERE bucket_id = ?""",
+                    (new_id, old_id),
+                )
+
+            c.execute("DELETE FROM bucket_draws")
+            c.execute("DELETE FROM buckets")
 
     # ── Transactions ─────────────────────────────────────────────────────────
     def add_transactions(self, transactions: list[Transaction]) -> int:
@@ -212,8 +306,19 @@ class Store:
             return cur.rowcount
 
     def all_transactions(self) -> list[Transaction]:
+        """Every row, each carrying the piggy bank it was allocated to.
+
+        The allocation is joined on here rather than left for callers to look
+        up, so that no analysis can forget to ask: a charge charged to a bank
+        arrives already marked, and `analytics.counts_as_spending` keeps it out
+        of the month's totals without anything else having to know.
+        """
         with self.conn() as c:
-            rows = c.execute("SELECT * FROM transactions ORDER BY date DESC, id").fetchall()
+            rows = c.execute(
+                """SELECT t.*, a.bank_id AS bank_id
+                     FROM transactions t
+                     LEFT JOIN piggy_allocations a ON a.txn_id = t.id
+                    ORDER BY t.date DESC, t.id""").fetchall()
         return [Transaction.from_row(dict(r)) for r in rows]
 
     def query_transactions(self, month: str | None = None, category: str | None = None,
@@ -246,9 +351,15 @@ class Store:
             total = c.execute(
                 f"SELECT COUNT(*) AS n FROM transactions {clause}", params
             ).fetchone()["n"]
+            # The column prefix matters: `clause` is written against the bare
+            # table, and `date`/`category` are unambiguous only because
+            # piggy_allocations has neither.
             rows = c.execute(
-                f"""SELECT * FROM transactions {clause}
-                    ORDER BY date DESC, id LIMIT ? OFFSET ?""",
+                f"""SELECT t.*, a.bank_id AS bank_id
+                      FROM transactions t
+                      LEFT JOIN piggy_allocations a ON a.txn_id = t.id
+                    {clause}
+                    ORDER BY t.date DESC, t.id LIMIT ? OFFSET ?""",
                 params + [limit, offset],
             ).fetchall()
         return [Transaction.from_row(dict(r)) for r in rows], total
@@ -441,8 +552,8 @@ class Store:
             ("merchant_overrides", "merchant overrides"),
             ("budgets", "budgets"),
             ("trips", "trips"),
-            ("bucket_draws", "bucket draws"),
-            ("buckets", "buckets"),
+            ("piggy_allocations", "piggy-bank allocations"),
+            ("piggy_draws", "piggy-bank draws"),
             ("dismissed_insights", "dismissed findings"),
         ]
         with self.conn() as c:
@@ -616,56 +727,155 @@ class Store:
         except (TypeError, ValueError):
             return default
 
-    # ── Buckets ──────────────────────────────────────────────────────────────
-    def buckets(self) -> list:
-        from .spend_plan import Bucket
-        with self.conn() as c:
-            rows = c.execute("SELECT id, name, balance FROM buckets ORDER BY name").fetchall()
-        return [Bucket(id=r["id"], name=r["name"], balance=r["balance"]) for r in rows]
+    # ── Piggy banks ──────────────────────────────────────────────────────────
+    # The arithmetic lives in finance/piggy.py; this only stores the decisions.
 
-    def set_bucket(self, name: str, balance: float) -> int:
+    def piggy_banks(self) -> list:
+        from .piggy import Bank
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT id, name, target, cadence, target_date, start_month, "
+                "opening, note FROM piggy_banks ORDER BY name").fetchall()
+        return [Bank(id=r["id"], name=r["name"], target=r["target"],
+                     cadence=r["cadence"], target_date=r["target_date"],
+                     start_month=r["start_month"], opening=r["opening"],
+                     note=r["note"] or "") for r in rows]
+
+    def piggy_bank(self, bank_id: int):
+        return next((b for b in self.piggy_banks() if b.id == bank_id), None)
+
+    def add_piggy_bank(self, name: str, target: float, cadence: str,
+                       target_date: str | None, start_month: str,
+                       opening: float = 0.0, note: str = "") -> int:
         with self.conn() as c:
             c.execute(
-                """INSERT INTO buckets (name, balance) VALUES (?, ?)
-                   ON CONFLICT(name) DO UPDATE SET balance = excluded.balance""",
-                (name.strip(), float(balance)),
+                """INSERT INTO piggy_banks
+                       (name, target, cadence, target_date, start_month, opening, note)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (name.strip(), float(target), cadence, target_date,
+                 start_month, float(opening), note.strip()),
             )
-            row = c.execute("SELECT id FROM buckets WHERE name = ?", (name.strip(),)).fetchone()
+            row = c.execute("SELECT id FROM piggy_banks WHERE name = ?",
+                            (name.strip(),)).fetchone()
             return row["id"]
 
-    def delete_bucket(self, bucket_id: int) -> bool:
+    def update_piggy_bank(self, bank_id: int, name: str, target: float,
+                          cadence: str, target_date: str | None,
+                          opening: float = 0.0, note: str = "") -> bool:
+        """Change a bank's terms, keeping the month it started.
+
+        The start month is deliberately not editable here: it is what the
+        accrued balance is measured from, and letting it move would rewrite
+        how much the bank is supposed to hold today.
+        """
         with self.conn() as c:
-            c.execute("DELETE FROM bucket_draws WHERE bucket_id = ?", (bucket_id,))
-            cur = c.execute("DELETE FROM buckets WHERE id = ?", (bucket_id,))
+            cur = c.execute(
+                """UPDATE piggy_banks
+                      SET name = ?, target = ?, cadence = ?, target_date = ?,
+                          opening = ?, note = ?
+                    WHERE id = ?""",
+                (name.strip(), float(target), cadence, target_date,
+                 float(opening), note.strip(), bank_id),
+            )
             return cur.rowcount > 0
 
-    def draw_from_bucket(self, bucket_id: int, month: str, amount: float,
-                         note: str = "") -> bool:
-        """Take money from a bucket to cover a month's overspend."""
+    def delete_piggy_bank(self, bank_id: int) -> bool:
+        """Remove a bank, releasing whatever was charged to it.
+
+        The allocations go with it, which puts that spending back into the
+        months it happened in. That is the honest outcome — the money was
+        always spent — but it does change past months, so the UI says so
+        before asking.
+        """
         with self.conn() as c:
-            row = c.execute("SELECT balance FROM buckets WHERE id = ?",
-                            (bucket_id,)).fetchone()
-            if row is None or row["balance"] < amount:
-                return False
-            c.execute("UPDATE buckets SET balance = balance - ? WHERE id = ?",
-                      (amount, bucket_id))
+            c.execute("DELETE FROM piggy_allocations WHERE bank_id = ?", (bank_id,))
+            c.execute("DELETE FROM piggy_draws WHERE bank_id = ?", (bank_id,))
+            cur = c.execute("DELETE FROM piggy_banks WHERE id = ?", (bank_id,))
+            return cur.rowcount > 0
+
+    # ── Allocations: spending charged to a bank rather than to its month ──────
+
+    def allocations(self) -> dict[str, int]:
+        """Transaction id → bank id, for every allocated charge."""
+        with self.conn() as c:
+            rows = c.execute("SELECT txn_id, bank_id FROM piggy_allocations").fetchall()
+        return {r["txn_id"]: r["bank_id"] for r in rows}
+
+    def allocate(self, txn_id: str, bank_id: int) -> None:
+        with self.conn() as c:
             c.execute(
-                "INSERT INTO bucket_draws (bucket_id, month, amount, note) VALUES (?,?,?,?)",
-                (bucket_id, month, float(amount), note),
+                """INSERT INTO piggy_allocations (txn_id, bank_id) VALUES (?, ?)
+                   ON CONFLICT(txn_id) DO UPDATE SET bank_id = excluded.bank_id""",
+                (txn_id, bank_id),
+            )
+
+    def unallocate(self, txn_id: str) -> bool:
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM piggy_allocations WHERE txn_id = ?", (txn_id,))
+            return cur.rowcount > 0
+
+    def charged_to_banks(self) -> dict[int, float]:
+        """Bank id → everything taken out of it: allocated charges and draws.
+
+        Joined against transactions rather than summing a stored total, so a
+        charge that was deleted, refunded or recategorised stops counting
+        without anything having to remember to adjust a balance.
+        """
+        totals: dict[int, float] = {}
+        with self.conn() as c:
+            rows = c.execute(
+                """SELECT a.bank_id AS bank_id, COALESCE(SUM(t.amount), 0) AS total
+                     FROM piggy_allocations a
+                     JOIN transactions t ON t.id = a.txn_id
+                    GROUP BY a.bank_id""").fetchall()
+            for r in rows:
+                totals[r["bank_id"]] = round(r["total"], 2)
+
+            drawn = c.execute(
+                "SELECT bank_id, COALESCE(SUM(amount), 0) AS total "
+                "FROM piggy_draws GROUP BY bank_id").fetchall()
+            for r in drawn:
+                totals[r["bank_id"]] = round(
+                    totals.get(r["bank_id"], 0.0) + r["total"], 2)
+        return totals
+
+    def allocated_in(self, month: str) -> float:
+        """What this month's spending charged to banks comes to."""
+        with self.conn() as c:
+            row = c.execute(
+                """SELECT COALESCE(SUM(t.amount), 0) AS total
+                     FROM piggy_allocations a
+                     JOIN transactions t ON t.id = a.txn_id
+                    WHERE t.date LIKE ?""", (f"{month}-%",)).fetchone()
+        return round(row["total"], 2)
+
+    def draw_from_bank(self, bank_id: int, month: str, amount: float,
+                       available: float, note: str = "") -> bool:
+        """Take money from a bank to cover a month's overspend."""
+        if amount <= 0 or available < amount:
+            return False
+        with self.conn() as c:
+            row = c.execute("SELECT id FROM piggy_banks WHERE id = ?",
+                            (bank_id,)).fetchone()
+            if row is None:
+                return False
+            c.execute(
+                "INSERT INTO piggy_draws (bank_id, month, amount, note) VALUES (?,?,?,?)",
+                (bank_id, month, float(amount), note),
             )
             return True
 
     def covered_in(self, month: str) -> float:
         with self.conn() as c:
             row = c.execute(
-                "SELECT COALESCE(SUM(amount), 0) AS total FROM bucket_draws WHERE month = ?",
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM piggy_draws WHERE month = ?",
                 (month,),
             ).fetchone()
         return round(row["total"], 2)
 
     def draws(self, month: str | None = None) -> list[dict]:
         sql = ("SELECT d.id, d.month, d.amount, d.note, d.created_at, b.name "
-               "FROM bucket_draws d JOIN buckets b ON b.id = d.bucket_id")
+               "FROM piggy_draws d JOIN piggy_banks b ON b.id = d.bank_id")
         params = []
         if month:
             sql += " WHERE d.month = ?"

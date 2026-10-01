@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import OverviewPanel from './panels/OverviewPanel.jsx';
 import TodayPanel from './panels/TodayPanel.jsx';
-import ProgressPanel from './panels/ProgressPanel.jsx';
+import PiggyPanel from './panels/PiggyPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import SavingsPanel from './panels/SavingsPanel.jsx';
 import SubscriptionsPanel from './panels/SubscriptionsPanel.jsx';
@@ -55,14 +55,14 @@ const TABS = [
     icon: 'M12 3v18M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
   { key: 'projections', label: 'Projections', hint: 'Where this lands, at this pace and with the cuts',
     icon: 'M3 17l6-6 4 4 8-8M21 7h-5M21 7v5' },
-  { key: 'progress', label: 'Progress', hint: 'Streaks and badges, all earned by spending less',
-    icon: 'M8 21h8M12 17v4M12 17a5 5 0 0 0 5-5V3H7v9a5 5 0 0 0 5 5zM17 5h3v3a3 3 0 0 1-3 3M7 5H4v3a3 3 0 0 0 3 3' },
   { key: 'subscriptions', label: 'Subscriptions', hint: 'Recurring charges found in your history',
     icon: 'M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M18 2v4h-4M6 22v-4h4' },
   { key: 'transactions', label: 'Transactions', hint: 'Every charge, searchable and correctable',
     icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
   { key: 'budgets', label: 'Budgets', hint: 'Spent against budget, projected to month end',
     icon: 'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8z' },
+  { key: 'piggy', label: 'Piggy banks', hint: 'Annual costs collected monthly, and spending charged to them',
+    icon: 'M19 10h2v4h-2M5 10a7 4 0 0 1 14 0v5a2 2 0 0 1-2 2h-1v2h-3v-2H9a4 4 0 0 1-4-4zM9 9h.01' },
   { key: 'trips', label: 'Trips', hint: 'Date ranges whose spending counts as Travel',
     icon: 'M3 11l18-6-6 18-2.5-7.5L5 13z' },
   { key: 'accounts', label: 'Accounts', hint: 'Every account, what syncs, and anything counted twice',
@@ -107,7 +107,7 @@ export default function App() {
   // flashing a dashboard at someone who then gets bounced to a login.
   const [signedIn, setSignedIn] = useState(null);
   // Bumped on every reload so panels that fetch their own data — Today,
-  // Progress, Projections — refetch after an import instead of showing what
+  // Projections, Piggy banks — refetch after an import instead of showing what
   // they loaded when they mounted.
   const [version, setVersion] = useState(0);
 
@@ -258,11 +258,12 @@ export default function App() {
         <OverviewPanel summary={summary} insights={insights} theme={theme}
                        month={shownMonth} onMonth={setMonth} version={version} />
       )}
-      {tab === 'savings' && <SavingsPanel insights={insights} onRefresh={load} />}
+      {tab === 'savings' && <SavingsPanel insights={insights} onRefresh={load}
+                                          onTab={setTab} />}
+      {tab === 'piggy' && <PiggyPanel onTab={setTab} version={version} />}
       {tab === 'projections' && (
         <ProjectionsPanel insights={insights} version={version} />
       )}
-      {tab === 'progress' && <ProgressPanel month={shownPlanMonth} version={version} />}
       {tab === 'subscriptions' && <SubscriptionsPanel recurring={recurring} />}
       {tab === 'transactions' && (
         <TransactionsPanel summary={summary} categories={categories}

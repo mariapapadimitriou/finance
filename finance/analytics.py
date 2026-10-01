@@ -19,9 +19,26 @@ from .categorize import CATEGORIES, is_discretionary, is_spend_category
 from .models import Transaction
 
 
+def counts_as_spending(t: Transaction) -> bool:
+    """Is this row consumption that belongs to the month it fell in?
+
+    Two ways it can fail to be. A transfer or a card payment is not
+    consumption at all — money moving between your own accounts is not a
+    purchase. And a charge allocated to a piggy bank is consumption that was
+    budgeted somewhere else: the holiday was paid for over twelve months, so
+    counting it against June as well would charge for it twice and make a
+    month that went exactly to plan read as a disaster.
+
+    This is the single gate for that question. Everything that reports
+    spending passes through it, so a charge cannot be excluded from the
+    Overview and still counted on the Budgets tab.
+    """
+    return is_spend_category(t.category or "Other") and t.bank_id is None
+
+
 def spend_only(transactions: list[Transaction]) -> list[Transaction]:
     """Rows that represent consumption, netting refunds against purchases."""
-    return [t for t in transactions if is_spend_category(t.category or "Other")]
+    return [t for t in transactions if counts_as_spending(t)]
 
 
 def month_range(transactions: list[Transaction]) -> list[str]:
@@ -104,7 +121,7 @@ def monthly_totals(transactions: list[Transaction]) -> list[dict]:
 
     for t in transactions:
         cat = t.category or "Other"
-        if is_spend_category(cat):
+        if counts_as_spending(t):
             spend[t.month] += t.amount
             if t.amount > 0:
                 counts[t.month] += 1

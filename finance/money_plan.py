@@ -7,11 +7,13 @@ from spending more, and a bad year quietly becomes the target.
 
 So the total comes from arithmetic instead:
 
-    income − fixed commitments − what you are putting away = what is left
+    income − fixed commitments − what you put away − what the piggy banks
+    collect = what is left
 
 Everything in that line is a decision rather than an observation. Rent is a
-contract, savings is a choice, and the remainder is the only part a daily
-number can influence.
+contract, savings is a choice, a piggy bank is a cost you have decided to meet
+in twelve instalments instead of one, and the remainder is the only part a
+daily number can influence.
 
 History still has a job, but a different one. It is no use for deciding *how
 much* is sensible to spend, and it is the best thing available for deciding
@@ -26,7 +28,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .categorize import CATEGORIES, is_discretionary, is_spend_category
+from .analytics import counts_as_spending
+from .categorize import CATEGORIES, is_discretionary
 
 # A plan that leaves nothing over is not a plan anyone keeps, and one that
 # leaves almost everything over is not telling you anything. Outside this
@@ -72,7 +75,7 @@ def variable_shares(transactions, months_back: int = 12,
         if t.month not in recent or t.amount <= 0:
             continue
         category = t.category or "Other"
-        if not is_spend_category(category):
+        if not counts_as_spending(t):
             continue
         if discretionary_only and not is_discretionary(category):
             continue
@@ -109,19 +112,32 @@ def discretionary_pool(budgets: dict[str, float]) -> float:
                      if is_discretionary(category)), 2)
 
 
-def plan(income: float, fixed: list[FixedCost], savings: float) -> dict:
-    """The arithmetic, with enough of its working shown to be argued with."""
+def plan(income: float, fixed: list[FixedCost], savings: float,
+         banks: float = 0.0) -> dict:
+    """The arithmetic, with enough of its working shown to be argued with.
+
+    `banks` is what the piggy banks collect this month — the annual costs
+    turned into a monthly commitment. It is subtracted here, alongside rent
+    and savings, because that is exactly what it is: money that has already
+    been promised to a holiday or a set of tyres before the month starts.
+    Leaving it out would hand the same money out twice, once as a daily
+    allowance and again when the holiday is actually paid for.
+    """
     income = round(max(float(income or 0), 0.0), 2)
     savings = round(max(float(savings or 0), 0.0), 2)
+    banks = round(max(float(banks or 0), 0.0), 2)
     fixed_total = round(sum(max(f.amount, 0.0) for f in fixed), 2)
-    leftover = round(income - fixed_total - savings, 2)
+    leftover = round(income - fixed_total - savings - banks, 2)
 
     share = (leftover / income) if income > 0 else 0.0
     if income <= 0:
         verdict, note = "unset", "Add your monthly take-home pay to start."
     elif leftover < 0:
+        committed = "fixed costs and savings"
+        if banks > 0:
+            committed = "fixed costs, savings and piggy banks"
         verdict, note = "negative", (
-            "Your fixed costs and savings come to more than you earn. "
+            f"Your {committed} come to more than you earn. "
             "Something here has to give before a daily number means anything.")
     elif share < LOW_SHARE:
         verdict, note = "tight", (
@@ -143,6 +159,8 @@ def plan(income: float, fixed: list[FixedCost], savings: float) -> dict:
         "income": income,
         "fixed_total": fixed_total,
         "savings": savings,
+        "banks": banks,
+        "committed": round(fixed_total + savings + banks, 2),
         "leftover": leftover,
         "leftover_share": round(share, 4),
         "daily": round(leftover / 30.44, 2) if leftover > 0 else 0.0,
@@ -151,6 +169,23 @@ def plan(income: float, fixed: list[FixedCost], savings: float) -> dict:
         "fixed": [f.to_dict() for f in fixed],
         "complete": income > 0,
     }
+
+
+def monthly_allowance(income: float, fixed: list[FixedCost], savings: float,
+                      banks: float, shares: dict[str, float]) -> float:
+    """The discretionary pool a daily number divides, derived from the plan.
+
+    This is the one figure the Today tab needs, and it is computed here rather
+    than stored anywhere. It used to be saved as a setting when you pressed
+    "Use these budgets", which meant raising your income, adding a commitment
+    or opening a piggy bank changed the Plan tab and left Today quoting the
+    figure from whenever that button was last pressed. A derived number cannot
+    go stale.
+    """
+    result = plan(income, fixed, savings, banks)
+    if result["leftover"] <= 0:
+        return 0.0
+    return discretionary_pool(category_budgets(result["leftover"], shares))
 
 
 # Above this, "Other" is not a category, it is a gap in the categorisation —

@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { Card, Empty, Notice } from '../components/ui.jsx';
-import AskPanel from './AskPanel.jsx';
+import { Card, Empty, StatusPill } from '../components/ui.jsx';
 import { dateLabel, dismissFinding, money, pct, restoreFinding } from '../api.js';
 
 const EFFORT = {
@@ -12,11 +11,12 @@ const EFFORT = {
 const CONFIDENCE = (c) =>
   (c >= 0.8 ? 'High confidence' : c >= 0.55 ? 'Moderate confidence' : 'Worth checking');
 
-export default function SavingsPanel({ insights, onRefresh }) {
+export default function SavingsPanel({ insights, onRefresh, onTab }) {
   const [busy, setBusy] = useState(null);
 
   const findings = insights?.findings ?? [];
   const summary = insights?.summary ?? {};
+  const observations = insights?.observations ?? [];
 
   async function dismiss(id) {
     setBusy(id);
@@ -32,14 +32,12 @@ export default function SavingsPanel({ insights, onRefresh }) {
   if (findings.length === 0) {
     return (
       <div className="stack">
+        <Observations rows={observations} onTab={onTab} />
         <Empty title="Nothing to cut that we can see">
           Either your spending is already tight, or there isn&apos;t enough
           history yet. Most rules need three or more months to tell a habit
           from a one-off — import a longer date range and check back.
         </Empty>
-        {/* Worth more here than anywhere: the rules found nothing, and the
-            question "why not" is exactly what they cannot answer. */}
-        <AskPanel />
       </div>
     );
   }
@@ -50,7 +48,7 @@ export default function SavingsPanel({ insights, onRefresh }) {
 
   return (
     <div className="stack">
-      <AskPanel />
+      <Observations rows={observations} onTab={onTab} />
 
       <div className="card hero-card">
         <div className="hero">
@@ -182,5 +180,56 @@ function DismissedNote({ onRefresh }) {
         {done && <span className="small muted">Restored.</span>}
       </form>
     </details>
+  );
+}
+
+const SEVERITY = {
+  act: { state: 'critical', label: 'Worth doing something about' },
+  watch: { state: 'warning', label: 'Worth knowing' },
+  good: { state: 'good', label: 'Going well' },
+};
+
+/**
+ * What your plan says about itself.
+ *
+ * Written in advance, each with the condition that makes it true, and shown
+ * only when that condition holds — see finance/insights/profile.py. The
+ * figures come from the same functions the tabs they link to use, so following
+ * one of these never lands you on a page that disagrees with it.
+ */
+function Observations({ rows, onTab }) {
+  if (!rows || rows.length === 0) return null;
+
+  return (
+    <Card title="What your plan says"
+          hint="Read from your income, commitments and this month's spending">
+      <div className="stack" style={{ gap: 16 }}>
+        {rows.map((o) => {
+          const tone = SEVERITY[o.severity] ?? SEVERITY.watch;
+          return (
+            <div key={o.id}>
+              <div className="row" style={{ gap: 10, marginBottom: 4 }}>
+                <StatusPill state={tone.state}>{tone.label}</StatusPill>
+                <strong>{o.title}</strong>
+                {o.metric && (
+                  <>
+                    <span className="spacer" />
+                    <span className="num small muted">{o.metric}</span>
+                  </>
+                )}
+              </div>
+              <p className="small" style={{ margin: '0 0 6px', color: 'var(--ink-2)' }}>
+                {o.detail}
+              </p>
+              {o.tab && o.action && onTab && (
+                <button className="link" onClick={() => onTab(o.tab)}>
+                  {o.action}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }

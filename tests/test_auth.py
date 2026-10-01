@@ -98,7 +98,7 @@ class TestLockedDeployment:
         """The gate is a before_request over the whole app, so a route added
         later is protected without anyone having to remember."""
         for path in ("/api/summary", "/api/transactions", "/api/plan",
-                     "/api/progress", "/api/projections", "/api/trips",
+                     "/api/piggy", "/api/projections", "/api/trips",
                      "/api/accounts", "/api/insights", "/api/budgets"):
             assert c.get(path).status_code == 401, path
 

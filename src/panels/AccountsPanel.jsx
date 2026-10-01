@@ -360,17 +360,20 @@ function StartFresh({ total, busy, setBusy, setError, onDone }) {
         <p className="small muted" style={{ margin: 0 }}>
           The ledger currently holds {total.toLocaleString()} transaction
           {total === 1 ? '' : 's'}. Starting fresh removes all of them, along
-          with your budgets, trips, buckets, merchant corrections and dismissed
-          findings. Your password and bank credentials are untouched.
+          with your budgets, trips, merchant corrections and dismissed
+          findings. Your piggy banks survive — they are decisions about the
+          future rather than a record of the past — but whatever was charged to
+          them goes, since those transactions do. Your password and bank
+          credentials are untouched.
         </p>
       ) : (
         <form onSubmit={go}>
           <Notice kind="error">
             <strong>This cannot be undone.</strong> It removes{' '}
             {total.toLocaleString()} transaction{total === 1 ? '' : 's'}, every
-            budget, trip, bucket, merchant correction and dismissed finding.
-            What stays: your password, your Plaid credentials, and — unless you
-            untick below — your bank connections.
+            budget, trip, merchant correction and dismissed finding. What
+            stays: your password, your Plaid credentials, your piggy banks,
+            and — unless you untick below — your bank connections.
           </Notice>
 
           <label className="row" style={{ marginTop: 14, gap: 8 }}>

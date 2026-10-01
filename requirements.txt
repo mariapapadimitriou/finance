@@ -17,7 +17,3 @@ cryptography>=42.0.0
 
 # Tests
 pytest>=8.0.0
-
-# Needed by the Savings-tab bot. Feature-detected at runtime: without an
-# ANTHROPIC_API_KEY it is never imported and the whole app works as before.
-anthropic>=1.0.0

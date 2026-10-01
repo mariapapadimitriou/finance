@@ -88,11 +88,19 @@ export const getPlan         = (month) =>
   req(`/api/plan${month ? `?month=${month}` : ''}`);
 export const simulateSpend   = (amount, month) =>
   json('POST', `/api/plan/simulate${month ? `?month=${month}` : ''}`, { amount });
-export const setBucket       = (name, balance) =>
-  json('PUT', '/api/buckets', { name, balance });
-export const deleteBucket    = (id) => req(`/api/buckets/${id}`, { method: 'DELETE' });
-export const coverFromBucket = (id, amount, month) =>
-  json('POST', `/api/buckets/${id}/cover`, { amount, month });
+
+// Piggy banks: annual costs collected monthly, and spending charged to them
+// instead of to the month it fell in.
+export const getBanks        = () => req('/api/piggy');
+export const addBank         = (bank) => json('POST', '/api/piggy', bank);
+export const updateBank      = (id, bank) => json('PATCH', `/api/piggy/${id}`, bank);
+export const deleteBank      = (id) => req(`/api/piggy/${id}`, { method: 'DELETE' });
+export const allocateToBank  = (id, txnId) =>
+  json('POST', `/api/piggy/${id}/allocate`, { txn_id: txnId });
+export const unallocate      = (txnId) =>
+  req(`/api/piggy/allocations/${txnId}`, { method: 'DELETE' });
+export const coverFromBank   = (id, amount, month) =>
+  json('POST', `/api/piggy/${id}/cover`, { amount, month });
 
 // The money plan: income in, commitments and savings out, the rest budgeted.
 export const getPlanSetup    = () => req('/api/plan/setup');
@@ -104,8 +112,6 @@ export const deleteFixedCost = (id) =>
   req(`/api/plan/fixed/${id}`, { method: 'DELETE' });
 export const getNudge        = () => req('/api/nudge');
 
-export const getProgress     = (month) =>
-  req(`/api/progress${month ? `?month=${month}` : ''}`);
 
 export const getProjections  = (target) =>
   req(`/api/projections${target ? `?target=${target}` : ''}`);
@@ -175,13 +181,6 @@ export const recategorizeAll = () => json('POST', '/api/recategorize', {});
 
 export const dismissFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'POST' });
 export const restoreFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'DELETE' });
-export const getRead        = () => req('/api/narrative', { method: 'POST' });
-
-// The Savings-tab bot: read-only, advisory, and entirely optional — every
-// number on every tab is computed locally without it.
-export const getAskStatus   = () => req('/api/ask');
-export const ask            = (question, history) =>
-  json('POST', '/api/ask', { question, history });
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 
