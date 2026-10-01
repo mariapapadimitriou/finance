@@ -1,0 +1,360 @@
+"""The same quantity, asked for in every place the app reports it.
+
+Each tab computes its numbers from the ledger independently, which is how
+they drift: two functions both called "monthly spend" that disagree about a
+refund, a budget whose lines sum to a few cents either side of its own
+total, a column headed "Spend" that counts a card payment.
+
+Any one of those is small. Together they are the reason someone stops
+trusting the figure in front of them, and no amount of care in a single
+panel fixes it — the invariants have to be asserted across panels, and
+re-asserted after the ledger changes, because a number that ties out on a
+fresh import and drifts after an edit is worse than one that never tied out
+at all.
+
+So these tests are deliberately not unit tests. They drive the API the way
+the app does and compare what different endpoints say about the same money.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from finance.categorize import NON_SPEND, is_discretionary
+
+TOLERANCE = 0.011          # a cent, plus room for float noise
+
+
+@pytest.fixture()
+def client(tmp_path):
+    from app import create_app
+    app = create_app(str(tmp_path / "consistency.db"))
+    app.config.update(TESTING=True)
+    with app.test_client() as c:
+        yield c
+
+
+@pytest.fixture()
+def ledger(client):
+    """A ledger with a plan on it, as the app is meant to be used."""
+    client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+    client.put("/api/plan/setup", json={"income": 5200, "savings": 900})
+    client.post("/api/plan/fixed", json={"name": "Rent", "amount": 2100,
+                                         "category": "Rent & Housing"})
+    client.post("/api/plan/setup/apply")
+    return client
+
+
+def busiest_month(client) -> str:
+    from collections import Counter
+    rows = client.application.config["STORE"].all_transactions()
+    return Counter(t.month for t in rows).most_common(1)[0][0]
+
+
+def ledger_spend(client, month: str) -> float:
+    rows = client.application.config["STORE"].all_transactions()
+    return round(sum(t.amount for t in rows
+                     if t.month == month and t.category not in NON_SPEND), 2)
+
+
+class TestOneMonthOneNumber:
+    """What the month cost, according to each tab that says so."""
+
+    def test_overview_breakdown_and_the_ledger_agree(self, ledger):
+        month = busiest_month(ledger)
+        truth = ledger_spend(ledger, month)
+
+        monthly = ledger.get("/api/summary").get_json()["monthly"]
+        overview = next(r["spend"] for r in monthly if r["month"] == month)
+        breakdown = round(sum(r["amount"] for r in ledger.get(
+            f"/api/breakdown?month={month}").get_json()["categories"]), 2)
+
+        assert overview == pytest.approx(truth, abs=TOLERANCE)
+        assert breakdown == pytest.approx(truth, abs=TOLERANCE)
+
+    def test_the_budgets_tab_accounts_for_the_whole_month(self, ledger):
+        """Budgeted plus unbudgeted is the month, with nothing unexplained."""
+        month = busiest_month(ledger)
+        b = ledger.get(f"/api/budgets?month={month}").get_json()
+        assert b["covered_spend"] + b["unbudgeted_spend"] == pytest.approx(
+            b["month_spend"], abs=TOLERANCE)
+        assert b["month_spend"] == pytest.approx(ledger_spend(ledger, month),
+                                                 abs=TOLERANCE)
+
+    def test_progress_and_overview_agree_on_the_month(self, ledger):
+        month = busiest_month(ledger)
+        rows = ledger.application.config["STORE"].all_transactions()
+        discretionary = round(sum(
+            t.amount for t in rows
+            if t.month == month and t.amount > 0
+            and t.category not in NON_SPEND
+            and is_discretionary(t.category or "Other")), 2)
+
+        progress = ledger.get(f"/api/progress?month={month}").get_json()
+        shown = next(m["spent"] for m in progress["months"] if m["month"] == month)
+        assert shown == pytest.approx(discretionary, abs=TOLERANCE)
+
+    def test_the_daily_grid_sums_to_the_month(self, ledger):
+        month = busiest_month(ledger)
+        progress = ledger.get(f"/api/progress?month={month}").get_json()
+        m = next(x for x in progress["months"] if x["month"] == month)
+        grid = round(sum(d["spent"] or 0 for d in m["days"]), 2)
+        assert grid == pytest.approx(m["spent"], abs=TOLERANCE)
+
+
+class TestSpendMeansSpend:
+    def test_accounts_and_overview_agree_on_the_total(self, ledger):
+        """A card payment is positive on some statements and is not spending."""
+        accounts = ledger.get("/api/accounts").get_json()["accounts"]
+        total = round(sum(a["total_spend"] for a in accounts), 2)
+        assert total == pytest.approx(
+            ledger.get("/api/summary").get_json()["total_spend"], abs=TOLERANCE)
+
+    def test_account_rows_add_up_to_the_ledger(self, ledger):
+        accounts = ledger.get("/api/accounts").get_json()["accounts"]
+        assert sum(a["transactions"] for a in accounts) == len(
+            ledger.application.config["STORE"].all_transactions())
+
+    def test_a_card_payment_is_never_counted_as_income(self, ledger):
+        """It once was, which read a $2,600 payment as a $2,600 salary."""
+        monthly = ledger.get("/api/summary").get_json()["monthly"]
+        assert all(r["income"] == 0 for r in monthly), [
+            r for r in monthly if r["income"]]
+        assert any(r["inflows"] > 0 for r in monthly)
+
+
+class TestThePlanTiesOut:
+    def test_the_leftover_is_the_arithmetic(self, ledger):
+        p = ledger.get("/api/plan/setup").get_json()
+        assert p["leftover"] == pytest.approx(
+            p["income"] - p["fixed_total"] - p["savings"], abs=TOLERANCE)
+
+    def test_the_budget_lines_sum_to_the_leftover_exactly(self, ledger):
+        """Not to within a few cents. Exactly."""
+        p = ledger.get("/api/plan/setup").get_json()
+        assert round(sum(p["suggested_budgets"].values()), 2) == p["leftover"]
+
+    def test_the_budgets_on_disk_sum_to_the_leftover(self, ledger):
+        p = ledger.get("/api/plan/setup").get_json()
+        saved = ledger.get("/api/budgets").get_json()["budgets"]
+        assert round(sum(saved.values()), 2) == p["leftover"]
+
+    def test_the_daily_number_divides_the_discretionary_slice(self, ledger):
+        """Not the whole leftover.
+
+        Groceries come out of the leftover and are not pocket money: no
+        amount of restraint on a Tuesday changes the grocery bill. Dividing
+        the whole leftover by the days in the month handed the grocery money
+        out as a daily allowance and then budgeted it a second time.
+        """
+        p = ledger.get("/api/plan/setup").get_json()
+        state = ledger.get("/api/plan").get_json()["state"]
+        assert state["monthly_amount"] == pytest.approx(p["daily_pool"],
+                                                        abs=TOLERANCE)
+        assert p["daily_pool"] < p["leftover"]
+
+    def test_the_budgets_still_cover_the_whole_leftover(self, ledger):
+        """Everything not committed has a line, essentials included."""
+        p = ledger.get("/api/plan/setup").get_json()
+        saved = ledger.get("/api/budgets").get_json()["budgets"]
+        assert round(sum(saved.values()), 2) == p["leftover"]
+        assert any(c in saved for c in ("Groceries", "Health", "Utilities"))
+
+    def test_the_daily_arithmetic_is_internally_consistent(self, ledger):
+        s = ledger.get("/api/plan").get_json()["state"]
+        assert s["flat_daily"] == pytest.approx(
+            s["budget"] / s["days_in_month"], abs=0.02)
+        assert s["remaining"] == pytest.approx(
+            s["budget"] - s["spent_mtd"], abs=TOLERANCE)
+        assert s["safe_today"] == pytest.approx(
+            s["flat_daily"] + s["carried_in"] - s["spent_today"], abs=0.02)
+        assert s["spread_daily"] == pytest.approx(
+            s["remaining"] / s["days_left"], abs=0.02)
+
+
+class TestNumbersMoveTogetherWhenThingsChange:
+    """The part that actually breaks: consistency after an edit."""
+
+    def test_changing_income_moves_the_budgets_and_the_daily_number(self, ledger):
+        ledger.put("/api/plan/setup", json={"income": 4000, "savings": 500})
+        ledger.post("/api/plan/setup/apply")
+
+        p = ledger.get("/api/plan/setup").get_json()
+        assert p["leftover"] == 1400
+        saved = ledger.get("/api/budgets").get_json()["budgets"]
+        assert round(sum(saved.values()), 2) == 1400
+        state = ledger.get("/api/plan").get_json()["state"]
+        assert state["monthly_amount"] == pytest.approx(p["daily_pool"],
+                                                        abs=TOLERANCE)
+
+    def test_adding_a_commitment_reduces_what_is_left(self, ledger):
+        before = ledger.get("/api/plan/setup").get_json()["leftover"]
+        ledger.post("/api/plan/fixed", json={"name": "Gym", "amount": 80})
+        after = ledger.get("/api/plan/setup").get_json()
+        assert after["leftover"] == pytest.approx(before - 80, abs=TOLERANCE)
+        assert after["fixed_total"] == pytest.approx(2180, abs=TOLERANCE)
+
+    def test_removing_a_commitment_puts_it_back(self, ledger):
+        before = ledger.get("/api/plan/setup").get_json()["leftover"]
+        cost_id = ledger.post("/api/plan/fixed",
+                              json={"name": "Gym", "amount": 80}).get_json()["id"]
+        ledger.delete(f"/api/plan/fixed/{cost_id}")
+        assert ledger.get("/api/plan/setup").get_json()["leftover"] == pytest.approx(
+            before, abs=TOLERANCE)
+
+    def test_adding_a_transaction_moves_every_total_that_includes_it(self, ledger):
+        month = busiest_month(ledger)
+        before_month = ledger_spend(ledger, month)
+        before_total = ledger.get("/api/summary").get_json()["total_spend"]
+
+        ledger.post("/api/transactions", json={
+            "date": f"{month}-14", "description": "A NEW LUNCH",
+            "amount": 42.50, "category": "Dining"})
+
+        assert ledger_spend(ledger, month) == pytest.approx(
+            before_month + 42.50, abs=TOLERANCE)
+        summary = ledger.get("/api/summary").get_json()
+        assert summary["total_spend"] == pytest.approx(
+            before_total + 42.50, abs=TOLERANCE)
+        breakdown = round(sum(r["amount"] for r in ledger.get(
+            f"/api/breakdown?month={month}").get_json()["categories"]), 2)
+        assert breakdown == pytest.approx(before_month + 42.50, abs=TOLERANCE)
+        accounts = round(sum(a["total_spend"] for a in ledger.get(
+            "/api/accounts").get_json()["accounts"]), 2)
+        assert accounts == pytest.approx(summary["total_spend"], abs=TOLERANCE)
+
+    def test_recategorizing_moves_money_between_lines_not_into_thin_air(self, ledger):
+        month = busiest_month(ledger)
+        before = ledger_spend(ledger, month)
+        rows = ledger.get(f"/api/transactions?month={month}&limit=500").get_json()
+        row = next(t for t in rows["transactions"]
+                   if t["amount"] > 0 and t["category"] != "Travel")
+
+        ledger.patch(f"/api/transactions/{row['id']}", json={"category": "Travel"})
+
+        assert ledger_spend(ledger, month) == pytest.approx(before, abs=TOLERANCE)
+        breakdown = round(sum(r["amount"] for r in ledger.get(
+            f"/api/breakdown?month={month}").get_json()["categories"]), 2)
+        assert breakdown == pytest.approx(before, abs=TOLERANCE)
+
+    def test_moving_a_charge_to_transfers_removes_it_from_spending(self, ledger):
+        """And removes it from every total, by the same amount."""
+        month = busiest_month(ledger)
+        before = ledger_spend(ledger, month)
+        rows = ledger.get(f"/api/transactions?month={month}&limit=500").get_json()
+        row = next(t for t in rows["transactions"] if t["amount"] > 0)
+
+        ledger.patch(f"/api/transactions/{row['id']}", json={"category": "Transfers"})
+
+        after = ledger_spend(ledger, month)
+        assert after == pytest.approx(before - row["amount"], abs=TOLERANCE)
+        breakdown = round(sum(r["amount"] for r in ledger.get(
+            f"/api/breakdown?month={month}").get_json()["categories"]), 2)
+        assert breakdown == pytest.approx(after, abs=TOLERANCE)
+        accounts = round(sum(a["total_spend"] for a in ledger.get(
+            "/api/accounts").get_json()["accounts"]), 2)
+        assert accounts == pytest.approx(
+            ledger.get("/api/summary").get_json()["total_spend"], abs=TOLERANCE)
+
+    def test_trimming_the_ledger_moves_the_totals_down_together(self, ledger):
+        ledger.put("/api/ledger/start", json={"start": "2026-03-01", "trim": True})
+        summary = ledger.get("/api/summary").get_json()
+        accounts = round(sum(a["total_spend"] for a in ledger.get(
+            "/api/accounts").get_json()["accounts"]), 2)
+        assert accounts == pytest.approx(summary["total_spend"], abs=TOLERANCE)
+        assert all(m >= "2026-03" for m in summary["months"])
+
+    def test_declaring_a_trip_keeps_the_month_total_unchanged(self, ledger):
+        """It relabels spending; it must not create or destroy any."""
+        month = busiest_month(ledger)
+        before = ledger_spend(ledger, month)
+        ledger.post("/api/trips", json={"name": "Somewhere",
+                                        "start_date": f"{month}-05",
+                                        "end_date": f"{month}-12"})
+        assert ledger_spend(ledger, month) == pytest.approx(before, abs=TOLERANCE)
+
+
+class TestDerivedFiguresAgreeWithTheirParts:
+    def test_subscriptions_annual_is_twelve_monthlies(self, ledger):
+        s = ledger.get("/api/recurring").get_json()["summary"]
+        assert s["annual_total"] == pytest.approx(s["monthly_total"] * 12, abs=1.0)
+
+    def test_the_split_adds_up_to_the_month(self, ledger):
+        split = ledger.get("/api/summary").get_json()["split"]
+        assert split["discretionary"] + split["fixed"] == pytest.approx(
+            split["total"], abs=TOLERANCE)
+
+    def test_each_budget_row_is_internally_consistent(self, ledger):
+        for r in ledger.get("/api/budgets").get_json()["status"]:
+            assert r["remaining"] == pytest.approx(r["budget"] - r["spent"],
+                                                   abs=TOLERANCE)
+            if r["budget"]:
+                assert r["used"] == pytest.approx(r["spent"] / r["budget"], abs=1e-3)
+
+
+class TestOneFigureOneName:
+    """The same quantity quoted on two tabs has to be the same quantity."""
+
+    def test_the_typical_month_is_the_same_on_overview_and_projections(self, ledger):
+        """They disagreed by half: a mean of complete months against a median
+        including a partial one, both labelled the typical month."""
+        summary = ledger.get("/api/summary").get_json()
+        projections = ledger.get("/api/projections").get_json()
+        assert projections["typical_monthly_spend"] == pytest.approx(
+            summary["typical_monthly_spend"], abs=TOLERANCE)
+
+    def test_the_summary_keeps_both_names_pointing_at_one_number(self, ledger):
+        summary = ledger.get("/api/summary").get_json()
+        assert summary["average_monthly_spend"] == summary["typical_monthly_spend"]
+
+    def test_the_month_against_typical_is_the_difference_shown(self, ledger):
+        summary = ledger.get("/api/summary").get_json()
+        assert summary["vs_average"] == pytest.approx(
+            summary["latest_spend"] - summary["typical_monthly_spend"], abs=TOLERANCE)
+
+
+class TestHeadlinesMatchTheirLists:
+    def test_the_savings_headline_is_the_sum_of_its_findings(self, ledger):
+        ins = ledger.get("/api/insights").get_json()
+        listed = round(sum(f.get("annual_saving") or 0 for f in ins["findings"]), 2)
+        assert ins["summary"]["annual_total"] == pytest.approx(listed, abs=TOLERANCE)
+
+    def test_the_savings_split_by_effort_adds_up(self, ledger):
+        s = ledger.get("/api/insights").get_json()["summary"]
+        assert sum(s["by_effort"].values()) == pytest.approx(
+            s["annual_total"], abs=TOLERANCE)
+
+    def test_the_weighted_figure_never_exceeds_the_raw_one(self, ledger):
+        s = ledger.get("/api/insights").get_json()["summary"]
+        assert s["weighted_annual"] <= s["annual_total"] + TOLERANCE
+
+    def test_the_subscription_tiles_are_the_sum_of_the_rows(self, ledger):
+        body = ledger.get("/api/recurring").get_json()
+        active = [r for r in body["recurring"] if r["active"]]
+        assert body["summary"]["monthly_total"] == pytest.approx(
+            round(sum(r["monthly_cost"] for r in active), 2), abs=TOLERANCE)
+        assert body["summary"]["annual_total"] == pytest.approx(
+            round(sum(r["annual_cost"] for r in active), 2), abs=TOLERANCE)
+
+    def test_the_trip_summary_is_the_travel_in_the_ledger(self, ledger):
+        month = busiest_month(ledger)
+        ledger.post("/api/trips", json={"name": "Somewhere",
+                                        "start_date": f"{month}-05",
+                                        "end_date": f"{month}-12"})
+        rows = ledger.application.config["STORE"].all_transactions()
+        travel = round(sum(t.amount for t in rows
+                           if t.category == "Travel" and t.amount > 0), 2)
+        summary = ledger.get("/api/trips").get_json()["summary"]
+        assert summary["travel_spend"] == pytest.approx(travel, abs=TOLERANCE)
+
+    def test_the_account_list_totals_match_the_import_list(self, ledger):
+        """Two tabs show the same per-card table; they must not differ."""
+        accounts = {a["account_id"]: a for a in
+                    ledger.get("/api/accounts").get_json()["accounts"]}
+        for a in ledger.get("/api/summary").get_json()["accounts"]:
+            other = accounts.get(a["account_id"])
+            if not other:
+                continue
+            assert a["amount"] == pytest.approx(other["total_spend"], abs=TOLERANCE)
+            # Same column name, so it has to be the same count.
+            assert a["transactions"] == other["transactions"]

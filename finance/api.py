@@ -874,7 +874,7 @@ def plan_setup():
     fixed = st.fixed_costs()
 
     result = money_plan.plan(income, fixed, savings)
-    shares = money_plan.discretionary_shares(txns)
+    shares = money_plan.variable_shares(txns)
     historical = _typical_by_category(txns)
     typical_total = round(sum(historical.get(c, 0.0) for c in shares), 2)
 
@@ -882,6 +882,11 @@ def plan_setup():
         **result,
         "typical_total": typical_total,
         "headroom": money_plan.headroom(result["leftover"], typical_total),
+        # What the daily allowance would divide: the discretionary slice,
+        # since groceries come out of the leftover but not out of a daily
+        # pocket-money figure.
+        "daily_pool": money_plan.discretionary_pool(
+            money_plan.category_budgets(result["leftover"], shares)),
         "shares": shares,
         "categories": money_plan.explain(result["leftover"], shares, historical),
         "suggested_budgets": money_plan.category_budgets(result["leftover"], shares),
@@ -925,7 +930,7 @@ def apply_plan_budgets():
         return jsonify({"error": "There is nothing left to budget. "
                                  "Check your income and commitments."}), 400
 
-    shares = money_plan.discretionary_shares(st.all_transactions())
+    shares = money_plan.variable_shares(st.all_transactions())
     budgets = money_plan.category_budgets(result["leftover"], shares)
     if not budgets:
         return jsonify({"error": "Not enough spending history yet to know how "
@@ -933,10 +938,14 @@ def apply_plan_budgets():
 
     for category, amount in budgets.items():
         st.set_budget(category, amount)
-    # The daily number divides the same pool, so it moves with the budgets.
-    st.set_setting("monthly_amount", result["leftover"])
+
+    # The budgets cover everything the leftover has to pay for; the daily
+    # number governs only the discretionary slice of it.
+    daily_pool = money_plan.discretionary_pool(budgets)
+    st.set_setting("monthly_amount", daily_pool)
     return jsonify({"ok": True, "budgets": budgets,
-                    "monthly_amount": result["leftover"]})
+                    "monthly_amount": daily_pool,
+                    "leftover": result["leftover"]})
 
 
 @bp.get("/plan/fixed")
@@ -1006,15 +1015,20 @@ def nudge():
 
 
 def _typical_by_category(transactions) -> dict[str, float]:
-    """Median monthly spend per category — shown beside the new budget."""
+    """Median monthly spend per category — shown beside the new budget.
+
+    Over every category a budget now covers, essentials included. Restricting
+    it to discretionary ones left the largest line on the page — groceries —
+    with no "you usually spend" to compare against, which is precisely the
+    comparison that makes a budget believable.
+    """
     import statistics
-    from .categorize import is_discretionary, is_spend_category
+    from .categorize import is_spend_category
 
     per: dict[str, dict[str, float]] = {}
     for t in transactions:
         category = t.category or "Other"
-        if t.amount <= 0 or not (is_spend_category(category)
-                                 and is_discretionary(category)):
+        if t.amount <= 0 or not is_spend_category(category):
             continue
         per.setdefault(category, {})
         per[category][t.month] = per[category].get(t.month, 0.0) + t.amount
@@ -1100,11 +1114,28 @@ def budgets():
     months = sorted({t.month for t in txns})
     month = request.args.get("month") or (months[-1] if months else None)
     b = store().budgets()
+    status = budget_status(txns, b, month)
+
+    # Spending in categories nothing budgets is still spending. Reporting
+    # only the budgeted lines made the month look smaller than the Overview
+    # said it was, with no way to see where the difference went.
+    covered = round(sum(r["spent"] for r in status), 2)
+    everything = round(sum(r["amount"] for r in by_category(txns, month)), 2)
+    unbudgeted = [
+        {"category": r["category"], "amount": r["amount"]}
+        for r in by_category(txns, month)
+        if r["category"] not in b and r["amount"] > 0
+    ]
+
     return jsonify({
         "budgets": b,
         "month": month,
-        "status": budget_status(txns, b, month),
+        "status": status,
         "suggested": _suggest_budgets(txns),
+        "covered_spend": covered,
+        "month_spend": everything,
+        "unbudgeted_spend": round(everything - covered, 2),
+        "unbudgeted": sorted(unbudgeted, key=lambda r: -r["amount"]),
     })
 
 

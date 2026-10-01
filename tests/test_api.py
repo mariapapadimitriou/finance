@@ -467,23 +467,27 @@ class TestThePlanEndpoints:
     def test_applying_sets_budgets_that_sum_to_the_leftover(self, client):
         self.setup_plan(client)
         applied = client.post("/api/plan/setup/apply").get_json()
-        assert applied["monthly_amount"] == 2200
-        budgets = applied["budgets"]
-        assert budgets
-        assert sum(budgets.values()) == pytest.approx(2200, abs=5)
+        assert applied["leftover"] == 2200
+        assert sum(applied["budgets"].values()) == pytest.approx(2200, abs=0.011)
+
+    def test_the_daily_pool_is_only_the_discretionary_part(self, client):
+        """Groceries come out of the leftover and are not pocket money."""
+        self.setup_plan(client)
+        applied = client.post("/api/plan/setup/apply").get_json()
+        assert applied["monthly_amount"] < applied["leftover"]
 
     def test_applying_also_drives_the_daily_number(self, client):
         """The daily figure divides the same pool, or they disagree."""
         self.setup_plan(client)
-        client.post("/api/plan/setup/apply")
+        applied = client.post("/api/plan/setup/apply").get_json()
         plan = client.get("/api/plan").get_json()
-        assert plan["state"]["monthly_amount"] == 2200
+        assert plan["state"]["monthly_amount"] == applied["monthly_amount"]
 
     def test_the_budget_is_not_last_months_spending(self, client):
         """The point of the whole thing."""
         self.setup_plan(client, income=3500, savings=200)
         applied = client.post("/api/plan/setup/apply").get_json()
-        assert applied["monthly_amount"] == 1200
+        assert applied["leftover"] == 1200
         p = client.get("/api/plan/setup").get_json()
         assert p["typical_total"] != p["leftover"]
 

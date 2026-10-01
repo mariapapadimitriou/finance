@@ -86,12 +86,15 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
           label={monthLabel(month, { long: true })}
           value={money(currentMonthSpend(summary, month))}
           delta={month === summary.latest_month ? summary.vs_average : undefined}
-          note="vs your monthly average"
+          note="vs a typical month"
         />
+        {/* A median, not a mean — one holiday should not redefine normal.
+            Labelled for what it is, and the same figure the Projections tab
+            quotes, which it did not used to be. */}
         <Tile
-          label="Monthly average"
-          value={money(summary.average_monthly_spend)}
-          note={`across ${observedMonths} month${observedMonths === 1 ? '' : 's'} of data`}
+          label="Typical month"
+          value={money(summary.typical_monthly_spend ?? summary.average_monthly_spend)}
+          note={`median of ${observedMonths} month${observedMonths === 1 ? '' : 's'} of data`}
         />
         <Tile
           label="Discretionary"

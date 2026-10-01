@@ -168,16 +168,27 @@ export default function PlanPanel({ onChanged }) {
         <Notice kind={data.verdict === 'ok' ? 'good'
                       : data.verdict === 'negative' ? 'error' : undefined}>
           {data.note}
-          {data.leftover > 0 && (
-            <> That is <strong className="num">{money(data.daily, { cents: true })}</strong> a
-              day across an average month.</>
-          )}
         </Notice>
+
+        {data.leftover > 0 && data.daily_pool > 0 && (
+          <p className="assumption" style={{ marginBottom: 0 }}>
+            That {money(data.leftover)} has to cover groceries and the other
+            essentials too, so it is not all pocket money. Of it,{' '}
+            <strong className="num">{money(data.daily_pool)}</strong> is
+            discretionary — which is what the daily number on Today divides,
+            about{' '}
+            <strong className="num">
+              {money(data.daily_pool / 30.44, { cents: true })}
+            </strong>{' '}
+            a day. No amount of restraint on a Tuesday changes the grocery
+            bill, so it is budgeted rather than handed out daily.
+          </p>
+        )}
       </Card>
 
       {data.leftover > 0 && (
         <Card title="How it divides"
-              hint="Your own proportions applied to the new total — not your old amounts"
+              hint="Every category the leftover has to pay for, in your own proportions"
               actions={data.has_history && (
                 <button className="btn primary" disabled={busy}
                         onClick={() => run(async () => {

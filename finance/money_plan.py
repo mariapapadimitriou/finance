@@ -51,8 +51,15 @@ class FixedCost:
                 "amount": round(self.amount, 2), "category": self.category}
 
 
-def discretionary_shares(transactions, months_back: int = 12) -> dict[str, float]:
-    """How you divide your discretionary spending, as proportions of 1.0.
+def variable_shares(transactions, months_back: int = 12,
+                    discretionary_only: bool = False) -> dict[str, float]:
+    """How you divide the spending a budget can cover, as proportions of 1.0.
+
+    Everything that is not a fixed commitment, which is what the leftover
+    actually has to pay for. Groceries are essential and they are still bought
+    with the money left after rent, so a budget that omitted them left a
+    third of the month unaccounted for and read as if the plan had more room
+    than it did.
 
     Proportions, never amounts. The amounts are what we are deliberately not
     taking from history; the shares are the part history genuinely knows.
@@ -65,7 +72,9 @@ def discretionary_shares(transactions, months_back: int = 12) -> dict[str, float
         if t.month not in recent or t.amount <= 0:
             continue
         category = t.category or "Other"
-        if not (is_spend_category(category) and is_discretionary(category)):
+        if not is_spend_category(category):
+            continue
+        if discretionary_only and not is_discretionary(category):
             continue
         totals[category] = totals.get(category, 0.0) + t.amount
 
@@ -81,6 +90,23 @@ def discretionary_shares(transactions, months_back: int = 12) -> dict[str, float
     scale = sum(kept.values())
     return {c: round(s / scale, 4) for c, s in sorted(
         kept.items(), key=lambda kv: -kv[1])}
+
+
+def discretionary_shares(transactions, months_back: int = 12) -> dict[str, float]:
+    """Only the part a daily allowance can influence."""
+    return variable_shares(transactions, months_back, discretionary_only=True)
+
+
+def discretionary_pool(budgets: dict[str, float]) -> float:
+    """The slice of the budget a daily number governs.
+
+    Today's figure counts discretionary charges only — no amount of restraint
+    on a Tuesday changes the grocery bill any more than it changes the hydro
+    bill. So it has to divide the discretionary share of the leftover, not
+    the whole of it, or it hands out the grocery money as pocket money.
+    """
+    return round(sum(amount for category, amount in budgets.items()
+                     if is_discretionary(category)), 2)
 
 
 def plan(income: float, fixed: list[FixedCost], savings: float) -> dict:
@@ -110,8 +136,8 @@ def plan(income: float, fixed: list[FixedCost], savings: float) -> dict:
             "or a bill, putting it above makes the daily number mean more.")
     else:
         verdict, note = "ok", (
-            f"{share:.0%} of your pay is yours to spend day to day, after "
-            "commitments and savings.")
+            f"{share:.0%} of your pay is left after commitments and savings, "
+            "to cover everything else you buy.")
 
     return {
         "income": income,
@@ -148,11 +174,31 @@ def uncategorised_warning(shares: dict[str, float]) -> str | None:
 
 
 def category_budgets(leftover: float, shares: dict[str, float]) -> dict[str, float]:
-    """Split the leftover across categories in the proportions already used."""
+    """Split the leftover across categories in the proportions already used.
+
+    The parts sum to the whole exactly. Rounding each share on its own left
+    the budget lines adding up to a few cents either side of the pool, which
+    is the kind of discrepancy that makes someone stop trusting every other
+    number on the page. The remainder goes to the largest line, where a cent
+    is least visible.
+    """
     if leftover <= 0 or not shares:
         return {}
-    out = {c: round(leftover * s, 2) for c, s in shares.items()}
-    return {c: v for c, v in out.items() if v >= 1}
+
+    raw = {c: leftover * s for c, s in shares.items()}
+    # Slivers are dropped first, then the rest are rescaled, so what is
+    # dropped is redistributed rather than quietly lost from the total.
+    kept = {c: v for c, v in raw.items() if v >= 1}
+    if not kept:
+        return {}
+    scale = leftover / sum(kept.values())
+    out = {c: round(v * scale, 2) for c, v in kept.items()}
+
+    drift = round(leftover - sum(out.values()), 2)
+    if drift:
+        biggest = max(out, key=lambda c: out[c])
+        out[biggest] = round(out[biggest] + drift, 2)
+    return out
 
 
 def headroom(leftover: float, typical_total: float) -> dict | None:
