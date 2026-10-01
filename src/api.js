@@ -156,6 +156,14 @@ export const setCategory   = (id, category, applyToMerchant = false) =>
     category, apply_to_merchant: applyToMerchant,
   });
 
+// Where the ledger starts, and re-running categorization over what is already
+// in it. Both exist for the same reason: a rule that improved after the rows
+// were imported does not reach them until something asks it to.
+export const getLedgerStart  = () => req('/api/ledger/start');
+export const setLedgerStart  = (start, trim) =>
+  json('PUT', '/api/ledger/start', { start, trim });
+export const recategorizeAll = () => json('POST', '/api/recategorize', {});
+
 export const dismissFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'POST' });
 export const restoreFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'DELETE' });
 export const runNarrative   = () => req('/api/narrative', { method: 'POST' });

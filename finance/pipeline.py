@@ -18,6 +18,19 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
     """Persist one ingestion result, returning what happened."""
     batch, self_dupes = dedupe_batch(result.transactions)
 
+    # Months before the ledger's start date are deliberately absent: they are
+    # the ones where only some cards were imported, so their totals read as
+    # restraint rather than as missing data. Dropping them here rather than
+    # once, by hand, is what makes the decision hold — Plaid backfills two
+    # years on every fresh link, and a one-time deletion would be undone by
+    # the next sync.
+    start = store.ledger_start()
+    before_start = 0
+    if start:
+        kept = [t for t in batch if t.date >= start]
+        before_start = len(batch) - len(kept)
+        batch = kept
+
     existing = store.all_transactions()
     new, dupes = split_new(batch, existing)
 
@@ -46,6 +59,8 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
         "filename": filename,
         "imported": inserted,
         "duplicates": duplicate_count,
+        "before_start": before_start,
+        "ledger_start": start,
         "replaced_manual": len(replaced),
         "date_range": (
             [min(t.date for t in new), max(t.date for t in new)] if new else None

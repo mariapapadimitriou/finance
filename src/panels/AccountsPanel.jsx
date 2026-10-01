@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
-  dateLabel, deleteAccount, getAccounts, getDuplicateAudit, money, resetLedger,
-  setAccountSync,
+  dateLabel, deleteAccount, getAccounts, getDuplicateAudit, getLedgerStart,
+  money, recategorizeAll, resetLedger, setAccountSync, setLedgerStart,
 } from '../api.js';
 
 /**
@@ -179,6 +179,10 @@ export default function AccountsPanel({ onChanged }) {
           )}
         </p>
       </Card>
+
+      {/* Trimming changes the row counts in the table above, so this panel's
+          own data has to be reloaded alongside the app's. */}
+      <TrendBasis onChanged={async () => { await load(); await onChanged?.(); }} />
 
       <StartFresh total={total} busy={busy} setBusy={setBusy}
                   setError={setError} onDone={async () => {
@@ -380,6 +384,139 @@ function StartFresh({ total, busy, setBusy, setError, onDone }) {
           </div>
         </form>
       )}
+    </Card>
+  );
+}
+
+/**
+ * The two reasons a total can be wrong about you.
+ *
+ * Both are about history rather than about any one transaction, which is why
+ * they sit together.
+ *
+ * A month where only some cards were imported reads as restraint. It is not —
+ * it is a month with cards missing, and averaged in with the complete ones it
+ * drags every trend down and quietly flatters the picture. The honest fix is
+ * to say where the complete record starts.
+ *
+ * That date has to persist, not just delete. A fresh Plaid link backfills two
+ * years, so a one-time deletion would be undone by the next sync; the date is
+ * applied to everything that arrives afterwards too.
+ *
+ * The second: categorization rules improve after rows are already stored, and
+ * nothing re-runs them on their own. The rule that matters most here is the
+ * one that keeps a card payment out of spending — a payment is negative, so
+ * misreading it does not merely mislabel a row, it subtracts from the month.
+ */
+function TrendBasis({ onChanged }) {
+  const [info, setInfo] = useState(null);
+  const [start, setStart] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const i = await getLedgerStart();
+      setInfo(i);
+      setStart(i.start || '');
+    } catch (e) {
+      setError(e);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function save(trim) {
+    if (trim && !window.confirm(
+      `Remove every transaction before ${start}? This can't be undone, and `
+      + 'the date is remembered — later syncs and imports will skip those '
+      + 'months too, until you change it back.'
+    )) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await setLedgerStart(start, trim);
+      setDone(trim
+        ? `Removed ${r.removed} transaction${r.removed === 1 ? '' : 's'} from before ${r.start}.`
+        : (r.start ? `Counting from ${r.start}.` : 'No start date — everything counts.'));
+      await load();
+      await onChanged?.();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recheck() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await recategorizeAll();
+      setDone(`Re-checked every transaction; ${r.updated} changed category.`);
+      await onChanged?.();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!info) return null;
+
+  const changed = (start || '') !== (info.start || '');
+  const wouldRemove = start && info.earliest && start > info.earliest;
+
+  return (
+    <Card title="What counts toward trends"
+          hint="Months with cards missing read as restraint, not as missing data">
+      <ErrorNote error={error} />
+
+      <p className="small muted" style={{ marginTop: 0 }}>
+        The ledger holds {info.total.toLocaleString()} transaction
+        {info.total === 1 ? '' : 's'}
+        {info.earliest && <> from {info.earliest} to {info.latest}</>}.
+        {info.start
+          ? <> Only {info.start} onward is counted; anything earlier is skipped
+              on import.</>
+          : <> Everything in it counts.</>}
+      </p>
+
+      <div className="controls">
+        <label htmlFor="ledger-start">Count from</label>
+        <input id="ledger-start" type="date" value={start}
+               onChange={(e) => setStart(e.target.value)} />
+        <button className="btn" type="button" disabled={busy || !changed}
+                onClick={() => save(false)}>
+          Save date
+        </button>
+        <button className="btn" type="button"
+                disabled={busy || !start || !wouldRemove}
+                onClick={() => save(true)}>
+          {busy ? 'Working…' : 'Save and remove earlier'}
+        </button>
+      </div>
+
+      {done && <Notice kind="good">{done}</Notice>}
+
+      <p className="assumption">
+        The date is remembered, not just applied once. A fresh bank connection
+        backfills two years of history, so without that the next sync would
+        put the same months straight back.
+      </p>
+
+      <div className="controls" style={{ marginTop: 4 }}>
+        <button className="btn quiet" type="button" disabled={busy}
+                onClick={recheck}>
+          Re-check categories
+        </button>
+        <span className="small muted">
+          Applies today&apos;s rules to rows already imported — including the
+          one that keeps a payment to a card out of spending. Categories you
+          set by hand are left alone.
+        </span>
+      </div>
     </Card>
   );
 }
