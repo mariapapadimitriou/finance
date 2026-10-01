@@ -186,15 +186,44 @@ export const clearLedger    = (account) =>
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 
-export function money(n, { cents = false, sign = false } = {}) {
+/**
+ * What this ledger is denominated in.
+ *
+ * Every amount is stored in the currency the card was billed in — Plaid
+ * reports it per transaction and the CSV layouts record it — but this
+ * formatter used to say USD regardless, so a Canadian ledger read as
+ * American on every page. The data was never wrong; the label was.
+ *
+ * Set once from the summary, before any figure is drawn. Blank until then
+ * rather than guessed, because guessing is what produced the bug.
+ */
+let LEDGER_CURRENCY = '';
+export const setLedgerCurrency = (code) => { LEDGER_CURRENCY = code || ''; };
+export const ledgerCurrency = () => LEDGER_CURRENCY;
+
+export function money(n, { cents = false, sign = false, currency } = {}) {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';
   const abs = Math.abs(n);
-  const text = abs.toLocaleString(undefined, {
-    style: 'currency',
-    currency: 'USD',
+  const code = currency || LEDGER_CURRENCY;
+  const opts = {
     minimumFractionDigits: cents ? 2 : 0,
     maximumFractionDigits: cents ? 2 : 0,
-  });
+  };
+  // narrowSymbol keeps CAD as "$" rather than "CA$". Correct for a ledger
+  // that is entirely one currency, which is the normal case; a mixed one is
+  // reported as mixed on the Accounts tab rather than papered over here.
+  let text;
+  try {
+    text = abs.toLocaleString(undefined, {
+      ...opts, style: 'currency', currency: code || 'USD',
+      currencyDisplay: 'narrowSymbol',
+    });
+  } catch {
+    // Some engines reject narrowSymbol, and an unknown code throws outright.
+    text = code
+      ? `${abs.toLocaleString(undefined, opts)} ${code}`
+      : `$${abs.toLocaleString(undefined, opts)}`;
+  }
   if (n < 0) return `−${text}`;
   return sign ? `+${text}` : text;
 }

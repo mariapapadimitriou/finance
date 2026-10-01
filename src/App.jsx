@@ -17,7 +17,7 @@ import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import {
   getAccounts, getAuthStatus, getCategories, getInsights, getRecurring,
-  getSummary, logout, monthLabel, setUnauthorizedHandler,
+  getSummary, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
 } from './api.js';
 
 // Icons are 24×24 stroke paths, drawn in currentColor.
@@ -149,6 +149,10 @@ export default function App() {
       const [summary, insights, recurring, accounts, categories] = await Promise.all([
         getSummary(), getInsights(), getRecurring(), getAccounts(), getCategories(),
       ]);
+      // Before anything is drawn: every figure in the app is formatted with
+      // this, and a wrong default is how the whole ledger came to read as
+      // US dollars.
+      setLedgerCurrency(summary.currency);
       setData({
         summary, insights, recurring,
         accounts: accounts.accounts ?? [],

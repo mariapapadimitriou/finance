@@ -358,3 +358,64 @@ class TestHeadlinesMatchTheirLists:
             assert a["amount"] == pytest.approx(other["total_spend"], abs=TOLERANCE)
             # Same column name, so it has to be the same count.
             assert a["transactions"] == other["transactions"]
+
+
+class TestTheLedgerKnowsItsCurrency:
+    """The amounts were always right; the dollar sign on them was not.
+
+    Plaid reports a currency per transaction and the CSV layouts record one,
+    so a Canadian ledger is stored as CAD throughout. The formatter said USD
+    regardless, hard-coded, which relabelled every figure in the app.
+    """
+
+    def test_the_summary_reports_what_the_ledger_is_in(self, ledger):
+        assert ledger.get("/api/summary").get_json()["currency"] == "CAD"
+
+    def test_the_accounts_tab_agrees_about_the_currency(self, ledger):
+        accounts = ledger.get("/api/accounts").get_json()
+        assert accounts["currency"] == (
+            ledger.get("/api/summary").get_json()["currency"])
+
+    def test_a_single_currency_ledger_says_so(self, ledger):
+        mix = ledger.get("/api/summary").get_json()["currency_mix"]
+        assert len(mix) == 1
+        assert mix[0]["currency"] == "CAD"
+
+    def test_a_statement_keeps_the_currency_its_layout_declares(self, ledger):
+        rows = ledger.application.config["STORE"].all_transactions()
+        assert {t.currency for t in rows} == {"CAD"}
+
+    def test_plaid_rows_keep_the_currency_plaid_reports(self):
+        from finance.ingest.plaid_source import map_plaid_transaction
+        t = map_plaid_transaction(
+            {"transaction_id": "x", "date": "2026-05-01", "name": "TIM HORTONS",
+             "amount": 2.79, "account_id": "a", "iso_currency_code": "CAD"},
+            {"a": {"name": "TD", "type": "credit"}})
+        assert t.currency == "CAD"
+
+    def test_an_unofficial_currency_is_not_relabelled_as_dollars(self):
+        """Plaid moves the code when it does not officially support one."""
+        from finance.ingest.plaid_source import map_plaid_transaction
+        t = map_plaid_transaction(
+            {"transaction_id": "y", "date": "2026-05-01", "name": "X",
+             "amount": 1.0, "account_id": "a", "iso_currency_code": None,
+             "unofficial_currency_code": "CRC"}, {"a": {}})
+        assert t.currency == "CRC"
+
+    def test_a_mixed_ledger_is_reported_as_mixed(self, ledger):
+        """Totals add amounts together, so two currencies make them wrong."""
+        from finance.ingest.base import IngestResult
+        from finance.models import Transaction
+        from finance.pipeline import ingest
+
+        st = ledger.application.config["STORE"]
+        ingest(st, IngestResult(transactions=[Transaction(
+            date="2026-05-04", description="US SHOP", amount=20.0,
+            account_id="us_card", account_name="US card", source="csv",
+            currency="USD")], format_key="csv", format_label="CSV",
+            confidence=1.0), filename="us.csv")
+
+        mix = ledger.get("/api/accounts").get_json()["currency_mix"]
+        assert [m["currency"] for m in mix] == ["CAD", "USD"]
+        # The commoner one still drives formatting; the warning does the rest.
+        assert ledger.get("/api/summary").get_json()["currency"] == "CAD"

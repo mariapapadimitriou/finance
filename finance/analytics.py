@@ -12,7 +12,7 @@ $3,200 credit card payment would show up as your biggest "purchase" of the month
 from __future__ import annotations
 
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, timedelta
 
 from .categorize import CATEGORIES, is_discretionary, is_spend_category
@@ -123,6 +123,29 @@ def monthly_totals(transactions: list[Transaction]) -> list[dict]:
         }
         for m in month_range(transactions)
     ]
+
+
+def ledger_currency(transactions: list[Transaction]) -> str:
+    """What this ledger is denominated in.
+
+    Every amount is stored in the currency the card was billed in, which the
+    importers record and nothing afterwards changes. The figure on screen was
+    nevertheless formatted as US dollars, hard-coded, so a Canadian ledger
+    read as American — the data was right the whole time and the label was
+    wrong on every page of the app.
+
+    The dominant currency, because the alternative is threading a currency
+    through every total, and a total that mixes two currencies is wrong in a
+    way no label can rescue. A mixed ledger is reported as mixed instead.
+    """
+    counts = Counter((t.currency or "").upper() for t in transactions if t.currency)
+    return counts.most_common(1)[0][0] if counts else ""
+
+
+def currency_mix(transactions: list[Transaction]) -> list[dict]:
+    """Every currency present, commonest first."""
+    counts = Counter((t.currency or "").upper() for t in transactions if t.currency)
+    return [{"currency": c, "transactions": n} for c, n in counts.most_common()]
 
 
 def typical_month_spend(transactions: list[Transaction]) -> float:
@@ -429,6 +452,8 @@ def summary(transactions: list[Transaction], budgets: dict[str, float] | None = 
         "coverage_gaps": coverage_gaps(transactions),
         "monthly": monthly,
         "latest_spend": latest_spend,
+        "currency": ledger_currency(transactions),
+        "currency_mix": currency_mix(transactions),
         "average_monthly_spend": avg_spend,
         # Same number, under the name the rest of the app uses for it.
         "typical_monthly_spend": avg_spend,
