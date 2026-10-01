@@ -37,8 +37,13 @@ export const getSummary      = () => req('/api/summary');
 export const getInsights     = () => req('/api/insights');
 export const getRecurring    = () => req('/api/recurring');
 export const getAccounts     = () => req('/api/accounts');
-export const deleteAccount   = (id) =>
-  req(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+// Removing a connected account has to stop it syncing too, or the next sync
+// fetches the whole thing again. `stopSyncing: false` deletes the rows only.
+export const deleteAccount   = (id, stopSyncing = true) =>
+  req(`/api/accounts/${encodeURIComponent(id)}`
+      + (stopSyncing ? '' : '?stop_syncing=0'), { method: 'DELETE' });
+export const setAccountSync  = (id, enabled) =>
+  json('PUT', `/api/accounts/${encodeURIComponent(id)}/sync`, { enabled });
 export const getDuplicateAudit = () => req('/api/audit/duplicates');
 export const resetLedger     = (keepBanks) =>
   json('POST', '/api/reset', { confirm: 'erase', keep_banks: keepBanks });

@@ -286,3 +286,69 @@ class TestBundledStatements:
         credits = [t for t in rows if "SCENE+" in t["description"]]
         assert len(credits) == 2
         assert all(t["category"] == "Transfers" for t in credits), credits
+
+
+class TestAccountSyncDecisions:
+    """Choosing which of a bank's accounts to keep, from inside the app."""
+
+    def _seen(self, client):
+        """Two accounts a bank handed over, as a sync would record them."""
+        st = client.application.config["STORE"]
+        st.note_account("card-1", name="TD Cash Back Visa ••4242",
+                        item_id="item-1", enabled=True, account_type="credit",
+                        subtype="credit card")
+        st.note_account("chq-1", name="TD Everyday Chequing ••1111",
+                        item_id="item-1", enabled=False, account_type="depository",
+                        subtype="chequing")
+        return st
+
+    def test_accounts_with_no_rows_are_still_listed(self, client):
+        """An account cannot be switched off if it never appears."""
+        self._seen(client)
+        rows = client.get("/api/accounts").get_json()["accounts"]
+        by_id = {r["account_id"]: r for r in rows}
+        assert by_id["chq-1"]["transactions"] == 0
+        assert by_id["chq-1"]["syncs"] is False
+        assert by_id["card-1"]["syncs"] is True
+
+    def test_turning_one_off_records_a_choice(self, client):
+        st = self._seen(client)
+        r = client.put("/api/accounts/card-1/sync", json={"enabled": False})
+        assert r.status_code == 200
+        rule = st.account_sync_rules()["card-1"]
+        assert rule["enabled"] is False
+        assert rule["decided_by"] == "user"
+
+    def test_turning_one_back_on_records_a_choice(self, client):
+        st = self._seen(client)
+        client.put("/api/accounts/chq-1/sync", json={"enabled": True})
+        rule = st.account_sync_rules()["chq-1"]
+        assert rule["enabled"] is True
+        assert rule["decided_by"] == "user"
+
+    def test_the_flag_is_required(self, client):
+        self._seen(client)
+        assert client.put("/api/accounts/card-1/sync", json={}).status_code == 400
+
+    def test_removing_an_account_also_stops_it_syncing(self, client):
+        st = self._seen(client)
+        r = client.delete("/api/accounts/card-1")
+        assert r.status_code == 200
+        assert r.get_json()["stopped_syncing"] is True
+        assert st.account_sync_rules()["card-1"]["enabled"] is False
+
+    def test_removal_can_leave_the_connection_alone(self, client):
+        st = self._seen(client)
+        r = client.delete("/api/accounts/card-1?stop_syncing=0")
+        assert r.get_json()["stopped_syncing"] is False
+        assert st.account_sync_rules()["card-1"]["enabled"] is True
+
+    def test_an_unknown_account_is_still_a_404(self, client):
+        assert client.delete("/api/accounts/nope").status_code == 404
+
+    def test_an_imported_account_has_no_sync_state(self, client):
+        """A statement has no bank behind it, so there is nothing to switch."""
+        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        rows = client.get("/api/accounts").get_json()["accounts"]
+        scotia = next(r for r in rows if r["account_id"] == "scotiabank_amex")
+        assert scotia["syncs"] is None

@@ -2,15 +2,20 @@ import { useCallback, useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
   dateLabel, deleteAccount, getAccounts, getDuplicateAudit, money, resetLedger,
+  setAccountSync,
 } from '../api.js';
 
 /**
- * Every account in the ledger, and the two ways it can hold something twice.
+ * Every account the app knows about, and the two ways it can hold a charge twice.
  *
- * Linking a bank hands over chequing, savings and investment accounts
- * alongside the card. Syncing now keeps only the cards, but anything pulled in
- * before that can be removed here — and a closed card's imported statements
- * can stay exactly as they are, since nothing will ever add to them.
+ * Some banks' consent screens are all-or-nothing: you grant the whole login,
+ * and the chequing, savings and investment accounts arrive beside the card you
+ * wanted. The choosing therefore happens here rather than at the bank, and it
+ * has to be a decision rather than a deletion — deleting the rows of an
+ * account the bank still holds just means the next sync brings them back.
+ *
+ * So each connected account carries a switch, and what it records outlives the
+ * rows. An imported statement has no bank behind it and so has no switch.
  */
 export default function AccountsPanel({ onChanged }) {
   const [accounts, setAccounts] = useState(null);
@@ -34,10 +39,14 @@ export default function AccountsPanel({ onChanged }) {
   useEffect(() => { load(); }, [load]);
 
   async function remove(account) {
+    const connected = account.syncs !== null;
     if (!window.confirm(
       `Remove "${account.account_name}" and all ${account.transactions} of its `
-      + 'transactions? This can\'t be undone — if it\'s a connected account it '
-      + 'will come back on the next sync unless you disconnect the bank too.'
+      + 'transactions? This can\'t be undone.'
+      + (connected
+        ? ' It will also stop syncing, so the next sync won\'t bring it back. '
+          + 'You can switch it back on here afterwards.'
+        : '')
     )) return;
     setBusy(true);
     try {
@@ -51,10 +60,25 @@ export default function AccountsPanel({ onChanged }) {
     }
   }
 
+  async function toggleSync(account, enabled) {
+    setBusy(true);
+    setError(null);
+    try {
+      await setAccountSync(account.account_id, enabled);
+      await load();
+      await onChanged?.();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!accounts && !error) return <Loading what="your accounts" />;
   if (!accounts) return <ErrorNote error={error} onRetry={load} />;
 
-  const notCards = accounts.filter((a) => !a.is_card);
+  const syncingNotCards = accounts.filter((a) => !a.is_card && a.syncs === true);
+  const off = accounts.filter((a) => a.syncs === false);
   const total = accounts.reduce((n, a) => n + a.transactions, 0);
   const overlaps = audit?.account_overlaps ?? [];
   const dupes = audit?.duplicates ?? [];
@@ -63,26 +87,29 @@ export default function AccountsPanel({ onChanged }) {
     <div className="stack">
       <ErrorNote error={error} onRetry={load} />
 
-      {notCards.length > 0 && (
+      {syncingNotCards.length > 0 && (
         <Notice>
           <strong>
-            {notCards.length} account{notCards.length === 1 ? '' : 's'} here
-            {notCards.length === 1 ? ' is' : ' are'} not a credit card.
+            {syncingNotCards.length} account
+            {syncingNotCards.length === 1 ? ' that is' : 's that are'} not a
+            credit card {syncingNotCards.length === 1 ? 'is' : 'are'} set to
+            sync.
           </strong>{' '}
-          Syncing now skips everything but cards, so nothing new will arrive
-          from {notCards.length === 1 ? 'it' : 'them'} — but what was already
-          imported is still counted. A chequing account records the payment
-          that settles the card, so leaving it in counts the same money twice.
+          A chequing account records the payment that settles the card, so
+          counting both counts the same money twice. Switch Sync off below for
+          anything you didn&apos;t mean to include.
         </Notice>
       )}
 
-      <Card title="Accounts" hint="Everything the ledger has transactions for">
+      <Card title="Accounts"
+            hint="Everything the app knows about, and what keeps arriving">
         <div className="table-wrap">
-          <table>
+          <table className="acct-stacked">
             <thead>
               <tr>
                 <th>Account</th>
                 <th>Kind</th>
+                <th>Sync</th>
                 <th>Range</th>
                 <th className="r">Rows</th>
                 <th className="r">Spend</th>
@@ -107,8 +134,26 @@ export default function AccountsPanel({ onChanged }) {
                           {a.plaid_subtype || a.plaid_type || 'not a card'}
                         </StatusPill>}
                   </td>
+                  <td>
+                    {a.syncs === null ? (
+                      <span className="small muted">—</span>
+                    ) : (
+                      <label className="row" style={{ gap: 7, margin: 0 }}>
+                        <input type="checkbox" checked={a.syncs} disabled={busy}
+                               onChange={(e) => toggleSync(a, e.target.checked)} />
+                        <span className="small">
+                          {a.syncs ? 'On' : 'Off'}
+                          {a.decided_by === 'user' && (
+                            <span className="muted"> · your choice</span>
+                          )}
+                        </span>
+                      </label>
+                    )}
+                  </td>
                   <td className="muted">
-                    {dateLabel(a.first_date)} – {dateLabel(a.last_date)}
+                    {a.transactions === 0
+                      ? <span className="small">no transactions</span>
+                      : <>{dateLabel(a.first_date)} – {dateLabel(a.last_date)}</>}
                   </td>
                   <td className="r">{a.transactions}</td>
                   <td className="r num">{money(a.total_spend)}</td>
@@ -122,9 +167,16 @@ export default function AccountsPanel({ onChanged }) {
           </table>
         </div>
         <p className="assumption" style={{ marginBottom: 0 }}>
-          Removing an account deletes its transactions. If the account is still
-          connected on the Banks tab, the next sync brings them back —
-          disconnect the bank first, or turn the account off at the source.
+          Sync off means the next sync skips that account entirely; its
+          existing rows stay until you remove it. Remove deletes the rows and
+          switches Sync off, so nothing comes back. Both are reversible — turn
+          Sync back on and the next sync re-fetches the history. An account
+          showing &ldquo;—&rdquo; came from a statement, not a bank, so there
+          is nothing to sync.
+          {off.length > 0 && (
+            <> {off.length} account{off.length === 1 ? ' is' : 's are'}{' '}
+              switched off right now.</>
+          )}
         </p>
       </Card>
 

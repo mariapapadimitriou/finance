@@ -313,6 +313,7 @@ export default function BanksPanel({ onChanged, onTab }) {
             {result.errors?.length > 0 && (
               <> {result.errors.length} connection(s) reported a problem.</>
             )}
+            <Skipped items={result.items} onTab={onTab} />
           </Notice>
         )}
 
@@ -334,6 +335,31 @@ export default function BanksPanel({ onChanged, onTab }) {
           nothing has to be downloaded again.
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * What the sync left out, and where to change it.
+ *
+ * A bank hands over every account on the login, and most of them are skipped
+ * on purpose. Saying nothing about that looks the same as a sync that missed
+ * them — and leaves no clue that the choice is yours to make, or where.
+ */
+function Skipped({ items, onTab }) {
+  const names = [...new Set((items ?? []).flatMap((i) => i.skipped_accounts ?? []))];
+  if (names.length === 0) return null;
+
+  return (
+    <div className="small" style={{ marginTop: 10 }}>
+      Skipped {names.length} account{names.length === 1 ? '' : 's'} this bank
+      also holds: {names.join(', ')}.{' '}
+      {onTab ? (
+        <button className="link" onClick={() => onTab('accounts')}>
+          Choose which accounts to sync
+        </button>
+      ) : 'Choose which accounts to sync on the Accounts tab'}
+      {' '}— the choice sticks, so a card you switch off stays off.
     </div>
   );
 }

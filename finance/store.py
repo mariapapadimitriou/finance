@@ -128,6 +128,30 @@ CREATE TABLE IF NOT EXISTS dismissed_insights (
     insight_id TEXT PRIMARY KEY,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Whether each account a bank handed over should be synced.
+--
+-- A bank's consent screen is all-or-nothing at some institutions: you grant
+-- the whole login or nothing, and every chequing, savings and investment
+-- account arrives with the card you actually wanted. Removing those accounts
+-- is not enough on its own, because the next sync fetches them again.
+--
+-- So the decision is recorded per account and outlives the rows. `decided_by`
+-- separates a default this app chose ('auto' — keep cards, skip the rest)
+-- from one the person made ('user'), which matters because only the first may
+-- be revised: re-deriving a default is housekeeping, overruling a choice is a
+-- bug. The account_id is Plaid's own, which is also the ledger's id for the
+-- rows, so one key serves both.
+CREATE TABLE IF NOT EXISTS account_sync (
+    account_id   TEXT PRIMARY KEY,
+    account_name TEXT,
+    item_id      TEXT,
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    decided_by   TEXT NOT NULL DEFAULT 'auto',
+    account_type TEXT,
+    account_subtype TEXT,
+    updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -293,6 +317,87 @@ class Store:
             return cur.rowcount
 
     # ── Starting over ────────────────────────────────────────────────────────
+    # ── Which accounts to sync ───────────────────────────────────────────
+
+    def account_sync_rules(self) -> dict[str, dict]:
+        """Every account this app has seen from a bank, keyed by account id."""
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT account_id, account_name, item_id, enabled, decided_by,"
+                "       account_type, account_subtype"
+                "  FROM account_sync ORDER BY account_name"
+            ).fetchall()
+        return {r["account_id"]: {
+            "account_id": r["account_id"],
+            "account_name": r["account_name"] or r["account_id"],
+            "item_id": r["item_id"] or "",
+            "enabled": bool(r["enabled"]),
+            "decided_by": r["decided_by"],
+            "account_type": r["account_type"] or "",
+            "account_subtype": r["account_subtype"] or "",
+        } for r in rows}
+
+    def note_account(self, account_id: str, *, name: str = "", item_id: str = "",
+                     enabled: bool = True, account_type: str = "",
+                     subtype: str = "") -> None:
+        """Record the default for an account not decided on before.
+
+        Does nothing to an account already present, whoever decided it: a
+        default must never overwrite a choice, and re-deriving one that has not
+        changed would only churn the timestamp.
+        """
+        with self.conn() as c:
+            existing = c.execute(
+                "SELECT account_id FROM account_sync WHERE account_id = ?",
+                (account_id,)).fetchone()
+            if existing:
+                # Names and types still improve as Plaid resolves them.
+                c.execute(
+                    "UPDATE account_sync"
+                    "   SET account_name = COALESCE(NULLIF(?, ''), account_name),"
+                    "       item_id = COALESCE(NULLIF(?, ''), item_id),"
+                    "       account_type = COALESCE(NULLIF(?, ''), account_type),"
+                    "       account_subtype = COALESCE(NULLIF(?, ''), account_subtype)"
+                    " WHERE account_id = ?",
+                    (name, item_id, account_type, subtype, account_id))
+                return
+            c.execute(
+                "INSERT INTO account_sync (account_id, account_name, item_id,"
+                "                          enabled, decided_by, account_type,"
+                "                          account_subtype)"
+                " VALUES (?, ?, ?, ?, 'auto', ?, ?)",
+                (account_id, name, item_id, 1 if enabled else 0,
+                 account_type, subtype))
+
+    def set_account_sync(self, account_id: str, enabled: bool, *,
+                         name: str = "", item_id: str = "") -> None:
+        """Record a decision the person made, which no default may revise."""
+        with self.conn() as c:
+            cur = c.execute(
+                "UPDATE account_sync"
+                "   SET enabled = ?, decided_by = 'user',"
+                "       updated_at = CURRENT_TIMESTAMP"
+                " WHERE account_id = ?",
+                (1 if enabled else 0, account_id))
+            if not cur.rowcount or cur.rowcount <= 0:
+                c.execute(
+                    "INSERT INTO account_sync (account_id, account_name,"
+                    "                          item_id, enabled, decided_by)"
+                    " VALUES (?, ?, ?, ?, 'user')",
+                    (account_id, name, item_id, 1 if enabled else 0))
+
+    def accounts_not_synced(self) -> set[str]:
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT account_id FROM account_sync WHERE enabled = 0").fetchall()
+        return {r["account_id"] for r in rows}
+
+    def forget_account_rules(self, item_id: str) -> int:
+        """Drop the rules for one bank, for when the bank itself is removed."""
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM account_sync WHERE item_id = ?", (item_id,))
+            return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+
     def reset(self, keep_banks: bool = True) -> dict:
         """Empty the ledger and everything derived from it.
 
@@ -330,6 +435,10 @@ class Store:
             else:
                 cur = c.execute("DELETE FROM plaid_items")
                 removed["bank connections"] = max(cur.rowcount, 0)
+                # The account decisions belong to those connections. Keeping
+                # them would leave a relink inheriting choices about accounts
+                # nobody can see any more.
+                c.execute("DELETE FROM account_sync")
 
             # Settings hold the spending plan and take-home pay, which are
             # yours rather than imported. The seed flag is the exception: it
