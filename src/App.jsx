@@ -68,6 +68,11 @@ const TABS = [
     icon: 'M3 21h18M4 10h16M5 10V7l7-4 7 4v3M7 10v11M12 10v11M17 10v11' },
 ];
 
+// Panels worth opening with nothing in the ledger: the two that bring data
+// in, and the one that decides what keeps arriving — which is also where the
+// ledger gets emptied, so it is reachable immediately afterwards.
+const WORKS_WHEN_EMPTY = ['banks', 'import', 'accounts'];
+
 // Everywhere that needs to name a tab rather than offer it.
 const ALL_TABS = [...TABS, ...HIDDEN_TABS];
 
@@ -198,7 +203,11 @@ export default function App() {
   // for a month holding no transactions is a budget nobody has spent against.
   const shownPlanMonth = planMonth || (thisMonthHasData ? '' : autoMonth);
 
-  if (summary.empty && tab !== 'import') {
+  // An empty ledger hides the panels that have nothing to show — but not the
+  // ones that exist to fix that, or this is a dead end: the Connect button
+  // would set the tab and the same empty state would render over it, which
+  // looks exactly like a button that does nothing.
+  if (summary.empty && !WORKS_WHEN_EMPTY.includes(tab)) {
     return (
       <Shell theme={theme} setTheme={setTheme} tab={tab} onTab={setTab}
              findingCount={findingCount}>
