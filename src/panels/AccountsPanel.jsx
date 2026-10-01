@@ -19,6 +19,7 @@ import {
  */
 export default function AccountsPanel({ onChanged }) {
   const [accounts, setAccounts] = useState(null);
+  const [mix, setMix] = useState([]);
   const [audit, setAudit] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -30,6 +31,7 @@ export default function AccountsPanel({ onChanged }) {
         getAccounts(), getDuplicateAudit().catch(() => null),
       ]);
       setAccounts(a.accounts ?? []);
+      setMix(a.currency_mix ?? []);
       setAudit(d);
     } catch (e) {
       setError(e);
@@ -86,6 +88,19 @@ export default function AccountsPanel({ onChanged }) {
   return (
     <div className="stack">
       <ErrorNote error={error} onRetry={load} />
+
+      {mix.length > 1 && (
+        <Notice kind="error">
+          <strong>
+            This ledger holds {mix.length} currencies:{' '}
+            {mix.map((m) => `${m.currency} (${m.transactions})`).join(', ')}.
+          </strong>{' '}
+          Totals add amounts together, so every figure mixing them is wrong by
+          whatever the exchange rate is. Amounts are shown in{' '}
+          {mix[0].currency} because that is most of them. Remove the odd card,
+          or treat anything that spans both as indicative only.
+        </Notice>
+      )}
 
       {syncingNotCards.length > 0 && (
         <Notice>

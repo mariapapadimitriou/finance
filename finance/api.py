@@ -327,7 +327,17 @@ def accounts():
             "item_id": rule["item_id"],
         })
 
-    return jsonify({"accounts": rows})
+    from .analytics import currency_mix, ledger_currency
+
+    txns = st.all_transactions()
+    return jsonify({
+        "accounts": rows,
+        "currency": ledger_currency(txns),
+        # Totals add amounts together, so two currencies in one ledger make
+        # every total wrong in a way no label can rescue. Said plainly here
+        # rather than silently formatted as whichever is commoner.
+        "currency_mix": currency_mix(txns),
+    })
 
 
 @bp.post("/reset")

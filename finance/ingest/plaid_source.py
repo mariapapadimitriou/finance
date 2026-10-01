@@ -179,7 +179,14 @@ def map_plaid_transaction(item: dict, accounts: dict | None = None) -> Transacti
         amount=float(amount),
         account_id=acct_id,
         account_name=name,
-        currency=item.get("iso_currency_code") or "USD",
+        # Plaid reports the currency per transaction. `iso_currency_code` is
+        # null for currencies it does not officially support, and the code
+        # moves to `unofficial_currency_code` — reading only the first and
+        # defaulting to USD labelled those rows as dollars.
+        currency=(item.get("iso_currency_code")
+                  or item.get("unofficial_currency_code")
+                  or (accounts or {}).get(acct_id, {}).get("iso_currency_code")
+                  or ""),
         source="plaid",
         # The account's type is kept on the row because it is the only place it
         # survives: Plaid reports it alongside the transactions, not with them,
