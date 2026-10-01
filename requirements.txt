@@ -20,3 +20,6 @@ pytest>=8.0.0
 
 # Optional extra, feature-detected at runtime:
 #   anthropic>=0.40.0     # the written Claude summary on the Savings tab
+# Needed by the Savings-tab bot. Without an ANTHROPIC_API_KEY it is never
+# imported and the whole app works exactly as before.
+anthropic>=1.0.0

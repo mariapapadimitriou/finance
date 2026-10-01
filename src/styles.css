@@ -994,3 +994,12 @@ details.evidence[open] summary::before { transform: rotate(90deg); }
   outline-offset: 2px;
   border-radius: 2px;
 }
+
+/* A question and its answer, on the Savings tab. Deliberately not a chat
+   bubble layout: this is a reference tool that happens to take questions,
+   and bubbles would make it look like a conversation to keep up with. */
+.turn { padding: 12px 0; border-top: 1px solid var(--border); }
+.turn:first-of-type { border-top: none; padding-top: 0; }
+.turn.user .turn-body { color: var(--ink-2); }
+.turn-body p { margin: 6px 0; }
+.turn-body p:last-child { margin-bottom: 0; }

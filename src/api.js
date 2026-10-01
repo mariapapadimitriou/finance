@@ -180,6 +180,12 @@ export const recategorizeAll = () => json('POST', '/api/recategorize', {});
 export const dismissFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'POST' });
 export const restoreFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'DELETE' });
 export const runNarrative   = () => req('/api/narrative', { method: 'POST' });
+
+// The Savings-tab bot: read-only, advisory, and entirely optional — every
+// number on every tab is computed locally without it.
+export const getAskStatus   = () => req('/api/ask');
+export const ask            = (question, history) =>
+  json('POST', '/api/ask', { question, history });
 export const clearLedger    = (account) =>
   req(`/api/transactions${account ? `?account=${encodeURIComponent(account)}` : ''}`,
       { method: 'DELETE' });
