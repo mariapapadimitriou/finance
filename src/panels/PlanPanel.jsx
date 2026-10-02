@@ -178,6 +178,7 @@ export default function PlanPanel({ onChanged }) {
         </Notice>
 
         {data.leftover > 0 && data.daily_pool > 0 && (
+          <>
           <p className="assumption" style={{ marginBottom: 0 }}>
             That {money(data.leftover)} has to cover groceries and the other
             essentials too, so it is not all pocket money. Of it,{' '}
@@ -192,6 +193,13 @@ export default function PlanPanel({ onChanged }) {
             changes the grocery bill, so it is budgeted rather than handed out
             daily.
           </p>
+          <p className="assumption" style={{ marginTop: 10, marginBottom: 0 }}>
+            The {money(data.daily_pool)} is the sum of the lines marked{' '}
+            <strong>yes</strong> below. Everything else —{' '}
+            {essentialNames(data.categories).join(', ') || 'nothing, so far'} —
+            has a budget of its own and stays out of the daily figure.
+          </p>
+          </>
         )}
       </Card>
 
@@ -229,6 +237,7 @@ export default function PlanPanel({ onChanged }) {
                     <tr>
                       <th>Category</th><th className="r">Share</th>
                       <th className="r">Budget</th>
+                      <th>In the daily number</th>
                       <th className="r">You usually spend</th>
                       <th>Asking</th>
                     </tr>
@@ -239,6 +248,16 @@ export default function PlanPanel({ onChanged }) {
                         <td className="merchant">{r.category}</td>
                         <td className="r muted">{pct(r.share)}</td>
                         <td className="r num">{money(r.budget, { cents: true })}</td>
+                        {/* The answer to "where does the discretionary figure
+                            come from" has to be on the page. It is the sum of
+                            exactly these rows, and which rows those are was
+                            decided by a table in categorize.py that the app
+                            showed nowhere. */}
+                        <td className="small">
+                          {r.essential
+                            ? <span className="muted">no — budgeted monthly</span>
+                            : <span>yes</span>}
+                        </td>
                         <td className="r num muted">
                           {r.typical ? money(r.typical) : '—'}
                         </td>
@@ -284,4 +303,12 @@ function Term({ label, value, note, strong = false, tone }) {
       {note && <div className="n">{note}</div>}
     </div>
   );
+}
+
+/** The categories budgeted monthly rather than handed out daily, biggest first. */
+function essentialNames(categories) {
+  return (categories ?? [])
+    .filter((r) => r.essential)
+    .sort((a, b) => b.budget - a.budget)
+    .map((r) => r.category.toLowerCase());
 }

@@ -142,12 +142,14 @@ export function projectionConfig(series) {
       labels: series.map((r) => r.month),
       datasets: [
         {
-          ...line(series.map((r) => r.with_cuts), c.series3),
-          label: 'With cuts',
-          // Fill down to the current-pace line below it, not to the axis.
-          fill: { target: 1, above: c.series3Soft },
+          ...line(series.map((r) => r.on_plan), c.series3),
+          label: 'Following the plan',
+          // Fill between the two lines rather than down to the axis: the gap
+          // is the point, and either line can be the higher one — spend under
+          // budget and your recent pace beats the plan.
+          fill: { target: 1, above: c.series3Soft, below: c.soft },
         },
-        { ...line(series.map((r) => r.current), c.series), label: 'Current pace' },
+        { ...line(series.map((r) => r.pace), c.series), label: 'Recent pace' },
       ],
     },
     options: {

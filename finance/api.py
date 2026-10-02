@@ -545,8 +545,8 @@ def _profile(st, txns, findings_summary_: dict):
     travel = round(sum(t.amount for t in txns if t.month in recent
                        and t.amount > 0 and (t.category or "") == "Travel"), 2)
 
-    charged = st.charged_to_banks()
-    banks = [b.to_dict(piggy.status(b, charged.get(b.id, 0.0)))
+    charges = st.bank_charges_by_month()
+    banks = [b.to_dict(piggy.status(b, charges.get(b.id, {})))
              for b in st.piggy_banks()]
 
     return Profile(
@@ -601,9 +601,13 @@ def _plan_month(default_from_data: bool = True) -> str:
 
 
 def _bank_monthly(st) -> float:
-    """What the piggy banks take out of this month, for the plan's arithmetic."""
+    """What the piggy banks take out of this month, for the plan's arithmetic.
+
+    Includes the catch-up on any bank that has been spent ahead of its funding,
+    since that is money genuinely leaving this month.
+    """
     from . import piggy
-    return piggy.total_monthly(st.piggy_banks())
+    return piggy.total_monthly(st.piggy_banks(), st.bank_charges_by_month())
 
 
 def _allowance(st, txns=None) -> tuple[float, bool]:
@@ -737,10 +741,8 @@ def simulate_purchase():
     st = store()
     month = _plan_month()
     state = _plan_state(st, month)
-    charged = st.charged_to_banks()
-    # Only a bank with something in it can cover anything, and the balance it
-    # is measured against is the derived one, not a stored figure.
-    pots = [(b, piggy.status(b, charged.get(b.id, 0.0))["balance"])
+    charges = st.bank_charges_by_month()
+    pots = [(b, piggy.status(b, charges.get(b.id, {}))["balance"])
             for b in st.piggy_banks()]
     return jsonify(spend_plan.simulate(state, amount, pots))
 
@@ -1036,8 +1038,8 @@ def _bank_status(st) -> list[dict]:
     """Every bank with its derived figures, biggest contribution first."""
     from . import piggy
 
-    charged = st.charged_to_banks()
-    rows = [b.to_dict(piggy.status(b, charged.get(b.id, 0.0)))
+    charges = st.bank_charges_by_month()
+    rows = [b.to_dict(piggy.status(b, charges.get(b.id, {})))
             for b in st.piggy_banks()]
     rows.sort(key=lambda r: (-r["monthly"], r["name"]))
     return rows
@@ -1142,13 +1144,16 @@ def remove_bank(bank_id: int):
 
 @bp.post("/piggy/<int:bank_id>/allocate")
 def allocate_to_bank(bank_id: int):
-    """Charge a transaction to a bank, as far as the bank can pay for it.
+    """Charge a transaction to a bank, which pays it whether or not it can yet.
 
-    A bank holding $400 covers $400 of a $2,000 flight and the remaining $1,600
-    stays in the month it was spent. Allocation used to be all-or-nothing, which
-    let a bank pay for something it had never collected the money for and made
-    the month read better than it was — while the separate "borrow to cover an
-    overspend" gesture, on the same pot, was balance-checked. One pot, one rule.
+    The whole charge leaves the month. A $2,000 trip against a travel fund
+    holding $200 leaves the fund $1,800 behind, and it repays itself out of the
+    months ahead by raising its own contribution — so the trip does come off
+    each month's target, which is the point of having declared it.
+
+    Capping the charge at the balance was the obvious-looking alternative and
+    it fails the case the feature exists for: the month you take the trip is
+    exactly the month that must not absorb it.
     """
     from . import piggy
 
@@ -1168,30 +1173,19 @@ def allocate_to_bank(bank_id: int):
         return jsonify({"error": "Only a charge can come out of a piggy bank. "
                                  "A refund or a payment is money coming back."}), 400
 
-    # What the bank holds, less whatever this charge is already taking from it —
-    # otherwise re-allocating the same charge would measure it against a balance
-    # its own allocation had already reduced.
-    charged = st.charged_to_banks().get(bank_id, 0.0)
-    already = txn.bank_amount if txn.bank_id == bank_id else 0.0
-    available = piggy.status(bank, charged - already)["balance"]
-    if available <= 0:
-        return jsonify({
-            "error": f"{bank.name} has nothing in it yet. It collects "
-                     f"${piggy.monthly(bank):,.2f} a month, so there will be "
-                     "something to charge against next month.",
-        }), 400
-
-    covered = round(min(available, txn.amount), 2)
-    st.allocate(txn_id, bank_id, covered)
+    st.allocate(txn_id, bank_id, txn.amount)
+    played = piggy.status(bank, st.bank_charges_by_month().get(bank_id, {}))
     return jsonify({
         "ok": True,
         "charge": round(txn.amount, 2),
-        "covered": covered,
-        # What the month still has to pay for, which is the figure worth showing:
-        # a partial allocation that looked complete would be the whole problem
-        # back again in a smaller form.
-        "remaining": round(txn.amount - covered, 2),
-        "partial": covered < txn.amount,
+        # The whole charge leaves the month. What it costs you is the catch-up
+        # on the months ahead, which is the figure worth reporting.
+        "covered": round(txn.amount, 2),
+        "behind_by": played["behind_by"],
+        "monthly": played["monthly"],
+        "base_monthly": played["base_monthly"],
+        "caught_up_by": played["caught_up_by"],
+        "behind": played["behind"],
         "bank": bank.name,
     })
 
@@ -1229,7 +1223,8 @@ def cover_from_bank(bank_id: int):
         return jsonify({"error": "No such piggy bank."}), 404
 
     month = str(body.get("month") or _plan_month())
-    available = piggy.status(bank, st.charged_to_banks().get(bank_id, 0.0))["balance"]
+    available = piggy.status(
+        bank, st.bank_charges_by_month().get(bank_id, {}))["balance"]
     if not st.draw_from_bank(bank_id, month, amount, available,
                              str(body.get("note") or "")):
         return jsonify({"error": f"{bank.name} only has "

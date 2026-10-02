@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from finance import manual, projections, spend_plan
+from finance import manual, money_plan, projections, spend_plan
 from finance.piggy import Bank
 from finance.categorize import apply_categories
 from finance.models import Transaction
@@ -226,12 +226,56 @@ class TestProjections:
         assert "take-home pay" in r["reason"]
 
     def test_with_income_it_projects_both_lines(self):
+        """Without a plan there is nothing to follow, so the second line falls
+        back to the pace with the cuts applied."""
         rows = [dining(f"2025-0{m}-05", 200.0) for m in range(1, 5)]
         apply_categories(rows)
         r = projections.project(rows, 3000.0, 1200.0, months_ahead=12)
         assert r["available"] is True
         assert r["monthly_cuts"] == pytest.approx(100.0)
-        assert r["at_12"]["with_cuts"] > r["at_12"]["current"]
+        assert r["monthly_on_plan"] is None
+        assert r["at_12"]["on_plan"] > r["at_12"]["pace"]
+
+    def test_with_a_plan_the_second_line_is_what_the_plan_puts_away(self):
+        """The fix for "it says I will never make money": the plan line is the
+        savings figure, which does not depend on the spending history at all."""
+        rows = [dining(f"2025-0{m}-05", 2000.0) for m in range(1, 5)]
+        apply_categories(rows)
+        # $3,000 in, $1,500 of rent and $400 put away leaves $1,100 — against
+        # $2,000 a month of actual spending.
+        rent = money_plan.FixedCost(id=1, name="Rent", amount=1500.0,
+                                    category="Rent & Housing")
+        plan = money_plan.plan(3000.0, [rent], 400.0)
+        r = projections.project(rows, 3000.0, 0.0, months_ahead=12, plan=plan)
+
+        # Spending far above the leftover, so the recent pace goes backwards.
+        assert r["monthly_surplus"] < 0
+        # The plan still accumulates, because following it means spending the
+        # budget rather than the history.
+        assert r["monthly_on_plan"] == pytest.approx(400.0)
+        assert r["at_12"]["on_plan"] == pytest.approx(4800.0)
+        assert r["at_12"]["pace"] < 0
+
+    def test_commitments_are_not_subtracted_twice(self):
+        """`leftover` already excludes them; a commitment paid by card was in
+        the spending as well, so both came off and the surplus read low."""
+        rows = [txn("2025-01-20", "ROGERS WIRELESS", 65.0),
+                txn("2025-02-20", "ROGERS WIRELESS", 65.0),
+                dining("2025-01-05", 100.0), dining("2025-02-05", 100.0)]
+        apply_categories(rows)
+        for t in rows:
+            if "ROGERS" in t.description:
+                t.category, t.category_source = "Phone & Internet", "user"
+
+        phone = money_plan.FixedCost(id=1, name="Phone", amount=65.0,
+                                     category="Phone & Internet")
+        plan = money_plan.plan(3000.0, [phone], 0.0)
+        r = projections.project(rows, 3000.0, 0.0, plan=plan)
+
+        # The phone category is out of the figure the leftover is measured
+        # against, though still in the headline typical month.
+        assert r["plan_spend"] < r["typical_monthly_spend"]
+        assert r["typical_monthly_spend"] - r["plan_spend"] == pytest.approx(65.0)
 
     def test_it_states_that_one_card_is_not_all_your_spending(self):
         rows = [dining("2025-01-05", 200.0)]
@@ -247,12 +291,24 @@ class TestProjections:
     def test_an_empty_ledger_projects_nothing(self):
         assert projections.project([], 3000.0, 0.0)["available"] is False
 
-    def test_goal_eta_is_sooner_with_the_cuts(self):
+    def test_goal_eta_answers_under_each_scenario(self):
         rows = [dining(f"2025-0{m}-05", 200.0) for m in range(1, 5)]
         apply_categories(rows)
         r = projections.project(rows, 3000.0, 6000.0)
         eta = projections.goal_eta(r, 10000.0)
-        assert eta["with_cuts_months"] <= eta["current_months"]
+        assert eta["plan_months"] <= eta["pace_months"]
+
+    def test_a_goal_is_reachable_on_the_plan_even_when_the_pace_says_never(self):
+        rows = [dining(f"2025-0{m}-05", 2000.0) for m in range(1, 5)]
+        apply_categories(rows)
+        rent = money_plan.FixedCost(id=1, name="Rent", amount=1500.0,
+                                    category="Rent & Housing")
+        plan = money_plan.plan(3000.0, [rent], 400.0)
+        r = projections.project(rows, 3000.0, 0.0, plan=plan)
+        eta = projections.goal_eta(r, 4800.0)
+
+        assert eta["pace_months"] is None          # going backwards
+        assert eta["plan_months"] == 12
 
 
 # ── Manual entry ─────────────────────────────────────────────────────────────

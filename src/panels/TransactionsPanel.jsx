@@ -426,21 +426,10 @@ function BankCell({ txn, banks, open, onOpen, onDone }) {
   }
 
   if (bank && !open) {
-    // A partial charge must read as partial. Showing a plain tick on a flight
-    // the bank could only half pay for would hide exactly the thing worth
-    // knowing: the rest is still this month's.
-    const partial = txn.bank_amount > 0 && txn.bank_amount < txn.amount - 0.005;
     return (
       <button className="btn quiet" onClick={onOpen} disabled={busy}
-              title={partial
-                ? `${bank.name} paid ${money(txn.bank_amount, { cents: true })}`
-                  + ` of ${money(txn.amount, { cents: true })};`
-                  + ` the rest counts against this month`
-                : `Charged to ${bank.name} — not counted in this month`}>
-        {bank.name}{' '}
-        {partial
-          ? <span className="num">{money(txn.bank_amount)}</span>
-          : '✓'}
+              title={`Charged to ${bank.name} in full — not counted in this month`}>
+        {bank.name} ✓
       </button>
     );
   }
@@ -459,21 +448,26 @@ function BankCell({ txn, banks, open, onOpen, onDone }) {
               aria-label="Charge this to a piggy bank"
               onChange={(e) => charge(e.target.value)}>
         <option value="">Count against this month</option>
+        {/* Nothing is disabled by its balance any more. A bank takes the
+            charge whether or not it has caught up yet, and repays itself from
+            the months ahead — so what matters at the point of choosing is
+            which bank the spending belongs to, with the balance as context. */}
         {banks.map((b) => (
-          <option key={b.id} value={b.id} disabled={b.balance <= 0}>
-            {b.name} — {b.balance > 0
+          <option key={b.id} value={b.id}>
+            {b.name} — {b.balance >= 0
               ? `${money(b.balance)} in it`
-              : 'nothing in it yet'}
+              : `${money(-b.balance)} behind`}
           </option>
         ))}
       </select>
       {result && (
         <span className="small">
-          {result.partial
-            ? <>{result.bank} paid{' '}
-                <strong className="num">{money(result.covered, { cents: true })}</strong>;{' '}
-                <strong className="num">{money(result.remaining, { cents: true })}</strong>{' '}
-                stays in this month.</>
+          {result.behind
+            ? <>{result.bank} took all of it and is now{' '}
+                <strong className="num">{money(result.behind_by)}</strong>{' '}
+                behind — its contribution rises to{' '}
+                <strong className="num">{money(result.monthly)}</strong> a
+                month until it catches up.</>
             : <>{result.bank} paid all of it.</>}
         </span>
       )}

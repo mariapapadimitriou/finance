@@ -193,7 +193,8 @@ def currency_mix(transactions: list[Transaction]) -> list[dict]:
     return [{"currency": c, "transactions": n} for c, n in counts.most_common()]
 
 
-def typical_month_spend(transactions: list[Transaction]) -> float:
+def typical_month_spend(transactions: list[Transaction],
+                        exclude: set[str] | None = None) -> float:
     """What a normal month costs, by the one definition the app uses.
 
     There were two. The Overview quoted a mean over complete months; the
@@ -204,6 +205,11 @@ def typical_month_spend(transactions: list[Transaction]) -> float:
     Median, because one holiday should not redefine normal, and complete
     months only, because a month four days in is not a cheap month.
     """
+    if exclude:
+        # Used by the projection, which compares this against a leftover that
+        # has already had those categories taken out as commitments.
+        transactions = [t for t in transactions
+                        if (t.category or "Other") not in exclude]
     monthly = monthly_totals(transactions)
     months = month_range(transactions)
     latest = months[-1] if months else None

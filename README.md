@@ -62,12 +62,18 @@ on every request rather than stored, so changing your pay or a commitment moves
 it immediately — and the page shows the whole chain from the plan's leftover
 down to the daily number, since those are different figures on purpose.
 
-**Projections, built on the plan rather than beside it.** Two lines — your current
-pace and the same pace with the found cuts applied — plus how many months of data
-are behind them. What accumulates is *what you put away plus what the plan leaves
+**Projections, built on the plan rather than beside it.** Two lines — *following
+the plan*, which accumulates the savings figure every month and owes nothing to
+your spending history, against *your recent pace* — plus how many months of data
+are behind them. Projecting only the pace told anyone spending above budget that
+they would never accumulate anything, however good the plan was: the plan was
+never the thing being projected. What accumulates is *what you put away plus what the plan leaves
 unspent*, so commitments come out of it: the surplus used to be take-home less
 card spending, which treated rent as money available to save and overstated the
-twelve-month figure several-fold. Piggy banks are deliberately not counted as
+twelve-month figure several-fold. A commitment paid *by card* was also
+subtracted twice — once as a fixed cost and again inside the spending — so each
+commitment's category now comes out of the figure the leftover is measured
+against. Piggy banks are deliberately not counted as
 savings, since they collect in order to be spent on the thing they are named
 after. Only without a plan does the surplus revert to a ceiling, where that
 really is all it is.
@@ -177,26 +183,31 @@ A piggy bank fixes both halves of that:
   the daily number. June doesn't look like a disaster, because June was never
   asked to pay for the holiday.
 
-**A bank pays only what it holds.** A bank with $400 in it covers $400 of a
-$2,000 flight and the remaining $1,600 stays in the month it was spent — the row
-on the Transactions tab says so, and the dropdown names each bank's balance
-before you choose. Allocation used to be all-or-nothing, which let a bank pay for
-something it had never collected the money for and made the month read better
-than it was, while the separate "borrow to cover an overspend" gesture on the
-same pot *was* balance-checked. One pot, one rule.
+**A bank pays whether or not it has caught up, and repays itself.** The whole
+charge leaves the month. A $2,000 trip against a travel fund holding $200 leaves
+the fund $1,800 behind, and it collects $350 a month instead of $200 until it is
+whole — so the trip comes off the months *ahead* rather than out of the month you
+took it. The month you take a holiday is exactly the month that must not absorb
+it, which is why capping the charge at the balance was tried and is wrong: being
+behind is worth saying, but it is not a refusal.
 
-Both figures are derived rather than stored — the monthly contribution from the
-target and the horizon, the balance from how many months have passed less what
-has been charged — so there is no number anywhere that has to be kept up to
-date. Two shapes, because two shapes of cost: `annual` recurs forever and
+Nothing is stored. `piggy.run` replays the bank month by month from what was
+charged when — each month's rate depends on the balance the month before, and
+the balance on every rate before it, so it is a loop rather than a formula. The
+contribution, the balance and the month it expects to be whole all fall out of
+that, and none of them can drift from the transactions behind them. A charge
+dated before the bank existed still counts against it (opening a fund *after*
+the trip is a normal thing to do) but collects nothing for those months.
+
+Two shapes, because two shapes of cost: `annual` recurs forever and
 refills after it is spent (target ÷ 12), and `once` has a date and stops
 collecting when it arrives (what is still needed ÷ months left).
 
-The split flows through one function. `analytics.spend_amount` returns what a
-charge costs its own month — the statement amount less whatever a bank covered —
-and `spend_only` hands downstream callers adjusted copies carrying that figure,
-so every total nets it off without knowing piggy banks exist. The ledger itself
-is never rewritten: the Transactions tab still shows what was charged.
+The exclusion flows through one function. `analytics.spend_amount` returns what
+a charge costs its own month, and `spend_only` hands downstream callers adjusted
+copies carrying that figure, so every total nets it off without knowing piggy
+banks exist. The ledger itself is never rewritten: the Transactions tab still
+shows what was charged.
 
 ---
 

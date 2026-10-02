@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Card, Empty, ErrorNote, Loading, Notice, StatusPill, Tile } from '../components/ui.jsx';
 import {
-  addBank, dateLabel, deleteBank, getBanks, money, pct, updateBank,
+  Card, Empty, ErrorNote, Loading, Notice, StatusPill, Tile,
+} from '../components/ui.jsx';
+import {
+  addBank, dateLabel, deleteBank, getBanks, money, monthLabel, pct, updateBank,
 } from '../api.js';
 
 /**
@@ -84,9 +86,9 @@ export default function PiggyPanel({ onTab, version = 0 }) {
             <Tile label="Held across every bank" value={money(data.balance_total)}
                   note="Collected so far, less what has been charged" />
             <Tile label="Piggy banks" value={String(banks.length)}
-                  note={banks.some((b) => b.overdrawn)
-                    ? 'One has been spent past what it holds'
-                    : 'All within what they hold'} />
+                  note={banks.some((b) => b.behind)
+                    ? 'One is behind and catching up'
+                    : 'None of them behind'} />
           </div>
 
           <Notice>
@@ -144,8 +146,8 @@ function Bank({ bank: b, editing, onEdit, onDone }) {
     return <BankForm bank={b} onCancel={onEdit} onSaved={onDone} />;
   }
 
-  const state = b.overdrawn ? 'critical' : b.funded_share >= 1 ? 'good' : 'warning';
-  const label = b.overdrawn ? 'Spent past what it holds'
+  const state = b.behind ? 'warning' : b.funded_share >= 1 ? 'good' : 'warning';
+  const label = b.behind ? 'Catching up'
     : b.funded_share >= 1 ? 'Fully funded' : 'Filling';
 
   return (
@@ -168,7 +170,9 @@ function Bank({ bank: b, editing, onEdit, onDone }) {
         </div>
         <div style={{ textAlign: 'right' }}>
           <div className="big num">{money(b.monthly)}</div>
-          <div className="per">a month</div>
+          <div className="per">
+            a month{b.catch_up > 0 && <>, incl. {money(b.catch_up)} catching up</>}
+          </div>
         </div>
       </div>
 
@@ -220,12 +224,15 @@ function Bank({ bank: b, editing, onEdit, onDone }) {
         </div>
       )}
 
-      {b.overdrawn && (
+      {b.behind && (
         <div className="assumption" style={{ marginBottom: 0 }}>
-          {money(b.overdrawn_by)} more has been charged to this than has gone
-          in. That difference is coming out of your month-to-month spending
-          whether it is budgeted or not — raise the contribution, or let it
-          catch up before charging anything else here.
+          You spent {money(b.behind_by)} more out of this than it had
+          collected, so it is paying itself back: the contribution is{' '}
+          <strong className="num">{money(b.monthly)}</strong> a month instead
+          of {money(b.base_monthly)} until it is whole, which at this rate is{' '}
+          {b.caught_up_by ? monthLabel(b.caught_up_by, { long: true }) : 'soon'}.
+          That is the trip coming off the months ahead rather than out of the
+          month you took it.
         </div>
       )}
     </section>

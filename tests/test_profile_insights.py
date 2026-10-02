@@ -124,18 +124,22 @@ class TestEachRuleFiresOnItsOwnCondition:
                             "funded_share": 0.1, "overdrawn": False}])
         assert find(observe(p), "travel_no_bank") is None
 
-    def test_an_overdrawn_bank_is_reported_per_bank(self):
+    def test_a_bank_catching_up_is_reported_per_bank(self):
+        """Not an error — it is the mechanism working — but the raised
+        contribution is why the month feels tighter, so it is worth saying."""
         p = Profile(income=4000.0, fixed_total=1500.0, savings=500.0,
                     leftover=2000.0, daily=65.0, months_of_history=12,
                     budgets_set=5,
-                    banks=[{"id": 7, "name": "Trip", "monthly": 300.0,
+                    banks=[{"id": 7, "name": "Trip", "monthly": 325.0,
+                            "base_monthly": 300.0, "catch_up": 25.0,
                             "accrued": 600.0, "charged": 900.0,
                             "balance": -300.0, "target": 3600.0,
-                            "funded_share": 0.17, "overdrawn": True,
-                            "overdrawn_by": 300.0}])
-        row = find(observe(p), "bank_overdrawn_7")
-        assert row and row["severity"] == "act"
+                            "funded_share": 0.17, "behind": True,
+                            "behind_by": 300.0}])
+        row = find(observe(p), "bank_behind_7")
+        assert row and row["severity"] == "watch"
         assert "Trip" in row["title"]
+        assert "$325" in row["detail"] and "$300" in row["detail"]
 
     def test_thin_history(self):
         row = find(observe(Profile(months_of_history=1)), "thin_history")
