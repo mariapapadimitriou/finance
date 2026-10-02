@@ -163,12 +163,24 @@ def plan(income: float, fixed: list[FixedCost], savings: float,
         "committed": round(fixed_total + savings + banks, 2),
         "leftover": leftover,
         "leftover_share": round(share, 4),
-        "daily": round(leftover / 30.44, 2) if leftover > 0 else 0.0,
         "verdict": verdict,
         "note": note,
         "fixed": [f.to_dict() for f in fixed],
         "complete": income > 0,
     }
+
+
+def days_in_month(month: str) -> int:
+    """How many days the month being shown actually has.
+
+    There is one divisor for "a day" and this is it. The Plan tab used to
+    divide by 30.44 — the average length of a month — while Today divided by
+    the real length of the month on screen, so the two pages quoted $41.86 and
+    $41.10 for the same figure. An average month is also not a month anyone
+    ever has to budget for.
+    """
+    import calendar
+    return calendar.monthrange(int(month[:4]), int(month[5:7]))[1]
 
 
 def monthly_allowance(income: float, fixed: list[FixedCost], savings: float,

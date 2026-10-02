@@ -115,3 +115,57 @@ export function ErrorNote({ error, onRetry }) {
     </Notice>
   );
 }
+
+/**
+ * One voice for "the data behind this month may be incomplete".
+ *
+ * Overview and Budgets both face exactly this situation and each had its own
+ * wording for it — "the data stops at day 27" on one tab, "the data stops short
+ * of its last day" on the other — so one fact read as two different problems
+ * depending on where you happened to be standing. The distinction that does
+ * matter is kept: a month still running will fill up by itself, and a finished
+ * month the data stops short of will not.
+ *
+ * `month` is the month being shown, `summary` the payload from /api/summary.
+ */
+export function MonthFreshness({ month, summary, onTab }) {
+  const shown = month === summary?.latest_month;
+  if (!shown || summary?.latest_month_complete) return null;
+
+  const lastDay = summary?.date_range?.[1]?.slice(8);
+  const running = summary?.latest_month_running;
+  const label = monthName(month);
+
+  return (
+    <Notice>
+      {running ? (
+        <>
+          {label} is still in progress
+          {lastDay && <> — your data runs to day {Number(lastDay)}</>}. Anything
+          compared against whole months will read low until it closes.
+        </>
+      ) : (
+        <>
+          <strong>
+            {label} is over, but the data{' '}
+            {lastDay ? <>stops at day {Number(lastDay)}</> : <>stops short of its last day</>}.
+          </strong>{' '}
+          That is either a quiet end to the month or a sync that hasn&apos;t run
+          since — they look identical from here.{' '}
+          {onTab
+            ? <>Sync on the{' '}
+                <button className="link" onClick={() => onTab('banks')}>
+                  Banks tab
+                </button>{' '}before reading anything into this month.</>
+            : <>Sync on the Banks tab before reading anything into this month.</>}
+        </>
+      )}
+    </Notice>
+  );
+}
+
+function monthName(month) {
+  if (!month) return 'This month';
+  const d = new Date(`${month}-01T00:00:00`);
+  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}

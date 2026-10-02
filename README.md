@@ -62,10 +62,15 @@ on every request rather than stored, so changing your pay or a commitment moves
 it immediately — and the page shows the whole chain from the plan's leftover
 down to the daily number, since those are different figures on purpose.
 
-**Projections, with their own error bars.** Two lines — your current pace, and the
-same pace with the found cuts applied — plus how many months of data are behind
-them. The surplus is stated as a ceiling, because spending that never touches an
-imported card isn't in it.
+**Projections, built on the plan rather than beside it.** Two lines — your current
+pace and the same pace with the found cuts applied — plus how many months of data
+are behind them. What accumulates is *what you put away plus what the plan leaves
+unspent*, so commitments come out of it: the surplus used to be take-home less
+card spending, which treated rent as money available to save and overstated the
+twelve-month figure several-fold. Piggy banks are deliberately not counted as
+savings, since they collect in order to be spent on the thing they are named
+after. Only without a plan does the surplus revert to a ceiling, where that
+really is all it is.
 
 **Typing a purchase in before it posts.** Manual entries run the same duplicate
 check an import runs, only looser, and report near-matches instead of silently
@@ -447,9 +452,13 @@ follows the plan without anything being re-applied.
 `/api/piggy/<id>/cover` · `/api/auth/login` · `/api/auth/logout` ·
 `/api/plaid/link-token` · `/api/plaid/exchange` · `/api/plaid/sync`
 `PATCH /api/transactions/<id>` · `/api/trips/<id>` · `/api/piggy/<id>`
-`PUT /api/budgets` · `/api/plan/setup` · `/api/projections/income`
+`PUT /api/budgets` · `/api/plan/setup`
 `DELETE /api/transactions` · `/api/transactions/<id>` · `/api/trips/<id>` ·
 `/api/piggy/<id>` · `/api/piggy/allocations/<txn_id>` · `/api/plaid/items/<id>`
+
+There is deliberately no route that sets take-home pay from the Projections tab
+either. It had one, writing the same `monthly_income` the Plan tab writes, and
+whichever was touched last won silently.
 
 There is deliberately no route that sets the daily spending figure. It is
 derived from the plan on every request — see `money_plan.monthly_allowance` —

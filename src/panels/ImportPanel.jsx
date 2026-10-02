@@ -50,6 +50,11 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
   }
 
 
+  // Before the body renders: a failed refresh leaves `sources` null, and the
+  // cards below would otherwise draw themselves with an undefined hint and an
+  // empty list of steps — a failure that looks like furniture.
+  if (error && !sources) return <ErrorNote error={error} onRetry={refresh} />;
+
   const csv = sources?.sources?.find((s) => s.key === 'csv');
   const others = sources?.sources?.filter((s) => s.key !== 'csv') ?? [];
 

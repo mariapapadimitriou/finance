@@ -469,3 +469,116 @@ class TestTheLedgerKnowsItsCurrency:
         assert [m["currency"] for m in mix] == ["CAD", "USD"]
         # The commoner one still drives formatting; the warning does the rest.
         assert ledger.get("/api/summary").get_json()["currency"] == "CAD"
+
+
+class TestOneFigureOneAuthority:
+    """The class of bug this suite exists for: a number decided in one place
+    and read in another, which then drift apart without saying so."""
+
+    def test_budgets_report_when_they_no_longer_match_the_plan(self, ledger):
+        """Adopt budgets, then change the plan underneath them."""
+        ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
+        ledger.post("/api/plan/setup/apply")
+        assert ledger.get("/api/budgets").get_json()["drift"] is None
+
+        # A piggy bank takes $200 a month out of the leftover the saved budgets
+        # are still dividing.
+        ledger.post("/api/piggy", json={"name": "Trip", "target": 2400,
+                                        "cadence": "annual"})
+
+        drift = ledger.get("/api/budgets").get_json()["drift"]
+        assert drift is not None
+        assert drift["gap"] == pytest.approx(200.0, abs=TOLERANCE)
+        assert drift["saved_total"] - drift["plan_total"] == pytest.approx(
+            200.0, abs=TOLERANCE)
+        assert drift["banks"] == pytest.approx(200.0, abs=TOLERANCE)
+
+    def test_re_applying_clears_the_drift(self, ledger):
+        ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
+        ledger.post("/api/plan/setup/apply")
+        ledger.post("/api/piggy", json={"name": "Trip", "target": 2400,
+                                        "cadence": "annual"})
+        assert ledger.get("/api/budgets").get_json()["drift"] is not None
+
+        ledger.post("/api/plan/setup/apply")
+        assert ledger.get("/api/budgets").get_json()["drift"] is None
+
+    def test_no_drift_is_reported_before_a_plan_exists(self, client):
+        """Nothing to disagree with yet, so the notice must stay silent."""
+        client.put("/api/budgets", json={"budgets": {"Coffee": 60}})
+        assert client.get("/api/budgets").get_json()["drift"] is None
+
+    def test_editing_one_category_by_hand_is_also_reported(self, ledger):
+        """The notice states the discrepancy without claiming the plan moved —
+        it cannot tell that from a budget edited here, and either way the
+        totals no longer agree."""
+        before = ledger.get("/api/budgets").get_json()
+        coffee = before["budgets"]["Coffee"]
+        ledger.put("/api/budgets", json={"budgets": {"Coffee": 1}})
+
+        drift = ledger.get("/api/budgets").get_json()["drift"]
+        assert drift["gap"] == pytest.approx(1 - coffee, abs=TOLERANCE)
+        assert drift["gap"] < 0          # under-allocated, the milder direction
+
+    def test_the_projected_surplus_never_exceeds_what_the_plan_leaves(self, ledger):
+        """It used to be take-home less card spending, which treated rent as
+        money available to save."""
+        ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
+        ledger.post("/api/plan/fixed", json={"name": "Rent", "amount": 1850})
+
+        plan = ledger.get("/api/plan/setup").get_json()
+        proj = ledger.get("/api/projections").get_json()
+
+        assert proj["from_plan"] is True
+        assert proj["monthly_surplus"] <= plan["leftover"] + plan["savings"]
+        # And the terms add up to the figure shown.
+        b = proj["basis"]
+        assert b["saving"] + b["unspent"] == pytest.approx(
+            proj["monthly_surplus"], abs=TOLERANCE)
+        assert b["leftover"] - b["typical_spend"] == pytest.approx(
+            b["unspent"], abs=TOLERANCE)
+
+    def test_a_piggy_bank_is_not_counted_as_savings(self, ledger):
+        """It accumulates in order to be spent on the thing it is named after."""
+        ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
+        before = ledger.get("/api/projections").get_json()["monthly_surplus"]
+        ledger.post("/api/piggy", json={"name": "Trip", "target": 2400,
+                                        "cadence": "annual"})
+        after = ledger.get("/api/projections").get_json()
+
+        # The bank's $200 leaves the leftover and does not reappear as savings.
+        assert after["monthly_surplus"] == pytest.approx(before - 200.0,
+                                                         abs=TOLERANCE)
+        assert after["basis"]["banks"] == pytest.approx(200.0, abs=TOLERANCE)
+
+    def test_without_a_plan_the_projection_keeps_the_ceiling_caveat(self, client):
+        """The fallback is still take-home less card spending, which genuinely
+        is only a ceiling — so there the old warning is the honest one."""
+        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        client.put("/api/plan/setup", json={"income": 5200})
+        proj = client.get("/api/projections").get_json()
+
+        # Income but no commitments and no savings: the plan exists, so the
+        # derived path is used and the leftover is the whole income.
+        assert proj["from_plan"] is True
+        assert proj["basis"]["fixed_total"] == 0
+
+    def test_the_plan_and_today_divide_by_the_same_number_of_days(self, ledger):
+        ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
+        setup = ledger.get("/api/plan/setup").get_json()
+        state = ledger.get("/api/plan").get_json()["state"]
+
+        assert setup["days_this_month"] == state["days_in_month"]
+        assert setup["daily_pool"] / setup["days_this_month"] == pytest.approx(
+            state["flat_daily"], abs=0.02)
+
+    def test_every_category_called_essential_on_today_actually_is(self, ledger):
+        """Today's Essentials note named 'transport', which categorize.py marks
+        discretionary — a counter-example inside the one figure on the page
+        whose purpose is to be checkable."""
+        ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
+        d = ledger.get("/api/plan").get_json()["derivation"]
+
+        assert d["from_plan"] is True
+        for category in d["essential_categories"]:
+            assert not is_discretionary(category), category

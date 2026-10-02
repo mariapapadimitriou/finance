@@ -82,6 +82,9 @@ export default function AccountsPanel({ onChanged }) {
   const syncingNotCards = accounts.filter((a) => !a.is_card && a.syncs === true);
   const off = accounts.filter((a) => a.syncs === false);
   const total = accounts.reduce((n, a) => n + a.transactions, 0);
+  // A connected account has a sync decision; an imported statement has none.
+  const connectedNames = accounts.filter((a) => a.syncs !== null)
+                                 .map((a) => a.name);
   const overlaps = audit?.account_overlaps ?? [];
   const dupes = audit?.duplicates ?? [];
 
@@ -199,7 +202,7 @@ export default function AccountsPanel({ onChanged }) {
           own data has to be reloaded alongside the app's. */}
       <TrendBasis onChanged={async () => { await load(); await onChanged?.(); }} />
 
-      <StartFresh total={total} busy={busy} setBusy={setBusy}
+      <StartFresh total={total} connected={connectedNames} busy={busy} setBusy={setBusy}
                   setError={setError} onDone={async () => {
                     await load(); await onChanged?.();
                   }} />
@@ -321,7 +324,7 @@ export default function AccountsPanel({ onChanged }) {
  * goes is spelled out because "start fresh" means different things to
  * different people, and the difference here is a year of spending.
  */
-function StartFresh({ total, busy, setBusy, setError, onDone }) {
+function StartFresh({ total, connected = [], busy, setBusy, setError, onDone }) {
   const [open, setOpen] = useState(false);
   const [word, setWord] = useState('');
   const [keepBanks, setKeepBanks] = useState(true);
@@ -372,19 +375,28 @@ function StartFresh({ total, busy, setBusy, setError, onDone }) {
             <strong>This cannot be undone.</strong> It removes{' '}
             {total.toLocaleString()} transaction{total === 1 ? '' : 's'}, every
             budget, trip, merchant correction and dismissed finding. What
-            stays: your password, your Plaid credentials, your piggy banks,
-            and — unless you untick below — your bank connections.
+            stays: your password, your Plaid credentials and your piggy banks
+            {connected.length > 0 && ', and — unless you untick below — your bank connections'}.
           </Notice>
 
-          <label className="row" style={{ marginTop: 14, gap: 8 }}>
-            <input type="checkbox" checked={keepBanks}
-                   onChange={(e) => setKeepBanks(e.target.checked)} />
-            <span className="small">
-              Keep TD and Wealthsimple connected. Their sync position is
-              rewound either way, so the next sync re-fetches the full history
-              rather than reporting nothing new against an empty ledger.
-            </span>
-          </label>
+          {/* Only offered when there is something to keep. It used to name two
+              institutions from the author's own ledger, shown to everyone
+              including someone with nothing connected at all — on the most
+              irreversible control in the app. */}
+          {connected.length > 0 && (
+            <label className="row" style={{ marginTop: 14, gap: 8 }}>
+              <input type="checkbox" checked={keepBanks}
+                     onChange={(e) => setKeepBanks(e.target.checked)} />
+              <span className="small">
+                Keep {connected.length === 1 ? 'this connection' : `these ${connected.length} connections`}:{' '}
+                {connected.slice(0, 3).join(', ')}
+                {connected.length > 3 && ` and ${connected.length - 3} more`}.
+                Their sync position is rewound either way, so the next sync
+                re-fetches the full history rather than reporting nothing new
+                against an empty ledger.
+              </span>
+            </label>
+          )}
 
           <div className="controls" style={{ marginTop: 14 }}>
             <label htmlFor="erase">Type <code>erase</code> to confirm</label>

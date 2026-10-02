@@ -115,8 +115,6 @@ export const getNudge        = () => req('/api/nudge');
 
 export const getProjections  = (target) =>
   req(`/api/projections${target ? `?target=${target}` : ''}`);
-export const setIncome       = (income) =>
-  json('PUT', '/api/projections/income', { monthly_income: income });
 
 /**
  * Add a transaction by hand.

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import Chart from '../components/Chart.jsx';
-import { BarRow, Card, Legend, Notice, Tile } from '../components/ui.jsx';
+import {
+  BarRow, Card, Legend, MonthFreshness, Notice, Tile,
+} from '../components/ui.jsx';
 import { dailySpendConfig, monthlyTrendConfig } from '../charts.js';
 import { cssVar, getBreakdown, money, monthLabel, pct } from '../api.js';
 
 export default function OverviewPanel({ summary, insights, theme, month, onMonth,
-                                        version = 0 }) {
+                                        onTab, version = 0 }) {
   const [showTable, setShowTable] = useState(false);
 
   const monthly = summary.monthly ?? [];
@@ -33,11 +35,9 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
   const merchants = breakdown?.merchants ?? [];
   const maxMerchant = merchants[0]?.amount ?? 0;
   const split = breakdown?.split ?? {};
-  // Two different situations that used to share one message. A month that
-  // is still running will fill up on its own; a finished month the data
-  // stops short of will not, and needs a sync rather than patience.
-  const partial = month === summary.latest_month && !summary.latest_month_complete;
-  const running = partial && summary.latest_month_running;
+  // The month-freshness wording lives in one shared component now — see
+  // MonthFreshness in components/ui.jsx. A coverage gap is a different fact
+  // (a month never imported at all) and keeps its own notice below.
   const gaps = summary.coverage_gaps ?? [];
 
   const savings = insights?.summary?.weighted_annual ?? 0;
@@ -59,27 +59,7 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
         </Notice>
       )}
 
-      {partial && (
-        <Notice>
-          {running ? (
-            <>
-              {monthLabel(month, { long: true })} is still in progress — your
-              data runs to day {summary.date_range?.[1]?.slice(8)}. Comparisons
-              against full months will read low until the month closes.
-            </>
-          ) : (
-            <>
-              <strong>
-                {monthLabel(month, { long: true })} is over, but the data stops
-                at day {summary.date_range?.[1]?.slice(8)}.
-              </strong>{' '}
-              That is either a quiet end to the month or a sync that hasn&apos;t
-              run since — they look identical from here. Sync on the Banks tab
-              to be sure before reading anything into this month.
-            </>
-          )}
-        </Notice>
-      )}
+      <MonthFreshness month={month} summary={summary} onTab={onTab} />
 
       <div className="grid cols-4">
         <Tile
@@ -188,23 +168,32 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
       </div>
 
       <div className="grid cols-2">
+        {/* Named for what it measures: spending on these cards, split by whether
+            you could have chosen otherwise. It used to be headed "Fixed
+            commitments — rent, utilities, insurance", the same words the Plan
+            tab uses for the list you type by hand. The two are unrelated
+            totals: rent paid by transfer is in the Plan's figure and not in
+            this one, so someone who typed rent $1,850 and read "Fixed — $380"
+            here could only conclude that a tab was broken. */}
         <Card
-          title="Fixed vs discretionary"
-          hint="What you chose to spend, against what was already committed"
+          title="Unavoidable vs chosen, on your cards"
+          hint="Only what these cards saw — a commitment paid by transfer is not here"
         >
           <div className="split-bar" role="img" aria-label={
-            `Discretionary ${money(split.discretionary)}, fixed ${money(split.fixed)}`}>
+            `Chosen ${money(split.discretionary)}, unavoidable ${money(split.fixed)}`}>
             <span className="a" style={{ width: `${(split.discretionary_share ?? 0) * 100}%` }} />
             <span className="b" style={{ flex: 1 }} />
           </div>
           <Legend items={[
-            { label: `Discretionary — ${money(split.discretionary ?? 0)}`, color: cssVar('--series-1') },
-            { label: `Fixed — ${money(split.fixed ?? 0)}`, color: cssVar('--series-2') },
+            { label: `Chosen — ${money(split.discretionary ?? 0)}`, color: cssVar('--series-1') },
+            { label: `Unavoidable — ${money(split.fixed ?? 0)}`, color: cssVar('--series-2') },
           ]} />
           <p className="small muted" style={{ marginTop: 12, marginBottom: 0 }}>
-            Discretionary spending is the part you can actually move. Fixed
-            commitments — rent, utilities, insurance — need renegotiating rather
-            than restraint.
+            The chosen half is the part restraint can move. The unavoidable half
+            needs renegotiating instead. This counts only charges on the cards
+            you have imported, so it is not the same figure as the commitments
+            you typed on the Plan tab — anything paid by transfer never reaches
+            these statements.
           </p>
         </Card>
 
