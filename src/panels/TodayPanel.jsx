@@ -400,7 +400,7 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
                   Open a piggy bank{onTab && (
                     <> on the{' '}
                       <button className="link" onClick={() => onTab('piggy')}>
-                        Piggy banks tab
+                        Plan tab
                       </button></>
                   )} and borrowing from one to cover an overspend becomes an
                   option here too.

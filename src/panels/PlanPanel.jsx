@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
-  addFixedCost, applyPlanBudgets, deleteFixedCost, getCategories, getPlanSetup,
+  addFixedCost, deleteFixedCost, getCategories, getPlanSetup,
   money, monthLabel, pct, savePlanSetup,
 } from '../api.js';
 
@@ -14,12 +14,15 @@ import {
  * and a bad year quietly becomes the target.
  *
  * So the total is arithmetic on figures you enter, and history is used only
- * for the split: the shares are yours, the total is the arithmetic's. Both
- * halves are shown together, because the gap between what a category gets
- * and what it usually costs is exactly where the plan is asking something of
- * you, and that is better seen now than met as a failure in week three.
+ * for the split: the shares are yours, the total is the arithmetic's.
+ *
+ * The split itself is not here. It used to be, as a table of every category —
+ * which meant the same list appeared on this page and twice more on Budgets,
+ * and the figure you were reading depended on which card you had reached. This
+ * page answers what the money is promised to; Budgets answers how the rest
+ * divides and how the month is going against it.
  */
-export default function PlanPanel({ onChanged }) {
+export default function PlanPanel({ onChanged, onTab }) {
   const [data, setData] = useState(null);
   const [cats, setCats] = useState([]);
   const [error, setError] = useState(null);
@@ -27,7 +30,6 @@ export default function PlanPanel({ onChanged }) {
   const [income, setIncome] = useState('');
   const [savings, setSavings] = useState('');
   const [draft, setDraft] = useState({ name: '', amount: '', category: 'Rent & Housing' });
-  const [applied, setApplied] = useState(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -194,101 +196,36 @@ export default function PlanPanel({ onChanged }) {
             daily.
           </p>
           <p className="assumption" style={{ marginTop: 10, marginBottom: 0 }}>
-            The {money(data.daily_pool)} is the sum of the lines marked{' '}
-            <strong>yes</strong> below. Everything else —{' '}
+            That {money(data.daily_pool)} is the sum of the categories in the
+            daily number. Everything else —{' '}
             {essentialNames(data.categories).join(', ') || 'nothing, so far'} —
-            has a budget of its own and stays out of the daily figure.
+            has a budget of its own and stays out of the daily figure. Budgets
+            marks every line one way or the other.
           </p>
           </>
         )}
-      </Card>
 
-      {data.leftover > 0 && (
-        <Card title="How it divides"
-              hint="Every category the leftover has to pay for, in your own proportions"
-              actions={data.has_history && (
-                <button className="btn primary" disabled={busy}
-                        onClick={() => run(async () => {
-                          const r = await applyPlanBudgets();
-                          setApplied(r);
-                        })}>
-                  {busy ? 'Applying…' : 'Use these budgets'}
-                </button>
-              )}>
-          {!data.has_history ? (
-            <Notice>
-              Not enough categorised spending yet to know how you divide things
-              up. Import a month or two and this fills in — until then the
-              total above still drives the daily number.
-            </Notice>
-          ) : (
-            <>
-              {data.headroom && <Notice>{data.headroom.note}</Notice>}
-              {data.uncategorised && <Notice>{data.uncategorised}</Notice>}
-              {applied && (
-                <Notice kind="good">
-                  Budgets set, and the daily allowance now divides{' '}
-                  {money(applied.monthly_amount)} instead of your past spending.
-                </Notice>
-              )}
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Category</th><th className="r">Share</th>
-                      <th className="r">Budget</th>
-                      <th>In the daily number</th>
-                      <th className="r">You usually spend</th>
-                      <th>Asking</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.categories.map((r) => (
-                      <tr key={r.category}>
-                        <td className="merchant">{r.category}</td>
-                        <td className="r muted">{pct(r.share)}</td>
-                        <td className="r num">{money(r.budget, { cents: true })}</td>
-                        {/* The answer to "where does the discretionary figure
-                            come from" has to be on the page. It is the sum of
-                            exactly these rows, and which rows those are was
-                            decided by a table in categorize.py that the app
-                            showed nowhere. */}
-                        <td className="small">
-                          {r.essential
-                            ? <span className="muted">no — budgeted monthly</span>
-                            : <span>yes</span>}
-                        </td>
-                        <td className="r num muted">
-                          {r.typical ? money(r.typical) : '—'}
-                        </td>
-                        <td>
-                          {/* A budget above what you spend is headroom, not
-                              an allowance to grow into. Naming the surplus
-                              would read as encouragement to use it. */}
-                          {r.change === null ? <span className="muted">—</span>
-                            : r.change < -1
-                              ? <StatusPill state="warning">
-                                  {money(-r.change)} less
-                                </StatusPill>
-                              : r.change > 1
-                                ? <span className="small muted">room to spare</span>
-                                : <span className="small muted">about the same</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="assumption" style={{ marginBottom: 0 }}>
-                The shares come from how you already divide your spending, so
-                the budget fits the way you actually live. The total does not —
-                it comes from the arithmetic above, which is the only way a
-                budget can ever ask for less than last month.
-              </p>
-            </>
-          )}
-        </Card>
-      )}
+        {/* These are about the plan, not the split: how much room the
+            arithmetic leaves, and how much of the history it had to work
+            from. They sat under the category table that used to follow. */}
+        {data.headroom && <Notice>{data.headroom.note}</Notice>}
+        {data.uncategorised && <Notice>{data.uncategorised}</Notice>}
+
+        {data.leftover > 0 && (
+          <div className="row" style={{ marginTop: 14, flexWrap: 'wrap', gap: 10 }}>
+            <span className="small muted" style={{ flex: '1 1 240px' }}>
+              {data.has_history
+                ? 'How that divides across categories — and how this month is going against it — is on Budgets.'
+                : 'Import a month or two and Budgets can divide that total in the proportions you already spend.'}
+            </span>
+            {onTab && (
+              <button className="btn" onClick={() => onTab('budgets')}>
+                Budgets
+              </button>
+            )}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

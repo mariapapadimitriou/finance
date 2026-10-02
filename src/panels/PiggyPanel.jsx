@@ -15,7 +15,7 @@ import {
  * you can actually spend. Showing one without the other is how you end up
  * either surprised by a small daily allowance or surprised by an empty fund.
  */
-export default function PiggyPanel({ onTab, version = 0 }) {
+export default function PiggyPanel({ version = 0 }) {
   const [data, setData] = useState(null);
   // A failed load has nothing to show and replaces the panel; anything that
   // fails while acting must leave the page and any half-filled form standing.
@@ -91,15 +91,13 @@ export default function PiggyPanel({ onTab, version = 0 }) {
                     : 'None of them behind'} />
           </div>
 
+          {/* No link to the plan from here any more: this is the plan page.
+              The figure it refers to is the term in the sum above it. */}
           <Notice>
-            These contributions come off the Plan&apos;s leftover before the
-            daily number is worked out, which is what &ldquo;deducted equally
-            from each month&rdquo; means in practice.{' '}
-            {onTab && (
-              <button className="link" onClick={() => onTab('plan')}>
-                See it in the plan
-              </button>
-            )}
+            These contributions come off the{' '}
+            <strong>Yours to spend</strong> figure above before the daily
+            number is worked out, which is what &ldquo;deducted equally from
+            each month&rdquo; means in practice.
           </Notice>
 
           <div className="stack">

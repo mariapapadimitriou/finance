@@ -54,6 +54,14 @@ def groups(source) -> dict[str, list[str]]:
 
 
 @pytest.fixture(scope="module")
+def aliases(source) -> dict[str, str]:
+    """Old panel keys that now point at the panel which absorbed them."""
+    m = re.search(r"const ALIASES = \{(.*?)\};", source, re.S)
+    assert m, "could not find `const ALIASES = {...}` in App.jsx — update this test"
+    return dict(re.findall(r"(\w+):\s*'([^']+)'", m.group(1)))
+
+
+@pytest.fixture(scope="module")
 def rendered(source) -> set[str]:
     """Panel keys that actually have a branch rendering them."""
     keys = set(re.findall(r"panel === '([^']+)'", source))
@@ -103,9 +111,21 @@ class TestEveryPanelIsReachableAndRendered:
 
 
 class TestLinksBetweenPanels:
-    def test_every_link_target_resolves(self, panels, groups):
+    def test_every_alias_points_somewhere_real(self, panels, groups, aliases):
+        """An alias is how a panel that was folded into another one keeps its
+        old links working. One pointing at nothing is worse than no alias at
+        all: `resolve` falls through to Today, so the button appears to work."""
+        assert aliases, "ALIASES is empty — remove the fixture if it is gone"
+        for key, target in aliases.items():
+            assert key not in panels, (
+                f"'{key}' is aliased but is also a panel — the alias wins in "
+                "`resolve`, so the panel is unreachable")
+            assert target in panels or target in groups, (
+                f"alias '{key}' points at '{target}', which is neither")
+
+    def test_every_link_target_resolves(self, panels, groups, aliases):
         """Panels navigate by panel key — `onTab('piggy')` — and a key that is
-        neither a panel nor a group silently lands you on Today."""
+        neither a panel, a group nor an alias silently lands you on Today."""
         targets: dict[str, list[str]] = {}
         for path in sorted(SRC.rglob("*.jsx")):
             text = path.read_text(encoding="utf-8")
@@ -115,7 +135,7 @@ class TestLinksBetweenPanels:
                 targets.setdefault(key, []).append(path.name)
 
         assert targets, "no onTab('...') calls found anywhere — update this test"
-        valid = panels | set(groups)
+        valid = panels | set(groups) | set(aliases)
         bad = {k: v for k, v in targets.items() if k not in valid}
         assert not bad, f"link targets that resolve to nothing: {bad}"
 
