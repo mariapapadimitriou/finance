@@ -15,22 +15,24 @@ import {
  */
 export default function PiggyPanel({ onTab, version = 0 }) {
   const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+  // A failed load has nothing to show and replaces the panel; anything that
+  // fails while acting must leave the page and any half-filled form standing.
+  const [loadError, setLoadError] = useState(null);
   const [editing, setEditing] = useState(null);     // bank id, or 'new'
 
   async function load() {
-    setError(null);
+    setLoadError(null);
     try {
       setData(await getBanks());
     } catch (e) {
-      setError(e);
+      setLoadError(e);
     }
   }
 
   // `version` changes on an import, which changes what has been charged.
   useEffect(() => { load(); }, [version]);
 
-  if (error) return <ErrorNote error={error} onRetry={load} />;
+  if (loadError) return <ErrorNote error={loadError} onRetry={load} />;
   if (!data) return <Loading what="piggy banks" />;
 
   const banks = data.banks ?? [];

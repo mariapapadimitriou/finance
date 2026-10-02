@@ -268,7 +268,14 @@ function ThisMonth({ status, state, live }) {
                 value={money(Math.abs(state.remaining), { cents: true })}
                 note={state.remaining < 0
                   ? 'nothing left to spread over the rest of the month'
-                  : `${money(state.spread_daily, { cents: true })}/day from here`}
+                  : state.days_left <= 1
+                    // On the last day there is nothing to spread it over, so
+                    // "$755.38/day from here" advertised a daily allowance of
+                    // $755 — arithmetically the remainder divided by one, and
+                    // absurd as guidance.
+                    ? 'all of it for the last day of the month'
+                    : `${money(state.spread_daily, { cents: true })}/day over the `
+                      + `${state.days_left} days left`}
                 tone={state.remaining < 0 ? 'bad' : undefined} />
       </div>
 
@@ -505,7 +512,7 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
                      note="the Plan tab's figure" />
             <span className="op" aria-hidden="true">−</span>
             <SumTerm label="Essentials" value={d.essentials}
-                     note="groceries, transport — budgeted, not daily" />
+                     note={essentialsNote(d.essential_categories)} />
             <span className="op" aria-hidden="true">=</span>
             <SumTerm label="Day to day" value={d.discretionary} />
           </div>
@@ -550,4 +557,20 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
       )}
     </Card>
   );
+}
+
+/**
+ * Name the categories that actually make up the essential half.
+ *
+ * Written out rather than illustrated with an example. The note used to say
+ * "groceries, transport", and Transport is flagged discretionary — so it is in
+ * the *other* column, and the one figure on this page whose whole purpose is to
+ * be checkable was explained with a counter-example.
+ */
+function essentialsNote(categories) {
+  const names = (categories ?? []).map((c) => c.toLowerCase());
+  if (names.length === 0) return 'budgeted by category, not handed out daily';
+  const shown = names.slice(0, 3).join(', ');
+  const rest = names.length > 3 ? ` and ${names.length - 3} more` : '';
+  return `${shown}${rest} — budgeted, not daily`;
 }

@@ -181,7 +181,7 @@ export default function App() {
           <strong>Can&apos;t reach the Spendie API.</strong> {String(error.message)}
           <br />
           Start it with <code>python app.py</code> (or{' '}
-          <code>python app.py</code>), then{' '}
+          <code>flask --app app run</code>), then{' '}
           <button className="btn quiet" onClick={load}>retry</button>.
         </div>
       </Shell>
@@ -256,13 +256,14 @@ export default function App() {
       )}
       {tab === 'overview' && (
         <OverviewPanel summary={summary} insights={insights} theme={theme}
-                       month={shownMonth} onMonth={setMonth} version={version} />
+                       month={shownMonth} onMonth={setMonth} onTab={setTab}
+                       version={version} />
       )}
       {tab === 'savings' && <SavingsPanel insights={insights} onRefresh={load}
                                           onTab={setTab} />}
       {tab === 'piggy' && <PiggyPanel onTab={setTab} version={version} />}
       {tab === 'projections' && (
-        <ProjectionsPanel insights={insights} version={version} />
+        <ProjectionsPanel insights={insights} onTab={setTab} version={version} />
       )}
       {tab === 'subscriptions' && <SubscriptionsPanel recurring={recurring} />}
       {tab === 'transactions' && (
@@ -288,7 +289,7 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
   const current = ALL_TABS.find((t) => t.key === tab);
   const navRef = useRef(null);
 
-  // On a phone the nav is a scrolling strip, and eleven destinations don't
+  // On a phone the nav is a scrolling strip, and twelve destinations don't
   // fit. Without this, opening the app on a tab that sits off the right edge
   // shows a bar with nothing selected in it.
   useEffect(() => {

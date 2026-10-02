@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Card, Empty, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
-import { getBudgets, money, monthLabel, pct, setBudgets } from '../api.js';
+import {
+  Card, ErrorNote, Loading, MonthFreshness, Notice, StatusPill,
+} from '../components/ui.jsx';
+import {
+  applyPlanBudgets, getBudgets, money, monthLabel, pct, setBudgets,
+} from '../api.js';
 
 /** Over budget, on pace to go over, or fine — status colour plus an icon and a word. */
 function state(row) {
@@ -17,16 +21,21 @@ const STATE_TEXT = {
 
 export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
   const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+  // Two error slots, not one. A failed load has nothing to show, so it replaces
+  // the panel; a failed save has to leave the table and the half-typed draft
+  // exactly where they were, or a transient failure costs the user their edits.
+  const [loadError, setLoadError] = useState(null);
+  const [actionError, setActionError] = useState(null);
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
+  const [applying, setApplying] = useState(false);
 
   async function load() {
-    setError(null);
+    setLoadError(null);
     try {
       setData(await getBudgets(month));
     } catch (e) {
-      setError(e);
+      setLoadError(e);
     }
   }
 
@@ -35,24 +44,37 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
 
   async function save() {
     setSaving(true);
+    setActionError(null);
     try {
       await setBudgets(draft);
       setDraft({});
       await load();
     } catch (e) {
-      setError(e);
+      setActionError(e);          // the draft survives on purpose
     } finally {
       setSaving(false);
     }
   }
 
+  async function adoptPlan() {
+    setApplying(true);
+    setActionError(null);
+    try {
+      await applyPlanBudgets();
+      setDraft({});
+      await load();
+    } catch (e) {
+      setActionError(e);
+    } finally {
+      setApplying(false);
+    }
+  }
 
-  if (error) return <ErrorNote error={error} onRetry={load} />;
+  if (loadError) return <ErrorNote error={loadError} onRetry={load} />;
   if (!data) return <Loading what="budgets" />;
 
   const rows = data.status ?? [];
-  const partial = month === summary.latest_month && !summary.latest_month_complete;
-  const running = partial && summary.latest_month_running;
+  const drift = data.drift;
 
   // No second budget suggester on this tab. Budgets come from the Plan
   // tab's arithmetic — income less commitments less savings, divided in your
@@ -77,25 +99,56 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
         </Card>
       ) : (
         <>
-          {partial && (
-            <Notice>
-              {running ? (
+          {/* First, because every bar below it is drawn against a total that
+              no longer matches the plan. Saying it after the bars would be
+              letting the user read the wrong numbers first. */}
+          {/* States the discrepancy without claiming why it exists. It can come
+              from the plan moving underneath these budgets or from a category
+              edited by hand here, and the notice has no way to tell which —
+              asserting a cause it cannot know would be its own small untruth.
+              The two directions do differ in how much they matter: allowing
+              more than you have is misleading, allowing less is merely
+              conservative. */}
+          {drift && (
+            <Notice kind={drift.gap > 0 ? 'error' : undefined}>
+              <strong>
+                These budgets divide {money(drift.saved_total)}; your plan has{' '}
+                {money(drift.plan_total)}.
+              </strong>{' '}
+              {drift.gap > 0 ? (
                 <>
-                  {monthLabel(month, { long: true })} is still in progress.
-                  &ldquo;On pace&rdquo; projects your spending so far across the
-                  whole month, so you can act before the month closes rather
-                  than after.
+                  So the lines below allow {money(drift.gap)} a month more than
+                  you actually have
+                  {drift.banks > 0 && (
+                    <>, against {money(drift.banks)} a month now going into
+                       piggy banks</>
+                  )}
+                  .
                 </>
               ) : (
                 <>
-                  {monthLabel(month, { long: true })} is over, but the data
-                  stops short of its last day — so these totals may be missing
-                  the end of the month. Sync on the Banks tab before treating
-                  them as final.
+                  So {money(-drift.gap)} a month is left unassigned — not a
+                  problem, but the plan has room these budgets do not use.
                 </>
               )}
+              <div className="row" style={{ marginTop: 12 }}>
+                <button className={`btn${drift.gap > 0 ? ' primary' : ''}`}
+                        onClick={adoptPlan} disabled={applying}>
+                  {applying ? 'Applying…' : "Use the plan's split"}
+                </button>
+                {onTab && (
+                  <button className="btn quiet" onClick={() => onTab('plan')}>
+                    See the plan first
+                  </button>
+                )}
+              </div>
             </Notice>
           )}
+
+          <ErrorNote error={actionError} />
+
+          {/* One wording for this, shared with Overview. */}
+          <MonthFreshness month={month} summary={summary} onTab={onTab} />
 
           {data.unbudgeted_spend > 1 && (
             <Notice>
@@ -161,6 +214,7 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
                   <tr>
                     <th>Category</th>
                     <th className="r">Monthly budget</th>
+                    {drift && <th className="r">Plan says</th>}
                     <th className="r">Your median</th>
                   </tr>
                 </thead>
@@ -181,6 +235,12 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
                           aria-label={`${r.category} monthly budget`}
                         />
                       </td>
+                      {drift && (
+                        <td className="r">
+                          <PlanShare saved={r.budget}
+                                     planned={drift.plan_budgets?.[r.category]} />
+                        </td>
+                      )}
                       <td className="r muted">{money(data.typical?.[r.category] ?? 0)}</td>
                     </tr>
                   ))}
@@ -200,5 +260,25 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * What the plan would give this category, beside what is saved.
+ *
+ * Only worth showing when the two disagree, and worth colouring only when the
+ * saved figure is the larger one — that is the direction that tells someone
+ * they have more to spend than they do.
+ */
+function PlanShare({ saved, planned }) {
+  if (planned === undefined || planned === null) {
+    return <span className="muted small">not in the plan</span>;
+  }
+  const over = saved - planned > 1;
+  return (
+    <span className={`num small${over ? '' : ' muted'}`}
+          style={over ? { color: 'var(--critical)' } : undefined}>
+      {money(planned)}
+    </span>
   );
 }

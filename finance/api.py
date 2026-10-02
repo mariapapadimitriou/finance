@@ -555,7 +555,8 @@ def _profile(st, txns, findings_summary_: dict):
         savings=savings,
         bank_monthly=bank_monthly,
         leftover=result["leftover"],
-        daily=round(allowance / 30.44, 2) if allowance > 0 else 0.0,
+        daily=round(allowance / money_plan.days_in_month(
+            _plan_month()), 2) if allowance > 0 else 0.0,
         months_of_history=len(months),
         last_month=last,
         last_month_discretionary=last_spend,
@@ -656,6 +657,18 @@ def _derivation(st, txns, allowance: float, from_plan: bool) -> dict:
                              _bank_monthly(st))
     shares = money_plan.variable_shares(txns)
     budgets = money_plan.category_budgets(result["leftover"], shares)
+
+    # The categories actually making up the essential half, biggest first,
+    # rather than a hardcoded example. The note used to read "groceries,
+    # transport" — but Transport is flagged discretionary in categorize.py, so
+    # it sits in the other column, and the one explanation on the page whose
+    # job is to be auditable named a category that contradicted it.
+    from .categorize import is_discretionary
+    essential_categories = [
+        c for c, _ in sorted(budgets.items(), key=lambda kv: -kv[1])
+        if not is_discretionary(c)
+    ]
+
     return {
         "from_plan": True,
         "income": result["income"],
@@ -665,6 +678,7 @@ def _derivation(st, txns, allowance: float, from_plan: bool) -> dict:
         # "Yours to spend" on the Plan tab.
         "leftover": result["leftover"],
         "essentials": round(result["leftover"] - allowance, 2),
+        "essential_categories": essential_categories,
         "discretionary": allowance,
     }
 
@@ -742,8 +756,15 @@ def projection():
     findings = generate_findings(txns, st.dismissed())
     weighted = findings_summary(findings).get("weighted_annual", 0.0)
 
+    # The plan, when there is one. Without it the projection cannot see rent and
+    # ends up treating it as money available to save.
+    from . import money_plan
+    plan = money_plan.plan(income or 0.0, st.fixed_costs(),
+                           st.float_setting("savings_target", 0.0),
+                           _bank_monthly(st)) if income else None
+
     result = projections.project(txns, income, weighted,
-                                 int(request.args.get("months", 12)))
+                                 int(request.args.get("months", 12)), plan=plan)
     target = request.args.get("target")
     if target:
         try:
@@ -755,19 +776,6 @@ def projection():
     # figure you typed, and is null until you do.
     result["configured_income"] = income
     return jsonify(result)
-
-
-@bp.put("/projections/income")
-def set_income():
-    body = request.get_json(silent=True) or {}
-    try:
-        income = float(body.get("monthly_income", 0))
-    except (TypeError, ValueError):
-        return jsonify({"error": "Income must be a number."}), 400
-    if income < 0:
-        return jsonify({"error": "Income cannot be negative."}), 400
-    store().set_setting("monthly_income", income)
-    return jsonify({"ok": True, "monthly_income": income})
 
 
 # ── Plaid ────────────────────────────────────────────────────────────────
@@ -949,6 +957,13 @@ def plan_setup():
         # pocket-money figure.
         "daily_pool": money_plan.discretionary_pool(
             money_plan.category_budgets(result["leftover"], shares)),
+        # Divided by this month's real length, the same divisor Today uses, so
+        # the two tabs cannot print different numbers for one figure. The month
+        # travels with it, because Today may be showing an earlier one when the
+        # current month has nothing imported yet — and then the two figures
+        # differ for a reason that has to be visible.
+        "days_this_month": money_plan.days_in_month(_plan_month()),
+        "month": _plan_month(),
         "shares": shares,
         "categories": money_plan.explain(result["leftover"], shares, historical),
         "suggested_budgets": money_plan.category_budgets(result["leftover"], shares),
@@ -1375,7 +1390,55 @@ def budgets():
         "month_spend": everything,
         "unbudgeted_spend": round(everything - covered, 2),
         "unbudgeted": sorted(unbudgeted, key=lambda r: -r["amount"]),
+        # Whether these budgets still divide the money the plan actually has.
+        "drift": _budget_drift(store(), txns, b),
     })
+
+
+def _budget_drift(st, txns, saved: dict) -> dict | None:
+    """Do the saved budgets still add up to what the plan leaves?
+
+    They are adopted once, from the plan's arithmetic, and then stay as they
+    were. Anything that moves the plan afterwards — a raise, a new commitment,
+    a change to the savings figure, opening a piggy bank — leaves them dividing
+    a leftover that no longer exists. Before this, the Budgets tab went on
+    reporting the old division in full confidence: budgets totalling $2,585
+    against a plan with $1,910 in it, with the $675 of piggy banks spent twice
+    and nothing on the page saying so.
+
+    Reported rather than corrected, because a category may have been adjusted
+    by hand on that tab, and silently reverting it would be this same bug
+    pointing the other way.
+    """
+    from . import money_plan
+
+    income = st.float_setting("monthly_income", 0.0)
+    if income <= 0 or not saved:
+        return None
+
+    result = money_plan.plan(income, st.fixed_costs(),
+                             st.float_setting("savings_target", 0.0),
+                             _bank_monthly(st))
+    leftover = result["leftover"]
+    shares = money_plan.variable_shares(txns)
+    plan_budgets = money_plan.category_budgets(leftover, shares)
+
+    saved_total = round(sum(saved.values()), 2)
+    gap = round(saved_total - leftover, 2)
+    if abs(gap) <= 1:
+        return None
+
+    return {
+        "saved_total": saved_total,
+        "plan_total": leftover,
+        "gap": gap,
+        # Named so the notice can say where the difference went rather than
+        # just that there is one.
+        "banks": result["banks"],
+        "savings": result["savings"],
+        "fixed_total": result["fixed_total"],
+        "plan_budgets": plan_budgets,
+    }
 
 
 @bp.put("/budgets")

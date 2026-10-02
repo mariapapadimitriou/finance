@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
   addFixedCost, applyPlanBudgets, deleteFixedCost, getCategories, getPlanSetup,
-  money, pct, savePlanSetup,
+  money, monthLabel, pct, savePlanSetup,
 } from '../api.js';
 
 /**
@@ -185,10 +185,12 @@ export default function PlanPanel({ onChanged }) {
             discretionary — which is what the daily number on Today divides,
             about{' '}
             <strong className="num">
-              {money(data.daily_pool / 30.44, { cents: true })}
+              {money(data.daily_pool / (data.days_this_month || 30), { cents: true })}
             </strong>{' '}
-            a day. No amount of restraint on a Tuesday changes the grocery
-            bill, so it is budgeted rather than handed out daily.
+            a day across {monthLabel(data.month, { long: true })}&apos;s{' '}
+            {data.days_this_month} days. No amount of restraint on a Tuesday
+            changes the grocery bill, so it is budgeted rather than handed out
+            daily.
           </p>
         )}
       </Card>

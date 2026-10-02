@@ -37,8 +37,27 @@ def _monthly_totals(transactions) -> dict[str, dict]:
 
 
 def project(transactions, monthly_income: float | None = None,
-            found_savings_annual: float = 0.0, months_ahead: int = 12) -> dict:
-    """Project cumulative savings forward under two scenarios."""
+            found_savings_annual: float = 0.0, months_ahead: int = 12,
+            plan: dict | None = None) -> dict:
+    """Project cumulative savings forward under two scenarios.
+
+    `plan` is the result of `money_plan.plan` when one has been set up. It
+    matters a great deal. Without it the only surplus available is take-home
+    less the spending visible on the imported cards — which silently treats
+    rent as money you could be saving, because rent is usually paid by transfer
+    and never appears. On a real ledger that produced a surplus of $3,552 a
+    month against a plan that had $1,910 left in it, and a twelve-month
+    projection five times larger than anything achievable.
+
+    With a plan the app already knows the commitments, so the projection is
+    built from what the plan says accumulates:
+
+        what you put away  +  what the plan leaves unspent
+
+    Piggy banks are deliberately not in that sum. They collect, but they
+    collect in order to be spent on the thing they are named after, so counting
+    them as savings would be the same mistake in a smaller coat.
+    """
     totals = _monthly_totals(transactions)
     observed = sorted(totals)
 
@@ -67,7 +86,7 @@ def project(transactions, monthly_income: float | None = None,
             "months_observed": len(observed),
         }
 
-    surplus = round(income - typical_spend, 2)
+    surplus, basis = _surplus(income, typical_spend, plan)
     monthly_cuts = round(found_savings_annual / 12, 2)
 
     rows = []
@@ -86,12 +105,23 @@ def project(transactions, monthly_income: float | None = None,
         "monthly_cuts": monthly_cuts,
         "series": rows,
         "at_12": rows[-1] if rows else None,
-        # The spend figure covers the cards that were imported, not everything
-        # you spend. Rent paid by transfer, another card, cash — none of it is
-        # here, so the surplus is an upper bound, not a forecast of savings.
-        "caveat": "Based only on the cards you've imported. Spending that never "
-                  "touches them — rent, other cards, cash — isn't counted, so "
-                  "treat the surplus as a ceiling.",
+        # The terms behind the surplus, so the figure can be argued with rather
+        # than taken on trust — the same treatment the daily number gets.
+        "basis": basis,
+        "from_plan": basis["from_plan"],
+        "caveat": (
+            # With a plan, commitments are known and subtracted, so the old
+            # "ceiling" warning would now be false modesty about a figure that
+            # is actually derived. What remains uncertain is the spending, not
+            # the income.
+            "Your commitments come out of this, so it is what the plan expects "
+            "to accumulate rather than an upper bound. The spending side is "
+            "still only the cards you have imported."
+            if basis["from_plan"] else
+            "Based only on the cards you've imported. Spending that never "
+            "touches them — rent, other cards, cash — isn't counted, so "
+            "treat the surplus as a ceiling."
+        ),
         # A projection off three months is a guess with a wide band; off twelve
         # it is a trend. The caller shows this rather than implying precision.
         "confidence": ("thin" if len(observed) < 4
@@ -114,4 +144,35 @@ def goal_eta(projection: dict, target: float) -> dict | None:
         "current_months": months_for(projection["monthly_surplus"]),
         "with_cuts_months": months_for(
             projection["monthly_surplus"] + projection["monthly_cuts"]),
+    }
+
+
+def _surplus(income: float, typical_spend: float,
+             plan: dict | None) -> tuple[float, dict]:
+    """What accumulates each month, and the terms it came from.
+
+    Two cases, and the difference between them is whether the app knows what
+    is already committed.
+    """
+    if plan and plan.get("income", 0) > 0:
+        leftover = plan["leftover"]
+        unspent = round(leftover - typical_spend, 2)
+        saving = plan["savings"]
+        return round(saving + unspent, 2), {
+            "from_plan": True,
+            "income": plan["income"],
+            "fixed_total": plan["fixed_total"],
+            # Named so the tab can say why it is excluded rather than appearing
+            # to have forgotten it.
+            "banks": plan["banks"],
+            "saving": saving,
+            "leftover": leftover,
+            "typical_spend": typical_spend,
+            "unspent": unspent,
+        }
+
+    return round(income - typical_spend, 2), {
+        "from_plan": False,
+        "income": round(income, 2),
+        "typical_spend": typical_spend,
     }

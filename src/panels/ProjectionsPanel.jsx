@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Chart from '../components/Chart.jsx';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
-import { getProjections, money, setIncome } from '../api.js';
+import { getProjections, money } from '../api.js';
 import { projectionConfig } from '../charts.js';
 
 /**
@@ -12,23 +12,16 @@ import { projectionConfig } from '../charts.js';
  * arithmetic on a trend, and the honest part is saying how thin that trend is,
  * so the months behind the numbers travel with them.
  */
-export default function ProjectionsPanel({ insights, version = 0 }) {
+export default function ProjectionsPanel({ insights, onTab, version = 0 }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [target, setTarget] = useState('');
-  const [income, setIncomeDraft] = useState('');
-  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (goal) => {
     setError(null);
     try {
       const d = await getProjections(goal || undefined);
       setData(d);
-      // Always the stored figure, never a sticky local copy. This is the
-      // same `monthly_income` the Plan tab writes, so keeping whatever was
-      // typed here meant the two tabs could show different pay for the same
-      // person until the page was reloaded.
-      setIncomeDraft(d.configured_income ? String(d.configured_income) : '');
     } catch (e) {
       setError(e);
     }
@@ -37,20 +30,12 @@ export default function ProjectionsPanel({ insights, version = 0 }) {
 
   useEffect(() => { load(target); }, [load, target]);
 
-  async function saveIncome(e) {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      await setIncome(Number(income || 0));
-      await load(target);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setBusy(false);
-    }
-  }
 
-  if (!data && !error) return <Loading what="projections" />;
+  // Before the unavailable branch below, not after: on a failed load `data` is
+  // null, so `!data?.available` was true and the page rendered an empty grey
+  // notice under the error — a failure dressed as furniture.
+  if (error && !data) return <ErrorNote error={error} onRetry={() => load(target)} />;
+  if (!data) return <Loading what="projections" />;
 
   const foundAnnual = insights?.summary?.weighted_annual ?? 0;
 
@@ -58,20 +43,23 @@ export default function ProjectionsPanel({ insights, version = 0 }) {
     <div className="stack">
       <ErrorNote error={error} onRetry={() => load(target)} />
 
-      <Card title="Monthly take-home pay"
-            hint="Credit card statements don't show income, so this one has to be typed">
-        <form className="controls" onSubmit={saveIncome}>
-          <label htmlFor="income">After tax, each month I take home</label>
-          <input id="income" type="number" min="0" step="50" value={income}
-                 onChange={(e) => setIncomeDraft(e.target.value)}
-                 placeholder="e.g. 4200" style={{ width: 140 }} />
-          <button className="btn primary" type="submit" disabled={busy}>
-            {busy ? 'Saving…' : 'Save'}
-          </button>
-        </form>
-        <p className="assumption" style={{ marginBottom: 0 }}>
-          The same figure the Plan tab uses — change it in either place and
-          both follow.
+      {/* Shown, not edited. Take-home pay had a Save button here and another on
+          the Plan tab, both writing the same setting, and whichever was touched
+          last won silently. One figure, one place to change it. */}
+      <Card title="What this is built on"
+            hint="All of it comes from the Plan tab">
+        <p className="small" style={{ marginTop: 0, marginBottom: 12 }}>
+          Take-home pay of{' '}
+          <strong className="num">{money(data.monthly_income)}</strong> a month
+          {data.basis?.from_plan && (
+            <>, less {money(data.basis.fixed_total)} of commitments</>
+          )}
+          .{' '}
+          {onTab
+            ? <button className="link" onClick={() => onTab('plan')}>
+                Change it on the Plan tab
+              </button>
+            : <>Change it on the Plan tab.</>}
         </p>
       </Card>
 
@@ -89,24 +77,54 @@ export default function ProjectionsPanel({ insights, version = 0 }) {
         </Notice>
       ) : (
         <>
-          {/* Stated before the numbers rather than under them. The surplus is
-              take-home minus what touched these cards — rent paid by transfer,
-              another card and cash are all missing from it, so read as a
-              savings rate it is far too high. */}
-          <Notice>
-            <strong>Read the surplus as a ceiling.</strong> {data.caveat}
+          <Notice kind={data.from_plan ? undefined : 'error'}>
+            {!data.from_plan && <strong>Read the surplus as a ceiling. </strong>}
+            {data.caveat}
           </Notice>
 
-          <div className="grid cols-4">
-            <Tile label="Take-home" value={money(data.monthly_income)} note="a month" />
-            <Tile label="Typical spend" value={money(data.typical_monthly_spend)}
-                  note="median month, imported cards only" />
-            <Tile label="Surplus" value={money(data.monthly_surplus)}
-                  note="take-home minus that spending"
-                  tone={data.monthly_surplus < 0 ? 'bad' : 'good'} />
-            <Tile label="Cuts found" value={money(data.monthly_cuts)}
-                  note="a month, from the Savings tab" tone="good" />
-          </div>
+          {data.from_plan ? (
+            <>
+              <div className="grid cols-3">
+                <Tile label="You put away" value={money(data.basis.saving)}
+                      note="the savings figure in your plan" tone="good" />
+                <Tile label="Left unspent" value={money(data.basis.unspent)}
+                      note={`${money(data.basis.leftover)} to spend, `
+                            + `${money(data.basis.typical_spend)} typically spent`}
+                      tone={data.basis.unspent < 0 ? 'bad' : 'good'} />
+                <Tile label="Saved each month" value={money(data.monthly_surplus)}
+                      note="what the two above come to"
+                      tone={data.monthly_surplus < 0 ? 'bad' : 'good'} />
+              </div>
+              {data.basis.banks > 0 && (
+                <p className="assumption">
+                  Your piggy banks collect a further{' '}
+                  <strong className="num">{money(data.basis.banks)}</strong> a
+                  month, deliberately left out of the figures above. They do
+                  accumulate, but they accumulate in order to be spent on the
+                  thing they are named after, so counting them as savings would
+                  overstate what you actually keep.
+                </p>
+              )}
+              <div className="grid cols-2">
+                <Tile label="Cuts found" value={money(data.monthly_cuts)}
+                      note="a month, from the Savings tab" tone="good" />
+                <Tile label="Typical spend" value={money(data.typical_monthly_spend)}
+                      note={`median of ${data.months_observed} month`
+                            + `${data.months_observed === 1 ? '' : 's'}, imported cards only`} />
+              </div>
+            </>
+          ) : (
+            <div className="grid cols-4">
+              <Tile label="Take-home" value={money(data.monthly_income)} note="a month" />
+              <Tile label="Typical spend" value={money(data.typical_monthly_spend)}
+                    note="median month, imported cards only" />
+              <Tile label="Surplus" value={money(data.monthly_surplus)}
+                    note="take-home minus that spending"
+                    tone={data.monthly_surplus < 0 ? 'bad' : 'good'} />
+              <Tile label="Cuts found" value={money(data.monthly_cuts)}
+                    note="a month, from the Savings tab" tone="good" />
+            </div>
+          )}
 
           <Card
             title="Twelve months out"
