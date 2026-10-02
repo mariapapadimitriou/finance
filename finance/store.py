@@ -876,6 +876,35 @@ class Store:
             cur = c.execute("DELETE FROM piggy_allocations WHERE txn_id = ?", (txn_id,))
             return cur.rowcount > 0
 
+    def bank_charges_by_month(self) -> dict[int, dict[str, float]]:
+        """Bank id → month → what came out of it that month.
+
+        The per-month breakdown rather than a total, because a bank's
+        contribution now depends on *when* it was spent: a trip charged in
+        January is repaid over the months since, and one charged yesterday is
+        not. See `piggy.run`.
+        """
+        out: dict[int, dict[str, float]] = {}
+        with self.conn() as c:
+            rows = c.execute(
+                """SELECT a.bank_id AS bank_id,
+                          SUBSTR(t.date, 1, 7) AS month,
+                          COALESCE(SUM(COALESCE(a.amount, t.amount)), 0) AS total
+                     FROM piggy_allocations a
+                     JOIN transactions t ON t.id = a.txn_id
+                    GROUP BY a.bank_id, SUBSTR(t.date, 1, 7)""").fetchall()
+            for r in rows:
+                out.setdefault(r["bank_id"], {})[r["month"]] = round(r["total"], 2)
+
+            drawn = c.execute(
+                "SELECT bank_id, month, COALESCE(SUM(amount), 0) AS total "
+                "FROM piggy_draws GROUP BY bank_id, month").fetchall()
+            for r in drawn:
+                months = out.setdefault(r["bank_id"], {})
+                months[r["month"]] = round(months.get(r["month"], 0.0)
+                                           + r["total"], 2)
+        return out
+
     def charged_to_banks(self) -> dict[int, float]:
         """Bank id → everything taken out of it: allocated charges and draws.
 

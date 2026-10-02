@@ -49,6 +49,13 @@ CADENCES = (ANNUAL, ONCE)
 # with a name, and dividing by it produces a monthly figure of pennies.
 MAX_MONTHS = 120
 
+# How long a bank gets to repay itself after being spent ahead of its funding.
+# A year, because the alternative to spreading it is a single month that has to
+# absorb the whole overspend — which is the problem piggy banks exist to solve,
+# and solving it for the planned case while reintroducing it for the unplanned
+# one would be most of the way to pointless.
+CATCH_UP_MONTHS = 12
+
 
 @dataclass
 class Bank:
@@ -114,8 +121,12 @@ def funding_months(bank: Bank, today: str | None = None) -> int:
     return max(min(span, MAX_MONTHS), 1)
 
 
-def monthly(bank: Bank, today: str | None = None) -> float:
-    """What this bank takes out of every month's budget.
+def base_monthly(bank: Bank, today: str | None = None) -> float:
+    """The rate the target and the horizon imply, before any catching up.
+
+    What the bank actually takes out of a month can be more than this — see
+    `run`, which adds whatever it takes to repay a bank that has been spent
+    ahead of its funding.
 
     Money already in the bank reduces it: if the holiday costs $3,000 and
     $500 is already set aside, only $2,500 has to be collected. Saying
@@ -125,39 +136,113 @@ def monthly(bank: Bank, today: str | None = None) -> float:
     return round(needed / funding_months(bank, today), 2)
 
 
-def accrued(bank: Bank, today: str | None = None) -> float:
-    """What should be in the bank by now, if every month paid in.
+def run(bank: Bank, charges: dict[str, float],
+        today: str | None = None) -> dict:
+    """Play the bank forward month by month and report where it stands.
 
-    Derived from the calendar rather than stored, so it cannot drift from the
-    contributions the Plan has actually been subtracting. A dated bank stops
-    collecting once its date passes; an annual one never does.
+    This is what makes a bank able to pay for something before it has finished
+    saving for it. A trip booked in the first month of a $2,400-a-year travel
+    fund costs $2,000 against a pot holding $200 — and the answer is not that
+    the bank can only pay $200, nor that the month has to absorb $1,800. The
+    answer is the one anybody would reach for in real life: the fund is behind,
+    and it pays itself back out of the months that follow.
+
+    So the contribution is not a constant. While the balance is negative the
+    shortfall is spread over the next `CATCH_UP_MONTHS`, on top of the base
+    rate, and that extra comes out of those months' budgets exactly as the base
+    does. As the balance recovers the extra shrinks and disappears, which is
+    why this is a loop rather than a formula: each month's rate depends on the
+    balance the month before, and the balance depends on every rate before it.
+
+    Nothing is stored. `charges` is what was taken out in each month — spending
+    allocated to the bank plus anything drawn to cover an overspend — and the
+    whole history is replayed on every request, so the figures cannot drift
+    from the transactions behind them.
     """
-    now = today or _today()
-    start = bank.start_month or now[:7]
-    if now[:7] < start:
-        return round(bank.opening, 2)
+    now = (today or _today())[:7]
+    start = bank.start_month or now
+    base = base_monthly(bank, today)
+    horizon = funding_months(bank, today)
 
-    elapsed = months_between(start, now[:7])
-    if bank.is_dated:
-        elapsed = min(elapsed, funding_months(bank, today))
-    return round(bank.opening + monthly(bank, today) * elapsed, 2)
+    # The replay has to begin at the earliest of the bank's start and anything
+    # charged to it, not simply at the start. A bank opened *after* the trip it
+    # is for — "that holiday hurt, let me spread the next one" — has charges
+    # dated before it existed, and a loop that began at the start month skipped
+    # them entirely: the bank reported itself fully funded while owing $2,000.
+    first = min([start, *charges]) if charges else start
+
+    balance = round(bank.opening, 2)
+    months_paid = 0
+    paid_in = round(bank.opening, 2)
+
+    if now >= first:
+        for i in range(months_between(first, now)):
+            month = _add_months(first, i)
+            # Nothing is collected before the bank existed, and a dated bank
+            # stops collecting once its date has passed — but either way it
+            # still has to pay off whatever it owes.
+            since_start = _month_index(month) - _month_index(start)
+            open_yet = month >= start
+            collecting = (base if open_yet
+                          and (not bank.is_dated or since_start < horizon)
+                          else 0.0)
+            # The catch-up is gated on the bank existing too. A fund opened
+            # after the trip it covers would otherwise show itself as having
+            # quietly repaid the shortfall over the preceding year — money that
+            # never came out of any real month's budget.
+            behind = max(-balance, 0.0) if open_yet else 0.0
+            rate = round(collecting + behind / CATCH_UP_MONTHS, 2)
+            balance = round(balance + rate - charges.get(month, 0.0), 2)
+            paid_in = round(paid_in + rate, 2)
+            if month >= start:
+                months_paid += 1
+
+    # Next month's rate, which is the one the Plan has to subtract.
+    behind_now = max(-balance, 0.0)
+    collecting_next = base if (not bank.is_dated or months_paid < horizon) else 0.0
+    next_rate = round(collecting_next + behind_now / CATCH_UP_MONTHS, 2)
+
+    return {
+        "monthly": next_rate,
+        "base_monthly": base,
+        "catch_up": round(next_rate - collecting_next, 2),
+        "balance": balance,
+        "paid_in": paid_in,
+        "charged": round(sum(charges.values()), 2),
+        "months_paid": months_paid,
+        "behind_by": round(behind_now, 2),
+        "behind": behind_now > 0,
+        # When the shortfall is cleared at the current rate, so "behind" reads
+        # as a date rather than an open-ended failure.
+        "caught_up_by": (_add_months(now, CATCH_UP_MONTHS)
+                         if behind_now > 0 else None),
+    }
 
 
-def status(bank: Bank, charged: float, today: str | None = None) -> dict:
+def _add_months(month: str, n: int) -> str:
+    total = _month_index(month) + n
+    return f"{total // 12:04d}-{total % 12 + 1:02d}"
+
+
+def status(bank: Bank, charges, today: str | None = None) -> dict:
     """One bank's full picture: what went in, what came out, what is left.
 
-    `charged` is everything taken out of it — spending allocated to the bank
-    plus anything drawn to cover a month — because a pot does not care which
-    gesture emptied it.
+    `charges` is either the per-month breakdown of everything taken out of the
+    bank, or a single total for callers that do not have the breakdown — a
+    total is treated as having been spent in the current month, which is right
+    for the common case of asking what a charge made just now would do.
     """
     now = today or _today()
-    per_month = monthly(bank, today)
-    in_so_far = accrued(bank, today)
-    balance = round(in_so_far - charged, 2)
+    if not isinstance(charges, dict):
+        charges = {now[:7]: float(charges or 0.0)}
+
+    played = run(bank, charges, today)
+    per_month = played["monthly"]
+    in_so_far = played["paid_in"]
+    balance = played["balance"]
     months = funding_months(bank, today)
 
-    start = bank.start_month or now[:7]
-    paid_months = max(months_between(start, now[:7]), 0) if now[:7] >= start else 0
+    paid_months = played["months_paid"]
     if bank.is_dated:
         remaining_months = max(months - paid_months, 0)
         funded_on = bank.target_date
@@ -167,8 +252,10 @@ def status(bank: Bank, charged: float, today: str | None = None) -> dict:
 
     return {
         "monthly": per_month,
+        "base_monthly": played["base_monthly"],
+        "catch_up": played["catch_up"],
         "accrued": in_so_far,
-        "charged": round(charged, 2),
+        "charged": played["charged"],
         "balance": balance,
         "funding_months": months,
         "months_paid": paid_months,
@@ -176,18 +263,26 @@ def status(bank: Bank, charged: float, today: str | None = None) -> dict:
         "funded_on": funded_on,
         "funded_share": round(min(in_so_far / bank.target, 1.0), 4) if bank.target > 0 else 0.0,
         "complete": bool(bank.is_dated and remaining_months == 0),
-        # Spending ahead of the bank is not an error — you may have to fly
-        # before you have finished saving for the flight — but it is the one
-        # thing about a bank worth surfacing, because the overdraft comes out
-        # of the month after all.
-        "overdrawn": balance < 0,
-        "overdrawn_by": round(-balance, 2) if balance < 0 else 0.0,
+        # Spending ahead of a bank is not an error — you may have to fly before
+        # you have finished saving for the flight. What it means is that the
+        # bank owes itself money, which it collects from the months ahead.
+        "behind": played["behind"],
+        "behind_by": played["behind_by"],
+        "caught_up_by": played["caught_up_by"],
     }
 
 
-def total_monthly(banks: list[Bank], today: str | None = None) -> float:
-    """What every bank together takes out of a month, for the Plan's arithmetic."""
-    return round(sum(monthly(b, today) for b in banks), 2)
+def total_monthly(banks: list[Bank], charges: dict[int, dict] | None = None,
+                  today: str | None = None) -> float:
+    """What every bank together takes out of a month, for the Plan's arithmetic.
+
+    Includes any catch-up, because a bank repaying itself genuinely does take
+    more out of this month than its base rate — that is the whole mechanism,
+    and leaving it out of the Plan would hand the same money out twice.
+    """
+    charges = charges or {}
+    return round(sum(run(b, charges.get(b.id, {}), today)["monthly"]
+                     for b in banks), 2)
 
 
 def _today() -> str:

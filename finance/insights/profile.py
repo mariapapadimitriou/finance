@@ -375,25 +375,26 @@ def travel_has_no_bank(p: Profile) -> Observation | None:
     )
 
 
-def a_bank_is_overdrawn(p: Profile) -> list[Observation]:
+def a_bank_is_catching_up(p: Profile) -> list[Observation]:
     out = []
     for bank in p.banks:
-        if not bank.get("overdrawn"):
+        if not bank.get("behind"):
             continue
         out.append(Observation(
-            id=f"bank_overdrawn_{bank['id']}",
-            title=f"{bank['name']} has been spent further than it has filled",
-            detail=(f"{_money(bank['charged'])} has been charged to it and "
-                    f"{_money(bank['accrued'])} has gone in, so it is "
-                    f"{_money(bank['overdrawn_by'])} down. That is not "
-                    "necessarily wrong — sometimes you have to fly before you "
-                    "have finished saving for the flight — but the difference "
-                    "is coming out of your month-to-month spending whether it "
-                    "is budgeted or not. Either raise the contribution or let "
-                    "it catch up before charging anything else to it."),
-            severity="act", metric=_money(bank["overdrawn_by"]),
+            id=f"bank_behind_{bank['id']}",
+            title=f"{bank['name']} is repaying itself",
+            detail=(f"You spent {_money(bank['behind_by'])} more out of it "
+                    "than it had collected, which is allowed — sometimes you "
+                    "have to fly before you have finished saving for the "
+                    f"flight. It now takes {_money(bank['monthly'])} a month "
+                    f"instead of {_money(bank.get('base_monthly', 0))} until "
+                    "it is whole, and that extra is coming out of your "
+                    "day-to-day money. Nothing to fix; worth knowing why this "
+                    "month feels tighter."),
+            severity="watch", metric=_money(bank["behind_by"]),
             tab="piggy", action=f"Look at {bank['name']}",
-            figures={"bank": bank["name"], "short": bank["overdrawn_by"]},
+            figures={"bank": bank["name"], "behind": bank["behind_by"],
+                     "monthly": bank["monthly"]},
         ))
     return out
 
@@ -401,7 +402,7 @@ def a_bank_is_overdrawn(p: Profile) -> list[Observation]:
 def a_bank_is_ready(p: Profile) -> list[Observation]:
     out = []
     for bank in p.banks:
-        if bank.get("overdrawn") or bank.get("funded_share", 0) < 1.0:
+        if bank.get("behind") or bank.get("funded_share", 0) < 1.0:
             continue
         if bank.get("balance", 0) <= 0:
             continue
@@ -493,7 +494,7 @@ RULES = (
     no_emergency_fund,
     history_is_thin,
     savings_are_available,
-    a_bank_is_overdrawn,
+    a_bank_is_catching_up,
     a_bank_is_ready,
     living_under_the_plan,
     saving_well,

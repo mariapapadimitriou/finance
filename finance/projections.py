@@ -70,6 +70,21 @@ def project(transactions, monthly_income: float | None = None,
     from .analytics import typical_month_spend
     typical_spend = typical_month_spend(transactions)
 
+    # What the plan's leftover actually has to cover, which is not the same
+    # thing. `leftover` already has the commitments taken out of it, and a
+    # commitment paid by card — a phone bill, insurance — is *also* in the
+    # spending above. Subtracting both charged it twice and made the surplus
+    # look worse than the ledger does.
+    #
+    # Each commitment names a category, so those categories come out of the
+    # comparison. It is not perfect — a commitment could share a category with
+    # ordinary spending — but it is far closer than counting them twice, and it
+    # errs toward the plan looking worse rather than better.
+    committed = {f["category"] for f in (plan or {}).get("fixed", [])
+                 if isinstance(f, dict) and f.get("category")}
+    plan_spend = (typical_month_spend(transactions, exclude=committed)
+                  if committed else typical_spend)
+
     # Income is only visible when payroll lands on an imported card. Credit card
     # statements usually show none, so it is an input rather than a deduction.
     observed_income = [totals[m]["income"] for m in observed if totals[m]["income"] > 0]
@@ -86,21 +101,26 @@ def project(transactions, monthly_income: float | None = None,
             "months_observed": len(observed),
         }
 
-    surplus, basis = _surplus(income, typical_spend, plan)
+    surplus, basis = _surplus(income, plan_spend, plan)
+    on_plan = basis.get("on_plan")
     monthly_cuts = round(found_savings_annual / 12, 2)
 
     rows = []
-    base, improved = 0.0, 0.0
+    pace, planned = 0.0, 0.0
     for i in range(1, months_ahead + 1):
-        base = round(base + surplus, 2)
-        improved = round(improved + surplus + monthly_cuts, 2)
-        rows.append({"month": i, "current": base, "with_cuts": improved})
+        pace = round(pace + surplus, 2)
+        planned = round(planned + (on_plan if on_plan is not None
+                                   else surplus + monthly_cuts), 2)
+        rows.append({"month": i, "pace": pace, "on_plan": planned})
 
     return {
         "available": True,
         "months_observed": len(observed),
         "monthly_income": round(income, 2),
         "typical_monthly_spend": typical_spend,
+        # What the leftover is measured against: the same months with the
+        # commitment categories removed, so nothing is subtracted twice.
+        "plan_spend": plan_spend,
         "monthly_surplus": surplus,
         "monthly_cuts": monthly_cuts,
         "series": rows,
@@ -109,6 +129,9 @@ def project(transactions, monthly_income: float | None = None,
         # than taken on trust — the same treatment the daily number gets.
         "basis": basis,
         "from_plan": basis["from_plan"],
+        # What following the plan accumulates each month, against what the
+        # recent pace does. The chart draws both.
+        "monthly_on_plan": basis.get("on_plan"),
         "caveat": (
             # With a plan, commitments are known and subtracted, so the old
             # "ceiling" warning would now be false modesty about a figure that
@@ -130,29 +153,44 @@ def project(transactions, monthly_income: float | None = None,
 
 
 def goal_eta(projection: dict, target: float) -> dict | None:
-    """How long a savings target takes under each scenario."""
+    """How long a savings target takes at the recent pace, and on the plan."""
     if not projection.get("available") or target <= 0:
         return None
 
     def months_for(rate: float) -> int | None:
-        if rate <= 0:
+        if rate is None or rate <= 0:
             return None
         return max(1, int(-(-target // rate)))
 
+    on_plan = projection.get("monthly_on_plan")
     return {
         "target": round(target, 2),
-        "current_months": months_for(projection["monthly_surplus"]),
-        "with_cuts_months": months_for(
-            projection["monthly_surplus"] + projection["monthly_cuts"]),
+        "pace_months": months_for(projection["monthly_surplus"]),
+        "plan_months": months_for(
+            on_plan if on_plan is not None
+            else projection["monthly_surplus"] + projection["monthly_cuts"]),
     }
 
 
 def _surplus(income: float, typical_spend: float,
              plan: dict | None) -> tuple[float, dict]:
-    """What accumulates each month, and the terms it came from.
+    """What accumulates each month at the recent pace, and on the plan.
 
-    Two cases, and the difference between them is whether the app knows what
-    is already committed.
+    Two figures, because the honest answer to "where does this land" depends
+    entirely on which question is being asked, and the tab used to answer only
+    the discouraging one:
+
+      *recent pace*  what you put away, plus whatever the plan's leftover has
+                     actually been going unspent. Spend above budget and this
+                     is negative, which is the truth about the last few months
+                     and says nothing about the plan.
+      *on plan*      what you put away, full stop. Following the plan means
+                     spending the budget, so the budget is not a surplus — the
+                     savings figure is, and it arrives every month.
+
+    Reporting only the first made the plan look unachievable because it was
+    never being projected: a ledger that overspends its budget projected a flat
+    or falling line for ever, however good the plan was.
     """
     if plan and plan.get("income", 0) > 0:
         leftover = plan["leftover"]
@@ -169,10 +207,12 @@ def _surplus(income: float, typical_spend: float,
             "leftover": leftover,
             "typical_spend": typical_spend,
             "unspent": unspent,
+            "on_plan": saving,
         }
 
     return round(income - typical_spend, 2), {
         "from_plan": False,
         "income": round(income, 2),
         "typical_spend": typical_spend,
+        "on_plan": None,
     }

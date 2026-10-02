@@ -128,7 +128,7 @@ export default function ProjectionsPanel({ insights, onTab, version = 0 }) {
 
           <Card
             title="Twelve months out"
-            hint="Cumulative savings, current pace against pace with the cuts applied"
+            hint="What following the plan accumulates, against what the last few months would"
             actions={<Confidence level={data.confidence}
                                  months={data.months_observed} />}
           >
@@ -136,32 +136,60 @@ export default function ProjectionsPanel({ insights, onTab, version = 0 }) {
               <Chart
                 config={projectionConfig(data.series)}
                 ariaLabel={`Cumulative savings over twelve months: `
-                  + `${money(data.at_12.current)} at the current pace, `
-                  + `${money(data.at_12.with_cuts)} with the cuts applied`}
+                  + `${money(data.at_12.pace)} at your recent pace, `
+                  + `${money(data.at_12.on_plan)} following the plan`}
               />
             </div>
             <div className="legend" style={{ marginTop: 6 }}>
               <span className="item">
                 <span className="swatch" style={{ background: 'var(--series-1)' }} />
-                Current pace — {money(data.at_12.current)} by month 12
+                Recent pace — {money(data.at_12.pace)} by month 12
               </span>
               <span className="item">
                 <span className="swatch" style={{ background: 'var(--series-3)' }} />
-                With cuts — {money(data.at_12.with_cuts)} by month 12
+                Following the plan — {money(data.at_12.on_plan)} by month 12
               </span>
             </div>
             <p className="assumption" style={{ marginBottom: 0 }}>
-              The gap between the lines is{' '}
-              {money(data.at_12.with_cuts - data.at_12.current)} over the year,
-              which is what acting on the findings is worth
-              {foundAnnual > 0 && ' — already weighted for how likely each one is to stick'}.
-              Both lines move with the same surplus underneath them, so the gap
-              holds even where the surplus itself is too generous.
+              {/* Either line can be the higher one, and the honest reading
+                  differs by which. Overspending the budget is the case the tab
+                  used to project on its own and call the future. */}
+              {data.at_12.on_plan >= data.at_12.pace ? (
+                <>
+                  Following the plan is worth{' '}
+                  <strong className="num">
+                    {money(data.at_12.on_plan - data.at_12.pace)}
+                  </strong>{' '}
+                  more over the year than the last few months would give you.
+                  The plan line is simply what you have decided to put away —
+                  it does not depend on your spending history, which is why it
+                  is the one to aim at.
+                </>
+              ) : (
+                <>
+                  You are currently spending{' '}
+                  <strong className="num">
+                    {money(data.basis.leftover - data.plan_spend)}
+                  </strong>{' '}
+                  a month less than the plan allows, so your recent pace
+                  accumulates{' '}
+                  <strong className="num">
+                    {money(data.at_12.pace - data.at_12.on_plan)}
+                  </strong>{' '}
+                  more over the year than the plan promises. Worth raising the
+                  savings figure on the Plan tab by some of it — then it happens
+                  on purpose rather than by accident.
+                </>
+              )}
+              {data.monthly_cuts > 0 && (
+                <> The {money(data.monthly_cuts)} a month of cuts on the Savings
+                   tab would add to either line.</>
+              )}
             </p>
           </Card>
 
           <Card title="How long until…"
-                hint="A number you have in mind, under each pace">
+                hint="A number you have in mind, under each scenario">
             <form className="controls" onSubmit={(e) => e.preventDefault()}>
               <label htmlFor="target">I want to save</label>
               <input id="target" type="number" min="0" step="500" value={target}
@@ -171,22 +199,23 @@ export default function ProjectionsPanel({ insights, onTab, version = 0 }) {
 
             {data.goal && (
               <div className="grid cols-2" style={{ marginTop: 16 }}>
-                <Tile label="At your current pace"
-                      value={data.goal.current_months
-                        ? `${data.goal.current_months} months`
+                <Tile label="At your recent pace"
+                      value={data.goal.pace_months
+                        ? `${data.goal.pace_months} months`
                         : 'Never'}
-                      note={data.goal.current_months
+                      note={data.goal.pace_months
                         ? `${money(data.monthly_surplus)} a month`
                         : 'this pace saves nothing'}
-                      tone={data.goal.current_months ? undefined : 'bad'} />
-                <Tile label="With the cuts applied"
-                      value={data.goal.with_cuts_months
-                        ? `${data.goal.with_cuts_months} months`
+                      tone={data.goal.pace_months ? undefined : 'bad'} />
+                <Tile label="Following the plan"
+                      value={data.goal.plan_months
+                        ? `${data.goal.plan_months} months`
                         : 'Never'}
-                      note={data.goal.current_months && data.goal.with_cuts_months
-                        ? `${data.goal.current_months - data.goal.with_cuts_months} months sooner`
+                      note={data.monthly_on_plan !== null
+                            && data.monthly_on_plan !== undefined
+                        ? `${money(data.monthly_on_plan)} a month, your savings figure`
                         : `${money(data.monthly_surplus + data.monthly_cuts)} a month`}
-                      tone="good" />
+                      tone={data.goal.plan_months ? 'good' : 'bad'} />
               </div>
             )}
           </Card>
