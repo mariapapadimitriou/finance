@@ -582,3 +582,76 @@ class TestOneFigureOneAuthority:
         assert d["from_plan"] is True
         for category in d["essential_categories"]:
             assert not is_discretionary(category), category
+
+
+class TestTheBudgetsTableHasOneRowPerCategory:
+    """One list, once.
+
+    The per-category list used to be rendered three times — the plan's split on
+    one tab, bars and an editor on another — and two of the three were
+    editable. The server now hands over a single row list, and these are the
+    invariants that keep it a single list: it covers everything either side
+    knew about, it carries the plan's figure whether or not the two agree, and
+    each row says which side of the daily number it falls on using the same
+    predicate the daily number itself uses.
+    """
+
+    def test_the_plans_split_is_served_even_when_the_budgets_match_it(self, ledger):
+        """The bug this replaces: the split travelled inside `drift`, which is
+        absent precisely when the saved budgets agree with the plan — so the
+        column was blank in the one case where it is reassuring."""
+        body = ledger.get("/api/budgets").get_json()
+        setup = ledger.get("/api/plan/setup").get_json()
+
+        assert body["drift"] is None, "the fixture applies the plan, so it ties out"
+        assert body["plan_budgets"], "the plan's split went missing with the drift"
+        assert body["plan_leftover"] == pytest.approx(setup["leftover"],
+                                                      abs=TOLERANCE)
+        assert sum(body["plan_budgets"].values()) == pytest.approx(
+            body["plan_leftover"], abs=TOLERANCE)
+
+    def test_the_split_survives_the_plan_moving_underneath_it(self, ledger):
+        ledger.post("/api/piggy", json={"name": "Trip", "target": 2400,
+                                        "cadence": "annual"})
+        body = ledger.get("/api/budgets").get_json()
+
+        assert body["drift"], "opening a bank should put the budgets out"
+        assert body["plan_budgets"]
+        # The notice compares these two; they have to come from one place.
+        assert body["drift"]["plan_total"] == pytest.approx(
+            body["plan_leftover"], abs=TOLERANCE)
+
+    def test_every_row_knows_which_side_of_the_daily_number_it_is_on(self, ledger):
+        rows = ledger.get("/api/budgets").get_json()["rows"]
+        assert rows
+        for r in rows:
+            assert r["essential"] == (not is_discretionary(r["category"])), \
+                r["category"]
+
+    def test_the_rows_cover_the_saved_budgets_and_the_plans_proposals(self, ledger):
+        ledger.post("/api/piggy", json={"name": "Trip", "target": 2400,
+                                        "cadence": "annual"})
+        body = ledger.get("/api/budgets").get_json()
+
+        expected = set(body["budgets"]) | set(body["plan_budgets"])
+        assert {r["category"] for r in body["rows"]} == expected
+        for r in body["rows"]:
+            assert r["adopted"] is (r["category"] in body["budgets"])
+            assert r["plan_budget"] == body["plan_budgets"].get(r["category"])
+            # A row the plan proposes is drawn against the plan's figure, so
+            # the bar means something before anything has been adopted.
+            if not r["adopted"]:
+                assert r["budget"] == pytest.approx(r["plan_budget"],
+                                                    abs=TOLERANCE)
+
+    def test_a_category_the_plan_pays_for_is_on_the_page_before_adoption(self, ledger):
+        """The table was empty until budgets were adopted, on the one tab whose
+        job is to get them adopted."""
+        saved = ledger.get("/api/budgets").get_json()["budgets"]
+        ledger.put("/api/budgets", json={"budgets": {c: 0 for c in saved}})
+
+        body = ledger.get("/api/budgets").get_json()
+        assert body["budgets"] == {}
+        assert body["status"] == []          # nothing saved…
+        assert body["rows"]                  # …and still a page to read
+        assert all(r["adopted"] is False for r in body["rows"])

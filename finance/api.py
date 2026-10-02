@@ -20,7 +20,7 @@ from .analytics import (
     summary as build_summary,
     weekday_profile,
 )
-from .categorize import CATEGORIES
+from .categorize import CATEGORIES, is_discretionary
 from .db import storage_mode
 from .ingest import all_sources, get_source, parse_csv, parse_statement
 from .insights import (detect_recurring, findings_summary, generate_findings,
@@ -667,7 +667,6 @@ def _derivation(st, txns, allowance: float, from_plan: bool) -> dict:
     # transport" — but Transport is flagged discretionary in categorize.py, so
     # it sits in the other column, and the one explanation on the page whose
     # job is to be auditable named a category that contradicted it.
-    from .categorize import is_discretionary
     essential_categories = [
         c for c, _ in sorted(budgets.items(), key=lambda kv: -kv[1])
         if not is_discretionary(c)
@@ -1395,7 +1394,28 @@ def budgets():
     months = sorted({t.month for t in txns})
     month = request.args.get("month") or (months[-1] if months else None)
     b = store().budgets()
-    status = budget_status(txns, b, month)
+    split = _plan_split(store(), txns)
+    plan_budgets = split["budgets"] if split else {}
+    typical = _typical_by_category(txns)
+
+    # One row per category the month will be judged on: every budget that is
+    # set, plus every category the plan would give money to. A category in the
+    # plan with nothing saved yet is shown against the plan's figure rather
+    # than left off the page — the table was empty until budgets were adopted,
+    # on the one tab whose job is to get them adopted.
+    rows = budget_status(txns, {**plan_budgets, **b}, month)
+    for row in rows:
+        cat = row["category"]
+        row["adopted"] = cat in b
+        row["plan_budget"] = plan_budgets.get(cat)
+        row["typical"] = typical.get(cat)
+        # Which side of the daily number this line falls on. It travels with
+        # the row rather than being re-derived in the panel, so the tag beside
+        # a budget cannot contradict the gate that sets the daily figure.
+        row["essential"] = not is_discretionary(cat)
+
+    # The saved budgets alone, which is what "covered" below has to mean.
+    status = [r for r in rows if r["adopted"]]
 
     # Spending in categories nothing budgets is still spending. Reporting
     # only the budgeted lines made the month look smaller than the Overview
@@ -1411,21 +1431,59 @@ def budgets():
     return jsonify({
         "budgets": b,
         "month": month,
+        # Every line the table draws, saved or only proposed.
+        "rows": rows,
+        # The saved lines alone — the same list, and the same meaning, this
+        # key has always had.
         "status": status,
         # What you usually spend, beside each budget. The old "suggested"
         # figure was a rival budget seeded from past spending, which could
-        # never ask for less than last month; the Plan tab owns budgets now.
-        "typical": _typical_by_category(txns),
+        # never ask for less than last month; the plan owns budgets now.
+        "typical": typical,
         "covered_spend": covered,
         "month_spend": everything,
         "unbudgeted_spend": round(everything - covered, 2),
         "unbudgeted": sorted(unbudgeted, key=lambda r: -r["amount"]),
+        # What the plan would give each category, and what it has to give out.
+        # Top-level rather than inside `drift`, because the table shows this
+        # column whether or not the two agree — and `drift` is None precisely
+        # when they do.
+        "plan_leftover": split["leftover"] if split else None,
+        "plan_budgets": plan_budgets,
         # Whether these budgets still divide the money the plan actually has.
-        "drift": _budget_drift(store(), txns, b),
+        "drift": _budget_drift(split, b),
     })
 
 
-def _budget_drift(st, txns, saved: dict) -> dict | None:
+def _plan_split(st, txns) -> dict | None:
+    """The plan's arithmetic, and the category split it implies.
+
+    Two callers need this: the drift notice below, and the budgets table, which
+    shows what the plan would give a category beside what is saved. It used to
+    be returned inside `drift` — which is None whenever the budgets already
+    agree with the plan, so the one case where the comparison is reassuring was
+    the one case the table could not draw it.
+    """
+    from . import money_plan
+
+    income = st.float_setting("monthly_income", 0.0)
+    if income <= 0:
+        return None
+
+    result = money_plan.plan(income, st.fixed_costs(),
+                             st.float_setting("savings_target", 0.0),
+                             _bank_monthly(st))
+    shares = money_plan.variable_shares(txns)
+    return {
+        "leftover": result["leftover"],
+        "budgets": money_plan.category_budgets(result["leftover"], shares),
+        "banks": result["banks"],
+        "savings": result["savings"],
+        "fixed_total": result["fixed_total"],
+    }
+
+
+def _budget_drift(split: dict | None, saved: dict) -> dict | None:
     """Do the saved budgets still add up to what the plan leaves?
 
     They are adopted once, from the plan's arithmetic, and then stay as they
@@ -1440,19 +1498,10 @@ def _budget_drift(st, txns, saved: dict) -> dict | None:
     by hand on that tab, and silently reverting it would be this same bug
     pointing the other way.
     """
-    from . import money_plan
-
-    income = st.float_setting("monthly_income", 0.0)
-    if income <= 0 or not saved:
+    if not split or not saved:
         return None
 
-    result = money_plan.plan(income, st.fixed_costs(),
-                             st.float_setting("savings_target", 0.0),
-                             _bank_monthly(st))
-    leftover = result["leftover"]
-    shares = money_plan.variable_shares(txns)
-    plan_budgets = money_plan.category_budgets(leftover, shares)
-
+    leftover = split["leftover"]
     saved_total = round(sum(saved.values()), 2)
     gap = round(saved_total - leftover, 2)
     if abs(gap) <= 1:
@@ -1464,10 +1513,9 @@ def _budget_drift(st, txns, saved: dict) -> dict | None:
         "gap": gap,
         # Named so the notice can say where the difference went rather than
         # just that there is one.
-        "banks": result["banks"],
-        "savings": result["savings"],
-        "fixed_total": result["fixed_total"],
-        "plan_budgets": plan_budgets,
+        "banks": split["banks"],
+        "savings": split["savings"],
+        "fixed_total": split["fixed_total"],
     }
 
 

@@ -328,9 +328,12 @@ def budgets_not_adopted(p: Profile) -> Observation | None:
         title="The plan has worked out your budgets, but none are set",
         detail=("The arithmetic is done — what you earn, less commitments, "
                 "divided across categories in the proportions you already "
-                "spend them. Until you adopt it, the Budgets tab has nothing "
-                "to track against and the month has no per-category shape."),
-        severity="act", tab="plan", action="Use these budgets",
+                "spend them. Budgets shows that split as a proposal; until "
+                "you adopt it, nothing is tracked against it and the month "
+                "has no per-category shape."),
+        # Budgets, not the plan: the button that adopts the split is on the
+        # page the split is shown on now.
+        severity="act", tab="budgets", action="Use these budgets",
     )
 
 

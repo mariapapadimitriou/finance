@@ -53,8 +53,6 @@ const PANELS = {
                    hint: 'What comes in, what is spoken for, and what is left' },
   budgets:       { label: 'Budgets',
                    hint: 'Spent against budget, projected to month end' },
-  piggy:         { label: 'Piggy banks',
-                   hint: 'Costs that arrive once a year, collected monthly' },
   overview:      { label: 'This month',
                    hint: 'Spending across every card' },
   projections:   { label: 'Looking ahead',
@@ -80,8 +78,8 @@ const GROUPS = [
   { key: 'today', label: 'Today', panels: ['today'],
     hint: 'What you can spend today, and why that number',
     icon: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z' },
-  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'piggy'],
-    hint: 'What you earn, what it is promised to, and what that leaves',
+  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets'],
+    hint: 'What you earn, what it is promised to — banks included — and how the rest divides',
     icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
   { key: 'overview', label: 'Overview', panels: ['overview', 'projections'],
     hint: 'Where the money went, and where this pace leads',
@@ -97,6 +95,17 @@ const GROUPS = [
     icon: 'M3 10h18M3 10a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2M3 10v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8M7 15h4' },
 ];
 
+// Keys that are no longer panels of their own but are still linked to from
+// across the app and from the insights, which carry a tab name in their data.
+// Piggy banks are a card on the Plan page now — they are already a term in its
+// arithmetic — so a link to them is a link there.
+const ALIASES = { piggy: 'plan' };
+
+// Where on that page the aliased thing actually is. Without this a link to a
+// piggy bank lands at the top of a long page with no sign of one, which is
+// indistinguishable from a button that did nothing.
+const ANCHORS = { piggy: 'piggy-banks' };
+
 /**
  * Turn a group key or a panel key into both.
  *
@@ -105,10 +114,11 @@ const GROUPS = [
  * 'import' opens the same group at that panel.
  */
 function resolve(key) {
-  const group = GROUPS.find((g) => g.key === key);
+  const target = ALIASES[key] ?? key;
+  const group = GROUPS.find((g) => g.key === target);
   if (group) return [group.key, group.panels[0]];
-  const owner = GROUPS.find((g) => g.panels.includes(key));
-  if (owner) return [owner.key, key];
+  const owner = GROUPS.find((g) => g.panels.includes(target));
+  if (owner) return [owner.key, target];
   return ['today', 'today'];
 }
 
@@ -144,6 +154,15 @@ export default function App() {
     const [group, target] = resolve(key);
     setTab(group);
     setPanel(target);
+    const anchor = ANCHORS[key];
+    if (anchor) {
+      // After the panel has rendered and its data has had a moment to land,
+      // since what is being scrolled to is below a card that grows on load.
+      setTimeout(() => {
+        document.getElementById(anchor)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 350);
+    }
   }, []);
   // Both month values hold *your* choice, and empty means "follow the data".
   // They are deliberately not seeded from the first load: a seeded value would
@@ -301,7 +320,16 @@ export default function App() {
       showMonth={['overview', 'budgets'].includes(panel)}
       onSignOut={async () => { await logout(); setSignedIn(false); }}
     >
-      {panel === 'plan' && <PlanPanel onChanged={load} />}
+      {panel === 'plan' && (
+        <div className="stack">
+          <PlanPanel onChanged={load} onTab={go} />
+          {/* Not a section of its own any more. A piggy bank is a commitment
+              like rent — it is the `− Piggy banks` term in the sum above — and
+              splitting it off put a third page in a group that was already
+              saying the same thing twice. */}
+          <div id="piggy-banks"><PiggyPanel version={version} /></div>
+        </div>
+      )}
       {panel === 'today' && (
         <TodayPanel month={shownPlanMonth} onMonth={setPlanMonth}
                     onTab={go} version={version} />
@@ -313,7 +341,6 @@ export default function App() {
       )}
       {panel === 'savings' && <SavingsPanel insights={insights} onRefresh={load}
                                           onTab={go} />}
-      {panel === 'piggy' && <PiggyPanel onTab={go} version={version} />}
       {panel === 'projections' && (
         <ProjectionsPanel insights={insights} onTab={go} version={version} />
       )}
