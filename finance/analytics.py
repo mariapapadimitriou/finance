@@ -13,32 +13,60 @@ from __future__ import annotations
 
 import statistics
 from collections import Counter, defaultdict
+from dataclasses import replace
 from datetime import date, timedelta
 
 from .categorize import CATEGORIES, is_discretionary, is_spend_category
 from .models import Transaction
 
 
-def counts_as_spending(t: Transaction) -> bool:
-    """Is this row consumption that belongs to the month it fell in?
+def spend_amount(t: Transaction) -> float:
+    """How much of this charge the month it fell in has to pay for.
 
-    Two ways it can fail to be. A transfer or a card payment is not
-    consumption at all — money moving between your own accounts is not a
-    purchase. And a charge allocated to a piggy bank is consumption that was
-    budgeted somewhere else: the holiday was paid for over twelve months, so
-    counting it against June as well would charge for it twice and make a
-    month that went exactly to plan read as a disaster.
-
-    This is the single gate for that question. Everything that reports
-    spending passes through it, so a charge cannot be excluded from the
-    Overview and still counted on the Budgets tab.
+    Usually all of it. A charge allocated to a piggy bank is paid by the bank
+    instead, out of contributions collected over the preceding months — but only
+    up to what the bank actually held, so a $2,000 flight against a bank holding
+    $400 leaves $1,600 for the month. The split is the whole point: the money
+    budgeted in advance is not charged twice, and the money that was not
+    budgeted is not hidden.
     """
-    return is_spend_category(t.category or "Other") and t.bank_id is None
+    return round(t.amount - (t.bank_amount or 0.0), 2)
+
+
+def counts_as_spending(t: Transaction) -> bool:
+    """Does any of this charge belong to the month it fell in?
+
+    Two ways it can fail to. A transfer or a card payment is not consumption at
+    all — money moving between your own accounts is not a purchase. And a charge
+    a piggy bank covered in full was budgeted somewhere else: the holiday was
+    paid for over twelve months, so counting it against June as well would
+    charge for it twice and make a month that went exactly to plan read as a
+    disaster.
+
+    This is the single gate for that question. Everything that reports spending
+    passes through it, so a charge cannot be excluded from the Overview and
+    still counted on the Budgets tab.
+    """
+    if not is_spend_category(t.category or "Other"):
+        return False
+    # A partly covered charge still counts, for the part nobody budgeted.
+    return t.bank_id is None or abs(spend_amount(t)) >= 0.005
 
 
 def spend_only(transactions: list[Transaction]) -> list[Transaction]:
-    """Rows that represent consumption, netting refunds against purchases."""
-    return [t for t in transactions if counts_as_spending(t)]
+    """Rows that represent consumption, netting refunds against purchases.
+
+    What comes back carries the amount its own month pays, not the amount on
+    the statement, so every total computed downstream nets off whatever a piggy
+    bank covered without having to know that piggy banks exist. The originals
+    are untouched — the Transactions tab still shows what was charged.
+    """
+    out = []
+    for t in transactions:
+        if not counts_as_spending(t):
+            continue
+        out.append(replace(t, amount=spend_amount(t)) if t.bank_id is not None else t)
+    return out
 
 
 def month_range(transactions: list[Transaction]) -> list[str]:
@@ -122,7 +150,7 @@ def monthly_totals(transactions: list[Transaction]) -> list[dict]:
     for t in transactions:
         cat = t.category or "Other"
         if counts_as_spending(t):
-            spend[t.month] += t.amount
+            spend[t.month] += spend_amount(t)
             if t.amount > 0:
                 counts[t.month] += 1
         elif cat == "Income" and t.amount < 0:

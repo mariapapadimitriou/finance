@@ -1,9 +1,14 @@
-"""Invariants between the shell and the panels it can refuse to render.
+"""Invariants between the shell, the groups, and the panels they render.
 
 These read the source rather than run it. There is no JavaScript test runner
 here, and the alternative to a static check was no check at all — for a class
-of bug that is invisible in review and looks, in the browser, like a button
-that does nothing.
+of bug that is invisible in review and looks, in the browser, like a button that
+does nothing.
+
+The navigation has two levels now: six groups in the sidebar, each holding one
+or more panels behind a section switcher. Panels still link to each other by
+panel key, which only works because `resolve` maps a panel key back to the group
+that owns it — so the checks below are mostly about that mapping staying whole.
 
 Each test fails loudly if it cannot find what it expects to parse, so a
 restructured file reports that it needs updating rather than passing silently.
@@ -16,7 +21,8 @@ from pathlib import Path
 
 import pytest
 
-APP = Path(__file__).resolve().parent.parent / "src" / "App.jsx"
+SRC = Path(__file__).resolve().parent.parent / "src"
+APP = SRC / "App.jsx"
 
 
 @pytest.fixture(scope="module")
@@ -26,58 +32,139 @@ def source() -> str:
     return text
 
 
+@pytest.fixture(scope="module")
+def panels(source) -> set[str]:
+    """The keys of the PANELS map."""
+    m = re.search(r"const PANELS = \{(.*?)\n\};", source, re.S)
+    assert m, "could not find `const PANELS = {...}` in App.jsx — update this test"
+    keys = set(re.findall(r"^\s{2}(\w+):\s*\{", m.group(1), re.M))
+    assert len(keys) > 5, f"only parsed {keys} out of PANELS — update this test"
+    return keys
+
+
+@pytest.fixture(scope="module")
+def groups(source) -> dict[str, list[str]]:
+    """Group key -> the panel keys it holds, in order."""
+    m = re.search(r"const GROUPS = \[(.*?)\n\];", source, re.S)
+    assert m, "could not find `const GROUPS = [...]` in App.jsx — update this test"
+    found = re.findall(r"key: '([^']+)', label: '[^']*', panels: \[([^\]]+)\]",
+                       m.group(1))
+    assert found, "could not parse any group out of GROUPS — update this test"
+    return {key: re.findall(r"'([^']+)'", panels) for key, panels in found}
+
+
+@pytest.fixture(scope="module")
+def rendered(source) -> set[str]:
+    """Panel keys that actually have a branch rendering them."""
+    keys = set(re.findall(r"panel === '([^']+)'", source))
+    assert keys, "no `panel === '...'` branches found — update this test"
+    return keys
+
+
 def _string_list(source: str, name: str) -> list[str]:
     m = re.search(rf"const {name} = \[(.*?)\];", source, re.S)
     assert m, f"could not find `const {name} = [...]` in App.jsx — update this test"
     return re.findall(r"'([^']+)'", m.group(1))
 
 
-def test_the_empty_state_only_offers_tabs_it_will_render(source):
-    """The bug this exists to prevent.
+class TestEveryPanelIsReachableAndRendered:
+    def test_every_panel_belongs_to_exactly_one_group(self, panels, groups):
+        """A panel in no group cannot be reached; one in two is ambiguous —
+        `resolve` would send you to whichever appeared first."""
+        owners: dict[str, list[str]] = {key: [] for key in panels}
+        for group, members in groups.items():
+            for key in members:
+                assert key in panels, (
+                    f"group '{group}' lists panel '{key}', which is not in PANELS")
+                owners[key].append(group)
 
-    When the ledger is empty most panels are hidden behind an empty state. A
-    button there that points at a hidden panel sets the tab, the empty state
-    renders over it again, and nothing appears to happen — which is exactly
-    how it was reported.
-    """
-    allowed = _string_list(source, "WORKS_WHEN_EMPTY")
-    assert allowed, "WORKS_WHEN_EMPTY is empty"
+        orphans = sorted(k for k, g in owners.items() if not g)
+        assert not orphans, f"panels in no group, so unreachable: {orphans}"
+        shared = sorted(k for k, g in owners.items() if len(g) > 1)
+        assert not shared, f"panels claimed by more than one group: {shared}"
 
-    guard = re.search(r"if \(summary\.empty && (.+?)\) \{", source)
-    assert guard, "could not find the empty-ledger guard — update this test"
-    assert "WORKS_WHEN_EMPTY" in guard.group(1), (
-        "the empty-ledger guard no longer consults WORKS_WHEN_EMPTY")
+    def test_every_panel_is_rendered(self, panels, rendered):
+        missing = sorted(panels - rendered)
+        assert not missing, (
+            f"{missing} appear in PANELS and the section switcher, but nothing "
+            "renders them — the section would open onto an empty page")
 
-    block = re.search(r"<Empty title=.*?</Empty>", source, re.S)
-    assert block, "could not find the <Empty> block — update this test"
+    def test_nothing_is_rendered_that_is_not_a_panel(self, panels, rendered):
+        stray = sorted(rendered - panels)
+        assert not stray, (
+            f"{stray} have a render branch but are in no group, so no "
+            "navigation can reach them")
 
-    targets = set(re.findall(r"setTab\('([^']+)'\)", block.group(0)))
-    assert targets, "the empty state offers no way out of itself"
-
-    unreachable = sorted(t for t in targets if t not in allowed)
-    assert not unreachable, (
-        f"the empty state links to {unreachable}, which it will not render; "
-        f"add them to WORKS_WHEN_EMPTY or point the button elsewhere")
-
-
-def test_every_offered_tab_exists(source):
-    """A button pointing at a tab key nothing renders is the same dead end."""
-    keys = set(re.findall(r"\{ key: '([^']+)'", source))
-    assert "banks" in keys and "import" in keys, (
-        "could not parse the tab definitions — update this test")
-
-    rendered = set(re.findall(r"tab === '([^']+)'", source))
-    for target in set(re.findall(r"setTab\('([^']+)'\)", source)):
-        assert target in rendered, f"setTab('{target}') has no panel rendering it"
+    def test_the_import_panel_is_reachable_again(self, groups):
+        """It used to be hidden from the strip entirely, which left the import
+        history unreachable in normal use once Plaid was working."""
+        owners = [g for g, members in groups.items() if "import" in members]
+        assert owners, "'import' is in no group, so nothing can reach it"
 
 
-def test_the_hidden_panel_is_still_rendered(source):
-    """Import is absent from the strip on purpose; it must remain reachable."""
-    m = re.search(r"const HIDDEN_TABS = \[(.*?)\];", source, re.S)
-    assert m, "could not find HIDDEN_TABS — update this test"
-    # Objects, not bare strings: take the `key:` of each, not every literal.
-    hidden = re.findall(r"key: '([^']+)'", m.group(1))
-    assert hidden, "HIDDEN_TABS is empty"
-    rendered = set(re.findall(r"tab === '([^']+)'", source))
-    for key in hidden:
-        assert key in rendered, f"'{key}' is hidden and never rendered"
+class TestLinksBetweenPanels:
+    def test_every_link_target_resolves(self, panels, groups):
+        """Panels navigate by panel key — `onTab('piggy')` — and a key that is
+        neither a panel nor a group silently lands you on Today."""
+        targets: dict[str, list[str]] = {}
+        for path in sorted(SRC.rglob("*.jsx")):
+            text = path.read_text(encoding="utf-8")
+            for key in re.findall(r"onTab\('([^']+)'\)", text):
+                targets.setdefault(key, []).append(path.name)
+            for key in re.findall(r"\bgo\('([^']+)'\)", text):
+                targets.setdefault(key, []).append(path.name)
+
+        assert targets, "no onTab('...') calls found anywhere — update this test"
+        valid = panels | set(groups)
+        bad = {k: v for k, v in targets.items() if k not in valid}
+        assert not bad, f"link targets that resolve to nothing: {bad}"
+
+
+class TestTheEmptyLedger:
+    def test_the_empty_state_only_offers_panels_it_will_render(self, source):
+        """The bug this exists to prevent.
+
+        When the ledger is empty most panels are hidden behind an empty state. A
+        button there that points at a hidden panel sets the destination, the
+        empty state renders over it again, and nothing appears to happen — which
+        is exactly how it was reported.
+        """
+        allowed = _string_list(source, "WORKS_WHEN_EMPTY")
+        assert allowed, "WORKS_WHEN_EMPTY is empty"
+
+        guard = re.search(r"if \(summary\.empty && (.+?)\) \{", source)
+        assert guard, "could not find the empty-ledger guard — update this test"
+        assert "WORKS_WHEN_EMPTY" in guard.group(1), (
+            "the empty-ledger guard no longer consults WORKS_WHEN_EMPTY")
+        # It has to test the panel, not the group: a group whose first panel
+        # works when empty would otherwise let through every panel beside it.
+        assert "includes(panel)" in guard.group(1), (
+            "the guard checks something other than the active panel")
+
+        block = re.search(r"<Empty title=.*?</Empty>", source, re.S)
+        assert block, "could not find the <Empty> block — update this test"
+
+        targets = set(re.findall(r"go\('([^']+)'\)", block.group(0)))
+        assert targets, "the empty state offers no way out of itself"
+
+        unreachable = sorted(t for t in targets if t not in allowed)
+        assert not unreachable, (
+            f"the empty state links to {unreachable}, which it will not render; "
+            f"add them to WORKS_WHEN_EMPTY or point the button elsewhere")
+
+    def test_the_guarded_panels_are_real(self, panels, source):
+        for key in _string_list(source, "WORKS_WHEN_EMPTY"):
+            assert key in panels, (
+                f"WORKS_WHEN_EMPTY names '{key}', which is not a panel")
+
+
+class TestTheMonthSelector:
+    def test_it_is_offered_on_the_panels_that_read_a_month(self, panels, source):
+        """It is shown per panel now, not per group: Overview and Budgets live
+        in different groups and both need it, and their neighbours do not."""
+        m = re.search(r"showMonth=\{(.+?)\}", source)
+        assert m, "could not find the showMonth prop — update this test"
+        assert "includes(panel)" in m.group(1), (
+            "showMonth no longer keys off the active panel")
+        for key in re.findall(r"'([^']+)'", m.group(1)):
+            assert key in panels, f"showMonth names '{key}', which is not a panel"

@@ -29,7 +29,7 @@ import calendar
 from dataclasses import dataclass
 from datetime import date
 
-from .analytics import counts_as_spending
+from .analytics import counts_as_spending, spend_amount
 from .categorize import is_discretionary
 
 
@@ -55,7 +55,9 @@ def _spent(transactions, month: str, upto_day: int | None = None,
             continue
         if upto_day is not None and day > upto_day:
             continue
-        total += t.amount
+        # What this day cost the month, so a charge a piggy bank covered does
+        # not come out of the daily allowance as well.
+        total += spend_amount(t)
     return round(total, 2)
 
 
@@ -251,7 +253,7 @@ def suggest_monthly_amount(transactions) -> float:
     per_month: dict[str, float] = {}
     for t in transactions:
         if counts_toward_plan(t):
-            per_month[t.month] = per_month.get(t.month, 0.0) + t.amount
+            per_month[t.month] = per_month.get(t.month, 0.0) + spend_amount(t)
     if not per_month:
         return 0.0
     median = statistics.median(per_month.values())

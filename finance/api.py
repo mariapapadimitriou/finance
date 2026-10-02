@@ -1142,14 +1142,24 @@ def remove_bank(bank_id: int):
 
 @bp.post("/piggy/<int:bank_id>/allocate")
 def allocate_to_bank(bank_id: int):
-    """Charge one transaction to a bank instead of to the month it fell in."""
+    """Charge a transaction to a bank, as far as the bank can pay for it.
+
+    A bank holding $400 covers $400 of a $2,000 flight and the remaining $1,600
+    stays in the month it was spent. Allocation used to be all-or-nothing, which
+    let a bank pay for something it had never collected the money for and made
+    the month read better than it was — while the separate "borrow to cover an
+    overspend" gesture, on the same pot, was balance-checked. One pot, one rule.
+    """
+    from . import piggy
+
     body = request.get_json(silent=True) or {}
     txn_id = str(body.get("txn_id", "")).strip()
     if not txn_id:
         return jsonify({"error": "Which transaction?"}), 400
 
     st = store()
-    if st.piggy_bank(bank_id) is None:
+    bank = st.piggy_bank(bank_id)
+    if bank is None:
         return jsonify({"error": "No such piggy bank."}), 404
     txn = st.get_transaction(txn_id)
     if txn is None:
@@ -1158,8 +1168,32 @@ def allocate_to_bank(bank_id: int):
         return jsonify({"error": "Only a charge can come out of a piggy bank. "
                                  "A refund or a payment is money coming back."}), 400
 
-    st.allocate(txn_id, bank_id)
-    return jsonify({"ok": True})
+    # What the bank holds, less whatever this charge is already taking from it —
+    # otherwise re-allocating the same charge would measure it against a balance
+    # its own allocation had already reduced.
+    charged = st.charged_to_banks().get(bank_id, 0.0)
+    already = txn.bank_amount if txn.bank_id == bank_id else 0.0
+    available = piggy.status(bank, charged - already)["balance"]
+    if available <= 0:
+        return jsonify({
+            "error": f"{bank.name} has nothing in it yet. It collects "
+                     f"${piggy.monthly(bank):,.2f} a month, so there will be "
+                     "something to charge against next month.",
+        }), 400
+
+    covered = round(min(available, txn.amount), 2)
+    st.allocate(txn_id, bank_id, covered)
+    return jsonify({
+        "ok": True,
+        "charge": round(txn.amount, 2),
+        "covered": covered,
+        # What the month still has to pay for, which is the figure worth showing:
+        # a partial allocation that looked complete would be the whole problem
+        # back again in a smaller form.
+        "remaining": round(txn.amount - covered, 2),
+        "partial": covered < txn.amount,
+        "bank": bank.name,
+    })
 
 
 @bp.delete("/piggy/allocations/<txn_id>")
@@ -1274,7 +1308,7 @@ def _typical_by_category(transactions) -> dict[str, float]:
     comparison that makes a budget believable.
     """
     import statistics
-    from .analytics import counts_as_spending
+    from .analytics import counts_as_spending, spend_amount
 
     per: dict[str, dict[str, float]] = {}
     for t in transactions:
@@ -1282,7 +1316,8 @@ def _typical_by_category(transactions) -> dict[str, float]:
         if t.amount <= 0 or not counts_as_spending(t):
             continue
         per.setdefault(category, {})
-        per[category][t.month] = per[category].get(t.month, 0.0) + t.amount
+        per[category][t.month] = (per[category].get(t.month, 0.0)
+                                  + spend_amount(t))
     return {c: round(statistics.median(m.values()), 2) for c, m in per.items() if m}
 
 @bp.get("/trips/suggestions")

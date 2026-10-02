@@ -160,7 +160,11 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                           txn={t} banks={banks}
                           open={charging === t.id}
                           onOpen={() => setCharging(charging === t.id ? null : t.id)}
-                          onDone={() => { setCharging(null); bump(); }}
+                          // Deliberately left open: the row has just told you
+                          // how much the bank could pay and how much stayed in
+                          // the month, and closing it would take that away
+                          // before it was read.
+                          onDone={bump}
                         />
                       </td>
                       <td className="r" style={t.amount < 0 ? { color: 'var(--good-text)' } : undefined}>
@@ -391,6 +395,7 @@ function CategoryEditor({ current, merchant, categories, onSave, onCancel }) {
 function BankCell({ txn, banks, open, onOpen, onDone }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [result, setResult] = useState(null);
 
   const bank = banks.find((b) => b.id === txn.bank_id);
 
@@ -398,8 +403,12 @@ function BankCell({ txn, banks, open, onOpen, onDone }) {
     setBusy(true);
     setError(null);
     try {
-      if (id) await allocateToBank(Number(id), txn.id);
-      else await unallocate(txn.id);
+      if (id) {
+        setResult(await allocateToBank(Number(id), txn.id));
+      } else {
+        await unallocate(txn.id);
+        setResult(null);
+      }
       onDone();
     } catch (e) {
       setError(e);
@@ -417,10 +426,21 @@ function BankCell({ txn, banks, open, onOpen, onDone }) {
   }
 
   if (bank && !open) {
+    // A partial charge must read as partial. Showing a plain tick on a flight
+    // the bank could only half pay for would hide exactly the thing worth
+    // knowing: the rest is still this month's.
+    const partial = txn.bank_amount > 0 && txn.bank_amount < txn.amount - 0.005;
     return (
       <button className="btn quiet" onClick={onOpen} disabled={busy}
-              title={`Charged to ${bank.name} — not counted in this month`}>
-        {bank.name} ✓
+              title={partial
+                ? `${bank.name} paid ${money(txn.bank_amount, { cents: true })}`
+                  + ` of ${money(txn.amount, { cents: true })};`
+                  + ` the rest counts against this month`
+                : `Charged to ${bank.name} — not counted in this month`}>
+        {bank.name}{' '}
+        {partial
+          ? <span className="num">{money(txn.bank_amount)}</span>
+          : '✓'}
       </button>
     );
   }
@@ -440,9 +460,23 @@ function BankCell({ txn, banks, open, onOpen, onDone }) {
               onChange={(e) => charge(e.target.value)}>
         <option value="">Count against this month</option>
         {banks.map((b) => (
-          <option key={b.id} value={b.id}>{b.name}</option>
+          <option key={b.id} value={b.id} disabled={b.balance <= 0}>
+            {b.name} — {b.balance > 0
+              ? `${money(b.balance)} in it`
+              : 'nothing in it yet'}
+          </option>
         ))}
       </select>
+      {result && (
+        <span className="small">
+          {result.partial
+            ? <>{result.bank} paid{' '}
+                <strong className="num">{money(result.covered, { cents: true })}</strong>;{' '}
+                <strong className="num">{money(result.remaining, { cents: true })}</strong>{' '}
+                stays in this month.</>
+            : <>{result.bank} paid all of it.</>}
+        </span>
+      )}
       <button className="btn quiet" onClick={onOpen} disabled={busy}>Close</button>
       {error && <span className="small" style={{ color: 'var(--critical)' }}>
         {error.message}

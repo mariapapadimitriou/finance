@@ -114,9 +114,16 @@ CREATE TABLE IF NOT EXISTS piggy_banks (
 -- A row here is a decision about an existing transaction, like a merchant
 -- override, so it is keyed by the transaction and survives a re-import: the
 -- id is the fingerprint, which is stable across exports.
+--
+-- `amount` is how much of the charge the bank actually paid, which is not
+-- always the whole of it: a bank holding $400 can only take $400 of a $2,000
+-- flight, and the remaining $1,600 stays in the month it was spent. Stored
+-- rather than derived, because it is a record of what the bank held at the
+-- moment you charged it, and that balance moves afterwards.
 CREATE TABLE IF NOT EXISTS piggy_allocations (
     txn_id     TEXT PRIMARY KEY,
     bank_id    INTEGER NOT NULL,
+    amount     REAL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_alloc_bank ON piggy_allocations(bank_id);
@@ -236,6 +243,7 @@ class Store:
         with self.conn() as c:
             c.executescript(SCHEMA)
         self._migrate_buckets()
+        self._migrate_allocation_amounts()
 
     def _migrate_buckets(self) -> None:
         """Carry the buckets that piggy banks replaced into piggy banks.
@@ -285,6 +293,31 @@ class Store:
             c.execute("DELETE FROM bucket_draws")
             c.execute("DELETE FROM buckets")
 
+    def _migrate_allocation_amounts(self) -> None:
+        """Add `piggy_allocations.amount` to a database that predates it.
+
+        Allocation used to be all-or-nothing, so a row written before this
+        column meant the bank paid the whole charge — which is what the backfill
+        records. Afterwards the column holds however much the bank could cover.
+
+        `ALTER TABLE ... ADD COLUMN` is spelled the same in both dialects but
+        neither offers a portable way to ask first: SQLite has no
+        `IF NOT EXISTS` for it, and probing the catalogue needs different SQL
+        per dialect. So the attempt is made and a failure is read as "already
+        there" — in its own transaction, because in Postgres a failed statement
+        poisons the one it ran in.
+        """
+        try:
+            with self.conn() as c:
+                c.execute("ALTER TABLE piggy_allocations ADD COLUMN amount REAL")
+        except Exception:                                        # noqa: BLE001
+            return
+        with self.conn() as c:
+            c.execute(
+                """UPDATE piggy_allocations SET amount = (
+                       SELECT t.amount FROM transactions t WHERE t.id = txn_id)
+                    WHERE amount IS NULL""")
+
     # ── Transactions ─────────────────────────────────────────────────────────
     def add_transactions(self, transactions: list[Transaction]) -> int:
         rows = []
@@ -315,7 +348,13 @@ class Store:
         """
         with self.conn() as c:
             rows = c.execute(
-                """SELECT t.*, a.bank_id AS bank_id
+                """SELECT t.*, a.bank_id AS bank_id,
+                          -- No allocation row means nothing is covered. A row
+                          -- whose amount is null predates that column and
+                          -- covered the whole charge.
+                          CASE WHEN a.bank_id IS NULL THEN 0
+                               ELSE COALESCE(a.amount, t.amount)
+                          END AS bank_amount
                      FROM transactions t
                      LEFT JOIN piggy_allocations a ON a.txn_id = t.id
                     ORDER BY t.date DESC, t.id""").fetchall()
@@ -355,7 +394,10 @@ class Store:
             # table, and `date`/`category` are unambiguous only because
             # piggy_allocations has neither.
             rows = c.execute(
-                f"""SELECT t.*, a.bank_id AS bank_id
+                f"""SELECT t.*, a.bank_id AS bank_id,
+                           CASE WHEN a.bank_id IS NULL THEN 0
+                                ELSE COALESCE(a.amount, t.amount)
+                           END AS bank_amount
                       FROM transactions t
                       LEFT JOIN piggy_allocations a ON a.txn_id = t.id
                     {clause}
@@ -373,8 +415,21 @@ class Store:
             return cur.rowcount > 0
 
     def get_transaction(self, txn_id: str) -> Transaction | None:
+        """One row, carrying its piggy-bank allocation like the other loaders.
+
+        Without the join this returned a transaction that always looked
+        unallocated, so re-charging one to the same bank measured the bank's
+        balance against a figure its own allocation had already reduced.
+        """
         with self.conn() as c:
-            row = c.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+            row = c.execute(
+                """SELECT t.*, a.bank_id AS bank_id,
+                          CASE WHEN a.bank_id IS NULL THEN 0
+                               ELSE COALESCE(a.amount, t.amount)
+                          END AS bank_amount
+                     FROM transactions t
+                     LEFT JOIN piggy_allocations a ON a.txn_id = t.id
+                    WHERE t.id = ?""", (txn_id,)).fetchone()
         return Transaction.from_row(dict(row)) if row else None
 
     def delete_transaction(self, txn_id: str) -> bool:
@@ -801,12 +856,19 @@ class Store:
             rows = c.execute("SELECT txn_id, bank_id FROM piggy_allocations").fetchall()
         return {r["txn_id"]: r["bank_id"] for r in rows}
 
-    def allocate(self, txn_id: str, bank_id: int) -> None:
+    def allocate(self, txn_id: str, bank_id: int, amount: float) -> None:
+        """Charge `amount` of this transaction to a bank.
+
+        `amount` is what the bank could cover, which the caller works out from
+        its balance — never more than the charge itself.
+        """
         with self.conn() as c:
             c.execute(
-                """INSERT INTO piggy_allocations (txn_id, bank_id) VALUES (?, ?)
-                   ON CONFLICT(txn_id) DO UPDATE SET bank_id = excluded.bank_id""",
-                (txn_id, bank_id),
+                """INSERT INTO piggy_allocations (txn_id, bank_id, amount)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(txn_id) DO UPDATE SET bank_id = excluded.bank_id,
+                                                     amount = excluded.amount""",
+                (txn_id, bank_id, round(float(amount), 2)),
             )
 
     def unallocate(self, txn_id: str) -> bool:
@@ -824,7 +886,8 @@ class Store:
         totals: dict[int, float] = {}
         with self.conn() as c:
             rows = c.execute(
-                """SELECT a.bank_id AS bank_id, COALESCE(SUM(t.amount), 0) AS total
+                """SELECT a.bank_id AS bank_id,
+                          COALESCE(SUM(COALESCE(a.amount, t.amount)), 0) AS total
                      FROM piggy_allocations a
                      JOIN transactions t ON t.id = a.txn_id
                     GROUP BY a.bank_id""").fetchall()
@@ -843,7 +906,7 @@ class Store:
         """What this month's spending charged to banks comes to."""
         with self.conn() as c:
             row = c.execute(
-                """SELECT COALESCE(SUM(t.amount), 0) AS total
+                """SELECT COALESCE(SUM(COALESCE(a.amount, t.amount)), 0) AS total
                      FROM piggy_allocations a
                      JOIN transactions t ON t.id = a.txn_id
                     WHERE t.date LIKE ?""", (f"{month}-%",)).fetchone()

@@ -38,46 +38,84 @@ function defaultMonth(summary) {
 // is how data arrives; uploading a file is the exception, for a card that
 // cannot be connected at all. It stays reachable at the 'import' key, linked
 // from the Banks tab, so hiding it costs nothing but prominence.
-const HIDDEN_TABS = [
-  { key: 'import', label: 'Import',
-    hint: 'Statements from a file, for a card that can\'t be connected',
-    icon: 'M12 3v12M7 10l5 5 5-5M4 21h16' },
-];
+// Every panel the app can show, keyed the way it always was.
+//
+// These used to be twelve top-level destinations plus a hidden one, which on a
+// phone was a scrolling strip nobody could hold in their head, and which put
+// the four surfaces you touch once at setup beside the two you open daily.
+// They are grouped below instead. The keys are unchanged, so every
+// `onTab('piggy')` in a panel still works — `resolve` turns a panel key into
+// the group that now contains it.
+const PANELS = {
+  today:         { label: 'Today',
+                   hint: 'What you can spend today, and why that number' },
+  plan:          { label: 'Income & commitments',
+                   hint: 'What comes in, what is spoken for, and what is left' },
+  budgets:       { label: 'Budgets',
+                   hint: 'Spent against budget, projected to month end' },
+  piggy:         { label: 'Piggy banks',
+                   hint: 'Costs that arrive once a year, collected monthly' },
+  overview:      { label: 'This month',
+                   hint: 'Spending across every card' },
+  projections:   { label: 'Looking ahead',
+                   hint: 'Where this lands, at this pace and with the cuts' },
+  savings:       { label: 'What to cut',
+                   hint: 'Ranked by what it saves, with the charges behind it' },
+  subscriptions: { label: 'Subscriptions',
+                   hint: 'Every recurring charge found in your history' },
+  transactions:  { label: 'Every charge',
+                   hint: 'Searchable, correctable, chargeable to a piggy bank' },
+  trips:         { label: 'Trips',
+                   hint: 'Date ranges whose spending counts as Travel' },
+  banks:         { label: 'Connections',
+                   hint: 'Connect a card through Plaid and let it sync itself' },
+  accounts:      { label: 'Accounts',
+                   hint: 'Every account, what syncs, and anything counted twice' },
+  import:        { label: 'From a file',
+                   hint: "Statements for a card that can't be connected" },
+};
 
-const TABS = [
-  { key: 'plan', label: 'Plan', hint: 'Income, commitments, and what is left to spend',
-    icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
-  { key: 'today', label: 'Today', hint: 'What you can spend today, and why that number',
+// The six destinations. A group holding one panel shows no sub-navigation.
+const GROUPS = [
+  { key: 'today', label: 'Today', panels: ['today'],
+    hint: 'What you can spend today, and why that number',
     icon: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z' },
-  { key: 'overview', label: 'Overview', hint: 'Spending across every card',
+  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'piggy'],
+    hint: 'What you earn, what it is promised to, and what that leaves',
+    icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
+  { key: 'overview', label: 'Overview', panels: ['overview', 'projections'],
+    hint: 'Where the money went, and where this pace leads',
     icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
-  { key: 'savings', label: 'Savings', hint: 'What to cut, ranked by what it saves',
+  { key: 'savings', label: 'Savings', panels: ['savings', 'subscriptions'],
+    hint: 'What to cut, and the renewals worth a second look',
     icon: 'M12 3v18M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
-  { key: 'projections', label: 'Projections', hint: 'Where this lands, at this pace and with the cuts',
-    icon: 'M3 17l6-6 4 4 8-8M21 7h-5M21 7v5' },
-  { key: 'subscriptions', label: 'Subscriptions', hint: 'Recurring charges found in your history',
-    icon: 'M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M18 2v4h-4M6 22v-4h4' },
-  { key: 'transactions', label: 'Transactions', hint: 'Every charge, searchable and correctable',
+  { key: 'transactions', label: 'Transactions', panels: ['transactions', 'trips'],
+    hint: 'Every charge, and the date ranges that reclassify them',
     icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
-  { key: 'budgets', label: 'Budgets', hint: 'Spent against budget, projected to month end',
-    icon: 'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8z' },
-  { key: 'piggy', label: 'Piggy banks', hint: 'Annual costs collected monthly, and spending charged to them',
-    icon: 'M19 10h2v4h-2M5 10a7 4 0 0 1 14 0v5a2 2 0 0 1-2 2h-1v2h-3v-2H9a4 4 0 0 1-4-4zM9 9h.01' },
-  { key: 'trips', label: 'Trips', hint: 'Date ranges whose spending counts as Travel',
-    icon: 'M3 11l18-6-6 18-2.5-7.5L5 13z' },
-  { key: 'accounts', label: 'Accounts', hint: 'Every account, what syncs, and anything counted twice',
+  { key: 'cards', label: 'Cards & data', panels: ['banks', 'accounts', 'import'],
+    hint: 'Where the transactions come from, and what counts',
     icon: 'M3 10h18M3 10a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2M3 10v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8M7 15h4' },
-  { key: 'banks', label: 'Banks', hint: 'Connect a card through Plaid and let it sync itself',
-    icon: 'M3 21h18M4 10h16M5 10V7l7-4 7 4v3M7 10v11M12 10v11M17 10v11' },
 ];
 
-// Panels worth opening with nothing in the ledger: the two that bring data
-// in, and the one that decides what keeps arriving — which is also where the
-// ledger gets emptied, so it is reachable immediately afterwards.
-const WORKS_WHEN_EMPTY = ['banks', 'import', 'accounts', 'plan'];
+/**
+ * Turn a group key or a panel key into both.
+ *
+ * Panels link to each other by panel key and should not have to know about the
+ * grouping, so this accepts either: 'cards' opens the group at its first panel,
+ * 'import' opens the same group at that panel.
+ */
+function resolve(key) {
+  const group = GROUPS.find((g) => g.key === key);
+  if (group) return [group.key, group.panels[0]];
+  const owner = GROUPS.find((g) => g.panels.includes(key));
+  if (owner) return [owner.key, key];
+  return ['today', 'today'];
+}
 
-// Everywhere that needs to name a tab rather than offer it.
-const ALL_TABS = [...TABS, ...HIDDEN_TABS];
+// Panels worth opening with nothing in the ledger: the two that bring data in,
+// and the one that decides what keeps arriving — which is also where the ledger
+// gets emptied, so it is reachable immediately afterwards.
+const WORKS_WHEN_EMPTY = ['banks', 'import', 'accounts', 'plan'];
 
 function Icon({ d }) {
   return (
@@ -93,6 +131,20 @@ export default function App() {
     () => localStorage.getItem('spendie-theme') || 'dark'
   );
   const [tab, setTab] = useState('today');
+  const [panel, setPanel] = useState('today');
+
+  /**
+   * Go to a destination named either way.
+   *
+   * Panels link to each other by panel key — `onTab('piggy')` — and must not
+   * have to know which group now owns it, so every one of those calls still
+   * works unchanged.
+   */
+  const go = useCallback((key) => {
+    const [group, target] = resolve(key);
+    setTab(group);
+    setPanel(target);
+  }, []);
   // Both month values hold *your* choice, and empty means "follow the data".
   // They are deliberately not seeded from the first load: a seeded value would
   // survive an import that added newer months, leaving the dashboard pinned to
@@ -214,9 +266,9 @@ export default function App() {
   // ones that exist to fix that, or this is a dead end: the Connect button
   // would set the tab and the same empty state would render over it, which
   // looks exactly like a button that does nothing.
-  if (summary.empty && !WORKS_WHEN_EMPTY.includes(tab)) {
+  if (summary.empty && !WORKS_WHEN_EMPTY.includes(panel)) {
     return (
-      <Shell theme={theme} setTheme={setTheme} tab={tab} onTab={setTab}
+      <Shell theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
              findingCount={findingCount}>
         <Empty title="Let's see where the money goes">
           <p>
@@ -225,14 +277,14 @@ export default function App() {
             to cut. The connection keeps itself up to date, so this is the last
             time you have to think about where the data comes from.
           </p>
-          <button className="btn primary" onClick={() => setTab('banks')}
+          <button className="btn primary" onClick={() => go('banks')}
                   style={{ marginTop: 14 }}>
             Connect a card
           </button>
           <p className="small muted" style={{ marginTop: 16, marginBottom: 0 }}>
             For a card that can&apos;t be connected — a closed account, or a bank
             Plaid doesn&apos;t reach —{' '}
-            <button className="link" onClick={() => setTab('import')}>
+            <button className="link" onClick={() => go('import')}>
               import statements from a file
             </button>.
           </p>
@@ -243,50 +295,54 @@ export default function App() {
 
   return (
     <Shell
-      theme={theme} setTheme={setTheme} tab={tab} onTab={setTab}
+      theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
       findingCount={findingCount}
       months={summary.months} month={shownMonth} onMonth={setMonth}
-      showMonth={['overview', 'budgets'].includes(tab)}
+      showMonth={['overview', 'budgets'].includes(panel)}
       onSignOut={async () => { await logout(); setSignedIn(false); }}
     >
-      {tab === 'plan' && <PlanPanel onChanged={load} />}
-      {tab === 'today' && (
+      {panel === 'plan' && <PlanPanel onChanged={load} />}
+      {panel === 'today' && (
         <TodayPanel month={shownPlanMonth} onMonth={setPlanMonth}
-                    onTab={setTab} version={version} />
+                    onTab={go} version={version} />
       )}
-      {tab === 'overview' && (
+      {panel === 'overview' && (
         <OverviewPanel summary={summary} insights={insights} theme={theme}
-                       month={shownMonth} onMonth={setMonth} onTab={setTab}
+                       month={shownMonth} onMonth={setMonth} onTab={go}
                        version={version} />
       )}
-      {tab === 'savings' && <SavingsPanel insights={insights} onRefresh={load}
-                                          onTab={setTab} />}
-      {tab === 'piggy' && <PiggyPanel onTab={setTab} version={version} />}
-      {tab === 'projections' && (
-        <ProjectionsPanel insights={insights} onTab={setTab} version={version} />
+      {panel === 'savings' && <SavingsPanel insights={insights} onRefresh={load}
+                                          onTab={go} />}
+      {panel === 'piggy' && <PiggyPanel onTab={go} version={version} />}
+      {panel === 'projections' && (
+        <ProjectionsPanel insights={insights} onTab={go} version={version} />
       )}
-      {tab === 'subscriptions' && <SubscriptionsPanel recurring={recurring} />}
-      {tab === 'transactions' && (
+      {panel === 'subscriptions' && <SubscriptionsPanel recurring={recurring} />}
+      {panel === 'transactions' && (
         <TransactionsPanel summary={summary} categories={categories}
                            accounts={accounts} onChanged={load} />
       )}
-      {tab === 'budgets' && (
-        <BudgetsPanel onTab={setTab} month={shownMonth} summary={summary} version={version} />
+      {panel === 'budgets' && (
+        <BudgetsPanel onTab={go} month={shownMonth} summary={summary} version={version} />
       )}
-      {tab === 'trips' && <TripsPanel onChanged={load} />}
-      {tab === 'accounts' && <AccountsPanel onChanged={load} />}
-      {tab === 'banks' && <BanksPanel onChanged={load} onTab={setTab} />}
-      {tab === 'import' && (
-        <ImportPanel accounts={accounts} onImported={load} onTab={setTab} />
+      {panel === 'trips' && <TripsPanel onChanged={load} />}
+      {panel === 'accounts' && <AccountsPanel onChanged={load} />}
+      {panel === 'banks' && <BanksPanel onChanged={load} onTab={go} />}
+      {panel === 'import' && (
+        <ImportPanel accounts={accounts} onImported={load} onTab={go} />
       )}
     </Shell>
   );
 }
 
-function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
+function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
                  months = [], month, onMonth, showMonth = false, onSignOut,
                  children }) {
-  const current = ALL_TABS.find((t) => t.key === tab);
+  const group = GROUPS.find((g) => g.key === tab);
+  // The heading names the panel you are actually looking at; the group label is
+  // already on the selected button in the sidebar, so repeating it here would
+  // say the same word twice and name the narrower thing nowhere.
+  const current = PANELS[panel] ?? group;
   const navRef = useRef(null);
 
   // On a phone the nav is a scrolling strip, and twelve destinations don't
@@ -311,16 +367,16 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
         {onTab && (
           <nav className="nav" role="tablist" aria-orientation="vertical"
                ref={navRef}>
-            {TABS.map((t) => (
+            {GROUPS.map((g) => (
               <button
-                key={t.key}
+                key={g.key}
                 role="tab"
-                aria-selected={tab === t.key}
-                onClick={() => onTab(t.key)}
+                aria-selected={tab === g.key}
+                onClick={() => onTab(g.key)}
               >
-                <Icon d={t.icon} />
-                {t.label}
-                {t.key === 'savings' && findingCount > 0 && (
+                <Icon d={g.icon} />
+                {g.label}
+                {g.key === 'savings' && findingCount > 0 && (
                   <span className="count">{findingCount}</span>
                 )}
               </button>
@@ -366,6 +422,22 @@ function Shell({ theme, setTheme, tab, onTab, findingCount = 0,
               </>
             )}
           </div>
+
+          {group && group.panels.length > 1 && (
+            <nav className="sections" role="tablist"
+                 aria-label={`${group.label} sections`}>
+              {group.panels.map((key) => (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={panel === key}
+                  onClick={() => onTab(key)}
+                >
+                  {PANELS[key].label}
+                </button>
+              ))}
+            </nav>
+          )}
         </div>
         <main>{children}</main>
       </div>

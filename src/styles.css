@@ -234,14 +234,51 @@ a { color: var(--brand); text-underline-offset: 3px; }
 .topbar .title { margin-right: auto; }
 .topbar .title .hint { color: var(--muted); font-size: .86rem; margin-top: 2px; }
 
+/* ── Sections within a destination ───────────────────────────────────────
+ *
+ * The second level of navigation, shown only where a destination holds more
+ * than one panel. Deliberately quieter than the sidebar: it is a choice of
+ * view within somewhere you have already arrived, not a choice of where to go.
+ */
+.sections {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 32px 14px;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sections::-webkit-scrollbar { display: none; }
+.sections button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: .88rem;
+  font-weight: 500;
+  padding: 7px 13px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.sections button:hover { color: var(--ink); background: var(--surface-2); }
+.sections button[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
 main { max-width: 1180px; margin: 0 auto; padding: 4px 32px 80px; }
 
 /* ── Phone layout ────────────────────────────────────────────────────────
  *
  * Below 860px the sidebar becomes a tab bar fixed to the bottom of the
- * screen, where a thumb can actually reach it. With eleven destinations it
- * scrolls horizontally, so the icons come back — at a glance they are what
- * you navigate by, and the label underneath confirms it.
+ * screen, where a thumb can actually reach it. Six destinations fit across a
+ * phone without scrolling, which is most of the reason there are six: the
+ * icons carry the glance and the label underneath confirms it.
  *
  * `min-width: 0` on the scrolling strip is the load-bearing line. A flex or
  * grid item defaults to `min-width: auto`, meaning it refuses to shrink below
@@ -345,6 +382,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 4px 32px 80px; }
   .content { min-width: 0; }
   .topbar { position: sticky; top: 0; }
   .topbar-inner { padding: 16px 16px 12px; }
+  /* Same 16px side gutter as everything else at this width. */
+  .sections { padding: 0 16px 12px; }
   .topbar h1 { font-size: 1.28rem; }
 
   /* Room for the fixed bar, plus the home indicator below it. */
