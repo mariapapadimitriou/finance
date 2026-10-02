@@ -28,7 +28,7 @@ def store(tmp_path):
     st.set_budget("Dining", 200.0)
     st.add_trip("Lisbon", "2025-11-01", "2025-11-07")
     bank = st.add_piggy_bank("Fun", 400.0, "annual", None, "2025-11", 400.0)
-    st.allocate(st.all_transactions()[0].fingerprint, bank)
+    st.allocate(st.all_transactions()[0].fingerprint, bank, 40.0)
     st.dismiss("finding-1")
     st.set_setting("monthly_income", 4200.0)
     return st

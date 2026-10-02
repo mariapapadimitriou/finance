@@ -172,10 +172,18 @@ A piggy bank fixes both halves of that:
   subtracted from every month's budget, exactly like rent — so it reduces the
   Plan's leftover and with it the daily number. A holiday in June is a bill you
   are already paying.
-- **Coming out.** A charge allocated to a bank on the Transactions tab leaves the
-  month it fell in: it is not in the Overview, the budgets, the trends or the
-  daily number. June doesn't look like a disaster, because June was never asked
-  to pay for the holiday.
+- **Coming out.** A charge allocated to a bank on the Transactions tab leaves
+  the month it fell in: it is not in the Overview, the budgets, the trends or
+  the daily number. June doesn't look like a disaster, because June was never
+  asked to pay for the holiday.
+
+**A bank pays only what it holds.** A bank with $400 in it covers $400 of a
+$2,000 flight and the remaining $1,600 stays in the month it was spent — the row
+on the Transactions tab says so, and the dropdown names each bank's balance
+before you choose. Allocation used to be all-or-nothing, which let a bank pay for
+something it had never collected the money for and made the month read better
+than it was, while the separate "borrow to cover an overspend" gesture on the
+same pot *was* balance-checked. One pot, one rule.
 
 Both figures are derived rather than stored — the monthly contribution from the
 target and the horizon, the balance from how many months have passed less what
@@ -184,9 +192,11 @@ date. Two shapes, because two shapes of cost: `annual` recurs forever and
 refills after it is spent (target ÷ 12), and `once` has a date and stops
 collecting when it arrives (what is still needed ÷ months left).
 
-Spending ahead of a bank is allowed — sometimes you have to fly before you have
-finished saving for the flight — and reported, because the overdraft comes out of
-the month after all.
+The split flows through one function. `analytics.spend_amount` returns what a
+charge costs its own month — the statement amount less whatever a bank covered —
+and `spend_only` hands downstream callers adjusted copies carrying that figure,
+so every total nets it off without knowing piggy banks exist. The ledger itself
+is never rewritten: the Transactions tab still shows what was charged.
 
 ---
 
@@ -278,9 +288,29 @@ of the home indicator.
 
 The bug worth naming, because it is the one that makes a layout "not
 responsive" while every media query looks right: a flex or grid item defaults
-to `min-width: auto` and refuses to shrink below its content. A row of eleven
-tabs with `overflow-x: auto` therefore forced the entire page three times wider
-than the phone. `min-width: 0` on the strip is what fixes it.
+to `min-width: auto` and refuses to shrink below its content. A row of tabs with
+`overflow-x: auto` therefore forced the entire page three times wider than the
+phone. `min-width: 0` on the strip is what fixes it.
+
+### Six destinations, thirteen panels
+
+There were twelve top-level tabs and a hidden thirteenth. On a phone that was a
+scrolling strip nobody could hold in their head, and it put the four surfaces you
+touch once at setup beside the two you open daily — while Import, the only route
+to the import history, had no slot at all.
+
+They are grouped now: **Today**, **Plan** (income and commitments, budgets, piggy
+banks), **Overview** (this month, looking ahead), **Savings** (what to cut,
+subscriptions), **Transactions** (every charge, trips) and **Cards & data**
+(connections, accounts, from a file). Six fit across a phone without scrolling,
+which is most of the reason there are six. A group holding one panel shows no
+second row.
+
+The panel keys did not change, so a panel still links to another by its own name
+— `onTab('piggy')` — and `resolve` in `src/App.jsx` maps that back to whichever
+group now owns it. `tests/test_frontend_wiring.py` reads the source to check that
+every panel belongs to exactly one group, that each one has something rendering
+it, and that no link anywhere points at a key that resolves to nothing.
 
 ### Locking the deployment
 

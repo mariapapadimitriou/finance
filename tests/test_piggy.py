@@ -143,7 +143,7 @@ class TestAllocatedSpendingLeavesTheMonth:
 
         bank = store.add_piggy_bank("Trip", 3600.0, "annual", None, "2026-01")
         flight = next(t for t in store.all_transactions() if t.amount == 600.0)
-        store.allocate(flight.fingerprint, bank)
+        store.allocate(flight.fingerprint, bank, 600.0)
 
         rows = store.all_transactions()
         allocated = next(t for t in rows if t.amount == 600.0)
@@ -152,12 +152,40 @@ class TestAllocatedSpendingLeavesTheMonth:
         # The grocery shop is untouched.
         assert counts_as_spending(next(t for t in rows if t.amount == 80.0))
 
+    def test_a_partly_covered_charge_still_counts_for_the_rest(self, store):
+        """The bank paid $200 of a $600 flight, so $400 is the month's."""
+        from finance.analytics import counts_as_spending, spend_amount, spend_only
+
+        bank = store.add_piggy_bank("Trip", 3600.0, "annual", None, "2026-01")
+        flight = next(t for t in store.all_transactions() if t.amount == 600.0)
+        store.allocate(flight.fingerprint, bank, 200.0)
+
+        allocated = next(t for t in store.all_transactions() if t.amount == 600.0)
+        assert allocated.bank_amount == 200.0
+        assert counts_as_spending(allocated) is True
+        assert spend_amount(allocated) == 400.0
+
+        # And what spend_only hands downstream carries the reduced figure, so
+        # every total nets it off without knowing piggy banks exist.
+        netted = next(t for t in spend_only(store.all_transactions())
+                      if t.merchant == "AIR CANADA")
+        assert netted.amount == 400.0
+
+    def test_the_statement_amount_is_never_rewritten(self, store):
+        """spend_only hands out adjusted copies; the ledger keeps the truth."""
+        bank = store.add_piggy_bank("Trip", 3600.0, "annual", None, "2026-01")
+        flight = next(t for t in store.all_transactions() if t.amount == 600.0)
+        store.allocate(flight.fingerprint, bank, 200.0)
+
+        again = next(t for t in store.all_transactions() if t.merchant == "AIR CANADA")
+        assert again.amount == 600.0
+
     def test_it_comes_back_when_the_allocation_is_removed(self, store):
         from finance.analytics import counts_as_spending
 
         bank = store.add_piggy_bank("Trip", 3600.0, "annual", None, "2026-01")
         flight = next(t for t in store.all_transactions() if t.amount == 600.0)
-        store.allocate(flight.fingerprint, bank)
+        store.allocate(flight.fingerprint, bank, 600.0)
         store.unallocate(flight.fingerprint)
 
         rows = store.all_transactions()
@@ -166,7 +194,7 @@ class TestAllocatedSpendingLeavesTheMonth:
     def test_what_a_bank_has_been_charged_is_summed_from_the_ledger(self, store):
         bank = store.add_piggy_bank("Trip", 3600.0, "annual", None, "2026-01")
         flight = next(t for t in store.all_transactions() if t.amount == 600.0)
-        store.allocate(flight.fingerprint, bank)
+        store.allocate(flight.fingerprint, bank, 600.0)
         assert store.charged_to_banks()[bank] == 600.0
 
     def test_deleting_the_transaction_stops_it_counting_against_the_bank(self, store):
@@ -174,7 +202,7 @@ class TestAllocatedSpendingLeavesTheMonth:
         remember to adjust it."""
         bank = store.add_piggy_bank("Trip", 3600.0, "annual", None, "2026-01")
         flight = next(t for t in store.all_transactions() if t.amount == 600.0)
-        store.allocate(flight.fingerprint, bank)
+        store.allocate(flight.fingerprint, bank, 600.0)
         store.delete_transaction(flight.fingerprint)
         assert store.charged_to_banks().get(bank, 0.0) == 0.0
 
@@ -182,8 +210,8 @@ class TestAllocatedSpendingLeavesTheMonth:
         a = store.add_piggy_bank("Trip", 3600.0, "annual", None, "2026-01")
         b = store.add_piggy_bank("Car", 1200.0, "annual", None, "2026-01")
         flight = next(t for t in store.all_transactions() if t.amount == 600.0)
-        store.allocate(flight.fingerprint, a)
-        store.allocate(flight.fingerprint, b)
+        store.allocate(flight.fingerprint, a, 600.0)
+        store.allocate(flight.fingerprint, b, 600.0)
 
         charged = store.charged_to_banks()
         assert charged.get(a, 0.0) == 0.0
@@ -295,19 +323,75 @@ class TestTheEndpoints:
         r = client.patch(f"/api/piggy/{bank_id}", json={"name": "Old trip"})
         assert r.status_code == 200
 
-    def test_a_charge_can_be_allocated_and_released(self, client):
-        from finance.models import Transaction
+    def test_a_charge_a_bank_can_cover_is_taken_in_full(self, client):
+        st = client.application.config["STORE"]
+        st.add_transactions([txn("2026-09-10", "AIR CANADA", 600.0)])
+        txn_id = st.all_transactions()[0].fingerprint
+        # $600 already set aside, so the bank can pay the whole flight.
+        bank_id = self._open(client, target=3600, opening=600).get_json()["id"]
+
+        r = client.post(f"/api/piggy/{bank_id}/allocate", json={"txn_id": txn_id})
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body["covered"] == 600.0
+        assert body["remaining"] == 0.0
+        assert body["partial"] is False
+        assert client.get("/api/piggy").get_json()["banks"][0]["charged"] == 600.0
+
+        assert client.delete(f"/api/piggy/allocations/{txn_id}").status_code == 200
+        assert client.get("/api/piggy").get_json()["banks"][0]["charged"] == 0.0
+
+    def test_a_bank_pays_only_what_it_holds(self, client):
+        """The whole point of the change: a $3,600-a-year bank opened this month
+        holds one contribution, and that is all it can pay."""
         st = client.application.config["STORE"]
         st.add_transactions([txn("2026-09-10", "AIR CANADA", 600.0)])
         txn_id = st.all_transactions()[0].fingerprint
         bank_id = self._open(client, target=3600).get_json()["id"]
 
-        assert client.post(f"/api/piggy/{bank_id}/allocate",
-                          json={"txn_id": txn_id}).status_code == 200
-        assert client.get("/api/piggy").get_json()["banks"][0]["charged"] == 600.0
+        body = client.post(f"/api/piggy/{bank_id}/allocate",
+                           json={"txn_id": txn_id}).get_json()
+        assert body["covered"] == 300.0        # 3600 / 12, one month in
+        assert body["remaining"] == 300.0
+        assert body["partial"] is True
 
-        assert client.delete(f"/api/piggy/allocations/{txn_id}").status_code == 200
-        assert client.get("/api/piggy").get_json()["banks"][0]["charged"] == 0.0
+        bank = client.get("/api/piggy").get_json()["banks"][0]
+        assert bank["charged"] == 300.0
+        # And it is not overdrawn, because it was never allowed to overdraw.
+        assert bank["overdrawn"] is False
+        assert bank["balance"] == 0.0
+
+    def test_an_empty_bank_refuses_and_says_when_it_will_have_something(self, client):
+        st = client.application.config["STORE"]
+        st.add_transactions([txn("2026-09-10", "AIR CANADA", 600.0)])
+        txn_id = st.all_transactions()[0].fingerprint
+        # Target already met by the opening balance, so it collects nothing a
+        # month — and the flight takes exactly what it holds.
+        bank_id = self._open(client, target=600, opening=600).get_json()["id"]
+        emptied = client.post(f"/api/piggy/{bank_id}/allocate",
+                              json={"txn_id": txn_id}).get_json()
+        assert emptied["covered"] == 600.0
+
+        st.add_transactions([txn("2026-09-11", "HOTEL", 90.0, category="Lodging")])
+        second = next(t for t in st.all_transactions() if t.amount == 90.0)
+        r = client.post(f"/api/piggy/{bank_id}/allocate",
+                        json={"txn_id": second.fingerprint})
+        assert r.status_code == 400
+        assert "nothing in it" in r.get_json()["error"]
+
+    def test_re_allocating_the_same_charge_measures_the_bank_without_it(self, client):
+        """Otherwise the charge would be weighed against a balance its own
+        allocation had already reduced, and shrink every time it was re-saved."""
+        st = client.application.config["STORE"]
+        st.add_transactions([txn("2026-09-10", "AIR CANADA", 600.0)])
+        txn_id = st.all_transactions()[0].fingerprint
+        bank_id = self._open(client, target=3600, opening=600).get_json()["id"]
+
+        first = client.post(f"/api/piggy/{bank_id}/allocate",
+                            json={"txn_id": txn_id}).get_json()
+        again = client.post(f"/api/piggy/{bank_id}/allocate",
+                            json={"txn_id": txn_id}).get_json()
+        assert again["covered"] == first["covered"]
 
     def test_an_inflow_cannot_be_charged_to_a_bank(self, client):
         """There is nothing to take out of a bank for money coming back."""
@@ -329,7 +413,7 @@ class TestTheEndpoints:
         month_before = next(m for m in before["monthly"] if m["month"] == "2026-09")
 
         flight = next(t for t in st.all_transactions() if t.amount == 600.0)
-        bank_id = self._open(client, target=3600).get_json()["id"]
+        bank_id = self._open(client, target=3600, opening=600).get_json()["id"]
         client.post(f"/api/piggy/{bank_id}/allocate",
                     json={"txn_id": flight.fingerprint})
 
@@ -337,11 +421,26 @@ class TestTheEndpoints:
         month_after = next(m for m in after["monthly"] if m["month"] == "2026-09")
         assert month_before["spend"] - month_after["spend"] == pytest.approx(600.0)
 
+    def test_a_partial_allocation_only_removes_what_the_bank_paid(self, client):
+        st = client.application.config["STORE"]
+        st.add_transactions([txn("2026-09-10", "AIR CANADA", 600.0)])
+        before = client.get("/api/summary").get_json()
+        month_before = next(m for m in before["monthly"] if m["month"] == "2026-09")
+
+        flight = st.all_transactions()[0]
+        bank_id = self._open(client, target=3600).get_json()["id"]   # holds 300
+        client.post(f"/api/piggy/{bank_id}/allocate",
+                    json={"txn_id": flight.fingerprint})
+
+        after = client.get("/api/summary").get_json()
+        month_after = next(m for m in after["monthly"] if m["month"] == "2026-09")
+        assert month_before["spend"] - month_after["spend"] == pytest.approx(300.0)
+
     def test_closing_a_bank_reports_what_it_released(self, client):
         st = client.application.config["STORE"]
         st.add_transactions([txn("2026-09-10", "AIR CANADA", 600.0)])
         txn_id = st.all_transactions()[0].fingerprint
-        bank_id = self._open(client, target=3600).get_json()["id"]
+        bank_id = self._open(client, target=3600, opening=600).get_json()["id"]
         client.post(f"/api/piggy/{bank_id}/allocate", json={"txn_id": txn_id})
 
         r = client.delete(f"/api/piggy/{bank_id}")

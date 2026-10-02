@@ -252,6 +252,10 @@ class Transaction:
     # of the fingerprint: allocating a charge does not make it a different
     # charge, and a re-import must not create a second copy of it.
     bank_id: int | None = None
+    # How much of this charge the bank paid. Not always the whole of it: a bank
+    # holding $400 covers $400 of a $2,000 flight and the other $1,600 stays in
+    # the month it was spent.
+    bank_amount: float = 0.0
 
     def __post_init__(self):
         if not self.merchant:
@@ -312,6 +316,7 @@ class Transaction:
             seq=int(row.get("seq", 0) or 0),
             raw=raw,
             bank_id=row.get("bank_id"),
+            bank_amount=float(row.get("bank_amount") or 0.0),
         )
 
 

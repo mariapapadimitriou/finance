@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .analytics import counts_as_spending
+from .analytics import counts_as_spending, spend_amount
 from .categorize import CATEGORIES, is_discretionary
 
 # A plan that leaves nothing over is not a plan anyone keeps, and one that
@@ -79,7 +79,7 @@ def variable_shares(transactions, months_back: int = 12,
             continue
         if discretionary_only and not is_discretionary(category):
             continue
-        totals[category] = totals.get(category, 0.0) + t.amount
+        totals[category] = totals.get(category, 0.0) + spend_amount(t)
 
     grand = sum(totals.values())
     if grand <= 0:
