@@ -155,49 +155,40 @@ export default function BanksPanel({ onChanged, onTab }) {
 
       {!configured && (
         <Notice>
-          <strong>Plaid isn&apos;t set up on this deployment yet.</strong> Add{' '}
+          <strong>Bank connections aren&apos;t set up yet.</strong> Add{' '}
           <code>PLAID_CLIENT_ID</code>, <code>PLAID_SECRET</code> and{' '}
-          <code>PLAID_ENV</code> to the project&apos;s environment variables and
-          redeploy. Until then you can still{' '}
+          <code>PLAID_ENV</code>, then redeploy. Until then,{' '}
           {onTab ? (
             <button className="link" onClick={() => onTab('import')}>
-              import statements from a file
+              upload statements
             </button>
-          ) : 'import statements from a file'}.
+          ) : 'upload statements'}.
         </Notice>
       )}
 
       {configured && !encrypted && (
         <Notice kind="error">
-          <strong>No encryption key is set.</strong> A bank token is a live
-          credential, so linking is refused until <code>SPENDIE_SECRET_KEY</code>{' '}
-          exists to encrypt it before it reaches the database.
+          <strong>Set <code>SPENDIE_SECRET_KEY</code> to connect banks.</strong>{' '}
+          It encrypts your bank token.
         </Notice>
       )}
 
       {configured && !['sandbox', 'production'].includes(environment) && (
         <Notice kind="error">
           <strong>PLAID_ENV is set to &ldquo;{environment}&rdquo;</strong>, which
-          isn&apos;t a Plaid environment. Use <code>sandbox</code> or{' '}
-          <code>production</code> — Plaid retired <code>development</code> in
-          June 2024. A value with a stray space or newline lands here too.
+          isn&apos;t valid. Use <code>sandbox</code> or <code>production</code>.
         </Notice>
       )}
 
       {configured && environment === 'sandbox' && (
         <Notice>
-          Running against Plaid&apos;s <strong>sandbox</strong>, so you&apos;ll
-          get made-up test transactions rather than your own. Switch{' '}
-          <code>PLAID_ENV</code> to <code>production</code> when you&apos;re ready
-          for the real thing.
+          <strong>Test mode</strong> — transactions are made up. Set{' '}
+          <code>PLAID_ENV</code> to <code>production</code> for real data.
         </Notice>
       )}
 
       <Card
         title="Connected banks"
-        hint={configured
-          ? `Linked through Plaid · ${environment} environment`
-          : 'Linked through Plaid — transactions arrive without downloading a statement'}
         actions={
           <div className="row" style={{ gap: 8 }}>
             {items.length > 0 && (
@@ -214,10 +205,8 @@ export default function BanksPanel({ onChanged, onTab }) {
       >
         {items.length === 0 ? (
           <p className="small muted" style={{ margin: 0 }}>
-            Nothing connected yet. Connecting a card pulls its history in and
-            keeps it current, so you stop downloading statements by hand. Your
-            bank login goes to Plaid, never to Spendie — what gets stored here
-            is a token that can read transactions and nothing else.
+            Nothing connected yet. Your bank login goes to Plaid, never to
+            Spendie.
           </p>
         ) : (
           <div className="table-wrap">
@@ -265,7 +254,7 @@ export default function BanksPanel({ onChanged, onTab }) {
           <Notice kind="good" >
             {result.imported > 0
               ? `Brought in ${result.imported} new transaction${result.imported === 1 ? '' : 's'}.`
-              : 'Already up to date — nothing new since the last sync.'}
+              : 'Already up to date.'}
             {result.errors?.length > 0 && (
               <> {result.errors.length} connection(s) reported a problem.</>
             )}
@@ -273,22 +262,14 @@ export default function BanksPanel({ onChanged, onTab }) {
           </Notice>
         )}
 
-        <p className="assumption" style={{ marginBottom: 0 }}>
-          Only what changed since the last sync is fetched, so syncing often is
-          cheap. When a pending charge posts, the pending version is removed
-          rather than left beside the real one.
-        </p>
       </Card>
 
       {onTab && (
         <p className="small muted" style={{ textAlign: 'center', margin: 0 }}>
-          A card you can&apos;t connect — closed, or at a bank Plaid doesn&apos;t
-          reach —{' '}
+          Can&apos;t connect a card?{' '}
           <button className="link" onClick={() => onTab('import')}>
-            can be imported from a file
+            Upload statements
           </button>
-          . Connecting is better where it&apos;s possible: it stays current, and
-          nothing has to be downloaded again.
         </p>
       )}
     </div>
@@ -308,14 +289,12 @@ function Skipped({ items, onTab }) {
 
   return (
     <div className="small" style={{ marginTop: 10 }}>
-      Skipped {names.length} account{names.length === 1 ? '' : 's'} this bank
-      also holds: {names.join(', ')}.{' '}
+      Skipped: {names.join(', ')}.{' '}
       {onTab ? (
         <button className="link" onClick={() => onTab('accounts')}>
-          Choose which accounts to sync
+          Choose accounts
         </button>
-      ) : 'Choose which accounts to sync on the Accounts tab'}
-      {' '}— the choice sticks, so a card you switch off stays off.
+      ) : 'Choose accounts on the Accounts tab.'}
     </div>
   );
 }

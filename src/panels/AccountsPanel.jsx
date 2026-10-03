@@ -43,12 +43,11 @@ export default function AccountsPanel({ onChanged }) {
   async function remove(account) {
     const connected = account.syncs !== null;
     if (!window.confirm(
-      `Remove "${account.account_name}" and all ${account.transactions} of its `
-      + 'transactions? This can\'t be undone.'
+      `Remove "${account.account_name}" and its ${account.transactions} `
+      + 'transactions?'
       + (connected
-        ? ' It will also stop syncing, so the next sync won\'t bring it back. '
-          + 'You can switch it back on here afterwards.'
-        : '')
+        ? ' Syncing stops too; turn it back on here to re-fetch them.'
+        : ' Re-upload its statements to get them back.')
     )) return;
     setBusy(true);
     try {
@@ -98,10 +97,7 @@ export default function AccountsPanel({ onChanged }) {
             This ledger holds {mix.length} currencies:{' '}
             {mix.map((m) => `${m.currency} (${m.transactions})`).join(', ')}.
           </strong>{' '}
-          Totals add amounts together, so every figure mixing them is wrong by
-          whatever the exchange rate is. Amounts are shown in{' '}
-          {mix[0].currency} because that is most of them. Remove the odd card,
-          or treat anything that spans both as indicative only.
+          Totals mixing them ignore exchange rates, so treat them as rough.
         </Notice>
       )}
 
@@ -113,14 +109,12 @@ export default function AccountsPanel({ onChanged }) {
             credit card {syncingNotCards.length === 1 ? 'is' : 'are'} set to
             sync.
           </strong>{' '}
-          A chequing account records the payment that settles the card, so
-          counting both counts the same money twice. Switch Sync off below for
-          anything you didn&apos;t mean to include.
+          Card payments from it may be counted twice. Turn Sync off below if
+          you didn&apos;t mean to include it.
         </Notice>
       )}
 
-      <Card title="Accounts"
-            hint="Everything the app knows about, and what keeps arriving">
+      <Card title="Accounts">
         <div className="table-wrap">
           <table className="acct-stacked">
             <thead>
@@ -140,9 +134,9 @@ export default function AccountsPanel({ onChanged }) {
                   <td className="merchant">
                     {a.account_name}
                     <div className="desc">
-                      {a.source === 'plaid' ? 'connected through Plaid'
+                      {a.source === 'plaid' ? 'connected'
                         : a.source === 'manual' ? 'added by hand'
-                        : 'imported from statements'}
+                        : 'uploaded'}
                     </div>
                   </td>
                   <td>
@@ -184,18 +178,6 @@ export default function AccountsPanel({ onChanged }) {
             </tbody>
           </table>
         </div>
-        <p className="assumption" style={{ marginBottom: 0 }}>
-          Sync off means the next sync skips that account entirely; its
-          existing rows stay until you remove it. Remove deletes the rows and
-          switches Sync off, so nothing comes back. Both are reversible — turn
-          Sync back on and the next sync re-fetches the history. An account
-          showing &ldquo;—&rdquo; came from a statement, not a bank, so there
-          is nothing to sync.
-          {off.length > 0 && (
-            <> {off.length} account{off.length === 1 ? ' is' : 's are'}{' '}
-              switched off right now.</>
-          )}
-        </p>
       </Card>
 
       {/* Trimming changes the row counts in the table above, so this panel's
@@ -207,26 +189,15 @@ export default function AccountsPanel({ onChanged }) {
                     await load(); await onChanged?.();
                   }} />
 
-      <Card title="Possible overlap"
-            hint="One card that may have been imported under two accounts">
+      <Card title="Duplicates">
         {overlaps.length === 0 && dupes.length === 0 ? (
-          <Notice kind="good">
-            Nothing overlapping. No two accounts look like the same card under
-            two ids. Two different cards buying the same thing for the same
-            price in the same week is not counted as a duplicate — that is two
-            purchases, and at the rate it happens, flagging it would bury
-            anything real.
-          </Notice>
+          <Notice kind="good">No duplicates found.</Notice>
         ) : (
           <>
             {overlaps.length > 0 && (
               <>
                 <p className="small muted" style={{ marginTop: 0 }}>
-                  These pairs cover the same months and share most of their
-                  amounts, which is what one card imported twice looks like —
-                  from statements, and again through Plaid. Two different
-                  cards never reach this bar, so a pair here is worth
-                  resolving by removing one of them.
+                  These look like the same card added twice. Remove one.
                 </p>
                 <div className="table-wrap">
                   <table>
@@ -307,10 +278,6 @@ export default function AccountsPanel({ onChanged }) {
           </>
         )}
 
-        <p className="assumption" style={{ marginBottom: 0 }}>
-          {audit?.note ?? ''} To clear a whole duplicated account, remove it
-          above; to drop a single charge, use the Transactions tab.
-        </p>
       </Card>
     </div>
   );
@@ -348,7 +315,6 @@ function StartFresh({ total, connected = [], busy, setBusy, setError, onDone }) 
 
   return (
     <Card title="Start fresh"
-          hint="Empty the ledger and everything worked out from it"
           actions={!open && (
             <button className="btn" onClick={() => setOpen(true)}>
               Start fresh…
@@ -361,22 +327,15 @@ function StartFresh({ total, connected = [], busy, setBusy, setError, onDone }) 
         </Notice>
       ) : !open ? (
         <p className="small muted" style={{ margin: 0 }}>
-          The ledger currently holds {total.toLocaleString()} transaction
-          {total === 1 ? '' : 's'}. Starting fresh removes all of them, along
-          with your budgets, trips, merchant corrections and dismissed
-          findings. Your piggy banks survive — they are decisions about the
-          future rather than a record of the past — but whatever was charged to
-          them goes, since those transactions do. Your password and bank
-          credentials are untouched.
+          Delete all {total.toLocaleString()} transactions, budgets and trips.
+          Piggy banks stay.
         </p>
       ) : (
         <form onSubmit={go}>
           <Notice kind="error">
-            <strong>This cannot be undone.</strong> It removes{' '}
-            {total.toLocaleString()} transaction{total === 1 ? '' : 's'}, every
-            budget, trip, merchant correction and dismissed finding. What
-            stays: your password, your Plaid credentials and your piggy banks
-            {connected.length > 0 && ', and — unless you untick below — your bank connections'}.
+            <strong>This can&apos;t be undone.</strong> Deletes{' '}
+            {total.toLocaleString()} transaction{total === 1 ? '' : 's'}, budgets,
+            trips, category fixes and hidden suggestions. Piggy banks stay.
           </Notice>
 
           {/* Only offered when there is something to keep. It used to name two
@@ -388,12 +347,8 @@ function StartFresh({ total, connected = [], busy, setBusy, setError, onDone }) 
               <input type="checkbox" checked={keepBanks}
                      onChange={(e) => setKeepBanks(e.target.checked)} />
               <span className="small">
-                Keep {connected.length === 1 ? 'this connection' : `these ${connected.length} connections`}:{' '}
-                {connected.slice(0, 3).join(', ')}
-                {connected.length > 3 && ` and ${connected.length - 3} more`}.
-                Their sync position is rewound either way, so the next sync
-                re-fetches the full history rather than reporting nothing new
-                against an empty ledger.
+                Keep bank connections ({connected.slice(0, 3).join(', ')}
+                {connected.length > 3 && ` +${connected.length - 3}`})
               </span>
             </label>
           )}
@@ -403,7 +358,7 @@ function StartFresh({ total, connected = [], busy, setBusy, setError, onDone }) 
             <input id="erase" type="text" value={word} autoComplete="off"
                    onChange={(e) => setWord(e.target.value)}
                    style={{ width: 140 }} />
-            <button className="btn" type="submit"
+            <button className="btn danger" type="submit"
                     disabled={busy || word.trim().toLowerCase() !== 'erase'}>
               {busy ? 'Erasing…' : 'Erase everything'}
             </button>
@@ -499,18 +454,14 @@ function TrendBasis({ onChanged }) {
   const wouldRemove = start && info.earliest && start > info.earliest;
 
   return (
-    <Card title="What counts toward trends"
-          hint="Months with cards missing read as restraint, not as missing data">
+    <Card title="History"
+          hint="Ignore early months where some cards are missing">
       <ErrorNote error={error} />
 
       <p className="small muted" style={{ marginTop: 0 }}>
-        The ledger holds {info.total.toLocaleString()} transaction
-        {info.total === 1 ? '' : 's'}
+        {info.total.toLocaleString()} transaction{info.total === 1 ? '' : 's'}
         {info.earliest && <> from {info.earliest} to {info.latest}</>}.
-        {info.start
-          ? <> Only {info.start} onward is counted; anything earlier is skipped
-              on import.</>
-          : <> Everything in it counts.</>}
+        {info.start && <> Counting from {info.start}.</>}
       </p>
 
       <div className="controls">
@@ -524,17 +475,12 @@ function TrendBasis({ onChanged }) {
         <button className="btn" type="button"
                 disabled={busy || !start || !wouldRemove}
                 onClick={() => save(true)}>
-          {busy ? 'Working…' : 'Save and remove earlier'}
+          {busy ? 'Working…' : 'Save and delete earlier'}
         </button>
       </div>
 
       {done && <Notice kind="good">{done}</Notice>}
 
-      <p className="assumption">
-        The date is remembered, not just applied once. A fresh bank connection
-        backfills two years of history, so without that the next sync would
-        put the same months straight back.
-      </p>
 
       <div className="controls" style={{ marginTop: 4 }}>
         <button className="btn quiet" type="button" disabled={busy}
@@ -542,9 +488,7 @@ function TrendBasis({ onChanged }) {
           Re-check categories
         </button>
         <span className="small muted">
-          Applies today&apos;s rules to rows already imported — including the
-          one that keeps a payment to a card out of spending. Categories you
-          set by hand are left alone.
+          Re-run auto-categorization. Your own changes are kept.
         </span>
       </div>
     </Card>

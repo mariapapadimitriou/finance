@@ -84,20 +84,19 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
       {/* Shown, not edited. Take-home pay had a Save button here and another on
           the Plan tab, both writing the same setting, and whichever was touched
           last won silently. One figure, one place to change it. */}
-      <Card title="What this is built on"
-            hint="All of it comes from the Plan tab">
-        <p className="small" style={{ marginTop: 0, marginBottom: 12 }}>
+      <Card>
+        <p className="small" style={{ margin: 0 }}>
           Take-home pay of{' '}
           <strong className="num">{money(data.monthly_income)}</strong> a month
           {data.basis?.from_plan && (
-            <>, less {money(data.basis.fixed_total)} of commitments</>
+            <>, less {money(data.basis.fixed_total)} in bills</>
           )}
           .{' '}
           {onTab
             ? <button className="link" onClick={() => onTab('plan')}>
-                Change it on the Plan tab
+                Edit
               </button>
-            : <>Change it on the Plan tab.</>}
+            : null}
         </p>
       </Card>
 
@@ -115,40 +114,31 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
         </Notice>
       ) : (
         <>
-          <Notice kind={data.from_plan ? undefined : 'error'}>
-            {!data.from_plan && <strong>Read the surplus as a ceiling. </strong>}
-            {data.caveat}
-          </Notice>
+          {!data.from_plan && (
+            <Notice>
+              Add your bills on the Plan for a real figure — for now this is a
+              best case, counting only your imported cards.
+            </Notice>
+          )}
 
           {data.from_plan ? (
             <>
               <div className="grid cols-3">
                 <Tile label="You put away" value={money(data.basis.saving)}
-                      note="the savings figure in your plan" tone="good" />
+                      note="from your plan" tone="good" />
                 <Tile label="Left unspent" value={money(data.basis.unspent)}
-                      note={`${money(data.basis.leftover)} to spend, `
-                            + `${money(data.basis.typical_spend)} typically spent`}
+                      note={`${money(data.basis.typical_spend)} of ${money(data.basis.leftover)} usually spent`}
                       tone={data.basis.unspent < 0 ? 'bad' : 'good'} />
                 <Tile label="Saved each month" value={money(data.monthly_surplus)}
-                      note="what the two above come to"
+                      note="both together"
                       tone={data.monthly_surplus < 0 ? 'bad' : 'good'} />
               </div>
-              {data.basis.banks > 0 && (
-                <p className="assumption">
-                  Your piggy banks collect a further{' '}
-                  <strong className="num">{money(data.basis.banks)}</strong> a
-                  month, deliberately left out of the figures above. They do
-                  accumulate, but they accumulate in order to be spent on the
-                  thing they are named after, so counting them as savings would
-                  overstate what you actually keep.
-                </p>
-              )}
               <div className="grid cols-2">
                 <Tile label="Cuts found" value={money(data.monthly_cuts)}
-                      note="a month, from the Savings tab" tone="good" />
+                      note="a month, from Savings" tone="good" />
                 <Tile label="Typical spend" value={money(data.typical_monthly_spend)}
                       note={`median of ${data.months_observed} month`
-                            + `${data.months_observed === 1 ? '' : 's'}, imported cards only`} />
+                            + `${data.months_observed === 1 ? '' : 's'}`} />
               </div>
             </>
           ) : (
@@ -179,7 +169,7 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
 
           <Card
             title="Twelve months out"
-            hint="What following the plan accumulates, against what the last few months would"
+            hint="Saved by following the plan vs. your recent pace"
             actions={<Confidence level={data.confidence}
                                  months={data.months_observed} />}
           >
@@ -202,45 +192,17 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
               </span>
             </div>
             <p className="assumption" style={{ marginBottom: 0 }}>
-              {/* Either line can be the higher one, and the honest reading
-                  differs by which. Overspending the budget is the case the tab
-                  used to project on its own and call the future. */}
-              {data.at_12.on_plan >= data.at_12.pace ? (
-                <>
-                  Following the plan is worth{' '}
-                  <strong className="num">
-                    {money(data.at_12.on_plan - data.at_12.pace)}
-                  </strong>{' '}
-                  more over the year than the last few months would give you.
-                  The plan line is simply what you have decided to put away —
-                  it does not depend on your spending history, which is why it
-                  is the one to aim at.
-                </>
-              ) : (
-                <>
-                  You are currently spending{' '}
-                  <strong className="num">
-                    {money(data.basis.leftover - data.plan_spend)}
-                  </strong>{' '}
-                  a month less than the plan allows, so your recent pace
-                  accumulates{' '}
-                  <strong className="num">
-                    {money(data.at_12.pace - data.at_12.on_plan)}
-                  </strong>{' '}
-                  more over the year than the plan promises. Worth raising the
-                  savings figure on the Plan tab by some of it — then it happens
-                  on purpose rather than by accident.
-                </>
-              )}
-              {data.monthly_cuts > 0 && (
-                <> The {money(data.monthly_cuts)} a month of cuts on the Savings
-                   tab would add to either line.</>
-              )}
+              {data.at_12.on_plan >= data.at_12.pace
+                ? <>Sticking to the plan saves{' '}
+                    <strong className="num">{money(data.at_12.on_plan - data.at_12.pace)}</strong>{' '}
+                    more this year.</>
+                : <>You&apos;re beating the plan by{' '}
+                    <strong className="num">{money(data.at_12.pace - data.at_12.on_plan)}</strong>{' '}
+                    a year — consider raising your savings.</>}
             </p>
           </Card>
 
-          <Card title="How long until…"
-                hint="A number you have in mind, under each scenario">
+          <Card title="How long to save…">
             <form className="controls" onSubmit={(e) => e.preventDefault()}>
               <label htmlFor="target">I want to save</label>
               <input id="target" type="number" min="0" step="any" value={target}
@@ -256,7 +218,7 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
                         : 'Never'}
                       note={data.goal.pace_months
                         ? `${money(data.monthly_surplus)} a month`
-                        : 'this pace saves nothing'}
+                        : 'not at this pace'}
                       tone={data.goal.pace_months ? undefined : 'bad'} />
                 <Tile label="Following the plan"
                       value={data.goal.plan_months
@@ -264,7 +226,7 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
                         : 'Never'}
                       note={data.monthly_on_plan !== null
                             && data.monthly_on_plan !== undefined
-                        ? `${money(data.monthly_on_plan)} a month, your savings figure`
+                        ? `${money(data.monthly_on_plan)} a month`
                         : `${money(data.monthly_surplus + data.monthly_cuts)} a month`}
                       tone={data.goal.plan_months ? 'good' : 'bad'} />
               </div>
@@ -297,15 +259,14 @@ function SavingsSlider({ data, value, onChange, onCommit, onReset, saving,
   const from = MONTH_NAMES[12 - months] ?? '';
 
   return (
-    <Card title="What if you put away more"
-          hint="Drag it, and every figure below moves with it — nothing is saved until you say so"
+    <Card title="What if you saved more?"
           actions={dirty && (
             <div className="row" style={{ gap: 8 }}>
               <button className="btn quiet" onClick={onReset} disabled={saving}>
                 Reset
               </button>
               <button className="btn primary" onClick={onCommit} disabled={saving}>
-                {saving ? 'Saving…' : 'Make it the plan'}
+                {saving ? 'Saving…' : 'Save to plan'}
               </button>
             </div>
           )}>
@@ -346,21 +307,12 @@ function SavingsSlider({ data, value, onChange, onCommit, onReset, saving,
         <Tile label="Over twelve months" value={money(data.at_12?.on_plan ?? 0)}
               note="following the plan" tone="good" />
         <Tile label="Left to spend" value={money(data.basis?.leftover ?? 0)}
-              note="a month, after commitments and this"
+              note="a month"
               tone={(data.basis?.leftover ?? 0) <= 0 ? 'bad' : undefined} />
       </div>
 
       <p className="assumption" style={{ marginBottom: 0 }}>
-        {/* The thing a slider like this usually hides: it is not a tap that
-            makes more money come out. The recent-pace line does not move at
-            all, because what you actually accumulate is unchanged — what
-            changes is how much of it was a decision. */}
-        Moving this does not change what you accumulate, only how much of it
-        happens on purpose: the money comes out of what is left to spend, and
-        the recent-pace line below does not move. What it does change is the
-        daily number on Today, which divides the smaller leftover.
-        {dirty && <> Nothing is saved until you press
-          <strong> Make it the plan</strong>.</>}
+        Saving more lowers what you can spend each day.
       </p>
     </Card>
   );
@@ -380,8 +332,8 @@ function Invested({ invested }) {
   const at30 = chart.at['30'];
 
   return (
-    <Card title="If you invested it instead of holding it"
-          hint={`${money(invested.monthly)} a month, compounded — assumptions, not predictions`}>
+    <Card title="If you invested it"
+          hint={`${money(invested.monthly)} a month, compounded`}>
       <div className="chart">
         <Chart
           config={investedConfig(invested.series)}
@@ -441,15 +393,8 @@ function Invested({ invested }) {
       </div>
 
       <p className="assumption" style={{ marginBottom: 0 }}>
-        These are what the arithmetic gives if a constant average return
-        happened every year, which is the one thing markets reliably do not
-        do: the same long-run average arrives as good years and falling ones
-        in an order nobody gets to choose, and a bad run early is worth far
-        less than this suggests. Nothing here accounts for tax or for fees,
-        and the figures are in today&apos;s dollars without inflation taken
-        out — {money(at30.value)} in thirty years buys a good deal less than
-        it does now. It is a sense of scale, not advice, and not a
-        recommendation of anywhere in particular to put it.
+        Illustrative only — ignores tax, fees, inflation and market swings.
+        Not advice.
       </p>
     </Card>
   );
@@ -469,7 +414,7 @@ function Confidence({ level, months }) {
   const tone = { thin: 'warning', fair: 'warning', reasonable: 'good' }[level];
   return (
     <StatusPill state={tone}>
-      {months} month{months === 1 ? '' : 's'} of data — {level} confidence
+      {months} month{months === 1 ? '' : 's'} of data
     </StatusPill>
   );
 }

@@ -12,10 +12,8 @@ export default function SubscriptionsPanel({ recurring }) {
 
   if (items.length === 0) {
     return (
-      <Empty title="No recurring charges detected yet">
-        A charge needs to appear at least three times on a regular cadence before
-        it counts as recurring. Import a longer history and subscriptions will
-        surface here automatically.
+      <Empty title="No subscriptions found yet">
+        They show up after three regular charges.
       </Empty>
     );
   }
@@ -29,19 +27,15 @@ export default function SubscriptionsPanel({ recurring }) {
   return (
     <div className="stack">
       <div className="grid cols-4">
-        <Tile label="Active subscriptions" value={summary.count ?? 0}
-              note="detected from charge regularity, not merchant names" />
-        <Tile label="Every month" value={money(summary.monthly_total ?? 0)}
-              note="renewing without a decision" />
-        <Tile label="Every year" value={money(summary.annual_total ?? 0)}
-              note="total committed annually" />
-        <Tile label="Lapsed" value={inactive.length}
-              note="past due for their next charge" />
+        <Tile label="Active" value={summary.count ?? 0} />
+        <Tile label="Per month" value={money(summary.monthly_total ?? 0)} />
+        <Tile label="Per year" value={money(summary.annual_total ?? 0)} />
+        <Tile label="Stopped" value={inactive.length} />
       </div>
 
       <Card
-        title="Active recurring charges"
-        hint="Detected by cadence and amount stability — includes bills as well as subscriptions"
+        title="Active"
+        hint="Subscriptions and regular bills"
       >
         <div className="table-wrap">
           <table>
@@ -49,10 +43,10 @@ export default function SubscriptionsPanel({ recurring }) {
               <tr>
                 <th>Merchant</th>
                 <th>Category</th>
-                <th>Cadence</th>
+                <th>How often</th>
                 <th className="r">Amount</th>
                 <th className="r">Per year</th>
-                <th>Next expected</th>
+                <th>Next</th>
                 <th>Confidence</th>
               </tr>
             </thead>
@@ -81,32 +75,29 @@ export default function SubscriptionsPanel({ recurring }) {
                   <td className="r">{money(r.annual_cost)}</td>
                   <td className="muted">{dateLabel(r.next_expected)}</td>
                   <td>
-                    <StatusPill state={r.confidence >= 0.8 ? 'good' : 'warning'}>
-                      {pct(r.confidence)}
-                    </StatusPill>
+                    <span title="How regular the charges are">
+                      <StatusPill state={r.confidence >= 0.8 ? 'good' : 'warning'}>
+                        {pct(r.confidence)}
+                      </StatusPill>
+                    </span>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <p className="small muted" style={{ marginTop: 14, marginBottom: 0 }}>
-          Confidence reflects how regular the charges are — how many there have
-          been, how evenly spaced, and how stable the amount. A lower score
-          usually means an irregular bill rather than a subscription.
-        </p>
       </Card>
 
       {inactive.length > 0 && (
         <Card
-          title="Lapsed or cancelled"
-          hint="Past their expected next charge — likely already cancelled"
+          title="Stopped"
+          hint="Probably cancelled"
         >
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Merchant</th><th>Cadence</th>
+                  <th>Merchant</th><th>How often</th>
                   <th className="r">Amount</th><th>Last charged</th>
                   <th className="r">Paid in total</th>
                 </tr>

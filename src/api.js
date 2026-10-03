@@ -22,7 +22,12 @@ async function req(path, options = {}) {
     onUnauthorized();
     throw new Error('Signed out.');
   }
-  if (!r.ok) throw new Error(body.error || `${r.status} ${r.statusText}`);
+  if (!r.ok) {
+    const err = new Error(body.error || `${r.status} ${r.statusText}`);
+    err.status = r.status;
+    err.body = body;
+    throw err;
+  }
   return body;
 }
 
@@ -136,15 +141,12 @@ export const getProjections  = (target, savings) => {
  * found, so the body travels with the thrown error for the form to show.
  */
 export async function addTransaction(entry) {
-  const r = await fetch(`${API}/api/transactions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(entry),
-  });
-  const body = await r.json().catch(() => ({}));
-  if (r.status === 409) return { conflict: true, ...body };
-  if (!r.ok) throw new Error(body.error || `${r.status} ${r.statusText}`);
-  return { conflict: false, ...body };
+  try {
+    return { conflict: false, ...await json('POST', '/api/transactions', entry) };
+  } catch (e) {
+    if (e.status === 409) return { conflict: true, ...e.body };
+    throw e;
+  }
 }
 
 export const deleteTransaction = (id) =>
@@ -256,6 +258,16 @@ export function dateLabel(iso) {
   const [y, m, d] = iso.split('-').map(Number);
   return `${MONTH_NAMES[m - 1]} ${d}`;
 }
+
+/** Today's date in the browser's own timezone, as YYYY-MM-DD. */
+export function localToday() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** This month in the browser's own timezone, as YYYY-MM. */
+export const localMonth = () => localToday().slice(0, 7);
 
 export function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();

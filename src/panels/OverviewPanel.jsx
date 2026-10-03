@@ -49,13 +49,9 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
     <div className="stack">
       {gaps.length > 0 && (
         <Notice>
-          <strong>{gaps.length} month{gaps.length === 1 ? '' : 's'} missing
+          <strong>{gaps.length} month{gaps.length === 1 ? '' : 's'} missing</strong>{' '}
           between {monthLabel(summary.months[0])} and{' '}
-          {monthLabel(summary.months.at(-1))}.</strong>{' '}
-          Averages and trends here only count the months you actually imported,
-          so they stay honest — but a subscription whose charges straddle a gap
-          can be missed entirely. Import the statements in between for the full
-          picture.
+          {monthLabel(summary.months.at(-1))}. Import them for accurate averages.
         </Notice>
       )}
 
@@ -74,23 +70,23 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
         <Tile
           label="Typical month"
           value={money(summary.typical_monthly_spend ?? summary.average_monthly_spend)}
-          note={`median of ${observedMonths} month${observedMonths === 1 ? '' : 's'} of data`}
+          note={`median of ${observedMonths} month${observedMonths === 1 ? '' : 's'}`}
         />
         <Tile
-          label="Discretionary"
+          label="Optional"
           value={pct(split.discretionary_share ?? 0)}
           note={`${money(split.discretionary ?? 0)} of ${money(split.total ?? 0)}`}
         />
         <Tile
           label="Could save"
           value={money(savings)}
-          note="per year, confidence-weighted"
+          note="a year — see how →"
+          onClick={onTab ? () => onTab('savings') : undefined}
         />
       </div>
 
       <Card
         title="Month by month"
-        hint="Card payments, transfers and refunds excluded; refunds net against their category"
         actions={
           <button className="btn quiet" onClick={() => setShowTable((v) => !v)}>
             {showTable ? 'Hide data' : 'Show data'}
@@ -176,28 +172,20 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
             this one, so someone who typed rent $1,850 and read "Fixed — $380"
             here could only conclude that a tab was broken. */}
         <Card
-          title="Unavoidable vs chosen, on your cards"
-          hint="Only what these cards saw — a commitment paid by transfer is not here"
+          title="Essential vs optional"
         >
           <div className="split-bar" role="img" aria-label={
-            `Chosen ${money(split.discretionary)}, unavoidable ${money(split.fixed)}`}>
+            `Optional ${money(split.discretionary)}, essential ${money(split.fixed)}`}>
             <span className="a" style={{ width: `${(split.discretionary_share ?? 0) * 100}%` }} />
             <span className="b" style={{ flex: 1 }} />
           </div>
           <Legend items={[
-            { label: `Chosen — ${money(split.discretionary ?? 0)}`, color: cssVar('--series-1') },
-            { label: `Unavoidable — ${money(split.fixed ?? 0)}`, color: cssVar('--series-2') },
+            { label: `Optional — ${money(split.discretionary ?? 0)}`, color: cssVar('--series-1') },
+            { label: `Essential — ${money(split.fixed ?? 0)}`, color: cssVar('--series-2') },
           ]} />
-          <p className="small muted" style={{ marginTop: 12, marginBottom: 0 }}>
-            The chosen half is the part restraint can move. The unavoidable half
-            needs renegotiating instead. This counts only charges on the cards
-            you have imported, so it is not the same figure as the commitments
-            you typed on the Plan tab — anything paid by transfer never reaches
-            these statements.
-          </p>
         </Card>
 
-        <Card title="Spend by weekday" hint="Average per active day, all history">
+        <Card title="By weekday" hint="Average per day">
           {weekday.length === 0 ? (
             <p className="muted">Not enough data yet.</p>
           ) : (
@@ -216,7 +204,7 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
         </div>
       </Card>
 
-      <Card title="Your cards" hint="Spending aggregated across every card you've imported">
+      <Card title="By card">
         <div className="table-wrap">
           <table>
             <thead>

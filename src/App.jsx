@@ -17,7 +17,7 @@ import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import {
   getAccounts, getAuthStatus, getCategories, getInsights, getRecurring,
-  getSummary, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
+  getSummary, localMonth, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
 } from './api.js';
 
 // Icons are 24×24 stroke paths, drawn in currentColor.
@@ -47,53 +47,35 @@ function defaultMonth(summary) {
 // `onTab('piggy')` in a panel still works — `resolve` turns a panel key into
 // the group that now contains it.
 const PANELS = {
-  today:         { label: 'Today',
-                   hint: 'What you can spend today, and why that number' },
-  plan:          { label: 'Income & commitments',
-                   hint: 'What comes in, what is spoken for, and what is left' },
-  budgets:       { label: 'Budgets',
-                   hint: 'Spent against budget, projected to month end' },
-  overview:      { label: 'This month',
-                   hint: 'Spending across every card' },
-  projections:   { label: 'Looking ahead',
-                   hint: 'Where this lands, at this pace and with the cuts' },
-  savings:       { label: 'What to cut',
-                   hint: 'Ranked by what it saves, with the charges behind it' },
-  subscriptions: { label: 'Subscriptions',
-                   hint: 'Every recurring charge found in your history' },
-  transactions:  { label: 'Every charge',
-                   hint: 'Searchable, correctable, chargeable to a piggy bank' },
-  trips:         { label: 'Trips',
-                   hint: 'Date ranges whose spending counts as Travel' },
-  banks:         { label: 'Connections',
-                   hint: 'Connect a card through Plaid and let it sync itself' },
-  accounts:      { label: 'Accounts',
-                   hint: 'Every account, what syncs, and anything counted twice' },
-  import:        { label: 'From a file',
-                   hint: "Statements for a card that can't be connected" },
+  today:         { label: 'Today' },
+  plan:          { label: 'Income & bills' },
+  budgets:       { label: 'Budgets' },
+  overview:      { label: 'This month' },
+  projections:   { label: 'Looking ahead' },
+  savings:       { label: 'What to cut' },
+  subscriptions: { label: 'Subscriptions' },
+  transactions:  { label: 'All' },
+  trips:         { label: 'Trips' },
+  banks:         { label: 'Connections' },
+  accounts:      { label: 'Accounts' },
+  import:        { label: 'Upload' },
 };
 
 // The six destinations. A group holding one panel shows no sub-navigation.
 const GROUPS = [
   { key: 'today', label: 'Today', panels: ['today'],
-    hint: 'What you can spend today, and why that number',
     icon: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z' },
   // Looking ahead sits with the plan, not with the history: it is the plan
   // run forward, and the savings figure it offers to move is the plan's.
   { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections'],
-    hint: 'What you earn, what it is promised to, how the rest divides, and where that leads',
     icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
   { key: 'overview', label: 'Overview', panels: ['overview'],
-    hint: 'Where the money went',
     icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
   { key: 'savings', label: 'Savings', panels: ['savings', 'subscriptions'],
-    hint: 'What to cut, and the renewals worth a second look',
     icon: 'M12 3v18M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
-  { key: 'transactions', label: 'Transactions', panels: ['transactions', 'trips'],
-    hint: 'Every charge, and the date ranges that reclassify them',
+  { key: 'transactions', label: 'Activity', panels: ['transactions', 'trips'],
     icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
-  { key: 'cards', label: 'Cards & data', panels: ['banks', 'accounts', 'import'],
-    hint: 'Where the transactions come from, and what counts',
+  { key: 'cards', label: 'Cards', panels: ['banks', 'accounts', 'import'],
     icon: 'M3 10h18M3 10a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2M3 10v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8M7 15h4' },
 ];
 
@@ -179,6 +161,9 @@ export default function App() {
   // null while we're still asking; the app renders nothing rather than
   // flashing a dashboard at someone who then gets bounced to a login.
   const [signedIn, setSignedIn] = useState(null);
+  // Locally there is no password, and a Sign out button that signs nobody out
+  // is a button that does nothing.
+  const [authRequired, setAuthRequired] = useState(false);
   // Bumped on every reload so panels that fetch their own data — Today,
   // Projections, Piggy banks — refetch after an import instead of showing what
   // they loaded when they mounted.
@@ -206,6 +191,7 @@ export default function App() {
     try {
       const s = await getAuthStatus();
       setSignedIn(s.signed_in);
+      setAuthRequired(Boolean(s.required));
       return s.signed_in;
     } catch (e) {
       setError(e);
@@ -274,7 +260,7 @@ export default function App() {
   const autoMonth = defaultMonth(summary);
   const shownMonth = (month && summary.months?.includes(month)) ? month : autoMonth;
 
-  const thisMonth = new Date().toISOString().slice(0, 7);
+  const thisMonth = localMonth();
   const thisMonthHasData = (summary.monthly ?? [])
     .some((m) => m.month === thisMonth && m.transactions > 0);
   // Empty means "whatever month it actually is", which is what the plan wants
@@ -292,22 +278,16 @@ export default function App() {
       <Shell theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
              findingCount={findingCount}>
         <Empty title="Let's see where the money goes">
-          <p>
-            Connect a card and this fills in by itself: spending by category,
-            subscriptions you&apos;ve forgotten about, and a ranked list of what
-            to cut. The connection keeps itself up to date, so this is the last
-            time you have to think about where the data comes from.
-          </p>
+          <p>Connect a card and everything here fills in by itself.</p>
           <button className="btn primary" onClick={() => go('banks')}
                   style={{ marginTop: 14 }}>
             Connect a card
           </button>
           <p className="small muted" style={{ marginTop: 16, marginBottom: 0 }}>
-            For a card that can&apos;t be connected — a closed account, or a bank
-            Plaid doesn&apos;t reach —{' '}
+            Can&apos;t connect it?{' '}
             <button className="link" onClick={() => go('import')}>
-              import statements from a file
-            </button>.
+              Upload statements
+            </button>
           </p>
         </Empty>
       </Shell>
@@ -320,7 +300,9 @@ export default function App() {
       findingCount={findingCount}
       months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(panel)}
-      onSignOut={async () => { await logout(); setSignedIn(false); }}
+      onSignOut={authRequired
+        ? async () => { await logout(); setSignedIn(false); }
+        : undefined}
     >
       {panel === 'plan' && (
         <div className="stack">
@@ -437,7 +419,6 @@ function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
           <div className="topbar-inner">
             <div className="title">
               <h1>{current?.label ?? 'Spendie'}</h1>
-              {current && <div className="hint">{current.hint}</div>}
             </div>
 
             {showMonth && months.length > 0 && (

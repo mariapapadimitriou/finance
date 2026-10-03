@@ -310,11 +310,12 @@ scrolling strip nobody could hold in their head, and it put the four surfaces yo
 touch once at setup beside the two you open daily — while Import, the only route
 to the import history, had no slot at all.
 
-They are grouped now: **Today**, **Plan** (income and commitments, budgets, piggy
-banks), **Overview** (this month, looking ahead), **Savings** (what to cut,
-subscriptions), **Transactions** (every charge, trips) and **Cards & data**
-(connections, accounts, from a file). Six fit across a phone without scrolling,
-which is most of the reason there are six. A group holding one panel shows no
+They are grouped now: **Today**, **Plan** (income and bills, budgets, looking
+ahead, piggy banks), **Overview** (this month), **Savings** (what to cut,
+subscriptions), **Activity** (all transactions, trips) and **Cards**
+(connections, accounts, upload). Six fit across a phone without scrolling —
+the labels are kept to one short word each so they do — which is most of the
+reason there are six. A group holding one panel shows no
 second row.
 
 The panel keys did not change, so a panel still links to another by its own name

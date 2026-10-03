@@ -143,23 +143,18 @@ def plan(income: float, fixed: list[FixedCost], savings: float,
         if banks > 0:
             committed = "fixed costs, savings and piggy banks"
         verdict, note = "negative", (
-            f"Your {committed} come to more than you earn. "
-            "Something here has to give before a daily number means anything.")
+            f"Your {committed} add up to more than you earn.")
     elif share < LOW_SHARE:
         verdict, note = "tight", (
-            f"That leaves {share:.0%} of your pay for everything else. "
-            "Workable, but one unexpected bill will break it — consider "
-            "lowering the savings figure rather than discovering it in week "
-            "three.")
+            f"Only {share:.0%} of your pay is left. One surprise bill could "
+            "break it — consider saving a little less.")
     elif share > HIGH_SHARE:
         verdict, note = "loose", (
-            f"That leaves {share:.0%} of your pay unallocated. Nothing is "
-            "wrong with it, but if some of that is really going into savings "
-            "or a bill, putting it above makes the daily number mean more.")
+            f"{share:.0%} of your pay is unassigned. If some goes to savings "
+            "or a bill, add it above.")
     else:
         verdict, note = "ok", (
-            f"{share:.0%} of your pay is left after commitments and savings, "
-            "to cover everything else you buy.")
+            f"{share:.0%} of your pay is left for everything else.")
 
     return {
         "income": income,
@@ -218,12 +213,8 @@ def uncategorised_warning(shares: dict[str, float]) -> str | None:
     if share < UNCATEGORISED_WARN:
         return None
     return (
-        f"{share:.0%} of your discretionary spending is uncategorised, so "
-        f"that share of the budget is a line called \u201cOther\u201d. The "
-        "money is real, but you cannot act on it. Correcting a few merchants "
-        "on the Transactions tab \u2014 ticking \u201capply to every charge "
-        "from this merchant\u201d \u2014 moves a lot of it at once, and the "
-        "budget gets sharper every time you do.")
+        f"{share:.0%} of your spending is uncategorised. Fix a few "
+        "merchants on Transactions to sharpen your budgets.")
 
 
 def category_budgets(leftover: float, shares: dict[str, float]) -> dict[str, float]:
@@ -272,11 +263,9 @@ def headroom(leftover: float, typical_total: float) -> dict | None:
         "spare": spare,
         "typical_total": round(typical_total, 2),
         "note": (
-            f"You typically spend about {_money(typical_total)} a month of "
-            f"this, leaving {_money(spare)} unallocated. That is not spare "
-            "money to find a use for — it is the clearest saving available "
-            "to you. Raising the savings figure above by some of it makes it "
-            "happen on purpose rather than by accident."),
+            f"You usually spend about {_money(typical_total)} of this, so "
+            f"{_money(spare)} goes unused. Consider moving some of it into "
+            "savings."),
     }
 
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice } from '../components/ui.jsx';
 import {
   addTrip, dateLabel, deleteTrip, getTripSuggestions, getTrips, money, updateTrip,
@@ -25,6 +25,7 @@ export default function TripsPanel({ onChanged }) {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState({ name: '', start_date: '', end_date: '' });
+  const formRef = useRef(null);
 
   /** Take a suggestion as-is. The dates came from the charges themselves. */
   async function accept(sug) {
@@ -74,8 +75,8 @@ export default function TripsPanel({ onChanged }) {
 
   async function remove(trip) {
     if (!window.confirm(
-      `Remove "${trip.name}"? Its ${trip.transactions} transactions go back to `
-      + 'their merchant categories.'
+      `Remove "${trip.name}"? Its ${trip.transactions} charges go back to their `
+      + 'usual categories.'
     )) return;
     setBusy(true);
     try {
@@ -92,6 +93,7 @@ export default function TripsPanel({ onChanged }) {
   function edit(trip) {
     setEditing(trip.id);
     setDraft({ name: trip.name, start_date: trip.start_date, end_date: trip.end_date });
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   if (!data && !error) return <Loading what="trips" />;
@@ -103,9 +105,10 @@ export default function TripsPanel({ onChanged }) {
     <div className="stack">
       <ErrorNote error={error} onRetry={load} />
 
+      <div ref={formRef} />
       <Card
         title={editing ? 'Edit trip' : 'Add a trip'}
-        hint="Every purchase between these dates becomes Travel, whatever the merchant"
+        hint="Spending between these dates counts as Travel"
       >
         <form className="controls" onSubmit={save}>
           <input
@@ -144,8 +147,8 @@ export default function TripsPanel({ onChanged }) {
       </Card>
 
       {suggestions.length > 0 && (
-        <Card title={`${suggestions.length} trip${suggestions.length === 1 ? '' : 's'} found in your spending`}
-              hint="Days where most of what you bought was charged in another currency">
+        <Card title={`${suggestions.length} possible trip${suggestions.length === 1 ? '' : 's'}`}
+              hint="Spending in another currency">
           <div className="stack" style={{ gap: 14 }}>
             {suggestions.map((sug) => (
               <div key={sug.start_date} className="row"
@@ -166,19 +169,11 @@ export default function TripsPanel({ onChanged }) {
                 </div>
                 <button className="btn primary" disabled={busy}
                         onClick={() => accept(sug)}>
-                  Add this trip
+                  Add
                 </button>
               </div>
             ))}
           </div>
-          <p className="assumption" style={{ marginBottom: 0 }}>
-            Found by currency, not by the place in a descriptor: a charge
-            converted from colónes really was made in colónes, whereas a
-            merchant registered in Montreal may never have been visited.
-            Adding one reclassifies every charge between those dates as
-            Travel, so check the dates before you do — they can be edited
-            afterwards.
-          </p>
         </Card>
       )}
 
@@ -187,15 +182,12 @@ export default function TripsPanel({ onChanged }) {
           making that case, neither is needed. */}
       {trips.length === 0 ? (suggestions.length === 0 && (
         <Notice>
-          No trips yet. Holiday spending is scattered across Dining, Coffee,
-          Transport and Shopping until you declare the dates — which also stops
-          a trip inflating those categories and setting off a false
-          &ldquo;you&apos;re eating out more&rdquo; finding.
+          No trips yet. Add one so holiday spending is grouped as Travel.
         </Notice>
       )) : (
         <Card
           title={`${summary.count} trip${summary.count === 1 ? '' : 's'}`}
-          hint={`${money(summary.total)} spent while away · ${money(summary.travel_spend)} now categorized as Travel`}
+          hint={`${money(summary.total)} spent while away`}
         >
           <div className="table-wrap">
             <table>
@@ -204,7 +196,7 @@ export default function TripsPanel({ onChanged }) {
                   <th>Trip</th>
                   <th>Dates</th>
                   <th className="r">Days</th>
-                  <th className="r">Transactions</th>
+                  <th className="r">Charges</th>
                   <th className="r">Per day</th>
                   <th className="r">Total</th>
                   <th />
@@ -214,7 +206,7 @@ export default function TripsPanel({ onChanged }) {
                 {trips.map((t) => (
                   <tr key={t.id}>
                     <td className="merchant">{t.name}</td>
-                    <td className="muted">{t.start_date} → {t.end_date}</td>
+                    <td className="muted">{dateLabel(t.start_date)} – {dateLabel(t.end_date)}</td>
                     <td className="r">{t.nights + 1}</td>
                     <td className="r">{t.transactions}</td>
                     <td className="r">{money(t.per_day)}</td>
@@ -228,10 +220,6 @@ export default function TripsPanel({ onChanged }) {
               </tbody>
             </table>
           </div>
-          <p className="small muted" style={{ marginTop: 14, marginBottom: 0 }}>
-            Card payments, transfers and fees are never reclassified, and a
-            category you set by hand on a transaction stays yours.
-          </p>
         </Card>
       )}
     </div>

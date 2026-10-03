@@ -95,8 +95,8 @@ def project(transactions, monthly_income: float | None = None,
     if not income:
         return {
             "available": False,
-            "reason": "Add your monthly take-home pay to project savings — "
-                      "credit card statements don't show income.",
+            "reason": "Add your monthly take-home pay on the Plan to see "
+                      "projections.",
             "typical_monthly_spend": typical_spend,
             "months_observed": len(observed),
         }

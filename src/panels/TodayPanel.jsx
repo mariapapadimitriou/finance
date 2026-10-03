@@ -1,23 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
-  coverFromBank, getNudge, getPlan, money, monthLabel,
+  coverFromBank, getNudge, getPlan, localMonth, money, monthLabel,
   simulateSpend,
 } from '../api.js';
 
 /**
- * Today: one number, and the arithmetic behind it.
+ * Today: one number, with the arithmetic one click away.
  *
- * The number itself is easy to show and easy to distrust, so every part of it is
- * on screen: the flat daily share, what rolled over from the days before, and
- * what today has already used. A safe-to-spend figure you can't reconstruct is
- * indistinguishable from one that was made up.
+ * The headline and a single caption are what most visits need. The full
+ * derivation — daily share, rollover, what today used, and where the monthly
+ * figure comes from — sits behind "How is this calculated?" so it is always
+ * checkable without being in the way.
  */
 export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
   const [data, setData] = useState(null);
   const [nudge, setNudge] = useState(null);
   const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
 
   // `version` is in the dependency list on purpose: it changes when a statement
   // is imported, and the plan has to be recomputed against the new ledger even
@@ -28,9 +27,7 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
       setData(await getPlan(month));
       // The server decides whether there is anything to say: it speaks only
       // about the current month, never on the 1st, and never about a day it
-      // has no data for. Gating again here on which month is being *viewed*
-      // silenced it entirely, because the panel falls back to the last month
-      // with statements whenever this one is still empty.
+      // has no data for.
       setNudge((await getNudge().catch(() => null))?.nudge ?? null);
     } catch (e) {
       setError(e);
@@ -43,12 +40,12 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
   if (!data) return <ErrorNote error={error} onRetry={load} />;
 
   const { state, status, banks, draws, configured, derivation } = data;
-  const thisMonth = new Date().toISOString().slice(0, 7);
-  // Showing a month that has already ended is a different question — "what was
-  // left on the last day" rather than "what can I spend now" — and the panel
-  // has to say which one it is answering.
+  const thisMonth = localMonth();
+  // Showing a month that has already ended answers "what was left on the last
+  // day" rather than "what can I spend now", and the labels say which.
   const live = state.month === thisMonth;
   const latestWithData = data.months_with_data?.at(-1);
+  const long = (m) => monthLabel(m, { long: true });
 
   return (
     <div className="stack">
@@ -62,15 +59,11 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
 
       {!live && (
         <Notice>
-          Nothing imported for {monthLabel(thisMonth, { long: true })} yet, so
-          this is {monthLabel(state.month, { long: true })} — the most recent
-          month you have statements for — as it finished. Import this month&apos;s
-          statement and the number becomes about today.
+          No {long(thisMonth)} data yet — showing {long(state.month)}.
           {onMonth && (
-            <>
-              {' '}
-              <button className="btn quiet" onClick={() => onMonth(thisMonth)}>
-                Show {monthLabel(thisMonth, { long: true })} anyway
+            <>{' '}
+              <button className="link" onClick={() => onMonth(thisMonth)}>
+                Show {long(thisMonth)}
               </button>
             </>
           )}
@@ -79,31 +72,24 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
 
       {live && !data.has_data_this_month && (
         <Notice>
-          Nothing imported for {monthLabel(state.month, { long: true })} yet, so
-          this reads as a month where nothing has been spent. The arithmetic below
-          is real — it just has an empty month under it.
+          Nothing recorded for {long(state.month)} yet.
           {latestWithData && onMonth && (
-            <>
-              {' '}
-              <button className="btn quiet" onClick={() => onMonth(latestWithData)}>
-                Show {monthLabel(latestWithData, { long: true })} instead
+            <>{' '}
+              <button className="link" onClick={() => onMonth(latestWithData)}>
+                Show {long(latestWithData)}
               </button>
             </>
           )}
         </Notice>
       )}
 
-      <SafeToSpend state={state} live={live} />
+      <SafeToSpend state={state} live={live} configured={configured}
+                   derivation={derivation} onTab={onTab} />
       <ThisMonth status={status} state={state} live={live} />
       <CanIBuyThis month={state.month} banks={banks} onCovered={load}
                    onTab={onTab} />
-
-      <div className="grid cols-2">
-        <PiggyBanks banks={banks} draws={draws}
-                    allocated={data.allocated_this_month} onTab={onTab} />
-        <MonthlyAmount state={state} configured={configured}
-                       derivation={derivation} onTab={onTab} />
-      </div>
+      <PiggyBanks banks={banks} draws={draws}
+                  allocated={data.allocated_this_month} onTab={onTab} />
     </div>
   );
 }
@@ -114,10 +100,10 @@ const ordinal = (n) =>
 
 /* ── The number ──────────────────────────────────────────────────────────── */
 
-function SafeToSpend({ state, live }) {
-  // The number to act on. A shortfall is spread over the days that remain
-  // rather than dumped on today, so the headline stays a figure you can use;
-  // the strict rollover is still shown in the breakdown underneath.
+function SafeToSpend({ state, live, configured, derivation, onTab }) {
+  // A shortfall is spread over the days that remain rather than dumped on
+  // today, so the headline stays a figure you can use; the strict rollover is
+  // in the breakdown.
   const headline = state.safe_today_effective ?? state.safe_today;
   const over = headline < 0;
   const recovering = state.recovering;
@@ -128,105 +114,81 @@ function SafeToSpend({ state, live }) {
       <div className="safe">
         <div>
           <div className="tile-label">
-            {live ? 'Safe to spend today'
+            {live ? 'Spend today'
                   : `Left on the last day of ${monthLabel(state.month)}`}
           </div>
           <div className={`figure num${over ? ' bad' : ''}`}>
             {money(headline, { cents: true })}
           </div>
           <div className="caption">
-            Day {state.day} of {state.days_in_month} ·{' '}
             {state.days_left} day{state.days_left === 1 ? '' : 's'} left ·{' '}
             {state.remaining < 0
-              ? `${money(-state.remaining, { cents: true })} past the ${money(state.budget)} budget`
-              : `${money(state.remaining, { cents: true })} left of ${money(state.budget)}`}
+              ? `${money(-state.remaining)} over the ${money(state.budget)} budget`
+              : `${money(state.remaining)} left of ${money(state.budget)}`}
           </div>
         </div>
         {over ? (
-          <StatusPill state="critical">
-            Over by {money(-headline, { cents: true })}
-          </StatusPill>
+          <StatusPill state="critical">Over</StatusPill>
         ) : recovering ? (
           <StatusPill state="warning">Catching up</StatusPill>
         ) : null}
       </div>
 
-      <div className="sum">
-        <SumTerm label="Daily share" value={state.flat_daily}
-                 note={`${money(state.budget)} ÷ ${state.days_in_month} days`} />
-        <span className="op" aria-hidden="true">{carried < 0 ? '−' : '+'}</span>
-        <SumTerm
-          label={carried < 0 ? 'Owed from earlier days' : 'Rolled over'}
-          value={Math.abs(carried)}
-          note={carried < 0
-            ? `the first ${state.day - 1} days went over`
-            : `unspent across the first ${state.day - 1} days`}
-          tone={carried < 0 ? 'bad' : 'good'}
-        />
-        <span className="op" aria-hidden="true">−</span>
-        <SumTerm label={live ? 'Spent today' : 'Spent that day'}
-                 value={state.spent_today}
-                 note={`discretionary charges dated the ${state.day}${ordinal(state.day)}`} />
-        <span className="op" aria-hidden="true">=</span>
-        <SumTerm label={recovering ? 'Strictly, today' : live ? 'Safe to spend' : 'What was left'}
-                 value={state.safe_today}
-                 tone={state.safe_today < 0 ? 'bad' : 'good'}
-                 strong={!recovering} />
-      </div>
-
-      {recovering && (
-        <div className="sum" style={{ marginTop: 10 }}>
-          <SumTerm label="Left this month" value={state.remaining}
-                   note={`${money(state.budget)} − ${money(state.spent_mtd)} spent`} />
-          <span className="op" aria-hidden="true">÷</span>
-          <SumTerm label="Days left" value={state.days_left} money={false}
-                   note="today included" />
-          <span className="op" aria-hidden="true">=</span>
-          <SumTerm label="Spread over the rest" value={headline} strong
-                   tone="good" />
-        </div>
-      )}
-
-      {recovering && (
-        <p className="assumption" style={{ marginBottom: 0 }}>
-          You went over earlier in the month, so the shortfall is spread across
-          the days that are left rather than all landing on today. Strictly
-          you are {money(-state.safe_today, { cents: true })} behind; every
-          remaining day takes a small share of that instead, and the month
-          still balances.
-        </p>
-      )}
-
       {over && (
         <p className="assumption" style={{ marginBottom: 0 }}>
-          {state.spread_daily >= 0 ? (
-            <>
-              Spread evenly instead, every remaining day gets{' '}
-              <strong className="num">
-                {money(state.spread_daily, { cents: true })}
-              </strong>{' '}
-              and the month still balances. Nothing is hidden — the daily number
-              just drops.
-            </>
-          ) : (
-            <>
-              The month is{' '}
-              <strong className="num">
-                {money(-state.remaining, { cents: true })}
-              </strong>{' '}
-              past its budget, so spreading can&apos;t rescue it — there is
-              nothing left to divide. Borrow it from a piggy bank, or let it
-              be a month that went over.
-            </>
-          )}
+          {state.spread_daily >= 0
+            ? <>Spread over the rest of the month:{' '}
+                <strong className="num">{money(state.spread_daily, { cents: true })}</strong> a day.</>
+            : 'Nothing left this month. Borrow from a piggy bank below, or let it go over.'}
         </p>
       )}
       {state.covered > 0 && (
         <p className="assumption" style={{ marginBottom: 0 }}>
-          Includes {money(state.covered, { cents: true })} borrowed from your
-          piggy banks this month.
+          Includes {money(state.covered, { cents: true })} borrowed from piggy banks.
         </p>
       )}
+
+      <details className="evidence" style={{ marginTop: 16 }}>
+        <summary>How is this calculated?</summary>
+
+        <div className="sum" style={{ marginTop: 12 }}>
+          <SumTerm label="Daily share" value={state.flat_daily}
+                   note={`${money(state.budget)} ÷ ${state.days_in_month} days`} />
+          <span className="op" aria-hidden="true">{carried < 0 ? '−' : '+'}</span>
+          <SumTerm
+            label={carried < 0 ? 'Overspent earlier' : 'Rolled over'}
+            value={Math.abs(carried)}
+            note={`days 1–${Math.max(state.day - 1, 0)}`}
+            tone={carried < 0 ? 'bad' : 'good'}
+          />
+          <span className="op" aria-hidden="true">−</span>
+          <SumTerm label="Spent today" value={state.spent_today}
+                   note={`the ${state.day}${ordinal(state.day)}`} />
+          <span className="op" aria-hidden="true">=</span>
+          <SumTerm label={recovering ? 'Strictly' : 'Today'}
+                   value={state.safe_today}
+                   tone={state.safe_today < 0 ? 'bad' : 'good'}
+                   strong={!recovering} />
+        </div>
+
+        {recovering && (
+          <div className="sum" style={{ marginTop: 10 }}>
+            <SumTerm label="Left this month" value={state.remaining} />
+            <span className="op" aria-hidden="true">÷</span>
+            <SumTerm label="Days left" value={state.days_left} money={false} />
+            <span className="op" aria-hidden="true">=</span>
+            <SumTerm label="Spend today" value={headline} strong tone="good" />
+          </div>
+        )}
+
+        <MonthlyAmount state={state} configured={configured}
+                       derivation={derivation} onTab={onTab} />
+
+        <p className="assumption" style={{ marginBottom: 0 }}>
+          Only day-to-day spending counts. Bills and essentials are budgeted
+          separately.
+        </p>
+      </details>
     </Card>
   );
 }
@@ -246,51 +208,25 @@ function SumTerm({ label, value, note, strong = false, tone, money: asMoney = tr
 /* ── How are you doing this month ────────────────────────────────────────── */
 
 function ThisMonth({ status, state, live }) {
-  const pace = state.pace;
-
   return (
-    <Card title={live
-            ? `How you're doing in ${monthLabel(state.month, { long: true })}`
-            : `How ${monthLabel(state.month, { long: true })} went`}
+    <Card title={live ? 'This month' : monthLabel(state.month, { long: true })}
           actions={<StatusPill state={status.tone}>{status.verdict}</StatusPill>}>
-      <div className="grid cols-4">
-        <Figure label="Spent so far" value={money(status.spent, { cents: true })}
+      {/* Three short figures fit side by side even on a phone. */}
+      <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+        <Figure label="Spent" value={money(status.spent)}
                 note={`${money(status.expected_by_now)} would be on pace`} />
-        <Figure label="Pace" value={pace ? `${Math.round(pace * 100)}%` : '—'}
-                note="of an even spend by today"
-                tone={pace > 1.05 ? 'bad' : pace ? 'good' : undefined} />
-        <Figure label="Lands at" value={money(status.projected_month_end)}
+        <Figure label="On pace for" value={money(status.projected_month_end)}
                 note={status.projected_over > 0
-                  ? `${money(status.projected_over)} over budget`
-                  : `${money(-status.projected_over)} under budget`}
+                  ? `${money(status.projected_over)} over`
+                  : `${money(-status.projected_over)} under`}
                 tone={status.projected_over > 0 ? 'bad' : 'good'} />
-        <Figure label={state.remaining < 0 ? 'Past budget by' : 'Left to spend'}
-                value={money(Math.abs(state.remaining), { cents: true })}
-                note={state.remaining < 0
-                  ? 'nothing left to spread over the rest of the month'
-                  : state.days_left <= 1
-                    // On the last day there is nothing to spread it over, so
-                    // "$755.38/day from here" advertised a daily allowance of
-                    // $755 — arithmetically the remainder divided by one, and
-                    // absurd as guidance.
-                    ? 'all of it for the last day of the month'
-                    : `${money(state.spread_daily, { cents: true })}/day over the `
-                      + `${state.days_left} days left`}
+        <Figure label={state.remaining < 0 ? 'Over by' : 'Left'}
+                value={money(Math.abs(state.remaining))}
+                note={state.remaining < 0 || state.days_left <= 1
+                  ? null
+                  : `${money(state.spread_daily, { cents: true })}/day`}
                 tone={state.remaining < 0 ? 'bad' : undefined} />
       </div>
-
-      {status.vs_baseline !== null && status.vs_baseline !== undefined && (
-        <p className="assumption">
-          Against your own median month, this one is heading{' '}
-          <strong>{money(Math.abs(status.vs_baseline))}{' '}
-            {status.vs_baseline > 0 ? 'higher' : 'lower'}</strong>.
-        </p>
-      )}
-      <p className="assumption" style={{ marginBottom: 0 }}>
-        Only discretionary spending counts here. Rent, utilities, insurance and
-        card payments are already committed, and no amount of restraint on a
-        Tuesday changes the hydro bill.
-      </p>
     </Card>
   );
 }
@@ -343,15 +279,15 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
   }
 
   return (
-    <Card title="Thinking about buying something?"
-          hint="Enter the price and see whether today has room for it">
+    <Card title="Can I afford it?">
       <form className="controls" onSubmit={ask}>
-        <label htmlFor="ask-amount">It costs</label>
+        <label htmlFor="ask-amount">Price</label>
         <input id="ask-amount" type="number" min="0.01" step="0.01" required
+               inputMode="decimal"
                value={amount} onChange={(e) => setAmount(e.target.value)}
                placeholder="0.00" style={{ width: 130 }} />
         <button className="btn primary" type="submit" disabled={busy}>
-          {busy ? 'Checking…' : 'Can I?'}
+          {busy ? 'Checking…' : 'Check'}
         </button>
         {result && (
           <button type="button" className="btn quiet"
@@ -367,16 +303,14 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
         <div className="verdict">
           <div className="line">
             <StatusPill state={result.affordable ? 'good' : 'warning'}>
-              {result.affordable ? 'Yes' : 'Not out of today'}
+              {result.affordable ? 'Yes' : "Over today's limit"}
             </StatusPill>
             <span>{result.message}</span>
           </div>
 
           {result.options.length > 0 && (
             <>
-              <div className="tile-label" style={{ marginTop: 16 }}>
-                Two honest ways to do it anyway
-              </div>
+              <div className="tile-label" style={{ marginTop: 16 }}>Options</div>
               <div className="options">
                 {result.options.map((o, i) => (
                   <div key={i} className={`option${o.viable ? '' : ' unviable'}`}>
@@ -387,23 +321,19 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
                     {o.kind === 'cover' ? (
                       <button className="btn" disabled={!o.viable || busy}
                               onClick={() => cover(o)}>
-                        {o.viable ? 'Draw it' : 'Not enough in it'}
+                        {o.viable ? 'Borrow it' : 'Not enough in it'}
                       </button>
                     ) : (
-                      <span className="pill">{o.viable ? 'Automatic' : 'Won\'t balance'}</span>
+                      <span className="pill">{o.viable ? 'Automatic' : "Won't balance"}</span>
                     )}
                   </div>
                 ))}
               </div>
-              {banks.length === 0 && (
+              {banks.length === 0 && onTab && (
                 <p className="assumption" style={{ marginBottom: 0 }}>
-                  Open a piggy bank{onTab && (
-                    <> on the{' '}
-                      <button className="link" onClick={() => onTab('piggy')}>
-                        Plan tab
-                      </button></>
-                  )} and borrowing from one to cover an overspend becomes an
-                  option here too.
+                  <button className="link" onClick={() => onTab('piggy')}>
+                    Open a piggy bank
+                  </button>{' '}to borrow from it here.
                 </p>
               )}
             </>
@@ -417,28 +347,28 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
 /* ── Piggy banks, as seen from here ─────────────────────────────────────── */
 
 /**
- * Read-only on purpose. Piggy banks are opened and edited on their own tab,
- * and a second form here that could change a target would be a second place
- * deciding the same number.
+ * Read-only on purpose. Piggy banks are opened and edited on the Plan page,
+ * and a second form here would be a second place deciding the same number.
  */
 function PiggyBanks({ banks, draws, allocated, onTab }) {
   return (
     <Card title="Piggy banks"
-          hint="What they hold, and what an overspend could borrow from">
+          actions={onTab && banks.length > 0 && (
+            <button className="btn quiet" onClick={() => onTab('piggy')}>
+              Manage
+            </button>
+          )}>
       {banks.length === 0 ? (
-        <p className="small muted" style={{ marginTop: 0 }}>
-          None yet. A piggy bank turns a cost that arrives once a year into a
-          monthly one — and lets you charge the spending to it instead of to the
-          month it happened in.{onTab && (
-            <>{' '}
-              <button className="link" onClick={() => onTab('piggy')}>
-                Open one
-              </button>.
-            </>
+        <p className="small muted" style={{ margin: 0 }}>
+          Save monthly for yearly costs like trips or insurance.{' '}
+          {onTab && (
+            <button className="link" onClick={() => onTab('piggy')}>
+              Open one
+            </button>
           )}
         </p>
       ) : (
-        <div className="bars" style={{ marginBottom: 14 }}>
+        <div className="bars">
           {banks.map((b) => (
             <div className="bucket" key={b.id}>
               <div className="name">
@@ -452,16 +382,14 @@ function PiggyBanks({ banks, draws, allocated, onTab }) {
       )}
 
       {allocated > 0 && (
-        <p className="small" style={{ margin: '0 0 12px' }}>
-          <strong>{money(allocated, { cents: true })}</strong> of this
-          month&apos;s spending was charged to a piggy bank, so it is not in the
-          figures above or in the daily number. That is the point of them: the
-          money was budgeted over the preceding months instead.
+        <p className="small muted" style={{ margin: '14px 0 0' }}>
+          {money(allocated, { cents: true })} of this month&apos;s spending is
+          paid from piggy banks and isn&apos;t counted above.
         </p>
       )}
 
       {draws?.length > 0 && (
-        <table>
+        <table style={{ marginTop: 14 }}>
           <thead>
             <tr><th>Borrowed this month</th><th className="r">Amount</th></tr>
           </thead>
@@ -475,13 +403,6 @@ function PiggyBanks({ banks, draws, allocated, onTab }) {
           </tbody>
         </table>
       )}
-
-      {onTab && banks.length > 0 && (
-        <button className="btn quiet" style={{ marginTop: 14 }}
-                onClick={() => onTab('piggy')}>
-          Manage piggy banks
-        </button>
-      )}
     </Card>
   );
 }
@@ -490,87 +411,59 @@ function PiggyBanks({ banks, draws, allocated, onTab }) {
 
 function MonthlyAmount({ state, configured, derivation, onTab }) {
   const d = derivation ?? {};
-  const planTab = onTab
-    ? <button className="link" onClick={() => onTab('plan')}>Plan tab</button>
-    : <strong>Plan tab</strong>;
+  const planLink = onTab
+    ? <button className="link" onClick={() => onTab('plan')}>Plan</button>
+    : <strong>Plan</strong>;
+
+  if (configured && d.from_plan) {
+    return (
+      <>
+        <div className="sum" style={{ marginTop: 10 }}>
+          <SumTerm label="Left after bills" value={d.leftover} note="from your Plan" />
+          <span className="op" aria-hidden="true">−</span>
+          <SumTerm label="Essentials" value={d.essentials}
+                   note={essentialsNote(d.essential_categories)} />
+          <span className="op" aria-hidden="true">=</span>
+          <SumTerm label="Day-to-day" value={d.discretionary} />
+        </div>
+        <div className="sum" style={{ marginTop: 10 }}>
+          <SumTerm label="Day-to-day" value={state.monthly_amount} />
+          <span className="op" aria-hidden="true">÷</span>
+          <SumTerm label="Days" value={state.days_in_month} money={false} />
+          <span className="op" aria-hidden="true">=</span>
+          <SumTerm label="Daily share" value={state.flat_daily} strong />
+        </div>
+        <p className="assumption" style={{ marginBottom: 0 }}>
+          Change your income, bills or savings on the {planLink} and this
+          updates.
+        </p>
+      </>
+    );
+  }
 
   return (
-    <Card title="Where the daily number comes from"
-          hint="Calculated on the Plan tab, not typed here">
-      {/* No input. The figure is derived from the plan on every request, so
-          there is nothing here that could overwrite it and no stored copy to
-          fall out of date. */}
-
-      {configured && d.from_plan ? (
-        <>
-          {/* The chain in full. Showing only the last step is what made this
-              tab look as though it disagreed with the Plan: "yours to spend"
-              still has the groceries in it, and the daily number deliberately
-              does not. */}
-          <div className="sum" style={{ marginBottom: 14 }}>
-            <SumTerm label="Yours to spend" value={d.leftover}
-                     note="the Plan tab's figure" />
-            <span className="op" aria-hidden="true">−</span>
-            <SumTerm label="Essentials" value={d.essentials}
-                     note={essentialsNote(d.essential_categories)} />
-            <span className="op" aria-hidden="true">=</span>
-            <SumTerm label="Day to day" value={d.discretionary} />
-          </div>
-          <div className="sum">
-            <SumTerm label="Day to day" value={state.monthly_amount} />
-            <span className="op" aria-hidden="true">÷</span>
-            <SumTerm label="Days this month" value={state.days_in_month}
-                     money={false} />
-            <span className="op" aria-hidden="true">=</span>
-            <SumTerm label="A day" value={state.flat_daily} strong />
-          </div>
-          <p className="assumption" style={{ marginBottom: 0 }}>
-            Every term above is read from your plan when this page loads, so
-            changing your pay, a commitment, your savings or a piggy bank on
-            the {planTab} moves this number immediately — there is no copy of
-            it stored anywhere to go stale.
-            {d.banks > 0 && (
-              <> Piggy banks are taking {money(d.banks)} a month out before the
-                 leftover is worked out.</>
-            )}
-          </p>
-        </>
-      ) : (
-        <>
-          <div className="sum">
-            <SumTerm label="Discretionary budget" value={state.monthly_amount}
-                     note="a stand-in, from your own history" />
-            <span className="op" aria-hidden="true">÷</span>
-            <SumTerm label="Days this month" value={state.days_in_month}
-                     money={false} />
-            <span className="op" aria-hidden="true">=</span>
-            <SumTerm label="A day" value={state.flat_daily} strong />
-          </div>
-          <p className="assumption" style={{ marginBottom: 0 }}>
-            This is a stand-in: your own median month of discretionary
-            spending, because the plan has no take-home pay in it yet. That
-            describes your habits rather than deciding anything. Fill in your
-            pay and commitments on the {planTab} and this becomes a figure you
-            chose.
-          </p>
-        </>
-      )}
-    </Card>
+    <>
+      <div className="sum" style={{ marginTop: 10 }}>
+        <SumTerm label="Usual day-to-day" value={state.monthly_amount}
+                 note="from your history" />
+        <span className="op" aria-hidden="true">÷</span>
+        <SumTerm label="Days" value={state.days_in_month} money={false} />
+        <span className="op" aria-hidden="true">=</span>
+        <SumTerm label="Daily share" value={state.flat_daily} strong />
+      </div>
+      <p className="assumption" style={{ marginBottom: 0 }}>
+        Based on your usual spending. Add your income on the {planLink} to set
+        it yourself.
+      </p>
+    </>
   );
 }
 
-/**
- * Name the categories that actually make up the essential half.
- *
- * Written out rather than illustrated with an example. The note used to say
- * "groceries, transport", and Transport is flagged discretionary — so it is in
- * the *other* column, and the one figure on this page whose whole purpose is to
- * be checkable was explained with a counter-example.
- */
+/** The categories that make up the essential half, named rather than illustrated. */
 function essentialsNote(categories) {
   const names = (categories ?? []).map((c) => c.toLowerCase());
-  if (names.length === 0) return 'budgeted by category, not handed out daily';
+  if (names.length === 0) return 'budgeted monthly';
   const shown = names.slice(0, 3).join(', ');
-  const rest = names.length > 3 ? ` and ${names.length - 3} more` : '';
-  return `${shown}${rest} — budgeted, not daily`;
+  const rest = names.length > 3 ? ` +${names.length - 3}` : '';
+  return `${shown}${rest}`;
 }

@@ -172,7 +172,7 @@ def create_app(db_path: str | None = None) -> Flask:
     # API sit on different ports. A built deployment serves both from one
     # origin, so sending these headers there would be noise at best.
     if not _is_hosted():
-        CORS(app, origins=DEV_ORIGINS)
+        CORS(app, origins=DEV_ORIGINS, supports_credentials=True)
 
     app.config["STORE"] = Store(db_path or _hosted_db_path() or DEFAULT_DB)
     _install_auth(app)

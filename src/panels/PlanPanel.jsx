@@ -40,7 +40,10 @@ export default function PlanPanel({ onChanged, onTab }) {
       setSavings(d.savings ? String(d.savings) : '');
       // The endpoint returns objects, not strings; the select wants names.
       const list = (await getCategories().catch(() => null))?.categories ?? [];
-      setCats(list.map((c) => (typeof c === 'string' ? c : c.name)));
+      const names = list.map((c) => (typeof c === 'string' ? c : c.name));
+      setCats(names);
+      setDraft((d) => (names.length && !names.includes(d.category)
+        ? { ...d, category: names[0] } : d));
     } catch (e) {
       setError(e);
     }
@@ -72,8 +75,7 @@ export default function PlanPanel({ onChanged, onTab }) {
     <div className="stack">
       <ErrorNote error={error} onRetry={load} />
 
-      <Card title="What comes in, and what is already spoken for"
-            hint="Credit card statements can't see your pay or your rent — these are typed once">
+      <Card title="Income & savings">
         <form className="controls" onSubmit={(e) => {
           e.preventDefault();
           run(() => savePlanSetup(Number(income) || 0, Number(savings) || 0));
@@ -82,7 +84,7 @@ export default function PlanPanel({ onChanged, onTab }) {
           <input id="income" type="number" min="0" step="any" inputMode="decimal"
                  value={income} onChange={(e) => setIncome(e.target.value)}
                  style={{ width: 130 }} />
-          <label htmlFor="savings">Saving / investing</label>
+          <label htmlFor="savings">Monthly savings</label>
           <input id="savings" type="number" min="0" step="any" inputMode="decimal"
                  value={savings} onChange={(e) => setSavings(e.target.value)}
                  style={{ width: 130 }} />
@@ -90,20 +92,14 @@ export default function PlanPanel({ onChanged, onTab }) {
             {busy ? 'Saving…' : 'Save'}
           </button>
         </form>
-        <p className="assumption" style={{ marginBottom: 0 }}>
-          Savings counts as a commitment on purpose. Money you have decided to
-          put away is not money you may spend, and treating it as leftover is
-          how it stops happening.
-        </p>
       </Card>
 
-      <Card title="Fixed commitments"
-            hint="Rent, bills, insurance — the part no daily number can influence">
+      <Card title="Bills" hint="Rent, utilities, insurance, phone…">
         {data.fixed.length > 0 && (
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Commitment</th><th>Category</th>
+                <tr><th>Bill</th><th>Category</th>
                   <th className="r">Monthly</th><th /></tr>
               </thead>
               <tbody>
@@ -136,7 +132,7 @@ export default function PlanPanel({ onChanged, onTab }) {
                 });
               }}>
           <input type="text" value={draft.name} required placeholder="Rent"
-                 aria-label="Commitment name" style={{ flex: '1 1 160px' }}
+                 aria-label="Bill name" style={{ flex: '1 1 160px' }}
                  onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
           <select value={draft.category} aria-label="Category"
                   onChange={(e) => setDraft({ ...draft, category: e.target.value })}>
@@ -150,7 +146,7 @@ export default function PlanPanel({ onChanged, onTab }) {
         </form>
       </Card>
 
-      <Card title="What's left" hint="The only part a daily number can move"
+      <Card title="What's left"
             actions={<StatusPill state={tone}>{
               { negative: 'Over-committed', tight: 'Tight', loose: 'Loose',
                 ok: 'Workable', unset: 'Incomplete' }[data.verdict] ?? '—'
@@ -158,10 +154,10 @@ export default function PlanPanel({ onChanged, onTab }) {
         <div className="sum">
           <Term label="Take-home" value={data.income} />
           <span className="op" aria-hidden="true">−</span>
-          <Term label="Commitments" value={data.fixed_total}
+          <Term label="Bills" value={data.fixed_total}
                 note={`${data.fixed.length} item${data.fixed.length === 1 ? '' : 's'}`} />
           <span className="op" aria-hidden="true">−</span>
-          <Term label="Saving" value={data.savings} />
+          <Term label="Savings" value={data.savings} />
           {data.banks > 0 && (
             <>
               <span className="op" aria-hidden="true">−</span>
@@ -170,7 +166,7 @@ export default function PlanPanel({ onChanged, onTab }) {
             </>
           )}
           <span className="op" aria-hidden="true">=</span>
-          <Term label="Yours to spend" value={data.leftover} strong
+          <Term label="Left after bills" value={data.leftover} strong
                 tone={data.leftover > 0 ? 'good' : 'bad'}
                 note={data.income > 0 ? `${pct(data.leftover_share)} of your pay` : ''} />
         </div>
@@ -180,35 +176,16 @@ export default function PlanPanel({ onChanged, onTab }) {
         </Notice>
 
         {data.leftover > 0 && data.daily_pool > 0 && (
-          <>
           <p className="assumption" style={{ marginBottom: 0 }}>
-            That {money(data.leftover)} has to cover groceries and the other
-            essentials too, so it is not all pocket money. Of it,{' '}
-            <strong className="num">{money(data.daily_pool)}</strong> is
-            discretionary — which is what the daily number on Today divides,
-            about{' '}
+            <strong className="num">{money(data.daily_pool)}</strong> of this is
+            day-to-day spending (about{' '}
             <strong className="num">
               {money(data.daily_pool / (data.days_this_month || 30), { cents: true })}
             </strong>{' '}
-            a day across {monthLabel(data.month, { long: true })}&apos;s{' '}
-            {data.days_this_month} days. No amount of restraint on a Tuesday
-            changes the grocery bill, so it is budgeted rather than handed out
-            daily.
+            a day). The rest covers essentials
+            {essentialNames(data.categories).length > 0
+              && ` like ${essentialNames(data.categories).slice(0, 3).join(', ')}`}.
           </p>
-          <p className="assumption" style={{ marginTop: 10, marginBottom: 0 }}>
-            That {money(data.daily_pool)} is the sum of the categories in the
-            daily number. Everything else —{' '}
-            {essentialNames(data.categories).join(', ') || 'nothing, so far'} —
-            has a budget of its own and stays out of the daily figure. Budgets
-            marks every line one way or the other.
-          </p>
-          <p className="assumption" style={{ marginTop: 10, marginBottom: 0 }}>
-            Travel is in neither. It arrives in lumps rather than monthly, so
-            instead of a budget line it is funded by a piggy bank — the{' '}
-            <strong>Piggy banks</strong> term above, already subtracted. A
-            trip charged to its bank never touches a month at all.
-          </p>
-          </>
         )}
 
         {/* These are about the plan, not the split: how much room the
@@ -221,8 +198,8 @@ export default function PlanPanel({ onChanged, onTab }) {
           <div className="row" style={{ marginTop: 14, flexWrap: 'wrap', gap: 10 }}>
             <span className="small muted" style={{ flex: '1 1 240px' }}>
               {data.has_history
-                ? 'How that divides across categories — and how this month is going against it — is on Budgets.'
-                : 'Import a month or two and Budgets can divide that total in the proportions you already spend.'}
+                ? 'Split it across categories on Budgets.'
+                : 'Import a month or two to split it across categories.'}
             </span>
             {onTab && (
               <button className="btn" onClick={() => onTab('budgets')}>

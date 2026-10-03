@@ -2,12 +2,11 @@ import { useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
   addTransaction, allocateToBank, dateLabel, deleteTransaction, getBanks,
-  getTransactions, money, setCategory, unallocate,
+  getTransactions, localToday, money, monthLabel, setCategory, unallocate,
 } from '../api.js';
 
 const PAGE = 100;
 
-const today = () => new Date().toISOString().slice(0, 10);
 
 export default function TransactionsPanel({ summary, categories, accounts, onChanged }) {
   const [filters, setFilters] = useState({ month: '', category: '', account: '', q: '' });
@@ -18,6 +17,15 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
   const [charging, setCharging] = useState(null);
   const [banks, setBanks] = useState([]);
   const [reload, setReload] = useState(0);
+  // What is typed in the search box, and what has been asked of the server.
+  // Kept apart so a word typed quickly is one request, not one per letter.
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    if (search === filters.q) return undefined;
+    const id = setTimeout(() => update('q', search), 250);
+    return () => clearTimeout(id);
+  }, [search]);
 
   // Loaded once: the list of banks changes on its own tab, not here.
   useEffect(() => {
@@ -41,9 +49,13 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
 
   async function removeRow(txn) {
     if (!window.confirm(`Delete ${txn.merchant} ${money(txn.amount, { cents: true })}?`)) return;
-    await deleteTransaction(txn.id);
-    setReload((n) => n + 1);
-    onChanged?.();
+    setError(null);
+    try {
+      await deleteTransaction(txn.id);
+      bump();
+    } catch (e) {
+      setError(e);
+    }
   }
 
   function update(key, value) {
@@ -52,11 +64,14 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
   }
 
   async function recategorize(txn, category, applyToMerchant) {
-    await setCategory(txn.id, category, applyToMerchant);
-    setEditing(null);
-    const fresh = await getTransactions({ ...filters, limit: PAGE, offset: page * PAGE });
-    setData(fresh);
-    onChanged?.();
+    setError(null);
+    try {
+      await setCategory(txn.id, category, applyToMerchant);
+      setEditing(null);
+      bump();
+    } catch (e) {
+      setError(e);
+    }
   }
 
   const rows = data?.transactions ?? [];
@@ -75,7 +90,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
           <select id="f-month" value={filters.month} onChange={(e) => update('month', e.target.value)}>
             <option value="">All</option>
             {[...(summary.months ?? [])].reverse().map((m) => (
-              <option key={m} value={m}>{m}</option>
+              <option key={m} value={m}>{monthLabel(m, { long: true })}</option>
             ))}
           </select>
 
@@ -95,9 +110,9 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
 
           <input
             type="search"
-            value={filters.q}
-            onChange={(e) => update('q', e.target.value)}
-            placeholder="Search merchant or description"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search"
             style={{ flex: 1, minWidth: 200 }}
             aria-label="Search transactions"
           />
@@ -108,7 +123,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
 
       <Card
         title={`${total.toLocaleString()} transaction${total === 1 ? '' : 's'}`}
-        hint="Click a category to correct it — corrections can apply to every charge from that merchant"
+        hint="Tap a category to change it"
       >
         {!data ? <Loading what="transactions" /> : (
           <>
@@ -132,7 +147,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                       <td className="merchant">
                         {t.merchant}
                         {t.source === 'manual' && (
-                          <span className="pill" style={{ marginLeft: 8 }}>by hand</span>
+                          <span className="pill" style={{ marginLeft: 8 }}>added</span>
                         )}
                         <div className="desc" title={t.description}>
                           {t.description}
@@ -215,7 +230,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
  * Going the other way, the statement's version replaces what you typed.
  */
 function AddByHand({ categories, onAdded }) {
-  const blank = { date: today(), description: '', amount: '', category: '' };
+  const blank = { date: localToday(), description: '', amount: '', category: '' };
   const [draft, setDraft] = useState(blank);
   const [open, setOpen] = useState(false);
   const [conflict, setConflict] = useState(null);
@@ -256,18 +271,15 @@ function AddByHand({ categories, onAdded }) {
     return (
       <div className="row">
         <button className="btn primary" onClick={() => setOpen(true)}>
-          + Add a transaction by hand
+          + Add transaction
         </button>
-        <span className="muted small">
-          For cash, or a charge that hasn&apos;t posted yet
-        </span>
+        <span className="muted small">Cash, or not posted yet</span>
       </div>
     );
   }
 
   return (
-    <Card title="Add a transaction by hand"
-          hint="Checked against your ledger first, so the statement doesn't add it twice later"
+    <Card title="Add transaction"
           actions={<button className="btn quiet" onClick={() => setOpen(false)}>Close</button>}>
       <form className="controls" onSubmit={(e) => submit(e, false)}>
         <label htmlFor="m-date">Date</label>
@@ -291,16 +303,14 @@ function AddByHand({ categories, onAdded }) {
         </button>
       </form>
 
-      <p className="assumption">
-        A positive amount is money out. Enter a refund as a negative number.
-      </p>
+      <p className="assumption">Enter refunds as a negative amount.</p>
 
       <ErrorNote error={error} />
 
       {added && (
         <Notice kind="good">
-          Added, filed under <strong>{added.category}</strong> as{' '}
-          <strong>{added.merchant}</strong>.
+          Added <strong>{added.merchant}</strong> to{' '}
+          <strong>{added.category}</strong>.
         </Notice>
       )}
 
@@ -313,7 +323,7 @@ function AddByHand({ categories, onAdded }) {
             <span>
               {conflict.duplicate
                 ? conflict.error
-                : 'Found something matching the amount already in your ledger.'}
+                : 'A charge with this amount is already here.'}
             </span>
           </div>
 
@@ -348,10 +358,10 @@ function AddByHand({ categories, onAdded }) {
             <div className="row" style={{ marginTop: 14 }}>
               <button className="btn primary" disabled={busy}
                       onClick={(e) => submit(e, true)}>
-                It&apos;s a different purchase — add it
+                Add anyway
               </button>
               <button className="btn quiet" onClick={() => setConflict(null)}>
-                Never mind
+                Cancel
               </button>
             </div>
           )}
@@ -428,7 +438,7 @@ function BankCell({ txn, banks, open, onOpen, onDone }) {
   if (bank && !open) {
     return (
       <button className="btn quiet" onClick={onOpen} disabled={busy}
-              title={`Charged to ${bank.name} in full — not counted in this month`}>
+              title={`Paid from ${bank.name} — not counted in this month`}>
         {bank.name} ✓
       </button>
     );
@@ -437,7 +447,7 @@ function BankCell({ txn, banks, open, onOpen, onDone }) {
   if (!open) {
     return (
       <button className="btn quiet" onClick={onOpen} disabled={busy}>
-        Charge…
+        Piggy bank…
       </button>
     );
   }
@@ -447,7 +457,7 @@ function BankCell({ txn, banks, open, onOpen, onDone }) {
       <select value={txn.bank_id ?? ''} disabled={busy}
               aria-label="Charge this to a piggy bank"
               onChange={(e) => charge(e.target.value)}>
-        <option value="">Count against this month</option>
+        <option value="">None</option>
         {/* Nothing is disabled by its balance any more. A bank takes the
             charge whether or not it has caught up yet, and repays itself from
             the months ahead — so what matters at the point of choosing is
@@ -463,12 +473,12 @@ function BankCell({ txn, banks, open, onOpen, onDone }) {
       {result && (
         <span className="small">
           {result.behind
-            ? <>{result.bank} took all of it and is now{' '}
+            ? <>{result.bank} is now{' '}
                 <strong className="num">{money(result.behind_by)}</strong>{' '}
-                behind — its contribution rises to{' '}
-                <strong className="num">{money(result.monthly)}</strong> a
-                month until it catches up.</>
-            : <>{result.bank} paid all of it.</>}
+                behind; it will collect{' '}
+                <strong className="num">{money(result.monthly)}</strong>/month
+                to catch up.</>
+            : <>Paid from {result.bank}.</>}
         </span>
       )}
       <button className="btn quiet" onClick={onOpen} disabled={busy}>Close</button>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Card, Empty, ErrorNote, Loading, Notice, StatusPill, Tile,
+  Card, ErrorNote, Loading, Notice, StatusPill, Tile,
 } from '../components/ui.jsx';
 import {
   addBank, dateLabel, deleteBank, getBanks, money, monthLabel, pct, updateBank,
@@ -47,88 +47,37 @@ export default function PiggyPanel({ version = 0 }) {
     <div className="stack">
       {banks.length === 0 ? (
         <>
-          <Empty title="No piggy banks yet">
-            A monthly budget handles rent well and a holiday badly. The holiday
-            costs $3,000 once, so eleven months look like a surplus and the
-            twelfth looks like a catastrophe — one that was entirely
-            predictable.
-          </Empty>
-
-          {/* Not a generic nudge. Travel has no budget line anywhere in the
-              app on purpose, so until this bank exists it is the one cost
-              nothing at all is paying for. */}
-          {suggested && editing !== 'new' && (
-            <Notice kind="error">
-              <strong>Start with travel.</strong> It is the one category with
-              no budget line — a cost that lands in lumps is wrong as a
-              monthly figure — so a bank is the only thing that can fund it.
-              {suggested.annual_spend > 0 && (
-                <> Your last year of travel came to{' '}
-                  <strong className="num">{money(suggested.annual_spend)}</strong>
-                  {suggested.target > 0 && (
-                    <>, about{' '}
-                      <strong className="num">
-                        {money(suggested.target / 12)}
-                      </strong>{' '}
-                      a month</>
-                  )}.</>
-              )}
-              <div className="row" style={{ marginTop: 12 }}>
+          <Card title="Piggy banks">
+            <p className="muted" style={{ margin: 0 }}>
+              Save a little each month for costs that come once a year — trips,
+              insurance, gifts. Spending you pay from a piggy bank won&apos;t
+              count against that month.
+            </p>
+            {suggested && editing !== 'new' && (
+              <div className="row" style={{ marginTop: 14, gap: 12, flexWrap: 'wrap' }}>
                 <button className="btn primary" onClick={() => setEditing('new')}>
-                  Open a travel bank
+                  Start a travel fund
                 </button>
+                {suggested.target > 0 && (
+                  <span className="small muted">
+                    Last year&apos;s travel: {money(suggested.annual_spend)}
+                    {' '}(~{money(suggested.target / 12)}/month)
+                  </span>
+                )}
               </div>
-            </Notice>
-          )}
-          <Card title="What a piggy bank does">
-            <p className="muted" style={{ marginTop: 0 }}>
-              You name a cost and a target. Two things follow, and the second is
-              the one that makes it work:
-            </p>
-            <ul className="steps">
-              <li>
-                <strong>Going in.</strong> The target is divided by the months
-                available, and that share comes off every month&apos;s budget
-                exactly like rent. A holiday in June becomes a bill you are
-                already paying.
-              </li>
-              <li>
-                <strong>Coming out.</strong> When you spend on it, you charge
-                that transaction to the bank on the Transactions tab. It leaves
-                the month it fell in entirely — so June doesn&apos;t look like a
-                disaster, because June was never asked to pay for the holiday.
-              </li>
-            </ul>
-            <p className="small muted" style={{ marginBottom: 0 }}>
-              Nothing here is typed twice. The monthly figure comes from the
-              target and the date; the balance comes from how many months have
-              passed and what you have charged to it.
-            </p>
+            )}
           </Card>
         </>
       ) : (
         <>
+          <div className="section-head"><h2>Piggy banks</h2></div>
           <div className="grid cols-3">
-            <Tile label="Out of every month" value={money(data.monthly_total)}
-                  note={data.income > 0
-                    ? `${pct(share)} of your take-home pay`
-                    : 'Set your income on the Plan tab to see this as a share'} />
-            <Tile label="Held across every bank" value={money(data.balance_total)}
-                  note="Collected so far, less what has been charged" />
+            <Tile label="Saving per month" value={money(data.monthly_total)}
+                  note={data.income > 0 ? `${pct(share)} of your pay` : undefined} />
+            <Tile label="Saved so far" value={money(data.balance_total)} />
             <Tile label="Piggy banks" value={String(banks.length)}
-                  note={banks.some((b) => b.behind)
-                    ? 'One is behind and catching up'
-                    : 'None of them behind'} />
+                  note={banks.some((b) => b.behind) ? 'Some catching up' : undefined} />
           </div>
-
-          {/* No link to the plan from here any more: this is the plan page.
-              The figure it refers to is the term in the sum above it. */}
-          <Notice>
-            These contributions come off the{' '}
-            <strong>Yours to spend</strong> figure above before the daily
-            number is worked out, which is what &ldquo;deducted equally from
-            each month&rdquo; means in practice.
-          </Notice>
 
           <div className="stack">
             {banks.map((b) => (
@@ -145,8 +94,8 @@ export default function PiggyPanel({ version = 0 }) {
         <BankForm suggest={suggested} onCancel={() => setEditing(null)}
                   onSaved={async () => { setEditing(null); await load(); }} />
       ) : (
-        <button className="btn primary" onClick={() => setEditing('new')}>
-          Open a piggy bank
+        <button className="btn" onClick={() => setEditing('new')}>
+          + New piggy bank
         </button>
       )}
     </div>
@@ -191,15 +140,15 @@ function Bank({ bank: b, editing, onEdit, onDone }) {
               ? <>{money(b.target)} by {dateLabel(b.target_date)}
                   {b.months_left > 0
                     ? ` — ${b.months_left} month${b.months_left === 1 ? '' : 's'} to go`
-                    : ' — the date has arrived'}</>
-              : <>{money(b.target)} a year, spread across twelve months</>}
+                    : ' — due now'}</>
+              : <>{money(b.target)} a year</>}
           </p>
           {b.note && <p className="small muted" style={{ margin: '4px 0 0' }}>{b.note}</p>}
         </div>
         <div style={{ textAlign: 'right' }}>
           <div className="big num">{money(b.monthly)}</div>
           <div className="per">
-            a month{b.catch_up > 0 && <>, incl. {money(b.catch_up)} catching up</>}
+            a month{b.catch_up > 0 && <> (incl. {money(b.catch_up)} catch-up)</>}
           </div>
         </div>
       </div>
@@ -217,11 +166,11 @@ function Bank({ bank: b, editing, onEdit, onDone }) {
 
       <div className="row small" style={{ marginTop: 10, gap: 18, flexWrap: 'wrap' }}>
         <span>
-          <span className="muted">In it now </span>
+          <span className="muted">Saved </span>
           <strong className="num">{money(b.balance, { cents: true })}</strong>
         </span>
         <span className="muted num">
-          {money(b.accrued)} collected · {money(b.charged)} charged to it
+          {money(b.accrued)} in · {money(b.charged)} spent
         </span>
         <span className="spacer" />
         <button className="btn quiet" onClick={onEdit}>Edit</button>
@@ -244,23 +193,19 @@ function Bank({ bank: b, editing, onEdit, onDone }) {
       {confirming && (
         <div style={{ marginTop: 12 }}>
           <Notice>
-            Closing {b.name} puts the {money(b.charged)} charged to it back into
-            the months it was spent in, so those months will read higher than
-            they do now. The money was always spent — this only changes which
-            month it counts against.
+            {b.charged > 0
+              ? `The ${money(b.charged)} spent from it will count against the months it was spent in.`
+              : 'Close this piggy bank?'}
           </Notice>
         </div>
       )}
 
       {b.behind && (
         <div className="assumption" style={{ marginBottom: 0 }}>
-          You spent {money(b.behind_by)} more out of this than it had
-          collected, so it is paying itself back: the contribution is{' '}
-          <strong className="num">{money(b.monthly)}</strong> a month instead
-          of {money(b.base_monthly)} until it is whole, which at this rate is{' '}
-          {b.caught_up_by ? monthLabel(b.caught_up_by, { long: true }) : 'soon'}.
-          That is the trip coming off the months ahead rather than out of the
-          month you took it.
+          {money(b.behind_by)} behind. Saving{' '}
+          <strong className="num">{money(b.monthly)}</strong> a month (normally{' '}
+          {money(b.base_monthly)}) until{' '}
+          {b.caught_up_by ? monthLabel(b.caught_up_by, { long: true }) : 'it catches up'}.
         </div>
       )}
     </section>
@@ -310,11 +255,11 @@ function BankForm({ bank, suggest, onCancel, onSaved }) {
   }
 
   return (
-    <Card title={bank ? `Edit ${bank.name}` : 'Open a piggy bank'}>
+    <Card title={bank ? `Edit ${bank.name}` : 'New piggy bank'}>
       <ErrorNote error={error} />
       <form className="stack" onSubmit={save} style={{ gap: 16 }}>
         <div className="controls">
-          <label htmlFor="pb-name">What it is for</label>
+          <label htmlFor="pb-name">Name</label>
           <input id="pb-name" type="text" value={name} required
                  placeholder="Vacation, car, Christmas…"
                  onChange={(e) => setName(e.target.value)}
@@ -322,11 +267,11 @@ function BankForm({ bank, suggest, onCancel, onSaved }) {
         </div>
 
         <div className="controls">
-          <label htmlFor="pb-target">How much you need</label>
+          <label htmlFor="pb-target">Goal</label>
           <input id="pb-target" type="number" min="1" step="any" required
                  inputMode="decimal" value={target} style={{ width: 130 }}
                  onChange={(e) => setTarget(e.target.value)} />
-          <label htmlFor="pb-opening">Already set aside</label>
+          <label htmlFor="pb-opening">Already saved</label>
           <input id="pb-opening" type="number" min="0" step="any" placeholder="0"
                  inputMode="decimal" value={opening} style={{ width: 130 }}
                  onChange={(e) => setOpening(e.target.value)} />
@@ -334,7 +279,7 @@ function BankForm({ bank, suggest, onCancel, onSaved }) {
 
         <div>
           <div className="controls">
-            <label>When you need it</label>
+            <label>Repeats</label>
             <label className="row small" style={{ gap: 6, color: 'inherit' }}>
               <input type="radio" name="cadence" value="annual"
                      checked={cadence === 'annual'}
@@ -345,45 +290,35 @@ function BankForm({ bank, suggest, onCancel, onSaved }) {
               <input type="radio" name="cadence" value="once"
                      checked={cadence === 'once'}
                      onChange={() => setCadence('once')} />
-              By a date
+              Once, by
             </label>
             {cadence === 'once' && (
               <input type="date" value={date} required aria-label="Needed by"
                      onChange={(e) => setDate(e.target.value)} />
             )}
           </div>
-          <p className="small muted" style={{ margin: '8px 0 0' }}>
-            {cadence === 'annual'
-              ? 'A cost that comes round again — car maintenance, insurance, '
-                + 'Christmas. It collects twelve months a year, forever, and '
-                + 'refills after you spend it.'
-              : 'A cost with a date — a trip, a wedding. It stops collecting '
-                + 'once the date arrives.'}
-          </p>
         </div>
 
         <div className="controls">
           <label htmlFor="pb-note">Note</label>
           <input id="pb-note" type="text" value={note}
-                 placeholder="Optional — anything worth remembering"
+                 placeholder="Optional"
                  onChange={(e) => setNote(e.target.value)}
                  style={{ flex: '1 1 200px' }} />
         </div>
 
         {monthly > 0 && (
           <Notice>
-            <strong>{money(monthly)} a month.</strong>{' '}
-            {money(needed)} still to collect
-            {cadence === 'annual'
-              ? ', over twelve months'
-              : ` over ${months} month${months === 1 ? '' : 's'}`}
-            . That comes off what you have to spend each month, starting now.
+            <strong>{money(monthly)} a month</strong> comes out of your
+            spending money{cadence === 'once'
+              ? ` for ${months} month${months === 1 ? '' : 's'}`
+              : ''}.
           </Notice>
         )}
 
         <div className="row">
           <button className="btn primary" type="submit" disabled={busy}>
-            {busy ? 'Saving…' : bank ? 'Save changes' : 'Open it'}
+            {busy ? 'Saving…' : bank ? 'Save' : 'Create'}
           </button>
           <button className="btn quiet" type="button" onClick={onCancel}>
             Cancel

@@ -505,11 +505,18 @@ def insights():
     st = store()
     txns = _txns()
     dismissed = st.dismissed()
-    findings = generate_findings(txns, dismissed)
+    everything = generate_findings(txns)
+    findings = [f for f in everything if f["id"] not in dismissed]
     summary = findings_summary(findings)
     return jsonify({
         "findings": findings,
         "summary": summary,
+        # Named, so the page can offer them back. Restoring used to mean typing
+        # an id the page never showed.
+        "hidden": [
+            {"id": f["id"], "title": f["title"], "annual_saving": f["annual_saving"]}
+            for f in everything if f["id"] in dismissed
+        ],
         # Written in advance, shown when they apply. See
         # finance/insights/profile.py — this is what replaced the paid bot.
         "observations": observe(_profile(st, txns, summary), dismissed),

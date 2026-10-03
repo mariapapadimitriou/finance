@@ -20,9 +20,11 @@ export function Card({ title, hint, actions, children, className = '' }) {
 }
 
 /** A single number that is the whole story — no chart needed. */
-export function Tile({ label, value, note, delta }) {
+export function Tile({ label, value, note, delta, onClick }) {
+  const Box = onClick ? 'button' : 'div';
   return (
-    <div className="card tile">
+    <Box className="card tile" onClick={onClick}
+         {...(onClick ? { type: 'button' } : {})}>
       <div className="label">{label}</div>
       <div className="value num">{value}</div>
       {delta !== undefined && delta !== null && (
@@ -34,7 +36,7 @@ export function Tile({ label, value, note, delta }) {
         </div>
       )}
       {delta === undefined && note && <div className="note">{note}</div>}
-    </div>
+    </Box>
   );
 }
 
@@ -139,25 +141,14 @@ export function MonthFreshness({ month, summary, onTab }) {
   return (
     <Notice>
       {running ? (
-        <>
-          {label} is still in progress
-          {lastDay && <> — your data runs to day {Number(lastDay)}</>}. Anything
-          compared against whole months will read low until it closes.
-        </>
+        <>{label} is still in progress{lastDay && <> (data to day {Number(lastDay)})</>}.</>
       ) : (
         <>
-          <strong>
-            {label} is over, but the data{' '}
-            {lastDay ? <>stops at day {Number(lastDay)}</> : <>stops short of its last day</>}.
-          </strong>{' '}
-          That is either a quiet end to the month or a sync that hasn&apos;t run
-          since — they look identical from here.{' '}
+          Data for {label}{' '}
+          {lastDay ? <>stops at day {Number(lastDay)}</> : 'looks incomplete'}.{' '}
           {onTab
-            ? <>Sync on the{' '}
-                <button className="link" onClick={() => onTab('banks')}>
-                  Banks tab
-                </button>{' '}before reading anything into this month.</>
-            : <>Sync on the Banks tab before reading anything into this month.</>}
+            ? <button className="link" onClick={() => onTab('banks')}>Sync now</button>
+            : 'Sync to fill it in.'}
         </>
       )}
     </Notice>

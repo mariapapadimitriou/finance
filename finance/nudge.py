@@ -77,12 +77,10 @@ def for_yesterday(transactions, state: dict, today: date | None = None) -> dict 
             "detail": (
                 f"Spread across the {days_left} day"
                 f"{'' if days_left == 1 else 's'} left, that leaves "
-                f"{_money(spread)} a day for the rest of the month instead of "
-                f"{_money(share)}. Nothing is lost — the month just gets a "
-                "little tighter from here."
+                f"{_money(spread)} a day for the rest of the month "
+                f"(was {_money(share)})."
                 if left > 0 else
-                f"That takes the month past its budget. What is left is "
-                f"{_money(left)}, so from here anything spent is over."),
+                "That puts the month past its budget."),
         }
 
     if delta < -MATERIAL:

@@ -221,15 +221,15 @@ def how_am_i_doing(state: dict, baseline: float | None = None) -> dict:
     if budget <= 0:
         verdict, tone = "No budget set yet", "neutral"
     elif spent == 0:
-        verdict, tone = "Nothing spent yet this month", "good"
+        verdict, tone = "Nothing spent yet", "good"
     elif spent <= expected * 0.8:
         verdict, tone = "Comfortably under", "good"
     elif spent <= expected:
         verdict, tone = "On track", "good"
     elif projected <= budget:
-        verdict, tone = "Ahead of pace, but the month still balances", "warning"
+        verdict, tone = "A bit ahead of pace", "warning"
     else:
-        verdict, tone = "Over pace — this month lands above budget", "critical"
+        verdict, tone = "Over pace", "critical"
 
     return {
         "verdict": verdict,

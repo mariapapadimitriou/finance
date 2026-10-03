@@ -1,43 +1,75 @@
 import { useState } from 'react';
-import { Card, Empty, StatusPill } from '../components/ui.jsx';
+import { Card, Empty, ErrorNote, Notice, StatusPill } from '../components/ui.jsx';
 import { dateLabel, dismissFinding, money, pct, restoreFinding } from '../api.js';
 
 const EFFORT = {
-  'one-off': { label: 'One-off action', hint: 'Cancel, dispute or switch once and it stays saved.' },
-  habit: { label: 'Habit change', hint: 'Needs a sustained change, not a single decision.' },
-  negotiate: { label: 'Negotiate', hint: 'A call or a cancellation threat usually settles it.' },
+  'one-off': { label: 'Quick wins', hint: 'Do it once' },
+  negotiate: { label: 'Negotiate', hint: 'One phone call' },
+  habit: { label: 'Habits', hint: 'Takes ongoing effort' },
 };
 
 const CONFIDENCE = (c) =>
-  (c >= 0.8 ? 'High confidence' : c >= 0.55 ? 'Moderate confidence' : 'Worth checking');
+  (c >= 0.8 ? 'Likely' : c >= 0.55 ? 'Probably' : 'Worth checking');
 
 export default function SavingsPanel({ insights, onRefresh, onTab }) {
   const [busy, setBusy] = useState(null);
+  const [error, setError] = useState(null);
+  // The one just hidden, so it can be put back with a click.
+  const [justHidden, setJustHidden] = useState(null);
 
   const findings = insights?.findings ?? [];
   const summary = insights?.summary ?? {};
   const observations = insights?.observations ?? [];
+  const hidden = insights?.hidden ?? [];
 
-  async function dismiss(id) {
-    setBusy(id);
+  async function dismiss(f) {
+    setBusy(f.id);
+    setError(null);
     try {
-      await dismissFinding(id);
+      await dismissFinding(f.id);
+      setJustHidden(f);
       await onRefresh();
+    } catch (e) {
+      setError(e);
     } finally {
       setBusy(null);
     }
   }
 
+  async function restore(id) {
+    setError(null);
+    try {
+      await restoreFinding(id);
+      setJustHidden(null);
+      await onRefresh();
+    } catch (e) {
+      setError(e);
+    }
+  }
+
+  const banner = (
+    <>
+      <ErrorNote error={error} />
+      {justHidden && (
+        <Notice>
+          Hidden &ldquo;{justHidden.title}&rdquo;.{' '}
+          <button className="link" onClick={() => restore(justHidden.id)}>Undo</button>
+        </Notice>
+      )}
+    </>
+  );
+
 
   if (findings.length === 0) {
     return (
       <div className="stack">
+        {banner}
         <Observations rows={observations} onTab={onTab} />
-        <Empty title="Nothing to cut that we can see">
-          Either your spending is already tight, or there isn&apos;t enough
-          history yet. Most rules need three or more months to tell a habit
-          from a one-off — import a longer date range and check back.
+        <Empty title="Nothing to cut right now">
+          Spending looks tight, or there isn&apos;t enough history yet (most
+          checks need 3+ months).
         </Empty>
+        <HiddenList rows={hidden} onRestore={restore} />
       </div>
     );
   }
@@ -48,24 +80,19 @@ export default function SavingsPanel({ insights, onRefresh, onTab }) {
 
   return (
     <div className="stack">
+      {banner}
       <Observations rows={observations} onTab={onTab} />
 
       <div className="card hero-card">
         <div className="hero">
           <div className="figure num">{money(summary.weighted_annual ?? 0)}</div>
           <div className="caption">
-            a year in identified savings, weighted by how confident each finding is.
-            <br />
-            Taken at face value the findings total {money(summary.annual_total ?? 0)};
-            the weighted figure is the honest one.
+            a year you could realistically save
+            {' '}<span className="muted">
+              (up to {money(summary.annual_total ?? 0)} if every idea pans out)
+            </span>
           </div>
         </div>
-        <p className="small" style={{ marginTop: 18, marginBottom: 0,
-                                      color: 'var(--ink-2)' }}>
-          Every figure comes from your own transactions. Each finding states what
-          it assumes, because a recommendation you can&apos;t audit is just a
-          guess — open the evidence to see the exact charges behind it.
-        </p>
       </div>
 
 
@@ -80,12 +107,12 @@ export default function SavingsPanel({ insights, onRefresh, onTab }) {
             </span>
           </div>
           {list.map((f) => (
-            <Finding key={f.id} finding={f} busy={busy === f.id} onDismiss={() => dismiss(f.id)} />
+            <Finding key={f.id} finding={f} busy={busy === f.id} onDismiss={() => dismiss(f)} />
           ))}
         </div>
       ))}
 
-      <DismissedNote onRefresh={onRefresh} />
+      <HiddenList rows={hidden} onRestore={restore} />
     </div>
   );
 }
@@ -96,9 +123,10 @@ function Finding({ finding: f, busy, onDismiss }) {
       <div className="top">
         <div>
           <h3>{f.title}</h3>
-          <p>{f.detail}</p>
           <div className="meta">
-            <span className="pill">{CONFIDENCE(f.confidence)} · {pct(f.confidence)}</span>
+            <span className="pill" title={`${pct(f.confidence)} confidence`}>
+              {CONFIDENCE(f.confidence)}
+            </span>
             {f.category && <span className="pill">{f.category}</span>}
             {f.merchants?.slice(0, 3).map((m) => (
               <span className="pill" key={m}>{m}</span>
@@ -115,10 +143,12 @@ function Finding({ finding: f, busy, onDismiss }) {
         </div>
       </div>
 
-      {f.evidence?.length > 0 && (
-        <details className="evidence">
-          <summary>Show the {f.evidence.length} charges behind this</summary>
-          <div className="table-wrap">
+      <details className="evidence">
+        <summary>Details</summary>
+        <p className="small" style={{ color: 'var(--ink-2)' }}>{f.detail}</p>
+        {f.assumption && <div className="assumption">{f.assumption}</div>}
+        {f.evidence?.length > 0 && (
+          <div className="table-wrap" style={{ marginTop: 12 }}>
             <table>
               <thead>
                 <tr><th>Date</th><th>Merchant</th><th>Card</th><th className="r">Amount</th></tr>
@@ -135,58 +165,45 @@ function Finding({ finding: f, busy, onDismiss }) {
               </tbody>
             </table>
           </div>
-        </details>
-      )}
-
-      {f.assumption && <div className="assumption">Assumption: {f.assumption}</div>}
+        )}
+      </details>
 
       <div className="row" style={{ marginTop: 12 }}>
         <span className="spacer" />
         <button className="btn quiet" onClick={onDismiss} disabled={busy}>
-          {busy ? 'Dismissing…' : 'Not useful — hide this'}
+          {busy ? 'Hiding…' : 'Hide'}
         </button>
       </div>
     </section>
   );
 }
 
-function DismissedNote({ onRefresh }) {
-  const [id, setId] = useState('');
-  const [done, setDone] = useState(false);
-
-  async function restore(e) {
-    e.preventDefault();
-    if (!id.trim()) return;
-    await restoreFinding(id.trim());
-    await onRefresh();
-    setId('');
-    setDone(true);
-  }
-
+/** Findings you hid, offered back by name. */
+function HiddenList({ rows, onRestore }) {
+  if (!rows || rows.length === 0) return null;
   return (
     <details className="card">
       <summary className="muted small" style={{ cursor: 'pointer' }}>
-        Restore a dismissed finding
+        {rows.length} hidden
       </summary>
-      <form className="row" onSubmit={restore} style={{ marginTop: 12 }}>
-        <input
-          type="text"
-          value={id}
-          onChange={(e) => { setId(e.target.value); setDone(false); }}
-          placeholder="Finding id (e.g. fees_1a2b3c4d5e)"
-          style={{ flex: 1, minWidth: 220 }}
-        />
-        <button className="btn" type="submit">Restore</button>
-        {done && <span className="small muted">Restored.</span>}
-      </form>
+      <div className="stack" style={{ gap: 8, marginTop: 12 }}>
+        {rows.map((r) => (
+          <div key={r.id} className="row" style={{ gap: 10 }}>
+            <span>{r.title}</span>
+            <span className="muted small num">{money(r.annual_saving)}/yr</span>
+            <span className="spacer" />
+            <button className="btn quiet" onClick={() => onRestore(r.id)}>Restore</button>
+          </div>
+        ))}
+      </div>
     </details>
   );
 }
 
 const SEVERITY = {
-  act: { state: 'critical', label: 'Worth doing something about' },
-  watch: { state: 'warning', label: 'Worth knowing' },
-  good: { state: 'good', label: 'Going well' },
+  act: { state: 'critical', label: 'Act' },
+  watch: { state: 'warning', label: 'Note' },
+  good: { state: 'good', label: 'Good' },
 };
 
 /**
@@ -201,8 +218,7 @@ function Observations({ rows, onTab }) {
   if (!rows || rows.length === 0) return null;
 
   return (
-    <Card title="What your plan says"
-          hint="Read from your income, commitments and this month's spending">
+    <Card title="About your plan">
       <div className="stack" style={{ gap: 16 }}>
         {rows.map((o) => {
           const tone = SEVERITY[o.severity] ?? SEVERITY.watch;
@@ -218,9 +234,12 @@ function Observations({ rows, onTab }) {
                   </>
                 )}
               </div>
-              <p className="small" style={{ margin: '0 0 6px', color: 'var(--ink-2)' }}>
-                {o.detail}
-              </p>
+              {o.detail && (
+                <details className="small" style={{ margin: '0 0 6px', color: 'var(--ink-2)' }}>
+                  <summary style={{ cursor: 'pointer' }}>Why</summary>
+                  <p style={{ margin: '6px 0 0' }}>{o.detail}</p>
+                </details>
+              )}
               {o.tab && o.action && onTab && (
                 <button className="link" onClick={() => onTab(o.tab)}>
                   {o.action}

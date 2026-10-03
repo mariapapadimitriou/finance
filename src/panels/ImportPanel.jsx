@@ -62,14 +62,10 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
     <div className="stack">
       {onTab && (
         <Notice>
-          <strong>Connecting a card is the better way in.</strong> A connection
-          keeps itself up to date and never has to be downloaded again, so this
-          page is for what a connection can&apos;t reach: a closed account, or a
-          bank Plaid doesn&apos;t support.{' '}
+          Tip: connected cards update themselves.{' '}
           <button className="link" onClick={() => onTab('banks')}>
-            Connect a card instead
+            Connect a card
           </button>
-          .
         </Notice>
       )}
 
@@ -82,13 +78,8 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
           notice by removing the problem. */}
       {storage === 'ephemeral' && (
         <Notice>
-          <strong>Uploads here are temporary.</strong> This deployment has no
-          database attached, so a statement you add lives on one server for as
-          long as that server does — usually minutes to hours — and may not be
-          visible on another device at all. Nothing is committed to the
-          repository to fall back on. To make uploads permanent, attach a
-          Postgres database in the Vercel project
-          (Storage → Create Database) and redeploy; nothing else needs changing.
+          <strong>Uploads here are temporary</strong> — no database is attached.
+          Add Postgres in Vercel (Storage → Create Database) and redeploy.
         </Notice>
       )}
 
@@ -102,11 +93,9 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
           handleFiles(e.dataTransfer.files);
         }}
       >
-        <h3>{busy ? 'Reading your statements…' : 'Drop your statements here'}</h3>
+        <h3>{busy ? 'Reading…' : 'Drop statements here'}</h3>
         <p style={{ margin: '8px auto 18px', maxWidth: '46ch' }}>
-          PDF statements or CSV exports, from any card. The format is detected
-          automatically, and re-importing an overlapping date range is safe —
-          duplicates are dropped, not double-counted.
+          PDF or CSV, any card. Duplicates are skipped.
         </p>
         <input
           ref={inputRef}
@@ -125,19 +114,19 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
       <ErrorNote error={error} />
 
       {results && (
-        <Card title="Import results">
+        <Card title="Imported">
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>File</th><th>Detected format</th><th>Card</th>
+                  <th>File</th><th>Format</th><th>Card</th>
                   <th className="r">Imported</th><th className="r">Duplicates</th>
                   <th className="r">Skipped</th>
                 </tr>
               </thead>
               <tbody>
                 {results.map((r) => (
-                  <tr key={r.filename}>
+                  <tr key={`${r.filename}-${r.account_name}`}>
                     <td className="merchant">{r.filename}</td>
                     <td>
                       {r.format_label}
@@ -161,7 +150,7 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
       )}
 
       <div className="grid cols-2">
-        <Card title="Getting your statements" hint={csv?.detail}>
+        <Card title="Getting your statements">
           <ol className="steps">
             {(csv?.setup_steps ?? []).map((s) => <li key={s}>{s}</li>)}
           </ol>
@@ -170,14 +159,12 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
               would be the one kind of inaccuracy that really matters here. */}
           <p className="small muted" style={{ marginTop: 16, marginBottom: 0 }}>
             {storage === 'sqlite'
-              ? 'Everything is parsed on this machine and stored in a local '
-                + 'SQLite file. Nothing is uploaded anywhere.'
-              : 'Statements are parsed on the server and stored in this '
-                + "deployment's own database. They are not sent anywhere else."}
+              ? 'Stays on this computer.'
+              : "Stored only in this app's database."}
           </p>
         </Card>
 
-        <Card title="Automatic sync" hint="Alternatives to downloading CSVs by hand">
+        <Card title="Automatic sync">
           {others.map((s) => (
             <div key={s.key} style={{ marginBottom: 14 }}>
               <div className="row">
@@ -189,8 +176,7 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
               <p className="small muted" style={{ margin: '6px 0' }}>{s.detail}</p>
               {s.key === 'plaid' && (
                 <p className="small" style={{ margin: '6px 0' }}>
-                  Connecting and syncing banks lives on the{' '}
-                  <strong>Banks</strong> tab.
+                  Set up under <strong>Connections</strong>.
                 </p>
               )}
               {!s.available && s.setup_steps?.length > 0 && (
@@ -289,8 +275,7 @@ function BundledStatements({ onImported }) {
   if (sets.length === 0) return null;
 
   return (
-    <Card title="Statements included with the app"
-          hint="For a card that can't be connected">
+    <Card title="Included statements">
       <ErrorNote error={error} />
 
       {sets.map((b) => (
@@ -319,7 +304,7 @@ function BundledStatements({ onImported }) {
         <Notice kind="good">
           {done.imported > 0
             ? `Added ${done.imported} transaction${done.imported === 1 ? '' : 's'}.`
-            : 'Nothing to add — all of them were already in the ledger.'}
+            : 'Already loaded.'}
           {done.duplicates > 0 && ` ${done.duplicates} were already there.`}
           {done.warnings?.length > 0 && (
             <div className="small" style={{ marginTop: 8 }}>
@@ -330,9 +315,7 @@ function BundledStatements({ onImported }) {
       )}
 
       <p className="assumption" style={{ marginBottom: 0 }}>
-        These go through the same checks as an upload, so pressing this twice
-        adds nothing the second time. They are the only transactions that come
-        back after the ledger is emptied — and only when you ask for them.
+        Safe to load twice — duplicates are skipped.
       </p>
     </Card>
   );

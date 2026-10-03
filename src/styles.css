@@ -331,14 +331,15 @@ main { max-width: 1180px; margin: 0 auto; padding: 4px 32px 80px; }
        anchors to the nearest positioned ancestor instead of its own tab and
        floats over whichever button happens to be there. */
     position: relative;
-    flex: 0 0 auto;
+    /* Six equal shares of the bar, so every destination is on screen
+       without scrolling to find the last one. */
+    flex: 1 1 0;
     scroll-snap-align: center;
     flex-direction: column;
     gap: 3px;
-    /* 56px clears Apple's 44pt minimum touch target with room to spare. */
-    min-width: 62px;
+    min-width: 0;
     min-height: 52px;
-    padding: 6px 8px;
+    padding: 6px 2px;
     font-size: .68rem;
     font-weight: 560;
     text-align: center;
@@ -484,6 +485,24 @@ select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-v
 .btn.quiet { border-color: transparent; background: transparent; color: var(--ink-2); }
 .btn.quiet:hover { background: var(--surface-2); color: var(--ink); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.danger { background: var(--critical); border-color: var(--critical); color: #fff; }
+.btn.danger:hover { background: var(--critical); opacity: .9; }
+
+/* Unsaved edits on a long list: the Save button follows you down the page. */
+.save-bar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 20;
+  padding: 12px 16px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / .18);
+}
+@media (max-width: 860px) {
+  .save-bar { bottom: calc(76px + env(safe-area-inset-bottom, 0)); }
+}
+
+/* A card that is itself a link to more detail. */
+button.tile { text-align: left; font: inherit; color: inherit; cursor: pointer; width: 100%; }
+button.tile:hover { border-color: var(--border-firm); }
 
 .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .controls label { color: var(--muted); font-size: .84rem; font-weight: 500; }
