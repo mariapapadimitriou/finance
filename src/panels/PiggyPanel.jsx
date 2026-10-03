@@ -39,6 +39,9 @@ export default function PiggyPanel({ version = 0 }) {
 
   const banks = data.banks ?? [];
   const share = data.income > 0 ? data.monthly_total / data.income : 0;
+  // The first bank the app wants you to have: travel, because the budget
+  // deliberately has no line for it. Null once any bank exists.
+  const suggested = data.suggested;
 
   return (
     <div className="stack">
@@ -50,6 +53,33 @@ export default function PiggyPanel({ version = 0 }) {
             twelfth looks like a catastrophe — one that was entirely
             predictable.
           </Empty>
+
+          {/* Not a generic nudge. Travel has no budget line anywhere in the
+              app on purpose, so until this bank exists it is the one cost
+              nothing at all is paying for. */}
+          {suggested && editing !== 'new' && (
+            <Notice kind="error">
+              <strong>Start with travel.</strong> It is the one category with
+              no budget line — a cost that lands in lumps is wrong as a
+              monthly figure — so a bank is the only thing that can fund it.
+              {suggested.annual_spend > 0 && (
+                <> Your last year of travel came to{' '}
+                  <strong className="num">{money(suggested.annual_spend)}</strong>
+                  {suggested.target > 0 && (
+                    <>, about{' '}
+                      <strong className="num">
+                        {money(suggested.target / 12)}
+                      </strong>{' '}
+                      a month</>
+                  )}.</>
+              )}
+              <div className="row" style={{ marginTop: 12 }}>
+                <button className="btn primary" onClick={() => setEditing('new')}>
+                  Open a travel bank
+                </button>
+              </div>
+            </Notice>
+          )}
           <Card title="What a piggy bank does">
             <p className="muted" style={{ marginTop: 0 }}>
               You name a cost and a target. Two things follow, and the second is
@@ -112,7 +142,7 @@ export default function PiggyPanel({ version = 0 }) {
       )}
 
       {editing === 'new' ? (
-        <BankForm onCancel={() => setEditing(null)}
+        <BankForm suggest={suggested} onCancel={() => setEditing(null)}
                   onSaved={async () => { setEditing(null); await load(); }} />
       ) : (
         <button className="btn primary" onClick={() => setEditing('new')}>
@@ -238,9 +268,12 @@ function Bank({ bank: b, editing, onEdit, onDone }) {
 }
 
 /** Opening or editing a bank. The monthly figure is shown, never typed. */
-function BankForm({ bank, onCancel, onSaved }) {
-  const [name, setName] = useState(bank?.name ?? '');
-  const [target, setTarget] = useState(bank?.target ?? '');
+function BankForm({ bank, suggest, onCancel, onSaved }) {
+  // `suggest` only arrives for the very first bank, and only as a starting
+  // point: both fields stay editable, because a target she did not choose is
+  // a monthly deduction she did not agree to.
+  const [name, setName] = useState(bank?.name ?? suggest?.name ?? '');
+  const [target, setTarget] = useState(bank?.target ?? suggest?.target ?? '');
   const [cadence, setCadence] = useState(bank?.cadence ?? 'annual');
   const [date, setDate] = useState(bank?.target_date ?? '');
   const [opening, setOpening] = useState(bank?.opening ?? '');
@@ -290,11 +323,11 @@ function BankForm({ bank, onCancel, onSaved }) {
 
         <div className="controls">
           <label htmlFor="pb-target">How much you need</label>
-          <input id="pb-target" type="number" min="1" step="50" required
+          <input id="pb-target" type="number" min="1" step="any" required
                  inputMode="decimal" value={target} style={{ width: 130 }}
                  onChange={(e) => setTarget(e.target.value)} />
           <label htmlFor="pb-opening">Already set aside</label>
-          <input id="pb-opening" type="number" min="0" step="50" placeholder="0"
+          <input id="pb-opening" type="number" min="0" step="any" placeholder="0"
                  inputMode="decimal" value={opening} style={{ width: 130 }}
                  onChange={(e) => setOpening(e.target.value)} />
         </div>

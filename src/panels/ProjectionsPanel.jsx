@@ -192,7 +192,7 @@ export default function ProjectionsPanel({ insights, onTab, version = 0 }) {
                 hint="A number you have in mind, under each scenario">
             <form className="controls" onSubmit={(e) => e.preventDefault()}>
               <label htmlFor="target">I want to save</label>
-              <input id="target" type="number" min="0" step="500" value={target}
+              <input id="target" type="number" min="0" step="any" value={target}
                      onChange={(e) => setTarget(e.target.value)}
                      placeholder="5,000" style={{ width: 140 }} />
             </form>

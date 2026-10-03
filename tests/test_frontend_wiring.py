@@ -188,3 +188,30 @@ class TestTheMonthSelector:
             "showMonth no longer keys off the active panel")
         for key in re.findall(r"'([^']+)'", m.group(1)):
             assert key in panels, f"showMonth names '{key}', which is not a panel"
+
+
+class TestNumberInputsAcceptTheAmountsPeopleType:
+    """The `step` attribute is a validity rule, not a convenience.
+
+    `min="1" step="50"` on the piggy bank target meant the browser considered
+    1300, 2400 and every other round figure invalid — the two nearest valid
+    values being 1251 and 1301. Chrome then refuses to submit the form and
+    reports it on a tooltip nobody sees, so the button does nothing. This is
+    exactly the class of bug this file exists for: invisible in review, and
+    indistinguishable in use from a dead button.
+
+    Cents are the only step a money field may impose.
+    """
+
+    def test_no_money_field_rejects_an_ordinary_amount(self):
+        pattern = re.compile(r'type="number"[^>]*?step="([^"]+)"'
+                             r'|step="([^"]+)"[^>]*?type="number"', re.S)
+        offenders = []
+        for path in sorted(SRC.rglob("*.jsx")):
+            for m in pattern.finditer(path.read_text(encoding="utf-8")):
+                step = m.group(1) or m.group(2)
+                if step not in ("any", "0.01"):
+                    offenders.append(f"{path.name}: step=\"{step}\"")
+        assert not offenders, (
+            "number inputs whose step makes ordinary amounts invalid, so the "
+            f"form silently refuses to submit: {offenders}")

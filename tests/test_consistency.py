@@ -81,11 +81,18 @@ class TestOneMonthOneNumber:
         assert breakdown == pytest.approx(truth, abs=TOLERANCE)
 
     def test_the_budgets_tab_accounts_for_the_whole_month(self, ledger):
-        """Budgeted plus unbudgeted is the month, with nothing unexplained."""
+        """Budgeted, bank-funded and unbudgeted are the month, with nothing
+        unexplained. Travel is the third term: it has no budget line and is
+        not a missing one either."""
+        add_travel(ledger)
         month = busiest_month(ledger)
         b = ledger.get(f"/api/budgets?month={month}").get_json()
-        assert b["covered_spend"] + b["unbudgeted_spend"] == pytest.approx(
+        assert (b["covered_spend"] + b["unbudgeted_spend"]
+                + b["bank_funded"]["unallocated_total"]) == pytest.approx(
             b["month_spend"], abs=TOLERANCE)
+        assert b["budgetable_spend"] == pytest.approx(
+            b["month_spend"] - b["bank_funded"]["unallocated_total"],
+            abs=TOLERANCE)
         assert b["month_spend"] == pytest.approx(ledger_spend(ledger, month),
                                                  abs=TOLERANCE)
 
@@ -655,3 +662,117 @@ class TestTheBudgetsTableHasOneRowPerCategory:
         assert body["status"] == []          # nothing saved…
         assert body["rows"]                  # …and still a page to read
         assert all(r["adopted"] is False for r in body["rows"])
+
+
+def add_travel(client, amount: float = 1800.0) -> float:
+    """Put a year's worth of travel in the ledger, in two lumps.
+
+    The bundled statements have none, and the whole point of the rule is how
+    a lumpy cost behaves — so a fixture with no lumps would prove nothing.
+    """
+    months = sorted({t.month for t in
+                     client.application.config["STORE"].all_transactions()})
+    for month, part in ((months[-1], amount * 0.4), (months[0], amount * 0.6)):
+        client.post("/api/transactions", json={
+            "date": f"{month}-09", "description": "AIR CANADA 014",
+            "amount": round(part, 2), "category": "Travel"})
+    return round(amount, 2)
+
+
+class TestTravelIsFundedByABankNotABudget:
+    """A cost that arrives in lumps has no business as a monthly line.
+
+    Travel is excluded from the budget split, because the piggy bank
+    collecting for it is already subtracted from the leftover in `plan()`.
+    Leaving it in funded the same trip twice: once through the bank, and
+    again as a monthly budget line nobody was spending against.
+    """
+
+    def test_travel_gets_no_share_of_the_leftover(self, ledger):
+        from finance import money_plan
+        add_travel(ledger)
+        txns = ledger.application.config["STORE"].all_transactions()
+        assert any(t.category == "Travel" and t.amount > 0 for t in txns), \
+            "the fixture has no travel, so this test proves nothing"
+        assert "Travel" not in money_plan.variable_shares(txns)
+
+    def test_no_travel_row_and_no_travel_budget_anywhere(self, ledger):
+        add_travel(ledger)
+        ledger.post("/api/plan/setup/apply")
+        body = ledger.get("/api/budgets").get_json()
+        assert "Travel" not in body["plan_budgets"]
+        assert "Travel" not in body["budgets"]
+        assert "Travel" not in {r["category"] for r in body["rows"]}
+
+    def test_travel_is_not_reported_as_a_missing_budget(self, ledger):
+        """It is not missing a budget; it is funded somewhere else, and the
+        page says which."""
+        add_travel(ledger)
+        body = ledger.get("/api/budgets").get_json()
+        assert "Travel" not in {r["category"] for r in body["unbudgeted"]}
+        assert "Travel" in body["bank_funded"]["categories"]
+
+    def test_a_budget_for_it_is_refused(self, ledger):
+        r = ledger.put("/api/budgets", json={"budgets": {"Travel": 300}})
+        assert r.status_code == 400
+        assert "piggy bank" in r.get_json()["error"]
+
+    def test_a_budget_saved_before_the_rule_is_cleared_on_open(self, tmp_path):
+        """Her ledger already has one. It cannot be written any more, so the
+        only way it goes is for the store to drop it."""
+        from app import create_app
+        path = str(tmp_path / "stale.db")
+
+        app = create_app(path)
+        app.config["STORE"].set_budget("Travel", 300)
+        assert "Travel" in app.config["STORE"].budgets()
+
+        reopened = create_app(path)          # the migration runs on open
+        assert "Travel" not in reopened.config["STORE"].budgets()
+
+    def test_re_applying_the_plan_clears_it_too(self, ledger):
+        ledger.application.config["STORE"].set_budget("Travel", 300)
+        ledger.post("/api/plan/setup/apply")
+        assert "Travel" not in ledger.application.config["STORE"].budgets()
+
+    def test_the_leftover_still_divides_exactly(self, ledger):
+        """Dropping a category must redistribute its share, not lose it."""
+        add_travel(ledger)
+        body = ledger.get("/api/budgets").get_json()
+        assert sum(body["plan_budgets"].values()) == pytest.approx(
+            body["plan_leftover"], abs=TOLERANCE)
+
+
+class TestTheFirstBankIsTravel:
+    def test_it_is_suggested_with_a_target_from_her_own_history(self, ledger):
+        add_travel(ledger)
+        body = ledger.get("/api/piggy").get_json()
+        suggested = body["suggested"]
+        assert suggested and suggested["name"] == "Travel"
+        assert suggested["annual_spend"] > 0
+        # Rounded up to something recognisable, never below what it costs.
+        assert suggested["target"] >= suggested["annual_spend"]
+        assert suggested["target"] % 100 == 0
+
+    def test_travel_is_still_offered_with_nothing_to_go_on(self, ledger):
+        """No travel in the ledger is no reason to leave the field blank of a
+        name — only of a number nobody can source."""
+        suggested = ledger.get("/api/piggy").get_json()["suggested"]
+        assert suggested["name"] == "Travel"
+        assert suggested["target"] is None
+
+    def test_the_suggestion_stops_once_a_bank_exists(self, ledger):
+        ledger.post("/api/piggy", json={"name": "Trip", "target": 2400,
+                                        "cadence": "annual"})
+        assert ledger.get("/api/piggy").get_json()["suggested"] is None
+
+    def test_the_insight_and_the_suggestion_quote_one_figure(self, ledger):
+        """Both are "what travel costs you a year" and they are read off the
+        same function, so they cannot disagree."""
+        add_travel(ledger)
+        suggested = ledger.get("/api/piggy").get_json()["suggested"]
+        rows = ledger.get("/api/insights").get_json()["observations"]
+        row = next((r for r in rows if r["id"] == "travel_no_bank"), None)
+        assert row, "the fixture travels but is offered no bank"
+        assert row["figures"]["annual"] == pytest.approx(
+            suggested["annual_spend"], abs=TOLERANCE)

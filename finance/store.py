@@ -244,6 +244,7 @@ class Store:
             c.executescript(SCHEMA)
         self._migrate_buckets()
         self._migrate_allocation_amounts()
+        self._drop_bank_funded_budgets()
 
     def _migrate_buckets(self) -> None:
         """Carry the buckets that piggy banks replaced into piggy banks.
@@ -292,6 +293,29 @@ class Store:
 
             c.execute("DELETE FROM bucket_draws")
             c.execute("DELETE FROM buckets")
+
+    def _drop_bank_funded_budgets(self) -> None:
+        """Remove budget lines for categories a piggy bank now funds.
+
+        Travel used to get a share of the leftover like any other category,
+        which double-counted it against the bank already collecting for it.
+        The endpoint refuses to write one now, so this only has to clear what
+        was written before — idempotent, and a no-op on every open after the
+        first.
+        """
+        from .categorize import BANK_FUNDED
+
+        if not BANK_FUNDED:
+            return
+        marks = ", ".join("?" for _ in BANK_FUNDED)
+        names = tuple(sorted(BANK_FUNDED))
+        with self.conn() as c:
+            found = c.execute(
+                f"SELECT 1 FROM budgets WHERE category IN ({marks}) LIMIT 1",
+                names).fetchone()
+            if not found:
+                return
+            c.execute(f"DELETE FROM budgets WHERE category IN ({marks})", names)
 
     def _migrate_allocation_amounts(self) -> None:
         """Add `piggy_allocations.amount` to a database that predates it.
