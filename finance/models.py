@@ -256,6 +256,9 @@ class Transaction:
     # holding $400 covers $400 of a $2,000 flight and the other $1,600 stays in
     # the month it was spent.
     bank_amount: float = 0.0
+    # True when the bank pays for it because the bank owns its category,
+    # rather than because someone allocated this charge by hand.
+    bank_auto: bool = False
 
     def __post_init__(self):
         if not self.merchant:
@@ -317,6 +320,7 @@ class Transaction:
             raw=raw,
             bank_id=row.get("bank_id"),
             bank_amount=float(row.get("bank_amount") or 0.0),
+            bank_auto=bool(row.get("bank_auto") or 0),
         )
 
 

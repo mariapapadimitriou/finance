@@ -362,22 +362,20 @@ def travel_has_no_bank(p: Profile) -> Observation | None:
     """The case piggy banks exist for, pointed out from the data."""
     if p.travel_last_year <= 240:
         return None
-    if any(b.get("monthly", 0) > 0 for b in p.banks):
+    if any("Travel" in (b.get("categories") or []) for b in p.banks):
         return None
     monthly = round(p.travel_last_year / 12, 2)
     return Observation(
         id="travel_no_bank",
-        title=f"{_money(p.travel_last_year)} of travel, funded by nothing",
-        detail=(f"That is what the last year of travel cost. Travel has no "
-                "budget line on purpose — it arrives in a few lumps rather "
-                "than monthly, so a monthly line for it is wrong in both "
-                "directions — which means a piggy bank is the only thing "
-                f"paying for it, and there isn't one. {_money(monthly)} a "
-                "month would cover the same travel out of every month "
-                "equally, and charging the next trip to the bank keeps it "
-                "out of that month's spending entirely."),
-        # An unfunded cost you are certain to incur, now that the budget
-        # deliberately leaves it out: that is something to do, not watch.
+        title=f"{_money(p.travel_last_year)} of travel, paid from the week",
+        detail=(f"That is what the last year of travel cost. Until a piggy "
+                "bank pays for it, every trip lands on the week it was "
+                "booked in and makes that week look like a disaster. A bank "
+                f"of {_money(p.travel_last_year)} a year takes "
+                f"{_money(monthly)} out of every month instead, has the whole "
+                "amount ready from the day it opens, and pays for every "
+                "travel charge by itself — the weekly allowance is left for "
+                "the everyday."),
         severity="act", metric=_money(monthly), tab="piggy",
         action="Open a travel bank",
         figures={"annual": p.travel_last_year, "monthly": monthly},
@@ -385,46 +383,71 @@ def travel_has_no_bank(p: Profile) -> Observation | None:
 
 
 def a_bank_is_catching_up(p: Profile) -> list[Observation]:
+    """A bank over this year's budget, or repaying last year's overspend.
+
+    Both are allowed — sometimes the trip costs what it costs — and both are
+    worth knowing about, because they are why a month can feel tighter.
+    """
     out = []
     for bank in p.banks:
-        if not bank.get("behind"):
-            continue
-        out.append(Observation(
-            id=f"bank_behind_{bank['id']}",
-            title=f"{bank['name']} is repaying itself",
-            detail=(f"You spent {_money(bank['behind_by'])} more out of it "
-                    "than it had collected, which is allowed — sometimes you "
-                    "have to fly before you have finished saving for the "
-                    f"flight. It now takes {_money(bank['monthly'])} a month "
-                    f"instead of {_money(bank.get('base_monthly', 0))} until "
-                    "it is whole, and that extra is coming out of your "
-                    "day-to-day money. Nothing to fix; worth knowing why this "
-                    "month feels tighter."),
-            severity="watch", metric=_money(bank["behind_by"]),
-            tab="piggy", action=f"Look at {bank['name']}",
-            figures={"bank": bank["name"], "behind": bank["behind_by"],
-                     "monthly": bank["monthly"]},
-        ))
+        base = round(bank.get("target", 0) / 12, 2)
+        if bank.get("over"):
+            out.append(Observation(
+                id=f"bank_behind_{bank['id']}",
+                title=f"{bank['name']} is {_money(bank['behind_by'])} over this year",
+                detail=(f"It paid {_money(bank.get('spent_this_year', 0))} "
+                        f"against a budget of {_money(bank['target'])} a year. "
+                        "That is allowed, and it changes nothing this year. "
+                        "Next year the bank repays what it actually spent, so "
+                        "its monthly contribution rises by the overspend "
+                        "spread over twelve months."),
+                severity="watch", metric=_money(bank["behind_by"]),
+                tab="piggy", action=f"Look at {bank['name']}",
+                figures={"bank": bank["name"], "behind": bank["behind_by"],
+                         "monthly": bank["monthly"]},
+            ))
+        elif (bank.get("basis") == "repaying" and bank.get("cadence") != "once"
+              and bank.get("monthly", 0) > base + 0.005):
+            out.append(Observation(
+                id=f"bank_repaying_{bank['id']}",
+                title=f"{bank['name']} is repaying last year's overspend",
+                detail=(f"Last year it paid "
+                        f"{_money(bank.get('spent_last_year') or 0)}, more than "
+                        f"its {_money(bank['target'])}. So this year it takes "
+                        f"{_money(bank['monthly'])} a month instead of "
+                        f"{_money(base)}, and that extra is coming out of your "
+                        "everyday money. Nothing to fix; worth knowing why "
+                        "the week feels tighter."),
+                severity="watch", metric=_money(bank["monthly"]),
+                tab="piggy", action=f"Look at {bank['name']}",
+                figures={"bank": bank["name"], "monthly": bank["monthly"],
+                         "base_monthly": base},
+            ))
     return out
 
 
 def a_bank_is_ready(p: Profile) -> list[Observation]:
+    """A bank whose money is really in it, not just promised.
+
+    Every bank can pay its whole target from the day it opens, so "can pay"
+    says nothing. What is worth a good word is the real money — paid in, less
+    paid out — reaching the target.
+    """
     out = []
     for bank in p.banks:
-        if bank.get("behind") or bank.get("funded_share", 0) < 1.0:
-            continue
-        if bank.get("balance", 0) <= 0:
+        held = bank.get("held", 0)
+        if bank.get("over") or held <= 0 or held < bank.get("target", 0):
             continue
         out.append(Observation(
             id=f"bank_ready_{bank['id']}",
             title=f"{bank['name']} is fully funded",
-            detail=(f"{_money(bank['balance'])} is in it, against a target of "
-                    f"{_money(bank['target'])}. The thing it was for is paid "
+            detail=(f"{_money(held)} is really in it, against a target of "
+                    f"{_money(bank['target'])}. The thing it is for is paid "
                     "for before you have bought it, which is the whole point "
                     "of having done it monthly."),
-            severity="good", metric=_money(bank["balance"]),
+            severity="good", metric=_money(held),
             tab="piggy", action=f"Look at {bank['name']}",
-            figures={"bank": bank["name"], "balance": bank["balance"]},
+            figures={"bank": bank["name"], "balance": held},
         ))
     return out
 
@@ -433,7 +456,9 @@ def no_emergency_fund(p: Profile) -> Observation | None:
     if not p.has_plan or p.fixed_total <= 0:
         return None
     target = round(p.fixed_total * EMERGENCY_MONTHS, 2)
-    held = round(sum(b.get("balance", 0) for b in p.banks), 2)
+    # Real money, not what a bank could advance: that is what an empty
+    # month can actually be paid from.
+    held = round(sum(max(b.get("held", 0), 0) for b in p.banks), 2)
     if held >= target:
         return None
     return Observation(

@@ -50,147 +50,140 @@ class TestTheBaseContribution:
         assert piggy.base_monthly(bank) == 0.0
 
 
-class TestWhatIsInIt:
-    """The balance, replayed month by month from what was charged when."""
-
-    def test_it_collects_a_contribution_for_every_month_including_the_first(self):
-        bank = Bank(id=1, name="Car", target=1200.0, start_month="2026-01")
-        assert piggy.run(bank, {}, today="2026-01-15")["balance"] == 100.0
-        assert piggy.run(bank, {}, today="2026-03-15")["balance"] == 300.0
-
-    def test_what_was_already_set_aside_counts_from_the_start(self):
-        bank = Bank(id=1, name="Trip", target=1200.0, opening=600.0,
-                    start_month="2026-01")
-        # $600 in hand, plus one month of (1200-600)/12.
-        assert piggy.run(bank, {}, today="2026-01-15")["balance"] == 650.0
-
-    def test_a_dated_bank_stops_collecting_once_its_date_passes(self):
-        bank = Bank(id=1, name="June", target=600.0, cadence="once",
-                    target_date="2026-06-10", start_month="2026-01")
-        assert piggy.run(bank, {}, today="2026-06-30")["balance"] == 600.0
-        assert piggy.run(bank, {}, today="2027-01-01")["balance"] == 600.0
-
-    def test_an_annual_bank_keeps_collecting_forever(self):
-        """A sinking fund refills after it is spent; that is the point."""
-        bank = Bank(id=1, name="Car", target=1200.0, start_month="2026-01")
-        assert piggy.run(bank, {}, today="2027-06-15")["balance"] == 1800.0
-
-    def test_a_bank_whose_start_month_has_not_arrived_holds_only_its_opening(self):
-        bank = Bank(id=1, name="Later", target=1200.0, opening=50.0,
-                    start_month="2026-06")
-        assert piggy.run(bank, {}, today="2026-01-15")["balance"] == 50.0
-
-    def test_what_it_was_charged_comes_out_in_the_month_it_was_charged(self):
-        bank = Bank(id=1, name="Car", target=1200.0, start_month="2026-01")
-        played = piggy.run(bank, {"2026-02": 150.0}, today="2026-03-15")
-        # Three months at $100, less the $150 spent in February.
-        assert played["balance"] == 150.0
-        assert played["charged"] == 150.0
+def vacation(**kw):
+    """Her example: $8,000 a year of travel, opened in March 2026."""
+    args = dict(id=1, name="Vacation", target=8000.0, cadence="annual",
+                start_month="2026-03")
+    args.update(kw)
+    return Bank(**args)
 
 
-class TestCatchingUp:
-    """The mechanism that lets a bank pay for something it has not saved for."""
+class TestTheMoneyIsThereFromDayOne:
+    """ "If I want to spend 8k per year on vacation, the piggy bank should hold
+    8k and my allowance should be reduced by 8000/12. After I create the bank
+    I should be able to allocate a purchase up to $8k towards it." """
 
-    def test_a_bank_spent_ahead_of_itself_goes_behind_rather_than_refusing(self):
-        """The case the feature exists for: a $2,000 trip in the first month of
-        a $2,400-a-year travel fund. The month must not absorb it."""
-        bank = Bank(id=1, name="Travel", target=2400.0, start_month="2026-10")
-        played = piggy.run(bank, {"2026-10": 2000.0}, today="2026-10-15")
+    def test_the_whole_target_is_available_the_day_it_opens(self):
+        s = piggy.status(vacation(), {}, today="2026-03-05")
+        assert s["available"] == 8000.0
+        assert s["monthly"] == pytest.approx(666.67)
+        assert s["basis"] == "first_year"
 
-        assert played["balance"] == -1800.0
-        assert played["behind"] is True
-        assert played["behind_by"] == 1800.0
+    def test_a_trip_in_the_first_month_does_not_wait_for_the_saving(self):
+        s = piggy.status(vacation(), {"2026-04": 6000.0}, today="2026-05-10")
+        assert s["available"] == 2000.0
+        assert s["over"] is False
+        # And the deduction does not move mid-year: the week is not jolted.
+        assert s["monthly"] == pytest.approx(666.67)
 
-    def test_the_contribution_rises_to_repay_it(self):
-        bank = Bank(id=1, name="Travel", target=2400.0, start_month="2026-10")
-        played = piggy.run(bank, {"2026-10": 2000.0}, today="2026-10-15")
+    def test_money_already_set_aside_lowers_the_first_year(self):
+        s = piggy.status(vacation(opening=2000.0), {}, today="2026-03-05")
+        assert s["available"] == 8000.0
+        assert s["monthly"] == pytest.approx(500.0)
 
-        assert played["base_monthly"] == 200.0
-        # The shortfall spread over the catch-up window, on top of the base.
-        assert played["monthly"] == round(200 + 1800 / piggy.CATCH_UP_MONTHS, 2)
-        assert played["catch_up"] == round(1800 / piggy.CATCH_UP_MONTHS, 2)
+    def test_a_bank_that_has_not_opened_yet_takes_nothing(self):
+        s = piggy.status(vacation(start_month="2026-12"), {}, today="2026-10-03")
+        assert s["monthly"] == 0.0
 
-    def test_the_catch_up_shrinks_as_it_is_repaid_and_then_stops(self):
-        bank = Bank(id=1, name="Travel", target=2400.0, start_month="2026-10")
-        charges = {"2026-10": 2000.0}
 
-        rates = [piggy.run(bank, charges, today=f"{m}-15")["monthly"]
-                 for m in ("2026-10", "2026-11", "2026-12", "2027-03")]
-        assert rates == sorted(rates, reverse=True), rates
-        assert all(r > 200.0 for r in rates)
+class TestEachYearRepaysTheOneBefore:
+    def test_the_second_year_repays_what_the_first_one_spent(self):
+        s = piggy.status(vacation(), {"2026-04": 6000.0}, today="2027-03-10")
+        assert s["available"] == 8000.0             # a fresh year's budget
+        assert s["monthly"] == pytest.approx(500.0)  # repaying the $6,000
+        assert s["basis"] == "repaying"
+        assert s["spent_last_year"] == 6000.0
 
-        # And a year on it is whole again, back at the base rate.
-        later = piggy.run(bank, charges, today="2027-10-15")
-        assert later["behind"] is False
-        assert later["monthly"] == 200.0
-        assert later["balance"] > 0
+    def test_a_full_bank_stops_collecting(self):
+        """The bug this replaces: an unused $1,300 bank held $4,008 after three
+        years and was still taking $108 a month."""
+        s = piggy.status(vacation(), {"2026-04": 6000.0}, today="2028-03-10")
+        assert s["monthly"] == 0.0
+        assert s["basis"] == "full"
+        assert s["available"] == 8000.0
+        idle = Bank(id=2, name="Travel", target=1300.0, cadence="annual",
+                    start_month="2024-10")
+        later = piggy.status(idle, {}, today="2027-10-03")
+        assert later["monthly"] == 0.0
+        assert later["held"] == pytest.approx(1300.0)
 
-    def test_it_names_the_month_it_expects_to_be_whole(self):
-        bank = Bank(id=1, name="Travel", target=2400.0, start_month="2026-10")
-        played = piggy.run(bank, {"2026-10": 2000.0}, today="2026-10-15")
-        assert played["caught_up_by"] == "2027-10"
+    def test_spending_beyond_the_target_is_over_and_next_year_repays_it(self):
+        over = piggy.status(vacation(), {"2026-04": 10000.0}, today="2026-06-10")
+        assert over["available"] == -2000.0
+        assert over["over"] is True and over["behind_by"] == 2000.0
+        assert over["caught_up_by"] == "2028-02"     # the end of next year
+        nxt = piggy.status(vacation(), {"2026-04": 10000.0}, today="2027-04-10")
+        assert nxt["monthly"] == pytest.approx(833.33)
+        assert nxt["catch_up"] == pytest.approx(833.33 - 666.67, abs=0.01)
+        assert nxt["available"] == 8000.0
 
-    def test_a_charge_made_before_the_bank_existed_still_counts(self):
-        """Opening a fund *after* the trip it is for is a normal thing to do —
-        "that holiday hurt, let me spread the next one" — and the replay used
-        to begin at the start month, so those charges were skipped entirely and
-        the bank reported itself fully funded while owing $2,000."""
-        bank = Bank(id=1, name="Travel", target=2400.0, start_month="2026-10")
-        played = piggy.run(bank, {"2026-08": 2000.0}, today="2026-10-15")
+    def test_steady_spending_keeps_the_deduction_steady(self):
+        charges = {"2026-07": 8000.0, "2027-06": 8000.0, "2028-08": 8000.0}
+        for today in ("2026-04-01", "2027-05-01", "2028-05-01", "2029-01-01"):
+            assert piggy.status(vacation(), charges, today=today)["monthly"] == \
+                pytest.approx(666.67)
 
-        assert played["charged"] == 2000.0
-        assert played["behind"] is True
-        assert played["balance"] < 0
+    def test_over_time_what_goes_in_is_what_comes_out(self):
+        """At each year's end the bank holds its target less that year's
+        spending — nothing hoarded, nothing conjured."""
+        charges = {"2026-05": 3000.0, "2027-08": 9500.0}
+        for end, spent in (("2027-02", 3000.0), ("2028-02", 9500.0),
+                           ("2029-02", 0.0)):
+            # Only what had been charged by then — a charge cannot be dated
+            # after the day the question is asked.
+            so_far = {m: v for m, v in charges.items() if m <= end}
+            s = piggy.status(vacation(), so_far, today=f"{end}-28")
+            assert s["held"] == pytest.approx(8000.0 - spent, abs=0.06)
 
-    def test_nothing_is_collected_for_months_before_the_bank_existed(self):
-        """It sees the charge, but it must not pretend to have been saving."""
-        bank = Bank(id=1, name="Travel", target=1200.0, start_month="2026-10")
-        played = piggy.run(bank, {"2026-01": 100.0}, today="2026-10-15")
-        # October alone: $100 of base plus a first catch-up instalment on the
-        # $100 charged in January. Nothing at all for the nine months before it
-        # opened — neither base nor catch-up.
-        assert played["months_paid"] == 1
-        assert played["paid_in"] == round(100 + 100 / piggy.CATCH_UP_MONTHS, 2)
+    def test_a_charge_from_before_the_bank_opened_counts_to_its_first_year(self):
+        s = piggy.status(vacation(), {"2026-01": 1500.0}, today="2026-04-10")
+        assert s["available"] == 6500.0
 
-    def test_a_bank_in_credit_names_no_catch_up_date(self):
-        bank = Bank(id=1, name="Car", target=1200.0, start_month="2026-01")
-        played = piggy.run(bank, {}, today="2026-06-15")
-        assert played["caught_up_by"] is None
-        assert played["catch_up"] == 0.0
+    def test_a_bare_total_is_read_as_spent_this_month(self):
+        assert (piggy.status(vacation(), 500.0, today="2026-05-10")["available"]
+                == piggy.status(vacation(), {"2026-05": 500.0},
+                                today="2026-05-10")["available"])
+
+
+class TestDatedBanks:
+    def wedding(self):
+        return Bank(id=3, name="Wedding", target=3000.0, cadence="once",
+                    target_date="2026-12-15", start_month="2026-07")
+
+    def test_available_from_day_one_and_paid_in_until_the_date(self):
+        s = piggy.status(self.wedding(), {}, today="2026-07-10")
+        assert s["available"] == 3000.0
+        assert s["monthly"] == pytest.approx(500.0)       # six months
+
+    def test_overspend_is_repaid_over_the_year_after(self):
+        s = piggy.status(self.wedding(), {"2026-12": 3400.0}, today="2027-01-10")
+        assert s["monthly"] == pytest.approx(33.33)
+        assert s["basis"] == "repaying"
+        done = piggy.status(self.wedding(), {"2026-12": 3400.0}, today="2028-01-10")
+        assert done["monthly"] == 0.0
+        assert done["available"] == pytest.approx(0.0, abs=0.06)
+
+    def test_a_leftover_after_the_date_is_what_is_really_in_it(self):
+        s = piggy.status(self.wedding(), {"2026-12": 2500.0}, today="2027-02-10")
+        assert s["available"] == pytest.approx(500.0)
+        assert s["monthly"] == 0.0
 
 
 class TestStatus:
-    def test_it_reports_the_shortfall_and_the_raised_contribution(self):
-        bank = Bank(id=1, name="Trip", target=1200.0, start_month="2026-01")
-        s = piggy.status(bank, {"2026-01": 500.0}, today="2026-02-15")
+    def test_a_bank_within_its_means_is_not_over(self):
+        s = piggy.status(vacation(), {"2026-04": 100.0}, today="2026-05-10")
+        assert s["over"] is False and s["behind"] is False
 
-        assert s["behind"] is True
-        assert s["behind_by"] > 0
-        assert s["monthly"] > s["base_monthly"]
+    def test_the_total_is_what_every_bank_takes_out_of_this_month(self):
+        banks = [vacation(), Bank(id=2, name="Gifts", target=1200.0,
+                                  cadence="annual", start_month="2026-03")]
+        assert piggy.total_monthly(banks, {}, today="2026-05-10") == \
+            pytest.approx(766.67)
 
-    def test_a_bank_within_its_means_is_not_behind(self):
-        bank = Bank(id=1, name="Trip", target=1200.0, start_month="2026-01")
-        s = piggy.status(bank, {"2026-01": 50.0}, today="2026-03-15")
-        assert s["behind"] is False
-        assert s["monthly"] == s["base_monthly"]
-
-    def test_a_bare_total_is_read_as_spent_this_month(self):
-        """For callers asking what a charge made right now would do."""
-        bank = Bank(id=1, name="Trip", target=1200.0, start_month="2026-01")
-        assert (piggy.status(bank, 50.0, today="2026-03-15")["balance"]
-                == piggy.status(bank, {"2026-03": 50.0}, today="2026-03-15")["balance"])
-
-    def test_the_total_is_what_every_bank_takes_out_of_a_month(self):
-        banks = [
-            Bank(id=1, name="Car", target=1200.0, start_month="2026-01"),
-            Bank(id=2, name="Xmas", target=600.0, start_month="2026-01"),
-        ]
-        assert piggy.total_monthly(banks) == 150.0
-
-    def test_the_total_includes_a_banks_catch_up(self):
-        banks = [Bank(id=1, name="Travel", target=2400.0, start_month="2026-10")]
-        charged = {1: {"2026-10": 2000.0}}
-        assert piggy.total_monthly(banks, charged, today="2026-10-15") > 200.0
+    def test_the_total_follows_last_years_spending(self):
+        banks = [vacation()]
+        assert piggy.total_monthly(banks, {1: {"2026-05": 3000.0}},
+                                   today="2027-05-10") == pytest.approx(250.0)
 
 
 class TestValidation:
@@ -416,57 +409,44 @@ class TestTheEndpoints:
         r = client.patch(f"/api/piggy/{bank_id}", json={"name": "Old trip"})
         assert r.status_code == 200
 
-    def test_the_whole_charge_leaves_the_month_even_unfunded(self, client):
-        """Your $2,000 trip: the month keeps its room, the bank goes behind."""
+    def test_a_new_bank_can_pay_its_whole_target_at_once(self, client):
+        """The $8,000 bank on its first day takes a $6,000 trip without going
+        over — the money is there from day one."""
         st = client.application.config["STORE"]
-        st.add_transactions([txn("2026-09-10", "AIR CANADA", 600.0)])
+        st.add_transactions([txn("2026-09-10", "AIR CANADA", 6000.0)])
         txn_id = st.all_transactions()[0].fingerprint
-        bank_id = self._open(client, target=3600).get_json()["id"]   # $300/mo
+        bank_id = self._open(client, target=8000).get_json()["id"]
 
         body = client.post(f"/api/piggy/{bank_id}/allocate",
                            json={"txn_id": txn_id}).get_json()
-        assert body["covered"] == 600.0          # all of it, funded or not
-        assert body["behind"] is True
-        assert body["monthly"] > body["base_monthly"]
-        assert body["caught_up_by"]
+        assert body["covered"] == 6000.0
+        assert body["over"] is False
 
-        # Deliberately not an exact shortfall: how far behind it lands depends
-        # on how many months sit between the charge and today, and on how much
-        # catch-up has already been paid in them. The exact arithmetic is
-        # pinned in TestCatchingUp, where `today` is fixed.
         bank = client.get("/api/piggy").get_json()["banks"][0]
-        assert bank["charged"] == 600.0
-        assert -600.0 < bank["balance"] < 0
+        assert bank["charged"] == 6000.0
+        assert bank["available"] == pytest.approx(2000.0)
 
         assert client.delete(f"/api/piggy/allocations/{txn_id}").status_code == 200
         after = client.get("/api/piggy").get_json()["banks"][0]
         assert after["charged"] == 0.0
-        assert after["behind"] is False
+        assert after["available"] == pytest.approx(8000.0)
 
-    def test_a_funded_bank_takes_the_charge_without_going_behind(self, client):
-        st = client.application.config["STORE"]
-        st.add_transactions([txn("2026-09-10", "AIR CANADA", 600.0)])
-        txn_id = st.all_transactions()[0].fingerprint
-        bank_id = self._open(client, target=3600, opening=600).get_json()["id"]
-
-        body = client.post(f"/api/piggy/{bank_id}/allocate",
-                           json={"txn_id": txn_id}).get_json()
-        assert body["behind"] is False
-        assert body["monthly"] == body["base_monthly"]
-
-    def test_the_catch_up_comes_out_of_the_plan(self, client):
-        """The cost does come off each month's target, which is the point."""
-        client.put("/api/plan/setup", json={"income": 5200, "savings": 500})
+    def test_more_than_the_target_is_allowed_and_reported_as_over(self, client):
         st = client.application.config["STORE"]
         st.add_transactions([txn("2026-09-10", "AIR CANADA", 2000.0)])
         txn_id = st.all_transactions()[0].fingerprint
-        bank_id = self._open(client, target=2400).get_json()["id"]
+        bank_id = self._open(client, target=1200).get_json()["id"]
+        body = client.post(f"/api/piggy/{bank_id}/allocate",
+                           json={"txn_id": txn_id}).get_json()
+        assert body["covered"] == 2000.0         # all of it
+        assert body["over"] is True
 
+    def test_the_contribution_comes_out_of_the_plan(self, client):
+        client.put("/api/plan/setup", json={"income": 5200, "savings": 500})
         before = client.get("/api/plan/setup").get_json()["banks"]
-        client.post(f"/api/piggy/{bank_id}/allocate", json={"txn_id": txn_id})
+        self._open(client, target=8000)
         after = client.get("/api/plan/setup").get_json()["banks"]
-
-        assert after > before, (before, after)
+        assert after - before == pytest.approx(666.67, abs=0.01)
 
     def test_an_inflow_cannot_be_charged_to_a_bank(self, client):
         """There is nothing to take out of a bank for money coming back."""

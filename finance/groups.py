@@ -25,7 +25,7 @@ Two rules, both to keep the arithmetic honest:
 
 from __future__ import annotations
 
-from .categorize import CATEGORIES, NON_SPEND, is_bank_funded, is_discretionary
+from .categorize import CATEGORIES, NON_SPEND, is_discretionary
 
 MAX_NAME = 40
 
@@ -47,8 +47,9 @@ def lines(groups: dict[str, str] | None) -> dict[str, list[str]]:
     return out
 
 
-def line_bank_funded(members: list[str]) -> bool:
-    return bool(members) and all(is_bank_funded(m) for m in members)
+def line_bank_funded(members: list[str], bank_funded) -> bool:
+    """Is every category on this line paid for by a piggy bank?"""
+    return bool(members) and all(m in bank_funded for m in members)
 
 
 def line_daily(members: list[str]) -> str:
@@ -66,7 +67,8 @@ def line_daily(members: list[str]) -> str:
     return "part"
 
 
-def validate(mapping: dict) -> tuple[dict[str, str] | None, str | None]:
+def validate(mapping: dict, bank_funded=frozenset()
+             ) -> tuple[dict[str, str] | None, str | None]:
     """Clean a proposed grouping, or say what is wrong with it.
 
     Returns the mapping as it will be stored — trimmed, with "its own line"
@@ -102,10 +104,10 @@ def validate(mapping: dict) -> tuple[dict[str, str] | None, str | None]:
 
     # Bank-funded categories only share a line with each other.
     for line, members in lines(clean).items():
-        funded = {is_bank_funded(m) for m in members}
+        funded = {m in bank_funded for m in members}
         if len(funded) > 1:
-            banked = ", ".join(m for m in members if is_bank_funded(m))
-            budgeted = ", ".join(m for m in members if not is_bank_funded(m))
+            banked = ", ".join(m for m in members if m in bank_funded)
+            budgeted = ", ".join(m for m in members if m not in bank_funded)
             return None, (
                 f"{banked} {'is' if ',' not in banked else 'are'} paid for by a "
                 f"piggy bank and can't share the {line} line with {budgeted}, "
@@ -116,7 +118,7 @@ def validate(mapping: dict) -> tuple[dict[str, str] | None, str | None]:
 
 
 def carry_budgets(saved: dict[str, float], old: dict[str, str],
-                  new: dict[str, str]) -> dict[str, float]:
+                  new: dict[str, str], bank_funded=frozenset()) -> dict[str, float]:
     """Saved budgets re-expressed under a new grouping.
 
     Folding lines together adds their budgets, so a hand-tuned total survives
@@ -136,7 +138,7 @@ def carry_budgets(saved: dict[str, float], old: dict[str, str],
             target = key                  # a named line that came through intact
         else:
             continue                      # a line that no longer exists as it was
-        if line_bank_funded(new_lines.get(target, [])):
+        if line_bank_funded(new_lines.get(target, []), bank_funded):
             continue
         out[target] = round(out.get(target, 0.0) + amount, 2)
     return out
