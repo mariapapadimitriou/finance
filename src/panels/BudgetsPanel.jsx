@@ -31,7 +31,7 @@ const STATE_TEXT = {
  * So there is one row per category now, and it carries everything the three
  * used to say separately: what you have set, what the plan would give it, what
  * you usually spend, how the month is going against it, and whether it is part
- * of the daily number or budgeted monthly. The row is also where you change it.
+ * of the weekly number or budgeted monthly. The row is also where you change it.
  */
 export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
   const [data, setData] = useState(null);
@@ -348,11 +348,11 @@ function BudgetRow({ row, draft, onChange }) {
         {/* The answer to "where does the discretionary figure come from" has
             to be on the page, per line. A line folded from several
             categories can be partly in it — Health is budgeted monthly,
-            Personal Care is in the daily number — and says so. */}
+            Personal Care is in the weekly number — and says so. */}
         <span className="small muted">
-          {{ all: 'in the daily number', none: 'budgeted monthly',
-             part: 'partly in the daily number' }[row.daily]
-            ?? (row.essential ? 'budgeted monthly' : 'in the daily number')}
+          {{ all: 'in the weekly number', none: 'budgeted monthly',
+             part: 'partly in the weekly number' }[row.daily]
+            ?? (row.essential ? 'budgeted monthly' : 'in the weekly number')}
         </span>
         <span className="spacer" />
         <span className="num small">

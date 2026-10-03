@@ -729,7 +729,7 @@ def _allowance(st, txns=None) -> tuple[float, bool]:
 
     Derived from the plan every time it is asked for, so the Today tab and the
     Plan tab cannot drift apart: change your income, add a commitment or open a
-    piggy bank and the daily number moves with it.
+    piggy bank and the weekly number moves with it.
 
     Before the plan has an income in it there is nothing to derive, and a brand
     new ledger should still show something, so the fallback is your own median
@@ -757,7 +757,7 @@ def _plan_state(st, month: str) -> dict:
 
 
 def _derivation(st, txns, allowance: float, from_plan: bool) -> dict:
-    """How the Plan tab's leftover becomes Today's daily number.
+    """How the Plan tab's leftover becomes Today's weekly number.
 
     Four terms, in the order they apply. Reporting only the last one is what
     made the two tabs look inconsistent: the Plan's leftover has to cover
@@ -824,7 +824,7 @@ def plan():
         "banks": _bank_status(st),
         "draws": st.draws(month),
         "allocated_this_month": st.allocated_in(month),
-        # The whole chain from the Plan tab's figure down to the daily number,
+        # The whole chain from the Plan tab's figure down to the weekly number,
         # so the two pages can be read against each other. They are not the
         # same number and used to look as though they should be: what the Plan
         # calls "yours to spend" has the groceries still in it.
@@ -897,7 +897,7 @@ def projection():
     result = projections.project(txns, income, weighted,
                                  int(request.args.get("months", 12)), plan=plan)
     # What the slider may ask for: everything that is not already promised.
-    # Past this the plan has nothing left to divide, and the daily number is
+    # Past this the plan has nothing left to divide, and the weekly number is
     # zero before the month starts.
     result["savings_ceiling"] = round(
         max((income or 0.0) - sum(f.amount for f in fixed) - banks, 0.0), 2)
@@ -1101,6 +1101,12 @@ def plan_setup():
         # current month has nothing imported yet — and then the two figures
         # differ for a reason that has to be visible.
         "days_this_month": money_plan.days_in_month(_plan_month()),
+        # A full week's worth of the discretionary pool, so the plan quotes
+        # the same weekly figure Today leads with rather than the browser
+        # working one out.
+        "weekly_share": round(money_plan.discretionary_pool(
+            money_plan.category_budgets(result["leftover"], shares))
+            / money_plan.days_in_month(_plan_month()) * 7, 2),
         "month": _plan_month(),
         "shares": shares,
         "categories": money_plan.explain(result["leftover"], shares, historical),
@@ -1619,8 +1625,8 @@ def budgets():
         row["plan_budget"] = plan_budgets.get(line)
         row["typical"] = typical.get(line)
         row["members"] = members if len(members) > 1 or members[0] != line else []
-        # Which side of the daily number this line falls on — all, none or
-        # part of it. Decided from its categories, because the daily number
+        # Which side of the weekly number this line falls on — all, none or
+        # part of it. Decided from its categories, because the weekly number
         # is, so the tag beside a budget cannot contradict the gate itself.
         row["daily"] = budget_lines.line_daily(members)
         row["essential"] = row["daily"] == "none"
@@ -1711,7 +1717,7 @@ def _plan_split(st, txns) -> dict | None:
                              st.float_setting("savings_target", 0.0),
                              _bank_monthly(st))
     # Split by budget line, which is a category unless you have folded some
-    # together in Settings. The daily number is not worked out here and never
+    # together in Settings. The weekly number is not worked out here and never
     # sees the grouping — see finance/groups.py.
     shares = money_plan.variable_shares(txns, groups=st.category_groups())
     return {

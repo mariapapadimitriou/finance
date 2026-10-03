@@ -100,7 +100,7 @@ export default function PlanPanel({ onChanged, onTab }) {
       </Card>
 
       <Card title="Fixed commitments"
-            hint="Rent, bills, insurance — the part no daily number can influence">
+            hint="Rent, bills, insurance — the part no weekly number can influence">
         {data.fixed.length > 0 && (
           <div className="table-wrap">
             <table>
@@ -152,7 +152,7 @@ export default function PlanPanel({ onChanged, onTab }) {
         </form>
       </Card>
 
-      <Card title="What's left" hint="The only part a daily number can move"
+      <Card title="What's left" hint="The only part a weekly number can move"
             actions={<StatusPill state={tone}>{
               { negative: 'Over-committed', tight: 'Tight', loose: 'Loose',
                 ok: 'Workable', unset: 'Incomplete' }[data.verdict] ?? '—'
@@ -187,21 +187,18 @@ export default function PlanPanel({ onChanged, onTab }) {
             That {money(data.leftover)} has to cover groceries and the other
             essentials too, so it is not all pocket money. Of it,{' '}
             <strong className="num">{money(data.daily_pool)}</strong> is
-            discretionary — which is what the daily number on Today divides,
+            discretionary — which is what the weekly number on Today divides,
             about{' '}
-            <strong className="num">
-              {money(data.daily_pool / (data.days_this_month || 30), { cents: true })}
-            </strong>{' '}
-            a day across {monthLabel(data.month, { long: true })}&apos;s{' '}
-            {data.days_this_month} days. No amount of restraint on a Tuesday
-            changes the grocery bill, so it is budgeted rather than handed out
-            daily.
+            <strong className="num">{money(data.weekly_share)}</strong> a
+            week through {monthLabel(data.month, { long: true })}. No amount
+            of restraint on a Tuesday changes the grocery bill, so it is
+            budgeted rather than handed out week by week.
           </p>
           <Why id="plan.split" label="Which categories count toward it?">
             That {money(data.daily_pool)} is the sum of the categories in the
-            daily number. Everything else —{' '}
+            weekly number. Everything else —{' '}
             {essentialNames(data.categories).join(', ') || 'nothing, so far'} —
-            has a budget of its own and stays out of the daily figure. Budgets
+            has a budget of its own and stays out of the weekly figure. Budgets
             marks every line one way or the other.
             <br /><br />
             Travel is in neither. It arrives in lumps rather than monthly, so

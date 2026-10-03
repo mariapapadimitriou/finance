@@ -36,7 +36,7 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
       // with statements whenever this one is still empty.
       setNudge((await getNudge().catch(() => null))?.nudge ?? null);
       // Best effort: a checklist that fails to load is simply not shown,
-      // rather than taking the daily number down with it.
+      // rather than taking the weekly number down with it.
       setSetup(await getSetup().catch(() => null));
     } catch (e) {
       setError(e);
@@ -127,7 +127,7 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
 /**
  * Only the steps not yet done, each a button to where it is done.
  *
- * Above the daily number on purpose: until these are done the number is a
+ * Above the weekly number on purpose: until these are done the number is a
  * stand-in, and the list says what would make it real. Every tick comes from
  * the data rather than from pressing anything here, so a step done somewhere
  * else ticks itself, and the card disappears for good once the last one does.
@@ -173,98 +173,100 @@ const ordinal = (n) =>
 /* ── The number ──────────────────────────────────────────────────────────── */
 
 function SafeToSpend({ state, live }) {
-  // The number to act on. A shortfall is spread over the days that remain
-  // rather than dumped on today, so the headline stays a figure you can use;
-  // the strict rollover is still shown in the breakdown underneath.
-  const headline = state.safe_today_effective ?? state.safe_today;
-  const over = headline < 0;
-  const recovering = state.recovering;
-  const carried = state.carried_in;
+  // The number to act on: what is left of this week. A shortfall from earlier
+  // in the month is spread over the weeks that remain rather than dumped on
+  // this one, so the headline stays a figure you can use.
+  const week = state.week;
+  const left = week.left;
+  const over = left < 0;
+  const behind = week.behind;
+  const carried = week.carried_in;
+  const range = week.first_day === week.last_day
+    ? `the ${week.first_day}${ordinal(week.first_day)}`
+    : `the ${week.first_day}${ordinal(week.first_day)}–${week.last_day}${ordinal(week.last_day)}`;
 
   return (
     <Card className={`hero-card${over ? ' behind' : ''}`}>
       <div className="safe">
         <div>
           <div className="tile-label">
-            {live ? 'Safe to spend today'
-                  : `Left on the last day of ${monthLabel(state.month)}`}
+            {live ? 'Left this week'
+                  : `Left in the last week of ${monthLabel(state.month, { long: true })}`}
           </div>
           <div className={`figure num${over ? ' bad' : ''}`}>
-            {money(headline, { cents: true })}
+            {money(left, { cents: true })}
           </div>
           <div className="caption">
-            Day {state.day} of {state.days_in_month} ·{' '}
-            {state.days_left} day{state.days_left === 1 ? '' : 's'} left ·{' '}
+            {live && !over && week.days_left > 1 && (
+              <>About {money(week.per_day, { cents: true })} a day for the{' '}
+                {week.days_left} days left this week ·{' '}</>
+            )}
             {state.remaining < 0
               ? `${money(-state.remaining, { cents: true })} past the ${money(state.budget)} budget`
-              : `${money(state.remaining, { cents: true })} left of ${money(state.budget)}`}
+              : `${money(state.remaining, { cents: true })} left of ${money(state.budget)} this month`}
           </div>
         </div>
         {over ? (
           <StatusPill state="critical">
-            Over by {money(-headline, { cents: true })}
+            Over by {money(-left, { cents: true })}
           </StatusPill>
-        ) : recovering ? (
+        ) : behind ? (
           <StatusPill state="warning">Catching up</StatusPill>
         ) : null}
       </div>
 
+      {/* The week's arithmetic, in the order it applies. */}
       <div className="sum">
-        <SumTerm label="Daily share" value={state.flat_daily}
-                 note={`${money(state.budget)} ÷ ${state.days_in_month} days`} />
-        <span className="op" aria-hidden="true">{carried < 0 ? '−' : '+'}</span>
-        <SumTerm
-          label={carried < 0 ? 'Owed from earlier days' : 'Rolled over'}
-          value={Math.abs(carried)}
-          note={carried < 0
-            ? `the first ${state.day - 1} days went over`
-            : `unspent across the first ${state.day - 1} days`}
-          tone={carried < 0 ? 'bad' : 'good'}
-        />
+        {behind ? (
+          <>
+            <SumTerm label="Left this month" value={state.remaining + week.spent}
+                     note={`as the week began, on the ${week.first_day}${ordinal(week.first_day)}`} />
+            <span className="op" aria-hidden="true">×</span>
+            <SumTerm label="This week's days" value={`${week.days} of ${state.days_in_month - week.first_day + 1}`}
+                     money={false} note="its share of what is left" />
+          </>
+        ) : (
+          <>
+            <SumTerm label="This week's share" value={week.share}
+                     note={week.short
+                       ? `${week.days} days (${range}) — a short week`
+                       : `${week.days} days, ${range}`} />
+            <span className="op" aria-hidden="true">+</span>
+            <SumTerm label="Rolled over" value={carried}
+                     note={week.first_day > 1
+                       ? `unspent before the ${week.first_day}${ordinal(week.first_day)}`
+                       : 'nothing yet — the month just started'}
+                     tone="good" />
+          </>
+        )}
         <span className="op" aria-hidden="true">−</span>
-        <SumTerm label={live ? 'Spent today' : 'Spent that day'}
-                 value={state.spent_today}
-                 note={`discretionary charges dated the ${state.day}${ordinal(state.day)}`} />
+        <SumTerm label={live ? 'Spent this week' : 'Spent that week'}
+                 value={week.spent}
+                 note="discretionary charges" />
         <span className="op" aria-hidden="true">=</span>
-        <SumTerm label={recovering ? 'Strictly, today' : live ? 'Safe to spend' : 'What was left'}
-                 value={state.safe_today}
-                 tone={state.safe_today < 0 ? 'bad' : 'good'}
-                 strong={!recovering} />
+        <SumTerm label={live ? 'Left this week' : 'What was left'}
+                 value={left}
+                 tone={left < 0 ? 'bad' : 'good'} strong />
       </div>
 
-      {recovering && (
-        <div className="sum" style={{ marginTop: 10 }}>
-          <SumTerm label="Left this month" value={state.remaining}
-                   note={`${money(state.budget)} − ${money(state.spent_mtd)} spent`} />
-          <span className="op" aria-hidden="true">÷</span>
-          <SumTerm label="Days left" value={state.days_left} money={false}
-                   note="today included" />
-          <span className="op" aria-hidden="true">=</span>
-          <SumTerm label="Spread over the rest" value={headline} strong
-                   tone="good" />
-        </div>
-      )}
-
-      {recovering && (
+      {behind && (
         <p className="assumption" style={{ marginBottom: 0 }}>
           You went over earlier in the month, so the shortfall is spread across
-          the days that are left rather than all landing on today. Strictly
-          you are {money(-state.safe_today, { cents: true })} behind; every
-          remaining day takes a small share of that instead, and the month
-          still balances.
+          the weeks that are left rather than all landing on this one. This
+          week gets its {week.days} days&apos; share of what remains, and the
+          month still balances.
         </p>
       )}
 
       {over && (
         <p className="assumption" style={{ marginBottom: 0 }}>
-          {state.spread_daily >= 0 ? (
+          {state.remaining >= 0 ? (
             <>
-              Spread evenly instead, every remaining day gets{' '}
-              <strong className="num">
-                {money(state.spread_daily, { cents: true })}
-              </strong>{' '}
-              and the month still balances. Nothing is hidden — the daily number
-              just drops.
+              The month still has{' '}
+              <strong className="num">{money(state.remaining, { cents: true })}</strong>{' '}
+              in it. Next week the shortfall is spread across what is left of
+              the month, so every week after this gets a little less — nothing
+              is hidden, the weekly number just drops.
             </>
           ) : (
             <>
@@ -402,7 +404,7 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
 
   return (
     <Card title="Thinking about buying something?"
-          hint="Enter the price and see whether today has room for it">
+          hint="Enter the price and see whether this week has room for it">
       <form className="controls" onSubmit={ask}>
         <label htmlFor="ask-amount">It costs</label>
         <input id="ask-amount" type="number" min="0.01" step="0.01" required
@@ -425,7 +427,7 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
         <div className="verdict">
           <div className="line">
             <StatusPill state={result.affordable ? 'good' : 'warning'}>
-              {result.affordable ? 'Yes' : 'Not out of today'}
+              {result.affordable ? 'Yes' : 'Not out of this week'}
             </StatusPill>
             <span>{result.message}</span>
           </div>
@@ -509,7 +511,7 @@ function PiggyBanks({ banks, draws, allocated, onTab }) {
         <p className="small" style={{ margin: '0 0 12px' }}>
           <strong>{money(allocated, { cents: true })}</strong> of this
           month&apos;s spending was charged to a piggy bank, so it is not in the
-          figures above or in the daily number. That is the point of them: the
+          figures above or in the weekly number. That is the point of them: the
           money was budgeted over the preceding months instead.
         </p>
       )}
@@ -547,7 +549,7 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
   const planTab = <GoTo to="plan" from="today" onTab={onTab} />;
 
   return (
-    <Card title="Where the daily number comes from"
+    <Card title="Where the weekly number comes from"
           hint="Calculated from your plan, not typed here">
       {/* No input. The figure is derived from the plan on every request, so
           there is nothing here that could overwrite it and no stored copy to
@@ -557,7 +559,7 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
         <>
           {/* The chain in full. Showing only the last step is what made this
               tab look as though it disagreed with the Plan: "yours to spend"
-              still has the groceries in it, and the daily number deliberately
+              still has the groceries in it, and the weekly number deliberately
               does not. */}
           <div className="sum" style={{ marginBottom: 14 }}>
             <SumTerm label="Yours to spend" value={d.leftover}
@@ -573,8 +575,13 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
             <span className="op" aria-hidden="true">÷</span>
             <SumTerm label="Days this month" value={state.days_in_month}
                      money={false} />
+            <span className="op" aria-hidden="true">×</span>
+            <SumTerm label="Days in a week" value={7} money={false} />
             <span className="op" aria-hidden="true">=</span>
-            <SumTerm label="A day" value={state.flat_daily} strong />
+            <SumTerm label="A week" value={state.week.nominal} strong
+                     note={state.week.short
+                       ? `this week is ${state.week.days} days, so it gets ${money(state.week.share)}`
+                       : undefined} />
           </div>
           <Why id="today.derivation" label="How do I change this number?">
             Every term above is read from your plan when this page loads, so
@@ -595,8 +602,13 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
             <span className="op" aria-hidden="true">÷</span>
             <SumTerm label="Days this month" value={state.days_in_month}
                      money={false} />
+            <span className="op" aria-hidden="true">×</span>
+            <SumTerm label="Days in a week" value={7} money={false} />
             <span className="op" aria-hidden="true">=</span>
-            <SumTerm label="A day" value={state.flat_daily} strong />
+            <SumTerm label="A week" value={state.week.nominal} strong
+                     note={state.week.short
+                       ? `this week is ${state.week.days} days, so it gets ${money(state.week.share)}`
+                       : undefined} />
           </div>
           <p className="assumption" style={{ marginBottom: 0 }}>
             This is a stand-in: your own median month of discretionary
@@ -621,8 +633,8 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
  */
 function essentialsNote(categories) {
   const names = (categories ?? []).map((c) => c.toLowerCase());
-  if (names.length === 0) return 'budgeted by category, not handed out daily';
+  if (names.length === 0) return 'budgeted by category, not handed out weekly';
   const shown = names.slice(0, 3).join(', ');
   const rest = names.length > 3 ? ` and ${names.length - 3} more` : '';
-  return `${shown}${rest} — budgeted, not daily`;
+  return `${shown}${rest} — budgeted monthly, not weekly`;
 }

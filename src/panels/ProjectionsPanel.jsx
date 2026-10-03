@@ -379,7 +379,7 @@ function SavingsSlider({ data, value, onChange, onCommit, onReset, saving,
         Not on its own. Moving this does not change what you accumulate, only
         how much of it happens on purpose: the money comes out of what is left
         to spend, and the recent-pace line below does not move. What it does
-        change is the daily number on Today, which divides the smaller
+        change is the weekly number on Today, which divides the smaller
         leftover.
       </Why>
     </Card>

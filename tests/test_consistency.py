@@ -1084,3 +1084,27 @@ class TestTheSetupChecklist:
             st.set_budget(key, 0)
         st.set_budget("Travel", 300)          # written directly, past the API
         assert self._step(ledger, "budgets")["done"] is False
+
+
+class TestTheWeeklyNumberIsOneNumber:
+    def test_the_plan_and_today_quote_the_same_week(self, ledger):
+        """Plan says "about $X a week"; Today's derivation ends in "a week".
+        They are one figure and come from one place."""
+        ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
+        setup = ledger.get("/api/plan/setup").get_json()
+        state = ledger.get("/api/plan").get_json()["state"]
+        assert setup["weekly_share"] == pytest.approx(
+            state["week"]["nominal"], abs=0.02)
+
+    def test_a_purchase_is_judged_against_what_is_left_this_week(self, ledger):
+        state = ledger.get("/api/plan").get_json()["state"]
+        left = state["week"]["left"]
+        if left <= 1:
+            pytest.skip("the fixture's week is already spent")
+        r = ledger.post("/api/plan/simulate",
+                        json={"amount": round(left - 1, 2)}).get_json()
+        assert r["affordable"] is True
+        r = ledger.post("/api/plan/simulate",
+                        json={"amount": round(left + 50, 2)}).get_json()
+        assert r["affordable"] is False
+        assert r["short_by"] == pytest.approx(50.0, abs=0.02)
