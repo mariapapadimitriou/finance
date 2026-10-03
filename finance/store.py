@@ -62,6 +62,16 @@ CREATE TABLE IF NOT EXISTS budgets (
     monthly  REAL NOT NULL
 );
 
+-- Categories folded into one budget line. A row says "budget this category as
+-- part of that line"; a category with no row is a line of its own. The line
+-- may be another category (Lodging under Travel) or a name of your own
+-- (Health and Personal Care under "Health & care"). Budgeting only — the
+-- transactions keep their own categories everywhere else.
+CREATE TABLE IF NOT EXISTS category_groups (
+    category TEXT PRIMARY KEY,
+    parent   TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS imports (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     filename     TEXT,
@@ -704,6 +714,22 @@ class Store:
         with self.conn() as c:
             rows = c.execute("SELECT category, monthly FROM budgets").fetchall()
         return {r["category"]: r["monthly"] for r in rows}
+
+    def category_groups(self) -> dict[str, str]:
+        """Category -> the budget line it is folded into. Absent = its own."""
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT category, parent FROM category_groups").fetchall()
+        return {r["category"]: r["parent"] for r in rows}
+
+    def set_category_groups(self, mapping: dict[str, str]) -> None:
+        """Replace the whole grouping. Validation is the caller's job."""
+        with self.conn() as c:
+            c.execute("DELETE FROM category_groups")
+            for category, parent in sorted(mapping.items()):
+                c.execute(
+                    "INSERT INTO category_groups (category, parent) VALUES (?, ?)",
+                    (category, parent))
 
     def set_budget(self, category: str, monthly: float) -> None:
         with self.conn() as c:

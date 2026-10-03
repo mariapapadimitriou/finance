@@ -55,7 +55,8 @@ class FixedCost:
 
 
 def variable_shares(transactions, months_back: int = 12,
-                    discretionary_only: bool = False) -> dict[str, float]:
+                    discretionary_only: bool = False,
+                    groups: dict[str, str] | None = None) -> dict[str, float]:
     """How you divide the spending a budget can cover, as proportions of 1.0.
 
     Everything that is not a fixed commitment, which is what the leftover
@@ -72,6 +73,12 @@ def variable_shares(transactions, months_back: int = 12,
 
     Proportions, never amounts. The amounts are what we are deliberately not
     taking from history; the shares are the part history genuinely knows.
+
+    `groups` folds categories into budget lines (see finance/groups.py). The
+    exclusions above are still decided per category — a line is a label, not
+    a reason to budget something a piggy bank pays for — and the slivers are
+    dropped per line, so two small categories folded together can clear the
+    threshold that would have dropped each on its own.
     """
     totals: dict[str, float] = {}
     months = sorted({t.month for t in transactions})[-months_back:]
@@ -85,7 +92,8 @@ def variable_shares(transactions, months_back: int = 12,
             continue
         if discretionary_only and not is_discretionary(category):
             continue
-        totals[category] = totals.get(category, 0.0) + spend_amount(t)
+        line = (groups or {}).get(category, category)
+        totals[line] = totals.get(line, 0.0) + spend_amount(t)
 
     grand = sum(totals.values())
     if grand <= 0:

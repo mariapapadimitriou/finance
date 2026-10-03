@@ -528,12 +528,20 @@ def summary(transactions: list[Transaction], budgets: dict[str, float] | None = 
 
 
 def budget_status(transactions: list[Transaction], budgets: dict[str, float],
-                  month: str | None = None) -> list[dict]:
-    """Actual vs. budget per category, with a pace projection for the live month."""
+                  month: str | None = None,
+                  groups: dict[str, str] | None = None) -> list[dict]:
+    """Actual vs. budget per line, with a pace projection for the live month.
+
+    A line is a category, or several folded together by `groups`; with no
+    grouping every category is its own line and nothing changes.
+    """
     if not budgets:
         return []
 
-    actuals = {r["category"]: r["amount"] for r in by_category(transactions, month)}
+    actuals: dict[str, float] = {}
+    for r in by_category(transactions, month):
+        line = (groups or {}).get(r["category"], r["category"])
+        actuals[line] = actuals.get(line, 0.0) + r["amount"]
 
     # Project the current month forward: 40% through the month and already at
     # 60% of budget is worth knowing before the month ends, not after.

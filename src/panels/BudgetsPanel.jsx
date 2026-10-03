@@ -359,10 +359,13 @@ function BudgetRow({ row, draft, onChange }) {
           ? <StatusPill state={s}>{STATE_TEXT[s]}</StatusPill>
           : <StatusPill state="warning">No budget set</StatusPill>}
         {/* The answer to "where does the discretionary figure come from" has
-            to be on the page, per category. Which categories those are was
-            decided by a table in categorize.py that the app showed nowhere. */}
+            to be on the page, per line. A line folded from several
+            categories can be partly in it — Health is budgeted monthly,
+            Personal Care is in the daily number — and says so. */}
         <span className="small muted">
-          {row.essential ? 'budgeted monthly' : 'in the daily number'}
+          {{ all: 'in the daily number', none: 'budgeted monthly',
+             part: 'partly in the daily number' }[row.daily]
+            ?? (row.essential ? 'budgeted monthly' : 'in the daily number')}
         </span>
         <span className="spacer" />
         <span className="num small">
@@ -374,6 +377,12 @@ function BudgetRow({ row, draft, onChange }) {
           ) : <> spent</>}
         </span>
       </div>
+
+      {row.members?.length > 0 && (
+        <div className="small muted" style={{ marginTop: -4, marginBottom: 8 }}>
+          {row.members.join(' · ')}
+        </div>
+      )}
 
       <div className="track" style={{
         background: 'var(--surface-2)', borderRadius: 4,
