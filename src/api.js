@@ -121,6 +121,11 @@ export const getNudge        = () => req('/api/nudge');
  * `savings` previews a different savings figure without saving it, so the
  * slider on the tab moves the real arithmetic rather than a copy of it.
  */
+// Which categories share a budget line. Budgeting only — see finance/groups.py.
+export const getCategoryGroups = () => req('/api/category-groups');
+export const setCategoryGroups = (groups) =>
+  json('PUT', '/api/category-groups', { groups });
+
 export const getProjections  = (target, savings) => {
   const q = new URLSearchParams();
   if (target) q.set('target', target);

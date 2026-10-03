@@ -897,3 +897,127 @@ class TestWhatItComesToIfInvested:
             point = next(p for p in inv["series"] if p["year"] == years)
             assert point["value"] == pytest.approx(
                 middle["at"][str(years)]["value"], abs=TOLERANCE)
+
+
+class TestBudgetLines:
+    """Categories folded together for budgeting, and nothing else.
+
+    The promises: a line's budget, spending and typical month are the sums of
+    its categories; regrouping keeps hand-tuned totals; the daily number does
+    not move at all; and the two rules — no nesting, bank-funded only with
+    bank-funded — hold at the API, not just in the picker.
+    """
+
+    HEALTH = {"Health": "Health & care", "Personal Care": "Health & care"}
+
+    def _status(self, client, month=None):
+        q = f"?month={month}" if month else ""
+        return client.get(f"/api/budgets{q}").get_json()
+
+    def test_no_grouping_is_the_page_it_always_was(self, ledger):
+        body = self._status(ledger)
+        for r in body["rows"]:
+            assert r["members"] == []
+            assert r["daily"] in ("all", "none")
+
+    def test_a_line_is_the_sum_of_its_categories(self, ledger):
+        month = busiest_month(ledger)
+        before = {r["category"]: r for r in self._status(ledger, month)["rows"]}
+        ledger.put("/api/category-groups", json={"groups": self.HEALTH})
+        after = {r["category"]: r for r in self._status(ledger, month)["rows"]}
+
+        assert "Health" not in after and "Personal Care" not in after
+        line = after["Health & care"]
+        assert sorted(line["members"]) == ["Health", "Personal Care"]
+        expected = sum(before[c]["spent"] for c in ("Health", "Personal Care")
+                       if c in before)
+        assert line["spent"] == pytest.approx(expected, abs=TOLERANCE)
+
+    def test_the_plan_still_divides_the_leftover_exactly(self, ledger):
+        ledger.put("/api/category-groups", json={"groups": self.HEALTH})
+        body = self._status(ledger)
+        assert "Health & care" in body["plan_budgets"]
+        assert sum(body["plan_budgets"].values()) == pytest.approx(
+            body["plan_leftover"], abs=TOLERANCE)
+
+    def test_folding_lines_together_adds_their_saved_budgets(self, ledger):
+        ledger.put("/api/budgets", json={"budgets": {"Health": 85,
+                                                     "Personal Care": 40}})
+        ledger.put("/api/category-groups", json={"groups": self.HEALTH})
+        saved = self._status(ledger)["budgets"]
+        assert saved["Health & care"] == pytest.approx(125.0, abs=TOLERANCE)
+        assert "Health" not in saved and "Personal Care" not in saved
+
+    def test_breaking_a_line_up_drops_it_and_says_so(self, ledger):
+        ledger.put("/api/category-groups", json={"groups": self.HEALTH})
+        ledger.post("/api/plan/setup/apply")
+        assert self._status(ledger)["drift"] is None
+
+        ledger.put("/api/category-groups", json={"groups": {}})
+        body = self._status(ledger)
+        assert "Health & care" not in body["budgets"]
+        # Nothing invented for the two categories: they are proposals until
+        # adopted, and the totals no longer match, which the page reports.
+        assert body["drift"] is not None
+
+    def test_the_daily_number_does_not_move(self, ledger):
+        """Grouping is a budgeting label. The daily number is worked out per
+        category, so no grouping can change what you may spend today."""
+        before = ledger.get("/api/plan").get_json()["state"]["monthly_amount"]
+        ledger.put("/api/category-groups", json={"groups": {
+            **self.HEALTH, "Coffee": "Dining", "Groceries": "Food"}})
+        ledger.post("/api/plan/setup/apply")
+        after = ledger.get("/api/plan").get_json()["state"]["monthly_amount"]
+        assert after == pytest.approx(before, abs=TOLERANCE)
+
+    def test_a_mixed_line_says_it_is_partly_in_the_daily_number(self, ledger):
+        ledger.put("/api/category-groups", json={"groups": self.HEALTH})
+        row = next(r for r in self._status(ledger)["rows"]
+                   if r["category"] == "Health & care")
+        assert row["daily"] == "part"
+        assert row["essential"] is False
+
+    def test_a_folded_category_cannot_be_budgeted_on_its_own(self, ledger):
+        ledger.put("/api/category-groups", json={"groups": self.HEALTH})
+        r = ledger.put("/api/budgets", json={"budgets": {"Health": 50}})
+        assert r.status_code == 400
+        assert "Health & care" in r.get_json()["error"]
+        assert ledger.put("/api/budgets", json={
+            "budgets": {"Health & care": 150}}).status_code == 200
+
+    def test_nesting_is_refused(self, ledger):
+        r = ledger.put("/api/category-groups", json={"groups": {
+            "Lodging": "Travel", "Travel": "Trips"}})
+        assert r.status_code == 400
+
+    def test_bank_funded_only_shares_with_bank_funded(self, ledger):
+        bad = ledger.put("/api/category-groups",
+                         json={"groups": {"Dining": "Travel"}})
+        assert bad.status_code == 400
+        assert "piggy bank" in bad.get_json()["error"]
+        ok = ledger.put("/api/category-groups",
+                        json={"groups": {"Lodging": "Travel"}})
+        assert ok.status_code == 200
+
+    def test_lodging_under_travel_reads_as_one_bank_funded_line(self, ledger):
+        add_travel(ledger)
+        ledger.put("/api/category-groups", json={"groups": {"Lodging": "Travel"}})
+        body = self._status(ledger)
+        assert body["bank_funded"]["categories"] == ["Travel"]
+        assert "Travel" not in {r["category"] for r in body["rows"]}
+
+    def test_income_and_transfers_cannot_be_grouped(self, ledger):
+        assert ledger.put("/api/category-groups", json={"groups": {
+            "Transfers": "Other"}}).status_code == 400
+        assert ledger.put("/api/category-groups", json={"groups": {
+            "Dining": "Income"}}).status_code == 400
+
+    def test_the_month_still_adds_up_with_lines(self, ledger):
+        add_travel(ledger)
+        ledger.put("/api/category-groups", json={"groups": {
+            **self.HEALTH, "Lodging": "Travel"}})
+        ledger.post("/api/plan/setup/apply")
+        b = self._status(ledger, busiest_month(ledger))
+        assert (b["covered_spend"] + b["unbudgeted_spend"]
+                + b["bank_funded"]["unallocated_total"]) == pytest.approx(
+            b["month_spend"], abs=TOLERANCE)

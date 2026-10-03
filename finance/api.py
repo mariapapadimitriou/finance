@@ -78,6 +78,59 @@ def categories():
     })
 
 
+def _category_groups_payload(st) -> dict:
+    from . import groups as budget_lines
+
+    grouping = st.category_groups()
+    lines = budget_lines.lines(grouping)
+    return {
+        "groups": grouping,
+        "categories": budget_lines.spend_categories(),
+        "lines": [
+            {"name": name, "members": members,
+             "bank_funded": budget_lines.line_bank_funded(members),
+             "daily": budget_lines.line_daily(members)}
+            for name, members in lines.items()
+        ],
+        # Named lines that are not categories — the ones you made up — so the
+        # picker can offer them as somewhere to put a category.
+        "named": sorted({p for p in grouping.values() if p not in CATEGORIES}),
+    }
+
+
+@bp.get("/category-groups")
+def get_category_groups():
+    """Which categories share a budget line."""
+    return jsonify(_category_groups_payload(store()))
+
+
+@bp.put("/category-groups")
+def set_category_groups():
+    """Replace the grouping, carrying saved budgets across.
+
+    Folding lines together adds their saved budgets, so a figure tuned by hand
+    survives regrouping. See `groups.carry_budgets` for what happens when a
+    line is broken up.
+    """
+    from . import groups as budget_lines
+
+    body = request.get_json(silent=True) or {}
+    clean, error = budget_lines.validate(body.get("groups", body))
+    if error:
+        return jsonify({"error": error}), 400
+
+    st = store()
+    old = st.category_groups()
+    carried = budget_lines.carry_budgets(st.budgets(), old, clean)
+    st.set_category_groups(clean)
+    for key in list(st.budgets()):
+        if key not in carried:
+            st.set_budget(key, 0)
+    for line, amount in carried.items():
+        st.set_budget(line, amount)
+    return jsonify({"ok": True, **_category_groups_payload(st)})
+
+
 # ── Import ───────────────────────────────────────────────────────────────────
 
 @bp.post("/import")
@@ -1032,26 +1085,37 @@ def apply_plan_budgets():
         return jsonify({"error": "There is nothing left to budget. "
                                  "Check your income and commitments."}), 400
 
-    shares = money_plan.variable_shares(st.all_transactions())
+    from . import groups as budget_lines
+
+    txns = st.all_transactions()
+    grouping = st.category_groups()
+    shares = money_plan.variable_shares(txns, groups=grouping)
     budgets = money_plan.category_budgets(result["leftover"], shares)
     if not budgets:
         return jsonify({"error": "Not enough spending history yet to know how "
                                  "to divide it. Import a month or two first."}), 400
 
-    for category, amount in budgets.items():
-        st.set_budget(category, amount)
+    for line, amount in budgets.items():
+        st.set_budget(line, amount)
 
-    # A budget saved before the category became bank-funded would otherwise
-    # survive every re-apply, dividing money the plan no longer gives it.
-    for category in BANK_FUNDED:
-        st.set_budget(category, 0)
+    # A saved budget that is no longer a line with a budget — a category
+    # since folded into another, or one a piggy bank now pays for — would
+    # otherwise survive every re-apply, dividing money the plan no longer
+    # gives it.
+    lines = budget_lines.lines(grouping)
+    for key in list(st.budgets()):
+        if key not in lines or budget_lines.line_bank_funded(lines[key]):
+            st.set_budget(key, 0)
 
     # The budgets cover everything the leftover has to pay for; the daily
     # number governs only the discretionary slice of it. That slice is not
     # saved — Today derives it from this same arithmetic on every request, so
-    # there is no copy of it to fall out of date.
+    # there is no copy of it to fall out of date. It is worked out per
+    # category, never per line, so how you group a budget cannot move it.
+    pool = money_plan.discretionary_pool(money_plan.category_budgets(
+        result["leftover"], money_plan.variable_shares(txns)))
     return jsonify({"ok": True, "budgets": budgets,
-                    "monthly_amount": money_plan.discretionary_pool(budgets),
+                    "monthly_amount": pool,
                     "leftover": result["leftover"]})
 
 
@@ -1356,8 +1420,9 @@ def nudge():
     return jsonify({"nudge": nudge_mod.for_yesterday(txns, state)})
 
 
-def _typical_by_category(transactions) -> dict[str, float]:
-    """Median monthly spend per category — shown beside the new budget.
+def _typical_by_category(transactions,
+                         groups: dict[str, str] | None = None) -> dict[str, float]:
+    """Median monthly spend per category (or per line) — shown beside a budget.
 
     Over every category a budget now covers, essentials included. Restricting
     it to discretionary ones left the largest line on the page — groceries —
@@ -1369,7 +1434,7 @@ def _typical_by_category(transactions) -> dict[str, float]:
 
     per: dict[str, dict[str, float]] = {}
     for t in transactions:
-        category = t.category or "Other"
+        category = (groups or {}).get(t.category or "Other", t.category or "Other")
         if t.amount <= 0 or not counts_as_spending(t):
             continue
         per.setdefault(category, {})
@@ -1453,56 +1518,75 @@ def remove_trip(trip_id: int):
 
 @bp.get("/budgets")
 def budgets():
+    from . import groups as budget_lines
+
+    st = store()
     txns = _txns()
     months = sorted({t.month for t in txns})
     month = request.args.get("month") or (months[-1] if months else None)
-    # A bank-funded category has no budget line, and a stale one saved before
-    # it became bank-funded is not shown as though it still governed anything.
-    b = {c: v for c, v in store().budgets().items() if not is_bank_funded(c)}
-    split = _plan_split(store(), txns)
-    plan_budgets = split["budgets"] if split else {}
-    typical = _typical_by_category(txns)
 
-    # One row per category the month will be judged on: every budget that is
-    # set, plus every category the plan would give money to. A category in the
-    # plan with nothing saved yet is shown against the plan's figure rather
-    # than left off the page — the table was empty until budgets were adopted,
-    # on the one tab whose job is to get them adopted.
-    rows = budget_status(txns, {**plan_budgets, **b}, month)
+    # Everything on this page is per budget line: a category, or several you
+    # folded together in Settings → Categories. With no grouping every line is
+    # one category and this is exactly the per-category page it used to be.
+    grouping = st.category_groups()
+    lines = budget_lines.lines(grouping)
+    line_of = lambda c: budget_lines.line_of(c, grouping)          # noqa: E731
+    funded = {name for name, members in lines.items()
+              if budget_lines.line_bank_funded(members)}
+
+    # A saved budget only counts if it is for a line that exists and has a
+    # budget at all. One saved before a category was folded away, or before it
+    # became bank-funded, is not shown as though it still governed anything.
+    b = {k: v for k, v in st.budgets().items()
+         if k in lines and k not in funded}
+    split = _plan_split(st, txns)
+    plan_budgets = split["budgets"] if split else {}
+    typical = _typical_by_category(txns, grouping)
+
+    # One row per line the month will be judged on: every budget that is
+    # set, plus every line the plan would give money to. A line in the plan
+    # with nothing saved yet is shown against the plan's figure rather than
+    # left off the page — the table was empty until budgets were adopted, on
+    # the one tab whose job is to get them adopted.
+    rows = budget_status(txns, {**plan_budgets, **b}, month, grouping)
     for row in rows:
-        cat = row["category"]
-        row["adopted"] = cat in b
-        row["plan_budget"] = plan_budgets.get(cat)
-        row["typical"] = typical.get(cat)
-        # Which side of the daily number this line falls on. It travels with
-        # the row rather than being re-derived in the panel, so the tag beside
-        # a budget cannot contradict the gate that sets the daily figure.
-        row["essential"] = not is_discretionary(cat)
+        line = row["category"]
+        members = lines.get(line, [line])
+        row["adopted"] = line in b
+        row["plan_budget"] = plan_budgets.get(line)
+        row["typical"] = typical.get(line)
+        row["members"] = members if len(members) > 1 or members[0] != line else []
+        # Which side of the daily number this line falls on — all, none or
+        # part of it. Decided from its categories, because the daily number
+        # is, so the tag beside a budget cannot contradict the gate itself.
+        row["daily"] = budget_lines.line_daily(members)
+        row["essential"] = row["daily"] == "none"
 
     # The saved budgets alone, which is what "covered" below has to mean.
     status = [r for r in rows if r["adopted"]]
 
-    # Spending in categories nothing budgets is still spending. Reporting
-    # only the budgeted lines made the month look smaller than the Overview
-    # said it was, with no way to see where the difference went.
+    # This month's spending by line, once, for the three terms below.
+    by_line: dict[str, float] = {}
+    for r in by_category(txns, month):
+        if r["amount"] > 0:
+            by_line[line_of(r["category"])] = round(
+                by_line.get(line_of(r["category"]), 0.0) + r["amount"], 2)
+
+    # Spending in lines nothing budgets is still spending. Reporting only the
+    # budgeted lines made the month look smaller than the Overview said it
+    # was, with no way to see where the difference went.
     covered = round(sum(r["spent"] for r in status), 2)
     everything = round(sum(r["amount"] for r in by_category(txns, month)), 2)
-    unbudgeted = [
-        {"category": r["category"], "amount": r["amount"]}
-        for r in by_category(txns, month)
-        if r["category"] not in b and r["amount"] > 0
-        and not is_bank_funded(r["category"])
-    ]
+    unbudgeted = [{"category": line, "amount": amount}
+                  for line, amount in by_line.items()
+                  if line not in b and line not in funded]
 
     # Travel is not missing a budget; it is funded somewhere else. What is
     # worth reporting is the part of it no bank has actually paid for —
     # `by_category` already nets off whatever was charged to one — because
     # that is the travel still coming out of this month.
-    bank_funded = [
-        {"category": r["category"], "amount": r["amount"]}
-        for r in by_category(txns, month)
-        if is_bank_funded(r["category"]) and r["amount"] > 0
-    ]
+    bank_funded = [{"category": line, "amount": amount}
+                   for line, amount in by_line.items() if line in funded]
     bank_funded_total = round(sum(r["amount"] for r in bank_funded), 2)
 
     return jsonify({
@@ -1526,15 +1610,15 @@ def budgets():
         "budgetable_spend": round(everything - bank_funded_total, 2),
         "unbudgeted_spend": round(everything - covered - bank_funded_total, 2),
         "unbudgeted": sorted(unbudgeted, key=lambda r: -r["amount"]),
-        # Categories a piggy bank pays for instead of a budget, and the
-        # spending in them this month that no bank covered.
+        # Lines a piggy bank pays for instead of a budget, and the spending in
+        # them this month that no bank covered.
         "bank_funded": {
-            "categories": sorted(BANK_FUNDED),
+            "categories": sorted(funded),
             "unallocated": sorted(bank_funded, key=lambda r: -r["amount"]),
             "unallocated_total": bank_funded_total,
-            "banks": len(store().piggy_banks()),
+            "banks": len(st.piggy_banks()),
         },
-        # What the plan would give each category, and what it has to give out.
+        # What the plan would give each line, and what it has to give out.
         # Top-level rather than inside `drift`, because the table shows this
         # column whether or not the two agree — and `drift` is None precisely
         # when they do.
@@ -1563,7 +1647,10 @@ def _plan_split(st, txns) -> dict | None:
     result = money_plan.plan(income, st.fixed_costs(),
                              st.float_setting("savings_target", 0.0),
                              _bank_monthly(st))
-    shares = money_plan.variable_shares(txns)
+    # Split by budget line, which is a category unless you have folded some
+    # together in Settings. The daily number is not worked out here and never
+    # sees the grouping — see finance/groups.py.
+    shares = money_plan.variable_shares(txns, groups=st.category_groups())
     return {
         "leftover": result["leftover"],
         "budgets": money_plan.category_budgets(result["leftover"], shares),
@@ -1616,10 +1703,22 @@ def set_budgets():
     if not isinstance(updates, dict):
         return jsonify({"error": "Expected a mapping of category to amount."}), 400
 
+    from . import groups as budget_lines
+
+    # Budgets are per line: a category, or a name you folded several under.
+    grouping = store().category_groups()
+    lines = budget_lines.lines(grouping)
+
     for category, amount in updates.items():
-        if category not in CATEGORIES:
+        if category not in lines:
+            if category in CATEGORIES:
+                return jsonify({"error": (
+                    f"{category} is budgeted as part of "
+                    f"{budget_lines.line_of(category, grouping)} — set that "
+                    "line instead, or take it out of the group in Settings "
+                    "→ Categories.")}), 400
             return jsonify({"error": f"Unknown category '{category}'."}), 400
-        if is_bank_funded(category):
+        if budget_lines.line_bank_funded(lines[category]):
             return jsonify({"error": (
                 f"{category} is funded by a piggy bank, not budgeted. Its "
                 "money leaves the plan as the bank's monthly contribution, so "

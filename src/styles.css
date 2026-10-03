@@ -232,6 +232,15 @@ a { color: var(--brand); text-underline-offset: 3px; }
   flex-wrap: wrap;
 }
 .topbar .title { margin-right: auto; }
+
+/* Theme and sign-out, for phones only — on a desktop they live in the
+   sidebar's foot. See the phone block for why they moved. */
+.topbar-actions { display: none; gap: 4px; align-self: flex-start; }
+
+/* Phone-width navigation labels; see `Label` in App.jsx. */
+.label-short { display: none; }
+.topbar-actions .btn { padding: 6px 9px; }
+.topbar-actions .btn .label { display: none; }
 .topbar .title .hint { color: var(--muted); font-size: .86rem; margin-top: 2px; }
 
 /* ── Sections within a destination ───────────────────────────────────────
@@ -248,6 +257,9 @@ a { color: var(--brand); text-underline-offset: 3px; }
   gap: 4px;
   overflow-x: auto;
   scrollbar-width: none;
+  /* Keeps a tab scrolled into view off the very edge, where it would sit
+     under the fade below. */
+  scroll-padding-inline: 32px;
 }
 .sections::-webkit-scrollbar { display: none; }
 .sections button {
@@ -279,6 +291,11 @@ main { max-width: 1180px; margin: 0 auto; padding: 4px 32px 80px; }
  * screen, where a thumb can actually reach it. Six destinations fit across a
  * phone without scrolling, which is most of the reason there are six: the
  * icons carry the glance and the label underneath confirms it.
+ *
+ * They only fit because nothing else is in the bar. Theme and sign-out used to
+ * share it, and their ~100px pushed Transactions and Cards & data off the
+ * right edge of a 390px phone behind a scroll nobody could see. They live in
+ * the top bar at this width now.
  *
  * `min-width: 0` on the scrolling strip is the load-bearing line. A flex or
  * grid item defaults to `min-width: auto`, meaning it refuses to shrink below
@@ -361,29 +378,34 @@ main { max-width: 1180px; margin: 0 auto; padding: 4px 32px 80px; }
     line-height: 1.5;
   }
 
-  .sidebar-foot {
-    margin: 0;
-    display: flex;
-    align-items: center;
-    border-left: 1px solid var(--border);
-    padding: 6px 4px 4px;
-    flex: none;
+  .sidebar-foot { display: none; }
+  .topbar-actions { display: flex; }
+  /* Visually hidden, not display:none — that would take the full label out
+     of the accessibility tree too, and the short one is aria-hidden. */
+  .label-full {
+    position: absolute; width: 1px; height: 1px; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
   }
-  .sidebar-foot .btn {
-    width: auto;
-    min-width: 46px;
-    min-height: 52px;
-    flex-direction: column;
-    justify-content: center;
-    padding: 6px;
-  }
-  .sidebar-foot .btn .label { display: none; }
+  .label-short { display: inline; }
+
+  /* Six across, sharing the width rather than each insisting on 62px. */
+  .nav button { flex: 1 1 0; min-width: 0; padding: 6px 2px; }
+  .nav { overflow-x: visible; padding: 6px 2px 4px; }
 
   .content { min-width: 0; }
   .topbar { position: sticky; top: 0; }
   .topbar-inner { padding: 16px 16px 12px; }
   /* Same 16px side gutter as everything else at this width. */
-  .sections { padding: 0 16px 12px; }
+  .sections {
+    padding: 0 16px 12px;
+    scroll-padding-inline: 24px;
+    /* A strip that scrolls has to look like it does. The fade says "there is
+       more this way" without spending any width on an arrow. */
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 16px,
+                                        #000 calc(100% - 16px), transparent 100%);
+            mask-image: linear-gradient(to right, transparent 0, #000 16px,
+                                        #000 calc(100% - 16px), transparent 100%);
+  }
   .topbar h1 { font-size: 1.28rem; }
 
   /* Room for the fixed bar, plus the home indicator below it. */

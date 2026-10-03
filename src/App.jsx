@@ -12,9 +12,11 @@ import ImportPanel from './panels/ImportPanel.jsx';
 import PlanPanel from './panels/PlanPanel.jsx';
 import BanksPanel from './panels/BanksPanel.jsx';
 import AccountsPanel from './panels/AccountsPanel.jsx';
+import CategoriesPanel from './panels/CategoriesPanel.jsx';
 import Login from './Login.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
+import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
   getAccounts, getAuthStatus, getCategories, getInsights, getRecurring,
   getSummary, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
@@ -34,100 +36,26 @@ function defaultMonth(summary) {
   return withSpending.at(-1)?.month ?? summary.latest_month ?? '';
 }
 
-// The Import panel is deliberately absent from this list. Connecting a bank
-// is how data arrives; uploading a file is the exception, for a card that
-// cannot be connected at all. It stays reachable at the 'import' key, linked
-// from the Banks tab, so hiding it costs nothing but prominence.
-// Every panel the app can show, keyed the way it always was.
-//
-// These used to be twelve top-level destinations plus a hidden one, which on a
-// phone was a scrolling strip nobody could hold in their head, and which put
-// the four surfaces you touch once at setup beside the two you open daily.
-// They are grouped below instead. The keys are unchanged, so every
-// `onTab('piggy')` in a panel still works — `resolve` turns a panel key into
-// the group that now contains it.
-const PANELS = {
-  today:         { label: 'Today',
-                   hint: 'What you can spend today, and why that number' },
-  plan:          { label: 'Income & commitments',
-                   hint: 'What comes in, what is spoken for, and what is left' },
-  budgets:       { label: 'Budgets',
-                   hint: 'Spent against budget, projected to month end' },
-  overview:      { label: 'This month',
-                   hint: 'Spending across every card' },
-  projections:   { label: 'Looking ahead',
-                   hint: 'Where this lands, at this pace and with the cuts' },
-  savings:       { label: 'What to cut',
-                   hint: 'Ranked by what it saves, with the charges behind it' },
-  subscriptions: { label: 'Subscriptions',
-                   hint: 'Every recurring charge found in your history' },
-  transactions:  { label: 'Every charge',
-                   hint: 'Searchable, correctable, chargeable to a piggy bank' },
-  trips:         { label: 'Trips',
-                   hint: 'Date ranges whose spending counts as Travel' },
-  banks:         { label: 'Connections',
-                   hint: 'Connect a card through Plaid and let it sync itself' },
-  accounts:      { label: 'Accounts',
-                   hint: 'Every account, what syncs, and anything counted twice' },
-  import:        { label: 'From a file',
-                   hint: "Statements for a card that can't be connected" },
-};
-
-// The six destinations. A group holding one panel shows no sub-navigation.
-const GROUPS = [
-  { key: 'today', label: 'Today', panels: ['today'],
-    hint: 'What you can spend today, and why that number',
-    icon: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z' },
-  // Looking ahead sits with the plan, not with the history: it is the plan
-  // run forward, and the savings figure it offers to move is the plan's.
-  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections'],
-    hint: 'What you earn, what it is promised to, how the rest divides, and where that leads',
-    icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
-  { key: 'overview', label: 'Overview', panels: ['overview'],
-    hint: 'Where the money went',
-    icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
-  { key: 'savings', label: 'Savings', panels: ['savings', 'subscriptions'],
-    hint: 'What to cut, and the renewals worth a second look',
-    icon: 'M12 3v18M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
-  { key: 'transactions', label: 'Transactions', panels: ['transactions', 'trips'],
-    hint: 'Every charge, and the date ranges that reclassify them',
-    icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
-  { key: 'cards', label: 'Cards & data', panels: ['banks', 'accounts', 'import'],
-    hint: 'Where the transactions come from, and what counts',
-    icon: 'M3 10h18M3 10a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2M3 10v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8M7 15h4' },
-];
-
-// Keys that are no longer panels of their own but are still linked to from
-// across the app and from the insights, which carry a tab name in their data.
-// Piggy banks are a card on the Plan page now — they are already a term in its
-// arithmetic — so a link to them is a link there.
-const ALIASES = { piggy: 'plan' };
-
-// Where on that page the aliased thing actually is. Without this a link to a
-// piggy bank lands at the top of a long page with no sign of one, which is
-// indistinguishable from a button that did nothing.
-const ANCHORS = { piggy: 'piggy-banks' };
-
-/**
- * Turn a group key or a panel key into both.
- *
- * Panels link to each other by panel key and should not have to know about the
- * grouping, so this accepts either: 'cards' opens the group at its first panel,
- * 'import' opens the same group at that panel.
- */
-function resolve(key) {
-  const target = ALIASES[key] ?? key;
-  const group = GROUPS.find((g) => g.key === target);
-  if (group) return [group.key, group.panels[0]];
-  const owner = GROUPS.find((g) => g.panels.includes(target));
-  if (owner) return [owner.key, target];
-  return ['today', 'today'];
-}
-
 // Panels worth opening with nothing in the ledger: the two that bring data in,
 // and the one that decides what keeps arriving — which is also where the ledger
 // gets emptied, so it is reachable immediately afterwards.
 const WORKS_WHEN_EMPTY = ['banks', 'import', 'accounts', 'plan'];
+
+/**
+ * A navigation label with an optional phone-width form.
+ *
+ * Both are rendered and CSS picks one, so the accessible name is always the
+ * full label — a screen reader on a phone should still hear "Transactions".
+ */
+function Label({ full, short }) {
+  if (!short) return full;
+  return (
+    <>
+      <span className="label-full">{full}</span>
+      <span className="label-short" aria-hidden="true">{short}</span>
+    </>
+  );
+}
 
 function Icon({ d }) {
   return (
@@ -358,6 +286,7 @@ export default function App() {
       {panel === 'trips' && <TripsPanel onChanged={load} />}
       {panel === 'accounts' && <AccountsPanel onChanged={load} />}
       {panel === 'banks' && <BanksPanel onChanged={load} onTab={go} />}
+      {panel === 'categories' && <CategoriesPanel onChanged={load} />}
       {panel === 'import' && (
         <ImportPanel accounts={accounts} onImported={load} onTab={go} />
       )}
@@ -374,6 +303,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
   // say the same word twice and name the narrower thing nowhere.
   const current = PANELS[panel] ?? group;
   const navRef = useRef(null);
+  const sectionsRef = useRef(null);
 
   // On a phone the nav is a scrolling strip, and twelve destinations don't
   // fit. Without this, opening the app on a tab that sits off the right edge
@@ -385,6 +315,39 @@ function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
     selected?.scrollIntoView({ inline: 'center', block: 'nearest',
                                behavior: 'smooth' });
   }, [tab]);
+
+  // The section strip scrolls on a phone too, and opening Looking ahead used
+  // to leave the strip reading "come & commitments | Budgets | Looking ahead":
+  // the first tab sliced in half, and no hint that anything was there.
+  // `nearest` moves it only as far as needed, and the strip's scroll-padding
+  // keeps the chosen tab off the very edge.
+  useEffect(() => {
+    const selected = sectionsRef.current?.querySelector('[aria-selected="true"]');
+    selected?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  }, [panel]);
+
+  // Theme and sign-out, drawn twice: in the sidebar on a desktop and in the
+  // top bar on a phone. On a phone they used to share the bottom bar with the
+  // six destinations, which left no room for two of them.
+  const accountActions = (
+    <>
+      {onSignOut && (
+        <button className="btn quiet" onClick={onSignOut}
+                aria-label="Sign out">
+          <span aria-hidden="true">⎋</span>
+          <span className="label">Sign out</span>
+        </button>
+      )}
+      <button
+        className="btn quiet"
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+      >
+        <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
+        <span className="label">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+      </button>
+    </>
+  );
 
   return (
     <div className="app">
@@ -405,7 +368,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
                 onClick={() => onTab(g.key)}
               >
                 <Icon d={g.icon} />
-                {g.label}
+                <Label full={g.label} short={g.short} />
                 {g.key === 'savings' && findingCount > 0 && (
                   <span className="count">{findingCount}</span>
                 )}
@@ -414,22 +377,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
           </nav>
         )}
 
-        <div className="sidebar-foot">
-          {onSignOut && (
-            <button className="btn quiet" onClick={onSignOut}>
-              <span aria-hidden="true">⎋</span>
-              <span className="label">Sign out</span>
-            </button>
-          )}
-          <button
-            className="btn quiet"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-          >
-            <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
-            <span className="label">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
-          </button>
-        </div>
+        <div className="sidebar-foot">{accountActions}</div>
       </aside>
 
       <div className="content">
@@ -451,10 +399,12 @@ function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
                 </select>
               </>
             )}
+
+            <div className="topbar-actions">{accountActions}</div>
           </div>
 
           {group && group.panels.length > 1 && (
-            <nav className="sections" role="tablist"
+            <nav className="sections" role="tablist" ref={sectionsRef}
                  aria-label={`${group.label} sections`}>
               {group.panels.map((key) => (
                 <button
@@ -463,7 +413,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
                   aria-selected={panel === key}
                   onClick={() => onTab(key)}
                 >
-                  {PANELS[key].label}
+                  <Label full={PANELS[key].label} short={PANELS[key].short} />
                 </button>
               ))}
             </nav>

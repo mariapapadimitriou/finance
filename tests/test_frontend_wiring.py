@@ -23,6 +23,9 @@ import pytest
 
 SRC = Path(__file__).resolve().parent.parent / "src"
 APP = SRC / "App.jsx"
+# The map of panels, groups and aliases. It lives apart from the shell so that
+# components naming a destination in a sentence can ask what it is called.
+NAV = SRC / "nav.js"
 
 
 @pytest.fixture(scope="module")
@@ -33,31 +36,41 @@ def source() -> str:
 
 
 @pytest.fixture(scope="module")
-def panels(source) -> set[str]:
+def nav() -> str:
+    text = NAV.read_text(encoding="utf-8")
+    assert text.strip(), "src/nav.js is empty"
+    return text
+
+
+@pytest.fixture(scope="module")
+def panels(nav) -> set[str]:
     """The keys of the PANELS map."""
-    m = re.search(r"const PANELS = \{(.*?)\n\};", source, re.S)
-    assert m, "could not find `const PANELS = {...}` in App.jsx — update this test"
+    m = re.search(r"const PANELS = \{(.*?)\n\};", nav, re.S)
+    assert m, "could not find `const PANELS = {...}` in nav.js — update this test"
     keys = set(re.findall(r"^\s{2}(\w+):\s*\{", m.group(1), re.M))
     assert len(keys) > 5, f"only parsed {keys} out of PANELS — update this test"
     return keys
 
 
 @pytest.fixture(scope="module")
-def groups(source) -> dict[str, list[str]]:
+def groups(nav) -> dict[str, list[str]]:
     """Group key -> the panel keys it holds, in order."""
-    m = re.search(r"const GROUPS = \[(.*?)\n\];", source, re.S)
-    assert m, "could not find `const GROUPS = [...]` in App.jsx — update this test"
-    found = re.findall(r"key: '([^']+)', label: '[^']*', panels: \[([^\]]+)\]",
+    m = re.search(r"const GROUPS = \[(.*?)\n\];", nav, re.S)
+    assert m, "could not find `const GROUPS = [...]` in nav.js — update this test"
+    # `short:` is the optional phone-width label, and may push `panels` onto
+    # the next line.
+    found = re.findall(r"key: '([^']+)', label: '[^']*',"
+                       r"(?:\s*short: '[^']*',)?\s*panels: \[([^\]]+)\]",
                        m.group(1))
     assert found, "could not parse any group out of GROUPS — update this test"
     return {key: re.findall(r"'([^']+)'", panels) for key, panels in found}
 
 
 @pytest.fixture(scope="module")
-def aliases(source) -> dict[str, str]:
+def aliases(nav) -> dict[str, str]:
     """Old panel keys that now point at the panel which absorbed them."""
-    m = re.search(r"const ALIASES = \{(.*?)\};", source, re.S)
-    assert m, "could not find `const ALIASES = {...}` in App.jsx — update this test"
+    m = re.search(r"const ALIASES = \{(.*?)\};", nav, re.S)
+    assert m, "could not find `const ALIASES = {...}` in nav.js — update this test"
     return dict(re.findall(r"(\w+):\s*'([^']+)'", m.group(1)))
 
 
