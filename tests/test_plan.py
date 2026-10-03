@@ -124,19 +124,28 @@ class TestSafeToSpend:
 
 class TestCanIBuyThis:
     def _state(self):
+        # $310 over January's 31 days is $10 a day. 1 January 2025 is a
+        # Wednesday, so the 3rd sits in a five-day week (Wed 1 – Sun 5) worth
+        # $50, with $5 already spent in it.
         rows = [dining("2025-01-01", 5.0)]
         apply_categories(rows)
         return spend_plan.compute(rows, 310.0, "2025-01", today=date(2025, 1, 3))
 
+    def test_it_answers_against_the_week(self):
+        week = self._state()["week"]
+        assert (week["first_day"], week["last_day"]) == (1, 5)
+        assert week["left"] == pytest.approx(45.0)
+
     def test_an_affordable_purchase_says_what_is_left(self):
         r = spend_plan.simulate(self._state(), 10.0)
         assert r["affordable"] is True
-        assert r["leaves_today"] == pytest.approx(15.0)
+        assert r["leaves_week"] == pytest.approx(35.0)
+        assert "rest of the week" in r["message"]
 
     def test_an_unaffordable_one_says_by_how_much(self):
         r = spend_plan.simulate(self._state(), 100.0)
         assert r["affordable"] is False
-        assert r["short_by"] == pytest.approx(75.0)
+        assert r["short_by"] == pytest.approx(55.0)
 
     def test_it_offers_to_spread_the_shortfall(self):
         r = spend_plan.simulate(self._state(), 100.0)
@@ -170,7 +179,7 @@ class TestProseFormatting:
 
     def test_a_negative_never_renders_as_a_dollar_minus(self):
         state = spend_plan.compute([], 300.0, "2025-01", today=date(2025, 1, 31))
-        state["safe_today"] = -56.89
+        state["week"]["left"] = -56.89
         state["remaining"] = -56.89
         state["days_left"] = 1
         r = spend_plan.simulate(state, 250.0)
@@ -180,7 +189,7 @@ class TestProseFormatting:
 
     def test_spreading_says_the_month_ran_out_rather_than_a_negative_daily(self):
         state = spend_plan.compute([], 300.0, "2025-01", today=date(2025, 1, 31))
-        state["safe_today"] = -56.89
+        state["week"]["left"] = -56.89
         state["remaining"] = -56.89
         state["days_left"] = 1
         spread = spend_plan.simulate(state, 250.0)["options"][0]
@@ -500,3 +509,79 @@ class TestPlanApi:
 
     def test_projections_respond(self, client):
         assert client.get("/api/projections").status_code == 200
+
+
+class TestTheWeek:
+    """The headline is a week: Monday to Sunday, clipped to the month."""
+
+    def test_weeks_run_monday_to_sunday_clipped_to_the_month(self):
+        # October 2026 starts on a Thursday and ends on a Saturday.
+        assert spend_plan.week_bounds("2026-10", 1) == (1, 4)
+        assert spend_plan.week_bounds("2026-10", 4) == (1, 4)
+        assert spend_plan.week_bounds("2026-10", 5) == (5, 11)
+        assert spend_plan.week_bounds("2026-10", 31) == (26, 31)
+
+    def test_a_short_week_gets_its_days_share(self):
+        state = spend_plan.compute([], 310.0, "2025-01", today=date(2025, 1, 2))
+        week = state["week"]
+        assert week["days"] == 5 and week["short"] is True
+        assert week["allowance"] == pytest.approx(50.0)
+        assert week["nominal"] == pytest.approx(70.0)
+
+    def test_underspending_rolls_into_this_week(self):
+        """Restraint is carried forward in full, the same choice the daily
+        number makes. Spend nothing in week one and week two has both."""
+        state = spend_plan.compute([], 310.0, "2025-01", today=date(2025, 1, 6))
+        week = state["week"]
+        assert (week["first_day"], week["last_day"]) == (6, 12)
+        assert week["carried_in"] == pytest.approx(50.0)
+        assert week["allowance"] == pytest.approx(70.0 + 50.0)
+
+    def test_overspending_is_spread_not_dumped_on_the_next_week(self):
+        rows = [dining("2025-01-02", 200.0)]          # $150 over week one
+        apply_categories(rows)
+        state = spend_plan.compute(rows, 310.0, "2025-01", today=date(2025, 1, 6))
+        week = state["week"]
+        assert week["behind"] is True
+        # $110 left of the month over the 26 days from the 6th; this week is 7.
+        assert week["allowance"] == pytest.approx(110.0 * 7 / 26, abs=0.01)
+        assert week["allowance"] > 0
+
+    def test_the_last_week_is_allowed_exactly_what_is_left(self):
+        rows = [dining("2025-01-08", 120.0), dining("2025-01-15", 40.0)]
+        apply_categories(rows)
+        state = spend_plan.compute(rows, 310.0, "2025-01", today=date(2025, 1, 28))
+        week = state["week"]
+        assert week["last_day"] == 31
+        assert week["allowance"] == pytest.approx(310.0 - 160.0, abs=0.01)
+
+    def test_ahead_of_pace_a_week_never_exceeds_the_month(self):
+        rows = [dining("2025-01-03", 20.0)]
+        apply_categories(rows)
+        for day in range(1, 32):
+            state = spend_plan.compute(rows, 310.0, "2025-01",
+                                       today=date(2025, 1, day))
+            spent_before = sum(r.amount for r in rows
+                               if int(r.date[8:]) < state["week"]["first_day"])
+            assert state["week"]["allowance"] <= 310.0 - spent_before + 0.01
+
+    def test_the_weeks_of_a_month_add_up_to_its_budget(self):
+        """Spending exactly each week's allowance uses exactly the month."""
+        rows, used = [], 0.0
+        day = 1
+        while day <= 31:
+            state = spend_plan.compute(list(rows), 310.0, "2025-01",
+                                       today=date(2025, 1, day))
+            week = state["week"]
+            if week["allowance"] > 0:
+                rows.append(dining(f"2025-01-{day:02d}", round(week["allowance"], 2)))
+                apply_categories(rows)
+                used += round(week["allowance"], 2)
+            day = week["last_day"] + 1
+        assert used == pytest.approx(310.0, abs=0.05)
+
+    def test_per_day_is_what_is_left_over_the_days_left_in_the_week(self):
+        state = spend_plan.compute([], 310.0, "2025-01", today=date(2025, 1, 9))
+        week = state["week"]                            # Thu 9 in Mon 6 – Sun 12
+        assert week["days_left"] == 4
+        assert week["per_day"] == pytest.approx(week["left"] / 4, abs=0.01)

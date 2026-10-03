@@ -10,8 +10,8 @@ A grouping maps a category to the line it is budgeted under. A category with no
 entry is its own line. The line is named either after a category (Lodging
 folded into Travel) or freshly ("Health & care"). Only budgeting sees lines:
 the plan's split, the Budgets table and what can be saved there. Transactions,
-the Overview and the daily number keep the categories they always had — the
-daily number in particular is worked out per category, so how you group your
+the Overview and the weekly number keep the categories they always had — the
+weekly number in particular is worked out per category, so how you group your
 budget cannot change what you may spend today.
 
 Two rules, both to keep the arithmetic honest:
@@ -52,11 +52,11 @@ def line_bank_funded(members: list[str]) -> bool:
 
 
 def line_daily(members: list[str]) -> str:
-    """Which side of the daily number a line falls on: all, none, or part.
+    """Which side of the weekly number a line falls on: all, none, or part.
 
-    A line is a budgeting convenience; the daily number is still decided per
+    A line is a budgeting convenience; the weekly number is still decided per
     category, so a line holding Health (budgeted monthly) and Personal Care
-    (in the daily number) is honestly "part", and says so.
+    (in the weekly number) is honestly "part", and says so.
     """
     flags = {is_discretionary(m) for m in members}
     if flags == {True}:

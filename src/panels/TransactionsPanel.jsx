@@ -385,7 +385,7 @@ function CategoryEditor({ current, merchant, categories, onSave, onCancel }) {
  *
  * This is the gesture that makes piggy banks worth having. A charge allocated
  * to a bank leaves the month it fell in — it is not in the Overview, the
- * budgets, or the daily number — because it was already paid for over the
+ * budgets, or the weekly number — because it was already paid for over the
  * months leading up to it. Putting it back is one click, and the month gets it
  * again.
  *

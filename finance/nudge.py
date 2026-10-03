@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from .spend_plan import counts_toward_plan, days_in_month
+from .spend_plan import compute, counts_toward_plan, days_in_month
 
 # A few dollars over is not a story. Below this the day reads as ordinary.
 MATERIAL = 5.0
@@ -63,9 +63,39 @@ def for_yesterday(transactions, state: dict, today: date | None = None) -> dict 
     spent = _spent_on(transactions, iso)
     share = state["flat_daily"]
     delta = round(spent - share, 2)
-    left = state["remaining"]
-    days_left = max(state["days_in_month"] - state["day"] + 1, 1)
-    spread = round(left / days_left, 2) if left > 0 else 0.0
+
+    # What it did to the week — the number the reader is actually holding.
+    # On a Monday, yesterday belongs to a week that has just closed, so the
+    # useful thing to say is how that week finished and what this one starts
+    # with, not what is "left" of a week that is over.
+    week = state["week"]
+    new_week = week["first_day"] == now.day
+    if state["remaining"] < 0:
+        # Past the whole month's budget is the larger fact, and saying "the
+        # weeks after this get a little less" would be false: there is
+        # nothing left to give them.
+        consequence = (f"That takes the month past its budget: it is "
+                       f"{_money(state['remaining'])} over, so from here "
+                       "anything spent is over too.")
+    elif new_week:
+        last = compute(transactions, state["monthly_amount"], state["month"],
+                       today=yesterday, covered=state.get("covered", 0.0))["week"]
+        closed = last["left"]
+        consequence = (
+            f"That closed last week {_money(closed)} "
+            f"{'under' if closed >= 0 else 'over'} its allowance, and this "
+            f"week starts with {_money(week['allowance'])}."
+            if abs(closed) >= 1 else
+            f"Last week finished on its allowance; this one starts with "
+            f"{_money(week['allowance'])}.")
+    else:
+        left = week["left"]
+        consequence = (
+            f"That leaves {_money(left)} for the rest of the week."
+            if left >= 0 else
+            f"This week is now {_money(left)} over. Spread across the rest of "
+            "the month, every week after this gets a little less — nothing is "
+            "lost, the month just gets tighter from here.")
 
     if delta > MATERIAL:
         return {
@@ -73,16 +103,8 @@ def for_yesterday(transactions, state: dict, today: date | None = None) -> dict 
             "spent": spent,
             "over_by": delta,
             "headline": f"You spent {_money(spent)} yesterday, "
-                        f"{_money(delta)} over the daily share.",
-            "detail": (
-                f"Spread across the {days_left} day"
-                f"{'' if days_left == 1 else 's'} left, that leaves "
-                f"{_money(spread)} a day for the rest of the month instead of "
-                f"{_money(share)}. Nothing is lost — the month just gets a "
-                "little tighter from here."
-                if left > 0 else
-                f"That takes the month past its budget. What is left is "
-                f"{_money(left)}, so from here anything spent is over."),
+                        f"{_money(delta)} more than a typical day's share.",
+            "detail": consequence,
         }
 
     if delta < -MATERIAL:
@@ -91,9 +113,11 @@ def for_yesterday(transactions, state: dict, today: date | None = None) -> dict 
             "spent": spent,
             "under_by": abs(delta),
             "headline": f"You spent {_money(spent)} yesterday, "
-                        f"{_money(abs(delta))} under the daily share.",
-            "detail": (f"That carries forward: today has {_money(spread)} "
-                       f"rather than {_money(share)}."),
+                        f"{_money(abs(delta))} under a typical day's share.",
+            "detail": (consequence if new_week or state["remaining"] < 0
+                       or week["left"] < 0 else
+                       f"That carries forward — {_money(week['left'])} left "
+                       "for the rest of the week."),
         }
 
     return None

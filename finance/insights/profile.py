@@ -14,7 +14,7 @@ someone about a budget, and they are all knowable in advance:
     if your commitments are more than 55% of your pay, that is worth saying
     if you are putting away nothing while the plan leaves a surplus, that is
     worth saying
-    if the daily number is under ten dollars, the plan will not survive
+    if the weekly number is under seventy dollars, the plan will not survive
     contact with a Tuesday
 
 What varies between people is which ones apply and what the numbers are, and
@@ -45,7 +45,7 @@ from dataclasses import asdict, dataclass, field
 HIGH_COMMITMENT_SHARE = 0.55      # fixed costs + savings as a share of pay
 LOW_SAVINGS_SHARE = 0.10          # what you are putting away
 GOOD_SAVINGS_SHARE = 0.20
-THIN_DAILY = 10.0                 # a daily allowance nobody can keep to
+THIN_WEEKLY = 70.0                # a weekly allowance nobody can keep to
 DOMINANT_CATEGORY_SHARE = 0.40    # one category, this much of discretionary
 HEAVY_SUBSCRIPTION_SHARE = 0.15   # renewals as a share of discretionary
 OVERSPEND_TOLERANCE = 0.10        # over the plan by more than this is a story
@@ -124,7 +124,7 @@ def no_plan_yet(p: Profile) -> Observation | None:
         title="The plan has no income in it yet",
         detail=("Everything else on this page can be worked out from your "
                 "transactions, but what you can afford cannot — that needs to "
-                "start from what you earn. Until it does, the daily number is "
+                "start from what you earn. Until it does, the weekly number is "
                 "your own median spending, which describes your habits rather "
                 "than deciding anything."),
         severity="act", tab="plan", action="Set up your plan",
@@ -216,19 +216,22 @@ def saving_well(p: Profile) -> Observation | None:
 def plan_is_too_tight(p: Profile) -> Observation | None:
     if not p.has_plan or p.leftover <= 0 or p.daily <= 0:
         return None
-    if p.daily >= THIN_DAILY:
+    # Today's number is a week now; `daily` is still what the profile
+    # carries, since the arithmetic underneath is a daily share.
+    weekly = round(p.daily * 7, 2)
+    if weekly >= THIN_WEEKLY:
         return None
     return Observation(
         id="too_tight",
-        title=f"The plan leaves {_money(p.daily)} a day",
-        detail=("That is thin enough that one coffee and a bus fare breaks it, "
-                "and a budget you break on the second day is a budget you stop "
-                "using by the third. This is usually a sign that the savings "
-                "figure or a piggy bank is set higher than the month can "
-                "actually bear. Lowering it on purpose is better than "
-                "discovering it in week three."),
-        severity="act", metric=_money(p.daily), tab="plan",
-        action="Loosen the plan", figures={"daily": p.daily},
+        title=f"The plan leaves {_money(weekly)} a week",
+        detail=("That is thin enough that a couple of coffees and a bus fare "
+                "breaks it, and a budget you break by Wednesday is a budget "
+                "you stop using by the weekend. This is usually a sign that "
+                "the savings figure or a piggy bank is set higher than the "
+                "month can actually bear. Lowering it on purpose is better "
+                "than discovering it in week three."),
+        severity="act", metric=_money(weekly), tab="plan",
+        action="Loosen the plan", figures={"daily": p.daily, "weekly": weekly},
     )
 
 
@@ -442,7 +445,7 @@ def no_emergency_fund(p: Profile) -> Observation | None:
                 "one saving that is not about any particular purchase — it is "
                 "what stops an unexpected month becoming debt — and it works "
                 "the same way as the others: a monthly figure, taken out "
-                "before the daily number is worked out."),
+                "before the weekly number is worked out."),
         severity="watch", metric=_money(target), tab="piggy",
         action="Open a piggy bank",
         figures={"target": target, "held": held,

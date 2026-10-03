@@ -34,12 +34,20 @@ class TestWhenItSpeaks:
         assert n["kind"] == "over"
         assert "$200" in n["headline"]
 
-    def test_it_says_what_today_now_costs(self):
-        """A report without a consequence is just a telling-off."""
+    def test_it_says_what_the_week_now_has(self):
+        """A report without a consequence is just a telling-off. $900 over
+        October is about $29 a day, so the short first week (Thu 1 – Sun 4)
+        is worth about $116; $70 spent leaves some of it."""
+        rows = [dining("2026-10-01", 10), dining("2026-10-02", 60)]
+        today = date(2026, 10, 3)
+        n = nudge.for_yesterday(rows, state_for(rows, today), today)
+        assert "for the rest of the week" in n["detail"]
+
+    def test_a_week_already_spent_says_the_weeks_after_get_less(self):
         rows = [dining("2026-10-01", 30), dining("2026-10-02", 200)]
         today = date(2026, 10, 3)
         n = nudge.for_yesterday(rows, state_for(rows, today), today)
-        assert "a day for the rest of the month" in n["detail"]
+        assert "every week after this gets a little less" in n["detail"]
 
     def test_a_day_well_under_is_also_worth_saying(self):
         rows = [dining("2026-10-01", 30), dining("2026-10-02", 2)]
@@ -108,3 +116,33 @@ class TestWhatItWillNotDo:
         today = date(2026, 10, 3)
         n = nudge.for_yesterday(rows, state_for(rows, today), today)
         assert "past its budget" in n["detail"]
+
+
+class TestItSpeaksInWeeks:
+    """Yesterday is reported against the week, the number on screen."""
+
+    def test_midweek_it_says_what_is_left_of_the_week(self):
+        rows = [dining("2026-10-01", 10), dining("2026-10-02", 60)]
+        today = date(2026, 10, 3)                      # Sat, week Thu 1 – Sun 4
+        state = state_for(rows, today)
+        n = nudge.for_yesterday(rows, state, today)
+        assert f"${state['week']['left']:,.0f}" in n["detail"]
+
+    def test_on_a_monday_it_reports_how_last_week_finished(self):
+        """Yesterday belongs to a week that has closed; saying what is "left"
+        of it would be about a week that is over."""
+        rows = [dining("2026-10-01", 30), dining("2026-10-04", 200)]
+        today = date(2026, 10, 5)                      # Monday
+        state = state_for(rows, today)
+        n = nudge.for_yesterday(rows, state, today)
+        assert n["kind"] == "over"
+        assert "last week" in n["detail"]
+        assert "this week starts with" in n["detail"]
+        assert "rest of the week" not in n["detail"]
+
+    def test_a_week_already_over_says_so_without_a_negative_dollar(self):
+        rows = [dining("2026-10-01", 30), dining("2026-10-02", 400)]
+        today = date(2026, 10, 3)
+        n = nudge.for_yesterday(rows, state_for(rows, today), today)
+        assert "over" in n["detail"]
+        assert "$-" not in n["detail"]

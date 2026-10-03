@@ -13,7 +13,7 @@ const NEW = '__new__';
  * where you fold them: Lodging into Travel, Health and Personal Care into one
  * line, Coffee left on its own. Only budgeting sees the result — the plan's
  * split and the Budgets table. Transactions keep their categories everywhere
- * else, and the daily number is worked out per category, so nothing here can
+ * else, and the weekly number is worked out per category, so nothing here can
  * change what you may spend today.
  *
  * Two rules are enforced by the server and pre-empted here, so the choices
@@ -139,7 +139,7 @@ export default function CategoriesPanel({ onChanged }) {
         <p className="muted" style={{ marginTop: 0 }}>
           Each category is its own line in Budgets unless you put it with
           another. Transactions keep their own categories either way, and the
-          daily number on Today is unaffected — this only decides how the
+          weekly number on Today is unaffected — this only decides how the
           budget is divided and shown.
         </p>
 

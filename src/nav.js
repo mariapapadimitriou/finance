@@ -16,7 +16,7 @@
 // the group that now contains it.
 export const PANELS = {
   today:         { label: 'Today',
-                   hint: 'What you can spend today, and why that number' },
+                   hint: "What's left to spend this week, and why" },
   // `short` is what a phone shows where the full label will not fit. Only
   // set where it is needed; everything else uses its label at every width.
   plan:          { label: 'Income & commitments', short: 'Income',
@@ -54,7 +54,7 @@ export const PANELS = {
 // every link and every insight that names one still resolves.
 export const GROUPS = [
   { key: 'today', label: 'Today', panels: ['today'],
-    hint: 'What you can spend today, and why that number',
+    hint: "What's left to spend this week, and why",
     icon: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z' },
   // Looking ahead sits with the plan, not with the history: it is the plan
   // run forward, and the savings figure it offers to move is the plan's.
