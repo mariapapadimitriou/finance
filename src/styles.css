@@ -1189,3 +1189,22 @@ details.why > .assumption { border-top: 0; padding-top: 0; margin-top: 8px; }
 .turn.user .turn-body { color: var(--ink-2); }
 .turn-body p { margin: 6px 0; }
 .turn-body p:last-child { margin-bottom: 0; }
+
+/* Piggy bank form: which categories the bank pays for. */
+fieldset.pays-for {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px 14px;
+  margin: 0;
+  min-width: 0;
+}
+fieldset.pays-for legend {
+  padding: 0 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+  gap: 6px 14px;
+}

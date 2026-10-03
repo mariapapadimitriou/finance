@@ -803,6 +803,8 @@ class TestOwnedChargesGoToTheBankByThemselves:
         assert b["available"] == pytest.approx(8000)
         assert b["monthly"] == pytest.approx(666.67)
         assert b["categories"] == ["Lodging", "Travel"]
+        offered = ledger.get("/api/piggy").get_json()["spend_categories"]
+        assert "Travel" in offered and "Income" not in offered
 
     def test_a_trip_is_charged_to_it_without_being_asked(self, ledger):
         bank = travel_bank(ledger)

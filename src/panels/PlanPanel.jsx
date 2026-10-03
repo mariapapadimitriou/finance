@@ -200,11 +200,16 @@ export default function PlanPanel({ onChanged, onTab }) {
             {essentialNames(data.categories).join(', ') || 'nothing, so far'} —
             has a budget of its own and stays out of the weekly figure. Budgets
             marks every line one way or the other.
-            <br /><br />
-            Travel is in neither. It arrives in lumps rather than monthly, so
-            instead of a budget line it is funded by a piggy bank — the{' '}
-            <strong>Piggy banks</strong> term above, already subtracted. A
-            trip charged to its bank never touches a month at all.
+            {data.bank_funded?.length > 0 && (
+              <>
+                <br /><br />
+                {data.bank_funded.join(', ')}{' '}
+                {data.bank_funded.length > 1 ? 'are' : 'is'} in neither. A
+                piggy bank pays for {data.bank_funded.length > 1 ? 'them' : 'it'}{' '}
+                — the <strong>Piggy banks</strong> term above, already
+                subtracted — so that spending never touches your week.
+              </>
+            )}
           </Why>
           </>
         )}

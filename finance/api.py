@@ -1118,6 +1118,7 @@ def plan_setup():
         # Each bank's contribution beside the total, so a leftover that looks
         # small can be traced to the holiday it is paying for.
         "bank_lines": _bank_status(st),
+        "bank_funded": sorted(st.bank_funded_categories()),
     })
 
 
@@ -1305,7 +1306,14 @@ def list_banks():
         # The first bank anyone should open, prefilled from their own history.
         "suggested": _suggested_bank(st.all_transactions(), rows),
         "bank_funded": sorted(st.bank_funded_categories()),
+        # What a bank can be told to pay for: any spending category.
+        "spend_categories": _spend_categories(),
     })
+
+
+def _spend_categories() -> list[str]:
+    from . import groups as budget_lines
+    return budget_lines.spend_categories()
 
 
 @bp.post("/piggy")
