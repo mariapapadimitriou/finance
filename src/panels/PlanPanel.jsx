@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
+import {
+  Card, ErrorNote, Loading, Notice, StatusPill, Why,
+} from '../components/ui.jsx';
 import {
   addFixedCost, deleteFixedCost, getCategories, getPlanSetup,
   money, monthLabel, pct, savePlanSetup,
@@ -90,11 +92,11 @@ export default function PlanPanel({ onChanged, onTab }) {
             {busy ? 'Saving…' : 'Save'}
           </button>
         </form>
-        <p className="assumption" style={{ marginBottom: 0 }}>
+        <Why id="plan.savings" label="Why is saving a commitment?">
           Savings counts as a commitment on purpose. Money you have decided to
           put away is not money you may spend, and treating it as leftover is
           how it stops happening.
-        </p>
+        </Why>
       </Card>
 
       <Card title="Fixed commitments"
@@ -195,19 +197,18 @@ export default function PlanPanel({ onChanged, onTab }) {
             changes the grocery bill, so it is budgeted rather than handed out
             daily.
           </p>
-          <p className="assumption" style={{ marginTop: 10, marginBottom: 0 }}>
+          <Why id="plan.split" label="Which categories count toward it?">
             That {money(data.daily_pool)} is the sum of the categories in the
             daily number. Everything else —{' '}
             {essentialNames(data.categories).join(', ') || 'nothing, so far'} —
             has a budget of its own and stays out of the daily figure. Budgets
             marks every line one way or the other.
-          </p>
-          <p className="assumption" style={{ marginTop: 10, marginBottom: 0 }}>
+            <br /><br />
             Travel is in neither. It arrives in lumps rather than monthly, so
             instead of a budget line it is funded by a piggy bank — the{' '}
             <strong>Piggy banks</strong> term above, already subtracted. A
             trip charged to its bank never touches a month at all.
-          </p>
+          </Why>
           </>
         )}
 

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
-  coverFromBank, getNudge, getPlan, money, monthLabel,
-  simulateSpend,
+  Card, ErrorNote, GoTo, Loading, Notice, StatusPill, Why,
+} from '../components/ui.jsx';
+import {
+  coverFromBank, getNudge, getPlan, getSetup, money, monthLabel,
+  simulateSpend, skipSetupStep,
 } from '../api.js';
 
 /**
@@ -18,6 +20,7 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
   const [nudge, setNudge] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [setup, setSetup] = useState(null);
 
   // `version` is in the dependency list on purpose: it changes when a statement
   // is imported, and the plan has to be recomputed against the new ledger even
@@ -32,6 +35,9 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
       // silenced it entirely, because the panel falls back to the last month
       // with statements whenever this one is still empty.
       setNudge((await getNudge().catch(() => null))?.nudge ?? null);
+      // Best effort: a checklist that fails to load is simply not shown,
+      // rather than taking the daily number down with it.
+      setSetup(await getSetup().catch(() => null));
     } catch (e) {
       setError(e);
     }
@@ -53,6 +59,14 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
   return (
     <div className="stack">
       <ErrorNote error={error} onRetry={load} />
+
+      {setup?.remaining > 0 && (
+        <SetupChecklist setup={setup} onTab={onTab}
+                        onSkip={async (id) => {
+                          await skipSetupStep(id).catch(() => null);
+                          setSetup(await getSetup().catch(() => null));
+                        }} />
+      )}
 
       {nudge && (
         <Notice kind={nudge.kind === 'over' ? 'error' : 'good'}>
@@ -105,6 +119,50 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
                        derivation={derivation} onTab={onTab} />
       </div>
     </div>
+  );
+}
+
+/* ── What is left to set up ──────────────────────────────────────────────── */
+
+/**
+ * Only the steps not yet done, each a button to where it is done.
+ *
+ * Above the daily number on purpose: until these are done the number is a
+ * stand-in, and the list says what would make it real. Every tick comes from
+ * the data rather than from pressing anything here, so a step done somewhere
+ * else ticks itself, and the card disappears for good once the last one does.
+ */
+function SetupChecklist({ setup, onTab, onSkip }) {
+  const todo = setup.steps.filter((s) => !s.done && !s.skipped);
+  const done = setup.steps.filter((s) => s.done).length;
+  const total = setup.steps.filter((s) => !s.skipped).length;
+
+  return (
+    <Card title="Finish setting up"
+          hint={`${done} of ${total} done — the rest make today's number yours`}>
+      <ol className="setup-steps">
+        {todo.map((step) => (
+          <li key={step.id}>
+            <div className="what">
+              <strong>{step.label}</strong>
+              <div className="small muted">{step.detail}</div>
+            </div>
+            <div className="row" style={{ gap: 6, flex: 'none' }}>
+              {step.optional && (
+                <button className="btn quiet" onClick={() => onSkip(step.id)}>
+                  Skip
+                </button>
+              )}
+              {onTab && (
+                <button className="btn" onClick={() => onTab(step.tab)}>
+                  {step.action}
+                </button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </Card>
   );
 }
 
@@ -286,11 +344,11 @@ function ThisMonth({ status, state, live }) {
             {status.vs_baseline > 0 ? 'higher' : 'lower'}</strong>.
         </p>
       )}
-      <p className="assumption" style={{ marginBottom: 0 }}>
+      <Why id="today.discretionary" label="What counts here?">
         Only discretionary spending counts here. Rent, utilities, insurance and
         card payments are already committed, and no amount of restraint on a
         Tuesday changes the hydro bill.
-      </p>
+      </Why>
     </Card>
   );
 }
@@ -397,13 +455,9 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
               </div>
               {banks.length === 0 && (
                 <p className="assumption" style={{ marginBottom: 0 }}>
-                  Open a piggy bank{onTab && (
-                    <> on the{' '}
-                      <button className="link" onClick={() => onTab('piggy')}>
-                        Plan tab
-                      </button></>
-                  )} and borrowing from one to cover an overspend becomes an
-                  option here too.
+                  Open a piggy bank in{' '}
+                  <GoTo to="piggy" from="today" onTab={onTab} /> and borrowing
+                  from one to cover an overspend becomes an option here too.
                 </p>
               )}
             </>
@@ -490,13 +544,11 @@ function PiggyBanks({ banks, draws, allocated, onTab }) {
 
 function MonthlyAmount({ state, configured, derivation, onTab }) {
   const d = derivation ?? {};
-  const planTab = onTab
-    ? <button className="link" onClick={() => onTab('plan')}>Plan tab</button>
-    : <strong>Plan tab</strong>;
+  const planTab = <GoTo to="plan" from="today" onTab={onTab} />;
 
   return (
     <Card title="Where the daily number comes from"
-          hint="Calculated on the Plan tab, not typed here">
+          hint="Calculated from your plan, not typed here">
       {/* No input. The figure is derived from the plan on every request, so
           there is nothing here that could overwrite it and no stored copy to
           fall out of date. */}
@@ -509,7 +561,7 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
               does not. */}
           <div className="sum" style={{ marginBottom: 14 }}>
             <SumTerm label="Yours to spend" value={d.leftover}
-                     note="the Plan tab's figure" />
+                     note="from your plan" />
             <span className="op" aria-hidden="true">−</span>
             <SumTerm label="Essentials" value={d.essentials}
                      note={essentialsNote(d.essential_categories)} />
@@ -524,16 +576,16 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
             <span className="op" aria-hidden="true">=</span>
             <SumTerm label="A day" value={state.flat_daily} strong />
           </div>
-          <p className="assumption" style={{ marginBottom: 0 }}>
+          <Why id="today.derivation" label="How do I change this number?">
             Every term above is read from your plan when this page loads, so
-            changing your pay, a commitment, your savings or a piggy bank on
-            the {planTab} moves this number immediately — there is no copy of
+            changing your pay, a commitment, your savings or a piggy bank in{' '}
+            {planTab} moves this number immediately — there is no copy of
             it stored anywhere to go stale.
             {d.banks > 0 && (
               <> Piggy banks are taking {money(d.banks)} a month out before the
                  leftover is worked out.</>
             )}
-          </p>
+          </Why>
         </>
       ) : (
         <>
@@ -550,7 +602,7 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
             This is a stand-in: your own median month of discretionary
             spending, because the plan has no take-home pay in it yet. That
             describes your habits rather than deciding anything. Fill in your
-            pay and commitments on the {planTab} and this becomes a figure you
+            pay and commitments in {planTab} and this becomes a figure you
             chose.
           </p>
         </>

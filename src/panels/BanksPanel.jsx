@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
+import {
+  Card, ErrorNote, GoTo, Loading, Notice, StatusPill, Why,
+} from '../components/ui.jsx';
 import {
   checkPlaidKeys, createLinkToken, exchangePublicToken, getPlaidItems,
   syncPlaid, unlinkBank,
@@ -273,11 +275,11 @@ export default function BanksPanel({ onChanged, onTab }) {
           </Notice>
         )}
 
-        <p className="assumption" style={{ marginBottom: 0 }}>
+        <Why id="banks.sync" label="How does syncing work?">
           Only what changed since the last sync is fetched, so syncing often is
           cheap. When a pending charge posts, the pending version is removed
           rather than left beside the real one.
-        </p>
+        </Why>
       </Card>
 
       {onTab && (
@@ -310,11 +312,9 @@ function Skipped({ items, onTab }) {
     <div className="small" style={{ marginTop: 10 }}>
       Skipped {names.length} account{names.length === 1 ? '' : 's'} this bank
       also holds: {names.join(', ')}.{' '}
-      {onTab ? (
-        <button className="link" onClick={() => onTab('accounts')}>
-          Choose which accounts to sync
-        </button>
-      ) : 'Choose which accounts to sync on the Accounts tab'}
+      <GoTo to="accounts" from="banks" onTab={onTab}>
+        Choose which accounts to sync
+      </GoTo>
       {' '}— the choice sticks, so a card you switch off stays off.
     </div>
   );

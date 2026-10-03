@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Chart from '../components/Chart.jsx';
 import {
-  BarRow, Card, Legend, MonthFreshness, Notice, Tile,
+  BarRow, Card, GoTo, Legend, MonthFreshness, Notice, Tile,
 } from '../components/ui.jsx';
 import { dailySpendConfig, monthlyTrendConfig } from '../charts.js';
 import { cssVar, getBreakdown, money, monthLabel, pct } from '../api.js';
@@ -59,7 +59,8 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
         </Notice>
       )}
 
-      <MonthFreshness month={month} summary={summary} onTab={onTab} />
+      <MonthFreshness month={month} summary={summary} onTab={onTab}
+                      from="overview" />
 
       <div className="grid cols-4">
         <Tile
@@ -192,8 +193,8 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
             The chosen half is the part restraint can move. The unavoidable half
             needs renegotiating instead. This counts only charges on the cards
             you have imported, so it is not the same figure as the commitments
-            you typed on the Plan tab — anything paid by transfer never reaches
-            these statements.
+            you typed in <GoTo to="plan" from="overview" onTab={onTab} /> —
+            anything paid by transfer never reaches these statements.
           </p>
         </Card>
 

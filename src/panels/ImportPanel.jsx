@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Card, ErrorNote, Notice } from '../components/ui.jsx';
+import { Card, ErrorNote, Notice, Why } from '../components/ui.jsx';
 import {
   getBundled, getHealth, getImports, getSources, importBundled,
   importFiles, money,
@@ -329,11 +329,11 @@ function BundledStatements({ onImported }) {
         </Notice>
       )}
 
-      <p className="assumption" style={{ marginBottom: 0 }}>
+      <Why id="import.bundled" label="Is it safe to press twice?">
         These go through the same checks as an upload, so pressing this twice
         adds nothing the second time. They are the only transactions that come
         back after the ledger is emptied — and only when you ask for them.
-      </p>
+      </Why>
     </Card>
   );
 }

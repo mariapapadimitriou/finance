@@ -1021,3 +1021,66 @@ class TestBudgetLines:
         assert (b["covered_spend"] + b["unbudgeted_spend"]
                 + b["bank_funded"]["unallocated_total"]) == pytest.approx(
             b["month_spend"], abs=TOLERANCE)
+
+
+class TestTheSetupChecklist:
+    """Every tick comes from the data, so a step done anywhere ticks itself."""
+
+    def _setup(self, client):
+        return client.get("/api/setup").get_json()
+
+    def _step(self, client, step_id):
+        return next(s for s in self._setup(client)["steps"] if s["id"] == step_id)
+
+    def test_a_fresh_ledger_has_everything_to_do(self, client):
+        body = self._setup(client)
+        assert [s["id"] for s in body["steps"]] == [
+            "start", "data", "income", "commitments", "travel", "budgets"]
+        assert not any(s["done"] for s in body["steps"])
+        assert body["remaining"] == 6
+
+    def test_each_step_ticks_itself_from_the_ordinary_endpoint(self, client):
+        client.put("/api/ledger/start", json={"start": "2026-03-01"})
+        assert self._step(client, "start")["done"]
+
+        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        assert self._step(client, "data")["done"]
+
+        client.put("/api/plan/setup", json={"income": 5200, "savings": 700})
+        assert self._step(client, "income")["done"]
+
+        client.post("/api/plan/fixed", json={"name": "Rent", "amount": 1800,
+                                             "category": "Rent & Housing"})
+        assert self._step(client, "commitments")["done"]
+
+        client.post("/api/piggy", json={"name": "Travel", "target": 1200,
+                                        "cadence": "annual"})
+        assert self._step(client, "travel")["done"]
+
+        client.post("/api/plan/setup/apply")
+        assert self._step(client, "budgets")["done"]
+
+        assert self._setup(client)["remaining"] == 0
+
+    def test_remaining_counts_what_is_left(self, ledger):
+        body = self._setup(ledger)
+        assert body["remaining"] == sum(
+            1 for s in body["steps"] if not s["done"] and not s["skipped"])
+
+    def test_only_optional_steps_can_be_skipped(self, client):
+        for step_id in ("start", "travel", "income"):
+            client.post(f"/api/insights/setup.{step_id}/dismiss")
+        steps = {s["id"]: s for s in self._setup(client)["steps"]}
+        assert steps["start"]["skipped"] and steps["travel"]["skipped"]
+        # A core step is not skippable however it is asked.
+        assert steps["income"]["skipped"] is False
+        assert self._setup(client)["remaining"] == 4
+
+    def test_a_bank_funded_budget_does_not_count_as_adopted(self, ledger):
+        """Only a real budget line ticks the step — a stale Travel row a
+        piggy bank pays for is not a budget being kept."""
+        st = ledger.application.config["STORE"]
+        for key in list(st.budgets()):
+            st.set_budget(key, 0)
+        st.set_budget("Travel", 300)          # written directly, past the API
+        assert self._step(ledger, "budgets")["done"] is False

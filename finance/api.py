@@ -626,6 +626,69 @@ def _profile(st, txns, findings_summary_: dict):
     )
 
 
+# ── Setting up ───────────────────────────────────────────────────────────────
+
+@bp.get("/setup")
+def setup_steps():
+    """What is left to set up, from the data the app already has.
+
+    Nothing is stored to track this — every step is true or false because of
+    something already in the ledger or the plan, so a step done some other way
+    (a bank opened from Transactions, budgets adopted from a notice) ticks
+    itself. Two steps are optional and can be skipped: not everyone wants an
+    older history trimmed off, and not everyone travels. A skip is kept with
+    the dismissed insights, the store that already exists for "not for me".
+    """
+    st = store()
+    skipped = st.dismissed()
+    grouping = st.category_groups()
+    from . import groups as budget_lines
+    lines = budget_lines.lines(grouping)
+    budgeted = {k for k in st.budgets()
+                if k in lines and not budget_lines.line_bank_funded(lines[k])}
+
+    steps = [
+        {"id": "start", "optional": True,
+         "label": "Choose the date your ledger counts from",
+         "detail": "Set it before connecting a card — a new connection "
+                   "backfills two years, and this keeps the old months out.",
+         "done": bool(st.ledger_start()), "tab": "accounts",
+         "action": "Choose a date"},
+        {"id": "data", "optional": False,
+         "label": "Connect a card, or load a statement",
+         "detail": "Everything else is worked out from these.",
+         "done": bool(st.accounts()), "tab": "banks",
+         "action": "Connect"},
+        {"id": "income", "optional": False,
+         "label": "Enter your take-home pay",
+         "detail": "Card statements can't see your pay, so the plan starts here.",
+         "done": st.float_setting("monthly_income", 0.0) > 0, "tab": "plan",
+         "action": "Enter it"},
+        {"id": "commitments", "optional": False,
+         "label": "Add rent and your other commitments",
+         "detail": "Anything paid by transfer never reaches a card statement.",
+         "done": bool(st.fixed_costs()), "tab": "plan",
+         "action": "Add them"},
+        {"id": "travel", "optional": True,
+         "label": "Open a travel piggy bank",
+         "detail": "Travel has no budget line — a bank is the only thing "
+                   "that pays for it.",
+         "done": bool(st.piggy_banks()), "tab": "piggy",
+         "action": "Open one"},
+        {"id": "budgets", "optional": False,
+         "label": "Adopt your budgets",
+         "detail": "The plan has already worked out the split; this makes it "
+                   "the one the month is measured against.",
+         "done": bool(budgeted), "tab": "budgets",
+         "action": "Review them"},
+    ]
+    for step in steps:
+        step["skipped"] = step["optional"] and f"setup.{step['id']}" in skipped
+
+    outstanding = [s for s in steps if not s["done"] and not s["skipped"]]
+    return jsonify({"steps": steps, "remaining": len(outstanding)})
+
+
 @bp.post("/insights/<insight_id>/dismiss")
 def dismiss_insight(insight_id: str):
     store().dismiss(insight_id)
