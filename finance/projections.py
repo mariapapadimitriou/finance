@@ -38,7 +38,7 @@ def _monthly_totals(transactions) -> dict[str, dict]:
 
 def project(transactions, monthly_income: float | None = None,
             found_savings_annual: float = 0.0, months_ahead: int = 12,
-            plan: dict | None = None) -> dict:
+            plan: dict | None = None, today: str | None = None) -> dict:
     """Project cumulative savings forward under two scenarios.
 
     `plan` is the result of `money_plan.plan` when one has been set up. It
@@ -105,6 +105,13 @@ def project(transactions, monthly_income: float | None = None,
     on_plan = basis.get("on_plan")
     monthly_cuts = round(found_savings_annual / 12, 2)
 
+    # What is actually being set aside on purpose: the savings figure when
+    # there is a plan, and otherwise whatever the month happens to leave.
+    saving = on_plan if on_plan is not None else surplus
+    if today is None:
+        from datetime import date as _date
+        today = _date.today().isoformat()
+
     rows = []
     pace, planned = 0.0, 0.0
     for i in range(1, months_ahead + 1):
@@ -125,6 +132,15 @@ def project(transactions, monthly_income: float | None = None,
         "monthly_cuts": monthly_cuts,
         "series": rows,
         "at_12": rows[-1] if rows else None,
+        # The rest of this calendar year, which is the horizon anyone
+        # actually pictures. Not a balance — the app has never seen one.
+        "year_end": {
+            "months": months_left_in_year(today),
+            "pace": by_year_end(surplus, today)["total"],
+            "on_plan": by_year_end(saving, today)["total"],
+        },
+        # The same contribution left to compound instead of sitting still.
+        "invested": invested(saving),
         # The terms behind the surplus, so the figure can be argued with rather
         # than taken on trust — the same treatment the daily number gets.
         "basis": basis,
@@ -216,3 +232,95 @@ def _surplus(income: float, typical_spend: float,
         "typical_spend": typical_spend,
         "on_plan": None,
     }
+
+
+# ── What it becomes if it is invested rather than held ───────────────────────
+#
+# Rates, not a rate. A single number would be a forecast dressed as arithmetic,
+# and the honest shape of this question is a range: the same contribution is a
+# very different sum after thirty years depending on where it sits. These are
+# long-run nominal averages of the obvious places to put it, and the UI labels
+# them as assumptions rather than expectations, because a real thirty years
+# delivers them in a jagged order that includes falling years.
+RATES = (
+    (0.02, "A savings account"),
+    (0.05, "A balanced portfolio"),
+    (0.08, "A stock index"),
+)
+
+# The one drawn as a chart: the middle assumption, never the flattering one.
+CHART_RATE = 0.05
+
+HORIZONS = (5, 10, 20, 30)
+
+
+def future_value(monthly: float, annual_rate: float, months: int,
+                 opening: float = 0.0) -> float:
+    """An ordinary annuity: a contribution at the end of each month, compounded.
+
+    Monthly compounding of an annual rate divided by twelve, which is the
+    convention every retirement calculator uses and is close enough to the
+    truth that the difference is invisible beside the uncertainty in the rate
+    itself.
+    """
+    if months <= 0:
+        return round(opening, 2)
+    r = annual_rate / 12
+    if r == 0:
+        return round(opening + monthly * months, 2)
+    growth = (1 + r) ** months
+    return round(opening * growth + monthly * (growth - 1) / r, 2)
+
+
+def invested(monthly: float, opening: float = 0.0) -> dict | None:
+    """What a monthly contribution comes to, under each assumption.
+
+    Contributions are reported beside every value, because the gap between
+    them is the only part of this that is interesting — and the only part that
+    is not simply the contribution restated.
+    """
+    if monthly <= 0:
+        return None
+
+    def at(rate: float, years: int) -> dict:
+        months = years * 12
+        value = future_value(monthly, rate, months, opening)
+        paid_in = round(opening + monthly * months, 2)
+        return {"years": years, "value": value, "contributed": paid_in,
+                "growth": round(value - paid_in, 2)}
+
+    return {
+        "monthly": round(monthly, 2),
+        "opening": round(opening, 2),
+        "horizons": list(HORIZONS),
+        "rates": [
+            {"rate": rate, "label": label,
+             "at": {str(y): at(rate, y) for y in HORIZONS}}
+            for rate, label in RATES
+        ],
+        # One line of value against one of contributions, year by year, for
+        # the middle assumption. The area between them is the growth.
+        "chart_rate": CHART_RATE,
+        "series": [
+            {"year": y,
+             "contributed": round(opening + monthly * y * 12, 2),
+             "value": future_value(monthly, CHART_RATE, y * 12, opening)}
+            for y in range(0, max(HORIZONS) + 1)
+        ],
+    }
+
+
+def months_left_in_year(today: str) -> int:
+    """Including the month we are in, which is the month still being saved."""
+    return 13 - int(today[5:7])
+
+
+def by_year_end(monthly: float, today: str) -> dict:
+    """What the rest of the calendar year accumulates at this rate.
+
+    Deliberately not "your savings", which the app has no way to know — it has
+    never seen a savings balance, only what the plan sets aside. So this is
+    what these remaining months add, and the UI says so.
+    """
+    months = months_left_in_year(today)
+    return {"months": months, "total": round(max(monthly, 0.0) * months, 2)}

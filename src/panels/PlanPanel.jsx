@@ -79,11 +79,11 @@ export default function PlanPanel({ onChanged, onTab }) {
           run(() => savePlanSetup(Number(income) || 0, Number(savings) || 0));
         }}>
           <label htmlFor="income">Monthly take-home</label>
-          <input id="income" type="number" min="0" step="10" inputMode="decimal"
+          <input id="income" type="number" min="0" step="any" inputMode="decimal"
                  value={income} onChange={(e) => setIncome(e.target.value)}
                  style={{ width: 130 }} />
           <label htmlFor="savings">Saving / investing</label>
-          <input id="savings" type="number" min="0" step="10" inputMode="decimal"
+          <input id="savings" type="number" min="0" step="any" inputMode="decimal"
                  value={savings} onChange={(e) => setSavings(e.target.value)}
                  style={{ width: 130 }} />
           <button className="btn primary" type="submit" disabled={busy}>
@@ -142,7 +142,7 @@ export default function PlanPanel({ onChanged, onTab }) {
                   onChange={(e) => setDraft({ ...draft, category: e.target.value })}>
             {cats.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
-          <input type="number" min="0" step="5" required inputMode="decimal"
+          <input type="number" min="0" step="any" required inputMode="decimal"
                  value={draft.amount} placeholder="0" aria-label="Monthly amount"
                  style={{ width: 110 }}
                  onChange={(e) => setDraft({ ...draft, amount: e.target.value })} />
@@ -201,6 +201,12 @@ export default function PlanPanel({ onChanged, onTab }) {
             {essentialNames(data.categories).join(', ') || 'nothing, so far'} —
             has a budget of its own and stays out of the daily figure. Budgets
             marks every line one way or the other.
+          </p>
+          <p className="assumption" style={{ marginTop: 10, marginBottom: 0 }}>
+            Travel is in neither. It arrives in lumps rather than monthly, so
+            instead of a budget line it is funded by a piggy bank — the{' '}
+            <strong>Piggy banks</strong> term above, already subtracted. A
+            trip charged to its bank never touches a month at all.
           </p>
           </>
         )}

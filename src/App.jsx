@@ -78,11 +78,13 @@ const GROUPS = [
   { key: 'today', label: 'Today', panels: ['today'],
     hint: 'What you can spend today, and why that number',
     icon: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z' },
-  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets'],
-    hint: 'What you earn, what it is promised to — banks included — and how the rest divides',
+  // Looking ahead sits with the plan, not with the history: it is the plan
+  // run forward, and the savings figure it offers to move is the plan's.
+  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections'],
+    hint: 'What you earn, what it is promised to, how the rest divides, and where that leads',
     icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
-  { key: 'overview', label: 'Overview', panels: ['overview', 'projections'],
-    hint: 'Where the money went, and where this pace leads',
+  { key: 'overview', label: 'Overview', panels: ['overview'],
+    hint: 'Where the money went',
     icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
   { key: 'savings', label: 'Savings', panels: ['savings', 'subscriptions'],
     hint: 'What to cut, and the renewals worth a second look',
@@ -342,7 +344,8 @@ export default function App() {
       {panel === 'savings' && <SavingsPanel insights={insights} onRefresh={load}
                                           onTab={go} />}
       {panel === 'projections' && (
-        <ProjectionsPanel insights={insights} onTab={go} version={version} />
+        <ProjectionsPanel insights={insights} onTab={go} onChanged={load}
+                         version={version} />
       )}
       {panel === 'subscriptions' && <SubscriptionsPanel recurring={recurring} />}
       {panel === 'transactions' && (

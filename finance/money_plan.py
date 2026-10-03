@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .analytics import counts_as_spending, spend_amount
-from .categorize import CATEGORIES, is_discretionary
+from .categorize import CATEGORIES, is_bank_funded, is_discretionary
 
 # A plan that leaves nothing over is not a plan anyone keeps, and one that
 # leaves almost everything over is not telling you anything. Outside this
@@ -64,6 +64,12 @@ def variable_shares(transactions, months_back: int = 12,
     third of the month unaccounted for and read as if the plan had more room
     than it did.
 
+    The bank-funded categories are left out for the opposite reason: their
+    money has already gone. A piggy bank's contribution is subtracted in
+    `plan()` alongside rent, so handing Travel a share of what remains would
+    fund the same trip twice — once through the bank and again as a monthly
+    line nobody is spending.
+
     Proportions, never amounts. The amounts are what we are deliberately not
     taking from history; the shares are the part history genuinely knows.
     """
@@ -75,7 +81,7 @@ def variable_shares(transactions, months_back: int = 12,
         if t.month not in recent or t.amount <= 0:
             continue
         category = t.category or "Other"
-        if not counts_as_spending(t):
+        if not counts_as_spending(t) or is_bank_funded(category):
             continue
         if discretionary_only and not is_discretionary(category):
             continue

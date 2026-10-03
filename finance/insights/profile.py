@@ -364,16 +364,19 @@ def travel_has_no_bank(p: Profile) -> Observation | None:
     monthly = round(p.travel_last_year / 12, 2)
     return Observation(
         id="travel_no_bank",
-        title=f"{_money(p.travel_last_year)} of travel, budgeted nowhere",
-        detail=(f"That is what the last year of travel cost, and because it "
-                "arrived in a few lumps rather than monthly, the months it "
-                "landed in look like disasters and the rest look better than "
-                f"they were. A piggy bank of {_money(monthly)} a month would "
-                "cover the same travel out of every month equally — and when "
-                "you book the next trip, charging it to the bank keeps it out "
-                "of that month's spending entirely."),
-        severity="watch", metric=_money(monthly), tab="piggy",
-        action="Open a piggy bank",
+        title=f"{_money(p.travel_last_year)} of travel, funded by nothing",
+        detail=(f"That is what the last year of travel cost. Travel has no "
+                "budget line on purpose — it arrives in a few lumps rather "
+                "than monthly, so a monthly line for it is wrong in both "
+                "directions — which means a piggy bank is the only thing "
+                f"paying for it, and there isn't one. {_money(monthly)} a "
+                "month would cover the same travel out of every month "
+                "equally, and charging the next trip to the bank keeps it "
+                "out of that month's spending entirely."),
+        # An unfunded cost you are certain to incur, now that the budget
+        # deliberately leaves it out: that is something to do, not watch.
+        severity="act", metric=_money(monthly), tab="piggy",
+        action="Open a travel bank",
         figures={"annual": p.travel_last_year, "monthly": monthly},
     )
 

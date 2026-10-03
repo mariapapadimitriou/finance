@@ -96,6 +96,7 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
   // drift to report in that state — nothing is saved to drift from — so
   // without this the page showed a full table and no way to accept it.
   const nothingAdopted = rows.length > 0 && rows.every((r) => !r.adopted);
+  const banked = data.bank_funded;
 
   return (
     <div className="stack">
@@ -193,6 +194,11 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
 
           <ErrorNote error={actionError} />
 
+          {/* Travel has no row in the table above, and a category that
+              silently disappears is worse than one with a wrong number — so
+              the page says where it went, and what it is still costing. */}
+          {banked && <BankFunded banked={banked} onTab={onTab} />}
+
           {/* One wording for this, shared with Overview. */}
           <MonthFreshness month={month} summary={summary} onTab={onTab} />
 
@@ -202,7 +208,8 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
             <Notice>
               <strong>
                 {money(data.unbudgeted_spend)} of this month&apos;s{' '}
-                {money(data.month_spend)} isn&apos;t covered by any budget line.
+                {money(data.budgetable_spend)} isn&apos;t covered by any budget
+                line.
               </strong>{' '}
               The totals below only count categories you have a budget for, so
               they will always read lower than the Overview until everything
@@ -249,6 +256,79 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Why Travel is not in the table, and what that leaves outstanding.
+ *
+ * Three states worth distinguishing: no bank at all, which means the cost is
+ * funded by nothing; a bank that covered everything, which is the system
+ * working and needs one quiet line; and a bank that did not cover a charge,
+ * which is money still coming out of this month until it is allocated.
+ */
+function BankFunded({ banked, onTab }) {
+  // One category or several — the set is a decision in categorize.py, not a
+  // constant this component gets to assume the size of.
+  const list = banked.categories;
+  const names = list.length > 1
+    ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`
+    : list[0];
+  const verb = list.length > 1 ? 'have' : 'has';
+  const left = banked.unallocated_total;
+
+  if (banked.banks === 0) {
+    return (
+      <Notice kind="error">
+        <strong>
+          {names} {verb} no budget line and no piggy bank.
+        </strong>{' '}
+        They are left out of the split above on purpose — a cost that arrives
+        in lumps is wrong as a monthly line — on the understanding that a bank
+        is collecting for them. Nothing is.
+        {onTab && (
+          <div className="row" style={{ marginTop: 12 }}>
+            <button className="btn primary" onClick={() => onTab('piggy')}>
+              Open a travel bank
+            </button>
+          </div>
+        )}
+      </Notice>
+    );
+  }
+
+  if (left <= 1) {
+    return (
+      <Notice kind="good">
+        <strong>
+          {names} {verb === 'have' ? 'are' : 'is'} paid for by a piggy bank,
+          not budgeted.
+        </strong>{' '}
+        That is why there is no line above for{' '}
+        {list.length > 1 ? 'them' : 'it'}, and nothing this month is waiting
+        to be charged to a bank.
+      </Notice>
+    );
+  }
+
+  return (
+    <Notice>
+      <strong>
+        {money(left)} of {names.toLowerCase()} this month isn&apos;t charged to
+        a piggy bank.
+      </strong>{' '}
+      {names} {verb} no budget line — a bank funds them instead — so until
+      that charge is allocated to one it comes out of this month like any
+      other spending. Charge it on Transactions and it leaves the month
+      entirely.
+      {onTab && (
+        <div className="row" style={{ marginTop: 12 }}>
+          <button className="btn" onClick={() => onTab('transactions')}>
+            Charge it to a bank
+          </button>
+        </div>
+      )}
+    </Notice>
   );
 }
 
@@ -338,7 +418,7 @@ function BudgetRow({ row, draft, onChange }) {
           id={`budget-${row.category}`}
           type="number"
           min="0"
-          step="10"
+          step="any"
           style={{ width: 110, textAlign: 'right' }}
           value={draft ?? (row.adopted ? row.budget : '')}
           placeholder={row.plan_budget != null ? String(row.plan_budget) : '0'}

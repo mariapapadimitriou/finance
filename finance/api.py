@@ -20,7 +20,7 @@ from .analytics import (
     summary as build_summary,
     weekday_profile,
 )
-from .categorize import CATEGORIES, is_discretionary
+from .categorize import BANK_FUNDED, CATEGORIES, is_bank_funded, is_discretionary
 from .db import storage_mode
 from .ingest import all_sources, get_source, parse_csv, parse_statement
 from .insights import (detect_recurring, findings_summary, generate_findings,
@@ -541,9 +541,7 @@ def _profile(st, txns, findings_summary_: dict):
                            and spend_plan.counts_toward_plan(t)), 2)
 
     months = sorted({t.month for t in txns})
-    recent = set(months[-12:])
-    travel = round(sum(t.amount for t in txns if t.month in recent
-                       and t.amount > 0 and (t.category or "") == "Travel"), 2)
+    travel = _travel_last_year(txns)
 
     charges = st.bank_charges_by_month()
     banks = [b.to_dict(piggy.status(b, charges.get(b.id, {})))
@@ -757,15 +755,38 @@ def projection():
     findings = generate_findings(txns, st.dismissed())
     weighted = findings_summary(findings).get("weighted_annual", 0.0)
 
+    # `savings` asks "what if I put this much away" without writing it down.
+    # The slider on the tab drags it, and every figure that comes back is from
+    # the same arithmetic the saved one would use — the alternative was the
+    # browser recomputing a preview, which is how two versions of one sum
+    # start disagreeing.
+    saved_savings = st.float_setting("savings_target", 0.0)
+    savings = saved_savings
+    previewing = False
+    if request.args.get("savings") is not None:
+        try:
+            savings = max(float(request.args["savings"]), 0.0)
+            previewing = abs(savings - saved_savings) > 0.005
+        except (TypeError, ValueError):
+            return jsonify({"error": "savings must be a number."}), 400
+
     # The plan, when there is one. Without it the projection cannot see rent and
     # ends up treating it as money available to save.
     from . import money_plan
-    plan = money_plan.plan(income or 0.0, st.fixed_costs(),
-                           st.float_setting("savings_target", 0.0),
-                           _bank_monthly(st)) if income else None
+    fixed = st.fixed_costs()
+    banks = _bank_monthly(st)
+    plan = money_plan.plan(income or 0.0, fixed, savings,
+                           banks) if income else None
 
     result = projections.project(txns, income, weighted,
                                  int(request.args.get("months", 12)), plan=plan)
+    # What the slider may ask for: everything that is not already promised.
+    # Past this the plan has nothing left to divide, and the daily number is
+    # zero before the month starts.
+    result["savings_ceiling"] = round(
+        max((income or 0.0) - sum(f.amount for f in fixed) - banks, 0.0), 2)
+    result["savings_saved"] = round(saved_savings, 2)
+    result["savings_previewing"] = previewing
     target = request.args.get("target")
     if target:
         try:
@@ -1020,6 +1041,11 @@ def apply_plan_budgets():
     for category, amount in budgets.items():
         st.set_budget(category, amount)
 
+    # A budget saved before the category became bank-funded would otherwise
+    # survive every re-apply, dividing money the plan no longer gives it.
+    for category in BANK_FUNDED:
+        st.set_budget(category, 0)
+
     # The budgets cover everything the leftover has to pay for; the daily
     # number governs only the discretionary slice of it. That slice is not
     # saved — Today derives it from this same arithmetic on every request, so
@@ -1044,6 +1070,40 @@ def _bank_status(st) -> list[dict]:
     return rows
 
 
+def _travel_last_year(txns) -> float:
+    """What travel cost over the last twelve months the ledger covers.
+
+    Gross, not netted against a bank: this is the size of the cost a bank
+    would have to be collecting for, which is the question being asked of it.
+    """
+    recent = set(sorted({t.month for t in txns})[-12:])
+    return round(sum(t.amount for t in txns if t.month in recent
+                     and t.amount > 0 and (t.category or "") == "Travel"), 2)
+
+
+def _suggested_bank(txns, banks: list) -> dict | None:
+    """The bank to offer when there is not one yet.
+
+    Travel, because it is the category the budget deliberately has no line
+    for: its share is excluded from the split on the understanding that a
+    bank is collecting for it instead. Offering anything else first would
+    leave the one cost the plan does not cover uncovered.
+
+    The target comes from her own last year of travel, rounded up to a round
+    number, because a figure she can recognise is one she can correct. With
+    no travel in the ledger there is nothing to suggest and the field is left
+    empty rather than filled with a number from nowhere.
+    """
+    import math
+
+    if banks:
+        return None
+    annual = _travel_last_year(txns)
+    target = int(math.ceil(annual / 100.0) * 100) if annual >= 240 else None
+    return {"name": "Travel", "cadence": "annual",
+            "target": target, "annual_spend": annual}
+
+
 @bp.get("/piggy")
 def list_banks():
     st = store()
@@ -1055,6 +1115,9 @@ def list_banks():
         # What opening one costs the month, so the Plan tab's leftover and this
         # page quote the same figure.
         "income": st.float_setting("monthly_income", 0.0),
+        # The first bank anyone should open, prefilled from their own history.
+        "suggested": _suggested_bank(st.all_transactions(), rows),
+        "bank_funded": sorted(BANK_FUNDED),
     })
 
 
@@ -1393,7 +1456,9 @@ def budgets():
     txns = _txns()
     months = sorted({t.month for t in txns})
     month = request.args.get("month") or (months[-1] if months else None)
-    b = store().budgets()
+    # A bank-funded category has no budget line, and a stale one saved before
+    # it became bank-funded is not shown as though it still governed anything.
+    b = {c: v for c, v in store().budgets().items() if not is_bank_funded(c)}
     split = _plan_split(store(), txns)
     plan_budgets = split["budgets"] if split else {}
     typical = _typical_by_category(txns)
@@ -1426,7 +1491,19 @@ def budgets():
         {"category": r["category"], "amount": r["amount"]}
         for r in by_category(txns, month)
         if r["category"] not in b and r["amount"] > 0
+        and not is_bank_funded(r["category"])
     ]
+
+    # Travel is not missing a budget; it is funded somewhere else. What is
+    # worth reporting is the part of it no bank has actually paid for —
+    # `by_category` already nets off whatever was charged to one — because
+    # that is the travel still coming out of this month.
+    bank_funded = [
+        {"category": r["category"], "amount": r["amount"]}
+        for r in by_category(txns, month)
+        if is_bank_funded(r["category"]) and r["amount"] > 0
+    ]
+    bank_funded_total = round(sum(r["amount"] for r in bank_funded), 2)
 
     return jsonify({
         "budgets": b,
@@ -1442,8 +1519,21 @@ def budgets():
         "typical": typical,
         "covered_spend": covered,
         "month_spend": everything,
-        "unbudgeted_spend": round(everything - covered, 2),
+        # Three terms now, and they still sum to the month: what a budget
+        # covered, what a bank is meant to, and what nothing does. Rolling the
+        # middle one into the last would have the page report travel as a
+        # missing budget line on the same screen that explains it has none.
+        "budgetable_spend": round(everything - bank_funded_total, 2),
+        "unbudgeted_spend": round(everything - covered - bank_funded_total, 2),
         "unbudgeted": sorted(unbudgeted, key=lambda r: -r["amount"]),
+        # Categories a piggy bank pays for instead of a budget, and the
+        # spending in them this month that no bank covered.
+        "bank_funded": {
+            "categories": sorted(BANK_FUNDED),
+            "unallocated": sorted(bank_funded, key=lambda r: -r["amount"]),
+            "unallocated_total": bank_funded_total,
+            "banks": len(store().piggy_banks()),
+        },
         # What the plan would give each category, and what it has to give out.
         # Top-level rather than inside `drift`, because the table shows this
         # column whether or not the two agree — and `drift` is None precisely
@@ -1529,6 +1619,11 @@ def set_budgets():
     for category, amount in updates.items():
         if category not in CATEGORIES:
             return jsonify({"error": f"Unknown category '{category}'."}), 400
+        if is_bank_funded(category):
+            return jsonify({"error": (
+                f"{category} is funded by a piggy bank, not budgeted. Its "
+                "money leaves the plan as the bank's monthly contribution, so "
+                "a budget line here would set the same money aside twice.")}), 400
         try:
             store().set_budget(category, float(amount) if amount is not None else 0)
         except (TypeError, ValueError):

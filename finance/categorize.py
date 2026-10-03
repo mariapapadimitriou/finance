@@ -70,6 +70,30 @@ def is_discretionary(category: str) -> bool:
     return CATEGORIES.get(category, {}).get("discretionary", False)
 
 
+# Categories a piggy bank funds rather than a monthly budget line.
+#
+# Travel costs nothing for eight months and $2,400 in the ninth, so a monthly
+# budget for it is wrong in both directions: eight months report a surplus
+# that is really a flight not yet booked, and the ninth reports a disaster
+# that was entirely predictable. A piggy bank is the answer to exactly that
+# shape of cost, and once a bank is collecting for it the money has already
+# left the leftover as the bank's contribution — giving the category a budget
+# out of what remains would fund the same trip twice.
+#
+# So these are excluded from the budget split the way rent is: not because
+# they do not matter, but because something else is already paying for them.
+#
+# Lodging is in here with Travel because the line between them is an artefact
+# of the rules above, not of anything real: a flight bought through Expedia
+# matches the lodging pattern and lands in Lodging, so funding only Travel
+# would leave half of a trip with a monthly budget and half without.
+BANK_FUNDED = {"Travel", "Lodging"}
+
+
+def is_bank_funded(category: str) -> bool:
+    return category in BANK_FUNDED
+
+
 # ── Pattern rules ────────────────────────────────────────────────────────────
 # Ordered: the first match wins, so put specific merchants above generic words.
 # Patterns are matched case-insensitively against "MERCHANT || raw description".
