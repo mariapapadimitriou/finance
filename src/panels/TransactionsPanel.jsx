@@ -381,13 +381,14 @@ function CategoryEditor({ current, merchant, categories, onSave, onCancel }) {
 }
 
 /**
- * Charging one transaction to a piggy bank, or putting it back.
+ * Which piggy bank pays for a charge, if any.
  *
- * This is the gesture that makes piggy banks worth having. A charge allocated
- * to a bank leaves the month it fell in — it is not in the Overview, the
- * budgets, or the weekly number — because it was already paid for over the
- * months leading up to it. Putting it back is one click, and the month gets it
- * again.
+ * Most charges get here by themselves: a bank that pays for Travel pays for
+ * every travel charge, marked "automatic". This cell is for the exceptions —
+ * a one-off in some other category charged to a bank by hand, or a travel
+ * charge you would rather count as everyday spending. A charge a bank pays
+ * leaves the week it fell in — it is not in the Overview, the budgets, or the
+ * weekly number — because the bank's monthly contribution already paid for it.
  *
  * Only outflows can be charged: a refund or a card payment is money coming
  * back, and there is nothing to take out of a bank.
@@ -428,8 +429,11 @@ function BankCell({ txn, banks, open, onOpen, onDone }) {
   if (bank && !open) {
     return (
       <button className="btn quiet" onClick={onOpen} disabled={busy}
-              title={`Charged to ${bank.name} in full — not counted in this month`}>
+              title={txn.bank_auto
+                ? `${bank.name} pays for ${txn.category} — not counted in your week`
+                : `Charged to ${bank.name} — not counted in your week`}>
         {bank.name} ✓
+        {txn.bank_auto && <span className="muted"> · automatic</span>}
       </button>
     );
   }
@@ -447,28 +451,28 @@ function BankCell({ txn, banks, open, onOpen, onDone }) {
       <select value={txn.bank_id ?? ''} disabled={busy}
               aria-label="Charge this to a piggy bank"
               onChange={(e) => charge(e.target.value)}>
-        <option value="">Count against this month</option>
-        {/* Nothing is disabled by its balance any more. A bank takes the
-            charge whether or not it has caught up yet, and repays itself from
-            the months ahead — so what matters at the point of choosing is
-            which bank the spending belongs to, with the balance as context. */}
+        <option value="">Count as everyday</option>
+        {/* Nothing is disabled by what is left. A bank pays the charge even
+            past its target, and repays the difference next year — so what
+            matters at the point of choosing is which bank the spending
+            belongs to, with what is left as context. */}
         {banks.map((b) => (
           <option key={b.id} value={b.id}>
-            {b.name} — {b.balance >= 0
-              ? `${money(b.balance)} in it`
-              : `${money(-b.balance)} behind`}
+            {b.name} — {b.available >= 0
+              ? `${money(b.available)} left`
+              : `${money(-b.available)} over`}
           </option>
         ))}
       </select>
       {result && (
         <span className="small">
-          {result.behind
-            ? <>{result.bank} took all of it and is now{' '}
+          {result.over
+            ? <>{result.bank} paid it and is now{' '}
                 <strong className="num">{money(result.behind_by)}</strong>{' '}
-                behind — its contribution rises to{' '}
-                <strong className="num">{money(result.monthly)}</strong> a
-                month until it catches up.</>
-            : <>{result.bank} paid all of it.</>}
+                over this year — next year&apos;s contribution repays it.</>
+            : <>{result.bank} paid it —{' '}
+                <strong className="num">{money(result.available)}</strong>{' '}
+                left this year.</>}
         </span>
       )}
       <button className="btn quiet" onClick={onOpen} disabled={busy}>Close</button>

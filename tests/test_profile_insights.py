@@ -115,31 +115,62 @@ class TestEachRuleFiresOnItsOwnCondition:
         assert row and row["figures"]["monthly"] == 300.0
         assert row["tab"] == "piggy"
 
-    def test_travel_already_covered_by_a_bank_says_nothing(self):
-        p = Profile(income=4000.0, fixed_total=1500.0, savings=500.0,
-                    leftover=2000.0, daily=65.0, months_of_history=12,
-                    budgets_set=5, travel_last_year=3600.0,
-                    banks=[{"id": 1, "name": "Trip", "monthly": 300.0,
-                            "balance": 0.0, "target": 3600.0,
-                            "funded_share": 0.1, "overdrawn": False}])
+    def _plan(self, **kw):
+        return Profile(income=4000.0, fixed_total=1500.0, savings=500.0,
+                       leftover=2000.0, daily=65.0, months_of_history=12,
+                       budgets_set=5, **kw)
+
+    def test_travel_paid_for_by_a_bank_says_nothing(self):
+        p = self._plan(travel_last_year=3600.0,
+                       banks=[{"id": 1, "name": "Trip", "monthly": 300.0,
+                               "available": 3600.0, "target": 3600.0,
+                               "categories": ["Lodging", "Travel"]}])
         assert find(observe(p), "travel_no_bank") is None
 
-    def test_a_bank_catching_up_is_reported_per_bank(self):
-        """Not an error — it is the mechanism working — but the raised
-        contribution is why the month feels tighter, so it is worth saying."""
-        p = Profile(income=4000.0, fixed_total=1500.0, savings=500.0,
-                    leftover=2000.0, daily=65.0, months_of_history=12,
-                    budgets_set=5,
-                    banks=[{"id": 7, "name": "Trip", "monthly": 325.0,
-                            "base_monthly": 300.0, "catch_up": 25.0,
-                            "accrued": 600.0, "charged": 900.0,
-                            "balance": -300.0, "target": 3600.0,
-                            "funded_share": 0.17, "behind": True,
-                            "behind_by": 300.0}])
+    def test_a_bank_that_does_not_pay_for_travel_does_not_count(self):
+        """A wedding fund keeps nothing off the week when a flight lands."""
+        p = self._plan(travel_last_year=3600.0,
+                       banks=[{"id": 1, "name": "Wedding", "monthly": 300.0,
+                               "available": 3600.0, "target": 3600.0,
+                               "categories": []}])
+        assert find(observe(p), "travel_no_bank")
+
+    def test_a_bank_over_this_year_is_reported_per_bank(self):
+        """Not an error — it is the mechanism working — but it decides next
+        year's contribution, so it is worth saying."""
+        p = self._plan(banks=[{"id": 7, "name": "Trip", "monthly": 300.0,
+                               "target": 3600.0, "spent_this_year": 3900.0,
+                               "available": -300.0, "over": True,
+                               "behind_by": 300.0, "basis": "first_year"}])
         row = find(observe(p), "bank_behind_7")
         assert row and row["severity"] == "watch"
-        assert "Trip" in row["title"]
-        assert "$325" in row["detail"] and "$300" in row["detail"]
+        assert "Trip" in row["title"] and "$300" in row["title"]
+        assert "$3,900" in row["detail"] and "$3,600" in row["detail"]
+
+    def test_a_bank_repaying_last_year_says_why_the_week_is_tighter(self):
+        p = self._plan(banks=[{"id": 7, "name": "Trip", "monthly": 325.0,
+                               "target": 3600.0, "spent_last_year": 3900.0,
+                               "available": 3600.0, "over": False,
+                               "basis": "repaying", "cadence": "annual"}])
+        row = find(observe(p), "bank_repaying_7")
+        assert row and "$325" in row["detail"] and "$300" in row["detail"]
+
+    def test_repaying_a_normal_year_is_not_news(self):
+        p = self._plan(banks=[{"id": 7, "name": "Trip", "monthly": 250.0,
+                               "target": 3600.0, "spent_last_year": 3000.0,
+                               "available": 3600.0, "over": False,
+                               "basis": "repaying", "cadence": "annual"}])
+        assert not [r for r in observe(p) if r["id"].startswith("bank_")]
+
+    def test_a_new_bank_is_not_called_fully_funded(self):
+        """It can pay its whole target on day one; that money is advanced,
+        not saved."""
+        p = self._plan(banks=[{"id": 7, "name": "Trip", "monthly": 300.0,
+                               "target": 3600.0, "available": 3600.0,
+                               "held": 300.0, "over": False}])
+        assert find(observe(p), "bank_ready_7") is None
+        p.banks[0]["held"] = 3600.0
+        assert find(observe(p), "bank_ready_7")
 
     def test_thin_history(self):
         row = find(observe(Profile(months_of_history=1)), "thin_history")

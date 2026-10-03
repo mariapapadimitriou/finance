@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .analytics import counts_as_spending, spend_amount
-from .categorize import CATEGORIES, is_bank_funded, is_discretionary
+from .categorize import CATEGORIES, is_discretionary
 
 # A plan that leaves nothing over is not a plan anyone keeps, and one that
 # leaves almost everything over is not telling you anything. Outside this
@@ -56,7 +56,8 @@ class FixedCost:
 
 def variable_shares(transactions, months_back: int = 12,
                     discretionary_only: bool = False,
-                    groups: dict[str, str] | None = None) -> dict[str, float]:
+                    groups: dict[str, str] | None = None,
+                    bank_funded=frozenset()) -> dict[str, float]:
     """How you divide the spending a budget can cover, as proportions of 1.0.
 
     Everything that is not a fixed commitment, which is what the leftover
@@ -65,11 +66,11 @@ def variable_shares(transactions, months_back: int = 12,
     third of the month unaccounted for and read as if the plan had more room
     than it did.
 
-    The bank-funded categories are left out for the opposite reason: their
-    money has already gone. A piggy bank's contribution is subtracted in
-    `plan()` alongside rent, so handing Travel a share of what remains would
-    fund the same trip twice — once through the bank and again as a monthly
-    line nobody is spending.
+    `bank_funded` — the categories a piggy bank pays for — are left out for
+    the opposite reason: their money has already gone. A bank's contribution
+    is subtracted in `plan()` alongside rent, so handing Travel a share of
+    what remains would fund the same trip twice — once through the bank and
+    again as a monthly line nobody is spending.
 
     Proportions, never amounts. The amounts are what we are deliberately not
     taking from history; the shares are the part history genuinely knows.
@@ -88,7 +89,7 @@ def variable_shares(transactions, months_back: int = 12,
         if t.month not in recent or t.amount <= 0:
             continue
         category = t.category or "Other"
-        if not counts_as_spending(t) or is_bank_funded(category):
+        if not counts_as_spending(t) or category in bank_funded:
             continue
         if discretionary_only and not is_discretionary(category):
             continue
@@ -109,9 +110,11 @@ def variable_shares(transactions, months_back: int = 12,
         kept.items(), key=lambda kv: -kv[1])}
 
 
-def discretionary_shares(transactions, months_back: int = 12) -> dict[str, float]:
+def discretionary_shares(transactions, months_back: int = 12,
+                         bank_funded=frozenset()) -> dict[str, float]:
     """Only the part a daily allowance can influence."""
-    return variable_shares(transactions, months_back, discretionary_only=True)
+    return variable_shares(transactions, months_back, discretionary_only=True,
+                           bank_funded=bank_funded)
 
 
 def discretionary_pool(budgets: dict[str, float]) -> float:

@@ -7,13 +7,16 @@ import {
 } from '../api.js';
 
 /**
- * Piggy banks: the costs that don't arrive monthly, budgeted monthly anyway.
+ * Piggy banks: big spending, kept out of the weekly allowance.
+ *
+ * The weekly number is for habits. A trip is not a habit, so a bank pays for
+ * it instead: you say what it pays for (Travel, say) and every charge in
+ * those categories comes out of the bank by itself.
  *
  * Two numbers matter per bank and they answer different questions. The monthly
  * contribution is what this bank costs you every month — it comes off the
- * Plan's leftover like rent. The balance is what is in it now, which is what
- * you can actually spend. Showing one without the other is how you end up
- * either surprised by a small daily allowance or surprised by an empty fund.
+ * Plan's leftover like rent. What is available is what you can spend from it
+ * this year: the whole target, from the day it opens, less what it has paid.
  */
 export default function PiggyPanel({ onTab, version = 0 }) {
   const [data, setData] = useState(null);
@@ -54,14 +57,15 @@ export default function PiggyPanel({ onTab, version = 0 }) {
             predictable.
           </Empty>
 
-          {/* Not a generic nudge. Travel has no budget line anywhere in the
-              app on purpose, so until this bank exists it is the one cost
-              nothing at all is paying for. */}
+          {/* Not a generic nudge: travel is the big spending almost
+              everyone has, and until a bank pays for it every trip lands on
+              the week it was booked in. */}
           {suggested && editing !== 'new' && (
             <Notice kind="error">
-              <strong>Start with travel.</strong> It is the one category with
-              no budget line — a cost that lands in lumps is wrong as a
-              monthly figure — so a bank is the only thing that can fund it.
+              <strong>Start with travel.</strong> Trips arrive in lumps, not
+              habits, so they don&apos;t belong in a weekly allowance — until
+              a bank pays for them, the week you book a flight reads as a
+              disaster.
               {suggested.annual_spend > 0 && (
                 <> Your last year of travel came to{' '}
                   <strong className="num">{money(suggested.annual_spend)}</strong>
@@ -82,29 +86,24 @@ export default function PiggyPanel({ onTab, version = 0 }) {
           )}
           <Card title="What a piggy bank does">
             <p className="muted" style={{ marginTop: 0 }}>
-              You name a cost and a target. Two things follow, and the second is
-              the one that makes it work:
+              You name your big spending and how much it gets a year. Two
+              things follow:
             </p>
             <ul className="steps">
               <li>
-                <strong>Going in.</strong> The target is divided by the months
-                available, and that share comes off every month&apos;s budget
-                exactly like rent. A holiday in June becomes a bill you are
-                already paying.
+                <strong>The money is there from day one.</strong> Open an
+                $8,000 travel bank and you can spend $8,000 on travel today.
+                A twelfth of it comes off every month, like rent — and after
+                the first year it only takes back what you actually spent.
               </li>
               <li>
-                <strong>Coming out.</strong> When you spend on it, you charge
-                that transaction to the bank in{' '}
-                <GoTo to="transactions" from="plan" onTab={onTab} />. It leaves
-                the month it fell in entirely — so June doesn&apos;t look like a
-                disaster, because June was never asked to pay for the holiday.
+                <strong>It pays by itself.</strong> Choose what it pays for,
+                and every charge in those categories comes out of the bank
+                instead of your week. A one-off in any other category can be
+                charged to it in{' '}
+                <GoTo to="transactions" from="plan" onTab={onTab} />.
               </li>
             </ul>
-            <p className="small muted" style={{ marginBottom: 0 }}>
-              Nothing here is typed twice. The monthly figure comes from the
-              target and the date; the balance comes from how many months have
-              passed and what you have charged to it.
-            </p>
           </Card>
         </>
       ) : (
@@ -114,26 +113,26 @@ export default function PiggyPanel({ onTab, version = 0 }) {
                   note={data.income > 0
                     ? `${pct(share)} of your take-home pay`
                     : 'Set your take-home above to see this as a share'} />
-            <Tile label="Held across every bank" value={money(data.balance_total)}
-                  note="Collected so far, less what has been charged" />
+            <Tile label="Available across every bank"
+                  value={money(data.balance_total)}
+                  note="What they can still pay this year" />
             <Tile label="Piggy banks" value={String(banks.length)}
-                  note={banks.some((b) => b.behind)
-                    ? 'One is behind and catching up'
-                    : 'None of them behind'} />
+                  note={overCount(banks)} />
           </div>
 
           {/* No link to the plan from here any more: this is the plan page.
               The figure it refers to is the term in the sum above it. */}
           <Notice>
             These contributions come off the{' '}
-            <strong>Yours to spend</strong> figure above before the daily
-            number is worked out, which is what &ldquo;deducted equally from
-            each month&rdquo; means in practice.
+            <strong>Yours to spend</strong> figure above before the weekly
+            number is worked out. In return, everything a bank pays for comes
+            out of the bank, never out of your week.
           </Notice>
 
           <div className="stack">
             {banks.map((b) => (
-              <Bank key={b.id} bank={b}
+              <Bank key={b.id} bank={b} banks={banks}
+                    all={data.spend_categories ?? []}
                     editing={editing === b.id}
                     onEdit={() => setEditing(editing === b.id ? null : b.id)}
                     onDone={async () => { setEditing(null); await load(); }} />
@@ -143,7 +142,9 @@ export default function PiggyPanel({ onTab, version = 0 }) {
       )}
 
       {editing === 'new' ? (
-        <BankForm suggest={suggested} onCancel={() => setEditing(null)}
+        <BankForm suggest={suggested} banks={banks}
+                  all={data.spend_categories ?? []}
+                  onCancel={() => setEditing(null)}
                   onSaved={async () => { setEditing(null); await load(); }} />
       ) : (
         <button className="btn primary" onClick={() => setEditing('new')}>
@@ -154,7 +155,7 @@ export default function PiggyPanel({ onTab, version = 0 }) {
   );
 }
 
-function Bank({ bank: b, editing, onEdit, onDone }) {
+function Bank({ bank: b, banks, all, editing, onEdit, onDone }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [confirming, setConfirming] = useState(false);
@@ -172,15 +173,20 @@ function Bank({ bank: b, editing, onEdit, onDone }) {
   }
 
   if (editing) {
-    return <BankForm bank={b} onCancel={onEdit} onSaved={onDone} />;
+    return <BankForm bank={b} banks={banks} all={all}
+                     onCancel={onEdit} onSaved={onDone} />;
   }
 
-  const state = b.behind ? 'warning' : b.funded_share >= 1 ? 'good' : 'warning';
-  const label = b.behind ? 'Catching up'
-    : b.funded_share >= 1 ? 'Fully funded' : 'Filling';
+  const dated = b.cadence === 'once';
+  const state = b.over ? 'warning' : 'good';
+  const label = b.over ? 'Over this year'
+    : dated && b.complete ? 'Done' : 'Ready';
+  const share = b.target > 0 ? Math.min(Math.max(b.available / b.target, 0), 1) : 0;
+  const cats = b.categories ?? [];
 
   return (
     <section className="card">
+      <ErrorNote error={error} />
       <div className="row" style={{ alignItems: 'flex-start', gap: 16 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="row" style={{ gap: 10 }}>
@@ -188,20 +194,24 @@ function Bank({ bank: b, editing, onEdit, onDone }) {
             <StatusPill state={state}>{label}</StatusPill>
           </div>
           <p className="small muted" style={{ margin: '6px 0 0' }}>
-            {b.cadence === 'once'
-              ? <>{money(b.target)} by {dateLabel(b.target_date)}
-                  {b.months_left > 0
-                    ? ` — ${b.months_left} month${b.months_left === 1 ? '' : 's'} to go`
-                    : ' — the date has arrived'}</>
-              : <>{money(b.target)} a year, spread across twelve months</>}
+            {dated
+              ? <>{money(b.target)} by {dateLabel(b.target_date)}</>
+              : <>{money(b.target)} a year ·{' '}
+                  {monthLabel(b.year_start)} – {monthLabel(b.year_end)}</>}
+          </p>
+          <p className="small" style={{ margin: '4px 0 0' }}>
+            {cats.length > 0
+              ? <>Pays for <strong>{cats.join(', ')}</strong> by itself</>
+              : <span className="muted">
+                  Pays for nothing by itself — charge things to it from
+                  Transactions, or edit it to choose categories
+                </span>}
           </p>
           {b.note && <p className="small muted" style={{ margin: '4px 0 0' }}>{b.note}</p>}
         </div>
         <div style={{ textAlign: 'right' }}>
           <div className="big num">{money(b.monthly)}</div>
-          <div className="per">
-            a month{b.catch_up > 0 && <>, incl. {money(b.catch_up)} catching up</>}
-          </div>
+          <div className="per">a month — {basisText(b)}</div>
         </div>
       </div>
 
@@ -210,19 +220,20 @@ function Bank({ bank: b, editing, onEdit, onDone }) {
         overflow: 'hidden', marginTop: 16,
       }}>
         <div style={{
-          width: `${Math.min(Math.max(b.funded_share, 0), 1) * 100}%`,
+          width: `${share * 100}%`,
           height: '100%', borderRadius: '0 4px 4px 0',
-          background: `var(--${state === 'good' ? 'good' : state})`,
+          background: `var(--${state})`,
         }} />
       </div>
 
       <div className="row small" style={{ marginTop: 10, gap: 18, flexWrap: 'wrap' }}>
         <span>
-          <span className="muted">In it now </span>
-          <strong className="num">{money(b.balance, { cents: true })}</strong>
+          <span className="muted">Available {dated ? '' : 'this year '}</span>
+          <strong className="num">{money(b.available, { cents: true })}</strong>
+          <span className="muted"> of {money(b.target)}</span>
         </span>
         <span className="muted num">
-          {money(b.accrued)} collected · {money(b.charged)} charged to it
+          {money(b.spent_this_year)} spent {dated ? 'from it' : 'this year'}
         </span>
         <span className="spacer" />
         <button className="btn quiet" onClick={onEdit}>Edit</button>
@@ -245,31 +256,64 @@ function Bank({ bank: b, editing, onEdit, onDone }) {
       {confirming && (
         <div style={{ marginTop: 12 }}>
           <Notice>
-            Closing {b.name} puts the {money(b.charged)} charged to it back into
-            the months it was spent in, so those months will read higher than
-            they do now. The money was always spent — this only changes which
-            month it counts against.
+            Closing {b.name} puts the {money(b.charged)} it paid back into
+            the weeks it was spent in, so those will read higher than they
+            do now
+            {cats.length > 0 && <>, and {cats.join(' and ')} go back to
+              being everyday spending</>}
+            . The money was always spent — this only changes what it
+            counts against.
           </Notice>
         </div>
       )}
 
-      {b.behind && (
+      {b.over && (
         <div className="assumption" style={{ marginBottom: 0 }}>
-          You spent {money(b.behind_by)} more out of this than it had
-          collected, so it is paying itself back: the contribution is{' '}
-          <strong className="num">{money(b.monthly)}</strong> a month instead
-          of {money(b.base_monthly)} until it is whole, which at this rate is{' '}
-          {b.caught_up_by ? monthLabel(b.caught_up_by, { long: true }) : 'soon'}.
-          That is the trip coming off the months ahead rather than out of the
-          month you took it.
+          It has paid {money(b.spent_this_year)}{dated ? '' : ' this year'},{' '}
+          {money(b.behind_by)} more than its {money(b.target)}. That is
+          allowed — sometimes the trip costs what it costs — and it changes
+          nothing {dated ? 'now' : 'this year'}.{' '}
+          {dated
+            ? <>The extra is repaid over the twelve months after{' '}
+                {dateLabel(b.target_date)}.</>
+            : <>From {monthLabel(nextMonth(b.year_end), { long: true })} it
+                takes{' '}
+                <strong className="num">{money(b.spent_this_year / 12)}</strong>{' '}
+                a month to repay what it spent.</>}
         </div>
       )}
     </section>
   );
 }
 
+/** Why this month's contribution is what it is, in a few words. */
+function basisText(b) {
+  switch (b.basis) {
+    case 'first_year': return 'first year';
+    case 'repaying': return b.cadence === 'once'
+      ? 'repaying the overspend'
+      : `repaying last year's ${money(b.spent_last_year)}`;
+    case 'full': return 'nothing spent last year, so nothing to repay';
+    case 'dated': return 'until the date';
+    case 'done': return 'finished';
+    default: return '';
+  }
+}
+
+function overCount(banks) {
+  const n = banks.filter((b) => b.over).length;
+  if (n === 0) return 'None of them over this year';
+  return n === 1 ? 'One is over this year' : `${n} are over this year`;
+}
+
+function nextMonth(ym) {
+  const [y, m] = (ym || '').split('-').map(Number);
+  if (!y || !m) return ym;
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+
 /** Opening or editing a bank. The monthly figure is shown, never typed. */
-function BankForm({ bank, suggest, onCancel, onSaved }) {
+function BankForm({ bank, suggest, banks = [], all = [], onCancel, onSaved }) {
   // `suggest` only arrives for the very first bank, and only as a starting
   // point: both fields stay editable, because a target she did not choose is
   // a monthly deduction she did not agree to.
@@ -279,6 +323,7 @@ function BankForm({ bank, suggest, onCancel, onSaved }) {
   const [date, setDate] = useState(bank?.target_date ?? '');
   const [opening, setOpening] = useState(bank?.opening ?? '');
   const [note, setNote] = useState(bank?.note ?? '');
+  const [cats, setCats] = useState(bank?.categories ?? suggest?.categories ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -287,6 +332,16 @@ function BankForm({ bank, suggest, onCancel, onSaved }) {
   const needed = Math.max(Number(target || 0) - Number(opening || 0), 0);
   const months = cadence === 'annual' ? 12 : monthsUntil(date);
   const monthly = months > 0 ? needed / months : 0;
+
+  // Category → the other bank that already pays for it. A category belongs to
+  // one bank, so those are shown but can't be ticked.
+  const taken = {};
+  for (const other of banks) {
+    if (bank && other.id === bank.id) continue;
+    for (const c of other.categories ?? []) taken[c] = other.name;
+  }
+  const toggle = (c) => setCats(cats.includes(c)
+    ? cats.filter((x) => x !== c) : [...cats, c]);
 
   async function save(e) {
     e.preventDefault();
@@ -299,6 +354,7 @@ function BankForm({ bank, suggest, onCancel, onSaved }) {
       target_date: cadence === 'once' ? date : null,
       opening: Number(opening || 0),
       note,
+      categories: cats,
     };
     try {
       if (bank) await updateBank(bank.id, body);
@@ -355,13 +411,33 @@ function BankForm({ bank, suggest, onCancel, onSaved }) {
           </div>
           <p className="small muted" style={{ margin: '8px 0 0' }}>
             {cadence === 'annual'
-              ? 'A cost that comes round again — car maintenance, insurance, '
-                + 'Christmas. It collects twelve months a year, forever, and '
-                + 'refills after you spend it.'
-              : 'A cost with a date — a trip, a wedding. It stops collecting '
-                + 'once the date arrives.'}
+              ? 'Spending that comes round every year — trips, Christmas, car '
+                + 'upkeep. The whole amount is there from day one, and each '
+                + 'year after the first it takes back only what you spent.'
+              : 'A cost with a date — a wedding. The whole amount is there '
+                + 'now, paid in month by month until the date.'}
           </p>
         </div>
+
+        <fieldset className="pays-for">
+          <legend>What it pays for</legend>
+          <p className="small muted" style={{ margin: '0 0 8px' }}>
+            Every charge in these categories, from this month on, comes out
+            of this bank instead of your week. Leave them all unticked to
+            charge things to it by hand.
+          </p>
+          <div className="checks">
+            {all.map((c) => (
+              <label key={c} className="row small"
+                     style={{ gap: 6, color: taken[c] ? 'var(--muted)' : 'inherit' }}>
+                <input type="checkbox" checked={cats.includes(c)}
+                       disabled={Boolean(taken[c])}
+                       onChange={() => toggle(c)} />
+                {c}{taken[c] && <span className="muted"> · {taken[c]}</span>}
+              </label>
+            ))}
+          </div>
+        </fieldset>
 
         <div className="controls">
           <label htmlFor="pb-note">Note</label>
@@ -373,12 +449,17 @@ function BankForm({ bank, suggest, onCancel, onSaved }) {
 
         {monthly > 0 && (
           <Notice>
-            <strong>{money(monthly)} a month.</strong>{' '}
-            {money(needed)} still to collect
+            <strong>
+              {money(Number(target || 0))} to spend from{' '}
+              {bank ? 'the start of each year' : 'today'}.
+            </strong>{' '}
             {cadence === 'annual'
-              ? ', over twelve months'
-              : ` over ${months} month${months === 1 ? '' : 's'}`}
-            . That comes off what you have to spend each month, starting now.
+              ? <>In its first year it takes {money(monthly)} a month to pay
+                  that in; after that, a twelfth of whatever it spent the
+                  year before.</>
+              : <>It takes {money(monthly)} a month for {months} month
+                  {months === 1 ? '' : 's'} to pay that in.</>}
+            {' '}That comes off what you have to spend each month.
           </Notice>
         )}
 

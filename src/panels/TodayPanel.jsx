@@ -480,12 +480,11 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
 function PiggyBanks({ banks, draws, allocated, onTab }) {
   return (
     <Card title="Piggy banks"
-          hint="What they hold, and what an overspend could borrow from">
+          hint="What they can still pay this year">
       {banks.length === 0 ? (
         <p className="small muted" style={{ marginTop: 0 }}>
-          None yet. A piggy bank turns a cost that arrives once a year into a
-          monthly one — and lets you charge the spending to it instead of to the
-          month it happened in.{onTab && (
+          None yet. A piggy bank pays for your big spending — travel, say —
+          so it never lands on your weekly allowance.{onTab && (
             <>{' '}
               <button className="link" onClick={() => onTab('piggy')}>
                 Open one
@@ -499,9 +498,16 @@ function PiggyBanks({ banks, draws, allocated, onTab }) {
             <div className="bucket" key={b.id}>
               <div className="name">
                 {b.name}
-                <div className="desc">{money(b.monthly)} a month</div>
+                <div className="desc">
+                  {b.categories?.length ? `Pays for ${b.categories.join(', ')} · ` : ''}
+                  {money(b.monthly)} a month
+                </div>
               </div>
-              <div className="num val">{money(b.balance, { cents: true })}</div>
+              <div className="num val">
+                {b.available < 0
+                  ? `${money(-b.available, { cents: true })} over`
+                  : `${money(b.available, { cents: true })} left`}
+              </div>
             </div>
           ))}
         </div>
@@ -510,9 +516,9 @@ function PiggyBanks({ banks, draws, allocated, onTab }) {
       {allocated > 0 && (
         <p className="small" style={{ margin: '0 0 12px' }}>
           <strong>{money(allocated, { cents: true })}</strong> of this
-          month&apos;s spending was charged to a piggy bank, so it is not in the
-          figures above or in the weekly number. That is the point of them: the
-          money was budgeted over the preceding months instead.
+          month&apos;s spending was paid by a piggy bank, so it is not in the
+          figures above or in the weekly number. That is the point of them:
+          big spending comes out of the bank, not your week.
         </p>
       )}
 

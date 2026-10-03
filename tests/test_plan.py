@@ -491,10 +491,12 @@ class TestPlanApi:
         assert r.status_code == 200
 
         bank = client.get("/api/plan").get_json()["banks"][0]
-        # $100 was already in it and $50 came out, against a contribution of
-        # (1200 - 100) / 12 for each month since it opened.
+        # The year's $1,200 is available from day one, so $50 out leaves
+        # $1,150 to spend; what is really in it is what went in less the $50.
         assert bank["charged"] == pytest.approx(50.0)
-        assert bank["balance"] == pytest.approx(bank["accrued"] - 50.0)
+        assert bank["balance"] == pytest.approx(1150.0)
+        assert bank["available"] == pytest.approx(1150.0)
+        assert bank["held"] == pytest.approx(bank["accrued"] - 50.0)
 
     def test_covering_more_than_the_bank_holds_is_refused(self, client):
         bank_id = client.post("/api/piggy", json={

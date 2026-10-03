@@ -138,6 +138,22 @@ CREATE TABLE IF NOT EXISTS piggy_allocations (
 );
 CREATE INDEX IF NOT EXISTS idx_alloc_bank ON piggy_allocations(bank_id);
 
+-- What each bank pays for: a category belongs to at most one bank. Every
+-- charge in it, dated from the month the bank opened, is paid by that bank
+-- without anyone having to allocate it — big spending is not habit spending,
+-- so it stays out of the weekly number. See `_CHARGES`.
+CREATE TABLE IF NOT EXISTS piggy_bank_categories (
+    category TEXT PRIMARY KEY,
+    bank_id  INTEGER NOT NULL
+);
+
+-- Charges in a bank's categories that you chose to pay from the week anyway:
+-- "count this one as everyday". Keyed by the transaction, like an allocation.
+CREATE TABLE IF NOT EXISTS piggy_optouts (
+    txn_id     TEXT PRIMARY KEY,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Money drawn from a bank to cover a month's overspend, as opposed to a
 -- specific charge allocated to it. Kept per month so the spend plan can add
 -- it back to that month's budget and nowhere else.
@@ -232,6 +248,40 @@ CREATE TABLE IF NOT EXISTS account_sync (
 """
 
 
+# Every charge a bank pays, one row per transaction: `bank_id`, how much of it
+# the bank paid (`charged`) and whether it got there by itself (`auto`).
+#
+# Two ways in. An allocation is a decision about one charge and always wins.
+# Otherwise a charge whose category a bank owns is that bank's, from the month
+# the bank opened, unless it was opted out. That second half is derived on
+# every read rather than written, so an import, a sync, a recategorisation or
+# a change of what a bank pays for is reflected at once, with no write path
+# that could forget to keep it up to date.
+_CHARGES = """(
+    SELECT t.id AS txn_id,
+           COALESCE(m.bank_id, o.bank_id) AS bank_id,
+           CASE WHEN m.txn_id IS NOT NULL THEN COALESCE(m.amount, t.amount)
+                ELSE t.amount END AS charged,
+           CASE WHEN m.txn_id IS NULL THEN 1 ELSE 0 END AS auto
+      FROM transactions t
+      LEFT JOIN piggy_allocations m ON m.txn_id = t.id
+      LEFT JOIN (SELECT bc.category AS category, b.id AS bank_id,
+                        b.start_month AS start_month
+                   FROM piggy_bank_categories bc
+                   JOIN piggy_banks b ON b.id = bc.bank_id) o
+             ON o.category = t.category
+            AND SUBSTR(t.date, 1, 7) >= o.start_month
+            AND NOT EXISTS (SELECT 1 FROM piggy_optouts x WHERE x.txn_id = t.id)
+     WHERE m.txn_id IS NOT NULL OR o.bank_id IS NOT NULL
+)"""
+
+# The columns every transaction loader adds, joined as `a` on `_CHARGES`.
+_CHARGE_COLUMNS = """a.bank_id AS bank_id,
+                          CASE WHEN a.bank_id IS NULL THEN 0 ELSE a.charged
+                          END AS bank_amount,
+                          COALESCE(a.auto, 0) AS bank_auto"""
+
+
 class Store:
     def __init__(self, path: str = DEFAULT_DB, url: str | None = None):
         self.path = path
@@ -254,6 +304,7 @@ class Store:
             c.executescript(SCHEMA)
         self._migrate_buckets()
         self._migrate_allocation_amounts()
+        self._migrate_travel_ownership()
         self._drop_bank_funded_budgets()
 
     def _migrate_buckets(self) -> None:
@@ -304,28 +355,41 @@ class Store:
             c.execute("DELETE FROM bucket_draws")
             c.execute("DELETE FROM buckets")
 
-    def _drop_bank_funded_budgets(self) -> None:
-        """Remove budget lines for categories a piggy bank now funds.
+    def _migrate_travel_ownership(self) -> None:
+        """Give a travel bank the categories it used to fund by rule.
 
-        Travel used to get a share of the leftover like any other category,
-        which double-counted it against the bank already collecting for it.
-        The endpoint refuses to write one now, so this only has to clear what
-        was written before — idempotent, and a no-op on every open after the
-        first.
+        Travel and Lodging were bank-funded by a hard-coded rule before banks
+        chose what they pay for. A database from then, with a bank named for
+        travel, keeps that behaviour: the bank now owns them. Done once — a
+        later decision to own nothing must not be undone on the next open.
         """
-        from .categorize import BANK_FUNDED
-
-        if not BANK_FUNDED:
+        if self.setting("bank_categories_migrated"):
             return
-        marks = ", ".join("?" for _ in BANK_FUNDED)
-        names = tuple(sorted(BANK_FUNDED))
         with self.conn() as c:
-            found = c.execute(
-                f"SELECT 1 FROM budgets WHERE category IN ({marks}) LIMIT 1",
-                names).fetchone()
-            if not found:
-                return
-            c.execute(f"DELETE FROM budgets WHERE category IN ({marks})", names)
+            owned = c.execute(
+                "SELECT 1 FROM piggy_bank_categories LIMIT 1").fetchone()
+            bank = c.execute(
+                "SELECT id FROM piggy_banks WHERE LOWER(name) LIKE ? "
+                "ORDER BY id LIMIT 1", ("%travel%",)).fetchone()
+            if not owned and bank:
+                for category in ("Travel", "Lodging"):
+                    c.execute(
+                        "INSERT OR IGNORE INTO piggy_bank_categories "
+                        "(category, bank_id) VALUES (?, ?)",
+                        (category, bank["id"]))
+        self.set_setting("bank_categories_migrated", "1")
+
+    def _drop_bank_funded_budgets(self) -> None:
+        """Remove budget lines for categories a piggy bank pays for.
+
+        A category a bank owns is paid by the bank, so a budget line for it
+        would count it twice. `set_bank_categories` clears them as it goes;
+        this catches anything written before that — idempotent, and a no-op
+        on every open after the first.
+        """
+        with self.conn() as c:
+            c.execute("DELETE FROM budgets WHERE category IN "
+                      "(SELECT category FROM piggy_bank_categories)")
 
     def _migrate_allocation_amounts(self) -> None:
         """Add `piggy_allocations.amount` to a database that predates it.
@@ -382,15 +446,9 @@ class Store:
         """
         with self.conn() as c:
             rows = c.execute(
-                """SELECT t.*, a.bank_id AS bank_id,
-                          -- No allocation row means nothing is covered. A row
-                          -- whose amount is null predates that column and
-                          -- covered the whole charge.
-                          CASE WHEN a.bank_id IS NULL THEN 0
-                               ELSE COALESCE(a.amount, t.amount)
-                          END AS bank_amount
+                f"""SELECT t.*, {_CHARGE_COLUMNS}
                      FROM transactions t
-                     LEFT JOIN piggy_allocations a ON a.txn_id = t.id
+                     LEFT JOIN {_CHARGES} a ON a.txn_id = t.id
                     ORDER BY t.date DESC, t.id""").fetchall()
         return [Transaction.from_row(dict(r)) for r in rows]
 
@@ -426,14 +484,11 @@ class Store:
             ).fetchone()["n"]
             # The column prefix matters: `clause` is written against the bare
             # table, and `date`/`category` are unambiguous only because
-            # piggy_allocations has neither.
+            # `_CHARGES` has neither.
             rows = c.execute(
-                f"""SELECT t.*, a.bank_id AS bank_id,
-                           CASE WHEN a.bank_id IS NULL THEN 0
-                                ELSE COALESCE(a.amount, t.amount)
-                           END AS bank_amount
+                f"""SELECT t.*, {_CHARGE_COLUMNS}
                       FROM transactions t
-                      LEFT JOIN piggy_allocations a ON a.txn_id = t.id
+                      LEFT JOIN {_CHARGES} a ON a.txn_id = t.id
                     {clause}
                     ORDER BY t.date DESC, t.id LIMIT ? OFFSET ?""",
                 params + [limit, offset],
@@ -457,12 +512,9 @@ class Store:
         """
         with self.conn() as c:
             row = c.execute(
-                """SELECT t.*, a.bank_id AS bank_id,
-                          CASE WHEN a.bank_id IS NULL THEN 0
-                               ELSE COALESCE(a.amount, t.amount)
-                          END AS bank_amount
+                f"""SELECT t.*, {_CHARGE_COLUMNS}
                      FROM transactions t
-                     LEFT JOIN piggy_allocations a ON a.txn_id = t.id
+                     LEFT JOIN {_CHARGES} a ON a.txn_id = t.id
                     WHERE t.id = ?""", (txn_id,)).fetchone()
         return Transaction.from_row(dict(row)) if row else None
 
@@ -642,6 +694,7 @@ class Store:
             ("budgets", "budgets"),
             ("trips", "trips"),
             ("piggy_allocations", "piggy-bank allocations"),
+            ("piggy_optouts", "charges kept out of piggy banks"),
             ("piggy_draws", "piggy-bank draws"),
             ("dismissed_insights", "dismissed findings"),
         ]
@@ -895,22 +948,26 @@ class Store:
         with self.conn() as c:
             c.execute("DELETE FROM piggy_allocations WHERE bank_id = ?", (bank_id,))
             c.execute("DELETE FROM piggy_draws WHERE bank_id = ?", (bank_id,))
+            c.execute("DELETE FROM piggy_bank_categories WHERE bank_id = ?",
+                      (bank_id,))
             cur = c.execute("DELETE FROM piggy_banks WHERE id = ?", (bank_id,))
             return cur.rowcount > 0
 
     # ── Allocations: spending charged to a bank rather than to its month ──────
 
     def allocations(self) -> dict[str, int]:
-        """Transaction id → bank id, for every allocated charge."""
+        """Transaction id → bank id, for every charge a bank pays — allocated
+        by hand or paid automatically because the bank owns its category."""
         with self.conn() as c:
-            rows = c.execute("SELECT txn_id, bank_id FROM piggy_allocations").fetchall()
+            rows = c.execute(f"SELECT txn_id, bank_id FROM {_CHARGES} a").fetchall()
         return {r["txn_id"]: r["bank_id"] for r in rows}
 
     def allocate(self, txn_id: str, bank_id: int, amount: float) -> None:
         """Charge `amount` of this transaction to a bank.
 
-        `amount` is what the bank could cover, which the caller works out from
-        its balance — never more than the charge itself.
+        `amount` is never more than the charge itself. Charging it by hand
+        also withdraws an earlier "count as everyday" — the latest decision
+        about a charge is the one that stands.
         """
         with self.conn() as c:
             c.execute(
@@ -920,11 +977,62 @@ class Store:
                                                      amount = excluded.amount""",
                 (txn_id, bank_id, round(float(amount), 2)),
             )
+            c.execute("DELETE FROM piggy_optouts WHERE txn_id = ?", (txn_id,))
 
     def unallocate(self, txn_id: str) -> bool:
+        """Put a charge back in the month it fell in.
+
+        Removing the allocation is not enough for a charge in a category a
+        bank owns: the bank would pick it straight back up. So that case is
+        recorded as an opt-out — "count this one as everyday".
+        """
         with self.conn() as c:
             cur = c.execute("DELETE FROM piggy_allocations WHERE txn_id = ?", (txn_id,))
-            return cur.rowcount > 0
+            removed = cur.rowcount > 0
+            still = c.execute(f"SELECT 1 FROM {_CHARGES} a WHERE a.txn_id = ?",
+                              (txn_id,)).fetchone()
+            if still:
+                c.execute("INSERT OR IGNORE INTO piggy_optouts (txn_id) VALUES (?)",
+                          (txn_id,))
+                removed = True
+            return removed
+
+    # ── What each bank pays for ───────────────────────────────────────────────
+
+    def bank_categories(self) -> dict[int, list[str]]:
+        """Bank id → the categories it pays for, alphabetically."""
+        with self.conn() as c:
+            rows = c.execute(
+                """SELECT bc.category AS category, bc.bank_id AS bank_id
+                     FROM piggy_bank_categories bc
+                     JOIN piggy_banks b ON b.id = bc.bank_id
+                    ORDER BY bc.category""").fetchall()
+        out: dict[int, list[str]] = {}
+        for r in rows:
+            out.setdefault(r["bank_id"], []).append(r["category"])
+        return out
+
+    def bank_funded_categories(self) -> set[str]:
+        """Every category some bank pays for — out of the budget split and the
+        weekly number, because the bank pays for it instead."""
+        return {c for cats in self.bank_categories().values() for c in cats}
+
+    def set_bank_categories(self, bank_id: int, categories) -> None:
+        """Make `categories` exactly what this bank pays for.
+
+        A budget line for a category the bank now owns is removed, since the
+        bank pays for it; the caller has already checked that no other bank
+        owns any of them.
+        """
+        wanted = sorted({c.strip() for c in categories if c and c.strip()})
+        with self.conn() as c:
+            c.execute("DELETE FROM piggy_bank_categories WHERE bank_id = ?",
+                      (bank_id,))
+            for category in wanted:
+                c.execute(
+                    "INSERT INTO piggy_bank_categories (category, bank_id) "
+                    "VALUES (?, ?)", (category, bank_id))
+                c.execute("DELETE FROM budgets WHERE category = ?", (category,))
 
     def bank_charges_by_month(self) -> dict[int, dict[str, float]]:
         """Bank id → month → what came out of it that month.
@@ -932,15 +1040,15 @@ class Store:
         The per-month breakdown rather than a total, because a bank's
         contribution now depends on *when* it was spent: a trip charged in
         January is repaid over the months since, and one charged yesterday is
-        not. See `piggy.run`.
+        not. See `piggy.status`.
         """
         out: dict[int, dict[str, float]] = {}
         with self.conn() as c:
             rows = c.execute(
-                """SELECT a.bank_id AS bank_id,
+                f"""SELECT a.bank_id AS bank_id,
                           SUBSTR(t.date, 1, 7) AS month,
-                          COALESCE(SUM(COALESCE(a.amount, t.amount)), 0) AS total
-                     FROM piggy_allocations a
+                          COALESCE(SUM(a.charged), 0) AS total
+                     FROM {_CHARGES} a
                      JOIN transactions t ON t.id = a.txn_id
                     GROUP BY a.bank_id, SUBSTR(t.date, 1, 7)""").fetchall()
             for r in rows:
@@ -965,10 +1073,9 @@ class Store:
         totals: dict[int, float] = {}
         with self.conn() as c:
             rows = c.execute(
-                """SELECT a.bank_id AS bank_id,
-                          COALESCE(SUM(COALESCE(a.amount, t.amount)), 0) AS total
-                     FROM piggy_allocations a
-                     JOIN transactions t ON t.id = a.txn_id
+                f"""SELECT a.bank_id AS bank_id,
+                          COALESCE(SUM(a.charged), 0) AS total
+                     FROM {_CHARGES} a
                     GROUP BY a.bank_id""").fetchall()
             for r in rows:
                 totals[r["bank_id"]] = round(r["total"], 2)
@@ -985,8 +1092,8 @@ class Store:
         """What this month's spending charged to banks comes to."""
         with self.conn() as c:
             row = c.execute(
-                """SELECT COALESCE(SUM(COALESCE(a.amount, t.amount)), 0) AS total
-                     FROM piggy_allocations a
+                f"""SELECT COALESCE(SUM(a.charged), 0) AS total
+                     FROM {_CHARGES} a
                      JOIN transactions t ON t.id = a.txn_id
                     WHERE t.date LIKE ?""", (f"{month}-%",)).fetchone()
         return round(row["total"], 2)

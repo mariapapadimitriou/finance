@@ -679,68 +679,226 @@ def add_travel(client, amount: float = 1800.0) -> float:
     return round(amount, 2)
 
 
-class TestTravelIsFundedByABankNotABudget:
-    """A cost that arrives in lumps has no business as a monthly line.
+def travel_bank(client, categories=("Travel", "Lodging"), name="Travel",
+                target=8000) -> int:
+    """Open a yearly bank that pays for travel, the way the suggestion does."""
+    r = client.post("/api/piggy", json={"name": name, "target": target,
+                                        "cadence": "annual",
+                                        "categories": list(categories)})
+    assert r.status_code == 200, r.get_json()
+    return r.get_json()["id"]
 
-    Travel is excluded from the budget split, because the piggy bank
-    collecting for it is already subtracted from the leftover in `plan()`.
-    Leaving it in funded the same trip twice: once through the bank, and
-    again as a monthly budget line nobody was spending against.
+
+def charge_today(client, amount=6000.0, category="Travel",
+                 description="AIR CANADA 4410") -> str:
+    from datetime import date
+    r = client.post("/api/transactions", json={
+        "date": date.today().isoformat(), "description": description,
+        "amount": amount, "category": category, "confirm": True})
+    assert r.status_code == 200, r.get_json()
+    return r.get_json()["id"]
+
+
+def the_bank(client, bank_id):
+    return next(b for b in client.get("/api/piggy").get_json()["banks"]
+                if b["id"] == bank_id)
+
+
+class TestBanksOwnTheirCategories:
+    """Big spending comes out of a piggy bank, not the weekly allowance.
+
+    Which spending is "big" differs from person to person, so a bank says
+    what it pays for. Those categories leave the budget split, Budgets and
+    the weekly number — the bank's contribution is already subtracted from the
+    leftover in `plan()`, so giving them a share of what remains would fund
+    the same trip twice — and every charge in them is paid by the bank.
     """
 
-    def test_travel_gets_no_share_of_the_leftover(self, ledger):
+    def test_travel_nobody_owns_is_an_ordinary_line(self, ledger):
         from finance import money_plan
         add_travel(ledger)
-        txns = ledger.application.config["STORE"].all_transactions()
+        st = ledger.application.config["STORE"]
+        assert "Travel" in money_plan.variable_shares(
+            st.all_transactions(), bank_funded=st.bank_funded_categories())
+        assert ledger.put("/api/budgets", json={
+            "budgets": {"Travel": 300}}).status_code == 200
+
+    def test_an_owned_category_gets_no_share_of_the_leftover(self, ledger):
+        from finance import money_plan
+        add_travel(ledger)
+        travel_bank(ledger)
+        st = ledger.application.config["STORE"]
+        txns = st.all_transactions()
         assert any(t.category == "Travel" and t.amount > 0 for t in txns), \
             "the fixture has no travel, so this test proves nothing"
-        assert "Travel" not in money_plan.variable_shares(txns)
+        assert "Travel" not in money_plan.variable_shares(
+            txns, bank_funded=st.bank_funded_categories())
 
-    def test_no_travel_row_and_no_travel_budget_anywhere(self, ledger):
+    def test_no_row_no_budget_and_not_reported_missing(self, ledger):
         add_travel(ledger)
+        travel_bank(ledger)
         ledger.post("/api/plan/setup/apply")
         body = ledger.get("/api/budgets").get_json()
         assert "Travel" not in body["plan_budgets"]
         assert "Travel" not in body["budgets"]
         assert "Travel" not in {r["category"] for r in body["rows"]}
-
-    def test_travel_is_not_reported_as_a_missing_budget(self, ledger):
-        """It is not missing a budget; it is funded somewhere else, and the
-        page says which."""
-        add_travel(ledger)
-        body = ledger.get("/api/budgets").get_json()
         assert "Travel" not in {r["category"] for r in body["unbudgeted"]}
-        assert "Travel" in body["bank_funded"]["categories"]
+        assert body["bank_funded"]["categories"] == ["Lodging", "Travel"]
+        assert body["bank_funded"]["paid_by"] == [
+            {"bank": "Travel", "id": 1, "categories": ["Lodging", "Travel"]}]
 
     def test_a_budget_for_it_is_refused(self, ledger):
+        travel_bank(ledger)
         r = ledger.put("/api/budgets", json={"budgets": {"Travel": 300}})
         assert r.status_code == 400
         assert "piggy bank" in r.get_json()["error"]
 
-    def test_a_budget_saved_before_the_rule_is_cleared_on_open(self, tmp_path):
-        """Her ledger already has one. It cannot be written any more, so the
-        only way it goes is for the store to drop it."""
-        from app import create_app
-        path = str(tmp_path / "stale.db")
-
-        app = create_app(path)
-        app.config["STORE"].set_budget("Travel", 300)
-        assert "Travel" in app.config["STORE"].budgets()
-
-        reopened = create_app(path)          # the migration runs on open
-        assert "Travel" not in reopened.config["STORE"].budgets()
-
-    def test_re_applying_the_plan_clears_it_too(self, ledger):
-        ledger.application.config["STORE"].set_budget("Travel", 300)
-        ledger.post("/api/plan/setup/apply")
+    def test_a_budget_it_had_goes_when_a_bank_takes_it(self, ledger):
+        ledger.put("/api/budgets", json={"budgets": {"Travel": 300}})
+        travel_bank(ledger)
         assert "Travel" not in ledger.application.config["STORE"].budgets()
 
     def test_the_leftover_still_divides_exactly(self, ledger):
         """Dropping a category must redistribute its share, not lose it."""
         add_travel(ledger)
+        travel_bank(ledger)
         body = ledger.get("/api/budgets").get_json()
         assert sum(body["plan_budgets"].values()) == pytest.approx(
             body["plan_leftover"], abs=TOLERANCE)
+
+    def test_a_category_belongs_to_one_bank(self, ledger):
+        travel_bank(ledger)
+        r = ledger.post("/api/piggy", json={"name": "Hotels", "target": 900,
+                                            "cadence": "annual",
+                                            "categories": ["Lodging"]})
+        assert r.status_code == 400
+        assert "Travel bank" in r.get_json()["error"]
+
+    def test_only_spending_can_be_owned(self, ledger):
+        r = ledger.post("/api/piggy", json={"name": "Pay", "target": 900,
+                                            "cadence": "annual",
+                                            "categories": ["Income"]})
+        assert r.status_code == 400
+
+    def test_a_line_cannot_end_up_half_owned(self, ledger):
+        ledger.put("/api/category-groups", json={"groups": {"Lodging": "Dining"}})
+        r = ledger.post("/api/piggy", json={"name": "Hotels", "target": 900,
+                                            "cadence": "annual",
+                                            "categories": ["Lodging"]})
+        assert r.status_code == 400
+        assert "Settings" in r.get_json()["error"]
+
+    def test_closing_the_bank_gives_the_categories_back(self, ledger):
+        bank = travel_bank(ledger)
+        ledger.delete(f"/api/piggy/{bank}")
+        assert ledger.application.config["STORE"].bank_funded_categories() == set()
+
+
+class TestOwnedChargesGoToTheBankByThemselves:
+    """Her example: an $8,000 vacation bank, then a $6,000 trip."""
+
+    def test_the_whole_target_is_there_the_day_it_opens(self, ledger):
+        bank = travel_bank(ledger)
+        b = the_bank(ledger, bank)
+        assert b["available"] == pytest.approx(8000)
+        assert b["monthly"] == pytest.approx(666.67)
+        assert b["categories"] == ["Lodging", "Travel"]
+        offered = ledger.get("/api/piggy").get_json()["spend_categories"]
+        assert "Travel" in offered and "Income" not in offered
+
+    def test_a_trip_is_charged_to_it_without_being_asked(self, ledger):
+        bank = travel_bank(ledger)
+        txn = charge_today(ledger, 6000)
+        row = ledger.application.config["STORE"].get_transaction(txn)
+        assert row.bank_id == bank and row.bank_auto
+        assert row.bank_amount == pytest.approx(6000)
+        assert the_bank(ledger, bank)["available"] == pytest.approx(2000)
+
+    def test_the_trip_is_not_in_the_months_spending(self, ledger):
+        from datetime import date
+        month = date.today().isoformat()[:7]
+        travel_bank(ledger)
+
+        def spent():
+            return ledger.get(f"/api/budgets?month={month}").get_json()["month_spend"]
+        before = spent()
+        charge_today(ledger, 6000)
+        assert spent() == pytest.approx(before, abs=TOLERANCE)
+
+    def test_charges_from_before_the_bank_opened_stay_in_their_months(self, ledger):
+        add_travel(ledger)
+        bank = travel_bank(ledger)
+        assert the_bank(ledger, bank)["available"] == pytest.approx(8000)
+
+    def test_count_as_everyday_takes_it_out_and_it_stays_out(self, ledger):
+        bank = travel_bank(ledger)
+        txn = charge_today(ledger, 120)
+        assert ledger.delete(f"/api/piggy/allocations/{txn}").status_code == 200
+        st = ledger.application.config["STORE"]
+        assert st.get_transaction(txn).bank_id is None
+        assert the_bank(ledger, bank)["available"] == pytest.approx(8000)
+        # Charging it by hand again withdraws the opt-out.
+        ledger.post(f"/api/piggy/{bank}/allocate", json={"txn_id": txn})
+        assert st.get_transaction(txn).bank_id == bank
+
+    def test_recategorising_it_out_of_travel_takes_it_off_the_bank(self, ledger):
+        bank = travel_bank(ledger)
+        txn = charge_today(ledger, 300)
+        ledger.patch(f"/api/transactions/{txn}", json={"category": "Dining"})
+        assert ledger.application.config["STORE"].get_transaction(txn).bank_id is None
+        assert the_bank(ledger, bank)["available"] == pytest.approx(8000)
+
+    def test_letting_go_of_a_category_lets_go_of_its_charges(self, ledger):
+        bank = travel_bank(ledger)
+        txn = charge_today(ledger, 300, category="Lodging",
+                           description="HOTEL DIEU 22")
+        ledger.patch(f"/api/piggy/{bank}", json={"categories": ["Travel"]})
+        assert ledger.application.config["STORE"].get_transaction(txn).bank_id is None
+
+    def test_a_hand_allocation_to_another_bank_wins(self, ledger):
+        travel_bank(ledger)
+        other = ledger.post("/api/piggy", json={"name": "Wedding", "target": 3000,
+                                                "cadence": "annual"}).get_json()["id"]
+        txn = charge_today(ledger, 500)
+        ledger.post(f"/api/piggy/{other}/allocate", json={"txn_id": txn})
+        row = ledger.application.config["STORE"].get_transaction(txn)
+        assert row.bank_id == other and not row.bank_auto
+
+    def test_more_than_the_target_is_paid_and_reported_as_over(self, ledger):
+        bank = travel_bank(ledger)
+        charge_today(ledger, 10000)
+        b = the_bank(ledger, bank)
+        assert b["available"] == pytest.approx(-2000)
+        assert b["over"] is True
+
+
+class TestTravelOwnershipMigration:
+    """Her ledger had a Travel bank funded by the old hard-coded rule."""
+
+    def _old_ledger(self, tmp_path):
+        from finance.store import Store
+        path = str(tmp_path / "old.db")
+        st = Store(path, url="")
+        st.add_piggy_bank("Travel fund", 2400, "annual", None, "2026-01")
+        # As if the migration had never run: no ownership, no flag.
+        with st.conn() as c:
+            c.execute("DELETE FROM piggy_bank_categories")
+            c.execute("DELETE FROM settings WHERE key = 'bank_categories_migrated'")
+        st.set_budget("Travel", 300)
+        return path
+
+    def test_a_travel_bank_takes_travel_and_lodging(self, tmp_path):
+        from finance.store import Store
+        st = Store(self._old_ledger(tmp_path), url="")
+        assert st.bank_funded_categories() == {"Travel", "Lodging"}
+        assert "Travel" not in st.budgets()
+
+    def test_it_happens_once(self, tmp_path):
+        from finance.store import Store
+        path = self._old_ledger(tmp_path)
+        st = Store(path, url="")
+        st.set_bank_categories(st.piggy_banks()[0].id, [])
+        assert Store(path, url="").bank_funded_categories() == set()
 
 
 class TestTheFirstBankIsTravel:
@@ -991,6 +1149,7 @@ class TestBudgetLines:
         assert r.status_code == 400
 
     def test_bank_funded_only_shares_with_bank_funded(self, ledger):
+        travel_bank(ledger)
         bad = ledger.put("/api/category-groups",
                          json={"groups": {"Dining": "Travel"}})
         assert bad.status_code == 400
@@ -1001,6 +1160,7 @@ class TestBudgetLines:
 
     def test_lodging_under_travel_reads_as_one_bank_funded_line(self, ledger):
         add_travel(ledger)
+        travel_bank(ledger)
         ledger.put("/api/category-groups", json={"groups": {"Lodging": "Travel"}})
         body = self._status(ledger)
         assert body["bank_funded"]["categories"] == ["Travel"]
@@ -1014,6 +1174,7 @@ class TestBudgetLines:
 
     def test_the_month_still_adds_up_with_lines(self, ledger):
         add_travel(ledger)
+        travel_bank(ledger)
         ledger.put("/api/category-groups", json={"groups": {
             **self.HEALTH, "Lodging": "Travel"}})
         ledger.post("/api/plan/setup/apply")
@@ -1053,8 +1214,11 @@ class TestTheSetupChecklist:
                                              "category": "Rent & Housing"})
         assert self._step(client, "commitments")["done"]
 
-        client.post("/api/piggy", json={"name": "Travel", "target": 1200,
+        client.post("/api/piggy", json={"name": "Concerts", "target": 600,
                                         "cadence": "annual"})
+        assert not self._step(client, "travel")["done"], \
+            "a bank that pays for nothing keeps nothing off the week"
+        travel_bank(client, target=1200)
         assert self._step(client, "travel")["done"]
 
         client.post("/api/plan/setup/apply")
@@ -1080,6 +1244,7 @@ class TestTheSetupChecklist:
         """Only a real budget line ticks the step — a stale Travel row a
         piggy bank pays for is not a budget being kept."""
         st = ledger.application.config["STORE"]
+        travel_bank(ledger)
         for key in list(st.budgets()):
             st.set_budget(key, 0)
         st.set_budget("Travel", 300)          # written directly, past the API

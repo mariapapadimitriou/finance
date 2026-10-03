@@ -252,71 +252,56 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
 }
 
 /**
- * Why Travel is not in the table, and what that leaves outstanding.
+ * Why some categories are not in the table: a piggy bank pays for them.
  *
- * Three states worth distinguishing: no bank at all, which means the cost is
- * funded by nothing; a bank that covered everything, which is the system
- * working and needs one quiet line; and a bank that did not cover a charge,
- * which is money still coming out of this month until it is allocated.
+ * Normally one quiet line saying which bank. The one other state is spending
+ * in those categories from before the bank opened, which the bank does not
+ * pay for and so still counts in its month.
  */
 function bankFundedItem(banked, onTab) {
-  // One line or several — the set is a decision in categorize.py and in your
-  // grouping, not a constant this function gets to assume the size of.
   const list = banked.categories;
   if (!list?.length) return null;
-  const names = list.length > 1
-    ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`
-    : list[0];
-  const verb = list.length > 1 ? 'have' : 'has';
+  const names = joinNames(list);
   const left = banked.unallocated_total;
+  const payers = banked.paid_by ?? [];
 
-  if (banked.banks === 0) {
+  if (left > 1) {
     return {
-      key: 'banked', kind: 'error', rank: 0,
-      summary: <>{names} {verb} no budget line and no piggy bank.</>,
+      key: 'banked', kind: '', rank: 1,
+      summary: <>{money(left)} of {names.toLowerCase()} this month came
+        before its piggy bank opened.</>,
       detail: (
         <>
-          {list.length > 1 ? 'They are' : 'It is'} left out of the split below
-          on purpose — a cost that arrives in lumps is wrong as a monthly line
-          — on the understanding that a bank is collecting for{' '}
-          {list.length > 1 ? 'them' : 'it'}. Nothing is.
-          {onTab && (
-            <div className="row" style={{ marginTop: 12 }}>
-              <button className="btn primary" onClick={() => onTab('piggy')}>
-                Open a travel bank
-              </button>
-            </div>
-          )}
+          A bank pays for its categories from the month it opened, so this
+          counts as everyday spending. To have a bank pay for it anyway,
+          charge it in <GoTo to="transactions" from="budgets" onTab={onTab} />.
         </>
       ),
     };
   }
 
-  if (left <= 1) {
-    return {
-      key: 'banked', kind: 'good', rank: 2,
-      summary: <>{names} {verb === 'have' ? 'are' : 'is'} paid for by a piggy
-        bank, not budgeted.</>,
-      detail: <>That is why there is no line below for{' '}
-        {list.length > 1 ? 'them' : 'it'}, and nothing this month is waiting
-        to be charged to a bank.</>,
-    };
-  }
-
   return {
-    key: 'banked', kind: '', rank: 1,
-    summary: <>{money(left)} of {names.toLowerCase()} this month isn&apos;t
-      charged to a piggy bank.</>,
-    detail: (
-      <>
-        {names} {verb} no budget line — a bank funds{' '}
-        {list.length > 1 ? 'them' : 'it'} instead — so until that charge is
-        allocated to one it comes out of this month like any other spending.
-        Charge it in <GoTo to="transactions" from="budgets" onTab={onTab} />{' '}
-        and it leaves the month entirely.
-      </>
-    ),
+    key: 'banked', kind: 'good', rank: 2,
+    summary: payers.length > 0
+      ? <>{payers.map((p, i) => (
+          <span key={p.id}>
+            {i > 0 && '; '}
+            {joinNames(p.categories)} {p.categories.length > 1 ? 'are' : 'is'}{' '}
+            paid by your {p.bank} bank
+          </span>
+        ))}.</>
+      : <>{names} {list.length > 1 ? 'are' : 'is'} paid by a piggy bank.</>,
+    detail: <>That is why there is no line below for{' '}
+      {list.length > 1 ? 'them' : 'it'}: big spending comes out of the bank,
+      not your week. Change what a bank pays for on{' '}
+      <GoTo to="piggy" from="budgets" onTab={onTab} />.</>,
   };
+}
+
+function joinNames(list) {
+  return list.length > 1
+    ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`
+    : list[0];
 }
 
 /**

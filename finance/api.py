@@ -20,7 +20,7 @@ from .analytics import (
     summary as build_summary,
     weekday_profile,
 )
-from .categorize import BANK_FUNDED, CATEGORIES, is_bank_funded, is_discretionary
+from .categorize import CATEGORIES, TRAVEL_BANK_CATEGORIES, is_discretionary
 from .db import storage_mode
 from .ingest import all_sources, get_source, parse_csv, parse_statement
 from .insights import (detect_recurring, findings_summary, generate_findings,
@@ -83,12 +83,13 @@ def _category_groups_payload(st) -> dict:
 
     grouping = st.category_groups()
     lines = budget_lines.lines(grouping)
+    funded = st.bank_funded_categories()
     return {
         "groups": grouping,
         "categories": budget_lines.spend_categories(),
         "lines": [
             {"name": name, "members": members,
-             "bank_funded": budget_lines.line_bank_funded(members),
+             "bank_funded": budget_lines.line_bank_funded(members, funded),
              "daily": budget_lines.line_daily(members)}
             for name, members in lines.items()
         ],
@@ -115,13 +116,14 @@ def set_category_groups():
     from . import groups as budget_lines
 
     body = request.get_json(silent=True) or {}
-    clean, error = budget_lines.validate(body.get("groups", body))
+    st = store()
+    funded = st.bank_funded_categories()
+    clean, error = budget_lines.validate(body.get("groups", body), funded)
     if error:
         return jsonify({"error": error}), 400
 
-    st = store()
     old = st.category_groups()
-    carried = budget_lines.carry_budgets(st.budgets(), old, clean)
+    carried = budget_lines.carry_budgets(st.budgets(), old, clean, funded)
     st.set_category_groups(clean)
     for key in list(st.budgets()):
         if key not in carried:
@@ -585,8 +587,8 @@ def _profile(st, txns, findings_summary_: dict):
     fixed = st.fixed_costs()
     bank_monthly = _bank_monthly(st)
     result = money_plan.plan(income, fixed, savings, bank_monthly)
-    shares = money_plan.variable_shares(txns)
-    discretionary = money_plan.discretionary_shares(txns)
+    shares = money_plan.variable_shares(txns, bank_funded=st.bank_funded_categories())
+    discretionary = money_plan.discretionary_shares(txns, bank_funded=st.bank_funded_categories())
 
     allowance, from_plan = _allowance(st, txns)
     last = last_complete_month(txns) or ""
@@ -596,9 +598,7 @@ def _profile(st, txns, findings_summary_: dict):
     months = sorted({t.month for t in txns})
     travel = _travel_last_year(txns)
 
-    charges = st.bank_charges_by_month()
-    banks = [b.to_dict(piggy.status(b, charges.get(b.id, {})))
-             for b in st.piggy_banks()]
+    banks = _bank_status(st)
 
     return Profile(
         income=income,
@@ -644,8 +644,9 @@ def setup_steps():
     grouping = st.category_groups()
     from . import groups as budget_lines
     lines = budget_lines.lines(grouping)
+    funded = st.bank_funded_categories()
     budgeted = {k for k in st.budgets()
-                if k in lines and not budget_lines.line_bank_funded(lines[k])}
+                if k in lines and not budget_lines.line_bank_funded(lines[k], funded)}
 
     steps = [
         {"id": "start", "optional": True,
@@ -670,10 +671,10 @@ def setup_steps():
          "done": bool(st.fixed_costs()), "tab": "plan",
          "action": "Add them"},
         {"id": "travel", "optional": True,
-         "label": "Open a travel piggy bank",
-         "detail": "Travel has no budget line — a bank is the only thing "
-                   "that pays for it.",
-         "done": bool(st.piggy_banks()), "tab": "piggy",
+         "label": "Open a piggy bank for your big spending",
+         "detail": "Travel, say: a bank that pays for it keeps the trips "
+                   "off your weekly allowance.",
+         "done": bool(funded), "tab": "piggy",
          "action": "Open one"},
         {"id": "budgets", "optional": False,
          "label": "Adopt your budgets",
@@ -744,7 +745,7 @@ def _allowance(st, txns=None) -> tuple[float, bool]:
     if income > 0:
         amount = money_plan.monthly_allowance(
             income, st.fixed_costs(), st.float_setting("savings_target", 0.0),
-            _bank_monthly(st), money_plan.variable_shares(txns))
+            _bank_monthly(st), money_plan.variable_shares(txns, bank_funded=st.bank_funded_categories()))
         if amount > 0:
             return amount, True
     return spend_plan.suggest_monthly_amount(txns), False
@@ -773,7 +774,7 @@ def _derivation(st, txns, allowance: float, from_plan: bool) -> dict:
     result = money_plan.plan(income, st.fixed_costs(),
                              st.float_setting("savings_target", 0.0),
                              _bank_monthly(st))
-    shares = money_plan.variable_shares(txns)
+    shares = money_plan.variable_shares(txns, bank_funded=st.bank_funded_categories())
     budgets = money_plan.category_budgets(result["leftover"], shares)
 
     # The categories actually making up the essential half, biggest first,
@@ -1082,7 +1083,7 @@ def plan_setup():
 
     banks = _bank_monthly(st)
     result = money_plan.plan(income, fixed, savings, banks)
-    shares = money_plan.variable_shares(txns)
+    shares = money_plan.variable_shares(txns, bank_funded=st.bank_funded_categories())
     historical = _typical_by_category(txns)
     typical_total = round(sum(historical.get(c, 0.0) for c in shares), 2)
 
@@ -1117,6 +1118,7 @@ def plan_setup():
         # Each bank's contribution beside the total, so a leftover that looks
         # small can be traced to the holiday it is paying for.
         "bank_lines": _bank_status(st),
+        "bank_funded": sorted(st.bank_funded_categories()),
     })
 
 
@@ -1158,7 +1160,8 @@ def apply_plan_budgets():
 
     txns = st.all_transactions()
     grouping = st.category_groups()
-    shares = money_plan.variable_shares(txns, groups=grouping)
+    shares = money_plan.variable_shares(txns, groups=grouping,
+                                         bank_funded=st.bank_funded_categories())
     budgets = money_plan.category_budgets(result["leftover"], shares)
     if not budgets:
         return jsonify({"error": "Not enough spending history yet to know how "
@@ -1173,7 +1176,8 @@ def apply_plan_budgets():
     # gives it.
     lines = budget_lines.lines(grouping)
     for key in list(st.budgets()):
-        if key not in lines or budget_lines.line_bank_funded(lines[key]):
+        if key not in lines or budget_lines.line_bank_funded(
+                lines[key], st.bank_funded_categories()):
             st.set_budget(key, 0)
 
     # The budgets cover everything the leftover has to pay for; the daily
@@ -1182,7 +1186,7 @@ def apply_plan_budgets():
     # there is no copy of it to fall out of date. It is worked out per
     # category, never per line, so how you group a budget cannot move it.
     pool = money_plan.discretionary_pool(money_plan.category_budgets(
-        result["leftover"], money_plan.variable_shares(txns)))
+        result["leftover"], money_plan.variable_shares(txns, bank_funded=st.bank_funded_categories())))
     return jsonify({"ok": True, "budgets": budgets,
                     "monthly_amount": pool,
                     "leftover": result["leftover"]})
@@ -1197,10 +1201,60 @@ def _bank_status(st) -> list[dict]:
     from . import piggy
 
     charges = st.bank_charges_by_month()
-    rows = [b.to_dict(piggy.status(b, charges.get(b.id, {})))
+    owned = st.bank_categories()
+    rows = [{**b.to_dict(piggy.status(b, charges.get(b.id, {}))),
+             "categories": owned.get(b.id, [])}
             for b in st.piggy_banks()]
     rows.sort(key=lambda r: (-r["monthly"], r["name"]))
     return rows
+
+
+def _paid_by(st) -> list[dict]:
+    """Each bank that pays for something, and what: the Budgets note."""
+    owned = st.bank_categories()
+    return [{"bank": b.name, "id": b.id, "categories": owned[b.id]}
+            for b in st.piggy_banks() if owned.get(b.id)]
+
+
+def _bank_categories(st, body: dict, bank_id: int | None):
+    """The categories a bank form asked for, or the error to send back.
+
+    `None` with no error means the form did not say, so nothing changes.
+    """
+    from . import groups as budget_lines
+
+    if "categories" not in body:
+        return None, None
+    wanted = body.get("categories") or []
+    if not isinstance(wanted, list) or not all(isinstance(c, str) for c in wanted):
+        return None, "Categories must be a list of names."
+    wanted = sorted({c.strip() for c in wanted if c.strip()})
+
+    allowed = set(budget_lines.spend_categories())
+    for category in wanted:
+        if category not in allowed:
+            return None, f"'{category}' is not spending a bank can pay for."
+
+    names = {b.id: b.name for b in st.piggy_banks()}
+    for other, categories in st.bank_categories().items():
+        if other == bank_id:
+            continue
+        taken = [c for c in wanted if c in categories]
+        if taken:
+            return None, (f"{', '.join(taken)} {'is' if len(taken) == 1 else 'are'} "
+                          f"already paid for by your {names.get(other, 'other')} "
+                          "bank. A category can belong to one bank.")
+
+    # A budget line holds either categories a bank pays for or ones with a
+    # budget, never both — see groups.validate. Checked against the
+    # ownership this change would leave.
+    funded = {c for other, cats in st.bank_categories().items()
+              if other != bank_id for c in cats} | set(wanted)
+    _, error = budget_lines.validate(st.category_groups(), funded)
+    if error:
+        return None, (error + " Change the grouping in Settings → Categories "
+                      "first, or choose the whole line.")
+    return wanted, None
 
 
 def _travel_last_year(txns) -> float:
@@ -1234,7 +1288,8 @@ def _suggested_bank(txns, banks: list) -> dict | None:
     annual = _travel_last_year(txns)
     target = int(math.ceil(annual / 100.0) * 100) if annual >= 240 else None
     return {"name": "Travel", "cadence": "annual",
-            "target": target, "annual_spend": annual}
+            "target": target, "annual_spend": annual,
+            "categories": list(TRAVEL_BANK_CATEGORIES)}
 
 
 @bp.get("/piggy")
@@ -1250,8 +1305,15 @@ def list_banks():
         "income": st.float_setting("monthly_income", 0.0),
         # The first bank anyone should open, prefilled from their own history.
         "suggested": _suggested_bank(st.all_transactions(), rows),
-        "bank_funded": sorted(BANK_FUNDED),
+        "bank_funded": sorted(st.bank_funded_categories()),
+        # What a bank can be told to pay for: any spending category.
+        "spend_categories": _spend_categories(),
     })
+
+
+def _spend_categories() -> list[str]:
+    from . import groups as budget_lines
+    return budget_lines.spend_categories()
 
 
 @bp.post("/piggy")
@@ -1282,10 +1344,15 @@ def add_bank():
     st = store()
     if any(b.name.lower() == name.lower() for b in st.piggy_banks()):
         return jsonify({"error": f"You already have a piggy bank called {name}."}), 400
+    categories, error = _bank_categories(st, body, None)
+    if error:
+        return jsonify({"error": error}), 400
 
     bank_id = st.add_piggy_bank(
         name, target, cadence, target_date if cadence == piggy.ONCE else None,
         _d.today().isoformat()[:7], opening, str(body.get("note") or ""))
+    if categories is not None:
+        st.set_bank_categories(bank_id, categories)
     return jsonify({"ok": True, "id": bank_id})
 
 
@@ -1320,10 +1387,15 @@ def edit_bank(bank_id: int):
     if any(b.name.lower() == name.lower() and b.id != bank_id
            for b in st.piggy_banks()):
         return jsonify({"error": f"You already have a piggy bank called {name}."}), 400
+    categories, error = _bank_categories(st, body, bank_id)
+    if error:
+        return jsonify({"error": error}), 400
 
     st.update_piggy_bank(bank_id, name, target, cadence,
                          target_date if cadence == piggy.ONCE else None,
                          opening, str(body.get("note", bank.note) or ""))
+    if categories is not None:
+        st.set_bank_categories(bank_id, categories)
     return jsonify({"ok": True})
 
 
@@ -1373,9 +1445,11 @@ def allocate_to_bank(bank_id: int):
     return jsonify({
         "ok": True,
         "charge": round(txn.amount, 2),
-        # The whole charge leaves the month. What it costs you is the catch-up
-        # on the months ahead, which is the figure worth reporting.
+        # The whole charge leaves the month, whatever the bank holds. What is
+        # worth reporting is what the bank has left this year.
         "covered": round(txn.amount, 2),
+        "available": played["available"],
+        "over": played["over"],
         "behind_by": played["behind_by"],
         "monthly": played["monthly"],
         "base_monthly": played["base_monthly"],
@@ -1600,8 +1674,9 @@ def budgets():
     grouping = st.category_groups()
     lines = budget_lines.lines(grouping)
     line_of = lambda c: budget_lines.line_of(c, grouping)          # noqa: E731
+    owned = st.bank_funded_categories()
     funded = {name for name, members in lines.items()
-              if budget_lines.line_bank_funded(members)}
+              if budget_lines.line_bank_funded(members, owned)}
 
     # A saved budget only counts if it is for a line that exists and has a
     # budget at all. One saved before a category was folded away, or before it
@@ -1686,6 +1761,8 @@ def budgets():
             "unallocated": sorted(bank_funded, key=lambda r: -r["amount"]),
             "unallocated_total": bank_funded_total,
             "banks": len(st.piggy_banks()),
+            # Which bank pays for which categories, for the one-line note.
+            "paid_by": _paid_by(st),
         },
         # What the plan would give each line, and what it has to give out.
         # Top-level rather than inside `drift`, because the table shows this
@@ -1719,7 +1796,8 @@ def _plan_split(st, txns) -> dict | None:
     # Split by budget line, which is a category unless you have folded some
     # together in Settings. The weekly number is not worked out here and never
     # sees the grouping — see finance/groups.py.
-    shares = money_plan.variable_shares(txns, groups=st.category_groups())
+    shares = money_plan.variable_shares(txns, groups=st.category_groups(),
+                                         bank_funded=st.bank_funded_categories())
     return {
         "leftover": result["leftover"],
         "budgets": money_plan.category_budgets(result["leftover"], shares),
@@ -1777,6 +1855,7 @@ def set_budgets():
     # Budgets are per line: a category, or a name you folded several under.
     grouping = store().category_groups()
     lines = budget_lines.lines(grouping)
+    funded = store().bank_funded_categories()
 
     for category, amount in updates.items():
         if category not in lines:
@@ -1787,9 +1866,9 @@ def set_budgets():
                     "line instead, or take it out of the group in Settings "
                     "→ Categories.")}), 400
             return jsonify({"error": f"Unknown category '{category}'."}), 400
-        if budget_lines.line_bank_funded(lines[category]):
+        if budget_lines.line_bank_funded(lines[category], funded):
             return jsonify({"error": (
-                f"{category} is funded by a piggy bank, not budgeted. Its "
+                f"{category} is paid for by a piggy bank, not budgeted. Its "
                 "money leaves the plan as the bank's monthly contribution, so "
                 "a budget line here would set the same money aside twice.")}), 400
         try:
