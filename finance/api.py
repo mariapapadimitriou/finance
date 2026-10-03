@@ -755,15 +755,38 @@ def projection():
     findings = generate_findings(txns, st.dismissed())
     weighted = findings_summary(findings).get("weighted_annual", 0.0)
 
+    # `savings` asks "what if I put this much away" without writing it down.
+    # The slider on the tab drags it, and every figure that comes back is from
+    # the same arithmetic the saved one would use — the alternative was the
+    # browser recomputing a preview, which is how two versions of one sum
+    # start disagreeing.
+    saved_savings = st.float_setting("savings_target", 0.0)
+    savings = saved_savings
+    previewing = False
+    if request.args.get("savings") is not None:
+        try:
+            savings = max(float(request.args["savings"]), 0.0)
+            previewing = abs(savings - saved_savings) > 0.005
+        except (TypeError, ValueError):
+            return jsonify({"error": "savings must be a number."}), 400
+
     # The plan, when there is one. Without it the projection cannot see rent and
     # ends up treating it as money available to save.
     from . import money_plan
-    plan = money_plan.plan(income or 0.0, st.fixed_costs(),
-                           st.float_setting("savings_target", 0.0),
-                           _bank_monthly(st)) if income else None
+    fixed = st.fixed_costs()
+    banks = _bank_monthly(st)
+    plan = money_plan.plan(income or 0.0, fixed, savings,
+                           banks) if income else None
 
     result = projections.project(txns, income, weighted,
                                  int(request.args.get("months", 12)), plan=plan)
+    # What the slider may ask for: everything that is not already promised.
+    # Past this the plan has nothing left to divide, and the daily number is
+    # zero before the month starts.
+    result["savings_ceiling"] = round(
+        max((income or 0.0) - sum(f.amount for f in fixed) - banks, 0.0), 2)
+    result["savings_saved"] = round(saved_savings, 2)
+    result["savings_previewing"] = previewing
     target = request.args.get("target")
     if target:
         try:

@@ -403,6 +403,61 @@ select, input[type="text"], input[type="search"], input[type="number"] {
   transition: border-color .15s ease;
 }
 select:hover, input:hover { border-color: var(--ink-2); }
+
+/* The one control you drag rather than type into. Native styling varies far
+   too much between browsers to leave alone next to the rest of these, and the
+   track has to read as a measure — filled to the left of the handle. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 24px;
+  cursor: pointer;
+  padding: 0;
+}
+/* Chromium has no ::-moz-range-progress equivalent, so the filled part of
+   the track is painted by a gradient the component sets from the value. */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: transparent;
+}
+input[type="range"].measure {
+  border-radius: 3px;
+  background-repeat: no-repeat;
+  background-size: 100% 6px;
+  background-position: 0 9px;
+}
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+}
+input[type="range"]::-moz-range-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--brand);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--brand);
+  border: 2px solid var(--surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / .35);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--brand);
+  border: 2px solid var(--surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / .35);
+}
+input[type="range"]:hover { border-color: transparent; }
 select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
@@ -454,6 +509,10 @@ select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-v
 
 .grid { display: grid; gap: 16px; }
 .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* This rule was simply missing, so every three-tile row in the app — the
+   piggy bank totals, the projection's basis — stacked one tile per line at
+   full width and made those pages several screens longer than they are. */
+.grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
 @media (max-width: 1100px) {
@@ -461,10 +520,11 @@ select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-v
 }
 @media (max-width: 920px) {
   .grid.cols-2 { grid-template-columns: 1fr; }
+  .grid.cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .card { padding: 18px; border-radius: var(--r); }
 }
 @media (max-width: 560px) {
-  .grid.cols-4 { grid-template-columns: 1fr; }
+  .grid.cols-3, .grid.cols-4 { grid-template-columns: 1fr; }
 }
 
 /* ── Stat cards ──────────────────────────────────────────────────────────── */

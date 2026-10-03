@@ -776,3 +776,124 @@ class TestTheFirstBankIsTravel:
         assert row, "the fixture travels but is offered no bank"
         assert row["figures"]["annual"] == pytest.approx(
             suggested["annual_spend"], abs=TOLERANCE)
+
+
+class TestTheSavingsSliderAsksTheServer:
+    """Nothing about the preview is computed in the browser.
+
+    The slider moves a real projection by asking for one, so the figure under
+    the handle and the figure that gets saved are produced by the same code.
+    A client-side preview would be a second implementation of the plan's
+    arithmetic, which is how two versions of one sum start disagreeing.
+    """
+
+    def test_previewing_does_not_write_anything(self, ledger):
+        before = ledger.get("/api/plan/setup").get_json()["savings"]
+        body = ledger.get("/api/projections?savings=1500").get_json()
+
+        assert body["savings_previewing"] is True
+        assert body["basis"]["saving"] == pytest.approx(1500.0, abs=TOLERANCE)
+        assert ledger.get("/api/plan/setup").get_json()["savings"] == before
+        assert body["savings_saved"] == pytest.approx(before, abs=TOLERANCE)
+
+    def test_the_preview_matches_what_saving_it_would_give(self, ledger):
+        preview = ledger.get("/api/projections?savings=1500").get_json()
+        ledger.put("/api/plan/setup", json={"savings": 1500})
+        saved = ledger.get("/api/projections").get_json()
+
+        assert saved["savings_previewing"] is False
+        for key in ("monthly_on_plan", "monthly_surplus"):
+            assert saved[key] == pytest.approx(preview[key], abs=TOLERANCE)
+        assert saved["at_12"]["on_plan"] == pytest.approx(
+            preview["at_12"]["on_plan"], abs=TOLERANCE)
+        assert saved["year_end"]["on_plan"] == pytest.approx(
+            preview["year_end"]["on_plan"], abs=TOLERANCE)
+
+    def test_saving_more_moves_the_plan_line_and_not_the_pace(self, ledger):
+        """The honest part, and what the copy on the card promises: this does
+        not conjure money, it relabels money. What you accumulate is the same;
+        how much of it was a decision is not."""
+        low = ledger.get("/api/projections?savings=200").get_json()
+        high = ledger.get("/api/projections?savings=1200").get_json()
+
+        assert high["at_12"]["on_plan"] > low["at_12"]["on_plan"]
+        assert high["at_12"]["pace"] == pytest.approx(low["at_12"]["pace"],
+                                                      abs=TOLERANCE)
+        # And it comes out of what is left to spend, pound for pound.
+        assert high["basis"]["leftover"] == pytest.approx(
+            low["basis"]["leftover"] - 1000.0, abs=TOLERANCE)
+
+    def test_the_ceiling_is_everything_not_already_promised(self, ledger):
+        body = ledger.get("/api/projections").get_json()
+        setup = ledger.get("/api/plan/setup").get_json()
+        assert body["savings_ceiling"] == pytest.approx(
+            setup["income"] - setup["fixed_total"] - setup["banks"],
+            abs=TOLERANCE)
+
+    def test_a_nonsense_figure_is_refused_rather_than_guessed_at(self, ledger):
+        assert ledger.get("/api/projections?savings=lots").status_code == 400
+
+    def test_the_year_end_figure_is_the_months_that_are_left(self, ledger):
+        from finance import projections
+        from datetime import date
+
+        body = ledger.get("/api/projections").get_json()
+        months = projections.months_left_in_year(date.today().isoformat())
+        assert body["year_end"]["months"] == months
+        assert body["year_end"]["on_plan"] == pytest.approx(
+            body["monthly_on_plan"] * months, abs=TOLERANCE)
+
+
+class TestWhatItComesToIfInvested:
+    def test_the_compounding_is_an_ordinary_annuity(self):
+        from finance.projections import future_value
+        # $500 a month at 7% for ten years, the figure every calculator gives.
+        assert future_value(500, 0.07, 120) == pytest.approx(86542.40, abs=1.0)
+        # No return is just the contributions, with nothing conjured.
+        assert future_value(500, 0.0, 120) == pytest.approx(60000.0, abs=0.01)
+        assert future_value(0, 0.07, 120, opening=1000) == pytest.approx(
+            2009.66, abs=1.0)
+
+    def test_every_value_is_reported_beside_what_was_paid_in(self, ledger):
+        inv = ledger.get("/api/projections").get_json()["invested"]
+        assert inv
+        for rate in inv["rates"]:
+            for years in inv["horizons"]:
+                row = rate["at"][str(years)]
+                assert row["contributed"] == pytest.approx(
+                    inv["monthly"] * years * 12, abs=TOLERANCE)
+                assert row["growth"] == pytest.approx(
+                    row["value"] - row["contributed"], abs=TOLERANCE)
+                # A positive rate can only beat holding it in a drawer.
+                assert row["value"] >= row["contributed"] - TOLERANCE
+
+    def test_a_higher_assumption_is_never_worth_less(self, ledger):
+        inv = ledger.get("/api/projections").get_json()["invested"]
+        values = [r["at"]["30"]["value"] for r in
+                  sorted(inv["rates"], key=lambda r: r["rate"])]
+        assert values == sorted(values)
+
+    def test_it_compounds_the_figure_the_plan_sets_aside(self, ledger):
+        body = ledger.get("/api/projections?savings=800").get_json()
+        assert body["invested"]["monthly"] == pytest.approx(800.0, abs=TOLERANCE)
+
+    def test_nothing_is_offered_when_nothing_is_being_saved(self, ledger):
+        body = ledger.get("/api/projections?savings=0").get_json()
+        assert body["invested"] is None
+
+    def test_the_chart_is_drawn_on_the_middle_assumption(self, ledger):
+        """Never the flattering one — the chart is the figure people
+        remember, so it is not allowed to be the best case."""
+        inv = ledger.get("/api/projections").get_json()["invested"]
+        rates = sorted(r["rate"] for r in inv["rates"])
+        assert inv["chart_rate"] == rates[len(rates) // 2]
+        assert inv["chart_rate"] < max(rates)
+
+    def test_the_chart_series_starts_at_nothing_and_matches_the_table(self, ledger):
+        inv = ledger.get("/api/projections").get_json()["invested"]
+        assert inv["series"][0] == {"year": 0, "contributed": 0.0, "value": 0.0}
+        middle = next(r for r in inv["rates"] if r["rate"] == inv["chart_rate"])
+        for years in inv["horizons"]:
+            point = next(p for p in inv["series"] if p["year"] == years)
+            assert point["value"] == pytest.approx(
+                middle["at"][str(years)]["value"], abs=TOLERANCE)

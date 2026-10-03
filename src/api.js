@@ -106,6 +106,10 @@ export const coverFromBank   = (id, amount, month) =>
 export const getPlanSetup    = () => req('/api/plan/setup');
 export const savePlanSetup   = (income, savings) =>
   json('PUT', '/api/plan/setup', { income, savings });
+// The savings figure on its own. The endpoint writes only the fields it is
+// given, and the slider has no business sending an income it never showed.
+export const saveSavings     = (savings) =>
+  json('PUT', '/api/plan/setup', { savings });
 export const applyPlanBudgets = () => json('POST', '/api/plan/setup/apply', {});
 export const addFixedCost    = (cost) => json('POST', '/api/plan/fixed', cost);
 export const deleteFixedCost = (id) =>
@@ -113,8 +117,17 @@ export const deleteFixedCost = (id) =>
 export const getNudge        = () => req('/api/nudge');
 
 
-export const getProjections  = (target) =>
-  req(`/api/projections${target ? `?target=${target}` : ''}`);
+/**
+ * `savings` previews a different savings figure without saving it, so the
+ * slider on the tab moves the real arithmetic rather than a copy of it.
+ */
+export const getProjections  = (target, savings) => {
+  const q = new URLSearchParams();
+  if (target) q.set('target', target);
+  if (savings !== undefined && savings !== null) q.set('savings', savings);
+  const s = q.toString();
+  return req(`/api/projections${s ? `?${s}` : ''}`);
+};
 
 /**
  * Add a transaction by hand.

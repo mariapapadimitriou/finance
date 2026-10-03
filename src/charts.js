@@ -238,3 +238,83 @@ export function dailySpendConfig(daily) {
     },
   };
 }
+
+/**
+ * Contributions against what they are worth, year by year.
+ *
+ * Two lines with the area between them filled, because that area is the only
+ * thing this chart is for: the lower line is money she put in, the upper one
+ * is what it grew to, and the gap is the growth. Drawing value alone would
+ * flatter it — a big number with no sense of how much of it was simply saved.
+ */
+export function investedConfig(series) {
+  const c = ink();
+  const line = (data, color) => ({
+    data,
+    borderColor: color,
+    borderWidth: 2,
+    fill: false,
+    tension: 0.25,
+    pointRadius: 0,
+    pointHoverRadius: 5,
+    pointHoverBorderWidth: 2,
+    pointHoverBorderColor: c.surface,
+    pointHoverBackgroundColor: color,
+    pointHitRadius: 16,
+  });
+
+  return {
+    type: 'line',
+    data: {
+      labels: series.map((r) => r.year),
+      datasets: [
+        {
+          ...line(series.map((r) => r.value), c.series3),
+          label: 'What it is worth',
+          fill: { target: 1, above: c.series3Soft, below: c.soft },
+        },
+        {
+          ...line(series.map((r) => r.contributed), c.series),
+          label: 'What you put in',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: tooltip(c, {
+          title: (items) => (items[0].label === '1' ? 'After 1 year'
+            : `After ${items[0].label} years`),
+          label: (ctx) => `${ctx.dataset.label}: ${money(ctx.parsed.y)}`,
+        }),
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { color: c.axis },
+          ticks: {
+            color: c.muted, font: AXIS_FONT, maxRotation: 0,
+            // Every fifth year, so thirty labels do not become a smear.
+            callback(i) {
+              const y = Number(this.getLabelForValue(i));
+              return y % 5 === 0 ? `${y}y` : '';
+            },
+          },
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: c.grid, drawTicks: false },
+          border: { display: false },
+          ticks: {
+            color: c.muted, font: AXIS_FONT, padding: 8, maxTicksLimit: 5,
+            callback: (v) => money(v),
+          },
+        },
+      },
+    },
+  };
+}

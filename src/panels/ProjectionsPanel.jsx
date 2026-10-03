@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import Chart from '../components/Chart.jsx';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
-import { getProjections, money } from '../api.js';
-import { projectionConfig } from '../charts.js';
+import { getProjections, money, saveSavings } from '../api.js';
+import { investedConfig, projectionConfig } from '../charts.js';
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+                     'July', 'August', 'September', 'October', 'November',
+                     'December'];
 
 /**
  * Projections: two lines, and the gap between them is the whole point.
@@ -12,23 +16,57 @@ import { projectionConfig } from '../charts.js';
  * arithmetic on a trend, and the honest part is saying how thin that trend is,
  * so the months behind the numbers travel with them.
  */
-export default function ProjectionsPanel({ insights, onTab, version = 0 }) {
+export default function ProjectionsPanel({ insights, onTab, onChanged,
+                                          version = 0 }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [target, setTarget] = useState('');
+  // The slider's own position, and the figure the server has been asked to
+  // project. Null in both means "whatever is saved" — dragging sets the
+  // first immediately so the handle keeps up with the finger, and the second
+  // follows a beat later so a drag is not one request per pixel.
+  const [slider, setSlider] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async (goal) => {
+  const load = useCallback(async (goal, savings) => {
     setError(null);
     try {
-      const d = await getProjections(goal || undefined);
-      setData(d);
+      // Not cleared first: on a re-fetch the previous figures stay on screen
+      // rather than collapsing to a spinner under the slider being dragged.
+      setData(await getProjections(goal || undefined, savings));
     } catch (e) {
       setError(e);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version]);   // an import changes the spend history the projection rests on
 
-  useEffect(() => { load(target); }, [load, target]);
+  useEffect(() => {
+    if (slider === null) return undefined;
+    const id = setTimeout(() => setPreview(slider), 180);
+    return () => clearTimeout(id);
+  }, [slider]);
+
+  useEffect(() => { load(target, preview ?? undefined); },
+    [load, target, preview]);
+
+  async function commit() {
+    setSaving(true);
+    setError(null);
+    try {
+      // The same endpoint and the same setting the Plan tab writes. One
+      // figure with two editors is fine; two figures would not be.
+      await saveSavings(slider);
+      setSlider(null);
+      setPreview(null);
+      await load(target);
+      await onChanged?.();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setSaving(false);
+    }
+  }
 
 
   // Before the unavailable branch below, not after: on a failed load `data` is
@@ -126,6 +164,19 @@ export default function ProjectionsPanel({ insights, onTab, version = 0 }) {
             </div>
           )}
 
+          {data.from_plan && (
+            <SavingsSlider
+              data={data}
+              value={slider ?? data.savings_saved ?? 0}
+              onChange={setSlider}
+              onCommit={commit}
+              onReset={() => { setSlider(null); setPreview(null); }}
+              saving={saving}
+              dirty={slider !== null
+                     && Math.abs(slider - (data.savings_saved ?? 0)) > 0.005}
+            />
+          )}
+
           <Card
             title="Twelve months out"
             hint="What following the plan accumulates, against what the last few months would"
@@ -219,9 +270,188 @@ export default function ProjectionsPanel({ insights, onTab, version = 0 }) {
               </div>
             )}
           </Card>
+
+          {data.invested && <Invested invested={data.invested} />}
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The savings figure, as something you can move and watch.
+ *
+ * Two things make this honest rather than a toy. The first is that nothing
+ * here is computed in the browser: every figure comes back from the same
+ * endpoint the saved value uses, asked a hypothetical question. The second is
+ * that it shows the cost as well as the benefit — raising this does not
+ * conjure money, it moves it out of what you may spend, and the tile for that
+ * sits beside the two that go up.
+ */
+function SavingsSlider({ data, value, onChange, onCommit, onReset, saving,
+                         dirty }) {
+  const ceiling = Math.max(data.savings_ceiling ?? 0, value, 100);
+  const max = Math.ceil(ceiling / 25) * 25;
+  const filled = Math.round((value / max) * 100);
+  const months = data.year_end?.months ?? 0;
+  const from = MONTH_NAMES[12 - months] ?? '';
+
+  return (
+    <Card title="What if you put away more"
+          hint="Drag it, and every figure below moves with it — nothing is saved until you say so"
+          actions={dirty && (
+            <div className="row" style={{ gap: 8 }}>
+              <button className="btn quiet" onClick={onReset} disabled={saving}>
+                Reset
+              </button>
+              <button className="btn primary" onClick={onCommit} disabled={saving}>
+                {saving ? 'Saving…' : 'Make it the plan'}
+              </button>
+            </div>
+          )}>
+      <div className="controls" style={{ alignItems: 'center', gap: 14 }}>
+        <label htmlFor="savings-slider" style={{ whiteSpace: 'nowrap' }}>
+          Saving each month
+        </label>
+        <input
+          id="savings-slider"
+          className="measure"
+          type="range"
+          min="0"
+          max={max}
+          step="25"
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          style={{
+            flex: '1 1 220px',
+            minWidth: 160,
+            // The filled part of the track, which Chromium will not draw.
+            backgroundImage: `linear-gradient(to right, var(--brand) 0 ${
+              filled}%, var(--surface-2) ${filled}% 100%)`,
+          }}
+          aria-valuetext={`${money(value)} a month`}
+        />
+        <strong className="num" style={{ fontSize: 20, minWidth: 96,
+                                         textAlign: 'right' }}>
+          {money(value)}
+        </strong>
+      </div>
+
+      <div className="grid cols-3" style={{ marginTop: 16 }}>
+        <Tile label={`By 31 December`} value={money(data.year_end?.on_plan ?? 0)}
+              note={months > 0
+                ? `${months} more month${months === 1 ? '' : 's'}, ${from} on`
+                : 'the year is done'}
+              tone="good" />
+        <Tile label="Over twelve months" value={money(data.at_12?.on_plan ?? 0)}
+              note="following the plan" tone="good" />
+        <Tile label="Left to spend" value={money(data.basis?.leftover ?? 0)}
+              note="a month, after commitments and this"
+              tone={(data.basis?.leftover ?? 0) <= 0 ? 'bad' : undefined} />
+      </div>
+
+      <p className="assumption" style={{ marginBottom: 0 }}>
+        {/* The thing a slider like this usually hides: it is not a tap that
+            makes more money come out. The recent-pace line does not move at
+            all, because what you actually accumulate is unchanged — what
+            changes is how much of it was a decision. */}
+        Moving this does not change what you accumulate, only how much of it
+        happens on purpose: the money comes out of what is left to spend, and
+        the recent-pace line below does not move. What it does change is the
+        daily number on Today, which divides the smaller leftover.
+        {dirty && <> Nothing is saved until you press
+          <strong> Make it the plan</strong>.</>}
+      </p>
+    </Card>
+  );
+}
+
+/**
+ * The same contribution, left to compound.
+ *
+ * Deliberately a range rather than a figure. One rate would be a forecast
+ * wearing arithmetic's clothes; three make the point that the answer depends
+ * on an assumption the app cannot make for her. Contributions are shown
+ * against every value, because the gap is the only part that is news.
+ */
+function Invested({ invested }) {
+  const chart = invested.rates.find((r) => r.rate === invested.chart_rate)
+    ?? invested.rates[1] ?? invested.rates[0];
+  const at30 = chart.at['30'];
+
+  return (
+    <Card title="If you invested it instead of holding it"
+          hint={`${money(invested.monthly)} a month, compounded — assumptions, not predictions`}>
+      <div className="chart">
+        <Chart
+          config={investedConfig(invested.series)}
+          ariaLabel={`Invested at ${Math.round(invested.chart_rate * 100)}% a `
+            + `year, ${money(invested.monthly)} a month grows to `
+            + `${money(at30.value)} over thirty years, of which `
+            + `${money(at30.contributed)} is what you put in`}
+        />
+      </div>
+      <div className="legend" style={{ marginTop: 6 }}>
+        <span className="item">
+          <span className="swatch" style={{ background: 'var(--series-3)' }} />
+          What it is worth at {Math.round(invested.chart_rate * 100)}% a year
+        </span>
+        <span className="item">
+          <span className="swatch" style={{ background: 'var(--series-1)' }} />
+          What you put in — {money(at30.contributed)} over thirty years
+        </span>
+      </div>
+
+      <div className="table-wrap" style={{ marginTop: 16 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>If it returned</th>
+              {invested.horizons.map((y) => (
+                <th key={y} className="r">{y} years</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {invested.rates.map((r) => (
+              <tr key={r.rate}>
+                <td>
+                  {r.label}{' '}
+                  <span className="muted small">
+                    {Math.round(r.rate * 100)}% a year
+                  </span>
+                </td>
+                {invested.horizons.map((y) => (
+                  <td key={y} className="r num">
+                    {money(r.at[String(y)].value)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            <tr>
+              <td className="muted">What you put in</td>
+              {invested.horizons.map((y) => (
+                <td key={y} className="r num muted">
+                  {money(invested.rates[0].at[String(y)].contributed)}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p className="assumption" style={{ marginBottom: 0 }}>
+        These are what the arithmetic gives if a constant average return
+        happened every year, which is the one thing markets reliably do not
+        do: the same long-run average arrives as good years and falling ones
+        in an order nobody gets to choose, and a bad run early is worth far
+        less than this suggests. Nothing here accounts for tax or for fees,
+        and the figures are in today&apos;s dollars without inflation taken
+        out — {money(at30.value)} in thirty years buys a good deal less than
+        it does now. It is a sense of scale, not advice, and not a
+        recommendation of anywhere in particular to put it.
+      </p>
+    </Card>
   );
 }
 
