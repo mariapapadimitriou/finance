@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import Chart from '../components/Chart.jsx';
-import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
+import {
+  Card, ErrorNote, GoTo, Loading, Notice, StatusPill, Why,
+} from '../components/ui.jsx';
+import { destination } from '../nav.js';
 import { getProjections, money, saveSavings } from '../api.js';
 import { investedConfig, projectionConfig } from '../charts.js';
 
@@ -54,7 +57,7 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
     setSaving(true);
     setError(null);
     try {
-      // The same endpoint and the same setting the Plan tab writes. One
+      // The same endpoint and the same setting the plan's own field writes. One
       // figure with two editors is fine; two figures would not be.
       await saveSavings(slider);
       setSlider(null);
@@ -81,25 +84,21 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
     <div className="stack">
       <ErrorNote error={error} onRetry={() => load(target)} />
 
-      {/* Shown, not edited. Take-home pay had a Save button here and another on
-          the Plan tab, both writing the same setting, and whichever was touched
-          last won silently. One figure, one place to change it. */}
-      <Card title="What this is built on"
-            hint="All of it comes from the Plan tab">
-        <p className="small" style={{ marginTop: 0, marginBottom: 12 }}>
-          Take-home pay of{' '}
-          <strong className="num">{money(data.monthly_income)}</strong> a month
-          {data.basis?.from_plan && (
-            <>, less {money(data.basis.fixed_total)} of commitments</>
-          )}
-          .{' '}
-          {onTab
-            ? <button className="link" onClick={() => onTab('plan')}>
-                Change it on the Plan tab
-              </button>
-            : <>Change it on the Plan tab.</>}
-        </p>
-      </Card>
+      {/* Without a plan there is no slider to frame the figures, so this is
+          the only place that says what they rest on. With one, the slider
+          card says it in its first line and this card would be a repeat.
+          Shown, not edited: take-home pay had a Save button here and another
+          in the plan, and whichever was touched last won silently. */}
+      {!data.basis?.from_plan && (
+        <Card title="What this is built on">
+          <p className="small" style={{ marginTop: 0, marginBottom: 0 }}>
+            Take-home pay of{' '}
+            <strong className="num">{money(data.monthly_income)}</strong> a
+            month. Change it in{' '}
+            <GoTo to="plan" from="projections" onTab={onTab} />.
+          </p>
+        </Card>
+      )}
 
       {!data?.available ? (
         <Notice>
@@ -115,6 +114,22 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
         </Notice>
       ) : (
         <>
+          {/* First: it is the one thing on the page you can move, and every
+              figure below it moves with it. */}
+          {data.from_plan && (
+            <SavingsSlider
+              onTab={onTab}
+              data={data}
+              value={slider ?? data.savings_saved ?? 0}
+              onChange={setSlider}
+              onCommit={commit}
+              onReset={() => { setSlider(null); setPreview(null); }}
+              saving={saving}
+              dirty={slider !== null
+                     && Math.abs(slider - (data.savings_saved ?? 0)) > 0.005}
+            />
+          )}
+
           <Notice kind={data.from_plan ? undefined : 'error'}>
             {!data.from_plan && <strong>Read the surplus as a ceiling. </strong>}
             {data.caveat}
@@ -134,18 +149,18 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
                       tone={data.monthly_surplus < 0 ? 'bad' : 'good'} />
               </div>
               {data.basis.banks > 0 && (
-                <p className="assumption">
+                <Why id="ahead.banks" label="Why aren't piggy banks counted?">
                   Your piggy banks collect a further{' '}
                   <strong className="num">{money(data.basis.banks)}</strong> a
                   month, deliberately left out of the figures above. They do
                   accumulate, but they accumulate in order to be spent on the
                   thing they are named after, so counting them as savings would
                   overstate what you actually keep.
-                </p>
+                </Why>
               )}
               <div className="grid cols-2">
                 <Tile label="Cuts found" value={money(data.monthly_cuts)}
-                      note="a month, from the Savings tab" tone="good" />
+                      note={`a month, from ${destination('savings', 'projections')}`} tone="good" />
                 <Tile label="Typical spend" value={money(data.typical_monthly_spend)}
                       note={`median of ${data.months_observed} month`
                             + `${data.months_observed === 1 ? '' : 's'}, imported cards only`} />
@@ -160,21 +175,8 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
                     note="take-home minus that spending"
                     tone={data.monthly_surplus < 0 ? 'bad' : 'good'} />
               <Tile label="Cuts found" value={money(data.monthly_cuts)}
-                    note="a month, from the Savings tab" tone="good" />
+                    note={`a month, from ${destination('savings', 'projections')}`} tone="good" />
             </div>
-          )}
-
-          {data.from_plan && (
-            <SavingsSlider
-              data={data}
-              value={slider ?? data.savings_saved ?? 0}
-              onChange={setSlider}
-              onCommit={commit}
-              onReset={() => { setSlider(null); setPreview(null); }}
-              saving={saving}
-              dirty={slider !== null
-                     && Math.abs(slider - (data.savings_saved ?? 0)) > 0.005}
-            />
           )}
 
           <Card
@@ -228,13 +230,14 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
                     {money(data.at_12.pace - data.at_12.on_plan)}
                   </strong>{' '}
                   more over the year than the plan promises. Worth raising the
-                  savings figure on the Plan tab by some of it — then it happens
-                  on purpose rather than by accident.
+                  savings figure above by some of it — then it happens on
+                  purpose rather than by accident.
                 </>
               )}
               {data.monthly_cuts > 0 && (
-                <> The {money(data.monthly_cuts)} a month of cuts on the Savings
-                   tab would add to either line.</>
+                <> The {money(data.monthly_cuts)} a month of cuts in{' '}
+                   <GoTo to="savings" from="projections" onTab={onTab} /> would
+                   add to either line.</>
               )}
             </p>
           </Card>
@@ -289,7 +292,7 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
  * sits beside the two that go up.
  */
 function SavingsSlider({ data, value, onChange, onCommit, onReset, saving,
-                         dirty }) {
+                         dirty, onTab }) {
   const ceiling = Math.max(data.savings_ceiling ?? 0, value, 100);
   const max = Math.ceil(ceiling / 25) * 25;
   const filled = Math.round((value / max) * 100);
@@ -337,6 +340,17 @@ function SavingsSlider({ data, value, onChange, onCommit, onReset, saving,
         </strong>
       </div>
 
+      {/* What the figures rest on, in one line. It used to be a card of its
+          own above this one, restating what the slider already frames. */}
+      <p className="small muted" style={{ margin: '10px 0 0' }}>
+        Out of{' '}
+        <strong className="num">{money(data.basis?.income ?? data.monthly_income)}</strong>{' '}
+        take-home, less{' '}
+        <strong className="num">{money(data.basis?.fixed_total ?? 0)}</strong>{' '}
+        of commitments — those are changed in{' '}
+        <GoTo to="plan" from="projections" onTab={onTab} />.
+      </p>
+
       <div className="grid cols-3" style={{ marginTop: 16 }}>
         <Tile label={`By 31 December`} value={money(data.year_end?.on_plan ?? 0)}
               note={months > 0
@@ -350,18 +364,24 @@ function SavingsSlider({ data, value, onChange, onCommit, onReset, saving,
               tone={(data.basis?.leftover ?? 0) <= 0 ? 'bad' : undefined} />
       </div>
 
-      <p className="assumption" style={{ marginBottom: 0 }}>
-        {/* The thing a slider like this usually hides: it is not a tap that
-            makes more money come out. The recent-pace line does not move at
-            all, because what you actually accumulate is unchanged — what
-            changes is how much of it was a decision. */}
-        Moving this does not change what you accumulate, only how much of it
-        happens on purpose: the money comes out of what is left to spend, and
-        the recent-pace line below does not move. What it does change is the
-        daily number on Today, which divides the smaller leftover.
-        {dirty && <> Nothing is saved until you press
-          <strong> Make it the plan</strong>.</>}
-      </p>
+      {/* Live state, so never folded away with the explanation below. */}
+      {dirty && (
+        <p className="small" style={{ margin: '14px 0 0' }}>
+          Nothing is saved until you press <strong>Make it the plan</strong>.
+        </p>
+      )}
+
+      {/* The thing a slider like this usually hides: it is not a tap that
+          makes more money come out. The recent-pace line does not move at
+          all, because what you actually accumulate is unchanged — what
+          changes is how much of it was a decision. */}
+      <Why id="ahead.slider" label="Does saving more mean I have more?">
+        Not on its own. Moving this does not change what you accumulate, only
+        how much of it happens on purpose: the money comes out of what is left
+        to spend, and the recent-pace line below does not move. What it does
+        change is the daily number on Today, which divides the smaller
+        leftover.
+      </Why>
     </Card>
   );
 }

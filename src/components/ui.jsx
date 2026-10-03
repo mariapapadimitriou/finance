@@ -1,6 +1,86 @@
 // Small shared presentation pieces.
 
+import { useState } from 'react';
 import { money } from '../api.js';
+import { destination } from '../nav.js';
+
+/**
+ * A link to somewhere else in the app, named the way the app names it now.
+ *
+ * Panels used to write the destination into their own sentences — "sync on
+ * the Banks tab" — and went on saying it long after Banks became Connections
+ * inside Settings. The text comes from `nav.js` instead: the section name
+ * when you are already in its group, "Settings → Connections" when you are
+ * not. `from` is the panel the sentence is on.
+ */
+export function GoTo({ to, from, onTab, children }) {
+  const text = children ?? destination(to, from);
+  if (!onTab) return <strong>{text}</strong>;
+  return (
+    <button className="link" onClick={() => onTab(to)}>{text}</button>
+  );
+}
+
+/**
+ * An explanation you can put away.
+ *
+ * Nearly every card ends in a paragraph saying why its figure is what it is.
+ * Worth reading once; noise on the fiftieth visit. So each opens the first
+ * time and, once collapsed, stays collapsed — remembered per explanation in
+ * this browser. Storage can be missing or refuse (a private window), and
+ * then it simply stays open, which is where it started.
+ */
+export function Why({ id, label = 'Why?', children }) {
+  const key = `spendie.why.${id}`;
+  const [open, setOpen] = useState(() => {
+    try { return localStorage.getItem(key) !== 'closed'; } catch { return true; }
+  });
+
+  function onToggle(e) {
+    const next = e.currentTarget.open;
+    if (next === open) return;
+    setOpen(next);
+    try {
+      if (next) localStorage.removeItem(key);
+      else localStorage.setItem(key, 'closed');
+    } catch { /* stays as it is for this visit */ }
+  }
+
+  return (
+    <details className="why" open={open} onToggle={onToggle}>
+      <summary>{label}</summary>
+      <div className="assumption">{children}</div>
+    </details>
+  );
+}
+
+/**
+ * Several notices as one strip: the most serious in full, the rest folded.
+ *
+ * Budgets could open with five notices before its first line — each true,
+ * together pushing the table off the first screen and teaching you to skip
+ * anything yellow. Callers pass them most serious first; only the first is
+ * open, and every other is one bold line that expands where it stands.
+ * Each item is `{ key, kind, summary, detail }`; null items are skipped.
+ */
+export function NoticeStack({ items }) {
+  const shown = (items ?? []).filter(Boolean);
+  if (shown.length === 0) return null;
+  const [first, ...rest] = shown;
+  return (
+    <div className="notice-stack">
+      <Notice kind={first.kind}>
+        <strong>{first.summary}</strong>{first.detail && <> {first.detail}</>}
+      </Notice>
+      {rest.map((it) => (
+        <details key={it.key} className={`notice folded ${it.kind ?? ''}`}>
+          <summary><strong>{it.summary}</strong></summary>
+          {it.detail && <div className="folded-body">{it.detail}</div>}
+        </details>
+      ))}
+    </div>
+  );
+}
 
 export function Card({ title, hint, actions, children, className = '' }) {
   return (
@@ -128,7 +208,7 @@ export function ErrorNote({ error, onRetry }) {
  *
  * `month` is the month being shown, `summary` the payload from /api/summary.
  */
-export function MonthFreshness({ month, summary, onTab }) {
+export function freshness(month, summary, { onTab, from } = {}) {
   const shown = month === summary?.latest_month;
   if (!shown || summary?.latest_month_complete) return null;
 
@@ -136,30 +216,39 @@ export function MonthFreshness({ month, summary, onTab }) {
   const running = summary?.latest_month_running;
   const label = monthName(month);
 
+  if (running) {
+    // A month still running fills itself in; it is information, not a
+    // warning, so it is not set in bold on its own.
+    return {
+      key: 'freshness',
+      kind: '',
+      emphasis: false,
+      summary: <>{label} is still in progress
+        {lastDay && <> — your data runs to day {Number(lastDay)}</>}.</>,
+      detail: <>Anything compared against whole months will read low until
+        it closes.</>,
+    };
+  }
+  return {
+    key: 'freshness',
+    kind: '',
+    emphasis: true,
+    summary: <>{label} is over, but the data{' '}
+      {lastDay ? <>stops at day {Number(lastDay)}</> : <>stops short of its last day</>}.</>,
+    detail: <>That is either a quiet end to the month or a sync that
+      hasn&apos;t run since — they look identical from here. Sync in{' '}
+      <GoTo to="banks" from={from} onTab={onTab} /> before reading anything
+      into this month.</>,
+  };
+}
+
+/** The same notice on its own, for a page with nothing else to stack it with. */
+export function MonthFreshness({ month, summary, onTab, from }) {
+  const it = freshness(month, summary, { onTab, from });
+  if (!it) return null;
   return (
-    <Notice>
-      {running ? (
-        <>
-          {label} is still in progress
-          {lastDay && <> — your data runs to day {Number(lastDay)}</>}. Anything
-          compared against whole months will read low until it closes.
-        </>
-      ) : (
-        <>
-          <strong>
-            {label} is over, but the data{' '}
-            {lastDay ? <>stops at day {Number(lastDay)}</> : <>stops short of its last day</>}.
-          </strong>{' '}
-          That is either a quiet end to the month or a sync that hasn&apos;t run
-          since — they look identical from here.{' '}
-          {onTab
-            ? <>Sync on the{' '}
-                <button className="link" onClick={() => onTab('banks')}>
-                  Banks tab
-                </button>{' '}before reading anything into this month.</>
-            : <>Sync on the Banks tab before reading anything into this month.</>}
-        </>
-      )}
+    <Notice kind={it.kind}>
+      {it.emphasis ? <strong>{it.summary}</strong> : it.summary} {it.detail}
     </Notice>
   );
 }

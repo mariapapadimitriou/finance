@@ -196,6 +196,10 @@ export const setLedgerStart  = (start, trim) =>
 export const recategorizeAll = () => json('POST', '/api/recategorize', {});
 
 export const dismissFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'POST' });
+// What is left to set up. Every step is derived from data already there.
+export const getSetup = () => req('/api/setup');
+// An optional step skipped for good, kept with the other "not for me"s.
+export const skipSetupStep = (id) => dismissFinding(`setup.${id}`);
 export const restoreFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'DELETE' });
 
 // ── Formatting ───────────────────────────────────────────────────────────────

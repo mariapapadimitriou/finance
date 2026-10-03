@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Card, Empty, ErrorNote, Loading, Notice, StatusPill, Tile,
+  Card, Empty, ErrorNote, GoTo, Loading, Notice, StatusPill, Tile,
 } from '../components/ui.jsx';
 import {
   addBank, dateLabel, deleteBank, getBanks, money, monthLabel, pct, updateBank,
@@ -15,7 +15,7 @@ import {
  * you can actually spend. Showing one without the other is how you end up
  * either surprised by a small daily allowance or surprised by an empty fund.
  */
-export default function PiggyPanel({ version = 0 }) {
+export default function PiggyPanel({ onTab, version = 0 }) {
   const [data, setData] = useState(null);
   // A failed load has nothing to show and replaces the panel; anything that
   // fails while acting must leave the page and any half-filled form standing.
@@ -94,7 +94,8 @@ export default function PiggyPanel({ version = 0 }) {
               </li>
               <li>
                 <strong>Coming out.</strong> When you spend on it, you charge
-                that transaction to the bank on the Transactions tab. It leaves
+                that transaction to the bank in{' '}
+                <GoTo to="transactions" from="plan" onTab={onTab} />. It leaves
                 the month it fell in entirely — so June doesn&apos;t look like a
                 disaster, because June was never asked to pay for the holiday.
               </li>
@@ -112,7 +113,7 @@ export default function PiggyPanel({ version = 0 }) {
             <Tile label="Out of every month" value={money(data.monthly_total)}
                   note={data.income > 0
                     ? `${pct(share)} of your take-home pay`
-                    : 'Set your income on the Plan tab to see this as a share'} />
+                    : 'Set your take-home above to see this as a share'} />
             <Tile label="Held across every bank" value={money(data.balance_total)}
                   note="Collected so far, less what has been charged" />
             <Tile label="Piggy banks" value={String(banks.length)}

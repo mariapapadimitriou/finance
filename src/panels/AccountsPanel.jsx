@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
+import {
+  Card, ErrorNote, GoTo, Loading, Notice, StatusPill, Why,
+} from '../components/ui.jsx';
 import {
   dateLabel, deleteAccount, getAccounts, getDuplicateAudit, getLedgerStart,
   money, recategorizeAll, resetLedger, setAccountSync, setLedgerStart,
@@ -17,7 +19,7 @@ import {
  * So each connected account carries a switch, and what it records outlives the
  * rows. An imported statement has no bank behind it and so has no switch.
  */
-export default function AccountsPanel({ onChanged }) {
+export default function AccountsPanel({ onChanged, onTab }) {
   const [accounts, setAccounts] = useState(null);
   const [mix, setMix] = useState([]);
   const [audit, setAudit] = useState(null);
@@ -184,18 +186,21 @@ export default function AccountsPanel({ onChanged }) {
             </tbody>
           </table>
         </div>
-        <p className="assumption" style={{ marginBottom: 0 }}>
+        {/* Live, so it stays out of the fold below. */}
+        {off.length > 0 && (
+          <p className="small" style={{ margin: '12px 0 0' }}>
+            {off.length} account{off.length === 1 ? ' is' : 's are'} switched
+            off right now.
+          </p>
+        )}
+        <Why id="accounts.sync" label="What do Sync off and Remove do?">
           Sync off means the next sync skips that account entirely; its
           existing rows stay until you remove it. Remove deletes the rows and
           switches Sync off, so nothing comes back. Both are reversible — turn
           Sync back on and the next sync re-fetches the history. An account
           showing &ldquo;—&rdquo; came from a statement, not a bank, so there
           is nothing to sync.
-          {off.length > 0 && (
-            <> {off.length} account{off.length === 1 ? ' is' : 's are'}{' '}
-              switched off right now.</>
-          )}
-        </p>
+        </Why>
       </Card>
 
       {/* Trimming changes the row counts in the table above, so this panel's
@@ -309,7 +314,8 @@ export default function AccountsPanel({ onChanged }) {
 
         <p className="assumption" style={{ marginBottom: 0 }}>
           {audit?.note ?? ''} To clear a whole duplicated account, remove it
-          above; to drop a single charge, use the Transactions tab.
+          above; to drop a single charge, use{' '}
+          <GoTo to="transactions" from="accounts" onTab={onTab} />.
         </p>
       </Card>
     </div>
@@ -530,11 +536,11 @@ function TrendBasis({ onChanged }) {
 
       {done && <Notice kind="good">{done}</Notice>}
 
-      <p className="assumption">
+      <Why id="accounts.start" label="Why is the date remembered?">
         The date is remembered, not just applied once. A fresh bank connection
         backfills two years of history, so without that the next sync would
         put the same months straight back.
-      </p>
+      </Why>
 
       <div className="controls" style={{ marginTop: 4 }}>
         <button className="btn quiet" type="button" disabled={busy}

@@ -228,3 +228,68 @@ class TestNumberInputsAcceptTheAmountsPeopleType:
         assert not offenders, (
             "number inputs whose step makes ordinary amounts invalid, so the "
             f"form silently refuses to submit: {offenders}")
+
+
+def _visible_text(source: str) -> str:
+    """JSX with its comments removed — what could reach the screen."""
+    source = re.sub(r"\{/\*.*?\*/\}", "", source, flags=re.S)   # {/* … */}
+    source = re.sub(r"/\*.*?\*/", "", source, flags=re.S)       # /* … */
+    return re.sub(r"(?m)^\s*//.*$|(?<=[;{}(),])\s*//.*$", "", source)
+
+
+class TestNoSentenceNamesATabThatIsGone:
+    """The freshness notice told people to "sync on the Banks tab" for months
+    after Banks became Connections, inside a group now called Settings.
+    Destinations are named by `<GoTo>` from nav.js now; this catches anything
+    that goes back to writing one by hand."""
+
+    def test_every_tab_named_in_a_sentence_exists(self, nav):
+        labels = set(re.findall(r"label: '([^']+)'", nav))
+        assert labels, "no labels parsed from nav.js — update this test"
+
+        stale = []
+        for path in sorted(SRC.rglob("*.jsx")):
+            text = _visible_text(path.read_text(encoding="utf-8"))
+            for name in re.findall(r"\bthe ([A-Z][\w&]*(?: [\w&]+)*?) tab\b", text):
+                if name not in labels:
+                    stale.append(f"{path.name}: 'the {name} tab'")
+        assert not stale, (
+            "sentences naming tabs that do not exist — use <GoTo to=…> so the "
+            f"name comes from nav.js: {stale}")
+
+    def test_the_comment_stripper_is_not_hiding_everything(self):
+        sample = "<p>Go to the Banks tab</p>{/* the Old tab */}\n// the Gone tab"
+        visible = _visible_text(sample)
+        assert "the Banks tab" in visible
+        assert "Old" not in visible and "Gone" not in visible
+
+
+class TestExplanationsRememberThemselves:
+    def test_every_why_has_its_own_id(self):
+        """The id is the key a collapsed explanation is remembered under. Two
+        sharing one would fold together — collapse the one on Today and the
+        one on Plan disappears with it."""
+        seen: dict[str, str] = {}
+        dupes = []
+        for path in sorted(SRC.rglob("*.jsx")):
+            for wid in re.findall(r"<Why id=\"([^\"]+)\"", path.read_text(encoding="utf-8")):
+                if wid in seen:
+                    dupes.append(f"{wid} in {seen[wid]} and {path.name}")
+                seen[wid] = path.name
+        assert seen, "no <Why id=…> found — update this test"
+        assert not dupes, f"explanations sharing a remembered state: {dupes}"
+
+
+class TestTheSetupChecklistGoesSomewhereReal:
+    def test_every_step_names_a_destination_that_exists(self, tmp_path, panels,
+                                                        groups, aliases):
+        """The checklist's buttons take their destination from the server, so
+        the static link check above cannot see them."""
+        from app import create_app
+        app = create_app(str(tmp_path / "setup.db"))
+        app.config.update(TESTING=True)
+        with app.test_client() as c:
+            steps = c.get("/api/setup").get_json()["steps"]
+        valid = panels | set(groups) | set(aliases)
+        bad = {s["id"]: s["tab"] for s in steps if s["tab"] not in valid}
+        assert not bad, f"setup steps pointing nowhere: {bad}"

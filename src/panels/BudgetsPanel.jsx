@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Card, ErrorNote, Loading, MonthFreshness, Notice, StatusPill,
+  Card, ErrorNote, GoTo, Loading, NoticeStack, StatusPill, Why, freshness,
 } from '../components/ui.jsx';
 import {
   applyPlanBudgets, getBudgets, money, monthLabel, pct, setBudgets,
@@ -96,7 +96,88 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
   // drift to report in that state — nothing is saved to drift from — so
   // without this the page showed a full table and no way to accept it.
   const nothingAdopted = rows.length > 0 && rows.every((r) => !r.adopted);
-  const banked = data.bank_funded;
+
+  const planButtons = (primary) => (
+    <div className="row" style={{ marginTop: 12 }}>
+      <button className={`btn${primary ? ' primary' : ''}`}
+              onClick={adoptPlan} disabled={applying}>
+        {applying ? 'Applying…' : "Use the plan's split"}
+      </button>
+      {onTab && (
+        <button className="btn quiet" onClick={() => onTab('plan')}>
+          See the plan first
+        </button>
+      )}
+    </div>
+  );
+
+  // Everything this page needs to say before the table, as one strip: the
+  // most serious in full, the rest a line each. It used to be up to five
+  // notices stacked above the first category. Rank: 0 is something wrong
+  // with the figures, 1 something to do, 2 something to know.
+  const notices = [
+    // Budgets that no longer divide the money the plan has. States the
+    // discrepancy without claiming why — it can come from the plan moving or
+    // from a line edited by hand, and the page cannot tell which. Allowing
+    // more than you have is wrong; allowing less is merely conservative.
+    drift && {
+      key: 'drift',
+      kind: drift.gap > 0 ? 'error' : '',
+      rank: drift.gap > 0 ? 0 : 2,
+      summary: <>These budgets divide {money(drift.saved_total)}; your plan
+        has {money(drift.plan_total)}.</>,
+      detail: drift.gap > 0 ? (
+        <>
+          So the lines below allow {money(drift.gap)} a month more than you
+          actually have{drift.banks > 0 && (
+            <>, against {money(drift.banks)} a month now going into piggy
+               banks</>
+          )}.
+          {planButtons(true)}
+        </>
+      ) : (
+        <>
+          So {money(-drift.gap)} a month is left unassigned — not a problem,
+          but the plan has room these budgets do not use.
+          {planButtons(false)}
+        </>
+      ),
+    },
+    data.bank_funded && bankFundedItem(data.bank_funded, onTab),
+    nothingAdopted && {
+      key: 'adopt', kind: '', rank: 1,
+      summary: <>None of these are budgets yet — they are what your plan would
+        give each line, in the proportions you already spend.</>,
+      detail: <>Adopt them in one go, or type over any line and save it on its
+        own.{planButtons(true)}</>,
+    },
+    // One wording for this, shared with This month.
+    (() => {
+      const it = freshness(month, summary, { onTab, from: 'budgets' });
+      return it && { ...it, rank: 2 };
+    })(),
+    // Not worth saying when nothing is budgeted at all: the adopt notice
+    // already says that, and more usefully.
+    data.unbudgeted_spend > 1 && !nothingAdopted && {
+      key: 'unbudgeted', kind: '', rank: 2,
+      summary: <>{money(data.unbudgeted_spend)} of this month&apos;s{' '}
+        {money(data.budgetable_spend)} isn&apos;t covered by any budget
+        line.</>,
+      detail: (
+        <>
+          The totals below only count lines you have a budget for, so they
+          will always read lower than{' '}
+          <GoTo to="overview" from="budgets" onTab={onTab} /> until everything
+          has one.{data.unbudgeted?.length > 0 && (
+            <> Missing:{' '}
+              {data.unbudgeted.slice(0, 5).map((r) => r.category).join(', ')}
+              {data.unbudgeted.length > 5
+                && ` and ${data.unbudgeted.length - 5} more`}.</>
+          )}
+        </>
+      ),
+    },
+  ].filter(Boolean).sort((a, b) => a.rank - b.rank);
 
   return (
     <div className="stack">
@@ -124,103 +205,10 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
         </Card>
       ) : (
         <>
-          {/* First, because every bar below it is drawn against a total that
-              no longer matches the plan. Saying it after the bars would be
-              letting the user read the wrong numbers first. */}
-          {/* States the discrepancy without claiming why it exists. It can come
-              from the plan moving underneath these budgets or from a category
-              edited by hand here, and the notice has no way to tell which —
-              asserting a cause it cannot know would be its own small untruth.
-              The two directions do differ in how much they matter: allowing
-              more than you have is misleading, allowing less is merely
-              conservative. */}
-          {nothingAdopted && (
-            <Notice>
-              <strong>
-                None of these are budgets yet — they are what your plan would
-                give each category, in the proportions you already spend.
-              </strong>{' '}
-              Adopt them in one go, or type over any line and save it on its
-              own.
-              <div className="row" style={{ marginTop: 12 }}>
-                <button className="btn primary" onClick={adoptPlan}
-                        disabled={applying}>
-                  {applying ? 'Applying…' : "Use the plan's split"}
-                </button>
-                {onTab && (
-                  <button className="btn quiet" onClick={() => onTab('plan')}>
-                    See the plan first
-                  </button>
-                )}
-              </div>
-            </Notice>
-          )}
-
-          {drift && (
-            <Notice kind={drift.gap > 0 ? 'error' : undefined}>
-              <strong>
-                These budgets divide {money(drift.saved_total)}; your plan has{' '}
-                {money(drift.plan_total)}.
-              </strong>{' '}
-              {drift.gap > 0 ? (
-                <>
-                  So the lines below allow {money(drift.gap)} a month more than
-                  you actually have
-                  {drift.banks > 0 && (
-                    <>, against {money(drift.banks)} a month now going into
-                       piggy banks</>
-                  )}
-                  .
-                </>
-              ) : (
-                <>
-                  So {money(-drift.gap)} a month is left unassigned — not a
-                  problem, but the plan has room these budgets do not use.
-                </>
-              )}
-              <div className="row" style={{ marginTop: 12 }}>
-                <button className={`btn${drift.gap > 0 ? ' primary' : ''}`}
-                        onClick={adoptPlan} disabled={applying}>
-                  {applying ? 'Applying…' : "Use the plan's split"}
-                </button>
-                {onTab && (
-                  <button className="btn quiet" onClick={() => onTab('plan')}>
-                    See the plan first
-                  </button>
-                )}
-              </div>
-            </Notice>
-          )}
-
+          {/* A failure to save is live, so it is never folded into the strip. */}
           <ErrorNote error={actionError} />
 
-          {/* Travel has no row in the table above, and a category that
-              silently disappears is worse than one with a wrong number — so
-              the page says where it went, and what it is still costing. */}
-          {banked && <BankFunded banked={banked} onTab={onTab} />}
-
-          {/* One wording for this, shared with Overview. */}
-          <MonthFreshness month={month} summary={summary} onTab={onTab} />
-
-          {/* Not worth saying when nothing is budgeted at all: the notice
-              above already says that, and more usefully. */}
-          {data.unbudgeted_spend > 1 && !nothingAdopted && (
-            <Notice>
-              <strong>
-                {money(data.unbudgeted_spend)} of this month&apos;s{' '}
-                {money(data.budgetable_spend)} isn&apos;t covered by any budget
-                line.
-              </strong>{' '}
-              The totals below only count categories you have a budget for, so
-              they will always read lower than the Overview until everything
-              has one.{data.unbudgeted?.length > 0 && (
-                <> Missing:{' '}
-                  {data.unbudgeted.slice(0, 5).map((r) => r.category).join(', ')}
-                  {data.unbudgeted.length > 5
-                    && ` and ${data.unbudgeted.length - 5} more`}.</>
-              )}
-            </Notice>
-          )}
+          <NoticeStack items={notices} />
 
           <Card title={`Budgets — ${monthLabel(month, { long: true })}`}
                 hint="What each category has, how the month is going against it, and what the plan would give it"
@@ -246,12 +234,16 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
                            }))} />
               ))}
             </div>
-            <p className="assumption" style={{ marginBottom: 0 }}>
-              Set a category to 0 to remove its budget. The shares come from how
-              you already divide your spending, so the budget fits the way you
-              actually live; the total does not — it comes from the plan, which
-              is the only way a budget can ever ask for less than last month.
+            {/* The instruction stays; the reasoning folds. */}
+            <p className="small muted" style={{ margin: '16px 0 0' }}>
+              Set a line to 0 to remove its budget.
             </p>
+            <Why id="budgets.shares" label="Where do these figures come from?">
+              The shares come from how you already divide your spending, so the
+              budget fits the way you actually live; the total does not — it
+              comes from the plan, which is the only way a budget can ever ask
+              for less than last month.
+            </Why>
           </Card>
         </>
       )}
@@ -267,10 +259,11 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
  * working and needs one quiet line; and a bank that did not cover a charge,
  * which is money still coming out of this month until it is allocated.
  */
-function BankFunded({ banked, onTab }) {
-  // One category or several — the set is a decision in categorize.py, not a
-  // constant this component gets to assume the size of.
+function bankFundedItem(banked, onTab) {
+  // One line or several — the set is a decision in categorize.py and in your
+  // grouping, not a constant this function gets to assume the size of.
   const list = banked.categories;
+  if (!list?.length) return null;
   const names = list.length > 1
     ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`
     : list[0];
@@ -278,58 +271,52 @@ function BankFunded({ banked, onTab }) {
   const left = banked.unallocated_total;
 
   if (banked.banks === 0) {
-    return (
-      <Notice kind="error">
-        <strong>
-          {names} {verb} no budget line and no piggy bank.
-        </strong>{' '}
-        They are left out of the split above on purpose — a cost that arrives
-        in lumps is wrong as a monthly line — on the understanding that a bank
-        is collecting for them. Nothing is.
-        {onTab && (
-          <div className="row" style={{ marginTop: 12 }}>
-            <button className="btn primary" onClick={() => onTab('piggy')}>
-              Open a travel bank
-            </button>
-          </div>
-        )}
-      </Notice>
-    );
+    return {
+      key: 'banked', kind: 'error', rank: 0,
+      summary: <>{names} {verb} no budget line and no piggy bank.</>,
+      detail: (
+        <>
+          {list.length > 1 ? 'They are' : 'It is'} left out of the split below
+          on purpose — a cost that arrives in lumps is wrong as a monthly line
+          — on the understanding that a bank is collecting for{' '}
+          {list.length > 1 ? 'them' : 'it'}. Nothing is.
+          {onTab && (
+            <div className="row" style={{ marginTop: 12 }}>
+              <button className="btn primary" onClick={() => onTab('piggy')}>
+                Open a travel bank
+              </button>
+            </div>
+          )}
+        </>
+      ),
+    };
   }
 
   if (left <= 1) {
-    return (
-      <Notice kind="good">
-        <strong>
-          {names} {verb === 'have' ? 'are' : 'is'} paid for by a piggy bank,
-          not budgeted.
-        </strong>{' '}
-        That is why there is no line above for{' '}
+    return {
+      key: 'banked', kind: 'good', rank: 2,
+      summary: <>{names} {verb === 'have' ? 'are' : 'is'} paid for by a piggy
+        bank, not budgeted.</>,
+      detail: <>That is why there is no line below for{' '}
         {list.length > 1 ? 'them' : 'it'}, and nothing this month is waiting
-        to be charged to a bank.
-      </Notice>
-    );
+        to be charged to a bank.</>,
+    };
   }
 
-  return (
-    <Notice>
-      <strong>
-        {money(left)} of {names.toLowerCase()} this month isn&apos;t charged to
-        a piggy bank.
-      </strong>{' '}
-      {names} {verb} no budget line — a bank funds them instead — so until
-      that charge is allocated to one it comes out of this month like any
-      other spending. Charge it on Transactions and it leaves the month
-      entirely.
-      {onTab && (
-        <div className="row" style={{ marginTop: 12 }}>
-          <button className="btn" onClick={() => onTab('transactions')}>
-            Charge it to a bank
-          </button>
-        </div>
-      )}
-    </Notice>
-  );
+  return {
+    key: 'banked', kind: '', rank: 1,
+    summary: <>{money(left)} of {names.toLowerCase()} this month isn&apos;t
+      charged to a piggy bank.</>,
+    detail: (
+      <>
+        {names} {verb} no budget line — a bank funds{' '}
+        {list.length > 1 ? 'them' : 'it'} instead — so until that charge is
+        allocated to one it comes out of this month like any other spending.
+        Charge it in <GoTo to="transactions" from="budgets" onTab={onTab} />{' '}
+        and it leaves the month entirely.
+      </>
+    ),
+  };
 }
 
 /**
@@ -429,8 +416,13 @@ function BudgetRow({ row, draft, onChange }) {
           min="0"
           step="any"
           style={{ width: 110, textAlign: 'right' }}
-          value={draft ?? (row.adopted ? row.budget : '')}
-          placeholder={row.plan_budget != null ? String(row.plan_budget) : '0'}
+          // Whole dollars, like the bar beside it — "$693" above an input
+          // reading 692.73 looked like two different figures. Only an edited
+          // line is saved, so a stored figure with cents is left exactly as
+          // it is unless you change it.
+          value={draft ?? (row.adopted ? Math.round(row.budget) : '')}
+          placeholder={row.plan_budget != null
+            ? String(Math.round(row.plan_budget)) : '0'}
           onChange={(e) => onChange(Number(e.target.value))}
           aria-label={`${row.category} monthly budget`}
         />

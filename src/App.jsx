@@ -257,7 +257,7 @@ export default function App() {
               like rent — it is the `− Piggy banks` term in the sum above — and
               splitting it off put a third page in a group that was already
               saying the same thing twice. */}
-          <div id="piggy-banks"><PiggyPanel version={version} /></div>
+          <div id="piggy-banks"><PiggyPanel onTab={go} version={version} /></div>
         </div>
       )}
       {panel === 'today' && (
@@ -284,7 +284,7 @@ export default function App() {
         <BudgetsPanel onTab={go} month={shownMonth} summary={summary} version={version} />
       )}
       {panel === 'trips' && <TripsPanel onChanged={load} />}
-      {panel === 'accounts' && <AccountsPanel onChanged={load} />}
+      {panel === 'accounts' && <AccountsPanel onChanged={load} onTab={go} />}
       {panel === 'banks' && <BanksPanel onChanged={load} onTab={go} />}
       {panel === 'categories' && <CategoriesPanel onChanged={load} />}
       {panel === 'import' && (

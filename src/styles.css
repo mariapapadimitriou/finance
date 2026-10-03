@@ -380,6 +380,9 @@ main { max-width: 1180px; margin: 0 auto; padding: 4px 32px 80px; }
 
   .sidebar-foot { display: none; }
   .topbar-actions { display: flex; }
+  /* Let the title shrink so the two buttons sit beside it, top right, rather
+     than wrapping onto a row of their own. */
+  .topbar .title { flex: 1 1 0; min-width: 0; }
   /* Visually hidden, not display:none — that would take the full label out
      of the accessibility tree too, and the short one is aria-hidden. */
   .label-full {
@@ -1077,6 +1080,68 @@ details.evidence[open] summary::before { transform: rotate(90deg); }
 }
 .notice.error::before { background: var(--critical); }
 .notice.good::before  { background: var(--good); }
+
+/* ── A strip of notices: the first open, the rest one line each ───────── */
+.notice-stack { display: flex; flex-direction: column; gap: 6px; }
+details.notice.folded { padding-top: 10px; padding-bottom: 10px; }
+details.notice.folded > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+details.notice.folded > summary::-webkit-details-marker { display: none; }
+details.notice.folded > summary::after {
+  content: "Show";
+  margin-left: auto;
+  flex: none;
+  color: var(--brand);
+  font-size: .8rem;
+  font-weight: 500;
+}
+details.notice.folded[open] > summary::after { content: "Hide"; }
+details.notice.folded .folded-body { margin-top: 8px; }
+
+/* ── Setup checklist on Today ─────────────────────────────────────────── */
+.setup-steps { list-style: none; margin: 0; padding: 0; }
+.setup-steps li {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.setup-steps li:first-child { border-top: 0; padding-top: 2px; }
+.setup-steps .what { flex: 1 1 260px; min-width: 0; }
+.setup-steps .what .small { margin-top: 2px; }
+
+/* ── "Why?" — an explanation that folds away once read ─────────────────── */
+details.why {
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 10px;
+}
+details.why > summary {
+  cursor: pointer;
+  color: var(--brand);
+  font-size: .8rem;
+  font-weight: 500;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+details.why > summary::-webkit-details-marker { display: none; }
+details.why > summary::before {
+  content: "›";
+  display: inline-block;
+  transition: transform .15s ease;
+}
+details.why[open] > summary::before { transform: rotate(90deg); }
+/* Inside a fold the paragraph needs no rule of its own above it. */
+details.why > .assumption { border-top: 0; padding-top: 0; margin-top: 8px; }
 
 .stack { display: flex; flex-direction: column; gap: 16px; }
 .row { display: flex; gap: 11px; align-items: center; flex-wrap: wrap; }
