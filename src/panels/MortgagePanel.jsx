@@ -35,21 +35,30 @@ const PER_PAYMENT = {
 
 const EMPTY = { balance: '', rate: '', years: '25', frequency: 'monthly',
                 compounding: 'canadian', term_end: '', extra_monthly: 0,
-                shared: false, share_mode: 'percent', share_value: '50' };
+                shared: false, share_mode: 'percent', share_value: '50',
+                as_of: '', as_of_balance: '', as_of_years: '' };
 
-/** The form, filled from a saved mortgage as it stands this month. */
+/**
+ * The form, filled with exactly what was typed.
+ *
+ * Never with what the arithmetic made of it: the payoff time is an output,
+ * and with accelerated payments or an extra it is shorter than the years
+ * typed. Putting it back in the box fed it in again as the amortization,
+ * which raised the payment and shortened the loan on every save.
+ */
 function formFrom(data) {
   const s = data?.saved;
   const r = data?.result;
   if (!s || !r) return EMPTY;
-  // The balance and years as of now, rolled forward from when they were
-  // typed — saving again starts the schedule from this month, so the form
-  // has to say what is true today, not what was true then.
-  const years = (r.without_extra ?? r).years_left;
   return {
-    balance: String(r.balance_now),
+    balance: String(s.balance),
     rate: String(s.rate),
-    years: String(Math.max(Math.round(years * 100) / 100, 1)),
+    years: String(s.years),
+    // The month those two were true in. Re-saved unchanged, they keep it,
+    // so editing the rate doesn't restart a schedule already under way.
+    as_of: s.as_of ?? '',
+    as_of_balance: String(s.balance),
+    as_of_years: String(s.years),
     frequency: s.frequency,
     compounding: s.compounding,
     term_end: s.term_end ?? '',
@@ -73,7 +82,26 @@ function body(form) {
     // Not shared is simply 100% yours.
     share_mode: form.shared ? form.share_mode : 'percent',
     share_value: form.shared ? Number(form.share_value) || 0 : 100,
+    // A new balance or years starts again from this month; the server
+    // supplies it when none is sent.
+    ...(form.as_of
+        && Number(form.balance) === Number(form.as_of_balance)
+        && Number(form.years) === Number(form.as_of_years)
+      ? { as_of: form.as_of } : {}),
   };
+}
+
+/** Whole months from `ym` to this month. */
+function monthsSince(ym) {
+  if (!ym) return 0;
+  const [y, m] = ym.split('-').map(Number);
+  const now = new Date();
+  return Math.max((now.getFullYear() * 12 + now.getMonth()) - (y * 12 + m - 1), 0);
+}
+
+function thisMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function complete(form) {
@@ -262,6 +290,8 @@ export default function MortgagePanel({ onChanged, onTab }) {
             </p>
           )}
 
+          <PayoffNote r={r} form={form} />
+
           <p id="mg-term-hint" className="small muted" style={{ margin: 0 }}>
             The term is how long this rate is fixed (often five years); the
             years left are how long until it is paid off. Canadian fixed-rate
@@ -305,6 +335,42 @@ export default function MortgagePanel({ onChanged, onTab }) {
       {r && <Results data={shown} r={r} form={form} setForm={setForm}
                      onTab={onTab} />}
     </div>
+  );
+}
+
+/**
+ * Why the payoff can be sooner than the years typed, and how old the typed
+ * figures are — said, rather than quietly written back into the boxes.
+ */
+function PayoffNote({ r, form }) {
+  if (!r) return null;
+  const typedLeft = Math.round(Number(form.years) * 12) - monthsSince(r.as_of);
+  const sooner = typedLeft - r.months_left;
+  const reasons = [];
+  if (r.accelerated) {
+    reasons.push('accelerated payments add a 13th monthly payment a year');
+  }
+  if (r.extra_monthly > 0) reasons.push(`of the extra ${money(r.extra_monthly)} a month`);
+  const old = r.as_of && r.as_of < thisMonth()
+    && Number(form.balance) === Number(form.as_of_balance)
+    && Number(form.years) === Number(form.as_of_years);
+
+  if (!(sooner > 1 && reasons.length) && !old) return null;
+  return (
+    <p className="small" style={{ margin: 0 }}>
+      {sooner > 1 && reasons.length > 0 && (
+        <>Paid off in <strong>{yearsMonths(r.months_left)}</strong> — sooner
+          than the {form.years} years you typed, because{' '}
+          {reasons.join(', and because ')}. </>
+      )}
+      {old && (
+        <span className="muted">
+          Balance and years as you entered them in{' '}
+          {monthLabel(r.as_of, { long: true })}; &ldquo;Owing now&rdquo;
+          rolls them forward. Change either to start again from today.
+        </span>
+      )}
+    </p>
   );
 }
 

@@ -408,3 +408,48 @@ class TestYourShareInThePlan:
         client.put("/api/mortgage", json={**MORTGAGE, "share_value": 50})
         m_ = client.get("/api/coastfire").get_json()["defaults"]["mortgage"]
         assert m_["monthly"] == pytest.approx(1454.02, abs=0.01)
+
+
+# ── What was typed stays what was typed ──────────────────────────────────────
+
+class TestTheYearsTypedStay:
+    """Typing 19.83 years with accelerated payments came back as 17.83 after
+    saving: the form was refilled with the payoff time — an output — and
+    every save fed it back in as the amortization, raising the payment."""
+
+    BODY = {**MORTGAGE, "years": 19.83, "frequency": "accelerated_biweekly"}
+
+    def test_saving_keeps_the_years_and_balance_as_typed(self, client):
+        client.put("/api/mortgage", json=self.BODY)
+        body = client.get("/api/mortgage").get_json()
+        assert body["saved"]["years"] == 19.83
+        assert body["saved"]["balance"] == 500000
+        # The payoff really is sooner — that is the accelerated payments.
+        assert body["result"]["years_left"] < 19
+
+    def test_saving_again_changes_nothing(self, client):
+        first = client.put("/api/mortgage", json=self.BODY).get_json()
+        as_of = first["saved"]["as_of"]
+        again = client.put("/api/mortgage", json={**self.BODY, "as_of": as_of}).get_json()
+        for key in ("payment", "your_monthly", "payoff_month"):
+            assert again["result"][key] == first["result"][key], key
+        assert commitments(client)[0]["amount"] == first["result"]["your_monthly"]
+
+
+class TestTheMonthItWasTyped:
+    def test_a_past_month_is_kept(self):
+        got, error = m.validate({"balance": 400_000, "rate": 5, "years": 20,
+                                 "as_of": "2026-01"}, TODAY)
+        assert error is None and got.as_of == "2026-01"
+        # Rolled forward from then, not reset to what was typed.
+        assert m.compute(got, TODAY)["balance_now"] < 400_000
+
+    def test_no_month_means_this_one(self):
+        got, _ = m.validate({"balance": 400_000, "rate": 5, "years": 20}, TODAY)
+        assert got.as_of == TODAY
+
+    @pytest.mark.parametrize("bad", ["2027-01", "soon", "2026-13", "1970-01"])
+    def test_a_bad_month_is_refused(self, bad):
+        got, error = m.validate({"balance": 400_000, "rate": 5, "years": 20,
+                                 "as_of": bad}, TODAY)
+        assert got is None and error

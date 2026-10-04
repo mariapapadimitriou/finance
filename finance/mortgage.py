@@ -405,8 +405,20 @@ def validate(d: dict, today: str) -> tuple[Terms | None, str | None]:
         return None, "Your share has to be a number."
     if share_mode == "percent" and not 1 <= share_value <= 100:
         return None, "Your share has to be between 1% and 100%."
+    # The month the balance and years were true in. Today, unless the page
+    # is re-saving figures typed earlier — then they keep their own month,
+    # so changing the rate does not restart a schedule already under way.
+    as_of = d.get("as_of") or today[:7]
+    as_of = str(as_of)[:7]
+    if (len(as_of) != 7 or as_of[4] != "-" or not as_of[:4].isdigit()
+            or not as_of[5:].isdigit() or not 1 <= int(as_of[5:]) <= 12):
+        return None, "The month the balance was entered has to look like 2026-10."
+    if as_of > today[:7]:
+        return None, "The balance can't be from a month that hasn't happened yet."
+    if _index(today[:7]) - _index(as_of) > MAX_YEARS * 12:
+        return None, f"That balance is more than {MAX_YEARS} years old — enter today's."
     terms = Terms(balance=round(balance, 2), rate=rate, years=years,
-                  as_of=today[:7], frequency=frequency, compounding=compounding,
+                  as_of=as_of, frequency=frequency, compounding=compounding,
                   extra_monthly=round(extra, 2), term_end=term_end,
                   share_mode=share_mode, share_value=round(share_value, 2))
     if share_mode == "amount":
