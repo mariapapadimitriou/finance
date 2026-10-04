@@ -341,3 +341,210 @@ def validate(d: dict, today: str) -> tuple[Terms | None, str | None]:
     return Terms(balance=round(balance, 2), rate=rate, years=years,
                  as_of=today[:7], frequency=frequency, compounding=compounding,
                  extra_monthly=round(extra, 2), term_end=term_end), None
+
+
+# ── Invest the extra, or pay the mortgage down? ──────────────────────────────
+#
+# The fair comparison spends exactly the same money in both worlds, every
+# month, until the day the mortgage would have ended anyway:
+#
+# * **Pay it down.** The extra goes on the mortgage, which ends sooner. From
+#   then on the whole payment is free, and it is invested.
+# * **Invest.** The mortgage runs its course; the extra is invested from now.
+#
+# Both arrive at the original payoff date owing nothing, having paid out the
+# same amount each month. What differs is the portfolio, so that is what is
+# compared. Paying down earns exactly the mortgage rate, guaranteed and tax
+# free; investing earns whatever the market gives, less tax outside a TFSA or
+# RRSP. The return at which the two tie is the break-even — the one figure
+# that says how much you are betting on.
+
+# Capital gains are taxed on half the gain in Canada, so a taxable account
+# loses about half the marginal rate off its growth. Interest and dividends
+# are taxed more heavily than that; the page says so.
+CAPITAL_GAINS_INCLUSION = 0.5
+
+
+def _month_by_month(balance: float, regular: float, extra_monthly: float,
+                    rate: float, compounding: str, frequency: str,
+                    months: int) -> tuple[list[float], list[float]]:
+    """Balance owing at the end of each month, and what was paid in it.
+
+    A prepayment keeps the payment the same and shortens the mortgage, which
+    is how lenders apply it — not a smaller payment over the same years.
+    """
+    per_year, _ = FREQUENCIES[frequency]
+    i = periodic_rate(rate, compounding, per_year)
+    extra = max(extra_monthly, 0.0) * 12 / per_year
+    balances = [0.0] * (months + 1)
+    paid = [0.0] * (months + 1)
+    balances[0] = balance
+    k = 0
+    current = 0
+    while balance > 0.005:
+        k += 1
+        month = _offset(k, per_year)
+        if month > months:
+            break
+        while current < month:
+            current += 1
+            balances[current] = balance
+        interest = balance * i
+        amount = min(regular + extra, balance + interest)
+        balance = max(balance + interest - amount, 0.0)
+        balances[month] = balance
+        paid[month] += amount
+    for m in range(current + 1, months + 1):
+        balances[m] = balance
+    return balances, paid
+
+
+def _grow(contributions: list[float], annual: float, opening: float = 0.0) -> list[float]:
+    """A portfolio month by month: last month's value grown, plus this month's
+    contribution.
+
+    `annual` is an effective annual return, compounded monthly at the rate
+    that gives exactly that over a year — the same basis as the mortgage's
+    effective rate, so with no tax the break-even is the mortgage rate itself.
+    """
+    r = (1 + annual) ** (1 / 12) - 1
+    value = opening
+    out = [round(opening, 2)]
+    for c in contributions[1:]:
+        value = value * (1 + r) + c
+        out.append(value)
+    return out
+
+
+def compare(t: Terms, monthly: float, lump: float, expected: float,
+            tax_on_growth: float, today: str) -> dict:
+    """Invest `monthly` (and `lump` now), or put it on the mortgage?
+
+    `expected` is the annual return before tax, as a fraction; `tax_on_growth`
+    the share of that return lost to tax (0 in a TFSA or RRSP).
+    """
+    from .projections import RATES
+
+    today = today[:7]
+    per_year, _ = FREQUENCIES[t.frequency]
+    regular = payment(t.balance, t.rate, t.years, t.frequency, t.compounding)
+    _, balance_now = _ahead(t, today)
+    monthly = max(monthly, 0.0)
+    lump = min(max(lump, 0.0), balance_now)
+    # The same money leaves your account every month in both worlds.
+    cash = regular * per_year / 12 + max(t.extra_monthly, 0.0) + monthly
+
+    plain_b, plain_paid = _month_by_month(
+        balance_now, regular, t.extra_monthly, t.rate, t.compounding,
+        t.frequency, 100 * 12)
+    horizon = next((m for m, b in enumerate(plain_b) if m and b <= 0.005),
+                   len(plain_b) - 1)
+    plain_b, plain_paid = plain_b[:horizon + 1], plain_paid[:horizon + 1]
+    fast_b, fast_paid = _month_by_month(
+        balance_now - lump, regular, t.extra_monthly + monthly, t.rate,
+        t.compounding, t.frequency, horizon)
+    fast_end = next((m for m, b in enumerate(fast_b) if m and b <= 0.005), horizon)
+
+    invest_in = [0.0] + [cash - plain_paid[m] for m in range(1, horizon + 1)]
+    prepay_in = [0.0] + [cash - fast_paid[m] for m in range(1, horizon + 1)]
+
+    def outcome(annual: float) -> dict:
+        after_tax = annual * (1 - tax_on_growth)
+        invested = _grow(invest_in, after_tax, opening=lump)
+        prepaid = _grow(prepay_in, after_tax)
+        return {"invested": invested, "prepaid": prepaid,
+                "invest": round(invested[-1], 2), "prepay": round(prepaid[-1], 2),
+                "difference": round(invested[-1] - prepaid[-1], 2)}
+
+    # Where the two tie, by bisection: below it paying down wins, above it
+    # investing does. The difference rises with the return, so this is safe.
+    lo, hi = 0.0, 0.5
+    if outcome(hi)["difference"] < 0:
+        breakeven = None
+    elif outcome(lo)["difference"] > 0:
+        breakeven = 0.0
+    else:
+        for _ in range(50):
+            mid = (lo + hi) / 2
+            if outcome(mid)["difference"] > 0:
+                hi = mid
+            else:
+                lo = mid
+        breakeven = round((lo + hi) / 2, 5)
+
+    chosen = outcome(expected)
+    # Net worth in each world, once a year: what is invested less what is
+    # owed. One measure, one axis.
+    series = []
+    for m in range(0, horizon + 1, 12):
+        series.append({
+            "year": m // 12,
+            "month": add_months(today, m),
+            "invest": round(chosen["invested"][m] - plain_b[m], 2),
+            "prepay": round(chosen["prepaid"][m] - fast_b[m], 2),
+        })
+    if horizon % 12:
+        series.append({
+            "year": round(horizon / 12, 2),
+            "month": add_months(today, horizon),
+            "invest": chosen["invest"], "prepay": chosen["prepay"],
+        })
+
+    interest_plain = round(sum(plain_paid) - balance_now, 2)
+    interest_fast = round(sum(fast_paid) + lump - balance_now, 2)
+
+    return {
+        "monthly": round(monthly, 2),
+        "lump": round(lump, 2),
+        "cash_monthly": round(cash, 2),
+        "horizon_month": add_months(today, horizon),
+        "horizon_years": round(horizon / 12, 2),
+        "expected": expected,
+        "tax_on_growth": round(tax_on_growth, 4),
+        "after_tax_return": round(expected * (1 - tax_on_growth), 5),
+        # What paying down earns: the mortgage's own rate, effective a year.
+        "mortgage_return": round(effective_annual(t.rate, t.compounding), 5),
+        "breakeven": breakeven,
+        "invest": chosen["invest"],
+        "prepay": chosen["prepay"],
+        "difference": chosen["difference"],
+        "winner": ("invest" if chosen["difference"] > 0.5
+                   else "prepay" if chosen["difference"] < -0.5 else "tie"),
+        "paid_off_month": add_months(today, fast_end),
+        "months_sooner": horizon - fast_end,
+        "interest_saved": round(interest_plain - interest_fast, 2),
+        "series": series,
+        "rates": [{"rate": r, "label": label, **{k: v for k, v in outcome(r).items()
+                                                 if k in ("invest", "prepay", "difference")}}
+                  for r, label in RATES],
+    }
+
+
+ACCOUNTS = ("sheltered", "taxable")
+
+
+def validate_compare(d: dict) -> tuple[dict | None, str | None]:
+    """The comparison's own inputs, cleaned, or what is wrong with them."""
+    try:
+        monthly = float(d.get("monthly") or 0)
+        lump = float(d.get("lump") or 0)
+        expected = float(d.get("expected", 5))
+        marginal = float(d.get("marginal") or 0)
+    except (TypeError, ValueError):
+        return None, "The amounts and rates must be numbers."
+    if not all(math.isfinite(x) for x in (monthly, lump, expected, marginal)):
+        return None, "The amounts and rates must be numbers."
+    if monthly < 0 or lump < 0:
+        return None, "The amounts can't be negative."
+    if monthly == 0 and lump == 0:
+        return None, "Enter a monthly amount, a lump sum, or both."
+    if expected < 0 or expected > 20:
+        return None, "Expected return has to be between 0% and 20%."
+    account = d.get("account") or "sheltered"
+    if account not in ACCOUNTS:
+        return None, "Choose a TFSA/RRSP or a taxable account."
+    if marginal < 0 or marginal > 60:
+        return None, "Your marginal tax rate has to be between 0% and 60%."
+    tax = marginal / 100 * CAPITAL_GAINS_INCLUSION if account == "taxable" else 0.0
+    return {"monthly": monthly, "lump": lump, "expected": expected / 100,
+            "account": account, "marginal": marginal, "tax_on_growth": tax}, None

@@ -252,3 +252,70 @@ class TestTheMortgageIsTheCommitment:
         assert client.put("/api/mortgage", json={**MORTGAGE, **bad}).status_code == 400
         assert client.post("/api/mortgage/preview",
                            json={**MORTGAGE, **bad}).status_code == 400
+
+
+# ── Invest the extra, or pay the mortgage down? ──────────────────────────────
+
+class TestInvestOrPayDown:
+    def test_with_no_tax_they_tie_at_the_mortgage_rate(self):
+        """Paying down earns exactly the mortgage's rate, so that is the
+        return investing has to beat."""
+        r = m.compare(terms(), 500, 0, 0.05, 0, TODAY)
+        assert r["breakeven"] == pytest.approx(r["mortgage_return"], abs=0.0002)
+        assert r["mortgage_return"] == pytest.approx(0.050625, abs=0.00001)
+
+    def test_tax_raises_the_bar(self):
+        r = m.compare(terms(), 500, 0, 0.05, 0.25, TODAY)
+        assert r["breakeven"] == pytest.approx(0.050625 / 0.75, abs=0.0003)
+
+    def test_below_the_break_even_paying_down_wins_and_above_investing(self):
+        low = m.compare(terms(), 500, 0, 0.03, 0, TODAY)
+        high = m.compare(terms(), 500, 0, 0.08, 0, TODAY)
+        assert low["winner"] == "prepay" and low["difference"] < 0
+        assert high["winner"] == "invest" and high["difference"] > 0
+
+    def test_both_worlds_spend_the_same_and_end_owing_nothing(self):
+        r = m.compare(terms(), 500, 0, 0.0, 0, TODAY)
+        # At a 0% return the portfolio is just the money put in, so the
+        # difference is exactly the interest paying down saves.
+        assert -r["difference"] == pytest.approx(r["interest_saved"], abs=1)
+        end = r["series"][-1]
+        assert end["month"] == r["horizon_month"] == "2051-10"
+        assert end["invest"] == r["invest"] and end["prepay"] == r["prepay"]
+
+    def test_paying_down_ends_the_mortgage_sooner(self):
+        r = m.compare(terms(), 500, 0, 0.05, 0, TODAY)
+        assert r["paid_off_month"] < r["horizon_month"]
+        assert r["months_sooner"] > 0 and r["interest_saved"] > 0
+
+    def test_a_lump_sum_counts_on_both_sides(self):
+        r = m.compare(terms(), 0, 30_000, 0.0, 0, TODAY)
+        assert r["lump"] == 30_000
+        assert -r["difference"] == pytest.approx(r["interest_saved"], abs=1)
+
+    def test_every_assumption_is_reported(self):
+        r = m.compare(terms(), 500, 0, 0.05, 0, TODAY)
+        assert [x["rate"] for x in r["rates"]] == [0.02, 0.05, 0.08]
+        assert r["rates"][1]["difference"] == r["difference"]
+
+
+class TestInvestOrPayDownEndpoint:
+    def test_it_answers_without_saving(self, client):
+        r = client.post("/api/mortgage/compare", json={
+            **MORTGAGE, "monthly": 500, "expected": 7, "account": "taxable",
+            "marginal": 43})
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body["tax_on_growth"] == pytest.approx(0.215)
+        assert body["breakeven"] == pytest.approx(0.050625 / 0.785, abs=0.0003)
+        assert client.get("/api/mortgage").get_json()["saved"] is None
+
+    def test_the_plans_savings_is_offered_as_the_amount(self, client):
+        assert client.get("/api/mortgage").get_json()["savings"] == 900
+
+    @pytest.mark.parametrize("bad", [{"monthly": 0, "lump": 0}, {"monthly": -1},
+                                     {"expected": 50}, {"account": "crypto"},
+                                     {"marginal": 80}])
+    def test_nonsense_is_a_400(self, client, bad):
+        assert client.post("/api/mortgage/compare", json={
+            **MORTGAGE, "monthly": 500, **bad}).status_code == 400
