@@ -44,6 +44,9 @@ FREQUENCIES = {
 }
 COMPOUNDING = ("canadian", "monthly")
 
+# How your part of a shared mortgage is stated.
+SHARE_MODES = ("percent", "amount")
+
 # The amortizations offered side by side, so "how long could I pay it off in"
 # has an answer for each length a lender would actually write.
 ALTERNATIVES = (15, 20, 25, 30)
@@ -62,13 +65,19 @@ class Terms:
     compounding: str = "canadian"
     extra_monthly: float = 0.0      # paid on top, every month
     term_end: str | None = None     # YYYY-MM the term ends and it renews
+    # Your part of it, when the mortgage is shared: a percentage, or a fixed
+    # amount a month. 100% is a mortgage that is all yours.
+    share_mode: str = "percent"
+    share_value: float = 100.0
 
     def to_dict(self) -> dict:
         return {"balance": round(self.balance, 2), "rate": self.rate,
                 "years": self.years, "as_of": self.as_of,
                 "frequency": self.frequency, "compounding": self.compounding,
                 "extra_monthly": round(self.extra_monthly, 2),
-                "term_end": self.term_end}
+                "term_end": self.term_end,
+                "share_mode": self.share_mode,
+                "share_value": round(self.share_value, 2)}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Terms":
@@ -77,7 +86,9 @@ class Terms:
                    frequency=d.get("frequency") or "monthly",
                    compounding=d.get("compounding") or "canadian",
                    extra_monthly=float(d.get("extra_monthly") or 0.0),
-                   term_end=(str(d["term_end"])[:7] if d.get("term_end") else None))
+                   term_end=(str(d["term_end"])[:7] if d.get("term_end") else None),
+                   share_mode=d.get("share_mode") or "percent",
+                   share_value=float(d.get("share_value") or 100.0))
 
 
 # ── Months ───────────────────────────────────────────────────────────────────
@@ -202,6 +213,25 @@ def _payoff(t: Terms, ahead: list[dict], today: str) -> dict:
             "years_left": round(len(ahead) / per_year, 2)}
 
 
+def share_fraction(t: Terms, monthly_equivalent: float | None = None) -> float:
+    """Your part of every payment, as a fraction of the whole.
+
+    A fixed amount is turned into the fraction of the regular payment it
+    covers, and that fraction applies to everything — the extra included —
+    because a shared mortgage is paid in shares, and an extra both agree to
+    is split the way the payment is.
+    """
+    if t.share_mode == "amount":
+        if monthly_equivalent is None:
+            per_year, _ = FREQUENCIES[t.frequency]
+            monthly_equivalent = payment(t.balance, t.rate, t.years, t.frequency,
+                                         t.compounding) * per_year / 12
+        if monthly_equivalent <= 0:
+            return 1.0
+        return min(max(t.share_value, 0.0) / monthly_equivalent, 1.0)
+    return min(max(t.share_value, 0.0), 100.0) / 100
+
+
 def compute(t: Terms, today: str) -> dict:
     """The whole picture, from this month on.
 
@@ -246,6 +276,12 @@ def compute(t: Terms, today: str) -> dict:
             "principal": _sum(until, "principal"),
         }
 
+    share = share_fraction(t, regular * per_year / 12)
+    committed = round(monthly_equivalent + max(t.extra_monthly, 0.0), 2)
+    your_monthly = (round(t.share_value + max(t.extra_monthly, 0.0) * share, 2)
+                    if t.share_mode == "amount" and share < 1
+                    else round(committed * share, 2))
+
     result = {
         "payment": regular,
         "frequency": t.frequency,
@@ -255,8 +291,10 @@ def compute(t: Terms, today: str) -> dict:
         "effective_annual_rate": round(effective_annual(t.rate, t.compounding) * 100, 4),
         "monthly_equivalent": monthly_equivalent,
         "extra_monthly": round(max(t.extra_monthly, 0.0), 2),
-        # The one figure the plan subtracts, like rent.
-        "committed_monthly": round(monthly_equivalent + max(t.extra_monthly, 0.0), 2),
+        # What the whole mortgage takes a month, between everyone paying it.
+        "committed_monthly": committed,
+        # Your part of that: the one figure the plan subtracts, like rent.
+        "your_monthly": your_monthly,
         "balance_now": balance_now,
         "as_of": t.as_of,
         **_payoff(t, ahead, today),
@@ -271,6 +309,22 @@ def compute(t: Terms, today: str) -> dict:
         },
         "by_year": by_year,
         "renewal": renewal,
+        "share": {
+            "fraction": round(share, 4),
+            "shared": share < 0.9999,
+            "mode": t.share_mode,
+            "value": round(t.share_value, 2),
+            "monthly": your_monthly,
+            "payment": round(regular * share, 2),
+            "extra": round(max(t.extra_monthly, 0.0) * share, 2),
+            "interest": round(interest * share, 2),
+            "principal": round(principal * share, 2),
+            "balance_now": round(balance_now * share, 2),
+            "next_month": {"interest": round(_sum(first, "interest") * share, 2),
+                           "principal": round(_sum(first, "principal") * share, 2)},
+            "renewal_balance": (round(renewal["balance"] * share, 2)
+                                if renewal else None),
+        },
     }
 
     # The same mortgage without the extra, which is what the extra is worth.
@@ -302,6 +356,7 @@ def compute(t: Terms, today: str) -> dict:
             "years": years,
             "payment": pay,
             "monthly_equivalent": round(pay * per_year / 12, 2),
+            "your_monthly": round(pay * per_year / 12 * share, 2),
             "total_interest": _sum(alt_rows, "interest"),
         })
     result["alternatives"] = alternatives
@@ -338,9 +393,31 @@ def validate(d: dict, today: str) -> tuple[Terms | None, str | None]:
             return None, "The term end has to be a month, like 2029-06."
         if term_end <= today[:7]:
             return None, "The term end has to be in the future."
-    return Terms(balance=round(balance, 2), rate=rate, years=years,
-                 as_of=today[:7], frequency=frequency, compounding=compounding,
-                 extra_monthly=round(extra, 2), term_end=term_end), None
+    share_mode = d.get("share_mode") or "percent"
+    if share_mode not in SHARE_MODES:
+        return None, "Say your share as a percentage or an amount."
+    try:
+        share_value = float(d.get("share_value") if d.get("share_value")
+                            not in (None, "") else 100)
+    except (TypeError, ValueError):
+        return None, "Your share has to be a number."
+    if not math.isfinite(share_value):
+        return None, "Your share has to be a number."
+    if share_mode == "percent" and not 1 <= share_value <= 100:
+        return None, "Your share has to be between 1% and 100%."
+    terms = Terms(balance=round(balance, 2), rate=rate, years=years,
+                  as_of=today[:7], frequency=frequency, compounding=compounding,
+                  extra_monthly=round(extra, 2), term_end=term_end,
+                  share_mode=share_mode, share_value=round(share_value, 2))
+    if share_mode == "amount":
+        per_year, _ = FREQUENCIES[frequency]
+        whole = payment(terms.balance, rate, years, frequency, compounding) * per_year / 12
+        if share_value <= 0:
+            return None, "Enter what you pay each month."
+        if share_value > whole + 0.005:
+            return None, (f"That's more than the whole payment, {whole:,.2f} a "
+                          "month. Enter your part of it, or 100%.")
+    return terms, None
 
 
 # ── Invest the extra, or pay the mortgage down? ──────────────────────────────
@@ -367,17 +444,22 @@ CAPITAL_GAINS_INCLUSION = 0.5
 
 def _month_by_month(balance: float, regular: float, extra_monthly: float,
                     rate: float, compounding: str, frequency: str,
-                    months: int) -> tuple[list[float], list[float]]:
-    """Balance owing at the end of each month, and what was paid in it.
+                    months: int, own_monthly: float = 0.0
+                    ) -> tuple[list[float], list[float], list[float]]:
+    """Balance owing at the end of each month, what was paid in it, and how
+    much of that was `own_monthly` — an extra one person pays alone.
 
     A prepayment keeps the payment the same and shortens the mortgage, which
     is how lenders apply it — not a smaller payment over the same years.
     """
     per_year, _ = FREQUENCIES[frequency]
     i = periodic_rate(rate, compounding, per_year)
-    extra = max(extra_monthly, 0.0) * 12 / per_year
+    shared = max(extra_monthly, 0.0) * 12 / per_year
+    own_per = max(own_monthly, 0.0) * 12 / per_year
+    extra = shared + own_per
     balances = [0.0] * (months + 1)
     paid = [0.0] * (months + 1)
+    own = [0.0] * (months + 1)
     balances[0] = balance
     k = 0
     current = 0
@@ -394,9 +476,12 @@ def _month_by_month(balance: float, regular: float, extra_monthly: float,
         balance = max(balance + interest - amount, 0.0)
         balances[month] = balance
         paid[month] += amount
+        # The regular payment goes first, then the shared extra, then yours:
+        # in the last payment, what is short is yours.
+        own[month] += max(min(own_per, amount - regular - shared), 0.0)
     for m in range(current + 1, months + 1):
         balances[m] = balance
-    return balances, paid
+    return balances, paid, own
 
 
 def _grow(contributions: list[float], annual: float, opening: float = 0.0) -> list[float]:
@@ -431,22 +516,32 @@ def compare(t: Terms, monthly: float, lump: float, expected: float,
     _, balance_now = _ahead(t, today)
     monthly = max(monthly, 0.0)
     lump = min(max(lump, 0.0), balance_now)
+    # A shared mortgage is compared from your side: you pay your share of the
+    # payment in both worlds, and the extra money in question is yours alone.
+    share = share_fraction(t, regular * per_year / 12)
     # The same money leaves your account every month in both worlds.
-    cash = regular * per_year / 12 + max(t.extra_monthly, 0.0) + monthly
+    cash = share * (regular * per_year / 12 + max(t.extra_monthly, 0.0)) + monthly
 
-    plain_b, plain_paid = _month_by_month(
+    plain_b, plain_paid, _ = _month_by_month(
         balance_now, regular, t.extra_monthly, t.rate, t.compounding,
         t.frequency, 100 * 12)
     horizon = next((m for m, b in enumerate(plain_b) if m and b <= 0.005),
                    len(plain_b) - 1)
     plain_b, plain_paid = plain_b[:horizon + 1], plain_paid[:horizon + 1]
-    fast_b, fast_paid = _month_by_month(
-        balance_now - lump, regular, t.extra_monthly + monthly, t.rate,
-        t.compounding, t.frequency, horizon)
+    fast_b, fast_paid, own = _month_by_month(
+        balance_now - lump, regular, t.extra_monthly, t.rate,
+        t.compounding, t.frequency, horizon, own_monthly=monthly)
     fast_end = next((m for m, b in enumerate(fast_b) if m and b <= 0.005), horizon)
 
-    invest_in = [0.0] + [cash - plain_paid[m] for m in range(1, horizon + 1)]
-    prepay_in = [0.0] + [cash - fast_paid[m] for m in range(1, horizon + 1)]
+    # What you pay in a month: your share of the joint payment, plus all of
+    # your own extra. Paying it down alone also pays off their share — which
+    # is why, shared, it is worth less to you than the mortgage rate.
+    def yours(paid: float, own_part: float = 0.0) -> float:
+        return share * (paid - own_part) + own_part
+
+    invest_in = [0.0] + [cash - yours(plain_paid[m]) for m in range(1, horizon + 1)]
+    prepay_in = [0.0] + [cash - yours(fast_paid[m], own[m])
+                         for m in range(1, horizon + 1)]
 
     def outcome(annual: float) -> dict:
         after_tax = annual * (1 - tax_on_growth)
@@ -480,8 +575,8 @@ def compare(t: Terms, monthly: float, lump: float, expected: float,
         series.append({
             "year": m // 12,
             "month": add_months(today, m),
-            "invest": round(chosen["invested"][m] - plain_b[m], 2),
-            "prepay": round(chosen["prepaid"][m] - fast_b[m], 2),
+            "invest": round(chosen["invested"][m] - share * plain_b[m], 2),
+            "prepay": round(chosen["prepaid"][m] - share * fast_b[m], 2),
         })
     if horizon % 12:
         series.append({
@@ -504,6 +599,7 @@ def compare(t: Terms, monthly: float, lump: float, expected: float,
         "after_tax_return": round(expected * (1 - tax_on_growth), 5),
         # What paying down earns: the mortgage's own rate, effective a year.
         "mortgage_return": round(effective_annual(t.rate, t.compounding), 5),
+        "share": round(share, 4),
         "breakeven": breakeven,
         "invest": chosen["invest"],
         "prepay": chosen["prepay"],

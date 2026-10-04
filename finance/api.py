@@ -1578,7 +1578,7 @@ def _mortgage_payload(st, terms, result) -> dict:
         "saved": terms.to_dict() if terms else None,
         "result": result,
         "income": income,
-        "share_of_income": (round(result["committed_monthly"] / income, 4)
+        "share_of_income": (round(result["your_monthly"] / income, 4)
                             if result and income > 0 else None),
         # A commitment typed by hand before the calculator existed. Saving
         # adopts it rather than adding a second, and the page says so first.
@@ -1652,7 +1652,8 @@ def save_mortgage():
         return jsonify({"error": error}), 400
     result = _mortgage().compute(terms, today)
     st = store()
-    st.save_mortgage(terms.to_dict(), result["committed_monthly"])
+    # Your share of it: in a shared mortgage the rest is someone else's money.
+    st.save_mortgage(terms.to_dict(), result["your_monthly"])
     return jsonify({"ok": True, **_mortgage_payload(st, terms, result)})
 
 
@@ -1687,8 +1688,8 @@ def _coastfire_defaults(st) -> dict:
     if saved:
         terms = mortgage.Terms.from_dict(saved)
         r = mortgage.compute(terms, _today_iso())
-        out["mortgage"] = {"monthly": r["committed_monthly"],
-                           "yearly": round(r["committed_monthly"] * 12, 2),
+        out["mortgage"] = {"monthly": r["your_monthly"],
+                           "yearly": round(r["your_monthly"] * 12, 2),
                            "payoff_month": r["payoff_month"]}
     return out
 

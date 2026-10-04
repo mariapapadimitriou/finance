@@ -34,7 +34,8 @@ const PER_PAYMENT = {
 };
 
 const EMPTY = { balance: '', rate: '', years: '25', frequency: 'monthly',
-                compounding: 'canadian', term_end: '', extra_monthly: 0 };
+                compounding: 'canadian', term_end: '', extra_monthly: 0,
+                shared: false, share_mode: 'percent', share_value: '50' };
 
 /** The form, filled from a saved mortgage as it stands this month. */
 function formFrom(data) {
@@ -53,6 +54,10 @@ function formFrom(data) {
     compounding: s.compounding,
     term_end: s.term_end ?? '',
     extra_monthly: s.extra_monthly ?? 0,
+    shared: !(s.share_mode === 'percent' && Number(s.share_value) >= 100),
+    share_mode: s.share_mode ?? 'percent',
+    share_value: s.share_mode === 'percent' && Number(s.share_value) >= 100
+      ? '50' : String(s.share_value ?? 50),
   };
 }
 
@@ -65,6 +70,9 @@ function body(form) {
     compounding: form.compounding,
     term_end: form.term_end || null,
     extra_monthly: Number(form.extra_monthly) || 0,
+    // Not shared is simply 100% yours.
+    share_mode: form.shared ? form.share_mode : 'percent',
+    share_value: form.shared ? Number(form.share_value) || 0 : 100,
   };
 }
 
@@ -209,6 +217,51 @@ export default function MortgagePanel({ onChanged, onTab }) {
               Monthly — US-style
             </label>
           </div>
+          <div className="controls">
+            <label className="row small" style={{ gap: 6, color: 'inherit' }}>
+              <input type="checkbox" checked={form.shared}
+                     onChange={(e) => setForm({ ...form, shared: e.target.checked })} />
+              Shared with someone — a partner, a sibling
+            </label>
+            {form.shared && (
+              <>
+                <label className="row small" style={{ gap: 6, color: 'inherit' }}>
+                  <input type="radio" name="mg-share-mode" value="percent"
+                         checked={form.share_mode === 'percent'}
+                         onChange={set('share_mode')} />
+                  A percentage
+                </label>
+                <label className="row small" style={{ gap: 6, color: 'inherit' }}>
+                  <input type="radio" name="mg-share-mode" value="amount"
+                         checked={form.share_mode === 'amount'}
+                         onChange={set('share_mode')} />
+                  A fixed amount
+                </label>
+                <label htmlFor="mg-share" className="sr-only">
+                  {form.share_mode === 'percent' ? 'Your share, percent' : 'Your share, a month'}
+                </label>
+                <span className="row" style={{ gap: 4 }}>
+                  {form.share_mode === 'amount' && <span className="muted">$</span>}
+                  <input id="mg-share" type="number" min="0" step="any" inputMode="decimal"
+                         max={form.share_mode === 'percent' ? 100 : undefined}
+                         value={form.share_value} onChange={set('share_value')}
+                         style={{ width: 100 }} />
+                  <span className="muted">
+                    {form.share_mode === 'percent' ? '% is yours' : 'a month is yours'}
+                  </span>
+                </span>
+              </>
+            )}
+          </div>
+          {form.shared && r?.share && (
+            <p className="small" style={{ margin: 0 }}>
+              You pay <strong className="num">{money(r.your_monthly, { cents: true })}</strong>{' '}
+              a month of <span className="num">{money(r.committed_monthly, { cents: true })}</span>{' '}
+              ({pct(r.share.fraction)}). That is what your plan sets aside; the
+              rest is theirs. Extra payments are split the same way.
+            </p>
+          )}
+
           <p id="mg-term-hint" className="small muted" style={{ margin: 0 }}>
             The term is how long this rate is fixed (often five years); the
             years left are how long until it is paid off. Canadian fixed-rate
@@ -223,7 +276,7 @@ export default function MortgagePanel({ onChanged, onTab }) {
               a month for {data.existing.name}. Saving replaces it with what
               these terms work out
               {r ? <> — <strong className="num">
-                {money(r.committed_monthly, { cents: true })}</strong></> : ''}
+                {money(r.your_monthly, { cents: true })}</strong></> : ''}
               {' '}— rather than adding a second line.
             </Notice>
           )}
@@ -258,22 +311,41 @@ export default function MortgagePanel({ onChanged, onTab }) {
 function Results({ data, r, form, setForm, onTab }) {
   const paidOffIn = yearsMonths(r.months_left);
   const interestShare = r.interest_share;
+  // Shared: your part leads, the whole loan beside it. The payoff date and
+  // the chart stay whole, because it is one loan.
+  const sh = r.share?.shared ? r.share : null;
+  const ofIncome = data.share_of_income != null
+    ? `${pct(data.share_of_income)} of your take-home pay`
+    : 'Set your take-home on Income to see the share';
 
   return (
     <>
       <div className="grid cols-4">
-        <Tile label="Out of every month" value={money(r.committed_monthly)}
-              note={data.share_of_income != null
-                ? `${pct(data.share_of_income)} of your take-home pay`
-                : 'Set your take-home on Income to see the share'} />
-        <Tile label="Paid off by" value={monthLabel(r.payoff_month)}
-              note={`${paidOffIn} from now`} />
-        <Tile label="Interest still to pay" value={money(r.total_interest)}
-              note={`on ${money(r.total_principal)} owing`} />
-        <Tile label="Owing now" value={money(r.balance_now)}
-              note={r.as_of && r.balance_now !== Number(form.balance)
-                ? `rolled forward from ${monthLabel(r.as_of)}`
-                : `${money(r.payment, { cents: true })} ${PER_PAYMENT[r.frequency]}`} />
+        {sh ? (
+          <>
+            <Tile label="Your share each month" value={money(r.your_monthly)}
+                  note={`of ${money(r.committed_monthly)} · ${ofIncome}`} />
+            <Tile label="Paid off by" value={monthLabel(r.payoff_month)}
+                  note={`${paidOffIn} from now`} />
+            <Tile label="Your share of the interest" value={money(sh.interest)}
+                  note={`of ${money(r.total_interest)} in all`} />
+            <Tile label="Your share of what's owed" value={money(sh.balance_now)}
+                  note={`of ${money(r.balance_now)}`} />
+          </>
+        ) : (
+          <>
+            <Tile label="Out of every month" value={money(r.committed_monthly)}
+                  note={ofIncome} />
+            <Tile label="Paid off by" value={monthLabel(r.payoff_month)}
+                  note={`${paidOffIn} from now`} />
+            <Tile label="Interest still to pay" value={money(r.total_interest)}
+                  note={`on ${money(r.total_principal)} owing`} />
+            <Tile label="Owing now" value={money(r.balance_now)}
+                  note={r.as_of && r.balance_now !== Number(form.balance)
+                    ? `rolled forward from ${monthLabel(r.as_of)}`
+                    : `${money(r.payment, { cents: true })} ${PER_PAYMENT[r.frequency]}`} />
+          </>
+        )}
       </div>
 
       <Card title="Interest against principal"
@@ -305,6 +377,11 @@ function Results({ data, r, form, setForm, onTab }) {
               is interest and{' '}
               <strong className="num">{money(r.next_month.principal, { cents: true })}</strong>{' '}
               comes off what you owe.</>
+          )}
+          {sh && (
+            <> Your share:{' '}
+              <strong className="num">{money(sh.principal)}</strong> principal
+              and <strong className="num">{money(sh.interest)}</strong> interest.</>
           )}
           {r.accelerated && (
             <> Accelerated payments add up to thirteen monthly payments a year
@@ -344,7 +421,11 @@ function Results({ data, r, form, setForm, onTab }) {
             the {money(r.renewal.interest + r.renewal.principal)} you pay
             until then,{' '}
             <strong className="num">{money(r.renewal.interest)}</strong> is
-            interest. That balance is what the next rate will apply to.
+            interest. That balance is what the next rate will apply to
+            {sh && sh.renewal_balance != null && (
+              <> — your share of it,{' '}
+                <strong className="num">{money(sh.renewal_balance)}</strong></>
+            )}.
           </p>
         )}
       </Card>
@@ -358,6 +439,7 @@ function Results({ data, r, form, setForm, onTab }) {
                 <th>Paid off over</th>
                 <th className="r">Payment</th>
                 <th className="r">A month</th>
+                {sh && <th className="r">Your share</th>}
                 <th className="r">Total interest</th>
               </tr>
             </thead>
@@ -375,6 +457,7 @@ function Results({ data, r, form, setForm, onTab }) {
                       <span className="muted small">{PER_PAYMENT[r.frequency]}</span>
                     </td>
                     <td className="r num">{money(a.monthly_equivalent)}</td>
+                    {sh && <td className="r num">{money(a.your_monthly)}</td>}
                     <td className="r num">{money(a.total_interest)}</td>
                   </tr>
                 );
@@ -406,7 +489,9 @@ function ExtraSlider({ r, form, setForm }) {
     <Card title="Paying extra"
           hint="On top of the payment, every month — straight off the principal">
       <div className="controls" style={{ alignItems: 'center', gap: 14 }}>
-        <label htmlFor="mg-extra" style={{ whiteSpace: 'nowrap' }}>Extra each month</label>
+        <label htmlFor="mg-extra" style={{ whiteSpace: 'nowrap' }}>
+          {r.share?.shared ? 'Extra each month, between you' : 'Extra each month'}
+        </label>
         <input id="mg-extra" className="measure" type="range" min="0" max={max}
                step="25" value={value}
                onChange={(e) => setForm({ ...form, extra_monthly: Number(e.target.value) })}
@@ -426,9 +511,13 @@ function ExtraSlider({ r, form, setForm }) {
               <strong>{yearsMonths(r.saves.months)} sooner</strong>, in{' '}
               {monthLabel(r.payoff_month, { long: true })}, with{' '}
               <strong className="num">{money(r.saves.interest)}</strong> less
-              interest. The plan would set aside{' '}
-              {money(r.committed_monthly)} a month instead of{' '}
-              {money(r.monthly_equivalent)}.</>
+              interest.{' '}
+              {r.share?.shared
+                ? <>Your part of the extra is {money(r.share.extra)}, so your
+                    plan would set aside {money(r.your_monthly)} a month instead
+                    of {money(r.share.payment * r.payments_per_year / 12)}.</>
+                : <>The plan would set aside {money(r.committed_monthly)} a
+                    month instead of {money(r.monthly_equivalent)}.</>}</>
           : <span className="muted">Drag it to see what an extra amount each
               month saves. Most lenders allow prepayments up to a yearly limit
               — check yours.</span>}
@@ -538,14 +627,22 @@ function InvestOrPayDown({ form, savings, onTab }) {
                   : `At ${pctRate(c.expected)}, paying down the mortgage comes out ${money(ahead)} ahead`}
             </strong>
             {c.winner !== 'tie' && <> by {monthLabel(c.horizon_month, { long: true })}.</>}{' '}
-            Paying down earns your mortgage rate —{' '}
-            <strong>{pctRate(c.mortgage_return)}</strong> a year once its
-            compounding is counted, guaranteed and tax-free.{' '}
-            {c.breakeven != null && (
+            {c.share < 1 ? (
+              <>The mortgage is shared, and this is your money alone: paying
+                it down by yourself also pays off their share, and when it ends
+                you only stop paying yours — so it earns you less than the
+                mortgage&apos;s {pctRate(c.mortgage_return)}, unless you agree
+                your extra counts toward your share of the home.{' '}</>
+            ) : (
+              <>Paying down earns your mortgage rate —{' '}
+                <strong>{pctRate(c.mortgage_return)}</strong> a year once its
+                compounding is counted, guaranteed and tax-free.{' '}</>
+            )}
+            {c.breakeven != null && (c.breakeven > 0 ? (
               <>Investing has to return more than{' '}
                 <strong>{pctRate(c.breakeven)}</strong>
                 {c.tax_on_growth > 0 && ' before tax'} to beat it.</>
-            )}
+            ) : <>Investing comes out ahead at any return.</>)}
           </Notice>
 
           <div className="grid cols-2" style={{ marginTop: 14 }}>
