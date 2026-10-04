@@ -107,6 +107,8 @@ export const getMortgage     = () => req('/api/mortgage');
 export const previewMortgage = (terms) => json('POST', '/api/mortgage/preview', terms);
 export const saveMortgage    = (terms) => json('PUT', '/api/mortgage', terms);
 export const deleteMortgage  = () => req('/api/mortgage', { method: 'DELETE' });
+export const compareMortgage = (terms, options) =>
+  json('POST', '/api/mortgage/compare', { ...terms, ...options });
 
 // The money plan: income in, commitments and savings out, the rest budgeted.
 export const getPlanSetup    = () => req('/api/plan/setup');

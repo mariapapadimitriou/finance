@@ -403,3 +403,76 @@ export function mortgageConfig(byYear) {
     },
   };
 }
+
+/**
+ * Invest or pay down: how far ahead investing is, year by year.
+ *
+ * The two worlds' net worth would be two lines a few thousand dollars apart
+ * on a half-million-dollar scale — indistinguishable. Their difference is the
+ * answer, so that is the one series drawn, against a zero line: above it
+ * investing is ahead, below it paying down is.
+ */
+export function investOrPayDownConfig(series) {
+  const c = ink();
+  const gap = series.map((r) => Math.round(r.invest - r.prepay));
+  return {
+    type: 'line',
+    data: {
+      labels: series.map((r) => r.year),
+      datasets: [{
+        data: gap,
+        borderColor: c.series,
+        borderWidth: 2,
+        fill: { target: { value: 0 }, above: c.soft, below: c.series3Soft },
+        tension: 0.25,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHoverBorderWidth: 2,
+        pointHoverBorderColor: c.surface,
+        pointHoverBackgroundColor: c.series,
+        pointHitRadius: 16,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: tooltip(c, {
+          title: (items) => `By ${monthLabel(series[items[0].dataIndex].month, { long: true })}`,
+          label: (ctx) => (ctx.parsed.y >= 0
+            ? `Investing ahead by ${money(ctx.parsed.y)}`
+            : `Paying down ahead by ${money(-ctx.parsed.y)}`),
+        }),
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { color: c.axis },
+          ticks: {
+            color: c.muted, font: AXIS_FONT, maxRotation: 0,
+            callback(i) {
+              const y = Number(this.getLabelForValue(i));
+              return Number.isInteger(y) && y % 5 === 0 ? `${y}y` : '';
+            },
+          },
+        },
+        y: {
+          grid: {
+            // The zero line is the verdict's dividing line, so it is the one
+            // gridline drawn firmly.
+            color: (ctx) => (ctx.tick.value === 0 ? c.axis : c.grid),
+            drawTicks: false,
+          },
+          border: { display: false },
+          ticks: {
+            color: c.muted, font: AXIS_FONT, padding: 8, maxTicksLimit: 5,
+            callback: (v) => money(v),
+          },
+        },
+      },
+    },
+  };
+}

@@ -1584,6 +1584,9 @@ def _mortgage_payload(st, terms, result) -> dict:
         # adopts it rather than adding a second, and the page says so first.
         "existing": existing.to_dict() if existing else None,
         "frequencies": list(_mortgage().FREQUENCIES),
+        # What the plan already sets aside to save or invest each month: the
+        # natural "excess money" to ask the invest-or-pay-down question about.
+        "savings": st.float_setting("savings_target", 0.0),
     }
 
 
@@ -1616,6 +1619,28 @@ def preview_mortgage():
         return jsonify({"error": error}), 400
     st = store()
     return jsonify(_mortgage_payload(st, terms, _mortgage().compute(terms, today)))
+
+
+@bp.post("/mortgage/compare")
+def compare_mortgage():
+    """Invest the extra, or pay the mortgage down with it? Writes nothing.
+
+    Takes the same terms as the preview — so it answers for whatever is on
+    screen, saved or not — plus how much, the expected return and the account.
+    """
+    m = _mortgage()
+    today = _today_iso()
+    body = request.get_json(silent=True) or {}
+    terms, error = m.validate(body, today)
+    if error:
+        return jsonify({"error": error}), 400
+    opts, error = m.validate_compare(body)
+    if error:
+        return jsonify({"error": error}), 400
+    result = m.compare(terms, opts["monthly"], opts["lump"], opts["expected"],
+                       opts["tax_on_growth"], today)
+    return jsonify({**result, "account": opts["account"],
+                    "marginal": opts["marginal"]})
 
 
 @bp.put("/mortgage")

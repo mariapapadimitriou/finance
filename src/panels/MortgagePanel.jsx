@@ -4,10 +4,10 @@ import {
   Card, ErrorNote, GoTo, Loading, Notice, Tile, Why,
 } from '../components/ui.jsx';
 import {
-  deleteMortgage, getMortgage, money, monthLabel, pct, previewMortgage,
-  saveMortgage,
+  compareMortgage, deleteMortgage, getMortgage, money, monthLabel, pct,
+  previewMortgage, saveMortgage,
 } from '../api.js';
-import { mortgageConfig } from '../charts.js';
+import { investOrPayDownConfig, mortgageConfig } from '../charts.js';
 
 /**
  * The mortgage: what it costs a month, when it ends, and how much is interest.
@@ -315,6 +315,8 @@ function Results({ data, r, form, setForm, onTab }) {
 
       <ExtraSlider r={r} form={form} setForm={setForm} />
 
+      <InvestOrPayDown form={form} savings={data.savings} onTab={onTab} />
+
       <Card title="Where each year's payments go"
             hint="Early years are mostly interest; the crossover is when principal takes over">
         <div className="chart">
@@ -433,6 +435,197 @@ function ExtraSlider({ r, form, setForm }) {
       </p>
     </Card>
   );
+}
+
+/**
+ * Should the extra go into investments or onto the mortgage?
+ *
+ * Asked of the server for whatever terms are on screen. Both worlds spend the
+ * same every month until the mortgage would have ended anyway; the page
+ * reports which ends up with more, and the return at which they tie.
+ */
+function InvestOrPayDown({ form, savings, onTab }) {
+  const [opts, setOpts] = useState({
+    monthly: savings > 0 ? String(savings) : '500',
+    lump: '', expected: '5', account: 'sheltered', marginal: '',
+  });
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const set = (key) => (e) => setOpts({ ...opts, [key]: e.target.value });
+
+  useEffect(() => {
+    if (!complete(form)) { setResult(null); return undefined; }
+    const id = setTimeout(async () => {
+      try {
+        setResult(await compareMortgage(body(form), {
+          monthly: Number(opts.monthly) || 0,
+          lump: Number(opts.lump) || 0,
+          expected: Number(opts.expected) || 0,
+          account: opts.account,
+          marginal: Number(opts.marginal) || 0,
+        }));
+        setError(null);
+      } catch (e) {
+        setError(e);
+      }
+    }, 250);
+    return () => clearTimeout(id);
+  }, [form, opts]);
+
+  const c = result;
+  const ahead = c && Math.abs(c.difference);
+
+  return (
+    <Card title="Invest it, or pay down the mortgage?"
+          hint="The same money, two ways — compared on the day the mortgage would have ended anyway">
+      <div className="controls">
+        <label htmlFor="ip-monthly">Extra each month</label>
+        <input id="ip-monthly" type="number" min="0" step="any" inputMode="decimal"
+               value={opts.monthly} onChange={set('monthly')} style={{ width: 110 }} />
+        <label htmlFor="ip-lump">Lump sum now</label>
+        <input id="ip-lump" type="number" min="0" step="any" inputMode="decimal"
+               value={opts.lump} placeholder="0" onChange={set('lump')}
+               style={{ width: 120 }} />
+        <label htmlFor="ip-return">Expected return</label>
+        <span className="row" style={{ gap: 4 }}>
+          <input id="ip-return" type="number" min="0" max="20" step="any"
+                 inputMode="decimal" value={opts.expected} onChange={set('expected')}
+                 style={{ width: 80 }} />
+          <span className="muted">% a year</span>
+        </span>
+      </div>
+      <div className="controls" style={{ marginTop: 10 }}>
+        <label>Invested in</label>
+        <label className="row small" style={{ gap: 6, color: 'inherit' }}>
+          <input type="radio" name="ip-account" value="sheltered"
+                 checked={opts.account === 'sheltered'} onChange={set('account')} />
+          A TFSA or RRSP
+        </label>
+        <label className="row small" style={{ gap: 6, color: 'inherit' }}>
+          <input type="radio" name="ip-account" value="taxable"
+                 checked={opts.account === 'taxable'} onChange={set('account')} />
+          A taxable account
+        </label>
+        {opts.account === 'taxable' && (
+          <>
+            <label htmlFor="ip-marginal">Marginal tax rate</label>
+            <span className="row" style={{ gap: 4 }}>
+              <input id="ip-marginal" type="number" min="0" max="60" step="any"
+                     inputMode="decimal" value={opts.marginal} placeholder="43"
+                     onChange={set('marginal')} style={{ width: 80 }} />
+              <span className="muted">%</span>
+            </span>
+          </>
+        )}
+      </div>
+      {savings > 0 && (
+        <p className="small muted" style={{ margin: '8px 0 0' }}>
+          Starts from the {money(savings)} a month your plan already sets aside
+          to save or invest — change it to ask about any amount.
+        </p>
+      )}
+
+      <ErrorNote error={error} />
+
+      {c && (
+        <>
+          <Notice kind={c.winner === 'tie' ? '' : 'good'}>
+            <strong>
+              {c.winner === 'tie'
+                ? `At ${pctRate(c.expected)}, it's a wash.`
+                : c.winner === 'invest'
+                  ? `At ${pctRate(c.expected)}, investing comes out ${money(ahead)} ahead`
+                  : `At ${pctRate(c.expected)}, paying down the mortgage comes out ${money(ahead)} ahead`}
+            </strong>
+            {c.winner !== 'tie' && <> by {monthLabel(c.horizon_month, { long: true })}.</>}{' '}
+            Paying down earns your mortgage rate —{' '}
+            <strong>{pctRate(c.mortgage_return)}</strong> a year once its
+            compounding is counted, guaranteed and tax-free.{' '}
+            {c.breakeven != null && (
+              <>Investing has to return more than{' '}
+                <strong>{pctRate(c.breakeven)}</strong>
+                {c.tax_on_growth > 0 && ' before tax'} to beat it.</>
+            )}
+          </Notice>
+
+          <div className="grid cols-2" style={{ marginTop: 14 }}>
+            <Tile label="If you invest it" value={money(c.invest)}
+                  note={`invested by ${monthLabel(c.horizon_month)}, mortgage paid off then too`} />
+            <Tile label="If you pay it down" value={money(c.prepay)}
+                  note={`mortgage gone ${monthLabel(c.paid_off_month)} — ${
+                    yearsMonths(c.months_sooner)} sooner, ${money(c.interest_saved)} less interest — then the payment is invested`} />
+          </div>
+
+          <div className="chart" style={{ marginTop: 16 }}>
+            <Chart config={investOrPayDownConfig(c.series)}
+                   ariaLabel={`How far ahead investing is over paying down, year by year, at ${
+                     pctRate(c.expected)}. By ${monthLabel(c.horizon_month, { long: true })}: ${
+                     c.difference >= 0 ? 'investing' : 'paying down'} ahead by ${money(ahead)}.`} />
+          </div>
+          <p className="small muted" style={{ margin: '6px 0 0' }}>
+            Above the line investing is ahead; below it paying down is.
+          </p>
+
+          <div className="table-wrap" style={{ marginTop: 16 }}>
+            <table>
+              <thead>
+                <tr><th>If investments returned</th>
+                  <th className="r">Invest</th><th className="r">Pay down</th>
+                  <th className="r">Better by</th></tr>
+              </thead>
+              <tbody>
+                {c.rates.map((x) => (
+                  <tr key={x.rate}>
+                    <td>{x.label} <span className="muted small">{pctRate(x.rate)}</span></td>
+                    <td className="r num">{money(x.invest)}</td>
+                    <td className="r num">{money(x.prepay)}</td>
+                    <td className="r num">
+                      {money(Math.abs(x.difference))}{' '}
+                      <span className="muted small">
+                        {x.difference >= 0 ? 'investing' : 'paying down'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <Why id="mortgage.invest" label="What the numbers can't tell you">
+            <ul className="steps" style={{ margin: 0 }}>
+              <li><strong>Risk.</strong> Paying down earns its rate every year,
+                no matter what. An average return is an average: the same
+                long-run figure arrives as good years and falling ones, and a
+                bad run near the end can undo the difference.</li>
+              <li><strong>Access.</strong> Money in a TFSA can be taken out
+                when you need it. Money paid into the house can&apos;t, short
+                of borrowing against it.</li>
+              <li><strong>Limits.</strong> Most lenders cap prepayments, often
+                at 10–20% of the original amount a year. An RRSP contribution
+                also earns a tax refund, which this leaves out.</li>
+              <li><strong>The rate will change.</strong> At renewal the
+                mortgage rate moves, and so does the break-even. A higher rate
+                makes paying down worth more.</li>
+              <li><strong>First things first.</strong> An emergency fund, an
+                employer&apos;s pension match and any higher-interest debt
+                usually come before either.</li>
+            </ul>
+            <p className="small muted" style={{ marginBottom: 0 }}>
+              A taxable account is assumed to lose half your marginal rate on
+              its growth, as capital gains do; interest and dividends are taxed
+              more. None of this is advice — it is the arithmetic, so you can
+              see what you would be betting on. What you save each month is
+              set on <GoTo to="plan" from="mortgage" onTab={onTab} />.
+            </p>
+          </Why>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function pctRate(fraction) {
+  return `${(Math.round(fraction * 10000) / 100).toFixed(2).replace(/\.?0+$/, '')}%`;
 }
 
 function yearsMonths(months) {
