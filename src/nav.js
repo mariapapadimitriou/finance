@@ -29,6 +29,8 @@ export const PANELS = {
                    hint: 'What saving more gets you — this year, and invested' },
   mortgage:      { label: 'Mortgage',
                    hint: 'What it costs a month, when it ends, and how much is interest' },
+  retirement:    { label: 'Retirement',
+                   hint: 'CoastFIRE — when saving for retirement could stop' },
   savings:       { label: 'What to cut',
                    hint: 'Ranked by what it saves, with the charges behind it' },
   subscriptions: { label: 'Subscriptions',
@@ -60,7 +62,7 @@ export const GROUPS = [
     icon: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z' },
   // Looking ahead sits with the plan, not with the history: it is the plan
   // run forward, and the savings figure it offers to move is the plan's.
-  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections', 'mortgage'],
+  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections', 'mortgage', 'retirement'],
     hint: 'What you earn, what it is promised to, how the rest divides, and where that leads',
     icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
   { key: 'overview', label: 'This month', short: 'Month', panels: ['overview'],

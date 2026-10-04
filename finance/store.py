@@ -892,6 +892,26 @@ class Store:
             c.execute("DELETE FROM settings WHERE key = 'mortgage'")
         return True
 
+    # ── CoastFIRE ─────────────────────────────────────────────────────────
+    # What you typed into the retirement calculator. It changes nothing else.
+
+    def coastfire(self) -> dict | None:
+        raw = self.setting("coastfire")
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+
+    def save_coastfire(self, inputs: dict) -> None:
+        self.set_setting("coastfire", json.dumps(inputs))
+
+    def clear_coastfire(self) -> bool:
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM settings WHERE key = 'coastfire'")
+            return bool(cur.rowcount and cur.rowcount > 0)
+
     def mortgage_cost_id(self) -> int | None:
         current = self.mortgage()
         return int(current["fixed_cost_id"]) if current and current.get("fixed_cost_id") else None
