@@ -34,7 +34,8 @@ const PER_PAYMENT = {
 };
 
 const EMPTY = { balance: '', rate: '', years: '25', months: '0', frequency: 'monthly',
-                compounding: 'canadian', term_end: '', extra_monthly: 0,
+                compounding: 'canadian', term_years: '', term_months: '',
+                extra_monthly: 0, actual_payment: '', original: '',
                 shared: false, share_mode: 'percent', share_value: '50',
                 as_of: '', as_of_balance: '', as_of_months: '' };
 
@@ -75,7 +76,11 @@ function formFrom(data) {
     as_of_months: String(Math.round(Number(s.years) * 12)),
     frequency: s.frequency,
     compounding: s.compounding,
-    term_end: s.term_end ?? '',
+    // The term is typed as what's left of it, the way a statement says it,
+    // and stored as the month it ends — so it counts down by itself.
+    ...termLeft(s.term_end),
+    actual_payment: s.actual_payment ? String(s.actual_payment) : '',
+    original: s.original ? String(s.original) : '',
     extra_monthly: s.extra_monthly ?? 0,
     shared: !(s.share_mode === 'percent' && Number(s.share_value) >= 100),
     share_mode: s.share_mode ?? 'percent',
@@ -93,7 +98,9 @@ function body(form) {
     years: totalMonths(form) / 12,
     frequency: form.frequency,
     compounding: form.compounding,
-    term_end: form.term_end || null,
+    term_end: termEnd(form),
+    actual_payment: Number(form.actual_payment) || null,
+    original: Number(form.original) || null,
     extra_monthly: Number(form.extra_monthly) || 0,
     // Not shared is simply 100% yours.
     share_mode: form.shared ? form.share_mode : 'percent',
@@ -105,6 +112,25 @@ function body(form) {
         && totalMonths(form) === Number(form.as_of_months)
       ? { as_of: form.as_of } : {}),
   };
+}
+
+/** "4 years 2 months" left → the month the term ends; nothing typed → none. */
+function termEnd(form) {
+  const total = (Math.trunc(Number(form.term_years)) || 0) * 12
+    + (Math.trunc(Number(form.term_months)) || 0);
+  if (total <= 0) return null;
+  const now = new Date();
+  const index = now.getFullYear() * 12 + now.getMonth() + total;
+  return `${Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, '0')}`;
+}
+
+/** The month a term ends → how much of it is left, as the two boxes. */
+function termLeft(end) {
+  if (!end) return { term_years: '', term_months: '' };
+  const [y, m] = end.split('-').map(Number);
+  const now = new Date();
+  const left = Math.max((y * 12 + m - 1) - (now.getFullYear() * 12 + now.getMonth()), 0);
+  return { term_years: String(Math.floor(left / 12)), term_months: String(left % 12) };
 }
 
 /** Whole months from `ym` to this month. */
@@ -249,9 +275,39 @@ export default function MortgagePanel({ onChanged, onTab }) {
                 <option key={k} value={k}>{v}</option>
               ))}
             </select>
-            <label htmlFor="mg-term">Term ends</label>
-            <input id="mg-term" type="month" value={form.term_end}
-                   onChange={set('term_end')} aria-describedby="mg-term-hint" />
+            <label htmlFor="mg-payment">Your payment</label>
+            <span className="row" style={{ gap: 4 }}>
+              <span className="muted">$</span>
+              <input id="mg-payment" type="number" min="0" step="any" inputMode="decimal"
+                     value={form.actual_payment}
+                     placeholder={r?.worked_out_payment ? String(r.worked_out_payment) : ''}
+                     onChange={set('actual_payment')} style={{ width: 110 }}
+                     aria-describedby="mg-payment-hint" />
+              <span className="muted">{PER_PAYMENT[form.frequency]}</span>
+            </span>
+          </div>
+
+          <div className="controls">
+            <label htmlFor="mg-term-years">Term left</label>
+            <span className="row" style={{ gap: 6 }}>
+              <input id="mg-term-years" type="number" min="0" max="10" step="1"
+                     inputMode="numeric" value={form.term_years} placeholder="0"
+                     onChange={set('term_years')} style={{ width: 64 }}
+                     aria-describedby="mg-term-hint" />
+              <span className="muted">years</span>
+              <label htmlFor="mg-term-months" className="sr-only">Months of the term left</label>
+              <input id="mg-term-months" type="number" min="0" max="11" step="1"
+                     inputMode="numeric" value={form.term_months} placeholder="0"
+                     onChange={set('term_months')} style={{ width: 64 }} />
+              <span className="muted">months</span>
+            </span>
+            <label htmlFor="mg-original">Original mortgage</label>
+            <span className="row" style={{ gap: 4 }}>
+              <span className="muted">$</span>
+              <input id="mg-original" type="number" min="0" step="any" inputMode="decimal"
+                     value={form.original} placeholder="optional"
+                     onChange={set('original')} style={{ width: 120 }} />
+            </span>
           </div>
 
           <div className="controls">
@@ -314,11 +370,16 @@ export default function MortgagePanel({ onChanged, onTab }) {
             </p>
           )}
 
+          <StatementCheck r={r} form={form} />
+
           <PayoffNote r={r} form={form} />
 
           <p id="mg-term-hint" className="small muted" style={{ margin: 0 }}>
-            The term is how long this rate is fixed (often five years); the
-            years left are how long until it is paid off. Canadian fixed-rate
+            Copy these from your statement. The term is how long this rate is
+            fixed; &ldquo;left to pay&rdquo; is the remaining amortization —
+            how long until it is paid off. Your payment is optional: without
+            it, it&apos;s worked out from the years left, which can be a few
+            cents off what your lender set. Canadian fixed-rate
             mortgages compound twice a year by law, which makes the payment a
             little smaller than an American calculator says.
           </p>
@@ -359,6 +420,41 @@ export default function MortgagePanel({ onChanged, onTab }) {
       {r && <Results data={shown} r={r} form={form} setForm={setForm}
                      onTab={onTab} />}
     </div>
+  );
+}
+
+/**
+ * Does the payment square with the years left? A statement's remaining
+ * amortization is worked out from its payment, so the two should agree to
+ * within a month; if they don't, one of the figures was mistyped.
+ */
+function StatementCheck({ r, form }) {
+  if (!r) return null;
+  const per = PER_PAYMENT[r.frequency];
+  if (r.payment_source !== 'statement') {
+    return (
+      <p id="mg-payment-hint" className="small muted" style={{ margin: 0 }}>
+        Worked out: <span className="num">{money(r.worked_out_payment, { cents: true })}</span>{' '}
+        {per}. If your statement says something different, enter it.
+      </p>
+    );
+  }
+  const months = r.amortization_months;
+  const off = months == null ? null : Math.abs(months - r.typed_months);
+  const paidOff = months == null ? null : yearsMonths(Math.round(months));
+  return (
+    <p id="mg-payment-hint" className="small" style={{ margin: 0 }}>
+      {off != null && off <= 1.5 ? (
+        <>✓ At <span className="num">{money(r.payment, { cents: true })}</span> {per},{' '}
+          {money(r.balance_now)} is paid off in {paidOff} — the same as your
+          statement. The calculator uses your payment.</>
+      ) : (
+        <>At <span className="num">{money(r.payment, { cents: true })}</span> {per},{' '}
+          {money(Number(form.balance))} is paid off in <strong>{paidOff}</strong>,
+          not the {yearsMonths(r.typed_months)} typed — check the balance,
+          the rate and how often you pay. The calculator uses your payment.</>
+      )}
+    </p>
   );
 }
 
@@ -459,8 +555,15 @@ function Results({ data, r, form, setForm, onTab }) {
             ({pct(interestShare)})
           </span>
         </div>
+        {r.original && (
+          <p className="small" style={{ margin: '10px 0 0' }}>
+            Paid off so far: <strong className="num">{money(r.paid_so_far)}</strong>{' '}
+            of the original {money(r.original)} ({pct(r.paid_so_far_share)})
+            {sh && <> — your share {money(r.paid_so_far * sh.fraction)}</>}.
+          </p>
+        )}
         <p className="small muted" style={{ margin: '10px 0 0' }}>
-          {money(r.total_paid)} in all.
+          {money(r.total_paid)} still to pay in all.
           {r.next_month?.month && (
             <> Of the payments in {monthLabel(r.next_month.month, { long: true })},{' '}
               <strong className="num">{money(r.next_month.interest, { cents: true })}</strong>{' '}
