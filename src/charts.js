@@ -318,3 +318,88 @@ export function investedConfig(series) {
     },
   };
 }
+
+/**
+ * Where each year's mortgage payments go: principal and interest, stacked.
+ *
+ * One measure (dollars paid in a year), so one axis — the balance owing is a
+ * different scale and lives in the tooltip and the figures beside the chart,
+ * never on a second axis. Slots 1 and 3, the validated pair the projection
+ * uses, with a legend beside the chart so the hues are never the only key.
+ * Interest sits at the bottom, where the early years make it tall: the
+ * crossover, when principal overtakes it, is the shape worth seeing.
+ */
+export function mortgageConfig(byYear) {
+  const c = ink();
+  const bar = (data, color, label, top) => ({
+    label,
+    data,
+    backgroundColor: color,
+    // A 2px surface gap between the stacked segments and adjacent bars.
+    borderColor: c.surface,
+    borderWidth: { top: 2, left: 1, right: 1, bottom: 0 },
+    borderRadius: top ? { topLeft: 4, topRight: 4 } : 0,
+    borderSkipped: false,
+    maxBarThickness: 22,
+    stack: 'paid',
+  });
+
+  return {
+    type: 'bar',
+    data: {
+      labels: byYear.map((r) => r.year),
+      datasets: [
+        bar(byYear.map((r) => r.interest), c.series3, 'Interest', false),
+        bar(byYear.map((r) => r.principal), c.series, 'Principal', true),
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          ...tooltip(c, {
+          title: (items) => {
+            const row = byYear[items[0].dataIndex];
+            return `Year ${row.year} · to ${monthLabel(row.ending)}`;
+          },
+          label: (ctx) => `${ctx.dataset.label}: ${money(ctx.parsed.y)}`,
+          footer: (items) => `Owing after: ${money(byYear[items[0].dataIndex].balance)}`,
+          }),
+          // Two series in one tooltip, so each value carries its swatch.
+          displayColors: true,
+          boxPadding: 4,
+          footerColor: c.text2,
+          footerFont: { family: 'system-ui', size: 12, weight: '500' },
+        },
+      },
+      scales: {
+        x: {
+          stacked: true,
+          grid: { display: false },
+          border: { color: c.axis },
+          ticks: {
+            color: c.muted, font: AXIS_FONT, maxRotation: 0,
+            callback(i) {
+              const y = Number(this.getLabelForValue(i));
+              return y === 1 || y % 5 === 0 ? `${y}y` : '';
+            },
+          },
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          grid: { color: c.grid, drawTicks: false },
+          border: { display: false },
+          ticks: {
+            color: c.muted, font: AXIS_FONT, padding: 8, maxTicksLimit: 5,
+            callback: (v) => money(v),
+          },
+        },
+      },
+    },
+  };
+}
