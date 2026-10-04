@@ -1664,6 +1664,83 @@ def delete_mortgage():
     return jsonify({"ok": True})
 
 
+# ── Retirement: CoastFIRE ────────────────────────────────────────────────────
+
+def _coastfire_defaults(st) -> dict:
+    """What the plan already says, offered as the starting figures.
+
+    A year of spending is take-home less saving, times twelve — what the plan
+    says you live on. If a saved mortgage ends before you would retire, its
+    payment is offered as something to take out, since nobody retires on a
+    payment that has stopped.
+    """
+    from . import mortgage
+
+    income = st.float_setting("monthly_income", 0.0)
+    saving = st.float_setting("savings_target", 0.0)
+    out = {
+        "plan_spending": round(max(income - saving, 0.0) * 12, 2) if income > 0 else None,
+        "plan_saving": saving,
+        "mortgage": None,
+    }
+    saved = st.mortgage()
+    if saved:
+        terms = mortgage.Terms.from_dict(saved)
+        r = mortgage.compute(terms, _today_iso())
+        out["mortgage"] = {"monthly": r["committed_monthly"],
+                           "yearly": round(r["committed_monthly"] * 12, 2),
+                           "payoff_month": r["payoff_month"]}
+    return out
+
+
+@bp.get("/coastfire")
+def get_coastfire():
+    from . import coastfire
+
+    st = store()
+    saved = st.coastfire()
+    inputs = coastfire.Inputs.from_dict(saved) if saved else None
+    return jsonify({
+        "saved": inputs.to_dict() if inputs else None,
+        "result": coastfire.compute(inputs, _today_iso()) if inputs else None,
+        "defaults": _coastfire_defaults(st),
+    })
+
+
+@bp.post("/coastfire/preview")
+def preview_coastfire():
+    """What these figures give, without saving anything."""
+    from . import coastfire
+
+    today = _today_iso()
+    inputs, error = coastfire.validate(request.get_json(silent=True) or {}, today)
+    if error:
+        return jsonify({"error": error}), 400
+    return jsonify({"result": coastfire.compute(inputs, today)})
+
+
+@bp.put("/coastfire")
+def save_coastfire():
+    from . import coastfire
+
+    today = _today_iso()
+    inputs, error = coastfire.validate(request.get_json(silent=True) or {}, today)
+    if error:
+        return jsonify({"error": error}), 400
+    st = store()
+    st.save_coastfire(inputs.to_dict())
+    return jsonify({"ok": True, "saved": inputs.to_dict(),
+                    "result": coastfire.compute(inputs, today),
+                    "defaults": _coastfire_defaults(st)})
+
+
+@bp.delete("/coastfire")
+def clear_coastfire():
+    if not store().clear_coastfire():
+        return jsonify({"error": "Nothing is saved."}), 404
+    return jsonify({"ok": True})
+
+
 @bp.get("/nudge")
 def nudge():
     """One sentence about yesterday, or nothing at all."""
