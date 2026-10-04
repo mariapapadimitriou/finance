@@ -319,3 +319,92 @@ class TestInvestOrPayDownEndpoint:
     def test_nonsense_is_a_400(self, client, bad):
         assert client.post("/api/mortgage/compare", json={
             **MORTGAGE, "monthly": 500, **bad}).status_code == 400
+
+
+# ── A shared mortgage: your part of it ───────────────────────────────────────
+
+class TestYourShare:
+    def test_all_yours_by_default(self):
+        r = m.compute(terms(), TODAY)
+        assert r["your_monthly"] == r["committed_monthly"]
+        assert r["share"]["fraction"] == 1 and not r["share"]["shared"]
+
+    def test_half_is_half(self):
+        r = m.compute(terms(share_value=50), TODAY)
+        assert r["your_monthly"] == pytest.approx(r["committed_monthly"] / 2, abs=0.01)
+        assert r["share"]["interest"] == pytest.approx(r["total_interest"] / 2, abs=0.01)
+        assert r["share"]["principal"] == pytest.approx(250_000)
+        # The loan itself doesn't change: one loan, paid by two people.
+        assert r["payoff_month"] == m.compute(terms(), TODAY)["payoff_month"]
+
+    def test_a_fixed_amount_is_exactly_that(self):
+        r = m.compute(terms(share_mode="amount", share_value=1500), TODAY)
+        assert r["your_monthly"] == 1500
+        assert r["share"]["fraction"] == pytest.approx(1500 / r["monthly_equivalent"],
+                                                       abs=0.0001)
+
+    def test_the_extra_is_split_the_same_way(self):
+        r = m.compute(terms(share_mode="amount", share_value=1500,
+                            extra_monthly=200), TODAY)
+        f = r["share"]["fraction"]
+        assert r["your_monthly"] == pytest.approx(1500 + 200 * f, abs=0.01)
+        half = m.compute(terms(share_value=50, extra_monthly=200), TODAY)
+        assert half["your_monthly"] == pytest.approx(half["committed_monthly"] / 2,
+                                                     abs=0.01)
+
+    @pytest.mark.parametrize("bad", [
+        {"share_value": 0}, {"share_value": 101},
+        {"share_mode": "amount", "share_value": 4000},
+        {"share_mode": "amount", "share_value": 0},
+        {"share_mode": "half"},
+    ])
+    def test_nonsense_is_refused(self, bad):
+        got, error = m.validate({"balance": 500_000, "rate": 5, "years": 25, **bad},
+                                TODAY)
+        assert got is None and error
+
+
+class TestPayingDownAShareAlone:
+    def test_all_yours_ties_at_the_mortgage_rate_as_before(self):
+        r = m.compare(terms(share_value=100), 500, 0, 0.05, 0, TODAY)
+        assert r["breakeven"] == pytest.approx(r["mortgage_return"], abs=0.0002)
+
+    def test_shared_it_is_worth_less_to_you(self):
+        """Paying it down by yourself also pays off their share, and when
+        the mortgage ends you only stop paying yours."""
+        alone = m.compare(terms(share_value=100), 500, 0, 0.05, 0, TODAY)
+        shared = m.compare(terms(share_value=50), 500, 0, 0.05, 0, TODAY)
+        assert shared["breakeven"] < alone["breakeven"]
+        assert shared["difference"] > alone["difference"]
+        assert shared["share"] == 0.5
+
+    def test_both_worlds_still_cost_you_the_same(self):
+        r = m.compare(terms(share_value=50), 500, 0, 0.0, 0, TODAY)
+        # At 0% the portfolios are just the sums put in; investing puts in
+        # $500 a month for the whole term, paying down puts in your freed
+        # share after the mortgage ends. Neither world spends more.
+        assert r["invest"] == pytest.approx(500 * (r["horizon_years"] * 12), rel=0.01)
+
+
+class TestYourShareInThePlan:
+    def test_the_plan_commits_only_your_share(self, client):
+        before = client.get("/api/plan/setup").get_json()["leftover"]
+        body = client.put("/api/mortgage", json={**MORTGAGE, "share_value": 50}).get_json()
+        assert body["result"]["your_monthly"] == pytest.approx(1454.02, abs=0.01)
+        rows = commitments(client)
+        assert rows[0]["amount"] == pytest.approx(1454.02, abs=0.01)
+        after = client.get("/api/plan/setup").get_json()["leftover"]
+        assert before - after == pytest.approx(1454.02, abs=0.011)
+        assert body["share_of_income"] == pytest.approx(1454.02 / 9000, abs=0.0001)
+
+    def test_a_fixed_amount_is_what_the_plan_commits(self, client):
+        client.put("/api/mortgage", json={**MORTGAGE, "share_mode": "amount",
+                                         "share_value": 1500})
+        assert commitments(client)[0]["amount"] == 1500
+        saved = client.get("/api/mortgage").get_json()["saved"]
+        assert saved["share_mode"] == "amount" and saved["share_value"] == 1500
+
+    def test_retirement_takes_out_your_share(self, client):
+        client.put("/api/mortgage", json={**MORTGAGE, "share_value": 50})
+        m_ = client.get("/api/coastfire").get_json()["defaults"]["mortgage"]
+        assert m_["monthly"] == pytest.approx(1454.02, abs=0.01)
