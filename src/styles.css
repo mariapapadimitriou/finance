@@ -419,7 +419,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 4px 32px 80px; }
 
 /* ── Controls ────────────────────────────────────────────────────────────── */
 
-select, input[type="text"], input[type="search"], input[type="number"] {
+select, input[type="text"], input[type="search"], input[type="number"],
+input[type="date"], input[type="month"] {
   background: var(--surface);
   border: 1px solid var(--border-firm);
   border-radius: var(--r-sm);
@@ -909,7 +910,7 @@ details.evidence[open] summary::before { transform: rotate(90deg); }
  */
 @media (max-width: 640px) {
   select, input[type="text"], input[type="search"], input[type="number"],
-  input[type="date"], input[type="password"] {
+  input[type="date"], input[type="month"], input[type="password"] {
     /* 16px exactly: below it Safari zooms on focus. */
     font-size: 16px;
     min-height: 44px;
@@ -1208,3 +1209,16 @@ fieldset.pays-for legend {
   grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
   gap: 6px 14px;
 }
+
+/* Mortgage: interest against principal, as one bar split in two. The 2px
+   surface gap between the segments is the same spacer the charts use. */
+.split-bar {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.split-bar span { display: block; height: 100%; min-width: 2px; }
+tr.current td { background: var(--surface-2); }
