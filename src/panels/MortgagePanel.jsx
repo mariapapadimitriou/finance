@@ -33,10 +33,23 @@ const PER_PAYMENT = {
   accelerated_weekly: 'a week',
 };
 
-const EMPTY = { balance: '', rate: '', years: '25', frequency: 'monthly',
+const EMPTY = { balance: '', rate: '', years: '25', months: '0', frequency: 'monthly',
                 compounding: 'canadian', term_end: '', extra_monthly: 0,
                 shared: false, share_mode: 'percent', share_value: '50',
-                as_of: '', as_of_balance: '', as_of_years: '' };
+                as_of: '', as_of_balance: '', as_of_months: '' };
+
+/** Left to pay, in months: what the two boxes say together. */
+function totalMonths(form) {
+  return (Math.trunc(Number(form.years)) || 0) * 12 + (Math.trunc(Number(form.months)) || 0);
+}
+
+/** Decimal years, as stored, back into whole years and months. */
+function splitYears(years) {
+  let y = Math.floor(Number(years) || 0);
+  let m = Math.round(((Number(years) || 0) - y) * 12);
+  if (m === 12) { y += 1; m = 0; }
+  return { y, m };
+}
 
 /**
  * The form, filled with exactly what was typed.
@@ -53,12 +66,13 @@ function formFrom(data) {
   return {
     balance: String(s.balance),
     rate: String(s.rate),
-    years: String(s.years),
+    years: String(splitYears(s.years).y),
+    months: String(splitYears(s.years).m),
     // The month those two were true in. Re-saved unchanged, they keep it,
     // so editing the rate doesn't restart a schedule already under way.
     as_of: s.as_of ?? '',
     as_of_balance: String(s.balance),
-    as_of_years: String(s.years),
+    as_of_months: String(Math.round(Number(s.years) * 12)),
     frequency: s.frequency,
     compounding: s.compounding,
     term_end: s.term_end ?? '',
@@ -74,7 +88,9 @@ function body(form) {
   return {
     balance: Number(form.balance),
     rate: Number(form.rate),
-    years: Number(form.years),
+    // Sent as years, at full precision: the server rounds years × 12 back
+    // to exactly the months typed.
+    years: totalMonths(form) / 12,
     frequency: form.frequency,
     compounding: form.compounding,
     term_end: form.term_end || null,
@@ -86,7 +102,7 @@ function body(form) {
     // supplies it when none is sent.
     ...(form.as_of
         && Number(form.balance) === Number(form.as_of_balance)
-        && Number(form.years) === Number(form.as_of_years)
+        && totalMonths(form) === Number(form.as_of_months)
       ? { as_of: form.as_of } : {}),
   };
 }
@@ -105,7 +121,7 @@ function thisMonth() {
 }
 
 function complete(form) {
-  return Number(form.balance) > 0 && form.rate !== '' && Number(form.years) >= 1;
+  return Number(form.balance) > 0 && form.rate !== '' && totalMonths(form) >= 12;
 }
 
 export default function MortgagePanel({ onChanged, onTab }) {
@@ -212,10 +228,18 @@ export default function MortgagePanel({ onChanged, onTab }) {
                      onChange={set('rate')} style={{ width: 90 }} />
               <span className="muted">%</span>
             </span>
-            <label htmlFor="mg-years">Years left to pay</label>
-            <input id="mg-years" type="number" min="1" max="40" step="any" required
-                   inputMode="decimal" value={form.years}
-                   onChange={set('years')} style={{ width: 80 }} />
+            <label htmlFor="mg-years">Left to pay</label>
+            <span className="row" style={{ gap: 6 }}>
+              <input id="mg-years" type="number" min="0" max="40" step="1" required
+                     inputMode="numeric" value={form.years}
+                     onChange={set('years')} style={{ width: 70 }} />
+              <span className="muted">years</span>
+              <label htmlFor="mg-months" className="sr-only">Months left to pay</label>
+              <input id="mg-months" type="number" min="0" max="11" step="1"
+                     inputMode="numeric" value={form.months} placeholder="0"
+                     onChange={set('months')} style={{ width: 64 }} />
+              <span className="muted">months</span>
+            </span>
           </div>
 
           <div className="controls">
@@ -344,7 +368,7 @@ export default function MortgagePanel({ onChanged, onTab }) {
  */
 function PayoffNote({ r, form }) {
   if (!r) return null;
-  const typedLeft = Math.round(Number(form.years) * 12) - monthsSince(r.as_of);
+  const typedLeft = totalMonths(form) - monthsSince(r.as_of);
   const sooner = typedLeft - r.months_left;
   const reasons = [];
   if (r.accelerated) {
@@ -353,14 +377,14 @@ function PayoffNote({ r, form }) {
   if (r.extra_monthly > 0) reasons.push(`of the extra ${money(r.extra_monthly)} a month`);
   const old = r.as_of && r.as_of < thisMonth()
     && Number(form.balance) === Number(form.as_of_balance)
-    && Number(form.years) === Number(form.as_of_years);
+    && totalMonths(form) === Number(form.as_of_months);
 
   if (!(sooner > 1 && reasons.length) && !old) return null;
   return (
     <p className="small" style={{ margin: 0 }}>
       {sooner > 1 && reasons.length > 0 && (
         <>Paid off in <strong>{yearsMonths(r.months_left)}</strong> — sooner
-          than the {form.years} years you typed, because{' '}
+          than the {yearsMonths(totalMonths(form))} you typed, because{' '}
           {reasons.join(', and because ')}. </>
       )}
       {old && (
@@ -511,7 +535,7 @@ function Results({ data, r, form, setForm, onTab }) {
             </thead>
             <tbody>
               {r.alternatives.map((a) => {
-                const current = Math.abs(a.years - Number(form.years)) < 0.01;
+                const current = a.years * 12 === totalMonths(form);
                 return (
                   <tr key={a.years} className={current ? 'current' : ''}>
                     <td>

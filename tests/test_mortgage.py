@@ -453,3 +453,17 @@ class TestTheMonthItWasTyped:
         got, error = m.validate({"balance": 400_000, "rate": 5, "years": 20,
                                  "as_of": bad}, TODAY)
         assert got is None and error
+
+
+class TestYearsAndMonths:
+    """The page asks for years and months, the way a statement states it,
+    and sends years at full precision; the arithmetic counts payments."""
+
+    def test_nineteen_years_ten_months_is_238_payments(self):
+        years = 19 + 10 / 12
+        t, error = m.validate({"balance": 400_000, "rate": 4.5, "years": years},
+                              TODAY)
+        assert error is None
+        expected = m.annuity(400_000, m.periodic_rate(4.5, "canadian", 12), 238)
+        assert m.compute(t, TODAY)["payment"] == pytest.approx(expected, abs=0.01)
+        assert m.compute(t, TODAY)["months_left"] == 238

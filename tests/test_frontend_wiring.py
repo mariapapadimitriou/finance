@@ -213,21 +213,36 @@ class TestNumberInputsAcceptTheAmountsPeopleType:
     exactly the class of bug this file exists for: invisible in review, and
     indistinguishable in use from a dead button.
 
-    Cents are the only step a money field may impose.
+    Cents are the only step a money field may impose. A count — years and
+    months — may ask for whole numbers, and says so with inputMode="numeric".
     """
 
     def test_no_money_field_rejects_an_ordinary_amount(self):
-        pattern = re.compile(r'type="number"[^>]*?step="([^"]+)"'
-                             r'|step="([^"]+)"[^>]*?type="number"', re.S)
+        inputs = re.compile(r'<input\b[^>]*?type="number"[^>]*?>', re.S)
         offenders = []
         for path in sorted(SRC.rglob("*.jsx")):
-            for m in pattern.finditer(path.read_text(encoding="utf-8")):
-                step = m.group(1) or m.group(2)
-                if step not in ("any", "0.01"):
-                    offenders.append(f"{path.name}: step=\"{step}\"")
+            for tag in inputs.findall(path.read_text(encoding="utf-8")):
+                m = re.search(r'step="([^"]+)"', tag)
+                if not m or m.group(1) in ("any", "0.01"):
+                    continue
+                if m.group(1) == "1" and 'inputMode="numeric"' in tag:
+                    continue
+                offenders.append(f"{path.name}: step=\"{m.group(1)}\"")
         assert not offenders, (
             "number inputs whose step makes ordinary amounts invalid, so the "
             f"form silently refuses to submit: {offenders}")
+
+
+class TestMortgageLeftToPay:
+    def test_it_is_asked_as_years_and_months(self):
+        """A statement says "19 years 10 months"; decimal years made people
+        convert, and 19.83 is not quite 19 years 10 months."""
+        source = (SRC / "panels" / "MortgagePanel.jsx").read_text(encoding="utf-8")
+        for id_ in ("mg-years", "mg-months"):
+            tag = re.search(r'<input\b[^>]*?id="%s"[^>]*?>' % id_, source, re.S)
+            assert tag, f"no {id_} input"
+            assert 'step="1"' in tag.group(0) and 'inputMode="numeric"' in tag.group(0)
+        assert re.search(r'id="mg-months"[^>]*?max="11"', source, re.S)
 
 
 def _visible_text(source: str) -> str:
