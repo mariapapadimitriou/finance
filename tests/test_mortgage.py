@@ -453,3 +453,76 @@ class TestTheMonthItWasTyped:
         got, error = m.validate({"balance": 400_000, "rate": 5, "years": 20,
                                  "as_of": bad}, TODAY)
         assert got is None and error
+
+
+class TestYearsAndMonths:
+    """The page asks for years and months, the way a statement states it,
+    and sends years at full precision; the arithmetic counts payments."""
+
+    def test_nineteen_years_ten_months_is_238_payments(self):
+        years = 19 + 10 / 12
+        t, error = m.validate({"balance": 400_000, "rate": 4.5, "years": years},
+                              TODAY)
+        assert error is None
+        expected = m.annuity(400_000, m.periodic_rate(4.5, "canadian", 12), 238)
+        assert m.compute(t, TODAY)["payment"] == pytest.approx(expected, abs=0.01)
+        assert m.compute(t, TODAY)["months_left"] == 238
+
+
+class TestHerStatement:
+    """$634,746 owing at 3.85%, $877.16 a week, 19 years 10 months left,
+    4 years 2 months of term, $721,500 originally, shared with her sister."""
+
+    BODY = {"balance": 634_746, "rate": 3.85, "years": 19 + 10 / 12,
+            "frequency": "weekly", "compounding": "canadian",
+            "actual_payment": 877.16, "original": 721_500,
+            "term_end": "2030-12", "share_value": 50}
+
+    def terms(self):
+        t, error = m.validate(self.BODY, TODAY)
+        assert error is None, error
+        return t
+
+    def test_the_payment_and_the_years_left_agree(self):
+        """The lender works the remaining amortization out from the payment;
+        so does this, and it lands on the statement's 19 years 10 months."""
+        r = m.compute(self.terms(), TODAY)
+        assert r["payment"] == 877.16 and r["payment_source"] == "statement"
+        assert r["amortization_months"] == pytest.approx(238, abs=0.5)
+
+    def test_worked_out_from_the_years_alone_it_is_cents_off(self):
+        r = m.compute(self.terms(), TODAY)
+        assert r["worked_out_payment"] == pytest.approx(877.16, abs=1.0)
+        assert r["worked_out_payment"] != 877.16
+
+    def test_a_weekly_payment_is_this_much_a_month(self):
+        r = m.compute(self.terms(), TODAY)
+        assert r["monthly_equivalent"] == pytest.approx(877.16 * 52 / 12, abs=0.01)
+        assert r["your_monthly"] == pytest.approx(877.16 * 52 / 12 / 2, abs=0.01)
+
+    def test_paid_off_so_far(self):
+        r = m.compute(self.terms(), TODAY)
+        assert r["paid_so_far"] == 86_754
+        assert r["paid_so_far_share"] == pytest.approx(0.1202, abs=0.0001)
+
+    def test_everything_still_adds_up(self):
+        r = m.compute(self.terms(), TODAY)
+        assert r["total_principal"] == 634_746
+        assert r["total_paid"] == pytest.approx(r["total_principal"] + r["total_interest"])
+        assert r["renewal"]["month"] == "2030-12"
+        assert r["renewal"]["balance"] == pytest.approx(
+            634_746 - r["renewal"]["principal"], abs=0.01)
+
+    def test_a_payment_that_never_pays_it_off_is_refused(self):
+        t, error = m.validate({**self.BODY, "actual_payment": 400}, TODAY)
+        assert t is None and "interest" in error
+
+    def test_an_original_below_the_balance_is_refused(self):
+        t, error = m.validate({**self.BODY, "original": 500_000}, TODAY)
+        assert t is None and error
+
+
+    def test_the_payoff_reads_the_way_the_statement_does(self):
+        r = m.compute(self.terms(), TODAY)
+        assert r["months_left"] == 238          # 19 years 10 months
+        assert r["payoff_month"] == "2046-08"

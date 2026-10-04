@@ -69,6 +69,13 @@ class Terms:
     # amount a month. 100% is a mortgage that is all yours.
     share_mode: str = "percent"
     share_value: float = 100.0
+    # The payment on your statement, when you know it. A lender sets it at
+    # the start of the term and it does not move; worked out again from a
+    # rounded "19 years 10 months" it comes out a few cents off, so the real
+    # one wins. Without it, the payment is worked out from the years left.
+    actual_payment: float | None = None
+    # What was borrowed in the first place — only for "paid off so far".
+    original: float | None = None
 
     def to_dict(self) -> dict:
         return {"balance": round(self.balance, 2), "rate": self.rate,
@@ -77,7 +84,10 @@ class Terms:
                 "extra_monthly": round(self.extra_monthly, 2),
                 "term_end": self.term_end,
                 "share_mode": self.share_mode,
-                "share_value": round(self.share_value, 2)}
+                "share_value": round(self.share_value, 2),
+                "actual_payment": (round(self.actual_payment, 2)
+                                   if self.actual_payment else None),
+                "original": round(self.original, 2) if self.original else None}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Terms":
@@ -88,7 +98,10 @@ class Terms:
                    extra_monthly=float(d.get("extra_monthly") or 0.0),
                    term_end=(str(d["term_end"])[:7] if d.get("term_end") else None),
                    share_mode=d.get("share_mode") or "percent",
-                   share_value=float(d.get("share_value") or 100.0))
+                   share_value=float(d.get("share_value") or 100.0),
+                   actual_payment=(float(d["actual_payment"])
+                                   if d.get("actual_payment") else None),
+                   original=float(d["original"]) if d.get("original") else None)
 
 
 # ── Months ───────────────────────────────────────────────────────────────────
@@ -146,6 +159,30 @@ def payment(balance: float, rate: float, years: float, frequency: str,
                              max(round(years * per_year), 1)))
 
 
+def regular_payment(t: "Terms") -> float:
+    """The payment the schedule runs on: yours if you gave it, else worked
+    out from the years left."""
+    if t.actual_payment:
+        return round(t.actual_payment, 2)
+    return payment(t.balance, t.rate, t.years, t.frequency, t.compounding)
+
+
+def amortization_months(balance: float, pay: float, rate: float,
+                        frequency: str, compounding: str) -> float | None:
+    """How long a payment takes to clear a balance, in months — the
+    "remaining amortization" a statement prints. None if it never does."""
+    per_year, _ = FREQUENCIES[frequency]
+    i = periodic_rate(rate, compounding, per_year)
+    if pay <= 0:
+        return None
+    if i == 0:
+        return balance / pay / per_year * 12
+    if pay <= balance * i:
+        return None
+    n = -math.log(1 - balance * i / pay) / math.log(1 + i)
+    return n / per_year * 12
+
+
 def _cents_up(x: float) -> float:
     # The small allowance keeps float noise from adding a cent to a payment
     # that is already exact.
@@ -165,7 +202,7 @@ def schedule(t: Terms) -> list[dict]:
     """
     per_year, _ = FREQUENCIES[t.frequency]
     i = periodic_rate(t.rate, t.compounding, per_year)
-    regular = payment(t.balance, t.rate, t.years, t.frequency, t.compounding)
+    regular = regular_payment(t)
     extra = max(t.extra_monthly, 0.0) * 12 / per_year
     balance = t.balance
     rows = []
@@ -203,14 +240,24 @@ def _ahead(t: Terms, today: str) -> tuple[list[dict], float]:
 
 
 def _payoff(t: Terms, ahead: list[dict], today: str) -> dict:
+    """When the last payment is made, counted in payments rather than in the
+    calendar months they are filed under.
+
+    1,033 weekly payments are 238.4 months — "19 years 10 months", as a
+    statement says it. Filing the last, small payment under the month after
+    made the page say 19 years 11 months beside a statement saying 10.
+    """
     per_year, _ = FREQUENCIES[t.frequency]
     if not ahead:
         return {"payoff_month": today, "months_left": 0, "years_left": 0.0}
-    last = ahead[-1]
-    return {"payoff_month": add_months(t.as_of, last["offset"]),
-            "months_left": max(last["offset"]
-                               - max(_months_between(t.as_of, today), 0), 0),
+    months = round(len(ahead) * 12 / per_year)
+    return {"payoff_month": add_months(today, months),
+            "months_left": months,
             "years_left": round(len(ahead) / per_year, 2)}
+
+
+def _round_or_none(x, places=1):
+    return round(x, places) if x is not None else None
 
 
 def share_fraction(t: Terms, monthly_equivalent: float | None = None) -> float:
@@ -224,8 +271,7 @@ def share_fraction(t: Terms, monthly_equivalent: float | None = None) -> float:
     if t.share_mode == "amount":
         if monthly_equivalent is None:
             per_year, _ = FREQUENCIES[t.frequency]
-            monthly_equivalent = payment(t.balance, t.rate, t.years, t.frequency,
-                                         t.compounding) * per_year / 12
+            monthly_equivalent = regular_payment(t) * per_year / 12
         if monthly_equivalent <= 0:
             return 1.0
         return min(max(t.share_value, 0.0) / monthly_equivalent, 1.0)
@@ -241,7 +287,7 @@ def compute(t: Terms, today: str) -> dict:
     """
     today = today[:7]
     per_year, accelerated = FREQUENCIES[t.frequency]
-    regular = payment(t.balance, t.rate, t.years, t.frequency, t.compounding)
+    regular = regular_payment(t)
     monthly_equivalent = round(regular * per_year / 12, 2)
     ahead, balance_now = _ahead(t, today)
     now = max(_months_between(t.as_of, today), 0)
@@ -309,6 +355,19 @@ def compute(t: Terms, today: str) -> dict:
         },
         "by_year": by_year,
         "renewal": renewal,
+        # Where the payment came from, and how it squares with the years
+        # typed: the statement's remaining amortization is worked out from
+        # its payment, so the two should agree to within a month or so.
+        "payment_source": "statement" if t.actual_payment else "worked_out",
+        "worked_out_payment": payment(t.balance, t.rate, t.years, t.frequency,
+                                      t.compounding),
+        "typed_months": round(t.years * 12),
+        "amortization_months": _round_or_none(amortization_months(
+            t.balance, regular, t.rate, t.frequency, t.compounding)),
+        "original": round(t.original, 2) if t.original else None,
+        "paid_so_far": (round(t.original - balance_now, 2) if t.original else None),
+        "paid_so_far_share": (round((t.original - balance_now) / t.original, 4)
+                              if t.original else None),
         "share": {
             "fraction": round(share, 4),
             "shared": share < 0.9999,
@@ -417,13 +476,44 @@ def validate(d: dict, today: str) -> tuple[Terms | None, str | None]:
         return None, "The balance can't be from a month that hasn't happened yet."
     if _index(today[:7]) - _index(as_of) > MAX_YEARS * 12:
         return None, f"That balance is more than {MAX_YEARS} years old — enter today's."
+    def optional(key):
+        raw = d.get(key)
+        if raw in (None, "", 0, "0"):
+            return None, None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None, "must be a number"
+        if not math.isfinite(value) or value <= 0:
+            return None, "must be more than zero"
+        return round(value, 2), None
+
+    actual, problem = optional("actual_payment")
+    if problem:
+        return None, f"Your payment {problem}."
+    original, problem = optional("original")
+    if problem:
+        return None, f"The original amount {problem}."
+    if original is not None and original < balance:
+        return None, "The original amount can't be less than what you owe now."
+    if actual is not None:
+        months = amortization_months(balance, actual, rate, frequency, compounding)
+        if months is None:
+            return None, ("That payment doesn't cover the interest, so the "
+                          "balance would never go down — check the payment, "
+                          "how often it's paid, and the rate.")
+        if months > MAX_YEARS * 12:
+            return None, (f"At that payment it would take more than {MAX_YEARS} "
+                          "years — check the payment and how often it's paid.")
+
     terms = Terms(balance=round(balance, 2), rate=rate, years=years,
                   as_of=as_of, frequency=frequency, compounding=compounding,
                   extra_monthly=round(extra, 2), term_end=term_end,
-                  share_mode=share_mode, share_value=round(share_value, 2))
+                  share_mode=share_mode, share_value=round(share_value, 2),
+                  actual_payment=actual, original=original)
     if share_mode == "amount":
         per_year, _ = FREQUENCIES[frequency]
-        whole = payment(terms.balance, rate, years, frequency, compounding) * per_year / 12
+        whole = regular_payment(terms) * per_year / 12
         if share_value <= 0:
             return None, "Enter what you pay each month."
         if share_value > whole + 0.005:
@@ -524,7 +614,7 @@ def compare(t: Terms, monthly: float, lump: float, expected: float,
 
     today = today[:7]
     per_year, _ = FREQUENCIES[t.frequency]
-    regular = payment(t.balance, t.rate, t.years, t.frequency, t.compounding)
+    regular = regular_payment(t)
     _, balance_now = _ahead(t, today)
     monthly = max(monthly, 0.0)
     lump = min(max(lump, 0.0), balance_now)
