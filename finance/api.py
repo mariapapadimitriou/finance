@@ -1261,13 +1261,13 @@ def apply_plan_budgets():
     for line, amount in budgets.items():
         st.set_budget(line, amount)
 
-    # A saved budget that is no longer a line with a budget — a category
-    # since folded into another, or one a piggy bank now pays for — would
-    # otherwise survive every re-apply, dividing money the plan no longer
-    # gives it.
+    # A saved budget the plan's split no longer gives anything to — a line
+    # too small to fund, a category since folded into another, or one a piggy
+    # bank now pays for — would otherwise survive every re-apply, dividing
+    # money the plan no longer has for it. Applying the split replaces it all.
     lines = budget_lines.lines(grouping)
     for key in list(st.budgets()):
-        if key not in lines or budget_lines.line_bank_funded(
+        if key not in budgets or key not in lines or budget_lines.line_bank_funded(
                 lines[key], st.bank_funded_categories()):
             st.set_budget(key, 0)
 
@@ -1950,12 +1950,16 @@ def budgets():
     plan_budgets = split["budgets"] if split else {}
     typical = _typical_by_category(txns, grouping)
 
-    # One row per line the month will be judged on: every budget that is
-    # set, plus every line the plan would give money to. A line in the plan
-    # with nothing saved yet is shown against the plan's figure rather than
-    # left off the page — the table was empty until budgets were adopted, on
-    # the one tab whose job is to get them adopted.
-    rows = budget_status(txns, {**plan_budgets, **b}, month, grouping)
+    # One row per line in Settings → Categories, in that order, so this page
+    # is the list you made there. A line used to appear only if it had a
+    # saved budget or the plan's split gave it one, and the split drops lines
+    # under 2% of spending — so a line you had just set up could be missing.
+    # A line with nothing saved is drawn against the plan's figure, or $0
+    # when the plan gives it nothing.
+    order = [name for name in lines if name not in funded]
+    limits = {name: b.get(name, plan_budgets.get(name, 0.0)) for name in order}
+    rows = budget_status(txns, limits, month, grouping)
+    rows.sort(key=lambda r: order.index(r["category"]))
     for row in rows:
         line = row["category"]
         members = lines.get(line, [line])
@@ -1968,6 +1972,10 @@ def budgets():
         # is, so the tag beside a budget cannot contradict the gate itself.
         row["daily"] = budget_lines.line_daily(members)
         row["essential"] = row["daily"] == "none"
+        # Nothing set, nothing planned, nothing spent: still a line, but one
+        # the page can fold away rather than draw as an empty bar.
+        row["quiet"] = (not row["adopted"] and row["plan_budget"] is None
+                        and row["spent"] == 0)
 
     # The saved budgets alone, which is what "covered" below has to mean.
     status = [r for r in rows if r["adopted"]]
@@ -1996,11 +2004,24 @@ def budgets():
                    for line, amount in by_line.items() if line in funded]
     bank_funded_total = round(sum(r["amount"] for r in bank_funded), 2)
 
+    # The bank-paid lines, in Settings order too, so the page lists every
+    # line you have — with which bank pays for it instead of a budget.
+    payer = {c: p["bank"] for p in _paid_by(st) for c in p["categories"]}
+    bank_lines = [{
+        "category": name,
+        "members": members if len(members) > 1 or members[0] != name else [],
+        "bank": ", ".join(dict.fromkeys(payer[m] for m in members if m in payer)),
+        "uncovered": by_line.get(name, 0.0),
+    } for name, members in lines.items() if name in funded]
+
     return jsonify({
         "budgets": b,
         "month": month,
-        # Every line the table draws, saved or only proposed.
+        # Every budgeted line in Settings → Categories, in that order, saved,
+        # proposed by the plan, or neither yet.
         "rows": rows,
+        # The lines a piggy bank pays for instead, in the same order.
+        "bank_lines": bank_lines,
         # The saved lines alone — the same list, and the same meaning, this
         # key has always had.
         "status": status,
