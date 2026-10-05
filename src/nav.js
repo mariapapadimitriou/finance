@@ -31,10 +31,8 @@ export const PANELS = {
                    hint: 'What it costs a month, when it ends, and how much is interest' },
   retirement:    { label: 'Retirement', short: 'Retire',
                    hint: 'CoastFIRE — when saving for retirement could stop' },
-  savings:       { label: 'What to cut',
-                   hint: 'Ranked by what it saves, with the charges behind it' },
-  subscriptions: { label: 'Subscriptions',
-                   hint: 'Every recurring charge found in your history' },
+  savings:       { label: 'Cut back',
+                   hint: 'What could be cut, and what is worth knowing' },
   transactions:  { label: 'Every charge',
                    hint: 'Searchable, correctable, chargeable to a piggy bank' },
   trips:         { label: 'Trips',
@@ -70,8 +68,8 @@ export const GROUPS = [
   { key: 'overview', label: 'This month', short: 'Month', panels: ['overview'],
     hint: 'Where the money went',
     icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
-  { key: 'savings', label: 'Cut back', panels: ['savings', 'subscriptions'],
-    hint: 'What to cut, and the renewals worth a second look',
+  { key: 'savings', label: 'Cut back', panels: ['savings'],
+    hint: 'What could be cut, and what is worth knowing',
     icon: 'M12 3v18M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
   { key: 'transactions', label: 'Transactions', short: 'Charges',
     panels: ['transactions', 'trips'],
@@ -90,7 +88,9 @@ export const GROUPS = [
 // across the app and from the insights, which carry a tab name in their data.
 // Piggy banks are a card on the Plan page now — they are already a term in its
 // arithmetic — so a link to them is a link there.
-export const ALIASES = { piggy: 'plan' };
+// Subscriptions were a page of their own; they are insights in the Cut back
+// feed now, and the plan's observations still link to them by that name.
+export const ALIASES = { piggy: 'plan', subscriptions: 'savings' };
 
 // Where on that page the aliased thing actually is. Without this a link to a
 // piggy bank lands at the top of a long page with no sign of one, which is
@@ -99,7 +99,7 @@ export const ANCHORS = { piggy: 'piggy-banks' };
 
 // What an alias is called in a sentence, since it has no panel label of its
 // own to borrow.
-const ALIAS_LABELS = { piggy: 'Piggy banks' };
+const ALIAS_LABELS = { piggy: 'Piggy banks', subscriptions: 'Cut back' };
 
 /**
  * Turn a group key or a panel key into both.

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
-  Card, Empty, ErrorNote, GoTo, Loading, Notice, StatusPill, Tile,
+  Card, Empty, ErrorNote, GoTo, Loading, Notice, StatusPill,
 } from '../components/ui.jsx';
 import {
-  addBank, dateLabel, deleteBank, getBanks, money, monthLabel, pct, updateBank,
+  addBank, dateLabel, deleteBank, getBanks, money, monthLabel, updateBank,
 } from '../api.js';
 
 /**
@@ -41,13 +41,15 @@ export default function PiggyPanel({ onTab, version = 0 }) {
   if (!data) return <Loading what="piggy banks" />;
 
   const banks = data.banks ?? [];
-  const share = data.income > 0 ? data.monthly_total / data.income : 0;
   // The first bank the app wants you to have: travel, because the budget
   // deliberately has no line for it. Null once any bank exists.
   const suggested = data.suggested;
 
   return (
     <div className="stack">
+      <h2 className="section-title" style={{ cursor: 'default', margin: '8px 0 0' }}>
+        Piggy banks
+      </h2>
       {banks.length === 0 ? (
         <>
           <Empty title="No piggy banks yet" />
@@ -66,16 +68,6 @@ export default function PiggyPanel({ onTab, version = 0 }) {
         </>
       ) : (
         <>
-          <div className="grid cols-3">
-            <Tile label="Out of every month" value={money(data.monthly_total)}
-                  note={data.income > 0 ? `${pct(share)} of your take-home pay` : ''} />
-            <Tile label="Available this year"
-                  value={money(data.balance_total)} />
-            <Tile label="Piggy banks" value={String(banks.length)}
-                  note={overCount(banks)} />
-          </div>
-
-
           <div className="stack">
             {banks.map((b) => (
               <Bank key={b.id} bank={b} banks={banks}
@@ -221,12 +213,6 @@ function basisText(b) {
     case 'done': return 'finished';
     default: return '';
   }
-}
-
-function overCount(banks) {
-  const n = banks.filter((b) => b.over).length;
-  if (n === 0) return 'None of them over this year';
-  return n === 1 ? 'One is over this year' : `${n} are over this year`;
 }
 
 function nextMonth(ym) {

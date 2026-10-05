@@ -314,6 +314,26 @@ class TestPicturesNotArithmetic:
         assert not offenders, f"arithmetic rows are back in: {offenders}"
 
 
+class TestLessToRead:
+    def test_cut_back_is_one_feed(self, groups, aliases, panels):
+        """Cut back is a feed of insights. Subscriptions are cards in it, and
+        what still links to them by name lands there."""
+        assert groups["savings"] == ["savings"]
+        assert "subscriptions" not in panels
+        assert aliases.get("subscriptions") == "savings"
+        assert not (SRC / "panels" / "SubscriptionsPanel.jsx").exists()
+
+    def test_the_allowance_card_is_folded_into_the_month(self):
+        text = (SRC / "panels" / "TodayPanel.jsx").read_text(encoding="utf-8")
+        assert "MonthlyAmount" not in text
+        assert "spent_in_total" in text
+
+    def test_the_piggy_banks_have_a_title_and_no_tiles(self):
+        text = (SRC / "panels" / "PiggyPanel.jsx").read_text(encoding="utf-8")
+        assert "<Tile" not in text
+        assert ">\n        Piggy banks\n      </h2>" in text
+
+
 class TestTheSetupChecklistGoesSomewhereReal:
     def test_every_step_names_a_destination_that_exists(self, tmp_path, panels,
                                                         groups, aliases):

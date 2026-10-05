@@ -1149,9 +1149,12 @@ class TestBudgetLines:
         assert r.status_code == 400
 
     def test_bank_funded_only_shares_with_bank_funded(self, ledger):
+        """A bank-paid category can't join a budgeted line. The other way
+        round, joining a bank's line hands the category to that bank — see
+        test_lines_totals_hidden.py — so the line is still all bank-paid."""
         travel_bank(ledger)
         bad = ledger.put("/api/category-groups",
-                         json={"groups": {"Dining": "Travel"}})
+                         json={"groups": {"Travel": "Dining"}})
         assert bad.status_code == 400
         assert "piggy bank" in bad.get_json()["error"]
         ok = ledger.put("/api/category-groups",

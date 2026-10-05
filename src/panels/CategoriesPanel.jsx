@@ -19,7 +19,8 @@ const NEW = '__new__';
  * Two rules are enforced by the server and pre-empted here, so the choices
  * offered are only ones that will save: a line cannot itself be folded into
  * another, and a category a piggy bank pays for only shares a line with
- * others a piggy bank pays for.
+ * others a piggy bank pays for. Joining a bank's line is how a category
+ * becomes one: the server hands it to that bank.
  */
 export default function CategoriesPanel({ onChanged }) {
   const [data, setData] = useState(null);
@@ -29,6 +30,7 @@ export default function CategoriesPanel({ onChanged }) {
   const [naming, setNaming] = useState({});     // category -> new line name
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [adopted, setAdopted] = useState({});
 
   async function load() {
     setLoadError(null);
@@ -84,13 +86,16 @@ export default function CategoriesPanel({ onChanged }) {
     return members.length > 0 && members.every((m) => funded.has(m));
   };
 
+  // A category a piggy bank pays for only joins others it pays for. One no
+  // bank pays for can join anything: joining a bank's line hands it to that
+  // bank, which is what putting Lodging under Travel means.
   function options(c) {
     const bf = funded.has(c);
     const others = categories.filter((o) =>
-      o !== c && !draft[o] && funded.has(o) === bf);
+      o !== c && !draft[o] && (!bf || funded.has(o)));
     const names = named.filter((n) => {
       const members = categories.filter((m) => m !== c && lineOf(m) === n);
-      return members.length === 0 || namedFunded(n) === bf;
+      return members.length === 0 || !bf || namedFunded(n);
     });
     return { others, names };
   }
@@ -109,8 +114,9 @@ export default function CategoriesPanel({ onChanged }) {
     setSaveError(null);
     setSaved(false);
     try {
-      await setCategoryGroups(outgoing);
+      const r = await setCategoryGroups(outgoing);
       await load();
+      setAdopted(r?.adopted ?? {});
       await onChanged?.();
       setSaved(true);
     } catch (e) {
@@ -140,6 +146,9 @@ export default function CategoriesPanel({ onChanged }) {
         {saved && !dirty && (
           <Notice kind="good">
             Saved
+            {Object.entries(adopted).map(([cat, bank]) => (
+              <div key={cat}>{bank} piggy bank now pays for {cat}</div>
+            ))}
           </Notice>
         )}
 
@@ -198,14 +207,18 @@ export default function CategoriesPanel({ onChanged }) {
                             {others.length > 0 && (
                               <optgroup label="Put it with">
                                 {others.map((o) => (
-                                  <option key={o} value={o}>{o}</option>
+                                  <option key={o} value={o}>
+                                    {o}{!funded.has(c) && funded.has(o) ? ' · piggy bank' : ''}
+                                  </option>
                                 ))}
                               </optgroup>
                             )}
                             {names.length > 0 && (
                               <optgroup label="Your lines">
                                 {names.map((n) => (
-                                  <option key={n} value={n}>{n}</option>
+                                  <option key={n} value={n}>
+                                    {n}{!funded.has(c) && namedFunded(n) ? ' · piggy bank' : ''}
+                                  </option>
                                 ))}
                               </optgroup>
                             )}

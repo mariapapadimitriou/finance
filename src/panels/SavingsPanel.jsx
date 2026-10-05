@@ -1,217 +1,254 @@
 import { useState } from 'react';
-import { Card, Empty, StatusPill } from '../components/ui.jsx';
-import { dateLabel, dismissFinding, money, pct, restoreFinding } from '../api.js';
+import { Empty } from '../components/ui.jsx';
+import { dateLabel, dismissFinding, money, restoreFinding } from '../api.js';
 
-const EFFORT = {
-  'one-off': { label: 'One-off action', hint: 'Cancel, dispute or switch once and it stays saved.' },
-  habit: { label: 'Habit change', hint: 'Needs a sustained change, not a single decision.' },
-  negotiate: { label: 'Negotiate', hint: 'A call or a cancellation threat usually settles it.' },
-};
-
-const CONFIDENCE = (c) =>
-  (c >= 0.8 ? 'High confidence' : c >= 0.55 ? 'Moderate confidence' : 'Worth checking');
-
-export default function SavingsPanel({ insights, onRefresh, onTab }) {
+/**
+ * Cut back: one feed of insights.
+ *
+ * Three sources, one shape. What the plan says about itself (written in
+ * advance, shown when it holds — finance/insights/profile.py), what could be
+ * cut (finance/insights/rules.py, ranked by what it saves), and what the
+ * recurring charges are doing (a price that went up, a renewal coming, ones
+ * that stopped). Each card is a headline and a figure, with the one thing to
+ * do about it.
+ */
+export default function SavingsPanel({ insights, recurring, onRefresh, onTab }) {
   const [busy, setBusy] = useState(null);
+  const [showHidden, setShowHidden] = useState(false);
 
-  const findings = insights?.findings ?? [];
-  const summary = insights?.summary ?? {};
+  const findings = [...(insights?.findings ?? [])]
+    .sort((a, b) => b.annual_saving - a.annual_saving);
   const observations = insights?.observations ?? [];
+  const hidden = insights?.hidden ?? [];
+  const yearly = insights?.summary?.weighted_annual ?? 0;
 
-  async function dismiss(id) {
+  async function act(fn, id) {
     setBusy(id);
     try {
-      await dismissFinding(id);
+      await fn(id);
       await onRefresh();
     } finally {
       setBusy(null);
     }
   }
+  const hide = (id) => act(dismissFinding, id);
 
-
-  if (findings.length === 0) {
-    return (
-      <div className="stack">
-        <Observations rows={observations} onTab={onTab} />
-        <Empty title="Nothing to cut that we can see">
-          Either your spending is already tight, or there isn&apos;t enough
-          history yet. Most rules need three or more months to tell a habit
-          from a one-off — import a longer date range and check back.
-        </Empty>
-      </div>
-    );
-  }
-
-  const grouped = ['one-off', 'negotiate', 'habit']
-    .map((effort) => [effort, findings.filter((f) => f.effort === effort)])
-    .filter(([, list]) => list.length > 0);
+  const bySeverity = (s) => observations.filter((o) => o.severity === s);
+  const cards = [
+    ...bySeverity('act').map((o) => observationCard(o, onTab)),
+    ...findings.map(findingCard),
+    ...bySeverity('watch').map((o) => observationCard(o, onTab)),
+    ...subscriptionCards(recurring),
+    ...bySeverity('good').map((o) => observationCard(o, onTab)),
+    ...observations.filter((o) => !['act', 'watch', 'good'].includes(o.severity))
+      .map((o) => observationCard(o, onTab)),
+  ];
 
   return (
     <div className="stack">
-      <Observations rows={observations} onTab={onTab} />
-
-      <div className="month-hero">
-        <div>
-          <div className="hero-total">{money(summary.weighted_annual ?? 0)}</div>
-          <div className="hero-sub">a year you could save</div>
-        </div>
-      </div>
-
-
-      {grouped.map(([effort, list]) => (
-        <div key={effort} className="stack">
-          <div className="section-head">
-            <h2>{EFFORT[effort]?.label ?? effort}</h2>
-            <span className="spacer" />
-            <span className="muted small num">
-              {money(list.reduce((s, f) => s + f.annual_saving, 0))}/yr
-            </span>
+      {yearly > 0 && (
+        <div className="month-hero">
+          <div>
+            <div className="hero-total">{money(yearly)}</div>
+            <div className="hero-sub">a year you could save</div>
           </div>
-          {list.map((f) => (
-            <Finding key={f.id} finding={f} busy={busy === f.id} onDismiss={() => dismiss(f.id)} />
+        </div>
+      )}
+
+      {cards.length === 0 ? (
+        <Empty title="Nothing to cut that we can see" />
+      ) : (
+        <div className="insights">
+          {cards.map((c) => (
+            <Insight key={c.key} card={c} busy={busy === c.id}
+                     onHide={c.id ? () => hide(c.id) : null} />
           ))}
         </div>
-      ))}
+      )}
 
-      <DismissedNote onRefresh={onRefresh} />
+      {hidden.length > 0 && (
+        <div className="hidden-insights">
+          <button className="btn quiet" onClick={() => setShowHidden(!showHidden)}>
+            {hidden.length} hidden · {showHidden ? 'Close' : 'Show'}
+          </button>
+          {showHidden && (
+            <ul>
+              {hidden.map((h) => (
+                <li key={h.id}>
+                  <span>{h.title}</span>
+                  <button className="btn quiet" disabled={busy === h.id}
+                          onClick={() => act(restoreFinding, h.id)}>
+                    Restore
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function Finding({ finding: f, busy, onDismiss }) {
-  return (
-    <section className={`card finding effort-${f.effort}`}>
-      <div className="top">
-        <div>
-          <h3>{f.title}</h3>
-          <div className="meta">
-            <span className="pill">{CONFIDENCE(f.confidence)} · {pct(f.confidence)}</span>
-            {f.category && <span className="pill">{f.category}</span>}
-            {f.merchants?.slice(0, 3).map((m) => (
-              <span className="pill" key={m}>{m}</span>
-            ))}
-            {f.merchants?.length > 3 && (
-              <span className="muted small">+{f.merchants.length - 3} more</span>
-            )}
-          </div>
-        </div>
-        <div className="save">
-          <div className="big num">{money(f.annual_saving)}</div>
-          <div className="per">per year</div>
-          <div className="per num">{money(f.monthly_saving)}/mo</div>
-        </div>
-      </div>
+/* ── The card ───────────────────────────────────────────────────────────── */
 
-      {f.evidence?.length > 0 && (
-        <details className="evidence">
-          <summary>Show the {f.evidence.length} charges behind this</summary>
-          <div className="table-wrap">
+function Insight({ card: c, busy, onHide }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <article className={`insight tone-${c.tone}`}>
+      <span className="chip" aria-hidden="true"><Glyph name={c.icon} /></span>
+      <div className="body">
+        <div className="t">{c.title}</div>
+        {c.sub && <div className="s">{c.sub}</div>}
+        {c.pills?.length > 0 && (
+          <div className="pills">
+            {c.pills.map((p) => <span className="pill" key={p}>{p}</span>)}
+          </div>
+        )}
+        {open && c.evidence && (
+          <div className="table-wrap evidence">
             <table>
-              <thead>
-                <tr><th>Date</th><th>Merchant</th><th>Card</th><th className="r">Amount</th></tr>
-              </thead>
               <tbody>
-                {f.evidence.map((e, i) => (
+                {c.evidence.map((e, i) => (
                   <tr key={`${e.date}-${e.merchant}-${i}`}>
-                    <td>{dateLabel(e.date)}</td>
+                    <td className="muted">{dateLabel(e.date)}</td>
                     <td className="merchant">{e.merchant}</td>
-                    <td className="muted">{e.account}</td>
-                    <td className="r">{money(e.amount, { cents: true })}</td>
+                    <td className="r num">{money(e.amount, { cents: true })}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </details>
-      )}
-
-
-      <div className="row" style={{ marginTop: 12 }}>
-        <span className="spacer" />
-        <button className="btn quiet" onClick={onDismiss} disabled={busy}>
-          {busy ? 'Dismissing…' : 'Not useful — hide this'}
-        </button>
+        )}
+        {(c.action || c.evidence || onHide) && (
+          <div className="acts">
+            {c.action}
+            {c.evidence?.length > 0 && (
+              <button className="link" onClick={() => setOpen(!open)}>
+                {open ? 'Hide charges' : `See ${c.evidence.length} charges`}
+              </button>
+            )}
+            {onHide && (
+              <button className="link quiet" onClick={onHide} disabled={busy}>
+                {busy ? 'Hiding…' : 'Hide'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
-    </section>
+      {c.figure && (
+        <div className="fig">
+          <div className="v num">{c.figure}</div>
+          {c.unit && <div className="u">{c.unit}</div>}
+        </div>
+      )}
+    </article>
   );
 }
 
-function DismissedNote({ onRefresh }) {
-  const [id, setId] = useState('');
-  const [done, setDone] = useState(false);
-
-  async function restore(e) {
-    e.preventDefault();
-    if (!id.trim()) return;
-    await restoreFinding(id.trim());
-    await onRefresh();
-    setId('');
-    setDone(true);
-  }
-
-  return (
-    <details className="card">
-      <summary className="muted small" style={{ cursor: 'pointer' }}>
-        Restore a dismissed finding
-      </summary>
-      <form className="row" onSubmit={restore} style={{ marginTop: 12 }}>
-        <input
-          type="text"
-          value={id}
-          onChange={(e) => { setId(e.target.value); setDone(false); }}
-          placeholder="Finding id (e.g. fees_1a2b3c4d5e)"
-          style={{ flex: 1, minWidth: 220 }}
-        />
-        <button className="btn" type="submit">Restore</button>
-        {done && <span className="small muted">Restored.</span>}
-      </form>
-    </details>
-  );
-}
-
-const SEVERITY = {
-  act: { state: 'critical', label: 'Worth doing something about' },
-  watch: { state: 'warning', label: 'Worth knowing' },
-  good: { state: 'good', label: 'Going well' },
+const GLYPHS = {
+  alert: 'M12 3l10 18H2L12 3zM12 10v4M12 17.5v.01',
+  eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  check: 'M20 6L9 17l-5-5',
+  scissors: 'M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12',
+  repeat: 'M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3',
+  up: 'M12 19V5M5 12l7-7 7 7',
+  calendar: 'M4 6h16v14H4zM4 10h16M9 3v4M15 3v4',
+  pause: 'M8 5v14M16 5v14',
 };
 
-/**
- * What your plan says about itself.
- *
- * Written in advance, each with the condition that makes it true, and shown
- * only when that condition holds — see finance/insights/profile.py. The
- * figures come from the same functions the tabs they link to use, so following
- * one of these never lands you on a page that disagrees with it.
- */
-function Observations({ rows, onTab }) {
-  if (!rows || rows.length === 0) return null;
-
+function Glyph({ name }) {
   return (
-    <Card title="What your plan says">
-      <div className="stack" style={{ gap: 16 }}>
-        {rows.map((o) => {
-          const tone = SEVERITY[o.severity] ?? SEVERITY.watch;
-          return (
-            <div key={o.id}>
-              <div className="row" style={{ gap: 10, marginBottom: 4 }}>
-                <StatusPill state={tone.state}>{tone.label}</StatusPill>
-                <strong>{o.title}</strong>
-                {o.metric && (
-                  <>
-                    <span className="spacer" />
-                    <span className="num small muted">{o.metric}</span>
-                  </>
-                )}
-              </div>
-              {o.tab && o.action && onTab && (
-                <button className="link" onClick={() => onTab(o.tab)}>
-                  {o.action}
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </Card>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+         strokeLinecap="round" strokeLinejoin="round">
+      <path d={GLYPHS[name] ?? GLYPHS.eye} />
+    </svg>
   );
+}
+
+/* ── Where the cards come from ──────────────────────────────────────────── */
+
+const OBSERVATION_TONE = {
+  act: ['critical', 'alert'], watch: ['warning', 'eye'], good: ['good', 'check'],
+};
+
+function observationCard(o, onTab) {
+  const [tone, icon] = OBSERVATION_TONE[o.severity] ?? OBSERVATION_TONE.watch;
+  return {
+    key: `o-${o.id}`, id: o.id, tone, icon,
+    title: o.title,
+    figure: o.metric || null,
+    action: o.tab && o.action && onTab
+      ? <button className="link" onClick={() => onTab(o.tab)}>{o.action}</button>
+      : null,
+  };
+}
+
+function findingCard(f) {
+  const merchants = f.merchants ?? [];
+  return {
+    key: `f-${f.id}`, id: f.id, tone: 'brand', icon: 'scissors',
+    title: f.title,
+    sub: `${money(f.monthly_saving)} a month`,
+    figure: money(f.annual_saving), unit: 'a year',
+    pills: [
+      f.category,
+      ...merchants.slice(0, 2),
+      merchants.length > 2 ? `+${merchants.length - 2} more` : null,
+    ].filter(Boolean),
+    evidence: f.evidence?.length ? f.evidence : null,
+  };
+}
+
+const RARE = new Set(['quarterly', 'semiannual', 'annual']);
+const RENEWAL_DAYS = 14;
+
+function subscriptionCards(recurring) {
+  const items = recurring?.recurring ?? [];
+  const summary = recurring?.summary ?? {};
+  const active = items.filter((r) => r.active);
+  const cards = [];
+
+  if (active.length > 0) {
+    cards.push({
+      key: 's-total', tone: 'neutral', icon: 'repeat',
+      title: `${active.length} subscription${active.length === 1 ? '' : 's'}`,
+      sub: `${money(summary.annual_total ?? 0)} a year`,
+      figure: money(summary.monthly_total ?? 0), unit: 'a month',
+      pills: [...active].sort((a, b) => b.annual_cost - a.annual_cost)
+        .slice(0, 4).map((r) => r.merchant),
+    });
+  }
+
+  active.filter((r) => r.price_change?.direction === 'increase').forEach((r) => {
+    cards.push({
+      key: `s-up-${r.merchant}-${r.amount}`, tone: 'warning', icon: 'up',
+      title: `${r.merchant} went up`,
+      sub: `${money(r.price_change.from, { cents: true })} → ${
+        money(r.price_change.to, { cents: true })}`,
+      figure: `+${Math.round(r.price_change.pct * 100)}%`,
+    });
+  });
+
+  const today = new Date(new Date().toDateString());
+  active.filter((r) => RARE.has(r.cadence) && r.next_expected).forEach((r) => {
+    const days = Math.round((new Date(`${r.next_expected}T00:00:00`) - today) / 86400000);
+    if (days < 0 || days > RENEWAL_DAYS) return;
+    cards.push({
+      key: `s-renew-${r.merchant}-${r.amount}`, tone: 'neutral', icon: 'calendar',
+      title: `${r.merchant} renews ${days === 0 ? 'today' : dateLabel(r.next_expected)}`,
+      figure: money(r.amount, { cents: true }),
+    });
+  });
+
+  const lapsed = items.filter((r) => !r.active && r.confidence >= 0.6);
+  if (lapsed.length > 0) {
+    cards.push({
+      key: 's-lapsed', tone: 'neutral', icon: 'pause',
+      title: `${lapsed.length} stopped charging`,
+      sub: lapsed.slice(0, 3).map((r) => r.merchant).join(', ')
+        + (lapsed.length > 3 ? ` and ${lapsed.length - 3} more` : ''),
+    });
+  }
+  return cards;
 }
