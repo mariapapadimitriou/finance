@@ -2,6 +2,12 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "flask",
   "buildCommand": "npm install && npm run build",
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "*": false
+    }
+  },
   "env": {
     "LEDGER_DB": "/tmp/ledger.db"
   },
