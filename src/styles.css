@@ -424,7 +424,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 4px 32px 80px; }
 /* ── Controls ────────────────────────────────────────────────────────────── */
 
 select, input[type="text"], input[type="search"], input[type="number"],
-input[type="date"], input[type="month"] {
+input[type="date"], input[type="month"], input[type="email"] {
   background: var(--surface);
   border: 1px solid var(--border-firm);
   border-radius: var(--r-sm);
@@ -879,7 +879,7 @@ details.evidence[open] summary::before { transform: rotate(90deg); }
  */
 @media (max-width: 640px) {
   select, input[type="text"], input[type="search"], input[type="number"],
-  input[type="date"], input[type="month"], input[type="password"] {
+  input[type="date"], input[type="month"], input[type="password"], input[type="email"] {
     /* 16px exactly: below it Safari zooms on focus. */
     font-size: 16px;
     min-height: 44px;
@@ -1270,7 +1270,7 @@ h3 { font-size: 1.02rem; font-weight: 680; }
 
 /* Controls: soft fills instead of outlines, fully rounded buttons. */
 select, input[type="text"], input[type="search"], input[type="number"],
-input[type="date"], input[type="month"], input[type="password"] {
+input[type="date"], input[type="month"], input[type="password"], input[type="email"] {
   background: var(--surface-2);
   border: 1px solid transparent;
   border-radius: var(--r-sm);
@@ -1470,3 +1470,12 @@ td { border-top-color: var(--border); }
   .insight .chip { width: 34px; height: 34px; }
 }
 .ring-head h2 .week-dates { color: var(--muted); font-weight: 600; font-size: .95rem; letter-spacing: 0; }
+.gate-title { font-size: 1.15rem; font-weight: 700; letter-spacing: -.015em; margin: 0 0 14px; }
+.gate-note { color: var(--ink-2); font-size: .9rem; margin: 0 0 14px; line-height: 1.45; }
+.gate-card .code-input { font-size: 1.4rem; letter-spacing: .35em; text-align: center; font-variant-numeric: tabular-nums; }
+.gate-card input[type="email"] {
+  display: block; box-sizing: border-box; width: 100%; margin: 7px 0 0;
+  padding: 10px 12px; border-radius: var(--r-sm); border: 1px solid var(--border-firm);
+  background: var(--surface-2); color: var(--ink); font: inherit;
+}
+.gate-card input[type="email"]:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
