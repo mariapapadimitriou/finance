@@ -1000,8 +1000,11 @@ def projection():
     plan = money_plan.plan(income or 0.0, fixed, savings,
                            banks) if income else None
 
+    committed = {f.category for f in fixed if f.category}
+    pace = projections.current_pace(txns, _today_iso(), exclude=committed)
     result = projections.project(txns, income, weighted,
-                                 int(request.args.get("months", 12)), plan=plan)
+                                 int(request.args.get("months", 12)), plan=plan,
+                                 pace=pace)
     # What the slider may ask for: everything that is not already promised.
     # Past this the plan has nothing left to divide, and the weekly number is
     # zero before the month starts.
@@ -1019,7 +1022,190 @@ def projection():
     # been inferred from payroll landing on an imported card. This one is the
     # figure you typed, and is null until you do.
     result["configured_income"] = income
+    if result.get("available"):
+        _add_levels(st, result, savings)
     return jsonify(result)
+
+
+def _invested_balance(st) -> dict:
+    """What you have saved and invested today, outside your goals.
+
+    Typed on Ahead. Until it is, the figure from Retirement stands in, since
+    it is the same money.
+    """
+    raw = st.setting("invested_balance")
+    if raw is not None:
+        as_of = st.setting("invested_as_of") or _today_iso()[:7]
+        source = "saved"
+        balance = float(raw)
+    else:
+        saved = st.coastfire()
+        balance = float(saved["invested"]) if saved else 0.0
+        as_of = saved["as_of"] if saved else None
+        source = "retirement" if saved else None
+    from .coastfire import _index
+    stale = bool(as_of) and _index(_today_iso()[:7]) - _index(as_of) > 3
+    return {"balance": round(balance, 2), "as_of": as_of, "source": source,
+            "stale": stale}
+
+
+def _add_levels(st, result: dict, savings: float) -> None:
+    """Goals take their monthly amounts first; investing gets the rest."""
+    from . import coastfire, goals as goal_math, levels
+
+    held = _invested_balance(st)
+    funding = goal_math.funding(st.goals(), savings)
+    investing = funding["to_investing"]
+    ahead = result.get("ahead") or 0.0
+    coast = None
+    saved = st.coastfire()
+    if saved:
+        coast = coastfire.compute(coastfire.Inputs.from_dict(saved), _today_iso())
+    result["goals_funding"] = funding
+    result["investing_monthly"] = investing
+    result["invested_balance"] = held
+    result["invested"] = projections.invested(investing, opening=held["balance"])
+    result["levels"] = levels.compute(held["balance"], investing,
+                                      max(investing + ahead, 0.0),
+                                      _today_iso(), coast)
+
+
+@bp.put("/invested")
+def save_invested():
+    """What you have saved and invested today, as of this month."""
+    st = store()
+    try:
+        balance = round(float((request.get_json(silent=True) or {}).get("balance")), 2)
+    except (TypeError, ValueError):
+        return jsonify({"error": "The balance needs to be a number."}), 400
+    if balance < 0:
+        return jsonify({"error": "The balance can't be negative."}), 400
+    st.set_setting("invested_balance", balance)
+    st.set_setting("invested_as_of", _today_iso()[:7])
+    return jsonify({"ok": True, **_invested_balance(st)})
+
+
+def _pace_ahead(st, txns) -> float | None:
+    """How far this month's pace runs under the plan's leftover, a month.
+
+    Positive when spending is under budget. None without a plan.
+    """
+    from . import money_plan
+
+    income = st.float_setting("monthly_income", 0.0)
+    if income <= 0:
+        return None
+    fixed = st.fixed_costs()
+    result = money_plan.plan(income, fixed, st.float_setting("savings_target", 0.0),
+                             _bank_monthly(st))
+    pace = projections.current_pace(txns, _today_iso(),
+                                    exclude={f.category for f in fixed if f.category})
+    if not pace:
+        return None
+    return round(result["leftover"] - pace["projected_spend"], 2)
+
+
+# ── Savings goals ────────────────────────────────────────────────────────────
+# Something you are putting money towards. See finance/goals.py.
+
+def _goals_payload(st, txns=None) -> dict:
+    from . import goals as goal_math
+
+    txns = st.all_transactions() if txns is None else txns
+    saved = st.goals()
+    ahead = _pace_ahead(st, txns)
+    extra = ahead if ahead and ahead > 0 else 0.0
+    today = _today_iso()
+    return {
+        "goals": [goal_math.status(g, today, extra) for g in saved],
+        "ahead": ahead,
+        **goal_math.funding(saved, st.float_setting("savings_target", 0.0)),
+    }
+
+
+def _goal_fields(body: dict, partial: bool) -> tuple[dict | None, str | None]:
+    out = {}
+    if "name" in body or not partial:
+        name = str(body.get("name") or "").strip()
+        if not name:
+            return None, "Give the goal a name."
+        if len(name) > 60:
+            return None, "Goal names are at most 60 characters."
+        out["name"] = name
+    for key, label, positive in (("target", "The target", True),
+                                 ("saved", "Saved so far", False),
+                                 ("monthly", "The monthly amount", False)):
+        if key not in body and (partial or key != "target"):
+            continue
+        try:
+            value = round(float(body.get(key) or 0), 2)
+        except (TypeError, ValueError):
+            return None, f"{label} needs to be a number."
+        if value < 0 or (positive and value <= 0):
+            return None, f"{label} has to be more than $0." if positive \
+                else f"{label} can't be negative."
+        out[key] = value
+    return out, None
+
+
+@bp.get("/goals")
+def list_goals():
+    return jsonify(_goals_payload(store()))
+
+
+@bp.post("/goals")
+def create_goal():
+    st = store()
+    fields, error = _goal_fields(request.get_json(silent=True) or {}, partial=False)
+    if error:
+        return jsonify({"error": error}), 400
+    goal_id = st.add_goal(fields["name"], fields["target"], fields.get("saved", 0.0),
+                          fields.get("monthly", 0.0), _today_iso())
+    return jsonify({"id": goal_id, **_goals_payload(st)}), 201
+
+
+@bp.patch("/goals/<int:goal_id>")
+def edit_goal(goal_id: int):
+    st = store()
+    body = request.get_json(silent=True) or {}
+    fields, error = _goal_fields(body, partial=True)
+    if error:
+        return jsonify({"error": error}), 400
+    if "position" in body:
+        try:
+            fields["position"] = int(body["position"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "Position needs to be a number."}), 400
+    if not st.update_goal(goal_id, _today_iso(), **fields):
+        return jsonify({"error": "No such goal."}), 404
+    return jsonify(_goals_payload(st))
+
+
+@bp.post("/goals/<int:goal_id>/deposit")
+def deposit_to_goal(goal_id: int):
+    """Money you put towards a goal — or took back out, as a negative."""
+    st = store()
+    goal = st.goal(goal_id)
+    if not goal:
+        return jsonify({"error": "No such goal."}), 404
+    try:
+        amount = round(float((request.get_json(silent=True) or {}).get("amount")), 2)
+    except (TypeError, ValueError):
+        return jsonify({"error": "The amount needs to be a number."}), 400
+    if amount == 0:
+        return jsonify({"error": "Add an amount."}), 400
+    if goal["saved"] + amount < 0:
+        return jsonify({"error": f"There's only ${goal['saved']:,.2f} in it."}), 400
+    st.update_goal(goal_id, _today_iso(), saved=round(goal["saved"] + amount, 2))
+    return jsonify(_goals_payload(st))
+
+
+@bp.delete("/goals/<int:goal_id>")
+def remove_goal(goal_id: int):
+    st = store()
+    if not st.delete_goal(goal_id):
+        return jsonify({"error": "No such goal."}), 404
+    return jsonify(_goals_payload(st))
 
 
 # ── Plaid ────────────────────────────────────────────────────────────────

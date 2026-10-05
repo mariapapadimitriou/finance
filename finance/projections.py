@@ -36,9 +36,59 @@ def _monthly_totals(transactions) -> dict[str, dict]:
     return {k: {kk: round(vv, 2) for kk, vv in v.items()} for k, v in out.items()}
 
 
+# Before this many days of a month, its own pace is mostly noise — one grocery
+# shop on the 2nd projects a $1,500 month — so the last 30 days stand in.
+EARLY_DAYS = 7
+
+
+def current_pace(transactions, today: str,
+                 exclude: set[str] | None = None) -> dict | None:
+    """Where this month's spending lands if it carries on like this.
+
+    Spent so far, divided by the days gone, times the days in the month. In
+    the first week the month has too little in it to say, so the last 30 days
+    are used instead. A month with nothing imported yet is not a month of no
+    spending: the latest month that has data is used, as it finished.
+    """
+    from datetime import date, timedelta
+
+    from .analytics import counts_as_spending, spend_amount
+    from .money_plan import days_in_month
+
+    rows = [t for t in transactions if counts_as_spending(t)
+            and (t.category or "Other") not in (exclude or set())]
+    if not rows:
+        return None
+
+    month = today[:7]
+    have = sorted({t.month for t in rows})
+    if month not in have:
+        earlier = [m for m in have if m < month]
+        if not earlier:
+            return None
+        month = earlier[-1]
+    total_days = days_in_month(month)
+    day = int(today[8:10]) if today[:7] == month else total_days
+
+    spent = round(sum(spend_amount(t) for t in rows
+                      if t.month == month and int(t.date[8:10]) <= day), 2)
+    if day >= EARLY_DAYS:
+        projected, basis = spent / day * total_days, "month"
+    else:
+        end = date.fromisoformat(f"{month}-{day:02d}")
+        start = (end - timedelta(days=29)).isoformat()
+        last30 = sum(spend_amount(t) for t in rows
+                     if start <= t.date <= end.isoformat())
+        projected, basis = last30 / 30 * total_days, "30 days"
+    return {"month": month, "day": day, "days_in_month": total_days,
+            "spent": spent, "projected_spend": round(projected, 2),
+            "basis": basis}
+
+
 def project(transactions, monthly_income: float | None = None,
             found_savings_annual: float = 0.0, months_ahead: int = 12,
-            plan: dict | None = None, today: str | None = None) -> dict:
+            plan: dict | None = None, today: str | None = None,
+            pace: dict | None = None) -> dict:
     """Project cumulative savings forward under two scenarios.
 
     `plan` is the result of `money_plan.plan` when one has been set up. It
@@ -101,7 +151,13 @@ def project(transactions, monthly_income: float | None = None,
             "months_observed": len(observed),
         }
 
-    surplus, basis = _surplus(income, plan_spend, plan)
+    # The pace line is this month's pace when there is one: what you are
+    # doing now, rather than a median of what you used to do.
+    pace_info = pace
+    pace_spend = pace_info["projected_spend"] if pace_info else plan_spend
+    surplus, basis = _surplus(income, pace_spend, plan)
+    basis["typical_spend"] = plan_spend
+    basis["pace_spend"] = pace_spend
     on_plan = basis.get("on_plan")
     monthly_cuts = round(found_savings_annual / 12, 2)
 
@@ -148,6 +204,12 @@ def project(transactions, monthly_income: float | None = None,
         # What following the plan accumulates each month, against what the
         # recent pace does. The chart draws both.
         "monthly_on_plan": basis.get("on_plan"),
+        # This month's pace, and how far it runs ahead of (or behind) the
+        # plan each month. Positive is good: spending under the budget.
+        "pace_month": ({**pace_info, "leftover": basis.get("leftover")}
+                       if pace_info else None),
+        "ahead": (round(surplus - basis["on_plan"], 2)
+                  if basis.get("on_plan") is not None else None),
         "caveat": (
             # With a plan, commitments are known and subtracted, so the old
             # "ceiling" warning would now be false modesty about a figure that
@@ -279,8 +341,9 @@ def invested(monthly: float, opening: float = 0.0) -> dict | None:
     them is the only part of this that is interesting — and the only part that
     is not simply the contribution restated.
     """
-    if monthly <= 0:
+    if monthly <= 0 and opening <= 0:
         return None
+    monthly = max(monthly, 0.0)
 
     def at(rate: float, years: int) -> dict:
         months = years * 12
