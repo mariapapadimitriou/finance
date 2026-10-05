@@ -99,8 +99,8 @@ export const allocateToBank  = (id, txnId) =>
   json('POST', `/api/piggy/${id}/allocate`, { txn_id: txnId });
 export const unallocate      = (txnId) =>
   req(`/api/piggy/allocations/${txnId}`, { method: 'DELETE' });
-export const coverFromBank   = (id, amount, month) =>
-  json('POST', `/api/piggy/${id}/cover`, { amount, month });
+// Put back money a bank lent the month. Nothing creates these any more.
+export const undoDraw        = (id) => req(`/api/piggy/draws/${id}`, { method: 'DELETE' });
 
 // The mortgage: saved terms, whose monthly cost is the Mortgage commitment.
 export const getMortgage     = () => req('/api/mortgage');

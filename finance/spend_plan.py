@@ -273,14 +273,17 @@ def simulate(state: dict, amount: float, pots=None) -> dict:
         "viable": new_daily >= 0,
     }]
 
+    # What paying from a bank would do — nothing is taken from it here. The
+    # real charge is charged to the bank when it arrives, and the bank pays
+    # the whole of it, so that is the figure shown.
     for bank, available in (pots or []):
         options.append({
             "kind": "cover",
             "bank_id": bank.id,
-            "label": f"Cover {_money(short)} from {bank.name}",
+            "label": f"Pay it from {bank.name}",
             "detail": f"{bank.name} goes from {_money(available)} to "
-                      f"{_money(round(available - short, 2))}.",
-            "viable": available >= short,
+                      f"{_money(round(available - amount, 2))}.",
+            "viable": available >= amount,
         })
 
     if left < 0:
