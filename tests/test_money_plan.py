@@ -121,3 +121,69 @@ class TestWhatThePlanAdmits:
         assert dining["budget"] == 375
         assert dining["typical"] == 600.0
         assert dining["change"] == -225
+
+
+class TestUsualSpendingFirst:
+    """Each line starts at what you usually spend; the rest is a buffer.
+
+    Splitting the whole leftover in proportion to history handed every line
+    far more than you ever spend whenever the leftover was large — a budget
+    of $2,227 beside "usually $298".
+    """
+
+    MONTHS = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05"]
+
+    def ledger(self):
+        out = []
+        for m, dining in zip(self.MONTHS, [100, 120, 110, 900, 105]):
+            out += [txn(m, "Groceries", 400), txn(m, "Dining", dining)]
+        out.append(txn("2026-02", "Gifts & Charity", 240))   # once in five months
+        out.append(txn("2026-06", "Groceries", 50))         # the month under way
+        return out
+
+    def test_a_line_is_its_median_month(self):
+        typical = money_plan.typical_monthly(self.ledger())
+        assert typical["Groceries"] == 400
+        assert typical["Dining"] == 110      # the $900 month does not set it
+
+    def test_the_month_under_way_is_left_out(self):
+        assert money_plan.typical_monthly(self.ledger())["Groceries"] == 400
+
+    def test_an_occasional_line_is_spread_over_the_year(self):
+        assert money_plan.typical_monthly(self.ledger())["Gifts & Charity"] == 48
+
+    def test_bank_funded_categories_are_left_out(self):
+        typical = money_plan.typical_monthly(self.ledger(),
+                                             bank_funded={"Dining"})
+        assert "Dining" not in typical
+
+    def test_lines_follow_the_grouping(self):
+        typical = money_plan.typical_monthly(
+            self.ledger(), groups={"Groceries": "Food", "Dining": "Food"})
+        assert typical["Food"] == 510
+
+    def test_what_is_left_over_is_the_buffer(self):
+        s = money_plan.split(self.ledger(), 1000)
+        assert s["budgets"] == {"Groceries": 400, "Dining": 110,
+                                "Gifts & Charity": 48}
+        assert s["buffer"] == 442 and s["short"] == 0
+        assert sum(s["budgets"].values()) + s["buffer"] == 1000
+
+    def test_a_tight_plan_scales_every_line_down_to_fit(self):
+        s = money_plan.split(self.ledger(), 279)
+        assert s["buffer"] == 0
+        assert s["short"] == pytest.approx(279, abs=0.01)
+        assert round(sum(s["budgets"].values()), 2) == 279
+        assert s["budgets"]["Groceries"] == pytest.approx(200, abs=0.02)
+
+    def test_nothing_to_divide(self):
+        assert money_plan.split(self.ledger(), 0)["budgets"] == {}
+        assert money_plan.split([], 500) == {
+            "budgets": {}, "buffer": 500, "short": 0.0, "typical": {}}
+
+    def test_the_weekly_pool_leaves_the_buffer_out(self):
+        pool = money_plan.monthly_allowance(
+            3000, fixed(("Rent", 1500)), 500, 0, self.ledger())
+        # Dining and Gifts are discretionary; Groceries is not; the $842
+        # buffer is no one's.
+        assert pool == 158

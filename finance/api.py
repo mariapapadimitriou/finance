@@ -826,7 +826,7 @@ def _allowance(st, txns=None) -> tuple[float, bool]:
     if income > 0:
         amount = money_plan.monthly_allowance(
             income, st.fixed_costs(), st.float_setting("savings_target", 0.0),
-            _bank_monthly(st), money_plan.variable_shares(txns, bank_funded=st.bank_funded_categories()))
+            _bank_monthly(st), txns, bank_funded=st.bank_funded_categories())
         if amount > 0:
             return amount, True
     return spend_plan.suggest_monthly_amount(txns), False
@@ -855,8 +855,9 @@ def _derivation(st, txns, allowance: float, from_plan: bool) -> dict:
     result = money_plan.plan(income, st.fixed_costs(),
                              st.float_setting("savings_target", 0.0),
                              _bank_monthly(st))
-    shares = money_plan.variable_shares(txns, bank_funded=st.bank_funded_categories())
-    budgets = money_plan.category_budgets(result["leftover"], shares)
+    divided = money_plan.split(txns, result["leftover"],
+                               bank_funded=st.bank_funded_categories())
+    budgets = divided["budgets"]
 
     # The categories actually making up the essential half, biggest first,
     # rather than a hardcoded example. The note used to read "groceries,
@@ -876,7 +877,11 @@ def _derivation(st, txns, allowance: float, from_plan: bool) -> dict:
         "banks": result["banks"],
         # "Yours to spend" on the Plan tab.
         "leftover": result["leftover"],
-        "essentials": round(result["leftover"] - allowance, 2),
+        # The leftover is essentials + the weekly number + the buffer, which
+        # belongs to neither until you assign it.
+        "essentials": round(sum(v for c, v in budgets.items()
+                                if not is_discretionary(c)), 2),
+        "buffer": divided["buffer"],
         "essential_categories": essential_categories,
         "discretionary": allowance,
     }
@@ -1174,8 +1179,10 @@ def plan_setup():
     banks = _bank_monthly(st)
     result = money_plan.plan(income, fixed, savings, banks)
     shares = money_plan.variable_shares(txns, bank_funded=st.bank_funded_categories())
-    historical = _typical_by_category(txns)
-    typical_total = round(sum(historical.get(c, 0.0) for c in shares), 2)
+    divided = money_plan.split(txns, result["leftover"],
+                               bank_funded=st.bank_funded_categories())
+    historical = divided["typical"]
+    typical_total = round(sum(historical.values()), 2)
 
     result["fixed"] = _mark_mortgage(st, result["fixed"])
     return jsonify({
@@ -1185,8 +1192,7 @@ def plan_setup():
         # What the daily allowance would divide: the discretionary slice,
         # since groceries come out of the leftover but not out of a daily
         # pocket-money figure.
-        "daily_pool": money_plan.discretionary_pool(
-            money_plan.category_budgets(result["leftover"], shares)),
+        "daily_pool": money_plan.discretionary_pool(divided["budgets"]),
         # Divided by this month's real length, the same divisor Today uses, so
         # the two tabs cannot print different numbers for one figure. The month
         # travels with it, because Today may be showing an earlier one when the
@@ -1196,13 +1202,17 @@ def plan_setup():
         # A full week's worth of the discretionary pool, so the plan quotes
         # the same weekly figure Today leads with rather than the browser
         # working one out.
-        "weekly_share": round(money_plan.discretionary_pool(
-            money_plan.category_budgets(result["leftover"], shares))
+        "weekly_share": round(money_plan.discretionary_pool(divided["budgets"])
             / money_plan.days_in_month(_plan_month()) * 7, 2),
         "month": _plan_month(),
         "shares": shares,
-        "categories": money_plan.explain(result["leftover"], shares, historical),
-        "suggested_budgets": money_plan.category_budgets(result["leftover"], shares),
+        "categories": money_plan.explain(result["leftover"], shares, historical,
+                                         budgets_override=divided["budgets"]),
+        "suggested_budgets": divided["budgets"],
+        # What the leftover has beyond your usual spending, and what it is
+        # short of it — see money_plan.split.
+        "buffer": divided["buffer"],
+        "short": divided["short"],
         "has_history": bool(shares),
         "uncategorised": money_plan.uncategorised_warning(shares),
         "current_budgets": st.budgets(),
@@ -1251,9 +1261,8 @@ def apply_plan_budgets():
 
     txns = st.all_transactions()
     grouping = st.category_groups()
-    shares = money_plan.variable_shares(txns, groups=grouping,
-                                         bank_funded=st.bank_funded_categories())
-    budgets = money_plan.category_budgets(result["leftover"], shares)
+    budgets = money_plan.split(txns, result["leftover"], groups=grouping,
+                               bank_funded=st.bank_funded_categories())["budgets"]
     if not budgets:
         return jsonify({"error": "Not enough spending history yet to know how "
                                  "to divide it. Import a month or two first."}), 400
@@ -1276,8 +1285,8 @@ def apply_plan_budgets():
     # saved — Today derives it from this same arithmetic on every request, so
     # there is no copy of it to fall out of date. It is worked out per
     # category, never per line, so how you group a budget cannot move it.
-    pool = money_plan.discretionary_pool(money_plan.category_budgets(
-        result["leftover"], money_plan.variable_shares(txns, bank_funded=st.bank_funded_categories())))
+    pool = money_plan.discretionary_pool(money_plan.split(
+        txns, result["leftover"], bank_funded=st.bank_funded_categories())["budgets"])
     return jsonify({"ok": True, "budgets": budgets,
                     "monthly_amount": pool,
                     "leftover": result["leftover"]})
@@ -1826,28 +1835,6 @@ def nudge():
     return jsonify({"nudge": nudge_mod.for_yesterday(txns, state)})
 
 
-def _typical_by_category(transactions,
-                         groups: dict[str, str] | None = None) -> dict[str, float]:
-    """Median monthly spend per category (or per line) — shown beside a budget.
-
-    Over every category a budget now covers, essentials included. Restricting
-    it to discretionary ones left the largest line on the page — groceries —
-    with no "you usually spend" to compare against, which is precisely the
-    comparison that makes a budget believable.
-    """
-    import statistics
-    from .analytics import counts_as_spending, spend_amount
-
-    per: dict[str, dict[str, float]] = {}
-    for t in transactions:
-        category = (groups or {}).get(t.category or "Other", t.category or "Other")
-        if t.amount <= 0 or not counts_as_spending(t):
-            continue
-        per.setdefault(category, {})
-        per[category][t.month] = (per[category].get(t.month, 0.0)
-                                  + spend_amount(t))
-    return {c: round(statistics.median(m.values()), 2) for c, m in per.items() if m}
-
 @bp.get("/trips/suggestions")
 def trip_suggestions():
     """Trips the ledger can see, which nobody has had to remember.
@@ -1925,6 +1912,7 @@ def remove_trip(trip_id: int):
 @bp.get("/budgets")
 def budgets():
     from . import groups as budget_lines
+    from . import money_plan
 
     st = store()
     txns = _txns()
@@ -1948,7 +1936,9 @@ def budgets():
          if k in lines and k not in funded}
     split = _plan_split(st, txns)
     plan_budgets = split["budgets"] if split else {}
-    typical = _typical_by_category(txns, grouping)
+    # "Usually", beside each budget: the same figure the plan starts each
+    # line from, so a budget adopted from the plan reads as exactly that.
+    typical = money_plan.typical_monthly(txns, groups=grouping)
 
     # One row per line in Settings → Categories, in that order, so this page
     # is the list you made there. A line used to appear only if it had a
@@ -2054,6 +2044,14 @@ def budgets():
         # when they do.
         "plan_leftover": split["leftover"] if split else None,
         "plan_budgets": plan_budgets,
+        # What the plan leaves beyond your usual spending, assigned to no
+        # line; and how far short of your usual spending it falls.
+        "plan_buffer": split["buffer"] if split else None,
+        "plan_short": split["short"] if split else None,
+        # The leftover not covered by the budgets you have saved — the buffer
+        # as it actually stands, once you have adopted or changed budgets.
+        "unassigned": (round(split["leftover"] - sum(b.values()), 2)
+                       if split and b else None),
         # Whether these budgets still divide the money the plan actually has.
         "drift": _budget_drift(split, b),
     })
@@ -2080,11 +2078,13 @@ def _plan_split(st, txns) -> dict | None:
     # Split by budget line, which is a category unless you have folded some
     # together in Settings. The weekly number is not worked out here and never
     # sees the grouping — see finance/groups.py.
-    shares = money_plan.variable_shares(txns, groups=st.category_groups(),
-                                         bank_funded=st.bank_funded_categories())
+    divided = money_plan.split(txns, result["leftover"], groups=st.category_groups(),
+                               bank_funded=st.bank_funded_categories())
     return {
         "leftover": result["leftover"],
-        "budgets": money_plan.category_budgets(result["leftover"], shares),
+        "budgets": divided["budgets"],
+        "buffer": divided["buffer"],
+        "short": divided["short"],
         "banks": result["banks"],
         "savings": result["savings"],
         "fixed_total": result["fixed_total"],
@@ -2109,10 +2109,13 @@ def _budget_drift(split: dict | None, saved: dict) -> dict | None:
     if not split or not saved:
         return None
 
+    # Budgets under the leftover are not drift: the rest is the buffer, which
+    # the plan leaves unassigned on purpose. Only budgets that hand out more
+    # than the plan has are a problem worth a notice.
     leftover = split["leftover"]
     saved_total = round(sum(saved.values()), 2)
     gap = round(saved_total - leftover, 2)
-    if abs(gap) <= 1:
+    if gap <= 1:
         return None
 
     return {

@@ -456,7 +456,9 @@ class TestThePlanEndpoints:
         self.setup_plan(client)
         applied = client.post("/api/plan/setup/apply").get_json()
         assert applied["leftover"] == 2200
-        assert sum(applied["budgets"].values()) == pytest.approx(2200, abs=0.011)
+        buffer = client.get("/api/plan/setup").get_json()["buffer"]
+        assert sum(applied["budgets"].values()) + buffer == pytest.approx(
+            2200, abs=0.011)
 
     def test_the_daily_pool_is_only_the_discretionary_part(self, client):
         """Groceries come out of the leftover and are not pocket money."""
