@@ -1,6 +1,6 @@
-"""Sending the few emails the app sends: sign-in codes and reset links.
+"""Sending the one email the app sends: a link to reset a forgotten password.
 
-Plain SMTP, so any free mailbox can send them. The setup this was built for is
+Plain SMTP, so any free mailbox can send it. The setup this was built for is
 a Gmail account with an app password (free, around 500 messages a day); the
 host and port default to Gmail's, and any other SMTP server works by setting
 them.
@@ -11,9 +11,8 @@ them.
     SPENDIE_SMTP_PORT      default 587 (STARTTLS)
     SPENDIE_MAIL_FROM      default the SMTP user, e.g. "Spendie <you@gmail.com>"
 
-Until the user and password are set, `configured()` is false and the app
-behaves as it did before email existed: password-only sign-in, and a reset
-screen that says email isn't set up.
+Until the user and password are set, `configured()` is false and "Forgot
+password?" says email isn't set up rather than pretending to send.
 """
 
 from __future__ import annotations

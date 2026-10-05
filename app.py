@@ -73,12 +73,7 @@ def _hosted_db_path() -> str | None:
 # files the sign-in screen is made of. Everything else, including every /api
 # route and the frontend shell, needs one.
 _OPEN_PATHS = frozenset({"/api/auth/status", "/api/auth/login", "/api/auth/signup",
-                         "/api/auth/verify", "/api/auth/resend",
                          "/api/auth/forgot", "/api/auth/reset"})
-
-TRUST_COOKIE = "spendie_trust"
-TRUST_DAYS = 30
-PENDING_SECONDS = 10 * 60
 
 
 def _is_static_asset(path: str) -> bool:
@@ -156,70 +151,7 @@ def _install_auth(app: Flask) -> None:
         session["pw"] = user.fingerprint
         session.permanent = True
 
-    # ── Email: codes at sign-in, links for a forgotten password ─────────────
-    from itsdangerous import BadSignature, URLSafeTimedSerializer
-    trust_signer = URLSafeTimedSerializer(app.secret_key, salt="spendie.trust.v1")
-
-    def trusted(user) -> bool:
-        """Has this browser entered a code for this account, with this
-        password, in the last 30 days?"""
-        raw = request.cookies.get(TRUST_COOKIE)
-        if not raw:
-            return False
-        try:
-            data = trust_signer.loads(raw, max_age=TRUST_DAYS * 86400)
-        except BadSignature:
-            return False
-        return data.get("uid") == user.id and data.get("pw") == user.fingerprint
-
-    def trust(resp, user):
-        resp.set_cookie(TRUST_COOKIE,
-                        trust_signer.dumps({"uid": user.id, "pw": user.fingerprint}),
-                        max_age=TRUST_DAYS * 86400, httponly=True,
-                        secure=_is_hosted(), samesite="Lax")
-        return resp
-
-    def needs_code(user) -> bool:
-        return mailer.configured() and bool(user.email) and not trusted(user)
-
-    def send_code(user, purpose="login", to=None, payload=None) -> str:
-        """Email a code. 'sent', 'wait' (one went out under a minute ago) or
-        'failed' (the mail server refused)."""
-        code = users.issue(base, user.id, purpose, payload)
-        if code is None:
-            return "wait"
-        try:
-            mailer.send(to or user.email, f"Your Spendie code: {code}",
-                        f"Your Spendie code is {code}\n\n"
-                        "It works for 10 minutes. If you didn't just try to "
-                        "sign in, you can ignore this email — and it's worth "
-                        "changing your password.")
-        except Exception:                              # noqa: BLE001
-            return "failed"
-        return "sent"
-
-    def begin_code_step(user, status_code=200):
-        """Password accepted; now the emailed code. The session holds who is
-        part-way in, and for how long, but grants nothing."""
-        outcome = send_code(user)
-        if outcome == "failed":
-            return jsonify({"error": "Couldn't send the code. Try again in a "
-                                     "minute."}), 502
-        session.clear()
-        session["pending"] = {"uid": user.id, "pw": user.fingerprint,
-                              "at": users.now()}
-        return jsonify({"ok": True, "needs_code": True,
-                        "sent_to": mailer.mask(user.email)}), status_code
-
-    def pending_user():
-        p = session.get("pending") or {}
-        if not p or users.now() - float(p.get("at", 0)) > PENDING_SECONDS:
-            return None
-        user = users.by_id(base, p.get("uid"))
-        if user is None or user.fingerprint != p.get("pw"):
-            return None
-        return user
-
+    # ── Email: a link for a forgotten password ──────────────────────────────
     def public_url() -> str:
         # A link in an email must not be built from a Host header a stranger
         # can set, so the deployment's own address wins when it is known.
@@ -290,41 +222,8 @@ def _install_auth(app: Flask) -> None:
             # The same message whatever went wrong, so it never confirms that
             # a username exists or that a guess was partly right.
             return jsonify({"error": "That username and password don't match."}), 401
-        if needs_code(user):
-            return begin_code_step(user)
         start_session(user)
         return jsonify({"ok": True, "signed_in": True, "user": user.public()})
-
-    @app.post("/api/auth/verify")
-    def _auth_verify():
-        user = pending_user()
-        if user is None:
-            return jsonify({"error": "That sign-in has expired. Start again.",
-                            "expired": True}), 400
-        body = request.get_json(silent=True) or {}
-        ok, _ = users.redeem(base, user.id, "login", body.get("code", ""))
-        if not ok:
-            return jsonify({"error": "That code isn't right, or it has expired."}), 400
-        users.mark_verified(base, user.id)
-        user = users.by_id(base, user.id)
-        start_session(user)
-        return trust(jsonify({"ok": True, "signed_in": True, "user": user.public()}),
-                     user)
-
-    @app.post("/api/auth/resend")
-    def _auth_resend():
-        user = pending_user()
-        if user is None:
-            return jsonify({"error": "That sign-in has expired. Start again.",
-                            "expired": True}), 400
-        outcome = send_code(user)
-        if outcome == "wait":
-            return jsonify({"error": "A code went out under a minute ago. "
-                                     "Check your inbox and spam folder."}), 429
-        if outcome == "failed":
-            return jsonify({"error": "Couldn't send the code. Try again in a "
-                                     "minute."}), 502
-        return jsonify({"ok": True, "sent_to": mailer.mask(user.email)})
 
     @app.post("/api/auth/forgot")
     def _auth_forgot():
@@ -334,7 +233,7 @@ def _install_auth(app: Flask) -> None:
         body = request.get_json(silent=True) or {}
         user = users.by_identifier(base, body.get("identifier", ""))
         if user is not None and user.email:
-            token = users.issue(base, user.id, "reset")
+            token = users.issue_reset(base, user.id)
             if token:
                 link = f"{public_url()}/?reset={token}"
                 try:
@@ -366,12 +265,11 @@ def _install_auth(app: Flask) -> None:
         users.mark_verified(base, user.id)     # they proved they own the inbox
         user = users.by_id(base, user.id)
         start_session(user)                    # every other session is now void
-        return trust(jsonify({"ok": True, "signed_in": True, "user": user.public()}),
-                     user)
+        return jsonify({"ok": True, "signed_in": True, "user": user.public()})
 
     @app.post("/api/auth/email")
     def _auth_email():
-        """Change your email: saved only once a code sent to it comes back."""
+        """Change your email: where a reset link would be sent."""
         user = g.get("user")
         if user is None:
             return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
@@ -380,31 +278,11 @@ def _install_auth(app: Flask) -> None:
         problem = users.check_email(email)
         if problem:
             return jsonify({"error": problem}), 400
-        other = users.by_email(base, email)
-        if other is not None and other.id != user.id:
+        if not users.set_email(base, user.id, email):
             return jsonify({"error": "Another account uses that email."}), 409
-        if not mailer.configured():
-            users.set_email(base, user.id, email)
-            return jsonify({"ok": True, "saved": True})
-        outcome = send_code(user, "email", to=email, payload=email)
-        if outcome == "failed":
-            return jsonify({"error": "Couldn't send to that address."}), 502
-        if outcome == "wait":
-            return jsonify({"error": "A code went out under a minute ago."}), 429
-        return jsonify({"ok": True, "needs_code": True, "sent_to": mailer.mask(email)})
-
-    @app.post("/api/auth/email/verify")
-    def _auth_email_verify():
-        user = g.get("user")
-        if user is None:
-            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
-        body = request.get_json(silent=True) or {}
-        ok, email = users.redeem(base, user.id, "email", body.get("code", ""))
-        if not ok or not email:
-            return jsonify({"error": "That code isn't right, or it has expired."}), 400
-        if not users.set_email(base, user.id, email, verified=True):
-            return jsonify({"error": "Another account uses that email."}), 409
-        if user.email and user.email != email:
+        if mailer.configured() and user.email and user.email != email:
+            # A heads-up to the old address, in case it wasn't them: whoever
+            # controls the email controls the account.
             try:
                 mailer.send(user.email, "Your Spendie email changed",
                             f"The email on your Spendie account ({user.username}) "
@@ -422,8 +300,8 @@ def _install_auth(app: Flask) -> None:
         email = users.normalise(body.get("email"))
         problem = users.check_new(username, password)
         if not problem and (email or mailer.configured()):
-            # Asked for whenever email works, since it is how a code or a
-            # reset link reaches you; optional only where none can be sent.
+            # Asked for whenever email works, since it is where a reset link
+            # goes; optional only where none can be sent.
             problem = users.check_email(email)
         if problem:
             return jsonify({"error": problem}), 400
@@ -439,10 +317,6 @@ def _install_auth(app: Flask) -> None:
             users.set_email(base, user.id, email)
             user = users.by_id(base, user.id)
         store_for(user)                   # its ledger exists from the start
-        if needs_code(user):
-            # Confirms the address before the account is used, so a typo is
-            # caught now rather than at the first forgotten password.
-            return begin_code_step(user)
         start_session(user)
         return jsonify({"ok": True, "signed_in": True, "user": user.public()})
 
@@ -465,12 +339,8 @@ def _install_auth(app: Flask) -> None:
 
     @app.post("/api/auth/logout")
     def _auth_logout():
-        # Signing out also forgets this device, so the next sign-in here asks
-        # for a code again.
         session.clear()
-        resp = jsonify({"ok": True, "signed_in": False})
-        resp.delete_cookie(TRUST_COOKIE)
-        return resp
+        return jsonify({"ok": True, "signed_in": False})
 
 
 def create_app(db_path: str | None = None) -> Flask:

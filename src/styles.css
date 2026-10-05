@@ -1472,7 +1472,6 @@ td { border-top-color: var(--border); }
 .ring-head h2 .week-dates { color: var(--muted); font-weight: 600; font-size: .95rem; letter-spacing: 0; }
 .gate-title { font-size: 1.15rem; font-weight: 700; letter-spacing: -.015em; margin: 0 0 14px; }
 .gate-note { color: var(--ink-2); font-size: .9rem; margin: 0 0 14px; line-height: 1.45; }
-.gate-card .code-input { font-size: 1.4rem; letter-spacing: .35em; text-align: center; font-variant-numeric: tabular-nums; }
 .gate-card input[type="email"] {
   display: block; box-sizing: border-box; width: 100%; margin: 7px 0 0;
   padding: 10px 12px; border-radius: var(--r-sm); border: 1px solid var(--border-firm);

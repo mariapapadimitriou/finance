@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Card, ErrorNote, Notice, StatusPill } from '../components/ui.jsx';
-import { changeEmail, changePassword, getAuthStatus, verifyEmail } from '../api.js';
+import { Card, ErrorNote, Notice } from '../components/ui.jsx';
+import { changeEmail, changePassword, getAuthStatus } from '../api.js';
 
 /** Who is signed in, their email, a new password, and signing out. */
 export default function AccountPanel({ onSignOut }) {
@@ -26,43 +26,29 @@ export default function AccountPanel({ onSignOut }) {
   );
 }
 
+/** Where a reset link goes if the password is ever forgotten. */
 function EmailForm({ user, mail, onSaved }) {
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [sentTo, setSentTo] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
 
-  async function run(fn) {
+  async function save(e) {
+    e.preventDefault();
     setBusy(true);
     setError(null);
     setDone(false);
     try {
-      const r = await fn();
-      if (!r.ok) throw new Error(r.error || 'That didn’t work.');
-      return r;
+      const r = await changeEmail(email.trim());
+      if (!r.ok) throw new Error(r.error || 'That didn\u2019t work.');
+      setEmail('');
+      setDone(true);
+      onSaved();
     } catch (err) {
       setError(err);
-      return null;
     } finally {
       setBusy(false);
     }
-  }
-
-  async function send(e) {
-    e.preventDefault();
-    const r = await run(() => changeEmail(email.trim()));
-    if (!r) return;
-    if (r.needs_code) { setSentTo(r.sent_to); setCode(''); return; }
-    setEmail(''); setDone(true); onSaved();
-  }
-
-  async function confirm(e) {
-    e.preventDefault();
-    const r = await run(() => verifyEmail(code));
-    if (!r) return;
-    setSentTo(null); setEmail(''); setDone(true); onSaved();
   }
 
   return (
@@ -70,39 +56,19 @@ function EmailForm({ user, mail, onSaved }) {
       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
         <span className="tile-label" style={{ margin: 0 }}>Email</span>
         <strong>{user?.email || 'None yet'}</strong>
-        {user?.email && (
-          <StatusPill state={user.email_verified ? 'good' : 'warning'}>
-            {user.email_verified ? 'Confirmed' : 'Not confirmed yet'}
-          </StatusPill>
-        )}
       </div>
       {mail === false && (
         <Notice>Email isn&apos;t set up on this deployment yet</Notice>
       )}
-
-      {sentTo ? (
-        <form className="controls" onSubmit={confirm}>
-          <label htmlFor="email-code">Code sent to {sentTo}</label>
-          <input id="email-code" type="text" inputMode="numeric"
-                 autoComplete="one-time-code" maxLength={7} value={code}
-                 onChange={(e) => setCode(e.target.value)} required
-                 style={{ width: 140 }} />
-          <button className="btn primary" type="submit" disabled={busy}>Confirm</button>
-          <button className="btn quiet" type="button" onClick={() => setSentTo(null)}>
-            Cancel
-          </button>
-        </form>
-      ) : (
-        <form className="controls" onSubmit={send}>
-          <label htmlFor="email-new">{user?.email ? 'New email' : 'Add an email'}</label>
-          <input id="email-new" type="email" autoComplete="email" value={email}
-                 onChange={(e) => setEmail(e.target.value)} required
-                 style={{ width: 240 }} />
-          <button className="btn" type="submit" disabled={busy}>
-            {busy ? 'Sending…' : (mail ? 'Send code' : 'Save')}
-          </button>
-        </form>
-      )}
+      <form className="controls" onSubmit={save}>
+        <label htmlFor="email-new">{user?.email ? 'New email' : 'Add an email'}</label>
+        <input id="email-new" type="email" autoComplete="email" value={email}
+               onChange={(e) => setEmail(e.target.value)} required
+               style={{ width: 240 }} />
+        <button className="btn" type="submit" disabled={busy}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+      </form>
       <ErrorNote error={error} />
       {done && <Notice kind="good">Email saved</Notice>}
     </div>
