@@ -7,6 +7,7 @@ import {
   saveCoastfire,
 } from '../api.js';
 import { coastConfig } from '../charts.js';
+import { Donut } from '../components/Ring.jsx';
 
 /**
  * Retirement: the CoastFIRE calculator.
@@ -232,14 +233,18 @@ function Results({ r, onTab }) {
               note={`grows into it by ${r.retire_age} at ${r.real_return}% a year`} />
         <div className="card tile">
           <div className="label">Invested now</div>
-          <div className="value num">{money(r.invested)}</div>
-          <div className="meter" role="img"
-               aria-label={`${pct(r.progress)} of the coast number`}>
-            <span style={{ width: `${r.progress * 100}%` }} />
+          <div className="row" style={{ gap: 14, marginTop: 6 }}>
+            <Donut size={64} thickness={8} total={1}
+                   segments={[{ label: 'Invested', value: Math.min(r.progress, 1),
+                                color: r.progress >= 1 ? 'var(--good)' : 'var(--series-1)' }]}
+                   label={`${pct(r.progress)} of the coast number`}>
+              <div className="num" style={{ fontSize: '.78rem', fontWeight: 700 }}>
+                {pct(Math.min(r.progress, 9.99))}
+              </div>
+            </Donut>
+            <div className="value num" style={{ marginTop: 0 }}>{money(r.invested)}</div>
           </div>
-          <div className="note">
-            {pct(r.progress)} of the coast number · as of {monthLabel(r.as_of)}
-          </div>
+          <div className="note">of the coast number · as of {monthLabel(r.as_of)}</div>
         </div>
         <Tile label="Fully retired at" value={r.fire_age != null ? String(years(r.fire_age)) : '—'}
               note={r.fire_age != null

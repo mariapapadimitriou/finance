@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import Chart from '../components/Chart.jsx';
 import Treemap from '../components/Treemap.jsx';
 import { MonthFreshness, Notice } from '../components/ui.jsx';
-import { paceConfig } from '../charts.js';
-import { categoryGradient } from '../categoryColors.js';
+import { Donut, RingLegend, RingRow } from '../components/Ring.jsx';
+import { dailySpendConfig, paceConfig } from '../charts.js';
+import { categoryColors, categoryGradient } from '../categoryColors.js';
 import {
   dateLabel, getBreakdown, getTransactions, money, monthLabel, pct,
 } from '../api.js';
@@ -39,6 +40,9 @@ export default function OverviewPanel({ summary, theme, month, onTab, version = 
 
   const pace = breakdown?.pace;
   const config = useMemo(() => (pace ? paceConfig(pace) : null), [pace, theme]);
+  const daily = breakdown?.daily ?? [];
+  const dailyConfig = useMemo(
+    () => (daily.length ? dailySpendConfig(daily) : null), [daily, theme]);
   const categories = (breakdown?.categories ?? []).filter((c) => c.amount > 0);
   const spent = pace?.total ?? currentMonthSpend(summary, month);
   const gaps = summary.coverage_gaps ?? [];
@@ -60,29 +64,45 @@ export default function OverviewPanel({ summary, theme, month, onTab, version = 
         </button>
       </div>
 
-      <div className="month-hero">
-        <div>
-          <div className="hero-total">{money(spent, { cents: true })}</div>
-          <div className="hero-sub">Spent in {monthLabel(month, { full: true })}</div>
-        </div>
-        {view === 'trends' && pace?.average_total != null && (
-          <div className="hero-side">
-            <div className="k"><span className="dot" aria-hidden="true" />
-              {pace.compared.length} month avg.</div>
-            <div className="v num">{money(pace.average_total, { cents: true })}</div>
+      {view === 'trends' ? (
+        <div className="month-hero">
+          <div>
+            <div className="hero-total">{money(spent, { cents: true })}</div>
+            <div className="hero-sub">Spent in {monthLabel(month, { full: true })}</div>
           </div>
-        )}
-      </div>
+          {pace?.average_total != null && (
+            <div className="hero-side">
+              <div className="k"><span className="dot" aria-hidden="true" />
+                {pace.compared.length} month avg.</div>
+              <div className="v num">{money(pace.average_total, { cents: true })}</div>
+            </div>
+          )}
+        </div>
+      ) : categories.length > 0 && (
+        <CategoryRing categories={categories} total={spent} month={month} />
+      )}
 
       {view === 'trends' ? (
-        config && (
-          <div className="pace">
-            <Chart config={config} theme={theme}
-                   ariaLabel={`${money(spent)} spent so far in ${monthLabel(month, { long: true })}${
-                     pace.average_total != null
-                       ? `, against ${money(pace.average_total)} in a usual month` : ''}`} />
-          </div>
-        )
+        <>
+          {config && (
+            <div className="pace">
+              <Chart config={config} theme={theme}
+                     ariaLabel={`${money(spent)} spent so far in ${monthLabel(month, { long: true })}${
+                       pace.average_total != null
+                         ? `, against ${money(pace.average_total)} in a usual month` : ''}`} />
+            </div>
+          )}
+          {dailyConfig && (
+            <section>
+              <h2 className="chart-title">Last 90 days</h2>
+              <div className="chart short">
+                <Chart config={dailyConfig} theme={theme}
+                       ariaLabel={`Spending each day for the last 90 days, ${
+                         money(daily.reduce((t, d) => t + d.amount, 0))} in all`} />
+              </div>
+            </section>
+          )}
+        </>
       ) : (
         <>
           {categories.length > 0 && (
@@ -127,6 +147,34 @@ export default function OverviewPanel({ summary, theme, month, onTab, version = 
         </section>
       )}
     </div>
+  );
+}
+
+/**
+ * The month as a donut: the biggest categories, and the rest as one slice.
+ * Colours are each category's own, so a slice matches its row below.
+ */
+function CategoryRing({ categories, total, month }) {
+  const top = categories.slice(0, 5);
+  const rest = categories.slice(5).reduce((t, c) => t + c.amount, 0);
+  const parts = [
+    ...top.map((c) => ({ label: c.category, value: c.amount,
+                         color: categoryColors(c.category)[0] })),
+    rest > 0 && { label: `${categories.length - 5} more`, value: rest,
+                  color: 'var(--surface-3)' },
+  ].filter(Boolean);
+
+  return (
+    <RingRow>
+      <Donut size={172} thickness={18}
+             segments={parts.map((p) => ({ ...p, title: money(p.value) }))}>
+        <div className="small-big num">{money(total)}</div>
+        <div className="under">{monthLabel(month, { long: true })}</div>
+      </Donut>
+      <RingLegend items={parts.slice(0, 4).map((p) => ({
+        label: p.label, color: p.color, value: money(p.value),
+      }))} />
+    </RingRow>
   );
 }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Card, ErrorNote, Loading, Notice, StatusPill, } from '../components/ui.jsx';
+import { Donut, RingLegend, RingRow } from '../components/Ring.jsx';
 import {
   addFixedCost, deleteFixedCost, getCategories, getPlanSetup,
   money, monthLabel, pct, savePlanSetup,
@@ -159,25 +160,7 @@ export default function PlanPanel({ onChanged, onTab }) {
               { negative: 'Over-committed', tight: 'Tight', loose: 'Loose',
                 ok: 'Workable', unset: 'Incomplete' }[data.verdict] ?? '—'
             }</StatusPill>}>
-        <div className="sum">
-          <Term label="Take-home" value={data.income} />
-          <span className="op" aria-hidden="true">−</span>
-          <Term label="Commitments" value={data.fixed_total}
-                note={`${data.fixed.length} item${data.fixed.length === 1 ? '' : 's'}`} />
-          <span className="op" aria-hidden="true">−</span>
-          <Term label="Saving" value={data.savings} />
-          {data.banks > 0 && (
-            <>
-              <span className="op" aria-hidden="true">−</span>
-              <Term label="Piggy banks" value={data.banks}
-                    note={`${data.bank_lines.length} bank${data.bank_lines.length === 1 ? '' : 's'}`} />
-            </>
-          )}
-          <span className="op" aria-hidden="true">=</span>
-          <Term label="Yours to spend" value={data.leftover} strong
-                tone={data.leftover > 0 ? 'good' : 'bad'}
-                note={data.income > 0 ? `${pct(data.leftover_share)} of your pay` : ''} />
-        </div>
+        <IncomeRing data={data} />
         {data.leftover > 0 && (
           <div className="row" style={{ marginTop: 14, justifyContent: 'flex-end' }}>
             {onTab && (
@@ -192,15 +175,40 @@ export default function PlanPanel({ onChanged, onTab }) {
   );
 }
 
-function Term({ label, value, note, strong = false, tone }) {
+/**
+ * Take-home pay as a donut: what is promised away, and the part that is yours.
+ *
+ * When the plan promises more than comes in, the ring is drawn against what
+ * is promised instead, and the middle says by how much it is short.
+ */
+function IncomeRing({ data }) {
+  const parts = [
+    { label: 'Commitments', value: data.fixed_total, color: 'var(--ring-2)' },
+    { label: 'Saving', value: data.savings, color: 'var(--ring-1)' },
+    data.banks > 0 && { label: 'Piggy banks', value: data.banks, color: 'var(--ring-4)' },
+    { label: 'Yours to spend', value: Math.max(data.leftover, 0), color: 'var(--ring-3)' },
+  ].filter(Boolean);
+  const short = data.leftover < 0;
+
   return (
-    <div className={`term${strong ? ' strong' : ''}`}>
-      <div className="k">{label}</div>
-      <div className={`v num${tone ? ` ${tone}` : ''}`}>
-        {money(value, { cents: true })}
-      </div>
-      {note && <div className="n">{note}</div>}
-    </div>
+    <RingRow>
+      <Donut size={168} thickness={16}
+             segments={parts.map((p) => ({ ...p, title: money(p.value) }))}
+             total={short ? undefined : data.income}>
+        <div className={`big num${short ? ' bad' : ''}`}>{money(Math.abs(data.leftover))}</div>
+        <div className="under">
+          {short ? 'Short' : data.income > 0 ? `${pct(data.leftover_share)} yours` : 'Yours'}
+        </div>
+      </Donut>
+      <RingLegend items={[
+        { label: 'Take-home', value: money(data.income, { cents: true }), icon: 'flag' },
+        ...parts.map((p) => ({
+          label: p.label, color: p.color,
+          value: money(p.label === 'Yours to spend' ? data.leftover : p.value, { cents: true }),
+          tone: p.label === 'Yours to spend' && short ? 'bad' : undefined,
+        })),
+      ]} />
+    </RingRow>
   );
 }
 

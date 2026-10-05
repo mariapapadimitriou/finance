@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Card, ErrorNote, GoTo, Loading, Notice, StatusPill, } from '../components/ui.jsx';
+  Card, ErrorNote, Loading, Notice, StatusPill, } from '../components/ui.jsx';
+import { Donut, RingLegend, RingRow } from '../components/Ring.jsx';
 import {
   coverFromBank, getNudge, getPlan, getSetup, money, monthLabel,
   simulateSpend, skipSetupStep,
 } from '../api.js';
 
 /**
- * Today: one number, and the arithmetic behind it.
- *
- * The number itself is easy to show and easy to distrust, so every part of it is
- * on screen: the flat daily share, what rolled over from the days before, and
- * what today has already used. A safe-to-spend figure you can't reconstruct is
- * indistinguishable from one that was made up.
+ * Allowance: what is left to spend this week, as a ring with its parts beside
+ * it — the week's share, what rolled over, and what has gone.
  */
 export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
   const [data, setData] = useState(null);
@@ -44,7 +41,7 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
 
   useEffect(() => { load(); }, [load]);
 
-  if (!data && !error) return <Loading what="today's number" />;
+  if (!data && !error) return <Loading what="your allowance" />;
   if (!data) return <ErrorNote error={error} onRetry={load} />;
 
   const { state, status, banks, draws, configured, derivation } = data;
@@ -110,7 +107,7 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
         <PiggyBanks banks={banks} draws={draws}
                     allocated={data.allocated_this_month} onTab={onTab} />
         <MonthlyAmount state={state} configured={configured}
-                       derivation={derivation} onTab={onTab} />
+                       derivation={derivation} />
       </div>
     </div>
   );
@@ -158,152 +155,109 @@ function SetupChecklist({ setup, onTab, onSkip }) {
   );
 }
 
-const ordinal = (n) =>
-  (n % 100 >= 11 && n % 100 <= 13) ? 'th'
-    : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th';
-
 /* ── The number ──────────────────────────────────────────────────────────── */
 
 function SafeToSpend({ state, live }) {
-  // The number to act on: what is left of this week. A shortfall from earlier
-  // in the month is spread over the weeks that remain rather than dumped on
-  // this one, so the headline stays a figure you can use.
+  // What is left of this week, as a ring: the week's money all the way round,
+  // what has been spent drawn on it. A shortfall from earlier in the month is
+  // spread over the weeks that remain rather than dumped on this one.
   const week = state.week;
   const left = week.left;
   const over = left < 0;
   const behind = week.behind;
-  const carried = week.carried_in;
-  const range = week.first_day === week.last_day
-    ? `the ${week.first_day}${ordinal(week.first_day)}`
-    : `the ${week.first_day}${ordinal(week.first_day)}–${week.last_day}${ordinal(week.last_day)}`;
+  const spent = Math.max(week.spent, 0);
+  const pot = Math.max(left + week.spent, 0);
+  const spentColor = over ? 'var(--critical)' : 'var(--ring-1)';
 
   return (
     <Card className={`hero-card${over ? ' behind' : ''}`}>
-      <div className="safe">
-        <div>
-          <div className="tile-label">
-            {live ? 'Left this week'
-                  : `Left in the last week of ${monthLabel(state.month, { long: true })}`}
-          </div>
-          <div className={`figure num${over ? ' bad' : ''}`}>
-            {money(left, { cents: true })}
-          </div>
-          <div className="caption">
-            {live && !over && week.days_left > 1 && (
-              <>{money(week.per_day, { cents: true })} a day ·{' '}</>
-            )}
-            {state.remaining < 0
-              ? `${money(-state.remaining, { cents: true })} past the ${money(state.budget)} budget`
-              : `${money(state.remaining, { cents: true })} left this month`}
-          </div>
-        </div>
+      <div className="ring-head">
+        <h2>{live ? 'This week'
+                  : `Last week of ${monthLabel(state.month, { long: true })}`}</h2>
         {over ? (
-          <StatusPill state="critical">
-            Over by {money(-left, { cents: true })}
-          </StatusPill>
+          <StatusPill state="critical">Over by {money(-left, { cents: true })}</StatusPill>
         ) : behind ? (
           <StatusPill state="warning">Catching up</StatusPill>
         ) : null}
       </div>
-
-      {/* The week's arithmetic, in the order it applies. */}
-      <div className="sum">
-        {behind ? (
-          <>
-            <SumTerm label="Left this month" value={state.remaining + week.spent}
-                     note={`as the week began, on the ${week.first_day}${ordinal(week.first_day)}`} />
-            <span className="op" aria-hidden="true">×</span>
-            <SumTerm label="This week's days" value={`${week.days} of ${state.days_in_month - week.first_day + 1}`}
-                     money={false} note="its share of what is left" />
-          </>
-        ) : (
-          <>
-            <SumTerm label="This week's share" value={week.share}
-                     note={week.short
-                       ? `${week.days} days (${range}) — a short week`
-                       : `${week.days} days, ${range}`} />
-            <span className="op" aria-hidden="true">+</span>
-            <SumTerm label="Rolled over" value={carried}
-                     note={week.first_day > 1
-                       ? `unspent before the ${week.first_day}${ordinal(week.first_day)}`
-                       : 'nothing yet — the month just started'}
-                     tone="good" />
-          </>
+      <RingRow>
+        <Donut size={168} thickness={15} total={over ? spent : pot}
+               segments={[{ label: 'Spent', value: spent, color: spentColor,
+                            title: money(spent, { cents: true }) }]}
+               label={`${money(left, { cents: true })} left of ${
+                 money(pot, { cents: true })} this week`}>
+          <div className={`big num${over ? ' bad' : ''}`}>{money(Math.abs(left))}</div>
+          <div className="under">{over ? 'Over' : 'Left'}</div>
+        </Donut>
+        <RingLegend items={behind ? [
+          { label: "This week's budget", value: money(pot, { cents: true }), icon: 'flag' },
+          { label: 'Spent', value: money(week.spent, { cents: true }), icon: 'bag',
+            color: spentColor },
+        ] : [
+          { label: 'Weekly allowance', value: money(week.share, { cents: true }),
+            icon: 'flag' },
+          { label: 'Rolled over', value: money(week.carried_in, { cents: true }),
+            icon: 'plus', color: 'var(--ring-3)' },
+          { label: 'Spent', value: money(week.spent, { cents: true }), icon: 'bag',
+            color: spentColor },
+        ]} />
+      </RingRow>
+      <div className="ring-foot">
+        {live && !over && week.days_left > 1 && (
+          <><strong className="num">{money(week.per_day, { cents: true })}</strong> a day · </>
         )}
-        <span className="op" aria-hidden="true">−</span>
-        <SumTerm label={live ? 'Spent this week' : 'Spent that week'}
-                 value={week.spent}
-                 note="discretionary charges" />
-        <span className="op" aria-hidden="true">=</span>
-        <SumTerm label={live ? 'Left this week' : 'What was left'}
-                 value={left}
-                 tone={left < 0 ? 'bad' : 'good'} strong />
+        {state.remaining < 0
+          ? `${money(-state.remaining, { cents: true })} past the month's ${money(state.budget)}`
+          : `${money(state.remaining, { cents: true })} left this month`}
       </div>
-
-
     </Card>
-  );
-}
-
-function SumTerm({ label, value, note, strong = false, tone, money: asMoney = true }) {
-  return (
-    <div className={`term${strong ? ' strong' : ''}`}>
-      <div className="k">{label}</div>
-      <div className={`v num${tone ? ` ${tone}` : ''}`}>
-        {asMoney ? money(value, { cents: true }) : value}
-      </div>
-      {note && <div className="n">{note}</div>}
-    </div>
   );
 }
 
 /* ── How are you doing this month ────────────────────────────────────────── */
 
 function ThisMonth({ status, state, live }) {
-  const pace = state.pace;
+  const budget = Math.max(state.budget ?? 0, 0);
+  const spent = Math.max(status.spent, 0);
+  const over = spent > budget;
+  const used = budget > 0 ? spent / budget : 0;
+  const lands = status.projected_over > 0;
 
   return (
     <Card title={live
-            ? `How you're doing in ${monthLabel(state.month, { long: true })}`
+            ? monthLabel(state.month, { full: true })
             : `How ${monthLabel(state.month, { long: true })} went`}
           actions={<StatusPill state={status.tone}>{status.verdict}</StatusPill>}>
-      <div className="grid cols-4">
-        <Figure label="Spent so far" value={money(status.spent, { cents: true })}
-                note={`${money(status.expected_by_now)} would be on pace`} />
-        <Figure label="Pace" value={pace ? `${Math.round(pace * 100)}%` : '—'}
-                note="of an even spend by today"
-                tone={pace > 1.05 ? 'bad' : pace ? 'good' : undefined} />
-        <Figure label="Lands at" value={money(status.projected_month_end)}
-                note={status.projected_over > 0
-                  ? `${money(status.projected_over)} over budget`
-                  : `${money(-status.projected_over)} under budget`}
-                tone={status.projected_over > 0 ? 'bad' : 'good'} />
-        <Figure label={state.remaining < 0 ? 'Past budget by' : 'Left to spend'}
-                value={money(Math.abs(state.remaining), { cents: true })}
-                note={state.remaining < 0
-                  ? 'nothing left to spread over the rest of the month'
-                  : state.days_left <= 1
-                    // On the last day there is nothing to spread it over, so
-                    // "$755.38/day from here" advertised a daily allowance of
-                    // $755 — arithmetically the remainder divided by one, and
-                    // absurd as guidance.
-                    ? 'all of it for the last day of the month'
-                    : `${money(state.spread_daily, { cents: true })}/day over the `
-                      + `${state.days_left} days left`}
-                tone={state.remaining < 0 ? 'bad' : undefined} />
-      </div>
-
+      <RingRow>
+        <Donut size={140} thickness={13} total={over ? spent : budget}
+               marker={live && budget > 0
+                 ? Math.min(status.expected_by_now / budget, 1) : null}
+               segments={[{ label: 'Spent', value: spent,
+                            color: over ? 'var(--critical)' : 'var(--ring-1)',
+                            title: money(spent, { cents: true }) }]}
+               label={`${Math.round(used * 100)}% of ${money(budget)} spent`}>
+          <div className={`small-big num${over ? ' bad' : ''}`}>
+            {Math.round(used * 100)}%
+          </div>
+          <div className="under">of {money(budget)}</div>
+        </Donut>
+        <RingLegend items={[
+          { label: 'Spent', value: money(status.spent, { cents: true }),
+            color: over ? 'var(--critical)' : 'var(--ring-1)' },
+          live && { label: 'On pace by today', value: money(status.expected_by_now),
+                    icon: 'tick' },
+          { label: 'Lands at', value: money(status.projected_month_end),
+            tone: lands ? 'bad' : 'good', icon: 'trend',
+            color: lands ? 'var(--critical)' : 'var(--good-text)' },
+        ]} />
+      </RingRow>
+      {state.remaining >= 0 && state.days_left > 1 && (
+        <div className="ring-foot">
+          <strong className="num">{money(state.spread_daily, { cents: true })}</strong> a day
+          for the {state.days_left} days left
+        </div>
+      )}
     </Card>
-  );
-}
-
-function Figure({ label, value, note, tone }) {
-  return (
-    <div className="figure-cell">
-      <div className="tile-label">{label}</div>
-      <div className={`fv num${tone ? ` ${tone}` : ''}`}>{value}</div>
-      {note && <div className="fn">{note}</div>}
-    </div>
   );
 }
 
@@ -422,11 +376,19 @@ function PiggyBanks({ banks, draws, allocated, onTab }) {
         <div className="bars" style={{ marginBottom: 14 }}>
           {banks.map((b) => (
             <div className="bucket" key={b.id}>
-              <div className="name">
-                {b.name}
-                <div className="desc">
-                  {b.categories?.length ? `Pays for ${b.categories.join(', ')} · ` : ''}
-                  {money(b.monthly)} a month
+              <div className="name with-ring">
+                <Donut size={36} thickness={5} total={1}
+                       segments={[{ label: b.name,
+                                    value: b.available < 0 ? 1 : (b.funded_share ?? 0),
+                                    color: b.available < 0
+                                      ? 'var(--critical)' : 'var(--ring-3)' }]}
+                       label={`${b.name}: ${Math.round((b.funded_share ?? 0) * 100)}% full`} />
+                <div>
+                  {b.name}
+                  <div className="desc">
+                    {b.categories?.length ? `Pays for ${b.categories.join(', ')} · ` : ''}
+                    {money(b.monthly)} a month
+                  </div>
                 </div>
               </div>
               <div className="num val">
@@ -474,79 +436,40 @@ function PiggyBanks({ banks, draws, allocated, onTab }) {
 
 /* ── The monthly amount everything is measured against ──────────────────── */
 
-function MonthlyAmount({ state, configured, derivation, onTab }) {
+/**
+ * Where the weekly number comes from, as one donut: what the plan leaves you,
+ * split into the essentials budgeted monthly and the day-to-day the week is
+ * cut from.
+ */
+function MonthlyAmount({ state, configured, derivation }) {
   const d = derivation ?? {};
-  const planTab = <GoTo to="plan" from="today" onTab={onTab} />;
+  const fromPlan = configured && d.from_plan;
+  const essentials = Math.max(d.essentials ?? 0, 0);
+  const daily = Math.max((fromPlan ? d.discretionary : state.monthly_amount) ?? 0, 0);
 
   return (
-    <Card title="Where the weekly number comes from">
-      {/* No input. The figure is derived from the plan on every request, so
-          there is nothing here that could overwrite it and no stored copy to
-          fall out of date. */}
-
-      {configured && d.from_plan ? (
-        <>
-          {/* The chain in full. Showing only the last step is what made this
-              tab look as though it disagreed with the Plan: "yours to spend"
-              still has the groceries in it, and the weekly number deliberately
-              does not. */}
-          <div className="sum" style={{ marginBottom: 14 }}>
-            <SumTerm label="Yours to spend" value={d.leftover}
-                     note="from your plan" />
-            <span className="op" aria-hidden="true">−</span>
-            <SumTerm label="Essentials" value={d.essentials}
-                     note={essentialsNote(d.essential_categories)} />
-            <span className="op" aria-hidden="true">=</span>
-            <SumTerm label="Day to day" value={d.discretionary} />
-          </div>
-          <div className="sum">
-            <SumTerm label="Day to day" value={state.monthly_amount} />
-            <span className="op" aria-hidden="true">÷</span>
-            <SumTerm label="Days this month" value={state.days_in_month}
-                     money={false} />
-            <span className="op" aria-hidden="true">×</span>
-            <SumTerm label="Days in a week" value={7} money={false} />
-            <span className="op" aria-hidden="true">=</span>
-            <SumTerm label="A week" value={state.week.nominal} strong
-                     note={state.week.short
-                       ? `this week is ${state.week.days} days, so it gets ${money(state.week.share)}`
-                       : undefined} />
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="sum">
-            <SumTerm label="Discretionary budget" value={state.monthly_amount}
-                     note="a stand-in, from your own history" />
-            <span className="op" aria-hidden="true">÷</span>
-            <SumTerm label="Days this month" value={state.days_in_month}
-                     money={false} />
-            <span className="op" aria-hidden="true">×</span>
-            <SumTerm label="Days in a week" value={7} money={false} />
-            <span className="op" aria-hidden="true">=</span>
-            <SumTerm label="A week" value={state.week.nominal} strong
-                     note={state.week.short
-                       ? `this week is ${state.week.days} days, so it gets ${money(state.week.share)}`
-                       : undefined} />
-          </div>
-        </>
-      )}
+    <Card title="Your allowance">
+      <RingRow>
+        <Donut size={140} thickness={13}
+               segments={fromPlan ? [
+                 { label: 'Day to day', value: daily, color: 'var(--ring-1)',
+                   title: money(daily) },
+                 { label: 'Essentials', value: essentials, color: 'var(--ring-4)',
+                   title: money(essentials) },
+               ] : [{ label: 'Day to day', value: daily, color: 'var(--ring-1)',
+                      title: money(daily) }]}>
+          <div className="small-big num">{money(state.week.nominal)}</div>
+          <div className="under">a week</div>
+        </Donut>
+        <RingLegend items={[
+          fromPlan && { label: 'Yours to spend', value: `${money(d.leftover)}/mo`,
+                        icon: 'flag' },
+          { label: fromPlan ? 'Day to day' : 'Day to day, from history',
+            value: `${money(daily)}/mo`, color: 'var(--ring-1)' },
+          fromPlan && { label: 'Essentials', value: `${money(essentials)}/mo`,
+                        color: 'var(--ring-4)' },
+        ]} />
+      </RingRow>
     </Card>
   );
-}
-
-/**
- * Name the categories that actually make up the essential half.
- *
- * Written out rather than illustrated with an example. The note used to say
- * "groceries, transport", and Transport is flagged discretionary — so it is in
- * the *other* column, and the one figure on this page whose whole purpose is to
- * be checkable was explained with a counter-example.
- */
-function essentialsNote(categories) {
-  const names = (categories ?? []).map((c) => c.toLowerCase());
-  if (names.length === 0) return 'monthly';
-  const shown = names.slice(0, 3).join(', ');
-  const rest = names.length > 3 ? ` and ${names.length - 3} more` : '';
-  return `${shown}${rest}`;
 }

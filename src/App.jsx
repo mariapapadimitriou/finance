@@ -101,7 +101,7 @@ export default function App() {
   // Both month values hold *your* choice, and empty means "follow the data".
   // They are deliberately not seeded from the first load: a seeded value would
   // survive an import that added newer months, leaving the dashboard pinned to
-  // a month you never picked and the Today tab insisting nothing was imported
+  // a month you never picked and the Allowance tab insisting nothing was imported
   // for this month when it just was. Derived at render instead, so new data
   // moves them and an explicit pick still sticks.
   const [month, setMonth] = useState('');
@@ -111,7 +111,7 @@ export default function App() {
   // null while we're still asking; the app renders nothing rather than
   // flashing a dashboard at someone who then gets bounced to a login.
   const [signedIn, setSignedIn] = useState(null);
-  // Bumped on every reload so panels that fetch their own data — Today,
+  // Bumped on every reload so panels that fetch their own data — Allowance,
   // Projections, Piggy banks — refetch after an import instead of showing what
   // they loaded when they mounted.
   const [version, setVersion] = useState(0);
