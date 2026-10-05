@@ -1,13 +1,14 @@
-"""A single password in front of the whole app.
+"""Password hashing, and the gate in front of the whole app.
 
 The ledger was public by choice while it held nothing but transactions. A Plaid
 access token is a different thing: it is a live credential to a bank account,
 and an endpoint that uses it must not be something a stranger can reach. So
-everything now sits behind one password — the UI, every API route, and in
-particular the ones that link, sync or delete.
+everything sits behind a sign-in — the UI, every API route, and in particular
+the ones that link, sync or delete.
 
-Deliberately not a user system. There is one person here, so there is one
-secret, and no accounts, signup, reset flow or email to get wrong.
+There are accounts now, each with a ledger of its own; see finance/users.py.
+This module keeps the hashing and the single-password settings the first
+account is created from.
 
 Three decisions worth stating:
 

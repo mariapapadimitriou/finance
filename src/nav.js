@@ -43,6 +43,8 @@ export const PANELS = {
                    hint: 'Every account, what syncs, and anything counted twice' },
   import:        { label: 'From a file', short: 'Files',
                    hint: "Statements for a card that can't be connected" },
+  account:       { label: 'Sign-in',
+                   hint: 'Who is signed in, and the password' },
   categories:    { label: 'Categories',
                    hint: 'Which categories share one line in your budget' },
 };
@@ -79,7 +81,7 @@ export const GROUPS = [
   // and how the categories are grouped for budgeting. Neither is somewhere
   // you go to find out how the month is going.
   { key: 'settings', label: 'Settings',
-    panels: ['banks', 'accounts', 'import', 'categories'],
+    panels: ['banks', 'accounts', 'import', 'categories', 'account'],
     hint: 'Where the transactions come from, and how categories are grouped',
     icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z' },
 ];

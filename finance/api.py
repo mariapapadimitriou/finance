@@ -41,7 +41,12 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
 def store() -> Store:
-    return current_app.config["STORE"]
+    """The signed-in account's ledger, or the only one when nobody signs in."""
+    from flask import g
+    user = g.get("user")
+    if user is None:
+        return current_app.config["STORE"]
+    return current_app.config["STORE_FOR"](user)
 
 
 def _txns():

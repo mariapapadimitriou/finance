@@ -283,16 +283,20 @@ _CHARGE_COLUMNS = """a.bank_id AS bank_id,
 
 
 class Store:
-    def __init__(self, path: str = DEFAULT_DB, url: str | None = None):
+    def __init__(self, path: str = DEFAULT_DB, url: str | None = None,
+                 schema: str = "public"):
         self.path = path
         # Resolved once, at construction, so a Store keeps talking to the
         # database it was opened against even if the environment changes.
         self.url = url if url is not None else db.database_url()
+        # One account's ledger. On Postgres a schema per account; on SQLite
+        # the account's own file is the path, and this stays "public".
+        self.schema = db.valid_schema(schema)
         self._init()
 
     @contextmanager
     def conn(self):
-        with db.connect(self.path, self.url) as c:
+        with db.connect(self.path, self.url, self.schema) as c:
             yield c
 
     @property
@@ -300,6 +304,11 @@ class Store:
         return bool(self.url)
 
     def _init(self) -> None:
+        if self.is_postgres and self.schema != "public":
+            # Created before anything is pointed at it: with no schema on the
+            # search path there is nowhere for the tables below to go.
+            with self.conn() as c:
+                c.execute(f'CREATE SCHEMA IF NOT EXISTS "{self.schema}"')
         with self.conn() as c:
             c.executescript(SCHEMA)
         self._migrate_buckets()

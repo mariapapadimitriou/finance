@@ -55,16 +55,22 @@ export const getAuthStatus   = () => req('/api/auth/status');
 export const logout          = () => json('POST', '/api/auth/logout', {});
 
 /** Kept out of `req` so a wrong password reads as an answer, not a crash. */
-export async function login(password) {
-  const r = await fetch(`${API}/api/auth/login`, {
+async function authPost(path, payload) {
+  const r = await fetch(`${API}${path}`, {
     ...CREDENTIALS,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify(payload),
   });
   const body = await r.json().catch(() => ({}));
   return { ok: r.ok, ...body };
 }
+export const login          = (username, password) =>
+  authPost('/api/auth/login', { username, password });
+export const signup         = (username, password) =>
+  authPost('/api/auth/signup', { username, password });
+export const changePassword = (current, next) =>
+  authPost('/api/auth/password', { current, new: next });
 
 // ── Plaid ────────────────────────────────────────────────────────────────────
 export const getPlaidItems   = () => req('/api/plaid/items');
@@ -128,7 +134,6 @@ export const applyPlanBudgets = () => json('POST', '/api/plan/setup/apply', {});
 export const addFixedCost    = (cost) => json('POST', '/api/plan/fixed', cost);
 export const deleteFixedCost = (id) =>
   req(`/api/plan/fixed/${id}`, { method: 'DELETE' });
-export const getNudge        = () => req('/api/nudge');
 
 
 /**
@@ -210,10 +215,6 @@ export const setLedgerStart  = (start, trim) =>
 export const recategorizeAll = () => json('POST', '/api/recategorize', {});
 
 export const dismissFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'POST' });
-// What is left to set up. Every step is derived from data already there.
-export const getSetup = () => req('/api/setup');
-// An optional step skipped for good, kept with the other "not for me"s.
-export const skipSetupStep = (id) => dismissFinding(`setup.${id}`);
 export const restoreFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'DELETE' });
 
 // ── Formatting ───────────────────────────────────────────────────────────────
