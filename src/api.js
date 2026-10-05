@@ -155,6 +155,15 @@ export const getCategoryGroups = () => req('/api/category-groups');
 export const setCategoryGroups = (groups) =>
   json('PUT', '/api/category-groups', { groups });
 
+// Savings goals, and what you have saved and invested today (Ahead).
+export const getGoals        = () => req('/api/goals');
+export const addGoal         = (goal) => json('POST', '/api/goals', goal);
+export const editGoal        = (id, fields) => json('PATCH', `/api/goals/${id}`, fields);
+export const depositToGoal   = (id, amount) =>
+  json('POST', `/api/goals/${id}/deposit`, { amount });
+export const deleteGoal      = (id) => req(`/api/goals/${id}`, { method: 'DELETE' });
+export const saveInvested    = (balance) => json('PUT', '/api/invested', { balance });
+
 export const getProjections  = (target, savings) => {
   const q = new URLSearchParams();
   if (target) q.set('target', target);

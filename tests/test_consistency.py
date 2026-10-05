@@ -558,7 +558,7 @@ class TestOneFigureOneAuthority:
         b = proj["basis"]
         assert b["saving"] + b["unspent"] == pytest.approx(
             proj["monthly_surplus"], abs=TOLERANCE)
-        assert b["leftover"] - b["typical_spend"] == pytest.approx(
+        assert b["leftover"] - b["pace_spend"] == pytest.approx(
             b["unspent"], abs=TOLERANCE)
 
     def test_a_piggy_bank_is_not_counted_as_savings(self, ledger):

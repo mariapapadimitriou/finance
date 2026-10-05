@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Chart from '../components/Chart.jsx';
 import {
   Card, ErrorNote, GoTo, Loading, Notice, StatusPill, } from '../components/ui.jsx';
-import { destination } from '../nav.js';
-import { getProjections, money, saveSavings } from '../api.js';
+import Goals from '../components/Goals.jsx';
+import { getProjections, money, monthLabel, saveInvested, saveSavings } from '../api.js';
 import { investedConfig, projectionConfig } from '../charts.js';
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -11,12 +11,12 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
                      'December'];
 
 /**
- * Projections: two lines, and the gap between them is the whole point.
+ * Ahead: the plan against your current pace, the goals you are saving for,
+ * and the levels your savings climb.
  *
- * *Current pace* carries your own surplus forward. *With cuts* adds the savings
- * the engine has already found and priced. Neither is a forecast — they are
- * arithmetic on a trend, and the honest part is saying how thin that trend is,
- * so the months behind the numbers travel with them.
+ * *Plan* is what the plan puts away. *Current pace* is that plus whatever this
+ * month's spending, carried to its end, leaves of the budget — so the gap
+ * between them is how this month is going, a month at a time.
  */
 export default function ProjectionsPanel({ insights, onTab, onChanged,
                                           version = 0 }) {
@@ -123,92 +123,38 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
           )}
 
 
-          {data.from_plan ? (
-            <>
-              <div className="grid cols-3">
-                <Tile label="You put away" value={money(data.basis.saving)}
-                      note="a month" tone="good" />
-                <Tile label="Left unspent" value={money(data.basis.unspent)}
-                      note={`${money(data.basis.leftover)} to spend, `
-                            + `${money(data.basis.typical_spend)} typically spent`}
-                      tone={data.basis.unspent < 0 ? 'bad' : 'good'} />
-                <Tile label="Saved each month" value={money(data.monthly_surplus)}
-                      tone={data.monthly_surplus < 0 ? 'bad' : 'good'} />
-              </div>
-              <div className="grid cols-2">
-                <Tile label="Cuts found" value={money(data.monthly_cuts)}
-                      note={`a month, from ${destination('savings', 'projections')}`} tone="good" />
-                <Tile label="Typical spend" value={money(data.typical_monthly_spend)}
-                      note="median month" />
-              </div>
-            </>
-          ) : (
-            <div className="grid cols-4">
-              <Tile label="Take-home" value={money(data.monthly_income)} note="a month" />
-              <Tile label="Typical spend" value={money(data.typical_monthly_spend)}
-                    note="median month" />
-              <Tile label="Surplus" value={money(data.monthly_surplus)}
-                    tone={data.monthly_surplus < 0 ? 'bad' : 'good'} />
-              <Tile label="Cuts found" value={money(data.monthly_cuts)}
-                    note={`a month, from ${destination('savings', 'projections')}`} tone="good" />
-            </div>
-          )}
-
           <Card
-            title="Twelve months out"
+            title="Plan vs current pace"
             actions={<Confidence level={data.confidence}
                                  months={data.months_observed} />}
           >
+            <PaceBadge data={data} />
             <div className="chart">
               <Chart
                 config={projectionConfig(data.series)}
-                ariaLabel={`Cumulative savings over twelve months: `
-                  + `${money(data.at_12.pace)} at your recent pace, `
-                  + `${money(data.at_12.on_plan)} following the plan`}
+                ariaLabel={`Saved over twelve months: `
+                  + `${money(data.at_12.on_plan)} on the plan, `
+                  + `${money(data.at_12.pace)} at your current pace`}
               />
             </div>
             <div className="legend" style={{ marginTop: 6 }}>
               <span className="item">
-                <span className="swatch" style={{ background: 'var(--series-1)' }} />
-                Recent pace — {money(data.at_12.pace)} by month 12
+                <span className="swatch" style={{ background: 'var(--series-3)' }} />
+                Plan — {money(data.at_12.on_plan)} in 12 months
               </span>
               <span className="item">
-                <span className="swatch" style={{ background: 'var(--series-3)' }} />
-                Following the plan — {money(data.at_12.on_plan)} by month 12
+                <span className="swatch" style={{ background: 'var(--series-1)' }} />
+                Current pace — {money(data.at_12.pace)}
               </span>
             </div>
           </Card>
 
-          <Card title="How long until…">
-            <form className="controls" onSubmit={(e) => e.preventDefault()}>
-              <label htmlFor="target">I want to save</label>
-              <input id="target" type="number" min="0" step="any" value={target}
-                     onChange={(e) => setTarget(e.target.value)}
-                     placeholder="5,000" style={{ width: 140 }} />
-            </form>
+          {data.from_plan && <Goals onChanged={() => load(target, preview ?? undefined)} />}
 
-            {data.goal && (
-              <div className="grid cols-2" style={{ marginTop: 16 }}>
-                <Tile label="At your recent pace"
-                      value={data.goal.pace_months
-                        ? `${data.goal.pace_months} months`
-                        : 'Never'}
-                      note={data.goal.pace_months
-                        ? `${money(data.monthly_surplus)} a month`
-                        : 'this pace saves nothing'}
-                      tone={data.goal.pace_months ? undefined : 'bad'} />
-                <Tile label="Following the plan"
-                      value={data.goal.plan_months
-                        ? `${data.goal.plan_months} months`
-                        : 'Never'}
-                      note={data.monthly_on_plan !== null
-                            && data.monthly_on_plan !== undefined
-                        ? `${money(data.monthly_on_plan)} a month, your savings figure`
-                        : `${money(data.monthly_surplus + data.monthly_cuts)} a month`}
-                      tone={data.goal.plan_months ? 'good' : 'bad'} />
-              </div>
-            )}
-          </Card>
+          {data.levels && (
+            <Levels levels={data.levels} held={data.invested_balance}
+                    onSaved={() => load(target, preview ?? undefined)} />
+          )}
 
           {data.invested && <Invested invested={data.invested} />}
         </>
@@ -395,5 +341,121 @@ function Confidence({ level, months }) {
     <StatusPill state={tone}>
       {months} month{months === 1 ? '' : 's'}
     </StatusPill>
+  );
+}
+
+/**
+ * How this month is going against the plan, as one badge: ahead (spending
+ * under the budget) or behind, a month at a time.
+ */
+function PaceBadge({ data }) {
+  const pm = data.pace_month;
+  if (data.ahead == null || !pm) return null;
+  const ahead = data.ahead >= 0;
+  return (
+    <div className="pace-badge-row">
+      <span className={`pace-badge ${ahead ? 'good' : 'bad'}`}>
+        {ahead ? '▲' : '▼'} {money(Math.abs(data.ahead))} a month {ahead ? 'ahead of' : 'behind'} plan
+      </span>
+      <span className="small muted">
+        On pace to spend {money(pm.projected_spend)} of {money(pm.leftover)}
+        {pm.basis === '30 days' ? ' (last 30 days)' : ` in ${monthLabel(pm.month, { long: true })}`}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Levels: what you have saved and invested, as a ladder of round numbers.
+ * The next rung gets a month on the plan and at your current pace; the
+ * milestones past the rungs are locked until they happen.
+ */
+function Levels({ levels, held, onSaved }) {
+  const [editing, setEditing] = useState(!held?.source);
+  const [value, setValue] = useState(held?.balance ? String(held.balance) : '');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const next = levels.next;
+
+  async function save(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await saveInvested(Number(value || 0));
+      await onSaved?.();
+      setEditing(false);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title="Levels"
+          actions={!editing && (
+            <button className="btn quiet" onClick={() => setEditing(true)}>
+              {held?.stale ? 'Update balance' : 'Balance'}
+            </button>
+          )}>
+      {editing && (
+        <form className="controls" onSubmit={save} style={{ marginBottom: 16 }}>
+          <label htmlFor="invested-balance">Saved & invested today, outside your goals</label>
+          <input id="invested-balance" type="number" min="0" step="any"
+                 inputMode="decimal" value={value} placeholder="12,000"
+                 onChange={(e) => setValue(e.target.value)} style={{ width: 140 }} />
+          <button className="btn primary" type="submit" disabled={busy}>
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+          <ErrorNote error={error} />
+        </form>
+      )}
+
+      <div className="level-head">
+        <div>
+          <div className="level-name">{levels.level?.name ?? 'Getting started'}</div>
+          <div className="stars" aria-label={`${levels.stars.earned} of ${levels.stars.total} levels`}>
+            {Array.from({ length: levels.stars.total }, (_, i) => (
+              <span key={i} className={i < levels.stars.earned ? 'on' : ''}>★</span>
+            ))}
+          </div>
+        </div>
+        <div className="level-balance num">{money(levels.balance)}</div>
+      </div>
+
+      {next && (
+        <div className="level-next">
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <strong>Next: {next.name}</strong>
+            <span className="spacer" />
+            <span className="small muted num">{money(next.left)} to go</span>
+          </div>
+          <div className="track" style={{ background: 'var(--surface-2)', borderRadius: 4,
+                                           height: 8, overflow: 'hidden', margin: '8px 0' }}>
+            <div style={{ width: `${Math.min(next.progress, 1) * 100}%`, height: '100%',
+                          background: 'var(--brand)', borderRadius: 4 }} />
+          </div>
+          <div className="small muted">
+            {next.plan_eta ? `${monthLabel(next.plan_eta, { long: true })} on the plan` : 'Not on the plan yet'}
+            {next.pace_eta && next.pace_eta !== next.plan_eta
+              && ` · ${monthLabel(next.pace_eta, { long: true })} at your pace`}
+          </div>
+        </div>
+      )}
+
+      <ul className="milestones">
+        {levels.milestones.map((m) => (
+          <li key={m.id} className={m.done ? 'done' : ''}>
+            <span className="ms-icon" aria-hidden="true">{m.done ? '✓' : '🔒'}</span>
+            <span>{m.label}</span>
+            <span className="spacer" />
+            <span className="small muted num">
+              {m.done ? 'Unlocked' : m.eta ? monthLabel(m.eta, { long: true }) : '—'}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
