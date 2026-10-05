@@ -13,6 +13,7 @@ import ImportPanel from './panels/ImportPanel.jsx';
 import PlanPanel from './panels/PlanPanel.jsx';
 import BanksPanel from './panels/BanksPanel.jsx';
 import AccountsPanel from './panels/AccountsPanel.jsx';
+import AccountPanel from './panels/AccountPanel.jsx';
 import CategoriesPanel from './panels/CategoriesPanel.jsx';
 import Login from './Login.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
@@ -21,6 +22,7 @@ import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
   getAccounts, getAuthStatus, getCategories, getInsights, getRecurring,
   getSummary, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
+  syncPlaid,
 } from './api.js';
 
 // Icons are 24×24 stroke paths, drawn in currentColor.
@@ -40,7 +42,9 @@ function defaultMonth(summary) {
 // Panels worth opening with nothing in the ledger: the two that bring data in,
 // and the one that decides what keeps arriving — which is also where the ledger
 // gets emptied, so it is reachable immediately afterwards.
-const WORKS_WHEN_EMPTY = ['banks', 'import', 'accounts', 'plan'];
+// The sign-in settings too: a brand-new account has an empty ledger, and must
+// still be able to change its password or sign out.
+const WORKS_WHEN_EMPTY = ['banks', 'import', 'accounts', 'plan', 'account', 'categories'];
 
 /**
  * A navigation label with an optional phone-width form.
@@ -170,12 +174,35 @@ export default function App() {
 
   useEffect(() => { if (signedIn) load(); }, [load, signedIn]);
 
+  // Pull from the banks as soon as the app opens, after the first paint so
+  // the page never waits on Plaid. Once per sign-in; the figures reload only
+  // if something actually came in, changed or went away. A failure is left
+  // for the Connections page to report.
+  const synced = useRef(false);
+  useEffect(() => {
+    if (!signedIn || !data || synced.current) return;
+    synced.current = true;
+    syncPlaid()
+      .then((r) => {
+        const changed = (r?.imported ?? 0) > 0 || (r?.items ?? []).some(
+          (i) => (i.modified ?? 0) > 0 || (i.removed ?? 0) > 0);
+        if (changed) load();
+      })
+      .catch(() => {});
+  }, [signedIn, data, load]);
+
   if (signedIn === null) {
     return <Shell theme={theme} setTheme={setTheme}><Loading what="Spendie" /></Shell>;
   }
 
   if (!signedIn) {
-    return <Login onSignedIn={() => { setSignedIn(true); setError(null); }} />;
+    // A different person may be signing in on this device: nothing from the
+    // last session's ledger is carried over.
+    return <Login onSignedIn={() => {
+      setData(null); setMonth(''); setPlanMonth('');
+      synced.current = false;
+      setSignedIn(true); setError(null);
+    }} />;
   }
 
   if (error) {
@@ -242,7 +269,7 @@ export default function App() {
       findingCount={findingCount}
       months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(panel)}
-      onSignOut={async () => { await logout(); setSignedIn(false); }}
+      onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
       {panel === 'plan' && (
         <div className="stack">
@@ -282,6 +309,11 @@ export default function App() {
       {panel === 'accounts' && <AccountsPanel onChanged={load} onTab={go} />}
       {panel === 'banks' && <BanksPanel onChanged={load} onTab={go} />}
       {panel === 'categories' && <CategoriesPanel onChanged={load} />}
+      {panel === 'account' && (
+        <AccountPanel onSignOut={async () => {
+          await logout(); setData(null); setSignedIn(false);
+        }} />
+      )}
       {panel === 'import' && (
         <ImportPanel accounts={accounts} onImported={load} onTab={go} />
       )}

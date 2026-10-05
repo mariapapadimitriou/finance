@@ -1,4 +1,4 @@
-"""The password gate.
+"""The sign-in gate.
 
 These matter more than most tests here: everything else in this app guards
 against getting a number wrong, and this guards against a stranger reaching a
@@ -81,7 +81,7 @@ class TestHostedWithoutAPassword:
 
     def test_logging_in_is_impossible_rather_than_open(self, tmp_path, monkeypatch):
         c = client_for(tmp_path, monkeypatch, hosted=True, password=None)
-        assert c.post("/api/auth/login", json={"password": ""}).status_code == 503
+        assert c.post("/api/auth/login", json={"username": "mariapapas", "password": ""}).status_code == 503
 
 
 class TestLockedDeployment:
@@ -108,20 +108,20 @@ class TestLockedDeployment:
         assert c.post("/api/recategorize").status_code == 401
 
     def test_a_wrong_password_is_refused(self, c):
-        assert c.post("/api/auth/login", json={"password": "wrong"}).status_code == 401
+        assert c.post("/api/auth/login", json={"username": "mariapapas", "password": "wrong"}).status_code == 401
         assert c.get("/api/summary").status_code == 401
 
     def test_the_right_password_opens_it(self, c):
-        assert c.post("/api/auth/login", json={"password": "hunter2"}).status_code == 200
+        assert c.post("/api/auth/login", json={"username": "mariapapas", "password": "hunter2"}).status_code == 200
         assert c.get("/api/summary").status_code == 200
 
     def test_the_session_persists_across_requests(self, c):
-        c.post("/api/auth/login", json={"password": "hunter2"})
+        c.post("/api/auth/login", json={"username": "mariapapas", "password": "hunter2"})
         assert c.get("/api/summary").status_code == 200
         assert c.get("/api/accounts").status_code == 200
 
     def test_signing_out_closes_it_again(self, c):
-        c.post("/api/auth/login", json={"password": "hunter2"})
+        c.post("/api/auth/login", json={"username": "mariapapas", "password": "hunter2"})
         assert c.post("/api/auth/logout").status_code == 200
         assert c.get("/api/summary").status_code == 401
 
@@ -131,20 +131,28 @@ class TestLockedDeployment:
         r = c.get("/api/auth/status")
         assert r.status_code == 200
         assert r.get_json() == {"required": True, "configured": True,
-                                "signed_in": False}
+                                "signed_in": False, "user": None}
 
     def test_status_reports_signed_in_after_login(self, c):
-        c.post("/api/auth/login", json={"password": "hunter2"})
-        assert c.get("/api/auth/status").get_json()["signed_in"] is True
+        c.post("/api/auth/login", json={"username": "mariapapas", "password": "hunter2"})
+        body = c.get("/api/auth/status").get_json()
+        assert body["signed_in"] is True
+        assert body["user"]["username"] == "mariapapas"
+
+    def test_a_wrong_username_is_refused_like_a_wrong_password(self, c):
+        a = c.post("/api/auth/login", json={"username": "nobody", "password": "hunter2"})
+        b = c.post("/api/auth/login", json={"username": "mariapapas", "password": "x"})
+        assert a.status_code == b.status_code == 401
+        assert a.get_json()["error"] == b.get_json()["error"]
 
     def test_a_plain_password_env_var_also_works(self, tmp_path, monkeypatch):
         c = client_for(tmp_path, monkeypatch, hosted=True, password="plain",
                        as_hash=False)
-        assert c.post("/api/auth/login", json={"password": "plain"}).status_code == 200
+        assert c.post("/api/auth/login", json={"username": "mariapapas", "password": "plain"}).status_code == 200
 
     def test_the_error_message_never_says_which_part_was_wrong(self, c):
-        a = c.post("/api/auth/login", json={"password": ""}).get_json()["error"]
-        b = c.post("/api/auth/login", json={"password": "hunter"}).get_json()["error"]
+        a = c.post("/api/auth/login", json={"username": "mariapapas", "password": ""}).get_json()["error"]
+        b = c.post("/api/auth/login", json={"username": "mariapapas", "password": "hunter"}).get_json()["error"]
         assert a == b
 
 
@@ -155,12 +163,12 @@ class TestRunningLocally:
         c = client_for(tmp_path, monkeypatch, hosted=False, password=None)
         assert c.get("/api/summary").status_code == 200
         assert c.get("/api/auth/status").get_json() == {
-            "required": False, "configured": False, "signed_in": True}
+            "required": False, "configured": False, "signed_in": True, "user": None}
 
     def test_setting_one_locally_is_honoured(self, tmp_path, monkeypatch):
         c = client_for(tmp_path, monkeypatch, hosted=False, password="local")
         assert c.get("/api/summary").status_code == 401
-        assert c.post("/api/auth/login", json={"password": "local"}).status_code == 200
+        assert c.post("/api/auth/login", json={"username": "mariapapas", "password": "local"}).status_code == 200
         assert c.get("/api/summary").status_code == 200
 
 class TestSessionsSurviveAcrossInstances:
@@ -201,7 +209,7 @@ class TestSessionsSurviveAcrossInstances:
         a, b = self.two_instances(tmp_path, monkeypatch,
                                   password="hunter2", as_hash=False)
 
-        assert a.post("/api/auth/login", json={"password": "hunter2"}).status_code == 200
+        assert a.post("/api/auth/login", json={"username": "mariapapas", "password": "hunter2"}).status_code == 200
         cookie = a.get_cookie("session")
         assert cookie is not None, "logging in should have set a session cookie"
 
@@ -213,7 +221,7 @@ class TestSessionsSurviveAcrossInstances:
         (tmp_path / "a").mkdir(); (tmp_path / "b").mkdir()
         a, b = self.two_instances(tmp_path, monkeypatch,
                                   password="hunter2", as_hash=True)
-        a.post("/api/auth/login", json={"password": "hunter2"})
+        a.post("/api/auth/login", json={"username": "mariapapas", "password": "hunter2"})
         b.set_cookie("session", a.get_cookie("session").value, domain="localhost")
         assert b.get("/api/summary").status_code == 200
 
@@ -223,7 +231,7 @@ class TestSessionsSurviveAcrossInstances:
         (tmp_path / "a").mkdir(); (tmp_path / "b").mkdir()
         a = client_for(tmp_path / "a", monkeypatch, hosted=True,
                        password="hunter2", as_hash=False)
-        a.post("/api/auth/login", json={"password": "hunter2"})
+        a.post("/api/auth/login", json={"username": "mariapapas", "password": "hunter2"})
         stolen = a.get_cookie("session").value
 
         monkeypatch.setenv(auth.PASSWORD_ENV, "something-else")
@@ -236,7 +244,7 @@ class TestSessionsSurviveAcrossInstances:
         (tmp_path / "a").mkdir(); (tmp_path / "b").mkdir()
         a = client_for(tmp_path / "a", monkeypatch, hosted=True,
                        password="old-one", as_hash=False)
-        a.post("/api/auth/login", json={"password": "old-one"})
+        a.post("/api/auth/login", json={"username": "mariapapas", "password": "old-one"})
         old_cookie = a.get_cookie("session").value
 
         monkeypatch.setenv(auth.PASSWORD_ENV, "new-one")

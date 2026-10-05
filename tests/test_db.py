@@ -128,3 +128,54 @@ class TestDriverOnlyParameters:
         _clear(monkeypatch)
         monkeypatch.setenv("DATABASE_URL", value)
         assert database_url() is None
+
+
+class TestEachAccountIsItsOwnSchema:
+    """On a pooled Postgres the search path must be per transaction, or one
+    person's query could land in another person's tables."""
+
+    class _Raw:
+        def __init__(self):
+            self.log = []
+
+        def cursor(self):
+            raw = self
+
+            class _Cur:
+                rowcount = 0
+
+                def execute(self, sql, params=()):
+                    raw.log.append(sql)
+
+                def executemany(self, sql, rows):
+                    raw.log.append(sql)
+            return _Cur()
+
+        def commit(self):
+            self.log.append("COMMIT")
+
+    def test_set_local_opens_every_transaction(self):
+        from finance.db import _PgConnection
+        raw = self._Raw()
+        conn = _PgConnection(raw, "u_7")
+        conn.execute("SELECT 1")
+        conn.execute("SELECT 2")
+        conn.commit()
+        conn.execute("SELECT 3")
+        assert raw.log == ['SET LOCAL search_path TO "u_7"', "SELECT 1", "SELECT 2",
+                           "COMMIT",
+                           'SET LOCAL search_path TO "u_7"', "SELECT 3"]
+
+    def test_the_owner_is_pinned_to_public_too(self):
+        from finance.db import _PgConnection
+        raw = self._Raw()
+        _PgConnection(raw).execute("SELECT 1")
+        assert raw.log[0] == 'SET LOCAL search_path TO "public"'
+
+    def test_only_ledger_schema_names_reach_sql(self):
+        from finance.db import valid_schema
+        for good in ("public", "u_1", "u_42"):
+            assert valid_schema(good) == good
+        for bad in ("", "u_", "u_1; DROP TABLE x", 'u_1"', "pg_catalog", "U_1"):
+            with pytest.raises(ValueError):
+                valid_schema(bad)

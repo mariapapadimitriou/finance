@@ -1460,3 +1460,4 @@ td { border-top-color: var(--border); }
   .insight .fig .v { font-size: 1.05rem; }
   .insight .chip { width: 34px; height: 34px; }
 }
+.ring-head h2 .week-dates { color: var(--muted); font-weight: 600; font-size: .95rem; letter-spacing: 0; }

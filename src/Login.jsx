@@ -1,31 +1,33 @@
 import { useState } from 'react';
 import Logo from './components/Logo.jsx';
-import { login } from './api.js';
+import { login, signup } from './api.js';
 
 /**
- * The password screen.
+ * Sign in, or make an account.
  *
- * One field, because there is one person and one secret — no accounts, no
- * signup, no reset link to get wrong. It says as little as possible about a
- * failure: the server returns the same message whatever was wrong with the
- * guess, and this shows exactly that rather than inventing a more helpful one.
+ * Each account has a ledger of its own, so a new one starts empty. On a
+ * failed sign-in it shows exactly what the server said, which is the same
+ * whether the username or the password was wrong.
  */
 export default function Login({ onSignedIn }) {
+  const [mode, setMode] = useState('in');            // 'in' | 'up'
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const creating = mode === 'up';
 
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const r = await login(password);
+      const r = await (creating ? signup : login)(username.trim(), password);
       if (r.ok) {
         setPassword('');
-        onSignedIn();
+        onSignedIn(r.user);
       } else {
-        setError(r.error || "That password isn't right.");
+        setError(r.error || "That username and password don't match.");
       }
     } catch (err) {
       setError(err.message);
@@ -42,30 +44,49 @@ export default function Login({ onSignedIn }) {
           <div className="name">Spendie</div>
         </div>
 
-        <label htmlFor="pw" className="tile-label">Password</label>
+        <label htmlFor="user" className="tile-label">Username</label>
+        <input
+          id="user"
+          type="text"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoComplete="username"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
+          required
+        />
+
+        <label htmlFor="pw" className="tile-label" style={{ marginTop: 12 }}>
+          Password
+        </label>
         <input
           id="pw"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          autoFocus
-          autoComplete="current-password"
-          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoComplete={creating ? 'new-password' : 'current-password'}
+          minLength={creating ? 10 : undefined}
           required
         />
 
         <button className="btn primary" type="submit" disabled={busy}
                 style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}>
-          {busy ? 'Checking…' : 'Sign in'}
+          {busy ? (creating ? 'Creating…' : 'Checking…')
+            : (creating ? 'Create account' : 'Sign in')}
         </button>
 
         {error && (
           <div className="notice error" style={{ marginTop: 14 }}>{error}</div>
         )}
 
-        <p className="small muted" style={{ marginTop: 18, marginBottom: 0 }}>
-          Your spending — and the banks you&apos;ve connected — are behind this.
-        </p>
+        <button type="button" className="btn quiet"
+                style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
+                onClick={() => { setMode(creating ? 'in' : 'up'); setError(null); }}>
+          {creating ? 'I have an account' : 'Create an account'}
+        </button>
       </form>
     </div>
   );

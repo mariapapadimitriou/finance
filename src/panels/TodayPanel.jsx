@@ -1,22 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Card, ErrorNote, Loading, Notice, StatusPill, } from '../components/ui.jsx';
+  Card, ErrorNote, Loading, StatusPill, } from '../components/ui.jsx';
 import { Donut, RingLegend, RingRow } from '../components/Ring.jsx';
 import {
-  getNudge, getPlan, getSetup, money, monthLabel,
-  simulateSpend, skipSetupStep, undoDraw,
+  getPlan, money, monthLabel, simulateSpend, undoDraw,
 } from '../api.js';
 
 /**
  * Allowance: what is left to spend this week, as a ring with its parts beside
  * it — the week's share, what rolled over, and what has gone.
  */
-export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
+export default function TodayPanel({ month, onTab, version = 0 }) {
   const [data, setData] = useState(null);
-  const [nudge, setNudge] = useState(null);
   const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [setup, setSetup] = useState(null);
 
   // `version` is in the dependency list on purpose: it changes when a statement
   // is imported, and the plan has to be recomputed against the new ledger even
@@ -25,15 +21,6 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
     setError(null);
     try {
       setData(await getPlan(month));
-      // The server decides whether there is anything to say: it speaks only
-      // about the current month, never on the 1st, and never about a day it
-      // has no data for. Gating again here on which month is being *viewed*
-      // silenced it entirely, because the panel falls back to the last month
-      // with statements whenever this one is still empty.
-      setNudge((await getNudge().catch(() => null))?.nudge ?? null);
-      // Best effort: a checklist that fails to load is simply not shown,
-      // rather than taking the weekly number down with it.
-      setSetup(await getSetup().catch(() => null));
     } catch (e) {
       setError(e);
     }
@@ -46,57 +33,14 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
 
   const { state, status, banks, draws } = data;
   const thisMonth = new Date().toISOString().slice(0, 7);
-  // Showing a month that has already ended is a different question — "what was
+  // A month that has already ended is a different question — "what was
   // left on the last day" rather than "what can I spend now" — and the panel
   // has to say which one it is answering.
   const live = state.month === thisMonth;
-  const latestWithData = data.months_with_data?.at(-1);
 
   return (
     <div className="stack">
       <ErrorNote error={error} onRetry={load} />
-
-      {setup?.remaining > 0 && (
-        <SetupChecklist setup={setup} onTab={onTab}
-                        onSkip={async (id) => {
-                          await skipSetupStep(id).catch(() => null);
-                          setSetup(await getSetup().catch(() => null));
-                        }} />
-      )}
-
-      {nudge && (
-        <Notice kind={nudge.kind === 'over' ? 'error' : 'good'}>
-          <strong>{nudge.headline}</strong> {nudge.detail}
-        </Notice>
-      )}
-
-      {!live && (
-        <Notice>
-          Showing {monthLabel(state.month, { full: true })}
-          {onMonth && (
-            <>
-              {' '}
-              <button className="btn quiet" onClick={() => onMonth(thisMonth)}>
-                Show {monthLabel(thisMonth, { long: true })} anyway
-              </button>
-            </>
-          )}
-        </Notice>
-      )}
-
-      {live && !data.has_data_this_month && (
-        <Notice>
-          Nothing yet for {monthLabel(state.month, { full: true })}
-          {latestWithData && onMonth && (
-            <>
-              {' '}
-              <button className="btn quiet" onClick={() => onMonth(latestWithData)}>
-                Show {monthLabel(latestWithData, { long: true })} instead
-              </button>
-            </>
-          )}
-        </Notice>
-      )}
 
       <SafeToSpend state={state} live={live} />
       <ThisMonth status={status} state={state} live={live}
@@ -110,46 +54,13 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
   );
 }
 
-/* ── What is left to set up ──────────────────────────────────────────────── */
-
-/**
- * Only the steps not yet done, each a button to where it is done.
- *
- * Above the weekly number on purpose: until these are done the number is a
- * stand-in, and the list says what would make it real. Every tick comes from
- * the data rather than from pressing anything here, so a step done somewhere
- * else ticks itself, and the card disappears for good once the last one does.
- */
-function SetupChecklist({ setup, onTab, onSkip }) {
-  const todo = setup.steps.filter((s) => !s.done && !s.skipped);
-  const done = setup.steps.filter((s) => s.done).length;
-  const total = setup.steps.filter((s) => !s.skipped).length;
-
-  return (
-    <Card title="Finish setting up">
-      <ol className="setup-steps">
-        {todo.map((step) => (
-          <li key={step.id}>
-            <div className="what">
-              <strong>{step.label}</strong>
-            </div>
-            <div className="row" style={{ gap: 6, flex: 'none' }}>
-              {step.optional && (
-                <button className="btn quiet" onClick={() => onSkip(step.id)}>
-                  Skip
-                </button>
-              )}
-              {onTab && (
-                <button className="btn" onClick={() => onTab(step.tab)}>
-                  {step.action}
-                </button>
-              )}
-            </div>
-          </li>
-        ))}
-      </ol>
-    </Card>
-  );
+/** "Oct 5–11", or "Oct 31" for a one-day week. */
+function weekDates(month, week) {
+  const [y, m] = month.split('-').map(Number);
+  const mon = new Date(y, m - 1, 1).toLocaleString('en', { month: 'short' });
+  return week.first_day === week.last_day
+    ? `${mon} ${week.first_day}`
+    : `${mon} ${week.first_day}–${week.last_day}`;
 }
 
 /* ── The number ──────────────────────────────────────────────────────────── */
@@ -169,8 +80,11 @@ function SafeToSpend({ state, live }) {
   return (
     <Card className={`hero-card${over ? ' behind' : ''}`}>
       <div className="ring-head">
-        <h2>{live ? 'This week'
-                  : `Last week of ${monthLabel(state.month, { long: true })}`}</h2>
+        <h2>
+          {live ? 'This week'
+                : `Last week of ${monthLabel(state.month, { long: true })}`}
+          <span className="week-dates"> · {weekDates(state.month, week)}</span>
+        </h2>
         {over ? (
           <StatusPill state="critical">Over by {money(-left, { cents: true })}</StatusPill>
         ) : behind ? (

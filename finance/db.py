@@ -118,19 +118,45 @@ class _EmptyResult:
         return []
 
 
+_SCHEMA_NAME = re.compile(r"^(public|u_[0-9]+)$")
+
+
+def valid_schema(name: str) -> str:
+    """A schema name this module will put into SQL: public, or u_<id>."""
+    if not _SCHEMA_NAME.match(name or ""):
+        raise ValueError(f"not a ledger schema: {name!r}")
+    return name
+
+
 class _PgConnection:
     """A psycopg connection that speaks the SQLite dialect `store.py` writes.
 
     Exposes only what the store uses: `execute`, `executemany` and
     `executescript`, each returning a cursor whose rows behave like
     `sqlite3.Row` — indexable by column name and convertible with `dict()`.
+
+    Each account's ledger is its own schema, chosen per transaction with
+    `SET LOCAL search_path`. LOCAL is the whole point: the URL is a pooled
+    endpoint, and a plain `SET` would stay on the shared server connection
+    after this one hands it back — the next person's query could then run
+    against someone else's tables. `SET LOCAL` ends with the transaction, so
+    it is issued again at the start of each one.
     """
 
-    def __init__(self, raw):
+    def __init__(self, raw, schema: str = "public"):
         self._raw = raw
+        self._schema = valid_schema(schema)
+        self._path_set = False
+
+    def _cursor(self):
+        cur = self._raw.cursor()
+        if not self._path_set:
+            cur.execute(f'SET LOCAL search_path TO "{self._schema}"')
+            self._path_set = True
+        return cur
 
     def execute(self, sql, params=()):
-        cur = self._raw.cursor()
+        cur = self._cursor()
         cur.execute(to_postgres(sql), tuple(params))
         return cur
 
@@ -141,12 +167,12 @@ class _PgConnection:
             # reports 0. Callers read this as "how many rows were written", and
             # an import where every row was a duplicate writes none.
             return _EmptyResult()
-        cur = self._raw.cursor()
+        cur = self._cursor()
         cur.executemany(to_postgres(sql), rows)
         return cur
 
     def executescript(self, script):
-        cur = self._raw.cursor()
+        cur = self._cursor()
         # Postgres runs a multi-statement string in one call, but only when the
         # statements carry no parameters — which is true of the schema.
         cur.execute(to_postgres(script))
@@ -154,21 +180,27 @@ class _PgConnection:
 
     def commit(self):
         self._raw.commit()
+        self._path_set = False          # the next transaction sets it again
 
     def close(self):
         self._raw.close()
 
 
 @contextmanager
-def connect(path: str, url: str | None = None):
-    """Open the ledger: Postgres when a URL is configured, SQLite otherwise."""
+def connect(path: str, url: str | None = None, schema: str = "public"):
+    """Open the ledger: Postgres when a URL is configured, SQLite otherwise.
+
+    `schema` picks the account's ledger on Postgres. On SQLite each account
+    has its own file instead, so it is the path that differs and this is
+    unused.
+    """
     url = url or database_url()
     if url:
         import psycopg
         from psycopg.rows import dict_row
 
         raw = psycopg.connect(url, row_factory=dict_row)
-        conn = _PgConnection(raw)
+        conn = _PgConnection(raw, schema)
         try:
             yield conn
             conn.commit()

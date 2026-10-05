@@ -350,6 +350,28 @@ class TestMonthlyNotWeekly:
         assert "setLinked(false)" in text
 
 
+class TestAllowanceOpensOnTheWeek:
+    def test_no_banners_above_the_week(self):
+        text = (SRC / "panels" / "TodayPanel.jsx").read_text(encoding="utf-8")
+        for gone in ("SetupChecklist", "getNudge", "getSetup", "Showing ",
+                     "Nothing yet for"):
+            assert gone not in text, gone
+
+    def test_the_week_says_which_dates_it_covers(self):
+        text = (SRC / "panels" / "TodayPanel.jsx").read_text(encoding="utf-8")
+        assert "weekDates(state.month, week)" in text
+
+
+class TestAccountsInTheApp:
+    def test_plaid_syncs_when_the_app_opens(self):
+        text = (SRC / "App.jsx").read_text(encoding="utf-8")
+        assert "syncPlaid()" in text
+
+    def test_sign_in_asks_for_a_username_and_offers_sign_up(self):
+        text = (SRC / "Login.jsx").read_text(encoding="utf-8")
+        assert 'id="user"' in text and "signup" in text
+
+
 class TestTheSetupChecklistGoesSomewhereReal:
     def test_every_step_names_a_destination_that_exists(self, tmp_path, panels,
                                                         groups, aliases):

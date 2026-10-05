@@ -17,15 +17,15 @@ one thing that changes when hosted.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
-import secrets
 import sys
 from datetime import timedelta
 
-from flask import Flask, abort, jsonify, request, send_from_directory, session
+from flask import Flask, abort, g, jsonify, request, send_from_directory, session
 from flask_cors import CORS
 
-from finance import auth
+from finance import auth, users
 from finance.api import bp
 # storage_mode is re-exported for convenience; /api/health reads it from db.
 from finance.db import database_url, is_hosted as _is_hosted, storage_mode  # noqa: F401
@@ -64,24 +64,42 @@ def _hosted_db_path() -> str | None:
     return None
 
 
-# ── The password gate ────────────────────────────────────────────────────────
+# ── Accounts and the sign-in gate ────────────────────────────────────────────
 # Registered before the blueprint so it covers every route, present and future.
-# See finance/auth.py for why it fails closed when hosted.
+# See finance/auth.py for why it fails closed when hosted, and finance/users.py
+# for how each account gets a ledger of its own.
 
-# Reachable without a session: the login endpoints themselves, and the static
-# files the login screen is made of. Everything else, including every /api
+# Reachable without a session: the sign-in endpoints themselves, and the static
+# files the sign-in screen is made of. Everything else, including every /api
 # route and the frontend shell, needs one.
-_OPEN_PATHS = frozenset({"/api/auth/status", "/api/auth/login"})
+_OPEN_PATHS = frozenset({"/api/auth/status", "/api/auth/login", "/api/auth/signup"})
 
 
 def _is_static_asset(path: str) -> bool:
     return path.startswith("/assets/") or path in ("/favicon.svg", "/favicon.ico")
 
 
+def _session_key(base: Store) -> bytes:
+    """The cookie-signing key: the same on every instance of a deployment.
+
+    The secret-box key when there is one (it is already a stable deployment
+    secret), else the owner's configured hash, else a random value kept in the
+    database — which every instance reads alike.
+    """
+    from finance.secrets_box import KEY_ENV
+    secret = os.environ.get(KEY_ENV, "").strip()
+    if secret:
+        return hashlib.sha256(b"spendie.session.v2|" + secret.encode()).digest()
+    owner = users.owner_hash_from_env()
+    if owner:
+        return auth.session_secret(owner)
+    return hashlib.sha256(b"spendie.session.v2|"
+                          + users.stored_secret(base, "session").encode()).digest()
+
+
 def _install_auth(app: Flask) -> None:
-    password_hash = auth.configured_hash()
-    app.config["AUTH_REQUIRED"] = auth.required(_is_hosted())
-    app.config["AUTH_HASH"] = password_hash
+    base: Store = app.config["STORE"]
+    users.bootstrap_owner(base)
 
     # Cookie hardening. Secure only when hosted, because a local dev server is
     # http and a Secure cookie would simply never be sent.
@@ -91,41 +109,77 @@ def _install_auth(app: Flask) -> None:
         SESSION_COOKIE_SECURE=_is_hosted(),
         PERMANENT_SESSION_LIFETIME=timedelta(days=30),
     )
+    app.secret_key = _session_key(base)
+    app.config["STORES"] = {}
 
-    if password_hash:
-        app.secret_key = auth.session_secret(password_hash)
-    else:
-        # No password, so nothing is signed that matters. A random key keeps
-        # Flask happy and guarantees nothing is silently carried over if a
-        # password is added later.
-        app.secret_key = secrets.token_bytes(32)
+    has_accounts = {"yes": users.count(base) > 0}
+
+    def accounts_exist() -> bool:
+        # Once there is an account there always is one, so a yes is kept and
+        # only a no is asked again.
+        if not has_accounts["yes"]:
+            has_accounts["yes"] = users.count(base) > 0
+        return has_accounts["yes"]
+
+    def required() -> bool:
+        # Hosted: always. Locally, only once there is an account to sign in
+        # to — a login prompt in front of a SQLite file on your own laptop
+        # helps nobody.
+        return _is_hosted() or accounts_exist()
+
+    def store_for(user) -> Store:
+        if user.owner:
+            return base
+        stores = app.config["STORES"]
+        if user.id not in stores:
+            path, schema = users.ledger_location(base.path, user)
+            stores[user.id] = Store(path, base.url, schema)
+        return stores[user.id]
+
+    app.config["STORE_FOR"] = store_for
+
+    def signed_in_user():
+        user = users.by_id(base, session.get("uid"))
+        if user is None or session.get("pw") != user.fingerprint:
+            return None
+        return user
+
+    def start_session(user) -> None:
+        session.clear()
+        session["uid"] = user.id
+        session["pw"] = user.fingerprint
+        session.permanent = True
 
     @app.before_request
-    def _require_password():
-        if not app.config["AUTH_REQUIRED"]:
+    def _require_sign_in():
+        g.user = None
+        if not required():
             return None
 
-        if not app.config["AUTH_HASH"]:
-            # Hosted with no password configured. Serving the app would expose
-            # it; serving nothing at least says why.
+        path = request.path
+        if not accounts_exist():
+            if path == "/api/auth/status":
+                return None
+            # Hosted with no account and nothing to create the first one from.
+            # Serving the app would expose it; serving nothing says why.
             return jsonify({
-                "error": "This deployment has no password set, so it will not "
-                         "serve anything. Set SPENDIE_PASSWORD_HASH in the "
+                "error": "This deployment has no account set up, so it will not "
+                         "serve anything. Set SPENDIE_OWNER_PASSWORD_HASH in the "
                          "project's environment variables and redeploy.",
                 "setup_required": True,
             }), 503
 
-        path = request.path
+        g.user = signed_in_user()
         if path in _OPEN_PATHS or _is_static_asset(path):
             return None
-        if session.get("ok") is True:
+        if g.user is not None:
             return None
 
         if path.startswith("/api/"):
             return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
 
         # A browser asking for a page gets the app shell, which renders the
-        # login screen once /api/auth/status tells it to. Redirecting would
+        # sign-in screen once /api/auth/status tells it to. Redirecting would
         # break deep links for no benefit.
         index = os.path.join(FRONTEND_DIR, "index.html")
         if os.path.isfile(index):
@@ -134,30 +188,63 @@ def _install_auth(app: Flask) -> None:
 
     @app.get("/api/auth/status")
     def _auth_status():
+        need = required()
+        user = g.get("user")
         return jsonify({
-            "required": bool(app.config["AUTH_REQUIRED"]),
-            "configured": bool(app.config["AUTH_HASH"]),
-            "signed_in": (not app.config["AUTH_REQUIRED"]) or session.get("ok") is True,
+            "required": need,
+            "configured": accounts_exist(),
+            "signed_in": (not need) or user is not None,
+            "user": user.public() if user else None,
         })
 
     @app.post("/api/auth/login")
     def _auth_login():
-        if not app.config["AUTH_REQUIRED"]:
+        if not required():
             return jsonify({"ok": True, "signed_in": True})
-        stored = app.config["AUTH_HASH"]
-        if not stored:
-            return jsonify({"error": "No password is configured."}), 503
-
         body = request.get_json(silent=True) or {}
-        if not auth.verify_password(str(body.get("password", "")), stored):
-            # The same message whatever went wrong, so it never confirms a
-            # partially-right guess.
-            return jsonify({"error": "That password isn't right."}), 401
+        user = users.authenticate(base, body.get("username", ""),
+                                  str(body.get("password", "")))
+        if user is None:
+            # The same message whatever went wrong, so it never confirms that
+            # a username exists or that a guess was partly right.
+            return jsonify({"error": "That username and password don't match."}), 401
+        start_session(user)
+        return jsonify({"ok": True, "signed_in": True, "user": user.public()})
 
-        session.clear()
-        session["ok"] = True
-        session.permanent = True
-        return jsonify({"ok": True, "signed_in": True})
+    @app.post("/api/auth/signup")
+    def _auth_signup():
+        body = request.get_json(silent=True) or {}
+        username = users.normalise(body.get("username"))
+        password = str(body.get("password", ""))
+        problem = users.check_new(username, password)
+        if problem:
+            return jsonify({"error": problem}), 400
+        # The first account on a ledger that has none takes the ledger that is
+        # already there; every later one starts a ledger of its own.
+        first = not accounts_exist()
+        user = users.create(base, username, auth.hash_password(password), owner=first)
+        if user is None:
+            return jsonify({"error": "That username is taken."}), 409
+        store_for(user)                   # its ledger exists from the start
+        start_session(user)
+        return jsonify({"ok": True, "signed_in": True, "user": user.public()})
+
+    @app.post("/api/auth/password")
+    def _auth_password():
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        body = request.get_json(silent=True) or {}
+        if not auth.verify_password(str(body.get("current", "")), user.password_hash):
+            return jsonify({"error": "Your current password isn't right."}), 400
+        new = str(body.get("new", ""))
+        if len(new) < users.MIN_PASSWORD:
+            return jsonify({"error": f"Passwords need at least "
+                                     f"{users.MIN_PASSWORD} characters."}), 400
+        users.set_password(base, user.id, auth.hash_password(new))
+        # Every other session is signed out; this one carries on.
+        start_session(users.by_id(base, user.id))
+        return jsonify({"ok": True})
 
     @app.post("/api/auth/logout")
     def _auth_logout():
