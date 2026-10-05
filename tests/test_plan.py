@@ -158,6 +158,8 @@ class TestCanIBuyThis:
         cover = next(o for o in r["options"] if o["kind"] == "cover")
         assert cover["viable"] is True
         assert cover["bank_id"] == 1
+        # The bank would pay the whole purchase, not just the shortfall.
+        assert "$200.00 to $100.00" in cover["detail"].replace(",", "")
 
     def test_a_bank_that_is_too_small_is_shown_as_not_viable(self):
         bank = Bank(id=1, name="Fun", target=200.0, opening=10.0)
@@ -482,29 +484,49 @@ class TestPlanApi:
         deprecated: two ways to decide one figure is how they drift apart."""
         assert client.put("/api/plan", json={"monthly_amount": 600}).status_code == 405
 
-    def test_banks_round_trip_and_cover(self, client):
-        bank_id = client.post("/api/piggy", json={
+    def _bank(self, client):
+        return client.post("/api/piggy", json={
             "name": "Fun", "target": 1200, "cadence": "annual", "opening": 100,
         }).get_json()["id"]
-        r = client.post(f"/api/piggy/{bank_id}/cover",
-                        json={"amount": 50, "month": "2025-01"})
+
+    def test_asking_can_i_moves_no_money(self, client):
+        """It is a question. Nothing was bought, so nothing comes out of a
+        bank and the week gets nothing added to it."""
+        bank_id = self._bank(client)
+        before = client.get("/api/plan").get_json()
+        r = client.post("/api/plan/simulate", json={"amount": 5000})
         assert r.status_code == 200
+        cover = next(o for o in r.get_json()["options"] if o["kind"] == "cover")
+        assert cover["bank_id"] == bank_id
+        after = client.get("/api/plan").get_json()
+        assert after["banks"][0]["available"] == before["banks"][0]["available"]
+        assert after["state"]["week"]["left"] == before["state"]["week"]["left"]
+        assert after["draws"] == []
 
-        bank = client.get("/api/plan").get_json()["banks"][0]
-        # The year's $1,200 is available from day one, so $50 out leaves
-        # $1,150 to spend; what is really in it is what went in less the $50.
-        assert bank["charged"] == pytest.approx(50.0)
-        assert bank["balance"] == pytest.approx(1150.0)
-        assert bank["available"] == pytest.approx(1150.0)
-        assert bank["held"] == pytest.approx(bank["accrued"] - 50.0)
+    def test_there_is_no_endpoint_that_draws_any_more(self, client):
+        bank_id = self._bank(client)
+        r = client.post(f"/api/piggy/{bank_id}/cover", json={"amount": 50})
+        assert r.status_code in (404, 405)
 
-    def test_covering_more_than_the_bank_holds_is_refused(self, client):
-        bank_id = client.post("/api/piggy", json={
-            "name": "Fun", "target": 120, "cadence": "annual", "opening": 10,
-        }).get_json()["id"]
-        r = client.post(f"/api/piggy/{bank_id}/cover", json={"amount": 500})
-        assert r.status_code == 400
-        assert "only has" in r.get_json()["error"]
+    def test_an_old_draw_can_be_undone(self, client):
+        bank_id = self._bank(client)
+        st = client.application.config["STORE"]
+        month = client.get("/api/plan").get_json()["state"]["month"]
+        before = client.get("/api/plan").get_json()["banks"][0]["available"]
+        with st.conn() as c:
+            c.execute("INSERT INTO piggy_draws (bank_id, month, amount, note) "
+                      "VALUES (?,?,?,?)", (bank_id, month, 50.0, ""))
+        drawn = client.get("/api/plan").get_json()
+        assert drawn["banks"][0]["available"] == pytest.approx(before - 50.0)
+        assert st.covered_in(month) == pytest.approx(50.0)
+
+        draw_id = drawn["draws"][0]["id"]
+        assert client.delete(f"/api/piggy/draws/{draw_id}").status_code == 200
+        undone = client.get("/api/plan").get_json()
+        assert undone["banks"][0]["available"] == pytest.approx(before)
+        assert undone["draws"] == []
+        assert st.covered_in(month) == 0
+        assert client.delete(f"/api/piggy/draws/{draw_id}").status_code == 404
 
     def test_simulate_needs_a_positive_amount(self, client):
         assert client.post("/api/plan/simulate", json={"amount": 0}).status_code == 400

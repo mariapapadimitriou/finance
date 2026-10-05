@@ -864,7 +864,9 @@ def plan():
         "state": state,
         "status": spend_plan.how_am_i_doing(state, baseline),
         "banks": _bank_status(st),
-        "draws": st.draws(month),
+        # Every month's, not just this one: they are only here to be undone,
+        # and one from a month ago is still holding money out of its bank.
+        "draws": st.draws(),
         "allocated_this_month": st.allocated_in(month),
         # Everything that went out this month — rent, groceries, and what a
         # piggy bank paid for too — net of refunds. The weekly number counts
@@ -1516,37 +1518,15 @@ def unallocate_from_bank(txn_id: str):
     return jsonify({"ok": True})
 
 
-@bp.post("/piggy/<int:bank_id>/cover")
-def cover_from_bank(bank_id: int):
-    """Draw on a bank to cover this month's overspend.
+@bp.delete("/piggy/draws/<int:draw_id>")
+def undo_draw(draw_id: int):
+    """Put back money a bank lent the month.
 
-    Distinct from allocating a charge: this is not "the holiday paid for the
-    flights", it is "the month went over and the holiday fund is lending it
-    the difference". Both empty the bank, so both are checked against what is
-    actually in it.
+    Asking "can I buy this?" used to take the money out there and then, before
+    anything was bought. It no longer does; this undoes the ones it took.
     """
-    from . import piggy
-
-    body = request.get_json(silent=True) or {}
-    try:
-        amount = float(body.get("amount", 0))
-    except (TypeError, ValueError):
-        return jsonify({"error": "Amount must be a number."}), 400
-    if amount <= 0:
-        return jsonify({"error": "Enter an amount above zero."}), 400
-
-    st = store()
-    bank = st.piggy_bank(bank_id)
-    if bank is None:
-        return jsonify({"error": "No such piggy bank."}), 404
-
-    month = str(body.get("month") or _plan_month())
-    available = piggy.status(
-        bank, st.bank_charges_by_month().get(bank_id, {}))["balance"]
-    if not st.draw_from_bank(bank_id, month, amount, available,
-                             str(body.get("note") or "")):
-        return jsonify({"error": f"{bank.name} only has "
-                                 f"${available:,.2f} in it."}), 400
+    if not store().delete_draw(draw_id):
+        return jsonify({"error": "No such draw."}), 404
     return jsonify({"ok": True})
 
 

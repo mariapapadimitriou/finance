@@ -3,8 +3,8 @@ import {
   Card, ErrorNote, Loading, Notice, StatusPill, } from '../components/ui.jsx';
 import { Donut, RingLegend, RingRow } from '../components/Ring.jsx';
 import {
-  coverFromBank, getNudge, getPlan, getSetup, money, monthLabel,
-  simulateSpend, skipSetupStep,
+  getNudge, getPlan, getSetup, money, monthLabel,
+  simulateSpend, skipSetupStep, undoDraw,
 } from '../api.js';
 
 /**
@@ -102,11 +102,11 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
       <ThisMonth status={status} state={state} live={live}
                  derivation={configured ? derivation : null}
                  total={data.spent_in_total} fromBanks={data.from_banks} />
-      <CanIBuyThis month={state.month} banks={banks} onCovered={load}
-                   onTab={onTab} />
+      <CanIBuyThis month={state.month} />
 
       <PiggyBanks banks={banks} draws={draws}
-                  allocated={data.allocated_this_month} onTab={onTab} />
+                  allocated={data.allocated_this_month} onTab={onTab}
+                  onChanged={load} />
     </div>
   );
 }
@@ -275,7 +275,7 @@ function ThisMonth({ status, state, live, derivation, total, fromBanks }) {
 
 /* ── Can I buy this ─────────────────────────────────────────────────────── */
 
-function CanIBuyThis({ month, banks, onCovered, onTab }) {
+function CanIBuyThis({ month }) {
   const [amount, setAmount] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -290,21 +290,6 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
     } catch (err) {
       setError(err);
       setResult(null);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function cover(option) {
-    setBusy(true);
-    setError(null);
-    try {
-      await coverFromBank(option.bank_id, result.short_by, month);
-      setResult(null);
-      setAmount('');
-      await onCovered();
-    } catch (err) {
-      setError(err);
     } finally {
       setBusy(false);
     }
@@ -342,7 +327,7 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
           {result.options.length > 0 && (
             <>
               <div className="tile-label" style={{ marginTop: 16 }}>
-                Two honest ways to do it anyway
+                If you buy it
               </div>
               <div className="options">
                 {result.options.map((o, i) => (
@@ -351,14 +336,6 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
                       <div className="ol">{o.label}</div>
                       <div className="od">{o.detail}</div>
                     </div>
-                    {o.kind === 'cover' ? (
-                      <button className="btn" disabled={!o.viable || busy}
-                              onClick={() => cover(o)}>
-                        {o.viable ? 'Draw it' : 'Not enough in it'}
-                      </button>
-                    ) : (
-                      <span className="pill">{o.viable ? 'Automatic' : 'Won\'t balance'}</span>
-                    )}
                   </div>
                 ))}
               </div>
@@ -377,7 +354,19 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
  * and a second form here that could change a target would be a second place
  * deciding the same number.
  */
-function PiggyBanks({ banks, draws, allocated, onTab }) {
+function PiggyBanks({ banks, draws, allocated, onTab, onChanged }) {
+  const [undoing, setUndoing] = useState(null);
+
+  async function undo(id) {
+    setUndoing(id);
+    try {
+      await undoDraw(id);
+      await onChanged?.();
+    } finally {
+      setUndoing(null);
+    }
+  }
+
   return (
     <Card title="Piggy banks">
       {banks.length === 0 ? (
@@ -423,13 +412,22 @@ function PiggyBanks({ banks, draws, allocated, onTab }) {
       {draws?.length > 0 && (
         <table>
           <thead>
-            <tr><th>Borrowed this month</th><th className="r">Amount</th></tr>
+            <tr><th>Borrowed</th><th className="r">Amount</th><th /></tr>
           </thead>
           <tbody>
-            {draws.map((d, i) => (
-              <tr key={i}>
-                <td>{d.name}</td>
+            {draws.map((d) => (
+              <tr key={d.id}>
+                <td>
+                  {d.name}
+                  <span className="muted small"> · {monthLabel(d.month)}</span>
+                </td>
                 <td className="r num">{money(d.amount, { cents: true })}</td>
+                <td className="r">
+                  <button className="btn quiet" disabled={undoing === d.id}
+                          onClick={() => undo(d.id)}>
+                    {undoing === d.id ? 'Undoing…' : 'Undo'}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

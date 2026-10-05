@@ -1165,21 +1165,11 @@ class Store:
                     WHERE t.date LIKE ?""", (f"{month}-%",)).fetchone()
         return round(row["total"], 2)
 
-    def draw_from_bank(self, bank_id: int, month: str, amount: float,
-                       available: float, note: str = "") -> bool:
-        """Take money from a bank to cover a month's overspend."""
-        if amount <= 0 or available < amount:
-            return False
+    def delete_draw(self, draw_id: int) -> bool:
+        """Undo a draw: the bank gets the money back, the month loses it."""
         with self.conn() as c:
-            row = c.execute("SELECT id FROM piggy_banks WHERE id = ?",
-                            (bank_id,)).fetchone()
-            if row is None:
-                return False
-            c.execute(
-                "INSERT INTO piggy_draws (bank_id, month, amount, note) VALUES (?,?,?,?)",
-                (bank_id, month, float(amount), note),
-            )
-            return True
+            cur = c.execute("DELETE FROM piggy_draws WHERE id = ?", (draw_id,))
+            return (cur.rowcount or 0) > 0
 
     def covered_in(self, month: str) -> float:
         with self.conn() as c:
