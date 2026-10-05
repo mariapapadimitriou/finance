@@ -44,7 +44,7 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
   if (!data && !error) return <Loading what="your allowance" />;
   if (!data) return <ErrorNote error={error} onRetry={load} />;
 
-  const { state, status, banks, draws, configured, derivation } = data;
+  const { state, status, banks, draws } = data;
   const thisMonth = new Date().toISOString().slice(0, 7);
   // Showing a month that has already ended is a different question — "what was
   // left on the last day" rather than "what can I spend now" — and the panel
@@ -100,7 +100,6 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
 
       <SafeToSpend state={state} live={live} />
       <ThisMonth status={status} state={state} live={live}
-                 derivation={configured ? derivation : null}
                  total={data.spent_in_total} fromBanks={data.from_banks} />
       <CanIBuyThis month={state.month} />
 
@@ -214,13 +213,12 @@ function SafeToSpend({ state, live }) {
 
 /* ── How are you doing this month ────────────────────────────────────────── */
 
-function ThisMonth({ status, state, live, derivation, total, fromBanks }) {
+function ThisMonth({ status, state, live, total, fromBanks }) {
   const budget = Math.max(state.budget ?? 0, 0);
   const spent = Math.max(status.spent, 0);
   const over = spent > budget;
   const used = budget > 0 ? spent / budget : 0;
   const lands = status.projected_over > 0;
-  const d = derivation;
 
   return (
     <Card title={live
@@ -248,10 +246,8 @@ function ThisMonth({ status, state, live, derivation, total, fromBanks }) {
           { label: 'Lands at', value: money(status.projected_month_end),
             tone: lands ? 'bad' : 'good', icon: 'trend',
             color: lands ? 'var(--critical)' : 'var(--good-text)' },
-          { label: 'Weekly allowance', value: `${money(state.week.nominal)}/wk`,
+          { label: 'Monthly allowance', value: `${money(state.monthly_amount)}/mo`,
             icon: 'flag' },
-          d?.from_plan && { label: 'Essentials', value: `${money(d.essentials)}/mo`,
-                            icon: 'calendar', color: 'var(--ring-4)' },
         ]} />
       </RingRow>
       {state.remaining >= 0 && state.days_left > 1 && (
