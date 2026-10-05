@@ -50,84 +50,31 @@ export default function PiggyPanel({ onTab, version = 0 }) {
     <div className="stack">
       {banks.length === 0 ? (
         <>
-          <Empty title="No piggy banks yet">
-            A monthly budget handles rent well and a holiday badly. The holiday
-            costs $3,000 once, so eleven months look like a surplus and the
-            twelfth looks like a catastrophe — one that was entirely
-            predictable.
-          </Empty>
-
-          {/* Not a generic nudge: travel is the big spending almost
-              everyone has, and until a bank pays for it every trip lands on
-              the week it was booked in. */}
-          {suggested && editing !== 'new' && (
-            <Notice kind="error">
-              <strong>Start with travel.</strong> Trips arrive in lumps, not
-              habits, so they don&apos;t belong in a weekly allowance — until
-              a bank pays for them, the week you book a flight reads as a
-              disaster.
-              {suggested.annual_spend > 0 && (
-                <> Your last year of travel came to{' '}
-                  <strong className="num">{money(suggested.annual_spend)}</strong>
-                  {suggested.target > 0 && (
-                    <>, about{' '}
-                      <strong className="num">
-                        {money(suggested.target / 12)}
-                      </strong>{' '}
-                      a month</>
-                  )}.</>
+          <Empty title="No piggy banks yet" />
+          {editing !== 'new' && (
+            <div className="row">
+              <button className="btn primary" onClick={() => setEditing('new')}>
+                {suggested ? 'Open a travel bank' : 'Open a piggy bank'}
+              </button>
+              {suggested?.annual_spend > 0 && (
+                <span className="muted num">
+                  {money(suggested.annual_spend)} on travel last year
+                </span>
               )}
-              <div className="row" style={{ marginTop: 12 }}>
-                <button className="btn primary" onClick={() => setEditing('new')}>
-                  Open a travel bank
-                </button>
-              </div>
-            </Notice>
+            </div>
           )}
-          <Card title="What a piggy bank does">
-            <p className="muted" style={{ marginTop: 0 }}>
-              You name your big spending and how much it gets a year. Two
-              things follow:
-            </p>
-            <ul className="steps">
-              <li>
-                <strong>The money is there from day one.</strong> Open an
-                $8,000 travel bank and you can spend $8,000 on travel today.
-                A twelfth of it comes off every month, like rent — and after
-                the first year it only takes back what you actually spent.
-              </li>
-              <li>
-                <strong>It pays by itself.</strong> Choose what it pays for,
-                and every charge in those categories comes out of the bank
-                instead of your week. A one-off in any other category can be
-                charged to it in{' '}
-                <GoTo to="transactions" from="plan" onTab={onTab} />.
-              </li>
-            </ul>
-          </Card>
         </>
       ) : (
         <>
           <div className="grid cols-3">
             <Tile label="Out of every month" value={money(data.monthly_total)}
-                  note={data.income > 0
-                    ? `${pct(share)} of your take-home pay`
-                    : 'Set your take-home above to see this as a share'} />
-            <Tile label="Available across every bank"
-                  value={money(data.balance_total)}
-                  note="What they can still pay this year" />
+                  note={data.income > 0 ? `${pct(share)} of your take-home pay` : ''} />
+            <Tile label="Available this year"
+                  value={money(data.balance_total)} />
             <Tile label="Piggy banks" value={String(banks.length)}
                   note={overCount(banks)} />
           </div>
 
-          {/* No link to the plan from here any more: this is the plan page.
-              The figure it refers to is the term in the sum above it. */}
-          <Notice>
-            These contributions come off the{' '}
-            <strong>Yours to spend</strong> figure above before the weekly
-            number is worked out. In return, everything a bank pays for comes
-            out of the bank, never out of your week.
-          </Notice>
 
           <div className="stack">
             {banks.map((b) => (
@@ -202,10 +149,7 @@ function Bank({ bank: b, banks, all, editing, onEdit, onDone }) {
           <p className="small" style={{ margin: '4px 0 0' }}>
             {cats.length > 0
               ? <>Pays for <strong>{cats.join(', ')}</strong> by itself</>
-              : <span className="muted">
-                  Pays for nothing by itself — charge things to it from
-                  Transactions, or edit it to choose categories
-                </span>}
+              : <span className="muted">Pays for nothing by itself</span>}
           </p>
           {b.note && <p className="small muted" style={{ margin: '4px 0 0' }}>{b.note}</p>}
         </div>
@@ -256,32 +200,11 @@ function Bank({ bank: b, banks, all, editing, onEdit, onDone }) {
       {confirming && (
         <div style={{ marginTop: 12 }}>
           <Notice>
-            Closing {b.name} puts the {money(b.charged)} it paid back into
-            the weeks it was spent in, so those will read higher than they
-            do now
-            {cats.length > 0 && <>, and {cats.join(' and ')} go back to
-              being everyday spending</>}
-            . The money was always spent — this only changes what it
-            counts against.
+            {money(b.charged)} goes back into the weeks it was spent in.
           </Notice>
         </div>
       )}
 
-      {b.over && (
-        <div className="assumption" style={{ marginBottom: 0 }}>
-          It has paid {money(b.spent_this_year)}{dated ? '' : ' this year'},{' '}
-          {money(b.behind_by)} more than its {money(b.target)}. That is
-          allowed — sometimes the trip costs what it costs — and it changes
-          nothing {dated ? 'now' : 'this year'}.{' '}
-          {dated
-            ? <>The extra is repaid over the twelve months after{' '}
-                {dateLabel(b.target_date)}.</>
-            : <>From {monthLabel(nextMonth(b.year_end), { long: true })} it
-                takes{' '}
-                <strong className="num">{money(b.spent_this_year / 12)}</strong>{' '}
-                a month to repay what it spent.</>}
-        </div>
-      )}
     </section>
   );
 }
@@ -293,7 +216,7 @@ function basisText(b) {
     case 'repaying': return b.cadence === 'once'
       ? 'repaying the overspend'
       : `repaying last year's ${money(b.spent_last_year)}`;
-    case 'full': return 'nothing spent last year, so nothing to repay';
+    case 'full': return 'nothing to repay';
     case 'dated': return 'until the date';
     case 'done': return 'finished';
     default: return '';
@@ -409,23 +332,10 @@ function BankForm({ bank, suggest, banks = [], all = [], onCancel, onSaved }) {
                      onChange={(e) => setDate(e.target.value)} />
             )}
           </div>
-          <p className="small muted" style={{ margin: '8px 0 0' }}>
-            {cadence === 'annual'
-              ? 'Spending that comes round every year — trips, Christmas, car '
-                + 'upkeep. The whole amount is there from day one, and each '
-                + 'year after the first it takes back only what you spent.'
-              : 'A cost with a date — a wedding. The whole amount is there '
-                + 'now, paid in month by month until the date.'}
-          </p>
         </div>
 
         <fieldset className="pays-for">
           <legend>What it pays for</legend>
-          <p className="small muted" style={{ margin: '0 0 8px' }}>
-            Every charge in these categories, from this month on, comes out
-            of this bank instead of your week. Leave them all unticked to
-            charge things to it by hand.
-          </p>
           <div className="checks">
             {all.map((c) => (
               <label key={c} className="row small"
@@ -442,24 +352,15 @@ function BankForm({ bank, suggest, banks = [], all = [], onCancel, onSaved }) {
         <div className="controls">
           <label htmlFor="pb-note">Note</label>
           <input id="pb-note" type="text" value={note}
-                 placeholder="Optional — anything worth remembering"
+                 placeholder="Optional"
                  onChange={(e) => setNote(e.target.value)}
                  style={{ flex: '1 1 200px' }} />
         </div>
 
         {monthly > 0 && (
           <Notice>
-            <strong>
-              {money(Number(target || 0))} to spend from{' '}
-              {bank ? 'the start of each year' : 'today'}.
-            </strong>{' '}
-            {cadence === 'annual'
-              ? <>In its first year it takes {money(monthly)} a month to pay
-                  that in; after that, a twelfth of whatever it spent the
-                  year before.</>
-              : <>It takes {money(monthly)} a month for {months} month
-                  {months === 1 ? '' : 's'} to pay that in.</>}
-            {' '}That comes off what you have to spend each month.
+            <strong>{money(monthly)} a month</strong> ·{' '}
+            {money(Number(target || 0))} available {bank ? 'each year' : 'today'}
           </Notice>
         )}
 

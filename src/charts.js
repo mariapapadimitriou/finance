@@ -555,3 +555,78 @@ export function coastConfig(series) {
     },
   };
 }
+
+/**
+ * This month's running total over a usual month's.
+ *
+ * One measure, one axis. The usual month is grey with a faint fill — the
+ * ground this month is read against — and this month is the brand colour,
+ * ending in a dot at today. No gridlines or axis labels: the totals above
+ * the chart say the numbers, and the tooltip gives any day.
+ */
+export function paceConfig(pace) {
+  const c = ink();
+  const baseline = cssVar('--baseline');
+  const baselineSoft = cssVar('--baseline-soft');
+  const days = Array.from({ length: pace.days }, (_, i) => i + 1);
+  const thisMonth = days.map((d) => (d <= pace.through ? pace.this[d - 1] : null));
+  const last = pace.through - 1;
+
+  return {
+    type: 'line',
+    data: {
+      labels: days,
+      datasets: [
+        {
+          label: 'This month',
+          data: thisMonth,
+          borderColor: c.series,
+          borderWidth: 3,
+          tension: 0.35,
+          fill: false,
+          pointRadius: (ctx) => (ctx.dataIndex === last ? 6 : 0),
+          pointBackgroundColor: c.series,
+          pointBorderColor: c.series,
+          pointHoverRadius: 6,
+          pointHitRadius: 14,
+          spanGaps: false,
+        },
+        {
+          label: 'Usual month',
+          data: pace.average,
+          borderColor: baseline,
+          backgroundColor: baselineSoft,
+          borderWidth: 2,
+          tension: 0.35,
+          fill: 'origin',
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          pointHitRadius: 14,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      layout: { padding: { top: 8, right: 8 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          ...tooltip(c, {
+            title: (items) => `Day ${items[0].label}`,
+            label: (ctx) => (ctx.parsed.y == null ? null
+              : `${ctx.dataset.label}: ${money(ctx.parsed.y)}`),
+          }),
+          displayColors: true,
+          boxPadding: 4,
+        },
+      },
+      scales: {
+        x: { display: false },
+        y: { display: false, beginAtZero: true },
+      },
+    },
+  };
+}

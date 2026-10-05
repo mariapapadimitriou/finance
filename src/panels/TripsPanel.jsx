@@ -105,7 +105,6 @@ export default function TripsPanel({ onChanged }) {
 
       <Card
         title={editing ? 'Edit trip' : 'Add a trip'}
-        hint="Every purchase between these dates becomes Travel, whatever the merchant"
       >
         <form className="controls" onSubmit={save}>
           <input
@@ -144,8 +143,7 @@ export default function TripsPanel({ onChanged }) {
       </Card>
 
       {suggestions.length > 0 && (
-        <Card title={`${suggestions.length} trip${suggestions.length === 1 ? '' : 's'} found in your spending`}
-              hint="Days where most of what you bought was charged in another currency">
+        <Card title={`${suggestions.length} trip${suggestions.length === 1 ? '' : 's'} found in your spending`}>
           <div className="stack" style={{ gap: 14 }}>
             {suggestions.map((sug) => (
               <div key={sug.start_date} className="row"
@@ -171,14 +169,6 @@ export default function TripsPanel({ onChanged }) {
               </div>
             ))}
           </div>
-          <p className="assumption" style={{ marginBottom: 0 }}>
-            Found by currency, not by the place in a descriptor: a charge
-            converted from colónes really was made in colónes, whereas a
-            merchant registered in Montreal may never have been visited.
-            Adding one reclassifies every charge between those dates as
-            Travel, so check the dates before you do — they can be edited
-            afterwards.
-          </p>
         </Card>
       )}
 
@@ -186,16 +176,10 @@ export default function TripsPanel({ onChanged }) {
           makes the case for declaring one; when a suggestion is already
           making that case, neither is needed. */}
       {trips.length === 0 ? (suggestions.length === 0 && (
-        <Notice>
-          No trips yet. Holiday spending is scattered across Dining, Coffee,
-          Transport and Shopping until you declare the dates — which also stops
-          a trip inflating those categories and setting off a false
-          &ldquo;you&apos;re eating out more&rdquo; finding.
-        </Notice>
+        <Notice>No trips yet</Notice>
       )) : (
         <Card
           title={`${summary.count} trip${summary.count === 1 ? '' : 's'}`}
-          hint={`${money(summary.total)} spent while away · ${money(summary.travel_spend)} now categorized as Travel`}
         >
           <div className="table-wrap">
             <table>
@@ -228,10 +212,6 @@ export default function TripsPanel({ onChanged }) {
               </tbody>
             </table>
           </div>
-          <p className="small muted" style={{ marginTop: 14, marginBottom: 0 }}>
-            Card payments, transfers and fees are never reclassified, and a
-            category you set by hand on a transaction stays yours.
-          </p>
         </Card>
       )}
     </div>

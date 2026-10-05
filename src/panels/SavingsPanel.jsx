@@ -50,22 +50,11 @@ export default function SavingsPanel({ insights, onRefresh, onTab }) {
     <div className="stack">
       <Observations rows={observations} onTab={onTab} />
 
-      <div className="card hero-card">
-        <div className="hero">
-          <div className="figure num">{money(summary.weighted_annual ?? 0)}</div>
-          <div className="caption">
-            a year in identified savings, weighted by how confident each finding is.
-            <br />
-            Taken at face value the findings total {money(summary.annual_total ?? 0)};
-            the weighted figure is the honest one.
-          </div>
+      <div className="month-hero">
+        <div>
+          <div className="hero-total">{money(summary.weighted_annual ?? 0)}</div>
+          <div className="hero-sub">a year you could save</div>
         </div>
-        <p className="small" style={{ marginTop: 18, marginBottom: 0,
-                                      color: 'var(--ink-2)' }}>
-          Every figure comes from your own transactions. Each finding states what
-          it assumes, because a recommendation you can&apos;t audit is just a
-          guess — open the evidence to see the exact charges behind it.
-        </p>
       </div>
 
 
@@ -73,7 +62,6 @@ export default function SavingsPanel({ insights, onRefresh, onTab }) {
         <div key={effort} className="stack">
           <div className="section-head">
             <h2>{EFFORT[effort]?.label ?? effort}</h2>
-            <span className="muted small">{EFFORT[effort]?.hint}</span>
             <span className="spacer" />
             <span className="muted small num">
               {money(list.reduce((s, f) => s + f.annual_saving, 0))}/yr
@@ -96,7 +84,6 @@ function Finding({ finding: f, busy, onDismiss }) {
       <div className="top">
         <div>
           <h3>{f.title}</h3>
-          <p>{f.detail}</p>
           <div className="meta">
             <span className="pill">{CONFIDENCE(f.confidence)} · {pct(f.confidence)}</span>
             {f.category && <span className="pill">{f.category}</span>}
@@ -138,7 +125,6 @@ function Finding({ finding: f, busy, onDismiss }) {
         </details>
       )}
 
-      {f.assumption && <div className="assumption">Assumption: {f.assumption}</div>}
 
       <div className="row" style={{ marginTop: 12 }}>
         <span className="spacer" />
@@ -201,8 +187,7 @@ function Observations({ rows, onTab }) {
   if (!rows || rows.length === 0) return null;
 
   return (
-    <Card title="What your plan says"
-          hint="Read from your income, commitments and this month's spending">
+    <Card title="What your plan says">
       <div className="stack" style={{ gap: 16 }}>
         {rows.map((o) => {
           const tone = SEVERITY[o.severity] ?? SEVERITY.watch;
@@ -218,9 +203,6 @@ function Observations({ rows, onTab }) {
                   </>
                 )}
               </div>
-              <p className="small" style={{ margin: '0 0 6px', color: 'var(--ink-2)' }}>
-                {o.detail}
-              </p>
               {o.tab && o.action && onTab && (
                 <button className="link" onClick={() => onTab(o.tab)}>
                   {o.action}

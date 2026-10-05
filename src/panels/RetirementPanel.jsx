@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Chart from '../components/Chart.jsx';
 import {
-  Card, ErrorNote, GoTo, Loading, Notice, Tile, Why,
-} from '../components/ui.jsx';
+  Card, ErrorNote, GoTo, Loading, Notice, Tile, } from '../components/ui.jsx';
 import {
   clearCoastfire, getCoastfire, money, monthLabel, pct, previewCoastfire,
   saveCoastfire,
@@ -130,7 +129,6 @@ export default function RetirementPanel({ onTab }) {
   return (
     <div className="stack">
       <Card title="Your retirement figures"
-            hint="Typed once and remembered — it changes nothing else in your plan"
             actions={data.saved && !dirty && (
               <button className="btn quiet" disabled={busy}
                       onClick={() => run(clearCoastfire)}>
@@ -165,7 +163,7 @@ export default function RetirementPanel({ onTab }) {
             <label htmlFor="cf-pension">Pensions a year</label>
             <input id="cf-pension" type="number" min="0" step="any" inputMode="decimal"
                    value={form.pension} onChange={set('pension')} style={{ width: 110 }}
-                   aria-describedby="cf-pension-hint" />
+                   />
             <label htmlFor="cf-monthly">Saving for it each month</label>
             <input id="cf-monthly" type="number" min="0" step="any" inputMode="decimal"
                    value={form.monthly} onChange={set('monthly')} style={{ width: 110 }} />
@@ -188,29 +186,14 @@ export default function RetirementPanel({ onTab }) {
             </span>
           </div>
 
-          <p id="cf-pension-hint" className="small muted" style={{ margin: 0 }}>
-            {d.plan_spending
-              ? <>The yearly cost starts from your plan — take-home less saving,
-                  {' '}{money(d.plan_spending)} a year — and the monthly saving
-                  from the {money(d.plan_saving)} it sets aside. </>
-              : <>Set your take-home on{' '}
-                  <GoTo to="plan" from="retirement" onTab={onTab} /> and the
-                  yearly cost can start from your plan. </>}
-            Pensions are CPP, OAS or a workplace pension: whatever arrives
-            without the portfolio paying it. Everything is in today&apos;s
-            dollars.
-          </p>
 
           {mortgageEnds && withoutMortgage != null
             && Number(form.spending) !== withoutMortgage && (
             <Notice>
-              Your mortgage is paid off by{' '}
-              {monthLabel(d.mortgage.payoff_month, { long: true })}, before you
-              would retire, so its {money(d.mortgage.yearly)} a year won&apos;t
-              be a cost then.{' '}
+              Mortgage paid off {monthLabel(d.mortgage.payoff_month)} ·{' '}
               <button type="button" className="link"
                       onClick={() => setForm({ ...form, spending: String(withoutMortgage) })}>
-                Take it out — {money(withoutMortgage)} a year
+                Take out {money(d.mortgage.yearly)}/yr
               </button>
             </Notice>
           )}
@@ -225,12 +208,7 @@ export default function RetirementPanel({ onTab }) {
                 Undo changes
               </button>
             )}
-            {dirty && (
-              <span className="small muted">
-                {complete(form) ? 'A preview — nothing is saved until you press Save.'
-                  : 'Fill in your age and what a year would cost to see it worked out.'}
-              </span>
-            )}
+            {dirty && complete(form) && <span className="small muted">Not saved</span>}
           </div>
         </form>
       </Card>
@@ -269,8 +247,7 @@ function Results({ r, onTab }) {
                 : 'not by 100 at this rate'} />
       </div>
 
-      <Card title="When you could stop saving"
-            hint="In today's dollars — where the lines cross is your coast age">
+      <Card title="When you could stop saving">
         <div className="chart">
           <Chart config={coastConfig(r.series)}
                  ariaLabel={`Needed to coast, rising to ${money(r.fire_number)} at ${
@@ -290,7 +267,7 @@ function Results({ r, onTab }) {
         </div>
       </Card>
 
-      <Card title="At other returns" hint="The return is the assumption that matters most">
+      <Card title="At other returns">
         <div className="table-wrap">
           <table>
             <thead>
@@ -325,32 +302,6 @@ function Results({ r, onTab }) {
             </tbody>
           </table>
         </div>
-        <Why id="retirement.coast" label="What this assumes">
-          <ul className="steps" style={{ margin: 0 }}>
-            <li><strong>CoastFIRE</strong> means what you have invested will
-              grow, untouched, into your FIRE number by {r.retire_age}. From
-              then on, work only has to pay for today; anything more you save
-              makes retirement earlier rather than possible.</li>
-            <li><strong>Today&apos;s dollars.</strong> The return is after
-              inflation, so a long-run stock return of 7–8% is roughly 4–5%
-              here. That keeps every figure meaning what it means now.</li>
-            <li><strong>The withdrawal rate.</strong> 4% comes from US
-              studies of 30-year retirements. A longer retirement, or one that
-              starts in a bad market, calls for less — 3.5% is the cautious
-              choice.</li>
-            <li><strong>Pensions.</strong> CPP and OAS depend on your
-              contributions and the age you start them; your estimate is in
-              My Service Canada Account.</li>
-            <li><strong>Not modelled:</strong> taxes on withdrawals (an RRSP is
-              taxed coming out; a TFSA isn&apos;t), fees, or a return that
-              arrives as good years and bad ones in an order nobody chooses.
-              It is arithmetic, not advice.</li>
-          </ul>
-          <p className="small muted" style={{ marginBottom: 0 }}>
-            What you save each month is set on{' '}
-            <GoTo to="plan" from="retirement" onTab={onTab} />.
-          </p>
-        </Why>
       </Card>
     </>
   );
@@ -363,12 +314,10 @@ function Verdict({ r }) {
   if (r.coasting) {
     return (
       <Notice kind="good">
-        <strong>You&apos;re coasting.</strong> {money(r.invested)} grows to{' '}
-        {money(r.untouched_at_retirement)} by {r.retire_age} without another
-        dollar — your FIRE number is {money(r.fire_number)}.
+        <strong>You&apos;re coasting</strong> · {money(r.untouched_at_retirement)} by{' '}
+        {r.retire_age}
         {r.early_retire_age != null && r.early_retire_age < r.retire_age && (
-          <> Left alone it gets there at {age(r.early_retire_age)}; anything you
-            keep saving brings that sooner.</>
+          <> · FIRE at {age(r.early_retire_age)}</>
         )}
       </Notice>
     );
@@ -380,23 +329,22 @@ function Verdict({ r }) {
           You&apos;ll reach CoastFIRE at {age(r.coast_age)}, in{' '}
           {monthLabel(r.coast_month, { long: true })}
         </strong>
-        , saving {money(r.monthly)} a month — {money(r.contributed_to_coast)} more
-        in all. After that, saving for retirement is optional: what you have
-        grows into {money(r.fire_number)} by {r.retire_age} on its own.
+        {' '}· {money(r.monthly)} a month
       </Notice>
     );
   }
   return (
     <Notice>
-      <strong>At {money(r.monthly)} a month you won&apos;t coast before {r.retire_age}.</strong>
-      {r.fire_age != null && <> You&apos;d reach your FIRE number at {age(r.fire_age)}.</>}
+      <strong>Not coasting before {r.retire_age}</strong>
       {need?.to_coast != null && (
-        <> To coast within {Math.round(need.coast_years)} years you&apos;d need to
-          save <strong className="num">{money(need.to_coast)}</strong> a month
+        <div className="small" style={{ marginTop: 4 }}>
+          Coast in {Math.round(need.coast_years)} years:{' '}
+          <strong className="num">{money(need.to_coast)}</strong>/mo
           {need.to_fire_by_retirement != null && (
-            <>; to be fully retired at {r.retire_age},{' '}
-              <strong className="num">{money(need.to_fire_by_retirement)}</strong></>
-          )}.</>
+            <> · retire at {r.retire_age}:{' '}
+              <strong className="num">{money(need.to_fire_by_retirement)}</strong>/mo</>
+          )}
+        </div>
       )}
     </Notice>
   );

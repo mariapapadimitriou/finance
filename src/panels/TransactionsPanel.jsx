@@ -108,7 +108,6 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
 
       <Card
         title={`${total.toLocaleString()} transaction${total === 1 ? '' : 's'}`}
-        hint="Click a category to correct it — corrections can apply to every charge from that merchant"
       >
         {!data ? <Loading what="transactions" /> : (
           <>
@@ -258,16 +257,12 @@ function AddByHand({ categories, onAdded }) {
         <button className="btn primary" onClick={() => setOpen(true)}>
           + Add a transaction by hand
         </button>
-        <span className="muted small">
-          For cash, or a charge that hasn&apos;t posted yet
-        </span>
       </div>
     );
   }
 
   return (
     <Card title="Add a transaction by hand"
-          hint="Checked against your ledger first, so the statement doesn't add it twice later"
           actions={<button className="btn quiet" onClick={() => setOpen(false)}>Close</button>}>
       <form className="controls" onSubmit={(e) => submit(e, false)}>
         <label htmlFor="m-date">Date</label>
@@ -291,16 +286,12 @@ function AddByHand({ categories, onAdded }) {
         </button>
       </form>
 
-      <p className="assumption">
-        A positive amount is money out. Enter a refund as a negative number.
-      </p>
 
       <ErrorNote error={error} />
 
       {added && (
         <Notice kind="good">
-          Added, filed under <strong>{added.category}</strong> as{' '}
-          <strong>{added.merchant}</strong>.
+          Added · <strong>{added.merchant}</strong> · {added.category}
         </Notice>
       )}
 

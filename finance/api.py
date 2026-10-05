@@ -16,6 +16,7 @@ from .analytics import (
     daily_series,
     fixed_vs_discretionary,
     month_over_month,
+    month_pace,
     monthly_totals,
     summary as build_summary,
     weekday_profile,
@@ -546,6 +547,7 @@ def breakdown():
         "monthly": monthly_totals(txns),
         "daily": daily_series(txns, int(request.args.get("days", 90))),
         "weekday": weekday_profile(txns),
+        "pace": month_pace(txns, month) if month else None,
     })
 
 

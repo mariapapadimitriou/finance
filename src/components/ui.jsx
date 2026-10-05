@@ -21,38 +21,6 @@ export function GoTo({ to, from, onTab, children }) {
   );
 }
 
-/**
- * An explanation you can put away.
- *
- * Nearly every card ends in a paragraph saying why its figure is what it is.
- * Worth reading once; noise on the fiftieth visit. So each opens the first
- * time and, once collapsed, stays collapsed — remembered per explanation in
- * this browser. Storage can be missing or refuse (a private window), and
- * then it simply stays open, which is where it started.
- */
-export function Why({ id, label = 'Why?', children }) {
-  const key = `spendie.why.${id}`;
-  const [open, setOpen] = useState(() => {
-    try { return localStorage.getItem(key) !== 'closed'; } catch { return true; }
-  });
-
-  function onToggle(e) {
-    const next = e.currentTarget.open;
-    if (next === open) return;
-    setOpen(next);
-    try {
-      if (next) localStorage.removeItem(key);
-      else localStorage.setItem(key, 'closed');
-    } catch { /* stays as it is for this visit */ }
-  }
-
-  return (
-    <details className="why" open={open} onToggle={onToggle}>
-      <summary>{label}</summary>
-      <div className="assumption">{children}</div>
-    </details>
-  );
-}
 
 /**
  * Several notices as one strip: the most serious in full, the rest folded.
@@ -82,14 +50,13 @@ export function NoticeStack({ items }) {
   );
 }
 
-export function Card({ title, hint, actions, children, className = '' }) {
+export function Card({ title, actions, children, className = '' }) {
   return (
     <section className={`card ${className}`}>
       {(title || actions) && (
         <div className="card-head">
           <div>
             {title && <h2>{title}</h2>}
-            {hint && <div className="hint">{hint}</div>}
           </div>
           {actions}
         </div>
@@ -223,22 +190,16 @@ export function freshness(month, summary, { onTab, from } = {}) {
       key: 'freshness',
       kind: '',
       emphasis: false,
-      summary: <>{label} is still in progress
-        {lastDay && <> — your data runs to day {Number(lastDay)}</>}.</>,
-      detail: <>Anything compared against whole months will read low until
-        it closes.</>,
+      summary: <>{label} so far{lastDay && <> · to day {Number(lastDay)}</>}</>,
+      detail: null,
     };
   }
   return {
     key: 'freshness',
     kind: '',
     emphasis: true,
-    summary: <>{label} is over, but the data{' '}
-      {lastDay ? <>stops at day {Number(lastDay)}</> : <>stops short of its last day</>}.</>,
-    detail: <>That is either a quiet end to the month or a sync that
-      hasn&apos;t run since — they look identical from here. Sync in{' '}
-      <GoTo to="banks" from={from} onTab={onTab} /> before reading anything
-      into this month.</>,
+    summary: <>Data stops at day {lastDay ? Number(lastDay) : '—'}</>,
+    detail: <GoTo to="banks" from={from} onTab={onTab}>Sync</GoTo>,
   };
 }
 

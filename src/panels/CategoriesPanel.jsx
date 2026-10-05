@@ -125,7 +125,6 @@ export default function CategoriesPanel({ onChanged }) {
   return (
     <div className="stack">
       <Card title="Budget lines"
-            hint="Fold categories together so your budget has fewer, broader lines"
             actions={dirty && (
               <div className="row" style={{ gap: 8 }}>
                 <button className="btn quiet" onClick={load} disabled={saving}>
@@ -136,18 +135,11 @@ export default function CategoriesPanel({ onChanged }) {
                 </button>
               </div>
             )}>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Each category is its own line in Budgets unless you put it with
-          another. Transactions keep their own categories either way, and the
-          weekly number on Today is unaffected — this only decides how the
-          budget is divided and shown.
-        </p>
 
         <ErrorNote error={saveError} />
         {saved && !dirty && (
           <Notice kind="good">
-            Saved. Budgets you had already set were carried across — folding
-            two lines together adds their figures.
+            Saved
           </Notice>
         )}
 

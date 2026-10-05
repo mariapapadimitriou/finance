@@ -12,11 +12,7 @@ export default function SubscriptionsPanel({ recurring }) {
 
   if (items.length === 0) {
     return (
-      <Empty title="No recurring charges detected yet">
-        A charge needs to appear at least three times on a regular cadence before
-        it counts as recurring. Import a longer history and subscriptions will
-        surface here automatically.
-      </Empty>
+      <Empty title="No recurring charges yet" />
     );
   }
 
@@ -29,8 +25,7 @@ export default function SubscriptionsPanel({ recurring }) {
   return (
     <div className="stack">
       <div className="grid cols-4">
-        <Tile label="Active subscriptions" value={summary.count ?? 0}
-              note="detected from charge regularity, not merchant names" />
+        <Tile label="Active subscriptions" value={summary.count ?? 0} />
         <Tile label="Every month" value={money(summary.monthly_total ?? 0)}
               note="renewing without a decision" />
         <Tile label="Every year" value={money(summary.annual_total ?? 0)}
@@ -41,7 +36,6 @@ export default function SubscriptionsPanel({ recurring }) {
 
       <Card
         title="Active recurring charges"
-        hint="Detected by cadence and amount stability — includes bills as well as subscriptions"
       >
         <div className="table-wrap">
           <table>
@@ -90,17 +84,11 @@ export default function SubscriptionsPanel({ recurring }) {
             </tbody>
           </table>
         </div>
-        <p className="small muted" style={{ marginTop: 14, marginBottom: 0 }}>
-          Confidence reflects how regular the charges are — how many there have
-          been, how evenly spaced, and how stable the amount. A lower score
-          usually means an irregular bill rather than a subscription.
-        </p>
       </Card>
 
       {inactive.length > 0 && (
         <Card
           title="Lapsed or cancelled"
-          hint="Past their expected next charge — likely already cancelled"
         >
           <div className="table-wrap">
             <table>
