@@ -15,8 +15,8 @@
 // `onTab('piggy')` in a panel still works — `resolve` turns a panel key into
 // the group that now contains it.
 export const PANELS = {
-  today:         { label: 'Today',
-                   hint: "What's left to spend this week, and why" },
+  today:         { label: 'Allowance',
+                   hint: "What's left to spend this week" },
   // `short` is what a phone shows where the full label will not fit. Only
   // set where it is needed; everything else uses its label at every width.
   plan:          { label: 'Income & commitments', short: 'Income',
@@ -57,9 +57,11 @@ export const PANELS = {
 // figure you actually save sat under Plan. The keys stay as they were, so
 // every link and every insight that names one still resolves.
 export const GROUPS = [
-  { key: 'today', label: 'Today', panels: ['today'],
-    hint: "What's left to spend this week, and why",
-    icon: 'M12 8v4l3 2M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z' },
+  // The page people open the app for, so it is first and where the app lands.
+  // The key is still `today`, which every link and insight already names.
+  { key: 'today', label: 'Allowance', panels: ['today'],
+    hint: "What's left to spend this week",
+    icon: 'M12 3a9 9 0 1 0 9 9M12 3a9 9 0 0 1 9 9M12 3v9h9' },
   // Looking ahead sits with the plan, not with the history: it is the plan
   // run forward, and the savings figure it offers to move is the plan's.
   { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections', 'mortgage', 'retirement'],

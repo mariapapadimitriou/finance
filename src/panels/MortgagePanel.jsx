@@ -7,6 +7,7 @@ import {
   previewMortgage, saveMortgage,
 } from '../api.js';
 import { investOrPayDownConfig, mortgageConfig } from '../charts.js';
+import { Donut, RingLegend, RingRow } from '../components/Ring.jsx';
 
 /**
  * The mortgage: what it costs a month, when it ends, and how much is interest.
@@ -503,36 +504,30 @@ function Results({ data, r, form, setForm, onTab }) {
       </div>
 
       <Card title="Interest against principal">
-        <div className="split-bar" role="img"
-             aria-label={`${pct(interestShare)} interest, ${pct(1 - interestShare)} principal`}>
-          <span style={{ width: `${(1 - interestShare) * 100}%`,
-                         background: 'var(--series-1)' }} />
-          <span style={{ width: `${interestShare * 100}%`,
-                         background: 'var(--series-3)' }} />
-        </div>
-        <div className="legend" style={{ marginTop: 8 }}>
-          <span className="item">
-            <span className="swatch" style={{ background: 'var(--series-1)' }} />
-            Principal — <strong className="num">{money(r.total_principal)}</strong>{' '}
-            ({pct(1 - interestShare)})
-          </span>
-          <span className="item">
-            <span className="swatch" style={{ background: 'var(--series-3)' }} />
-            Interest — <strong className="num">{money(r.total_interest)}</strong>{' '}
-            ({pct(interestShare)})
-          </span>
-        </div>
-        {r.original && (
-          <p className="small" style={{ margin: '10px 0 0' }}>
-            Paid off <strong className="num">{money(r.paid_so_far)}</strong>{' '}
-            of {money(r.original)} ({pct(r.paid_so_far_share)})
-            {sh && <> · yours {money(r.paid_so_far * sh.fraction)}</>}
-          </p>
-        )}
-        <p className="small muted" style={{ margin: '10px 0 0' }}>
-          {money(r.total_paid)} to pay
-          {sh && <> · yours {money(sh.principal)} + {money(sh.interest)} interest</>}
-        </p>
+        <RingRow>
+          <Donut size={168} thickness={16}
+                 segments={[
+                   { label: 'Principal', value: r.total_principal, color: 'var(--series-1)',
+                     title: money(r.total_principal) },
+                   { label: 'Interest', value: r.total_interest, color: 'var(--series-3)',
+                     title: money(r.total_interest) },
+                 ]}
+                 label={`${pct(interestShare)} interest, ${pct(1 - interestShare)} principal`}>
+            <div className="small-big num">{money(r.total_paid)}</div>
+            <div className="under">to pay</div>
+          </Donut>
+          <RingLegend items={[
+            { label: `Principal · ${pct(1 - interestShare)}`,
+              value: money(r.total_principal), color: 'var(--series-1)' },
+            { label: `Interest · ${pct(interestShare)}`,
+              value: money(r.total_interest), color: 'var(--series-3)' },
+            sh && { label: 'Yours', value: money(sh.principal + sh.interest),
+                    icon: 'flag' },
+            r.original && { label: `Paid off · ${pct(r.paid_so_far_share)}`,
+                            value: money(r.paid_so_far), icon: 'target',
+                            color: 'var(--good-text)' },
+          ]} />
+        </RingRow>
       </Card>
 
       <ExtraSlider r={r} form={form} setForm={setForm} />

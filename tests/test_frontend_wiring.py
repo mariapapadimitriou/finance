@@ -127,7 +127,7 @@ class TestLinksBetweenPanels:
     def test_every_alias_points_somewhere_real(self, panels, groups, aliases):
         """An alias is how a panel that was folded into another one keeps its
         old links working. One pointing at nothing is worse than no alias at
-        all: `resolve` falls through to Today, so the button appears to work."""
+        all: `resolve` falls through to Allowance, so the button appears to work."""
         assert aliases, "ALIASES is empty — remove the fixture if it is gone"
         for key, target in aliases.items():
             assert key not in panels, (
@@ -138,7 +138,7 @@ class TestLinksBetweenPanels:
 
     def test_every_link_target_resolves(self, panels, groups, aliases):
         """Panels navigate by panel key — `onTab('piggy')` — and a key that is
-        neither a panel, a group nor an alias silently lands you on Today."""
+        neither a panel, a group nor an alias silently lands you on Allowance."""
         targets: dict[str, list[str]] = {}
         for path in sorted(SRC.rglob("*.jsx")):
             text = path.read_text(encoding="utf-8")
@@ -291,6 +291,27 @@ class TestExplanationsRememberThemselves:
                 if re.search(pattern, text):
                     offenders.append(f"{path.name}: {pattern}")
         assert not offenders, f"explanation scaffolding is back: {offenders}"
+
+
+class TestPicturesNotArithmetic:
+    def test_the_first_tab_is_called_allowance(self, nav):
+        """It is the page people open the app for, and it lands there."""
+        first = re.search(r"GROUPS = \[\s*(?://[^\n]*\n\s*)*\{ key: '(\w+)', label: '([^']+)'", nav)
+        assert first, "could not find the first group in nav.js"
+        assert first.groups() == ("today", "Allowance")
+        assert "label: 'Today'" not in nav
+
+    def test_this_month_keeps_its_ninety_day_chart(self):
+        """It was dropped once in a redesign; it is wanted."""
+        text = (SRC / "panels" / "OverviewPanel.jsx").read_text(encoding="utf-8")
+        assert "dailySpendConfig(" in text
+
+    def test_no_sums_of_terms_are_back(self):
+        """The + − × ÷ = rows were replaced by rings with their parts beside
+        them. A sum drawn in boxes is the thing that was asked to go."""
+        offenders = [p.name for p in sorted(SRC.rglob("*.jsx"))
+                     if 'className="sum"' in p.read_text(encoding="utf-8")]
+        assert not offenders, f"arithmetic rows are back in: {offenders}"
 
 
 class TestTheSetupChecklistGoesSomewhereReal:

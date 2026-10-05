@@ -29,6 +29,11 @@
   --series-3:    #1baf7a;
   --series-1-soft: rgba(93, 123, 211, .14);
   --series-3-soft: rgba(27, 175, 122, .18);
+  --ring-1:      #5d7bd3;   /* ring parts, in this order; checked for */
+  --ring-2:      #eb6834;   /* colour-blind separation in both themes */
+  --ring-3:      #1baf7a;
+  --ring-4:      #b0569f;
+  --ring-track:  #ececee;
   --baseline:    #c9c9cd;   /* the grey "usual" line under this month's */
   --baseline-soft: rgba(17, 18, 20, .04);
 
@@ -65,6 +70,11 @@
     --brand:       #8ea4ec;
     --brand-tint:  #252b40;
     --on-brand:    #0d0d0f;
+    --ring-1:      #7590e0;
+    --ring-2:      #d95926;
+    --ring-3:      #199e70;
+    --ring-4:      #c272b4;
+    --ring-track:  #2a2a2f;
     --series-1:    #8ea4ec;
     --series-2:    #d95926;
     --series-3:    #199e70;
@@ -94,6 +104,11 @@
   --brand:       #8ea4ec;
   --brand-tint:  #252b40;
   --on-brand:    #0d0d0f;
+  --ring-1:      #7590e0;
+  --ring-2:      #d95926;
+  --ring-3:      #199e70;
+  --ring-4:      #c272b4;
+  --ring-track:  #2a2a2f;
   --series-1:    #8ea4ec;
   --series-2:    #d95926;
   --series-3:    #199e70;
@@ -618,14 +633,6 @@ select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-v
 .bar-row .sub { color: var(--muted); font-size: .77rem; font-weight: 450; }
 
 /* Two-segment split: a small gap separates the fills instead of a border. */
-.split-bar {
-  display: flex; height: 18px; gap: 3px;
-  border-radius: 6px; overflow: hidden;
-  margin: 12px 0 14px;
-}
-.split-bar span { display: block; }
-.split-bar .a { background: var(--series-1); }
-.split-bar .b { background: var(--series-2); }
 
 .legend { display: flex; gap: 20px; flex-wrap: wrap; font-size: .86rem; color: var(--ink-2); }
 .legend .item { display: flex; align-items: center; gap: 8px; font-weight: 500; }
@@ -723,13 +730,6 @@ td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top:
 
 .hero-card.behind::before { background: var(--critical); }
 
-.safe { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
-.safe .figure {
-  font-size: 2.9rem; font-weight: 700; letter-spacing: -0.04em;
-  line-height: 1.05; margin-top: 6px;
-}
-.safe .figure.bad { color: var(--critical); }
-.safe .caption { color: var(--ink-2); font-size: .89rem; margin-top: 8px; }
 
 .tile-label {
   color: var(--muted); font-size: .74rem; font-weight: 600;
@@ -740,21 +740,7 @@ td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top:
 .num.bad,  .value.bad,  .fv.bad  { color: var(--critical); }
 
 /* The arithmetic, laid out as the sum it is: term, operator, term, = total. */
-.sum {
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  margin-top: 22px; padding-top: 18px;
-  border-top: 1px solid var(--border);
-}
-.sum .op { color: var(--ink-2); font-size: 1.15rem; font-weight: 600; }
-.sum .term { min-width: 108px; }
-.sum .term .k { color: var(--muted); font-size: .73rem; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
-.sum .term .v { font-size: 1.12rem; font-weight: 660; letter-spacing: -.02em; margin-top: 4px; }
-.sum .term .n { color: var(--muted); font-size: .75rem; margin-top: 3px; max-width: 22ch; line-height: 1.4; }
-.sum .term.strong .v { font-size: 1.35rem; font-weight: 700; }
 
-.figure-cell { padding: 2px 0; }
-.figure-cell .fv { font-size: 1.5rem; font-weight: 680; letter-spacing: -.03em; margin-top: 8px; }
-.figure-cell .fn { color: var(--ink-2); font-size: .8rem; margin-top: 5px; }
 
 /* ── Can I buy this ─────────────────────────────────────────────────────── */
 
@@ -916,19 +902,13 @@ details.evidence[open] summary::before { transform: rotate(90deg); }
   .card-head { flex-direction: column; align-items: flex-start; gap: 10px; }
 
   h1 { font-size: 1.28rem; }
-  .safe .figure { font-size: 2.3rem; }
   .hero .figure { font-size: 2.2rem; }
   .streak { text-align: left; }
 
   /* The safe-to-spend sum reads as a column on a narrow screen; laid out
      sideways it either overflows or shrinks past legibility. The operators
      stay, because the arithmetic is the point of showing it at all. */
-  .sum { flex-direction: column; align-items: stretch; gap: 8px; }
-  .sum .op { text-align: center; line-height: 1; }
-  .sum .term { min-width: 0; }
-  .sum .term .n { max-width: none; }
 
-  .figure-cell .fv { font-size: 1.35rem; }
 
   .option { flex-direction: column; align-items: stretch; gap: 10px; }
   .option .btn { width: 100%; justify-content: center; }
@@ -1174,15 +1154,6 @@ fieldset.pays-for legend {
 
 /* Mortgage: interest against principal, as one bar split in two. The 2px
    surface gap between the segments is the same spacer the charts use. */
-.split-bar {
-  display: flex;
-  gap: 2px;
-  height: 12px;
-  border-radius: 4px;
-  overflow: hidden;
-  background: var(--surface);
-}
-.split-bar span { display: block; height: 100%; min-width: 2px; }
 tr.current td { background: var(--surface-2); }
 
 /* Retirement: how far invested is toward the coast number. */
@@ -1393,7 +1364,7 @@ td { border-top-color: var(--border); }
 /* Big figures everywhere read the same way: no accent bars, labels in
    sentence case, the number itself the loudest thing in the card. */
 .hero-card::before { display: none; }
-.tile-label, .term .k, .sum .term .k {
+.tile-label, .term .k {
   text-transform: none; letter-spacing: -0.005em;
   font-size: .92rem; font-weight: 560; color: var(--muted);
 }
@@ -1417,4 +1388,52 @@ td { border-top-color: var(--border); }
 @media (max-width: 860px) {
   .sections { gap: 0; padding: 4px; }
   .sections button { padding: 8px 6px; font-size: .84rem; flex: 1 1 auto; }
+}
+
+/* ── Rings ─────────────────────────────────────────────────────────────── */
+
+.ring { position: relative; flex: none; }
+.ring svg { display: block; overflow: visible; }
+.ring .arc { transition: opacity .15s; }
+.ring svg:hover .arc { opacity: .55; }
+.ring svg .arc:hover { opacity: 1; }
+.ring-center {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+  pointer-events: none; padding: 0 12%;
+}
+.ring-center .big { font-size: 1.85rem; font-weight: 720; letter-spacing: -.035em; line-height: 1.05; }
+.ring-center .big.bad { color: var(--critical); }
+.ring-center .small-big { font-size: 1.4rem; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; }
+.ring-center .under { color: var(--ink-2); font-size: .82rem; font-weight: 550; margin-top: 4px; }
+.ring-row { display: flex; align-items: center; gap: 28px; }
+.ring-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; min-width: 0; }
+.ring-legend li { display: flex; align-items: center; gap: 12px; }
+.ring-legend .mark {
+  width: 12px; height: 12px; border-radius: 50%; flex: none;
+  border: 2.5px solid transparent;
+}
+.ring-legend .mark.icon { width: 26px; height: 26px; border: 0; border-radius: 0; }
+.ring-legend .mark.icon svg { width: 26px; height: 26px; display: block; }
+.ring-legend .k { display: block; color: var(--ink-2); font-size: .85rem; font-weight: 550; }
+.ring-legend .v { display: block; font-size: 1.12rem; font-weight: 700; letter-spacing: -.02em; }
+.ring-legend .v.bad { color: var(--critical); }
+.ring-legend .v.good { color: var(--good-text); }
+.ring-legend .v.muted { color: var(--muted); font-weight: 600; }
+.ring-foot { color: var(--ink-2); font-size: .85rem; margin-top: 16px; }
+.ring-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.ring-head h2 { margin: 0; font-size: 1.25rem; font-weight: 720; letter-spacing: -.02em; }
+.mini-ring { display: inline-flex; vertical-align: middle; }
+.bucket .name.with-ring { display: flex; align-items: center; gap: 12px; }
+.chart-title { font-size: .95rem; font-weight: 650; margin: 18px 0 8px; }
+@media (max-width: 560px) {
+  .ring-row { gap: 18px; }
+  .ring-legend { gap: 12px; }
+  .ring-legend .v { font-size: 1rem; }
+  .ring-legend .mark.icon, .ring-legend .mark.icon svg { width: 22px; height: 22px; }
+  .ring-center .big { font-size: 1.5rem; }
+  .ring-center .small-big { font-size: 1.15rem; }
+}
+@media (max-width: 380px) {
+  .ring-row { flex-direction: column; align-items: flex-start; }
 }
