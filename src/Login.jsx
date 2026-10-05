@@ -59,9 +59,7 @@ export default function Login({ onSignedIn }) {
           required
         />
 
-        <label htmlFor="pw" className="tile-label" style={{ marginTop: 12 }}>
-          Password
-        </label>
+        <label htmlFor="pw" className="tile-label">Password</label>
         <input
           id="pw"
           type="password"
@@ -72,8 +70,7 @@ export default function Login({ onSignedIn }) {
           required
         />
 
-        <button className="btn primary" type="submit" disabled={busy}
-                style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}>
+        <button className="btn primary" type="submit" disabled={busy}>
           {busy ? (creating ? 'Creating…' : 'Checking…')
             : (creating ? 'Create account' : 'Sign in')}
         </button>
@@ -83,7 +80,6 @@ export default function Login({ onSignedIn }) {
         )}
 
         <button type="button" className="btn quiet"
-                style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
                 onClick={() => { setMode(creating ? 'in' : 'up'); setError(null); }}>
           {creating ? 'I have an account' : 'Create an account'}
         </button>

@@ -697,7 +697,7 @@ td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top:
 }
 .hero .caption { color: var(--ink-2); font-size: .92rem; padding-bottom: 4px; max-width: 52ch; }
 
-/* ── The password gate ───────────────────────────────────────────────────── */
+/* ── The sign-in screen ───────────────────────────────────────────────────── */
 
 .gate {
   min-height: 100dvh;
@@ -707,21 +707,30 @@ td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top:
   background: var(--page);
 }
 .gate-card { width: 100%; max-width: 380px; }
-.gate-card .brand { display: flex; align-items: center; gap: 11px; }
+.gate-card .brand { display: flex; align-items: center; gap: 11px; padding: 0; }
 .gate-card .brand .name { font-size: 1.3rem; font-weight: 680; letter-spacing: -.02em; }
+.gate-card label { display: block; margin-top: 14px; }
+.gate-card label:first-of-type { margin-top: 0; }
+.gate-card input[type="text"],
 .gate-card input[type="password"] {
+  display: block;
+  box-sizing: border-box;
   width: 100%;
-  margin-top: 7px;
+  margin: 7px 0 0;
   padding: 10px 12px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border-firm);
   background: var(--surface-2);
   color: var(--ink);
+  font: inherit;
 }
+.gate-card input[type="text"]:focus-visible,
 .gate-card input[type="password"]:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 1px;
 }
+.gate-card .btn { margin-top: 12px; width: 100%; justify-content: center; }
+.gate-card .btn.primary { margin-top: 18px; }
 
 /* ── Safe to spend ───────────────────────────────────────────────────────── */
 /* The hero keeps the green edge; a month running behind switches it to the
