@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import Logo from './components/Logo.jsx';
 import {
-  forgotPassword, getAuthStatus, login, resendCode, resetPassword,
-  signupWithEmail, verifyCode,
+  forgotPassword, getAuthStatus, login, resetPassword, signupWithEmail,
 } from './api.js';
 
 /** A reset link opens the app at /?reset=<token>. */
@@ -23,7 +22,7 @@ function clearResetFromUrl() {
 }
 
 /**
- * Sign in, make an account, enter the emailed code, or reset a password.
+ * Sign in, make an account, or reset a forgotten password by email.
  *
  * A failed sign-in shows exactly what the server said, which is the same
  * whether the username or the password was wrong; "forgot" says the same
@@ -31,13 +30,11 @@ function clearResetFromUrl() {
  */
 export default function Login({ onSignedIn }) {
   const resetToken = resetTokenFromUrl();
-  // 'in' | 'up' | 'code' | 'forgot' | 'sent' | 'reset'
+  // 'in' | 'up' | 'forgot' | 'sent' | 'reset'
   const [mode, setMode] = useState(resetToken ? 'reset' : 'in');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
-  const [sentTo, setSentTo] = useState('');
   const [note, setNote] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -64,12 +61,6 @@ export default function Login({ onSignedIn }) {
         setError(r.error || 'That didn’t work.');
         return;
       }
-      if (r.needs_code) {
-        setSentTo(r.sent_to || 'your email');
-        setCode('');
-        setMode('code');
-        return;
-      }
       if (r.signed_in) {
         setPassword('');
         clearResetFromUrl();
@@ -91,13 +82,11 @@ export default function Login({ onSignedIn }) {
     e.preventDefault();
     if (mode === 'in') attempt(() => login(username.trim(), password));
     else if (mode === 'up') attempt(() => signupWithEmail(username.trim(), email.trim(), password));
-    else if (mode === 'code') attempt(() => verifyCode(code));
     else if (mode === 'forgot') attempt(() => forgotPassword(username.trim()));
     else if (mode === 'reset') attempt(() => resetPassword(resetToken, password));
   }
 
   const title = {
-    code: 'Check your email',
     forgot: 'Reset your password',
     sent: 'Check your email',
     reset: 'Choose a new password',
@@ -147,18 +136,6 @@ export default function Login({ onSignedIn }) {
           </>
         )}
 
-        {mode === 'code' && (
-          <>
-            <p className="gate-note">Sent to {sentTo}</p>
-            <label htmlFor="code" className="tile-label">Code</label>
-            <input id="code" type="text" inputMode="numeric" pattern="[0-9 ]*"
-                   autoComplete="one-time-code" maxLength={7} value={code}
-                   onChange={(e) => setCode(e.target.value)}
-                   // eslint-disable-next-line jsx-a11y/no-autofocus
-                   autoFocus required className="code-input" />
-          </>
-        )}
-
         {mode === 'forgot' && (
           <>
             <label htmlFor="user" className="tile-label">Username or email</label>
@@ -176,7 +153,7 @@ export default function Login({ onSignedIn }) {
         {mode !== 'sent' && (
           <button className="btn primary" type="submit" disabled={busy}>
             {busy ? 'One moment…' : {
-              in: 'Sign in', up: 'Create account', code: 'Continue',
+              in: 'Sign in', up: 'Create account',
               forgot: 'Send reset link', reset: 'Save and sign in',
             }[mode]}
           </button>
@@ -193,16 +170,6 @@ export default function Login({ onSignedIn }) {
               Create an account
             </button>
           </>
-        )}
-        {mode === 'code' && (
-          <button type="button" className="btn quiet" disabled={busy}
-                  onClick={() => attempt(async () => {
-                    const r = await resendCode();
-                    if (r.ok) return { ok: true, needs_code: true, sent_to: r.sent_to };
-                    return r;
-                  })}>
-            Send a new code
-          </button>
         )}
         {mode !== 'in' && (
           <button type="button" className="btn quiet"

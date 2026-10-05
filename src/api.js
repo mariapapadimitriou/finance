@@ -71,14 +71,12 @@ export const changePassword = (current, next) =>
   authPost('/api/auth/password', { current, new: next });
 export const signupWithEmail = (username, email, password) =>
   authPost('/api/auth/signup', { username, email, password });
-export const verifyCode     = (code) => authPost('/api/auth/verify', { code });
-export const resendCode     = () => authPost('/api/auth/resend', {});
 export const forgotPassword = (identifier) =>
   authPost('/api/auth/forgot', { identifier });
 export const resetPassword  = (token, password) =>
   authPost('/api/auth/reset', { token, password });
 export const changeEmail    = (email) => authPost('/api/auth/email', { email });
-export const verifyEmail    = (code) => authPost('/api/auth/email/verify', { code });
+
 
 // ── Plaid ────────────────────────────────────────────────────────────────────
 export const getPlaidItems   = () => req('/api/plaid/items');

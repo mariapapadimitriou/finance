@@ -37,12 +37,9 @@ USERNAME = re.compile(r"^[a-z0-9._-]{3,32}$")
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 MIN_PASSWORD = 10
 
-# Emailed secrets. A sign-in code is short because it is typed; a reset link
-# is long because it is clicked. Both are stored only as hashes.
-CODE_TTL = 10 * 60
+# The one thing ever emailed: a link to choose a new password. It is stored
+# only as a hash, works once, and lasts half an hour.
 RESET_TTL = 30 * 60
-MAX_ATTEMPTS = 5
-RESEND_AFTER = 60
 RESETS_PER_HOUR = 3
 
 _TABLE = """
@@ -181,7 +178,7 @@ def mark_verified(base, user_id: int) -> None:
         c.execute("UPDATE app_users SET email_verified = 1 WHERE id = ?", (int(user_id),))
 
 
-# ── Emailed codes and links ──────────────────────────────────────────────────
+# ── Reset links ──────────────────────────────────────────────────────────────
 
 def now() -> float:
     """The clock, kept in one place so tests can move it."""
@@ -192,56 +189,26 @@ def _digest(secret: str) -> str:
     return hashlib.sha256(b"spendie.code.v1|" + secret.encode()).hexdigest()
 
 
-def issue(base, user_id: int, purpose: str, payload: str | None = None) -> str | None:
-    """Make a code (or a reset token) for this account and purpose.
+def issue_reset(base, user_id: int) -> str | None:
+    """A new reset token for this account, or None after three in an hour.
 
-    None when asked again too soon: one code a minute, three resets an hour.
-    Issuing a new one retires any earlier one for the same purpose, so only
-    the latest email works.
+    Issuing one retires any earlier link, so only the latest email works.
     """
     t = now()
     with base.conn() as c:
-        rows = c.execute(
-            "SELECT created_at FROM app_codes WHERE user_id = ? AND purpose = ? "
-            "AND created_at > ? ORDER BY created_at DESC",
-            (int(user_id), purpose, t - 3600)).fetchall()
-        if purpose == "reset":
-            if len(rows) >= RESETS_PER_HOUR:
-                return None
-        elif rows and t - float(rows[0]["created_at"]) < RESEND_AFTER:
+        recent = c.execute(
+            "SELECT COUNT(*) AS n FROM app_codes WHERE user_id = ? AND purpose = 'reset' "
+            "AND created_at > ?", (int(user_id), t - 3600)).fetchone()["n"]
+        if int(recent) >= RESETS_PER_HOUR:
             return None
-        secret = (secrets.token_urlsafe(32) if purpose == "reset"
-                  else f"{secrets.randbelow(10 ** 6):06d}")
-        c.execute("UPDATE app_codes SET used = 1 WHERE user_id = ? AND purpose = ? "
-                  "AND used = 0", (int(user_id), purpose))
+        token = secrets.token_urlsafe(32)
+        c.execute("UPDATE app_codes SET used = 1 WHERE user_id = ? AND purpose = 'reset' "
+                  "AND used = 0", (int(user_id),))
         c.execute(
             "INSERT INTO app_codes (user_id, purpose, secret_hash, payload, "
-            "expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (int(user_id), purpose, _digest(secret), payload,
-             t + (RESET_TTL if purpose == "reset" else CODE_TTL), t))
-    return secret
-
-
-def redeem(base, user_id: int, purpose: str, code: str) -> tuple[bool, str | None]:
-    """Check a typed code. (True, payload) once; every miss counts.
-
-    Five misses retire the code, so guessing six digits is not a matter of
-    patience.
-    """
-    code = "".join(ch for ch in str(code or "") if ch.isdigit())
-    with base.conn() as c:
-        r = c.execute(
-            "SELECT * FROM app_codes WHERE user_id = ? AND purpose = ? AND used = 0 "
-            "ORDER BY created_at DESC", (int(user_id), purpose)).fetchone()
-        if r is None or float(r["expires_at"]) < now():
-            return False, None
-        if code and _digest(code) == r["secret_hash"]:
-            c.execute("UPDATE app_codes SET used = 1 WHERE id = ?", (r["id"],))
-            return True, r["payload"]
-        attempts = int(r["attempts"]) + 1
-        c.execute("UPDATE app_codes SET attempts = ?, used = ? WHERE id = ?",
-                  (attempts, 1 if attempts >= MAX_ATTEMPTS else 0, r["id"]))
-    return False, None
+            "expires_at, created_at) VALUES (?, 'reset', ?, NULL, ?, ?)",
+            (int(user_id), _digest(token), t + RESET_TTL, t))
+    return token
 
 
 def redeem_reset(base, token: str) -> User | None:
@@ -325,7 +292,7 @@ def bootstrap_owner(base) -> User | None:
     """Create the first account from the environment, if there are none.
 
     Also gives the owner the email in SPENDIE_OWNER_EMAIL while they have
-    none, so codes have somewhere to go; the first code confirms it.
+    none, so a reset link has somewhere to go.
     """
     ensure_table(base)
     if count(base) > 0:

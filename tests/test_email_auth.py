@@ -1,4 +1,4 @@
-"""Codes by email at sign-in, and a reset link for a forgotten password.
+"""A reset link by email for a forgotten password — the only email sent.
 
 Mail is captured, never sent: `mailer.send` is replaced with a list.
 """
@@ -51,10 +51,6 @@ def app(tmp_path, outbox, clock):
     return a
 
 
-def code_in(mail) -> str:
-    return re.search(r"\b(\d{6})\b", mail["text"]).group(1)
-
-
 def login(c, username="mariapapas", password=OWNER_PW):
     return c.post("/api/auth/login", json={"username": username, "password": password})
 
@@ -63,99 +59,17 @@ def signed_in(c) -> bool:
     return c.get("/api/transactions?limit=1").status_code == 200
 
 
-class TestTheOwnersEmail:
-    def test_comes_from_the_environment_unconfirmed(self, app):
-        owner = users.by_username(app.config["STORE"], "mariapapas")
-        assert owner.email == "maria@example.com"
-        assert owner.email_verified is False
-
-
-class TestSignInWithACode:
-    def test_a_right_password_asks_for_a_code_and_opens_nothing(self, app, outbox):
+class TestSignInIsJustAPassword:
+    def test_no_code_is_sent(self, app, outbox):
         c = app.test_client()
         r = login(c).get_json()
-        assert r["needs_code"] is True and r["sent_to"] == "m•••@example.com"
-        assert len(outbox) == 1 and outbox[0]["to"] == "maria@example.com"
-        assert not signed_in(c)
-
-    def test_the_code_signs_in_and_confirms_the_email(self, app, outbox):
-        c = app.test_client()
-        login(c)
-        r = c.post("/api/auth/verify", json={"code": code_in(outbox[0])})
-        assert r.status_code == 200
+        assert r["signed_in"] is True and "needs_code" not in r
         assert signed_in(c)
-        assert users.by_username(app.config["STORE"], "mariapapas").email_verified
-
-    def test_a_wrong_code_does_not(self, app, outbox):
-        c = app.test_client()
-        login(c)
-        assert c.post("/api/auth/verify", json={"code": "000000"}).status_code == 400
-        assert not signed_in(c)
-
-    def test_five_misses_retire_the_code(self, app, outbox):
-        c = app.test_client()
-        login(c)
-        right = code_in(outbox[0])
-        wrong = "111111" if right != "111111" else "222222"
-        for _ in range(users.MAX_ATTEMPTS):
-            c.post("/api/auth/verify", json={"code": wrong})
-        assert c.post("/api/auth/verify", json={"code": right}).status_code == 400
-
-    def test_a_code_expires(self, app, outbox, clock):
-        c = app.test_client()
-        login(c)
-        clock["now"] += users.CODE_TTL + 1
-        r = c.post("/api/auth/verify", json={"code": code_in(outbox[0])})
-        assert r.status_code == 400
-
-    def test_a_new_code_waits_a_minute_and_retires_the_old(self, app, outbox, clock):
-        c = app.test_client()
-        login(c)
-        assert c.post("/api/auth/resend").status_code == 429
-        clock["now"] += users.RESEND_AFTER + 1
-        assert c.post("/api/auth/resend").status_code == 200
-        old, new = code_in(outbox[0]), code_in(outbox[1])
-        if old != new:
-            assert c.post("/api/auth/verify", json={"code": old}).status_code == 400
-        assert c.post("/api/auth/verify", json={"code": new}).status_code == 200
-
-    def test_a_wrong_password_sends_nothing(self, app, outbox):
-        assert login(app.test_client(), password="nope").status_code == 401
         assert outbox == []
 
-
-class TestATrustedDevice:
-    def sign_in_with_code(self, app, outbox, c):
-        login(c)
-        c.post("/api/auth/verify", json={"code": code_in(outbox[-1])})
-
-    def test_is_not_asked_again(self, app, outbox):
-        c = app.test_client()
-        self.sign_in_with_code(app, outbox, c)
-        c.delete_cookie("session")
-        r = login(c).get_json()
-        assert r.get("signed_in") is True and "needs_code" not in r
-        assert len(outbox) == 1
-
-    def test_another_device_is(self, app, outbox):
-        self.sign_in_with_code(app, outbox, app.test_client())
-        assert login(app.test_client()).get_json()["needs_code"] is True
-
-    def test_signing_out_forgets_the_device(self, app, outbox, clock):
-        c = app.test_client()
-        self.sign_in_with_code(app, outbox, c)
-        c.post("/api/auth/logout")
-        clock["now"] += 61
-        assert login(c).get_json()["needs_code"] is True
-
-    def test_a_new_password_forgets_every_device(self, app, outbox, clock):
-        c = app.test_client()
-        self.sign_in_with_code(app, outbox, c)
-        c.post("/api/auth/password", json={"current": OWNER_PW,
-                                           "new": "a whole new password"})
-        c.delete_cookie("session")
-        clock["now"] += 61
-        assert login(c, password="a whole new password").get_json()["needs_code"]
+    def test_the_owners_email_comes_from_the_environment(self, app):
+        owner = users.by_username(app.config["STORE"], "mariapapas")
+        assert owner.email == "maria@example.com"
 
 
 class TestSignUp:
@@ -164,16 +78,14 @@ class TestSignUp:
             "username": "sister", "password": "a long enough password"})
         assert r.status_code == 400
 
-    def test_confirms_the_email_with_a_code(self, app, outbox):
+    def test_signs_straight_in_and_keeps_the_email(self, app, outbox):
         c = app.test_client()
         r = c.post("/api/auth/signup", json={
-            "username": "sister", "email": "sis@example.com",
+            "username": "sister", "email": "Sis@Example.com",
             "password": "a long enough password"}).get_json()
-        assert r["needs_code"] is True and outbox[-1]["to"] == "sis@example.com"
-        assert not signed_in(c)
-        c.post("/api/auth/verify", json={"code": code_in(outbox[-1])})
-        assert signed_in(c)
-        assert users.by_username(app.config["STORE"], "sister").email_verified
+        assert r["signed_in"] is True and signed_in(c)
+        assert users.by_username(app.config["STORE"], "sister").email == "sis@example.com"
+        assert outbox == []
 
     def test_one_email_one_account(self, app):
         r = app.test_client().post("/api/auth/signup", json={
@@ -200,7 +112,6 @@ class TestForgottenPassword:
     def test_the_link_sets_a_new_password_once(self, app, outbox):
         elsewhere = app.test_client()
         login(elsewhere)
-        elsewhere.post("/api/auth/verify", json={"code": code_in(outbox[-1])})
         assert signed_in(elsewhere)
 
         c = app.test_client()
@@ -235,21 +146,32 @@ class TestForgottenPassword:
 
 
 class TestChangingEmail:
-    def test_is_saved_only_after_the_new_address_answers(self, app, outbox):
+    def test_is_saved_and_the_old_address_is_told(self, app, outbox):
         c = app.test_client()
         login(c)
-        c.post("/api/auth/verify", json={"code": code_in(outbox[-1])})
-        r = c.post("/api/auth/email", json={"email": "new@example.com"}).get_json()
-        assert r["needs_code"] and outbox[-1]["to"] == "new@example.com"
-        base = app.config["STORE"]
-        assert users.by_username(base, "mariapapas").email == "maria@example.com"
-        c.post("/api/auth/email/verify", json={"code": code_in(outbox[-1])})
-        assert users.by_username(base, "mariapapas").email == "new@example.com"
-        assert outbox[-1]["to"] == "maria@example.com", "the old address is told"
+        r = c.post("/api/auth/email", json={"email": "new@example.com"})
+        assert r.status_code == 200
+        assert users.by_username(app.config["STORE"], "mariapapas").email == "new@example.com"
+        assert [m["to"] for m in outbox] == ["maria@example.com"]
+
+    def test_a_reset_goes_to_the_new_address(self, app, outbox):
+        c = app.test_client()
+        login(c)
+        c.post("/api/auth/email", json={"email": "new@example.com"})
+        app.test_client().post("/api/auth/forgot", json={"identifier": "mariapapas"})
+        assert outbox[-1]["to"] == "new@example.com"
+
+    def test_two_accounts_cannot_share_one(self, app):
+        app.test_client().post("/api/auth/signup", json={
+            "username": "sister", "email": "sis@example.com",
+            "password": "a long enough password"})
+        c = app.test_client()
+        login(c)
+        assert c.post("/api/auth/email", json={"email": "sis@example.com"}).status_code == 409
 
 
 class TestWithoutEmailSetUp:
-    def test_sign_in_is_password_only(self, tmp_path, monkeypatch):
+    def test_forgot_says_so(self, tmp_path, monkeypatch):
         monkeypatch.delenv(mailer.USER_ENV, raising=False)
         monkeypatch.delenv(mailer.PASSWORD_ENV, raising=False)
         a = create_app(str(tmp_path / "l.db"))
