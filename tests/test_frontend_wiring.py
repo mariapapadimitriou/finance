@@ -280,19 +280,17 @@ class TestNoSentenceNamesATabThatIsGone:
 
 
 class TestExplanationsRememberThemselves:
-    def test_every_why_has_its_own_id(self):
-        """The id is the key a collapsed explanation is remembered under. Two
-        sharing one would fold together — collapse the one on Today and the
-        one on Plan disappears with it."""
-        seen: dict[str, str] = {}
-        dupes = []
+    def test_no_explanations_have_crept_back(self):
+        """The screens say figures and states, not reasons. A "Why?"
+        expander, an assumption paragraph or a card subtitle is the scaffolding
+        that was removed so the pages read at a glance."""
+        offenders = []
         for path in sorted(SRC.rglob("*.jsx")):
-            for wid in re.findall(r"<Why id=\"([^\"]+)\"", path.read_text(encoding="utf-8")):
-                if wid in seen:
-                    dupes.append(f"{wid} in {seen[wid]} and {path.name}")
-                seen[wid] = path.name
-        assert seen, "no <Why id=…> found — update this test"
-        assert not dupes, f"explanations sharing a remembered state: {dupes}"
+            text = path.read_text(encoding="utf-8")
+            for pattern in (r"<Why\b", r'className="assumption"', r"\bhint="):
+                if re.search(pattern, text):
+                    offenders.append(f"{path.name}: {pattern}")
+        assert not offenders, f"explanation scaffolding is back: {offenders}"
 
 
 class TestTheSetupChecklistGoesSomewhereReal:

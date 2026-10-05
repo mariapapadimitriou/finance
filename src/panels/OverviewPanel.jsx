@@ -1,23 +1,29 @@
 import { useEffect, useMemo, useState } from 'react';
 import Chart from '../components/Chart.jsx';
+import Treemap from '../components/Treemap.jsx';
+import { MonthFreshness, Notice } from '../components/ui.jsx';
+import { paceConfig } from '../charts.js';
+import { categoryGradient } from '../categoryColors.js';
 import {
-  BarRow, Card, GoTo, Legend, MonthFreshness, Notice, Tile,
-} from '../components/ui.jsx';
-import { dailySpendConfig, monthlyTrendConfig } from '../charts.js';
-import { cssVar, getBreakdown, money, monthLabel, pct } from '../api.js';
+  dateLabel, getBreakdown, getTransactions, money, monthLabel, pct,
+} from '../api.js';
 
-export default function OverviewPanel({ summary, insights, theme, month, onMonth,
-                                        onTab, version = 0 }) {
-  const [showTable, setShowTable] = useState(false);
+const VIEW_KEY = 'spendie.month.view';
 
-  const monthly = summary.monthly ?? [];
-  const trendConfig = useMemo(() => monthlyTrendConfig(monthly), [monthly, theme]);
-  const dailyConfig = useMemo(() => dailySpendConfig(summary.daily ?? []),
-                              [summary.daily, theme]);
-
-  // Server-rendered summary describes the latest month; anything month-specific
-  // is refetched when the selector changes.
+/**
+ * This month: what was spent, how it is running against a usual month, where
+ * it went, and the latest charges. The figures speak for themselves.
+ */
+export default function OverviewPanel({ summary, theme, month, onTab, version = 0 }) {
   const [breakdown, setBreakdown] = useState(null);
+  const [recent, setRecent] = useState([]);
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem(VIEW_KEY) || 'trends'; } catch { return 'trends'; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(VIEW_KEY, view); } catch { /* per visit then */ }
+  }, [view]);
 
   useEffect(() => {
     if (!month) return undefined;
@@ -25,222 +31,149 @@ export default function OverviewPanel({ summary, insights, theme, month, onMonth
     getBreakdown(month)
       .then((d) => { if (!cancelled) setBreakdown(d); })
       .catch(() => { if (!cancelled) setBreakdown(null); });
+    getTransactions({ month, limit: 12 })
+      .then((d) => { if (!cancelled) setRecent(d.transactions ?? []); })
+      .catch(() => { if (!cancelled) setRecent([]); });
     return () => { cancelled = true; };
-    // `version` changes on an import, so the breakdown follows the new ledger
-    // even when the selected month itself hasn't moved.
   }, [month, version]);
 
+  const pace = breakdown?.pace;
+  const config = useMemo(() => (pace ? paceConfig(pace) : null), [pace, theme]);
   const categories = (breakdown?.categories ?? []).filter((c) => c.amount > 0);
-  const maxCategory = categories[0]?.amount ?? 0;
-  const merchants = breakdown?.merchants ?? [];
-  const maxMerchant = merchants[0]?.amount ?? 0;
-  const split = breakdown?.split ?? {};
-  // The month-freshness wording lives in one shared component now — see
-  // MonthFreshness in components/ui.jsx. A coverage gap is a different fact
-  // (a month never imported at all) and keeps its own notice below.
+  const spent = pace?.total ?? currentMonthSpend(summary, month);
   const gaps = summary.coverage_gaps ?? [];
-
-  const savings = insights?.summary?.weighted_annual ?? 0;
-  const observedMonths = monthly.filter((m) => m.transactions > 0).length;
-  const weekday = summary.weekday ?? [];
-  const maxWeekday = Math.max(...weekday.map((d) => d.average), 0);
+  const charges = recent.filter((t) => t.amount > 0).slice(0, 8);
 
   return (
     <div className="stack">
       {gaps.length > 0 && (
-        <Notice>
-          <strong>{gaps.length} month{gaps.length === 1 ? '' : 's'} missing
-          between {monthLabel(summary.months[0])} and{' '}
-          {monthLabel(summary.months.at(-1))}.</strong>{' '}
-          Averages and trends here only count the months you actually imported,
-          so they stay honest — but a subscription whose charges straddle a gap
-          can be missed entirely. Import the statements in between for the full
-          picture.
-        </Notice>
+        <Notice>{gaps.length} month{gaps.length === 1 ? '' : 's'} missing</Notice>
       )}
+      <MonthFreshness month={month} summary={summary} onTab={onTab} from="overview" />
 
-      <MonthFreshness month={month} summary={summary} onTab={onTab}
-                      from="overview" />
-
-      <div className="grid cols-4">
-        <Tile
-          label={monthLabel(month, { long: true })}
-          value={money(currentMonthSpend(summary, month))}
-          delta={month === summary.latest_month ? summary.vs_average : undefined}
-          note="vs a typical month"
-        />
-        {/* A median, not a mean — one holiday should not redefine normal.
-            Labelled for what it is, and the same figure the Projections tab
-            quotes, which it did not used to be. */}
-        <Tile
-          label="Typical month"
-          value={money(summary.typical_monthly_spend ?? summary.average_monthly_spend)}
-          note={`median of ${observedMonths} month${observedMonths === 1 ? '' : 's'} of data`}
-        />
-        <Tile
-          label="Discretionary"
-          value={pct(split.discretionary_share ?? 0)}
-          note={`${money(split.discretionary ?? 0)} of ${money(split.total ?? 0)}`}
-        />
-        <Tile
-          label="Could save"
-          value={money(savings)}
-          note="per year, confidence-weighted"
-        />
+      <div className="segmented" role="group" aria-label="View">
+        <button aria-pressed={view === 'trends'} onClick={() => setView('trends')}>
+          Trends
+        </button>
+        <button aria-pressed={view === 'categories'} onClick={() => setView('categories')}>
+          Categories
+        </button>
       </div>
 
-      <Card
-        title="Month by month"
-        hint="Card payments, transfers and refunds excluded; refunds net against their category"
-        actions={
-          <button className="btn quiet" onClick={() => setShowTable((v) => !v)}>
-            {showTable ? 'Hide data' : 'Show data'}
-          </button>
-        }
-      >
-        <div className="chart">
-          <Chart
-            config={trendConfig}
-            theme={theme}
-            ariaLabel={`Monthly spending from ${monthLabel(monthly[0]?.month)} to ${monthLabel(monthly.at(-1)?.month)}`}
-          />
+      <div className="month-hero">
+        <div>
+          <div className="hero-total">{money(spent, { cents: true })}</div>
+          <div className="hero-sub">Spent in {monthLabel(month, { full: true })}</div>
         </div>
-        {showTable && (
-          <div className="table-wrap" style={{ marginTop: 14 }}>
-            <table>
-              <thead>
-                <tr><th>Month</th><th className="r">Spend</th><th className="r">Transactions</th></tr>
-              </thead>
-              <tbody>
-                {[...monthly].reverse().map((m) => (
-                  <tr key={m.month}>
-                    <td>{monthLabel(m.month, { long: true })}</td>
-                    <td className="r">{money(m.spend, { cents: true })}</td>
-                    <td className="r">{m.transactions}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {view === 'trends' && pace?.average_total != null && (
+          <div className="hero-side">
+            <div className="k"><span className="dot" aria-hidden="true" />
+              {pace.compared.length} month avg.</div>
+            <div className="v num">{money(pace.average_total, { cents: true })}</div>
           </div>
         )}
-      </Card>
-
-      <div className="grid cols-2">
-        <Card title="Where it went" hint={monthLabel(month, { long: true })}>
-          {categories.length === 0 ? (
-            <p className="muted">
-              {breakdown ? 'No spending recorded in this month.'
-                         : 'Loading…'}
-            </p>
-          ) : (
-            <div className="bars">
-              {categories.slice(0, 10).map((c) => (
-                <BarRow
-                  key={c.category}
-                  name={c.category}
-                  sub={`${c.transactions} transaction${c.transactions === 1 ? '' : 's'} · ${pct(c.share)}`}
-                  value={c.amount}
-                  max={maxCategory}
-                />
-              ))}
-            </div>
-          )}
-        </Card>
-
-        <Card title="Top merchants" hint={monthLabel(month, { long: true })}>
-          {merchants.length === 0 ? (
-            <p className="muted">
-              {breakdown ? 'No merchants in this month.' : 'Loading…'}
-            </p>
-          ) : (
-            <div className="bars">
-              {merchants.slice(0, 10).map((m) => (
-                <BarRow
-                  key={m.merchant}
-                  name={m.merchant}
-                  sub={`${m.category} · ${m.transactions}× · ${money(m.avg)} avg`}
-                  value={m.amount}
-                  max={maxMerchant}
-                />
-              ))}
-            </div>
-          )}
-        </Card>
       </div>
 
-      <div className="grid cols-2">
-        {/* Named for what it measures: spending on these cards, split by whether
-            you could have chosen otherwise. It used to be headed "Fixed
-            commitments — rent, utilities, insurance", the same words the Plan
-            tab uses for the list you type by hand. The two are unrelated
-            totals: rent paid by transfer is in the Plan's figure and not in
-            this one, so someone who typed rent $1,850 and read "Fixed — $380"
-            here could only conclude that a tab was broken. */}
-        <Card
-          title="Unavoidable vs chosen, on your cards"
-          hint="Only what these cards saw — a commitment paid by transfer is not here"
-        >
-          <div className="split-bar" role="img" aria-label={
-            `Chosen ${money(split.discretionary)}, unavoidable ${money(split.fixed)}`}>
-            <span className="a" style={{ width: `${(split.discretionary_share ?? 0) * 100}%` }} />
-            <span className="b" style={{ flex: 1 }} />
+      {view === 'trends' ? (
+        config && (
+          <div className="pace">
+            <Chart config={config} theme={theme}
+                   ariaLabel={`${money(spent)} spent so far in ${monthLabel(month, { long: true })}${
+                     pace.average_total != null
+                       ? `, against ${money(pace.average_total)} in a usual month` : ''}`} />
           </div>
-          <Legend items={[
-            { label: `Chosen — ${money(split.discretionary ?? 0)}`, color: cssVar('--series-1') },
-            { label: `Unavoidable — ${money(split.fixed ?? 0)}`, color: cssVar('--series-2') },
-          ]} />
-          <p className="small muted" style={{ marginTop: 12, marginBottom: 0 }}>
-            The chosen half is the part restraint can move. The unavoidable half
-            needs renegotiating instead. This counts only charges on the cards
-            you have imported, so it is not the same figure as the commitments
-            you typed in <GoTo to="plan" from="overview" onTab={onTab} /> —
-            anything paid by transfer never reaches these statements.
-          </p>
-        </Card>
-
-        <Card title="Spend by weekday" hint="Average per active day, all history">
-          {weekday.length === 0 ? (
-            <p className="muted">Not enough data yet.</p>
-          ) : (
-            <div className="bars">
-              {weekday.map((d) => (
-                <BarRow key={d.day} name={d.day} value={d.average} max={maxWeekday} />
+        )
+      ) : (
+        <>
+          {categories.length > 0 && (
+            <Treemap items={categories.map((c) => ({ label: c.category, value: c.amount }))} />
+          )}
+          <section>
+            <h2 className="section-title" style={{ cursor: 'default', margin: '8px 0 4px' }}>
+              Categories
+            </h2>
+            <div className="cat-list">
+              {categories.map((c) => (
+                <div className="cat-row" key={c.category}>
+                  <span className="sw" style={{ background: categoryGradient(c.category) }}
+                        aria-hidden="true" />
+                  <div>
+                    <div className="n">{c.category}</div>
+                    <div className="c">
+                      {c.transactions} transaction{c.transactions === 1 ? '' : 's'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="a num">{money(c.amount, { cents: true })}</div>
+                    <div className="p">{pct(c.share)}</div>
+                  </div>
+                </div>
               ))}
             </div>
-          )}
-        </Card>
-      </div>
+          </section>
+        </>
+      )}
 
-      <Card title="Daily spending" hint="Last 90 days">
-        <div className="chart short">
-          <Chart config={dailyConfig} theme={theme} ariaLabel="Daily spending over the last 90 days" />
-        </div>
-      </Card>
-
-      <Card title="Your cards" hint="Spending aggregated across every card you've imported">
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Card</th>
-                <th className="r">Transactions</th>
-                <th className="r">Total spend</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(summary.accounts ?? []).map((a) => (
-                <tr key={a.account_id}>
-                  <td className="merchant">{a.account_name}</td>
-                  <td className="r">{a.transactions}</td>
-                  <td className="r">{money(a.amount, { cents: true })}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      {charges.length > 0 && (
+        <section>
+          <button className="section-title" onClick={() => onTab?.('transactions')}>
+            Transactions
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"
+                 strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+          </button>
+          <RecentList rows={charges} />
+        </section>
+      )}
     </div>
   );
+}
+
+function RecentList({ rows }) {
+  const groups = [];
+  rows.forEach((t) => {
+    const label = dayLabel(t.date);
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.rows.push(t);
+    else groups.push({ label, rows: [t] });
+  });
+  return (
+    <div className="txn-list">
+      {groups.map((g) => (
+        <div key={g.label}>
+          <div className="txn-day">{g.label}</div>
+          {g.rows.map((t) => (
+            <div className="txn-row" key={t.id}>
+              <span className="ic" aria-hidden="true"
+                    style={{ background: categoryGradient(t.category) }}>
+                {(t.merchant || '?').slice(0, 1).toUpperCase()}
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div className="m">{t.merchant}</div>
+                <div className="c">{t.category}</div>
+              </div>
+              <div>
+                <div className="a">−{money(t.amount, { cents: true })}</div>
+                {t.raw && typeof t.raw === 'string' && t.raw.includes('"pending": true') && (
+                  <span className="pill">Pending</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function dayLabel(iso) {
+  const today = new Date();
+  const d = new Date(`${iso}T00:00:00`);
+  const diff = Math.round((new Date(today.toDateString()) - d) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return dateLabel(iso);
 }
 
 function currentMonthSpend(summary, month) {

@@ -70,7 +70,9 @@ function Icon({ d }) {
 
 export default function App() {
   const [theme, setTheme] = useState(
-    () => localStorage.getItem('spendie-theme') || 'dark'
+    // A new key: the old one saved the old dark default on every visit, so
+    // nobody would ever have seen the light default this introduced.
+    () => localStorage.getItem('spendie-theme-2') || 'light'
   );
   const [tab, setTab] = useState('today');
   const [panel, setPanel] = useState('today');
@@ -123,7 +125,7 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme);
   }
 
-  useEffect(() => { localStorage.setItem('spendie-theme', theme); }, [theme]);
+  useEffect(() => { localStorage.setItem('spendie-theme-2', theme); }, [theme]);
 
   // A 401 from any request means the session went away — a password change,
   // or a cookie that expired while the tab sat open. Returning to the login
@@ -221,24 +223,15 @@ export default function App() {
     return (
       <Shell theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
              findingCount={findingCount}>
-        <Empty title="Let's see where the money goes">
-          <p>
-            Connect a card and this fills in by itself: spending by category,
-            subscriptions you&apos;ve forgotten about, and a ranked list of what
-            to cut. The connection keeps itself up to date, so this is the last
-            time you have to think about where the data comes from.
-          </p>
-          <button className="btn primary" onClick={() => go('banks')}
-                  style={{ marginTop: 14 }}>
-            Connect a card
-          </button>
-          <p className="small muted" style={{ marginTop: 16, marginBottom: 0 }}>
-            For a card that can&apos;t be connected — a closed account, or a bank
-            Plaid doesn&apos;t reach —{' '}
-            <button className="link" onClick={() => go('import')}>
-              import statements from a file
-            </button>.
-          </p>
+        <Empty title="No spending yet">
+          <div className="row" style={{ justifyContent: 'center', marginTop: 14 }}>
+            <button className="btn primary" onClick={() => go('banks')}>
+              Connect a card
+            </button>
+            <button className="btn" onClick={() => go('import')}>
+              Import a file
+            </button>
+          </div>
         </Empty>
       </Shell>
     );
@@ -389,7 +382,6 @@ function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
           <div className="topbar-inner">
             <div className="title">
               <h1>{current?.label ?? 'Spendie'}</h1>
-              {current && <div className="hint">{current.hint}</div>}
             </div>
 
             {showMonth && months.length > 0 && (
@@ -398,7 +390,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
                 <select id="month-select" value={month}
                         onChange={(e) => onMonth(e.target.value)}>
                   {[...months].reverse().map((m) => (
-                    <option key={m} value={m}>{monthLabel(m, { long: true })}</option>
+                    <option key={m} value={m}>{monthLabel(m, { full: true })}</option>
                   ))}
                 </select>
               </>
@@ -408,6 +400,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
           </div>
 
           {group && group.panels.length > 1 && (
+            <div className="sections-wrap">
             <nav className="sections" role="tablist" ref={sectionsRef}
                  aria-label={`${group.label} sections`}>
               {group.panels.map((key) => (
@@ -421,6 +414,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
                 </button>
               ))}
             </nav>
+            </div>
           )}
         </div>
         <main>{children}</main>

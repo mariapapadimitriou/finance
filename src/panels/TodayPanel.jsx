@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Card, ErrorNote, GoTo, Loading, Notice, StatusPill, Why,
-} from '../components/ui.jsx';
+  Card, ErrorNote, GoTo, Loading, Notice, StatusPill, } from '../components/ui.jsx';
 import {
   coverFromBank, getNudge, getPlan, getSetup, money, monthLabel,
   simulateSpend, skipSetupStep,
@@ -76,10 +75,7 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
 
       {!live && (
         <Notice>
-          Nothing imported for {monthLabel(thisMonth, { long: true })} yet, so
-          this is {monthLabel(state.month, { long: true })} — the most recent
-          month you have statements for — as it finished. Import this month&apos;s
-          statement and the number becomes about today.
+          Showing {monthLabel(state.month, { full: true })}
           {onMonth && (
             <>
               {' '}
@@ -93,9 +89,7 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
 
       {live && !data.has_data_this_month && (
         <Notice>
-          Nothing imported for {monthLabel(state.month, { long: true })} yet, so
-          this reads as a month where nothing has been spent. The arithmetic below
-          is real — it just has an empty month under it.
+          Nothing yet for {monthLabel(state.month, { full: true })}
           {latestWithData && onMonth && (
             <>
               {' '}
@@ -138,14 +132,12 @@ function SetupChecklist({ setup, onTab, onSkip }) {
   const total = setup.steps.filter((s) => !s.skipped).length;
 
   return (
-    <Card title="Finish setting up"
-          hint={`${done} of ${total} done — the rest make today's number yours`}>
+    <Card title="Finish setting up">
       <ol className="setup-steps">
         {todo.map((step) => (
           <li key={step.id}>
             <div className="what">
               <strong>{step.label}</strong>
-              <div className="small muted">{step.detail}</div>
             </div>
             <div className="row" style={{ gap: 6, flex: 'none' }}>
               {step.optional && (
@@ -198,12 +190,11 @@ function SafeToSpend({ state, live }) {
           </div>
           <div className="caption">
             {live && !over && week.days_left > 1 && (
-              <>About {money(week.per_day, { cents: true })} a day for the{' '}
-                {week.days_left} days left this week ·{' '}</>
+              <>{money(week.per_day, { cents: true })} a day ·{' '}</>
             )}
             {state.remaining < 0
               ? `${money(-state.remaining, { cents: true })} past the ${money(state.budget)} budget`
-              : `${money(state.remaining, { cents: true })} left of ${money(state.budget)} this month`}
+              : `${money(state.remaining, { cents: true })} left this month`}
           </div>
         </div>
         {over ? (
@@ -249,44 +240,7 @@ function SafeToSpend({ state, live }) {
                  tone={left < 0 ? 'bad' : 'good'} strong />
       </div>
 
-      {behind && (
-        <p className="assumption" style={{ marginBottom: 0 }}>
-          You went over earlier in the month, so the shortfall is spread across
-          the weeks that are left rather than all landing on this one. This
-          week gets its {week.days} days&apos; share of what remains, and the
-          month still balances.
-        </p>
-      )}
 
-      {over && (
-        <p className="assumption" style={{ marginBottom: 0 }}>
-          {state.remaining >= 0 ? (
-            <>
-              The month still has{' '}
-              <strong className="num">{money(state.remaining, { cents: true })}</strong>{' '}
-              in it. Next week the shortfall is spread across what is left of
-              the month, so every week after this gets a little less — nothing
-              is hidden, the weekly number just drops.
-            </>
-          ) : (
-            <>
-              The month is{' '}
-              <strong className="num">
-                {money(-state.remaining, { cents: true })}
-              </strong>{' '}
-              past its budget, so spreading can&apos;t rescue it — there is
-              nothing left to divide. Borrow it from a piggy bank, or let it
-              be a month that went over.
-            </>
-          )}
-        </p>
-      )}
-      {state.covered > 0 && (
-        <p className="assumption" style={{ marginBottom: 0 }}>
-          Includes {money(state.covered, { cents: true })} borrowed from your
-          piggy banks this month.
-        </p>
-      )}
     </Card>
   );
 }
@@ -339,18 +293,6 @@ function ThisMonth({ status, state, live }) {
                 tone={state.remaining < 0 ? 'bad' : undefined} />
       </div>
 
-      {status.vs_baseline !== null && status.vs_baseline !== undefined && (
-        <p className="assumption">
-          Against your own median month, this one is heading{' '}
-          <strong>{money(Math.abs(status.vs_baseline))}{' '}
-            {status.vs_baseline > 0 ? 'higher' : 'lower'}</strong>.
-        </p>
-      )}
-      <Why id="today.discretionary" label="What counts here?">
-        Only discretionary spending counts here. Rent, utilities, insurance and
-        card payments are already committed, and no amount of restraint on a
-        Tuesday changes the hydro bill.
-      </Why>
     </Card>
   );
 }
@@ -403,8 +345,7 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
   }
 
   return (
-    <Card title="Thinking about buying something?"
-          hint="Enter the price and see whether this week has room for it">
+    <Card title="Thinking about buying something?">
       <form className="controls" onSubmit={ask}>
         <label htmlFor="ask-amount">It costs</label>
         <input id="ask-amount" type="number" min="0.01" step="0.01" required
@@ -455,13 +396,6 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
                   </div>
                 ))}
               </div>
-              {banks.length === 0 && (
-                <p className="assumption" style={{ marginBottom: 0 }}>
-                  Open a piggy bank in{' '}
-                  <GoTo to="piggy" from="today" onTab={onTab} /> and borrowing
-                  from one to cover an overspend becomes an option here too.
-                </p>
-              )}
             </>
           )}
         </div>
@@ -479,19 +413,11 @@ function CanIBuyThis({ month, banks, onCovered, onTab }) {
  */
 function PiggyBanks({ banks, draws, allocated, onTab }) {
   return (
-    <Card title="Piggy banks"
-          hint="What they can still pay this year">
+    <Card title="Piggy banks">
       {banks.length === 0 ? (
-        <p className="small muted" style={{ marginTop: 0 }}>
-          None yet. A piggy bank pays for your big spending — travel, say —
-          so it never lands on your weekly allowance.{onTab && (
-            <>{' '}
-              <button className="link" onClick={() => onTab('piggy')}>
-                Open one
-              </button>.
-            </>
-          )}
-        </p>
+        onTab && (
+          <button className="btn" onClick={() => onTab('piggy')}>Open a piggy bank</button>
+        )
       ) : (
         <div className="bars" style={{ marginBottom: 14 }}>
           {banks.map((b) => (
@@ -515,10 +441,8 @@ function PiggyBanks({ banks, draws, allocated, onTab }) {
 
       {allocated > 0 && (
         <p className="small" style={{ margin: '0 0 12px' }}>
-          <strong>{money(allocated, { cents: true })}</strong> of this
-          month&apos;s spending was paid by a piggy bank, so it is not in the
-          figures above or in the weekly number. That is the point of them:
-          big spending comes out of the bank, not your week.
+          <strong>{money(allocated, { cents: true })}</strong> paid by piggy banks
+          this month
         </p>
       )}
 
@@ -555,8 +479,7 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
   const planTab = <GoTo to="plan" from="today" onTab={onTab} />;
 
   return (
-    <Card title="Where the weekly number comes from"
-          hint="Calculated from your plan, not typed here">
+    <Card title="Where the weekly number comes from">
       {/* No input. The figure is derived from the plan on every request, so
           there is nothing here that could overwrite it and no stored copy to
           fall out of date. */}
@@ -589,16 +512,6 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
                        ? `this week is ${state.week.days} days, so it gets ${money(state.week.share)}`
                        : undefined} />
           </div>
-          <Why id="today.derivation" label="How do I change this number?">
-            Every term above is read from your plan when this page loads, so
-            changing your pay, a commitment, your savings or a piggy bank in{' '}
-            {planTab} moves this number immediately — there is no copy of
-            it stored anywhere to go stale.
-            {d.banks > 0 && (
-              <> Piggy banks are taking {money(d.banks)} a month out before the
-                 leftover is worked out.</>
-            )}
-          </Why>
         </>
       ) : (
         <>
@@ -616,13 +529,6 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
                        ? `this week is ${state.week.days} days, so it gets ${money(state.week.share)}`
                        : undefined} />
           </div>
-          <p className="assumption" style={{ marginBottom: 0 }}>
-            This is a stand-in: your own median month of discretionary
-            spending, because the plan has no take-home pay in it yet. That
-            describes your habits rather than deciding anything. Fill in your
-            pay and commitments in {planTab} and this becomes a figure you
-            chose.
-          </p>
         </>
       )}
     </Card>
@@ -639,8 +545,8 @@ function MonthlyAmount({ state, configured, derivation, onTab }) {
  */
 function essentialsNote(categories) {
   const names = (categories ?? []).map((c) => c.toLowerCase());
-  if (names.length === 0) return 'budgeted by category, not handed out weekly';
+  if (names.length === 0) return 'monthly';
   const shown = names.slice(0, 3).join(', ');
   const rest = names.length > 3 ? ` and ${names.length - 3} more` : '';
-  return `${shown}${rest} — budgeted monthly, not weekly`;
+  return `${shown}${rest}`;
 }

@@ -267,9 +267,13 @@ export function pct(n, digits = 0) {
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-export function monthLabel(month, { long = false } = {}) {
+const FULL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+                     'August', 'September', 'October', 'November', 'December'];
+
+export function monthLabel(month, { long = false, full = false } = {}) {
   if (!month) return '—';
   const [y, m] = month.split('-').map(Number);
+  if (full) return `${FULL_MONTHS[m - 1] ?? month} ${y}`;
   const name = MONTH_NAMES[m - 1] ?? month;
   return long ? `${name} ${y}` : `${name} '${String(y).slice(2)}`;
 }

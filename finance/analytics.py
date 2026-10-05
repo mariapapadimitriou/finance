@@ -394,6 +394,56 @@ def daily_series(transactions: list[Transaction], days: int = 90) -> list[dict]:
     return out
 
 
+def month_pace(transactions: list[Transaction], month: str,
+               today: date | None = None, compare: int = 3) -> dict:
+    """This month's spending as a running total, beside a usual month's.
+
+    Day by day, what has been spent so far — through today for the month
+    under way — and, under it, the average running total of the `compare`
+    months before it that have spending in them, by day of the month. The
+    same gate as every other total, so the last point is the month's spend.
+    """
+    import calendar
+
+    today = today or date.today()
+    rows = spend_only(transactions)
+    year, mon = int(month[:4]), int(month[5:7])
+    days = calendar.monthrange(year, mon)[1]
+    through = today.day if month == today.isoformat()[:7] else days
+
+    def running(m: str, length: int) -> list[float]:
+        by_day: dict[int, float] = defaultdict(float)
+        for t in rows:
+            if t.month == m:
+                by_day[int(t.date[8:10])] += t.amount
+        out, total = [], 0.0
+        for d in range(1, length + 1):
+            total += by_day.get(d, 0.0)
+            out.append(round(total, 2))
+        return out
+
+    this = running(month, through)
+    earlier = sorted({t.month for t in rows if t.month < month})[-compare:]
+    curves = []
+    for m in earlier:
+        y, mo = int(m[:4]), int(m[5:7])
+        curve = running(m, calendar.monthrange(y, mo)[1])
+        # A shorter month holds its last total for the days it doesn't have.
+        curves.append([curve[min(d, len(curve)) - 1] for d in range(1, days + 1)])
+    average = ([round(sum(c[d] for c in curves) / len(curves), 2) for d in range(days)]
+               if curves else [])
+    return {
+        "month": month,
+        "days": days,
+        "through": through,
+        "this": this,
+        "total": this[-1] if this else 0.0,
+        "average": average,
+        "average_total": average[-1] if average else None,
+        "compared": earlier,
+    }
+
+
 def weekday_profile(transactions: list[Transaction]) -> list[dict]:
     """Average spend by day of week — where the discretionary bulges sit."""
     rows = [t for t in spend_only(transactions) if t.amount > 0]

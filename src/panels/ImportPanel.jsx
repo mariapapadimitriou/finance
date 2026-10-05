@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Card, ErrorNote, Notice, Why } from '../components/ui.jsx';
+import { Card, ErrorNote, Notice } from '../components/ui.jsx';
 import {
   getBundled, getHealth, getImports, getSources, importBundled,
   importFiles, money,
@@ -55,22 +55,15 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
   // empty list of steps — a failure that looks like furniture.
   if (error && !sources) return <ErrorNote error={error} onRetry={refresh} />;
 
-  const csv = sources?.sources?.find((s) => s.key === 'csv');
-  const others = sources?.sources?.filter((s) => s.key !== 'csv') ?? [];
 
   return (
     <div className="stack">
       {onTab && (
-        <Notice>
-          <strong>Connecting a card is the better way in.</strong> A connection
-          keeps itself up to date and never has to be downloaded again, so this
-          page is for what a connection can&apos;t reach: a closed account, or a
-          bank Plaid doesn&apos;t support.{' '}
+        <div>
           <button className="link" onClick={() => onTab('banks')}>
             Connect a card instead
           </button>
-          .
-        </Notice>
+        </div>
       )}
 
       <BundledStatements onImported={onImported} />
@@ -82,13 +75,7 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
           notice by removing the problem. */}
       {storage === 'ephemeral' && (
         <Notice>
-          <strong>Uploads here are temporary.</strong> This deployment has no
-          database attached, so a statement you add lives on one server for as
-          long as that server does — usually minutes to hours — and may not be
-          visible on another device at all. Nothing is committed to the
-          repository to fall back on. To make uploads permanent, attach a
-          Postgres database in the Vercel project
-          (Storage → Create Database) and redeploy; nothing else needs changing.
+          <strong>Uploads are temporary</strong> · no database attached
         </Notice>
       )}
 
@@ -103,11 +90,7 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
         }}
       >
         <h3>{busy ? 'Reading your statements…' : 'Drop your statements here'}</h3>
-        <p style={{ margin: '8px auto 18px', maxWidth: '46ch' }}>
-          PDF statements or CSV exports, from any card. The format is detected
-          automatically, and re-importing an overlapping date range is safe —
-          duplicates are dropped, not double-counted.
-        </p>
+        <p className="muted" style={{ margin: '8px auto 18px' }}>PDF or CSV</p>
         <input
           ref={inputRef}
           type="file"
@@ -159,60 +142,6 @@ export default function ImportPanel({ accounts, onImported, onTab }) {
           )))}
         </Card>
       )}
-
-      <div className="grid cols-2">
-        <Card title="Getting your statements" hint={csv?.detail}>
-          <ol className="steps">
-            {(csv?.setup_steps ?? []).map((s) => <li key={s}>{s}</li>)}
-          </ol>
-          {/* The privacy claim has to match where the data actually goes:
-              on a deployment it is not "this machine", and saying so anyway
-              would be the one kind of inaccuracy that really matters here. */}
-          <p className="small muted" style={{ marginTop: 16, marginBottom: 0 }}>
-            {storage === 'sqlite'
-              ? 'Everything is parsed on this machine and stored in a local '
-                + 'SQLite file. Nothing is uploaded anywhere.'
-              : 'Statements are parsed on the server and stored in this '
-                + "deployment's own database. They are not sent anywhere else."}
-          </p>
-        </Card>
-
-        <Card title="Automatic sync" hint="Alternatives to downloading CSVs by hand">
-          {others.map((s) => (
-            <div key={s.key} style={{ marginBottom: 14 }}>
-              <div className="row">
-                <strong>{s.label}</strong>
-                <span className={`pill ${s.available ? 'good' : ''}`}>
-                  {s.available ? 'Configured' : 'Not configured'}
-                </span>
-              </div>
-              <p className="small muted" style={{ margin: '6px 0' }}>{s.detail}</p>
-              {s.key === 'plaid' && (
-                <p className="small" style={{ margin: '6px 0' }}>
-                  Connecting and syncing banks lives on the{' '}
-                  <strong>Banks</strong> tab.
-                </p>
-              )}
-              {!s.available && s.setup_steps?.length > 0 && (
-                <details>
-                  <summary className="small" style={{ cursor: 'pointer', color: 'var(--series-1)' }}>
-                    Setup steps
-                  </summary>
-                  <ol className="steps">
-                    {s.setup_steps.map((step) => <li key={step}>{step}</li>)}
-                  </ol>
-                  {s.setup_url && (
-                    <p className="small">
-                      <a href={s.setup_url} target="_blank" rel="noreferrer">{s.setup_url}</a>
-                    </p>
-                  )}
-                </details>
-              )}
-            </div>
-          ))}
-        </Card>
-      </div>
-
 
       {history.length > 0 && (
         <Card title="Recent imports">
@@ -289,8 +218,7 @@ function BundledStatements({ onImported }) {
   if (sets.length === 0) return null;
 
   return (
-    <Card title="Statements included with the app"
-          hint="For a card that can't be connected">
+    <Card title="Statements included with the app">
       <ErrorNote error={error} />
 
       {sets.map((b) => (
@@ -302,9 +230,6 @@ function BundledStatements({ onImported }) {
             <div className="desc">
               {b.rows} transactions · {b.period}
             </div>
-            <p className="small muted" style={{ margin: '6px 0 0', maxWidth: '54ch' }}>
-              {b.note}
-            </p>
           </div>
           <button className={`btn${b.loaded ? ' quiet' : ' primary'}`}
                   disabled={busy === b.key}
@@ -319,7 +244,7 @@ function BundledStatements({ onImported }) {
         <Notice kind="good">
           {done.imported > 0
             ? `Added ${done.imported} transaction${done.imported === 1 ? '' : 's'}.`
-            : 'Nothing to add — all of them were already in the ledger.'}
+            : 'Already imported'}
           {done.duplicates > 0 && ` ${done.duplicates} were already there.`}
           {done.warnings?.length > 0 && (
             <div className="small" style={{ marginTop: 8 }}>
@@ -329,11 +254,6 @@ function BundledStatements({ onImported }) {
         </Notice>
       )}
 
-      <Why id="import.bundled" label="Is it safe to press twice?">
-        These go through the same checks as an upload, so pressing this twice
-        adds nothing the second time. They are the only transactions that come
-        back after the ledger is emptied — and only when you ask for them.
-      </Why>
     </Card>
   );
 }

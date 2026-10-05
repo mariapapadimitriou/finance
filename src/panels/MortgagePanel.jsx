@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Chart from '../components/Chart.jsx';
 import {
-  Card, ErrorNote, GoTo, Loading, Notice, Tile, Why,
-} from '../components/ui.jsx';
+  Card, ErrorNote, GoTo, Loading, Notice, Tile, } from '../components/ui.jsx';
 import {
   compareMortgage, deleteMortgage, getMortgage, money, monthLabel, pct,
   previewMortgage, saveMortgage,
@@ -220,7 +219,6 @@ export default function MortgagePanel({ onChanged, onTab }) {
   return (
     <div className="stack">
       <Card title="Your mortgage"
-            hint="Typed once — the payment it works out becomes the Mortgage line in your plan"
             actions={data.saved && !dirty && (
               confirming ? (
                 <div className="row" style={{ gap: 8 }}>
@@ -329,7 +327,7 @@ export default function MortgagePanel({ onChanged, onTab }) {
             <label className="row small" style={{ gap: 6, color: 'inherit' }}>
               <input type="checkbox" checked={form.shared}
                      onChange={(e) => setForm({ ...form, shared: e.target.checked })} />
-              Shared with someone — a partner, a sibling
+              Shared
             </label>
             {form.shared && (
               <>
@@ -365,8 +363,7 @@ export default function MortgagePanel({ onChanged, onTab }) {
             <p className="small" style={{ margin: 0 }}>
               You pay <strong className="num">{money(r.your_monthly, { cents: true })}</strong>{' '}
               a month of <span className="num">{money(r.committed_monthly, { cents: true })}</span>{' '}
-              ({pct(r.share.fraction)}). That is what your plan sets aside; the
-              rest is theirs. Extra payments are split the same way.
+              ({pct(r.share.fraction)})
             </p>
           )}
 
@@ -374,25 +371,11 @@ export default function MortgagePanel({ onChanged, onTab }) {
 
           <PayoffNote r={r} form={form} />
 
-          <p id="mg-term-hint" className="small muted" style={{ margin: 0 }}>
-            Copy these from your statement. The term is how long this rate is
-            fixed; &ldquo;left to pay&rdquo; is the remaining amortization —
-            how long until it is paid off. Your payment is optional: without
-            it, it&apos;s worked out from the years left, which can be a few
-            cents off what your lender set. Canadian fixed-rate
-            mortgages compound twice a year by law, which makes the payment a
-            little smaller than an American calculator says.
-          </p>
 
           {data.existing && !data.saved && (
             <Notice>
-              Your plan already has{' '}
-              <strong className="num">{money(data.existing.amount, { cents: true })}</strong>{' '}
-              a month for {data.existing.name}. Saving replaces it with what
-              these terms work out
-              {r ? <> — <strong className="num">
-                {money(r.your_monthly, { cents: true })}</strong></> : ''}
-              {' '}— rather than adding a second line.
+              Replaces your {money(data.existing.amount, { cents: true })}{' '}
+              {data.existing.name} line
             </Notice>
           )}
 
@@ -407,12 +390,7 @@ export default function MortgagePanel({ onChanged, onTab }) {
                 Undo changes
               </button>
             )}
-            {dirty && (
-              <span className="small muted">
-                {complete(form) ? 'A preview — nothing is saved until you press Save.'
-                  : 'Fill in the balance, rate and years to see it worked out.'}
-              </span>
-            )}
+            {dirty && complete(form) && <span className="small muted">Not saved</span>}
           </div>
         </form>
       </Card>
@@ -434,8 +412,7 @@ function StatementCheck({ r, form }) {
   if (r.payment_source !== 'statement') {
     return (
       <p id="mg-payment-hint" className="small muted" style={{ margin: 0 }}>
-        Worked out: <span className="num">{money(r.worked_out_payment, { cents: true })}</span>{' '}
-        {per}. If your statement says something different, enter it.
+        <span className="num">{money(r.worked_out_payment, { cents: true })}</span> {per}
       </p>
     );
   }
@@ -445,14 +422,10 @@ function StatementCheck({ r, form }) {
   return (
     <p id="mg-payment-hint" className="small" style={{ margin: 0 }}>
       {off != null && off <= 1.5 ? (
-        <>✓ At <span className="num">{money(r.payment, { cents: true })}</span> {per},{' '}
-          {money(r.balance_now)} is paid off in {paidOff} — the same as your
-          statement. The calculator uses your payment.</>
+        <>✓ {paidOff} left at <span className="num">{money(r.payment, { cents: true })}</span> {per}</>
       ) : (
-        <>At <span className="num">{money(r.payment, { cents: true })}</span> {per},{' '}
-          {money(Number(form.balance))} is paid off in <strong>{paidOff}</strong>,
-          not the {yearsMonths(r.typed_months)} typed — check the balance,
-          the rate and how often you pay. The calculator uses your payment.</>
+        <>At <span className="num">{money(r.payment, { cents: true })}</span> {per}:{' '}
+          <strong>{paidOff}</strong> left, not {yearsMonths(r.typed_months)}</>
       )}
     </p>
   );
@@ -479,16 +452,11 @@ function PayoffNote({ r, form }) {
   return (
     <p className="small" style={{ margin: 0 }}>
       {sooner > 1 && reasons.length > 0 && (
-        <>Paid off in <strong>{yearsMonths(r.months_left)}</strong> — sooner
-          than the {yearsMonths(totalMonths(form))} you typed, because{' '}
-          {reasons.join(', and because ')}. </>
+        <>Paid off in <strong>{yearsMonths(r.months_left)}</strong>{' '}
+          ({r.accelerated ? 'accelerated' : `+${money(r.extra_monthly)}/mo`}) </>
       )}
       {old && (
-        <span className="muted">
-          Balance and years as you entered them in{' '}
-          {monthLabel(r.as_of, { long: true })}; &ldquo;Owing now&rdquo;
-          rolls them forward. Change either to start again from today.
-        </span>
+        <span className="muted">As of {monthLabel(r.as_of, { long: true })}</span>
       )}
     </p>
   );
@@ -534,8 +502,7 @@ function Results({ data, r, form, setForm, onTab }) {
         )}
       </div>
 
-      <Card title="Interest against principal"
-            hint="Of everything still to pay, how much clears the debt and how much is the cost of borrowing">
+      <Card title="Interest against principal">
         <div className="split-bar" role="img"
              aria-label={`${pct(interestShare)} interest, ${pct(1 - interestShare)} principal`}>
           <span style={{ width: `${(1 - interestShare) * 100}%`,
@@ -557,29 +524,14 @@ function Results({ data, r, form, setForm, onTab }) {
         </div>
         {r.original && (
           <p className="small" style={{ margin: '10px 0 0' }}>
-            Paid off so far: <strong className="num">{money(r.paid_so_far)}</strong>{' '}
-            of the original {money(r.original)} ({pct(r.paid_so_far_share)})
-            {sh && <> — your share {money(r.paid_so_far * sh.fraction)}</>}.
+            Paid off <strong className="num">{money(r.paid_so_far)}</strong>{' '}
+            of {money(r.original)} ({pct(r.paid_so_far_share)})
+            {sh && <> · yours {money(r.paid_so_far * sh.fraction)}</>}
           </p>
         )}
         <p className="small muted" style={{ margin: '10px 0 0' }}>
-          {money(r.total_paid)} still to pay in all.
-          {r.next_month?.month && (
-            <> Of the payments in {monthLabel(r.next_month.month, { long: true })},{' '}
-              <strong className="num">{money(r.next_month.interest, { cents: true })}</strong>{' '}
-              is interest and{' '}
-              <strong className="num">{money(r.next_month.principal, { cents: true })}</strong>{' '}
-              comes off what you owe.</>
-          )}
-          {sh && (
-            <> Your share:{' '}
-              <strong className="num">{money(sh.principal)}</strong> principal
-              and <strong className="num">{money(sh.interest)}</strong> interest.</>
-          )}
-          {r.accelerated && (
-            <> Accelerated payments add up to thirteen monthly payments a year
-              instead of twelve; the extra one goes entirely to principal.</>
-          )}
+          {money(r.total_paid)} to pay
+          {sh && <> · yours {money(sh.principal)} + {money(sh.interest)} interest</>}
         </p>
       </Card>
 
@@ -587,8 +539,7 @@ function Results({ data, r, form, setForm, onTab }) {
 
       <InvestOrPayDown form={form} savings={data.savings} onTab={onTab} />
 
-      <Card title="Where each year's payments go"
-            hint="Early years are mostly interest; the crossover is when principal takes over">
+      <Card title="Where each year's payments go">
         <div className="chart">
           <Chart config={mortgageConfig(r.by_year)}
                  ariaLabel={`Year by year, interest and principal paid. `
@@ -606,25 +557,9 @@ function Results({ data, r, form, setForm, onTab }) {
             Interest
           </span>
         </div>
-        {r.renewal && (
-          <p className="assumption" style={{ marginBottom: 0 }}>
-            By the end of your term in{' '}
-            {monthLabel(r.renewal.month, { long: true })} you&apos;ll owe{' '}
-            <strong className="num">{money(r.renewal.balance)}</strong>. Of
-            the {money(r.renewal.interest + r.renewal.principal)} you pay
-            until then,{' '}
-            <strong className="num">{money(r.renewal.interest)}</strong> is
-            interest. That balance is what the next rate will apply to
-            {sh && sh.renewal_balance != null && (
-              <> — your share of it,{' '}
-                <strong className="num">{money(sh.renewal_balance)}</strong></>
-            )}.
-          </p>
-        )}
       </Card>
 
-      <Card title="Shorter or longer"
-            hint="The balance owing now, paid off over each length, at this rate">
+      <Card title="Shorter or longer">
         <div className="table-wrap">
           <table>
             <thead>
@@ -658,15 +593,6 @@ function Results({ data, r, form, setForm, onTab }) {
             </tbody>
           </table>
         </div>
-        <Why id="mortgage.assumption" label="What does this assume?">
-          That the rate holds for every year left. It won&apos;t: the term ends,
-          the mortgage renews and the rate moves, up or down. The payoff date
-          and the interest are what these terms give if nothing changes, which
-          makes them useful for comparing choices — paying extra, paying more
-          often, a shorter amortization — and not a forecast. The monthly cost
-          is what the plan subtracts on{' '}
-          <GoTo to="plan" from="mortgage" onTab={onTab} />.
-        </Why>
       </Card>
     </>
   );
@@ -679,8 +605,7 @@ function ExtraSlider({ r, form, setForm }) {
   const filled = Math.round((value / max) * 100);
 
   return (
-    <Card title="Paying extra"
-          hint="On top of the payment, every month — straight off the principal">
+    <Card title="Paying extra">
       <div className="controls" style={{ alignItems: 'center', gap: 14 }}>
         <label htmlFor="mg-extra" style={{ whiteSpace: 'nowrap' }}>
           {r.share?.shared ? 'Extra each month, between you' : 'Extra each month'}
@@ -704,16 +629,8 @@ function ExtraSlider({ r, form, setForm }) {
               <strong>{yearsMonths(r.saves.months)} sooner</strong>, in{' '}
               {monthLabel(r.payoff_month, { long: true })}, with{' '}
               <strong className="num">{money(r.saves.interest)}</strong> less
-              interest.{' '}
-              {r.share?.shared
-                ? <>Your part of the extra is {money(r.share.extra)}, so your
-                    plan would set aside {money(r.your_monthly)} a month instead
-                    of {money(r.share.payment * r.payments_per_year / 12)}.</>
-                : <>The plan would set aside {money(r.committed_monthly)} a
-                    month instead of {money(r.monthly_equivalent)}.</>}</>
-          : <span className="muted">Drag it to see what an extra amount each
-              month saves. Most lenders allow prepayments up to a yearly limit
-              — check yours.</span>}
+              interest</>
+          : null}
       </p>
     </Card>
   );
@@ -758,8 +675,7 @@ function InvestOrPayDown({ form, savings, onTab }) {
   const ahead = c && Math.abs(c.difference);
 
   return (
-    <Card title="Invest it, or pay down the mortgage?"
-          hint="The same money, two ways — compared on the day the mortgage would have ended anyway">
+    <Card title="Invest it, or pay down the mortgage?">
       <div className="controls">
         <label htmlFor="ip-monthly">Extra each month</label>
         <input id="ip-monthly" type="number" min="0" step="any" inputMode="decimal"
@@ -800,12 +716,7 @@ function InvestOrPayDown({ form, savings, onTab }) {
           </>
         )}
       </div>
-      {savings > 0 && (
-        <p className="small muted" style={{ margin: '8px 0 0' }}>
-          Starts from the {money(savings)} a month your plan already sets aside
-          to save or invest — change it to ask about any amount.
-        </p>
-      )}
+
 
       <ErrorNote error={error} />
 
@@ -819,31 +730,21 @@ function InvestOrPayDown({ form, savings, onTab }) {
                   ? `At ${pctRate(c.expected)}, investing comes out ${money(ahead)} ahead`
                   : `At ${pctRate(c.expected)}, paying down the mortgage comes out ${money(ahead)} ahead`}
             </strong>
-            {c.winner !== 'tie' && <> by {monthLabel(c.horizon_month, { long: true })}.</>}{' '}
-            {c.share < 1 ? (
-              <>The mortgage is shared, and this is your money alone: paying
-                it down by yourself also pays off their share, and when it ends
-                you only stop paying yours — so it earns you less than the
-                mortgage&apos;s {pctRate(c.mortgage_return)}, unless you agree
-                your extra counts toward your share of the home.{' '}</>
-            ) : (
-              <>Paying down earns your mortgage rate —{' '}
-                <strong>{pctRate(c.mortgage_return)}</strong> a year once its
-                compounding is counted, guaranteed and tax-free.{' '}</>
+            {c.winner !== 'tie' && <> by {monthLabel(c.horizon_month, { long: true })}</>}
+            {c.breakeven != null && (
+              <div className="small muted" style={{ marginTop: 4 }}>
+                Break-even {c.breakeven > 0 ? pctRate(c.breakeven) : '0%'}
+                {c.tax_on_growth > 0 && ' before tax'}
+              </div>
             )}
-            {c.breakeven != null && (c.breakeven > 0 ? (
-              <>Investing has to return more than{' '}
-                <strong>{pctRate(c.breakeven)}</strong>
-                {c.tax_on_growth > 0 && ' before tax'} to beat it.</>
-            ) : <>Investing comes out ahead at any return.</>)}
           </Notice>
 
           <div className="grid cols-2" style={{ marginTop: 14 }}>
             <Tile label="If you invest it" value={money(c.invest)}
-                  note={`invested by ${monthLabel(c.horizon_month)}, mortgage paid off then too`} />
+                  note={`by ${monthLabel(c.horizon_month)}`} />
             <Tile label="If you pay it down" value={money(c.prepay)}
-                  note={`mortgage gone ${monthLabel(c.paid_off_month)} — ${
-                    yearsMonths(c.months_sooner)} sooner, ${money(c.interest_saved)} less interest — then the payment is invested`} />
+                  note={`mortgage gone ${monthLabel(c.paid_off_month)} · ${
+                    money(c.interest_saved)} less interest`} />
           </div>
 
           <div className="chart" style={{ marginTop: 16 }}>
@@ -852,9 +753,6 @@ function InvestOrPayDown({ form, savings, onTab }) {
                      pctRate(c.expected)}. By ${monthLabel(c.horizon_month, { long: true })}: ${
                      c.difference >= 0 ? 'investing' : 'paying down'} ahead by ${money(ahead)}.`} />
           </div>
-          <p className="small muted" style={{ margin: '6px 0 0' }}>
-            Above the line investing is ahead; below it paying down is.
-          </p>
 
           <div className="table-wrap" style={{ marginTop: 16 }}>
             <table>
@@ -881,33 +779,6 @@ function InvestOrPayDown({ form, savings, onTab }) {
             </table>
           </div>
 
-          <Why id="mortgage.invest" label="What the numbers can't tell you">
-            <ul className="steps" style={{ margin: 0 }}>
-              <li><strong>Risk.</strong> Paying down earns its rate every year,
-                no matter what. An average return is an average: the same
-                long-run figure arrives as good years and falling ones, and a
-                bad run near the end can undo the difference.</li>
-              <li><strong>Access.</strong> Money in a TFSA can be taken out
-                when you need it. Money paid into the house can&apos;t, short
-                of borrowing against it.</li>
-              <li><strong>Limits.</strong> Most lenders cap prepayments, often
-                at 10–20% of the original amount a year. An RRSP contribution
-                also earns a tax refund, which this leaves out.</li>
-              <li><strong>The rate will change.</strong> At renewal the
-                mortgage rate moves, and so does the break-even. A higher rate
-                makes paying down worth more.</li>
-              <li><strong>First things first.</strong> An emergency fund, an
-                employer&apos;s pension match and any higher-interest debt
-                usually come before either.</li>
-            </ul>
-            <p className="small muted" style={{ marginBottom: 0 }}>
-              A taxable account is assumed to lose half your marginal rate on
-              its growth, as capital gains do; interest and dividends are taxed
-              more. None of this is advice — it is the arithmetic, so you can
-              see what you would be betting on. What you save each month is
-              set on <GoTo to="plan" from="mortgage" onTab={onTab} />.
-            </p>
-          </Why>
         </>
       )}
     </Card>
