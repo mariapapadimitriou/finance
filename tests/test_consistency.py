@@ -641,13 +641,13 @@ class TestTheBudgetsTableHasOneRowPerCategory:
         body = ledger.get("/api/budgets").get_json()
 
         expected = set(body["budgets"]) | set(body["plan_budgets"])
-        assert {r["category"] for r in body["rows"]} == expected
+        assert expected <= {r["category"] for r in body["rows"]}
         for r in body["rows"]:
             assert r["adopted"] is (r["category"] in body["budgets"])
             assert r["plan_budget"] == body["plan_budgets"].get(r["category"])
             # A row the plan proposes is drawn against the plan's figure, so
             # the bar means something before anything has been adopted.
-            if not r["adopted"]:
+            if not r["adopted"] and r["plan_budget"] is not None:
                 assert r["budget"] == pytest.approx(r["plan_budget"],
                                                     abs=TOLERANCE)
 

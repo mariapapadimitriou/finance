@@ -20,7 +20,7 @@ const STATE_TEXT = {
 };
 
 /**
- * Every category, once.
+ * Every budget line from Settings → Categories, once, in the same order.
  *
  * This page used to be two tables, with a third on the Plan tab: bars here,
  * an editor below them, and the plan's proposed split over there — three
@@ -87,9 +87,13 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
   if (loadError) return <ErrorNote error={loadError} onRetry={load} />;
   if (!data) return <Loading what="budgets" />;
 
-  // Saved budgets and the plan's proposals in one list, from the server, so a
-  // category the plan pays for is on the page before it has a budget.
+  // Every line in Settings → Categories, in that order, from the server. The
+  // quiet ones — nothing set, nothing planned, nothing spent — are folded
+  // away at the end rather than drawn as a column of empty bars.
   const rows = data.rows ?? [];
+  const active = rows.filter((r) => !r.quiet);
+  const quiet = rows.filter((r) => r.quiet);
+  const bankLines = data.bank_lines ?? [];
   const drift = data.drift;
   const edited = Object.keys(draft).length > 0;
   // Every line is a proposal and none of them has been adopted. There is no
@@ -180,6 +184,11 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
           <Card title={`Budgets — ${monthLabel(month, { long: true })}`}
                 actions={(
                   <div className="row" style={{ gap: 8 }}>
+                    {onTab && (
+                      <button className="btn quiet" onClick={() => onTab('categories')}>
+                        Edit lines
+                      </button>
+                    )}
                     {edited && (
                       <button className="btn quiet" onClick={() => setDraft({})}>
                         Discard
@@ -192,7 +201,7 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
                   </div>
                 )}>
             <div className="stack" style={{ gap: 22 }}>
-              {rows.map((r) => (
+              {active.map((r) => (
                 <BudgetRow key={r.category} row={r}
                            draft={draft[r.category]}
                            onChange={(v) => setDraft((d) => ({
@@ -200,6 +209,50 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
                            }))} />
               ))}
             </div>
+
+            {quiet.length > 0 && (
+              <details className="evidence">
+                <summary>
+                  {quiet.length} more line{quiet.length === 1 ? '' : 's'} with no spending
+                </summary>
+                <div className="stack" style={{ gap: 12, marginTop: 12 }}>
+                  {quiet.map((r) => (
+                    <QuietRow key={r.category} row={r}
+                              draft={draft[r.category]}
+                              onChange={(v) => setDraft((d) => ({
+                                ...d, [r.category]: v,
+                              }))} />
+                  ))}
+                </div>
+              </details>
+            )}
+
+            {bankLines.length > 0 && (
+              <div className="stack" style={{
+                gap: 10, marginTop: 18, paddingTop: 14,
+                borderTop: '1px solid var(--border)',
+              }}>
+                {bankLines.map((l) => (
+                  <div key={l.category}>
+                    <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                      <strong>{l.category}</strong>
+                      <span className="small muted">
+                        Paid by {l.bank ? `${l.bank} bank` : 'a piggy bank'}
+                      </span>
+                      <span className="spacer" />
+                      {l.uncovered > 1 && (
+                        <span className="num small">
+                          {money(l.uncovered, { cents: true })} not covered
+                        </span>
+                      )}
+                    </div>
+                    {l.members?.length > 0 && (
+                      <div className="small muted">{l.members.join(' · ')}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         </>
       )}
@@ -318,8 +371,10 @@ function BudgetRow({ row, draft, onChange }) {
             row.on_track
               ? `${money(row.projected)} projected · ${money(row.remaining)} left`
               : `${money(row.projected)} projected · ${money(Math.abs(row.projected_over))} over`
-          ) : (
+          ) : row.plan_budget != null ? (
             `Plan ${money(row.budget)}`
+          ) : (
+            'Nothing planned'
           )}
           {differs && (
             <>
@@ -356,6 +411,35 @@ function BudgetRow({ row, draft, onChange }) {
           aria-label={`${row.category} monthly budget`}
         />
       </div>
+    </div>
+  );
+}
+
+/** A line with nothing set, planned or spent: its name and an input. */
+function QuietRow({ row, draft, onChange }) {
+  return (
+    <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+      <div style={{ minWidth: 0 }}>
+        <strong>{row.category}</strong>
+        {row.members?.length > 0 && (
+          <div className="small muted">{row.members.join(' · ')}</div>
+        )}
+      </div>
+      <span className="spacer" />
+      <label className="small muted" htmlFor={`budget-${row.category}`}>
+        Budget
+      </label>
+      <input
+        id={`budget-${row.category}`}
+        type="number"
+        min="0"
+        step="any"
+        style={{ width: 110, textAlign: 'right' }}
+        value={draft ?? ''}
+        placeholder="0"
+        onChange={(e) => onChange(Number(e.target.value))}
+        aria-label={`${row.category} monthly budget`}
+      />
     </div>
   );
 }
