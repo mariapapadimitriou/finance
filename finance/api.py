@@ -21,7 +21,8 @@ from .analytics import (
     summary as build_summary,
     weekday_profile,
 )
-from .categorize import CATEGORIES, TRAVEL_BANK_CATEGORIES, is_discretionary
+from .categorize import (CATEGORIES, TRAVEL_BANK_CATEGORIES, is_discretionary,
+                         is_spend_category)
 from .db import storage_mode
 from .ingest import all_sources, get_source, parse_csv, parse_statement
 from .insights import (detect_recurring, findings_summary, generate_findings,
@@ -118,10 +119,35 @@ def set_category_groups():
 
     body = request.get_json(silent=True) or {}
     st = store()
-    funded = st.bank_funded_categories()
-    clean, error = budget_lines.validate(body.get("groups", body), funded)
+    proposed = body.get("groups", body)
+    owners = {c: bank_id for bank_id, cats in st.bank_categories().items()
+              for c in cats}
+
+    # Joining a line a piggy bank pays for means the bank pays for this too:
+    # putting Lodging under Travel is saying the hotel is part of the trip.
+    # Decided before validating, so the line checks as all bank-paid; written
+    # only once it has passed, so a refused grouping changes nothing.
+    adopted: dict[str, int] = {}
+    if isinstance(proposed, dict):
+        # A named line ("Trips") belongs to the bank paying for what is in it.
+        line_owner = {p: owners[c] for c, p in proposed.items()
+                      if isinstance(p, str) and c in owners}
+        for category, parent in proposed.items():
+            if not isinstance(parent, str) or category in owners:
+                continue
+            bank_id = owners.get(parent, line_owner.get(parent))
+            if bank_id is not None:
+                adopted[category] = bank_id
+    funded = set(owners) | set(adopted)
+
+    clean, error = budget_lines.validate(proposed, funded)
     if error:
         return jsonify({"error": error}), 400
+
+    names = {b.id: b.name for b in st.piggy_banks()}
+    for bank_id in set(adopted.values()):
+        mine = [c for c, b in owners.items() if b == bank_id]
+        st.set_bank_categories(bank_id, mine + [c for c, b in adopted.items() if b == bank_id])
 
     old = st.category_groups()
     carried = budget_lines.carry_budgets(st.budgets(), old, clean, funded)
@@ -131,7 +157,9 @@ def set_category_groups():
             st.set_budget(key, 0)
     for line, amount in carried.items():
         st.set_budget(line, amount)
-    return jsonify({"ok": True, **_category_groups_payload(st)})
+    return jsonify({"ok": True,
+                    "adopted": {c: names.get(b, "") for c, b in adopted.items()},
+                    **_category_groups_payload(st)})
 
 
 # ── Import ───────────────────────────────────────────────────────────────────
@@ -564,12 +592,23 @@ def insights():
     dismissed = st.dismissed()
     findings = generate_findings(txns, dismissed)
     summary = findings_summary(findings)
+    profile = _profile(st, txns, summary)
+    observations = observe(profile, dismissed)
+    # What would be showing if nothing had been hidden, so a hidden insight
+    # can be brought back by name rather than by typing its id.
+    hidden = []
+    if dismissed:
+        hidden = ([{"id": f["id"], "title": f["title"]}
+                   for f in generate_findings(txns, set()) if f["id"] in dismissed]
+                  + [{"id": o["id"], "title": o["title"]}
+                     for o in observe(profile, set()) if o["id"] in dismissed])
     return jsonify({
         "findings": findings,
         "summary": summary,
         # Written in advance, shown when they apply. See
         # finance/insights/profile.py — this is what replaced the paid bot.
-        "observations": observe(_profile(st, txns, summary), dismissed),
+        "observations": observations,
+        "hidden": hidden,
     })
 
 
@@ -827,6 +866,13 @@ def plan():
         "banks": _bank_status(st),
         "draws": st.draws(month),
         "allocated_this_month": st.allocated_in(month),
+        # Everything that went out this month — rent, groceries, and what a
+        # piggy bank paid for too — net of refunds. The weekly number counts
+        # only part of this; this is the whole of it.
+        "spent_in_total": round(sum(
+            t.amount for t in txns
+            if t.month == month and is_spend_category(t.category or "Other")), 2),
+        "from_banks": st.allocated_in(month),
         # The whole chain from the Plan tab's figure down to the weekly number,
         # so the two pages can be read against each other. They are not the
         # same number and used to look as though they should be: what the Plan

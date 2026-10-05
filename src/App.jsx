@@ -6,7 +6,6 @@ import MortgagePanel from './panels/MortgagePanel.jsx';
 import RetirementPanel from './panels/RetirementPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import SavingsPanel from './panels/SavingsPanel.jsx';
-import SubscriptionsPanel from './panels/SubscriptionsPanel.jsx';
 import TransactionsPanel from './panels/TransactionsPanel.jsx';
 import BudgetsPanel from './panels/BudgetsPanel.jsx';
 import TripsPanel from './panels/TripsPanel.jsx';
@@ -264,15 +263,14 @@ export default function App() {
                        month={shownMonth} onMonth={setMonth} onTab={go}
                        version={version} />
       )}
-      {panel === 'savings' && <SavingsPanel insights={insights} onRefresh={load}
-                                          onTab={go} />}
+      {panel === 'savings' && <SavingsPanel insights={insights} recurring={recurring}
+                                          onRefresh={load} onTab={go} />}
       {panel === 'projections' && (
         <ProjectionsPanel insights={insights} onTab={go} onChanged={load}
                          version={version} />
       )}
       {panel === 'mortgage' && <MortgagePanel onChanged={load} onTab={go} />}
       {panel === 'retirement' && <RetirementPanel onTab={go} />}
-      {panel === 'subscriptions' && <SubscriptionsPanel recurring={recurring} />}
       {panel === 'transactions' && (
         <TransactionsPanel summary={summary} categories={categories}
                            accounts={accounts} onChanged={load} />

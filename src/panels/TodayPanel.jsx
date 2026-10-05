@@ -99,16 +99,14 @@ export default function TodayPanel({ month, onMonth, onTab, version = 0 }) {
       )}
 
       <SafeToSpend state={state} live={live} />
-      <ThisMonth status={status} state={state} live={live} />
+      <ThisMonth status={status} state={state} live={live}
+                 derivation={configured ? derivation : null}
+                 total={data.spent_in_total} fromBanks={data.from_banks} />
       <CanIBuyThis month={state.month} banks={banks} onCovered={load}
                    onTab={onTab} />
 
-      <div className="grid cols-2">
-        <PiggyBanks banks={banks} draws={draws}
-                    allocated={data.allocated_this_month} onTab={onTab} />
-        <MonthlyAmount state={state} configured={configured}
-                       derivation={derivation} />
-      </div>
+      <PiggyBanks banks={banks} draws={draws}
+                  allocated={data.allocated_this_month} onTab={onTab} />
     </div>
   );
 }
@@ -216,12 +214,13 @@ function SafeToSpend({ state, live }) {
 
 /* ── How are you doing this month ────────────────────────────────────────── */
 
-function ThisMonth({ status, state, live }) {
+function ThisMonth({ status, state, live, derivation, total, fromBanks }) {
   const budget = Math.max(state.budget ?? 0, 0);
   const spent = Math.max(status.spent, 0);
   const over = spent > budget;
   const used = budget > 0 ? spent / budget : 0;
   const lands = status.projected_over > 0;
+  const d = derivation;
 
   return (
     <Card title={live
@@ -249,12 +248,25 @@ function ThisMonth({ status, state, live }) {
           { label: 'Lands at', value: money(status.projected_month_end),
             tone: lands ? 'bad' : 'good', icon: 'trend',
             color: lands ? 'var(--critical)' : 'var(--good-text)' },
+          { label: 'Weekly allowance', value: `${money(state.week.nominal)}/wk`,
+            icon: 'flag' },
+          d?.from_plan && { label: 'Essentials', value: `${money(d.essentials)}/mo`,
+                            icon: 'calendar', color: 'var(--ring-4)' },
         ]} />
       </RingRow>
       {state.remaining >= 0 && state.days_left > 1 && (
         <div className="ring-foot">
           <strong className="num">{money(state.spread_daily, { cents: true })}</strong> a day
           for the {state.days_left} days left
+        </div>
+      )}
+      {total != null && (
+        <div className="ring-foot total-line">
+          <strong className="num">{money(total, { cents: true })}</strong> spent in total
+          {live ? ' this month' : ` in ${monthLabel(state.month, { long: true })}`}
+          {fromBanks > 0 && (
+            <> · <strong className="num">{money(fromBanks, { cents: true })}</strong> from piggy banks</>
+          )}
         </div>
       )}
     </Card>
@@ -430,46 +442,6 @@ function PiggyBanks({ banks, draws, allocated, onTab }) {
           Manage piggy banks
         </button>
       )}
-    </Card>
-  );
-}
-
-/* ── The monthly amount everything is measured against ──────────────────── */
-
-/**
- * Where the weekly number comes from, as one donut: what the plan leaves you,
- * split into the essentials budgeted monthly and the day-to-day the week is
- * cut from.
- */
-function MonthlyAmount({ state, configured, derivation }) {
-  const d = derivation ?? {};
-  const fromPlan = configured && d.from_plan;
-  const essentials = Math.max(d.essentials ?? 0, 0);
-  const daily = Math.max((fromPlan ? d.discretionary : state.monthly_amount) ?? 0, 0);
-
-  return (
-    <Card title="Your allowance">
-      <RingRow>
-        <Donut size={140} thickness={13}
-               segments={fromPlan ? [
-                 { label: 'Day to day', value: daily, color: 'var(--ring-1)',
-                   title: money(daily) },
-                 { label: 'Essentials', value: essentials, color: 'var(--ring-4)',
-                   title: money(essentials) },
-               ] : [{ label: 'Day to day', value: daily, color: 'var(--ring-1)',
-                      title: money(daily) }]}>
-          <div className="small-big num">{money(state.week.nominal)}</div>
-          <div className="under">a week</div>
-        </Donut>
-        <RingLegend items={[
-          fromPlan && { label: 'Yours to spend', value: `${money(d.leftover)}/mo`,
-                        icon: 'flag' },
-          { label: fromPlan ? 'Day to day' : 'Day to day, from history',
-            value: `${money(daily)}/mo`, color: 'var(--ring-1)' },
-          fromPlan && { label: 'Essentials', value: `${money(essentials)}/mo`,
-                        color: 'var(--ring-4)' },
-        ]} />
-      </RingRow>
     </Card>
   );
 }
