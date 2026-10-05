@@ -187,7 +187,7 @@ export default function PlanPanel({ onChanged, onTab }) {
           <div className="row" style={{ marginTop: 14, justifyContent: 'flex-end' }}>
             {onTab && (
               <button className="btn" onClick={() => onTab('budgets')}>
-                Budgets
+                Split it into budgets
               </button>
             )}
           </div>

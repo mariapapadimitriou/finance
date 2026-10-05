@@ -137,6 +137,10 @@ export const savePlanSetup   = (income, savings) =>
 export const saveSavings     = (savings) =>
   json('PUT', '/api/plan/setup', { savings });
 export const applyPlanBudgets = () => json('POST', '/api/plan/setup/apply', {});
+// Your own split of the monthly total: the lines you focus on, and every
+// amount. The server refuses one that does not add up to the total.
+export const setAllocation   = (focus, budgets) =>
+  json('PUT', '/api/budgets/allocation', { focus, budgets });
 export const addFixedCost    = (cost) => json('POST', '/api/plan/fixed', cost);
 export const deleteFixedCost = (id) =>
   req(`/api/plan/fixed/${id}`, { method: 'DELETE' });

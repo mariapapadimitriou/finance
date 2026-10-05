@@ -758,11 +758,11 @@ def setup_steps():
          "done": bool(funded), "tab": "piggy",
          "action": "Open one"},
         {"id": "budgets", "optional": False,
-         "label": "Adopt your budgets",
-         "detail": "The plan has already worked out the split; this makes it "
-                   "the one the month is measured against.",
-         "done": bool(budgeted), "tab": "budgets",
-         "action": "Review them"},
+         "label": "Split your monthly total across categories",
+         "detail": "Pick the categories to focus on and give each a monthly "
+                   "target; together they add up to what the plan leaves.",
+         "done": bool(budgeted) and _focus(st) is not None, "tab": "budgets",
+         "action": "Set them"},
     ]
     for step in steps:
         step["skipped"] = step["optional"] and f"setup.{step['id']}" in skipped
@@ -823,6 +823,12 @@ def _allowance(st, txns=None) -> tuple[float, bool]:
 
     txns = st.all_transactions() if txns is None else txns
     income = st.float_setting("monthly_income", 0.0)
+    if income > 0 and _focus(st) is not None:
+        # Once you have split the monthly total yourself, the weekly number is
+        # the part of that split that goes to discretionary categories.
+        from . import groups as budget_lines
+        lines = budget_lines.lines(st.category_groups())
+        return money_plan.weekly_pool(st.budgets(), lines, txns), True
     if income > 0:
         amount = money_plan.monthly_allowance(
             income, st.fixed_costs(), st.float_setting("savings_target", 0.0),
@@ -855,9 +861,14 @@ def _derivation(st, txns, allowance: float, from_plan: bool) -> dict:
     result = money_plan.plan(income, st.fixed_costs(),
                              st.float_setting("savings_target", 0.0),
                              _bank_monthly(st))
-    divided = money_plan.split(txns, result["leftover"],
-                               bank_funded=st.bank_funded_categories())
-    budgets = divided["budgets"]
+    if _focus(st) is not None:
+        saved = st.budgets()
+        buffer = round(result["leftover"] - sum(saved.values()), 2)
+        budgets = {c: v for c, v in saved.items()}
+    else:
+        divided = money_plan.split(txns, result["leftover"],
+                                   bank_funded=st.bank_funded_categories())
+        budgets, buffer = divided["budgets"], divided["buffer"]
 
     # The categories actually making up the essential half, biggest first,
     # rather than a hardcoded example. The note used to read "groceries,
@@ -879,9 +890,8 @@ def _derivation(st, txns, allowance: float, from_plan: bool) -> dict:
         "leftover": result["leftover"],
         # The leftover is essentials + the weekly number + the buffer, which
         # belongs to neither until you assign it.
-        "essentials": round(sum(v for c, v in budgets.items()
-                                if not is_discretionary(c)), 2),
-        "buffer": divided["buffer"],
+        "essentials": round(result["leftover"] - buffer - allowance, 2),
+        "buffer": buffer,
         "essential_categories": essential_categories,
         "discretionary": allowance,
     }
@@ -1947,9 +1957,16 @@ def budgets():
     # A line with nothing saved is drawn against the plan's figure, or $0
     # when the plan gives it nothing.
     order = [name for name in lines if name not in funded]
-    limits = {name: b.get(name, plan_budgets.get(name, 0.0)) for name in order}
+    # Once you have split the total yourself, a line you gave nothing is $0 —
+    # not the plan's old figure for it.
+    focus = _focus(st)
+    limits = {name: b.get(name, 0.0 if focus is not None
+                                 else plan_budgets.get(name, 0.0))
+              for name in order}
     rows = budget_status(txns, limits, month, grouping)
     rows.sort(key=lambda r: order.index(r["category"]))
+    history = money_plan.history_stats(txns, groups=grouping,
+                                       bank_funded=st.bank_funded_categories())
     for row in rows:
         line = row["category"]
         members = lines.get(line, [line])
@@ -1966,6 +1983,11 @@ def budgets():
         # the page can fold away rather than draw as an empty bar.
         row["quiet"] = (not row["adopted"] and row["plan_budget"] is None
                         and row["spent"] == 0)
+        # The guide beside a target: your average and median month here.
+        stats = history.get(line, {})
+        row["average"] = stats.get("average", 0.0)
+        row["median"] = stats.get("median", 0.0)
+        row["focus"] = focus is not None and line in focus
 
     # The saved budgets alone, which is what "covered" below has to mean.
     status = [r for r in rows if r["adopted"]]
@@ -2043,6 +2065,16 @@ def budgets():
         # column whether or not the two agree — and `drift` is None precisely
         # when they do.
         "plan_leftover": split["leftover"] if split else None,
+        # Your own split of the monthly total: the lines you focus on, and
+        # the total every budget together has to add up to.
+        "focus": [f for f in focus if f in limits] if focus is not None else None,
+        "monthly_total": split["leftover"] if split else None,
+        "allocated": round(sum(b.values()), 2),
+        "other": {
+            "spent": round(sum(r["spent"] for r in rows if not r["focus"]), 2),
+            "budget": round(sum(b.get(r["category"], 0.0) for r in rows
+                                if not r["focus"]), 2),
+        },
         "plan_budgets": plan_budgets,
         # What the plan leaves beyond your usual spending, assigned to no
         # line; and how far short of your usual spending it falls.
@@ -2053,8 +2085,29 @@ def budgets():
         "unassigned": (round(split["leftover"] - sum(b.values()), 2)
                        if split and b else None),
         # Whether these budgets still divide the money the plan actually has.
-        "drift": _budget_drift(split, b),
+        "drift": _budget_drift(split, b, allocated=focus is not None),
     })
+
+
+FOCUS_KEY = "budget_focus"
+
+
+def _focus(st) -> list[str] | None:
+    """The budget lines you chose to focus on, or None before you have.
+
+    None is the state before setup: the plan's own split still drives the
+    weekly number until you have divided the monthly total yourself.
+    """
+    import json
+
+    raw = st.setting(FOCUS_KEY)
+    if raw is None:
+        return None
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return [v for v in value if isinstance(v, str)] if isinstance(value, list) else None
 
 
 def _plan_split(st, txns) -> dict | None:
@@ -2091,7 +2144,8 @@ def _plan_split(st, txns) -> dict | None:
     }
 
 
-def _budget_drift(split: dict | None, saved: dict) -> dict | None:
+def _budget_drift(split: dict | None, saved: dict,
+                  allocated: bool = False) -> dict | None:
     """Do the saved budgets still add up to what the plan leaves?
 
     They are adopted once, from the plan's arithmetic, and then stay as they
@@ -2115,7 +2169,10 @@ def _budget_drift(split: dict | None, saved: dict) -> dict | None:
     leftover = split["leftover"]
     saved_total = round(sum(saved.values()), 2)
     gap = round(saved_total - leftover, 2)
-    if gap <= 1:
+    # Your own split has to add up to the monthly total exactly, so once the
+    # plan moves either way it no longer does. Before that, budgets under the
+    # leftover only leave a buffer.
+    if (abs(gap) if allocated else gap) <= 1:
         return None
 
     return {
@@ -2128,6 +2185,80 @@ def _budget_drift(split: dict | None, saved: dict) -> dict | None:
         "savings": split["savings"],
         "fixed_total": split["fixed_total"],
     }
+
+
+@bp.put("/budgets/allocation")
+def set_allocation():
+    """Your own split of the monthly total, saved all at once.
+
+    `focus` is the budget lines you want to track closely, and every one of
+    them needs a number (0 is a number: "no delivery this month"). Every
+    other line is 0 unless you give it something. Together they have to add
+    up to what the plan leaves — the monthly total — to the dollar, so the
+    split is a division of money you have, not a wish list.
+    """
+    import json
+
+    from . import groups as budget_lines
+
+    st = store()
+    body = request.get_json(silent=True) or {}
+    focus = body.get("focus")
+    amounts = body.get("budgets") or {}
+    if not isinstance(focus, list) or not focus or not all(
+            isinstance(f, str) for f in focus):
+        return jsonify({"error": "Pick at least one category to focus on."}), 400
+    if not isinstance(amounts, dict):
+        return jsonify({"error": "Expected a mapping of category to amount."}), 400
+
+    lines = budget_lines.lines(st.category_groups())
+    funded = st.bank_funded_categories()
+    budgetable = [n for n, members in lines.items()
+                  if not budget_lines.line_bank_funded(members, funded)]
+    focus = list(dict.fromkeys(focus))
+    for name in [*focus, *amounts]:
+        if name not in budgetable:
+            return jsonify({"error": f"'{name}' isn't a category you can budget. "
+                                     "Check Settings → Categories."}), 400
+
+    clean: dict[str, float] = {}
+    for name in budgetable:
+        raw = amounts.get(name)
+        if raw is None or raw == "":
+            if name in focus:
+                return jsonify({"error": f"{name} needs a monthly target."}), 400
+            continue
+        try:
+            value = round(float(raw), 2)
+        except (TypeError, ValueError):
+            return jsonify({"error": f"{name} needs a number."}), 400
+        if value < 0:
+            return jsonify({"error": f"{name} can't be negative."}), 400
+        clean[name] = value
+
+    split = _plan_split(st, st.all_transactions())
+    if not split or split["leftover"] <= 0:
+        return jsonify({"error": "Finish the plan first — your take-home pay "
+                                 "and commitments decide the monthly total."}), 400
+    total = round(sum(clean.values()), 2)
+    gap = round(split["leftover"] - total, 2)
+    if abs(gap) > 0.5:
+        return jsonify({"error": (
+            f"Your budgets add up to ${total:,.2f}; they need to add up to your "
+            f"monthly total of ${split['leftover']:,.2f} — "
+            + (f"${gap:,.2f} left to assign." if gap > 0
+               else f"${-gap:,.2f} too much.")),
+            "monthly_total": split["leftover"], "allocated": total}), 400
+
+    for name in budgetable:
+        st.set_budget(name, clean.get(name, 0.0))
+    # Anything saved under a name that is no longer a budget line goes too.
+    for key in list(st.budgets()):
+        if key not in budgetable:
+            st.set_budget(key, 0)
+    st.set_setting(FOCUS_KEY, json.dumps(focus))
+    return jsonify({"ok": True, "focus": focus, "budgets": st.budgets(),
+                    "monthly_total": split["leftover"]})
 
 
 @bp.put("/budgets")
