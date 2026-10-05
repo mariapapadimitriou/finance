@@ -94,6 +94,10 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
   const active = rows.filter((r) => !r.quiet);
   const quiet = rows.filter((r) => r.quiet);
   const bankLines = data.bank_lines ?? [];
+  // The plan gives each line what you usually spend; what the leftover has
+  // beyond that is the buffer, assigned to no line. Once budgets are saved it
+  // is whatever they leave of the leftover.
+  const buffer = data.unassigned ?? data.plan_buffer ?? 0;
   const drift = data.drift;
   const edited = Object.keys(draft).length > 0;
   // Every line is a proposal and none of them has been adopted. There is no
@@ -132,6 +136,13 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
       detail: planButtons(drift.gap > 0),
     },
     data.bank_funded && bankFundedItem(data.bank_funded, onTab),
+    // The leftover is less than you usually spend, so the plan had to scale
+    // every line down to fit.
+    data.plan_short > 1 && {
+      key: 'short', kind: '', rank: 1,
+      summary: <>Usual spending is {money(data.plan_short)} more than the plan leaves</>,
+      detail: <span className="muted">Each line is scaled down to fit.</span>,
+    },
     nothingAdopted && {
       key: 'adopt', kind: '', rank: 1,
       summary: <>Not adopted yet</>,
@@ -209,6 +220,18 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
                            }))} />
               ))}
             </div>
+
+            {buffer > 1 && (
+              <div className="row" style={{
+                flexWrap: 'wrap', gap: 8, marginTop: 18, paddingTop: 14,
+                borderTop: '1px solid var(--border)',
+              }}>
+                <strong>Buffer</strong>
+                <span className="small muted">not in any line</span>
+                <span className="spacer" />
+                <span className="num small">{money(buffer)}</span>
+              </div>
+            )}
 
             {quiet.length > 0 && (
               <details className="evidence">

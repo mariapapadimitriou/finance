@@ -15,13 +15,13 @@ contract, savings is a choice, a piggy bank is a cost you have decided to meet
 in twelve instalments instead of one, and the remainder is the only part a
 daily number can influence.
 
-History still has a job, but a different one. It is no use for deciding *how
-much* is sensible to spend, and it is the best thing available for deciding
-*how* that money gets divided: someone who has always spent four times as
-much on groceries as on coffee will go on doing so, and a budget that
-pretends otherwise gets ignored by the second week. So the pool is split
-across categories in the proportions you already spend them — the shares are
-yours, the total is the arithmetic's.
+History still has a job: deciding how that money is divided. Each budget
+line starts at what you usually spend on it in a month (`typical_monthly`),
+and whatever the leftover has beyond that is a buffer — not spread across the
+lines, where it used to inflate every budget well past anything you spend,
+but kept apart as money you decide what to do with. When your usual spending
+is more than the leftover, every line is scaled down to fit and the page says
+by how much (`split`).
 """
 
 from __future__ import annotations
@@ -108,6 +108,85 @@ def variable_shares(transactions, months_back: int = 12,
     scale = sum(kept.values())
     return {c: round(s / scale, 4) for c, s in sorted(
         kept.items(), key=lambda kv: -kv[1])}
+
+
+def typical_monthly(transactions, months_back: int = 12,
+                    groups: dict[str, str] | None = None,
+                    bank_funded=frozenset()) -> dict[str, float]:
+    """What you usually spend on each budget line in a month.
+
+    Over the last `months_back` complete months, counting a month with
+    nothing spent on a line as $0. The median of those months, so one big
+    month does not set the budget — except for a line you spend on in fewer
+    than half of them (gifts, a yearly subscription), whose median would be
+    $0; that one is its yearly total spread over the months instead.
+
+    Bank-funded categories are left out: their money is already taken off
+    the leftover as the bank's contribution.
+    """
+    import statistics
+    from .analytics import last_complete_month
+
+    months = sorted({t.month for t in transactions})
+    last = last_complete_month(transactions)
+    window = [m for m in months if last is None or m <= last][-months_back:]
+    if not window:
+        window = months[-months_back:]
+    if not window:
+        return {}
+    inside = set(window)
+
+    per: dict[str, dict[str, float]] = {}
+    for t in transactions:
+        if t.month not in inside or t.amount <= 0 or not counts_as_spending(t):
+            continue
+        category = t.category or "Other"
+        if category in bank_funded:
+            continue
+        line = (groups or {}).get(category, category)
+        per.setdefault(line, {})
+        per[line][t.month] = per[line].get(t.month, 0.0) + spend_amount(t)
+
+    out: dict[str, float] = {}
+    for line, by_month in per.items():
+        values = [by_month.get(m, 0.0) for m in window]
+        active = sum(1 for v in values if v > 0)
+        usual = (statistics.median(values) if active * 2 >= len(values)
+                 else sum(values) / len(values))
+        if usual >= 1:
+            out[line] = round(usual, 2)
+    return dict(sorted(out.items(), key=lambda kv: -kv[1]))
+
+
+def split(transactions, leftover: float, groups: dict[str, str] | None = None,
+          bank_funded=frozenset()) -> dict:
+    """The leftover divided across budget lines, usual spending first.
+
+    Each line gets what you usually spend on it. What the leftover has beyond
+    that is the `buffer`, assigned to no line. If your usual spending is more
+    than the leftover, every line is scaled down by the same proportion to
+    fit, and `short` says by how much it had to give.
+    """
+    typical = typical_monthly(transactions, groups=groups, bank_funded=bank_funded)
+    total = round(sum(typical.values()), 2)
+    if leftover <= 0 or not typical:
+        return {"budgets": {}, "buffer": round(max(leftover, 0.0), 2),
+                "short": 0.0, "typical": typical}
+
+    if total <= leftover:
+        return {"budgets": dict(typical), "buffer": round(leftover - total, 2),
+                "short": 0.0, "typical": typical}
+
+    scale = leftover / total
+    budgets = {line: round(v * scale, 2) for line, v in typical.items()}
+    # The parts sum to the leftover exactly; the rounding cent goes to the
+    # biggest line, where it is least visible.
+    drift = round(leftover - sum(budgets.values()), 2)
+    if drift:
+        biggest = max(budgets, key=lambda c: budgets[c])
+        budgets[biggest] = round(budgets[biggest] + drift, 2)
+    return {"budgets": budgets, "buffer": 0.0,
+            "short": round(total - leftover, 2), "typical": typical}
 
 
 def discretionary_shares(transactions, months_back: int = 12,
@@ -201,7 +280,8 @@ def days_in_month(month: str) -> int:
 
 
 def monthly_allowance(income: float, fixed: list[FixedCost], savings: float,
-                      banks: float, shares: dict[str, float]) -> float:
+                      banks: float, transactions,
+                      bank_funded=frozenset()) -> float:
     """The discretionary pool a daily number divides, derived from the plan.
 
     This is the one figure the Today tab needs, and it is computed here rather
@@ -214,7 +294,10 @@ def monthly_allowance(income: float, fixed: list[FixedCost], savings: float,
     result = plan(income, fixed, savings, banks)
     if result["leftover"] <= 0:
         return 0.0
-    return discretionary_pool(category_budgets(result["leftover"], shares))
+    # Per category, never per budget line, so grouping cannot move it; and
+    # without the buffer, which is no line's money until you assign it.
+    return discretionary_pool(split(transactions, result["leftover"],
+                                    bank_funded=bank_funded)["budgets"])
 
 
 # Above this, "Other" is not a category, it is a gap in the categorisation —
@@ -296,7 +379,8 @@ def _money(value: float) -> str:
 
 
 def explain(leftover: float, shares: dict[str, float],
-            historical: dict[str, float] | None = None) -> list[dict]:
+            historical: dict[str, float] | None = None,
+            budgets_override: dict[str, float] | None = None) -> list[dict]:
     """Each category's new budget beside what it used to cost.
 
     Shown together because the difference is the whole point: a category
@@ -304,7 +388,8 @@ def explain(leftover: float, shares: dict[str, float],
     something of you, and it is better to see that on the day you set it than
     to meet it as a failure three weeks later.
     """
-    budgets = category_budgets(leftover, shares)
+    budgets = (budgets_override if budgets_override is not None
+               else category_budgets(leftover, shares))
     rows = []
     for category, amount in budgets.items():
         was = round((historical or {}).get(category, 0.0), 2)
