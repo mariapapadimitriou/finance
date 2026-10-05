@@ -136,6 +136,14 @@ CREATE TABLE IF NOT EXISTS piggy_allocations (
     amount     REAL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- How much of a charge was really yours, when friends paid you back for the
+-- rest. Kept beside the transaction rather than written into it, so the row
+-- stays exactly what the card reported and a re-import or a sync can't undo it.
+CREATE TABLE IF NOT EXISTS txn_shares (
+    txn_id   TEXT PRIMARY KEY,
+    my_share REAL NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_alloc_bank ON piggy_allocations(bank_id);
 
 -- What each bank pays for: a category belongs to at most one bank. Every
@@ -260,11 +268,13 @@ CREATE TABLE IF NOT EXISTS account_sync (
 _CHARGES = """(
     SELECT t.id AS txn_id,
            COALESCE(m.bank_id, o.bank_id) AS bank_id,
-           CASE WHEN m.txn_id IS NOT NULL THEN COALESCE(m.amount, t.amount)
-                ELSE t.amount END AS charged,
+           CASE WHEN m.amount IS NOT NULL
+                     AND m.amount < COALESCE(s.my_share, t.amount) THEN m.amount
+                ELSE COALESCE(s.my_share, t.amount) END AS charged,
            CASE WHEN m.txn_id IS NULL THEN 1 ELSE 0 END AS auto
       FROM transactions t
       LEFT JOIN piggy_allocations m ON m.txn_id = t.id
+      LEFT JOIN txn_shares s ON s.txn_id = t.id
       LEFT JOIN (SELECT bc.category AS category, b.id AS bank_id,
                         b.start_month AS start_month
                    FROM piggy_bank_categories bc
@@ -276,7 +286,10 @@ _CHARGES = """(
 )"""
 
 # The columns every transaction loader adds, joined as `a` on `_CHARGES`.
-_CHARGE_COLUMNS = """a.bank_id AS bank_id,
+# A bank pays your share of a charge, never more: friends who paid you back
+# for the rest are not the bank's to cover.
+_CHARGE_COLUMNS = """sh.my_share AS my_share,
+                          a.bank_id AS bank_id,
                           CASE WHEN a.bank_id IS NULL THEN 0 ELSE a.charged
                           END AS bank_amount,
                           COALESCE(a.auto, 0) AS bank_auto"""
@@ -458,6 +471,7 @@ class Store:
                 f"""SELECT t.*, {_CHARGE_COLUMNS}
                      FROM transactions t
                      LEFT JOIN {_CHARGES} a ON a.txn_id = t.id
+                     LEFT JOIN txn_shares sh ON sh.txn_id = t.id
                     ORDER BY t.date DESC, t.id""").fetchall()
         return [Transaction.from_row(dict(r)) for r in rows]
 
@@ -498,6 +512,7 @@ class Store:
                 f"""SELECT t.*, {_CHARGE_COLUMNS}
                       FROM transactions t
                       LEFT JOIN {_CHARGES} a ON a.txn_id = t.id
+                      LEFT JOIN txn_shares sh ON sh.txn_id = t.id
                     {clause}
                     ORDER BY t.date DESC, t.id LIMIT ? OFFSET ?""",
                 params + [limit, offset],
@@ -524,13 +539,23 @@ class Store:
                 f"""SELECT t.*, {_CHARGE_COLUMNS}
                      FROM transactions t
                      LEFT JOIN {_CHARGES} a ON a.txn_id = t.id
+                     LEFT JOIN txn_shares sh ON sh.txn_id = t.id
                     WHERE t.id = ?""", (txn_id,)).fetchone()
         return Transaction.from_row(dict(row)) if row else None
 
     def delete_transaction(self, txn_id: str) -> bool:
         with self.conn() as c:
             cur = c.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_shares WHERE txn_id = ?", (txn_id,))
             return cur.rowcount > 0
+
+    def set_share(self, txn_id: str, my_share: float | None) -> None:
+        """Say how much of a charge was yours; None says all of it again."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_shares WHERE txn_id = ?", (txn_id,))
+            if my_share is not None:
+                c.execute("INSERT INTO txn_shares (txn_id, my_share) VALUES (?, ?)",
+                          (txn_id, round(float(my_share), 2)))
 
     def accounts(self) -> list[dict]:
         with self.conn() as c:
@@ -705,6 +730,7 @@ class Store:
             ("piggy_allocations", "piggy-bank allocations"),
             ("piggy_optouts", "charges kept out of piggy banks"),
             ("piggy_draws", "piggy-bank draws"),
+            ("txn_shares", "your shares of split charges"),
             ("dismissed_insights", "dismissed findings"),
         ]
         with self.conn() as c:

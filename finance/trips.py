@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from .analytics import share_amount
+
 # Money moving onto the card is never travel spending, and neither is a fee
 # that happens to land mid-trip.
 NEVER_TRAVEL = {"Income", "Transfers", "Fees & Interest"}
@@ -106,7 +108,7 @@ def summarize(trip: Trip, transactions) -> dict:
     """What a trip cost, for display beside it."""
     rows = [t for t in transactions if trip.covers(t.date) and t.amount > 0
             and t.category not in NEVER_TRAVEL]
-    total = round(sum(t.amount for t in rows), 2)
+    total = round(sum(share_amount(t) for t in rows), 2)
     return {
         "transactions": len(rows),
         "total": total,

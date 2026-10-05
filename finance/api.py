@@ -10,6 +10,8 @@ from __future__ import annotations
 from flask import Blueprint, current_app, jsonify, request
 
 from .analytics import (
+    share_amount,
+    spend_amount,
     budget_status,
     by_category,
     by_merchant,
@@ -359,6 +361,39 @@ def update_transaction(txn_id: str):
     return jsonify({"ok": True, "updated": 1, "scope": "transaction"})
 
 
+@bp.put("/transactions/<txn_id>/share")
+def set_transaction_share(txn_id: str):
+    """How much of a charge was yours, when friends paid you back the rest.
+
+    Only your share counts toward your week, your month and your budgets, in
+    the month you spent it. Empty or null puts the whole charge back.
+    """
+    body = request.get_json(silent=True) or {}
+    st = store()
+    txn = st.get_transaction(txn_id)
+    if txn is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if txn.amount <= 0:
+        return jsonify({"error": "Only a charge can be split. This is money "
+                                 "that came back."}), 400
+
+    raw = body.get("my_share")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        st.set_share(txn_id, None)
+        return jsonify({"ok": True, "my_share": None})
+    try:
+        share = round(float(raw), 2)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Your share has to be an amount."}), 400
+    if share < 0:
+        return jsonify({"error": "Your share can't be below zero."}), 400
+    if share > txn.amount + 0.005:
+        return jsonify({"error": "Your share can't be more than the charge."}), 400
+    # The whole charge is the same as no split at all.
+    st.set_share(txn_id, None if abs(share - txn.amount) < 0.005 else share)
+    return jsonify({"ok": True, "my_share": st.get_transaction(txn_id).my_share})
+
+
 @bp.get("/accounts")
 def accounts():
     """Every account this app knows about, and whether it syncs.
@@ -638,7 +673,7 @@ def _profile(st, txns, findings_summary_: dict):
 
     allowance, from_plan = _allowance(st, txns)
     last = last_complete_month(txns) or ""
-    last_spend = round(sum(t.amount for t in txns if t.month == last
+    last_spend = round(sum(spend_amount(t) for t in txns if t.month == last
                            and spend_plan.counts_toward_plan(t)), 2)
 
     months = sorted({t.month for t in txns})
@@ -859,7 +894,7 @@ def plan():
     prior = [m for m in months_with_data if m < month]
     if prior:
         import statistics
-        sums = [round(sum(t.amount for t in txns
+        sums = [round(sum(spend_amount(t) for t in txns
                           if t.month == m and spend_plan.counts_toward_plan(t)), 2)
                 for m in prior]
         baseline = round(statistics.median(sums), 2)
@@ -877,7 +912,7 @@ def plan():
         # piggy bank paid for too — net of refunds. The weekly number counts
         # only part of this; this is the whole of it.
         "spent_in_total": round(sum(
-            t.amount for t in txns
+            share_amount(t) for t in txns
             if t.month == month and is_spend_category(t.category or "Other")), 2),
         "from_banks": st.allocated_in(month),
         # The whole chain from the Plan tab's figure down to the weekly number,
@@ -1320,7 +1355,7 @@ def _travel_last_year(txns) -> float:
     would have to be collecting for, which is the question being asked of it.
     """
     recent = set(sorted({t.month for t in txns})[-12:])
-    return round(sum(t.amount for t in txns if t.month in recent
+    return round(sum(share_amount(t) for t in txns if t.month in recent
                      and t.amount > 0 and (t.category or "") == "Travel"), 2)
 
 
@@ -1840,7 +1875,7 @@ def trips():
         "summary": {
             "count": len(rows),
             "total": round(sum(r["total"] for r in rows), 2),
-            "travel_spend": round(sum(t.amount for t in travel), 2),
+            "travel_spend": round(sum(share_amount(t) for t in travel), 2),
         },
     })
 

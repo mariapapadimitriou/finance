@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from .analytics import spend_amount
 from .spend_plan import compute, counts_toward_plan, days_in_month
 
 # A few dollars over is not a story. Below this the day reads as ordinary.
@@ -28,7 +29,7 @@ MATERIAL = 5.0
 
 
 def _spent_on(transactions, day: str) -> float:
-    return round(sum(t.amount for t in transactions
+    return round(sum(spend_amount(t) for t in transactions
                      if t.date == day and counts_toward_plan(t)), 2)
 
 
