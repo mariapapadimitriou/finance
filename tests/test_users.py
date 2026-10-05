@@ -16,7 +16,8 @@ from finance import auth, users
 def _clean_env(monkeypatch):
     for key in (auth.PASSWORD_ENV, auth.HASH_ENV, users.OWNER_HASH_ENV,
                 users.OWNER_USERNAME_ENV, "VERCEL", "AWS_LAMBDA_FUNCTION_NAME",
-                "SPENDIE_SECRET_KEY"):
+                "SPENDIE_SECRET_KEY", "SPENDIE_SMTP_USER", "SPENDIE_SMTP_PASSWORD",
+                "SPENDIE_OWNER_EMAIL"):
         monkeypatch.delenv(key, raising=False)
 
 

@@ -18,6 +18,8 @@ def _no_ambient_password(monkeypatch):
     monkeypatch.delenv(auth.HASH_ENV, raising=False)
     monkeypatch.delenv("VERCEL", raising=False)
     monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME", raising=False)
+    for key in ("SPENDIE_SMTP_USER", "SPENDIE_SMTP_PASSWORD", "SPENDIE_OWNER_EMAIL"):
+        monkeypatch.delenv(key, raising=False)
 
 
 def client_for(tmp_path, monkeypatch, *, hosted=False, password=None, as_hash=True):
@@ -131,7 +133,8 @@ class TestLockedDeployment:
         r = c.get("/api/auth/status")
         assert r.status_code == 200
         assert r.get_json() == {"required": True, "configured": True,
-                                "signed_in": False, "user": None}
+                                "signed_in": False, "user": None,
+                                "mail": False}
 
     def test_status_reports_signed_in_after_login(self, c):
         c.post("/api/auth/login", json={"username": "mariapapas", "password": "hunter2"})
@@ -163,7 +166,8 @@ class TestRunningLocally:
         c = client_for(tmp_path, monkeypatch, hosted=False, password=None)
         assert c.get("/api/summary").status_code == 200
         assert c.get("/api/auth/status").get_json() == {
-            "required": False, "configured": False, "signed_in": True, "user": None}
+            "required": False, "configured": False, "signed_in": True, "user": None,
+            "mail": False}
 
     def test_setting_one_locally_is_honoured(self, tmp_path, monkeypatch):
         c = client_for(tmp_path, monkeypatch, hosted=False, password="local")

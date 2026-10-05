@@ -15,7 +15,7 @@ import BanksPanel from './panels/BanksPanel.jsx';
 import AccountsPanel from './panels/AccountsPanel.jsx';
 import AccountPanel from './panels/AccountPanel.jsx';
 import CategoriesPanel from './panels/CategoriesPanel.jsx';
-import Login from './Login.jsx';
+import Login, { resetTokenFromUrl } from './Login.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
@@ -195,7 +195,8 @@ export default function App() {
     return <Shell theme={theme} setTheme={setTheme}><Loading what="Spendie" /></Shell>;
   }
 
-  if (!signedIn) {
+  // A reset link opens the reset screen even on a device that is signed in.
+  if (!signedIn || resetTokenFromUrl()) {
     // A different person may be signing in on this device: nothing from the
     // last session's ledger is carried over.
     return <Login onSignedIn={() => {
