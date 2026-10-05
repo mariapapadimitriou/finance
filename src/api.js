@@ -207,6 +207,10 @@ export const importFiles = (payload) =>
     ? req('/api/import', { method: 'POST', body: payload })
     : json('POST', '/api/import', { files: payload }));
 export const setBudgets    = (budgets) => json('PUT', '/api/budgets', { budgets });
+// How much of a charge was yours, when friends paid you back the rest.
+// null puts the whole charge back.
+export const setShare      = (id, myShare) =>
+  json('PUT', `/api/transactions/${id}/share`, { my_share: myShare });
 export const setCategory   = (id, category, applyToMerchant = false) =>
   json('PATCH', `/api/transactions/${id}`, {
     category, apply_to_merchant: applyToMerchant,

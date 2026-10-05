@@ -259,6 +259,10 @@ class Transaction:
     # True when the bank pays for it because the bank owns its category,
     # rather than because someone allocated this charge by hand.
     bank_auto: bool = False
+    # How much of the charge was yours, when friends paid you back for the
+    # rest. None means all of it. Not part of the fingerprint, for the same
+    # reason the bank is not.
+    my_share: float | None = None
 
     def __post_init__(self):
         if not self.merchant:
@@ -321,6 +325,8 @@ class Transaction:
             bank_id=row.get("bank_id"),
             bank_amount=float(row.get("bank_amount") or 0.0),
             bank_auto=bool(row.get("bank_auto") or 0),
+            my_share=(None if row.get("my_share") is None
+                      else float(row["my_share"])),
         )
 
 

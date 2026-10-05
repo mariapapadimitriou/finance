@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
   addTransaction, allocateToBank, dateLabel, deleteTransaction, getBanks,
-  getTransactions, money, setCategory, unallocate,
+  getTransactions, money, setCategory, setShare, unallocate,
 } from '../api.js';
 
 const PAGE = 100;
@@ -16,6 +16,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null);
   const [charging, setCharging] = useState(null);
+  const [splitting, setSplitting] = useState(null);
   const [banks, setBanks] = useState([]);
   const [reload, setReload] = useState(0);
 
@@ -120,6 +121,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                     <th>Category</th>
                     <th>Card</th>
                     <th>Piggy bank</th>
+                    <th>Your share</th>
                     <th className="r">Amount</th>
                     <th />
                   </tr>
@@ -166,8 +168,21 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                           onDone={bump}
                         />
                       </td>
+                      <td>
+                        <ShareCell
+                          txn={t}
+                          open={splitting === t.id}
+                          onOpen={() => setSplitting(splitting === t.id ? null : t.id)}
+                          onDone={() => { setSplitting(null); bump(); }}
+                        />
+                      </td>
                       <td className="r" style={t.amount < 0 ? { color: 'var(--good-text)' } : undefined}>
                         {money(t.amount, { cents: true })}
+                        {t.my_share != null && (
+                          <div className="share-note num">
+                            yours {money(t.my_share, { cents: true })}
+                          </div>
+                        )}
                       </td>
                       <td className="r">
                         {/* Only hand-typed rows are deletable. An imported row
@@ -368,6 +383,76 @@ function CategoryEditor({ current, merchant, categories, onSave, onCancel }) {
       </button>
       <button className="btn quiet" onClick={onCancel}>Cancel</button>
     </div>
+  );
+}
+
+/**
+ * How much of a charge was yours, when friends paid you back the rest.
+ *
+ * Only your share counts toward the week, the month and the budgets, in the
+ * month it was spent. The card's amount stays as charged beside it.
+ */
+function ShareCell({ txn, open, onOpen, onDone }) {
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (open) setValue(txn.my_share != null ? String(txn.my_share) : '');
+  }, [open, txn.my_share]);
+
+  if (txn.amount <= 0) return <span className="muted small">—</span>;
+
+  async function save(share) {
+    setBusy(true);
+    setError(null);
+    try {
+      await setShare(txn.id, share);
+      onDone();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button className="btn quiet" onClick={onOpen}>
+        {txn.my_share != null ? `Yours ${money(txn.my_share)}` : 'Split…'}
+      </button>
+    );
+  }
+
+  const part = (n) => (Math.round((txn.amount / n) * 100) / 100).toFixed(2);
+
+  return (
+    <form className="stack share-edit" style={{ gap: 6 }}
+          onSubmit={(e) => { e.preventDefault(); save(value === '' ? null : Number(value)); }}>
+      <div className="row" style={{ gap: 6 }}>
+        <span className="muted small">$</span>
+        <input type="number" min="0" max={txn.amount} step="0.01" inputMode="decimal"
+               value={value} onChange={(e) => setValue(e.target.value)}
+               aria-label={`Your share of ${txn.merchant}`} style={{ width: 100 }}
+               // eslint-disable-next-line jsx-a11y/no-autofocus
+               autoFocus />
+      </div>
+      <div className="row" style={{ gap: 4 }}>
+        {[[2, '½'], [3, '⅓'], [4, '¼']].map(([n, label]) => (
+          <button key={n} type="button" className="btn quiet chip-btn"
+                  onClick={() => setValue(part(n))}>{label}</button>
+        ))}
+      </div>
+      <div className="row" style={{ gap: 6 }}>
+        <button className="btn primary" type="submit" disabled={busy}>Save</button>
+        {txn.my_share != null && (
+          <button className="btn quiet" type="button" disabled={busy}
+                  onClick={() => save(null)}>Clear</button>
+        )}
+        <button className="btn quiet" type="button" onClick={onOpen}>Cancel</button>
+      </div>
+      <ErrorNote error={error} />
+    </form>
   );
 }
 

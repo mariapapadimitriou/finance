@@ -24,6 +24,8 @@ import re
 from collections import Counter
 from datetime import date, timedelta
 
+from .analytics import share_amount
+
 # "AMT 2,800.00 CRC" / "AMT 14.84 USD" — a conversion the issuer appended.
 # The code is matched as three letters at the end of that clause rather than
 # against a list, so a currency nobody here has thought of still counts.
@@ -140,7 +142,7 @@ def suggest_trips(transactions, declared=()) -> list[dict]:
             "end_date": end,
             "days": (date.fromisoformat(end) - date.fromisoformat(start)).days + 1,
             "charges": len(charges),
-            "total": round(sum(t.amount for t in charges), 2),
+            "total": round(sum(share_amount(t) for t in charges), 2),
             "currencies": [c for c, _ in currencies.most_common(3)],
             "places": [p for p, _ in places.most_common(3)],
             "name": _name(places, currencies),

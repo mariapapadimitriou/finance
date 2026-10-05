@@ -1478,3 +1478,5 @@ td { border-top-color: var(--border); }
   background: var(--surface-2); color: var(--ink); font: inherit;
 }
 .gate-card input[type="email"]:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.share-note { color: var(--brand); font-size: .78rem; font-weight: 600; margin-top: 2px; }
+.share-edit .chip-btn { padding: 4px 10px; min-width: 38px; }

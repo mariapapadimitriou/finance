@@ -20,6 +20,12 @@ from .categorize import CATEGORIES, is_discretionary, is_spend_category
 from .models import Transaction
 
 
+def share_amount(t: Transaction) -> float:
+    """What a charge cost you: your share of it when friends paid you back
+    for the rest, otherwise the whole charge."""
+    return t.amount if t.my_share is None else t.my_share
+
+
 def spend_amount(t: Transaction) -> float:
     """How much of this charge the month it fell in has to pay for.
 
@@ -29,8 +35,11 @@ def spend_amount(t: Transaction) -> float:
     $400 leaves $1,600 for the month. The split is the whole point: the money
     budgeted in advance is not charged twice, and the money that was not
     budgeted is not hidden.
+
+    Only your share counts at all: when friends paid you back for part of a
+    charge, the part they paid was never yours to budget for.
     """
-    return round(t.amount - (t.bank_amount or 0.0), 2)
+    return round(share_amount(t) - (t.bank_amount or 0.0), 2)
 
 
 def counts_as_spending(t: Transaction) -> bool:
@@ -49,8 +58,11 @@ def counts_as_spending(t: Transaction) -> bool:
     """
     if not is_spend_category(t.category or "Other"):
         return False
-    # A partly covered charge still counts, for the part nobody budgeted.
-    return t.bank_id is None or abs(spend_amount(t)) >= 0.005
+    # A partly covered charge still counts, for the part nobody budgeted. A
+    # charge friends paid back in full counts for nothing at all.
+    if t.bank_id is None and t.my_share is None:
+        return True
+    return abs(spend_amount(t)) >= 0.005
 
 
 def spend_only(transactions: list[Transaction]) -> list[Transaction]:
@@ -65,7 +77,8 @@ def spend_only(transactions: list[Transaction]) -> list[Transaction]:
     for t in transactions:
         if not counts_as_spending(t):
             continue
-        out.append(replace(t, amount=spend_amount(t)) if t.bank_id is not None else t)
+        adjusted = t.bank_id is not None or t.my_share is not None
+        out.append(replace(t, amount=spend_amount(t)) if adjusted else t)
     return out
 
 
