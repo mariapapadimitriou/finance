@@ -334,6 +334,22 @@ class TestLessToRead:
         assert ">\n        Piggy banks\n      </h2>" in text
 
 
+class TestMonthlyNotWeekly:
+    def test_the_month_card_shows_the_monthly_allowance(self):
+        text = (SRC / "panels" / "TodayPanel.jsx").read_text(encoding="utf-8")
+        month = text[text.index("function ThisMonth("):]
+        month = month[:month.index("\n}\n")]
+        assert "Monthly allowance" in month and "monthly_amount" in month
+        assert "Essentials" not in month and "week.nominal" not in month
+
+    def test_saving_defaults_to_a_fifth_of_take_home(self):
+        """It follows take-home until you type your own, then stays yours."""
+        text = (SRC / "panels" / "PlanPanel.jsx").read_text(encoding="utf-8")
+        assert "DEFAULT_SAVING = 0.2" in text
+        assert "if (linked) setSavings(fifth(" in text
+        assert "setLinked(false)" in text
+
+
 class TestTheSetupChecklistGoesSomewhereReal:
     def test_every_step_names_a_destination_that_exists(self, tmp_path, panels,
                                                         groups, aliases):

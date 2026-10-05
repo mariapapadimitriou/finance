@@ -24,6 +24,11 @@ import {
  * page answers what the money is promised to; Budgets answers how the rest
  * divides and how the month is going against it.
  */
+// Saving starts at a fifth of take-home and follows it until you set your own.
+const DEFAULT_SAVING = 0.2;
+const fifth = (income) => (Number(income) > 0
+  ? String(Math.round(Number(income) * DEFAULT_SAVING)) : '');
+
 export default function PlanPanel({ onChanged, onTab }) {
   const [data, setData] = useState(null);
   const [cats, setCats] = useState([]);
@@ -31,6 +36,9 @@ export default function PlanPanel({ onChanged, onTab }) {
   const [busy, setBusy] = useState(false);
   const [income, setIncome] = useState('');
   const [savings, setSavings] = useState('');
+  // Whether saving is still the 20% default, so it moves with take-home.
+  // Saved as anything else, it is yours and stays put.
+  const [linked, setLinked] = useState(true);
   const [draft, setDraft] = useState({ name: '', amount: '', category: 'Rent & Housing' });
 
   const load = useCallback(async () => {
@@ -39,7 +47,9 @@ export default function PlanPanel({ onChanged, onTab }) {
       const d = await getPlanSetup();
       setData(d);
       setIncome(d.income ? String(d.income) : '');
-      setSavings(d.savings ? String(d.savings) : '');
+      const follows = !d.savings || String(d.savings) === fifth(d.income);
+      setLinked(follows);
+      setSavings(d.savings ? String(d.savings) : follows ? fifth(d.income) : '');
       // The endpoint returns objects, not strings; the select wants names.
       const list = (await getCategories().catch(() => null))?.categories ?? [];
       setCats(list.map((c) => (typeof c === 'string' ? c : c.name)));
@@ -81,12 +91,24 @@ export default function PlanPanel({ onChanged, onTab }) {
         }}>
           <label htmlFor="income">Monthly take-home</label>
           <input id="income" type="number" min="0" step="any" inputMode="decimal"
-                 value={income} onChange={(e) => setIncome(e.target.value)}
+                 value={income}
+                 onChange={(e) => {
+                   setIncome(e.target.value);
+                   if (linked) setSavings(fifth(e.target.value));
+                 }}
                  style={{ width: 130 }} />
           <label htmlFor="savings">Saving / investing</label>
-          <input id="savings" type="number" min="0" step="any" inputMode="decimal"
-                 value={savings} onChange={(e) => setSavings(e.target.value)}
-                 style={{ width: 130 }} />
+          <span className="row" style={{ gap: 8 }}>
+            <input id="savings" type="number" min="0" step="any" inputMode="decimal"
+                   value={savings}
+                   onChange={(e) => { setSavings(e.target.value); setLinked(false); }}
+                   style={{ width: 130 }} />
+            {Number(income) > 0 && savings !== '' && (
+              <span className="muted small num" aria-label="of take-home">
+                {pct(Number(savings) / Number(income))}
+              </span>
+            )}
+          </span>
           <button className="btn primary" type="submit" disabled={busy}>
             {busy ? 'Saving…' : 'Save'}
           </button>
