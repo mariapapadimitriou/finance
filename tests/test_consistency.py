@@ -1246,6 +1246,11 @@ class TestTheSetupChecklist:
         assert self._step(client, "travel")["done"]
 
         client.post("/api/plan/setup/apply")
+        assert not self._step(client, "budgets")["done"], \
+            "the plan's own split is not yours until you divide the total"
+        total = client.get("/api/budgets").get_json()["monthly_total"]
+        assert client.put("/api/budgets/allocation", json={
+            "focus": ["Dining"], "budgets": {"Dining": total}}).status_code == 200
         assert self._step(client, "budgets")["done"]
 
         assert self._setup(client)["remaining"] == 0

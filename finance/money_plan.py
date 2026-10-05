@@ -110,21 +110,15 @@ def variable_shares(transactions, months_back: int = 12,
         kept.items(), key=lambda kv: -kv[1])}
 
 
-def typical_monthly(transactions, months_back: int = 12,
-                    groups: dict[str, str] | None = None,
-                    bank_funded=frozenset()) -> dict[str, float]:
-    """What you usually spend on each budget line in a month.
+def _months_by_line(transactions, months_back: int = 12,
+                     groups: dict[str, str] | None = None,
+                     bank_funded=frozenset()) -> tuple[list[str], dict[str, list[float]]]:
+    """Each budget line's spending in each of the last complete months.
 
-    Over the last `months_back` complete months, counting a month with
-    nothing spent on a line as $0. The median of those months, so one big
-    month does not set the budget — except for a line you spend on in fewer
-    than half of them (gifts, a yearly subscription), whose median would be
-    $0; that one is its yearly total spread over the months instead.
-
-    Bank-funded categories are left out: their money is already taken off
-    the leftover as the bank's contribution.
+    A month with nothing spent on a line counts as $0. The month under way
+    is left out, since half a month would drag every figure down.
+    Bank-funded categories are left out: a piggy bank pays for them.
     """
-    import statistics
     from .analytics import last_complete_month
 
     months = sorted({t.month for t in transactions})
@@ -133,7 +127,7 @@ def typical_monthly(transactions, months_back: int = 12,
     if not window:
         window = months[-months_back:]
     if not window:
-        return {}
+        return [], {}
     inside = set(window)
 
     per: dict[str, dict[str, float]] = {}
@@ -146,16 +140,74 @@ def typical_monthly(transactions, months_back: int = 12,
         line = (groups or {}).get(category, category)
         per.setdefault(line, {})
         per[line][t.month] = per[line].get(t.month, 0.0) + spend_amount(t)
+    return window, {line: [by_month.get(m, 0.0) for m in window]
+                    for line, by_month in per.items()}
 
+
+def history_stats(transactions, months_back: int = 12,
+                  groups: dict[str, str] | None = None,
+                  bank_funded=frozenset()) -> dict[str, dict[str, float]]:
+    """Each line's average and median month — the guide beside a target."""
+    import statistics
+
+    _, by_line = _months_by_line(transactions, months_back, groups, bank_funded)
+    return {line: {"average": round(sum(v) / len(v), 2),
+                   "median": round(statistics.median(v), 2)}
+            for line, v in by_line.items()}
+
+
+def typical_monthly(transactions, months_back: int = 12,
+                    groups: dict[str, str] | None = None,
+                    bank_funded=frozenset()) -> dict[str, float]:
+    """What you usually spend on each budget line in a month.
+
+    The median month, so one big month does not set it — except for a line
+    you spend on in fewer than half of them (gifts, a yearly subscription),
+    whose median would be $0; that one is its yearly total spread over the
+    months instead.
+    """
+    import statistics
+
+    _, by_line = _months_by_line(transactions, months_back, groups, bank_funded)
     out: dict[str, float] = {}
-    for line, by_month in per.items():
-        values = [by_month.get(m, 0.0) for m in window]
+    for line, values in by_line.items():
         active = sum(1 for v in values if v > 0)
         usual = (statistics.median(values) if active * 2 >= len(values)
                  else sum(values) / len(values))
         if usual >= 1:
             out[line] = round(usual, 2)
     return dict(sorted(out.items(), key=lambda kv: -kv[1]))
+
+
+def weekly_pool(budgets: dict[str, float], lines: dict[str, list[str]],
+                transactions=()) -> float:
+    """The part of your budgets the weekly allowance hands out.
+
+    The weekly number counts discretionary charges only, so it divides the
+    budgets of discretionary categories. A line holding both kinds (Health,
+    budgeted monthly, with Personal Care, counted weekly) contributes the
+    share its discretionary members usually take of it — or, with no history,
+    the share of its members that are discretionary.
+    """
+    spent: dict[str, float] = {}
+    for t in transactions:
+        if t.amount > 0 and counts_as_spending(t):
+            spent[t.category or "Other"] = (spent.get(t.category or "Other", 0.0)
+                                            + spend_amount(t))
+    pool = 0.0
+    for line, amount in budgets.items():
+        members = lines.get(line, [line])
+        weekly = [m for m in members if is_discretionary(m)]
+        if not weekly:
+            continue
+        if len(weekly) == len(members):
+            pool += amount
+            continue
+        total = sum(spent.get(m, 0.0) for m in members)
+        share = (sum(spent.get(m, 0.0) for m in weekly) / total if total > 0
+                 else len(weekly) / len(members))
+        pool += amount * share
+    return round(pool, 2)
 
 
 def split(transactions, leftover: float, groups: dict[str, str] | None = None,

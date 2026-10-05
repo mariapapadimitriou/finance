@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
-  Card, ErrorNote, GoTo, Loading, NoticeStack, StatusPill, freshness,
+  Card, ErrorNote, Loading, NoticeStack, StatusPill, freshness,
 } from '../components/ui.jsx';
-import {
-  applyPlanBudgets, getBudgets, money, monthLabel, pct, setBudgets,
-} from '../api.js';
+import { getBudgets, money, monthLabel, pct, setAllocation } from '../api.js';
 
 /** Over budget, on pace to go over, or fine — status colour plus an icon and a word. */
 function state(row) {
@@ -20,34 +18,30 @@ const STATE_TEXT = {
 };
 
 /**
- * Every budget line from Settings → Categories, once, in the same order.
+ * Budgets: you split the monthly total yourself.
  *
- * This page used to be two tables, with a third on the Plan tab: bars here,
- * an editor below them, and the plan's proposed split over there — three
- * renderings of one list, two of them editable. Which figure you were looking
- * at depended on which card you had scrolled to, and the reasonable conclusion
- * was that the app had several budgets.
+ * The plan works out one figure — what is left after pay, commitments, saving
+ * and piggy banks. Here you pick the categories you want to keep an eye on,
+ * give each a monthly target, and everything together has to add up to that
+ * figure. The rest sit under "Other categories" at 0 unless you give them
+ * something. The lines are the ones in Settings → Categories.
  *
- * So there is one row per category now, and it carries everything the three
- * used to say separately: what you have set, what the plan would give it, what
- * you usually spend, how the month is going against it, and whether it is part
- * of the weekly number or budgeted monthly. The row is also where you change it.
+ * Three steps, the first two only while setting up or changing it:
+ * pick (which lines to focus on), split (the amounts), track (the month).
  */
 export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
   const [data, setData] = useState(null);
-  // Two error slots, not one. A failed load has nothing to show, so it replaces
-  // the panel; a failed save has to leave the table and the half-typed draft
-  // exactly where they were, or a transient failure costs the user their edits.
   const [loadError, setLoadError] = useState(null);
-  const [actionError, setActionError] = useState(null);
+  const [mode, setMode] = useState(null);         // 'pick' | 'split' | 'track'
+  const [focus, setFocus] = useState([]);
   const [draft, setDraft] = useState({});
-  const [saving, setSaving] = useState(false);
-  const [applying, setApplying] = useState(false);
 
   async function load() {
     setLoadError(null);
     try {
-      setData(await getBudgets(month));
+      const d = await getBudgets(month);
+      setData(d);
+      setMode((m) => m ?? (d.focus ? 'track' : 'pick'));
     } catch (e) {
       setLoadError(e);
     }
@@ -56,230 +50,357 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
   // `version` changes on an import, which changes what has been spent.
   useEffect(() => { load(); }, [month, version]);
 
+  if (loadError) return <ErrorNote error={loadError} onRetry={load} />;
+  if (!data || !mode) return <Loading what="budgets" />;
+
+  const rows = data.rows ?? [];
+
+  // Start (or restart) choosing, from what is saved.
+  function startPick() {
+    setFocus(data.focus ?? []);
+    setMode('pick');
+  }
+  function startSplit(chosen) {
+    const next = {};
+    rows.forEach((r) => {
+      if (r.adopted) next[r.category] = String(Math.round(r.budget * 100) / 100);
+      else if (!chosen.includes(r.category)) next[r.category] = '0';
+    });
+    setFocus(chosen);
+    setDraft(next);
+    setMode('split');
+  }
+
+  if (data.monthly_total == null || data.monthly_total <= 0) {
+    return (
+      <Card title="Finish your plan first">
+        <p className="muted" style={{ marginTop: 0 }}>
+          Your monthly total is what's left of your take-home pay after
+          commitments, saving and piggy banks. Budgets split it up.
+        </p>
+        {onTab && (
+          <button className="btn primary" onClick={() => onTab('plan')}>
+            Go to Income
+          </button>
+        )}
+      </Card>
+    );
+  }
+
+  if (mode === 'pick') {
+    return (
+      <PickFocus rows={rows} initial={data.focus ?? focus}
+                 canCancel={!!data.focus}
+                 onCancel={() => setMode('track')}
+                 onNext={(chosen) => startSplit(chosen)} />
+    );
+  }
+
+  if (mode === 'split') {
+    return (
+      <SplitTotal rows={rows} total={data.monthly_total} focus={focus}
+                  draft={draft} setDraft={setDraft}
+                  onBack={() => setMode('pick')}
+                  onCancel={data.focus ? () => setMode('track') : null}
+                  onSaved={async () => { await load(); setMode('track'); }} />
+    );
+  }
+
+  return (
+    <Track data={data} month={month} summary={summary} onTab={onTab}
+           onEdit={() => startSplit(data.focus ?? [])}
+           onFocus={startPick} />
+  );
+}
+
+/** Step one: which lines to keep an eye on. */
+function PickFocus({ rows, initial, canCancel, onCancel, onNext }) {
+  const [chosen, setChosen] = useState(() => new Set(initial));
+  const toggle = (name) => setChosen((s) => {
+    const next = new Set(s);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    return next;
+  });
+
+  return (
+    <Card title="What do you want to focus on?"
+          actions={canCancel && (
+            <button className="btn quiet" onClick={onCancel}>Cancel</button>
+          )}>
+      <p className="muted small" style={{ marginTop: 0 }}>
+        Pick the categories to track closely. You'll give each one a monthly
+        target next. The rest go under Other categories.
+      </p>
+      <div className="stack" style={{ gap: 4 }}>
+        {rows.map((r) => (
+          <label key={r.category} className="row"
+                 style={{ gap: 10, padding: '8px 0', cursor: 'pointer', flexWrap: 'wrap' }}>
+            <input type="checkbox" checked={chosen.has(r.category)}
+                   onChange={() => toggle(r.category)} />
+            <div style={{ minWidth: 0 }}>
+              <strong>{r.category}</strong>
+              {r.members?.length > 0 && (
+                <div className="small muted">{r.members.join(' · ')}</div>
+              )}
+            </div>
+            <span className="spacer" />
+            <History row={r} />
+          </label>
+        ))}
+      </div>
+      <div className="row" style={{ marginTop: 14, justifyContent: 'flex-end' }}>
+        <button className="btn primary" disabled={chosen.size === 0}
+                onClick={() => onNext(rows.map((r) => r.category)
+                  .filter((c) => chosen.has(c)))}>
+          Next{chosen.size > 0 ? ` (${chosen.size})` : ''}
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+/** Step two: the amounts, which have to add up to the monthly total. */
+function SplitTotal({ rows, total, focus, draft, setDraft, onBack, onCancel, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const focusRows = rows.filter((r) => focus.includes(r.category));
+  const otherRows = rows.filter((r) => !focus.includes(r.category));
+  const blank = (name) => draft[name] === undefined || draft[name] === ''
+    || Number.isNaN(Number(draft[name]));
+  const value = (name) => (blank(name) ? 0 : Number(draft[name]));
+  const allocated = rows.reduce((t, r) => t + value(r.category), 0);
+  const left = Math.round((total - allocated) * 100) / 100;
+  const missing = focusRows.filter((r) => blank(r.category));
+  const otherTotal = otherRows.reduce((t, r) => t + value(r.category), 0);
+  const ready = missing.length === 0 && Math.abs(left) <= 0.5;
+
   async function save() {
     setSaving(true);
-    setActionError(null);
+    setError(null);
     try {
-      await setBudgets(draft);
-      setDraft({});
-      await load();
+      const budgets = {};
+      rows.forEach((r) => {
+        if (!blank(r.category)) budgets[r.category] = Number(draft[r.category]);
+      });
+      await setAllocation(focus, budgets);
+      await onSaved();
     } catch (e) {
-      setActionError(e);          // the draft survives on purpose
+      setError(e);
     } finally {
       setSaving(false);
     }
   }
 
-  async function adoptPlan() {
-    setApplying(true);
-    setActionError(null);
-    try {
-      await applyPlanBudgets();
-      setDraft({});
-      await load();
-    } catch (e) {
-      setActionError(e);
-    } finally {
-      setApplying(false);
-    }
-  }
-
-  if (loadError) return <ErrorNote error={loadError} onRetry={load} />;
-  if (!data) return <Loading what="budgets" />;
-
-  // Every line in Settings → Categories, in that order, from the server. The
-  // quiet ones — nothing set, nothing planned, nothing spent — are folded
-  // away at the end rather than drawn as a column of empty bars.
-  const rows = data.rows ?? [];
-  const active = rows.filter((r) => !r.quiet);
-  const quiet = rows.filter((r) => r.quiet);
-  const bankLines = data.bank_lines ?? [];
-  // The plan gives each line what you usually spend; what the leftover has
-  // beyond that is the buffer, assigned to no line. Once budgets are saved it
-  // is whatever they leave of the leftover.
-  const buffer = data.unassigned ?? data.plan_buffer ?? 0;
-  const drift = data.drift;
-  const edited = Object.keys(draft).length > 0;
-  // Every line is a proposal and none of them has been adopted. There is no
-  // drift to report in that state — nothing is saved to drift from — so
-  // without this the page showed a full table and no way to accept it.
-  const nothingAdopted = rows.length > 0 && rows.every((r) => !r.adopted);
-
-  const planButtons = (primary) => (
-    <div className="row" style={{ marginTop: 12 }}>
-      <button className={`btn${primary ? ' primary' : ''}`}
-              onClick={adoptPlan} disabled={applying}>
-        {applying ? 'Applying…' : "Use the plan's split"}
-      </button>
-      {onTab && (
-        <button className="btn quiet" onClick={() => onTab('plan')}>
-          Plan
-        </button>
-      )}
-    </div>
+  const input = (r) => (
+    <input
+      id={`budget-${r.category}`}
+      type="number" min="0" step="any" inputMode="decimal"
+      style={{ width: 110, textAlign: 'right' }}
+      value={draft[r.category] ?? ''}
+      placeholder={focus.includes(r.category) ? '' : '0'}
+      onChange={(e) => setDraft((d) => ({ ...d, [r.category]: e.target.value }))}
+      aria-label={`${r.category} monthly budget`}
+    />
   );
 
-  // Everything this page needs to say before the table, as one strip: the
-  // most serious in full, the rest a line each. It used to be up to five
-  // notices stacked above the first category. Rank: 0 is something wrong
-  // with the figures, 1 something to do, 2 something to know.
+  return (
+    <Card title="Split your monthly total"
+          actions={onCancel && (
+            <button className="btn quiet" onClick={onCancel}>Cancel</button>
+          )}>
+      <div className="row" style={{ gap: 12, alignItems: 'flex-end' }}>
+        <div>
+          <div className="small muted">Monthly total</div>
+          <div className="num" style={{ fontSize: '1.5rem', fontWeight: 650 }}>
+            {money(total, { cents: true })}
+          </div>
+        </div>
+        <span className="spacer" />
+        <div style={{ textAlign: 'right' }}>
+          <div className="small muted">
+            {left > 0.5 ? 'Left to assign' : left < -0.5 ? 'Too much' : 'All assigned'}
+          </div>
+          <div className="num" style={{
+            fontSize: '1.5rem', fontWeight: 650,
+            color: left < -0.5 ? 'var(--critical)'
+              : Math.abs(left) <= 0.5 ? 'var(--good-text)' : undefined,
+          }}>
+            {money(Math.abs(left), { cents: true })}
+          </div>
+        </div>
+      </div>
+
+      <div className="stack" style={{ gap: 14, marginTop: 16 }}>
+        {focusRows.map((r) => (
+          <div key={r.category} className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <strong>{r.category}</strong>
+              <div><History row={r} /></div>
+            </div>
+            <span className="spacer" />
+            {input(r)}
+          </div>
+        ))}
+      </div>
+
+      {otherRows.length > 0 && (
+        <details className="evidence" style={{ marginTop: 18 }}>
+          <summary>
+            Other categories
+            <span className="muted num" style={{ fontWeight: 400 }}>
+              {' '}· {money(otherTotal)}
+            </span>
+          </summary>
+          <div className="stack" style={{ gap: 12, marginTop: 12 }}>
+            {otherRows.map((r) => (
+              <div key={r.category} className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <span>{r.category}</span>
+                  <div><History row={r} /></div>
+                </div>
+                <span className="spacer" />
+                {input(r)}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      <ErrorNote error={error} />
+      <div className="row" style={{ marginTop: 16, gap: 8, flexWrap: 'wrap' }}>
+        <button className="btn quiet" onClick={onBack}>Back</button>
+        <span className="spacer" />
+        {missing.length > 0 && (
+          <span className="small muted">
+            {missing.length === 1
+              ? `${missing[0].category} needs a target`
+              : `${missing.length} categories need a target`}
+          </span>
+        )}
+        <button className="btn primary" onClick={save} disabled={!ready || saving}>
+          {saving ? 'Saving…' : 'Save budgets'}
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+/** Step three: the month against the targets. */
+function Track({ data, month, summary, onTab, onEdit, onFocus }) {
+  const rows = data.rows ?? [];
+  const focusRows = rows.filter((r) => r.focus);
+  const otherRows = rows.filter((r) => !r.focus);
+  const bankLines = data.bank_lines ?? [];
+  const other = data.other ?? { spent: 0, budget: 0 };
+  const otherOver = other.spent > other.budget;
+  const drift = data.drift;
+
   const notices = [
-    // Budgets that no longer divide the money the plan has. States the
-    // discrepancy without claiming why — it can come from the plan moving or
-    // from a line edited by hand, and the page cannot tell which. Allowing
-    // more than you have is wrong; allowing less is merely conservative.
+    // The split no longer adds up to the monthly total: the plan moved.
     drift && {
-      key: 'drift',
-      kind: drift.gap > 0 ? 'error' : '',
-      rank: drift.gap > 0 ? 0 : 2,
-      summary: <>Budgets {money(drift.saved_total)} · plan {money(drift.plan_total)}</>,
-      detail: planButtons(drift.gap > 0),
+      key: 'drift', kind: 'error', rank: 0,
+      summary: <>Budgets {money(drift.saved_total)} · monthly total {money(drift.plan_total)}</>,
+      detail: (
+        <div className="row" style={{ marginTop: 12 }}>
+          <button className="btn primary" onClick={onEdit}>Adjust the split</button>
+        </div>
+      ),
     },
-    data.bank_funded && bankFundedItem(data.bank_funded, onTab),
-    // The leftover is less than you usually spend, so the plan had to scale
-    // every line down to fit.
-    data.plan_short > 1 && {
-      key: 'short', kind: '', rank: 1,
-      summary: <>Usual spending is {money(data.plan_short)} more than the plan leaves</>,
-      detail: <span className="muted">Each line is scaled down to fit.</span>,
-    },
-    nothingAdopted && {
-      key: 'adopt', kind: '', rank: 1,
-      summary: <>Not adopted yet</>,
-      detail: planButtons(true),
-    },
-    // One wording for this, shared with This month.
+    data.bank_funded && bankFundedItem(data.bank_funded),
     (() => {
       const it = freshness(month, summary, { onTab, from: 'budgets' });
       return it && { ...it, rank: 2 };
     })(),
-    // Not worth saying when nothing is budgeted at all: the adopt notice
-    // already says that, and more usefully.
-    data.unbudgeted_spend > 1 && !nothingAdopted && {
-      key: 'unbudgeted', kind: '', rank: 2,
-      summary: <>{money(data.unbudgeted_spend)} not in any budget</>,
-      detail: data.unbudgeted?.length > 0 ? (
-        <span className="muted">
-          {data.unbudgeted.slice(0, 5).map((r) => r.category).join(', ')}
-          {data.unbudgeted.length > 5 && ` +${data.unbudgeted.length - 5}`}
-        </span>
-      ) : null,
-    },
   ].filter(Boolean).sort((a, b) => a.rank - b.rank);
 
   return (
     <div className="stack">
-      {rows.length === 0 ? (
-        <Card title="No budgets to show yet">
-          {/* It used to send you to the Plan tab to press a button there. The
-              button belongs on the page that is empty without it. */}
-          <ErrorNote error={actionError} />
-          <div className="row" style={{ marginTop: 14 }}>
-            <button className="btn primary" onClick={adoptPlan} disabled={applying}>
-              {applying ? 'Applying…' : "Use the plan's split"}
-            </button>
-            {onTab && (
-              <button className="btn quiet" onClick={() => onTab('plan')}>
-                Set up the plan first
-              </button>
-            )}
-          </div>
-        </Card>
-      ) : (
-        <>
-          {/* A failure to save is live, so it is never folded into the strip. */}
-          <ErrorNote error={actionError} />
+      <NoticeStack items={notices} />
 
-          <NoticeStack items={notices} />
+      <Card title={`Budgets — ${monthLabel(month, { long: true })}`}
+            actions={(
+              <div className="row" style={{ gap: 8 }}>
+                <button className="btn quiet" onClick={onFocus}>Focus</button>
+                <button className="btn" onClick={onEdit}>Edit budgets</button>
+              </div>
+            )}>
+        <div className="stack" style={{ gap: 22 }}>
+          {focusRows.map((r) => <BudgetRow key={r.category} row={r} />)}
+        </div>
 
-          <Card title={`Budgets — ${monthLabel(month, { long: true })}`}
-                actions={(
-                  <div className="row" style={{ gap: 8 }}>
-                    {onTab && (
-                      <button className="btn quiet" onClick={() => onTab('categories')}>
-                        Edit lines
-                      </button>
-                    )}
-                    {edited && (
-                      <button className="btn quiet" onClick={() => setDraft({})}>
-                        Discard
-                      </button>
-                    )}
-                    <button className="btn primary" onClick={save}
-                            disabled={saving || !edited}>
-                      {saving ? 'Saving…' : 'Save changes'}
-                    </button>
-                  </div>
-                )}>
-            <div className="stack" style={{ gap: 22 }}>
-              {active.map((r) => (
-                <BudgetRow key={r.category} row={r}
-                           draft={draft[r.category]}
-                           onChange={(v) => setDraft((d) => ({
-                             ...d, [r.category]: v,
-                           }))} />
+        {otherRows.length > 0 && (
+          <details className="evidence" style={{ marginTop: 22 }}>
+            <summary>
+              Other categories
+              <span className="num" style={{
+                fontWeight: 400,
+                color: otherOver ? 'var(--critical)' : 'var(--muted)',
+              }}>
+                {' '}· {money(other.spent)} of {money(other.budget)}
+              </span>
+            </summary>
+            <div className="stack" style={{ gap: 10, marginTop: 12 }}>
+              {otherRows.map((r) => (
+                <div key={r.category} className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                  <span>{r.category}</span>
+                  <span className="spacer" />
+                  <span className="num small"
+                        style={r.spent > r.budget ? { color: 'var(--critical)' } : undefined}>
+                    {money(r.spent, { cents: true })} of {money(r.budget)}
+                  </span>
+                </div>
               ))}
             </div>
+          </details>
+        )}
 
-            {buffer > 1 && (
-              <div className="row" style={{
-                flexWrap: 'wrap', gap: 8, marginTop: 18, paddingTop: 14,
-                borderTop: '1px solid var(--border)',
-              }}>
-                <strong>Buffer</strong>
-                <span className="small muted">not in any line</span>
-                <span className="spacer" />
-                <span className="num small">{money(buffer)}</span>
-              </div>
-            )}
-
-            {quiet.length > 0 && (
-              <details className="evidence">
-                <summary>
-                  {quiet.length} more line{quiet.length === 1 ? '' : 's'} with no spending
-                </summary>
-                <div className="stack" style={{ gap: 12, marginTop: 12 }}>
-                  {quiet.map((r) => (
-                    <QuietRow key={r.category} row={r}
-                              draft={draft[r.category]}
-                              onChange={(v) => setDraft((d) => ({
-                                ...d, [r.category]: v,
-                              }))} />
-                  ))}
+        {bankLines.length > 0 && (
+          <div className="stack" style={{
+            gap: 10, marginTop: 18, paddingTop: 14,
+            borderTop: '1px solid var(--border)',
+          }}>
+            {bankLines.map((l) => (
+              <div key={l.category}>
+                <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                  <strong>{l.category}</strong>
+                  <span className="small muted">
+                    Paid by {l.bank ? `${l.bank} bank` : 'a piggy bank'}
+                  </span>
+                  <span className="spacer" />
+                  {l.uncovered > 1 && (
+                    <span className="num small">
+                      {money(l.uncovered, { cents: true })} not covered
+                    </span>
+                  )}
                 </div>
-              </details>
-            )}
-
-            {bankLines.length > 0 && (
-              <div className="stack" style={{
-                gap: 10, marginTop: 18, paddingTop: 14,
-                borderTop: '1px solid var(--border)',
-              }}>
-                {bankLines.map((l) => (
-                  <div key={l.category}>
-                    <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-                      <strong>{l.category}</strong>
-                      <span className="small muted">
-                        Paid by {l.bank ? `${l.bank} bank` : 'a piggy bank'}
-                      </span>
-                      <span className="spacer" />
-                      {l.uncovered > 1 && (
-                        <span className="num small">
-                          {money(l.uncovered, { cents: true })} not covered
-                        </span>
-                      )}
-                    </div>
-                    {l.members?.length > 0 && (
-                      <div className="small muted">{l.members.join(' · ')}</div>
-                    )}
-                  </div>
-                ))}
+                {l.members?.length > 0 && (
+                  <div className="small muted">{l.members.join(' · ')}</div>
+                )}
               </div>
-            )}
-          </Card>
-        </>
-      )}
+            ))}
+          </div>
+        )}
+
+        {onTab && (
+          <div className="row" style={{ marginTop: 16, justifyContent: 'flex-end' }}>
+            <button className="btn quiet" onClick={() => onTab('categories')}>
+              Edit lines
+            </button>
+          </div>
+        )}
+      </Card>
     </div>
+  );
+}
+
+/** "avg $X · median $Y": your own months, the guide beside a target. */
+function History({ row }) {
+  if (!row.average && !row.median) return <span className="small muted">no history</span>;
+  return (
+    <span className="small muted num">
+      avg {money(row.average)} · median {money(row.median)}
+    </span>
   );
 }
 
@@ -290,7 +411,7 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
  * in those categories from before the bank opened, which the bank does not
  * pay for and so still counts in its month.
  */
-function bankFundedItem(banked, onTab) {
+function bankFundedItem(banked) {
   const list = banked.categories;
   if (!list?.length) return null;
   const names = joinNames(list);
@@ -325,48 +446,26 @@ function joinNames(list) {
     : list[0];
 }
 
-/**
- * One category: the bar, the editor, and the two reference figures.
- *
- * A row the plan proposes but nothing has adopted is shown the same way, drawn
- * against the plan's figure, with the input left empty — it is a suggestion
- * until someone types in it, and an input pre-filled with a number nobody
- * chose reads as a budget that exists.
- */
-function BudgetRow({ row, draft, onChange }) {
+/** One focus line: how the month is going against its target. */
+function BudgetRow({ row }) {
   const s = state(row);
-  const used = Math.min(row.used, 1);
-  const colour = row.adopted ? s : 'warning';
-  // Only worth saying when the two differ. Printing "plan says $78" against a
-  // budget of $78 on every row is noise that hides the one row where it is
-  // $78 against $120.
-  const differs = row.adopted && row.plan_budget != null
-    && Math.abs(row.budget - row.plan_budget) > 1;
-  const over = differs && row.budget > row.plan_budget;
+  const used = row.budget > 0 ? Math.min(row.used, 1) : (row.spent > 0 ? 1 : 0);
 
   return (
     <div>
       <div className="row" style={{ marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
         <strong>{row.category}</strong>
-        {row.adopted
-          ? <StatusPill state={s}>{STATE_TEXT[s]}</StatusPill>
-          : <StatusPill state="warning">No budget set</StatusPill>}
-        {/* The answer to "where does the discretionary figure come from" has
-            to be on the page, per line. A line folded from several
-            categories can be partly in it — Health is budgeted monthly,
-            Personal Care is in the weekly number — and says so. */}
+        <StatusPill state={s}>{STATE_TEXT[s]}</StatusPill>
+        {/* Which side of the weekly number this line is on. A line folded
+            from several categories can be partly in it, and says so. */}
         <span className="small muted">
           {{ all: 'weekly', none: 'monthly', part: 'partly weekly' }[row.daily]
             ?? (row.essential ? 'monthly' : 'weekly')}
         </span>
         <span className="spacer" />
         <span className="num small">
-          {money(row.spent, { cents: true })}
-          {row.adopted ? (
-            <> of {money(row.budget)}{' '}
-              <span className="muted">({pct(row.used)})</span>
-            </>
-          ) : <> spent</>}
+          {money(row.spent, { cents: true })} of {money(row.budget)}
+          {row.budget > 0 && <span className="muted"> ({pct(row.used)})</span>}
         </span>
       </div>
 
@@ -384,85 +483,19 @@ function BudgetRow({ row, draft, onChange }) {
           width: `${used * 100}%`,
           height: '100%',
           borderRadius: '0 4px 4px 0',
-          background: `var(--${colour === 'good' ? 'good' : colour})`,
+          background: `var(--${s})`,
         }} />
       </div>
 
       <div className="row" style={{ marginTop: 7, flexWrap: 'wrap', gap: 8 }}>
         <span className="small muted">
-          {row.adopted ? (
-            row.on_track
-              ? `${money(row.projected)} projected · ${money(row.remaining)} left`
-              : `${money(row.projected)} projected · ${money(Math.abs(row.projected_over))} over`
-          ) : row.plan_budget != null ? (
-            `Plan ${money(row.budget)}`
-          ) : (
-            'Nothing planned'
-          )}
-          {differs && (
-            <>
-              {' '}· plan{' '}
-              {/* Worth colouring only when the saved figure is the larger one
-                  — that is the direction that tells someone they have more to
-                  spend than they do. */}
-              <span className={over ? 'num' : 'num muted'}
-                    style={over ? { color: 'var(--critical)' } : undefined}>
-                {money(row.plan_budget)}
-              </span>
-            </>
-          )}
-          {row.typical ? ` · usually ${money(row.typical)}` : ''}
+          {row.on_track
+            ? `${money(row.projected)} projected · ${money(row.remaining)} left`
+            : `${money(row.projected)} projected · ${money(Math.abs(row.projected_over))} over`}
         </span>
         <span className="spacer" />
-        <label className="small muted" htmlFor={`budget-${row.category}`}>
-          Budget
-        </label>
-        <input
-          id={`budget-${row.category}`}
-          type="number"
-          min="0"
-          step="any"
-          style={{ width: 110, textAlign: 'right' }}
-          // Whole dollars, like the bar beside it — "$693" above an input
-          // reading 692.73 looked like two different figures. Only an edited
-          // line is saved, so a stored figure with cents is left exactly as
-          // it is unless you change it.
-          value={draft ?? (row.adopted ? Math.round(row.budget) : '')}
-          placeholder={row.plan_budget != null
-            ? String(Math.round(row.plan_budget)) : '0'}
-          onChange={(e) => onChange(Number(e.target.value))}
-          aria-label={`${row.category} monthly budget`}
-        />
+        <History row={row} />
       </div>
-    </div>
-  );
-}
-
-/** A line with nothing set, planned or spent: its name and an input. */
-function QuietRow({ row, draft, onChange }) {
-  return (
-    <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-      <div style={{ minWidth: 0 }}>
-        <strong>{row.category}</strong>
-        {row.members?.length > 0 && (
-          <div className="small muted">{row.members.join(' · ')}</div>
-        )}
-      </div>
-      <span className="spacer" />
-      <label className="small muted" htmlFor={`budget-${row.category}`}>
-        Budget
-      </label>
-      <input
-        id={`budget-${row.category}`}
-        type="number"
-        min="0"
-        step="any"
-        style={{ width: 110, textAlign: 'right' }}
-        value={draft ?? ''}
-        placeholder="0"
-        onChange={(e) => onChange(Number(e.target.value))}
-        aria-label={`${row.category} monthly budget`}
-      />
     </div>
   );
 }
