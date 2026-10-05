@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
-import {
-  Card, ErrorNote, Loading, NoticeStack, StatusPill, freshness,
-} from '../components/ui.jsx';
+import { Card, ErrorNote, Loading, StatusPill } from '../components/ui.jsx';
 import { getBudgets, money, monthLabel, pct, setAllocation } from '../api.js';
 
 /** Over budget, on pace to go over, or fine — status colour plus an icon and a word. */
@@ -107,7 +105,7 @@ export default function BudgetsPanel({ month, summary, onTab, version = 0 }) {
   }
 
   return (
-    <Track data={data} month={month} summary={summary} onTab={onTab}
+    <Track data={data} month={month} onTab={onTab}
            onEdit={() => startSplit(data.focus ?? [])}
            onFocus={startPick} />
   );
@@ -287,37 +285,16 @@ function SplitTotal({ rows, total, focus, draft, setDraft, onBack, onCancel, onS
 }
 
 /** Step three: the month against the targets. */
-function Track({ data, month, summary, onTab, onEdit, onFocus }) {
+function Track({ data, month, onTab, onEdit, onFocus }) {
   const rows = data.rows ?? [];
   const focusRows = rows.filter((r) => r.focus);
   const otherRows = rows.filter((r) => !r.focus);
   const bankLines = data.bank_lines ?? [];
   const other = data.other ?? { spent: 0, budget: 0 };
   const otherOver = other.spent > other.budget;
-  const drift = data.drift;
-
-  const notices = [
-    // The split no longer adds up to the monthly total: the plan moved.
-    drift && {
-      key: 'drift', kind: 'error', rank: 0,
-      summary: <>Budgets {money(drift.saved_total)} · monthly total {money(drift.plan_total)}</>,
-      detail: (
-        <div className="row" style={{ marginTop: 12 }}>
-          <button className="btn primary" onClick={onEdit}>Adjust the split</button>
-        </div>
-      ),
-    },
-    data.bank_funded && bankFundedItem(data.bank_funded),
-    (() => {
-      const it = freshness(month, summary, { onTab, from: 'budgets' });
-      return it && { ...it, rank: 2 };
-    })(),
-  ].filter(Boolean).sort((a, b) => a.rank - b.rank);
 
   return (
     <div className="stack">
-      <NoticeStack items={notices} />
-
       <Card title={`Budgets — ${monthLabel(month, { long: true })}`}
             actions={(
               <div className="row" style={{ gap: 8 }}>
@@ -402,48 +379,6 @@ function History({ row }) {
       avg {money(row.average)} · median {money(row.median)}
     </span>
   );
-}
-
-/**
- * Why some categories are not in the table: a piggy bank pays for them.
- *
- * Normally one quiet line saying which bank. The one other state is spending
- * in those categories from before the bank opened, which the bank does not
- * pay for and so still counts in its month.
- */
-function bankFundedItem(banked) {
-  const list = banked.categories;
-  if (!list?.length) return null;
-  const names = joinNames(list);
-  const left = banked.unallocated_total;
-  const payers = banked.paid_by ?? [];
-
-  if (left > 1) {
-    return {
-      key: 'banked', kind: '', rank: 1,
-      summary: <>{money(left)} of {names.toLowerCase()} before its bank opened</>,
-      detail: null,
-    };
-  }
-
-  return {
-    key: 'banked', kind: 'good', rank: 2,
-    summary: payers.length > 0
-      ? <>{payers.map((p, i) => (
-          <span key={p.id}>
-            {i > 0 && '; '}
-            {joinNames(p.categories)} → {p.bank} bank
-          </span>
-        ))}</>
-      : <>{names} → piggy bank</>,
-    detail: null,
-  };
-}
-
-function joinNames(list) {
-  return list.length > 1
-    ? `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`
-    : list[0];
 }
 
 /** One focus line: how the month is going against its target. */
