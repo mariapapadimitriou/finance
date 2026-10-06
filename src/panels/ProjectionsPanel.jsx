@@ -3,7 +3,7 @@ import Chart from '../components/Chart.jsx';
 import {
   Card, ErrorNote, GoTo, Loading, Notice, StatusPill, } from '../components/ui.jsx';
 import Goals from '../components/Goals.jsx';
-import { getProjections, money, monthLabel, saveInvested, saveSavings } from '../api.js';
+import { getProjections, money, monthLabel, saveSavings } from '../api.js';
 import { investedConfig, projectionConfig } from '../charts.js';
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -11,8 +11,7 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
                      'December'];
 
 /**
- * Ahead: the plan against your current pace, the goals you are saving for,
- * and the levels your savings climb.
+ * Ahead: the plan against your current pace, and the goals you are saving for.
  *
  * *Plan* is what the plan puts away. *Current pace* is that plus whatever this
  * month's spending, carried to its end, leaves of the budget — so the gap
@@ -149,11 +148,8 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
             </div>
           </Card>
 
-          {data.from_plan && <Goals onChanged={() => load(target, preview ?? undefined)} />}
-
-          {data.levels && (
-            <Levels levels={data.levels} held={data.invested_balance}
-                    onSaved={() => load(target, preview ?? undefined)} />
+          {data.from_plan && (
+            <Goals onTab={onTab} onChanged={() => load(target, preview ?? undefined)} />
           )}
 
           {data.invested && <Invested invested={data.invested} />}
@@ -362,100 +358,5 @@ function PaceBadge({ data }) {
         {pm.basis === '30 days' ? ' (last 30 days)' : ` in ${monthLabel(pm.month, { long: true })}`}
       </span>
     </div>
-  );
-}
-
-/**
- * Levels: what you have saved and invested, as a ladder of round numbers.
- * The next rung gets a month on the plan and at your current pace; the
- * milestones past the rungs are locked until they happen.
- */
-function Levels({ levels, held, onSaved }) {
-  const [editing, setEditing] = useState(!held?.source);
-  const [value, setValue] = useState(held?.balance ? String(held.balance) : '');
-  const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const next = levels.next;
-
-  async function save(e) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await saveInvested(Number(value || 0));
-      await onSaved?.();
-      setEditing(false);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Card title="Levels"
-          actions={!editing && (
-            <button className="btn quiet" onClick={() => setEditing(true)}>
-              {held?.stale ? 'Update balance' : 'Balance'}
-            </button>
-          )}>
-      {editing && (
-        <form className="controls" onSubmit={save} style={{ marginBottom: 16 }}>
-          <label htmlFor="invested-balance">Saved & invested today, outside your goals</label>
-          <input id="invested-balance" type="number" min="0" step="any"
-                 inputMode="decimal" value={value} placeholder="12,000"
-                 onChange={(e) => setValue(e.target.value)} style={{ width: 140 }} />
-          <button className="btn primary" type="submit" disabled={busy}>
-            {busy ? 'Saving…' : 'Save'}
-          </button>
-          <ErrorNote error={error} />
-        </form>
-      )}
-
-      <div className="level-head">
-        <div>
-          <div className="level-name">{levels.level?.name ?? 'Getting started'}</div>
-          <div className="stars" aria-label={`${levels.stars.earned} of ${levels.stars.total} levels`}>
-            {Array.from({ length: levels.stars.total }, (_, i) => (
-              <span key={i} className={i < levels.stars.earned ? 'on' : ''}>★</span>
-            ))}
-          </div>
-        </div>
-        <div className="level-balance num">{money(levels.balance)}</div>
-      </div>
-
-      {next && (
-        <div className="level-next">
-          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-            <strong>Next: {next.name}</strong>
-            <span className="spacer" />
-            <span className="small muted num">{money(next.left)} to go</span>
-          </div>
-          <div className="track" style={{ background: 'var(--surface-2)', borderRadius: 4,
-                                           height: 8, overflow: 'hidden', margin: '8px 0' }}>
-            <div style={{ width: `${Math.min(next.progress, 1) * 100}%`, height: '100%',
-                          background: 'var(--brand)', borderRadius: 4 }} />
-          </div>
-          <div className="small muted">
-            {next.plan_eta ? `${monthLabel(next.plan_eta, { long: true })} on the plan` : 'Not on the plan yet'}
-            {next.pace_eta && next.pace_eta !== next.plan_eta
-              && ` · ${monthLabel(next.pace_eta, { long: true })} at your pace`}
-          </div>
-        </div>
-      )}
-
-      <ul className="milestones">
-        {levels.milestones.map((m) => (
-          <li key={m.id} className={m.done ? 'done' : ''}>
-            <span className="ms-icon" aria-hidden="true">{m.done ? '✓' : '🔒'}</span>
-            <span>{m.label}</span>
-            <span className="spacer" />
-            <span className="small muted num">
-              {m.done ? 'Unlocked' : m.eta ? monthLabel(m.eta, { long: true }) : '—'}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </Card>
   );
 }

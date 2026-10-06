@@ -122,3 +122,17 @@ def test_a_goal_belongs_to_its_own_account(tmp_path, monkeypatch):
     gid = maria.post("/api/goals", json={"name": "Japan", "target": 4000}).get_json()["id"]
     assert sister.get("/api/goals").get_json()["goals"] == []
     assert sister.delete(f"/api/goals/{gid}").status_code == 404
+
+
+def test_goals_come_out_before_investing(tmp_path):
+    from app import create_app
+    app = create_app(str(tmp_path / "inv.db"))
+    c = app.test_client()
+    c.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+    c.put("/api/plan/setup", json={"income": 5200, "savings": 900})
+    c.post("/api/goals", json={"name": "Emergency fund", "target": 10000,
+                               "monthly": 300})
+    body = c.get("/api/projections").get_json()
+    assert body["investing_monthly"] == 600
+    assert body["invested"]["monthly"] == 600
+    assert "levels" not in body

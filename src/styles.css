@@ -1481,7 +1481,7 @@ td { border-top-color: var(--border); }
 .share-note { color: var(--brand); font-size: .78rem; font-weight: 600; margin-top: 2px; }
 .share-edit .chip-btn { padding: 4px 10px; min-width: 38px; }
 
-/* ── Ahead: pace badge, goals, levels ─────────────────────────────────── */
+/* ── Ahead: pace badge and goals ─────────────────────────────────── */
 
 .pace-badge-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
 .pace-badge {
@@ -1529,17 +1529,11 @@ td { border-top-color: var(--border); }
 }
 @media (prefers-reduced-motion: reduce) { .confetti { display: none; } }
 
-.level-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
-.level-name { font-size: 1.6rem; font-weight: 750; letter-spacing: -.03em; }
-.level-balance { font-size: 1.2rem; font-weight: 700; color: var(--ink-2); }
-.stars { font-size: 1.2rem; letter-spacing: 2px; color: var(--surface-3, #ccc); }
-.stars .on { color: var(--warning); }
-.level-next { margin-top: 16px; }
-.milestones { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 10px; }
-.milestones li { display: flex; align-items: center; gap: 10px; color: var(--muted); }
-.milestones li.done { color: var(--ink); font-weight: 600; }
-.milestones .ms-icon {
-  width: 26px; height: 26px; border-radius: 50%; display: inline-grid; place-items: center;
-  background: var(--surface-2); font-size: .8rem; flex: none;
+
+.goal-hint {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  font-size: .86rem; color: var(--ink-2);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  border-radius: 10px; padding: 10px 12px;
 }
-.milestones li.done .ms-icon { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good-text); }
+.goal-hint span { flex: 1 1 220px; }

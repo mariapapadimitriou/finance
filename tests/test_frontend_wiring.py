@@ -331,7 +331,11 @@ class TestLessToRead:
     def test_the_piggy_banks_have_a_title_and_no_tiles(self):
         text = (SRC / "panels" / "PiggyPanel.jsx").read_text(encoding="utf-8")
         assert "<Tile" not in text
-        assert ">\n        Piggy banks\n      </h2>" in text
+        assert ">\n        Piggy banks\n" in text
+        # Piggy banks are for spending; goals (on Ahead) are for keeping.
+        assert "for spending on your cards" in text
+        goals = (SRC / "components" / "Goals.jsx").read_text(encoding="utf-8")
+        assert "for keeping" in goals and "Make it a piggy bank" in goals
 
 
 class TestMonthlyNotWeekly:

@@ -18,15 +18,28 @@ function markCelebrated(id) {
   } catch { /* a celebration per visit, then */ }
 }
 
+// Names that sound like money that will be spent on a card — a trip, a gift.
+// That belongs in a piggy bank, which pays for the charges when they come, so
+// they don't land on the weekly allowance.
+const SPENDING = /\b(trip|travel|vacation|holiday|flights?|hotel|getaway|gifts?|christmas|birthday|wedding|honeymoon|concerts?|festival|tickets?|car repairs?)\b/i;
+
+export function soundsLikeSpending(name) {
+  return SPENDING.test(name || '');
+}
+
 /**
- * Savings goals: something to save for, a ring for how far along it is, and
- * the month it lands. When spending is running under the plan, each goal also
- * says how much sooner that extra would get it there.
+ * Savings goals: money you are keeping — an emergency fund, a down payment —
+ * with a ring for how far along each one is and the month it lands. When
+ * spending is running under the plan, each goal also says how much sooner
+ * that extra would get it there.
  *
- * `onChanged` lets Ahead refresh its levels: what goes to goals each month
- * is what does not go to investing.
+ * Money you will spend on your cards belongs in a piggy bank instead, and a
+ * goal named like one says so.
+ *
+ * `onChanged` lets Ahead refresh: what goes to goals each month is what does
+ * not go to investing.
  */
-export default function Goals({ onChanged }) {
+export default function Goals({ onChanged, onTab }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -58,7 +71,7 @@ export default function Goals({ onChanged }) {
   const room = Math.max((data.saving ?? 0) - (data.to_goals ?? 0), 0);
 
   return (
-    <Card title="Goals"
+    <Card title={<>Goals <span className="small muted" style={{ fontWeight: 500 }}>for keeping</span></>}
           actions={!adding && (
             <button className="btn" onClick={() => setAdding(true)}>+ New goal</button>
           )}>
@@ -73,7 +86,7 @@ export default function Goals({ onChanged }) {
         <div className="goal-empty">
           <div style={{ fontSize: '2rem' }} aria-hidden="true">🎯</div>
           <strong>What are you saving for?</strong>
-          <span className="small muted">A trip, an emergency fund, your first $10k.</span>
+          <span className="small muted">An emergency fund, a down payment, your first $10k.</span>
           <button className="btn primary" onClick={() => setAdding(true)}>
             Set a goal
           </button>
@@ -82,7 +95,7 @@ export default function Goals({ onChanged }) {
 
       {adding && (
         <GoalForm initial={{ monthly: room ? String(Math.round(room)) : '' }}
-                  submitLabel="Add goal"
+                  submitLabel="Add goal" onTab={onTab}
                   onCancel={() => setAdding(false)}
                   onSubmit={async (fields) => {
                     if (await act(addGoal(fields))) setAdding(false);
@@ -91,7 +104,7 @@ export default function Goals({ onChanged }) {
 
       <div className="goal-list">
         {goals.map((g) => (
-          <GoalItem key={g.id} goal={g} ahead={data.ahead}
+          <GoalItem key={g.id} goal={g} ahead={data.ahead} onTab={onTab}
                     onDeposit={(amount) => act(depositToGoal(g.id, amount))}
                     onEdit={(fields) => act(editGoal(g.id, fields))}
                     onDelete={() => act(deleteGoal(g.id))} />
@@ -101,7 +114,7 @@ export default function Goals({ onChanged }) {
   );
 }
 
-function GoalItem({ goal: g, ahead, onDeposit, onEdit, onDelete }) {
+function GoalItem({ goal: g, ahead, onDeposit, onEdit, onDelete, onTab }) {
   const [mode, setMode] = useState(null);          // 'add' | 'edit' | null
   const [amount, setAmount] = useState('');
   const [party, setParty] = useState(false);
@@ -172,7 +185,7 @@ function GoalItem({ goal: g, ahead, onDeposit, onEdit, onDelete }) {
       ) : mode === 'edit' ? (
         <GoalForm initial={{ name: g.name, target: String(g.target),
                              saved: String(g.saved), monthly: String(g.monthly) }}
-                  submitLabel="Save"
+                  submitLabel="Save" onTab={onTab}
                   onCancel={() => setMode(null)}
                   onDelete={onDelete}
                   onSubmit={async (fields) => {
@@ -190,7 +203,7 @@ function GoalItem({ goal: g, ahead, onDeposit, onEdit, onDelete }) {
   );
 }
 
-function GoalForm({ initial, submitLabel, onSubmit, onCancel, onDelete }) {
+function GoalForm({ initial, submitLabel, onSubmit, onCancel, onDelete, onTab }) {
   const [f, setF] = useState({ name: '', target: '', saved: '', monthly: '', ...initial });
   const set = (k) => (e) => setF((d) => ({ ...d, [k]: e.target.value }));
 
@@ -216,6 +229,19 @@ function GoalForm({ initial, submitLabel, onSubmit, onCancel, onDelete }) {
         <input type="number" min="0" step="any" inputMode="decimal"
                value={f.monthly} onChange={set('monthly')} placeholder="250" />
       </label>
+      {soundsLikeSpending(f.name) && (
+        <div className="goal-hint" style={{ gridColumn: '1 / -1' }}>
+          <span>
+            Spending this on your cards? A piggy bank pays for the charges, so
+            they don't count against your weekly allowance.
+          </span>
+          {onTab && (
+            <button className="btn" type="button" onClick={() => onTab('piggy')}>
+              Make it a piggy bank
+            </button>
+          )}
+        </div>
+      )}
       <div className="row" style={{ gap: 8, gridColumn: '1 / -1' }}>
         {onDelete && (
           <button className="btn quiet" type="button" onClick={onDelete}

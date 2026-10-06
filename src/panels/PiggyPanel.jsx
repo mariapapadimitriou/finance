@@ -49,6 +49,9 @@ export default function PiggyPanel({ onTab, version = 0 }) {
     <div className="stack">
       <h2 className="section-title" style={{ cursor: 'default', margin: '8px 0 0' }}>
         Piggy banks
+        <span className="small muted" style={{ fontWeight: 500, marginLeft: 8 }}>
+          for spending on your cards
+        </span>
       </h2>
       {banks.length === 0 ? (
         <>
