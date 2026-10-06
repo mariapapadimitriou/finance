@@ -147,6 +147,8 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
             </div>
           </Card>
 
+          {data.invested_month && <InvestedThisMonth im={data.invested_month} />}
+
           {data.invested && <Invested invested={data.invested} />}
         </>
       )}
@@ -353,5 +355,44 @@ function PaceBadge({ data }) {
         {pm.basis === '30 days' ? ' (last 30 days)' : ` in ${monthLabel(pm.month, { long: true })}`}
       </span>
     </div>
+  );
+}
+
+/**
+ * What actually went into investments this month, beside the saving the plan
+ * asks for: transfers categorised Investments, plus the invested part of any
+ * other transaction.
+ */
+function InvestedThisMonth({ im }) {
+  const target = im.saving ?? 0;
+  const done = target > 0 && im.amount >= target - 0.5;
+  const share = target > 0 ? Math.min(Math.max(im.amount, 0) / target, 1) : 0;
+  return (
+    <Card title="Invested this month">
+      {im.amount > 0 ? (
+        <>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
+            <strong className="num" style={{ fontSize: '1.5rem' }}>{money(im.amount)}</strong>
+            {target > 0 && (
+              <span className="muted">of your {money(target)} saving</span>
+            )}
+            <span className="spacer" />
+            {done && <StatusPill state="good">Done</StatusPill>}
+          </div>
+          {target > 0 && (
+            <div className="track" style={{ background: 'var(--surface-2)', borderRadius: 4,
+                                             height: 8, overflow: 'hidden', marginTop: 10 }}>
+              <div style={{ width: `${share * 100}%`, height: '100%', borderRadius: 4,
+                            background: done ? 'var(--good)' : 'var(--brand)' }} />
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="muted" style={{ margin: 0 }}>
+          Nothing marked as invested yet. Set a transfer's category to
+          Investments, or mark part of one under Split… on Transactions.
+        </p>
+      )}
+    </Card>
   );
 }

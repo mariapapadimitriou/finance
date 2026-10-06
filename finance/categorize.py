@@ -53,13 +53,15 @@ CATEGORIES: dict[str, dict] = {
     "Fees & Interest":  {"essential": False, "discretionary": True},
     "Taxes":            {"essential": True,  "discretionary": False},
     "Cash & ATM":       {"essential": False, "discretionary": False},
+    # Money put into an investment account: saved, not spent.
+    "Investments":      {"essential": False, "discretionary": False},
     "Income":           {"essential": False, "discretionary": False},
     "Transfers":        {"essential": False, "discretionary": False},
     "Other":            {"essential": False, "discretionary": True},
 }
 
 # Categories that are money movement, not consumption. Excluded from spend.
-NON_SPEND = {"Income", "Transfers"}
+NON_SPEND = {"Income", "Transfers", "Investments"}
 
 
 def is_spend_category(category: str) -> bool:
@@ -97,6 +99,16 @@ RULES: list[tuple[str, str]] = [
     (r"\b(annual (membership )?fee|membership fee|card fee)\b", "Fees & Interest"),
     (r"\b(foreign transaction fee|forex fee|fx fee|non-sterling|conversion fee)\b", "Fees & Interest"),
     (r"\b(atm fee|service charge|monthly fee|maintenance fee|overdraft)\b", "Fees & Interest"),
+
+    # Money going into an investment account. Before the transfer rules, which
+    # would otherwise call it a transfer and lose that it was saved. Specific
+    # names only: Wealthsimple also runs a cash account and a card, and a
+    # payment to those is not an investment.
+    (r"\b(questrade|qtrade|interactive brokers|vanguard|fidelity invest\w*|"
+     r"wealthsimple (?:invest\w*|trade)|ws (?:invest\w*|trade)|"
+     r"direct investing|direct brokerage|itrade|investor'?s edge|"
+     r"robinhood|moomoo|(?:tfsa|rrsp|fhsa|resp) (?:contrib\w*|deposit))\b",
+     "Investments"),
 
     # Payments & transfers
     # Card payments come in many spellings; all of them are money moving onto
@@ -296,7 +308,7 @@ AUTHORITATIVE_ISSUER_CATEGORIES = {
     "transfer_in_savings": "Transfers",
     "transfer_out_savings": "Transfers",
     "transfer_in_investment_and_retirement_funds": "Transfers",
-    "transfer_out_investment_and_retirement_funds": "Transfers",
+    "transfer_out_investment_and_retirement_funds": "Investments",
     "income_wages": "Income",
 }
 
@@ -348,7 +360,7 @@ PLAID_CATEGORY_MAP = {
 
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
-RULES_VERSION = 2
+RULES_VERSION = 3
 
 
 def plaid_category(code: str) -> str | None:

@@ -208,6 +208,9 @@ function RecentList({ rows }) {
                 {t.my_share != null && (
                   <div className="c">of {money(t.amount, { cents: true })}</div>
                 )}
+                {t.invested != null && (
+                  <div className="c">invested {money(t.invested, { cents: true })}</div>
+                )}
                 {t.raw && typeof t.raw === 'string' && t.raw.includes('"pending": true') && (
                   <span className="pill">Pending</span>
                 )}

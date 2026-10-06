@@ -361,6 +361,39 @@ def update_transaction(txn_id: str):
     return jsonify({"ok": True, "updated": 1, "scope": "transaction"})
 
 
+@bp.put("/transactions/<txn_id>/invested")
+def set_transaction_invested(txn_id: str):
+    """How much of a transaction went into investments.
+
+    For when only part of it did — a transfer split between an investment
+    account and something else. The rest still counts as whatever it is. A
+    transaction that went to investments in full is categorised Investments
+    instead.
+    """
+    body = request.get_json(silent=True) or {}
+    st = store()
+    txn = st.get_transaction(txn_id)
+    if txn is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if txn.amount <= 0:
+        return jsonify({"error": "Only money going out can be invested."}), 400
+
+    raw = body.get("amount")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        st.set_invested(txn_id, None)
+        return jsonify({"ok": True, "invested": None})
+    try:
+        amount = round(float(raw), 2)
+    except (TypeError, ValueError):
+        return jsonify({"error": "The invested amount has to be a number."}), 400
+    if amount < 0:
+        return jsonify({"error": "The invested amount can't be below zero."}), 400
+    if amount > txn.amount + 0.005:
+        return jsonify({"error": "You can't invest more than the transaction."}), 400
+    st.set_invested(txn_id, amount or None)
+    return jsonify({"ok": True, "invested": st.get_transaction(txn_id).invested})
+
+
 @bp.put("/transactions/<txn_id>/share")
 def set_transaction_share(txn_id: str):
     """How much of a charge was yours, when friends paid you back the rest.
@@ -1075,6 +1108,13 @@ def projection():
     # been inferred from payroll landing on an imported card. This one is the
     # figure you typed, and is null until you do.
     result["configured_income"] = income
+    # What actually went into investments this month, beside the saving the
+    # plan asks for — whether you put away what you meant to.
+    from .analytics import invested_in
+    this_month = _today_iso()[:7]
+    result["invested_month"] = {"month": this_month,
+                                "amount": invested_in(txns, this_month),
+                                "saving": round(saved_savings, 2)}
     return jsonify(result)
 
 

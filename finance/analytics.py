@@ -23,7 +23,11 @@ from .models import Transaction
 def share_amount(t: Transaction) -> float:
     """What a charge cost you: your share of it when friends paid you back
     for the rest, otherwise the whole charge."""
-    return t.amount if t.my_share is None else t.my_share
+    base = t.amount if t.my_share is None else t.my_share
+    if t.invested:
+        # The part that went into investments was saved, not spent.
+        return round(max(base - t.invested, 0.0), 2)
+    return base
 
 
 def spend_amount(t: Transaction) -> float:
@@ -60,7 +64,7 @@ def counts_as_spending(t: Transaction) -> bool:
         return False
     # A partly covered charge still counts, for the part nobody budgeted. A
     # charge friends paid back in full counts for nothing at all.
-    if t.bank_id is None and t.my_share is None:
+    if t.bank_id is None and t.my_share is None and not t.invested:
         return True
     return abs(spend_amount(t)) >= 0.005
 
@@ -77,7 +81,8 @@ def spend_only(transactions: list[Transaction]) -> list[Transaction]:
     for t in transactions:
         if not counts_as_spending(t):
             continue
-        adjusted = t.bank_id is not None or t.my_share is not None
+        adjusted = (t.bank_id is not None or t.my_share is not None
+                    or bool(t.invested))
         out.append(replace(t, amount=spend_amount(t)) if adjusted else t)
     return out
 
@@ -233,6 +238,24 @@ def typical_month_spend(transactions: list[Transaction],
     if not rows:
         return 0.0
     return round(statistics.median([m["spend"] for m in rows]), 2)
+
+
+def invested_in(transactions: list[Transaction], month: str) -> float:
+    """What went into investments in a month.
+
+    A transaction categorised Investments counts in full (money taken back
+    out, as a negative, reduces it). Any other transaction counts the part
+    marked as invested. A row is never counted both ways.
+    """
+    total = 0.0
+    for t in transactions:
+        if t.month != month:
+            continue
+        if (t.category or "") == "Investments":
+            total += t.amount
+        elif t.invested:
+            total += t.invested
+    return round(total, 2)
 
 
 def by_category(transactions: list[Transaction], month: str | None = None) -> list[dict]:
