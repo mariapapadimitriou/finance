@@ -1310,6 +1310,17 @@ class Store:
                 (item_id, token, institution),
             )
 
+    def rewind_plaid_cursor(self, item_id: str) -> None:
+        """Make the next sync fetch this bank's whole history again.
+
+        For an account switched back on: its rows were dropped while it was
+        off, and the cursor moved past them, so without this they would never
+        arrive. Rows already stored are skipped on the way in.
+        """
+        with self.conn() as c:
+            c.execute("UPDATE plaid_items SET cursor = NULL WHERE item_id = ?",
+                      (item_id,))
+
     def set_plaid_cursor(self, item_id: str, cursor: str) -> None:
         with self.conn() as c:
             c.execute(

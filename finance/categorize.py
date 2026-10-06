@@ -290,7 +290,76 @@ AUTHORITATIVE_ISSUER_CATEGORIES = {
     "loan_payments_credit_card_payment": "Transfers",
     "transfer_in_account_transfer": "Transfers",
     "transfer_out_account_transfer": "Transfers",
+    # Money moving between your own accounts and your pay, as a chequing
+    # account sees them. None of it is spending, whatever the description
+    # happens to contain.
+    "transfer_in_savings": "Transfers",
+    "transfer_out_savings": "Transfers",
+    "transfer_in_investment_and_retirement_funds": "Transfers",
+    "transfer_out_investment_and_retirement_funds": "Transfers",
+    "income_wages": "Income",
 }
+
+# Plaid's own categories (`personal_finance_category`), which every connected
+# account carries. Looked up by the detailed code first, then by the longest
+# prefix — usually the primary group — so a code Plaid adds later still lands
+# in its group. Before this, only the first word of each code was tried
+# ("food", "general", "rent"…), which matched almost nothing, and most of a
+# connected account fell through to Other.
+PLAID_CATEGORY_MAP = {
+    "FOOD_AND_DRINK": "Dining",
+    "FOOD_AND_DRINK_GROCERIES": "Groceries",
+    "FOOD_AND_DRINK_COFFEE": "Coffee",
+    "FOOD_AND_DRINK_BEER_WINE_AND_LIQUOR": "Alcohol & Bars",
+    "GENERAL_MERCHANDISE": "Shopping",
+    "GENERAL_MERCHANDISE_PET_SUPPLIES": "Pets",
+    "GENERAL_MERCHANDISE_GIFTS_AND_NOVELTIES": "Gifts & Charity",
+    "HOME_IMPROVEMENT": "Home",
+    "MEDICAL": "Health",
+    "MEDICAL_VETERINARY_SERVICES": "Pets",
+    "PERSONAL_CARE": "Personal Care",
+    "PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS": "Fitness",
+    "ENTERTAINMENT": "Entertainment",
+    "ENTERTAINMENT_MUSIC_AND_AUDIO": "Streaming",
+    "TRANSPORTATION": "Transport",
+    "TRANSPORTATION_GAS": "Gas & Fuel",
+    "TRAVEL": "Travel",
+    "TRAVEL_LODGING": "Lodging",
+    "RENT_AND_UTILITIES": "Utilities",
+    "RENT_AND_UTILITIES_RENT": "Rent & Housing",
+    "RENT_AND_UTILITIES_TELEPHONE": "Phone & Internet",
+    "RENT_AND_UTILITIES_INTERNET_AND_CABLE": "Phone & Internet",
+    "GENERAL_SERVICES": "Other",
+    "GENERAL_SERVICES_INSURANCE": "Insurance",
+    "GENERAL_SERVICES_EDUCATION": "Education",
+    "GENERAL_SERVICES_AUTOMOTIVE": "Transport",
+    "GENERAL_SERVICES_STORAGE": "Home",
+    "GOVERNMENT_AND_NON_PROFIT": "Taxes",
+    "GOVERNMENT_AND_NON_PROFIT_DONATIONS": "Gifts & Charity",
+    "BANK_FEES": "Fees & Interest",
+    "LOAN_PAYMENTS": "Transfers",
+    "LOAN_PAYMENTS_MORTGAGE_PAYMENT": "Rent & Housing",
+    "LOAN_PAYMENTS_CAR_PAYMENT": "Transport",
+    "INCOME": "Income",
+    "TRANSFER_IN": "Transfers",
+    "TRANSFER_OUT": "Transfers",
+    "TRANSFER_OUT_WITHDRAWAL": "Cash & ATM",
+}
+
+# Bumped whenever the rules above change enough that what is already in the
+# ledger should be sorted again; the next sync does it once.
+RULES_VERSION = 2
+
+
+def plaid_category(code: str) -> str | None:
+    """A Plaid category code as a Spendie category, or None if it isn't one."""
+    code = (code or "").strip().upper().replace(" ", "_")
+    if not code:
+        return None
+    if code in PLAID_CATEGORY_MAP:
+        return PLAID_CATEGORY_MAP[code]
+    prefixes = [k for k in PLAID_CATEGORY_MAP if code.startswith(k + "_")]
+    return PLAID_CATEGORY_MAP[max(prefixes, key=len)] if prefixes else None
 
 # The issuer's own label, when we have nothing better to go on.
 ISSUER_CATEGORY_MAP = {
@@ -363,6 +432,9 @@ def categorize(merchant: str, description: str = "", issuer_category: str = "",
             return category, "rule"
 
     if issuer_category:
+        mapped = plaid_category(issuer_category)
+        if mapped:
+            return mapped, "issuer"
         mapped = ISSUER_CATEGORY_MAP.get(issuer_category.strip().lower())
         if mapped:
             return mapped, "issuer"

@@ -3,7 +3,7 @@ import {
   Card, ErrorNote, GoTo, Loading, Notice, StatusPill, } from '../components/ui.jsx';
 import {
   dateLabel, deleteAccount, getAccounts, getDuplicateAudit, getLedgerStart,
-  money, recategorizeAll, resetLedger, setAccountSync, setLedgerStart,
+  money, recategorizeAll, resetLedger, setAccountSync, setLedgerStart, syncPlaid,
 } from '../api.js';
 
 /**
@@ -24,6 +24,8 @@ export default function AccountsPanel({ onChanged, onTab }) {
   const [audit, setAudit] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  // The account whose history is being fetched after switching it on.
+  const [syncing, setSyncing] = useState(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -67,7 +69,13 @@ export default function AccountsPanel({ onChanged, onTab }) {
     setBusy(true);
     setError(null);
     try {
-      await setAccountSync(account.account_id, enabled);
+      const r = await setAccountSync(account.account_id, enabled);
+      // Switched on after being off: its history was skipped while it was
+      // off, so fetch it now rather than at the next app open.
+      if (r?.resync) {
+        setSyncing(account.account_id);
+        try { await syncPlaid(); } finally { setSyncing(null); }
+      }
       await load();
       await onChanged?.();
     } catch (e) {
@@ -108,15 +116,8 @@ export default function AccountsPanel({ onChanged, onTab }) {
 
       {syncingNotCards.length > 0 && (
         <Notice>
-          <strong>
-            {syncingNotCards.length} account
-            {syncingNotCards.length === 1 ? ' that is' : 's that are'} not a
-            credit card {syncingNotCards.length === 1 ? 'is' : 'are'} set to
-            sync.
-          </strong>{' '}
-          A chequing account records the payment that settles the card, so
-          counting both counts the same money twice. Switch Sync off below for
-          anything you didn&apos;t mean to include.
+          Chequing works too: card payments, transfers between your accounts
+          and pay are kept out of spending.
         </Notice>
       )}
 
@@ -160,7 +161,7 @@ export default function AccountsPanel({ onChanged, onTab }) {
                         <input type="checkbox" checked={a.syncs} disabled={busy}
                                onChange={(e) => toggleSync(a, e.target.checked)} />
                         <span className="small">
-                          {a.syncs ? 'On' : 'Off'}
+                          {syncing === a.account_id ? 'Syncing…' : a.syncs ? 'On' : 'Off'}
                           {a.decided_by === 'user' && (
                             <span className="muted"> · your choice</span>
                           )}
