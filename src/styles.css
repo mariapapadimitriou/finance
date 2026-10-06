@@ -1493,3 +1493,15 @@ td { border-top-color: var(--border); }
 
 
 
+
+/* The arrows either side of the week's title on the Allowance card. */
+.week-nav { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.week-arrow {
+  width: 36px; height: 36px; flex: none; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--ink); font-size: 1.35rem; line-height: 1; cursor: pointer;
+  display: inline-grid; place-items: center; padding: 0 0 2px;
+}
+.week-arrow:hover:not(:disabled) { background: var(--surface-2); }
+.week-arrow:disabled { opacity: .35; cursor: default; }
+.hero-card .ring-head { flex-wrap: wrap; row-gap: 8px; }

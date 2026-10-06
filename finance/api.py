@@ -844,6 +844,51 @@ def _plan_state(st, month: str) -> dict:
     return spend_plan.compute(txns, amount, month, covered=st.covered_in(month))
 
 
+@bp.get("/plan/week")
+def plan_week():
+    """One week's result, as it finished — the arrows on the Allowance card.
+
+    The same arithmetic as the live card (`spend_plan.compute`), asked as of
+    the week's last day, so a past week shows exactly what it ended on.
+    Weeks run Monday to Sunday and stop at a month's edge, so the week before
+    a month's first one is the previous month's last.
+    """
+    from datetime import date, timedelta
+
+    try:
+        on = date.fromisoformat(request.args.get("on") or "")
+    except ValueError:
+        return jsonify({"error": "Ask for a date as YYYY-MM-DD."}), 400
+    today = date.today()
+    if on > today:
+        return jsonify({"error": "That week hasn't happened yet."}), 400
+
+    st = store()
+    txns = st.all_transactions()
+    amount, _ = _allowance(st, txns)
+    month = on.strftime("%Y-%m")
+    first, last = spend_plan.week_bounds(month, on.day)
+    start, end = on.replace(day=first), on.replace(day=last)
+    state = spend_plan.compute(txns, amount, month, today=min(end, today),
+                               covered=st.covered_in(month))
+
+    earliest = min((t.date for t in txns), default=None)
+    before = start - timedelta(days=1)
+    live_month = today.strftime("%Y-%m")
+    live_first = today.replace(day=spend_plan.week_bounds(live_month, today.day)[0])
+    after = end + timedelta(days=1)
+    return jsonify({
+        "month": month,
+        "week": state["week"],
+        "remaining": state["remaining"],
+        "done": end < today,
+        "previous": (before.isoformat()
+                     if earliest and before.isoformat() >= earliest else None),
+        # Null when the next week is the one under way: the live card has it.
+        "next": after.isoformat() if after < live_first else None,
+    })
+
+
 def _derivation(st, txns, allowance: float, from_plan: bool) -> dict:
     """How the Plan tab's leftover becomes Today's weekly number.
 
