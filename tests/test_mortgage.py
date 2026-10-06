@@ -404,11 +404,6 @@ class TestYourShareInThePlan:
         saved = client.get("/api/mortgage").get_json()["saved"]
         assert saved["share_mode"] == "amount" and saved["share_value"] == 1500
 
-    def test_retirement_takes_out_your_share(self, client):
-        client.put("/api/mortgage", json={**MORTGAGE, "share_value": 50})
-        m_ = client.get("/api/coastfire").get_json()["defaults"]["mortgage"]
-        assert m_["monthly"] == pytest.approx(1454.02, abs=0.01)
-
 
 # ── What was typed stays what was typed ──────────────────────────────────────
 

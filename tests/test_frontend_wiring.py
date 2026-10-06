@@ -5,7 +5,7 @@ here, and the alternative to a static check was no check at all — for a class
 of bug that is invisible in review and looks, in the browser, like a button that
 does nothing.
 
-The navigation has two levels now: five groups in the sidebar, each holding one
+The navigation has two levels now: four groups in the sidebar, each holding one
 or more panels behind a section switcher. Panels still link to each other by
 panel key, which only works because `resolve` maps a panel key back to the group
 that owns it — so the checks below are mostly about that mapping staying whole.
@@ -315,13 +315,13 @@ class TestPicturesNotArithmetic:
 
 
 class TestLessToRead:
-    def test_cut_back_is_one_feed(self, groups, aliases, panels):
-        """Cut back is a feed of insights. Subscriptions are cards in it, and
-        what still links to them by name lands there."""
-        assert groups["savings"] == ["savings"]
-        assert "subscriptions" not in panels
-        assert aliases.get("subscriptions") == "savings"
-        assert not (SRC / "panels" / "SubscriptionsPanel.jsx").exists()
+    def test_cut_back_and_retirement_are_gone(self, groups, aliases, panels):
+        assert "savings" not in groups and "savings" not in panels
+        assert "subscriptions" not in aliases
+        assert "retirement" not in panels
+        assert "retirement" not in groups["plan"]
+        for name in ("SavingsPanel.jsx", "RetirementPanel.jsx", "SubscriptionsPanel.jsx"):
+            assert not (SRC / "panels" / name).exists()
 
     def test_the_allowance_card_is_folded_into_the_month(self):
         text = (SRC / "panels" / "TodayPanel.jsx").read_text(encoding="utf-8")

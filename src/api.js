@@ -124,11 +124,6 @@ export const deleteMortgage  = () => req('/api/mortgage', { method: 'DELETE' });
 export const compareMortgage = (terms, options) =>
   json('POST', '/api/mortgage/compare', { ...terms, ...options });
 
-// Retirement: the CoastFIRE calculator. Saved, but changes nothing else.
-export const getCoastfire     = () => req('/api/coastfire');
-export const previewCoastfire = (inputs) => json('POST', '/api/coastfire/preview', inputs);
-export const saveCoastfire    = (inputs) => json('PUT', '/api/coastfire', inputs);
-export const clearCoastfire   = () => req('/api/coastfire', { method: 'DELETE' });
 
 // The money plan: income in, commitments and savings out, the rest budgeted.
 export const getPlanSetup    = () => req('/api/plan/setup');
