@@ -98,6 +98,29 @@ def _session_key(base: Store) -> bytes:
                           + users.stored_secret(base, "session").encode()).digest()
 
 
+_BUNDLED_IDS: set[str] | None = None
+
+
+def _bundled_fingerprints() -> set[str]:
+    """Every row in the statements shipped with the app, by fingerprint."""
+    global _BUNDLED_IDS
+    if _BUNDLED_IDS is None:
+        from finance.ingest import parse_csv
+        from seed_data.bundled import BUNDLED, read
+        ids: set[str] = set()
+        for entry in BUNDLED:
+            try:
+                text, entry = read(entry["key"])
+            except (KeyError, FileNotFoundError):
+                continue
+            result = parse_csv(content=text, filename=entry["file"],
+                               account_name=entry["account_name"],
+                               account_id=entry["account_id"])
+            ids.update(t.fingerprint for t in result.transactions)
+        _BUNDLED_IDS = ids
+    return _BUNDLED_IDS
+
+
 def _install_auth(app: Flask) -> None:
     base: Store = app.config["STORE"]
     users.bootstrap_owner(base)
@@ -134,7 +157,13 @@ def _install_auth(app: Flask) -> None:
         stores = app.config["STORES"]
         if user.id not in stores:
             path, schema = users.ledger_location(base.path, user)
-            stores[user.id] = Store(path, base.url, schema)
+            st = Store(path, base.url, schema)
+            # The bundled statements are the owner's card. They were once
+            # offered to every account, so a copy loaded into another ledger
+            # is removed the first time that ledger is opened — row by row,
+            # by fingerprint, so nothing of the account's own is touched.
+            st.forget_rows(_bundled_fingerprints(), import_suffix="(bundled)")
+            stores[user.id] = st
         return stores[user.id]
 
     app.config["STORE_FOR"] = store_for

@@ -639,6 +639,28 @@ class Store:
                     "type": kind, "subtype": raw.get("account_subtype", "")}
         return out
 
+    def forget_rows(self, ids: set[str], import_suffix: str = "") -> int:
+        """Delete these exact rows, and the import records named with the
+        suffix. Used to take out a copy of something that should never have
+        been loaded here."""
+        if not ids:
+            return 0
+        removed = 0
+        ids = list(ids)
+        with self.conn() as c:
+            for i in range(0, len(ids), 500):
+                chunk = ids[i:i + 500]
+                marks = ",".join("?" * len(chunk))
+                cur = c.execute(f"DELETE FROM transactions WHERE id IN ({marks})", chunk)
+                removed += max(cur.rowcount or 0, 0)
+                for table in ("txn_shares", "txn_invested", "piggy_allocations",
+                              "piggy_optouts"):
+                    c.execute(f"DELETE FROM {table} WHERE txn_id IN ({marks})", chunk)
+            if import_suffix:
+                c.execute("DELETE FROM imports WHERE filename LIKE ?",
+                          (f"%{import_suffix}",))
+        return removed
+
     def clear_transactions(self, account_id: str | None = None) -> int:
         # Import history goes with the transactions it describes; left behind,
         # it lists files whose data no longer exists.

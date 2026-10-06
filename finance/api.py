@@ -215,10 +215,20 @@ def import_files():
     })
 
 
+def _may_use_bundled() -> bool:
+    """The bundled statements are the owner's own card. Nobody else's ledger
+    may see or load them; with no sign-in (a local copy) there is only one."""
+    from flask import g
+    user = g.get("user")
+    return user is None or bool(user.owner)
+
+
 @bp.get("/import/bundled")
 def bundled_available():
     """Statement sets shipped with the app, and whether each is already loaded."""
     from seed_data.bundled import available
+    if not _may_use_bundled():
+        return jsonify({"bundled": []})
     s = store()
     loaded = {a["account_id"] for a in s.accounts()}
     return jsonify({"bundled": [{**b, "loaded": b["account_id"] in loaded}
@@ -237,6 +247,8 @@ def bundled_import():
     """
     from seed_data.bundled import read
 
+    if not _may_use_bundled():
+        return jsonify({"error": "These statements belong to another account."}), 403
     key = (request.get_json(silent=True) or {}).get("key", "")
     try:
         text, entry = read(key)
