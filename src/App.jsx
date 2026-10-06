@@ -3,9 +3,7 @@ import OverviewPanel from './panels/OverviewPanel.jsx';
 import TodayPanel from './panels/TodayPanel.jsx';
 import PiggyPanel from './panels/PiggyPanel.jsx';
 import MortgagePanel from './panels/MortgagePanel.jsx';
-import RetirementPanel from './panels/RetirementPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
-import SavingsPanel from './panels/SavingsPanel.jsx';
 import TransactionsPanel from './panels/TransactionsPanel.jsx';
 import BudgetsPanel from './panels/BudgetsPanel.jsx';
 import TripsPanel from './panels/TripsPanel.jsx';
@@ -20,7 +18,7 @@ import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
-  getAccounts, getAuthStatus, getCategories, getInsights, getRecurring,
+  getAccounts, getAuthStatus, getCategories, getInsights,
   getSummary, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
   syncPlaid,
 } from './api.js';
@@ -154,15 +152,15 @@ export default function App() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [summary, insights, recurring, accounts, categories] = await Promise.all([
-        getSummary(), getInsights(), getRecurring(), getAccounts(), getCategories(),
+      const [summary, insights, accounts, categories] = await Promise.all([
+        getSummary(), getInsights(), getAccounts(), getCategories(),
       ]);
       // Before anything is drawn: every figure in the app is formatted with
       // this, and a wrong default is how the whole ledger came to read as
       // US dollars.
       setLedgerCurrency(summary.currency);
       setData({
-        summary, insights, recurring,
+        summary, insights,
         accounts: accounts.accounts ?? [],
         categories: categories.categories ?? [],
       });
@@ -224,8 +222,7 @@ export default function App() {
     return <Shell theme={theme} setTheme={setTheme}><Loading what="your spending" /></Shell>;
   }
 
-  const { summary, insights, recurring, accounts, categories } = data;
-  const findingCount = insights?.findings?.length ?? 0;
+  const { summary, insights, accounts, categories } = data;
 
   // Your pick wins while the month still exists — clearing a card or an account
   // can remove it — and otherwise both fall back to the data, so an import that
@@ -248,8 +245,7 @@ export default function App() {
   // looks exactly like a button that does nothing.
   if (summary.empty && !WORKS_WHEN_EMPTY.includes(panel)) {
     return (
-      <Shell theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
-             findingCount={findingCount}>
+      <Shell theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}>
         <Empty title="No spending yet">
           <div className="row" style={{ justifyContent: 'center', marginTop: 14 }}>
             <button className="btn primary" onClick={() => go('banks')}>
@@ -267,7 +263,6 @@ export default function App() {
   return (
     <Shell
       theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
-      findingCount={findingCount}
       months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
@@ -291,14 +286,11 @@ export default function App() {
                        month={shownMonth} onMonth={setMonth} onTab={go}
                        version={version} />
       )}
-      {panel === 'savings' && <SavingsPanel insights={insights} recurring={recurring}
-                                          onRefresh={load} onTab={go} />}
       {panel === 'projections' && (
         <ProjectionsPanel insights={insights} onTab={go} onChanged={load}
                          version={version} />
       )}
       {panel === 'mortgage' && <MortgagePanel onChanged={load} onTab={go} />}
-      {panel === 'retirement' && <RetirementPanel onTab={go} />}
       {panel === 'transactions' && (
         <TransactionsPanel summary={summary} categories={categories}
                            accounts={accounts} onChanged={load} />
@@ -322,7 +314,7 @@ export default function App() {
   );
 }
 
-function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
+function Shell({ theme, setTheme, tab, panel, onTab,
                  months = [], month, onMonth, showMonth = false, onSignOut,
                  children }) {
   const group = GROUPS.find((g) => g.key === tab);
@@ -397,9 +389,6 @@ function Shell({ theme, setTheme, tab, panel, onTab, findingCount = 0,
               >
                 <Icon d={g.icon} />
                 <Label full={g.label} short={g.short} />
-                {g.key === 'savings' && findingCount > 0 && (
-                  <span className="count">{findingCount}</span>
-                )}
               </button>
             ))}
           </nav>

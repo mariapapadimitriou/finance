@@ -29,10 +29,6 @@ export const PANELS = {
                    hint: 'What saving more gets you — this year, and invested' },
   mortgage:      { label: 'Mortgage',
                    hint: 'What it costs a month, when it ends, and how much is interest' },
-  retirement:    { label: 'Retirement', short: 'Retire',
-                   hint: 'CoastFIRE — when saving for retirement could stop' },
-  savings:       { label: 'Cut back',
-                   hint: 'What could be cut, and what is worth knowing' },
   transactions:  { label: 'Every charge',
                    hint: 'Searchable, correctable, chargeable to a piggy bank' },
   trips:         { label: 'Trips',
@@ -49,7 +45,7 @@ export const PANELS = {
                    hint: 'Which categories share one line in your budget' },
 };
 
-// The five destinations. A group holding one panel shows no sub-navigation.
+// The four destinations. A group holding one panel shows no sub-navigation.
 //
 // A group's label is what the sidebar says, so it has to be what you find
 // when you click it. "Overview" opened a page titled This month; "Savings"
@@ -66,12 +62,9 @@ export const GROUPS = [
     icon: 'M12 3a9 9 0 1 0 9 9M12 3a9 9 0 0 1 9 9M12 3v9h9' },
   // Looking ahead sits with the plan, not with the history: it is the plan
   // run forward, and the savings figure it offers to move is the plan's.
-  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections', 'mortgage', 'retirement'],
+  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections', 'mortgage'],
     hint: 'What you earn, what it is promised to, how the rest divides, and where that leads',
     icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
-  { key: 'savings', label: 'Cut back', panels: ['savings'],
-    hint: 'What could be cut, and what is worth knowing',
-    icon: 'M12 3v18M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
   { key: 'transactions', label: 'Transactions', short: 'Charges',
     panels: ['transactions', 'trips'],
     hint: 'Every charge, and the date ranges that reclassify them',
@@ -89,9 +82,7 @@ export const GROUPS = [
 // across the app and from the insights, which carry a tab name in their data.
 // Piggy banks are a card on the Plan page now — they are already a term in its
 // arithmetic — so a link to them is a link there.
-// Subscriptions were a page of their own; they are insights in the Cut back
-// feed now, and the plan's observations still link to them by that name.
-export const ALIASES = { piggy: 'plan', subscriptions: 'savings' };
+export const ALIASES = { piggy: 'plan' };
 
 // Where on that page the aliased thing actually is. Without this a link to a
 // piggy bank lands at the top of a long page with no sign of one, which is
@@ -100,7 +91,7 @@ export const ANCHORS = { piggy: 'piggy-banks' };
 
 // What an alias is called in a sentence, since it has no panel label of its
 // own to borrow.
-const ALIAS_LABELS = { piggy: 'Piggy banks', subscriptions: 'Cut back' };
+const ALIAS_LABELS = { piggy: 'Piggy banks' };
 
 /**
  * Turn a group key or a panel key into both.
