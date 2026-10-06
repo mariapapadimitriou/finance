@@ -96,6 +96,8 @@ export const getTripSuggestions = () => req('/api/trips/suggestions');
 export const updateTrip      = (id, trip) => json('PATCH', `/api/trips/${id}`, trip);
 export const deleteTrip      = (id) => req(`/api/trips/${id}`, { method: 'DELETE' });
 
+// One past week as it finished — the arrows on the Allowance card.
+export const getWeek         = (on) => req(`/api/plan/week?on=${encodeURIComponent(on)}`);
 export const getPlan         = (month) =>
   req(`/api/plan${month ? `?month=${month}` : ''}`);
 export const simulateSpend   = (amount, month) =>

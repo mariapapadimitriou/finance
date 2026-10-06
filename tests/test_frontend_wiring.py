@@ -360,7 +360,9 @@ class TestAllowanceOpensOnTheWeek:
 
     def test_the_week_says_which_dates_it_covers(self):
         text = (SRC / "panels" / "TodayPanel.jsx").read_text(encoding="utf-8")
-        assert "weekDates(state.month, week)" in text
+        assert "weekDates(month, week)" in text
+        # And the arrows step through past weeks.
+        assert 'aria-label="Previous week"' in text and "getWeek(" in text
 
 
 class TestAccountsInTheApp:

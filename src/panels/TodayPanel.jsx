@@ -3,7 +3,7 @@ import {
   Card, ErrorNote, Loading, StatusPill, } from '../components/ui.jsx';
 import { Donut, RingLegend, RingRow } from '../components/Ring.jsx';
 import {
-  getPlan, money, monthLabel, simulateSpend, undoDraw,
+  getPlan, getWeek, money, monthLabel, simulateSpend, undoDraw,
 } from '../api.js';
 
 /**
@@ -13,6 +13,22 @@ import {
 export default function TodayPanel({ month, onTab, version = 0 }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  // The week the card shows: null is the live one; otherwise a date inside a
+  // past week, and `past` is that week as it finished.
+  const [weekOn, setWeekOn] = useState(null);
+  const [past, setPast] = useState(null);
+
+  // A different month on the picker starts from its own week again.
+  useEffect(() => { setWeekOn(null); setPast(null); }, [month]);
+
+  useEffect(() => {
+    if (!weekOn) { setPast(null); return undefined; }
+    let cancelled = false;
+    getWeek(weekOn)
+      .then((d) => { if (!cancelled) setPast(d); })
+      .catch((e) => { if (!cancelled) setError(e); });
+    return () => { cancelled = true; };
+  }, [weekOn, version]);
 
   // `version` is in the dependency list on purpose: it changes when a statement
   // is imported, and the plan has to be recomputed against the new ledger even
@@ -42,7 +58,16 @@ export default function TodayPanel({ month, onTab, version = 0 }) {
     <div className="stack">
       <ErrorNote error={error} onRetry={load} />
 
-      <SafeToSpend state={state} live={live} />
+      {past ? (
+        <SafeToSpend week={past.week} month={past.month} remaining={past.remaining}
+                     budget={state.budget} past
+                     onPrev={past.previous ? () => setWeekOn(past.previous) : null}
+                     onNext={() => setWeekOn(past.next ?? null)} />
+      ) : (
+        <SafeToSpend week={state.week} month={state.month} remaining={state.remaining}
+                     budget={state.budget} live={live}
+                     onPrev={() => setWeekOn(dayBefore(state.month, state.week.first_day))} />
+      )}
       <ThisMonth status={status} state={state} live={live}
                  total={data.spent_in_total} fromBanks={data.from_banks} />
       <CanIBuyThis month={state.month} />
@@ -52,6 +77,12 @@ export default function TodayPanel({ month, onTab, version = 0 }) {
                   onChanged={load} />
     </div>
   );
+}
+
+/** The day before `day` of `month`, as YYYY-MM-DD — across a month edge too. */
+function dayBefore(month, day) {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, day - 1)).toISOString().slice(0, 10);
 }
 
 /** "Oct 5–11", or "Oct 31" for a one-day week. */
@@ -65,11 +96,11 @@ function weekDates(month, week) {
 
 /* ── The number ──────────────────────────────────────────────────────────── */
 
-function SafeToSpend({ state, live }) {
+function SafeToSpend({ week, month, remaining, budget, live, past, onPrev, onNext }) {
   // What is left of this week, as a ring: the week's money all the way round,
   // what has been spent drawn on it. A shortfall from earlier in the month is
-  // spread over the weeks that remain rather than dumped on this one.
-  const week = state.week;
+  // spread over the weeks that remain rather than dumped on this one. A past
+  // week (the arrows) is the same card, as it finished.
   const left = week.left;
   const over = left < 0;
   const behind = week.behind;
@@ -80,12 +111,28 @@ function SafeToSpend({ state, live }) {
   return (
     <Card className={`hero-card${over ? ' behind' : ''}`}>
       <div className="ring-head">
-        <h2>
-          {live ? 'This week'
-                : `Last week of ${monthLabel(state.month, { long: true })}`}
-          <span className="week-dates"> · {weekDates(state.month, week)}</span>
-        </h2>
-        {over ? (
+        <div className="week-nav">
+          <button className="week-arrow" onClick={onPrev} disabled={!onPrev}
+                  aria-label="Previous week">‹</button>
+          {past ? (
+            <h2>{weekDates(month, week)}</h2>
+          ) : (
+            <h2>
+              {live ? 'This week' : `Last week of ${monthLabel(month, { long: true })}`}
+              <span className="week-dates"> · {weekDates(month, week)}</span>
+            </h2>
+          )}
+          {onNext && (
+            <button className="week-arrow" onClick={onNext} aria-label="Next week">›</button>
+          )}
+        </div>
+        {past ? (
+          over
+            ? <StatusPill state="critical">Over by {money(-left, { cents: true })}</StatusPill>
+            : left >= 0.005
+              ? <StatusPill state="good">Under by {money(left, { cents: true })}</StatusPill>
+              : <StatusPill state="good">On budget</StatusPill>
+        ) : over ? (
           <StatusPill state="critical">Over by {money(-left, { cents: true })}</StatusPill>
         ) : behind ? (
           <StatusPill state="warning">Catching up</StatusPill>
@@ -117,9 +164,13 @@ function SafeToSpend({ state, live }) {
         {live && !over && week.days_left > 1 && (
           <><strong className="num">{money(week.per_day, { cents: true })}</strong> a day · </>
         )}
-        {state.remaining < 0
-          ? `${money(-state.remaining, { cents: true })} past the month's ${money(state.budget)}`
-          : `${money(state.remaining, { cents: true })} left this month`}
+        {past
+          ? (over ? `Ended ${money(-left, { cents: true })} over`
+                  : left >= 0.005 ? `Ended with ${money(left, { cents: true })} left`
+                    : 'Ended right on budget')
+          : remaining < 0
+            ? `${money(-remaining, { cents: true })} past the month's ${money(budget)}`
+            : `${money(remaining, { cents: true })} left this month`}
       </div>
     </Card>
   );
