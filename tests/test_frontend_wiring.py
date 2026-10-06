@@ -5,7 +5,7 @@ here, and the alternative to a static check was no check at all — for a class
 of bug that is invisible in review and looks, in the browser, like a button that
 does nothing.
 
-The navigation has two levels now: six groups in the sidebar, each holding one
+The navigation has two levels now: five groups in the sidebar, each holding one
 or more panels behind a section switcher. Panels still link to each other by
 panel key, which only works because `resolve` maps a panel key back to the group
 that owns it — so the checks below are mostly about that mapping staying whole.
@@ -332,10 +332,7 @@ class TestLessToRead:
         text = (SRC / "panels" / "PiggyPanel.jsx").read_text(encoding="utf-8")
         assert "<Tile" not in text
         assert ">\n        Piggy banks\n" in text
-        # Piggy banks are for spending; goals (on Ahead) are for keeping.
         assert "for spending on your cards" in text
-        goals = (SRC / "components" / "Goals.jsx").read_text(encoding="utf-8")
-        assert "for keeping" in goals and "Make it a piggy bank" in goals
 
 
 class TestMonthlyNotWeekly:
@@ -389,3 +386,12 @@ class TestTheSetupChecklistGoesSomewhereReal:
         valid = panels | set(groups) | set(aliases)
         bad = {s["id"]: s["tab"] for s in steps if s["tab"] not in valid}
         assert not bad, f"setup steps pointing nowhere: {bad}"
+
+
+class TestThisMonthLivesUnderAllowance:
+    def test_allowance_holds_this_month_and_it_has_no_group_of_its_own(self):
+        nav = (SRC / "nav.js").read_text(encoding="utf-8")
+        groups = nav[nav.index("export const GROUPS = ["):]
+        groups = groups[:groups.index("\n];")]
+        assert "{ key: 'today', label: 'Allowance', panels: ['today', 'overview']" in groups
+        assert "key: 'overview'" not in groups

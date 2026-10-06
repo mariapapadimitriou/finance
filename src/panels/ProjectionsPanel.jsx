@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import Chart from '../components/Chart.jsx';
 import {
   Card, ErrorNote, GoTo, Loading, Notice, StatusPill, } from '../components/ui.jsx';
-import Goals from '../components/Goals.jsx';
 import { getProjections, money, monthLabel, saveSavings } from '../api.js';
 import { investedConfig, projectionConfig } from '../charts.js';
 
@@ -11,7 +10,7 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
                      'December'];
 
 /**
- * Ahead: the plan against your current pace, and the goals you are saving for.
+ * Ahead: the plan against your current pace, and what saving gets you.
  *
  * *Plan* is what the plan puts away. *Current pace* is that plus whatever this
  * month's spending, carried to its end, leaves of the budget — so the gap
@@ -147,10 +146,6 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
               </span>
             </div>
           </Card>
-
-          {data.from_plan && (
-            <Goals onTab={onTab} onChanged={() => load(target, preview ?? undefined)} />
-          )}
 
           {data.invested && <Invested invested={data.invested} />}
         </>

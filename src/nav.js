@@ -23,7 +23,7 @@ export const PANELS = {
                    hint: 'What comes in, what is spoken for, and what is left' },
   budgets:       { label: 'Budgets',
                    hint: 'Spent against budget, projected to month end' },
-  overview:      { label: 'This month',
+  overview:      { label: 'This month', short: 'Month',
                    hint: 'Spending across every card' },
   projections:   { label: 'Looking ahead', short: 'Ahead',
                    hint: 'What saving more gets you — this year, and invested' },
@@ -49,7 +49,7 @@ export const PANELS = {
                    hint: 'Which categories share one line in your budget' },
 };
 
-// The six destinations. A group holding one panel shows no sub-navigation.
+// The five destinations. A group holding one panel shows no sub-navigation.
 //
 // A group's label is what the sidebar says, so it has to be what you find
 // when you click it. "Overview" opened a page titled This month; "Savings"
@@ -59,17 +59,16 @@ export const PANELS = {
 export const GROUPS = [
   // The page people open the app for, so it is first and where the app lands.
   // The key is still `today`, which every link and insight already names.
-  { key: 'today', label: 'Allowance', panels: ['today'],
-    hint: "What's left to spend this week",
+  // This month sits with it: the week's number and where the month's money
+  // went are the two things you open the app to check.
+  { key: 'today', label: 'Allowance', panels: ['today', 'overview'],
+    hint: "What's left to spend this week, and where the month went",
     icon: 'M12 3a9 9 0 1 0 9 9M12 3a9 9 0 0 1 9 9M12 3v9h9' },
   // Looking ahead sits with the plan, not with the history: it is the plan
   // run forward, and the savings figure it offers to move is the plan's.
   { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections', 'mortgage', 'retirement'],
     hint: 'What you earn, what it is promised to, how the rest divides, and where that leads',
     icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
-  { key: 'overview', label: 'This month', short: 'Month', panels: ['overview'],
-    hint: 'Where the money went',
-    icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
   { key: 'savings', label: 'Cut back', panels: ['savings'],
     hint: 'What could be cut, and what is worth knowing',
     icon: 'M12 3v18M17 7H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },

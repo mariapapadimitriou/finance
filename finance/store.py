@@ -230,20 +230,6 @@ CREATE TABLE IF NOT EXISTS fixed_costs (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
--- Savings goals: something you are putting money towards, with what you have
--- so far and what goes in each month. Yours, not imported, so a reset of the
--- ledger leaves them alone like the commitments above.
-CREATE TABLE IF NOT EXISTS savings_goals (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT NOT NULL,
-    target     REAL NOT NULL,
-    saved      REAL NOT NULL DEFAULT 0,
-    monthly    REAL NOT NULL DEFAULT 0,
-    position   INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    reached_at TEXT
-);
-
 -- Whether each account a bank handed over should be synced.
 --
 -- A bank's consent screen is all-or-nothing at some institutions: you grant
@@ -884,55 +870,6 @@ class Store:
             if self.is_postgres:
                 return c.execute(sql + " RETURNING id", args).fetchone()["id"]
             return c.execute(sql, args).lastrowid
-
-    # ── Savings goals ────────────────────────────────────────────────────────
-
-    def goals(self) -> list[dict]:
-        with self.conn() as c:
-            rows = c.execute("SELECT * FROM savings_goals "
-                             "ORDER BY position, id").fetchall()
-        return [{"id": r["id"], "name": r["name"], "target": float(r["target"]),
-                 "saved": float(r["saved"]), "monthly": float(r["monthly"]),
-                 "position": r["position"], "created_at": r["created_at"],
-                 "reached_at": r["reached_at"]} for r in rows]
-
-    def goal(self, goal_id: int) -> dict | None:
-        return next((g for g in self.goals() if g["id"] == goal_id), None)
-
-    def add_goal(self, name: str, target: float, saved: float,
-                 monthly: float, today: str) -> int:
-        position = len(self.goals())
-        reached = today if saved >= target else None
-        sql = ("INSERT INTO savings_goals (name, target, saved, monthly, "
-               "position, created_at, reached_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-        args = (name.strip(), float(target), float(saved), float(monthly),
-                position, today, reached)
-        with self.conn() as c:
-            if self.is_postgres:
-                return c.execute(sql + " RETURNING id", args).fetchone()["id"]
-            return c.execute(sql, args).lastrowid
-
-    def update_goal(self, goal_id: int, today: str, **fields) -> dict | None:
-        goal = self.goal(goal_id)
-        if not goal:
-            return None
-        goal.update({k: v for k, v in fields.items() if v is not None})
-        if goal["saved"] >= goal["target"]:
-            goal["reached_at"] = goal["reached_at"] or today
-        else:
-            goal["reached_at"] = None
-        with self.conn() as c:
-            c.execute("UPDATE savings_goals SET name = ?, target = ?, saved = ?, "
-                      "monthly = ?, position = ?, reached_at = ? WHERE id = ?",
-                      (goal["name"].strip(), float(goal["target"]),
-                       float(goal["saved"]), float(goal["monthly"]),
-                       int(goal["position"]), goal["reached_at"], goal_id))
-        return self.goal(goal_id)
-
-    def delete_goal(self, goal_id: int) -> bool:
-        with self.conn() as c:
-            cur = c.execute("DELETE FROM savings_goals WHERE id = ?", (goal_id,))
-            return (cur.rowcount or 0) > 0
 
     def update_fixed_cost(self, cost_id: int, name: str, amount: float,
                           category: str = "Other") -> bool:
