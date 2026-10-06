@@ -1023,66 +1023,18 @@ def projection():
     # figure you typed, and is null until you do.
     result["configured_income"] = income
     if result.get("available"):
-        _add_levels(st, result, savings)
+        _add_goals_funding(st, result, savings)
     return jsonify(result)
 
 
-def _invested_balance(st) -> dict:
-    """What you have saved and invested today, outside your goals.
-
-    Typed on Ahead. Until it is, the figure from Retirement stands in, since
-    it is the same money.
-    """
-    raw = st.setting("invested_balance")
-    if raw is not None:
-        as_of = st.setting("invested_as_of") or _today_iso()[:7]
-        source = "saved"
-        balance = float(raw)
-    else:
-        saved = st.coastfire()
-        balance = float(saved["invested"]) if saved else 0.0
-        as_of = saved["as_of"] if saved else None
-        source = "retirement" if saved else None
-    from .coastfire import _index
-    stale = bool(as_of) and _index(_today_iso()[:7]) - _index(as_of) > 3
-    return {"balance": round(balance, 2), "as_of": as_of, "source": source,
-            "stale": stale}
-
-
-def _add_levels(st, result: dict, savings: float) -> None:
+def _add_goals_funding(st, result: dict, savings: float) -> None:
     """Goals take their monthly amounts first; investing gets the rest."""
-    from . import coastfire, goals as goal_math, levels
+    from . import goals as goal_math
 
-    held = _invested_balance(st)
     funding = goal_math.funding(st.goals(), savings)
-    investing = funding["to_investing"]
-    ahead = result.get("ahead") or 0.0
-    coast = None
-    saved = st.coastfire()
-    if saved:
-        coast = coastfire.compute(coastfire.Inputs.from_dict(saved), _today_iso())
     result["goals_funding"] = funding
-    result["investing_monthly"] = investing
-    result["invested_balance"] = held
-    result["invested"] = projections.invested(investing, opening=held["balance"])
-    result["levels"] = levels.compute(held["balance"], investing,
-                                      max(investing + ahead, 0.0),
-                                      _today_iso(), coast)
-
-
-@bp.put("/invested")
-def save_invested():
-    """What you have saved and invested today, as of this month."""
-    st = store()
-    try:
-        balance = round(float((request.get_json(silent=True) or {}).get("balance")), 2)
-    except (TypeError, ValueError):
-        return jsonify({"error": "The balance needs to be a number."}), 400
-    if balance < 0:
-        return jsonify({"error": "The balance can't be negative."}), 400
-    st.set_setting("invested_balance", balance)
-    st.set_setting("invested_as_of", _today_iso()[:7])
-    return jsonify({"ok": True, **_invested_balance(st)})
+    result["investing_monthly"] = funding["to_investing"]
+    result["invested"] = projections.invested(funding["to_investing"])
 
 
 def _pace_ahead(st, txns) -> float | None:
