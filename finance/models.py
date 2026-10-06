@@ -263,6 +263,9 @@ class Transaction:
     # rest. None means all of it. Not part of the fingerprint, for the same
     # reason the bank is not.
     my_share: float | None = None
+    # How much of it went into investments, when only part did. None means
+    # none of it; a whole transfer is categorised Investments instead.
+    invested: float | None = None
 
     def __post_init__(self):
         if not self.merchant:
@@ -327,6 +330,8 @@ class Transaction:
             bank_auto=bool(row.get("bank_auto") or 0),
             my_share=(None if row.get("my_share") is None
                       else float(row["my_share"])),
+            invested=(None if row.get("invested") is None
+                      else float(row["invested"])),
         )
 
 

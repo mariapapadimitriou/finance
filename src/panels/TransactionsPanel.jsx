@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
   addTransaction, allocateToBank, dateLabel, deleteTransaction, getBanks,
-  getTransactions, money, setCategory, setShare, unallocate,
+  getTransactions, money, setCategory, setInvested, setShare, unallocate,
 } from '../api.js';
 
 const PAGE = 100;
@@ -181,6 +181,11 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                         {t.my_share != null && (
                           <div className="share-note num">
                             yours {money(t.my_share, { cents: true })}
+                          </div>
+                        )}
+                        {t.invested != null && (
+                          <div className="share-note num">
+                            invested {money(t.invested, { cents: true })}
                           </div>
                         )}
                       </td>
@@ -394,20 +399,26 @@ function CategoryEditor({ current, merchant, categories, onSave, onCancel }) {
  */
 function ShareCell({ txn, open, onOpen, onDone }) {
   const [value, setValue] = useState('');
+  // How much of it went into investments, when part of it did.
+  const [invested, setInvestedValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (open) setValue(txn.my_share != null ? String(txn.my_share) : '');
-  }, [open, txn.my_share]);
+    if (open) {
+      setValue(txn.my_share != null ? String(txn.my_share) : '');
+      setInvestedValue(txn.invested != null ? String(txn.invested) : '');
+    }
+  }, [open, txn.my_share, txn.invested]);
 
   if (txn.amount <= 0) return <span className="muted small">—</span>;
 
-  async function save(share) {
+  async function save(share, inv = invested === '' ? null : Number(invested)) {
     setBusy(true);
     setError(null);
     try {
       await setShare(txn.id, share);
+      if (inv !== (txn.invested ?? null)) await setInvested(txn.id, inv);
       onDone();
     } catch (e) {
       setError(e);
@@ -419,7 +430,8 @@ function ShareCell({ txn, open, onOpen, onDone }) {
   if (!open) {
     return (
       <button className="btn quiet" onClick={onOpen}>
-        {txn.my_share != null ? `Yours ${money(txn.my_share)}` : 'Split…'}
+        {txn.my_share != null ? `Yours ${money(txn.my_share)}`
+          : txn.invested != null ? `Invested ${money(txn.invested)}` : 'Split…'}
       </button>
     );
   }
@@ -444,10 +456,18 @@ function ShareCell({ txn, open, onOpen, onDone }) {
         ))}
       </div>
       <div className="row" style={{ gap: 6 }}>
+        <span className="muted small">Invested $</span>
+        <input type="number" min="0" max={txn.amount} step="0.01" inputMode="decimal"
+               value={invested} onChange={(e) => setInvestedValue(e.target.value)}
+               aria-label={`Invested part of ${txn.merchant}`} style={{ width: 90 }} />
+        <button type="button" className="btn quiet chip-btn"
+                onClick={() => setInvestedValue(txn.amount.toFixed(2))}>All</button>
+      </div>
+      <div className="row" style={{ gap: 6 }}>
         <button className="btn primary" type="submit" disabled={busy}>Save</button>
-        {txn.my_share != null && (
+        {(txn.my_share != null || txn.invested != null) && (
           <button className="btn quiet" type="button" disabled={busy}
-                  onClick={() => save(null)}>Clear</button>
+                  onClick={() => save(null, null)}>Clear</button>
         )}
         <button className="btn quiet" type="button" onClick={onOpen}>Cancel</button>
       </div>

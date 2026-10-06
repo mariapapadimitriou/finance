@@ -144,6 +144,13 @@ CREATE TABLE IF NOT EXISTS txn_shares (
     txn_id   TEXT PRIMARY KEY,
     my_share REAL NOT NULL
 );
+
+-- How much of a transaction went into investments, when only part of it did.
+-- Beside the row for the same reason as a share: a sync can't undo it.
+CREATE TABLE IF NOT EXISTS txn_invested (
+    txn_id TEXT PRIMARY KEY,
+    amount REAL NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_alloc_bank ON piggy_allocations(bank_id);
 
 -- What each bank pays for: a category belongs to at most one bank. Every
@@ -269,12 +276,17 @@ _CHARGES = """(
     SELECT t.id AS txn_id,
            COALESCE(m.bank_id, o.bank_id) AS bank_id,
            CASE WHEN m.amount IS NOT NULL
-                     AND m.amount < COALESCE(s.my_share, t.amount) THEN m.amount
-                ELSE COALESCE(s.my_share, t.amount) END AS charged,
+                     AND m.amount < COALESCE(s.my_share, t.amount) - COALESCE(iv.amount, 0)
+                     THEN m.amount
+                WHEN COALESCE(s.my_share, t.amount) - COALESCE(iv.amount, 0) < 0
+                     THEN 0
+                ELSE COALESCE(s.my_share, t.amount) - COALESCE(iv.amount, 0)
+                END AS charged,
            CASE WHEN m.txn_id IS NULL THEN 1 ELSE 0 END AS auto
       FROM transactions t
       LEFT JOIN piggy_allocations m ON m.txn_id = t.id
       LEFT JOIN txn_shares s ON s.txn_id = t.id
+      LEFT JOIN txn_invested iv ON iv.txn_id = t.id
       LEFT JOIN (SELECT bc.category AS category, b.id AS bank_id,
                         b.start_month AS start_month
                    FROM piggy_bank_categories bc
@@ -289,6 +301,7 @@ _CHARGES = """(
 # A bank pays your share of a charge, never more: friends who paid you back
 # for the rest are not the bank's to cover.
 _CHARGE_COLUMNS = """sh.my_share AS my_share,
+                          ivx.amount AS invested,
                           a.bank_id AS bank_id,
                           CASE WHEN a.bank_id IS NULL THEN 0 ELSE a.charged
                           END AS bank_amount,
@@ -472,6 +485,7 @@ class Store:
                      FROM transactions t
                      LEFT JOIN {_CHARGES} a ON a.txn_id = t.id
                      LEFT JOIN txn_shares sh ON sh.txn_id = t.id
+                     LEFT JOIN txn_invested ivx ON ivx.txn_id = t.id
                     ORDER BY t.date DESC, t.id""").fetchall()
         return [Transaction.from_row(dict(r)) for r in rows]
 
@@ -513,6 +527,7 @@ class Store:
                       FROM transactions t
                       LEFT JOIN {_CHARGES} a ON a.txn_id = t.id
                       LEFT JOIN txn_shares sh ON sh.txn_id = t.id
+                      LEFT JOIN txn_invested ivx ON ivx.txn_id = t.id
                     {clause}
                     ORDER BY t.date DESC, t.id LIMIT ? OFFSET ?""",
                 params + [limit, offset],
@@ -540,6 +555,7 @@ class Store:
                      FROM transactions t
                      LEFT JOIN {_CHARGES} a ON a.txn_id = t.id
                      LEFT JOIN txn_shares sh ON sh.txn_id = t.id
+                     LEFT JOIN txn_invested ivx ON ivx.txn_id = t.id
                     WHERE t.id = ?""", (txn_id,)).fetchone()
         return Transaction.from_row(dict(row)) if row else None
 
@@ -547,6 +563,7 @@ class Store:
         with self.conn() as c:
             cur = c.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
             c.execute("DELETE FROM txn_shares WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_invested WHERE txn_id = ?", (txn_id,))
             return cur.rowcount > 0
 
     def set_share(self, txn_id: str, my_share: float | None) -> None:
@@ -556,6 +573,14 @@ class Store:
             if my_share is not None:
                 c.execute("INSERT INTO txn_shares (txn_id, my_share) VALUES (?, ?)",
                           (txn_id, round(float(my_share), 2)))
+
+    def set_invested(self, txn_id: str, amount: float | None) -> None:
+        """Say how much of a transaction went to investments; None clears it."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_invested WHERE txn_id = ?", (txn_id,))
+            if amount is not None:
+                c.execute("INSERT INTO txn_invested (txn_id, amount) VALUES (?, ?)",
+                          (txn_id, round(float(amount), 2)))
 
     def accounts(self) -> list[dict]:
         with self.conn() as c:
@@ -731,6 +756,7 @@ class Store:
             ("piggy_optouts", "charges kept out of piggy banks"),
             ("piggy_draws", "piggy-bank draws"),
             ("txn_shares", "your shares of split charges"),
+            ("txn_invested", "amounts marked as invested"),
             ("dismissed_insights", "dismissed findings"),
         ]
         with self.conn() as c:

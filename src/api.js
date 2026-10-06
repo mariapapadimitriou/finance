@@ -212,6 +212,9 @@ export const setBudgets    = (budgets) => json('PUT', '/api/budgets', { budgets 
 // null puts the whole charge back.
 export const setShare      = (id, myShare) =>
   json('PUT', `/api/transactions/${id}/share`, { my_share: myShare });
+// How much of a transaction went into investments. null clears it.
+export const setInvested   = (id, amount) =>
+  json('PUT', `/api/transactions/${id}/invested`, { amount });
 export const setCategory   = (id, category, applyToMerchant = false) =>
   json('PATCH', `/api/transactions/${id}`, {
     category, apply_to_merchant: applyToMerchant,
