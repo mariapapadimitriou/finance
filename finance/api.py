@@ -536,10 +536,18 @@ def set_account_sync(account_id: str):
     name = rule.get("account_name") or next(
         (a["account_name"] for a in st.accounts()
          if a["account_id"] == account_id), "")
+    enabling = bool(body["enabled"]) and not rule.get("enabled", True)
     st.set_account_sync(account_id, bool(body["enabled"]),
                         name=name, item_id=rule.get("item_id", ""))
+    # Switched on after being off: its transactions were dropped while it was
+    # off and the bank's cursor moved past them, so the next sync has to start
+    # from the beginning to bring its history in.
+    rewound = False
+    if enabling and rule.get("item_id"):
+        st.rewind_plaid_cursor(rule["item_id"])
+        rewound = True
     return jsonify({"ok": True, "account_id": account_id,
-                    "enabled": bool(body["enabled"])})
+                    "enabled": bool(body["enabled"]), "resync": rewound})
 
 
 @bp.get("/ledger/start")

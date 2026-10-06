@@ -593,6 +593,40 @@ class TestRemovingAnAccountSticks:
         plaid_link.sync_all(store)
         assert "chq" in {t.account_id for t in store.all_transactions()}
 
+    def test_switching_chequing_on_brings_its_history_in(self, store, fake, tmp_path):
+        """The bug: rows dropped while it was off never came back, because the
+        cursor had already moved past them. Switching it on rewinds it."""
+        app = create_app(str(tmp_path / "t.db"))
+        app.config["STORE"] = store
+        client = app.test_client()
+        self._pages(fake)
+        store.add_plaid_item("item-1", "tok", "TD")
+        plaid_link.sync_all(store)                  # chequing off by default
+        assert "chq" not in {t.account_id for t in store.all_transactions()}
+        assert store.plaid_items()[0]["synced_before"]
+        cards = len(store.all_transactions())
+
+        r = client.put("/api/accounts/chq/sync", json={"enabled": True})
+        assert r.get_json()["resync"] is True
+        assert not store.plaid_items()[0]["synced_before"]     # rewound
+
+        self._pages(fake)                           # Plaid sends it all again
+        plaid_link.sync_all(store)
+        rows = store.all_transactions()
+        assert "chq" in {t.account_id for t in rows}
+        assert len([t for t in rows if t.account_id == "acc1"]) == cards   # no doubles
+
+    def test_switching_a_card_off_does_not_rewind(self, store, fake, tmp_path):
+        app = create_app(str(tmp_path / "t.db"))
+        app.config["STORE"] = store
+        client = app.test_client()
+        self._pages(fake)
+        store.add_plaid_item("item-1", "tok", "TD")
+        plaid_link.sync_all(store)
+        r = client.put("/api/accounts/acc1/sync", json={"enabled": False})
+        assert r.get_json()["resync"] is False
+        assert store.plaid_items()[0]["synced_before"]
+
     def test_every_account_the_bank_sent_is_recorded(self, store, fake):
         """Including the ones skipped — they cannot be chosen if unlisted."""
         self._pages(fake)

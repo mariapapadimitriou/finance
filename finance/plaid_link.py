@@ -284,6 +284,14 @@ def sync_all(store) -> dict:
             out.append({"item_id": item["item_id"],
                         "institution": item.get("institution") or "",
                         "error": message})
+    # When the categorising rules have changed since the ledger was last
+    # sorted, sort what is already there once — your own choices are kept.
+    from .categorize import RULES_VERSION
+    from .pipeline import recategorize_all
+    if store.setting("categories_version") != str(RULES_VERSION):
+        recategorize_all(store)
+        store.set_setting("categories_version", RULES_VERSION)
+
     return {
         "items": out,
         "imported": sum(o.get("imported", 0) for o in out),
