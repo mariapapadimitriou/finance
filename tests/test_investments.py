@@ -17,11 +17,11 @@ MONTH = f"{TODAY:%Y-%m}"
 
 class TestTheCategory:
     def test_it_exists_is_not_spending_and_is_no_budget_line(self):
-        assert "Investments" in CATEGORIES
+        assert "Saved" in CATEGORIES
         t = Transaction(date=TODAY.isoformat(), description="X", amount=500,
-                        account_id="a", category="Investments")
+                        account_id="a", category="Saved")
         assert not counts_as_spending(t)
-        assert "Investments" not in groups.spend_categories()
+        assert "Saved" not in groups.spend_categories()
 
     @pytest.mark.parametrize("merchant,code", [
         ("QUESTRADE INC", ""),
@@ -31,13 +31,13 @@ class TestTheCategory:
         ("", "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS"),
     ])
     def test_investment_transfers_are_recognised(self, merchant, code):
-        assert categorize(merchant, "", code)[0] == "Investments"
+        assert categorize(merchant, "", code)[0] == "Saved"
 
     def test_money_back_from_investments_is_a_transfer(self):
         assert categorize("", "", "TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS")[0] == "Transfers"
 
     def test_a_wealthsimple_card_is_not_an_investment(self):
-        assert categorize("WEALTHSIMPLE CASH", "", "")[0] != "Investments"
+        assert categorize("WEALTHSIMPLE CASH", "", "")[0] != "Saved"
 
 
 @pytest.fixture()
@@ -121,11 +121,11 @@ class TestPartOfATransaction:
 
 class TestAheadShowsIt:
     def test_invested_this_month_counts_both_ways_once(self, client):
-        add(client, 500, category="Investments", description="QUESTRADE INC")
+        add(client, 500, category="Saved", description="QUESTRADE INC")
         part = add(client, 1000)
         client.put(f"/api/transactions/{part}/invested", json={"amount": 300})
-        # An Investments row with a partial amount still counts once, in full.
-        both = add(client, 200, category="Investments", description="TFSA CONTRIBUTION")
+        # A Saved row with a partial amount still counts once, in full.
+        both = add(client, 200, category="Saved", description="TFSA CONTRIBUTION")
         client.put(f"/api/transactions/{both}/invested", json={"amount": 50})
         body = client.get("/api/projections").get_json()
         assert body["invested_month"] == {"month": MONTH, "amount": 1000.0,
@@ -134,9 +134,9 @@ class TestAheadShowsIt:
     def test_the_sum_itself(self):
         rows = [
             Transaction(date=f"{MONTH}-01", description="A", amount=500,
-                        account_id="a", category="Investments"),
+                        account_id="a", category="Saved"),
             Transaction(date=f"{MONTH}-02", description="B", amount=-100,
-                        account_id="a", category="Investments"),
+                        account_id="a", category="Saved"),
             Transaction(date=f"{MONTH}-03", description="C", amount=1000,
                         account_id="a", category="Shopping", invested=250),
         ]

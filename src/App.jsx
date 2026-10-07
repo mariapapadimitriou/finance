@@ -19,7 +19,7 @@ import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
   getAccounts, getAuthStatus, getCategories, getInsights,
-  getSummary, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
+  getSummary, getUnsorted, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
   syncPlaid,
 } from './api.js';
 
@@ -152,8 +152,10 @@ export default function App() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [summary, insights, accounts, categories] = await Promise.all([
+      const [summary, insights, accounts, categories, unsorted] = await Promise.all([
         getSummary(), getInsights(), getAccounts(), getCategories(),
+        // Only a badge: a failure here must not stop the app loading.
+        getUnsorted().catch(() => ({ count: 0 })),
       ]);
       // Before anything is drawn: every figure in the app is formatted with
       // this, and a wrong default is how the whole ledger came to read as
@@ -163,6 +165,7 @@ export default function App() {
         summary, insights,
         accounts: accounts.accounts ?? [],
         categories: categories.categories ?? [],
+        unsorted: unsorted.count ?? 0,
       });
       setVersion((v) => v + 1);
     } catch (e) {
@@ -263,6 +266,7 @@ export default function App() {
   return (
     <Shell
       theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
+      counts={{ transactions: data.unsorted }}
       months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
@@ -314,7 +318,7 @@ export default function App() {
   );
 }
 
-function Shell({ theme, setTheme, tab, panel, onTab,
+function Shell({ theme, setTheme, tab, panel, onTab, counts = {},
                  months = [], month, onMonth, showMonth = false, onSignOut,
                  children }) {
   const group = GROUPS.find((g) => g.key === tab);
@@ -389,6 +393,11 @@ function Shell({ theme, setTheme, tab, panel, onTab,
               >
                 <Icon d={g.icon} />
                 <Label full={g.label} short={g.short} />
+                {counts[g.key] > 0 && (
+                  <span className="count" aria-label={`${counts[g.key]} to sort`}>
+                    {counts[g.key]}
+                  </span>
+                )}
               </button>
             ))}
           </nav>

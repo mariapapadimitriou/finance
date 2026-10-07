@@ -10,6 +10,8 @@ from __future__ import annotations
 from flask import Blueprint, current_app, jsonify, request
 
 from .analytics import (
+    bill_categories,
+    bills_paid,
     share_amount,
     spend_amount,
     budget_status,
@@ -345,8 +347,20 @@ def transactions():
         limit=min(int(request.args.get("limit", 200)), 1000),
         offset=int(request.args.get("offset", 0)),
     )
+    rows = [t.to_dict() for t in txns]
+    # Money that paid back a charge says which one, so the row can read
+    # "paid back · Uber Eats $80" without the page looking it up.
+    charges = {}
+    for row in rows:
+        cid = row.get("repays")
+        if cid:
+            if cid not in charges:
+                charges[cid] = store().get_transaction(cid)
+            c = charges[cid]
+            row["repays_merchant"] = c.merchant if c else ""
+            row["repays_amount"] = c.amount if c else None
     return jsonify({
-        "transactions": [t.to_dict() for t in txns],
+        "transactions": rows,
         "total": total,
     })
 
@@ -379,7 +393,7 @@ def set_transaction_invested(txn_id: str):
 
     For when only part of it did — a transfer split between an investment
     account and something else. The rest still counts as whatever it is. A
-    transaction that went to investments in full is categorised Investments
+    transaction that was put away in full is categorised Saved
     instead.
     """
     body = request.get_json(silent=True) or {}
@@ -437,6 +451,119 @@ def set_transaction_share(txn_id: str):
     # The whole charge is the same as no split at all.
     st.set_share(txn_id, None if abs(share - txn.amount) < 0.005 else share)
     return jsonify({"ok": True, "my_share": st.get_transaction(txn_id).my_share})
+
+
+# ── Where transfers went, and who paid you back ──────────────────────────────
+
+def _txn_brief(t) -> dict:
+    return {"id": t.fingerprint, "date": t.date, "merchant": t.merchant,
+            "description": t.description, "amount": t.amount,
+            "account_id": t.account_id, "account_name": t.account_name or "",
+            "category": t.category}
+
+
+@bp.get("/transfers/unsorted")
+def unsorted_transfers():
+    """Money that left a bank account for somewhere Spendie can't see, waiting
+    for you to say whether it was spent or saved. Counted as spent meanwhile."""
+    from .transfers import unsorted
+    rows = unsorted(_txns())
+    return jsonify({"count": len(rows),
+                    "total": round(sum(t.amount for t in rows), 2),
+                    "transfers": [_txn_brief(t) for t in rows]})
+
+
+# How far either side of a charge a repayment is looked for.
+_PAYBACK_BEFORE_DAYS = 3
+_PAYBACK_AFTER_DAYS = 45
+_PAYBACK_NAMES = ("e-transfer", "etransfer", "e-tfr", "etfr", "interac",
+                  "transfer", "venmo", "zelle", "wise")
+
+
+def _payback_candidates(charge, txns) -> list[dict]:
+    from datetime import date as _date
+    start = _date.fromisoformat(charge.date[:10])
+    remaining = round(charge.amount - (charge.paid_back or 0.0), 2)
+    out = []
+    for t in txns:
+        if t.amount >= 0 or t.repays or t.fingerprint == charge.fingerprint:
+            continue
+        if t.category not in ("Transfers", "Income", "Other"):
+            continue
+        gap = (_date.fromisoformat(t.date[:10]) - start).days
+        if gap < -_PAYBACK_BEFORE_DAYS or gap > _PAYBACK_AFTER_DAYS:
+            continue
+        amount = -t.amount
+        if amount > remaining + 0.005:
+            continue
+        name = f"{t.merchant} {t.description}".lower()
+        by_name = any(k in name for k in _PAYBACK_NAMES)
+        # $20 back on an $80 charge is a quarter: one of four people.
+        even = any(abs(charge.amount / n - amount) < 0.51 for n in range(2, 11))
+        out.append((0 if by_name else 1, 0 if even else 1, abs(gap), t))
+    out.sort(key=lambda r: r[:3])
+    return [dict(_txn_brief(t), likely=(a == 0 and b == 0)) for a, b, _, t in out[:12]]
+
+
+@bp.get("/transactions/<txn_id>/paybacks")
+def list_paybacks(txn_id: str):
+    st = store()
+    charge = st.get_transaction(txn_id)
+    if charge is None:
+        return jsonify({"error": "No such transaction."}), 404
+    txns = st.all_transactions()
+    linked = [t for t in txns if t.repays == txn_id]
+    return jsonify({
+        "charge": _txn_brief(charge),
+        "paid_back": round(charge.paid_back or 0.0, 2),
+        "share": round(share_amount(charge), 2) if charge.amount > 0 else None,
+        "linked": [_txn_brief(t) for t in sorted(linked, key=lambda t: t.date)],
+        "candidates": (_payback_candidates(charge, txns)
+                       if charge.amount > 0 else []),
+    })
+
+
+@bp.post("/transactions/<txn_id>/paybacks/<inflow_id>")
+def add_payback(txn_id: str, inflow_id: str):
+    """Say this money coming in was a friend paying you back for that charge.
+
+    The charge then costs you what is left, and the money in counts as
+    nothing — not income, not money in — because it was never yours.
+    """
+    from .transfers import apply_transfer_matches
+    st = store()
+    charge = st.get_transaction(txn_id)
+    inflow = st.get_transaction(inflow_id)
+    if charge is None or inflow is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if charge.amount <= 0:
+        return jsonify({"error": "Only a charge can be paid back."}), 400
+    if inflow.amount >= 0:
+        return jsonify({"error": "Only money coming in can pay back a charge."}), 400
+    if inflow.repays and inflow.repays != txn_id:
+        return jsonify({"error": "That money already paid back another charge."}), 400
+    already = 0.0 if inflow.repays == txn_id else (charge.paid_back or 0.0)
+    if already - inflow.amount > charge.amount + 0.005:
+        return jsonify({"error": "That's more than the charge — friends can't pay "
+                                 "back more than it cost."}), 400
+    st.link_payback(txn_id, inflow_id)
+    # Never income: Plaid sometimes calls an e-transfer in "income".
+    if inflow.category != "Transfers":
+        st.set_transaction_category(inflow_id, "Transfers")
+    apply_transfer_matches(st)
+    return list_paybacks(txn_id)
+
+
+@bp.delete("/transactions/<txn_id>/paybacks/<inflow_id>")
+def remove_payback(txn_id: str, inflow_id: str):
+    from .transfers import apply_transfer_matches
+    st = store()
+    inflow = st.get_transaction(inflow_id)
+    if inflow is None or inflow.repays != txn_id:
+        return jsonify({"error": "That money isn't linked to this charge."}), 404
+    st.unlink_payback(inflow_id)
+    apply_transfer_matches(st)
+    return list_paybacks(txn_id)
 
 
 @bp.get("/accounts")
@@ -657,10 +784,16 @@ def summary():
 
 @bp.get("/breakdown")
 def breakdown():
-    txns = _txns()
+    st = store()
+    txns = st.all_transactions()
     month = request.args.get("month")
+    fixed = st.fixed_costs()
+    bills = bill_categories(fixed)
     return jsonify({
         "month": month,
+        # Bills the plan already set aside are shown apart from the headline:
+        # a mortgage isn't this month's spending to watch.
+        "bills": bills_paid(txns, month, fixed) if month and bills else None,
         "split": fixed_vs_discretionary(txns, month),
         "categories": by_category(txns, month),
         "merchants": by_merchant(txns, month, limit=int(request.args.get("limit", 25))),
@@ -668,7 +801,7 @@ def breakdown():
         "monthly": monthly_totals(txns),
         "daily": daily_series(txns, int(request.args.get("days", 90))),
         "weekday": weekday_profile(txns),
-        "pace": month_pace(txns, month) if month else None,
+        "pace": month_pace(txns, month, exclude=bills) if month else None,
     })
 
 
@@ -1028,6 +1161,8 @@ def plan():
             share_amount(t) for t in txns
             if t.month == month and is_spend_category(t.category or "Other")), 2),
         "from_banks": st.allocated_in(month),
+        # The part of that total that was bills the plan set aside.
+        "bills_in_total": bills_paid(txns, month, st.fixed_costs())["paid"],
         # The whole chain from the Plan tab's figure down to the weekly number,
         # so the two pages can be read against each other. They are not the
         # same number and used to look as though they should be: what the Plan
@@ -1098,7 +1233,7 @@ def projection():
     plan = money_plan.plan(income or 0.0, fixed, savings,
                            banks) if income else None
 
-    committed = {f.category for f in fixed if f.category}
+    committed = bill_categories(fixed)
     pace = projections.current_pace(txns, _today_iso(), exclude=committed)
     result = projections.project(txns, income, weighted,
                                  int(request.args.get("months", 12)), plan=plan,

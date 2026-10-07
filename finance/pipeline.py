@@ -11,6 +11,7 @@ from .categorize import apply_categories
 from .dedupe import dedupe_batch, split_new
 from .ingest.base import IngestResult
 from .store import Store
+from .transfers import apply_transfer_matches
 from .trips import apply_trips
 
 
@@ -50,6 +51,10 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
         store.delete_transaction(placeholder.fingerprint)
 
     inserted = store.add_transactions(new)
+    if inserted:
+        # A new arrival can be the other end of a transfer already here, and a
+        # new departure may have its other end here already.
+        apply_transfer_matches(store)
 
     duplicate_count = len(dupes) + self_dupes
     store.log_import(filename or "upload.csv", result, inserted, duplicate_count)
@@ -87,4 +92,6 @@ def recategorize_all(store: Store) -> int:
                 (t.category, t.category_source, t.fingerprint),
             )
             updated += cur.rowcount
+    # The rules just put every transfer back to plain Transfers; sort them again.
+    apply_transfer_matches(store)
     return updated

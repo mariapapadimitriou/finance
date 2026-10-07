@@ -53,15 +53,20 @@ CATEGORIES: dict[str, dict] = {
     "Fees & Interest":  {"essential": False, "discretionary": True},
     "Taxes":            {"essential": True,  "discretionary": False},
     "Cash & ATM":       {"essential": False, "discretionary": False},
-    # Money put into an investment account: saved, not spent.
-    "Investments":      {"essential": False, "discretionary": False},
+    # Money leaving a bank account for somewhere Spendie can't see. Counted as
+    # spending until you say where it went — but never in the weekly number,
+    # so a rent e-transfer can't wipe out a week.
+    "Unsorted transfers": {"essential": False, "discretionary": False},
+    # Money put away — into an investment account, savings you don't connect,
+    # anything you keep: saved, not spent.
+    "Saved":            {"essential": False, "discretionary": False},
     "Income":           {"essential": False, "discretionary": False},
     "Transfers":        {"essential": False, "discretionary": False},
     "Other":            {"essential": False, "discretionary": True},
 }
 
 # Categories that are money movement, not consumption. Excluded from spend.
-NON_SPEND = {"Income", "Transfers", "Investments"}
+NON_SPEND = {"Income", "Transfers", "Saved"}
 
 
 def is_spend_category(category: str) -> bool:
@@ -108,7 +113,7 @@ RULES: list[tuple[str, str]] = [
      r"wealthsimple (?:invest\w*|trade)|ws (?:invest\w*|trade)|"
      r"direct investing|direct brokerage|itrade|investor'?s edge|"
      r"robinhood|moomoo|(?:tfsa|rrsp|fhsa|resp) (?:contrib\w*|deposit))\b",
-     "Investments"),
+     "Saved"),
 
     # Payments & transfers
     # Card payments come in many spellings; all of them are money moving onto
@@ -135,6 +140,9 @@ RULES: list[tuple[str, str]] = [
      r"\bcredit)\b", "Transfers"),
     (r"\b(e-?transfer|interac|zelle|venmo|wise|remitly|western union)\b", "Transfers"),
     (r"\b(transfer to|transfer from|internal transfer|balance transfer)\b", "Transfers"),
+    # How Canadian chequing statements abbreviate the same thing: TD's
+    # "SEND E-TFR", "E-TFR IN", "TFR-TO C/C", "TFR-FR 1234".
+    (r"\b(e-?tfr|tfr-?(?:to|fr|from)|send e-?trf)\b", "Transfers"),
     (r"\b(payroll|direct deposit|salary|dep\s+payroll|refund)\b", "Income"),
 
     # Coffee
@@ -308,7 +316,7 @@ AUTHORITATIVE_ISSUER_CATEGORIES = {
     "transfer_in_savings": "Transfers",
     "transfer_out_savings": "Transfers",
     "transfer_in_investment_and_retirement_funds": "Transfers",
-    "transfer_out_investment_and_retirement_funds": "Investments",
+    "transfer_out_investment_and_retirement_funds": "Saved",
     "income_wages": "Income",
 }
 
@@ -360,7 +368,7 @@ PLAID_CATEGORY_MAP = {
 
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
-RULES_VERSION = 3
+RULES_VERSION = 4
 
 
 def plaid_category(code: str) -> str | None:

@@ -2,8 +2,12 @@ import { useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
   addTransaction, allocateToBank, dateLabel, deleteTransaction, getBanks,
-  getTransactions, money, setCategory, setInvested, setShare, unallocate,
+  getPaybacks, getTransactions, getUnsorted, linkPayback, money, setCategory,
+  setInvested, setShare, unallocate, unlinkPayback,
 } from '../api.js';
+
+// Never offered as "where it went": these aren't spending.
+const NOT_SPENT = new Set(['Income', 'Transfers', 'Saved', 'Unsorted transfers']);
 
 const PAGE = 100;
 
@@ -66,6 +70,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
 
   return (
     <div className="stack">
+      <WhereDidThisGo categories={categories} reload={reload} onDone={bump} />
       <AddByHand categories={categories}
                  onAdded={() => { setReload((n) => n + 1); onChanged?.(); }} />
 
@@ -183,9 +188,20 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                             yours {money(t.my_share, { cents: true })}
                           </div>
                         )}
+                        {t.my_share == null && t.paid_back > 0 && (
+                          <div className="share-note num">
+                            yours {money(Math.max(t.amount - t.paid_back, 0), { cents: true })}
+                          </div>
+                        )}
                         {t.invested != null && (
                           <div className="share-note num">
-                            invested {money(t.invested, { cents: true })}
+                            saved {money(t.invested, { cents: true })}
+                          </div>
+                        )}
+                        {t.repays && (
+                          <div className="share-note">
+                            paid back · {t.repays_merchant}
+                            {t.repays_amount != null && ` ${money(t.repays_amount)}`}
                           </div>
                         )}
                       </td>
@@ -392,24 +408,104 @@ function CategoryEditor({ current, merchant, categories, onSave, onCancel }) {
 }
 
 /**
+ * Money that left a bank account for somewhere Spendie can't see.
+ *
+ * Every dollar out was spent or saved. Until you say which, it counts as
+ * spent; "Always" remembers the answer for that name.
+ */
+function WhereDidThisGo({ categories, reload, onDone }) {
+  const [data, setData] = useState(null);
+  const [always, setAlways] = useState({});
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    getUnsorted().then(setData).catch(() => setData(null));
+  }, [reload]);
+
+  if (!data?.count) return null;
+  const spendable = categories.filter((c) => !NOT_SPENT.has(c.name));
+
+  async function decide(t, category) {
+    setBusy(t.id);
+    setError(null);
+    try {
+      await setCategory(t.id, category, !!always[t.id]);
+      onDone();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Card title="Where did this go?">
+      <p className="muted small" style={{ marginTop: 0 }}>
+        {data.count} transfer{data.count === 1 ? '' : 's'} out · {money(data.total)} counted
+        as spent until sorted
+      </p>
+      <ul className="sort-list">
+        {data.transfers.map((t) => (
+          <li key={t.id} className="sort-row">
+            <div className="sort-what">
+              <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+                <strong>{t.merchant}</strong>
+                <span className="num">{money(t.amount, { cents: true })}</span>
+              </div>
+              <div className="muted small">{dateLabel(t.date)} · {t.account_name}</div>
+            </div>
+            <div className="row sort-actions" style={{ gap: 6 }}>
+              <button className="btn primary" disabled={busy === t.id}
+                      onClick={() => decide(t, 'Saved')}>Saved</button>
+              <select aria-label={`Spent on — ${t.merchant}`} value=""
+                      disabled={busy === t.id}
+                      onChange={(e) => e.target.value && decide(t, e.target.value)}>
+                <option value="">Spent on…</option>
+                {spendable.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+              </select>
+              <label className="small muted row" style={{ gap: 4 }}>
+                <input type="checkbox" checked={!!always[t.id]}
+                       onChange={(e) => setAlways((a) => ({ ...a, [t.id]: e.target.checked }))} />
+                Always for “{t.merchant}”
+              </label>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <ErrorNote error={error} />
+    </Card>
+  );
+}
+
+/**
  * How much of a charge was yours, when friends paid you back the rest.
  *
  * Only your share counts toward the week, the month and the budgets, in the
  * month it was spent. The card's amount stays as charged beside it.
+ *
+ * The easy way is to tick the e-transfers that paid you back: your share is
+ * what is left, and that money in stops looking like money you made.
  */
 function ShareCell({ txn, open, onOpen, onDone }) {
   const [value, setValue] = useState('');
-  // How much of it went into investments, when part of it did.
+  // How much of it was put away, when part of it was.
   const [invested, setInvestedValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [paybacks, setPaybacks] = useState(null);
+  const [changed, setChanged] = useState(false);
 
   useEffect(() => {
     if (open) {
       setValue(txn.my_share != null ? String(txn.my_share) : '');
       setInvestedValue(txn.invested != null ? String(txn.invested) : '');
+      setChanged(false);
+      if (txn.amount > 0) {
+        getPaybacks(txn.id).then(setPaybacks).catch(() => setPaybacks(null));
+      }
     }
-  }, [open, txn.my_share, txn.invested]);
+  }, [open, txn.id, txn.my_share, txn.invested, txn.amount]);
 
   if (txn.amount <= 0) return <span className="muted small">—</span>;
 
@@ -427,27 +523,63 @@ function ShareCell({ txn, open, onOpen, onDone }) {
     }
   }
 
+  async function toggle(inflow, on) {
+    setBusy(true);
+    setError(null);
+    try {
+      setPaybacks(on ? await linkPayback(txn.id, inflow.id)
+                     : await unlinkPayback(txn.id, inflow.id));
+      setChanged(true);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const paidBack = txn.paid_back ?? 0;
   if (!open) {
     return (
       <button className="btn quiet" onClick={onOpen}>
         {txn.my_share != null ? `Yours ${money(txn.my_share)}`
-          : txn.invested != null ? `Invested ${money(txn.invested)}` : 'Split…'}
+          : paidBack > 0 ? `Yours ${money(Math.max(txn.amount - paidBack, 0))}`
+          : txn.invested != null ? `Saved ${money(txn.invested)}` : 'Split…'}
       </button>
     );
   }
 
   const part = (n) => (Math.round((txn.amount / n) * 100) / 100).toFixed(2);
+  const linked = paybacks?.linked ?? [];
+  const offered = [...linked.map((t) => ({ ...t, on: true })),
+                   ...(paybacks?.candidates ?? []).map((t) => ({ ...t, on: false }))];
 
   return (
     <form className="stack share-edit" style={{ gap: 6 }}
           onSubmit={(e) => { e.preventDefault(); save(value === '' ? null : Number(value)); }}>
+      {offered.length > 0 && (
+        <fieldset className="paybacks">
+          <legend className="small">Paid back by</legend>
+          {offered.map((t) => (
+            <label key={t.id} className="row small" style={{ gap: 6 }}>
+              <input type="checkbox" checked={t.on} disabled={busy}
+                     onChange={(e) => toggle(t, e.target.checked)} />
+              <span className="num">{money(-t.amount, { cents: true })}</span>
+              <span className="muted">{dateLabel(t.date)} · {t.merchant}</span>
+            </label>
+          ))}
+          {paybacks && (
+            <div className="small">
+              Your share: <strong className="num">{money(paybacks.share, { cents: true })}</strong>
+              {' '}of {money(txn.amount, { cents: true })}
+            </div>
+          )}
+        </fieldset>
+      )}
       <div className="row" style={{ gap: 6 }}>
-        <span className="muted small">$</span>
+        <span className="muted small">Your share $</span>
         <input type="number" min="0" max={txn.amount} step="0.01" inputMode="decimal"
                value={value} onChange={(e) => setValue(e.target.value)}
-               aria-label={`Your share of ${txn.merchant}`} style={{ width: 100 }}
-               // eslint-disable-next-line jsx-a11y/no-autofocus
-               autoFocus />
+               aria-label={`Your share of ${txn.merchant}`} style={{ width: 100 }} />
       </div>
       <div className="row" style={{ gap: 4 }}>
         {[[2, '½'], [3, '⅓'], [4, '¼']].map(([n, label]) => (
@@ -456,10 +588,10 @@ function ShareCell({ txn, open, onOpen, onDone }) {
         ))}
       </div>
       <div className="row" style={{ gap: 6 }}>
-        <span className="muted small">Invested $</span>
+        <span className="muted small">Saved $</span>
         <input type="number" min="0" max={txn.amount} step="0.01" inputMode="decimal"
                value={invested} onChange={(e) => setInvestedValue(e.target.value)}
-               aria-label={`Invested part of ${txn.merchant}`} style={{ width: 90 }} />
+               aria-label={`Saved part of ${txn.merchant}`} style={{ width: 90 }} />
         <button type="button" className="btn quiet chip-btn"
                 onClick={() => setInvestedValue(txn.amount.toFixed(2))}>All</button>
       </div>
@@ -469,7 +601,8 @@ function ShareCell({ txn, open, onOpen, onDone }) {
           <button className="btn quiet" type="button" disabled={busy}
                   onClick={() => save(null, null)}>Clear</button>
         )}
-        <button className="btn quiet" type="button" onClick={onOpen}>Cancel</button>
+        <button className="btn quiet" type="button"
+                onClick={changed ? onDone : onOpen}>{changed ? 'Done' : 'Cancel'}</button>
       </div>
       <ErrorNote error={error} />
     </form>

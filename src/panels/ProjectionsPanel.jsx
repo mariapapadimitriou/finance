@@ -359,16 +359,15 @@ function PaceBadge({ data }) {
 }
 
 /**
- * What actually went into investments this month, beside the saving the plan
- * asks for: transfers categorised Investments, plus the invested part of any
- * other transaction.
+ * What was actually put away this month, beside the saving the plan asks
+ * for: transfers marked Saved, plus the saved part of any other transaction.
  */
 function InvestedThisMonth({ im }) {
   const target = im.saving ?? 0;
   const done = target > 0 && im.amount >= target - 0.5;
   const share = target > 0 ? Math.min(Math.max(im.amount, 0) / target, 1) : 0;
   return (
-    <Card title="Invested this month">
+    <Card title="Saved this month">
       {im.amount > 0 ? (
         <>
           <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
@@ -389,8 +388,8 @@ function InvestedThisMonth({ im }) {
         </>
       ) : (
         <p className="muted" style={{ margin: 0 }}>
-          Nothing marked as invested yet. Set a transfer's category to
-          Investments, or mark part of one under Split… on Transactions.
+          Nothing marked as saved yet. Sort a transfer as Saved on
+          Transactions, or mark part of one under Split….
         </p>
       )}
     </Card>
