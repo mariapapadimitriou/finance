@@ -37,6 +37,17 @@ export const getSummary      = () => req('/api/summary');
 export const getInsights     = () => req('/api/insights');
 export const getRecurring    = () => req('/api/recurring');
 export const getAccounts     = () => req('/api/accounts');
+
+/**
+ * What to call an account so you can tell which it is: the bank, the kind of
+ * account and its last four digits — "TD Bank · Chequing ••1234". Falls back
+ * to the name the bank or the statement gave it when the bank isn't known.
+ */
+export function accountTitle(a) {
+  if (!a) return '';
+  if (!a.institution) return a.account_name || a.account_id;
+  return `${a.institution} · ${a.kind_label}${a.mask ? ` ••${a.mask}` : ''}`;
+}
 // Removing a connected account has to stop it syncing too, or the next sync
 // fetches the whole thing again. `stopSyncing: false` deletes the rows only.
 export const deleteAccount   = (id, stopSyncing = true) =>

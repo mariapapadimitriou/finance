@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Card, ErrorNote, GoTo, Loading, Notice, StatusPill, } from '../components/ui.jsx';
 import {
-  dateLabel, deleteAccount, getAccounts, getDuplicateAudit, getLedgerStart,
+  accountTitle, dateLabel, deleteAccount, getAccounts, getDuplicateAudit, getLedgerStart,
   money, recategorizeAll, resetLedger, setAccountSync, setLedgerStart, syncPlaid,
 } from '../api.js';
 
@@ -46,7 +46,7 @@ export default function AccountsPanel({ onChanged, onTab }) {
   async function remove(account) {
     const connected = account.syncs !== null;
     if (!window.confirm(
-      `Remove "${account.account_name}" and all ${account.transactions} of its `
+      `Remove "${accountTitle(account)}" and all ${account.transactions} of its `
       + 'transactions? This can\'t be undone.'
       + (connected
         ? ' It will also stop syncing, so the next sync won\'t bring it back. '
@@ -139,19 +139,24 @@ export default function AccountsPanel({ onChanged, onTab }) {
               {accounts.map((a) => (
                 <tr key={a.account_id}>
                   <td className="merchant">
-                    {a.account_name}
+                    <strong>{accountTitle(a)}</strong>
+                    {a.institution && a.account_name && (
+                      <div className="desc" title={a.account_name}>{a.account_name}</div>
+                    )}
                     <div className="desc">
-                      {a.source === 'plaid' ? 'connected through Plaid'
-                        : a.source === 'manual' ? 'added by hand'
-                        : 'imported from statements'}
+                      {a.source === 'plaid' ? 'Connected through Plaid'
+                        : a.source === 'manual' ? 'Added by hand'
+                        : a.imported_from?.filename
+                          ? `From ${a.imported_from.filename}`
+                            + (a.imported_from.format_label
+                              ? ` (${a.imported_from.format_label})` : '')
+                          : 'Imported from statements'}
                     </div>
                   </td>
                   <td>
-                    {a.is_card
-                      ? <StatusPill state="good">Card</StatusPill>
-                      : <StatusPill state="warning">
-                          {a.plaid_subtype || a.plaid_type || 'not a card'}
-                        </StatusPill>}
+                    <span className="pill">
+                      {a.kind_label || (a.is_card ? 'Card' : 'Account')}
+                    </span>
                   </td>
                   <td>
                     {a.syncs === null ? (
