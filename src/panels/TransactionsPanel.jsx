@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
-  addTransaction, allocateToBank, dateLabel, deleteTransaction, getBanks,
+  accountTitle, addTransaction, allocateToBank, dateLabel, deleteTransaction, getBanks,
   getPaybacks, getTransactions, getUnsorted, linkPayback, money, setCategory,
   setInvested, setShare, unallocate, unlinkPayback,
 } from '../api.js';
@@ -95,7 +95,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
           <select id="f-acct" value={filters.account} onChange={(e) => update('account', e.target.value)}>
             <option value="">All</option>
             {accounts.map((a) => (
-              <option key={a.account_id} value={a.account_id}>{a.account_name}</option>
+              <option key={a.account_id} value={a.account_id}>{accountTitle(a)}</option>
             ))}
           </select>
 

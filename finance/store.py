@@ -968,6 +968,17 @@ class Store:
                  result.account_name, imported, duplicates, result.skipped_rows),
             )
 
+    def imports_by_account(self) -> dict[str, dict]:
+        """The latest import of each account: the file it came from and the
+        format it was read as."""
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT account_id, filename, format_label FROM imports "
+                "ORDER BY id").fetchall()
+        return {r["account_id"]: {"filename": r["filename"] or "",
+                                  "format_label": r["format_label"] or ""}
+                for r in rows if r["account_id"]}
+
     def import_history(self, limit: int = 25) -> list[dict]:
         with self.conn() as c:
             rows = c.execute(

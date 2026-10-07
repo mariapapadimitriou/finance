@@ -566,6 +566,56 @@ def remove_payback(txn_id: str, inflow_id: str):
     return list_paybacks(txn_id)
 
 
+# Plaid's account subtypes, as a person would say them.
+_KIND_LABELS = {
+    "credit card": "Credit card", "checking": "Chequing", "savings": "Savings",
+    "money market": "Savings", "cd": "GIC", "gic": "GIC", "mortgage": "Mortgage",
+    "line of credit": "Line of credit", "student": "Student loan",
+    "paypal": "PayPal", "prepaid": "Prepaid card",
+}
+_TYPE_LABELS = {"credit": "Credit card", "depository": "Bank account",
+                "investment": "Investment", "brokerage": "Investment",
+                "loan": "Loan"}
+# A statement format that says nothing about the bank.
+_GENERIC_FORMATS = {"csv / statement export", "pdf statement", "plaid", "manual",
+                    "empty file", "csv", ""}
+
+
+def _statement_bank(format_label: str) -> str:
+    """The bank a statement format names: "Scotiabank statement (PDF)" →
+    "Scotiabank", "American Express" → "American Express"."""
+    import re
+    name = re.sub(r"\s*\((?:pdf|csv|headerless)\)\s*$", "", format_label or "", flags=re.I)
+    name = re.sub(r"\s+statement$", "", name, flags=re.I).strip()
+    return "" if name.lower() in _GENERIC_FORMATS else name
+
+
+def _label_account(row: dict, banks: dict[str, str], imported: dict[str, dict]) -> None:
+    """Add what a person needs to tell accounts apart: the bank, what kind of
+    account it is, and its last four digits — or, for a statement, the file."""
+    import re
+    name = row.get("account_name") or ""
+    m = re.search(r"••\s*(\d{2,4})\s*$", name)
+    row["mask"] = m.group(1) if m else ""
+    subtype = (row.get("plaid_subtype") or "").lower()
+    ptype = (row.get("plaid_type") or "").lower()
+    if row.get("source") == "plaid":
+        row["institution"] = banks.get(row.get("item_id") or "", "")
+        if ptype == "investment" or subtype in ("tfsa", "rrsp", "fhsa", "resp",
+                                                "brokerage", "rrif", "lira"):
+            row["kind_label"] = "Investment"
+        else:
+            row["kind_label"] = (_KIND_LABELS.get(subtype) or _TYPE_LABELS.get(ptype)
+                                 or (subtype.title() if subtype else "Account"))
+        row["imported_from"] = None
+    else:
+        imp = imported.get(row.get("account_id") or "") or {}
+        row["institution"] = _statement_bank(imp.get("format_label", ""))
+        row["kind_label"] = ("Added by hand" if row.get("source") == "manual"
+                             else "Card statement")
+        row["imported_from"] = imp or None
+
+
 @bp.get("/accounts")
 def accounts():
     """Every account this app knows about, and whether it syncs.
@@ -623,6 +673,11 @@ def accounts():
         })
 
     from .analytics import currency_mix, ledger_currency
+
+    banks = {i["item_id"]: i.get("institution") or "" for i in st.plaid_items()}
+    imported = st.imports_by_account()
+    for row in rows:
+        _label_account(row, banks, imported)
 
     txns = st.all_transactions()
     return jsonify({
