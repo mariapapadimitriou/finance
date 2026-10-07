@@ -212,7 +212,16 @@ export const setBudgets    = (budgets) => json('PUT', '/api/budgets', { budgets 
 // null puts the whole charge back.
 export const setShare      = (id, myShare) =>
   json('PUT', `/api/transactions/${id}/share`, { my_share: myShare });
-// How much of a transaction went into investments. null clears it.
+// Money that left a bank account for somewhere Spendie can't see, waiting to
+// be called spent or saved.
+export const getUnsorted   = () => req('/api/transfers/unsorted');
+// Money friends sent back for a charge: what is linked, and what might be.
+export const getPaybacks   = (id) => req(`/api/transactions/${id}/paybacks`);
+export const linkPayback   = (id, inflowId) =>
+  json('POST', `/api/transactions/${id}/paybacks/${inflowId}`, {});
+export const unlinkPayback = (id, inflowId) =>
+  req(`/api/transactions/${id}/paybacks/${inflowId}`, { method: 'DELETE' });
+// How much of a transaction was put away (saved). null clears it.
 export const setInvested   = (id, amount) =>
   json('PUT', `/api/transactions/${id}/invested`, { amount });
 export const setCategory   = (id, category, applyToMerchant = false) =>

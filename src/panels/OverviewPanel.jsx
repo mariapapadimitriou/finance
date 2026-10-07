@@ -65,10 +65,14 @@ export default function OverviewPanel({ summary, theme, month, onTab, version = 
       </div>
 
       {view === 'trends' ? (
+        <div>
         <div className="month-hero">
           <div>
             <div className="hero-total">{money(spent, { cents: true })}</div>
-            <div className="hero-sub">Spent in {monthLabel(month, { full: true })}</div>
+            <div className="hero-sub">
+              {breakdown?.bills ? 'Everyday spending in ' : 'Spent in '}
+              {monthLabel(month, { full: true })}
+            </div>
           </div>
           {pace?.average_total != null && (
             <div className="hero-side">
@@ -78,8 +82,13 @@ export default function OverviewPanel({ summary, theme, month, onTab, version = 
             </div>
           )}
         </div>
+        {breakdown?.bills && <Bills bills={breakdown.bills} />}
+        </div>
       ) : categories.length > 0 && (
-        <CategoryRing categories={categories} total={spent} month={month} />
+        // Every category, bills included: the ring is where the whole month
+        // is, while the headline above is the part worth watching.
+        <CategoryRing categories={categories}
+                      total={categories.reduce((t, c) => t + c.amount, 0)} month={month} />
       )}
 
       {view === 'trends' ? (
@@ -154,6 +163,39 @@ export default function OverviewPanel({ summary, theme, month, onTab, version = 
  * The month as a donut: the biggest categories, and the rest as one slice.
  * Colours are each category's own, so a slice matches its row below.
  */
+/**
+ * The bills the plan already set aside — the mortgage, the hydro — paid this
+ * month, apart from the headline: they aren't spending to watch.
+ */
+function Bills({ bills }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button type="button" className="bills-row" aria-expanded={open}
+              onClick={() => setOpen((o) => !o)}>
+        <span>Bills from your plan</span>
+        <span className="num">
+          <strong>{money(bills.paid)}</strong>
+          <span className="muted"> of {money(bills.planned)} paid</span>
+          {' '}{open ? '▴' : '▾'}
+        </span>
+      </button>
+      {open && (
+        <ul className="bills-list">
+          {bills.items.map((b) => (
+            <li key={b.category}>
+              <span>{b.name}</span>
+              <span className="num">
+                {money(b.paid)} <span className="muted">/ {money(b.planned)}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function CategoryRing({ categories, total, month }) {
   const top = categories.slice(0, 5);
   const rest = categories.slice(5).reduce((t, c) => t + c.amount, 0);

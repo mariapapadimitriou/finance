@@ -291,6 +291,10 @@ def sync_all(store) -> dict:
     if store.setting("categories_version") != str(RULES_VERSION):
         recategorize_all(store)
         store.set_setting("categories_version", RULES_VERSION)
+    elif any(o.get("deleted") for o in out):
+        # A transfer whose other end was withdrawn is no longer matched.
+        from .transfers import apply_transfer_matches
+        apply_transfer_matches(store)
 
     return {
         "items": out,

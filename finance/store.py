@@ -151,6 +151,16 @@ CREATE TABLE IF NOT EXISTS txn_invested (
     txn_id TEXT PRIMARY KEY,
     amount REAL NOT NULL
 );
+
+-- Money friends sent back for a charge you paid for everyone. An inflow repays
+-- at most one charge; the charge's share is what is left once they have: an
+-- $80 dinner with $60 sent back cost you $20, and the $60 is neither income
+-- nor money in — it was always theirs.
+CREATE TABLE IF NOT EXISTS txn_paybacks (
+    inflow_id TEXT PRIMARY KEY,
+    charge_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_payback_charge ON txn_paybacks(charge_id);
 CREATE INDEX IF NOT EXISTS idx_alloc_bank ON piggy_allocations(bank_id);
 
 -- What each bank pays for: a category belongs to at most one bank. Every
@@ -276,17 +286,18 @@ _CHARGES = """(
     SELECT t.id AS txn_id,
            COALESCE(m.bank_id, o.bank_id) AS bank_id,
            CASE WHEN m.amount IS NOT NULL
-                     AND m.amount < COALESCE(s.my_share, t.amount) - COALESCE(iv.amount, 0)
+                     AND m.amount < COALESCE(s.my_share, t.amount - COALESCE(pb.total, 0)) - COALESCE(iv.amount, 0)
                      THEN m.amount
-                WHEN COALESCE(s.my_share, t.amount) - COALESCE(iv.amount, 0) < 0
+                WHEN COALESCE(s.my_share, t.amount - COALESCE(pb.total, 0)) - COALESCE(iv.amount, 0) < 0
                      THEN 0
-                ELSE COALESCE(s.my_share, t.amount) - COALESCE(iv.amount, 0)
+                ELSE COALESCE(s.my_share, t.amount - COALESCE(pb.total, 0)) - COALESCE(iv.amount, 0)
                 END AS charged,
            CASE WHEN m.txn_id IS NULL THEN 1 ELSE 0 END AS auto
       FROM transactions t
       LEFT JOIN piggy_allocations m ON m.txn_id = t.id
       LEFT JOIN txn_shares s ON s.txn_id = t.id
       LEFT JOIN txn_invested iv ON iv.txn_id = t.id
+      LEFT JOIN _PAYBACKS_ pb ON pb.charge_id = t.id
       LEFT JOIN (SELECT bc.category AS category, b.id AS bank_id,
                         b.start_month AS start_month
                    FROM piggy_bank_categories bc
@@ -297,11 +308,22 @@ _CHARGES = """(
      WHERE m.txn_id IS NOT NULL OR o.bank_id IS NOT NULL
 )"""
 
+# What friends have sent back for each charge, as a positive total.
+_PAYBACKS = """(
+    SELECT p.charge_id AS charge_id, -SUM(r.amount) AS total
+      FROM txn_paybacks p
+      JOIN transactions r ON r.id = p.inflow_id
+     GROUP BY p.charge_id
+)"""
+_CHARGES = _CHARGES.replace("_PAYBACKS_", _PAYBACKS)
+
 # The columns every transaction loader adds, joined as `a` on `_CHARGES`.
 # A bank pays your share of a charge, never more: friends who paid you back
 # for the rest are not the bank's to cover.
 _CHARGE_COLUMNS = """sh.my_share AS my_share,
                           ivx.amount AS invested,
+                          pbx.total AS paid_back,
+                          rpx.charge_id AS repays,
                           a.bank_id AS bank_id,
                           CASE WHEN a.bank_id IS NULL THEN 0 ELSE a.charged
                           END AS bank_amount,
@@ -341,6 +363,7 @@ class Store:
         self._migrate_allocation_amounts()
         self._migrate_travel_ownership()
         self._drop_bank_funded_budgets()
+        self._migrate_saved()
 
     def _migrate_buckets(self) -> None:
         """Carry the buckets that piggy banks replaced into piggy banks.
@@ -414,6 +437,16 @@ class Store:
                         (category, bank["id"]))
         self.set_setting("bank_categories_migrated", "1")
 
+    def _migrate_saved(self) -> None:
+        """Investments became Saved: one bucket for money put away, wherever
+        it went. Idempotent — after the first open there is nothing to rename.
+        Budgets and budget lines never held it (it was never spending)."""
+        with self.conn() as c:
+            c.execute("UPDATE transactions SET category = 'Saved' "
+                      "WHERE category = 'Investments'")
+            c.execute("UPDATE merchant_overrides SET category = 'Saved' "
+                      "WHERE category = 'Investments'")
+
     def _drop_bank_funded_budgets(self) -> None:
         """Remove budget lines for categories a piggy bank pays for.
 
@@ -486,6 +519,8 @@ class Store:
                      LEFT JOIN {_CHARGES} a ON a.txn_id = t.id
                      LEFT JOIN txn_shares sh ON sh.txn_id = t.id
                      LEFT JOIN txn_invested ivx ON ivx.txn_id = t.id
+                     LEFT JOIN {_PAYBACKS} pbx ON pbx.charge_id = t.id
+                     LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
                     ORDER BY t.date DESC, t.id""").fetchall()
         return [Transaction.from_row(dict(r)) for r in rows]
 
@@ -528,6 +563,8 @@ class Store:
                       LEFT JOIN {_CHARGES} a ON a.txn_id = t.id
                       LEFT JOIN txn_shares sh ON sh.txn_id = t.id
                       LEFT JOIN txn_invested ivx ON ivx.txn_id = t.id
+                      LEFT JOIN {_PAYBACKS} pbx ON pbx.charge_id = t.id
+                      LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
                     {clause}
                     ORDER BY t.date DESC, t.id LIMIT ? OFFSET ?""",
                 params + [limit, offset],
@@ -556,6 +593,8 @@ class Store:
                      LEFT JOIN {_CHARGES} a ON a.txn_id = t.id
                      LEFT JOIN txn_shares sh ON sh.txn_id = t.id
                      LEFT JOIN txn_invested ivx ON ivx.txn_id = t.id
+                     LEFT JOIN {_PAYBACKS} pbx ON pbx.charge_id = t.id
+                     LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
                     WHERE t.id = ?""", (txn_id,)).fetchone()
         return Transaction.from_row(dict(row)) if row else None
 
@@ -564,6 +603,8 @@ class Store:
             cur = c.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
             c.execute("DELETE FROM txn_shares WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_invested WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_paybacks WHERE inflow_id = ? OR charge_id = ?",
+                      (txn_id, txn_id))
             return cur.rowcount > 0
 
     def set_share(self, txn_id: str, my_share: float | None) -> None:
@@ -581,6 +622,40 @@ class Store:
             if amount is not None:
                 c.execute("INSERT INTO txn_invested (txn_id, amount) VALUES (?, ?)",
                           (txn_id, round(float(amount), 2)))
+
+    def link_payback(self, charge_id: str, inflow_id: str) -> None:
+        """Say this money coming in was a friend paying you back for that
+        charge. An inflow repays one charge, so linking it again moves it."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_paybacks WHERE inflow_id = ?", (inflow_id,))
+            c.execute("INSERT INTO txn_paybacks (inflow_id, charge_id) VALUES (?, ?)",
+                      (inflow_id, charge_id))
+
+    def unlink_payback(self, inflow_id: str) -> bool:
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM txn_paybacks WHERE inflow_id = ?",
+                            (inflow_id,))
+            return (cur.rowcount or 0) > 0
+
+    def paybacks_for(self, charge_id: str) -> list[str]:
+        """The inflows linked to a charge, as ids."""
+        with self.conn() as c:
+            rows = c.execute("SELECT inflow_id FROM txn_paybacks WHERE charge_id = ?",
+                             (charge_id,)).fetchall()
+        return [r["inflow_id"] for r in rows]
+
+    def set_categories(self, changes: dict[str, tuple[str, str]]) -> int:
+        """Write (category, source) for many rows at once, never over a
+        category you set yourself."""
+        updated = 0
+        with self.conn() as c:
+            for txn_id, (category, source) in changes.items():
+                cur = c.execute(
+                    """UPDATE transactions SET category = ?, category_source = ?
+                       WHERE id = ? AND category_source != 'user'""",
+                    (category, source, txn_id))
+                updated += max(cur.rowcount or 0, 0)
+        return updated
 
     def accounts(self) -> list[dict]:
         with self.conn() as c:
@@ -656,6 +731,8 @@ class Store:
                 for table in ("txn_shares", "txn_invested", "piggy_allocations",
                               "piggy_optouts"):
                     c.execute(f"DELETE FROM {table} WHERE txn_id IN ({marks})", chunk)
+                c.execute(f"DELETE FROM txn_paybacks WHERE inflow_id IN ({marks})", chunk)
+                c.execute(f"DELETE FROM txn_paybacks WHERE charge_id IN ({marks})", chunk)
             if import_suffix:
                 c.execute("DELETE FROM imports WHERE filename LIKE ?",
                           (f"%{import_suffix}",))
@@ -779,6 +856,7 @@ class Store:
             ("piggy_draws", "piggy-bank draws"),
             ("txn_shares", "your shares of split charges"),
             ("txn_invested", "amounts marked as invested"),
+            ("txn_paybacks", "money friends paid back"),
             ("dismissed_insights", "dismissed findings"),
         ]
         with self.conn() as c:

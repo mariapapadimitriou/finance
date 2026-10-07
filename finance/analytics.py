@@ -22,10 +22,20 @@ from .models import Transaction
 
 def share_amount(t: Transaction) -> float:
     """What a charge cost you: your share of it when friends paid you back
-    for the rest, otherwise the whole charge."""
-    base = t.amount if t.my_share is None else t.my_share
+    for the rest, otherwise the whole charge.
+
+    A share you typed wins. Otherwise whatever friends sent back and you
+    linked to the charge comes off it: an $80 dinner with three $20
+    e-transfers linked cost you $20.
+    """
+    if t.my_share is not None:
+        base = t.my_share
+    elif t.paid_back:
+        base = round(max(t.amount - t.paid_back, 0.0), 2)
+    else:
+        base = t.amount
     if t.invested:
-        # The part that went into investments was saved, not spent.
+        # The part that was put away was saved, not spent.
         return round(max(base - t.invested, 0.0), 2)
     return base
 
@@ -64,7 +74,8 @@ def counts_as_spending(t: Transaction) -> bool:
         return False
     # A partly covered charge still counts, for the part nobody budgeted. A
     # charge friends paid back in full counts for nothing at all.
-    if t.bank_id is None and t.my_share is None and not t.invested:
+    if (t.bank_id is None and t.my_share is None and not t.invested
+            and not t.paid_back):
         return True
     return abs(spend_amount(t)) >= 0.005
 
@@ -82,7 +93,7 @@ def spend_only(transactions: list[Transaction]) -> list[Transaction]:
         if not counts_as_spending(t):
             continue
         adjusted = (t.bank_id is not None or t.my_share is not None
-                    or bool(t.invested))
+                    or bool(t.invested) or bool(t.paid_back))
         out.append(replace(t, amount=spend_amount(t)) if adjusted else t)
     return out
 
@@ -173,7 +184,9 @@ def monthly_totals(transactions: list[Transaction]) -> list[dict]:
                 counts[t.month] += 1
         elif cat == "Income" and t.amount < 0:
             income[t.month] += abs(t.amount)
-        elif t.amount < 0:
+        elif t.amount < 0 and not t.repays:
+            # A friend paying you back is not money in: it came off the
+            # charge it was for.
             inflows[t.month] += abs(t.amount)
 
     return [
@@ -241,17 +254,17 @@ def typical_month_spend(transactions: list[Transaction],
 
 
 def invested_in(transactions: list[Transaction], month: str) -> float:
-    """What went into investments in a month.
+    """What was put away in a month.
 
-    A transaction categorised Investments counts in full (money taken back
-    out, as a negative, reduces it). Any other transaction counts the part
-    marked as invested. A row is never counted both ways.
+    A transaction categorised Saved counts in full (money taken back out, as
+    a negative, reduces it). Any other transaction counts the part marked as
+    saved. A row is never counted both ways.
     """
     total = 0.0
     for t in transactions:
         if t.month != month:
             continue
-        if (t.category or "") == "Investments":
+        if (t.category or "") == "Saved":
             total += t.amount
         elif t.invested:
             total += t.invested
@@ -431,7 +444,8 @@ def daily_series(transactions: list[Transaction], days: int = 90) -> list[dict]:
 
 
 def month_pace(transactions: list[Transaction], month: str,
-               today: date | None = None, compare: int = 3) -> dict:
+               today: date | None = None, compare: int = 3,
+               exclude: set[str] | frozenset = frozenset()) -> dict:
     """This month's spending as a running total, beside a usual month's.
 
     Day by day, what has been spent so far — through today for the month
@@ -442,7 +456,11 @@ def month_pace(transactions: list[Transaction], month: str,
     import calendar
 
     today = today or date.today()
-    rows = spend_only(transactions)
+    # `exclude` takes out the bills a plan already set aside — the mortgage
+    # is not this month's spending to watch — from this month and the months
+    # it is compared with alike.
+    rows = [t for t in spend_only(transactions)
+            if (t.category or "Other") not in exclude]
     year, mon = int(month[:4]), int(month[5:7])
     days = calendar.monthrange(year, mon)[1]
     through = today.day if month == today.isoformat()[:7] else days
@@ -478,6 +496,45 @@ def month_pace(transactions: list[Transaction], month: str,
         "average_total": average[-1] if average else None,
         "compared": earlier,
     }
+
+
+def bill_categories(fixed) -> set[str]:
+    """The categories a plan's fixed costs are paid under: its bills.
+
+    "Other" is left out — a fixed cost nobody categorised would otherwise
+    take every uncategorised charge with it.
+    """
+    return {f.category for f in fixed
+            if f.category and f.category != "Other" and is_spend_category(f.category)}
+
+
+def bills_paid(transactions: list[Transaction], month: str, fixed) -> dict:
+    """What the plan's bills cost this month, beside what the plan expected.
+
+    One item per category: a mortgage and a property tax both under Rent &
+    Housing are one line, because the ledger can't tell their payments apart.
+    """
+    cats = bill_categories(fixed)
+    planned: dict[str, float] = defaultdict(float)
+    names: dict[str, list[str]] = defaultdict(list)
+    for f in fixed:
+        if f.category in cats:
+            planned[f.category] += f.amount
+            names[f.category].append(f.name)
+    paid: dict[str, float] = defaultdict(float)
+    for t in transactions:
+        if t.month == month and t.category in cats \
+                and is_spend_category(t.category):
+            paid[t.category] += share_amount(t) if t.amount > 0 else t.amount
+    items = []
+    for cat in sorted(cats, key=lambda c: -planned[c]):
+        label = names[cat][0] if len(names[cat]) == 1 else cat
+        items.append({"name": label, "category": cat, "names": names[cat],
+                      "planned": round(planned[cat], 2),
+                      "paid": round(max(paid.get(cat, 0.0), 0.0), 2)})
+    return {"paid": round(sum(i["paid"] for i in items), 2),
+            "planned": round(sum(i["planned"] for i in items), 2),
+            "items": items}
 
 
 def weekday_profile(transactions: list[Transaction]) -> list[dict]:

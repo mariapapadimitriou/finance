@@ -37,6 +37,8 @@ export const CATEGORY_ICON = {
   'Cash & ATM': '💵',
   'Income': '💰',
   'Transfers': '🔄',
+  'Unsorted transfers': '❔',
+  'Saved': '🐖',
   'Other': '❓',
 };
 

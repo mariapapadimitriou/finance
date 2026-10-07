@@ -69,7 +69,8 @@ export default function TodayPanel({ month, onTab, version = 0 }) {
                      onPrev={() => setWeekOn(dayBefore(state.month, state.week.first_day))} />
       )}
       <ThisMonth status={status} state={state} live={live}
-                 total={data.spent_in_total} fromBanks={data.from_banks} />
+                 total={data.spent_in_total} bills={data.bills_in_total}
+                 fromBanks={data.from_banks} />
       <CanIBuyThis month={state.month} />
 
       <PiggyBanks banks={banks} draws={draws}
@@ -178,7 +179,7 @@ function SafeToSpend({ week, month, remaining, budget, live, past, onPrev, onNex
 
 /* ── How are you doing this month ────────────────────────────────────────── */
 
-function ThisMonth({ status, state, live, total, fromBanks }) {
+function ThisMonth({ status, state, live, total, bills = 0, fromBanks }) {
   const budget = Math.max(state.budget ?? 0, 0);
   const spent = Math.max(status.spent, 0);
   const over = spent > budget;
@@ -223,8 +224,18 @@ function ThisMonth({ status, state, live, total, fromBanks }) {
       )}
       {total != null && (
         <div className="ring-foot total-line">
-          <strong className="num">{money(total, { cents: true })}</strong> spent in total
-          {live ? ' this month' : ` in ${monthLabel(state.month, { long: true })}`}
+          {bills > 0 ? (
+            <>
+              <strong className="num">{money(total - bills, { cents: true })}</strong> everyday
+              {live ? ' this month' : ` in ${monthLabel(state.month, { long: true })}`}
+              {' · '}<strong className="num">{money(bills, { cents: true })}</strong> bills from your plan
+            </>
+          ) : (
+            <>
+              <strong className="num">{money(total, { cents: true })}</strong> spent in total
+              {live ? ' this month' : ` in ${monthLabel(state.month, { long: true })}`}
+            </>
+          )}
           {fromBanks > 0 && (
             <> · <strong className="num">{money(fromBanks, { cents: true })}</strong> from piggy banks</>
           )}
