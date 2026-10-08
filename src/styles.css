@@ -1523,3 +1523,20 @@ label.sort-foot { justify-content: flex-start; cursor: pointer; }
   border-radius: 999px; padding: 3px 10px; font: inherit; font-size: .8rem;
   font-weight: 600; cursor: pointer; color: var(--ink); }
 .owner-pill.theirs { color: var(--muted); border-style: dashed; }
+.plan-field { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.plan-field label { font-weight: 600; }
+.pill-btn.on { background: var(--brand-tint); border-color: var(--brand); }
+.goal-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.goal-rows li { display: grid; grid-template-columns: minmax(150px, 1.2fr) 2fr auto;
+  align-items: center; gap: 12px; }
+.goal-bar { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.goal-bar > div { height: 100%; border-radius: 4px; }
+.goal-bar .goal { background: var(--ring-1); }
+.goal-bar .good { background: var(--good); }
+.goal-bar .short { background: var(--warning, #d98e04); }
+.goal-value { text-align: right; white-space: nowrap; }
+.warn-text { color: color-mix(in srgb, var(--warning) 60%, var(--ink)); font-weight: 600; }
+@media (max-width: 640px) {
+  .goal-rows li { grid-template-columns: 1fr auto; }
+  .goal-bar { grid-column: 1 / -1; grid-row: 2; }
+}

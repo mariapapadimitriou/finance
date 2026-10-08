@@ -24,10 +24,9 @@ import {
  * page answers what the money is promised to; Budgets answers how the rest
  * divides and how the month is going against it.
  */
-// Saving starts at a fifth of take-home and follows it until you set your own.
-const DEFAULT_SAVING = 0.2;
-const fifth = (income) => (Number(income) > 0
-  ? String(Math.round(Number(income) * DEFAULT_SAVING)) : '');
+// With nothing set, the goal is a fifth of take-home.
+const DEFAULT_RATE = 20;
+const CHIPS = [10, 15, 20];
 
 export default function PlanPanel({ onChanged, onTab }) {
   const [data, setData] = useState(null);
@@ -35,10 +34,8 @@ export default function PlanPanel({ onChanged, onTab }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [income, setIncome] = useState('');
-  const [savings, setSavings] = useState('');
-  // Whether saving is still the 20% default, so it moves with take-home.
-  // Saved as anything else, it is yours and stays put.
-  const [linked, setLinked] = useState(true);
+  // The saving goal, as a percentage of take-home.
+  const [rate, setRate] = useState(String(DEFAULT_RATE));
   const [draft, setDraft] = useState({ name: '', amount: '', category: 'Rent & Housing' });
 
   const load = useCallback(async () => {
@@ -47,9 +44,8 @@ export default function PlanPanel({ onChanged, onTab }) {
       const d = await getPlanSetup();
       setData(d);
       setIncome(d.income ? String(d.income) : '');
-      const follows = !d.savings || String(d.savings) === fifth(d.income);
-      setLinked(follows);
-      setSavings(d.savings ? String(d.savings) : follows ? fifth(d.income) : '');
+      setRate(d.savings_rate != null
+        ? String(Math.round(d.savings_rate * 1000) / 10) : String(DEFAULT_RATE));
       // The endpoint returns objects, not strings; the select wants names.
       const list = (await getCategories().catch(() => null))?.categories ?? [];
       setCats(list.map((c) => (typeof c === 'string' ? c : c.name)));
@@ -77,6 +73,11 @@ export default function PlanPanel({ onChanged, onTab }) {
   if (!data && !error) return <Loading what="your plan" />;
   if (!data) return <ErrorNote error={error} onRetry={load} />;
 
+  const seen = data.observed;
+  const span = seen?.months?.length
+    ? `${monthLabel(seen.months[0].month)}–${monthLabel(seen.months.at(-1).month)}` : '';
+  const goal = Math.round((Number(income) || 0) * (Number(rate) || 0) / 100);
+
   const tone = { negative: 'critical', tight: 'warning', loose: 'warning',
                  ok: 'good', unset: 'warning' }[data.verdict] ?? 'warning';
 
@@ -85,35 +86,52 @@ export default function PlanPanel({ onChanged, onTab }) {
       <ErrorNote error={error} onRetry={load} />
 
       <Card title="Income">
-        <form className="controls" onSubmit={(e) => {
+        <form className="stack" style={{ gap: 14 }} onSubmit={(e) => {
           e.preventDefault();
-          run(() => savePlanSetup(Number(income) || 0, Number(savings) || 0));
+          run(() => savePlanSetup(Number(income) || 0, (Number(rate) || 0) / 100));
         }}>
-          <label htmlFor="income">Monthly take-home</label>
-          <input id="income" type="number" min="0" step="any" inputMode="decimal"
-                 value={income}
-                 onChange={(e) => {
-                   setIncome(e.target.value);
-                   if (linked) setSavings(fifth(e.target.value));
-                 }}
-                 style={{ width: 130 }} />
-          <label htmlFor="savings">Saving / investing</label>
-          <span className="row" style={{ gap: 8 }}>
-            <input id="savings" type="number" min="0" step="any" inputMode="decimal"
-                   value={savings}
-                   onChange={(e) => { setSavings(e.target.value); setLinked(false); }}
-                   style={{ width: 130 }} />
-            {Number(income) > 0 && savings !== '' && (
-              <span className="muted small num" aria-label="of take-home">
-                {pct(Number(savings) / Number(income))}
-              </span>
+          <div className="plan-field">
+            <label htmlFor="income">Monthly take-home</label>
+            <input id="income" type="number" min="0" step="any" inputMode="decimal"
+                   value={income} onChange={(e) => setIncome(e.target.value)}
+                   style={{ width: 140 }} />
+            {seen && Math.abs(seen.income - (Number(income) || 0)) > 1 && (
+              <div className="muted small">
+                From your accounts: about <strong className="num">{money(seen.income)}</strong>/mo
+                {' '}({span}) ·{' '}
+                <button type="button" className="link-btn"
+                        onClick={() => setIncome(String(Math.round(seen.income)))}>
+                  Use this
+                </button>
+              </div>
             )}
-          </span>
-          <button className="btn primary" type="submit" disabled={busy}>
-            {busy ? 'Saving…' : 'Save'}
-          </button>
+          </div>
+          <div className="plan-field">
+            <label htmlFor="rate">Saving goal</label>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <span className="row" style={{ gap: 4 }}>
+                <input id="rate" type="number" min="0" max="90" step="any" inputMode="decimal"
+                       value={rate} onChange={(e) => setRate(e.target.value)}
+                       style={{ width: 80 }} aria-label="Saving goal, percent of take-home" />
+                <span className="muted">%</span>
+              </span>
+              {CHIPS.map((c) => (
+                <button key={c} type="button"
+                        className={`pill-btn${Number(rate) === c ? ' on' : ''}`}
+                        onClick={() => setRate(String(c))}>{c}%</button>
+              ))}
+              <span className="num">= <strong>{money(goal)}</strong>/mo</span>
+            </div>
+          </div>
+          <div>
+            <button className="btn primary" type="submit" disabled={busy}>
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
         </form>
       </Card>
+
+      {seen && <GoalVsActual seen={seen} goal={data.savings} income={data.income} />}
 
       <Card title="Fixed commitments">
         {data.fixed.length > 0 && (
@@ -206,7 +224,7 @@ export default function PlanPanel({ onChanged, onTab }) {
 function IncomeRing({ data }) {
   const parts = [
     { label: 'Commitments', value: data.fixed_total, color: 'var(--ring-2)' },
-    { label: 'Saving', value: data.savings, color: 'var(--ring-1)' },
+    { label: 'Saving goal', value: data.savings, color: 'var(--ring-1)' },
     data.banks > 0 && { label: 'Piggy banks', value: data.banks, color: 'var(--ring-4)' },
     { label: 'Yours to spend', value: Math.max(data.leftover, 0), color: 'var(--ring-3)' },
   ].filter(Boolean);
@@ -231,6 +249,50 @@ function IncomeRing({ data }) {
         })),
       ]} />
     </RingRow>
+  );
+}
+
+/**
+ * The goal beside what actually happened, averaged over recent full months:
+ * what stayed with you (income minus everything spent) and what you moved to
+ * savings. Bars are measured against the goal.
+ */
+function GoalVsActual({ seen, goal, income }) {
+  const base = income > 0 ? income : seen.income;
+  const rows = [
+    { label: 'Saving goal', value: goal },
+    { label: 'Stayed with you', note: 'income − spending', value: seen.stayed },
+    { label: 'Moved to savings', note: 'marked Saved', value: seen.moved },
+  ];
+  const top = Math.max(goal, seen.stayed, seen.moved, 1);
+  const short = goal > 0 && seen.stayed < goal;
+  return (
+    <Card title="Saving: goal vs actual">
+      <ul className="goal-rows">
+        {rows.map((r, i) => (
+          <li key={r.label}>
+            <div className="goal-label">
+              <span>{r.label}</span>
+              {r.note && <span className="muted small"> · {r.note}</span>}
+            </div>
+            <div className="goal-bar" aria-hidden="true">
+              <div className={i === 0 ? 'goal' : r.value >= goal ? 'good' : 'short'}
+                   style={{ width: `${Math.max(Math.min(r.value / top, 1), 0) * 100}%` }} />
+            </div>
+            <div className="goal-value num">
+              <strong>{money(r.value)}</strong>
+              {base > 0 && <span className="muted small"> {pct(r.value / base)}</span>}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="muted small" style={{ margin: '10px 0 0' }}>
+        {seen.months.map((m) => `${monthLabel(m.month)} ${money(m.stayed)}`).join(' · ')} stayed
+        {short && (
+          <span className="warn-text"> · short of goal by {money(goal - seen.stayed)}/mo</span>
+        )}
+      </p>
+    </Card>
   );
 }
 
