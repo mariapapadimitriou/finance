@@ -344,11 +344,11 @@ class TestMonthlyNotWeekly:
         assert "Essentials" not in month and "week.nominal" not in month
 
     def test_saving_defaults_to_a_fifth_of_take_home(self):
-        """It follows take-home until you type your own, then stays yours."""
+        """The goal is a share of take-home — 20% until you set one — so its
+        dollars follow take-home; it is saved as that share, not as dollars."""
         text = (SRC / "panels" / "PlanPanel.jsx").read_text(encoding="utf-8")
-        assert "DEFAULT_SAVING = 0.2" in text
-        assert "if (linked) setSavings(fifth(" in text
-        assert "setLinked(false)" in text
+        assert "DEFAULT_RATE = 20" in text
+        assert "savePlanSetup(Number(income) || 0, (Number(rate) || 0) / 100)" in text
 
 
 class TestAllowanceOpensOnTheWeek:

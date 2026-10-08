@@ -1663,8 +1663,16 @@ def plan_setup():
     typical_total = round(sum(historical.values()), 2)
 
     result["fixed"] = _mark_mortgage(st, result["fixed"])
+    stored_rate = st.setting("savings_rate")
     return jsonify({
         **result,
+        # What actually came in, was spent and stayed, to check the plan on.
+        "observed": money_plan.observed(txns, _today_iso()),
+        # The saving goal as a share of income — what you set, or what the
+        # dollar figure comes to when only that was ever set.
+        "savings_rate": (round(float(stored_rate), 4) if stored_rate not in (None, "")
+                         else round(savings / income, 4) if income > 0 and savings
+                         else None),
         "typical_total": typical_total,
         "headroom": money_plan.headroom(result["leftover"], typical_total),
         # What the daily allowance would divide: the discretionary slice,
@@ -1706,6 +1714,15 @@ def save_plan_setup():
     """Income and the savings figure. Commitments have their own endpoints."""
     body = request.get_json(silent=True) or {}
     st = store()
+    rate = None
+    if body.get("savings_rate") is not None:
+        try:
+            rate = float(body["savings_rate"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "The saving goal must be a percentage."}), 400
+        if not 0 <= rate <= 0.9:
+            return jsonify({"error": "The saving goal has to be between 0% and 90% "
+                                     "of income."}), 400
     for key, field in (("monthly_income", "income"),
                        ("savings_target", "savings")):
         if field in body:
@@ -1714,6 +1731,17 @@ def save_plan_setup():
             except (TypeError, ValueError):
                 return jsonify({"error": f"{field} must be a number."}), 400
             st.set_setting(key, value)
+    income = st.float_setting("monthly_income", 0.0)
+    if rate is not None:
+        st.set_setting("savings_rate", round(rate, 4))
+    elif "savings" in body:
+        # A dollar figure (Ahead's slider): the goal's share follows it.
+        st.set_setting("savings_rate",
+                       round(float(body["savings"]) / income, 4) if income > 0 else "")
+    # The goal is a share of income, so the dollars follow income.
+    stored = st.setting("savings_rate")
+    if stored not in (None, "") and "savings" not in body:
+        st.set_setting("savings_target", round(float(stored) * income))
     return jsonify({"ok": True})
 
 

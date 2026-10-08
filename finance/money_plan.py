@@ -455,3 +455,50 @@ def explain(leftover: float, shares: dict[str, float],
         })
     rows.sort(key=lambda r: -r["budget"])
     return rows
+
+
+def observed(transactions, today: str, months: int = 3) -> dict | None:
+    """What actually came in, went out and stayed, in recent full months.
+
+    The plan is decisions; this is the check on them. Over the last `months`
+    complete months with data (the month under way is only part of one):
+
+    * income  — pay and other money categorised Income;
+    * spent   — everything you spent, bills included, your share only;
+    * stayed  — income minus spent: what was left with you, wherever it sits;
+    * moved   — what you moved to savings (transfers marked Saved).
+
+    Another member's money on a joint account is none of these. Returns None
+    when no month has any income to measure against.
+    """
+    import statistics
+
+    from .analytics import invested_in, is_others, share_amount
+    from .categorize import is_spend_category
+
+    current = today[:7]
+    by_month: dict[str, dict] = {}
+    for t in transactions:
+        if t.month >= current or is_others(t):
+            continue
+        m = by_month.setdefault(t.month, {"income": 0.0, "spent": 0.0})
+        if (t.category or "") == "Income" and t.amount < 0:
+            m["income"] += -t.amount
+        elif is_spend_category(t.category or "Other"):
+            m["spent"] += share_amount(t)
+    chosen = sorted(by_month)[-months:]
+    rows = []
+    for month in chosen:
+        m = by_month[month]
+        income, spent = round(m["income"], 2), round(m["spent"], 2)
+        rows.append({"month": month, "income": income, "spent": spent,
+                     "stayed": round(income - spent, 2),
+                     "moved": invested_in(transactions, month)})
+    if not any(r["income"] > 0 for r in rows):
+        return None
+    return {
+        "months": rows,
+        "income": round(statistics.median(r["income"] for r in rows), 2),
+        "stayed": round(statistics.fmean(r["stayed"] for r in rows), 2),
+        "moved": round(statistics.fmean(r["moved"] for r in rows), 2),
+    }

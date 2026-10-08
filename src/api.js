@@ -145,8 +145,9 @@ export const compareMortgage = (terms, options) =>
 
 // The money plan: income in, commitments and savings out, the rest budgeted.
 export const getPlanSetup    = () => req('/api/plan/setup');
-export const savePlanSetup   = (income, savings) =>
-  json('PUT', '/api/plan/setup', { income, savings });
+// The saving goal is a share of income; its dollars follow income.
+export const savePlanSetup   = (income, savingsRate) =>
+  json('PUT', '/api/plan/setup', { income, savings_rate: savingsRate });
 // The savings figure on its own. The endpoint writes only the fields it is
 // given, and the slider has no business sending an income it never showed.
 export const saveSavings     = (savings) =>
