@@ -1518,3 +1518,8 @@ label.sort-foot { justify-content: flex-start; cursor: pointer; }
 .week-arrow:hover:not(:disabled) { background: var(--surface-2); }
 .week-arrow:disabled { opacity: .35; cursor: default; }
 .hero-card .ring-head { flex-wrap: wrap; row-gap: 8px; }
+.joint-line { margin-top: 6px; color: var(--muted); }
+.owner-pill { border: 1px solid var(--border-firm); background: var(--surface);
+  border-radius: 999px; padding: 3px 10px; font: inherit; font-size: .8rem;
+  font-weight: 600; cursor: pointer; color: var(--ink); }
+.owner-pill.theirs { color: var(--muted); border-style: dashed; }

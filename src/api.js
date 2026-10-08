@@ -45,14 +45,21 @@ export const getAccounts     = () => req('/api/accounts');
  */
 export function accountTitle(a) {
   if (!a) return '';
-  if (!a.institution) return a.account_name || a.account_id;
-  return `${a.institution} · ${a.kind_label}${a.mask ? ` ••${a.mask}` : ''}`;
+  const base = !a.institution ? (a.account_name || a.account_id)
+    : `${a.institution} · ${a.kind_label}${a.mask ? ` ••${a.mask}` : ''}`;
+  return a.joint ? `${base} · Joint with ${a.joint}` : base;
 }
 // Removing a connected account has to stop it syncing too, or the next sync
 // fetches the whole thing again. `stopSyncing: false` deletes the rows only.
 export const deleteAccount   = (id, stopSyncing = true) =>
   req(`/api/accounts/${encodeURIComponent(id)}`
       + (stopSyncing ? '' : '?stop_syncing=0'), { method: 'DELETE' });
+// Mark an account as shared ("Family"), or null for yours alone.
+export const setAccountJoint = (id, label) =>
+  json('PUT', `/api/accounts/${encodeURIComponent(id)}/joint`, { label });
+// On joint accounts, purchases at this name are always yours.
+export const setMineAlways   = (id, on) =>
+  json('PUT', `/api/transactions/${id}/mine-always`, { on });
 export const setAccountSync  = (id, enabled) =>
   json('PUT', `/api/accounts/${encodeURIComponent(id)}/sync`, { enabled });
 export const getDuplicateAudit = () => req('/api/audit/duplicates');

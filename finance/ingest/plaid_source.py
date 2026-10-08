@@ -144,6 +144,14 @@ class PlaidSource(TransactionSource):
         return group_plaid_transactions(resp.get("transactions", []), accounts)
 
 
+def _counterparty(item: dict) -> str:
+    for cp in item.get("counterparties") or []:
+        name = (cp or {}).get("name")
+        if name:
+            return str(name).strip()
+    return str(item.get("merchant_name") or "").strip()
+
+
 def map_plaid_transaction(item: dict, accounts: dict | None = None) -> Transaction | None:
     """Translate one Plaid transaction into our normalized model.
 
@@ -198,6 +206,10 @@ def map_plaid_transaction(item: dict, accounts: dict | None = None) -> Transacti
              # A pending row is replaced when it posts; the posted one names
              # the pending one it replaces, which is how the twin is found.
              "pending": bool(item.get("pending")),
+             # Who the money went to or came from, when Plaid knows: the one
+             # stable name an e-transfer has, since its description carries a
+             # new reference every time.
+             "counterparty": _counterparty(item),
              "pending_id": item.get("pending_transaction_id") or ""},
     )
 

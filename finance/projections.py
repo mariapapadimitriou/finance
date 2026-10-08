@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import statistics
 
+from .analytics import is_others
 from .spend_plan import counts_toward_plan
 
 
@@ -25,6 +26,8 @@ def _monthly_totals(transactions) -> dict[str, dict]:
         m = out.setdefault(t.month, {"spend": 0.0, "income": 0.0, "all_spend": 0.0})
         if counts_toward_plan(t):
             m["spend"] += t.amount
+        if is_others(t):
+            continue                      # another member's, on a joint account
         if t.amount > 0 and t.category not in ("Income", "Transfers"):
             m["all_spend"] += t.amount
         # Only real income counts. A card payment is a Transfer — money moving

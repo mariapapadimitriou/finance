@@ -22,6 +22,7 @@ chose ("always Saved for QUESTRADE"). Those are decisions, not guesses.
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 
 from .models import Transaction
@@ -35,6 +36,14 @@ NEUTRAL = "Transfers"
 WINDOW_DAYS = 4
 
 _DECIDED = {"user", "merchant_override"}
+# Sorted by a destination rule: re-decided on every run, so a transfer whose
+# other end turns up later becomes neutral after all.
+RULED = "destination"
+
+
+def others(t: Transaction) -> bool:
+    """A row on a joint account that isn't yours: another member's money."""
+    return bool(getattr(t, "joint", None)) and abs(t.my_share or 0.0) < 0.005
 
 
 def _days(a: str, b: str) -> int:
@@ -43,6 +52,48 @@ def _days(a: str, b: str) -> int:
 
 def _is_bank(t: Transaction) -> bool:
     return str((t.raw or {}).get("account_type", "")).lower() == "depository"
+
+
+# Words that say "a transfer" without saying where to.
+_GENERIC = {"send", "sent", "e", "tfr", "etfr", "e-tfr", "transfer", "e-transfer",
+            "etransfer", "interac", "to", "fr", "from", "online", "banking",
+            "payment", "pmt", "bill", "mobile", "internet", "debit", "withdrawal",
+            "deposit", "the", "ref", "conf", "autodeposit", "request", "money"}
+_ACCOUNT = re.compile(r"(?:\btfr|\btransfer)[\s-]*(?:to|fr|from)\b[^\d]{0,8}(\d[\d\s-]{3,})",
+                      re.I)
+_MASKED = re.compile(r"(?:••|\*{2,}|x{2,})\s*(\d{4})\b", re.I)
+_REFERENCE = re.compile(r"\*+\s*\w+|#\s*\w+|\b\w*\d\w*\b")
+
+
+def destination(t: Transaction) -> tuple[str, str] | None:
+    """Where a transfer went, as (key, label), stable across transfers.
+
+    E-transfer descriptions carry a new reference every time ("SEND E-TFR
+    ***Q7k"), so the description can't be learned. In order: the payee Plaid
+    names; the destination account's digits ("TFR-TO 1234567" → ••4567); what
+    is left of the name once references are taken out. A transfer that says
+    nothing but "SEND E-TFR" has no destination: nothing safe to learn.
+    """
+    who = str((t.raw or {}).get("counterparty") or "").strip()
+    if who:
+        return "to:" + " ".join(who.lower().split()), who
+    text = t.description or ""
+    m = _ACCOUNT.search(text)
+    digits = re.sub(r"\D", "", m.group(1)) if m else ""
+    if not digits:
+        m = _MASKED.search(text)
+        digits = m.group(1) if m else ""
+    if len(digits) >= 4:
+        return "acct:" + digits[-4:], "••" + digits[-4:]
+    words = [w for w in re.split(r"[^a-z]+",
+                                 _REFERENCE.sub(" ", (t.description or t.merchant or "").lower()))
+             if w and w not in _GENERIC]
+    if words and sum(len(w) for w in words) >= 3:
+        return "name:" + " ".join(words), " ".join(words).title()
+    merchant = " ".join((t.merchant or "").lower().split())
+    if merchant and any(w not in _GENERIC for w in re.split(r"[^a-z0-9]+", merchant) if w):
+        return "m:" + merchant, t.merchant
+    return None
 
 
 # Only recent transfers are asked about. Plaid backfills two years, and
@@ -82,8 +133,8 @@ def _subset_summing(rows: list[Transaction], target: int) -> list[Transaction] |
     return [rows[i] for i in best] if best else None
 
 
-def match_transfers(transactions: list[Transaction],
-                    today: str | None = None) -> dict[str, str]:
+def match_transfers(transactions: list[Transaction], today: str | None = None,
+                    destinations: dict[str, str] | None = None) -> dict[str, str]:
     """The category each sortable outflow should have: Transfers when its
     other end is here, Unsorted transfers when it isn't.
 
@@ -99,13 +150,14 @@ def match_transfers(transactions: list[Transaction],
     4. The day nets out — everything that left on a day equals everything
        that arrived in your other accounts that day.
 
-    Whatever is left is Unsorted when it's recent, and neutral when it's older
-    than `ASK_DAYS`.
+    Only what is still unmatched goes where you said its destination goes
+    (`destinations`, key → category). Whatever is left is Unsorted when it's
+    recent, and neutral when it's older than `ASK_DAYS`.
     """
     candidates = sorted(
         (t for t in transactions
-         if t.amount > 0 and _is_bank(t)
-         and t.category in (NEUTRAL, UNSORTED)
+         if t.amount > 0 and _is_bank(t) and not others(t)
+         and (t.category in (NEUTRAL, UNSORTED) or t.category_source == RULED)
          and t.category_source not in _DECIDED),
         key=lambda t: (t.date, t.fingerprint))
     # A friend paying you back is not the other end of anything you sent, and
@@ -178,8 +230,21 @@ def match_transfers(transactions: list[Transaction],
 
     cutoff = (date.fromisoformat(today) if today else date.today()) \
         - timedelta(days=ASK_DAYS)
+    # Another member's transfers on a joint account aren't yours to sort; any
+    # that were waiting before the account was marked joint go back to neutral.
+    for t in transactions:
+        if (t.amount > 0 and _is_bank(t) and others(t)
+                and (t.category == UNSORTED or t.category_source == RULED)
+                and t.category_source not in _DECIDED):
+            out[t.fingerprint] = NEUTRAL
+
+    rules = destinations or {}
     for t in candidates:
         if t.fingerprint not in out:
+            where = destination(t)
+            if where and where[0] in rules:
+                out[t.fingerprint] = rules[where[0]]
+                continue
             recent = date.fromisoformat(t.date[:10]) >= cutoff
             out[t.fingerprint] = UNSORTED if recent else NEUTRAL
     return out
@@ -188,11 +253,49 @@ def match_transfers(transactions: list[Transaction],
 def apply_transfer_matches(store, transactions: list[Transaction] | None = None) -> int:
     """Run the match over the ledger and write what changed."""
     txns = transactions if transactions is not None else store.all_transactions()
-    current = {t.fingerprint: t.category for t in txns}
-    changes = {tid: (cat, "transfer_match")
-               for tid, cat in match_transfers(txns).items()
-               if current.get(tid) != cat}
+    current = {t.fingerprint: (t.category, t.category_source) for t in txns}
+    changes = {}
+    for tid, cat in match_transfers(txns, destinations=store.destinations()).items():
+        source = "transfer_match" if cat in (NEUTRAL, UNSORTED) else RULED
+        if current.get(tid) != (cat, source):
+            changes[tid] = (cat, source)
     return store.set_categories(changes) if changes else 0
+
+
+def migrate_overrides(store) -> int:
+    """Turn "remember this name" choices made on transfers into destination
+    rules, once.
+
+    Those were merchant overrides, which apply before matching and so kept a
+    transfer Saved or Spent even when its other end was in Spendie. A rule
+    for the destination applies only to what stays unmatched. Overrides that
+    cover anything other than bank transfers are left as they are.
+    """
+    if store.setting("destinations_migrated") == "1":
+        return 0
+    from .categorize import categorize
+    txns = store.all_transactions()
+    by_name: dict[str, list[Transaction]] = {}
+    for t in txns:
+        by_name.setdefault((t.merchant or "").strip().lower(), []).append(t)
+    moved = 0
+    for key, category in store.overrides().items():
+        rows = by_name.get(key, [])
+        if not rows or not all(
+                t.amount > 0 and _is_bank(t)
+                and categorize(t.merchant, t.description,
+                               (t.raw or {}).get("issuer_category", ""))[0] == NEUTRAL
+                for t in rows):
+            continue
+        for t in rows:
+            where = destination(t)
+            if where:
+                store.set_destination(where[0], category, where[1])
+        store.clear_override(key)
+        store.write_categories({t.fingerprint: (NEUTRAL, "transfer_match") for t in rows})
+        moved += 1
+    store.set_setting("destinations_migrated", "1")
+    return moved
 
 
 def unsorted(transactions: list[Transaction]) -> list[Transaction]:

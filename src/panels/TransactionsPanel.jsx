@@ -3,7 +3,8 @@ import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.j
 import {
   accountTitle, addTransaction, allocateToBank, dateLabel, deleteTransaction, getBanks,
   getPaybacks, getSaved, getTransactions, getUnsorted, linkPayback, money,
-  setCategory, setInvested, setShare, sortTransfers, unallocate, unlinkPayback,
+  setCategory, setInvested, setMineAlways, setShare, sortTransfers, unallocate,
+  unlinkPayback,
   unsortTransaction,
 } from '../api.js';
 
@@ -175,16 +176,23 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                         />
                       </td>
                       <td>
+                        {t.joint ? (
+                          <OwnerCell txn={t}
+                                     open={splitting === t.id}
+                                     onOpen={() => setSplitting(splitting === t.id ? null : t.id)}
+                                     onDone={() => { setSplitting(null); bump(); }} />
+                        ) : (
                         <ShareCell
                           txn={t}
                           open={splitting === t.id}
                           onOpen={() => setSplitting(splitting === t.id ? null : t.id)}
                           onDone={() => { setSplitting(null); bump(); }}
                         />
+                        )}
                       </td>
                       <td className="r" style={t.amount < 0 ? { color: 'var(--good-text)' } : undefined}>
                         {money(t.amount, { cents: true })}
-                        {t.my_share != null && (
+                        {t.my_share != null && !t.joint && (
                           <div className="share-note num">
                             yours {money(t.my_share, { cents: true })}
                           </div>
@@ -471,12 +479,12 @@ function WhereDidThisGo({ categories, reload, onDone }) {
   const decide = (g, category) => run(async () => {
     await sortTransfers(g.ids, category, remember);
     setPicking(null);
-    setDone((d) => [{ ...g, category }, ...d.filter((x) => x.merchant !== g.merchant)]);
+    setDone((d) => [{ ...g, category }, ...d.filter((x) => x.key !== g.key)]);
   });
 
   const undoGroup = (g) => run(async () => {
     for (const id of g.ids) await unsortTransaction(id);
-    setDone((d) => d.filter((x) => x.merchant !== g.merchant));
+    setDone((d) => d.filter((x) => x.key !== g.key));
   });
 
   const undoRow = (r) => run(() => unsortTransaction(r.id));
@@ -516,7 +524,7 @@ function WhereDidThisGo({ categories, reload, onDone }) {
           )}
           <ul className="sort-list">
             {done.map((g) => (
-              <li key={`done-${g.merchant}`} className="sort-row done">
+              <li key={`done-${g.key}`} className="sort-row done">
                 <span className="muted">
                   {g.merchant} → <strong>{g.category}</strong>
                 </span>
@@ -526,7 +534,7 @@ function WhereDidThisGo({ categories, reload, onDone }) {
               </li>
             ))}
             {shown.map((g) => (
-              <li key={g.merchant} className="sort-row">
+              <li key={g.key} className="sort-row">
                 <div className="sort-what">
                   <strong>{g.merchant}</strong>
                   <div className="muted small">
@@ -537,7 +545,7 @@ function WhereDidThisGo({ categories, reload, onDone }) {
                 </div>
                 <div className="sort-side">
                   <span className="num sort-amt">{money(g.total)}</span>
-                  {picking === g.merchant ? (
+                  {picking === g.key ? (
                     <select aria-label={`Spent on — ${g.merchant}`} value="" disabled={busy}
                             // eslint-disable-next-line jsx-a11y/no-autofocus
                             autoFocus onBlur={() => setPicking(null)}
@@ -550,7 +558,7 @@ function WhereDidThisGo({ categories, reload, onDone }) {
                       <button className="pill-btn" disabled={busy}
                               onClick={() => decide(g, 'Saved')}>Saved</button>
                       <button className="pill-btn" disabled={busy}
-                              onClick={() => setPicking(g.merchant)}>Spent</button>
+                              onClick={() => setPicking(g.key)}>Spent</button>
                     </>
                   )}
                 </div>
@@ -566,7 +574,7 @@ function WhereDidThisGo({ categories, reload, onDone }) {
             <label className="sort-foot small muted">
               <input type="checkbox" checked={remember}
                      onChange={(e) => setRemember(e.target.checked)} />
-              Remember for these names
+              Remember where these go
             </label>
           )}
         </>
@@ -734,6 +742,87 @@ function ShareCell({ txn, open, onOpen, onDone }) {
       </div>
       <ErrorNote error={error} />
     </form>
+  );
+}
+
+/**
+ * Whose a row on a joint account was. Another member's by default; yours, or
+ * part yours, when you say so. "Always mine" covers a name for good.
+ */
+function OwnerCell({ txn, open, onOpen, onDone }) {
+  const full = txn.amount;
+  const mine = txn.share_set && Math.abs((txn.my_share ?? 0) - full) < 0.005;
+  const theirs = Math.abs(txn.my_share ?? 0) < 0.005;
+  const [mode, setMode] = useState('theirs');
+  const [part, setPart] = useState('');
+  const [always, setAlways] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (open) {
+      setMode(mine ? 'mine' : theirs ? 'theirs' : 'part');
+      setPart(!mine && !theirs ? String(Math.abs(txn.my_share)) : '');
+      setAlways(false);
+    }
+  }, [open, mine, theirs, txn.my_share]);
+
+  const label = mine ? 'Mine' : theirs ? `${txn.joint}'s`
+    : `Yours ${money(Math.abs(txn.my_share), { cents: true })}`;
+
+  if (!open) {
+    return (
+      <button className={`owner-pill${theirs ? ' theirs' : ''}`} onClick={onOpen}>
+        {label}
+      </button>
+    );
+  }
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      const sign = full < 0 ? -1 : 1;
+      const share = mode === 'mine' ? full
+        : mode === 'theirs' ? null : sign * Math.abs(Number(part));
+      await setShare(txn.id, share);
+      if (always && mode === 'mine') await setMineAlways(txn.id, true);
+      onDone();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack share-edit" style={{ gap: 6 }}>
+      <div className="segmented small" role="group" aria-label="Whose was it">
+        {[['mine', 'Mine'], ['theirs', 'Not mine'], ['part', 'Part']].map(([k, l]) => (
+          <button key={k} type="button" aria-pressed={mode === k} onClick={() => setMode(k)}>{l}</button>
+        ))}
+      </div>
+      {mode === 'part' && (
+        <div className="row" style={{ gap: 6 }}>
+          <span className="muted small">Yours $</span>
+          <input type="number" min="0" max={Math.abs(full)} step="0.01" inputMode="decimal"
+                 value={part} onChange={(e) => setPart(e.target.value)}
+                 aria-label={`Your part of ${txn.merchant}`} style={{ width: 100 }} />
+        </div>
+      )}
+      {mode === 'mine' && full > 0 && (
+        <label className="small muted row" style={{ gap: 6 }}>
+          <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
+          Always mine at “{txn.merchant}”
+        </label>
+      )}
+      <div className="row" style={{ gap: 6 }}>
+        <button className="btn primary" type="button" disabled={busy || (mode === 'part' && !part)}
+                onClick={save}>Save</button>
+        <button className="btn quiet" type="button" onClick={onOpen}>Cancel</button>
+      </div>
+      <ErrorNote error={error} />
+    </div>
   );
 }
 
