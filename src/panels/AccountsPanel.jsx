@@ -74,7 +74,38 @@ export default function AccountsPanel({ onChanged, onTab }) {
       // off, so fetch it now rather than at the next app open.
       if (r?.resync) {
         setSyncing(account.account_id);
-        try { await syncPlaid(); } finally { setSyncing(null); }
+        // A sync that fails is reported on Connections; the switch itself
+        // was saved, so the table still has to show it.
+        try { await syncPlaid(); } catch { /* shown on Connections */ } finally {
+          setSyncing(null);
+        }
+      }
+      await load();
+      await onChanged?.();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Switch these on and fetch their history once, however many there are. */
+  async function turnOn(list) {
+    setBusy(true);
+    setError(null);
+    try {
+      let resync = false;
+      for (const a of list) {
+        const r = await setAccountSync(a.account_id, true);
+        resync = resync || !!r?.resync;
+      }
+      if (resync) {
+        setSyncing(list[0].account_id);
+        // A sync that fails is reported on Connections; the switch itself
+        // was saved, so the table still has to show it.
+        try { await syncPlaid(); } catch { /* shown on Connections */ } finally {
+          setSyncing(null);
+        }
       }
       await load();
       await onChanged?.();
@@ -90,6 +121,10 @@ export default function AccountsPanel({ onChanged, onTab }) {
 
   const syncingNotCards = accounts.filter((a) => !a.is_card && a.syncs === true);
   const off = accounts.filter((a) => a.syncs === false);
+  // A savings account left off is where transfers out of chequing go to look
+  // like spending: their other end is never seen.
+  const savingsOff = off.filter((a) => a.kind_label === 'Savings'
+    || ['savings', 'money market', 'hisa'].includes((a.plaid_subtype || '').toLowerCase()));
   const total = accounts.reduce((n, a) => n + a.transactions, 0);
   // A connected account has a sync decision; an imported statement has none.
   const connectedNames = accounts.filter((a) => a.syncs !== null)
@@ -111,6 +146,21 @@ export default function AccountsPanel({ onChanged, onTab }) {
           whatever the exchange rate is. Amounts are shown in{' '}
           {mix[0].currency} because that is most of them. Remove the odd card,
           or treat anything that spans both as indicative only.
+        </Notice>
+      )}
+
+      {savingsOff.length > 0 && (
+        <Notice>
+          <strong>
+            {savingsOff.map(accountTitle).join(', ')}{' '}
+            {savingsOff.length === 1 ? 'is' : 'are'} off.
+          </strong>{' '}
+          Money you move into {savingsOff.length === 1 ? 'it' : 'them'} counts as
+          spent until {savingsOff.length === 1 ? "it's" : "they're"} on.{' '}
+          <button className="btn primary" disabled={busy}
+                  onClick={() => turnOn(savingsOff)}>
+            {syncing ? 'Syncing…' : savingsOff.length === 1 ? 'Turn on' : 'Turn all on'}
+          </button>
         </Notice>
       )}
 
