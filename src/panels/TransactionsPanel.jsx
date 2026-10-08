@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
 import {
   accountTitle, addTransaction, allocateToBank, dateLabel, deleteTransaction, getBanks,
-  getPaybacks, getTransactions, getUnsorted, linkPayback, money, setCategory,
-  setInvested, setShare, unallocate, unlinkPayback,
+  getPaybacks, getSaved, getTransactions, getUnsorted, linkPayback, money,
+  setCategory, setInvested, setShare, sortTransfers, unallocate, unlinkPayback,
+  unsortTransaction,
 } from '../api.js';
 
 // Never offered as "where it went": these aren't spending.
@@ -407,72 +408,199 @@ function CategoryEditor({ current, merchant, categories, onSave, onCancel }) {
   );
 }
 
+// Set by "See what's counted" on Ahead, so this card opens on Saved.
+export const OPEN_SAVED_KEY = 'spendie.openSaved';
+
+function wantsSaved() {
+  try {
+    const v = window.sessionStorage.getItem(OPEN_SAVED_KEY);
+    window.sessionStorage.removeItem(OPEN_SAVED_KEY);
+    return v === '1';
+  } catch {
+    return false;
+  }
+}
+
+const SHOWN = 5;
+
+function span(first, last) {
+  return first === last ? dateLabel(first) : `${dateLabel(first)} – ${dateLabel(last)}`;
+}
+
 /**
  * Money that left a bank account for somewhere Spendie can't see.
  *
  * Every dollar out was spent or saved. Until you say which, it counts as
- * spent; "Always" remembers the answer for that name.
+ * spent. One row per recipient, so twelve e-transfers to one person are one
+ * decision; whatever you decide can be undone, here or under Saved.
  */
 function WhereDidThisGo({ categories, reload, onDone }) {
   const [data, setData] = useState(null);
-  const [always, setAlways] = useState({});
-  const [busy, setBusy] = useState(null);
+  const [saved, setSaved] = useState(null);
+  const [view, setView] = useState(() => (wantsSaved() ? 'saved' : 'sort'));
+  const [remember, setRemember] = useState(true);
+  const [picking, setPicking] = useState(null);
+  const [done, setDone] = useState([]);
+  const [all, setAll] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     getUnsorted().then(setData).catch(() => setData(null));
+    getSaved().then(setSaved).catch(() => setSaved(null));
   }, [reload]);
 
-  if (!data?.count) return null;
+  const groups = data?.groups ?? [];
+  const savedRows = saved?.rows ?? [];
+  if (!groups.length && !savedRows.length && !done.length) return null;
   const spendable = categories.filter((c) => !NOT_SPENT.has(c.name));
 
-  async function decide(t, category) {
-    setBusy(t.id);
+  async function run(fn) {
+    setBusy(true);
     setError(null);
     try {
-      await setCategory(t.id, category, !!always[t.id]);
+      await fn();
       onDone();
     } catch (e) {
       setError(e);
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
+  const decide = (g, category) => run(async () => {
+    await sortTransfers(g.ids, category, remember);
+    setPicking(null);
+    setDone((d) => [{ ...g, category }, ...d.filter((x) => x.merchant !== g.merchant)]);
+  });
+
+  const undoGroup = (g) => run(async () => {
+    for (const id of g.ids) await unsortTransaction(id);
+    setDone((d) => d.filter((x) => x.merchant !== g.merchant));
+  });
+
+  const undoRow = (r) => run(() => unsortTransaction(r.id));
+
+  const shown = all ? groups : groups.slice(0, SHOWN);
+
+  // Nothing waiting: just a way into what's saved.
+  if (!groups.length && !done.length && view !== 'saved') {
+    return (
+      <button type="button" className="card saved-peek" onClick={() => setView('saved')}>
+        <span>Saved</span>
+        <span className="num">{money(saved?.total ?? 0)} ▸</span>
+      </button>
+    );
+  }
+
   return (
-    <Card title="Where did this go?">
-      <p className="muted small" style={{ marginTop: 0 }}>
-        {data.count} transfer{data.count === 1 ? '' : 's'} out · {money(data.total)} counted
-        as spent until sorted
-      </p>
-      <ul className="sort-list">
-        {data.transfers.map((t) => (
-          <li key={t.id} className="sort-row">
-            <div className="sort-what">
-              <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
-                <strong>{t.merchant}</strong>
-                <span className="num">{money(t.amount, { cents: true })}</span>
-              </div>
-              <div className="muted small">{dateLabel(t.date)} · {t.account_name}</div>
-            </div>
-            <div className="row sort-actions" style={{ gap: 6 }}>
-              <button className="btn primary" disabled={busy === t.id}
-                      onClick={() => decide(t, 'Saved')}>Saved</button>
-              <select aria-label={`Spent on — ${t.merchant}`} value=""
-                      disabled={busy === t.id}
-                      onChange={(e) => e.target.value && decide(t, e.target.value)}>
-                <option value="">Spent on…</option>
-                {spendable.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-              </select>
-              <label className="small muted row" style={{ gap: 4 }}>
-                <input type="checkbox" checked={!!always[t.id]}
-                       onChange={(e) => setAlways((a) => ({ ...a, [t.id]: e.target.checked }))} />
-                Always for “{t.merchant}”
-              </label>
-            </div>
-          </li>
-        ))}
-      </ul>
+    <Card className="sort-card">
+      <div className="sort-head">
+        <h2>Where did this go?</h2>
+        <div className="segmented small" role="group" aria-label="Show">
+          <button aria-pressed={view === 'sort'} onClick={() => setView('sort')}>
+            To sort{groups.length ? ` · ${data.count}` : ''}
+          </button>
+          <button aria-pressed={view === 'saved'} onClick={() => setView('saved')}>
+            Saved · {money(saved?.total ?? 0)}
+          </button>
+        </div>
+      </div>
+
+      {view === 'sort' ? (
+        <>
+          {groups.length > 0 && (
+            <p className="muted small sort-note">
+              {money(data.total)} counted as spent until sorted
+            </p>
+          )}
+          <ul className="sort-list">
+            {done.map((g) => (
+              <li key={`done-${g.merchant}`} className="sort-row done">
+                <span className="muted">
+                  {g.merchant} → <strong>{g.category}</strong>
+                </span>
+                <button className="link-btn" disabled={busy} onClick={() => undoGroup(g)}>
+                  Undo
+                </button>
+              </li>
+            ))}
+            {shown.map((g) => (
+              <li key={g.merchant} className="sort-row">
+                <div className="sort-what">
+                  <strong>{g.merchant}</strong>
+                  <div className="muted small">
+                    {g.count > 1 ? `${g.count} transfers · ` : ''}
+                    {g.accounts.filter(Boolean).join(', ')}
+                    {' · '}{span(g.first, g.last)}
+                  </div>
+                </div>
+                <div className="sort-side">
+                  <span className="num sort-amt">{money(g.total)}</span>
+                  {picking === g.merchant ? (
+                    <select aria-label={`Spent on — ${g.merchant}`} value="" disabled={busy}
+                            // eslint-disable-next-line jsx-a11y/no-autofocus
+                            autoFocus onBlur={() => setPicking(null)}
+                            onChange={(e) => e.target.value && decide(g, e.target.value)}>
+                      <option value="">Spent on…</option>
+                      {spendable.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    </select>
+                  ) : (
+                    <>
+                      <button className="pill-btn" disabled={busy}
+                              onClick={() => decide(g, 'Saved')}>Saved</button>
+                      <button className="pill-btn" disabled={busy}
+                              onClick={() => setPicking(g.merchant)}>Spent</button>
+                    </>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {groups.length > SHOWN && (
+            <button className="link-btn" onClick={() => setAll((a) => !a)}>
+              {all ? 'Show fewer' : `Show ${groups.length - SHOWN} more`}
+            </button>
+          )}
+          {groups.length > 0 && (
+            <label className="sort-foot small muted">
+              <input type="checkbox" checked={remember}
+                     onChange={(e) => setRemember(e.target.checked)} />
+              Remember for these names
+            </label>
+          )}
+        </>
+      ) : (
+        <>
+          {savedRows.length === 0 ? (
+            <p className="muted small">Nothing marked as saved in the last two months.</p>
+          ) : (
+            <ul className="sort-list">
+              {savedRows.map((r) => (
+                <li key={r.id} className="sort-row">
+                  <div className="sort-what">
+                    <strong>{r.merchant}</strong>
+                    <div className="muted small">
+                      {dateLabel(r.date)} · {r.account_name}
+                      {r.part && ` · part of ${money(r.amount)}`}
+                    </div>
+                  </div>
+                  <div className="sort-side">
+                    <span className="num sort-amt">{money(r.saved)}</span>
+                    <button className="link-btn" disabled={busy} onClick={() => undoRow(r)}>
+                      Undo
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="sort-foot small">
+            <span className="muted">Since {dateLabel(saved?.since)}</span>
+            <strong className="num">{money(saved?.total ?? 0)}</strong>
+          </div>
+        </>
+      )}
       <ErrorNote error={error} />
     </Card>
   );

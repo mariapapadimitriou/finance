@@ -1447,6 +1447,47 @@ class Store:
                 (item_id, token, institution),
             )
 
+    def write_categories(self, changes: dict[str, tuple[str, str]]) -> None:
+        """Write (category, source) for these rows, your own choices included —
+        for undoing one, which is the only time that is right."""
+        with self.conn() as c:
+            for txn_id, (category, source) in changes.items():
+                c.execute("UPDATE transactions SET category = ?, category_source = ? "
+                          "WHERE id = ?", (category, source, txn_id))
+
+    def has_plaid_rows(self) -> bool:
+        with self.conn() as c:
+            return c.execute("SELECT 1 FROM transactions WHERE source = 'plaid' "
+                             "LIMIT 1").fetchone() is not None
+
+    def reconcile_plaid(self, returned: dict[str, tuple[set[str], str]]) -> int:
+        """After a full sync, drop stored Plaid rows Plaid no longer has.
+
+        `returned` is, per account, every transaction id the full sync
+        delivered and the earliest date among them. A stored row on that
+        account, dated within that range, whose id was not delivered no longer
+        exists at the bank — in practice a pending charge that posted while the
+        sync was being started over, which never reports the removal. Rows
+        before the range are older than what Plaid sends and are kept.
+        """
+        if not returned:
+            return 0
+        stale: set[str] = set()
+        with self.conn() as c:
+            for account_id, (ids, earliest) in returned.items():
+                rows = c.execute(
+                    "SELECT id, date, raw FROM transactions "
+                    "WHERE account_id = ? AND source = 'plaid' AND date >= ?",
+                    (account_id, earliest)).fetchall()
+                for r in rows:
+                    try:
+                        pid = (json.loads(r["raw"] or "{}") or {}).get("plaid_id")
+                    except (ValueError, TypeError):
+                        continue
+                    if pid and pid not in ids:
+                        stale.add(r["id"])
+        return self.forget_rows(stale)
+
     def rewind_plaid_cursor(self, item_id: str) -> None:
         """Make the next sync fetch this bank's whole history again.
 

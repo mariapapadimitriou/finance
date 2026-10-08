@@ -194,7 +194,11 @@ def map_plaid_transaction(item: dict, accounts: dict | None = None) -> Transacti
         raw={"issuer_category": detail,
              "plaid_id": item.get("transaction_id", ""),
              "account_type": acct.get("type", ""),
-             "account_subtype": acct.get("subtype", "")},
+             "account_subtype": acct.get("subtype", ""),
+             # A pending row is replaced when it posts; the posted one names
+             # the pending one it replaces, which is how the twin is found.
+             "pending": bool(item.get("pending")),
+             "pending_id": item.get("pending_transaction_id") or ""},
     )
 
 
