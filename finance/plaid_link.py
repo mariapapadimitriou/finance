@@ -166,6 +166,9 @@ def _sync_one(store, item: dict) -> dict:
 
     client = _client()
     cursor = item.get("cursor") or None
+    # From no cursor, the feed is the bank's whole current state rather than
+    # changes, and anything stored that it leaves out no longer exists.
+    full = cursor is None
     added, modified, removed = [], [], []
     accounts: dict = {}
 
@@ -193,6 +196,11 @@ def _sync_one(store, item: dict) -> dict:
     # charge that has now posted under a new id. Applied before the additions
     # so the posted version doesn't briefly sit alongside its own pending twin.
     removed_ids = [r.get("transaction_id") for r in removed if r.get("transaction_id")]
+    # A posted row names the pending row it replaces. Plaid normally reports
+    # that pending row as removed too, but not on a sync started over, so the
+    # posted row is the reliable signal.
+    removed_ids += [a.get("pending_transaction_id") for a in added
+                    if a.get("pending_transaction_id")]
     deleted = store.delete_transactions_from(removed_ids)
 
     # A modified row is the same purchase with better information — a merchant
@@ -227,6 +235,17 @@ def _sync_one(store, item: dict) -> dict:
     if blocked:
         added = [t for t in added if t.get("account_id") not in blocked]
         modified = [t for t in modified if t.get("account_id") not in blocked]
+
+    if full:
+        returned: dict[str, tuple[set[str], str]] = {}
+        for t in added + modified:
+            aid, tid, day = t.get("account_id"), t.get("transaction_id"), str(t.get("date") or "")
+            if not (aid and tid and day):
+                continue
+            ids, earliest = returned.get(aid, (set(), day))
+            ids.add(tid)
+            returned[aid] = (ids, min(earliest, day))
+        deleted += store.reconcile_plaid(returned)
 
     imported = 0
     results = group_plaid_transactions(added + modified, accounts)
@@ -273,6 +292,14 @@ def sync_all(store) -> dict:
     if not items:
         return {"items": [], "imported": 0,
                 "message": "No banks linked yet."}
+
+    # Once: start every bank's feed over so the reconcile in `_sync_one`
+    # clears pending rows left behind by earlier restarted syncs.
+    if store.setting("plaid_reconciled") != "1" and store.has_plaid_rows():
+        for item in items:
+            store.rewind_plaid_cursor(item["item_id"])
+            item["cursor"] = None
+    store.set_setting("plaid_reconciled", "1")
 
     out = []
     for item in items:

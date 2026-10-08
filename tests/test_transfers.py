@@ -98,15 +98,56 @@ class TestMatching:
         out = match_transfers([
             row(250, "SEND E-TFR", when="2026-03-01", category="Transfers"),
             row(-250, "TFR-FROM", account="sav", when="2026-03-08", category="Transfers"),
-        ])
+        ], today="2026-03-10")
         assert list(out.values()) == [UNSORTED]
 
-    def test_the_same_account_is_not_its_own_other_end(self):
+    def test_out_and_back_on_the_same_account_cancels(self):
         out = match_transfers([
-            row(250, "SEND E-TFR", category="Transfers"),
-            row(-250, "E-TFR IN", category="Transfers"),
-        ])
+            row(250, "SEND E-TFR", when="2026-03-01", category="Transfers"),
+            row(-250, "E-TFR REVERSAL", when="2026-03-02", category="Transfers"),
+        ], today="2026-03-10")
+        assert list(out.values()) == ["Transfers"]
+
+    def test_several_out_one_in(self):
+        out = match_transfers([
+            row(300, "TFR-TO SAV a", when="2026-03-01", category="Transfers"),
+            row(200, "TFR-TO SAV b", when="2026-03-01", category="Transfers"),
+            row(75, "SEND E-TFR c", when="2026-03-01", category="Transfers"),
+            row(-500, "TFR-FR CHQ", account="sav", when="2026-03-01", category="Transfers"),
+        ], today="2026-03-10")
+        cats = {k: v for k, v in out.items()}
+        by_desc = {t.description: cats[t.fingerprint] for t in [
+            row(300, "TFR-TO SAV a", when="2026-03-01"),
+            row(200, "TFR-TO SAV b", when="2026-03-01"),
+            row(75, "SEND E-TFR c", when="2026-03-01")]}
+        assert by_desc == {"TFR-TO SAV a": "Transfers", "TFR-TO SAV b": "Transfers",
+                           "SEND E-TFR c": UNSORTED}
+
+    def test_a_day_that_nets_out(self):
+        rows = [row(900, "TFR-TO A", when="2026-03-04", category="Transfers"),
+                row(100, "TFR-TO B", when="2026-03-04", category="Transfers"),
+                row(-700, "TFR-FR X", account="sav", when="2026-03-04", category="Transfers"),
+                row(-300, "PAYMENT THANK YOU", account="card", kind="credit",
+                    when="2026-03-04", category="Transfers")]
+        out = match_transfers(rows, today="2026-03-10")
+        assert set(out.values()) == {"Transfers"}
+
+    def test_a_day_that_doesnt_net_out_still_asks(self):
+        rows = [row(900, "TFR-TO A", when="2026-03-04", category="Transfers"),
+                row(-700, "TFR-FR X", account="sav", when="2026-03-04", category="Transfers")]
+        out = match_transfers(rows, today="2026-03-10")
         assert list(out.values()) == [UNSORTED]
+
+    def test_pay_is_never_the_other_end(self):
+        rows = [row(2500, "TFR-TO A", when="2026-03-04", category="Transfers"),
+                row(-2500, "PAYROLL", account="sav", when="2026-03-04", category="Income")]
+        assert list(match_transfers(rows, today="2026-03-10").values()) == [UNSORTED]
+
+    def test_only_the_last_two_months_are_asked_about(self):
+        old = row(400, "SEND E-TFR old", when="2026-01-08", category="Transfers")
+        new = row(400, "SEND E-TFR new", when="2026-01-10", category="Transfers")
+        out = match_transfers([old, new], today="2026-03-10")
+        assert out[old.fingerprint] == "Transfers" and out[new.fingerprint] == UNSORTED
 
     def test_a_cards_own_transfers_and_statements_are_left_alone(self, st):
         rows = load(st,
@@ -183,3 +224,64 @@ class TestSortingThem:
         assert all(r.category == "Saved" for r in st.all_transactions()
                    if r.merchant == t.merchant)
         assert client.get("/api/transfers/unsorted").get_json()["count"] == 0
+
+
+class TestGroupsUndoAndSaved:
+    @pytest.fixture()
+    def three(self, client):
+        st = client.application.config["STORE"]
+        load(st, row(100, "SEND E-TFR ***ANA", when=day(1)),
+             row(150, "SEND E-TFR ***ANA", when=day(2)),
+             row(500, "SEND E-TFR ***LANDLORD", when=day(1)))
+        return st
+
+    def test_unsorted_comes_grouped_by_name(self, client, three):
+        body = client.get("/api/transfers/unsorted").get_json()
+        assert body["count"] == 3
+        groups = body["groups"]
+        assert [g["count"] for g in groups] == [1, 2]          # largest total first
+        assert groups[1]["total"] == 250 and len(groups[1]["ids"]) == 2
+
+    def test_a_group_is_sorted_in_one_go_and_remembered(self, client, three):
+        g = next(g for g in client.get("/api/transfers/unsorted").get_json()["groups"]
+                 if g["count"] == 2)
+        r = client.post("/api/transfers/sort", json={"ids": g["ids"], "category": "Saved",
+                                                     "remember": True})
+        assert r.status_code == 200 and r.get_json()["sorted"] == 2
+        assert client.get("/api/transfers/unsorted").get_json()["count"] == 1
+        saved = client.get("/api/transfers/saved").get_json()
+        assert saved["total"] == 250 and len(saved["rows"]) == 2
+        load(three, row(80, "SEND E-TFR ***ANA", when=day(3)))
+        assert client.get("/api/transfers/unsorted").get_json()["count"] == 1
+
+    def test_undo_puts_a_remembered_name_back(self, client, three):
+        g = next(g for g in client.get("/api/transfers/unsorted").get_json()["groups"]
+                 if g["count"] == 2)
+        client.post("/api/transfers/sort", json={"ids": g["ids"], "category": "Saved",
+                                                 "remember": True})
+        r = client.post(f"/api/transactions/{g['ids'][0]}/unsort")
+        assert r.status_code == 200 and r.get_json()["category"] == UNSORTED
+        assert client.get("/api/transfers/unsorted").get_json()["count"] == 3
+        assert client.get("/api/transfers/saved").get_json()["rows"] == []
+        assert "send e-tfr ***ana" not in three.overrides()
+
+    def test_undo_one_row_leaves_the_rest(self, client, three):
+        g = next(g for g in client.get("/api/transfers/unsorted").get_json()["groups"]
+                 if g["count"] == 2)
+        client.post("/api/transfers/sort", json={"ids": g["ids"], "category": "Gifts & Charity"})
+        client.post(f"/api/transactions/{g['ids'][0]}/unsort")
+        assert client.get("/api/transfers/unsorted").get_json()["count"] == 2
+
+    def test_a_partly_saved_row_is_listed_and_undone(self, client, three):
+        txn = client.post("/api/transactions", json={
+            "date": day(1), "description": "BIG", "amount": 1000,
+            "category": "Shopping", "confirm": True}).get_json()["id"]
+        client.put(f"/api/transactions/{txn}/invested", json={"amount": 300})
+        saved = client.get("/api/transfers/saved").get_json()
+        assert saved["rows"][0]["part"] and saved["total"] == 300
+        client.post(f"/api/transactions/{txn}/unsort")
+        assert client.get("/api/transfers/saved").get_json()["total"] == 0
+
+    def test_bad_sorts_are_refused(self, client, three):
+        assert client.post("/api/transfers/sort", json={"ids": [], "category": "Saved"}).status_code == 400
+        assert client.post("/api/transfers/sort", json={"ids": ["x"], "category": "Nope"}).status_code == 400

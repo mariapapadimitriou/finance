@@ -226,6 +226,14 @@ export const setShare      = (id, myShare) =>
 // Money that left a bank account for somewhere Spendie can't see, waiting to
 // be called spent or saved.
 export const getUnsorted   = () => req('/api/transfers/unsorted');
+// Say where a group of transfers went; `remember` makes it the rule for
+// those names.
+export const sortTransfers = (ids, category, remember) =>
+  json('POST', '/api/transfers/sort', { ids, category, remember });
+// What counts as saved lately, to check and undo.
+export const getSaved      = (months = 2) => req(`/api/transfers/saved?months=${months}`);
+// Undo where you said something went.
+export const unsortTransaction = (id) => json('POST', `/api/transactions/${id}/unsort`, {});
 // Money friends sent back for a charge: what is linked, and what might be.
 export const getPaybacks   = (id) => req(`/api/transactions/${id}/paybacks`);
 export const linkPayback   = (id, inflowId) =>

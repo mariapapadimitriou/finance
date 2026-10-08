@@ -4,6 +4,7 @@ import {
   Card, ErrorNote, GoTo, Loading, Notice, StatusPill, } from '../components/ui.jsx';
 import { getProjections, money, monthLabel, saveSavings } from '../api.js';
 import { investedConfig, projectionConfig } from '../charts.js';
+import { OPEN_SAVED_KEY } from './TransactionsPanel.jsx';
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
                      'July', 'August', 'September', 'October', 'November',
@@ -147,7 +148,7 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
             </div>
           </Card>
 
-          {data.invested_month && <InvestedThisMonth im={data.invested_month} />}
+          {data.invested_month && <InvestedThisMonth im={data.invested_month} onTab={onTab} />}
 
           {data.invested && <Invested invested={data.invested} />}
         </>
@@ -362,12 +363,20 @@ function PaceBadge({ data }) {
  * What was actually put away this month, beside the saving the plan asks
  * for: transfers marked Saved, plus the saved part of any other transaction.
  */
-function InvestedThisMonth({ im }) {
+function InvestedThisMonth({ im, onTab }) {
+  function seeSaved() {
+    // Read once by the Transactions page, which opens on what's saved.
+    try { window.sessionStorage.setItem(OPEN_SAVED_KEY, '1'); } catch { /* fine */ }
+    onTab?.('transactions');
+  }
   const target = im.saving ?? 0;
   const done = target > 0 && im.amount >= target - 0.5;
   const share = target > 0 ? Math.min(Math.max(im.amount, 0) / target, 1) : 0;
   return (
-    <Card title="Saved this month">
+    <Card title="Saved this month"
+          actions={onTab && (
+            <button className="link-btn" onClick={seeSaved}>See what's counted</button>
+          )}>
       {im.amount > 0 ? (
         <>
           <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>

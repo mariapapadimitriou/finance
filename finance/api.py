@@ -7,6 +7,8 @@ optional Claude call on the Savings tab and a Plaid sync you configure.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from flask import Blueprint, current_app, jsonify, request
 
 from .analytics import (
@@ -465,12 +467,112 @@ def _txn_brief(t) -> dict:
 @bp.get("/transfers/unsorted")
 def unsorted_transfers():
     """Money that left a bank account for somewhere Spendie can't see, waiting
-    for you to say whether it was spent or saved. Counted as spent meanwhile."""
+    for you to say whether it was spent or saved. Counted as spent meanwhile.
+
+    Also grouped by who it went to, so twelve e-transfers to one person are
+    one decision, not twelve.
+    """
     from .transfers import unsorted
     rows = unsorted(_txns())
+    groups: dict[str, dict] = {}
+    for t in rows:
+        g = groups.setdefault(t.merchant.strip().lower(), {
+            "merchant": t.merchant, "count": 0, "total": 0.0, "first": t.date,
+            "last": t.date, "accounts": [], "ids": []})
+        g["count"] += 1
+        g["total"] = round(g["total"] + t.amount, 2)
+        g["first"], g["last"] = min(g["first"], t.date), max(g["last"], t.date)
+        if (t.account_name or "") not in g["accounts"]:
+            g["accounts"].append(t.account_name or "")
+        g["ids"].append(t.fingerprint)
     return jsonify({"count": len(rows),
                     "total": round(sum(t.amount for t in rows), 2),
-                    "transfers": [_txn_brief(t) for t in rows]})
+                    "transfers": [_txn_brief(t) for t in rows],
+                    "groups": sorted(groups.values(), key=lambda g: -g["total"])})
+
+
+@bp.post("/transfers/sort")
+def sort_transfers():
+    """Say where a group of transfers went, in one go. `remember` makes it
+    the rule for those names from now on."""
+    from .transfers import apply_transfer_matches
+    body = request.get_json(silent=True) or {}
+    category = body.get("category")
+    ids = [i for i in (body.get("ids") or []) if isinstance(i, str)]
+    if category not in CATEGORIES:
+        return jsonify({"error": "A valid category is required."}), 400
+    if not ids:
+        return jsonify({"error": "Nothing to sort."}), 400
+    st = store()
+    rows = [t for t in (st.get_transaction(i) for i in ids) if t is not None]
+    if body.get("remember"):
+        for merchant in {t.merchant for t in rows}:
+            st.set_override(merchant, category)
+    else:
+        for t in rows:
+            st.set_transaction_category(t.fingerprint, category)
+    apply_transfer_matches(st)
+    return jsonify({"ok": True, "sorted": len(rows)})
+
+
+@bp.get("/transfers/saved")
+def saved_transfers():
+    """What counts as saved over the last few months, so it can be checked
+    and undone: transfers marked Saved, and the saved part of anything else."""
+    from datetime import date as _date
+    try:
+        months = max(1, min(int(request.args.get("months", 2)), 24))
+    except (TypeError, ValueError):
+        months = 2
+    d = _date.today().replace(day=1)
+    for _ in range(months - 1):
+        d = (d - timedelta(days=1)).replace(day=1)
+    since = d.isoformat()
+    rows = []
+    for t in _txns():
+        if t.date < since:
+            continue
+        if t.category == "Saved":
+            rows.append(dict(_txn_brief(t), saved=t.amount, part=False))
+        elif t.invested:
+            rows.append(dict(_txn_brief(t), saved=t.invested, part=True))
+    rows.sort(key=lambda r: r["date"], reverse=True)
+    return jsonify({"since": since, "rows": rows,
+                    "total": round(sum(r["saved"] for r in rows), 2)})
+
+
+@bp.post("/transactions/<txn_id>/unsort")
+def unsort_transaction(txn_id: str):
+    """Undo where you said something went.
+
+    If the choice was remembered for its name, the rule goes too and every
+    row of that name is sorted afresh; otherwise just this row is. A partly
+    saved row loses its saved part. Whatever Spendie would have chosen comes
+    back, so a transfer to nowhere it can see is waiting to be sorted again.
+    """
+    from .categorize import apply_categories
+    from .transfers import apply_transfer_matches
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if t.invested and t.category != "Saved":
+        st.set_invested(txn_id, None)
+        return jsonify({"ok": True, "undone": 1})
+    key = t.merchant.strip().lower()
+    if key in st.overrides():
+        st.clear_override(t.merchant)
+        rows = [r for r in st.all_transactions() if r.merchant.strip().lower() == key]
+    else:
+        rows = [t]
+    for r in rows:
+        if r.category_source in ("user", "merchant_override"):
+            r.category_source = "rule"
+    apply_categories(rows, st.overrides())
+    st.write_categories({r.fingerprint: (r.category, r.category_source) for r in rows})
+    apply_transfer_matches(st)
+    return jsonify({"ok": True, "undone": len(rows),
+                    "category": st.get_transaction(txn_id).category})
 
 
 # How far either side of a charge a repayment is looked for.
