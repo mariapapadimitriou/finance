@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Card, ErrorNote, GoTo, Loading, Notice, StatusPill, } from '../components/ui.jsx';
 import {
-  accountTitle, dateLabel, deleteAccount, getAccounts, getDuplicateAudit, getLedgerStart,
+  accountTitle, dateLabel, deleteAccount, setAccountJoint, getAccounts, getDuplicateAudit, getLedgerStart,
   money, recategorizeAll, resetLedger, setAccountSync, setLedgerStart, syncPlaid,
 } from '../api.js';
 
@@ -56,6 +56,20 @@ export default function AccountsPanel({ onChanged, onTab }) {
     setBusy(true);
     try {
       await deleteAccount(account.account_id);
+      await load();
+      await onChanged?.();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function markJoint(account, label) {
+    setBusy(true);
+    setError(null);
+    try {
+      await setAccountJoint(account.account_id, label);
       await load();
       await onChanged?.();
     } catch (e) {
@@ -207,6 +221,8 @@ export default function AccountsPanel({ onChanged, onTab }) {
                     <span className="pill">
                       {a.kind_label || (a.is_card ? 'Card' : 'Account')}
                     </span>
+                    <JointControl account={a} busy={busy}
+                                  onSave={(label) => markJoint(a, label)} />
                   </td>
                   <td>
                     {a.syncs === null ? (
@@ -557,5 +573,46 @@ function TrendBasis({ onChanged }) {
         </button>
       </div>
     </Card>
+  );
+}
+
+/**
+ * Whether an account is shared, and with whom. On a joint account, anything
+ * that can't be matched to your own accounts is another member's until you
+ * mark it yours on Transactions.
+ */
+function JointControl({ account, busy, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState('');
+
+  if (account.joint && !editing) {
+    return (
+      <div className="joint-line small">
+        Joint · {account.joint}{' '}
+        <button className="link-btn" disabled={busy} onClick={() => onSave(null)}>
+          Not joint
+        </button>
+      </div>
+    );
+  }
+  if (!editing) {
+    return (
+      <div className="joint-line small">
+        <button className="link-btn" disabled={busy}
+                onClick={() => { setLabel(''); setEditing(true); }}>Joint?</button>
+      </div>
+    );
+  }
+  return (
+    <form className="joint-line row small" style={{ gap: 6 }}
+          onSubmit={(e) => { e.preventDefault(); if (label.trim()) { onSave(label.trim()); setEditing(false); } }}>
+      <input type="text" value={label} onChange={(e) => setLabel(e.target.value)}
+             placeholder="Shared with… (e.g. Family)" aria-label="Shared with"
+             style={{ width: 170 }} maxLength={40}
+             // eslint-disable-next-line jsx-a11y/no-autofocus
+             autoFocus />
+      <button className="btn primary" type="submit" disabled={busy || !label.trim()}>Save</button>
+      <button className="link-btn" type="button" onClick={() => setEditing(false)}>Cancel</button>
+    </form>
   );
 }

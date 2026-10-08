@@ -368,7 +368,7 @@ PLAID_CATEGORY_MAP = {
 
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
-RULES_VERSION = 5
+RULES_VERSION = 6
 
 
 def plaid_category(code: str) -> str | None:

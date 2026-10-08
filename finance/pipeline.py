@@ -11,7 +11,7 @@ from .categorize import apply_categories
 from .dedupe import dedupe_batch, split_new
 from .ingest.base import IngestResult
 from .store import Store
-from .transfers import apply_transfer_matches
+from .transfers import apply_transfer_matches, migrate_overrides
 from .trips import apply_trips
 
 
@@ -78,6 +78,7 @@ def recategorize_all(store: Store) -> int:
 
     User-set categories survive; everything else is recomputed.
     """
+    migrate_overrides(store)
     transactions = store.all_transactions()
     overrides = store.overrides()
     apply_categories(transactions, overrides)

@@ -434,11 +434,29 @@ def set_transaction_share(txn_id: str):
     txn = st.get_transaction(txn_id)
     if txn is None:
         return jsonify({"error": "No such transaction."}), 404
+    raw = body.get("my_share")
+    if txn.joint:
+        # On a joint account the share is what says whose it was: the whole
+        # of it (yours), nothing (theirs, the default) or part — and that
+        # applies to money coming in as much as going out.
+        from .transfers import apply_transfer_matches
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            st.set_share(txn_id, None)
+        else:
+            try:
+                share = round(float(raw), 2)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Your share has to be an amount."}), 400
+            if abs(share) > abs(txn.amount) + 0.005 or (share * txn.amount) < 0:
+                return jsonify({"error": "Your share has to be between nothing "
+                                         "and the whole amount."}), 400
+            st.set_share(txn_id, share)
+        apply_transfer_matches(st)
+        return jsonify({"ok": True, "my_share": st.get_transaction(txn_id).my_share})
     if txn.amount <= 0:
         return jsonify({"error": "Only a charge can be split. This is money "
                                  "that came back."}), 400
 
-    raw = body.get("my_share")
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         st.set_share(txn_id, None)
         return jsonify({"ok": True, "my_share": None})
@@ -472,12 +490,15 @@ def unsorted_transfers():
     Also grouped by who it went to, so twelve e-transfers to one person are
     one decision, not twelve.
     """
-    from .transfers import unsorted
+    from .transfers import destination, unsorted
     rows = unsorted(_txns())
     groups: dict[str, dict] = {}
     for t in rows:
-        g = groups.setdefault(t.merchant.strip().lower(), {
-            "merchant": t.merchant, "count": 0, "total": 0.0, "first": t.date,
+        where = destination(t)
+        key = where[0] if where else "row:" + t.fingerprint
+        g = groups.setdefault(key, {
+            "key": key, "merchant": where[1] if where else t.merchant,
+            "learnable": bool(where), "count": 0, "total": 0.0, "first": t.date,
             "last": t.date, "accounts": [], "ids": []})
         g["count"] += 1
         g["total"] = round(g["total"] + t.amount, 2)
@@ -503,16 +524,21 @@ def sort_transfers():
         return jsonify({"error": "A valid category is required."}), 400
     if not ids:
         return jsonify({"error": "Nothing to sort."}), 400
+    from .transfers import destination
     st = store()
     rows = [t for t in (st.get_transaction(i) for i in ids) if t is not None]
-    if body.get("remember"):
-        for merchant in {t.merchant for t in rows}:
-            st.set_override(merchant, category)
-    else:
-        for t in rows:
+    learned = 0
+    for t in rows:
+        where = destination(t) if body.get("remember") else None
+        if where:
+            # A rule for where it went, applied only to what matching leaves
+            # unmatched — so a transfer whose other end turns up stays neutral.
+            st.set_destination(where[0], category, where[1])
+            learned += 1
+        else:
             st.set_transaction_category(t.fingerprint, category)
     apply_transfer_matches(st)
-    return jsonify({"ok": True, "sorted": len(rows)})
+    return jsonify({"ok": True, "sorted": len(rows), "learned": learned})
 
 
 @bp.get("/transfers/saved")
@@ -551,7 +577,7 @@ def unsort_transaction(txn_id: str):
     back, so a transfer to nowhere it can see is waiting to be sorted again.
     """
     from .categorize import apply_categories
-    from .transfers import apply_transfer_matches
+    from .transfers import RULED, apply_transfer_matches, destination
     st = store()
     t = st.get_transaction(txn_id)
     if t is None:
@@ -559,6 +585,13 @@ def unsort_transaction(txn_id: str):
     if t.invested and t.category != "Saved":
         st.set_invested(txn_id, None)
         return jsonify({"ok": True, "undone": 1})
+    if t.category_source == RULED:
+        where = destination(t)
+        if where:
+            st.clear_destination(where[0])
+        apply_transfer_matches(st)
+        return jsonify({"ok": True, "undone": 1,
+                        "category": st.get_transaction(txn_id).category})
     key = t.merchant.strip().lower()
     if key in st.overrides():
         st.clear_override(t.merchant)
@@ -718,6 +751,39 @@ def _label_account(row: dict, banks: dict[str, str], imported: dict[str, dict]) 
         row["imported_from"] = imp or None
 
 
+@bp.put("/accounts/<account_id>/joint")
+def set_account_joint(account_id: str):
+    """Say an account is shared, and with whom; null says it's yours alone.
+
+    On a joint account, a row that can't be matched to your own accounts is
+    another member's — not your spending, income or money in — until you say
+    it was yours.
+    """
+    from .transfers import apply_transfer_matches
+    body = request.get_json(silent=True) or {}
+    label = body.get("label")
+    if label is not None:
+        label = " ".join(str(label).split())[:40]
+        if not label:
+            return jsonify({"error": "Say who it's shared with."}), 400
+    st = store()
+    st.set_joint(account_id, label)
+    apply_transfer_matches(st)
+    return jsonify({"ok": True, "joint": label})
+
+
+@bp.put("/transactions/<txn_id>/mine-always")
+def set_mine_always(txn_id: str):
+    """On joint accounts, purchases at this name are always yours."""
+    body = request.get_json(silent=True) or {}
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    st.set_joint_mine(t.merchant, bool(body.get("on")))
+    return jsonify({"ok": True})
+
+
 @bp.get("/accounts")
 def accounts():
     """Every account this app knows about, and whether it syncs.
@@ -778,8 +844,10 @@ def accounts():
 
     banks = {i["item_id"]: i.get("institution") or "" for i in st.plaid_items()}
     imported = st.imports_by_account()
+    joint = st.joint_accounts()
     for row in rows:
         _label_account(row, banks, imported)
+        row["joint"] = joint.get(row["account_id"])
 
     txns = st.all_transactions()
     return jsonify({

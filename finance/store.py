@@ -152,6 +152,27 @@ CREATE TABLE IF NOT EXISTS txn_invested (
     amount REAL NOT NULL
 );
 
+-- Where a transfer you can't see the other end of goes, decided once: an
+-- e-transfer recipient, an account number, a brokerage. Applied only to what
+-- matching left unmatched — see finance/transfers.py.
+CREATE TABLE IF NOT EXISTS transfer_destinations (
+    key      TEXT PRIMARY KEY,
+    label    TEXT,
+    category TEXT NOT NULL
+);
+
+-- Accounts you share. A row on one that can't be matched to your own
+-- accounts is another member's unless you say it was yours.
+CREATE TABLE IF NOT EXISTS joint_accounts (
+    account_id TEXT PRIMARY KEY,
+    label      TEXT NOT NULL
+);
+
+-- Names where a purchase on a joint account is always yours.
+CREATE TABLE IF NOT EXISTS joint_mine (
+    merchant_key TEXT PRIMARY KEY
+);
+
 -- Money friends sent back for a charge you paid for everyone. An inflow repays
 -- at most one charge; the charge's share is what is left once they have: an
 -- $80 dinner with $60 sent back cost you $20, and the $60 is neither income
@@ -305,6 +326,8 @@ _CHARGES = """(
              ON o.category = t.category
             AND SUBSTR(t.date, 1, 7) >= o.start_month
             AND NOT EXISTS (SELECT 1 FROM piggy_optouts x WHERE x.txn_id = t.id)
+            AND (s.txn_id IS NOT NULL OR NOT EXISTS
+                 (SELECT 1 FROM joint_accounts j WHERE j.account_id = t.account_id))
      WHERE m.txn_id IS NOT NULL OR o.bank_id IS NOT NULL
 )"""
 
@@ -324,6 +347,9 @@ _CHARGE_COLUMNS = """sh.my_share AS my_share,
                           ivx.amount AS invested,
                           pbx.total AS paid_back,
                           rpx.charge_id AS repays,
+                          jax.label AS joint,
+                          CASE WHEN jmx.merchant_key IS NULL THEN 0 ELSE 1 END
+                              AS joint_mine,
                           a.bank_id AS bank_id,
                           CASE WHEN a.bank_id IS NULL THEN 0 ELSE a.charged
                           END AS bank_amount,
@@ -521,6 +547,8 @@ class Store:
                      LEFT JOIN txn_invested ivx ON ivx.txn_id = t.id
                      LEFT JOIN {_PAYBACKS} pbx ON pbx.charge_id = t.id
                      LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
+                     LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
+                     LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
                     ORDER BY t.date DESC, t.id""").fetchall()
         return [Transaction.from_row(dict(r)) for r in rows]
 
@@ -531,28 +559,28 @@ class Store:
                            ) -> tuple[list[Transaction], int]:
         where, params = [], []
         if month:
-            where.append("date LIKE ?")
+            where.append("t.date LIKE ?")
             params.append(f"{month}%")
         if start:
-            where.append("date >= ?")
+            where.append("t.date >= ?")
             params.append(start)
         if end:
-            where.append("date <= ?")
+            where.append("t.date <= ?")
             params.append(end)
         if category:
-            where.append("category = ?")
+            where.append("t.category = ?")
             params.append(category)
         if account_id:
-            where.append("account_id = ?")
+            where.append("t.account_id = ?")
             params.append(account_id)
         if search:
-            where.append("(merchant LIKE ? OR description LIKE ?)")
+            where.append("(t.merchant LIKE ? OR t.description LIKE ?)")
             params += [f"%{search}%", f"%{search}%"]
 
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         with self.conn() as c:
             total = c.execute(
-                f"SELECT COUNT(*) AS n FROM transactions {clause}", params
+                f"SELECT COUNT(*) AS n FROM transactions t {clause}", params
             ).fetchone()["n"]
             # The column prefix matters: `clause` is written against the bare
             # table, and `date`/`category` are unambiguous only because
@@ -565,6 +593,8 @@ class Store:
                       LEFT JOIN txn_invested ivx ON ivx.txn_id = t.id
                       LEFT JOIN {_PAYBACKS} pbx ON pbx.charge_id = t.id
                       LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
+                      LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
+                      LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
                     {clause}
                     ORDER BY t.date DESC, t.id LIMIT ? OFFSET ?""",
                 params + [limit, offset],
@@ -595,6 +625,8 @@ class Store:
                      LEFT JOIN txn_invested ivx ON ivx.txn_id = t.id
                      LEFT JOIN {_PAYBACKS} pbx ON pbx.charge_id = t.id
                      LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
+                     LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
+                     LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
                     WHERE t.id = ?""", (txn_id,)).fetchone()
         return Transaction.from_row(dict(row)) if row else None
 
@@ -857,6 +889,9 @@ class Store:
             ("txn_shares", "your shares of split charges"),
             ("txn_invested", "amounts marked as invested"),
             ("txn_paybacks", "money friends paid back"),
+            ("transfer_destinations", "where transfers go"),
+            ("joint_accounts", "joint accounts"),
+            ("joint_mine", "names always yours on a joint account"),
             ("dismissed_insights", "dismissed findings"),
         ]
         with self.conn() as c:
@@ -1446,6 +1481,50 @@ class Store:
                        institution  = excluded.institution""",
                 (item_id, token, institution),
             )
+
+    # ── Transfer destinations ────────────────────────────────────────────
+    def destinations(self) -> dict[str, str]:
+        with self.conn() as c:
+            rows = c.execute("SELECT key, category FROM transfer_destinations").fetchall()
+        return {r["key"]: r["category"] for r in rows}
+
+    def destination_labels(self) -> dict[str, str]:
+        with self.conn() as c:
+            rows = c.execute("SELECT key, label FROM transfer_destinations").fetchall()
+        return {r["key"]: r["label"] or "" for r in rows}
+
+    def set_destination(self, key: str, category: str, label: str = "") -> None:
+        with self.conn() as c:
+            c.execute(
+                """INSERT INTO transfer_destinations (key, label, category) VALUES (?, ?, ?)
+                   ON CONFLICT(key) DO UPDATE SET category = excluded.category,
+                                                  label = excluded.label""",
+                (key, label, category))
+
+    def clear_destination(self, key: str) -> bool:
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM transfer_destinations WHERE key = ?", (key,))
+            return (cur.rowcount or 0) > 0
+
+    # ── Joint accounts ───────────────────────────────────────────────────
+    def joint_accounts(self) -> dict[str, str]:
+        with self.conn() as c:
+            rows = c.execute("SELECT account_id, label FROM joint_accounts").fetchall()
+        return {r["account_id"]: r["label"] for r in rows}
+
+    def set_joint(self, account_id: str, label: str | None) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM joint_accounts WHERE account_id = ?", (account_id,))
+            if label:
+                c.execute("INSERT INTO joint_accounts (account_id, label) VALUES (?, ?)",
+                          (account_id, label))
+
+    def set_joint_mine(self, merchant: str, on: bool) -> None:
+        key = merchant.strip().lower()
+        with self.conn() as c:
+            c.execute("DELETE FROM joint_mine WHERE merchant_key = ?", (key,))
+            if on:
+                c.execute("INSERT INTO joint_mine (merchant_key) VALUES (?)", (key,))
 
     def write_categories(self, changes: dict[str, tuple[str, str]]) -> None:
         """Write (category, source) for these rows, your own choices included —

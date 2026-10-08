@@ -271,6 +271,11 @@ class Transaction:
     paid_back: float | None = None
     # On money coming in: the charge it paid you back for.
     repays: str | None = None
+    # The label of the joint account this row is on ("Family"), if it is one.
+    # On a joint account a row is another member's unless you said otherwise,
+    # so its share defaults to nothing — `share_set` says whether you did.
+    joint: str | None = None
+    share_set: bool = False
 
     def __post_init__(self):
         if not self.merchant:
@@ -316,7 +321,7 @@ class Transaction:
                 raw = json.loads(raw)
             except (ValueError, TypeError):
                 raw = {}
-        return cls(
+        t = cls(
             date=row["date"],
             description=row.get("description", ""),
             amount=row["amount"],
@@ -340,7 +345,13 @@ class Transaction:
             paid_back=(None if row.get("paid_back") is None
                        else round(float(row["paid_back"]), 2)),
             repays=row.get("repays"),
+            joint=row.get("joint") or None,
+            share_set=row.get("my_share") is not None,
         )
+        if t.joint and t.my_share is None:
+            # Another member's, unless it's a name you said is always yours.
+            t.my_share = t.amount if row.get("joint_mine") else 0.0
+        return t
 
 
 def parse_date(value: str) -> str | None:

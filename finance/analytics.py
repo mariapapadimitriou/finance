@@ -40,6 +40,12 @@ def share_amount(t: Transaction) -> float:
     return base
 
 
+def is_others(t: Transaction) -> bool:
+    """A row on a joint account that isn't yours: another member's money,
+    in or out. Not your spending, your income, or money you received."""
+    return bool(t.joint) and abs(t.my_share or 0.0) < 0.005
+
+
 def spend_amount(t: Transaction) -> float:
     """How much of this charge the month it fell in has to pay for.
 
@@ -182,6 +188,8 @@ def monthly_totals(transactions: list[Transaction]) -> list[dict]:
             spend[t.month] += spend_amount(t)
             if t.amount > 0:
                 counts[t.month] += 1
+        elif is_others(t):
+            continue                      # another member's, on a joint account
         elif cat == "Income" and t.amount < 0:
             income[t.month] += abs(t.amount)
         elif t.amount < 0 and not t.repays:
