@@ -20,6 +20,7 @@ the environment is not consulted; passwords change in the app.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -68,7 +69,20 @@ CREATE TABLE IF NOT EXISTS app_codes (
 """
 
 # Added after accounts first shipped, so an existing table gains them.
-_NEW_COLUMNS = (("email", "TEXT"), ("email_verified", "INTEGER NOT NULL DEFAULT 0"))
+_NEW_COLUMNS = (("email", "TEXT"), ("email_verified", "INTEGER NOT NULL DEFAULT 0"),
+                # Pearl's onboarding: who you are, where you live, what you agreed
+                # to, and how far through setup you got.
+                ("first_name", "TEXT"), ("province", "TEXT"), ("consents", "TEXT"),
+                ("onboarding_step", "TEXT"), ("onboarded_at", "REAL"),
+                ("waitlist", "INTEGER NOT NULL DEFAULT 0"))
+# Sign-in codes are found by the address they were sent to, before there may
+# be an account to tie them to.
+_CODE_COLUMNS = (("email", "TEXT"),)
+
+# Accounts made by email code have no password. The stored hash is a random
+# value in a scheme `auth.verify_password` never accepts, so no password can
+# ever match it; it still gives the session a stable fingerprint.
+NO_PASSWORD = "none$"
 
 
 @dataclass(frozen=True)
@@ -79,6 +93,16 @@ class User:
     owner: bool
     email: str | None = None
     email_verified: bool = False
+    first_name: str | None = None
+    province: str | None = None
+    consents: dict | None = None
+    onboarding_step: str | None = None
+    onboarded_at: float | None = None
+    waitlist: bool = False
+
+    @property
+    def has_password(self) -> bool:
+        return self.password_hash.startswith("scrypt$")
 
     @property
     def fingerprint(self) -> str:
@@ -89,12 +113,35 @@ class User:
 
     def public(self) -> dict:
         return {"id": self.id, "username": self.username,
-                "email": self.email, "email_verified": self.email_verified}
+                "email": self.email, "email_verified": self.email_verified,
+                "first_name": self.first_name, "has_password": self.has_password,
+                "onboarding": {"done": self.onboarded_at is not None,
+                               "step": self.onboarding_step,
+                               "province": self.province,
+                               "waitlist": self.waitlist,
+                               "consents": self.consents or {}}}
+
+
+def _col(r, name):
+    try:
+        return r[name]
+    except (IndexError, KeyError):
+        return None
 
 
 def _row(r) -> User:
+    try:
+        consents = json.loads(_col(r, "consents") or "null")
+    except ValueError:
+        consents = None
+    done = _col(r, "onboarded_at")
     return User(int(r["id"]), r["username"], r["password_hash"], bool(r["owner"]),
-                r["email"] or None, bool(r["email_verified"]))
+                r["email"] or None, bool(r["email_verified"]),
+                _col(r, "first_name") or None, _col(r, "province") or None,
+                consents if isinstance(consents, dict) else None,
+                _col(r, "onboarding_step") or None,
+                float(done) if done is not None else None,
+                bool(_col(r, "waitlist")))
 
 
 def ensure_table(base) -> None:
@@ -108,9 +155,27 @@ def ensure_table(base) -> None:
                 c.execute(f"ALTER TABLE app_users ADD COLUMN {name} {kind}")
         except Exception:                              # noqa: BLE001
             pass
+    for name, kind in _CODE_COLUMNS:
+        try:
+            with base.conn() as c:
+                c.execute(f"ALTER TABLE app_codes ADD COLUMN {name} {kind}")
+        except Exception:                              # noqa: BLE001
+            pass
     with base.conn() as c:
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_email "
                   "ON app_users (email)")
+        # Everyone who had an account before onboarding existed has been set
+        # up already; only accounts made after this see it. Done once, so a
+        # new account later is never mistaken for an old one.
+        c.execute("INSERT OR IGNORE INTO app_secrets (name, value) "
+                  "VALUES ('onboarding_migrated', '0')")
+        flag = c.execute("SELECT value FROM app_secrets "
+                         "WHERE name = 'onboarding_migrated'").fetchone()["value"]
+        if flag != "1":
+            c.execute("UPDATE app_users SET onboarded_at = ? WHERE onboarded_at IS NULL",
+                      (now(),))
+            c.execute("UPDATE app_secrets SET value = '1' "
+                      "WHERE name = 'onboarding_migrated'")
 
 
 def count(base) -> int:
@@ -249,6 +314,78 @@ def create(base, username: str, password_hash: str, owner: bool = False) -> User
     return user
 
 
+def username_for(base, email: str) -> str:
+    """A free username made from an email, for accounts that never type one."""
+    local = re.sub(r"[^a-z0-9._-]", "", normalise(email).split("@")[0])[:24]
+    if len(local) < 3:
+        local += "pearl"
+    name = local
+    while by_username(base, name) is not None:
+        name = f"{local}-{secrets.randbelow(10000):04d}"
+    return name
+
+
+def create_passwordless(base, email: str, first_name: str | None = None,
+                        owner: bool = False) -> User | None:
+    """An account that signs in by email code or passkey, its email verified."""
+    for _ in range(5):
+        user = create(base, username_for(base, email),
+                      NO_PASSWORD + secrets.token_hex(16), owner=owner)
+        if user is not None:
+            break
+    else:
+        return None
+    if not set_email(base, user.id, email, verified=True):
+        return None
+    with base.conn() as c:
+        c.execute("UPDATE app_users SET first_name = ?, onboarding_step = 'province' "
+                  "WHERE id = ?", (clean_name(first_name), user.id))
+    return by_id(base, user.id)
+
+
+def clean_name(name) -> str | None:
+    name = " ".join(str(name or "").split())[:40]
+    return name or None
+
+
+PROVINCES = {
+    "AB": "Alberta", "BC": "British Columbia", "MB": "Manitoba",
+    "NB": "New Brunswick", "NL": "Newfoundland and Labrador",
+    "NS": "Nova Scotia", "NT": "Northwest Territories", "NU": "Nunavut",
+    "ON": "Ontario", "PE": "Prince Edward Island", "QC": "Quebec",
+    "SK": "Saskatchewan", "YT": "Yukon",
+}
+# Where Pearl can't be offered yet; people there can join a waitlist.
+UNAVAILABLE = {"QC"}
+
+# What O-07 asks. The first two are needed to link a bank.
+CONSENTS = {"terms": True, "read_data": True, "improve": False, "tips": False}
+
+STEPS = ("province", "protect", "consents", "bank", "linked", "path")
+
+
+def update_onboarding(base, user_id: int, **fields) -> User | None:
+    """Write any of first_name, province, consents, onboarding_step, waitlist,
+    onboarded_at — only those given."""
+    allowed = {"first_name", "province", "consents", "onboarding_step",
+               "waitlist", "onboarded_at"}
+    sets, vals = [], []
+    for key, value in fields.items():
+        if key not in allowed:
+            raise ValueError(key)
+        if key == "consents" and value is not None:
+            value = json.dumps(value)
+        if key == "waitlist":
+            value = 1 if value else 0
+        sets.append(f"{key} = ?")
+        vals.append(value)
+    if sets:
+        with base.conn() as c:
+            c.execute(f"UPDATE app_users SET {', '.join(sets)} WHERE id = ?",
+                      (*vals, int(user_id)))
+    return by_id(base, user_id)
+
+
 def set_password(base, user_id: int, password_hash: str) -> None:
     with base.conn() as c:
         c.execute("UPDATE app_users SET password_hash = ? WHERE id = ?",
@@ -303,6 +440,9 @@ def bootstrap_owner(base) -> User | None:
         return None
     name = normalise(os.environ.get(OWNER_USERNAME_ENV) or DEFAULT_OWNER)
     user = create(base, name, stored, owner=True)
+    if user is not None:
+        # Set up from the environment: there is nothing to onboard.
+        update_onboarding(base, user.id, onboarded_at=now())
     _owner_email(base)
     return by_id(base, user.id) if user else None
 

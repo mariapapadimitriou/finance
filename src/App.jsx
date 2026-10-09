@@ -12,7 +12,8 @@ import BanksPanel from './panels/BanksPanel.jsx';
 import AccountsPanel from './panels/AccountsPanel.jsx';
 import AccountPanel from './panels/AccountPanel.jsx';
 import CategoriesPanel from './panels/CategoriesPanel.jsx';
-import Login, { resetTokenFromUrl } from './Login.jsx';
+import SignedOut, { resetTokenFromUrl } from './pearl/SignedOut.jsx';
+import Onboarding from './pearl/Onboarding.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
@@ -111,6 +112,11 @@ export default function App() {
   // null while we're still asking; the app renders nothing rather than
   // flashing a dashboard at someone who then gets bounced to a login.
   const [signedIn, setSignedIn] = useState(null);
+  // Who is signed in, for onboarding: a new account sets itself up before the
+  // app opens. `fresh` is true straight after making one, which is when a
+  // passkey is offered.
+  const [user, setUser] = useState(null);
+  const [fresh, setFresh] = useState(false);
   // Bumped on every reload so panels that fetch their own data — Allowance,
   // Projections, Piggy banks — refetch after an import instead of showing what
   // they loaded when they mounted.
@@ -137,6 +143,7 @@ export default function App() {
   const checkAuth = useCallback(async () => {
     try {
       const s = await getAuthStatus();
+      setUser(s.user ?? null);
       setSignedIn(s.signed_in);
       return s.signed_in;
     } catch (e) {
@@ -172,7 +179,9 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => { if (signedIn) load(); }, [load, signedIn]);
+  const onboarding = !!user && user.onboarding && !user.onboarding.done;
+
+  useEffect(() => { if (signedIn && !onboarding) load(); }, [load, signedIn, onboarding]);
 
   // Pull from the banks as soon as the app opens, after the first paint so
   // the page never waits on Plaid. Once per sign-in; the figures reload only
@@ -192,25 +201,38 @@ export default function App() {
   }, [signedIn, data, load]);
 
   if (signedIn === null) {
-    return <Shell theme={theme} setTheme={setTheme}><Loading what="Spendie" /></Shell>;
+    return <Shell theme={theme} setTheme={setTheme}><Loading what="Pearl" /></Shell>;
   }
 
   // A reset link opens the reset screen even on a device that is signed in.
   if (!signedIn || resetTokenFromUrl()) {
     // A different person may be signing in on this device: nothing from the
     // last session's ledger is carried over.
-    return <Login onSignedIn={() => {
+    return <SignedOut onSignedIn={(u, { created = false } = {}) => {
       setData(null); setMonth(''); setPlanMonth('');
       synced.current = false;
+      setUser(u ?? null); setFresh(created);
       setSignedIn(true); setError(null);
     }} />;
+  }
+
+  if (onboarding) {
+    return (
+      <Onboarding user={user} startAt={fresh ? 'passkey' : null}
+                  onSignOut={async () => { await logout(); setUser(null); setSignedIn(false); }}
+                  onDone={(dest) => {
+                    setFresh(false);
+                    setUser((u) => ({ ...u, onboarding: { ...u.onboarding, done: true } }));
+                    if (dest) go(dest);
+                  }} />
+    );
   }
 
   if (error) {
     return (
       <Shell theme={theme} setTheme={setTheme}>
         <div className="notice error" style={{ marginTop: 24 }}>
-          <strong>Can&apos;t reach the Spendie API.</strong> {String(error.message)}
+          <strong>Can&apos;t reach the Pearl API.</strong> {String(error.message)}
           <br />
           Start it with <code>python app.py</code> (or{' '}
           <code>flask --app app run</code>), then{' '}
@@ -376,7 +398,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {},
       <aside className="sidebar">
         <div className="brand">
           <Logo size={34} />
-          <div className="name">Spendie</div>
+          <div className="name">pearl</div>
         </div>
 
         {onTab && (
@@ -408,7 +430,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {},
         <div className="topbar">
           <div className="topbar-inner">
             <div className="title">
-              <h1>{current?.label ?? 'Spendie'}</h1>
+              <h1>{current?.label ?? 'Pearl'}</h1>
             </div>
 
             {showMonth && months.length > 0 && (

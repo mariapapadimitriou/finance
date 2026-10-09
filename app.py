@@ -25,7 +25,7 @@ from datetime import timedelta
 from flask import Flask, abort, g, jsonify, request, send_from_directory, session
 from flask_cors import CORS
 
-from finance import auth, mailer, users
+from finance import auth, mailer, passkeys, signin_codes, users
 from finance.api import bp
 # storage_mode is re-exported for convenience; /api/health reads it from db.
 from finance.db import database_url, is_hosted as _is_hosted, storage_mode  # noqa: F401
@@ -73,7 +73,9 @@ def _hosted_db_path() -> str | None:
 # files the sign-in screen is made of. Everything else, including every /api
 # route and the frontend shell, needs one.
 _OPEN_PATHS = frozenset({"/api/auth/status", "/api/auth/login", "/api/auth/signup",
-                         "/api/auth/forgot", "/api/auth/reset"})
+                         "/api/auth/forgot", "/api/auth/reset",
+                         "/api/auth/code/start", "/api/auth/code/verify",
+                         "/api/auth/passkey/options", "/api/auth/passkey/verify"})
 
 
 def _is_static_asset(path: str) -> bool:
@@ -124,6 +126,7 @@ def _bundled_fingerprints() -> set[str]:
 def _install_auth(app: Flask) -> None:
     base: Store = app.config["STORE"]
     users.bootstrap_owner(base)
+    passkeys.ensure_table(base)
 
     # Cookie hardening. Secure only when hosted, because a local dev server is
     # http and a Secure cookie would simply never be sent.
@@ -180,6 +183,17 @@ def _install_auth(app: Flask) -> None:
         session["pw"] = user.fingerprint
         session.permanent = True
 
+    def may_link(user) -> bool:
+        """Linking a bank needs the required consents, from anyone who has
+        been through onboarding's choices; accounts from before it are set."""
+        if user.onboarded_at is not None:
+            return True
+        if user.province in users.UNAVAILABLE:
+            return False
+        given = user.consents or {}
+        return all((given.get(k) or {}).get("value") for k, need in
+                   users.CONSENTS.items() if need)
+
     # ── Email: a link for a forgotten password ──────────────────────────────
     def public_url() -> str:
         # A link in an email must not be built from a Host header a stranger
@@ -215,6 +229,9 @@ def _install_auth(app: Flask) -> None:
         if path in _OPEN_PATHS or _is_static_asset(path):
             return None
         if g.user is not None:
+            if path.startswith("/api/plaid/") and not may_link(g.user):
+                return jsonify({"error": "Agree to the two required choices "
+                                         "before linking a bank."}), 403
             return None
 
         if path.startswith("/api/"):
@@ -236,7 +253,7 @@ def _install_auth(app: Flask) -> None:
             "required": need,
             "configured": accounts_exist(),
             "signed_in": (not need) or user is not None,
-            "user": user.public() if user else None,
+            "user": status_user(user) if user else None,
             "mail": mailer.configured(),
         })
 
@@ -266,7 +283,7 @@ def _install_auth(app: Flask) -> None:
             if token:
                 link = f"{public_url()}/?reset={token}"
                 try:
-                    mailer.send(user.email, "Reset your Spendie password",
+                    mailer.send(user.email, "Reset your Pearl password",
                                 f"Hi {user.username},\n\nTo choose a new "
                                 f"password, open this link within 30 minutes:\n\n"
                                 f"{link}\n\nIt works once. If you didn't ask "
@@ -313,8 +330,8 @@ def _install_auth(app: Flask) -> None:
             # A heads-up to the old address, in case it wasn't them: whoever
             # controls the email controls the account.
             try:
-                mailer.send(user.email, "Your Spendie email changed",
-                            f"The email on your Spendie account ({user.username}) "
+                mailer.send(user.email, "Your Pearl email changed",
+                            f"The email on your Pearl account ({user.username}) "
                             f"is now {email}. If that wasn't you, reset your "
                             "password straight away.")
             except Exception:                          # noqa: BLE001
@@ -366,6 +383,199 @@ def _install_auth(app: Flask) -> None:
         start_session(users.by_id(base, user.id))
         return jsonify({"ok": True})
 
+    # ── Pearl: email codes and passkeys ─────────────────────────────────────
+    def relying_party() -> tuple[str, list[str]]:
+        rp_id, origin = passkeys.relying_party(request.host_url)
+        origins = {origin, f"https://{request.host}"}
+        if _is_hosted():
+            origins.add(public_url())
+        return rp_id, sorted(origins)
+
+    def signed_in_reply(user, **extra):
+        start_session(user)
+        return jsonify({"ok": True, "signed_in": True, "user": status_user(user),
+                        **extra})
+
+    def status_user(user) -> dict:
+        out = user.public()
+        out["passkeys"] = passkeys.count(base, user.id)
+        return out
+
+    def pause_reply(seconds: int):
+        return jsonify({"error": "There were too many sign-in attempts, so we've "
+                                 "paused sign-in for 15 minutes.",
+                        "paused": True, "retry_in": seconds}), 429
+
+    @app.post("/api/auth/code/start")
+    def _code_start():
+        body = request.get_json(silent=True) or {}
+        email = users.normalise(body.get("email"))
+        problem = users.check_email(email)
+        if problem:
+            return jsonify({"error": problem}), 400
+        creating = bool(body.get("create"))
+        if creating and not users.clean_name(body.get("first_name")):
+            return jsonify({"error": "Tell us your first name."}), 400
+        if _is_hosted() and not mailer.configured():
+            return jsonify({"error": "Email isn't set up on this deployment yet, "
+                                     "so a code can't be sent."}), 503
+        out = signin_codes.start(base, email, body.get("first_name"), creating=creating)
+        if out.get("paused"):
+            return pause_reply(out["paused"])
+        if out.get("code"):
+            account = users.by_email(base, email)
+            name = (account.first_name if account else None) \
+                or users.clean_name(body.get("first_name"))
+            subject, text = signin_codes.email_text(out["purpose"], out["code"],
+                                                    name, public_url())
+            if mailer.configured():
+                try:
+                    mailer.send(email, subject, text)
+                except Exception:                      # noqa: BLE001
+                    return jsonify({"error": "The email didn't send. Try again "
+                                             "in a minute."}), 502
+            else:
+                # Running locally with no mail server: the code goes to the
+                # terminal instead, so sign-up can still be tried out.
+                print(f"[pearl] {subject} → {email}: {out['code']}", file=sys.stderr)
+        # The same answer whoever asked, so this can't tell anyone who has an
+        # account.
+        return jsonify({"ok": True, "sent_to": email,
+                        "resend_in": out.get("resend_in", signin_codes.RESEND_AFTER),
+                        "ttl": signin_codes.TTL})
+
+    @app.post("/api/auth/code/verify")
+    def _code_verify():
+        body = request.get_json(silent=True) or {}
+        out = signin_codes.verify(base, body.get("email", ""), body.get("code", ""),
+                                  owner=not accounts_exist())
+        if out.get("error") == "paused":
+            return pause_reply(out["paused"])
+        if out.get("error") == "wrong":
+            left = out["left"]
+            return jsonify({"error": f"That code didn't match. Check it and try "
+                                     f"again. {left} {'try' if left == 1 else 'tries'} "
+                                     "left.", "wrong": True, "left": left}), 400
+        if out.get("error"):
+            return jsonify({"error": "That code has expired.", "expired": True}), 400
+        user = out["user"]
+        store_for(user)                    # its ledger exists from the start
+        has_accounts["yes"] = True
+        return signed_in_reply(user, created=out["created"])
+
+    @app.post("/api/auth/passkey/register/options")
+    def _passkey_register_options():
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        rp_id, _ = relying_party()
+        options, challenge = passkeys.registration_options(base, user, rp_id)
+        session["pk_reg"] = challenge
+        return app.response_class(options, mimetype="application/json")
+
+    @app.post("/api/auth/passkey/register/verify")
+    def _passkey_register_verify():
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        challenge = session.pop("pk_reg", None)
+        if not challenge:
+            return jsonify({"error": "That took too long. Try again."}), 400
+        rp_id, origins = relying_party()
+        try:
+            passkeys.register(base, user, request.get_json(silent=True) or {},
+                              challenge, rp_id, origins)
+        except Exception:                              # noqa: BLE001
+            return jsonify({"error": "Your passkey couldn't be saved. Try again, "
+                                     "or keep using email codes."}), 400
+        return jsonify({"ok": True, "user": status_user(user)})
+
+    @app.post("/api/auth/passkey/options")
+    def _passkey_options():
+        rp_id, _ = relying_party()
+        options, challenge = passkeys.authentication_options(rp_id)
+        session["pk_auth"] = challenge
+        return app.response_class(options, mimetype="application/json")
+
+    @app.post("/api/auth/passkey/verify")
+    def _passkey_verify():
+        challenge = session.pop("pk_auth", None)
+        if not challenge:
+            return jsonify({"error": "That took too long. Try again."}), 400
+        rp_id, origins = relying_party()
+        try:
+            user = passkeys.authenticate(base, request.get_json(silent=True) or {},
+                                         challenge, rp_id, origins)
+        except Exception:                              # noqa: BLE001
+            user = None
+        if user is None:
+            return jsonify({"error": "That passkey didn't work here. Use an email "
+                                     "code instead, then add a new passkey."}), 401
+        return signed_in_reply(user)
+
+    # ── Pearl: onboarding ───────────────────────────────────────────────────
+    @app.get("/api/onboarding")
+    def _onboarding_get():
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        return jsonify({"user": status_user(user), "provinces": users.PROVINCES,
+                        "unavailable": sorted(users.UNAVAILABLE)})
+
+    @app.post("/api/onboarding")
+    def _onboarding_post():
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        body = request.get_json(silent=True) or {}
+        fields: dict = {}
+        if "first_name" in body:
+            fields["first_name"] = users.clean_name(body["first_name"])
+        if "province" in body:
+            code = str(body["province"] or "").upper()
+            if code not in users.PROVINCES:
+                return jsonify({"error": "Choose a province or territory."}), 400
+            fields["province"] = code
+            fields["waitlist"] = False
+            fields["onboarding_step"] = ("province" if code in users.UNAVAILABLE
+                                         else "protect")
+        if body.get("waitlist"):
+            if (fields.get("province") or user.province) not in users.UNAVAILABLE:
+                return jsonify({"error": "The waitlist is for Quebec."}), 400
+            fields["waitlist"] = True
+        if "consents" in body:
+            given = body["consents"] or {}
+            missing = [k for k, need in users.CONSENTS.items()
+                       if need and not given.get(k)]
+            if missing:
+                return jsonify({"error": "Both required agreements are needed to "
+                                         "link a bank.", "missing": missing}), 400
+            at = users.now()
+            fields["consents"] = {k: {"value": bool(given.get(k)), "at": at}
+                                  for k in users.CONSENTS}
+            if user.onboarded_at is None:
+                fields["onboarding_step"] = "bank"
+        if "step" in body:
+            step = str(body["step"])
+            if step not in users.STEPS:
+                return jsonify({"error": "Unknown step."}), 400
+            later = users.STEPS.index(step)
+            province = fields.get("province") or user.province
+            if later > 0 and (not province or province in users.UNAVAILABLE):
+                return jsonify({"error": "Choose where you live first."}), 400
+            consents = fields.get("consents") or user.consents or {}
+            if later >= users.STEPS.index("bank") and not all(
+                    (consents.get(k) or {}).get("value")
+                    for k, need in users.CONSENTS.items() if need):
+                return jsonify({"error": "Both required agreements are needed "
+                                         "to link a bank."}), 400
+            fields["onboarding_step"] = step
+        if body.get("done"):
+            fields["onboarded_at"] = users.now()
+            fields["onboarding_step"] = "done"
+        user = users.update_onboarding(base, user.id, **fields)
+        return jsonify({"ok": True, "user": status_user(user)})
+
     @app.post("/api/auth/logout")
     def _auth_logout():
         session.clear()
@@ -413,7 +623,7 @@ def create_app(db_path: str | None = None) -> Flask:
             return send_from_directory(FRONTEND_DIR, "index.html")
 
         return jsonify({
-            "app": "Spendie",
+            "app": "Pearl",
             "note": "No frontend build found. Run `npm run build`, "
                     "or `npm run dev` for the dev server.",
             "endpoints": sorted(
@@ -457,7 +667,7 @@ app = create_app()
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Spendie — personal finance API")
+    parser = argparse.ArgumentParser(description="Pearl — personal finance API")
     parser.add_argument("--port", type=int, default=PORT)
     parser.add_argument("--db", default=DEFAULT_DB, help="path to the SQLite ledger")
     parser.add_argument("--demo", action="store_true",
@@ -476,8 +686,8 @@ def main() -> int:
         from sample_data.generate import load_demo
         print(f"Loaded {load_demo(store)} sample transactions across 3 cards.")
 
-    print(f"Spendie API → http://localhost:{args.port}")
-    print(f"Spendie DB  → {args.db}")
+    print(f"Pearl API → http://localhost:{args.port}")
+    print(f"Pearl DB   → {args.db}")
     local.run(host="127.0.0.1", port=args.port, debug=False)
     return 0
 

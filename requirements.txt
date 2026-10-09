@@ -15,5 +15,9 @@ psycopg[binary]>=3.1.0
 plaid-python>=18.0.0
 cryptography>=42.0.0
 
+# Pearl passkeys (WebAuthn): checks a device's signature when you sign in
+# with Face ID, Touch ID, Windows Hello or a PIN. Only public keys are kept.
+webauthn>=2.0,<4
+
 # Tests
 pytest>=8.0.0

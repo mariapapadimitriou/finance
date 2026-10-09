@@ -95,6 +95,23 @@ export const resetPassword  = (token, password) =>
   authPost('/api/auth/reset', { token, password });
 export const changeEmail    = (email) => authPost('/api/auth/email', { email });
 
+// Pearl: a six-digit code by email, and passkeys.
+// `create` is true on the sign-up screen, where a new address makes an account.
+export const startCode      = (email, firstName, create = false) =>
+  authPost('/api/auth/code/start', { email, first_name: firstName, create });
+export const verifyCode     = (email, code) =>
+  authPost('/api/auth/code/verify', { email, code });
+export const passkeyOptions = () => json('POST', '/api/auth/passkey/options', {});
+export const passkeySignIn  = (credential) =>
+  authPost('/api/auth/passkey/verify', credential);
+export const passkeyRegisterOptions = () =>
+  json('POST', '/api/auth/passkey/register/options', {});
+export const passkeyRegister = (credential) =>
+  json('POST', '/api/auth/passkey/register/verify', credential);
+// Onboarding: province, the Quebec waitlist, consents, which step you're on.
+export const getOnboarding  = () => req('/api/onboarding');
+export const saveOnboarding = (fields) => json('POST', '/api/onboarding', fields);
+
 
 // ── Plaid ────────────────────────────────────────────────────────────────────
 export const getPlaidItems   = () => req('/api/plaid/items');
@@ -224,7 +241,7 @@ export const setBudgets    = (budgets) => json('PUT', '/api/budgets', { budgets 
 // null puts the whole charge back.
 export const setShare      = (id, myShare) =>
   json('PUT', `/api/transactions/${id}/share`, { my_share: myShare });
-// Money that left a bank account for somewhere Spendie can't see, waiting to
+// Money that left a bank account for somewhere Pearl can't see, waiting to
 // be called spent or saved.
 export const getUnsorted   = () => req('/api/transfers/unsorted');
 // Say where a group of transfers went; `remember` makes it the rule for

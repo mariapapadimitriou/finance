@@ -1,4 +1,7 @@
-# Spendie
+# Pearl
+
+*Formerly Spendie.* Environment variables keep their `SPENDIE_` names so a
+live deployment's settings carry over unchanged.
 
 Personal finance and budgeting across every credit card you own. Import the CSV
 exports from each card, and Spendie normalizes them into one ledger, works out
@@ -344,6 +347,26 @@ is stable across serverless instances without a second variable to keep in
 sync — and changing your password signs every existing session out, which is
 what you would want it to do.
 
+### Signing up and signing in (Pearl)
+
+New accounts have no password. Sign-up asks for a first name and an email,
+emails a 6-digit code (10 minutes, five tries, a short pause after too many),
+and then offers a **passkey** — Face ID, Touch ID, Windows Hello or a device
+PIN — so the next sign-in is one tap. Signing in later is a passkey or another
+emailed code. Accounts that already have a password keep it: "Sign in with a
+password" is on the sign-in screen.
+
+Codes need email: set `SPENDIE_SMTP_USER` and `SPENDIE_SMTP_PASSWORD` (see
+`finance/mailer.py`). Without them a hosted deployment refuses to send a code
+and says so; locally the code is printed to the terminal instead.
+
+After the first sign-in a new account goes through onboarding — where you live
+(Quebec gets a waitlist), how Pearl protects your data, two required and two
+optional consents, then linking a bank through Plaid — before the app opens.
+Accounts that existed before onboarding are treated as already set up. Code in
+`finance/signin_codes.py`, `finance/passkeys.py` and `src/pearl/`; the design
+is the "Pearl Handoff File" in Figma.
+
 ### Starting fresh
 
 The **Accounts** tab can empty the ledger: every transaction, and the budgets,
@@ -453,7 +476,7 @@ finance/
   audit.py                  Charges that may be in the ledger twice
   api.py                    HTTP routes
 src/                        React UI (Vite)
-  components/Logo.jsx       The Spendie mark, inline SVG
+  components/Logo.jsx       The Pearl mark
 static/favicon.svg          Favicon, copied into the build
 seed_data/
   transactions.json         The committed ledger — public by design

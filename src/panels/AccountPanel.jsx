@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Card, ErrorNote, Notice } from '../components/ui.jsx';
-import { changeEmail, changePassword, getAuthStatus } from '../api.js';
+import {
+  changeEmail, changePassword, getAuthStatus, passkeyRegister, passkeyRegisterOptions,
+  saveOnboarding,
+} from '../api.js';
+import { createPasskey, passkeysSupported } from '../pearl/webauthn.js';
 
-/** Who is signed in, their email, a new password, and signing out. */
+/** Who is signed in, their email, passkeys, a password if they have one, the
+ *  optional choices from setup, and signing out. */
 export default function AccountPanel({ onSignOut }) {
   const [status, setStatus] = useState(null);
 
@@ -13,16 +18,89 @@ export default function AccountPanel({ onSignOut }) {
 
   return (
     <div className="stack">
-      <Card title={user ? user.username : 'Account'}
+      <Card title={user ? (user.first_name || user.username) : 'Account'}
             actions={onSignOut && (
               <button className="btn quiet" onClick={onSignOut}>Sign out</button>
             )}>
         <EmailForm user={user} mail={status?.mail} onSaved={load} />
       </Card>
-      <Card title="Password">
-        <PasswordForm />
-      </Card>
+      {user && <PasskeyCard user={user} onSaved={load} />}
+      {user?.has_password !== false && (
+        <Card title="Password">
+          <PasswordForm />
+        </Card>
+      )}
+      {user?.onboarding?.consents?.terms && <ChoicesCard user={user} onSaved={load} />}
     </div>
+  );
+}
+
+/** Sign in with Face ID, Touch ID, Windows Hello or a PIN on this device. */
+function PasskeyCard({ user, onSaved }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(false);
+  const n = user.passkeys ?? 0;
+  async function add() {
+    setBusy(true); setError(null); setDone(false);
+    try {
+      await passkeyRegister(await createPasskey(await passkeyRegisterOptions()));
+      setDone(true);
+      onSaved();
+    } catch (e) {
+      setError(e.name === 'NotAllowedError' ? new Error('The passkey prompt was closed.') : e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Card title="Passkeys">
+      <p className="muted" style={{ marginTop: 0 }}>
+        {n === 0 ? 'None yet. You sign in with a code sent to your email.'
+          : `${n} saved. Sign in with one tap on ${n === 1 ? 'that device' : 'those devices'}.`}
+      </p>
+      {passkeysSupported() && (
+        <button className="btn" disabled={busy} onClick={add}>
+          {busy ? 'Waiting…' : 'Add a passkey on this device'}
+        </button>
+      )}
+      {done && <Notice kind="good">Passkey added</Notice>}
+      <ErrorNote error={error} />
+    </Card>
+  );
+}
+
+/** The two optional choices from setup; the required two stay agreed. */
+function ChoicesCard({ user, onSaved }) {
+  const c = user.onboarding.consents;
+  const [error, setError] = useState(null);
+  async function set(key, value) {
+    setError(null);
+    try {
+      await saveOnboarding({ consents: {
+        terms: true, read_data: true,
+        improve: key === 'improve' ? value : !!c.improve?.value,
+        tips: key === 'tips' ? value : !!c.tips?.value,
+      } });
+      onSaved();
+    } catch (e) {
+      setError(e);
+    }
+  }
+  return (
+    <Card title="Your choices">
+      <label className="row" style={{ gap: 8 }}>
+        <input type="checkbox" checked={!!c.improve?.value}
+               onChange={(e) => set('improve', e.target.checked)} />
+        Use my categorized transactions to improve suggestions
+      </label>
+      <label className="row" style={{ gap: 8, marginTop: 8 }}>
+        <input type="checkbox" checked={!!c.tips?.value}
+               onChange={(e) => set('tips', e.target.checked)} />
+        Send me tips and product news by email
+      </label>
+      <ErrorNote error={error} />
+    </Card>
   );
 }
 
