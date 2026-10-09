@@ -218,6 +218,9 @@ def _sync_one(store, item: dict) -> dict:
     # rest — and from then on the stored decision governs. Removing an account
     # in the app writes a decision here, which is what stops the next sync
     # fetching it all over again.
+    if full and accounts:
+        _replace_superseded(store, item_id, accounts)
+
     cards_only = store.setting("plaid_cards_only", "1") != "0"
     for aid, a in accounts.items():
         store.note_account(
@@ -263,6 +266,53 @@ def _sync_one(store, item: dict) -> dict:
         "imported": imported,
         "skipped_accounts": skipped_accounts,
     }
+
+
+def _mask_of(name: str) -> str:
+    import re
+    m = re.search(r"••\s*(\d{2,4})\s*$", name or "")
+    return m.group(1) if m else ""
+
+
+def _replace_superseded(store, item_id: str, accounts: dict) -> list[str]:
+    """Reconnecting a bank replaces the connection it duplicates.
+
+    Each Plaid reconnect is a new Item with new account ids, so the same
+    purchases arrive again under ids nothing de-duplicates against, and the
+    old connection goes on syncing beside it. An earlier connection whose
+    every account reappears here — same last four digits, same kind — is that
+    duplicate: its rows go (this connection brings them back), it is revoked
+    at Plaid, and what you decided about its accounts (switched on, joint)
+    carries over to their new ids. Two different logins at one bank share no
+    accounts, so neither replaces the other.
+    """
+    new = {(str(a.get("mask") or ""), str(a.get("type") or "").lower()): aid
+           for aid, a in accounts.items() if a.get("mask")}
+    if not new:
+        return []
+    rules = store.account_sync_rules()
+    joint = store.joint_accounts()
+    replaced = []
+    for other in store.plaid_items():
+        old_id = other["item_id"]
+        if old_id == item_id:
+            continue
+        olds = [r for r in rules.values() if r["item_id"] == old_id]
+        keys = [(_mask_of(r["account_name"]), (r["account_type"] or "").lower())
+                for r in olds]
+        if not olds or not all(k in new and k[0] for k in keys):
+            continue
+        for r, k in zip(olds, keys):
+            if r["decided_by"] == "user":
+                store.set_account_sync(new[k], r["enabled"], name=r["account_name"],
+                                       item_id=item_id)
+            if r["account_id"] in joint:
+                store.set_joint(new[k], joint[r["account_id"]])
+                store.set_joint(r["account_id"], None)
+        store.forget_rows(store.row_ids_for_accounts([r["account_id"] for r in olds]))
+        unlink(store, old_id)
+        replaced.append(old_id)
+    return replaced
 
 
 def _account_label(account: dict, fallback: str = "") -> str:

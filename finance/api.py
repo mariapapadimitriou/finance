@@ -873,12 +873,20 @@ def reset_ledger():
     st = store()
     keep_banks = bool(body.get("keep_banks", True))
     before = len(st.all_transactions())
+    revoked = 0
+    if not keep_banks:
+        # Disconnected at Plaid too, not only forgotten here: a connection
+        # left live keeps counting against the Plaid plan's limit.
+        from . import plaid_link
+        for item in st.plaid_items():
+            revoked += 1 if plaid_link.unlink(st, item["item_id"]) else 0
     removed = st.reset(keep_banks=keep_banks)
     return jsonify({
         "ok": True,
         "transactions_removed": before,
         "removed": removed,
         "banks_kept": keep_banks,
+        "revoked_at_plaid": revoked,
         "note": ("Bank connections kept, and their sync positions rewound so "
                  "the next sync re-fetches everything."
                  if keep_banks else "Bank connections removed too."),
@@ -1662,7 +1670,6 @@ def plan_setup():
     historical = divided["typical"]
     typical_total = round(sum(historical.values()), 2)
 
-    result["fixed"] = _mark_mortgage(st, result["fixed"])
     stored_rate = st.setting("savings_rate")
     return jsonify({
         **result,
@@ -2088,13 +2095,7 @@ def undo_draw(draw_id: int):
 @bp.get("/plan/fixed")
 def list_fixed():
     st = store()
-    return jsonify({"fixed": _mark_mortgage(st, [f.to_dict() for f in st.fixed_costs()])})
-
-
-def _mark_mortgage(st, rows: list[dict]) -> list[dict]:
-    """Say which commitment the mortgage owns, so the page can send you there."""
-    owned = st.mortgage_cost_id()
-    return [{**r, "from": "mortgage"} if r["id"] == owned else r for r in rows]
+    return jsonify({"fixed": [f.to_dict() for f in st.fixed_costs()]})
 
 
 @bp.post("/plan/fixed")
@@ -2115,14 +2116,9 @@ def add_fixed():
     return jsonify({"ok": True, "id": cost_id})
 
 
-_FROM_MORTGAGE = "This comes from Mortgage — change it there."
-
-
 @bp.patch("/plan/fixed/<int:cost_id>")
 def edit_fixed(cost_id: int):
     body = request.get_json(silent=True) or {}
-    if cost_id == store().mortgage_cost_id():
-        return jsonify({"error": _FROM_MORTGAGE}), 400
     existing = next((f for f in store().fixed_costs() if f.id == cost_id), None)
     if existing is None:
         return jsonify({"error": "No such commitment."}), 404
@@ -2138,114 +2134,15 @@ def edit_fixed(cost_id: int):
 
 @bp.delete("/plan/fixed/<int:cost_id>")
 def remove_fixed(cost_id: int):
-    if cost_id == store().mortgage_cost_id():
-        return jsonify({"error": _FROM_MORTGAGE}), 400
     if not store().delete_fixed_cost(cost_id):
         return jsonify({"error": "No such commitment."}), 404
     return jsonify({"ok": True})
 
 
-# ── Mortgage ─────────────────────────────────────────────────────────────────
 
 def _today_iso() -> str:
     from datetime import date as _date
     return _date.today().isoformat()
-
-
-def _mortgage_payload(st, terms, result) -> dict:
-    income = st.float_setting("monthly_income", 0.0)
-    existing = next((f for f in st.fixed_costs()
-                     if f.id != st.mortgage_cost_id()
-                     and f.name.strip().lower() == "mortgage"), None)
-    return {
-        "saved": terms.to_dict() if terms else None,
-        "result": result,
-        "income": income,
-        "share_of_income": (round(result["your_monthly"] / income, 4)
-                            if result and income > 0 else None),
-        # A commitment typed by hand before the calculator existed. Saving
-        # adopts it rather than adding a second, and the page says so first.
-        "existing": existing.to_dict() if existing else None,
-        "frequencies": list(_mortgage().FREQUENCIES),
-        # What the plan already sets aside to save or invest each month: the
-        # natural "excess money" to ask the invest-or-pay-down question about.
-        "savings": st.float_setting("savings_target", 0.0),
-    }
-
-
-def _mortgage():
-    from . import mortgage
-    return mortgage
-
-
-@bp.get("/mortgage")
-def get_mortgage():
-    """The saved mortgage, worked out from this month on."""
-    st = store()
-    saved = st.mortgage()
-    if not saved:
-        return jsonify(_mortgage_payload(st, None, None))
-    terms = _mortgage().Terms.from_dict(saved)
-    return jsonify(_mortgage_payload(st, terms, _mortgage().compute(terms, _today_iso())))
-
-
-@bp.post("/mortgage/preview")
-def preview_mortgage():
-    """What these terms would give, without saving anything.
-
-    The slider and the form ask here rather than redoing the sums in the
-    browser, so the preview and the saved figure are the same arithmetic.
-    """
-    today = _today_iso()
-    terms, error = _mortgage().validate(request.get_json(silent=True) or {}, today)
-    if error:
-        return jsonify({"error": error}), 400
-    st = store()
-    return jsonify(_mortgage_payload(st, terms, _mortgage().compute(terms, today)))
-
-
-@bp.post("/mortgage/compare")
-def compare_mortgage():
-    """Invest the extra, or pay the mortgage down with it? Writes nothing.
-
-    Takes the same terms as the preview — so it answers for whatever is on
-    screen, saved or not — plus how much, the expected return and the account.
-    """
-    m = _mortgage()
-    today = _today_iso()
-    body = request.get_json(silent=True) or {}
-    terms, error = m.validate(body, today)
-    if error:
-        return jsonify({"error": error}), 400
-    opts, error = m.validate_compare(body)
-    if error:
-        return jsonify({"error": error}), 400
-    result = m.compare(terms, opts["monthly"], opts["lump"], opts["expected"],
-                       opts["tax_on_growth"], today)
-    return jsonify({**result, "account": opts["account"],
-                    "marginal": opts["marginal"]})
-
-
-@bp.put("/mortgage")
-def save_mortgage():
-    """Save the mortgage; its monthly cost becomes the Mortgage commitment."""
-    today = _today_iso()
-    terms, error = _mortgage().validate(request.get_json(silent=True) or {}, today)
-    if error:
-        return jsonify({"error": error}), 400
-    result = _mortgage().compute(terms, today)
-    st = store()
-    # Your share of it: in a shared mortgage the rest is someone else's money.
-    st.save_mortgage(terms.to_dict(), result["your_monthly"])
-    return jsonify({"ok": True, **_mortgage_payload(st, terms, result)})
-
-
-@bp.delete("/mortgage")
-def delete_mortgage():
-    """Forget the mortgage, and the commitment it put in the plan."""
-    if not store().delete_mortgage():
-        return jsonify({"error": "There is no mortgage saved."}), 404
-    return jsonify({"ok": True})
 
 
 @bp.get("/nudge")

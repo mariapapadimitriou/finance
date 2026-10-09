@@ -416,7 +416,7 @@ function StartFresh({ total, connected = [], busy, setBusy, setError, onDone }) 
             <strong>This cannot be undone.</strong> It removes{' '}
             {total.toLocaleString()} transaction{total === 1 ? '' : 's'}, every
             budget, trip, merchant correction and dismissed finding. What
-            stays: your password, your Plaid credentials and your piggy banks
+            stays: your password, your plan and your piggy banks
             {connected.length > 0 && ', and — unless you untick below — your bank connections'}.
           </Notice>
 
@@ -437,6 +437,12 @@ function StartFresh({ total, connected = [], busy, setBusy, setError, onDone }) 
                 against an empty ledger.
               </span>
             </label>
+          )}
+          {connected.length > 0 && !keepBanks && (
+            <p className="small" style={{ margin: '10px 0 0' }}>
+              <strong>Disconnects every bank, here and at Plaid.</strong> Connect
+              each bank once afterwards on Connections.
+            </p>
           )}
 
           <div className="controls" style={{ marginTop: 14 }}>

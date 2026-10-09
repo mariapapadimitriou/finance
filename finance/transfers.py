@@ -161,9 +161,12 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
          and t.category_source not in _DECIDED),
         key=lambda t: (t.date, t.fingerprint))
     # A friend paying you back is not the other end of anything you sent, and
-    # neither is your pay.
+    # neither is your pay. Nor is a payment arriving on a loan: paying the
+    # mortgage is a bill, not money moving between your own pockets, so it
+    # must not vanish as neutral when the mortgage account is connected.
     inflows = [t for t in transactions
-               if t.amount < 0 and not t.repays and t.category != "Income"]
+               if t.amount < 0 and not t.repays and t.category != "Income"
+               and str((t.raw or {}).get("account_type", "")).lower() != "loan"]
 
     used: set[str] = set()          # inflows already the other end of something
     out: dict[str, str] = {}

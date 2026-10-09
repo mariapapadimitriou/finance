@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import OverviewPanel from './panels/OverviewPanel.jsx';
 import TodayPanel from './panels/TodayPanel.jsx';
 import PiggyPanel from './panels/PiggyPanel.jsx';
-import MortgagePanel from './panels/MortgagePanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import TransactionsPanel from './panels/TransactionsPanel.jsx';
 import BudgetsPanel from './panels/BudgetsPanel.jsx';
@@ -294,7 +293,6 @@ export default function App() {
         <ProjectionsPanel insights={insights} onTab={go} onChanged={load}
                          version={version} />
       )}
-      {panel === 'mortgage' && <MortgagePanel onChanged={load} onTab={go} />}
       {panel === 'transactions' && (
         <TransactionsPanel summary={summary} categories={categories}
                            accounts={accounts} onChanged={load} />

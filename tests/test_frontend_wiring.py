@@ -233,16 +233,16 @@ class TestNumberInputsAcceptTheAmountsPeopleType:
             f"form silently refuses to submit: {offenders}")
 
 
-class TestMortgageLeftToPay:
-    def test_it_is_asked_as_years_and_months(self):
-        """A statement says "19 years 10 months"; decimal years made people
-        convert, and 19.83 is not quite 19 years 10 months."""
-        source = (SRC / "panels" / "MortgagePanel.jsx").read_text(encoding="utf-8")
-        for id_ in ("mg-years", "mg-months"):
-            tag = re.search(r'<input\b[^>]*?id="%s"[^>]*?>' % id_, source, re.S)
-            assert tag, f"no {id_} input"
-            assert 'step="1"' in tag.group(0) and 'inputMode="numeric"' in tag.group(0)
-        assert re.search(r'id="mg-months"[^>]*?max="11"', source, re.S)
+class TestTheMortgagePageIsGone:
+    def test_no_panel_route_or_calls(self):
+        """Mortgage payments are read from the accounts now; the calculator
+        that declared them by hand went, and an old link lands on Plan."""
+        assert not (SRC / "panels" / "MortgagePanel.jsx").exists()
+        nav = (SRC / "nav.js").read_text(encoding="utf-8")
+        assert "mortgage: 'plan'" in nav
+        assert "'mortgage'" not in nav.split("export const GROUPS")[1].split("];")[0]
+        for name in ("App.jsx", "api.js"):
+            assert "ortgage" not in (SRC / name).read_text(encoding="utf-8"), name
 
 
 def _visible_text(source: str) -> str:
