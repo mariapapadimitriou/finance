@@ -134,13 +134,6 @@ export const unallocate      = (txnId) =>
 // Put back money a bank lent the month. Nothing creates these any more.
 export const undoDraw        = (id) => req(`/api/piggy/draws/${id}`, { method: 'DELETE' });
 
-// The mortgage: saved terms, whose monthly cost is the Mortgage commitment.
-export const getMortgage     = () => req('/api/mortgage');
-export const previewMortgage = (terms) => json('POST', '/api/mortgage/preview', terms);
-export const saveMortgage    = (terms) => json('PUT', '/api/mortgage', terms);
-export const deleteMortgage  = () => req('/api/mortgage', { method: 'DELETE' });
-export const compareMortgage = (terms, options) =>
-  json('POST', '/api/mortgage/compare', { ...terms, ...options });
 
 
 // The money plan: income in, commitments and savings out, the rest budgeted.

@@ -285,3 +285,26 @@ class TestGroupsUndoAndSaved:
     def test_bad_sorts_are_refused(self, client, three):
         assert client.post("/api/transfers/sort", json={"ids": [], "category": "Saved"}).status_code == 400
         assert client.post("/api/transfers/sort", json={"ids": ["x"], "category": "Nope"}).status_code == 400
+
+
+class TestLoansAndTheMortgagePage:
+    def test_a_mortgage_payment_never_vanishes_as_a_transfer(self):
+        out = match_transfers([
+            row(2400, "TFR-TO 9988776", when="2026-03-01", category="Transfers"),
+            row(-2400, "PAYMENT RECEIVED", account="mtg", kind="loan",
+                when="2026-03-01", category="Transfers"),
+        ], today="2026-03-10")
+        assert list(out.values()) == [UNSORTED]
+
+    def test_the_mortgage_api_is_gone(self, client):
+        assert client.get("/api/mortgage").status_code == 404
+
+    def test_the_old_mortgage_commitment_is_an_ordinary_line(self, client):
+        st = client.application.config["STORE"]
+        cost = st.add_fixed_cost("Mortgage", 2400, "Rent & Housing")
+        st.set_setting("mortgage", '{"fixed_cost_id": %d}' % cost)
+        from finance.store import Store
+        Store(st.path)                                   # reopened: terms forgotten
+        assert st.setting("mortgage") in (None, "")
+        assert client.patch(f"/api/plan/fixed/{cost}", json={"amount": 2500}).status_code == 200
+        assert client.delete(f"/api/plan/fixed/{cost}").status_code == 200

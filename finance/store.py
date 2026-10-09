@@ -390,6 +390,7 @@ class Store:
         self._migrate_travel_ownership()
         self._drop_bank_funded_budgets()
         self._migrate_saved()
+        self._forget_mortgage_terms()
 
     def _migrate_buckets(self) -> None:
         """Carry the buckets that piggy banks replaced into piggy banks.
@@ -462,6 +463,12 @@ class Store:
                         "(category, bank_id) VALUES (?, ?)",
                         (category, bank["id"]))
         self.set_setting("bank_categories_migrated", "1")
+
+    def _forget_mortgage_terms(self) -> None:
+        """The Mortgage page is gone; its saved terms with it. The commitment
+        it put in the plan stays, as an ordinary line you can change."""
+        with self.conn() as c:
+            c.execute("DELETE FROM settings WHERE key = 'mortgage'")
 
     def _migrate_saved(self) -> None:
         """Investments became Saved: one bucket for money put away, wherever
@@ -1056,49 +1063,6 @@ class Store:
             cur = c.execute("DELETE FROM fixed_costs WHERE id = ?", (cost_id,))
             return bool(cur.rowcount and cur.rowcount > 0)
 
-    # ── The mortgage ──────────────────────────────────────────────────────
-    # What you typed, kept as one setting; the arithmetic is in
-    # finance/mortgage.py. It owns one fixed commitment, whose amount is the
-    # mortgage's monthly cost, so the plan subtracts it like rent.
-
-    def mortgage(self) -> dict | None:
-        raw = self.setting("mortgage")
-        if not raw:
-            return None
-        try:
-            return json.loads(raw)
-        except (TypeError, ValueError):
-            return None
-
-    def save_mortgage(self, terms: dict, monthly: float) -> int:
-        """Store the mortgage and make its commitment say `monthly`.
-
-        Adopts a commitment already called Mortgage rather than adding a
-        second one beside it, which would subtract the same payment twice.
-        """
-        current = self.mortgage() or {}
-        costs = self.fixed_costs()
-        owned = next((f for f in costs if f.id == current.get("fixed_cost_id")), None)
-        if owned is None:
-            owned = next((f for f in costs if f.name.strip().lower() == "mortgage"), None)
-        if owned is None:
-            cost_id = self.add_fixed_cost("Mortgage", monthly, "Rent & Housing")
-        else:
-            cost_id = owned.id
-            self.update_fixed_cost(cost_id, "Mortgage", monthly, "Rent & Housing")
-        self.set_setting("mortgage", json.dumps({**terms, "fixed_cost_id": cost_id}))
-        return cost_id
-
-    def delete_mortgage(self) -> bool:
-        current = self.mortgage()
-        if current is None:
-            return False
-        if current.get("fixed_cost_id"):
-            self.delete_fixed_cost(int(current["fixed_cost_id"]))
-        with self.conn() as c:
-            c.execute("DELETE FROM settings WHERE key = 'mortgage'")
-        return True
-
     # ── CoastFIRE ─────────────────────────────────────────────────────────
     # What you typed into the retirement calculator. It changes nothing else.
 
@@ -1118,10 +1082,6 @@ class Store:
         with self.conn() as c:
             cur = c.execute("DELETE FROM settings WHERE key = 'coastfire'")
             return bool(cur.rowcount and cur.rowcount > 0)
-
-    def mortgage_cost_id(self) -> int | None:
-        current = self.mortgage()
-        return int(current["fixed_cost_id"]) if current and current.get("fixed_cost_id") else None
 
     # ── Where the ledger starts ──────────────────────────────────────────
 
@@ -1533,6 +1493,15 @@ class Store:
             for txn_id, (category, source) in changes.items():
                 c.execute("UPDATE transactions SET category = ?, category_source = ? "
                           "WHERE id = ?", (category, source, txn_id))
+
+    def row_ids_for_accounts(self, account_ids: list[str]) -> set[str]:
+        if not account_ids:
+            return set()
+        marks = ",".join("?" * len(account_ids))
+        with self.conn() as c:
+            rows = c.execute(f"SELECT id FROM transactions WHERE account_id IN ({marks})",
+                             list(account_ids)).fetchall()
+        return {r["id"] for r in rows}
 
     def has_plaid_rows(self) -> bool:
         with self.conn() as c:

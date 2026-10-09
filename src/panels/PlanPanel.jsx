@@ -148,20 +148,10 @@ export default function PlanPanel({ onChanged, onTab }) {
                     <td className="muted">{f.category}</td>
                     <td className="r num">{money(f.amount, { cents: true })}</td>
                     <td className="r">
-                      {/* The mortgage's line is its payment, worked out on
-                          its own page; changing it here would disagree. */}
-                      {f.from === 'mortgage' ? (
-                        onTab ? (
-                          <button className="btn quiet" onClick={() => onTab('mortgage')}>
-                            Mortgage
-                          </button>
-                        ) : <span className="muted small">from Mortgage</span>
-                      ) : (
-                        <button className="btn quiet" disabled={busy}
-                                onClick={() => run(() => deleteFixedCost(f.id))}>
-                          Remove
-                        </button>
-                      )}
+                      <button className="btn quiet" disabled={busy}
+                              onClick={() => run(() => deleteFixedCost(f.id))}>
+                        Remove
+                      </button>
                     </td>
                   </tr>
                 ))}

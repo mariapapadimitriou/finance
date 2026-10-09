@@ -27,8 +27,6 @@ export const PANELS = {
                    hint: 'Spending across every card' },
   projections:   { label: 'Looking ahead', short: 'Ahead',
                    hint: 'What saving more gets you — this year, and invested' },
-  mortgage:      { label: 'Mortgage',
-                   hint: 'What it costs a month, when it ends, and how much is interest' },
   transactions:  { label: 'Every charge',
                    hint: 'Searchable, correctable, chargeable to a piggy bank' },
   trips:         { label: 'Trips',
@@ -62,7 +60,7 @@ export const GROUPS = [
     icon: 'M12 3a9 9 0 1 0 9 9M12 3a9 9 0 0 1 9 9M12 3v9h9' },
   // Looking ahead sits with the plan, not with the history: it is the plan
   // run forward, and the savings figure it offers to move is the plan's.
-  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections', 'mortgage'],
+  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections'],
     hint: 'What you earn, what it is promised to, how the rest divides, and where that leads',
     icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
   { key: 'transactions', label: 'Transactions', short: 'Charges',
@@ -82,7 +80,8 @@ export const GROUPS = [
 // across the app and from the insights, which carry a tab name in their data.
 // Piggy banks are a card on the Plan page now — they are already a term in its
 // arithmetic — so a link to them is a link there.
-export const ALIASES = { piggy: 'plan' };
+// The Mortgage page is gone: its payments are read from your accounts now.
+export const ALIASES = { piggy: 'plan', mortgage: 'plan' };
 
 // Where on that page the aliased thing actually is. Without this a link to a
 // piggy bank lands at the top of a long page with no sign of one, which is
