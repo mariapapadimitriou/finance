@@ -443,7 +443,7 @@ function span(first, last) {
 }
 
 /**
- * Money that left a bank account for somewhere Spendie can't see.
+ * Money that left a bank account for somewhere Pearl can't see.
  *
  * Every dollar out was spent or saved. Until you say which, it counts as
  * spent. One row per recipient, so twelve e-transfers to one person are one

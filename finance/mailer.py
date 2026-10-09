@@ -42,7 +42,7 @@ def send(to: str, subject: str, text: str) -> None:
     port = int(os.environ.get(PORT_ENV, "").strip() or 587)
 
     msg = EmailMessage()
-    msg["From"] = os.environ.get(FROM_ENV, "").strip() or f"Spendie <{user}>"
+    msg["From"] = os.environ.get(FROM_ENV, "").strip() or f"Pearl <{user}>"
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(text)

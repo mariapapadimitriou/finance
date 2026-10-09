@@ -1,4 +1,4 @@
-/* Spendie — quiet surfaces, big numbers.
+/* Pearl — quiet surfaces, big numbers.
  *
  * A pale neutral page, white rounded surfaces with no borders, and type that
  * does the work: the figure that matters is the largest thing on the screen.
@@ -8,20 +8,20 @@
 :root {
   color-scheme: light;
 
-  --page:        #f2f2f3;
+  --page:        #fbf8f6;
   --surface:     #ffffff;
   --surface-2:   #ececee;
   --surface-3:   #e0e0e4;
-  --ink:         #111214;
+  --ink:         #1c1a33;
   --ink-2:       #3e3f45;
-  --muted:       #6e6f75;   /* 4.9:1 on white */
+  --muted:       #6b6884;   /* 5.3:1 on white */
   --border:      rgba(17, 18, 20, .06);
   --border-firm: rgba(17, 18, 20, .12);
   --grid:        rgba(17, 18, 20, .05);
   --axis:        rgba(17, 18, 20, .14);
 
-  --brand:       #5d7bd3;
-  --brand-tint:  #e6ebf8;
+  --brand:       #b8285a;   /* Pearl action rose */
+  --brand-tint:  #ffe4ec;   /* blush */
   --on-brand:    #ffffff;
 
   --series-1:    #5d7bd3;
@@ -41,7 +41,8 @@
   --warning:     #fab219;
   --critical:    #d03b3b;
   --good-text:   #0a7a0a;
-  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --display: "Fraunces", Georgia, "Times New Roman", serif;
 
   --r-sm: 12px;
   --r:    18px;
@@ -67,8 +68,8 @@
     --border-firm: rgba(244, 244, 245, .14);
     --grid:        rgba(244, 244, 245, .06);
     --axis:        rgba(244, 244, 245, .16);
-    --brand:       #8ea4ec;
-    --brand-tint:  #252b40;
+    --brand:       #f08bb0;
+    --brand-tint:  #3a1f2b;
     --on-brand:    #0d0d0f;
     --ring-1:      #7590e0;
     --ring-2:      #d95926;
@@ -101,8 +102,8 @@
   --border-firm: rgba(244, 244, 245, .14);
   --grid:        rgba(244, 244, 245, .06);
   --axis:        rgba(244, 244, 245, .16);
-  --brand:       #8ea4ec;
-  --brand-tint:  #252b40;
+  --brand:       #f08bb0;
+  --brand-tint:  #3a1f2b;
   --on-brand:    #0d0d0f;
   --ring-1:      #7590e0;
   --ring-2:      #d95926;
@@ -177,7 +178,10 @@ a { color: var(--brand); text-underline-offset: 3px; }
   display: grid; place-items: center;
   flex: none;
 }
-.brand .name { font-weight: 650; font-size: 1.02rem; letter-spacing: -0.015em; }
+.brand .name {
+  font-family: var(--display); font-weight: 600; font-size: 1.55rem; line-height: 1;
+  letter-spacing: -0.02em; font-variation-settings: "SOFT" 0, "WONK" 1;
+}
 
 .nav { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .nav button {
@@ -1184,8 +1188,12 @@ tr.current td { background: var(--surface-2); }
  * decision rather than edits scattered through the file above.
  */
 
-body { font-size: 15px; letter-spacing: -0.01em; }
-h1 { font-size: 1.7rem; font-weight: 760; letter-spacing: -0.03em; }
+body { font-size: 15px; letter-spacing: 0; }
+/* Page titles in Pearl's display face; everything read stays in Figtree. */
+h1 {
+  font-family: var(--display); font-size: 1.85rem; font-weight: 600;
+  letter-spacing: -0.01em; font-variation-settings: "SOFT" 0, "WONK" 1;
+}
 h2 { font-size: 1.12rem; font-weight: 700; letter-spacing: -0.02em; }
 h3 { font-size: 1.02rem; font-weight: 680; }
 

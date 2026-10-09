@@ -130,7 +130,7 @@ def create_link_token(user_id: str = "spendie-user") -> dict:
 
     resp = _client().link_token_create(LinkTokenCreateRequest(
         user=LinkTokenCreateRequestUser(client_user_id=user_id),
-        client_name="Spendie",
+        client_name="Pearl",
         products=[Products("transactions")],
         country_codes=[CountryCode(c) for c in COUNTRY_CODES],
         language="en",

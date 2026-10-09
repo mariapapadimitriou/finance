@@ -1,0 +1,16 @@
+<svg width="160" height="134" viewBox="0 0 160 134" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M80 104L145.213 100.12C146.689 97.3289 143.311 95.1156 135.08 93.48C132.671 90.7422 126.551 89.0578 116.72 88.4267C110.782 86.1422 102.836 85.2267 92.88 85.68C84.2933 84.2044 75.7067 84.2044 67.12 85.68C57.1644 85.2267 49.2178 86.1422 43.28 88.4267C33.4489 89.0578 27.3289 90.7422 24.92 93.48C16.6889 95.1156 13.3111 97.3289 14.7867 100.12L80 104Z" fill="url(#paint0_linear_3_3)"/>
+<path d="M80 104L131.773 94.12" stroke="white" stroke-opacity="0.38" stroke-width="2" stroke-linecap="round"/>
+<path d="M80 104L114.52 89.36" stroke="white" stroke-opacity="0.38" stroke-width="2" stroke-linecap="round"/>
+<path d="M80 104L92.1067 86.7867" stroke="white" stroke-opacity="0.38" stroke-width="2" stroke-linecap="round"/>
+<path d="M80 104L67.8933 86.7867" stroke="white" stroke-opacity="0.38" stroke-width="2" stroke-linecap="round"/>
+<path d="M80 104L45.48 89.36" stroke="white" stroke-opacity="0.38" stroke-width="2" stroke-linecap="round"/>
+<path d="M80 104L28.2267 94.12" stroke="white" stroke-opacity="0.38" stroke-width="2" stroke-linecap="round"/>
+<path d="M24 104C34.6667 132 125.333 132 136 104C98.6667 112 61.3333 112 24 104Z" fill="#C9426E"/>
+<defs>
+<linearGradient id="paint0_linear_3_3" x1="14.4502" y1="84.5733" x2="14.4502" y2="104" gradientUnits="userSpaceOnUse">
+<stop stop-color="#FF8FB1"/>
+<stop offset="1" stop-color="#E2557F"/>
+</linearGradient>
+</defs>
+</svg>

@@ -286,6 +286,11 @@ class TestExplanationsRememberThemselves:
         that was removed so the pages read at a glance."""
         offenders = []
         for path in sorted(SRC.rglob("*.jsx")):
+            # Pearl's sign-in and onboarding follow the Figma handoff, where a
+            # field's one-line hint ("We'll send a code to check it's you") is
+            # part of the input component.
+            if "pearl" in path.parts:
+                continue
             text = path.read_text(encoding="utf-8")
             for pattern in (r"<Why\b", r'className="assumption"', r"\bhint="):
                 if re.search(pattern, text):
@@ -370,9 +375,16 @@ class TestAccountsInTheApp:
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
         assert "syncPlaid()" in text
 
-    def test_sign_in_asks_for_a_username_and_offers_sign_up(self):
-        text = (SRC / "Login.jsx").read_text(encoding="utf-8")
-        assert 'id="user"' in text and "signup" in text
+    def test_sign_in_offers_passkeys_codes_and_sign_up(self):
+        text = (SRC / "pearl" / "SignedOut.jsx").read_text(encoding="utf-8")
+        assert "getPasskey(" in text and "startCode(" in text and "verifyCode(" in text
+        assert "Create an account" in text
+        # Accounts that still have a password can use it.
+        assert 'autoComplete="username"' in text and "login(" in text
+
+    def test_new_accounts_set_up_before_the_app_opens(self):
+        text = (SRC / "App.jsx").read_text(encoding="utf-8")
+        assert "<Onboarding" in text and "user.onboarding.done" in text
 
 
 class TestTheSetupChecklistGoesSomewhereReal:

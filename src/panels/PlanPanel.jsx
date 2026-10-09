@@ -259,7 +259,7 @@ function GoalVsActual({ seen, goal, income }) {
   ].filter(Boolean);
   const top = Math.max(goal, seen.stayed, seen.moved, seen.grew ?? 0, 1);
   // Accounts growing by a lot more or less than income minus spending means
-  // money moved through an account Spendie can't see.
+  // money moved through an account Pearl can't see.
   const gap = seen.grew != null ? seen.grew - seen.stayed : 0;
   const short = goal > 0 && seen.stayed < goal;
   return (
@@ -292,7 +292,7 @@ function GoalVsActual({ seen, goal, income }) {
         <p className="muted small" style={{ margin: '6px 0 0' }}>
           Your accounts grew {money(Math.abs(gap))}/mo {gap < 0 ? 'less' : 'more'} than
           income minus spending — usually money moving to or from an account
-          Spendie can't see.
+          Pearl can't see.
         </p>
       )}
     </Card>
