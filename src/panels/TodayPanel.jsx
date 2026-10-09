@@ -70,7 +70,7 @@ export default function TodayPanel({ month, onTab, version = 0 }) {
       )}
       <ThisMonth status={status} state={state} live={live}
                  total={data.spent_in_total} bills={data.bills_in_total}
-                 fromBanks={data.from_banks} />
+                 fromBanks={data.from_banks} position={data.position} />
       <CanIBuyThis month={state.month} />
 
       <PiggyBanks banks={banks} draws={draws}
@@ -179,7 +179,7 @@ function SafeToSpend({ week, month, remaining, budget, live, past, onPrev, onNex
 
 /* ── How are you doing this month ────────────────────────────────────────── */
 
-function ThisMonth({ status, state, live, total, bills = 0, fromBanks }) {
+function ThisMonth({ status, state, live, total, bills = 0, fromBanks, position }) {
   const budget = Math.max(state.budget ?? 0, 0);
   const spent = Math.max(status.spent, 0);
   const over = spent > budget;
@@ -239,6 +239,17 @@ function ThisMonth({ status, state, live, total, bills = 0, fromBanks }) {
           {fromBanks > 0 && (
             <> · <strong className="num">{money(fromBanks, { cents: true })}</strong> from piggy banks</>
           )}
+        </div>
+      )}
+      {position && (
+        <div className="ring-foot total-line">
+          In your accounts <strong className="num">{money(position.cash)}</strong>
+          {position.owed > 0 && (
+            <> · cards owe <strong className="num">{money(position.owed)}</strong></>
+          )}
+          {position.joint.map((j) => (
+            <span key={j.name} className="muted"> · joint ({j.label}) {money(j.current)}</span>
+          ))}
         </div>
       )}
     </Card>

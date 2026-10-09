@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Chart from '../components/Chart.jsx';
 import Treemap from '../components/Treemap.jsx';
-import { MonthFreshness, Notice } from '../components/ui.jsx';
+import { MerchantMark, MonthFreshness, Notice } from '../components/ui.jsx';
 import { Donut, RingLegend, RingRow } from '../components/Ring.jsx';
 import { dailySpendConfig, paceConfig } from '../charts.js';
 import { categoryColors, categoryGradient } from '../categoryColors.js';
@@ -235,10 +235,8 @@ function RecentList({ rows }) {
           <div className="txn-day">{g.label}</div>
           {g.rows.map((t) => (
             <div className="txn-row" key={t.id}>
-              <span className="ic" aria-hidden="true"
-                    style={{ background: categoryGradient(t.category) }}>
-                {(t.merchant || '?').slice(0, 1).toUpperCase()}
-              </span>
+              <MerchantMark logo={t.logo} name={t.merchant} className="ic"
+                            style={{ background: categoryGradient(t.category) }} />
               <div style={{ minWidth: 0 }}>
                 <div className="m">{t.merchant}</div>
                 <div className="c">{t.category}</div>

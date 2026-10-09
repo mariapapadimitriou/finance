@@ -253,8 +253,14 @@ function GoalVsActual({ seen, goal, income }) {
     { label: 'Saving goal', value: goal },
     { label: 'Stayed with you', note: 'income − spending', value: seen.stayed },
     { label: 'Moved to savings', note: 'marked Saved', value: seen.moved },
-  ];
-  const top = Math.max(goal, seen.stayed, seen.moved, 1);
+    // The bank's own answer: how much your accounts actually grew.
+    seen.grew != null && { label: 'Your accounts grew by', note: 'from balances',
+                           value: seen.grew },
+  ].filter(Boolean);
+  const top = Math.max(goal, seen.stayed, seen.moved, seen.grew ?? 0, 1);
+  // Accounts growing by a lot more or less than income minus spending means
+  // money moved through an account Spendie can't see.
+  const gap = seen.grew != null ? seen.grew - seen.stayed : 0;
   const short = goal > 0 && seen.stayed < goal;
   return (
     <Card title="Saving: goal vs actual">
@@ -282,6 +288,13 @@ function GoalVsActual({ seen, goal, income }) {
           <span className="warn-text"> · short of goal by {money(goal - seen.stayed)}/mo</span>
         )}
       </p>
+      {Math.abs(gap) > 50 && (
+        <p className="muted small" style={{ margin: '6px 0 0' }}>
+          Your accounts grew {money(Math.abs(gap))}/mo {gap < 0 ? 'less' : 'more'} than
+          income minus spending — usually money moving to or from an account
+          Spendie can't see.
+        </p>
+      )}
     </Card>
   );
 }

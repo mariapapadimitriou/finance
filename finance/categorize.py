@@ -366,6 +366,18 @@ PLAID_CATEGORY_MAP = {
     "TRANSFER_OUT_WITHDRAWAL": "Cash & ATM",
 }
 
+# How sure Plaid has to be before its category is taken without a second look.
+UNSURE_CONFIDENCE = {"LOW", "UNKNOWN"}
+
+
+def is_unsure(t) -> bool:
+    """A category taken from Plaid's own label when Plaid itself wasn't sure,
+    and nobody has said otherwise."""
+    return (t.category_source == "issuer"
+            and str((t.raw or {}).get("category_confidence", "")).upper()
+            in UNSURE_CONFIDENCE)
+
+
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
 RULES_VERSION = 6
@@ -471,6 +483,12 @@ def apply_categories(transactions, overrides: dict[str, str] | None = None) -> N
     """Categorize in place, leaving explicit user choices untouched."""
     for t in transactions:
         if t.category and t.category_source == "user":
+            continue
+        # A correction made once applies to the merchant however its name is
+        # spelled next time: Plaid gives each merchant a stable id.
+        entity = (t.raw or {}).get("merchant_entity_id")
+        if overrides and entity and f"entity:{entity}" in overrides:
+            t.category, t.category_source = overrides[f"entity:{entity}"], "merchant_override"
             continue
         issuer_cat = (t.raw or {}).get("issuer_category", "")
         t.category, t.category_source = categorize(

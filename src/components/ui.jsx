@@ -219,3 +219,23 @@ function monthName(month) {
   const d = new Date(`${month}-01T00:00:00`);
   return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 }
+
+/**
+ * A merchant's logo when Plaid sent one, otherwise the letter it starts with.
+ * A logo that fails to load falls back to the letter rather than a broken
+ * image.
+ */
+export function MerchantMark({ logo, name, className = 'merchant-mark', style }) {
+  const [failed, setFailed] = useState(false);
+  if (logo && !failed) {
+    return (
+      <img className={`${className} logo`} src={logo} alt="" aria-hidden="true"
+           loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+    );
+  }
+  return (
+    <span className={className} aria-hidden="true" style={style}>
+      {(name || '?').slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
