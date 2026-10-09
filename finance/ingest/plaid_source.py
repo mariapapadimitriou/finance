@@ -152,6 +152,15 @@ def _counterparty(item: dict) -> str:
     return str(item.get("merchant_name") or "").strip()
 
 
+def _logo(item: dict) -> str:
+    if item.get("logo_url"):
+        return str(item["logo_url"])
+    for cp in item.get("counterparties") or []:
+        if (cp or {}).get("logo_url"):
+            return str(cp["logo_url"])
+    return ""
+
+
 def map_plaid_transaction(item: dict, accounts: dict | None = None) -> Transaction | None:
     """Translate one Plaid transaction into our normalized model.
 
@@ -210,6 +219,12 @@ def map_plaid_transaction(item: dict, accounts: dict | None = None) -> Transacti
              # stable name an e-transfer has, since its description carries a
              # new reference every time.
              "counterparty": _counterparty(item),
+             # Free with every transaction: the merchant's logo and a stable id
+             # (one merchant however its name is spelled), and how sure Plaid
+             # is of its own category.
+             "logo_url": _logo(item),
+             "merchant_entity_id": item.get("merchant_entity_id") or "",
+             "category_confidence": str(plaid_cat.get("confidence_level") or ""),
              "pending_id": item.get("pending_transaction_id") or ""},
     )
 

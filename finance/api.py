@@ -337,19 +337,38 @@ def imports():
 
 # ── Transactions ─────────────────────────────────────────────────────────────
 
+# The Category filter's "Not sure" option.
+UNSURE_FILTER = "__unsure__"
+
+
 @bp.get("/transactions")
 def transactions():
+    from .categorize import is_unsure
+    limit = min(int(request.args.get("limit", 200)), 1000)
+    offset = int(request.args.get("offset", 0))
+    category = request.args.get("category")
+    unsure_only = category == UNSURE_FILTER
     txns, total = store().query_transactions(
         month=request.args.get("month"),
-        category=request.args.get("category"),
+        category=None if unsure_only else category,
         account_id=request.args.get("account"),
         search=request.args.get("q"),
         start=request.args.get("start"),
         end=request.args.get("end"),
-        limit=min(int(request.args.get("limit", 200)), 1000),
-        offset=int(request.args.get("offset", 0)),
+        limit=100000 if unsure_only else limit,
+        offset=0 if unsure_only else offset,
     )
-    rows = [t.to_dict() for t in txns]
+    if unsure_only:
+        # Categories Plaid itself wasn't sure of: worth a second look.
+        txns = [t for t in txns if is_unsure(t)]
+        total = len(txns)
+        txns = txns[offset:offset + limit]
+    rows = []
+    for t in txns:
+        row = t.to_dict()
+        row["logo"] = (t.raw or {}).get("logo_url") or ""
+        row["unsure"] = is_unsure(t)
+        rows.append(row)
     # Money that paid back a charge says which one, so the row can read
     # "paid back · Uber Eats $80" without the page looking it up.
     charges = {}
@@ -845,9 +864,12 @@ def accounts():
     banks = {i["item_id"]: i.get("institution") or "" for i in st.plaid_items()}
     imported = st.imports_by_account()
     joint = st.joint_accounts()
+    balances = st.balances()
     for row in rows:
         _label_account(row, banks, imported)
         row["joint"] = joint.get(row["account_id"])
+        # What the bank says the account holds (or, for a card, what's owed).
+        row["balance"] = balances.get(row["account_id"])
 
     txns = st.all_transactions()
     return jsonify({
@@ -1394,6 +1416,8 @@ def plan():
             share_amount(t) for t in txns
             if t.month == month and is_spend_category(t.category or "Other")), 2),
         "from_banks": st.allocated_in(month),
+        # What's in your bank accounts and owed on your cards right now.
+        "position": _position(st),
         # The part of that total that was bills the plan set aside.
         "bills_in_total": bills_paid(txns, month, st.fixed_costs())["paid"],
         # The whole chain from the Plan tab's figure down to the weekly number,
@@ -1674,7 +1698,7 @@ def plan_setup():
     return jsonify({
         **result,
         # What actually came in, was spent and stayed, to check the plan on.
-        "observed": money_plan.observed(txns, _today_iso()),
+        "observed": _observed_with_growth(st, txns),
         # The saving goal as a share of income — what you set, or what the
         # dollar figure comes to when only that was ever set.
         "savings_rate": (round(float(stored_rate), 4) if stored_rate not in (None, "")
@@ -1714,6 +1738,31 @@ def plan_setup():
         "bank_lines": _bank_status(st),
         "bank_funded": sorted(st.bank_funded_categories()),
     })
+
+
+def _position(st):
+    from . import balances as bal
+    return bal.position(st.balances(), st.account_sync_rules(), st.joint_accounts())
+
+
+def _observed_with_growth(st, txns):
+    """What came in, was spent and stayed — and, beside it, how much your
+    accounts actually grew, which is the bank's own answer to the same
+    question."""
+    from . import balances as bal
+    from . import money_plan
+
+    seen = money_plan.observed(txns, _today_iso())
+    if not seen:
+        return seen
+    growth = bal.monthly_growth([m["month"] for m in seen["months"]], st.balances(),
+                                st.account_sync_rules(), st.joint_accounts(), txns)
+    if growth:
+        for m in seen["months"]:
+            m["grew"] = growth["months"].get(m["month"])
+        seen["grew"] = round(sum(growth["months"].values()) / len(growth["months"]), 2)
+        seen["grew_accounts"] = growth["accounts"]
+    return seen
 
 
 @bp.put("/plan/setup")

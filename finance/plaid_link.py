@@ -232,6 +232,17 @@ def _sync_one(store, item: dict) -> dict:
             subtype=str(a.get("subtype") or ""),
         )
 
+    # What each account holds, as the bank reports it with every sync — for
+    # accounts switched off too: a savings account's balance is worth knowing
+    # even when its transactions aren't tracked.
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    for aid, a in accounts.items():
+        b = a.get("balances") or {}
+        if b.get("current") is not None or b.get("available") is not None:
+            store.set_balance(aid, b.get("current"), b.get("available"), b.get("limit"),
+                              str(b.get("iso_currency_code") or ""), today)
+
     rules = store.account_sync_rules()
     blocked = {aid for aid in accounts if not rules.get(aid, {}).get("enabled", True)}
     skipped_accounts = sorted(_account_label(accounts[aid], aid) for aid in blocked)

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Card, ErrorNote, Loading, Notice, StatusPill } from '../components/ui.jsx';
+import {
+  Card, ErrorNote, Loading, MerchantMark, Notice, StatusPill,
+} from '../components/ui.jsx';
 import {
   accountTitle, addTransaction, allocateToBank, dateLabel, deleteTransaction, getBanks,
   getPaybacks, getSaved, getTransactions, getUnsorted, linkPayback, money,
@@ -90,6 +92,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
           <label htmlFor="f-cat">Category</label>
           <select id="f-cat" value={filters.category} onChange={(e) => update('category', e.target.value)}>
             <option value="">All</option>
+            <option value="__unsure__">Not sure</option>
             {categories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
           </select>
 
@@ -138,6 +141,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                     <tr key={t.id}>
                       <td className="muted">{dateLabel(t.date)}</td>
                       <td className="merchant">
+                        <MerchantMark logo={t.logo} name={t.merchant} />
                         {t.merchant}
                         {t.source === 'manual' && (
                           <span className="pill" style={{ marginLeft: 8 }}>by hand</span>
@@ -159,6 +163,9 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                           <button className="btn quiet" onClick={() => setEditing(t.id)}>
                             {t.category}
                             {t.category_source === 'user' && ' ✓'}
+                            {t.unsure && (
+                              <span className="unsure" title="Plaid wasn't sure of this one">?</span>
+                            )}
                           </button>
                         )}
                       </td>

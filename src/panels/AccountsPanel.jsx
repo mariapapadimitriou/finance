@@ -194,6 +194,7 @@ export default function AccountsPanel({ onChanged, onTab }) {
                 <th>Kind</th>
                 <th>Sync</th>
                 <th>Range</th>
+                <th className="r">Balance</th>
                 <th className="r">Rows</th>
                 <th className="r">Spend</th>
                 <th />
@@ -245,6 +246,7 @@ export default function AccountsPanel({ onChanged, onTab }) {
                       ? <span className="small">no transactions</span>
                       : <>{dateLabel(a.first_date)} – {dateLabel(a.last_date)}</>}
                   </td>
+                  <td className="r num"><Balance a={a} /></td>
                   <td className="r">{a.transactions}</td>
                   <td className="r num">{money(a.total_spend)}</td>
                   <td className="r">
@@ -620,5 +622,29 @@ function JointControl({ account, busy, onSave }) {
       <button className="btn primary" type="submit" disabled={busy || !label.trim()}>Save</button>
       <button className="link-btn" type="button" onClick={() => setEditing(false)}>Cancel</button>
     </form>
+  );
+}
+
+/**
+ * What the bank says an account holds — or, for a card, what's owed — as of
+ * the last sync.
+ */
+function Balance({ a }) {
+  const b = a.balance;
+  if (!b || b.current == null) return <span className="small muted">—</span>;
+  if (a.plaid_type === 'credit') {
+    return (
+      <span>
+        {money(b.current, { cents: true })} owed
+        {b.limit ? <div className="small muted">of {money(b.limit)}</div> : null}
+      </span>
+    );
+  }
+  const avail = b.available != null && Math.abs(b.available - b.current) >= 1;
+  return (
+    <span>
+      {money(b.current, { cents: true })}
+      {avail && <div className="small muted">{money(b.available, { cents: true })} available</div>}
+    </span>
   );
 }

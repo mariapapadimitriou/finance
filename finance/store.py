@@ -161,6 +161,25 @@ CREATE TABLE IF NOT EXISTS transfer_destinations (
     category TEXT NOT NULL
 );
 
+-- What each connected account holds, as the bank last reported it. Comes with
+-- every sync at no extra cost. Credit cards and loans report what is owed.
+CREATE TABLE IF NOT EXISTS account_balance (
+    account_id   TEXT PRIMARY KEY,
+    current      REAL,
+    available    REAL,
+    credit_limit REAL,
+    currency     TEXT,
+    as_of        TEXT
+);
+
+-- One reading per account per day, so the history becomes exact over time.
+CREATE TABLE IF NOT EXISTS account_balance_days (
+    account_id TEXT NOT NULL,
+    day        TEXT NOT NULL,
+    current    REAL,
+    PRIMARY KEY (account_id, day)
+);
+
 -- Accounts you share. A row on one that can't be matched to your own
 -- accounts is another member's unless you say it was yours.
 CREATE TABLE IF NOT EXISTS joint_accounts (
@@ -868,6 +887,10 @@ class Store:
     def forget_account_rules(self, item_id: str) -> int:
         """Drop the rules for one bank, for when the bank itself is removed."""
         with self.conn() as c:
+            for table in ("account_balance", "account_balance_days"):
+                c.execute(f"DELETE FROM {table} WHERE account_id IN "
+                          "(SELECT account_id FROM account_sync WHERE item_id = ?)",
+                          (item_id,))
             cur = c.execute("DELETE FROM account_sync WHERE item_id = ?", (item_id,))
             return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
 
@@ -919,6 +942,8 @@ class Store:
                 # them would leave a relink inheriting choices about accounts
                 # nobody can see any more.
                 c.execute("DELETE FROM account_sync")
+                c.execute("DELETE FROM account_balance")
+                c.execute("DELETE FROM account_balance_days")
 
             # Settings hold the spending plan and take-home pay, which are
             # yours rather than imported. The seed flag is the exception: it
@@ -953,6 +978,26 @@ class Store:
                    ON CONFLICT(merchant_key) DO UPDATE SET category = excluded.category""",
                 (key, category),
             )
+            # The same merchant under its stable Plaid id, so a differently
+            # spelled row ("UBER *EATS PENDING") is caught too.
+            entities = set()
+            for r in c.execute("SELECT raw FROM transactions WHERE LOWER(merchant) = ?",
+                               (key,)).fetchall():
+                try:
+                    eid = (json.loads(r["raw"] or "{}") or {}).get("merchant_entity_id")
+                except (TypeError, ValueError):
+                    eid = None
+                if eid:
+                    entities.add(eid)
+            for eid in entities:
+                c.execute(
+                    """INSERT INTO merchant_overrides (merchant_key, category) VALUES (?, ?)
+                       ON CONFLICT(merchant_key) DO UPDATE SET category = excluded.category""",
+                    (f"entity:{eid}", category))
+                c.execute(
+                    """UPDATE transactions SET category = ?, category_source = 'merchant_override'
+                       WHERE raw LIKE ? AND category_source != 'user'""",
+                    (category, f'%"merchant_entity_id": "{eid}"%'))
             cur = c.execute(
                 """UPDATE transactions SET category = ?, category_source = 'merchant_override'
                    WHERE LOWER(merchant) = ?""",
@@ -961,9 +1006,18 @@ class Store:
             return cur.rowcount
 
     def clear_override(self, merchant: str) -> None:
+        key = merchant.strip().lower()
         with self.conn() as c:
-            c.execute("DELETE FROM merchant_overrides WHERE merchant_key = ?",
-                      (merchant.strip().lower(),))
+            c.execute("DELETE FROM merchant_overrides WHERE merchant_key = ?", (key,))
+            for r in c.execute("SELECT raw FROM transactions WHERE LOWER(merchant) = ?",
+                               (key,)).fetchall():
+                try:
+                    eid = (json.loads(r["raw"] or "{}") or {}).get("merchant_entity_id")
+                except (TypeError, ValueError):
+                    eid = None
+                if eid:
+                    c.execute("DELETE FROM merchant_overrides WHERE merchant_key = ?",
+                              (f"entity:{eid}",))
 
     # ── Budgets ──────────────────────────────────────────────────────────────
     def budgets(self) -> dict[str, float]:
@@ -1465,6 +1519,36 @@ class Store:
         with self.conn() as c:
             cur = c.execute("DELETE FROM transfer_destinations WHERE key = ?", (key,))
             return (cur.rowcount or 0) > 0
+
+    # ── Balances ─────────────────────────────────────────────────────────
+    def set_balance(self, account_id: str, current, available, limit,
+                    currency: str, day: str) -> None:
+        def num(x):
+            return None if x is None else round(float(x), 2)
+        cur, avail, lim = num(current), num(available), num(limit)
+        with self.conn() as c:
+            c.execute(
+                """INSERT INTO account_balance
+                       (account_id, current, available, credit_limit, currency, as_of)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(account_id) DO UPDATE SET
+                       current = excluded.current, available = excluded.available,
+                       credit_limit = excluded.credit_limit,
+                       currency = excluded.currency, as_of = excluded.as_of""",
+                (account_id, cur, avail, lim, currency or "", day))
+            if cur is not None:
+                c.execute(
+                    """INSERT INTO account_balance_days (account_id, day, current)
+                       VALUES (?, ?, ?)
+                       ON CONFLICT(account_id, day) DO UPDATE SET current = excluded.current""",
+                    (account_id, day, cur))
+
+    def balances(self) -> dict[str, dict]:
+        with self.conn() as c:
+            rows = c.execute("SELECT * FROM account_balance").fetchall()
+        return {r["account_id"]: {"current": r["current"], "available": r["available"],
+                                  "limit": r["credit_limit"], "currency": r["currency"],
+                                  "as_of": r["as_of"]} for r in rows}
 
     # ── Joint accounts ───────────────────────────────────────────────────
     def joint_accounts(self) -> dict[str, str]:
