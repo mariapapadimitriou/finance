@@ -428,3 +428,13 @@ class TestOneReviewQueue:
         tx = (SRC / "panels" / "TransactionsPanel.jsx").read_text(encoding="utf-8")
         assert "excludeTransaction(" in tx and "includeTransaction(" in tx
         assert "__excluded__" in tx
+
+
+class TestWhereDidThisGoIsPerTransfer:
+    def test_rows_not_groups_and_no_rule(self):
+        tx = (SRC / "panels" / "TransactionsPanel.jsx").read_text(encoding="utf-8")
+        card = tx[tx.index("export function WhereDidThisGo"):]
+        card = card[:card.index("\n}\n")]
+        assert "data?.transfers" in card and "data?.groups" not in card
+        assert "sortTransfers([r.id], category, false)" in card
+        assert "Remember where these go" not in card

@@ -130,3 +130,18 @@ def test_excluded_rows_are_never_asked_about(client):
     client.put(f"/api/transactions/{rows['MYSTERY SHOP 123'].fingerprint}/exclude",
                json={"reason": "Not mine"})
     assert queue(client)["unsure_category"] == []
+
+
+def test_each_transfer_is_its_own_item(client):
+    rows = load(client.st,
+                row(200, "SEND E-TFR ***A", who="Landlord Co", when=day(9)),
+                row(200, "SEND E-TFR ***B", who="Landlord Co", when=day(2)))
+    q = queue(client)
+    listed = q["unsorted"]["transfers"]
+    assert [t["to"] for t in listed] == ["Landlord Co", "Landlord Co"]
+    assert q["unsorted"]["count"] == 2 and q["count"] >= 2
+    # Sorting one leaves the other waiting.
+    client.post("/api/transfers/sort", json={"ids": [rows["SEND E-TFR ***A"].fingerprint],
+                                             "category": "Saved"})
+    left = queue(client)["unsorted"]["transfers"]
+    assert [t["id"] for t in left] == [rows["SEND E-TFR ***B"].fingerprint]

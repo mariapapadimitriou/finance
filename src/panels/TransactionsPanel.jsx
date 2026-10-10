@@ -536,22 +536,17 @@ function wantsSaved() {
 
 const SHOWN = 5;
 
-function span(first, last) {
-  return first === last ? dateLabel(first) : `${dateLabel(first)} – ${dateLabel(last)}`;
-}
-
 /**
  * Money that left a bank account for somewhere Pearl can't see.
  *
  * Every dollar out was spent or saved. Until you say which, it counts as
- * spent. One row per recipient, so twelve e-transfers to one person are one
- * decision; whatever you decide can be undone, here or under Saved.
+ * spent. One row per transfer, each its own decision: sorting one changes that
+ * one only, and can be undone here or under Saved.
  */
 export function WhereDidThisGo({ categories, reload, onDone }) {
   const [data, setData] = useState(null);
   const [saved, setSaved] = useState(null);
   const [view, setView] = useState(() => (wantsSaved() ? 'saved' : 'sort'));
-  const [remember, setRemember] = useState(true);
   const [picking, setPicking] = useState(null);
   const [done, setDone] = useState([]);
   const [all, setAll] = useState(false);
@@ -563,9 +558,9 @@ export function WhereDidThisGo({ categories, reload, onDone }) {
     getSaved().then(setSaved).catch(() => setSaved(null));
   }, [reload]);
 
-  const groups = data?.groups ?? [];
+  const rows = data?.transfers ?? [];
   const savedRows = saved?.rows ?? [];
-  if (!groups.length && !savedRows.length && !done.length) return null;
+  if (!rows.length && !savedRows.length && !done.length) return null;
   const spendable = categories.filter((c) => !NOT_SPENT.has(c.name));
 
   async function run(fn) {
@@ -581,23 +576,24 @@ export function WhereDidThisGo({ categories, reload, onDone }) {
     }
   }
 
-  const decide = (g, category) => run(async () => {
-    await sortTransfers(g.ids, category, remember);
+  // This transfer only: no rule is made for the others to the same place.
+  const decide = (r, category) => run(async () => {
+    await sortTransfers([r.id], category, false);
     setPicking(null);
-    setDone((d) => [{ ...g, category }, ...d.filter((x) => x.key !== g.key)]);
+    setDone((d) => [{ ...r, category }, ...d.filter((x) => x.id !== r.id)]);
   });
 
-  const undoGroup = (g) => run(async () => {
-    for (const id of g.ids) await unsortTransaction(id);
-    setDone((d) => d.filter((x) => x.key !== g.key));
+  const undo = (r) => run(async () => {
+    await unsortTransaction(r.id);
+    setDone((d) => d.filter((x) => x.id !== r.id));
   });
 
   const undoRow = (r) => run(() => unsortTransaction(r.id));
 
-  const shown = all ? groups : groups.slice(0, SHOWN);
+  const shown = all ? rows : rows.slice(0, SHOWN);
 
   // Nothing waiting: just a way into what's saved.
-  if (!groups.length && !done.length && view !== 'saved') {
+  if (!rows.length && !done.length && view !== 'saved') {
     return (
       <button type="button" className="card saved-peek" onClick={() => setView('saved')}>
         <span>Saved</span>
@@ -612,7 +608,7 @@ export function WhereDidThisGo({ categories, reload, onDone }) {
         <h2>Where did this go?</h2>
         <div className="segmented small" role="group" aria-label="Show">
           <button aria-pressed={view === 'sort'} onClick={() => setView('sort')}>
-            To sort{groups.length ? ` · ${data.count}` : ''}
+            To sort{rows.length ? ` · ${data.count}` : ''}
           </button>
           <button aria-pressed={view === 'saved'} onClick={() => setView('saved')}>
             Saved · {money(saved?.total ?? 0)}
@@ -622,65 +618,62 @@ export function WhereDidThisGo({ categories, reload, onDone }) {
 
       {view === 'sort' ? (
         <>
-          {groups.length > 0 && (
+          {rows.length > 0 && (
             <p className="muted small sort-note">
               {money(data.total)} counted as spent until sorted
             </p>
           )}
           <ul className="sort-list">
-            {done.map((g) => (
-              <li key={`done-${g.key}`} className="sort-row done">
+            {done.map((r) => (
+              <li key={`done-${r.id}`} className="sort-row done">
                 <span className="muted">
-                  {g.merchant} → <strong>{g.category}</strong>
+                  {r.to} {money(r.amount)} · {dateLabel(r.date)} → <strong>{r.category}</strong>
                 </span>
-                <button className="link-btn" disabled={busy} onClick={() => undoGroup(g)}>
+                <button className="link-btn" disabled={busy} onClick={() => undo(r)}>
                   Undo
                 </button>
               </li>
             ))}
-            {shown.map((g) => (
-              <li key={g.key} className="sort-row">
+            {shown.map((r) => (
+              <li key={r.id} className="sort-row">
                 <div className="sort-what">
-                  <strong>{g.merchant}</strong>
+                  <strong>{r.to}</strong>
                   <div className="muted small">
-                    {g.count > 1 ? `${g.count} transfers · ` : ''}
-                    {g.accounts.filter(Boolean).join(', ')}
-                    {' · '}{span(g.first, g.last)}
+                    {dateLabel(r.date)} · {r.account_name}
                   </div>
+                  {r.description && r.description !== r.to && (
+                    <div className="muted small sort-desc" title={r.description}>
+                      {r.description}
+                    </div>
+                  )}
                 </div>
                 <div className="sort-side">
-                  <span className="num sort-amt">{money(g.total)}</span>
-                  {picking === g.key ? (
-                    <select aria-label={`Spent on — ${g.merchant}`} value="" disabled={busy}
+                  <span className="num sort-amt">{money(r.amount, { cents: true })}</span>
+                  {picking === r.id ? (
+                    <select aria-label={`Spent on — ${r.to} ${dateLabel(r.date)}`} value=""
+                            disabled={busy}
                             // eslint-disable-next-line jsx-a11y/no-autofocus
                             autoFocus onBlur={() => setPicking(null)}
-                            onChange={(e) => e.target.value && decide(g, e.target.value)}>
+                            onChange={(e) => e.target.value && decide(r, e.target.value)}>
                       <option value="">Spent on…</option>
                       {spendable.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
                     </select>
                   ) : (
                     <>
                       <button className="pill-btn" disabled={busy}
-                              onClick={() => decide(g, 'Saved')}>Saved</button>
+                              onClick={() => decide(r, 'Saved')}>Saved</button>
                       <button className="pill-btn" disabled={busy}
-                              onClick={() => setPicking(g.key)}>Spent</button>
+                              onClick={() => setPicking(r.id)}>Spent</button>
                     </>
                   )}
                 </div>
               </li>
             ))}
           </ul>
-          {groups.length > SHOWN && (
+          {rows.length > SHOWN && (
             <button className="link-btn" onClick={() => setAll((a) => !a)}>
-              {all ? 'Show fewer' : `Show ${groups.length - SHOWN} more`}
+              {all ? 'Show fewer' : `Show ${rows.length - SHOWN} more`}
             </button>
-          )}
-          {groups.length > 0 && (
-            <label className="sort-foot small muted">
-              <input type="checkbox" checked={remember}
-                     onChange={(e) => setRemember(e.target.checked)} />
-              Remember where these go
-            </label>
           )}
         </>
       ) : (

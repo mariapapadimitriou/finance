@@ -63,7 +63,9 @@ def unsorted_groups(transactions: list[Transaction]) -> dict:
         g["ids"].append(t.fingerprint)
     return {"count": len(rows),
             "total": round(sum(t.amount for t in rows), 2),
-            "transfers": [_brief(t) for t in rows],
+            # One row per transfer: each is its own decision.
+            "transfers": [dict(_brief(t), to=(destination(t) or (None, t.merchant))[1])
+                          for t in rows],
             "groups": sorted(groups.values(), key=lambda g: -g["total"])}
 
 
@@ -189,7 +191,7 @@ def build(transactions: list[Transaction], today: str | None = None,
                                 "third paycheque. Your plan uses a typical month: "
                                 "one paycheque × 26 ÷ 12."})
 
-    count = (len(groups["groups"]) + len(unsure) + len(money_in) + len(income)
+    count = (groups["count"] + len(unsure) + len(money_in) + len(income)
              + len(three))
     return {"count": count, "unsorted": groups, "unsure_category": unsure,
             "money_in": money_in, "income_type": income, "three_pay_month": three,
