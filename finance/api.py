@@ -389,6 +389,93 @@ def transactions():
     })
 
 
+def _txlist_rows(st):
+    """Every row of yours, described for the transactions list."""
+    from . import txlist
+    txns = st.all_transactions()
+    ctx = txlist.Context(txns, st.confirmed_categories(), st.notes(),
+                         {b.id: b.name for b in st.piggy_banks()})
+    return [(t, txlist.describe(t, ctx)) for t in txlist.visible(txns)]
+
+
+@bp.get("/transactions/list")
+def transactions_list():
+    """The transactions list (THL-122): one page of rows and the totals above.
+
+    Filters combine: month (YYYY-MM), account, group (essentials, lifestyle,
+    income, savings, transfer) or category, counts (spending | income | none)
+    and q, which searches merchant, description, your note and amount. The
+    totals cover every matching row, not just the page.
+    """
+    from . import txlist
+    from .categorize import CATEGORY_GROUPS
+    a = request.args
+    group = (a.get("group") or "").lower() or None
+    if group and group not in CATEGORY_GROUPS:
+        return jsonify({"error": "Unknown group."}), 400
+    try:
+        limit = max(1, min(int(a.get("limit", txlist.PAGE)), 200))
+        offset = max(0, int(a.get("offset", 0)))
+    except ValueError:
+        return jsonify({"error": "limit and offset are numbers."}), 400
+    month = a.get("month") or None
+    filters = {"month": month, "account": a.get("account") or None, "group": group,
+               "category": a.get("category") or None, "counts": a.get("counts") or None,
+               "q": a.get("q") or None}
+    rows = _txlist_rows(store())
+    chosen = txlist.select(rows, **filters)
+    return jsonify({
+        "transactions": [r for _, r in chosen[offset:offset + limit]],
+        "total": len(chosen),
+        "totals": txlist.totals(chosen),
+        "focus": txlist.focus(rows, month=month, account=filters["account"],
+                              group=group, category=filters["category"]),
+        "groups": CATEGORY_GROUPS,
+    })
+
+
+@bp.get("/transactions/<txn_id>")
+def transaction_detail(txn_id: str):
+    """One row as the list describes it, for the detail panel."""
+    for t, r in _txlist_rows(store()):
+        if t.fingerprint == txn_id:
+            return jsonify(r)
+    return jsonify({"error": "No such transaction."}), 404
+
+
+@bp.put("/transactions/<txn_id>/confirm")
+def confirm_transaction(txn_id: str):
+    """"Yes, that's right": the category stops being a suggestion, and the
+    review queue stops asking about it."""
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    st.confirm_category(txn_id, t.category or "Other")
+    st.dismiss_review("cat:" + txn_id)
+    return jsonify({"ok": True, "category": t.category or "Other"})
+
+
+@bp.delete("/transactions/<txn_id>/confirm")
+def unconfirm_transaction(txn_id: str):
+    store().unconfirm_category(txn_id)
+    return jsonify({"ok": True})
+
+
+@bp.put("/transactions/<txn_id>/note")
+def set_transaction_note(txn_id: str):
+    """Your private note on a transaction; empty removes it."""
+    from .txlist import NOTE_MAX
+    st = store()
+    if st.get_transaction(txn_id) is None:
+        return jsonify({"error": "No such transaction."}), 404
+    note = " ".join(str((request.get_json(silent=True) or {}).get("note") or "").split())
+    if len(note) > NOTE_MAX:
+        return jsonify({"error": f"A note is {NOTE_MAX} characters at most."}), 400
+    st.set_note(txn_id, note)
+    return jsonify({"ok": True, "note": note})
+
+
 @bp.patch("/transactions/<txn_id>")
 def update_transaction(txn_id: str):
     body = request.get_json(silent=True) or {}
