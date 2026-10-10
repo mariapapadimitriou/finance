@@ -1,19 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, CategoryChip, DayHeader, FilterChip, PButton, SearchField, StatTile, TxRow, txAmount,
+  Alert, CategoryChip, DayHeader, EmptyState, FilterChip, PButton, SearchField, StatTile, TxRow,
+  txAmount,
 } from '../pearl/kit.jsx';
 import { ErrorNote } from '../components/ui.jsx';
 import { accountTitle, getTxList } from '../api.js';
 import { readTxUrl, writeTxUrl } from '../router.js';
 
 /**
- * Transactions (Pearl TX-01, THL-122).
+ * Transactions (Pearl TX-01 to TX-03, THL-122).
  *
  * Opens on this calendar month, every account and every category, newest
  * first, grouped by day. Search and the three filters combine, and live in
  * the address bar so a filtered list can be linked to and survives back and
  * forward. What each row says — its amount, whether it counts, its chip and
  * its note — comes from the server, so the list and the month never disagree.
+ *
+ * Opened on a group or a category (TX-02, e.g. from Home's "See where it
+ * went"), the title names it and the tiles compare it with a usual month.
+ * With nothing to show (TX-03) the filters stay in view so she can see why,
+ * and nothing is drawn in an error colour.
  */
 
 const PAGE = 25;
@@ -45,10 +51,13 @@ function dayLabel(iso) {
 
 /** The filters, from the address bar, with the defaults filled in. */
 function fromUrl() {
-  const f = readTxUrl()?.filters ?? {};
+  const url = readTxUrl();
+  const f = url?.filters ?? {};
   return { month: f.month || thisMonth(), account: f.account || '', group: f.group || '',
-           category: f.category || '', q: f.q || '' };
+           category: f.category || '', q: f.q || '', from: url?.from || '' };
 }
+
+const DEFAULTS = () => ({ month: thisMonth(), account: '', group: '', category: '', from: '' });
 
 export default function TransactionsList({ summary, categories, accounts, reviewCount = 0,
                                            onTab, version }) {
@@ -63,7 +72,8 @@ export default function TransactionsList({ summary, categories, accounts, review
   // The address bar follows the filters. Defaults stay out of it, so the
   // plain list is just /transactions.
   const urlFilters = (f) => ({ ...f, month: f.month === thisMonth() ? '' : f.month });
-  useEffect(() => { writeTxUrl({ filters: urlFilters(filters) }); }, [filters]);
+  const toUrl = (f, push = false) => writeTxUrl({ filters: urlFilters(f), from: f.from }, { push });
+  useEffect(() => { toUrl(filters); }, [filters]);
 
   // Back and forward move between filter states.
   useEffect(() => {
@@ -86,14 +96,20 @@ export default function TransactionsList({ summary, categories, accounts, review
 
   const choose = (patch) => {
     const next = { ...filters, ...patch };
-    writeTxUrl({ filters: urlFilters(next) }, { push: true });
+    toUrl(next, true);
     setFilters(next);
   };
+  const filtered = filters.month !== thisMonth() || !!filters.account
+    || !!filters.group || !!filters.category;
+  // Back to TX-01's defaults; the search, if any, is its own control.
+  const clearFilters = () => choose(DEFAULTS());
+  const clearSearch = () => { setQuery(''); choose({ q: '' }); };
 
   const fetchPage = useCallback(async (offset) => {
     const id = ++request.current;
     try {
-      const res = await getTxList({ ...filters, limit: PAGE, offset });
+      const { from, ...params } = filters;
+      const res = await getTxList({ ...params, limit: PAGE, offset });
       if (id !== request.current) return;
       setError(null);
       setData(res);
@@ -153,15 +169,24 @@ export default function TransactionsList({ summary, categories, accounts, review
   }, [rows]);
 
   const totals = data?.totals;
+  const focus = data?.focus;           // set when a group or category is chosen
   const more = (data?.total ?? 0) - rows.length;
+  const empty = !!data && rows.length === 0;
   const anySuggested = rows.some((r) => r.suggested);
-  const open = (id) => writeTxUrl({ id, filters: urlFilters(filters) }, { push: true });
+  const open = (id) => writeTxUrl({ id, filters: urlFilters(filters), from: filters.from },
+                                  { push: true });
+
+  // The title says what the list is: "Lifestyle in October" when it is one
+  // group or category, otherwise just Transactions.
+  const focusLabel = filters.group ? groups[filters.group] : filters.category;
+  const title = focusLabel ? `${focusLabel} in ${monthName(filters.month)}` : 'Transactions';
+  const overline = filters.from === 'home' ? 'From Home' : monthName(filters.month, true);
 
   return (
     <div className="pk tx-page">
       <header className="tx-head">
-        <p className="pk-overline accent">{monthName(filters.month, true)}</p>
-        <h1 className="pk-h1">Transactions</h1>
+        <p className="pk-overline accent">{overline}</p>
+        <h1 className="pk-h1">{title}</h1>
       </header>
 
       <div className="tx-toolbar">
@@ -175,61 +200,108 @@ export default function TransactionsList({ summary, categories, accounts, review
                       active={!!filters.account} onChange={(v) => choose({ account: v })} />
           <FilterChip label="Category" value={categoryValue} options={categoryOptions}
                       shown={categoryLabel} active={!!categoryValue} onChange={pickCategory} />
+          {filtered && !empty && (
+            <PButton variant="text" className="tx-clear" onClick={clearFilters}>
+              Clear filters
+            </PButton>
+          )}
         </div>
       </div>
 
       {error && <ErrorNote error={error} onRetry={() => fetchPage(0)} />}
 
-      {totals && (
-        <div className="pk-tiles">
-          <StatTile label="Spent so far" value={txAmount(totals.spent)} />
-          <StatTile label="Income so far" value={txAmount(totals.income)} />
-          <StatTile label="Not counted" value={txAmount(totals.not_counted)} />
-        </div>
-      )}
-
-      {reviewCount > 0 && (
-        <Alert action="Review" onAction={() => onTab?.('review')}>
-          {reviewCount === 1 ? '1 transaction needs a look.' : `${reviewCount} transactions need a look.`}
-          {' '}Sorting them keeps your numbers right.
-        </Alert>
-      )}
-
-      {anySuggested && (
-        <div className="tx-legend">
-          <CategoryChip label="Groceries" suggested />
-          <span>Pearl suggested this category. Open the transaction to confirm or change it.</span>
-        </div>
-      )}
-
-      {data && rows.length === 0 && (
-        <p className="pk-muted">Nothing here.</p>
-      )}
-
-      {rows.length > 0 && (
-        <section className="pk-list" aria-label="Transactions">
-          {days.map((d) => (
-            <div key={d.date} role="group" aria-label={dayLabel(d.date)}>
-              <DayHeader>{dayLabel(d.date)}</DayHeader>
-              {d.rows.map((r) => (
-                <TxRow key={r.id} name={r.merchant} logo={r.logo}
-                       meta={r.account + (r.pending ? ' · Pending' : '')}
-                       note={r.note || r.my_note} noteLink={r.note_link}
-                       chip={r.chip} amount={r.amount} inflow={r.inflow}
-                       muted={r.counts === 'none'} onOpen={() => open(r.id)} />
-              ))}
+      {empty ? (
+        <Empty filters={filters} q={filters.q} filtered={filtered}
+               onClearSearch={clearSearch} onClearFilters={clearFilters} />
+      ) : (
+        <>
+          {totals && (focus ? (
+            <div className="pk-tiles">
+              <StatTile label={`${focus.label} so far`} value={txAmount(focus.total)} />
+              <StatTile label="In a usual month"
+                        value={focus.usual == null ? '—' : txAmount(focus.usual)} />
+              <StatTile label="Transactions" value={String(totals.count)} />
+            </div>
+          ) : (
+            <div className="pk-tiles">
+              <StatTile label="Spent so far" value={txAmount(totals.spent)} />
+              <StatTile label="Income so far" value={txAmount(totals.income)} />
+              <StatTile label="Not counted" value={txAmount(totals.not_counted)} />
             </div>
           ))}
-        </section>
-      )}
 
-      {more > 0 && (
-        <div className="tx-more">
-          <PButton variant="text" disabled={loadingMore} onClick={showMore}>
-            Show {more} more
-          </PButton>
-        </div>
+          {reviewCount > 0 && !focus && (
+            <Alert action="Review" onAction={() => onTab?.('review')}>
+              {reviewCount === 1 ? '1 transaction needs a look.'
+                : `${reviewCount} transactions need a look.`}
+              {' '}Sorting them keeps your numbers right.
+            </Alert>
+          )}
+
+          {anySuggested && (
+            <div className="tx-legend">
+              <CategoryChip label="Groceries" suggested />
+              <span>Pearl suggested this category. Open the transaction to confirm or change it.</span>
+            </div>
+          )}
+
+          {rows.length > 0 && (
+            <section className="pk-list" aria-label={title}>
+              {days.map((d) => (
+                <div key={d.date} role="group" aria-label={dayLabel(d.date)}>
+                  <DayHeader>{dayLabel(d.date)}</DayHeader>
+                  {d.rows.map((r) => (
+                    <TxRow key={r.id} name={r.merchant} logo={r.logo}
+                           meta={r.account + (r.pending ? ' · Pending' : '')}
+                           note={r.note || r.my_note} noteLink={r.note_link}
+                           chip={r.chip} amount={r.amount} inflow={r.inflow}
+                           muted={r.counts === 'none'} onOpen={() => open(r.id)} />
+                  ))}
+                </div>
+              ))}
+              {more > 0 && (
+                <div className="tx-more">
+                  <PButton variant="text" disabled={loadingMore} onClick={showMore}>
+                    Show {more} more
+                  </PButton>
+                </div>
+              )}
+            </section>
+          )}
+        </>
       )}
     </div>
+  );
+}
+
+/**
+ * Nothing to show (TX-03). A search that found nothing offers to clear the
+ * search and keep the filters; filters that found nothing offer to clear them.
+ * Never in an error colour: an empty list is an answer, not a failure.
+ */
+function Empty({ filters, q, filtered, onClearSearch, onClearFilters }) {
+  if (q) {
+    return (
+      <EmptyState title={`Nothing matches “${q}”`} action="Clear search" onAction={onClearSearch}
+                  extra={filtered && (
+                    <PButton variant="text" onClick={onClearFilters}>Clear filters</PButton>
+                  )}>
+        Try a shorter word, or check the month and account filters. We search merchant
+        names, notes and amounts.
+      </EmptyState>
+    );
+  }
+  if (filtered) {
+    return (
+      <EmptyState icon="list" title="Nothing for these filters" action="Clear filters"
+                  onAction={onClearFilters}>
+        Try another month, account or category.
+      </EmptyState>
+    );
+  }
+  return (
+    <EmptyState icon="list" title={`No transactions in ${monthName(filters.month)} yet`}>
+      They’ll show up here as soon as your bank sends them.
+    </EmptyState>
   );
 }
