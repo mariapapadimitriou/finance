@@ -1,0 +1,116 @@
+/* Pearl tokens — the variables of the Pearl Design System file, by their
+ * code-syntax names.
+ *
+ * Primitives hold the only colour values. The Color collection has a Light and
+ * a Dark mode; each semantic token points at a primitive in each. The brand
+ * colours (blush, lilac, seaglass, champagne) are the same in both modes, so
+ * text that sits on them uses --on-nacre, which is ink in both.
+ *
+ * Scoped to .pk so the screens not yet rebuilt keep their own tokens.
+ */
+
+.pk {
+  /* Primitives */
+  --pearl-50: #fbf8f6;
+  --white: #ffffff;
+  --blush-100: #ffe4ec;
+  --blush-150: #f1e9ee;
+  --blush-200: #eedfe6;
+  --lilac-200: #e3d4ff;
+  --seaglass-200: #cff3ee;
+  --rose-300: #ff8fb1;
+  --rose-500: #e2557f;
+  --rose-700: #b8285a;
+  --lagoon-400: #4fd1c5;
+  --lagoon-700: #137a72;
+  --gold-300: #f3d9a4;
+  --gold-700: #8a5a12;
+  --ocean-950: #0b1030;
+  --ocean-900: #151b44;
+  --ocean-800: #252c5e;
+  --ink-primitive: #1c1a33;
+  --mist-300: #b4b1cc;
+  --mist-500: #6b6884;
+
+  /* Color · Light */
+  --surface-page: var(--pearl-50);
+  --surface-card: var(--white);
+  --track: var(--blush-150);
+  --border: var(--blush-200);
+  --ink: var(--ink-primitive);
+  --ink-muted: var(--mist-500);
+  --on-nacre: var(--ink-primitive);
+  --on-action: var(--white);
+  --link: var(--rose-700);
+  --positive: var(--lagoon-700);
+  --caution: var(--gold-700);
+  --action: var(--rose-700);
+  --rose: var(--rose-500);
+  --lagoon: var(--lagoon-400);
+  --lilac: var(--lilac-200);
+  --seaglass: var(--seaglass-200);
+  --champagne: var(--gold-300);
+  --blush: var(--blush-100);
+
+  /* Layout */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-sm: 12px;
+  --radius-md: 20px;
+  --radius-lg: 28px;
+  --radius-full: 999px;
+
+  /* Effect styles: Glow/Pearl and Shadow/Card */
+  --glow-pearl: 0 6px 24px color-mix(in srgb, var(--rose-500) 28%, transparent);
+  --shadow-card: 0 8px 24px color-mix(in srgb, var(--ink-primitive) 7%, transparent);
+
+  /* Not variables in the file: derived from the ones above. */
+  --scrim: color-mix(in srgb, var(--ocean-950) 50%, transparent);   /* TX-04 */
+  --action-hover: color-mix(in srgb, var(--action) 88%, var(--ink));
+  --focus-ring: color-mix(in srgb, var(--rose-500) 18%, transparent);
+  --hover: color-mix(in srgb, var(--ink) 4%, transparent);
+  --panel-shadow: -12px 0 40px color-mix(in srgb, var(--ink-primitive) 12%, transparent);
+
+  --text: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --display: 'Fraunces', Georgia, 'Times New Roman', serif;
+}
+
+/* Color · Dark. Written twice: once for the app's own switch, once for the
+ * system setting when the app has not chosen. */
+:root[data-theme="dark"] .pk {
+  --surface-page: var(--ocean-950);
+  --surface-card: var(--ocean-900);
+  --track: var(--ocean-800);
+  --border: var(--ocean-800);
+  --ink: var(--pearl-50);
+  --ink-muted: var(--mist-300);
+  --on-action: var(--ink-primitive);
+  --link: var(--rose-300);
+  --positive: var(--lagoon-400);
+  --caution: var(--gold-300);
+  --action: var(--rose-300);
+  --panel-shadow: -12px 0 40px color-mix(in srgb, black 40%, transparent);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .pk {
+    --surface-page: var(--ocean-950);
+    --surface-card: var(--ocean-900);
+    --track: var(--ocean-800);
+    --border: var(--ocean-800);
+    --ink: var(--pearl-50);
+    --ink-muted: var(--mist-300);
+    --on-action: var(--ink-primitive);
+    --link: var(--rose-300);
+    --positive: var(--lagoon-400);
+    --caution: var(--gold-300);
+    --action: var(--rose-300);
+    --panel-shadow: -12px 0 40px color-mix(in srgb, black 40%, transparent);
+    color-scheme: dark;
+  }
+}
