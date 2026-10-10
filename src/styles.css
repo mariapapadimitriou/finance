@@ -1594,3 +1594,4 @@ label.sort-foot { justify-content: flex-start; cursor: pointer; }
 .rules-list li { display: flex; justify-content: space-between; gap: 12px; align-items: center;
   padding: 10px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .rules-list li:first-child { border-top: 0; }
+.sort-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
