@@ -4,6 +4,7 @@ import TodayPanel from './panels/TodayPanel.jsx';
 import PiggyPanel from './panels/PiggyPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import TransactionsPanel from './panels/TransactionsPanel.jsx';
+import ReviewPanel from './panels/ReviewPanel.jsx';
 import BudgetsPanel from './panels/BudgetsPanel.jsx';
 import TripsPanel from './panels/TripsPanel.jsx';
 import ImportPanel from './panels/ImportPanel.jsx';
@@ -19,7 +20,7 @@ import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
   getAccounts, getAuthStatus, getCategories, getInsights,
-  getSummary, getUnsorted, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
+  getReview, getSummary, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
   syncPlaid,
 } from './api.js';
 
@@ -158,10 +159,10 @@ export default function App() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [summary, insights, accounts, categories, unsorted] = await Promise.all([
+      const [summary, insights, accounts, categories, review] = await Promise.all([
         getSummary(), getInsights(), getAccounts(), getCategories(),
         // Only a badge: a failure here must not stop the app loading.
-        getUnsorted().catch(() => ({ count: 0 })),
+        getReview().catch(() => ({ count: 0 })),
       ]);
       // Before anything is drawn: every figure in the app is formatted with
       // this, and a wrong default is how the whole ledger came to read as
@@ -171,7 +172,7 @@ export default function App() {
         summary, insights,
         accounts: accounts.accounts ?? [],
         categories: categories.categories ?? [],
-        unsorted: unsorted.count ?? 0,
+        review: review.count ?? 0,
       });
       setVersion((v) => v + 1);
     } catch (e) {
@@ -287,7 +288,7 @@ export default function App() {
   return (
     <Shell
       theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
-      counts={{ transactions: data.unsorted }}
+      counts={{ transactions: data.review }}
       months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
@@ -314,6 +315,9 @@ export default function App() {
       {panel === 'projections' && (
         <ProjectionsPanel insights={insights} onTab={go} onChanged={load}
                          version={version} />
+      )}
+      {panel === 'review' && (
+        <ReviewPanel categories={categories} onChanged={load} onTab={go} />
       )}
       {panel === 'transactions' && (
         <TransactionsPanel summary={summary} categories={categories}
@@ -409,7 +413,8 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {},
                 key={g.key}
                 role="tab"
                 aria-selected={tab === g.key}
-                onClick={() => onTab(g.key)}
+                // The group's first page: Transactions opens on To review.
+                onClick={() => onTab(g.panels[0])}
               >
                 <Icon d={g.icon} />
                 <Label full={g.label} short={g.short} />

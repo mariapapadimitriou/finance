@@ -339,6 +339,8 @@ def imports():
 
 # The Category filter's "Not sure" option.
 UNSURE_FILTER = "__unsure__"
+# Rows you left out, wherever they are.
+EXCLUDED_FILTER = "__excluded__"
 
 
 @bp.get("/transactions")
@@ -347,7 +349,8 @@ def transactions():
     limit = min(int(request.args.get("limit", 200)), 1000)
     offset = int(request.args.get("offset", 0))
     category = request.args.get("category")
-    unsure_only = category == UNSURE_FILTER
+    excluded_only = category == EXCLUDED_FILTER
+    unsure_only = category == UNSURE_FILTER or excluded_only
     txns, total = store().query_transactions(
         month=request.args.get("month"),
         category=None if unsure_only else category,
@@ -360,7 +363,7 @@ def transactions():
     )
     if unsure_only:
         # Categories Plaid itself wasn't sure of: worth a second look.
-        txns = [t for t in txns if is_unsure(t)]
+        txns = [t for t in txns if (t.excluded if excluded_only else is_unsure(t))]
         total = len(txns)
         txns = txns[offset:offset + limit]
     rows = []
@@ -509,26 +512,8 @@ def unsorted_transfers():
     Also grouped by who it went to, so twelve e-transfers to one person are
     one decision, not twelve.
     """
-    from .transfers import destination, unsorted
-    rows = unsorted(_txns())
-    groups: dict[str, dict] = {}
-    for t in rows:
-        where = destination(t)
-        key = where[0] if where else "row:" + t.fingerprint
-        g = groups.setdefault(key, {
-            "key": key, "merchant": where[1] if where else t.merchant,
-            "learnable": bool(where), "count": 0, "total": 0.0, "first": t.date,
-            "last": t.date, "accounts": [], "ids": []})
-        g["count"] += 1
-        g["total"] = round(g["total"] + t.amount, 2)
-        g["first"], g["last"] = min(g["first"], t.date), max(g["last"], t.date)
-        if (t.account_name or "") not in g["accounts"]:
-            g["accounts"].append(t.account_name or "")
-        g["ids"].append(t.fingerprint)
-    return jsonify({"count": len(rows),
-                    "total": round(sum(t.amount for t in rows), 2),
-                    "transfers": [_txn_brief(t) for t in rows],
-                    "groups": sorted(groups.values(), key=lambda g: -g["total"])})
+    from .review import unsorted_groups
+    return jsonify(unsorted_groups(_txns()))
 
 
 @bp.post("/transfers/sort")
@@ -2660,3 +2645,116 @@ def set_budgets():
             return jsonify({"error": f"Invalid amount for '{category}'."}), 400
 
     return jsonify({"ok": True, "budgets": store().budgets()})
+
+
+# ── Exclusions ───────────────────────────────────────────────────────────────
+# Leave a transaction out, or every transaction like it. An exclusion is your
+# decision and wins over every rule; excluded rows stay listed and can be put
+# back. See finance/exclusions.py.
+
+def _reclassify(st) -> None:
+    from .pipeline import classify_ledger
+    classify_ledger(st)
+
+
+@bp.put("/transactions/<txn_id>/exclude")
+def exclude_transaction(txn_id: str):
+    st = store()
+    if st.get_transaction(txn_id) is None:
+        return jsonify({"error": "No such transaction."}), 404
+    body = request.get_json(silent=True) or {}
+    reason = " ".join(str(body.get("reason") or "").split())[:200]
+    if not reason:
+        return jsonify({"error": "Say why, so you can tell later."}), 400
+    st.exclude(txn_id, reason)
+    _reclassify(st)
+    return jsonify({"ok": True, "transaction": st.get_transaction(txn_id).to_dict()})
+
+
+@bp.delete("/transactions/<txn_id>/exclude")
+def include_transaction(txn_id: str):
+    st = store()
+    if not st.include(txn_id):
+        return jsonify({"error": "That transaction isn't excluded."}), 404
+    _reclassify(st)
+    return jsonify({"ok": True, "transaction": st.get_transaction(txn_id).to_dict()})
+
+
+@bp.get("/exclusions")
+def list_exclusions():
+    st = store()
+    rules = st.exclusion_rules()
+    if any(r.get("account_id") for r in rules):
+        names = {}
+        for t in st.all_transactions():
+            names.setdefault(t.account_id, t.account_name or t.account_id)
+        for r in rules:
+            r["account_name"] = names.get(r.get("account_id") or "", r.get("account_id"))
+    return jsonify({"rules": rules})
+
+
+@bp.post("/exclusions")
+def add_exclusion():
+    """A rule for every transaction like this, now and later. `?dry=1` says
+    how many it would catch without saving it."""
+    from .exclusions import clean, matching
+    st = store()
+    rule, problem = clean(request.get_json(silent=True) or {})
+    if problem:
+        return jsonify({"error": problem}), 400
+    txns = st.all_transactions()
+    caught = [t for t in matching(rule, txns)]
+    if request.args.get("dry"):
+        return jsonify({"matches": len(caught),
+                        "total": round(sum(abs(t.amount) for t in caught), 2),
+                        "sample": [_txn_brief(t) for t in caught[:5]]})
+    rule_id = st.add_exclusion_rule(rule)
+    _reclassify(st)
+    return jsonify({"ok": True, "id": rule_id, "matches": len(caught)}), 201
+
+
+@bp.delete("/exclusions/<int:rule_id>")
+def delete_exclusion(rule_id: int):
+    st = store()
+    if not st.delete_exclusion_rule(rule_id):
+        return jsonify({"error": "No such rule."}), 404
+    _reclassify(st)
+    return jsonify({"ok": True})
+
+
+# ── Income types ─────────────────────────────────────────────────────────────
+
+@bp.put("/transactions/<txn_id>/income-type")
+def set_income_type(txn_id: str):
+    from .income import KINDS
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    kind = (request.get_json(silent=True) or {}).get("kind")
+    if kind not in KINDS:
+        return jsonify({"error": "Choose a kind of income."}), 400
+    if t.category != "Income":
+        # Calling something a gift or a paycheque makes it income.
+        st.set_transaction_category(txn_id, "Income")
+    st.set_income_type(txn_id, kind, "user")
+    _reclassify(st)
+    return jsonify({"ok": True, "transaction": st.get_transaction(txn_id).to_dict()})
+
+
+# ── Review ───────────────────────────────────────────────────────────────────
+
+@bp.get("/review")
+def review_queue():
+    from .review import build
+    st = store()
+    return jsonify(build(st.all_transactions(), dismissed=st.dismissed_reviews()))
+
+
+@bp.post("/review/dismiss")
+def dismiss_review():
+    key = str((request.get_json(silent=True) or {}).get("key") or "")
+    if not key or ":" not in key:
+        return jsonify({"error": "Which item?"}), 400
+    store().dismiss_review(key)
+    return jsonify({"ok": True})

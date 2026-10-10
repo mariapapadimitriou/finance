@@ -42,7 +42,10 @@ RULED = "destination"
 
 
 def others(t: Transaction) -> bool:
-    """A row on a joint account that isn't yours: another member's money."""
+    """A row that is nothing of yours: one you excluded, or another member's
+    money on a joint account."""
+    if getattr(t, "excluded", None):
+        return True
     return bool(getattr(t, "joint", None)) and abs(t.my_share or 0.0) < 0.005
 
 
@@ -134,7 +137,8 @@ def _subset_summing(rows: list[Transaction], target: int) -> list[Transaction] |
 
 
 def match_transfers(transactions: list[Transaction], today: str | None = None,
-                    destinations: dict[str, str] | None = None) -> dict[str, str]:
+                    destinations: dict[str, str] | None = None,
+                    used_out: set[str] | None = None) -> dict[str, str]:
     """The category each sortable outflow should have: Transfers when its
     other end is here, Unsorted transfers when it isn't.
 
@@ -166,6 +170,7 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
     # must not vanish as neutral when the mortgage account is connected.
     inflows = [t for t in transactions
                if t.amount < 0 and not t.repays and t.category != "Income"
+               and not getattr(t, "excluded", None)
                and str((t.raw or {}).get("account_type", "")).lower() != "loan"]
 
     used: set[str] = set()          # inflows already the other end of something
@@ -250,7 +255,18 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
                 continue
             recent = date.fromisoformat(t.date[:10]) >= cutoff
             out[t.fingerprint] = UNSORTED if recent else NEUTRAL
+    if used_out is not None:
+        # Which arrivals were the other end of something: the rest is money
+        # that came from somewhere you can't see, and worth asking about.
+        used_out.update(used)
     return out
+
+
+def matched_inflows(transactions: list[Transaction], today: str | None = None) -> set[str]:
+    """The arrivals that are the other end of one of your own transfers."""
+    used: set[str] = set()
+    match_transfers(transactions, today=today, used_out=used)
+    return used
 
 
 def apply_transfer_matches(store, transactions: list[Transaction] | None = None) -> int:

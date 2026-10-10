@@ -496,9 +496,24 @@ def observed(transactions, today: str, months: int = 3) -> dict | None:
                      "moved": invested_in(transactions, month)})
     if not any(r["income"] > 0 for r in rows):
         return None
+    from .income import by_type, cadence
+    for r in rows:
+        r["by_type"] = by_type(transactions, r["month"])
+    pay = cadence(transactions, today)
+    median = round(statistics.median(r["income"] for r in rows), 2)
+    # Paid every two weeks: a typical month is one paycheque × 26 ÷ 12, plus
+    # whatever else usually comes in. A month that happened to hold a third
+    # paycheque doesn't get to set the figure.
+    income = median
+    if pay and pay["cadence"] == "biweekly" and pay["monthly"]:
+        other = statistics.median(
+            r["income"] - r["by_type"].get("salary", 0.0) for r in rows)
+        income = round(pay["monthly"] + max(other, 0.0), 2)
     return {
         "months": rows,
-        "income": round(statistics.median(r["income"] for r in rows), 2),
+        "income": income,
+        "income_median": median,
+        "pay": pay,
         "stayed": round(statistics.fmean(r["stayed"] for r in rows), 2),
         "moved": round(statistics.fmean(r["moved"] for r in rows), 2),
     }

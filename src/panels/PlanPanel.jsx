@@ -4,7 +4,7 @@ import {
 import { Donut, RingLegend, RingRow } from '../components/Ring.jsx';
 import {
   addFixedCost, deleteFixedCost, getCategories, getPlanSetup,
-  money, monthLabel, pct, savePlanSetup,
+  INCOME_KINDS, money, monthLabel, pct, savePlanSetup,
 } from '../api.js';
 
 /**
@@ -98,13 +98,16 @@ export default function PlanPanel({ onChanged, onTab }) {
             {seen && Math.abs(seen.income - (Number(income) || 0)) > 1 && (
               <div className="muted small">
                 From your accounts: about <strong className="num">{money(seen.income)}</strong>/mo
-                {' '}({span}) ·{' '}
+                {' '}({seen.pay?.cadence === 'biweekly'
+                  ? `paid every two weeks: ${money(seen.pay.paycheque)} × 26 ÷ 12`
+                  : span}) ·{' '}
                 <button type="button" className="link-btn"
                         onClick={() => setIncome(String(Math.round(seen.income)))}>
                   Use this
                 </button>
               </div>
             )}
+            {seen && <IncomeTypes months={seen.months} />}
           </div>
           <div className="plan-field">
             <label htmlFor="rate">Saving goal</label>
@@ -252,7 +255,7 @@ function GoalVsActual({ seen, goal, income }) {
   const rows = [
     { label: 'Saving goal', value: goal },
     { label: 'Stayed with you', note: 'income − spending', value: seen.stayed },
-    { label: 'Moved to savings', note: 'marked Saved', value: seen.moved },
+    { label: 'Moved to savings', note: 'saved − drawdowns', value: seen.moved },
     // The bank's own answer: how much your accounts actually grew.
     seen.grew != null && { label: 'Your accounts grew by', note: 'from balances',
                            value: seen.grew },
@@ -296,6 +299,22 @@ function GoalVsActual({ seen, goal, income }) {
         </p>
       )}
     </Card>
+  );
+}
+
+/** What came in over recent months, by kind, averaged: salary apart from the rest. */
+function IncomeTypes({ months }) {
+  const sums = {};
+  for (const m of months) {
+    for (const [k, v] of Object.entries(m.by_type ?? {})) sums[k] = (sums[k] ?? 0) + v;
+  }
+  const kinds = Object.entries(sums).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  if (kinds.length < 2) return null;
+  return (
+    <div className="muted small">
+      {kinds.map(([k, v]) => `${INCOME_KINDS[k] ?? k} ${money(v / months.length)}`).join(' · ')}
+      {' '}a month on average
+    </div>
   );
 }
 

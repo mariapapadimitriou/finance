@@ -276,6 +276,15 @@ class Transaction:
     # so its share defaults to nothing — `share_set` says whether you did.
     joint: str | None = None
     share_set: bool = False
+    # Why you left this row out, if you did: one transaction, or every row a
+    # rule of yours matches. An excluded row counts as nothing — not spending,
+    # not income, not savings — and never pairs with another as a transfer.
+    excluded: str | None = None
+    # On money categorised Income: salary, bonus, interest, gifts, government,
+    # tax_refund or other — see finance/income.py. `income_type_source` is
+    # "user" when you chose it.
+    income_type: str | None = None
+    income_type_source: str | None = None
 
     def __post_init__(self):
         if not self.merchant:
@@ -347,6 +356,9 @@ class Transaction:
             repays=row.get("repays"),
             joint=row.get("joint") or None,
             share_set=row.get("my_share") is not None,
+            excluded=row.get("excluded") or None,
+            income_type=row.get("income_type") or None,
+            income_type_source=row.get("income_type_source") or None,
         )
         if t.joint and t.my_share is None:
             # Another member's, unless it's a name you said is always yours.

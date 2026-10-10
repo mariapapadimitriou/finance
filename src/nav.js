@@ -27,6 +27,8 @@ export const PANELS = {
                    hint: 'Spending across every card' },
   projections:   { label: 'Looking ahead', short: 'Ahead',
                    hint: 'What saving more gets you — this year, and invested' },
+  review:        { label: 'To review', short: 'Review',
+                   hint: 'Everything Pearl isn’t sure about, with its best guess' },
   transactions:  { label: 'Every charge',
                    hint: 'Searchable, correctable, chargeable to a piggy bank' },
   trips:         { label: 'Trips',
@@ -64,7 +66,7 @@ export const GROUPS = [
     hint: 'What you earn, what it is promised to, how the rest divides, and where that leads',
     icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
   { key: 'transactions', label: 'Transactions', short: 'Charges',
-    panels: ['transactions', 'trips'],
+    panels: ['review', 'transactions', 'trips'],
     hint: 'Every charge, and the date ranges that reclassify them',
     icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
   // Everything you set once and then leave: where the transactions come from,
@@ -101,10 +103,12 @@ const ALIAS_LABELS = { piggy: 'Piggy banks' };
  */
 export function resolve(key) {
   const target = ALIASES[key] ?? key;
-  const group = GROUPS.find((g) => g.key === target);
-  if (group) return [group.key, group.panels[0]];
+  // A page wins over a group of the same name: `transactions` is the list of
+  // every charge, even though its group opens on To review.
   const owner = GROUPS.find((g) => g.panels.includes(target));
   if (owner) return [owner.key, target];
+  const group = GROUPS.find((g) => g.key === target);
+  if (group) return [group.key, group.panels[0]];
   return ['today', 'today'];
 }
 

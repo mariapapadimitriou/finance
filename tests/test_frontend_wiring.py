@@ -409,3 +409,22 @@ class TestThisMonthLivesUnderAllowance:
         groups = groups[:groups.index("\n];")]
         assert "{ key: 'today', label: 'Allowance', panels: ['today', 'overview']" in groups
         assert "key: 'overview'" not in groups
+
+
+class TestOneReviewQueue:
+    def test_the_badge_counts_the_review_queue(self):
+        text = (SRC / "App.jsx").read_text(encoding="utf-8")
+        assert "getReview()" in text and "counts={{ transactions: data.review }}" in text
+
+    def test_review_holds_every_kind_and_the_unsorted_card(self):
+        text = (SRC / "panels" / "ReviewPanel.jsx").read_text(encoding="utf-8")
+        for kind in ("money_in", "unsure_category", "income_type", "three_pay_month"):
+            assert f"data.{kind}" in text, kind
+        assert "<WhereDidThisGo" in text
+        tx = (SRC / "panels" / "TransactionsPanel.jsx").read_text(encoding="utf-8")
+        assert "<WhereDidThisGo" not in tx, "it lives on To review now"
+
+    def test_rows_can_be_excluded_and_put_back(self):
+        tx = (SRC / "panels" / "TransactionsPanel.jsx").read_text(encoding="utf-8")
+        assert "excludeTransaction(" in tx and "includeTransaction(" in tx
+        assert "__excluded__" in tx

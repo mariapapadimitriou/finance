@@ -54,7 +54,7 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
     if inserted:
         # A new arrival can be the other end of a transfer already here, and a
         # new departure may have its other end here already.
-        apply_transfer_matches(store)
+        classify_ledger(store)
 
     duplicate_count = len(dupes) + self_dupes
     store.log_import(filename or "upload.csv", result, inserted, duplicate_count)
@@ -94,5 +94,16 @@ def recategorize_all(store: Store) -> int:
             )
             updated += cur.rowcount
     # The rules just put every transfer back to plain Transfers; sort them again.
-    apply_transfer_matches(store)
+    classify_ledger(store)
     return updated
+
+
+def classify_ledger(store: Store) -> None:
+    """Everything decided across rows rather than one row at a time, in the
+    order the rules need: your exclusions first (they win, and an excluded row
+    never pairs as a transfer), then transfer matching, then income types."""
+    from .exclusions import reapply
+    from .income import apply_income_types
+    reapply(store)
+    apply_transfer_matches(store)
+    apply_income_types(store)

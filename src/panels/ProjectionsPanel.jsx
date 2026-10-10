@@ -365,9 +365,10 @@ function PaceBadge({ data }) {
  */
 function InvestedThisMonth({ im, onTab }) {
   function seeSaved() {
-    // Read once by the Transactions page, which opens on what's saved.
+    // Read once by the review page, whose "Where did this go" card opens on
+    // what's saved.
     try { window.sessionStorage.setItem(OPEN_SAVED_KEY, '1'); } catch { /* fine */ }
-    onTab?.('transactions');
+    onTab?.('review');
   }
   const target = im.saving ?? 0;
   const done = target > 0 && im.amount >= target - 0.5;
