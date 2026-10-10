@@ -3,7 +3,7 @@ import OverviewPanel from './panels/OverviewPanel.jsx';
 import TodayPanel from './panels/TodayPanel.jsx';
 import PiggyPanel from './panels/PiggyPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
-import TransactionsPanel from './panels/TransactionsPanel.jsx';
+import TransactionsList from './panels/TransactionsList.jsx';
 import ReviewPanel from './panels/ReviewPanel.jsx';
 import BudgetsPanel from './panels/BudgetsPanel.jsx';
 import TripsPanel from './panels/TripsPanel.jsx';
@@ -18,6 +18,7 @@ import Onboarding from './pearl/Onboarding.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
+import { clearUrl, readTxUrl } from './router.js';
 import {
   getAccounts, getAuthStatus, getCategories, getInsights,
   getReview, getSummary, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
@@ -76,8 +77,10 @@ export default function App() {
     // nobody would ever have seen the light default this introduced.
     () => localStorage.getItem('spendie-theme-2') || 'light'
   );
-  const [tab, setTab] = useState('today');
-  const [panel, setPanel] = useState('today');
+  // /transactions… opens the list (a link from anywhere lands there); every
+  // other address opens the app where it always opened.
+  const [tab, setTab] = useState(() => (readTxUrl() ? 'transactions' : 'today'));
+  const [panel, setPanel] = useState(() => (readTxUrl() ? 'transactions' : 'today'));
 
   /**
    * Go to a destination named either way.
@@ -90,6 +93,8 @@ export default function App() {
     const [group, target] = resolve(key);
     setTab(group);
     setPanel(target);
+    // Only the list has an address of its own; it writes it when it mounts.
+    if (target !== 'transactions') clearUrl();
     const anchor = ANCHORS[key];
     if (anchor) {
       // After the panel has rendered and its data has had a moment to land,
@@ -133,6 +138,18 @@ export default function App() {
   }
 
   useEffect(() => { localStorage.setItem('spendie-theme-2', theme); }, [theme]);
+
+  // Back and forward between the list's addresses and the rest of the app.
+  const panelRef = useRef(panel);
+  panelRef.current = panel;
+  useEffect(() => {
+    const onPop = () => {
+      if (readTxUrl()) { setTab('transactions'); setPanel('transactions'); }
+      else if (panelRef.current === 'transactions') { setTab('today'); setPanel('today'); }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   // A 401 from any request means the session went away — a password change,
   // or a cookie that expired while the tab sat open. Returning to the login
@@ -291,6 +308,8 @@ export default function App() {
       counts={{ transactions: data.review }}
       months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(panel)}
+      // The Pearl list draws its own header (overline + title).
+      ownTitle={panel === 'transactions'}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
       {panel === 'plan' && (
@@ -320,8 +339,9 @@ export default function App() {
         <ReviewPanel categories={categories} onChanged={load} onTab={go} />
       )}
       {panel === 'transactions' && (
-        <TransactionsPanel summary={summary} categories={categories}
-                           accounts={accounts} onChanged={load} />
+        <TransactionsList summary={summary} categories={categories} accounts={accounts}
+                          reviewCount={data.review} onTab={go} onChanged={load}
+                          version={version} />
       )}
       {panel === 'budgets' && (
         <BudgetsPanel onTab={go} month={shownMonth} summary={summary} version={version} />
@@ -344,7 +364,7 @@ export default function App() {
 
 function Shell({ theme, setTheme, tab, panel, onTab, counts = {},
                  months = [], month, onMonth, showMonth = false, onSignOut,
-                 children }) {
+                 ownTitle = false, children }) {
   const group = GROUPS.find((g) => g.key === tab);
   // The heading names the panel you are actually looking at; the group label is
   // already on the selected button in the sidebar, so repeating it here would
@@ -435,7 +455,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {},
         <div className="topbar">
           <div className="topbar-inner">
             <div className="title">
-              <h1>{current?.label ?? 'Pearl'}</h1>
+              {!ownTitle && <h1>{current?.label ?? 'Pearl'}</h1>}
             </div>
 
             {showMonth && months.length > 0 && (

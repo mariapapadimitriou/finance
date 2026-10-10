@@ -17,7 +17,7 @@ export function txAmount(amount, { inflow = false } = {}) {
 export function Avatar({ name, logo, large = false }) {
   return (
     <span className={`pk-avatar${large ? ' lg' : ''}`} aria-hidden="true">
-      {logo ? <img src={logo} alt="" /> : initialsOf(name)}
+      {logo ? <img src={logo} alt="" /> : initialsOf(name).slice(0, 2)}
     </span>
   );
 }
@@ -41,8 +41,9 @@ export function CategoryChip({ label, suggested = false }) {
  * Filter chip over a native select: the chip is what you see, the select is
  * what you use, so it works with a keyboard, a screen reader and a phone.
  */
-export function FilterChip({ label, value, options, onChange, active = false }) {
-  const shown = options.find((o) => o.value === value)?.label ?? options[0]?.label;
+export function FilterChip({ label, value, options, onChange, active = false, shown }) {
+  const flat = options.flatMap((o) => o.options ?? [o]);
+  shown = shown ?? flat.find((o) => o.value === value)?.label ?? flat[0]?.label;
   return (
     <span className={`pk-filter${active ? ' active' : ''}`}>
       <span aria-hidden="true">{shown}</span>

@@ -2,7 +2,8 @@
  *
  * A pale neutral page, white rounded surfaces with no borders, and type that
  * does the work: the figure that matters is the largest thing on the screen.
- * Colour is kept for data. Light is the default; dark has the same shapes.
+ * Colour is kept for data. Light is the default; dark has the same shapes,
+ * on the Pearl Design System's dark palette (ocean, pearl, mist, rose).
  */
 
 :root {
@@ -57,25 +58,25 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --page:        #0d0d0f;
-    --surface:     #18181b;
-    --surface-2:   #232327;
-    --surface-3:   #2e2e33;
-    --ink:         #f4f4f5;
-    --ink-2:       #c9c9ce;
-    --muted:       #8f8f96;
-    --border:      rgba(244, 244, 245, .07);
-    --border-firm: rgba(244, 244, 245, .14);
+    --page:        #0b1030;   /* ocean/950 */
+    --surface:     #151b44;   /* ocean/900 */
+    --surface-2:   #252c5e;   /* ocean/800 */
+    --surface-3:   #363c6a;   /* ocean/800 lifted */
+    --ink:         #fbf8f6;   /* pearl/50 */
+    --ink-2:       #edeaee;   /* pearl/50 toward mist/300 */
+    --muted:       #b4b1cc;   /* mist/300 */
+    --border:      #252c5e;   /* ocean/800 */
+    --border-firm: #424774;   /* ocean/800 toward mist/300 */
     --grid:        rgba(244, 244, 245, .06);
     --axis:        rgba(244, 244, 245, .16);
-    --brand:       #f08bb0;
-    --brand-tint:  #3a1f2b;
-    --on-brand:    #0d0d0f;
+    --brand:       #ff8fb1;   /* rose/300 */
+    --brand-tint:  #403058;   /* rose/300 at 18% on ocean/900 */
+    --on-brand:    #1c1a33;   /* ink */
     --ring-1:      #7590e0;
     --ring-2:      #d95926;
     --ring-3:      #199e70;
     --ring-4:      #c272b4;
-    --ring-track:  #2a2a2f;
+    --ring-track:  #252c5e;
     --series-1:    #8ea4ec;
     --series-2:    #d95926;
     --series-3:    #199e70;
@@ -91,25 +92,25 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page:        #0d0d0f;
-  --surface:     #18181b;
-  --surface-2:   #232327;
-  --surface-3:   #2e2e33;
-  --ink:         #f4f4f5;
-  --ink-2:       #c9c9ce;
-  --muted:       #8f8f96;
-  --border:      rgba(244, 244, 245, .07);
-  --border-firm: rgba(244, 244, 245, .14);
+  --page:        #0b1030;   /* ocean/950 */
+  --surface:     #151b44;   /* ocean/900 */
+  --surface-2:   #252c5e;   /* ocean/800 */
+  --surface-3:   #363c6a;   /* ocean/800 lifted */
+  --ink:         #fbf8f6;   /* pearl/50 */
+  --ink-2:       #edeaee;   /* pearl/50 toward mist/300 */
+  --muted:       #b4b1cc;   /* mist/300 */
+  --border:      #252c5e;   /* ocean/800 */
+  --border-firm: #424774;   /* ocean/800 toward mist/300 */
   --grid:        rgba(244, 244, 245, .06);
   --axis:        rgba(244, 244, 245, .16);
-  --brand:       #f08bb0;
-  --brand-tint:  #3a1f2b;
-  --on-brand:    #0d0d0f;
+  --brand:       #ff8fb1;   /* rose/300 */
+  --brand-tint:  #403058;   /* rose/300 at 18% on ocean/900 */
+  --on-brand:    #1c1a33;   /* ink */
   --ring-1:      #7590e0;
   --ring-2:      #d95926;
   --ring-3:      #199e70;
   --ring-4:      #c272b4;
-  --ring-track:  #2a2a2f;
+  --ring-track:  #252c5e;
   --series-1:    #8ea4ec;
   --series-2:    #d95926;
   --series-3:    #199e70;

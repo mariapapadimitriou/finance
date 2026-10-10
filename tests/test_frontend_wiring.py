@@ -438,3 +438,31 @@ class TestWhereDidThisGoIsPerTransfer:
         assert "data?.transfers" in card and "data?.groups" not in card
         assert "sortTransfers([r.id], category, false)" in card
         assert "Remember where these go" not in card
+
+
+class TestPearlTransactionsList:
+    """THL-122: the Pearl list replaces Every charge, and its rules hold."""
+
+    def test_the_group_opens_on_the_list(self):
+        nav = (SRC / "nav.js").read_text(encoding="utf-8")
+        assert "panels: ['transactions', 'review', 'trips']" in nav
+        app = (SRC / "App.jsx").read_text(encoding="utf-8")
+        assert "<TransactionsList" in app and "<TransactionsPanel" not in app
+
+    def test_kit_names_no_colour_of_its_own(self):
+        css = (SRC / "pearl" / "kit.css").read_text(encoding="utf-8")
+        assert not re.findall(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", css), \
+            "colours come from tokens.css"
+
+    def test_amounts_never_carry_a_minus(self):
+        kit = (SRC / "pearl" / "kit.jsx").read_text(encoding="utf-8")
+        body = kit[kit.index("export function txAmount"):]
+        body = body[:body.index("\n}\n")]
+        assert "Math.abs(" in body, "the amount is shown without its sign"
+        assert "`+${text}`" in body, "money in is marked with a plus"
+
+    def test_suggested_chip_is_told_apart_without_colour(self):
+        kit = (SRC / "pearl" / "kit.jsx").read_text(encoding="utf-8")
+        assert "suggested by Pearl" in kit and "name=\"help\"" in kit
+        css = (SRC / "pearl" / "kit.css").read_text(encoding="utf-8")
+        assert re.search(r"\.pk-cat\.suggested\s*\{[^}]*dashed", css)

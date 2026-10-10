@@ -76,7 +76,7 @@
   font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap;
 }
 .pk-filter.active { background: var(--blush); border-color: transparent; color: var(--on-nacre); }
-.pk-filter select {
+.pk .pk-filter select {
   position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
   font-size: 16px;
 }
@@ -90,9 +90,10 @@
   color: var(--ink-muted);
 }
 .pk-search:focus-within { border-color: var(--action); box-shadow: 0 0 0 4px var(--focus-ring); }
-.pk-search input {
-  flex: 1 1 auto; min-width: 0; height: 100%; border: 0; background: transparent; outline: none;
-  color: var(--ink); font: inherit; font-size: 15px; padding: 0; box-shadow: none;
+.pk .pk-search input, .pk .pk-search input:hover {
+  flex: 1 1 auto; min-width: 0; width: auto; height: 100%; border: 0; border-radius: 0;
+  background: transparent; outline: none; color: var(--ink); font: inherit; font-size: 15px;
+  padding: 0; box-shadow: none; appearance: none; -webkit-appearance: none;
 }
 .pk-search input::placeholder { color: var(--ink-muted); opacity: 1; }
 .pk-search input::-webkit-search-cancel-button { display: none; }
@@ -232,4 +233,25 @@
   padding: 10px 18px; border-radius: var(--radius-full);
   background: var(--ink); color: var(--surface-page); font-size: 15px; line-height: 22px;
   box-shadow: var(--shadow-card);
+}
+
+/* ── Transactions page (TX-01) ───────────────────────────────────────────── */
+.tx-page {
+  display: flex; flex-direction: column; gap: var(--space-6);
+  padding: var(--space-6) 0 var(--space-8);
+}
+.tx-head { display: flex; flex-direction: column; gap: var(--space-1); }
+.tx-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.tx-chips { display: flex; flex-wrap: wrap; gap: var(--space-3); min-width: 0; }
+.tx-legend {
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  font-size: 13px; line-height: 18px; color: var(--ink-muted);
+}
+.tx-more { display: flex; justify-content: center; }
+@media (max-width: 720px) {
+  .tx-page { gap: var(--space-5); padding-top: var(--space-4); }
+  .tx-toolbar .pk-search { width: 100%; }
+  .tx-chips { flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 2px;
+              scrollbar-width: none; }
+  .tx-chips::-webkit-scrollbar { display: none; }
 }

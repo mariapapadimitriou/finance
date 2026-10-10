@@ -29,8 +29,8 @@ export const PANELS = {
                    hint: 'What saving more gets you — this year, and invested' },
   review:        { label: 'To review', short: 'Review',
                    hint: 'Everything Pearl isn’t sure about, with its best guess' },
-  transactions:  { label: 'Every charge',
-                   hint: 'Searchable, correctable, chargeable to a piggy bank' },
+  transactions:  { label: 'All transactions', short: 'All',
+                   hint: 'Search, filter and check every transaction' },
   trips:         { label: 'Trips',
                    hint: 'Date ranges whose spending counts as Travel' },
   banks:         { label: 'Connections',
@@ -65,9 +65,11 @@ export const GROUPS = [
   { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections'],
     hint: 'What you earn, what it is promised to, how the rest divides, and where that leads',
     icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
+  // Opens on the list (Pearl TX-01); what needs a look is one tap away, and
+  // the list's alert links there too.
   { key: 'transactions', label: 'Transactions', short: 'Charges',
-    panels: ['review', 'transactions', 'trips'],
-    hint: 'Every charge, and the date ranges that reclassify them',
+    panels: ['transactions', 'review', 'trips'],
+    hint: 'Every transaction, what needs a look, and your trips',
     icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
   // Everything you set once and then leave: where the transactions come from,
   // and how the categories are grouped for budgeting. Neither is somewhere
@@ -103,8 +105,8 @@ const ALIAS_LABELS = { piggy: 'Piggy banks' };
  */
 export function resolve(key) {
   const target = ALIASES[key] ?? key;
-  // A page wins over a group of the same name: `transactions` is the list of
-  // every charge, even though its group opens on To review.
+  // A page wins over a group of the same name: `transactions` is the list
+  // itself, which is also the page its group opens on.
   const owner = GROUPS.find((g) => g.panels.includes(target));
   if (owner) return [owner.key, target];
   const group = GROUPS.find((g) => g.key === target);
