@@ -33,8 +33,10 @@ class TestTheCategory:
     def test_investment_transfers_are_recognised(self, merchant, code):
         assert categorize(merchant, "", code)[0] == "Saved"
 
-    def test_money_back_from_investments_is_a_transfer(self):
-        assert categorize("", "", "TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS")[0] == "Transfers"
+    def test_money_back_from_investments_is_a_drawdown(self):
+        """Saved, as a negative: savings going down, not income and not a
+        transfer between accounts you can see."""
+        assert categorize("", "", "TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS")[0] == "Saved"
 
     def test_a_wealthsimple_card_is_not_an_investment(self):
         assert categorize("WEALTHSIMPLE CASH", "", "")[0] != "Saved"

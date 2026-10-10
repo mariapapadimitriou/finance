@@ -60,13 +60,16 @@ CATEGORIES: dict[str, dict] = {
     # Money put away — into an investment account, savings you don't connect,
     # anything you keep: saved, not spent.
     "Saved":            {"essential": False, "discretionary": False},
+    # Money lent to someone, and their paying it back. Neither spending nor
+    # income: it was yours before and is yours again.
+    "Lent":             {"essential": False, "discretionary": False},
     "Income":           {"essential": False, "discretionary": False},
     "Transfers":        {"essential": False, "discretionary": False},
     "Other":            {"essential": False, "discretionary": True},
 }
 
 # Categories that are money movement, not consumption. Excluded from spend.
-NON_SPEND = {"Income", "Transfers", "Saved"}
+NON_SPEND = {"Income", "Transfers", "Saved", "Lent"}
 
 
 def is_spend_category(category: str) -> bool:
@@ -315,7 +318,9 @@ AUTHORITATIVE_ISSUER_CATEGORIES = {
     # happens to contain.
     "transfer_in_savings": "Transfers",
     "transfer_out_savings": "Transfers",
-    "transfer_in_investment_and_retirement_funds": "Transfers",
+    # Money coming back out of an investment account is a drawdown: savings
+    # going down, not income and not a transfer between pockets you can see.
+    "transfer_in_investment_and_retirement_funds": "Saved",
     "transfer_out_investment_and_retirement_funds": "Saved",
     "income_wages": "Income",
 }
@@ -380,7 +385,7 @@ def is_unsure(t) -> bool:
 
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
-RULES_VERSION = 6
+RULES_VERSION = 7
 
 
 def plaid_category(code: str) -> str | None:

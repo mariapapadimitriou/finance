@@ -1559,3 +1559,38 @@ label.sort-foot { justify-content: flex-start; cursor: pointer; }
 .unsure { display: inline-flex; align-items: center; justify-content: center; margin-left: 6px;
   width: 16px; height: 16px; border-radius: 50%; font-size: .7rem; font-weight: 700;
   background: color-mix(in srgb, var(--warning) 30%, transparent); color: var(--ink); }
+
+/* ── Exclusions, income types, review ────────────────────────────────────── */
+.excluded-row td { opacity: .55; }
+.excluded-row td:last-child { opacity: 1; }
+.excluded-row td.r { text-decoration: line-through; }
+.excluded-note { color: var(--muted); margin-top: 2px; text-decoration: none; }
+.income-kind { margin-left: 6px; font-size: .8rem; padding: 2px 6px; max-width: 150px; }
+.exclude-form { display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+  min-width: 220px; text-align: left; }
+.exclude-form input[type="text"] { width: 100%; }
+.exclude-form label { display: flex; gap: 6px; align-items: center; }
+
+.review-empty { text-align: center; margin: 8px 0 14px; font-weight: 600; }
+.review-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.review-item { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start;
+  padding: 14px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.review-item:first-child { border-top: 0; padding-top: 4px; }
+.review-what { flex: 1 1 260px; min-width: 0; }
+.review-line { display: flex; align-items: center; gap: 8px; }
+.review-line strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-amt { margin-left: auto; font-weight: 650; }
+.review-amt.in { color: var(--good-text); }
+.review-reason { margin: 6px 0 0; color: var(--ink-2); }
+.review-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  flex: 1 1 260px; justify-content: flex-end; }
+.review-actions select { max-width: 100%; }
+.review-always { display: inline-flex; gap: 4px; align-items: center; }
+@media (max-width: 720px) {
+  .review-actions { justify-content: flex-start; }
+}
+.excluded-line { margin: 8px 0 0; }
+.rules-list { list-style: none; margin: 0; padding: 0; }
+.rules-list li { display: flex; justify-content: space-between; gap: 12px; align-items: center;
+  padding: 10px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.rules-list li:first-child { border-top: 0; }

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice } from '../components/ui.jsx';
-import { getCategoryGroups, setCategoryGroups } from '../api.js';
+import {
+  dateLabel, deleteExclusion, getCategoryGroups, getExclusions, money, setCategoryGroups,
+} from '../api.js';
 
 const OWN = '';
 const NEW = '__new__';
@@ -130,6 +132,7 @@ export default function CategoriesPanel({ onChanged }) {
 
   return (
     <div className="stack">
+      <ExclusionRules onChanged={onChanged} />
       <Card title="Budget lines"
             actions={dirty && (
               <div className="row" style={{ gap: 8 }}>
@@ -248,5 +251,50 @@ export default function CategoriesPanel({ onChanged }) {
         </div>
       </Card>
     </div>
+  );
+}
+
+/**
+ * "Leave out every transaction like this": the rules you made from a
+ * transaction's Exclude… They apply to every row now and to every row that
+ * arrives later; removing one puts its rows back.
+ */
+function ExclusionRules({ onChanged }) {
+  const [rules, setRules] = useState(null);
+  const [error, setError] = useState(null);
+  const load = () => getExclusions().then((d) => setRules(d.rules ?? [])).catch(setError);
+  useEffect(() => { load(); }, []);
+  if (!rules?.length) return error ? <ErrorNote error={error} /> : null;
+
+  const describe = (r) => [
+    r.keyword && `“${r.keyword}”`,
+    r.counterparty && `with ${r.counterparty}`,
+    r.account_id && `on ${r.account_name || r.account_id}`,
+    (r.date_from || r.date_to) && `${r.date_from ? dateLabel(r.date_from) : '…'} – ${r.date_to ? dateLabel(r.date_to) : '…'}`,
+    (r.amount_min != null || r.amount_max != null)
+      && `${r.amount_min != null ? money(r.amount_min) : '$0'}–${r.amount_max != null ? money(r.amount_max) : '…'}`,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <Card title="Exclusions">
+      <ul className="rules-list">
+        {rules.map((r) => (
+          <li key={r.id}>
+            <div>
+              <strong>{r.reason}</strong>
+              <div className="muted small">{describe(r)} · {r.matched} left out</div>
+            </div>
+            <button className="btn quiet" onClick={async () => {
+              try {
+                await deleteExclusion(r.id);
+                await load();
+                await onChanged?.();
+              } catch (e) { setError(e); }
+            }}>Remove</button>
+          </li>
+        ))}
+      </ul>
+      <ErrorNote error={error} />
+    </Card>
   );
 }

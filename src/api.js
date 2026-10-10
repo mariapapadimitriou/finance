@@ -266,6 +266,32 @@ export const setCategory   = (id, category, applyToMerchant = false) =>
     category, apply_to_merchant: applyToMerchant,
   });
 
+// Leaving transactions out: one row, or every row like it. Your exclusion
+// wins over every rule; excluded rows stay listed and can be put back.
+export const excludeTransaction = (id, reason) =>
+  json('PUT', `/api/transactions/${id}/exclude`, { reason });
+export const includeTransaction = (id) =>
+  req(`/api/transactions/${id}/exclude`, { method: 'DELETE' });
+export const getExclusions   = () => req('/api/exclusions');
+// `dry` says how many rows the rule would catch, without saving it.
+export const addExclusion    = (rule, dry = false) =>
+  json('POST', `/api/exclusions${dry ? '?dry=1' : ''}`, rule);
+export const deleteExclusion = (id) => req(`/api/exclusions/${id}`, { method: 'DELETE' });
+
+// What kind of income a deposit is: salary, bonus, interest, gifts,
+// government, tax_refund or other.
+export const INCOME_KINDS = {
+  salary: 'Salary', bonus: 'Bonus / irregular', interest: 'Interest',
+  gifts: 'Gifts received', government: 'Government credits',
+  tax_refund: 'Tax refund', other: 'Other income',
+};
+export const setIncomeType = (id, kind) =>
+  json('PUT', `/api/transactions/${id}/income-type`, { kind });
+
+// Everything Pearl isn't sure about, each with its best guess.
+export const getReview     = () => req('/api/review');
+export const dismissReview = (key) => json('POST', '/api/review/dismiss', { key });
+
 // Where the ledger starts, and re-running categorization over what is already
 // in it. Both exist for the same reason: a rule that improved after the rows
 // were imported does not reach them until something asks it to.

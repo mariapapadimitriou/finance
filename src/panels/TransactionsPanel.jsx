@@ -3,7 +3,8 @@ import {
   Card, ErrorNote, Loading, MerchantMark, Notice, StatusPill,
 } from '../components/ui.jsx';
 import {
-  accountTitle, addTransaction, allocateToBank, dateLabel, deleteTransaction, getBanks,
+  INCOME_KINDS, accountTitle, addExclusion, addTransaction, allocateToBank, dateLabel,
+  deleteTransaction, excludeTransaction, getBanks, includeTransaction, setIncomeType,
   getPaybacks, getSaved, getTransactions, getUnsorted, linkPayback, money,
   setCategory, setInvested, setMineAlways, setShare, sortTransfers, unallocate,
   unlinkPayback,
@@ -11,7 +12,7 @@ import {
 } from '../api.js';
 
 // Never offered as "where it went": these aren't spending.
-const NOT_SPENT = new Set(['Income', 'Transfers', 'Saved', 'Unsorted transfers']);
+export const NOT_SPENT = new Set(['Income', 'Transfers', 'Saved', 'Lent', 'Unsorted transfers']);
 
 const PAGE = 100;
 
@@ -25,6 +26,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
   const [editing, setEditing] = useState(null);
   const [charging, setCharging] = useState(null);
   const [splitting, setSplitting] = useState(null);
+  const [excluding, setExcluding] = useState(null);
   const [banks, setBanks] = useState([]);
   const [reload, setReload] = useState(0);
 
@@ -74,7 +76,6 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
 
   return (
     <div className="stack">
-      <WhereDidThisGo categories={categories} reload={reload} onDone={bump} />
       <AddByHand categories={categories}
                  onAdded={() => { setReload((n) => n + 1); onChanged?.(); }} />
 
@@ -93,6 +94,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
           <select id="f-cat" value={filters.category} onChange={(e) => update('category', e.target.value)}>
             <option value="">All</option>
             <option value="__unsure__">Not sure</option>
+            <option value="__excluded__">Excluded</option>
             {categories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
           </select>
 
@@ -138,7 +140,7 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                 </thead>
                 <tbody>
                   {rows.map((t) => (
-                    <tr key={t.id}>
+                    <tr key={t.id} className={t.excluded ? 'excluded-row' : undefined}>
                       <td className="muted">{dateLabel(t.date)}</td>
                       <td className="merchant">
                         <MerchantMark logo={t.logo} name={t.merchant} />
@@ -167,6 +169,23 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                               <span className="unsure" title="Plaid wasn't sure of this one">?</span>
                             )}
                           </button>
+                        )}
+                        {t.category === 'Income' && t.amount < 0 && (
+                          <select className="income-kind" aria-label="Kind of income"
+                                  value={t.income_type || 'other'}
+                                  onChange={async (e) => {
+                                    await setIncomeType(t.id, e.target.value); bump();
+                                  }}>
+                            {Object.entries(INCOME_KINDS).map(([k, label]) => (
+                              <option key={k} value={k}>{label}</option>
+                            ))}
+                          </select>
+                        )}
+                        {t.category === 'Saved' && t.amount < 0 && (
+                          <span className="pill" style={{ marginLeft: 6 }}>Drawdown</span>
+                        )}
+                        {t.excluded && (
+                          <div className="excluded-note small">Excluded · {t.excluded}</div>
                         )}
                       </td>
                       <td className="muted">{t.account_name}</td>
@@ -230,6 +249,9 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
                             Delete
                           </button>
                         )}
+                        <ExcludeCell txn={t} open={excluding === t.id}
+                                     onOpen={() => setExcluding(excluding === t.id ? null : t.id)}
+                                     onDone={() => { setExcluding(null); bump(); }} />
                       </td>
                     </tr>
                   ))}
@@ -252,6 +274,82 @@ export default function TransactionsPanel({ summary, categories, accounts, onCha
         )}
       </Card>
     </div>
+  );
+}
+
+/**
+ * Leave a transaction out — or every one like it — or put it back.
+ *
+ * An exclusion is your decision and wins over every rule: the row stays here,
+ * struck through with your reason, and counts as nothing until you put it back.
+ */
+function ExcludeCell({ txn, open, onOpen, onDone }) {
+  const [reason, setReason] = useState('');
+  const [every, setEvery] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const rule = { keyword: txn.merchant, account_id: txn.account_id, reason: reason.trim() };
+
+  useEffect(() => {
+    if (!open || !every) { setPreview(null); return; }
+    addExclusion({ ...rule, reason: rule.reason || 'preview' }, true)
+      .then(setPreview).catch(() => setPreview(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, every]);
+
+  async function run(fn) {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      setReason('');
+      setEvery(false);
+      onDone();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (txn.excluded) {
+    return (
+      <button className="btn quiet" disabled={busy}
+              onClick={() => run(() => includeTransaction(txn.id))}>
+        Put back
+      </button>
+    );
+  }
+  if (!open) {
+    return <button className="btn quiet" onClick={onOpen}>Exclude…</button>;
+  }
+  return (
+    <form className="exclude-form" onSubmit={(e) => {
+      e.preventDefault();
+      if (!reason.trim()) { setError(new Error('Say why, so you can tell later.')); return; }
+      run(() => (every ? addExclusion(rule) : excludeTransaction(txn.id, reason.trim())));
+    }}>
+      <input type="text" value={reason} placeholder="Why? e.g. work expense"
+             aria-label="Why leave it out" maxLength={200}
+             // eslint-disable-next-line jsx-a11y/no-autofocus
+             autoFocus onChange={(e) => setReason(e.target.value)} />
+      <label className="small">
+        <input type="checkbox" checked={every} onChange={(e) => setEvery(e.target.checked)} />
+        Every “{txn.merchant}” on {txn.account_name || 'this account'}
+      </label>
+      {every && preview && (
+        <span className="small muted">
+          Catches {preview.matches} transaction{preview.matches === 1 ? '' : 's'}
+          {' '}({money(preview.total)}), and any later ones
+        </span>
+      )}
+      <div className="row" style={{ gap: 6 }}>
+        <button className="btn primary" type="submit" disabled={busy}>Exclude</button>
+        <button className="btn quiet" type="button" onClick={onOpen}>Cancel</button>
+      </div>
+      <ErrorNote error={error} />
+    </form>
   );
 }
 
@@ -449,7 +547,7 @@ function span(first, last) {
  * spent. One row per recipient, so twelve e-transfers to one person are one
  * decision; whatever you decide can be undone, here or under Saved.
  */
-function WhereDidThisGo({ categories, reload, onDone }) {
+export function WhereDidThisGo({ categories, reload, onDone }) {
   const [data, setData] = useState(null);
   const [saved, setSaved] = useState(null);
   const [view, setView] = useState(() => (wantsSaved() ? 'saved' : 'sort'));

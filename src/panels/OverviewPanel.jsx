@@ -47,6 +47,8 @@ export default function OverviewPanel({ summary, theme, month, onTab, version = 
   const spent = pace?.total ?? currentMonthSpend(summary, month);
   const gaps = summary.coverage_gaps ?? [];
   const charges = recent.filter((t) => t.amount > 0).slice(0, 8);
+  // Left out by you: counted here so nothing disappears silently.
+  const excluded = summary.monthly?.find((m) => m.month === month)?.excluded;
 
   return (
     <div className="stack">
@@ -83,6 +85,13 @@ export default function OverviewPanel({ summary, theme, month, onTab, version = 
           )}
         </div>
         {breakdown?.bills && <Bills bills={breakdown.bills} />}
+        {excluded?.count > 0 && (
+          <p className="muted small excluded-line">
+            <button className="link-btn" onClick={() => onTab?.('transactions')}>
+              {excluded.count} excluded · {money(excluded.total)}
+            </button>{' '}not counted
+          </p>
+        )}
         </div>
       ) : categories.length > 0 && (
         // Every category, bills included: the ring is where the whole month

@@ -201,6 +201,47 @@ CREATE TABLE IF NOT EXISTS txn_paybacks (
     charge_id TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_payback_charge ON txn_paybacks(charge_id);
+
+-- Rows you left out, and why. A row is either excluded on its own (rule_id
+-- NULL) or because a rule of yours matched it. `kept` = 1 is a row a rule
+-- matched that you put back: it stays here so the rule never takes it again.
+CREATE TABLE IF NOT EXISTS txn_exclusions (
+    txn_id     TEXT PRIMARY KEY,
+    reason     TEXT NOT NULL,
+    rule_id    INTEGER,
+    kept       INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- "Leave out every transaction like this": an account, words in the
+-- description, the person it was with, and optionally dates and amounts.
+-- Applied to every row now and to every row that arrives later.
+CREATE TABLE IF NOT EXISTS exclusion_rules (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id   TEXT,
+    keyword      TEXT,
+    counterparty TEXT,
+    date_from    TEXT,
+    date_to      TEXT,
+    amount_min   REAL,
+    amount_max   REAL,
+    reason       TEXT NOT NULL,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- What kind of income a row is (salary, bonus, interest, gifts, government,
+-- tax_refund, other). Beside the row, like a share, so a sync can't undo it.
+CREATE TABLE IF NOT EXISTS txn_income_type (
+    txn_id TEXT PRIMARY KEY,
+    kind   TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'rule'
+);
+
+-- Review items you settled without changing anything ("yes, that's right").
+CREATE TABLE IF NOT EXISTS review_dismissed (
+    item_key   TEXT PRIMARY KEY,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE INDEX IF NOT EXISTS idx_alloc_bank ON piggy_allocations(bank_id);
 
 -- What each bank pays for: a category belongs to at most one bank. Every
@@ -347,7 +388,9 @@ _CHARGES = """(
             AND NOT EXISTS (SELECT 1 FROM piggy_optouts x WHERE x.txn_id = t.id)
             AND (s.txn_id IS NOT NULL OR NOT EXISTS
                  (SELECT 1 FROM joint_accounts j WHERE j.account_id = t.account_id))
-     WHERE m.txn_id IS NOT NULL OR o.bank_id IS NOT NULL
+     WHERE (m.txn_id IS NOT NULL OR o.bank_id IS NOT NULL)
+       AND NOT EXISTS (SELECT 1 FROM txn_exclusions e
+                        WHERE e.txn_id = t.id AND e.kept = 0)
 )"""
 
 # What friends have sent back for each charge, as a positive total.
@@ -372,7 +415,10 @@ _CHARGE_COLUMNS = """sh.my_share AS my_share,
                           a.bank_id AS bank_id,
                           CASE WHEN a.bank_id IS NULL THEN 0 ELSE a.charged
                           END AS bank_amount,
-                          COALESCE(a.auto, 0) AS bank_auto"""
+                          COALESCE(a.auto, 0) AS bank_auto,
+                          exx.reason AS excluded,
+                          itx.kind AS income_type,
+                          itx.source AS income_type_source"""
 
 
 class Store:
@@ -575,6 +621,8 @@ class Store:
                      LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
                      LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
                      LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
+                     LEFT JOIN txn_exclusions exx ON exx.txn_id = t.id AND exx.kept = 0
+                     LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
                     ORDER BY t.date DESC, t.id""").fetchall()
         return [Transaction.from_row(dict(r)) for r in rows]
 
@@ -621,6 +669,8 @@ class Store:
                       LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
                       LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
                       LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
+                     LEFT JOIN txn_exclusions exx ON exx.txn_id = t.id AND exx.kept = 0
+                     LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
                     {clause}
                     ORDER BY t.date DESC, t.id LIMIT ? OFFSET ?""",
                 params + [limit, offset],
@@ -653,6 +703,8 @@ class Store:
                      LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
                      LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
                      LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
+                     LEFT JOIN txn_exclusions exx ON exx.txn_id = t.id AND exx.kept = 0
+                     LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
                     WHERE t.id = ?""", (txn_id,)).fetchone()
         return Transaction.from_row(dict(row)) if row else None
 
@@ -663,6 +715,8 @@ class Store:
             c.execute("DELETE FROM txn_invested WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_paybacks WHERE inflow_id = ? OR charge_id = ?",
                       (txn_id, txn_id))
+            c.execute("DELETE FROM txn_exclusions WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_income_type WHERE txn_id = ?", (txn_id,))
             return cur.rowcount > 0
 
     def set_share(self, txn_id: str, my_share: float | None) -> None:
@@ -680,6 +734,96 @@ class Store:
             if amount is not None:
                 c.execute("INSERT INTO txn_invested (txn_id, amount) VALUES (?, ?)",
                           (txn_id, round(float(amount), 2)))
+
+    # ── Exclusions ───────────────────────────────────────────────────────
+    def exclude(self, txn_id: str, reason: str, rule_id: int | None = None) -> None:
+        """Leave one row out. Your own exclusion replaces whatever a rule did."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_exclusions WHERE txn_id = ?", (txn_id,))
+            c.execute("INSERT INTO txn_exclusions (txn_id, reason, rule_id, kept) "
+                      "VALUES (?, ?, ?, 0)", (txn_id, reason, rule_id))
+
+    def include(self, txn_id: str) -> bool:
+        """Put an excluded row back. It is remembered as kept, so no rule
+        takes it again."""
+        with self.conn() as c:
+            r = c.execute("SELECT rule_id FROM txn_exclusions WHERE txn_id = ? "
+                          "AND kept = 0", (txn_id,)).fetchone()
+            if r is None:
+                return False
+            # Kept rather than deleted, either way: a rule that also matches
+            # this row must not take it straight back.
+            c.execute("UPDATE txn_exclusions SET kept = 1 WHERE txn_id = ?", (txn_id,))
+            return True
+
+    def exclusion_rules(self) -> list[dict]:
+        with self.conn() as c:
+            rules = [dict(r) for r in c.execute(
+                "SELECT * FROM exclusion_rules ORDER BY id").fetchall()]
+            counts = {r["rule_id"]: int(r["n"]) for r in c.execute(
+                "SELECT rule_id, COUNT(*) AS n FROM txn_exclusions "
+                "WHERE rule_id IS NOT NULL AND kept = 0 GROUP BY rule_id").fetchall()}
+        for r in rules:
+            r["matched"] = counts.get(r["id"], 0)
+        return rules
+
+    def add_exclusion_rule(self, rule: dict) -> int:
+        cols = ("account_id", "keyword", "counterparty", "date_from", "date_to",
+                "amount_min", "amount_max", "reason")
+        with self.conn() as c:
+            c.execute(f"INSERT INTO exclusion_rules ({', '.join(cols)}) "
+                      f"VALUES ({', '.join('?' for _ in cols)})",
+                      tuple(rule.get(k) for k in cols))
+            return int(c.execute("SELECT MAX(id) AS id FROM exclusion_rules")
+                       .fetchone()["id"])
+
+    def delete_exclusion_rule(self, rule_id: int) -> bool:
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM exclusion_rules WHERE id = ?", (int(rule_id),))
+            c.execute("DELETE FROM txn_exclusions WHERE rule_id = ?", (int(rule_id),))
+            return (cur.rowcount or 0) > 0
+
+    def exclusion_ids(self) -> set[str]:
+        """Every row with an entry, excluded or kept: a rule never touches them."""
+        with self.conn() as c:
+            return {r["txn_id"] for r in
+                    c.execute("SELECT txn_id FROM txn_exclusions").fetchall()}
+
+    # ── Income type ──────────────────────────────────────────────────────
+    def set_income_type(self, txn_id: str, kind: str | None, source: str = "user") -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_income_type WHERE txn_id = ?", (txn_id,))
+            if kind:
+                c.execute("INSERT INTO txn_income_type (txn_id, kind, source) "
+                          "VALUES (?, ?, ?)", (txn_id, kind, source))
+
+    def write_income_types(self, kinds: dict[str, str]) -> int:
+        """Guessed types, written over earlier guesses but never over yours."""
+        if not kinds:
+            return 0
+        with self.conn() as c:
+            mine = {r["txn_id"] for r in c.execute(
+                "SELECT txn_id FROM txn_income_type WHERE source = 'user'").fetchall()}
+            n = 0
+            for tid, kind in kinds.items():
+                if tid in mine:
+                    continue
+                c.execute("DELETE FROM txn_income_type WHERE txn_id = ?", (tid,))
+                c.execute("INSERT INTO txn_income_type (txn_id, kind, source) "
+                          "VALUES (?, ?, 'rule')", (tid, kind))
+                n += 1
+            return n
+
+    # ── Review ───────────────────────────────────────────────────────────
+    def dismissed_reviews(self) -> set[str]:
+        with self.conn() as c:
+            return {r["item_key"] for r in
+                    c.execute("SELECT item_key FROM review_dismissed").fetchall()}
+
+    def dismiss_review(self, key: str) -> None:
+        with self.conn() as c:
+            c.execute("INSERT OR IGNORE INTO review_dismissed (item_key) VALUES (?)",
+                      (key,))
 
     def link_payback(self, charge_id: str, inflow_id: str) -> None:
         """Say this money coming in was a friend paying you back for that
@@ -787,7 +931,7 @@ class Store:
                 cur = c.execute(f"DELETE FROM transactions WHERE id IN ({marks})", chunk)
                 removed += max(cur.rowcount or 0, 0)
                 for table in ("txn_shares", "txn_invested", "piggy_allocations",
-                              "piggy_optouts"):
+                              "piggy_optouts", "txn_exclusions", "txn_income_type"):
                     c.execute(f"DELETE FROM {table} WHERE txn_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_paybacks WHERE inflow_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_paybacks WHERE charge_id IN ({marks})", chunk)
@@ -923,6 +1067,10 @@ class Store:
             ("joint_accounts", "joint accounts"),
             ("joint_mine", "names always yours on a joint account"),
             ("dismissed_insights", "dismissed findings"),
+            ("txn_exclusions", "excluded transactions"),
+            ("exclusion_rules", "exclusion rules"),
+            ("txn_income_type", "income types"),
+            ("review_dismissed", "settled review items"),
         ]
         with self.conn() as c:
             for table, label in tables:

@@ -41,9 +41,16 @@ def share_amount(t: Transaction) -> float:
 
 
 def is_others(t: Transaction) -> bool:
-    """A row on a joint account that isn't yours: another member's money,
-    in or out. Not your spending, your income, or money you received."""
+    """A row that counts as nothing of yours: one you excluded, or a row on a
+    joint account that is another member's money, in or out. Not your
+    spending, your income, or money you received."""
+    if t.excluded:
+        return True
     return bool(t.joint) and abs(t.my_share or 0.0) < 0.005
+
+
+# The same question, by the name the classification rules use for it.
+ignored = is_others
 
 
 def spend_amount(t: Transaction) -> float:
@@ -76,7 +83,7 @@ def counts_as_spending(t: Transaction) -> bool:
     passes through it, so a charge cannot be excluded from the Overview and
     still counted on the Budgets tab.
     """
-    if not is_spend_category(t.category or "Other"):
+    if t.excluded or not is_spend_category(t.category or "Other"):
         return False
     # A partly covered charge still counts, for the part nobody budgeted. A
     # charge friends paid back in full counts for nothing at all.
@@ -181,9 +188,15 @@ def monthly_totals(transactions: list[Transaction]) -> list[dict]:
     income = defaultdict(float)
     inflows = defaultdict(float)
     counts = defaultdict(int)
+    excluded = defaultdict(lambda: [0, 0.0])
 
     for t in transactions:
         cat = t.category or "Other"
+        if t.excluded:
+            # Left out, but counted here so nothing disappears silently.
+            excluded[t.month][0] += 1
+            excluded[t.month][1] += abs(t.amount)
+            continue
         if counts_as_spending(t):
             spend[t.month] += spend_amount(t)
             if t.amount > 0:
@@ -204,6 +217,8 @@ def monthly_totals(transactions: list[Transaction]) -> list[dict]:
             "income": round(income.get(m, 0.0), 2),
             "inflows": round(inflows.get(m, 0.0), 2),
             "transactions": counts.get(m, 0),
+            "excluded": {"count": excluded[m][0] if m in excluded else 0,
+                         "total": round(excluded[m][1], 2) if m in excluded else 0.0},
         }
         for m in month_range(transactions)
     ]
@@ -270,7 +285,7 @@ def invested_in(transactions: list[Transaction], month: str) -> float:
     """
     total = 0.0
     for t in transactions:
-        if t.month != month:
+        if t.month != month or t.excluded:
             continue
         if (t.category or "") == "Saved":
             total += t.amount

@@ -497,7 +497,7 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
             { icon: 'eye', title: 'Check your safe-to-spend',
               sub: 'See what you can spend until payday', dest: 'today' },
             { icon: 'list', title: 'Review a few transactions',
-              sub: 'Fix anything Pearl sorted wrong', dest: 'transactions' },
+              sub: 'Fix anything Pearl sorted wrong', dest: 'review' },
             { icon: 'target', title: 'Set up your safety net',
               sub: 'Pick a starter amount to save', dest: 'plan' },
           ].map((r) => (
