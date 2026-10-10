@@ -4,8 +4,9 @@ import {
 } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import {
-  confirmTx, excludeTransaction, getTx, includeTransaction, setCategory, setShare, setTxNote,
-  sortTransfers,
+  addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTx,
+  includeTransaction, money, setCategory, setMineAlways, setShare, setTxNote, sortTransfers,
+  unallocate,
 } from '../api.js';
 
 /**
@@ -45,12 +46,15 @@ function suggestionReason(tx) {
 export default function TransactionDetail({ id, initial, categories, onClose, onSaved }) {
   const [tx, setTx] = useState(initial && initial.id === id ? initial : null);
   const [error, setError] = useState(null);
-  const [step, setStep] = useState('main');      // main | category | split | note | exclude
+  // main | category | split | note | exclude | bank | whose
+  const [step, setStep] = useState('main');
   const [busy, setBusy] = useState(false);
+  const [banks, setBanks] = useState([]);
 
   useEffect(() => {
     let live = true;
     getTx(id).then((r) => { if (live) setTx(r); }).catch((e) => { if (live) setError(e); });
+    getBanks().then((d) => { if (live) setBanks(d.banks ?? []); }).catch(() => {});
     return () => { live = false; };
   }, [id]);
 
@@ -81,8 +85,13 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
 
   const muted = tx.counts === 'none';
   const left = !!tx.excluded;
+  const notYours = tx.chip.label === 'Not yours';
   const canConfirm = tx.suggested && tx.category !== 'Unsorted transfers' && !left;
-  const canSplit = tx.counts === 'spending' && !tx.inflow && !left;
+  const canSplit = tx.counts === 'spending' && !tx.inflow && !left && !tx.joint;
+  // A piggy bank can pay for a charge (not money coming in, not a transfer).
+  const canBank = banks.length > 0 && !tx.inflow && !left && !notYours
+    && (tx.counts === 'spending' || tx.bank_id != null);
+  const bank = banks.find((b) => b.id === tx.bank_id);
 
   const back = () => { setStep('main'); setError(null); };
   const body = {
@@ -98,6 +107,14 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
     exclude: <Exclude tx={tx} busy={busy} onBack={back}
                       onSave={(reason) => save(() => excludeTransaction(tx.id, reason),
                                                { close: true })} />,
+    bank: <PiggyBank tx={tx} banks={banks} busy={busy} onBack={back}
+                     onSave={(bankId) => save(() => (bankId ? allocateToBank(Number(bankId), tx.id)
+                                                              : unallocate(tx.id)))} />,
+    whose: <Whose tx={tx} busy={busy} onBack={back}
+                  onSave={(share, always) => save(async () => {
+                    await setShare(tx.id, share);
+                    if (always) await setMineAlways(tx.id, true);
+                  })} />,
   }[step];
 
   return (
@@ -126,6 +143,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             <Detail label="Counts toward" value={tx.counts_toward} />
             {tx.note && !tx.note_link && <Detail label="Why" value={tx.note} />}
             {tx.split && <Detail label="Whole charge" value={txAmount(tx.full_amount)} />}
+            {bank && <Detail label="Paid from" value={`${bank.name}${tx.bank_auto ? ' · automatically' : ''}`} />}
             {tx.my_note && <Detail label="Your note" value={tx.my_note} />}
           </dl>
 
@@ -139,6 +157,17 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             {canSplit && (
               <button type="button" className="txd-link" onClick={() => setStep('split')}>
                 <PIcon name="users" size={18} /> Split this
+              </button>
+            )}
+            {tx.joint && !left && (
+              <button type="button" className="txd-link" onClick={() => setStep('whose')}>
+                <PIcon name="users" size={18} /> Whose was it?
+              </button>
+            )}
+            {canBank && (
+              <button type="button" className="txd-link" onClick={() => setStep('bank')}>
+                <PIcon name="target" size={18} />
+                {bank ? 'Change piggy bank' : 'Pay from a piggy bank'}
               </button>
             )}
             <button type="button" className="txd-link" onClick={() => setStep('note')}>
@@ -158,12 +187,20 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                 Put it back
               </PButton>
             )}
+            {notYours && (
+              <PButton disabled={busy}
+                       onClick={() => save(() => setShare(tx.id, tx.inflow ? -tx.full_amount
+                                                                       : tx.full_amount),
+                                           { close: true })}>
+                It was mine
+              </PButton>
+            )}
             {canConfirm && (
               <PButton disabled={busy} onClick={() => save(() => confirmTx(tx.id), { close: true })}>
                 Yes, that’s right
               </PButton>
             )}
-            {!left && (
+            {!left && !notYours && (
               <PButton variant="secondary" disabled={busy} onClick={() => setStep('category')}>
                 {tx.category === 'Unsorted transfers' ? 'Tell Pearl where it went'
                   : 'Change category'}
@@ -305,5 +342,152 @@ function Exclude({ tx, busy, onBack, onSave }) {
         Leave out {tx.merchant}
       </PButton>
     </Step>
+  );
+}
+
+/** A piggy bank pays for this charge instead of the month (or stops paying). */
+function PiggyBank({ tx, banks, busy, onBack, onSave }) {
+  const [pick, setPick] = useState(tx.bank_id == null ? '' : String(tx.bank_id));
+  return (
+    <Step title="Pay from a piggy bank" onBack={onBack}>
+      <p className="pk-muted">A charge a piggy bank pays for leaves your week and your month:
+        the bank’s monthly contribution already paid for it.</p>
+      <Field label="Piggy bank">
+        {(id) => (
+          <select id={id} value={pick} onChange={(e) => setPick(e.target.value)}>
+            <option value="">None · count it as everyday spending</option>
+            {banks.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name} · {b.available >= 0 ? `${money(b.available)} left` : `${money(-b.available)} over`}
+              </option>
+            ))}
+          </select>
+        )}
+      </Field>
+      <PButton disabled={busy || pick === (tx.bank_id == null ? '' : String(tx.bank_id))}
+               onClick={() => onSave(pick)}>Save</PButton>
+    </Step>
+  );
+}
+
+/** On a joint account: whose was it, all or part. */
+function Whose({ tx, busy, onBack, onSave }) {
+  const sign = tx.inflow ? -1 : 1;
+  const full = tx.full_amount;
+  const mine = tx.share_set && Math.abs(tx.amount - full) < 0.005;
+  const theirs = !tx.share_set || tx.amount < 0.005;
+  const [mode, setMode] = useState(mine ? 'mine' : theirs ? 'theirs' : 'part');
+  const [part, setPart] = useState(!mine && !theirs ? String(tx.amount) : '');
+  const [always, setAlways] = useState(false);
+  const n = Number(part);
+  return (
+    <Step title="Whose was it?" onBack={onBack}>
+      <p className="pk-muted">On a joint account a transaction is {tx.joint}’s until you say
+        it was yours. Only your part counts.</p>
+      <div className="txd-quick" role="radiogroup" aria-label="Whose was it">
+        {[['mine', 'Mine'], ['theirs', `${tx.joint}’s`], ['part', 'Part of it']].map(([k, l]) => (
+          <button key={k} type="button" role="radio" aria-checked={mode === k}
+                  className={`pk-filter${mode === k ? ' active' : ''}`} onClick={() => setMode(k)}>
+            {l}
+          </button>
+        ))}
+      </div>
+      {mode === 'part' && (
+        <Field label="Your part">
+          {(id) => (
+            <input id={id} type="number" inputMode="decimal" min="0" step="0.01" max={full}
+                   value={part} onChange={(e) => setPart(e.target.value)} />
+          )}
+        </Field>
+      )}
+      {mode === 'mine' && !tx.inflow && (
+        <label className="txd-check">
+          <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
+          Always mine at {tx.merchant}
+        </label>
+      )}
+      <PButton disabled={busy || (mode === 'part' && !(n > 0 && n <= full))}
+               onClick={() => onSave(mode === 'mine' ? sign * full : mode === 'theirs' ? null
+                                     : sign * n, mode === 'mine' && always)}>
+        Save
+      </PButton>
+    </Step>
+  );
+}
+
+/**
+ * Add a transaction by hand: cash, or a card that can't be connected. The
+ * server checks it against what's already there; a likely duplicate is shown
+ * and has to be confirmed as a different purchase.
+ */
+export function AddTransaction({ categories, onClose, onSaved }) {
+  const today = new Date();
+  const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const [draft, setDraft] = useState({ date: iso, description: '', amount: '', category: '' });
+  const [conflict, setConflict] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => { setConflict(null); setDraft({ ...draft, [k]: e.target.value }); };
+  const ok = draft.description.trim() && Number(draft.amount) > 0 && draft.date;
+
+  async function submit(confirm = false) {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await addTransaction({ ...draft, amount: Number(draft.amount), confirm });
+      if (r.conflict) setConflict(r);
+      else onSaved?.();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <DetailPanel label="Add a transaction" overline="Add a transaction" onClose={onClose}>
+      <h2 className="pk-h2">What did you spend?</h2>
+      <form className="txd-step" onSubmit={(e) => { e.preventDefault(); if (ok) submit(false); }}>
+        <Field label="What was it?">
+          {(id) => <input id={id} type="text" required value={draft.description}
+                          onChange={set('description')} maxLength={80} />}
+        </Field>
+        <Field label="Amount">
+          {(id) => <input id={id} type="number" inputMode="decimal" min="0.01" step="0.01"
+                          required value={draft.amount} onChange={set('amount')} />}
+        </Field>
+        <Field label="Date">
+          {(id) => <input id={id} type="date" required value={draft.date} onChange={set('date')} />}
+        </Field>
+        <Field label="Category">
+          {(id) => (
+            <select id={id} value={draft.category} onChange={set('category')}>
+              <option value="">Let Pearl suggest one</option>
+              {categories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+            </select>
+          )}
+        </Field>
+        {error && <p className="txd-error" role="alert">{error.message}</p>}
+        {conflict ? (
+          <div className="txd-step" role="status">
+            <p>{conflict.duplicate ? conflict.error
+              : 'This looks like something already in your transactions:'}</p>
+            <dl className="txd-details">
+              {(conflict.matches ?? []).map((m) => (
+                <Detail key={m.id} label={`${m.merchant} · ${longDate(m.date)}`}
+                        value={txAmount(m.amount)} />
+              ))}
+            </dl>
+            {!conflict.duplicate && (
+              <PButton disabled={busy} onClick={() => submit(true)}>
+                It’s a different purchase · add it
+              </PButton>
+            )}
+          </div>
+        ) : (
+          <PButton type="submit" disabled={busy || !ok}>Add it</PButton>
+        )}
+      </form>
+    </DetailPanel>
   );
 }

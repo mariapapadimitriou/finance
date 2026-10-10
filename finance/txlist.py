@@ -91,6 +91,9 @@ def describe(t: Transaction, ctx: Context) -> dict:
     if t.excluded:
         chip, structural = "Left out", True
         note = f"Left out · {t.excluded}"
+    elif is_others(t):
+        chip, structural = "Not yours", True
+        note = f"{t.joint}’s · joint account, not yours unless you say so"
     elif t.repays:
         charge = ctx.by_id.get(t.repays)
         chip, structural, group = "Repayment", True, "transfer"
@@ -125,8 +128,11 @@ def describe(t: Transaction, ctx: Context) -> dict:
         elif t.paid_back:
             note = "Paid back in full · not your spending"
 
-    split = (t.my_share is not None or bool(t.paid_back)) and cat not in (
-        "Transfers", "Unsorted transfers", "Income")
+    # A split is a charge that is partly hers: not one that is wholly someone
+    # else's, and not one left out.
+    split = ((t.my_share is not None or bool(t.paid_back)) and counts == "spending"
+             and cat not in ("Transfers", "Unsorted transfers", "Income")
+             and abs(abs(share_amount(t)) - abs(t.amount)) >= 0.005)
     if split and counts == "spending" and abs(amount - abs(t.amount)) >= 0.005:
         names = ctx.paid_by.get(t.fingerprint) or []
         with_whom = (" · split with " + ", ".join(names) if names
@@ -172,6 +178,10 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "split": split,
         "repays": t.repays,
         "excluded": t.excluded or "",
+        "joint": t.joint or "",
+        "share_set": bool(t.share_set),
+        "bank_id": t.bank_id,
+        "bank_auto": bool(t.bank_auto),
     }
 
 
@@ -212,6 +222,12 @@ def visible(transactions: list[Transaction]) -> list[Transaction]:
 def left_out(transactions: list[Transaction]) -> list[Transaction]:
     """Rows you excluded, listed on their own so they can be put back."""
     return [t for t in transactions if t.excluded]
+
+
+def theirs(transactions: list[Transaction]) -> list[Transaction]:
+    """Rows on a joint account that are another member's until you say they
+    were yours, listed on their own so you can."""
+    return [t for t in transactions if not t.excluded and is_others(t)]
 
 
 def select(rows: list[tuple[Transaction, dict]], *, month: str | None = None,

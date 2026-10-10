@@ -240,7 +240,9 @@
   display: flex; flex-direction: column; gap: var(--space-6);
   padding: var(--space-6) 0 var(--space-8);
 }
-.tx-head { display: flex; flex-direction: column; gap: var(--space-1); }
+.tx-head { display: flex; align-items: flex-end; justify-content: space-between;
+           gap: var(--space-4); flex-wrap: wrap; }
+.tx-head > div { display: flex; flex-direction: column; gap: var(--space-1); }
 .tx-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 .tx-chips { display: flex; flex-wrap: wrap; gap: var(--space-3); min-width: 0; }
 .tx-legend {

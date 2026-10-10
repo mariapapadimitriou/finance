@@ -389,17 +389,22 @@ def transactions():
     })
 
 
-def _txlist_rows(st, excluded: bool = False, everything: bool = False):
+def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bool = False):
     """Every row of yours, described for the transactions list — or, with
-    `excluded`, only the rows you left out."""
+    `excluded`, only the rows you left out; with `joint`, only the rows on a
+    joint account that are someone else's."""
     from . import txlist
     txns = st.all_transactions()
     ctx = txlist.Context(txns, st.confirmed_categories(), st.notes(),
                          {b.id: b.name for b in st.piggy_banks()})
     if everything:
-        rows = txlist.visible(txns) + txlist.left_out(txns)
+        rows = txlist.visible(txns) + txlist.left_out(txns) + txlist.theirs(txns)
+    elif excluded:
+        rows = txlist.left_out(txns)
+    elif joint:
+        rows = txlist.theirs(txns)
     else:
-        rows = txlist.left_out(txns) if excluded else txlist.visible(txns)
+        rows = txlist.visible(txns)
     return [(t, txlist.describe(t, ctx)) for t in rows]
 
 
@@ -410,7 +415,8 @@ def transactions_list():
     Filters combine: month (YYYY-MM), account, group (essentials, lifestyle,
     income, savings, transfer) or category, counts (spending | income | none)
     and q, which searches merchant, description, your note and amount.
-    excluded=1 lists the rows you left out instead. The totals cover every
+    excluded=1 lists the rows you left out instead, and joint=1 the rows on a
+    joint account that are someone else's. The totals cover every
     matching row, not just the page.
     """
     from . import txlist
@@ -428,7 +434,8 @@ def transactions_list():
     filters = {"month": month, "account": a.get("account") or None, "group": group,
                "category": a.get("category") or None, "counts": a.get("counts") or None,
                "q": a.get("q") or None}
-    rows = _txlist_rows(store(), excluded=a.get("excluded") in ("1", "true"))
+    rows = _txlist_rows(store(), excluded=a.get("excluded") in ("1", "true"),
+                        joint=a.get("joint") in ("1", "true"))
     chosen = txlist.select(rows, **filters)
     return jsonify({
         "transactions": [r for _, r in chosen[offset:offset + limit]],

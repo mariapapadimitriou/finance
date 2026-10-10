@@ -3,7 +3,7 @@ import {
   Alert, CategoryChip, DayHeader, EmptyState, FilterChip, PButton, SearchField, StatTile, Toast,
   TxRow, txAmount,
 } from '../pearl/kit.jsx';
-import TransactionDetail from './TransactionDetail.jsx';
+import TransactionDetail, { AddTransaction } from './TransactionDetail.jsx';
 import { ErrorNote } from '../components/ui.jsx';
 import { accountTitle, getTxList } from '../api.js';
 import { readTxUrl, writeTxUrl } from '../router.js';
@@ -55,12 +55,13 @@ function fromUrl() {
   const url = readTxUrl();
   const f = url?.filters ?? {};
   return { month: f.month || thisMonth(), account: f.account || '', group: f.group || '',
-           category: f.category || '', excluded: f.excluded || '', q: f.q || '',
+           category: f.category || '', excluded: f.excluded || '', joint: f.joint || '',
+           q: f.q || '',
            from: url?.from || '' };
 }
 
 const DEFAULTS = () => ({ month: thisMonth(), account: '', group: '', category: '',
-                          excluded: '', from: '' });
+                          excluded: '', joint: '', from: '' });
 
 export default function TransactionsList({ summary, categories, accounts, reviewCount = 0,
                                            onTab, onChanged, version }) {
@@ -68,6 +69,7 @@ export default function TransactionsList({ summary, categories, accounts, review
   // The transaction open in the side panel (TX-04), from /transactions/<id>.
   const [openId, setOpenId] = useState(() => readTxUrl()?.id ?? null);
   const [toast, setToast] = useState('');
+  const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState(filters.q);
   const [data, setData] = useState(null);
   const [rows, setRows] = useState([]);
@@ -108,7 +110,7 @@ export default function TransactionsList({ summary, categories, accounts, review
     setFilters(next);
   };
   const filtered = filters.month !== thisMonth() || !!filters.account
-    || !!filters.group || !!filters.category || !!filters.excluded;
+    || !!filters.group || !!filters.category || !!filters.excluded || !!filters.joint;
   // Back to TX-01's defaults; the search, if any, is its own control.
   const clearFilters = () => choose(DEFAULTS());
   const clearSearch = () => { setQuery(''); choose({ q: '' }); };
@@ -157,16 +159,24 @@ export default function TransactionsList({ summary, categories, accounts, review
     { group: 'Categories', options: categories.map((c) => ({ value: `c:${c.name}`, label: c.name })) },
     // Rows you excluded are not in the list; this is where they can be found
     // and put back.
-    { group: 'Other', options: [{ value: 'x:excluded', label: 'Left out' }] },
-  ], [categories, groups]);
+    // So are a joint account's rows that are someone else's, until she says
+    // one was hers.
+    { group: 'Other', options: [
+      { value: 'x:excluded', label: 'Left out' },
+      ...(accounts.some((a) => a.joint) ? [{ value: 'x:joint', label: 'Joint: not yours' }] : []),
+    ] },
+  ], [categories, groups, accounts]);
+  const special = filters.excluded ? 'Left out' : filters.joint ? 'Joint: not yours' : '';
   const categoryValue = filters.group ? `g:${filters.group}`
-    : filters.category ? `c:${filters.category}` : filters.excluded ? 'x:excluded' : '';
+    : filters.category ? `c:${filters.category}`
+      : filters.excluded ? 'x:excluded' : filters.joint ? 'x:joint' : '';
   const categoryLabel = filters.group ? groups[filters.group]
-    : filters.category || (filters.excluded ? 'Left out' : 'All categories');
+    : filters.category || special || 'All categories';
   const pickCategory = (v) => choose({
     group: v.startsWith('g:') ? v.slice(2) : '',
     category: v.startsWith('c:') ? v.slice(2) : '',
     excluded: v === 'x:excluded' ? '1' : '',
+    joint: v === 'x:joint' ? '1' : '',
   });
 
   // ── Rows by day ───────────────────────────────────────────────────────
@@ -197,16 +207,18 @@ export default function TransactionsList({ summary, categories, accounts, review
 
   // The title says what the list is: "Lifestyle in October" when it is one
   // group or category, otherwise just Transactions.
-  const focusLabel = filters.group ? groups[filters.group]
-    : filters.category || (filters.excluded ? 'Left out' : '');
+  const focusLabel = filters.group ? groups[filters.group] : filters.category || special;
   const title = focusLabel ? `${focusLabel} in ${monthName(filters.month)}` : 'Transactions';
   const overline = filters.from === 'home' ? 'From Home' : monthName(filters.month, true);
 
   return (
     <div className="pk tx-page">
       <header className="tx-head">
-        <p className="pk-overline accent">{overline}</p>
-        <h1 className="pk-h1">{title}</h1>
+        <div>
+          <p className="pk-overline accent">{overline}</p>
+          <h1 className="pk-h1">{title}</h1>
+        </div>
+        <PButton variant="text" onClick={() => setAdding(true)}>Add a transaction</PButton>
       </header>
 
       <div className="tx-toolbar">
@@ -294,6 +306,10 @@ export default function TransactionsList({ summary, categories, accounts, review
       {openId && (
         <TransactionDetail id={openId} initial={rows.find((r) => r.id === openId)}
                            categories={categories} onClose={close} onSaved={saved} />
+      )}
+      {adding && (
+        <AddTransaction categories={categories} onClose={() => setAdding(false)}
+                        onSaved={() => { setAdding(false); saved(); }} />
       )}
       {toast && <Toast onDone={() => setToast('')}>{toast}</Toast>}
     </div>

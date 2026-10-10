@@ -230,3 +230,15 @@ def test_left_out_rows_are_listed_on_their_own(client):
     assert r["chip"] == {"label": "Left out", "suggested": False}
     assert r["note"] == "Left out · Work" and r["counts"] == "none"
     assert client.get(f"/api/transactions/{ids['WORK LUNCH']}").get_json()["excluded"] == "Work"
+
+
+def test_someone_elses_joint_rows_are_listed_on_their_own(client):
+    ids = load(client.st, row(60, "COSTCO", account="fam", category="Groceries"))
+    client.put("/api/accounts/fam/joint", json={"label": "Alex"})
+    assert listing(client)["transactions"] == []
+    r = listing(client, joint=1)["transactions"][0]
+    assert r["chip"]["label"] == "Not yours" and r["joint"] == "Alex" and r["counts"] == "none"
+    # Saying it was hers brings it into the list, counted.
+    client.put(f"/api/transactions/{ids['COSTCO']}/share", json={"my_share": 60})
+    mine = listing(client)
+    assert mine["transactions"][0]["counts"] == "spending" and mine["totals"]["spent"] == 60
