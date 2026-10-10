@@ -88,7 +88,10 @@ def describe(t: Transaction, ctx: Context) -> dict:
     structural = False       # a chip Pearl worked out from your accounts, not a guess
     note, note_link = "", False
 
-    if t.repays:
+    if t.excluded:
+        chip, structural = "Left out", True
+        note = f"Left out · {t.excluded}"
+    elif t.repays:
         charge = ctx.by_id.get(t.repays)
         chip, structural, group = "Repayment", True, "transfer"
         note = (f"Paid you back for {charge.merchant} · not income" if charge
@@ -168,6 +171,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "my_note": ctx.notes.get(t.fingerprint, ""),
         "split": split,
         "repays": t.repays,
+        "excluded": t.excluded or "",
     }
 
 
@@ -203,6 +207,11 @@ def matches(row: dict, q: str) -> bool:
 def visible(transactions: list[Transaction]) -> list[Transaction]:
     """Rows that are yours: not excluded, not another joint member's."""
     return [t for t in transactions if not is_others(t)]
+
+
+def left_out(transactions: list[Transaction]) -> list[Transaction]:
+    """Rows you excluded, listed on their own so they can be put back."""
+    return [t for t in transactions if t.excluded]
 
 
 def select(rows: list[tuple[Transaction, dict]], *, month: str | None = None,

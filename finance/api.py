@@ -389,13 +389,18 @@ def transactions():
     })
 
 
-def _txlist_rows(st):
-    """Every row of yours, described for the transactions list."""
+def _txlist_rows(st, excluded: bool = False, everything: bool = False):
+    """Every row of yours, described for the transactions list — or, with
+    `excluded`, only the rows you left out."""
     from . import txlist
     txns = st.all_transactions()
     ctx = txlist.Context(txns, st.confirmed_categories(), st.notes(),
                          {b.id: b.name for b in st.piggy_banks()})
-    return [(t, txlist.describe(t, ctx)) for t in txlist.visible(txns)]
+    if everything:
+        rows = txlist.visible(txns) + txlist.left_out(txns)
+    else:
+        rows = txlist.left_out(txns) if excluded else txlist.visible(txns)
+    return [(t, txlist.describe(t, ctx)) for t in rows]
 
 
 @bp.get("/transactions/list")
@@ -404,8 +409,9 @@ def transactions_list():
 
     Filters combine: month (YYYY-MM), account, group (essentials, lifestyle,
     income, savings, transfer) or category, counts (spending | income | none)
-    and q, which searches merchant, description, your note and amount. The
-    totals cover every matching row, not just the page.
+    and q, which searches merchant, description, your note and amount.
+    excluded=1 lists the rows you left out instead. The totals cover every
+    matching row, not just the page.
     """
     from . import txlist
     from .categorize import CATEGORY_GROUPS
@@ -422,7 +428,7 @@ def transactions_list():
     filters = {"month": month, "account": a.get("account") or None, "group": group,
                "category": a.get("category") or None, "counts": a.get("counts") or None,
                "q": a.get("q") or None}
-    rows = _txlist_rows(store())
+    rows = _txlist_rows(store(), excluded=a.get("excluded") in ("1", "true"))
     chosen = txlist.select(rows, **filters)
     return jsonify({
         "transactions": [r for _, r in chosen[offset:offset + limit]],
@@ -437,7 +443,7 @@ def transactions_list():
 @bp.get("/transactions/<txn_id>")
 def transaction_detail(txn_id: str):
     """One row as the list describes it, for the detail panel."""
-    for t, r in _txlist_rows(store()):
+    for t, r in _txlist_rows(store(), everything=True):
         if t.fingerprint == txn_id:
             return jsonify(r)
     return jsonify({"error": "No such transaction."}), 404

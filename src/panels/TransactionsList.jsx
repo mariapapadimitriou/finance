@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, CategoryChip, DayHeader, EmptyState, FilterChip, PButton, SearchField, StatTile, TxRow,
-  txAmount,
+  Alert, CategoryChip, DayHeader, EmptyState, FilterChip, PButton, SearchField, StatTile, Toast,
+  TxRow, txAmount,
 } from '../pearl/kit.jsx';
+import TransactionDetail from './TransactionDetail.jsx';
 import { ErrorNote } from '../components/ui.jsx';
 import { accountTitle, getTxList } from '../api.js';
 import { readTxUrl, writeTxUrl } from '../router.js';
@@ -54,14 +55,19 @@ function fromUrl() {
   const url = readTxUrl();
   const f = url?.filters ?? {};
   return { month: f.month || thisMonth(), account: f.account || '', group: f.group || '',
-           category: f.category || '', q: f.q || '', from: url?.from || '' };
+           category: f.category || '', excluded: f.excluded || '', q: f.q || '',
+           from: url?.from || '' };
 }
 
-const DEFAULTS = () => ({ month: thisMonth(), account: '', group: '', category: '', from: '' });
+const DEFAULTS = () => ({ month: thisMonth(), account: '', group: '', category: '',
+                          excluded: '', from: '' });
 
 export default function TransactionsList({ summary, categories, accounts, reviewCount = 0,
-                                           onTab, version }) {
+                                           onTab, onChanged, version }) {
   const [filters, setFilters] = useState(fromUrl);
+  // The transaction open in the side panel (TX-04), from /transactions/<id>.
+  const [openId, setOpenId] = useState(() => readTxUrl()?.id ?? null);
+  const [toast, setToast] = useState('');
   const [query, setQuery] = useState(filters.q);
   const [data, setData] = useState(null);
   const [rows, setRows] = useState([]);
@@ -72,7 +78,8 @@ export default function TransactionsList({ summary, categories, accounts, review
   // The address bar follows the filters. Defaults stay out of it, so the
   // plain list is just /transactions.
   const urlFilters = (f) => ({ ...f, month: f.month === thisMonth() ? '' : f.month });
-  const toUrl = (f, push = false) => writeTxUrl({ filters: urlFilters(f), from: f.from }, { push });
+  const toUrl = (f, push = false, id = openId) =>
+    writeTxUrl({ id, filters: urlFilters(f), from: f.from }, { push });
   useEffect(() => { toUrl(filters); }, [filters]);
 
   // Back and forward move between filter states.
@@ -82,6 +89,7 @@ export default function TransactionsList({ summary, categories, accounts, review
       const next = fromUrl();
       setFilters(next);
       setQuery(next.q);
+      setOpenId(readTxUrl()?.id ?? null);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -100,7 +108,7 @@ export default function TransactionsList({ summary, categories, accounts, review
     setFilters(next);
   };
   const filtered = filters.month !== thisMonth() || !!filters.account
-    || !!filters.group || !!filters.category;
+    || !!filters.group || !!filters.category || !!filters.excluded;
   // Back to TX-01's defaults; the search, if any, is its own control.
   const clearFilters = () => choose(DEFAULTS());
   const clearSearch = () => { setQuery(''); choose({ q: '' }); };
@@ -147,14 +155,18 @@ export default function TransactionsList({ summary, categories, accounts, review
     { value: '', label: 'All categories' },
     { group: 'Groups', options: Object.entries(groups).map(([k, v]) => ({ value: `g:${k}`, label: v })) },
     { group: 'Categories', options: categories.map((c) => ({ value: `c:${c.name}`, label: c.name })) },
+    // Rows you excluded are not in the list; this is where they can be found
+    // and put back.
+    { group: 'Other', options: [{ value: 'x:excluded', label: 'Left out' }] },
   ], [categories, groups]);
   const categoryValue = filters.group ? `g:${filters.group}`
-    : filters.category ? `c:${filters.category}` : '';
+    : filters.category ? `c:${filters.category}` : filters.excluded ? 'x:excluded' : '';
   const categoryLabel = filters.group ? groups[filters.group]
-    : filters.category || 'All categories';
+    : filters.category || (filters.excluded ? 'Left out' : 'All categories');
   const pickCategory = (v) => choose({
     group: v.startsWith('g:') ? v.slice(2) : '',
     category: v.startsWith('c:') ? v.slice(2) : '',
+    excluded: v === 'x:excluded' ? '1' : '',
   });
 
   // ── Rows by day ───────────────────────────────────────────────────────
@@ -173,12 +185,20 @@ export default function TransactionsList({ summary, categories, accounts, review
   const more = (data?.total ?? 0) - rows.length;
   const empty = !!data && rows.length === 0;
   const anySuggested = rows.some((r) => r.suggested);
-  const open = (id) => writeTxUrl({ id, filters: urlFilters(filters), from: filters.from },
-                                  { push: true });
+  const open = (id) => { setOpenId(id); toUrl(filters, true, id); };
+  const close = () => { setOpenId(null); toUrl(filters, true, null); };
+  // After a change in the panel: say so, and refresh everything that counts
+  // it (the list, the totals, the review badge).
+  const saved = ({ close: closing } = {}) => {
+    setToast('Saved');
+    if (closing) close();
+    onChanged?.();
+  };
 
   // The title says what the list is: "Lifestyle in October" when it is one
   // group or category, otherwise just Transactions.
-  const focusLabel = filters.group ? groups[filters.group] : filters.category;
+  const focusLabel = filters.group ? groups[filters.group]
+    : filters.category || (filters.excluded ? 'Left out' : '');
   const title = focusLabel ? `${focusLabel} in ${monthName(filters.month)}` : 'Transactions';
   const overline = filters.from === 'home' ? 'From Home' : monthName(filters.month, true);
 
@@ -270,6 +290,12 @@ export default function TransactionsList({ summary, categories, accounts, review
           )}
         </>
       )}
+
+      {openId && (
+        <TransactionDetail id={openId} initial={rows.find((r) => r.id === openId)}
+                           categories={categories} onClose={close} onSaved={saved} />
+      )}
+      {toast && <Toast onDone={() => setToast('')}>{toast}</Toast>}
     </div>
   );
 }

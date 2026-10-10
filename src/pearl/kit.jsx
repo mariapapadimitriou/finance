@@ -210,10 +210,13 @@ export function DetailPanel({ label, overline, onClose, children }) {
 }
 
 export function Toast({ children, onDone, ms = 2400 }) {
+  // The timer starts once: a parent re-rendering must not keep it alive.
+  const done = useRef(onDone);
+  done.current = onDone;
   useEffect(() => {
-    const t = setTimeout(onDone, ms);
+    const t = setTimeout(() => done.current?.(), ms);
     return () => clearTimeout(t);
-  }, [onDone, ms]);
+  }, [ms]);
   return (
     <div className="pk-toast" role="status" aria-live="polite">
       <PIcon name="check" size={18} /> {children}

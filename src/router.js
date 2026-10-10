@@ -3,7 +3,7 @@
 // anywhere — Home, an alert, an explanation sheet — and back/forward work.
 // The rest of the app has no addresses yet: everything else lives at "/".
 
-export const TX_KEYS = ['month', 'account', 'group', 'category', 'q'];
+export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'q'];
 
 /** {path, id, filters} for the current address, or null when it is not the list. */
 export function readTxUrl(loc = window.location) {

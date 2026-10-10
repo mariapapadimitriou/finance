@@ -219,3 +219,14 @@ def test_detail_endpoint(client):
     assert r["merchant"] == "Uber Eats" and r["description"] == "UBER* EATS TORONTO ON"
     assert r["counts_toward"].endswith("safe to spend")
     assert client.get("/api/transactions/nope").status_code == 404
+
+
+def test_left_out_rows_are_listed_on_their_own(client):
+    ids = load(client.st, row(80, "WORK LUNCH", account="card", kind="credit", category="Dining"))
+    client.put(f"/api/transactions/{ids['WORK LUNCH']}/exclude", json={"reason": "Work"})
+    assert listing(client)["transactions"] == []
+    out = listing(client, excluded=1)
+    r = out["transactions"][0]
+    assert r["chip"] == {"label": "Left out", "suggested": False}
+    assert r["note"] == "Left out · Work" and r["counts"] == "none"
+    assert client.get(f"/api/transactions/{ids['WORK LUNCH']}").get_json()["excluded"] == "Work"
