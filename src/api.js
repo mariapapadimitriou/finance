@@ -224,6 +224,20 @@ export function getTransactions(filters = {}) {
   return req(`/api/transactions?${params}`);
 }
 
+// The transactions list (THL-122): a page of rows, the totals above them,
+// and — with a group or category chosen — that total against a usual month.
+export function getTxList(filters = {}) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== '' && v !== null && v !== undefined) params.set(k, v);
+  });
+  return req(`/api/transactions/list?${params}`);
+}
+export const getTx       = (id) => req(`/api/transactions/${encodeURIComponent(id)}`);
+export const confirmTx   = (id) => json('PUT', `/api/transactions/${encodeURIComponent(id)}/confirm`, {});
+export const setTxNote   = (id, note) =>
+  json('PUT', `/api/transactions/${encodeURIComponent(id)}/note`, { note });
+
 // Statements shipped with the app for a card that cannot be connected. Safe to
 // call twice: the server runs them through the same de-duplication as an upload.
 export const getBundled    = () => req('/api/import/bundled');

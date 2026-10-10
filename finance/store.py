@@ -242,6 +242,22 @@ CREATE TABLE IF NOT EXISTS review_dismissed (
     item_key   TEXT PRIMARY KEY,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- A category Pearl suggested that you said was right. Kept with the category
+-- you confirmed: if a later sync files the row somewhere else, that new
+-- category is a suggestion again.
+CREATE TABLE IF NOT EXISTS txn_confirmed (
+    txn_id     TEXT PRIMARY KEY,
+    category   TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Your private note on a transaction (140 characters at most).
+CREATE TABLE IF NOT EXISTS txn_notes (
+    txn_id     TEXT PRIMARY KEY,
+    note       TEXT NOT NULL,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE INDEX IF NOT EXISTS idx_alloc_bank ON piggy_allocations(bank_id);
 
 -- What each bank pays for: a category belongs to at most one bank. Every
@@ -717,6 +733,8 @@ class Store:
                       (txn_id, txn_id))
             c.execute("DELETE FROM txn_exclusions WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_income_type WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_confirmed WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_notes WHERE txn_id = ?", (txn_id,))
             return cur.rowcount > 0
 
     def set_share(self, txn_id: str, my_share: float | None) -> None:
@@ -825,6 +843,36 @@ class Store:
             c.execute("INSERT OR IGNORE INTO review_dismissed (item_key) VALUES (?)",
                       (key,))
 
+    # ── Confirmed categories and notes ──────────────────────────────────
+    def confirmed_categories(self) -> dict[str, str]:
+        """{txn_id: the category you said was right}."""
+        with self.conn() as c:
+            return {r["txn_id"]: r["category"] for r in
+                    c.execute("SELECT txn_id, category FROM txn_confirmed").fetchall()}
+
+    def confirm_category(self, txn_id: str, category: str) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_confirmed WHERE txn_id = ?", (txn_id,))
+            c.execute("INSERT INTO txn_confirmed (txn_id, category) VALUES (?, ?)",
+                      (txn_id, category))
+
+    def unconfirm_category(self, txn_id: str) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_confirmed WHERE txn_id = ?", (txn_id,))
+
+    def notes(self) -> dict[str, str]:
+        with self.conn() as c:
+            return {r["txn_id"]: r["note"] for r in
+                    c.execute("SELECT txn_id, note FROM txn_notes").fetchall()}
+
+    def set_note(self, txn_id: str, note: str) -> None:
+        """Save a note; an empty one removes it."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_notes WHERE txn_id = ?", (txn_id,))
+            if note:
+                c.execute("INSERT INTO txn_notes (txn_id, note) VALUES (?, ?)",
+                          (txn_id, note))
+
     def link_payback(self, charge_id: str, inflow_id: str) -> None:
         """Say this money coming in was a friend paying you back for that
         charge. An inflow repays one charge, so linking it again moves it."""
@@ -931,7 +979,8 @@ class Store:
                 cur = c.execute(f"DELETE FROM transactions WHERE id IN ({marks})", chunk)
                 removed += max(cur.rowcount or 0, 0)
                 for table in ("txn_shares", "txn_invested", "piggy_allocations",
-                              "piggy_optouts", "txn_exclusions", "txn_income_type"):
+                              "piggy_optouts", "txn_exclusions", "txn_income_type",
+                              "txn_confirmed", "txn_notes"):
                     c.execute(f"DELETE FROM {table} WHERE txn_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_paybacks WHERE inflow_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_paybacks WHERE charge_id IN ({marks})", chunk)
@@ -1071,6 +1120,8 @@ class Store:
             ("exclusion_rules", "exclusion rules"),
             ("txn_income_type", "income types"),
             ("review_dismissed", "settled review items"),
+            ("txn_confirmed", "confirmed categories"),
+            ("txn_notes", "notes on transactions"),
         ]
         with self.conn() as c:
             for table, label in tables:

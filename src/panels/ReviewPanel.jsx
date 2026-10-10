@@ -58,7 +58,7 @@ export default function ReviewPanel({ categories, onChanged, onTab }) {
         <Card>
           <p className="review-empty">Nothing to review.</p>
           <div className="row" style={{ justifyContent: 'center' }}>
-            <button className="btn" onClick={() => onTab?.('transactions')}>See every charge</button>
+            <button className="btn" onClick={() => onTab?.('transactions')}>See all transactions</button>
           </div>
         </Card>
       )}

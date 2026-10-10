@@ -76,6 +76,26 @@ def is_spend_category(category: str) -> bool:
     return category not in NON_SPEND
 
 
+# The five groups the transactions list filters by (Pearl Handoff, TX-01):
+# what you need, what you choose, what came in, what you put away, and money
+# moving between pockets. Not the budget lines in Settings → Categories,
+# which are yours to arrange; these are fixed.
+CATEGORY_GROUPS = {"essentials": "Essentials", "lifestyle": "Lifestyle",
+                   "income": "Income", "savings": "Savings", "transfer": "Transfer"}
+
+
+def group_of(category: str) -> str:
+    """The group key a category belongs to."""
+    category = category or "Other"
+    if category == "Income":
+        return "income"
+    if category == "Saved":
+        return "savings"
+    if category in ("Transfers", "Lent", "Unsorted transfers"):
+        return "transfer"
+    return "essentials" if CATEGORIES.get(category, {}).get("essential") else "lifestyle"
+
+
 def is_discretionary(category: str) -> bool:
     return CATEGORIES.get(category, {}).get("discretionary", False)
 
