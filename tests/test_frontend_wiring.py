@@ -528,7 +528,7 @@ class TestSplitsAndRepayments:
         src = (SRC / "panels" / "Splits.jsx").read_text(encoding="utf-8")
         for text in ("Only your share counts toward your spending.", "Add someone",
                      "Watch for ${names(people)} paying me back", "Save split",
-                     "Paid back ${shortDate(p.paid_on)}", "Owes ${txAmount(p.owes)}"):
+                     "Paid back {shortDate(p.paid_on)}", "Owes ${txAmount(p.owes)}"):
             assert text in src, text
         assert "MAX_PEOPLE = 8" in src
 
