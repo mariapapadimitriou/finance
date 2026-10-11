@@ -16,6 +16,7 @@ restructured file reports that it needs updating rather than passing silently.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -466,3 +467,33 @@ class TestPearlTransactionsList:
         assert "suggested by Pearl" in kit and "name=\"help\"" in kit
         css = (SRC / "pearl" / "kit.css").read_text(encoding="utf-8")
         assert re.search(r"\.pk-cat\.suggested\s*\{[^}]*dashed", css)
+
+
+class TestDesignTokens:
+    """THL-106: the Design System export is the one source of the variables."""
+
+    TOKENS = SRC / "tokens"
+
+    def test_the_export_is_vendored_whole(self):
+        for name in ("tokens.css", "tokens.json", "tokens.ts"):
+            text = (self.TOKENS / name).read_text(encoding="utf-8")
+            assert "Do not edit by hand" in text, name
+        data = json.loads((self.TOKENS / "tokens.json").read_text(encoding="utf-8"))
+        assert set(data["color"]) == {"light", "dark"}
+        assert set(data["color"]["light"]) == set(data["color"]["dark"])
+
+    def test_loaded_before_the_shell(self):
+        main = (SRC / "main.jsx").read_text(encoding="utf-8")
+        tokens = main.index("import './tokens/tokens.css'")
+        assert tokens < main.index("import App from") < main.index("import './styles.css'")
+
+    def test_the_kit_keeps_no_copy_of_the_palette(self):
+        css = (SRC / "pearl" / "tokens.css").read_text(encoding="utf-8")
+        assert not re.findall(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", css)
+        assert not re.search(r"--(pearl|blush|rose|lagoon|ocean|mist|gold)-\d+\s*:", css)
+
+    def test_the_kit_uses_the_v3_semantic_tokens(self):
+        css = (SRC / "pearl" / "kit.css").read_text(encoding="utf-8")
+        for token in ("--border-strong", "--border-focus", "--border-error",
+                      "--surface-scrim", "--surface-disabled", "--ink-disabled"):
+            assert f"var({token})" in css, token

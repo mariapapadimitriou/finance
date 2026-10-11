@@ -1,5 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+// The Design System's tokens first, so the shell's own names still win on :root.
+import './tokens/tokens.css';
 import App from './App.jsx';
 import './styles.css';
 

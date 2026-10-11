@@ -72,7 +72,7 @@
 .pk-filter {
   position: relative; display: inline-flex; align-items: center; gap: 6px; flex: none;
   height: 36px; padding: 0 12px 0 14px; border-radius: var(--radius-full);
-  background: var(--surface-card); border: 1px solid var(--border); color: var(--ink);
+  background: var(--surface-card); border: 1px solid var(--border-strong); color: var(--ink);
   font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap;
 }
 .pk-filter.active { background: var(--blush); border-color: transparent; color: var(--on-nacre); }
@@ -80,16 +80,16 @@
   position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
   font-size: 16px;
 }
-.pk-filter:focus-within { outline: 2px solid var(--action); outline-offset: 2px; }
+.pk-filter:focus-within { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 
 /* ── Search field ────────────────────────────────────────────────────────── */
 .pk-search {
   display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px;
   width: 400px; max-width: 100%; min-width: 0;
-  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-card); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
   color: var(--ink-muted);
 }
-.pk-search:focus-within { border-color: var(--action); box-shadow: 0 0 0 4px var(--focus-ring); }
+.pk-search:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 4px var(--focus-ring); }
 .pk .pk-search input, .pk .pk-search input:hover {
   flex: 1 1 auto; min-width: 0; width: auto; height: 100%; border: 0; border-radius: 0;
   background: transparent; outline: none; color: var(--ink); font: inherit; font-size: 15px;
@@ -149,7 +149,11 @@
   font-size: 13px; line-height: 18px; font-weight: 600;
 }
 .pk-btn.text:hover { text-decoration: underline; text-underline-offset: 3px; }
-.pk-btn:disabled { opacity: .55; cursor: default; box-shadow: none; }
+.pk-btn:disabled, .pk-btn:disabled:hover {
+  background: var(--surface-disabled); color: var(--ink-disabled); border-color: transparent;
+  cursor: default; box-shadow: none;
+}
+.pk-btn.text:disabled { background: none; text-decoration: none; }
 
 /* ── Transaction rows ────────────────────────────────────────────────────── */
 .pk-list {
@@ -207,7 +211,7 @@
 
 /* ── Side panel ──────────────────────────────────────────────────────────── */
 .pk-scrim {
-  position: fixed; inset: 0; z-index: 60; background: var(--scrim);
+  position: fixed; inset: 0; z-index: 60; background: var(--surface-scrim);
   display: flex; justify-content: flex-end;
 }
 .pk-panel {
@@ -232,7 +236,7 @@
   display: inline-flex; align-items: center; gap: var(--space-2);
   padding: 10px 18px; border-radius: var(--radius-full);
   background: var(--ink); color: var(--surface-page); font-size: 15px; line-height: 22px;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-raised);
 }
 
 /* ── Transactions page (TX-01) ───────────────────────────────────────────── */
@@ -294,10 +298,14 @@
 .txd-field { display: flex; flex-direction: column; gap: var(--space-2); }
 .pk .txd-field input, .pk .txd-field select, .pk .txd-field textarea {
   width: 100%; min-height: 48px; padding: 12px 16px; font: inherit; color: var(--ink);
-  background: var(--surface-card); border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-card); border: 1.5px solid var(--border-strong); border-radius: var(--radius-sm);
 }
 .pk .txd-field textarea { resize: vertical; }
-.pk .txd-field :focus { border-color: var(--action); outline: none; box-shadow: 0 0 0 4px var(--focus-ring); }
+.pk .txd-field :focus { border-color: var(--border-focus); outline: none; box-shadow: 0 0 0 4px var(--focus-ring); }
+.pk .txd-field [aria-invalid="true"] { border-color: var(--border-error); }
+/* An error is the rose border with words and an icon in caution — never red. */
+.txd-hint { margin: 0; display: flex; align-items: center; gap: var(--space-1); color: var(--caution);
+            font-size: 13px; line-height: 18px; font-weight: 500; }
 .txd-count { align-self: flex-end; }
 .txd-check { display: flex; align-items: center; gap: var(--space-2); font-size: 15px; }
 .txd-quick { display: flex; flex-wrap: wrap; gap: var(--space-2); }

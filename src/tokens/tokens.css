@@ -1,0 +1,144 @@
+/* Pearl design tokens · generated from Figma 'Pearl Design System' (THL-106) · 2026-10-11 (v3: aligned with Handoff File; filled-secondary tokens removed). Do not edit by hand; re-export from Figma. */
+:root {
+  --pearl-50: #fbf8f6;
+  --white: #ffffff;
+  --blush-100: #ffe4ec;
+  --blush-150: #f1e9ee;
+  --blush-200: #eedfe6;
+  --lilac-200: #e3d4ff;
+  --seaglass-200: #cff3ee;
+  --rose-300: #ff8fb1;
+  --rose-500: #e2557f;
+  --rose-700: #b8285a;
+  --lagoon-400: #4fd1c5;
+  --lagoon-700: #12736b;
+  --gold-300: #f3d9a4;
+  --gold-700: #8a5a12;
+  --ocean-950: #0b1030;
+  --ocean-900: #151b44;
+  --ocean-800: #252c5e;
+  --ink-base: #1c1a33;
+  --mist-300: #b4b1cc;
+  --mist-500: #686580;
+  --mist-400: #8a87a3;
+  --scrim-light: rgba(28, 26, 51, 0.40);
+  --scrim-dark: rgba(0, 0, 0, 0.60);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-sm: 12px;
+  --radius-md: 20px;
+  --radius-lg: 28px;
+  --radius-full: 999px;
+  --glow-pearl: 0px 6px 24px 0px rgba(226, 85, 127, 0.28);
+  --shadow-card: 0px 8px 24px 0px rgba(28, 26, 51, 0.07);
+  --shadow-raised: 0px 12px 32px 0px rgba(28, 26, 51, 0.10), 0px 2px 6px 0px rgba(28, 26, 51, 0.06);
+  --shadow-sheet: 0px -8px 32px 0px rgba(28, 26, 51, 0.14), 0px -2px 8px 0px rgba(28, 26, 51, 0.08);
+  --nacre-diagonal: linear-gradient(135deg, #ffd6e0 0%, #e3d4ff 50%, #cff3ee 100%);
+  --nacre-horizontal: linear-gradient(135deg, #ffc2d4 0%, #d9c6ff 50%, #b8ede6 100%);
+  --rose-shell: linear-gradient(135deg, #ff8fb1 0%, #e2557f 100%);
+  --pearl-orb: radial-gradient(circle, #ffffff 0%, #fce8f0 55%, #dccbff 100%);
+}
+
+:root, [data-theme="light"] {
+  color-scheme: light;
+  --surface-page: var(--pearl-50);
+  --surface-card: var(--white);
+  --track: var(--blush-150);
+  --border: var(--blush-200);
+  --ink: var(--ink-base);
+  --ink-muted: var(--mist-500);
+  --on-nacre: var(--ink-base);
+  --on-action: var(--white);
+  --link: var(--rose-700);
+  --positive: var(--lagoon-700);
+  --caution: var(--gold-700);
+  --action: var(--rose-700);
+  --rose: var(--rose-500);
+  --lagoon: var(--lagoon-400);
+  --lilac: var(--lilac-200);
+  --seaglass: var(--seaglass-200);
+  --champagne: var(--gold-300);
+  --blush: var(--blush-100);
+  --border-strong: var(--mist-400);
+  --border-focus: var(--rose-700);
+  --ink-disabled: var(--mist-300);
+  --surface-disabled: var(--blush-150);
+  --surface-scrim: var(--scrim-light);
+  --border-error: var(--rose-500);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-page: var(--ocean-950);
+    --surface-card: var(--ocean-900);
+    --track: var(--ocean-800);
+    --border: var(--ocean-800);
+    --ink: var(--pearl-50);
+    --ink-muted: var(--mist-300);
+    --on-nacre: var(--ink-base);
+    --on-action: var(--ink-base);
+    --link: var(--rose-300);
+    --positive: var(--lagoon-400);
+    --caution: var(--gold-300);
+    --action: var(--rose-300);
+    --rose: var(--rose-500);
+    --lagoon: var(--lagoon-400);
+    --lilac: var(--lilac-200);
+    --seaglass: var(--seaglass-200);
+    --champagne: var(--gold-300);
+    --blush: var(--blush-100);
+    --border-strong: var(--mist-400);
+    --border-focus: var(--rose-300);
+    --ink-disabled: var(--mist-500);
+    --surface-disabled: var(--ocean-800);
+    --surface-scrim: var(--scrim-dark);
+    --border-error: var(--rose-500);
+  }
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-page: var(--ocean-950);
+  --surface-card: var(--ocean-900);
+  --track: var(--ocean-800);
+  --border: var(--ocean-800);
+  --ink: var(--pearl-50);
+  --ink-muted: var(--mist-300);
+  --on-nacre: var(--ink-base);
+  --on-action: var(--ink-base);
+  --link: var(--rose-300);
+  --positive: var(--lagoon-400);
+  --caution: var(--gold-300);
+  --action: var(--rose-300);
+  --rose: var(--rose-500);
+  --lagoon: var(--lagoon-400);
+  --lilac: var(--lilac-200);
+  --seaglass: var(--seaglass-200);
+  --champagne: var(--gold-300);
+  --blush: var(--blush-100);
+  --border-strong: var(--mist-400);
+  --border-focus: var(--rose-300);
+  --ink-disabled: var(--mist-500);
+  --surface-disabled: var(--ocean-800);
+  --surface-scrim: var(--scrim-dark);
+  --border-error: var(--rose-500);
+}
+
+/* Type scale */
+.display-amount { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 44px; line-height: 50px; letter-spacing: -0.02em; }
+.display-heading-1 { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 30px; line-height: 36px; letter-spacing: -0.01em; }
+.display-heading-2 { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 24px; line-height: 30px; letter-spacing: -0.01em; }
+.display-heading-3 { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 18px; line-height: 24px; letter-spacing: 0.00em; }
+.display-wordmark { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 30px; line-height: 34px; letter-spacing: -0.02em; }
+.text-body-large { font-family: 'Figtree', system-ui, sans-serif; font-weight: 400; font-size: 16px; line-height: 24px; letter-spacing: 0.00em; }
+.text-body { font-family: 'Figtree', system-ui, sans-serif; font-weight: 500; font-size: 15px; line-height: 22px; letter-spacing: 0.00em; }
+.text-button { font-family: 'Figtree', system-ui, sans-serif; font-weight: 600; font-size: 16px; line-height: 20px; letter-spacing: 0.00em; }
+.text-label { font-family: 'Figtree', system-ui, sans-serif; font-weight: 500; font-size: 13px; line-height: 18px; letter-spacing: 0.00em; }
+.text-overline { font-family: 'Figtree', system-ui, sans-serif; font-weight: 600; font-size: 12px; line-height: 16px; letter-spacing: 0.12em; text-transform: uppercase; }
+.text-tab { font-family: 'Figtree', system-ui, sans-serif; font-weight: 600; font-size: 11px; line-height: 14px; letter-spacing: 0.00em; }
