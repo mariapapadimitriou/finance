@@ -34,7 +34,7 @@ from .ingest import all_sources, get_source, parse_csv, parse_statement
 from .insights import (detect_recurring, findings_summary, generate_findings,
                        observe, recurring_summary)
 from .pipeline import ingest, recategorize_all
-from .categorize import apply_categories
+from .categorize import apply_categories, group_of
 from .dedupe import split_new
 from .trips import apply_trips
 from .trips import summarize, validate
@@ -85,7 +85,10 @@ def sources():
 def categories():
     return jsonify({
         "categories": [
-            {"name": name, **meta} for name, meta in CATEGORIES.items()
+            # The group (Essentials, Lifestyle…) is what Change category
+            # (R-02) lays its chips out by.
+            {"name": name, "group": group_of(name), **meta}
+            for name, meta in CATEGORIES.items()
         ],
         "overrides": store().overrides(),
     })
@@ -396,7 +399,7 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
     from . import txlist
     txns = st.all_transactions()
     ctx = txlist.Context(txns, st.confirmed_categories(), st.notes(),
-                         {b.id: b.name for b in st.piggy_banks()})
+                         {b.id: b.name for b in st.piggy_banks()}, splits=st.splits())
     if everything:
         rows = txlist.visible(txns) + txlist.left_out(txns) + txlist.theirs(txns)
     elif excluded:
@@ -449,11 +452,74 @@ def transactions_list():
 
 @bp.get("/transactions/<txn_id>")
 def transaction_detail(txn_id: str):
-    """One row as the list describes it, for the detail panel."""
-    for t, r in _txlist_rows(store(), everything=True):
-        if t.fingerprint == txn_id:
-            return jsonify(r)
+    """One row as the list describes it, for the detail panel — with, for a
+    split charge, who owes what (S-04), and for money in, the split it
+    probably pays back and the others it could (S-02, S-03)."""
+    from . import splits as sp
+    st = store()
+    rows = _txlist_rows(st, everything=True)
+    for t, r in rows:
+        if t.fingerprint != txn_id:
+            continue
+        txns = [x for x, _ in rows]
+        splits, payer = st.splits(), st.payback_people()
+        r = dict(r)
+        split = splits.get(txn_id)
+        if split and t.amount > 0:
+            r["splitting"] = {
+                "mode": split["mode"], "watch": split["watch"],
+                "you": round(t.my_share if t.my_share is not None else t.amount, 2),
+                "people": sp.people_status(t, split, txns, payer),
+            }
+        if t.amount > 0:
+            r["repaid_by"] = [dict(_txn_brief(x), person=payer.get(x.fingerprint))
+                              for x in txns if x.repays == txn_id]
+        if t.repays:
+            charge = next((x for x in txns if x.fingerprint == t.repays), None)
+            if charge is not None:
+                r["repays_charge"] = dict(_txn_brief(charge),
+                                          person=payer.get(txn_id))
+        elif t.amount < 0 and not t.excluded:
+            options, by_name = sp.for_inflow(t, txns, splits, payer)
+            r["repayment"] = {"suggestion": sp.suggest(t, txns, splits, payer),
+                              "splits": options, "from_sender": by_name}
+        return jsonify(r)
     return jsonify({"error": "No such transaction."}), 404
+
+
+@bp.put("/transactions/<txn_id>/split")
+def set_transaction_split(txn_id: str):
+    """Split a charge with people, evenly or by amount (S-01). Your part
+    becomes your share, so only it counts anywhere; each other person's
+    part is a repayment to watch for."""
+    from . import splits as sp
+    body = request.get_json(silent=True) or {}
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if t.amount <= 0 or t.repays:
+        return jsonify({"error": "Only a charge can be split."}), 400
+    if t.joint:
+        return jsonify({"error": "On a joint account, say whose it was instead."}), 400
+    mode = body.get("mode")
+    people, problem = sp.validate(t, mode, body.get("people"))
+    if problem:
+        return jsonify({"error": problem}), 400
+    st.set_split(txn_id, mode, people, bool(body.get("watch", True)))
+    st.set_share(txn_id, sp.your_part(t, people))
+    return transaction_detail(txn_id)
+
+
+@bp.delete("/transactions/<txn_id>/split")
+def clear_transaction_split(txn_id: str):
+    """It was all mine after all: the split goes, and the whole charge counts."""
+    st = store()
+    if st.get_transaction(txn_id) is None:
+        return jsonify({"error": "No such transaction."}), 404
+    st.clear_split(txn_id)
+    st.set_share(txn_id, None)
+    return transaction_detail(txn_id)
 
 
 @bp.put("/transactions/<txn_id>/confirm")
@@ -489,26 +555,141 @@ def set_transaction_note(txn_id: str):
     return jsonify({"ok": True, "note": note})
 
 
+# ── Changing a category, and what it did (THL-123) ─────────────────────────
+
+def _safe_left(st, txns) -> float:
+    """Safe to spend: what is left of this week, as Allowance shows it."""
+    from datetime import date as _date
+    month = _date.today().isoformat()[:7]
+    amount, _ = _allowance(st, txns)
+    return spend_plan.compute(txns, amount, month,
+                              covered=st.covered_in(month))["week"]["left"]
+
+
+def _month_spent(txns, month: str) -> float:
+    """Spent in a month, as the transactions list totals it."""
+    from .analytics import counts_as_spending
+    return round(sum(spend_amount(t) for t in txns
+                     if t.date[:7] == month and counts_as_spending(t)), 2)
+
+
+def _month_name(month: str) -> str:
+    from datetime import date as _date
+    return _date.fromisoformat(month + "-01").strftime("%B")
+
+
+def _impact(st, before_txns, after_txns, cat_from: str, cat_to: str, month: str) -> dict:
+    from .impact import describe
+    return describe(_safe_left(st, before_txns), _safe_left(st, after_txns),
+                    cat_from, cat_to, _month_spent(before_txns, month),
+                    _month_spent(after_txns, month), _month_name(month))
+
+
+def _merchant_rows(t, txns) -> list:
+    """The rows "Apply to all from <merchant>" re-files: the same name, and
+    the same Plaid merchant under another spelling (as `set_override` does)."""
+    key = (t.merchant or "").strip().lower()
+    names = [x for x in txns if (x.merchant or "").strip().lower() == key]
+    entities = {(x.raw or {}).get("merchant_entity_id") for x in names} - {None, ""}
+    return names + [x for x in txns if x not in names and x.category_source != "user"
+                    and (x.raw or {}).get("merchant_entity_id") in entities]
+
+
+@bp.post("/transactions/<txn_id>/category/preview")
+def preview_category(txn_id: str):
+    """What choosing this category would do, before it is saved: the line
+    under the chips on Change category. Nothing is written."""
+    from dataclasses import replace
+    body = request.get_json(silent=True) or {}
+    category = body.get("category")
+    if not category or category not in CATEGORIES:
+        return jsonify({"error": "A valid category is required."}), 400
+    st = store()
+    txns = st.all_transactions()
+    t = next((x for x in txns if x.fingerprint == txn_id), None)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    rows = _merchant_rows(t, txns)
+    ids = {x.fingerprint for x in rows} if body.get("apply_to_merchant") else {txn_id}
+    after = [replace(x, category=category, category_source="user")
+             if x.fingerprint in ids else x for x in txns]
+    out = _impact(st, txns, after, t.category or "Other", category, t.date[:7])
+    return jsonify(dict(out, merchant=t.merchant, merchant_count=len(rows)))
+
+
 @bp.patch("/transactions/<txn_id>")
 def update_transaction(txn_id: str):
+    from .impact import snapshot, undo_payload
     body = request.get_json(silent=True) or {}
     category = body.get("category")
     if not category or category not in CATEGORIES:
         return jsonify({"error": "A valid category is required."}), 400
 
-    txn = store().get_transaction(txn_id)
+    st = store()
+    txn = st.get_transaction(txn_id)
     if txn is None:
         return jsonify({"error": "No such transaction."}), 404
+    before_txns = st.all_transactions()
+    before = snapshot(st, before_txns)
 
     # "Apply to merchant" is what makes correction worth doing once rather than
     # every month: it teaches the categorizer permanently.
     if body.get("apply_to_merchant"):
-        updated = store().set_override(txn.merchant, category)
-        return jsonify({"ok": True, "updated": updated, "scope": "merchant",
-                        "merchant": txn.merchant})
+        updated = st.set_override(txn.merchant, category)
+        out = {"ok": True, "updated": updated, "scope": "merchant",
+               "merchant": txn.merchant}
+    else:
+        st.set_transaction_category(txn_id, category)
+        out = {"ok": True, "updated": 1, "scope": "transaction"}
+    after_txns = st.all_transactions()
+    out["impact"] = _impact(st, before_txns, after_txns, txn.category or "Other",
+                            category, txn.date[:7])
+    out["undo"] = undo_payload(before, snapshot(st, after_txns))
+    return jsonify(out)
 
-    store().set_transaction_category(txn_id, category)
-    return jsonify({"ok": True, "updated": 1, "scope": "transaction"})
+
+@bp.post("/transactions/undo")
+def undo_change():
+    """Put back what a change of category did: the rows it re-filed, and any
+    rule it wrote ("Apply to all", "Remember where these go"). The body is the
+    `undo` a change returned."""
+    from .impact import SOURCE
+    from .transfers import apply_transfer_matches
+    body = request.get_json(silent=True) or {}
+    rows = body.get("rows") or []
+    overrides = body.get("overrides") or {}
+    dests = body.get("destinations") or {}
+    if not isinstance(rows, list) or not isinstance(overrides, dict) \
+            or not isinstance(dests, dict) or len(rows) > 5000:
+        return jsonify({"error": "Nothing to undo."}), 400
+    st = store()
+    known = {t.fingerprint for t in st.all_transactions()}
+    changes = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            return jsonify({"error": "Nothing to undo."}), 400
+        rid, cat, src = r.get("id"), r.get("category"), r.get("source")
+        if rid not in known or cat not in CATEGORIES or not isinstance(src, str) \
+                or not SOURCE.fullmatch(src):
+            return jsonify({"error": "That change can’t be undone."}), 400
+        changes[rid] = (cat, src)
+    for key, cat in overrides.items():
+        if not isinstance(key, str) or len(key) > 200 or (cat is not None and cat not in CATEGORIES):
+            return jsonify({"error": "That change can’t be undone."}), 400
+    for key, d in dests.items():
+        if not isinstance(key, str) or len(key) > 200 or (
+                d is not None and (not isinstance(d, dict) or d.get("category") not in CATEGORIES)):
+            return jsonify({"error": "That change can’t be undone."}), 400
+    for key, cat in overrides.items():
+        st.restore_override(key, cat)
+    for key, d in dests.items():
+        if d is None:
+            st.clear_destination(key)
+        else:
+            st.set_destination(key, d["category"], str(d.get("label") or "")[:200])
+    st.write_categories(changes)
+    apply_transfer_matches(st)
+    return jsonify({"ok": True, "undone": len(changes)})
 
 
 @bp.put("/transactions/<txn_id>/invested")
@@ -618,8 +799,10 @@ def unsorted_transfers():
 
 @bp.post("/transfers/sort")
 def sort_transfers():
-    """Say where a group of transfers went, in one go. `remember` makes it
-    the rule for those names from now on."""
+    """Say where transfers went: Saved, a spending category, or Transfers
+    (moved between your own accounts). `remember` makes it the rule for those
+    names from now on. Says what that did to safe to spend, with an undo."""
+    from .impact import snapshot, undo_payload
     from .transfers import apply_transfer_matches
     body = request.get_json(silent=True) or {}
     category = body.get("category")
@@ -631,6 +814,10 @@ def sort_transfers():
     from .transfers import destination
     st = store()
     rows = [t for t in (st.get_transaction(i) for i in ids) if t is not None]
+    if not rows:
+        return jsonify({"error": "Nothing to sort."}), 404
+    before_txns = st.all_transactions()
+    before = snapshot(st, before_txns)
     learned = 0
     for t in rows:
         where = destination(t) if body.get("remember") else None
@@ -642,7 +829,12 @@ def sort_transfers():
         else:
             st.set_transaction_category(t.fingerprint, category)
     apply_transfer_matches(st)
-    return jsonify({"ok": True, "sorted": len(rows), "learned": learned})
+    after_txns = st.all_transactions()
+    first = rows[0]
+    return jsonify({"ok": True, "sorted": len(rows), "learned": learned,
+                    "impact": _impact(st, before_txns, after_txns,
+                                      first.category or "Other", category, first.date[:7]),
+                    "undo": undo_payload(before, snapshot(st, after_txns))})
 
 
 @bp.get("/transfers/saved")
@@ -785,7 +977,13 @@ def add_payback(txn_id: str, inflow_id: str):
     if already - inflow.amount > charge.amount + 0.005:
         return jsonify({"error": "That's more than the charge — friends can't pay "
                                  "back more than it cost."}), 400
-    st.link_payback(txn_id, inflow_id)
+    body = request.get_json(silent=True) or {}
+    person = body.get("person")
+    if person is not None:
+        names = [p["name"] for p in (st.splits().get(txn_id) or {}).get("people", [])]
+        if person not in names:
+            return jsonify({"error": "That person isn't in this split."}), 400
+    st.link_payback(txn_id, inflow_id, person)
     # Never income: Plaid sometimes calls an e-transfer in "income".
     if inflow.category != "Transfers":
         st.set_transaction_category(inflow_id, "Transfers")
@@ -2848,7 +3046,8 @@ def set_income_type(txn_id: str):
 def review_queue():
     from .review import build
     st = store()
-    return jsonify(build(st.all_transactions(), dismissed=st.dismissed_reviews()))
+    return jsonify(build(st.all_transactions(), dismissed=st.dismissed_reviews(),
+                         splits=st.splits(), payer=st.payback_people()))
 
 
 @bp.post("/review/dismiss")

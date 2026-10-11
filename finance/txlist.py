@@ -64,11 +64,15 @@ class Context:
     for, who paid back a split, and what the piggy banks are called."""
 
     def __init__(self, transactions: list[Transaction], confirmed: dict[str, str],
-                 notes: dict[str, str], banks: dict[int, str]):
+                 notes: dict[str, str], banks: dict[int, str],
+                 splits: dict[str, dict] | None = None):
         self.by_id = {t.fingerprint: t for t in transactions}
         self.confirmed = confirmed
         self.notes = notes
         self.banks = banks
+        # Who a split charge was split with, as you named them (THL-124).
+        self.split_with = {cid: [p["name"] for p in sp["people"]]
+                           for cid, sp in (splits or {}).items()}
         self.paid_by: dict[str, list[str]] = defaultdict(list)
         for t in transactions:
             if t.repays:
@@ -134,7 +138,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
              and cat not in ("Transfers", "Unsorted transfers", "Income")
              and abs(abs(share_amount(t)) - abs(t.amount)) >= 0.005)
     if split and counts == "spending" and abs(amount - abs(t.amount)) >= 0.005:
-        names = ctx.paid_by.get(t.fingerprint) or []
+        names = ctx.split_with.get(t.fingerprint) or ctx.paid_by.get(t.fingerprint) or []
         with_whom = (" · split with " + ", ".join(names) if names
                      else " · joint account" if t.joint else "")
         note = f"Your share of {money(t.amount)}{with_whom}"

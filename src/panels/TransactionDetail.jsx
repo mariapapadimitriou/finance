@@ -3,10 +3,12 @@ import {
   Avatar, CategoryChip, DetailPanel, PButton, StatusPill, txAmount,
 } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
+import CategoryPicker, { categoryLabel } from './CategoryPicker.jsx';
+import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
 import {
   addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTx,
   includeTransaction, money, setCategory, setMineAlways, setShare, setTxNote, sortTransfers,
-  unallocate,
+  unallocate, setSplit, clearSplit, unlinkPayback, linkPayback,
 } from '../api.js';
 
 /**
@@ -15,8 +17,9 @@ import {
  *
  * A suggested category asks "Is it right?": yes confirms it and closes with
  * "Saved"; once confirmed the question and the button go and only Change
- * category stays. Change category (R-02) and Split this (S-01, THL-124) are
- * not designed yet, so each is a plain step inside the panel until they are.
+ * category stays. Change category (R-02, THL-123) takes the panel over, with a
+ * back link to the transaction; saving closes it with a toast that says what
+ * changed and offers Undo (R-03).
  */
 
 const NOTE_MAX = 140;
@@ -58,12 +61,12 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
     return () => { live = false; };
   }, [id]);
 
-  async function save(fn, { close = false } = {}) {
+  async function save(fn, { close = false, change } = {}) {
     setBusy(true);
     setError(null);
     try {
-      await fn();
-      onSaved?.({ close });
+      const res = await fn();
+      onSaved?.({ close, change: change?.(res) });
       if (close) return;
       setTx(await getTx(id));
       setStep('main');
@@ -94,14 +97,73 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
   const bank = banks.find((b) => b.id === tx.bank_id);
 
   const back = () => { setStep('main'); setError(null); };
+  // A change that moved a number closes the panel with what it did (R-03).
+  const changed = (verb, cat) => (res) => ({
+    id: tx.id,
+    title: [`${verb} ${categoryLabel(cat)}.`, res?.impact?.title].filter(Boolean).join(' '),
+    detail: res?.impact?.detail ?? '',
+    undo: res?.undo,
+  });
+
+  if (step === 'category') {
+    const unsorted = tx.category === 'Unsorted transfers';
+    return (
+      <DetailPanel label="Change category" onClose={onClose}
+                   back={{ label: `${tx.merchant} · ${txAmount(tx.amount, { inflow: tx.inflow })}`,
+                           onClick: back }}>
+        <h2 className="pk-h2">{unsorted ? 'Where did this go?' : 'Change category'}</h2>
+        {error && <p className="txd-error" role="alert">{error.message}</p>}
+        <CategoryPicker tx={tx} categories={categories} busy={busy}
+                        onSave={(cat, always) => save(() => (
+                          unsorted ? sortTransfers([tx.id], cat, false)
+                            : setCategory(tx.id, cat, always)),
+                        { close: true, change: changed(unsorted ? 'Sorted as' : 'Moved to', cat) })} />
+      </DetailPanel>
+    );
+  }
+
+  if (step === 'split') {
+    return (
+      <DetailPanel label="Split this" onClose={onClose}
+                   back={{ label: `${tx.merchant} · ${txAmount(tx.full_amount)}`, onClick: back }}>
+        <h2 className="pk-h2">Split this</h2>
+        {error && <p className="txd-error" role="alert">{error.message}</p>}
+        <SplitThis tx={tx} busy={busy}
+                   onSave={(split) => save(() => setSplit(tx.id, split))}
+                   onClear={() => save(() => clearSplit(tx.id))} />
+      </DetailPanel>
+    );
+  }
+
+  // Money in that pays back a split (S-02, S-03).
+  const linked = (o) => () => {
+    const owed = Math.round((o.owes - tx.full_amount) * 100) / 100;
+    return {
+      id: tx.id,
+      title: `Linked to ${o.merchant}.`,
+      detail: owed > 0.004 ? `${o.name} still owes ${txAmount(owed)}. It won’t count as income.`
+        : `${o.name}’s share is paid back. It won’t count as income.`,
+    };
+  };
+  const link = (o) => save(() => linkPayback(o.charge_id, tx.id, o.name),
+                           { close: true, change: linked(o) });
+
+  if (step === 'link') {
+    return (
+      <DetailPanel label="Which split is this for?" onClose={onClose}
+                   back={{ label: `${tx.merchant} · ${txAmount(tx.amount, { inflow: tx.inflow })}`,
+                           onClick: back }}>
+        <h2 className="pk-h2">Which split is this for?</h2>
+        {error && <p className="txd-error" role="alert">{error.message}</p>}
+        <LinkToSplit tx={tx} busy={busy} onLink={link} onNone={() => setStep('category')} />
+      </DetailPanel>
+    );
+  }
+
+  const match = !left && tx.repayment?.suggestion;
+  const otherSplits = !left && !match && (tx.repayment?.splits?.length ?? 0) > 0;
+
   const body = {
-    category: <ChangeCategory tx={tx} categories={categories} busy={busy} onBack={back}
-                              onSave={(cat, always) => save(() => (
-                                tx.category === 'Unsorted transfers'
-                                  ? sortTransfers([tx.id], cat, false)
-                                  : setCategory(tx.id, cat, always)))} />,
-    split: <Split tx={tx} busy={busy} onBack={back}
-                  onSave={(share) => save(() => setShare(tx.id, share))} />,
     note: <Note tx={tx} busy={busy} onBack={back}
                 onSave={(note) => save(() => setTxNote(tx.id, note))} />,
     exclude: <Exclude tx={tx} busy={busy} onBack={back}
@@ -126,8 +188,11 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
           <h2 className="pk-h2">{tx.merchant}</h2>
           <span className="pk-label pk-muted">{longDate(tx.date)}</span>
         </div>
-        <span className={`pk-h1 txd-amount${muted ? ' muted' : tx.inflow ? ' in' : ''}`}>
-          {txAmount(tx.amount, { inflow: tx.inflow })}
+        <span className={`txd-amount${muted ? ' muted' : tx.inflow ? ' in' : ''}`}>
+          <span className="pk-h1">{txAmount(tx.amount, { inflow: tx.inflow })}</span>
+          {tx.split && (
+            <span className="pk-label pk-muted txd-sub">your share of {txAmount(tx.full_amount)}</span>
+          )}
         </span>
       </div>
 
@@ -137,12 +202,31 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
         <>
           {tx.pending && <StatusPill>Pending · usually clears in 1–3 days</StatusPill>}
 
+          {tx.splitting && <SplitSummary tx={tx} onEdit={() => setStep('split')} />}
+
+          {match && (
+            <>
+              <RepaymentQuestion match={match} />
+              <button type="button" className="txd-link" onClick={() => setStep('link')}>
+                It’s for a different split
+              </button>
+            </>
+          )}
+
           <dl className="txd-details">
             <Detail label="Account" value={tx.account} />
             <Detail label="From your bank" value={tx.description} />
             <Detail label="Counts toward" value={tx.counts_toward} />
             {tx.note && !tx.note_link && <Detail label="Why" value={tx.note} />}
             {tx.split && <Detail label="Whole charge" value={txAmount(tx.full_amount)} />}
+            {tx.repays_charge && (
+              <Detail label="Pays back"
+                      value={`${tx.repays_charge.merchant}${tx.repays_charge.person ? ` · ${tx.repays_charge.person}’s share` : ''} · not income`} />
+            )}
+            {(tx.repaid_by ?? []).map((r) => (
+              <Detail key={r.id} label="Repayment"
+                      value={`${r.merchant} · ${txAmount(-r.amount)} · not income`} />
+            ))}
             {bank && <Detail label="Paid from" value={`${bank.name}${tx.bank_auto ? ' · automatically' : ''}`} />}
             {tx.my_note && <Detail label="Your note" value={tx.my_note} />}
           </dl>
@@ -154,11 +238,30 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
           </section>
 
           <div className="txd-more">
-            {canSplit && (
+            {canSplit && !tx.splitting && (
               <button type="button" className="txd-link" onClick={() => setStep('split')}>
                 <PIcon name="users" size={18} /> Split this
               </button>
             )}
+            {otherSplits && (
+              <button type="button" className="txd-link" onClick={() => setStep('link')}>
+                <PIcon name="users" size={18} /> Pays back a split?
+              </button>
+            )}
+            {tx.repays_charge && (
+              <button type="button" className="txd-link"
+                      onClick={() => save(() => unlinkPayback(tx.repays_charge.id, tx.id))}>
+                <PIcon name="x" size={18} /> Unlink repayment
+              </button>
+            )}
+            {(tx.repaid_by ?? []).map((r) => (
+              <button key={r.id} type="button" className="txd-link"
+                      onClick={() => save(() => unlinkPayback(tx.id, r.id))}>
+                <PIcon name="x" size={18} />
+                {tx.repaid_by.length === 1 ? 'Unlink repayment'
+                  : `Unlink ${r.merchant} · ${txAmount(-r.amount)}`}
+              </button>
+            ))}
             {tx.joint && !left && (
               <button type="button" className="txd-link" onClick={() => setStep('whose')}>
                 <PIcon name="users" size={18} /> Whose was it?
@@ -195,12 +298,20 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                 It was mine
               </PButton>
             )}
-            {canConfirm && (
+            {match && (
+              <>
+                <PButton disabled={busy} onClick={() => link(match)}>Yes, link them</PButton>
+                <PButton variant="secondary" disabled={busy} onClick={() => setStep('category')}>
+                  No, it’s something else
+                </PButton>
+              </>
+            )}
+            {canConfirm && !match && (
               <PButton disabled={busy} onClick={() => save(() => confirmTx(tx.id), { close: true })}>
                 Yes, that’s right
               </PButton>
             )}
-            {!left && !notYours && (
+            {!left && !notYours && !match && (
               <PButton variant="secondary" disabled={busy} onClick={() => setStep('category')}>
                 {tx.category === 'Unsorted transfers' ? 'Tell Pearl where it went'
                   : 'Change category'}
@@ -242,78 +353,6 @@ function Step({ title, onBack, children }) {
       <h3 className="pk-h3">{title}</h3>
       {children}
     </section>
-  );
-}
-
-/** Interim for R-02: pick a category, optionally for every one from here. */
-function ChangeCategory({ tx, categories, busy, onBack, onSave }) {
-  const unsorted = tx.category === 'Unsorted transfers';
-  const names = categories.map((c) => c.name)
-    .filter((n) => n !== 'Unsorted transfers' && (!unsorted || n !== 'Transfers'));
-  const [pick, setPick] = useState(unsorted ? 'Saved' : tx.category);
-  const [always, setAlways] = useState(false);
-  return (
-    <Step title={unsorted ? 'Where did it go?' : 'Change category'} onBack={onBack}>
-      <Field label="Category">
-        {(id) => (
-          <select id={id} value={pick} onChange={(e) => setPick(e.target.value)}>
-            {names.map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
-        )}
-      </Field>
-      {!unsorted && (
-        <label className="txd-check">
-          <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
-          Always use this for {tx.merchant}
-        </label>
-      )}
-      <PButton disabled={busy || (!unsorted && pick === tx.category && !always)}
-               onClick={() => onSave(pick, always)}>Save</PButton>
-    </Step>
-  );
-}
-
-/** Interim for S-01 (THL-124): how much of this was hers. */
-function Split({ tx, busy, onBack, onSave }) {
-  const [value, setValue] = useState(tx.split ? String(tx.amount) : '');
-  const n = Number(value);
-  const ok = value !== '' && n >= 0 && n <= tx.full_amount;
-  const hint = value !== '' && n > tx.full_amount
-    ? `More than the whole charge of ${txAmount(tx.full_amount)}` : '';
-  return (
-    <Step title="Split this" onBack={onBack}>
-      <p className="pk-muted">Only your share counts toward your spending and your safe-to-spend.
-        The whole charge was {txAmount(tx.full_amount)}.</p>
-      <Field label="Your share">
-        {(id) => (
-          <>
-            <input id={id} type="number" inputMode="decimal" min="0" step="0.01"
-                   max={tx.full_amount} value={value} onChange={(e) => setValue(e.target.value)}
-                   aria-invalid={hint ? 'true' : undefined}
-                   aria-describedby={hint ? `${id}-hint` : undefined} />
-            {hint && (
-              <p className="txd-hint" id={`${id}-hint`}>
-                <PIcon name="alert" size={16} /> {hint}
-              </p>
-            )}
-          </>
-        )}
-      </Field>
-      <div className="txd-quick">
-        {[2, 3, 4].map((k) => (
-          <button key={k} type="button" className="pk-filter"
-                  onClick={() => setValue((tx.full_amount / k).toFixed(2))}>
-            Split {k} ways
-          </button>
-        ))}
-      </div>
-      <PButton disabled={busy || !ok} onClick={() => onSave(n)}>Save</PButton>
-      {tx.split && (
-        <PButton variant="text" disabled={busy} onClick={() => onSave(null)}>
-          It was all mine
-        </PButton>
-      )}
-    </Step>
   );
 }
 

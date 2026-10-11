@@ -53,9 +53,9 @@ CATEGORIES: dict[str, dict] = {
     "Fees & Interest":  {"essential": False, "discretionary": True},
     "Taxes":            {"essential": True,  "discretionary": False},
     "Cash & ATM":       {"essential": False, "discretionary": False},
-    # Money leaving a bank account for somewhere Spendie can't see. Counted as
-    # spending until you say where it went — but never in the weekly number,
-    # so a rent e-transfer can't wipe out a week.
+    # Money leaving a bank account for somewhere Pearl can't see. Counted as
+    # spending until you say where it went, the week's safe to spend included
+    # (see spend_plan.counts_against_safe) — but not in plans or medians.
     "Unsorted transfers": {"essential": False, "discretionary": False},
     # Money put away — into an investment account, savings you don't connect,
     # anything you keep: saved, not spent.

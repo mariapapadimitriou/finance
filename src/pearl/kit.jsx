@@ -128,9 +128,10 @@ export function DayHeader({ children }) {
  *   inflow  — money in, shown with a "+"
  */
 export function TxRow({ name, logo, meta, note, noteLink = false, chip, amount,
-                        inflow = false, muted = false, onOpen }) {
+                        inflow = false, muted = false, flash = false, onOpen }) {
   return (
-    <button type="button" className={`pk-row${muted ? ' muted' : ''}`} onClick={onOpen}>
+    <button type="button" className={`pk-row${muted ? ' muted' : ''}${flash ? ' flash' : ''}`}
+            onClick={onOpen}>
       <Avatar name={name} logo={logo} />
       <span className="pk-row-text">
         <span className="pk-row-name">{name}</span>
@@ -163,11 +164,13 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
   + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * A 560px panel over the page (role=dialog). Focus moves in and stays in;
+ * A 560px panel over the page (role=dialog). A step inside it (Change
+ * category, Split this) swaps the overline for a back link naming what it
+ * came from, "← Uber Eats · $24.80", as the Handoff file draws it. Focus moves in and stays in;
  * Esc and the scrim close it, and focus goes back to what opened it. On a
  * phone it is the whole page.
  */
-export function DetailPanel({ label, overline, onClose, children }) {
+export function DetailPanel({ label, overline, back, onClose, children }) {
   const ref = useRef(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -198,7 +201,11 @@ export function DetailPanel({ label, overline, onClose, children }) {
       <div className="pk-panel" role="dialog" aria-modal="true" aria-label={label} ref={ref}
            onClick={(e) => e.stopPropagation()}>
         <div className="pk-panel-top">
-          <p className="pk-overline accent">{overline}</p>
+          {back ? (
+            <button type="button" className="pk-back" onClick={back.onClick}>
+              <PIcon name="arrowLeft" size={16} /> {back.label}
+            </button>
+          ) : <p className="pk-overline accent">{overline}</p>}
           <button type="button" className="pk-close" aria-label="Close" onClick={onClose}>
             <PIcon name="x" size={18} />
           </button>
@@ -220,6 +227,93 @@ export function Toast({ children, onDone, ms = 2400 }) {
   return (
     <div className="pk-toast" role="status" aria-live="polite">
       <PIcon name="check" size={18} /> {children}
+    </div>
+  );
+}
+
+/**
+ * A radio or checkbox row (Handoff "Choice"). The whole row is the target;
+ * the native input inside is what a keyboard and a screen reader use. A
+ * chosen radio row is blush with a rose edge; a checkbox row stays plain.
+ */
+export function Choice({ type = 'radio', name, checked, onChange, label, description,
+                         disabled = false }) {
+  return (
+    <label className={`pk-choice ${type}${checked ? ' on' : ''}${disabled ? ' off' : ''}`}>
+      <input type={type} name={name} checked={!!checked} disabled={disabled}
+             onChange={(e) => onChange?.(type === 'checkbox' ? e.target.checked : true)} />
+      <span className="pk-choice-box" aria-hidden="true">
+        {type === 'checkbox' && checked && <PIcon name="check" size={16} />}
+      </span>
+      <span className="pk-choice-text">
+        <span>{label}</span>
+        {description && <span className="pk-choice-desc">{description}</span>}
+      </span>
+    </label>
+  );
+}
+
+/**
+ * One option in a set of chips (Change category, R-02). Chosen is blush with
+ * a check; Pearl's guess keeps the dashed outline it has in the list.
+ */
+export function ChipOption({ label, selected = false, suggested = false, onSelect, link = false }) {
+  return (
+    <button type="button" role={link ? undefined : 'radio'}
+            aria-checked={link ? undefined : selected}
+            className={`pk-opt${selected ? ' on' : ''}${suggested && !selected ? ' guess' : ''}${link ? ' more' : ''}`}
+            onClick={onSelect}>
+      {selected && <PIcon name="check" size={14} />}
+      {label}
+    </button>
+  );
+}
+
+/** Two or more ways of doing one thing, side by side (Split evenly / by amount). */
+export function Segmented({ label, value, options, onChange }) {
+  return (
+    <div className="pk-seg" role="radiogroup" aria-label={label}>
+      {options.map((o) => (
+        <button key={o.value} type="button" role="radio" aria-checked={value === o.value}
+                className={value === o.value ? 'on' : ''} onClick={() => onChange(o.value)}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** What a choice will do, said before it is made. */
+export function ImpactNote({ children }) {
+  if (!children) return null;
+  return (
+    <p className="pk-impact" role="status" aria-live="polite">
+      <PIcon name="info" size={18} /> <span>{children}</span>
+    </p>
+  );
+}
+
+/**
+ * The toast after a change that moved a number (R-03): what happened, what it
+ * did, and Undo. Stays up longer than a plain toast so Undo can be reached.
+ */
+export function ActionToast({ title, detail, onUndo, onDone, ms = 8000 }) {
+  const done = useRef(onDone);
+  done.current = onDone;
+  useEffect(() => {
+    const t = setTimeout(() => done.current?.(), ms);
+    return () => clearTimeout(t);
+  }, [ms, title]);
+  return (
+    <div className="pk-toast-card" role="status" aria-live="polite">
+      <span className="pk-toast-icon" aria-hidden="true"><PIcon name="check" size={16} /></span>
+      <span className="pk-toast-text">
+        <span>{title}</span>
+        {detail && <span className="pk-toast-detail">{detail}</span>}
+      </span>
+      {onUndo && (
+        <button type="button" className="pk-toast-undo" onClick={onUndo}>Undo</button>
+      )}
     </div>
   );
 }

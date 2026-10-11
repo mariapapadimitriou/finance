@@ -268,8 +268,12 @@ export const getSaved      = (months = 2) => req(`/api/transfers/saved?months=${
 export const unsortTransaction = (id) => json('POST', `/api/transactions/${id}/unsort`, {});
 // Money friends sent back for a charge: what is linked, and what might be.
 export const getPaybacks   = (id) => req(`/api/transactions/${id}/paybacks`);
-export const linkPayback   = (id, inflowId) =>
-  json('POST', `/api/transactions/${id}/paybacks/${inflowId}`, {});
+export const linkPayback   = (id, inflowId, person) =>
+  json('POST', `/api/transactions/${id}/paybacks/${inflowId}`, person ? { person } : {});
+// A charge split with people (S-01, THL-124): {mode, people: [{name, amount}], watch}.
+export const setSplit      = (id, split) => json('PUT', `/api/transactions/${id}/split`, split);
+export const clearSplit    = (id) =>
+  req(`/api/transactions/${id}/split`, { method: 'DELETE' });
 export const unlinkPayback = (id, inflowId) =>
   req(`/api/transactions/${id}/paybacks/${inflowId}`, { method: 'DELETE' });
 // How much of a transaction was put away (saved). null clears it.
@@ -279,6 +283,13 @@ export const setCategory   = (id, category, applyToMerchant = false) =>
   json('PATCH', `/api/transactions/${id}`, {
     category, apply_to_merchant: applyToMerchant,
   });
+// What a category would do before it is saved (R-02), and taking a change
+// back — rows and rules — with the `undo` a change returned (R-03).
+export const previewCategory = (id, category, applyToMerchant = false) =>
+  json('POST', `/api/transactions/${id}/category/preview`, {
+    category, apply_to_merchant: applyToMerchant,
+  });
+export const undoChange = (undo) => json('POST', '/api/transactions/undo', undo);
 
 // Leaving transactions out: one row, or every row like it. Your exclusion
 // wins over every rule; excluded rows stay listed and can be put back.

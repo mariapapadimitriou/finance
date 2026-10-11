@@ -417,13 +417,14 @@ class TestOneReviewQueue:
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
         assert "getReview()" in text and "counts={{ transactions: data.review }}" in text
 
-    def test_review_holds_every_kind_and_the_unsorted_card(self):
-        text = (SRC / "panels" / "ReviewPanel.jsx").read_text(encoding="utf-8")
-        for kind in ("money_in", "unsure_category", "income_type", "three_pay_month"):
+    def test_review_holds_every_kind_and_the_unsorted_question(self):
+        text = (SRC / "panels" / "NeedsALook.jsx").read_text(encoding="utf-8")
+        for kind in ("unsorted", "money_in", "unsure_category", "income_type", "three_pay_month"):
             assert f"data.{kind}" in text, kind
         assert "<WhereDidThisGo" in text
-        tx = (SRC / "panels" / "TransactionsPanel.jsx").read_text(encoding="utf-8")
-        assert "<WhereDidThisGo" not in tx, "it lives on To review now"
+        assert "Remember where ${kind} to ${it.to} go" in text
+        app = (SRC / "App.jsx").read_text(encoding="utf-8")
+        assert "<NeedsALook" in app and "ReviewPanel" not in app
 
     def test_rows_can_be_excluded_and_put_back(self):
         tx = (SRC / "panels" / "TransactionsPanel.jsx").read_text(encoding="utf-8")
@@ -497,3 +498,48 @@ class TestDesignTokens:
         for token in ("--border-strong", "--border-focus", "--border-error",
                       "--surface-scrim", "--surface-disabled", "--ink-disabled"):
             assert f"var({token})" in css, token
+
+
+class TestChangeCategory:
+    """THL-123 R-02/R-03: Change category says what it will do, and can be undone."""
+
+    def test_the_picker_previews_and_groups(self):
+        src = (SRC / "panels" / "CategoryPicker.jsx").read_text(encoding="utf-8")
+        assert "previewCategory(" in src, "the impact line comes from the server"
+        for title in ("'Essentials'", "'Lifestyle'", "'Savings'", "'Income'", "'Not spending'"):
+            assert title in src, title
+        assert "Apply to all from ${tx.merchant}" in src
+
+    def test_the_detail_panel_uses_it(self):
+        src = (SRC / "panels" / "TransactionDetail.jsx").read_text(encoding="utf-8")
+        assert "<CategoryPicker" in src and "function ChangeCategory" not in src
+        assert "back={{" in src, "the step has a back link naming the transaction"
+
+    def test_the_list_offers_undo(self):
+        src = (SRC / "panels" / "TransactionsList.jsx").read_text(encoding="utf-8")
+        assert "<ActionToast" in src and "undoChange(" in src
+        assert "flash={flash.has(r.id)}" in src
+
+
+class TestSplitsAndRepayments:
+    """THL-124 S-01 to S-04: split with people; repayments suggested and linked."""
+
+    def test_split_this_and_its_summary(self):
+        src = (SRC / "panels" / "Splits.jsx").read_text(encoding="utf-8")
+        for text in ("Only your share counts toward your spending.", "Add someone",
+                     "Watch for ${names(people)} paying me back", "Save split",
+                     "Paid back {shortDate(p.paid_on)}", "Owes ${txAmount(p.owes)}"):
+            assert text in src, text
+        assert "MAX_PEOPLE = 8" in src
+
+    def test_repayment_suggestion_and_link(self):
+        src = (SRC / "panels" / "Splits.jsx").read_text(encoding="utf-8")
+        for text in ("Is {match.name} paying you back for this?", "Exact match",
+                     "Which split is this for?", "None of these",
+                     "Paid back part of it? Pick the split and we’ll keep the rest open."):
+            assert text in src, text
+        detail = (SRC / "panels" / "TransactionDetail.jsx").read_text(encoding="utf-8")
+        assert "Yes, link them" in detail and "No, it’s something else" in detail
+        assert "linkPayback(o.charge_id, tx.id, o.name)" in detail
+        review = (SRC / "panels" / "NeedsALook.jsx").read_text(encoding="utf-8")
+        assert "it.guess?.action === 'split'" in review

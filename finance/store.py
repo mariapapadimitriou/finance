@@ -367,6 +367,28 @@ CREATE TABLE IF NOT EXISTS account_sync (
     account_subtype TEXT,
     updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- A charge split with other people (Pearl S-01, THL-124): how it was split
+-- and whether to watch for their repayments. Your share is written to
+-- txn_shares as before, so everything that counts spending already counts
+-- only your part. The people are first names you typed, nothing more, and
+-- are used only to match an e-Transfer from the same name to this split.
+CREATE TABLE IF NOT EXISTS txn_splits (
+    txn_id TEXT PRIMARY KEY,
+    mode   TEXT NOT NULL,
+    watch  INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS txn_split_people (
+    txn_id TEXT NOT NULL,
+    pos    INTEGER NOT NULL,
+    name   TEXT NOT NULL,
+    amount REAL NOT NULL,
+    PRIMARY KEY (txn_id, pos)
+);
+-- Which person in a split a repayment came from, when you said.
+CREATE TABLE IF NOT EXISTS txn_payback_person (
+    inflow_id TEXT PRIMARY KEY,
+    person    TEXT NOT NULL
+);
 """
 
 
@@ -735,6 +757,9 @@ class Store:
             c.execute("DELETE FROM txn_income_type WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_confirmed WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_notes WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_splits WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_split_people WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_payback_person WHERE inflow_id = ?", (txn_id,))
             return cur.rowcount > 0
 
     def set_share(self, txn_id: str, my_share: float | None) -> None:
@@ -873,18 +898,61 @@ class Store:
                 c.execute("INSERT INTO txn_notes (txn_id, note) VALUES (?, ?)",
                           (txn_id, note))
 
-    def link_payback(self, charge_id: str, inflow_id: str) -> None:
+    def link_payback(self, charge_id: str, inflow_id: str, person: str | None = None) -> None:
         """Say this money coming in was a friend paying you back for that
-        charge. An inflow repays one charge, so linking it again moves it."""
+        charge — and, for a split, which of the people it was. An inflow
+        repays one charge, so linking it again moves it."""
         with self.conn() as c:
             c.execute("DELETE FROM txn_paybacks WHERE inflow_id = ?", (inflow_id,))
+            c.execute("DELETE FROM txn_payback_person WHERE inflow_id = ?", (inflow_id,))
             c.execute("INSERT INTO txn_paybacks (inflow_id, charge_id) VALUES (?, ?)",
                       (inflow_id, charge_id))
+            if person:
+                c.execute("INSERT INTO txn_payback_person (inflow_id, person) VALUES (?, ?)",
+                          (inflow_id, person))
 
     def unlink_payback(self, inflow_id: str) -> bool:
         with self.conn() as c:
+            c.execute("DELETE FROM txn_payback_person WHERE inflow_id = ?", (inflow_id,))
             cur = c.execute("DELETE FROM txn_paybacks WHERE inflow_id = ?",
                             (inflow_id,))
+            return (cur.rowcount or 0) > 0
+
+    def payback_people(self) -> dict[str, str]:
+        """inflow id → the person in a split it came from, where you said."""
+        with self.conn() as c:
+            rows = c.execute("SELECT inflow_id, person FROM txn_payback_person").fetchall()
+        return {r["inflow_id"]: r["person"] for r in rows}
+
+    # ── Splits (THL-124) ─────────────────────────────────────────────────
+    def splits(self) -> dict[str, dict]:
+        """charge id → {mode, watch, people: [{name, amount}]}."""
+        with self.conn() as c:
+            heads = c.execute("SELECT txn_id, mode, watch FROM txn_splits").fetchall()
+            people = c.execute("SELECT txn_id, pos, name, amount FROM txn_split_people "
+                               "ORDER BY txn_id, pos").fetchall()
+        out = {r["txn_id"]: {"mode": r["mode"], "watch": bool(r["watch"]), "people": []}
+               for r in heads}
+        for r in people:
+            if r["txn_id"] in out:
+                out[r["txn_id"]]["people"].append(
+                    {"name": r["name"], "amount": round(float(r["amount"]), 2)})
+        return out
+
+    def set_split(self, txn_id: str, mode: str, people: list[dict], watch: bool) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_split_people WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_splits WHERE txn_id = ?", (txn_id,))
+            c.execute("INSERT INTO txn_splits (txn_id, mode, watch) VALUES (?, ?, ?)",
+                      (txn_id, mode, 1 if watch else 0))
+            for pos, p in enumerate(people):
+                c.execute("INSERT INTO txn_split_people (txn_id, pos, name, amount) "
+                          "VALUES (?, ?, ?, ?)", (txn_id, pos, p["name"], p["amount"]))
+
+    def clear_split(self, txn_id: str) -> bool:
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_split_people WHERE txn_id = ?", (txn_id,))
+            cur = c.execute("DELETE FROM txn_splits WHERE txn_id = ?", (txn_id,))
             return (cur.rowcount or 0) > 0
 
     def paybacks_for(self, charge_id: str) -> list[str]:
@@ -980,8 +1048,10 @@ class Store:
                 removed += max(cur.rowcount or 0, 0)
                 for table in ("txn_shares", "txn_invested", "piggy_allocations",
                               "piggy_optouts", "txn_exclusions", "txn_income_type",
-                              "txn_confirmed", "txn_notes"):
+                              "txn_confirmed", "txn_notes", "txn_splits",
+                              "txn_split_people"):
                     c.execute(f"DELETE FROM {table} WHERE txn_id IN ({marks})", chunk)
+                c.execute(f"DELETE FROM txn_payback_person WHERE inflow_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_paybacks WHERE inflow_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_paybacks WHERE charge_id IN ({marks})", chunk)
             if import_suffix:
@@ -1112,6 +1182,9 @@ class Store:
             ("txn_shares", "your shares of split charges"),
             ("txn_invested", "amounts marked as invested"),
             ("txn_paybacks", "money friends paid back"),
+            ("txn_payback_person", "who paid you back"),
+            ("txn_splits", "split charges"),
+            ("txn_split_people", "people in split charges"),
             ("transfer_destinations", "where transfers go"),
             ("joint_accounts", "joint accounts"),
             ("joint_mine", "names always yours on a joint account"),
@@ -1203,6 +1276,15 @@ class Store:
                 (category, key),
             )
             return cur.rowcount
+
+    def restore_override(self, key: str, category: str | None) -> None:
+        """Put one rule back as it was — by its stored key, rows untouched.
+        For Undo, which restores the rows itself."""
+        with self.conn() as c:
+            c.execute("DELETE FROM merchant_overrides WHERE merchant_key = ?", (key,))
+            if category:
+                c.execute("INSERT INTO merchant_overrides (merchant_key, category) "
+                          "VALUES (?, ?)", (key, category))
 
     def clear_override(self, merchant: str) -> None:
         key = merchant.strip().lower()
