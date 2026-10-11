@@ -1204,6 +1204,15 @@ class Store:
             )
             return cur.rowcount
 
+    def restore_override(self, key: str, category: str | None) -> None:
+        """Put one rule back as it was — by its stored key, rows untouched.
+        For Undo, which restores the rows itself."""
+        with self.conn() as c:
+            c.execute("DELETE FROM merchant_overrides WHERE merchant_key = ?", (key,))
+            if category:
+                c.execute("INSERT INTO merchant_overrides (merchant_key, category) "
+                          "VALUES (?, ?)", (key, category))
+
     def clear_override(self, merchant: str) -> None:
         key = merchant.strip().lower()
         with self.conn() as c:

@@ -489,26 +489,141 @@ def set_transaction_note(txn_id: str):
     return jsonify({"ok": True, "note": note})
 
 
+# ── Changing a category, and what it did (THL-123) ─────────────────────────
+
+def _safe_left(st, txns) -> float:
+    """Safe to spend: what is left of this week, as Allowance shows it."""
+    from datetime import date as _date
+    month = _date.today().isoformat()[:7]
+    amount, _ = _allowance(st, txns)
+    return spend_plan.compute(txns, amount, month,
+                              covered=st.covered_in(month))["week"]["left"]
+
+
+def _month_spent(txns, month: str) -> float:
+    """Spent in a month, as the transactions list totals it."""
+    from .analytics import counts_as_spending
+    return round(sum(spend_amount(t) for t in txns
+                     if t.date[:7] == month and counts_as_spending(t)), 2)
+
+
+def _month_name(month: str) -> str:
+    from datetime import date as _date
+    return _date.fromisoformat(month + "-01").strftime("%B")
+
+
+def _impact(st, before_txns, after_txns, cat_from: str, cat_to: str, month: str) -> dict:
+    from .impact import describe
+    return describe(_safe_left(st, before_txns), _safe_left(st, after_txns),
+                    cat_from, cat_to, _month_spent(before_txns, month),
+                    _month_spent(after_txns, month), _month_name(month))
+
+
+def _merchant_rows(t, txns) -> list:
+    """The rows "Apply to all from <merchant>" re-files: the same name, and
+    the same Plaid merchant under another spelling (as `set_override` does)."""
+    key = (t.merchant or "").strip().lower()
+    names = [x for x in txns if (x.merchant or "").strip().lower() == key]
+    entities = {(x.raw or {}).get("merchant_entity_id") for x in names} - {None, ""}
+    return names + [x for x in txns if x not in names and x.category_source != "user"
+                    and (x.raw or {}).get("merchant_entity_id") in entities]
+
+
+@bp.post("/transactions/<txn_id>/category/preview")
+def preview_category(txn_id: str):
+    """What choosing this category would do, before it is saved: the line
+    under the chips on Change category. Nothing is written."""
+    from dataclasses import replace
+    body = request.get_json(silent=True) or {}
+    category = body.get("category")
+    if not category or category not in CATEGORIES:
+        return jsonify({"error": "A valid category is required."}), 400
+    st = store()
+    txns = st.all_transactions()
+    t = next((x for x in txns if x.fingerprint == txn_id), None)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    rows = _merchant_rows(t, txns)
+    ids = {x.fingerprint for x in rows} if body.get("apply_to_merchant") else {txn_id}
+    after = [replace(x, category=category, category_source="user")
+             if x.fingerprint in ids else x for x in txns]
+    out = _impact(st, txns, after, t.category or "Other", category, t.date[:7])
+    return jsonify(dict(out, merchant=t.merchant, merchant_count=len(rows)))
+
+
 @bp.patch("/transactions/<txn_id>")
 def update_transaction(txn_id: str):
+    from .impact import snapshot, undo_payload
     body = request.get_json(silent=True) or {}
     category = body.get("category")
     if not category or category not in CATEGORIES:
         return jsonify({"error": "A valid category is required."}), 400
 
-    txn = store().get_transaction(txn_id)
+    st = store()
+    txn = st.get_transaction(txn_id)
     if txn is None:
         return jsonify({"error": "No such transaction."}), 404
+    before_txns = st.all_transactions()
+    before = snapshot(st, before_txns)
 
     # "Apply to merchant" is what makes correction worth doing once rather than
     # every month: it teaches the categorizer permanently.
     if body.get("apply_to_merchant"):
-        updated = store().set_override(txn.merchant, category)
-        return jsonify({"ok": True, "updated": updated, "scope": "merchant",
-                        "merchant": txn.merchant})
+        updated = st.set_override(txn.merchant, category)
+        out = {"ok": True, "updated": updated, "scope": "merchant",
+               "merchant": txn.merchant}
+    else:
+        st.set_transaction_category(txn_id, category)
+        out = {"ok": True, "updated": 1, "scope": "transaction"}
+    after_txns = st.all_transactions()
+    out["impact"] = _impact(st, before_txns, after_txns, txn.category or "Other",
+                            category, txn.date[:7])
+    out["undo"] = undo_payload(before, snapshot(st, after_txns))
+    return jsonify(out)
 
-    store().set_transaction_category(txn_id, category)
-    return jsonify({"ok": True, "updated": 1, "scope": "transaction"})
+
+@bp.post("/transactions/undo")
+def undo_change():
+    """Put back what a change of category did: the rows it re-filed, and any
+    rule it wrote ("Apply to all", "Remember where these go"). The body is the
+    `undo` a change returned."""
+    from .impact import SOURCE
+    from .transfers import apply_transfer_matches
+    body = request.get_json(silent=True) or {}
+    rows = body.get("rows") or []
+    overrides = body.get("overrides") or {}
+    dests = body.get("destinations") or {}
+    if not isinstance(rows, list) or not isinstance(overrides, dict) \
+            or not isinstance(dests, dict) or len(rows) > 5000:
+        return jsonify({"error": "Nothing to undo."}), 400
+    st = store()
+    known = {t.fingerprint for t in st.all_transactions()}
+    changes = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            return jsonify({"error": "Nothing to undo."}), 400
+        rid, cat, src = r.get("id"), r.get("category"), r.get("source")
+        if rid not in known or cat not in CATEGORIES or not isinstance(src, str) \
+                or not SOURCE.fullmatch(src):
+            return jsonify({"error": "That change can’t be undone."}), 400
+        changes[rid] = (cat, src)
+    for key, cat in overrides.items():
+        if not isinstance(key, str) or len(key) > 200 or (cat is not None and cat not in CATEGORIES):
+            return jsonify({"error": "That change can’t be undone."}), 400
+    for key, d in dests.items():
+        if not isinstance(key, str) or len(key) > 200 or (
+                d is not None and (not isinstance(d, dict) or d.get("category") not in CATEGORIES)):
+            return jsonify({"error": "That change can’t be undone."}), 400
+    for key, cat in overrides.items():
+        st.restore_override(key, cat)
+    for key, d in dests.items():
+        if d is None:
+            st.clear_destination(key)
+        else:
+            st.set_destination(key, d["category"], str(d.get("label") or "")[:200])
+    st.write_categories(changes)
+    apply_transfer_matches(st)
+    return jsonify({"ok": True, "undone": len(changes)})
 
 
 @bp.put("/transactions/<txn_id>/invested")
@@ -618,8 +733,10 @@ def unsorted_transfers():
 
 @bp.post("/transfers/sort")
 def sort_transfers():
-    """Say where a group of transfers went, in one go. `remember` makes it
-    the rule for those names from now on."""
+    """Say where transfers went: Saved, a spending category, or Transfers
+    (moved between your own accounts). `remember` makes it the rule for those
+    names from now on. Says what that did to safe to spend, with an undo."""
+    from .impact import snapshot, undo_payload
     from .transfers import apply_transfer_matches
     body = request.get_json(silent=True) or {}
     category = body.get("category")
@@ -631,6 +748,10 @@ def sort_transfers():
     from .transfers import destination
     st = store()
     rows = [t for t in (st.get_transaction(i) for i in ids) if t is not None]
+    if not rows:
+        return jsonify({"error": "Nothing to sort."}), 404
+    before_txns = st.all_transactions()
+    before = snapshot(st, before_txns)
     learned = 0
     for t in rows:
         where = destination(t) if body.get("remember") else None
@@ -642,7 +763,12 @@ def sort_transfers():
         else:
             st.set_transaction_category(t.fingerprint, category)
     apply_transfer_matches(st)
-    return jsonify({"ok": True, "sorted": len(rows), "learned": learned})
+    after_txns = st.all_transactions()
+    first = rows[0]
+    return jsonify({"ok": True, "sorted": len(rows), "learned": learned,
+                    "impact": _impact(st, before_txns, after_txns,
+                                      first.category or "Other", category, first.date[:7]),
+                    "undo": undo_payload(before, snapshot(st, after_txns))})
 
 
 @bp.get("/transfers/saved")
