@@ -310,3 +310,99 @@
 .txd-check { display: flex; align-items: center; gap: var(--space-2); font-size: 15px; }
 .txd-quick { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .txd-quick .pk-filter { cursor: pointer; }
+
+/* ── Panel back link (a step inside the panel) ──────────────────────────── */
+.pk .pk-back {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none;
+  color: var(--link); font-size: 13px; line-height: 18px; font-weight: 500; cursor: pointer;
+  min-width: 0; text-align: left;
+}
+.pk .pk-back:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ── Choice (radio or checkbox row) ──────────────────────────────────────── */
+.pk-choice {
+  position: relative; display: flex; align-items: flex-start; gap: var(--space-3); width: 100%;
+  padding: var(--space-4); border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-card); color: var(--ink); cursor: pointer;
+}
+.pk-choice input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.pk-choice:has(input:focus-visible) { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.pk-choice.radio.on { background: var(--blush); border-color: var(--action); color: var(--on-nacre); }
+.pk-choice.off { cursor: default; color: var(--ink-disabled); }
+.pk-choice-box {
+  flex: none; width: 20px; height: 20px; margin-top: 1px; display: inline-flex;
+  align-items: center; justify-content: center;
+  background: var(--surface-card); border: 1.5px solid var(--border-strong);
+}
+.pk-choice.radio .pk-choice-box { border-radius: var(--radius-full); }
+.pk-choice.radio.on .pk-choice-box { border: 6px solid var(--action); }
+.pk-choice.checkbox .pk-choice-box { border-radius: 6px; }
+.pk-choice.checkbox.on .pk-choice-box {
+  background: var(--action); border-color: var(--action); color: var(--on-action);
+}
+.pk-choice-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.pk-choice-desc { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.pk-choice.radio.on .pk-choice-desc { color: var(--on-nacre); }
+.pk-choices { display: flex; flex-direction: column; gap: var(--space-3); }
+
+/* ── Chip options (Change category) ──────────────────────────────────────── */
+.pk-opts { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.pk .pk-opt {
+  display: inline-flex; align-items: center; gap: var(--space-1); padding: 6px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--surface-card);
+  color: var(--ink); font-size: 13px; line-height: 18px; font-weight: 500; cursor: pointer;
+}
+.pk .pk-opt:hover { border-color: var(--border-strong); }
+.pk .pk-opt.guess { border-style: dashed; border-color: var(--ink-muted); }
+.pk .pk-opt.on { background: var(--blush); border-color: transparent; color: var(--on-nacre); }
+.pk .pk-opt.more { color: var(--link); }
+.pk-opt-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.pk-opt-groups { display: flex; flex-direction: column; gap: 14px; }
+
+/* ── Segmented ───────────────────────────────────────────────────────────── */
+.pk-seg {
+  display: flex; gap: var(--space-1); padding: var(--space-1); width: 100%;
+  background: var(--track); border-radius: var(--radius-full);
+}
+.pk .pk-seg button {
+  flex: 1 1 0; min-width: 0; padding: 10px; border: 0; border-radius: var(--radius-full);
+  background: transparent; color: var(--ink-muted); font-size: 13px; line-height: 18px;
+  font-weight: 500; cursor: pointer;
+}
+.pk .pk-seg button.on {
+  background: var(--surface-card); color: var(--ink); font-size: 16px; line-height: 20px; font-weight: 600;
+}
+
+/* ── Impact line ─────────────────────────────────────────────────────────── */
+.pk-impact {
+  margin: 0; display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px;
+  background: var(--surface-card); border-radius: var(--radius-md);
+  font-size: 13px; line-height: 18px; color: var(--ink);
+}
+.pk-impact svg { flex: none; }
+
+/* ── Toast with an action (R-03) ─────────────────────────────────────────── */
+.pk-toast-card {
+  position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%); z-index: 70;
+  display: flex; align-items: center; gap: var(--space-3); width: max-content;
+  max-width: min(560px, calc(100vw - 32px)); padding: 16px 20px;
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised); color: var(--ink);
+}
+.pk-toast-icon {
+  flex: none; width: 32px; height: 32px; border-radius: var(--radius-full);
+  background: var(--seaglass); color: var(--on-nacre);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pk-toast-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pk-toast-detail { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.pk .pk-toast-undo {
+  flex: none; border: 0; background: none; padding: 4px 0; cursor: pointer;
+  color: var(--link); font-size: 13px; line-height: 18px; font-weight: 600;
+}
+@media (max-width: 720px) { .pk-toast-card { bottom: 16px; width: calc(100vw - 32px); } }
+
+/* ── A row that just changed ─────────────────────────────────────────────── */
+@keyframes pk-flash { from { background: var(--track); } to { background: transparent; } }
+.pk-row.flash { animation: pk-flash 2.4s ease-out; }
+@media (prefers-reduced-motion: reduce) { .pk-row.flash { animation: none; outline: 2px solid var(--border-focus); } }

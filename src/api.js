@@ -279,6 +279,13 @@ export const setCategory   = (id, category, applyToMerchant = false) =>
   json('PATCH', `/api/transactions/${id}`, {
     category, apply_to_merchant: applyToMerchant,
   });
+// What a category would do before it is saved (R-02), and taking a change
+// back — rows and rules — with the `undo` a change returned (R-03).
+export const previewCategory = (id, category, applyToMerchant = false) =>
+  json('POST', `/api/transactions/${id}/category/preview`, {
+    category, apply_to_merchant: applyToMerchant,
+  });
+export const undoChange = (undo) => json('POST', '/api/transactions/undo', undo);
 
 // Leaving transactions out: one row, or every row like it. Your exclusion
 // wins over every rule; excluded rows stay listed and can be put back.

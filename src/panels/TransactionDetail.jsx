@@ -3,6 +3,7 @@ import {
   Avatar, CategoryChip, DetailPanel, PButton, StatusPill, txAmount,
 } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
+import CategoryPicker, { categoryLabel } from './CategoryPicker.jsx';
 import {
   addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTx,
   includeTransaction, money, setCategory, setMineAlways, setShare, setTxNote, sortTransfers,
@@ -15,8 +16,9 @@ import {
  *
  * A suggested category asks "Is it right?": yes confirms it and closes with
  * "Saved"; once confirmed the question and the button go and only Change
- * category stays. Change category (R-02) and Split this (S-01, THL-124) are
- * not designed yet, so each is a plain step inside the panel until they are.
+ * category stays. Change category (R-02, THL-123) takes the panel over, with a
+ * back link to the transaction; saving closes it with a toast that says what
+ * changed and offers Undo (R-03).
  */
 
 const NOTE_MAX = 140;
@@ -58,12 +60,12 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
     return () => { live = false; };
   }, [id]);
 
-  async function save(fn, { close = false } = {}) {
+  async function save(fn, { close = false, change } = {}) {
     setBusy(true);
     setError(null);
     try {
-      await fn();
-      onSaved?.({ close });
+      const res = await fn();
+      onSaved?.({ close, change: change?.(res) });
       if (close) return;
       setTx(await getTx(id));
       setStep('main');
@@ -94,12 +96,32 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
   const bank = banks.find((b) => b.id === tx.bank_id);
 
   const back = () => { setStep('main'); setError(null); };
+  // A change that moved a number closes the panel with what it did (R-03).
+  const changed = (verb, cat) => (res) => ({
+    id: tx.id,
+    title: [`${verb} ${categoryLabel(cat)}.`, res?.impact?.title].filter(Boolean).join(' '),
+    detail: res?.impact?.detail ?? '',
+    undo: res?.undo,
+  });
+
+  if (step === 'category') {
+    const unsorted = tx.category === 'Unsorted transfers';
+    return (
+      <DetailPanel label="Change category" onClose={onClose}
+                   back={{ label: `${tx.merchant} · ${txAmount(tx.amount, { inflow: tx.inflow })}`,
+                           onClick: back }}>
+        <h2 className="pk-h2">{unsorted ? 'Where did this go?' : 'Change category'}</h2>
+        {error && <p className="txd-error" role="alert">{error.message}</p>}
+        <CategoryPicker tx={tx} categories={categories} busy={busy}
+                        onSave={(cat, always) => save(() => (
+                          unsorted ? sortTransfers([tx.id], cat, false)
+                            : setCategory(tx.id, cat, always)),
+                        { close: true, change: changed(unsorted ? 'Sorted as' : 'Moved to', cat) })} />
+      </DetailPanel>
+    );
+  }
+
   const body = {
-    category: <ChangeCategory tx={tx} categories={categories} busy={busy} onBack={back}
-                              onSave={(cat, always) => save(() => (
-                                tx.category === 'Unsorted transfers'
-                                  ? sortTransfers([tx.id], cat, false)
-                                  : setCategory(tx.id, cat, always)))} />,
     split: <Split tx={tx} busy={busy} onBack={back}
                   onSave={(share) => save(() => setShare(tx.id, share))} />,
     note: <Note tx={tx} busy={busy} onBack={back}
@@ -242,34 +264,6 @@ function Step({ title, onBack, children }) {
       <h3 className="pk-h3">{title}</h3>
       {children}
     </section>
-  );
-}
-
-/** Interim for R-02: pick a category, optionally for every one from here. */
-function ChangeCategory({ tx, categories, busy, onBack, onSave }) {
-  const unsorted = tx.category === 'Unsorted transfers';
-  const names = categories.map((c) => c.name)
-    .filter((n) => n !== 'Unsorted transfers' && (!unsorted || n !== 'Transfers'));
-  const [pick, setPick] = useState(unsorted ? 'Saved' : tx.category);
-  const [always, setAlways] = useState(false);
-  return (
-    <Step title={unsorted ? 'Where did it go?' : 'Change category'} onBack={onBack}>
-      <Field label="Category">
-        {(id) => (
-          <select id={id} value={pick} onChange={(e) => setPick(e.target.value)}>
-            {names.map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
-        )}
-      </Field>
-      {!unsorted && (
-        <label className="txd-check">
-          <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
-          Always use this for {tx.merchant}
-        </label>
-      )}
-      <PButton disabled={busy || (!unsorted && pick === tx.category && !always)}
-               onClick={() => onSave(pick, always)}>Save</PButton>
-    </Step>
   );
 }
 

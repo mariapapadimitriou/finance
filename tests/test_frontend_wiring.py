@@ -497,3 +497,24 @@ class TestDesignTokens:
         for token in ("--border-strong", "--border-focus", "--border-error",
                       "--surface-scrim", "--surface-disabled", "--ink-disabled"):
             assert f"var({token})" in css, token
+
+
+class TestChangeCategory:
+    """THL-123 R-02/R-03: Change category says what it will do, and can be undone."""
+
+    def test_the_picker_previews_and_groups(self):
+        src = (SRC / "panels" / "CategoryPicker.jsx").read_text(encoding="utf-8")
+        assert "previewCategory(" in src, "the impact line comes from the server"
+        for title in ("'Essentials'", "'Lifestyle'", "'Savings'", "'Income'", "'Not spending'"):
+            assert title in src, title
+        assert "Apply to all from ${tx.merchant}" in src
+
+    def test_the_detail_panel_uses_it(self):
+        src = (SRC / "panels" / "TransactionDetail.jsx").read_text(encoding="utf-8")
+        assert "<CategoryPicker" in src and "function ChangeCategory" not in src
+        assert "back={{" in src, "the step has a back link naming the transaction"
+
+    def test_the_list_offers_undo(self):
+        src = (SRC / "panels" / "TransactionsList.jsx").read_text(encoding="utf-8")
+        assert "<ActionToast" in src and "undoChange(" in src
+        assert "flash={flash.has(r.id)}" in src

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, CategoryChip, DayHeader, EmptyState, FilterChip, PButton, SearchField, StatTile, Toast,
-  TxRow, txAmount,
+  ActionToast, Alert, CategoryChip, DayHeader, EmptyState, FilterChip, PButton, SearchField,
+  StatTile, Toast, TxRow, txAmount,
 } from '../pearl/kit.jsx';
 import TransactionDetail, { AddTransaction } from './TransactionDetail.jsx';
 import { ErrorNote } from '../components/ui.jsx';
-import { accountTitle, getTxList } from '../api.js';
+import { accountTitle, getTxList, undoChange } from '../api.js';
 import { readTxUrl, writeTxUrl } from '../router.js';
 
 /**
@@ -69,6 +69,10 @@ export default function TransactionsList({ summary, categories, accounts, review
   // The transaction open in the side panel (TX-04), from /transactions/<id>.
   const [openId, setOpenId] = useState(() => readTxUrl()?.id ?? null);
   const [toast, setToast] = useState('');
+  // A change that moved a number (R-03): what it did, with Undo.
+  const [change, setChange] = useState(null);
+  // Rows that just changed, highlighted for a moment.
+  const [flash, setFlash] = useState(() => new Set());
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState(filters.q);
   const [data, setData] = useState(null);
@@ -199,9 +203,32 @@ export default function TransactionsList({ summary, categories, accounts, review
   const close = () => { setOpenId(null); toUrl(filters, true, null); };
   // After a change in the panel: say so, and refresh everything that counts
   // it (the list, the totals, the review badge).
-  const saved = ({ close: closing } = {}) => {
-    setToast('Saved');
+  const saved = ({ close: closing, change: what } = {}) => {
+    if (what) {
+      setToast('');
+      setChange(what);
+      setFlash(new Set([what.id, ...(what.undo?.rows ?? []).map((r) => r.id)]));
+    } else {
+      setToast('Saved');
+    }
     if (closing) close();
+    onChanged?.();
+  };
+  useEffect(() => {
+    if (!flash.size) return undefined;
+    const t = setTimeout(() => setFlash(new Set()), 2600);
+    return () => clearTimeout(t);
+  }, [flash]);
+  const undo = async () => {
+    const what = change;
+    setChange(null);
+    try {
+      await undoChange(what.undo);
+      setFlash(new Set([what.id]));
+      setToast('Undone');
+    } catch (e) {
+      setError(e);
+    }
     onChanged?.();
   };
 
@@ -287,7 +314,8 @@ export default function TransactionsList({ summary, categories, accounts, review
                            meta={r.account + (r.pending ? ' · Pending' : '')}
                            note={r.note || r.my_note} noteLink={r.note_link}
                            chip={r.chip} amount={r.amount} inflow={r.inflow}
-                           muted={r.counts === 'none'} onOpen={() => open(r.id)} />
+                           muted={r.counts === 'none'} flash={flash.has(r.id)}
+                           onOpen={() => open(r.id)} />
                   ))}
                 </div>
               ))}
@@ -311,7 +339,11 @@ export default function TransactionsList({ summary, categories, accounts, review
         <AddTransaction categories={categories} onClose={() => setAdding(false)}
                         onSaved={() => { setAdding(false); saved(); }} />
       )}
-      {toast && <Toast onDone={() => setToast('')}>{toast}</Toast>}
+      {change && (
+        <ActionToast title={change.title} detail={change.detail}
+                     onUndo={change.undo ? undo : undefined} onDone={() => setChange(null)} />
+      )}
+      {toast && !change && <Toast onDone={() => setToast('')}>{toast}</Toast>}
     </div>
   );
 }

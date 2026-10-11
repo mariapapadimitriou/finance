@@ -34,7 +34,7 @@ from .ingest import all_sources, get_source, parse_csv, parse_statement
 from .insights import (detect_recurring, findings_summary, generate_findings,
                        observe, recurring_summary)
 from .pipeline import ingest, recategorize_all
-from .categorize import apply_categories
+from .categorize import apply_categories, group_of
 from .dedupe import split_new
 from .trips import apply_trips
 from .trips import summarize, validate
@@ -85,7 +85,10 @@ def sources():
 def categories():
     return jsonify({
         "categories": [
-            {"name": name, **meta} for name, meta in CATEGORIES.items()
+            # The group (Essentials, Lifestyle…) is what Change category
+            # (R-02) lays its chips out by.
+            {"name": name, "group": group_of(name), **meta}
+            for name, meta in CATEGORIES.items()
         ],
         "overrides": store().overrides(),
     })
