@@ -4,7 +4,7 @@ import TodayPanel from './panels/TodayPanel.jsx';
 import PiggyPanel from './panels/PiggyPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import TransactionsList from './panels/TransactionsList.jsx';
-import ReviewPanel from './panels/ReviewPanel.jsx';
+import NeedsALook from './panels/NeedsALook.jsx';
 import BudgetsPanel from './panels/BudgetsPanel.jsx';
 import TripsPanel from './panels/TripsPanel.jsx';
 import ImportPanel from './panels/ImportPanel.jsx';
@@ -18,7 +18,7 @@ import Onboarding from './pearl/Onboarding.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
-import { clearUrl, readTxUrl } from './router.js';
+import { clearUrl, isReviewUrl, readTxUrl, writeReviewUrl } from './router.js';
 import {
   getAccounts, getAuthStatus, getCategories, getInsights,
   getReview, getSummary, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
@@ -79,8 +79,9 @@ export default function App() {
   );
   // /transactions… opens the list (a link from anywhere lands there); every
   // other address opens the app where it always opened.
-  const [tab, setTab] = useState(() => (readTxUrl() ? 'transactions' : 'today'));
-  const [panel, setPanel] = useState(() => (readTxUrl() ? 'transactions' : 'today'));
+  const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() ? 'transactions' : 'today'));
+  const [panel, setPanel] = useState(() => (isReviewUrl() ? 'review'
+    : readTxUrl() ? 'transactions' : 'today'));
 
   /**
    * Go to a destination named either way.
@@ -93,8 +94,10 @@ export default function App() {
     const [group, target] = resolve(key);
     setTab(group);
     setPanel(target);
-    // Only the list has an address of its own; it writes it when it mounts.
-    if (target !== 'transactions') clearUrl();
+    // The list writes its own address when it mounts; Needs a look has one
+    // too. Everything else lives at "/".
+    if (target === 'review') writeReviewUrl();
+    else if (target !== 'transactions') clearUrl();
     const anchor = ANCHORS[key];
     if (anchor) {
       // After the panel has rendered and its data has had a moment to land,
@@ -144,8 +147,11 @@ export default function App() {
   panelRef.current = panel;
   useEffect(() => {
     const onPop = () => {
-      if (readTxUrl()) { setTab('transactions'); setPanel('transactions'); }
-      else if (panelRef.current === 'transactions') { setTab('today'); setPanel('today'); }
+      if (isReviewUrl()) { setTab('transactions'); setPanel('review'); }
+      else if (readTxUrl()) { setTab('transactions'); setPanel('transactions'); }
+      else if (['transactions', 'review'].includes(panelRef.current)) {
+        setTab('today'); setPanel('today');
+      }
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -309,7 +315,7 @@ export default function App() {
       months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(panel)}
       // The Pearl list draws its own header (overline + title).
-      ownTitle={panel === 'transactions'}
+      ownTitle={panel === 'transactions' || panel === 'review'}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
       {panel === 'plan' && (
@@ -336,7 +342,7 @@ export default function App() {
                          version={version} />
       )}
       {panel === 'review' && (
-        <ReviewPanel categories={categories} onChanged={load} onTab={go} />
+        <NeedsALook categories={categories} onChanged={load} onTab={go} version={version} />
       )}
       {panel === 'transactions' && (
         <TransactionsList summary={summary} categories={categories} accounts={accounts}

@@ -400,9 +400,57 @@
   flex: none; border: 0; background: none; padding: 4px 0; cursor: pointer;
   color: var(--link); font-size: 13px; line-height: 18px; font-weight: 600;
 }
-@media (max-width: 720px) { .pk-toast-card { bottom: 16px; width: calc(100vw - 32px); } }
+/* On a phone the navigation is a bar along the bottom; toasts sit above it. */
+@media (max-width: 720px) {
+  .pk-toast, .pk-toast-card { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+  .pk-toast-card { width: calc(100vw - 32px); }
+}
 
 /* ── A row that just changed ─────────────────────────────────────────────── */
 @keyframes pk-flash { from { background: var(--track); } to { background: transparent; } }
 .pk-row.flash { animation: pk-flash 2.4s ease-out; }
 @media (prefers-reduced-motion: reduce) { .pk-row.flash { animation: none; outline: 2px solid var(--border-focus); } }
+
+/* ── Needs a look (R-01, R-04) ───────────────────────────────────────────── */
+.nl-page { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-6) 0 var(--space-8); }
+.nl-head { display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-start; }
+.nl-head .pk-h1 { margin-top: var(--space-1); }
+.nl-cols { display: flex; gap: var(--space-8); align-items: flex-start; }
+.nl-card {
+  width: 640px; max-width: 100%; min-width: 0;
+  display: flex; flex-direction: column; gap: var(--space-5); padding: var(--space-6);
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+.nl-cols .nl-card { flex: 0 1 640px; }
+.nl-why {
+  width: 376px; flex: 0 1 376px; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-6); background: var(--surface-card); border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.nl-why p { margin: 0; }
+.nl-tx { display: flex; align-items: center; gap: 14px; }
+.nl-tx .pk-avatar { width: 48px; height: 48px; font-size: 16px; line-height: 20px; }
+.nl-tx-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.nl-tx-amt { flex: none; font-variant-numeric: tabular-nums; }
+.nl-spent { display: flex; flex-direction: column; gap: var(--space-2); }
+.nl-spent > p { margin: 0; }
+.nl-actions { display: flex; flex-direction: column; gap: var(--space-2); }
+.pk .nl-skip { align-self: center; height: 44px; font-size: 16px; line-height: 20px; }
+.nl-card .txd-step { gap: var(--space-5); }
+.nl-empty { align-items: center; text-align: center; gap: var(--space-3); padding: 64px 40px; box-shadow: none; }
+.nl-empty p { margin: 0; max-width: 420px; }
+.nl-empty-icon {
+  width: 64px; height: 64px; border-radius: var(--radius-full); background: var(--seaglass);
+  color: var(--on-nacre); display: inline-flex; align-items: center; justify-content: center;
+}
+.pk .nl-empty-btn { width: 280px; max-width: 100%; margin-top: var(--space-2); }
+@media (max-width: 1100px) {
+  .nl-cols { flex-direction: column; gap: var(--space-4); }
+  .nl-cols .nl-card, .nl-why { width: 100%; flex: none; }
+}
+@media (max-width: 720px) {
+  .nl-page { gap: var(--space-5); padding-top: var(--space-4); }
+  .nl-card { padding: var(--space-5) var(--space-4); }
+  .nl-empty { padding: 40px 20px; }
+}

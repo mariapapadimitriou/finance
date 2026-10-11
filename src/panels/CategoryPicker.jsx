@@ -73,7 +73,8 @@ export function CategoryChips({ groups, value, suggested, onChange, label = 'Cat
 
 /** Chips, the impact line, Apply to all, and Save. */
 export default function CategoryPicker({ tx, categories, busy, onSave, saveLabel = 'Save',
-                                         allowApplyAll = true, only }) {
+                                         allowApplyAll = true, only, confirmable = false,
+                                         label = 'Category' }) {
   const current = tx.category;
   const unsorted = current === 'Unsorted transfers';
   const [pick, setPick] = useState(unsorted ? '' : current);
@@ -103,10 +104,11 @@ export default function CategoryPicker({ tx, categories, busy, onSave, saveLabel
     return () => { live = false; clearTimeout(t); };
   }, [tx.id, pick, always, current]);
 
-  const changed = !!pick && (pick !== current || always);
+  // In Needs a look, saving Pearl's own guess unchanged confirms it.
+  const changed = !!pick && (pick !== current || always || confirmable);
   return (
     <div className="txd-step">
-      <CategoryChips groups={groups} value={pick} onChange={setPick}
+      <CategoryChips groups={groups} value={pick} onChange={setPick} label={label}
                      suggested={tx.suggested && !unsorted ? current : null} />
       <ImpactNote>{impact?.line}</ImpactNote>
       {applyAll && (

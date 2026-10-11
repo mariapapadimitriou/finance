@@ -417,13 +417,14 @@ class TestOneReviewQueue:
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
         assert "getReview()" in text and "counts={{ transactions: data.review }}" in text
 
-    def test_review_holds_every_kind_and_the_unsorted_card(self):
-        text = (SRC / "panels" / "ReviewPanel.jsx").read_text(encoding="utf-8")
-        for kind in ("money_in", "unsure_category", "income_type", "three_pay_month"):
+    def test_review_holds_every_kind_and_the_unsorted_question(self):
+        text = (SRC / "panels" / "NeedsALook.jsx").read_text(encoding="utf-8")
+        for kind in ("unsorted", "money_in", "unsure_category", "income_type", "three_pay_month"):
             assert f"data.{kind}" in text, kind
         assert "<WhereDidThisGo" in text
-        tx = (SRC / "panels" / "TransactionsPanel.jsx").read_text(encoding="utf-8")
-        assert "<WhereDidThisGo" not in tx, "it lives on To review now"
+        assert "Remember where ${kind} to ${it.to} go" in text
+        app = (SRC / "App.jsx").read_text(encoding="utf-8")
+        assert "<NeedsALook" in app and "ReviewPanel" not in app
 
     def test_rows_can_be_excluded_and_put_back(self):
         tx = (SRC / "panels" / "TransactionsPanel.jsx").read_text(encoding="utf-8")

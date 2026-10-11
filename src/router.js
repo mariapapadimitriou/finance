@@ -5,8 +5,23 @@
 
 export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'joint', 'q'];
 
+// Needs a look (R-01, THL-123) has an address under the list's.
+export const REVIEW_PATH = '/transactions/review';
+
+/** True at /transactions/review. */
+export function isReviewUrl(loc = window.location) {
+  return /^\/transactions\/review\/?$/.test(loc.pathname);
+}
+
+/** Point the address bar at Needs a look. */
+export function writeReviewUrl({ push = true } = {}) {
+  if (isReviewUrl()) return;
+  window.history[push ? 'pushState' : 'replaceState'](null, '', REVIEW_PATH);
+}
+
 /** {path, id, filters} for the current address, or null when it is not the list. */
 export function readTxUrl(loc = window.location) {
+  if (isReviewUrl(loc)) return null;
   const m = loc.pathname.match(/^\/transactions(?:\/([^/]+))?\/?$/);
   if (!m) return null;
   const params = new URLSearchParams(loc.search);
