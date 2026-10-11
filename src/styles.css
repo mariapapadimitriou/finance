@@ -15,7 +15,7 @@
   --surface-3:   #e0e0e4;
   --ink:         #1c1a33;
   --ink-2:       #3e3f45;
-  --muted:       #6b6884;   /* 5.3:1 on white */
+  --muted:       #686580;   /* mist/500 · 5.6:1 on white */
   --border:      rgba(17, 18, 20, .06);
   --border-firm: rgba(17, 18, 20, .12);
   --grid:        rgba(17, 18, 20, .05);

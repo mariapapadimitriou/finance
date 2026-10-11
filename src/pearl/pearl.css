@@ -6,26 +6,32 @@
  * Everything is scoped under .pearl so the app's own stylesheet is untouched.
  */
 
-/* The tokens also cover the sheets, which open outside the page's tree. */
+/* The tokens also cover the sheets, which open outside the page's tree.
+ * Onboarding is light only, so its colours point at the Design System's
+ * primitives (src/tokens/tokens.css), not at the modes that switch. */
 .pearl, .p-scrim {
-  --ink: #1c1a33;
-  --on-nacre: #1c1a33;
-  --ink-muted: #6b6884;
-  --action: #b8285a;
-  --on-action: #ffffff;
-  --link: #b8285a;
-  --rose: #e2557f;
-  --blush: #ffe4ec;
-  --lavender: #e3d4ff;
-  --seaglass: #cff3ee;
-  --positive: #137a72;
-  --caution: #8a5a12;
+  --ink: var(--ink-base);
+  --on-nacre: var(--ink-base);
+  --ink-muted: var(--mist-500);
+  --action: var(--rose-700);
+  --on-action: var(--white);
+  --link: var(--rose-700);
+  --rose: var(--rose-500);
+  --blush: var(--blush-100);
+  --lavender: var(--lilac-200);
+  --seaglass: var(--seaglass-200);
+  --positive: var(--lagoon-700);
+  --caution: var(--gold-700);
   --caution-bg: #fbecc8;
   --info-bg: #efe8ff;
-  --track: #f1e9ee;
-  --border: #eedfe6;
-  --surface-page: #fbf8f6;
-  --surface-card: #ffffff;
+  --track: var(--blush-150);
+  --border: var(--blush-200);
+  --border-strong: var(--mist-400);
+  --border-focus: var(--rose-700);
+  --border-error: var(--rose-500);
+  --surface-page: var(--pearl-50);
+  --surface-card: var(--white);
+  --surface-scrim: var(--scrim-light);
   --radius-sm: 12px;
   --radius-md: 16px;
   --radius-full: 999px;
@@ -35,7 +41,6 @@
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
-  --glow-pearl: 0 6px 24px rgba(226, 85, 127, .28);
   --nacre: linear-gradient(121.89deg, #ffd6e0 0%, #e3d4ff 50%, #cff3ee 100%);
   --display: 'Fraunces', Georgia, 'Times New Roman', serif;
   --text: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -62,7 +67,7 @@
 
 .pearl *, .pearl *::before, .pearl *::after,
 .p-scrim *, .p-scrim *::before, .p-scrim *::after { box-sizing: border-box; }
-.pearl :focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+.pearl :focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 
 .p-display {
   font-family: var(--display);
@@ -207,13 +212,13 @@
 .p-control {
   position: relative; display: flex; align-items: center; gap: var(--space-3);
   height: 52px; padding: 0 var(--space-4); background: var(--surface-card);
-  border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border-strong); border-radius: var(--radius-sm);
 }
 .p-control:focus-within {
-  border: 2px solid var(--action); padding: 0 calc(var(--space-4) - .5px);
-  box-shadow: 0 0 0 4px rgba(226, 85, 127, .18);
+  border: 2px solid var(--border-focus); padding: 0 calc(var(--space-4) - .5px);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--border-focus) 20%, transparent);
 }
-.p-control.error { border-color: var(--rose); }
+.p-control.error { border-color: var(--border-error); }
 .p-control svg { width: 20px; height: 20px; flex: none; color: var(--ink); }
 .pearl .p-control input, .pearl .p-control select {
   flex: 1 1 auto; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent;
@@ -261,7 +266,7 @@
 }
 .p-choice.on .p-box { background: var(--action); border-color: var(--action); }
 .p-choice .p-box svg { width: 20px; height: 20px; }
-.p-choice input:focus-visible + .p-box { outline: 2px solid var(--action); outline-offset: 2px; }
+.p-choice input:focus-visible + .p-box { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 .p-choice-text { display: flex; flex-direction: column; gap: var(--space-1); }
 .p-choice-text small { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
 .p-choice-text .p-link { font-weight: 500; }
@@ -378,7 +383,7 @@
 
 /* ── Detail sheet (T-02, T-03, Privacy, Terms, Help) ─────────────────────── */
 .p-scrim {
-  position: fixed; inset: 0; background: rgba(28, 26, 51, .32); z-index: 50;
+  position: fixed; inset: 0; background: var(--surface-scrim); z-index: 50;
   display: flex; justify-content: flex-end;
 }
 .p-sheet {

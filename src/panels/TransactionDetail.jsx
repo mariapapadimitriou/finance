@@ -278,14 +278,25 @@ function Split({ tx, busy, onBack, onSave }) {
   const [value, setValue] = useState(tx.split ? String(tx.amount) : '');
   const n = Number(value);
   const ok = value !== '' && n >= 0 && n <= tx.full_amount;
+  const hint = value !== '' && n > tx.full_amount
+    ? `More than the whole charge of ${txAmount(tx.full_amount)}` : '';
   return (
     <Step title="Split this" onBack={onBack}>
       <p className="pk-muted">Only your share counts toward your spending and your safe-to-spend.
         The whole charge was {txAmount(tx.full_amount)}.</p>
       <Field label="Your share">
         {(id) => (
-          <input id={id} type="number" inputMode="decimal" min="0" step="0.01"
-                 max={tx.full_amount} value={value} onChange={(e) => setValue(e.target.value)} />
+          <>
+            <input id={id} type="number" inputMode="decimal" min="0" step="0.01"
+                   max={tx.full_amount} value={value} onChange={(e) => setValue(e.target.value)}
+                   aria-invalid={hint ? 'true' : undefined}
+                   aria-describedby={hint ? `${id}-hint` : undefined} />
+            {hint && (
+              <p className="txd-hint" id={`${id}-hint`}>
+                <PIcon name="alert" size={16} /> {hint}
+              </p>
+            )}
+          </>
         )}
       </Field>
       <div className="txd-quick">
