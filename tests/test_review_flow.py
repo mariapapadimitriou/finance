@@ -118,9 +118,10 @@ def test_sorting_a_transfer_with_remember_and_undo(client):
         "ids": [tid], "category": "Saved", "remember": True}).get_json()
     assert done["learned"] == 1 and cat(client.st, tid) == "Saved"
     imp = done["impact"]
-    # An unsorted transfer was counted as spent this month; now it isn't.
-    assert imp["spent_delta"] == -200
-    assert imp["detail"] == "$200.00 less, because it went to savings, not spending."
+    # Until it was sorted it counted as spent, safe to spend included.
+    assert imp["spent_delta"] == -200 and imp["delta"] > 0
+    assert imp["detail"] == (f"${imp['delta']:,.2f} more, because it went to savings, "
+                             "not spending.")
     assert client.st.destinations(), "Remember wrote a rule"
 
     assert client.post("/api/transactions/undo", json=done["undo"]).status_code == 200
@@ -137,6 +138,15 @@ def test_moved_between_my_own_accounts(client):
     assert cat(client.st, tid) == "Transfers"
     assert done["impact"]["spent_delta"] == -500
     assert not client.st.destinations(), "no rule without Remember"
+
+
+@pytest.mark.parametrize("category", ["Dining", "Rent & Housing", "Saved", "Transfers"])
+def test_sorting_never_lowers_safe_to_spend(client, category):
+    ids = load(client.st, row(150, "SEND E-TFR ***Z", account="chq", kind="depository",
+                              who="Sam"))
+    imp = client.post("/api/transfers/sort", json={
+        "ids": [ids["SEND E-TFR ***Z"]], "category": category}).get_json()["impact"]
+    assert imp["delta"] >= 0, imp
 
 
 def test_undo_refuses_what_it_did_not_make(client):

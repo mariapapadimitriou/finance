@@ -68,11 +68,27 @@ def counts_toward_plan(t) -> bool:
             and is_discretionary(t.category or "Other"))
 
 
+def counts_against_safe(t) -> bool:
+    """What comes out of safe to spend this week: discretionary spending, and
+    money that left for somewhere Pearl can't see until you say where it went.
+
+    An unsorted transfer counts until it is sorted (Pearl Handoff, THL-123):
+    the safe assumption is that it was spent, so sorting it can only raise
+    the number or leave it where it was — never lower it. Only the live
+    number works this way; plans and medians built from past months use
+    `counts_toward_plan`, so old transfers nobody sorted don't inflate them.
+    """
+    if counts_toward_plan(t):
+        return True
+    return (t.amount > 0 and t.category == "Unsorted transfers"
+            and counts_as_spending(t))
+
+
 def _spent(transactions, month: str, upto_day: int | None = None,
            on_day: int | None = None) -> float:
     total = 0.0
     for t in transactions:
-        if t.month != month or not counts_toward_plan(t):
+        if t.month != month or not counts_against_safe(t):
             continue
         day = int(t.date[8:10])
         if on_day is not None and day != on_day:
