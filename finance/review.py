@@ -26,12 +26,17 @@ from .analytics import is_others
 from .categorize import is_unsure
 from .income import KINDS, cadence, is_income, kind_of
 from .models import Transaction
+from .splits import suggest as split_suggest
 from .transfers import ASK_DAYS, destination, matched_inflows, unsorted
 
 # Where a friend's share most often comes from (doc: prefer these over $40).
 SHARED = {"Dining", "Food Delivery", "Alcohol & Bars", "Coffee", "Entertainment",
           "Travel", "Lodging", "Groceries", "Transport"}
 LOOKBACK_DAYS = 30
+
+
+def _money(x: float) -> str:
+    return f"${abs(x):,.2f}"
 
 
 def _brief(t: Transaction) -> dict:
@@ -113,7 +118,8 @@ def charge_candidates(inflow: Transaction, transactions: list[Transaction]) -> l
 
 
 def build(transactions: list[Transaction], today: str | None = None,
-          dismissed: set[str] | None = None) -> dict:
+          dismissed: set[str] | None = None, splits: dict | None = None,
+          payer: dict | None = None) -> dict:
     today_d = date.fromisoformat(today) if today else date.today()
     since = (today_d - timedelta(days=ASK_DAYS)).isoformat()
     dismissed = dismissed or set()
@@ -148,7 +154,13 @@ def build(transactions: list[Transaction], today: str | None = None,
         if key in dismissed:
             continue
         candidates = charge_candidates(t, transactions)
-        if candidates and candidates[0]["likely"]:
+        # A split waiting for this person's share beats any guess (S-02).
+        match = split_suggest(t, transactions, splits or {}, payer or {}) if splits else None
+        if match:
+            guess = {"action": "split", "split": match}
+            reason = (f"{match['name']} owes you {_money(match['owes'])} for "
+                      f"{match['merchant']}.")
+        elif candidates and candidates[0]["likely"]:
             top = candidates[0]
             guess = {"action": "payback", "charge": top}
             reason = (f"About a 1/{top['split']} share of {top['merchant']} "

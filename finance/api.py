@@ -399,7 +399,7 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
     from . import txlist
     txns = st.all_transactions()
     ctx = txlist.Context(txns, st.confirmed_categories(), st.notes(),
-                         {b.id: b.name for b in st.piggy_banks()})
+                         {b.id: b.name for b in st.piggy_banks()}, splits=st.splits())
     if everything:
         rows = txlist.visible(txns) + txlist.left_out(txns) + txlist.theirs(txns)
     elif excluded:
@@ -452,11 +452,74 @@ def transactions_list():
 
 @bp.get("/transactions/<txn_id>")
 def transaction_detail(txn_id: str):
-    """One row as the list describes it, for the detail panel."""
-    for t, r in _txlist_rows(store(), everything=True):
-        if t.fingerprint == txn_id:
-            return jsonify(r)
+    """One row as the list describes it, for the detail panel — with, for a
+    split charge, who owes what (S-04), and for money in, the split it
+    probably pays back and the others it could (S-02, S-03)."""
+    from . import splits as sp
+    st = store()
+    rows = _txlist_rows(st, everything=True)
+    for t, r in rows:
+        if t.fingerprint != txn_id:
+            continue
+        txns = [x for x, _ in rows]
+        splits, payer = st.splits(), st.payback_people()
+        r = dict(r)
+        split = splits.get(txn_id)
+        if split and t.amount > 0:
+            r["splitting"] = {
+                "mode": split["mode"], "watch": split["watch"],
+                "you": round(t.my_share if t.my_share is not None else t.amount, 2),
+                "people": sp.people_status(t, split, txns, payer),
+            }
+        if t.amount > 0:
+            r["repaid_by"] = [dict(_txn_brief(x), person=payer.get(x.fingerprint))
+                              for x in txns if x.repays == txn_id]
+        if t.repays:
+            charge = next((x for x in txns if x.fingerprint == t.repays), None)
+            if charge is not None:
+                r["repays_charge"] = dict(_txn_brief(charge),
+                                          person=payer.get(txn_id))
+        elif t.amount < 0 and not t.excluded:
+            options, by_name = sp.for_inflow(t, txns, splits, payer)
+            r["repayment"] = {"suggestion": sp.suggest(t, txns, splits, payer),
+                              "splits": options, "from_sender": by_name}
+        return jsonify(r)
     return jsonify({"error": "No such transaction."}), 404
+
+
+@bp.put("/transactions/<txn_id>/split")
+def set_transaction_split(txn_id: str):
+    """Split a charge with people, evenly or by amount (S-01). Your part
+    becomes your share, so only it counts anywhere; each other person's
+    part is a repayment to watch for."""
+    from . import splits as sp
+    body = request.get_json(silent=True) or {}
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if t.amount <= 0 or t.repays:
+        return jsonify({"error": "Only a charge can be split."}), 400
+    if t.joint:
+        return jsonify({"error": "On a joint account, say whose it was instead."}), 400
+    mode = body.get("mode")
+    people, problem = sp.validate(t, mode, body.get("people"))
+    if problem:
+        return jsonify({"error": problem}), 400
+    st.set_split(txn_id, mode, people, bool(body.get("watch", True)))
+    st.set_share(txn_id, sp.your_part(t, people))
+    return transaction_detail(txn_id)
+
+
+@bp.delete("/transactions/<txn_id>/split")
+def clear_transaction_split(txn_id: str):
+    """It was all mine after all: the split goes, and the whole charge counts."""
+    st = store()
+    if st.get_transaction(txn_id) is None:
+        return jsonify({"error": "No such transaction."}), 404
+    st.clear_split(txn_id)
+    st.set_share(txn_id, None)
+    return transaction_detail(txn_id)
 
 
 @bp.put("/transactions/<txn_id>/confirm")
@@ -914,7 +977,13 @@ def add_payback(txn_id: str, inflow_id: str):
     if already - inflow.amount > charge.amount + 0.005:
         return jsonify({"error": "That's more than the charge — friends can't pay "
                                  "back more than it cost."}), 400
-    st.link_payback(txn_id, inflow_id)
+    body = request.get_json(silent=True) or {}
+    person = body.get("person")
+    if person is not None:
+        names = [p["name"] for p in (st.splits().get(txn_id) or {}).get("people", [])]
+        if person not in names:
+            return jsonify({"error": "That person isn't in this split."}), 400
+    st.link_payback(txn_id, inflow_id, person)
     # Never income: Plaid sometimes calls an e-transfer in "income".
     if inflow.category != "Transfers":
         st.set_transaction_category(inflow_id, "Transfers")
@@ -2977,7 +3046,8 @@ def set_income_type(txn_id: str):
 def review_queue():
     from .review import build
     st = store()
-    return jsonify(build(st.all_transactions(), dismissed=st.dismissed_reviews()))
+    return jsonify(build(st.all_transactions(), dismissed=st.dismissed_reviews(),
+                         splits=st.splits(), payer=st.payback_people()))
 
 
 @bp.post("/review/dismiss")
