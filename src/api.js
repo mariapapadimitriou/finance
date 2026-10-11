@@ -268,8 +268,12 @@ export const getSaved      = (months = 2) => req(`/api/transfers/saved?months=${
 export const unsortTransaction = (id) => json('POST', `/api/transactions/${id}/unsort`, {});
 // Money friends sent back for a charge: what is linked, and what might be.
 export const getPaybacks   = (id) => req(`/api/transactions/${id}/paybacks`);
-export const linkPayback   = (id, inflowId) =>
-  json('POST', `/api/transactions/${id}/paybacks/${inflowId}`, {});
+export const linkPayback   = (id, inflowId, person) =>
+  json('POST', `/api/transactions/${id}/paybacks/${inflowId}`, person ? { person } : {});
+// A charge split with people (S-01, THL-124): {mode, people: [{name, amount}], watch}.
+export const setSplit      = (id, split) => json('PUT', `/api/transactions/${id}/split`, split);
+export const clearSplit    = (id) =>
+  req(`/api/transactions/${id}/split`, { method: 'DELETE' });
 export const unlinkPayback = (id, inflowId) =>
   req(`/api/transactions/${id}/paybacks/${inflowId}`, { method: 'DELETE' });
 // How much of a transaction was put away (saved). null clears it.

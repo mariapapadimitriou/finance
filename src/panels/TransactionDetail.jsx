@@ -4,10 +4,11 @@ import {
 } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import CategoryPicker, { categoryLabel } from './CategoryPicker.jsx';
+import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
 import {
   addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTx,
   includeTransaction, money, setCategory, setMineAlways, setShare, setTxNote, sortTransfers,
-  unallocate,
+  unallocate, setSplit, clearSplit, unlinkPayback, linkPayback,
 } from '../api.js';
 
 /**
@@ -121,9 +122,48 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
     );
   }
 
+  if (step === 'split') {
+    return (
+      <DetailPanel label="Split this" onClose={onClose}
+                   back={{ label: `${tx.merchant} · ${txAmount(tx.full_amount)}`, onClick: back }}>
+        <h2 className="pk-h2">Split this</h2>
+        {error && <p className="txd-error" role="alert">{error.message}</p>}
+        <SplitThis tx={tx} busy={busy}
+                   onSave={(split) => save(() => setSplit(tx.id, split))}
+                   onClear={() => save(() => clearSplit(tx.id))} />
+      </DetailPanel>
+    );
+  }
+
+  // Money in that pays back a split (S-02, S-03).
+  const linked = (o) => () => {
+    const owed = Math.round((o.owes - tx.full_amount) * 100) / 100;
+    return {
+      id: tx.id,
+      title: `Linked to ${o.merchant}.`,
+      detail: owed > 0.004 ? `${o.name} still owes ${txAmount(owed)}. It won’t count as income.`
+        : `${o.name}’s share is paid back. It won’t count as income.`,
+    };
+  };
+  const link = (o) => save(() => linkPayback(o.charge_id, tx.id, o.name),
+                           { close: true, change: linked(o) });
+
+  if (step === 'link') {
+    return (
+      <DetailPanel label="Which split is this for?" onClose={onClose}
+                   back={{ label: `${tx.merchant} · ${txAmount(tx.amount, { inflow: tx.inflow })}`,
+                           onClick: back }}>
+        <h2 className="pk-h2">Which split is this for?</h2>
+        {error && <p className="txd-error" role="alert">{error.message}</p>}
+        <LinkToSplit tx={tx} busy={busy} onLink={link} onNone={() => setStep('category')} />
+      </DetailPanel>
+    );
+  }
+
+  const match = !left && tx.repayment?.suggestion;
+  const otherSplits = !left && !match && (tx.repayment?.splits?.length ?? 0) > 0;
+
   const body = {
-    split: <Split tx={tx} busy={busy} onBack={back}
-                  onSave={(share) => save(() => setShare(tx.id, share))} />,
     note: <Note tx={tx} busy={busy} onBack={back}
                 onSave={(note) => save(() => setTxNote(tx.id, note))} />,
     exclude: <Exclude tx={tx} busy={busy} onBack={back}
@@ -148,8 +188,11 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
           <h2 className="pk-h2">{tx.merchant}</h2>
           <span className="pk-label pk-muted">{longDate(tx.date)}</span>
         </div>
-        <span className={`pk-h1 txd-amount${muted ? ' muted' : tx.inflow ? ' in' : ''}`}>
-          {txAmount(tx.amount, { inflow: tx.inflow })}
+        <span className={`txd-amount${muted ? ' muted' : tx.inflow ? ' in' : ''}`}>
+          <span className="pk-h1">{txAmount(tx.amount, { inflow: tx.inflow })}</span>
+          {tx.split && (
+            <span className="pk-label pk-muted txd-sub">your share of {txAmount(tx.full_amount)}</span>
+          )}
         </span>
       </div>
 
@@ -159,12 +202,31 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
         <>
           {tx.pending && <StatusPill>Pending · usually clears in 1–3 days</StatusPill>}
 
+          {tx.splitting && <SplitSummary tx={tx} onEdit={() => setStep('split')} />}
+
+          {match && (
+            <>
+              <RepaymentQuestion match={match} />
+              <button type="button" className="txd-link" onClick={() => setStep('link')}>
+                It’s for a different split
+              </button>
+            </>
+          )}
+
           <dl className="txd-details">
             <Detail label="Account" value={tx.account} />
             <Detail label="From your bank" value={tx.description} />
             <Detail label="Counts toward" value={tx.counts_toward} />
             {tx.note && !tx.note_link && <Detail label="Why" value={tx.note} />}
             {tx.split && <Detail label="Whole charge" value={txAmount(tx.full_amount)} />}
+            {tx.repays_charge && (
+              <Detail label="Pays back"
+                      value={`${tx.repays_charge.merchant}${tx.repays_charge.person ? ` · ${tx.repays_charge.person}’s share` : ''} · not income`} />
+            )}
+            {(tx.repaid_by ?? []).map((r) => (
+              <Detail key={r.id} label="Repayment"
+                      value={`${r.merchant} · ${txAmount(-r.amount)} · not income`} />
+            ))}
             {bank && <Detail label="Paid from" value={`${bank.name}${tx.bank_auto ? ' · automatically' : ''}`} />}
             {tx.my_note && <Detail label="Your note" value={tx.my_note} />}
           </dl>
@@ -176,11 +238,30 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
           </section>
 
           <div className="txd-more">
-            {canSplit && (
+            {canSplit && !tx.splitting && (
               <button type="button" className="txd-link" onClick={() => setStep('split')}>
                 <PIcon name="users" size={18} /> Split this
               </button>
             )}
+            {otherSplits && (
+              <button type="button" className="txd-link" onClick={() => setStep('link')}>
+                <PIcon name="users" size={18} /> Pays back a split?
+              </button>
+            )}
+            {tx.repays_charge && (
+              <button type="button" className="txd-link"
+                      onClick={() => save(() => unlinkPayback(tx.repays_charge.id, tx.id))}>
+                <PIcon name="x" size={18} /> Unlink repayment
+              </button>
+            )}
+            {(tx.repaid_by ?? []).map((r) => (
+              <button key={r.id} type="button" className="txd-link"
+                      onClick={() => save(() => unlinkPayback(tx.id, r.id))}>
+                <PIcon name="x" size={18} />
+                {tx.repaid_by.length === 1 ? 'Unlink repayment'
+                  : `Unlink ${r.merchant} · ${txAmount(-r.amount)}`}
+              </button>
+            ))}
             {tx.joint && !left && (
               <button type="button" className="txd-link" onClick={() => setStep('whose')}>
                 <PIcon name="users" size={18} /> Whose was it?
@@ -217,12 +298,20 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                 It was mine
               </PButton>
             )}
-            {canConfirm && (
+            {match && (
+              <>
+                <PButton disabled={busy} onClick={() => link(match)}>Yes, link them</PButton>
+                <PButton variant="secondary" disabled={busy} onClick={() => setStep('category')}>
+                  No, it’s something else
+                </PButton>
+              </>
+            )}
+            {canConfirm && !match && (
               <PButton disabled={busy} onClick={() => save(() => confirmTx(tx.id), { close: true })}>
                 Yes, that’s right
               </PButton>
             )}
-            {!left && !notYours && (
+            {!left && !notYours && !match && (
               <PButton variant="secondary" disabled={busy} onClick={() => setStep('category')}>
                 {tx.category === 'Unsorted transfers' ? 'Tell Pearl where it went'
                   : 'Change category'}
@@ -264,50 +353,6 @@ function Step({ title, onBack, children }) {
       <h3 className="pk-h3">{title}</h3>
       {children}
     </section>
-  );
-}
-
-/** Interim for S-01 (THL-124): how much of this was hers. */
-function Split({ tx, busy, onBack, onSave }) {
-  const [value, setValue] = useState(tx.split ? String(tx.amount) : '');
-  const n = Number(value);
-  const ok = value !== '' && n >= 0 && n <= tx.full_amount;
-  const hint = value !== '' && n > tx.full_amount
-    ? `More than the whole charge of ${txAmount(tx.full_amount)}` : '';
-  return (
-    <Step title="Split this" onBack={onBack}>
-      <p className="pk-muted">Only your share counts toward your spending and your safe-to-spend.
-        The whole charge was {txAmount(tx.full_amount)}.</p>
-      <Field label="Your share">
-        {(id) => (
-          <>
-            <input id={id} type="number" inputMode="decimal" min="0" step="0.01"
-                   max={tx.full_amount} value={value} onChange={(e) => setValue(e.target.value)}
-                   aria-invalid={hint ? 'true' : undefined}
-                   aria-describedby={hint ? `${id}-hint` : undefined} />
-            {hint && (
-              <p className="txd-hint" id={`${id}-hint`}>
-                <PIcon name="alert" size={16} /> {hint}
-              </p>
-            )}
-          </>
-        )}
-      </Field>
-      <div className="txd-quick">
-        {[2, 3, 4].map((k) => (
-          <button key={k} type="button" className="pk-filter"
-                  onClick={() => setValue((tx.full_amount / k).toFixed(2))}>
-            Split {k} ways
-          </button>
-        ))}
-      </div>
-      <PButton disabled={busy || !ok} onClick={() => onSave(n)}>Save</PButton>
-      {tx.split && (
-        <PButton variant="text" disabled={busy} onClick={() => onSave(null)}>
-          It was all mine
-        </PButton>
-      )}
-    </Step>
   );
 }
 

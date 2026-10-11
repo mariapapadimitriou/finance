@@ -519,3 +519,27 @@ class TestChangeCategory:
         src = (SRC / "panels" / "TransactionsList.jsx").read_text(encoding="utf-8")
         assert "<ActionToast" in src and "undoChange(" in src
         assert "flash={flash.has(r.id)}" in src
+
+
+class TestSplitsAndRepayments:
+    """THL-124 S-01 to S-04: split with people; repayments suggested and linked."""
+
+    def test_split_this_and_its_summary(self):
+        src = (SRC / "panels" / "Splits.jsx").read_text(encoding="utf-8")
+        for text in ("Only your share counts toward your spending.", "Add someone",
+                     "Watch for ${names(people)} paying me back", "Save split",
+                     "Paid back ${shortDate(p.paid_on)}", "Owes ${txAmount(p.owes)}"):
+            assert text in src, text
+        assert "MAX_PEOPLE = 8" in src
+
+    def test_repayment_suggestion_and_link(self):
+        src = (SRC / "panels" / "Splits.jsx").read_text(encoding="utf-8")
+        for text in ("Is {match.name} paying you back for this?", "Exact match",
+                     "Which split is this for?", "None of these",
+                     "Paid back part of it? Pick the split and we’ll keep the rest open."):
+            assert text in src, text
+        detail = (SRC / "panels" / "TransactionDetail.jsx").read_text(encoding="utf-8")
+        assert "Yes, link them" in detail and "No, it’s something else" in detail
+        assert "linkPayback(o.charge_id, tx.id, o.name)" in detail
+        review = (SRC / "panels" / "NeedsALook.jsx").read_text(encoding="utf-8")
+        assert "it.guess?.action === 'split'" in review

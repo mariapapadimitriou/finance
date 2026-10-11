@@ -5,6 +5,7 @@ import {
 import PIcon from '../pearl/icons.jsx';
 import CategoryPicker, { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
 import { ErrorNote } from '../components/ui.jsx';
+import { RepaymentMatch } from './Splits.jsx';
 import {
   INCOME_KINDS, confirmTx, dismissReview, getReview, linkPayback, money, setCategory,
   setIncomeType, sortTransfers, undoChange,
@@ -316,9 +317,42 @@ function WhereDidThisGo({ it, categories, busy, onSkip, act, sorted }) {
   );
 }
 
-/** Money that came in from somewhere Pearl can't see. */
+/**
+ * Money that came in from somewhere Pearl can't see. When it matches a
+ * split someone still owes on, the question is that one (S-02).
+ */
 function MoneyIn({ it, busy, onSkip, act, sorted }) {
-  const likely = it.guess?.charge && it.candidates?.[0]?.likely ? `pb:${it.guess.charge.id}` : '';
+  const [other, setOther] = useState(false);
+  const match = it.guess?.action === 'split' ? it.guess.split : null;
+  if (match && !other) {
+    return (
+      <>
+        <TxHead txn={it.txn} />
+        <h2 className="pk-h2">Is {match.name} paying you back for this?</h2>
+        <RepaymentMatch match={match} />
+        <p className="pk-muted">If you link them, this e-Transfer won’t count as income, and the
+          split shows as paid back.</p>
+        <div className="nl-actions">
+          <PButton disabled={busy}
+                   onClick={() => act(() => linkPayback(match.charge_id, it.txn.id, match.name))}>
+            Yes, link them
+          </PButton>
+          <PButton variant="secondary" disabled={busy} onClick={() => setOther(true)}>
+            No, it’s something else
+          </PButton>
+          <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>
+            Skip for now
+          </PButton>
+        </div>
+      </>
+    );
+  }
+  return <MoneyInChoices it={it} busy={busy} onSkip={onSkip} act={act} sorted={sorted} />;
+}
+
+function MoneyInChoices({ it, busy, onSkip, act, sorted }) {
+  const likely = it.guess?.action === 'payback' && it.candidates?.[0]?.likely
+    ? `pb:${it.guess.charge.id}` : '';
   const [pick, setPick] = useState(likely);
   const name = `in-${it.txn.id}`;
   const run = () => {
