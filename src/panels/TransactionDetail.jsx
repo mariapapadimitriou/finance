@@ -202,7 +202,10 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
         <>
           {tx.pending && <StatusPill>Pending · usually clears in 1–3 days</StatusPill>}
 
-          {tx.splitting && <SplitSummary tx={tx} onEdit={() => setStep('split')} />}
+          {tx.splitting && (
+            <SplitSummary tx={tx} busy={busy} onEdit={() => setStep('split')}
+                          onAssign={(inflowId, name) => save(() => linkPayback(tx.id, inflowId, name))} />
+          )}
 
           {match && (
             <>

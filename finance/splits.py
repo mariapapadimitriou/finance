@@ -24,6 +24,10 @@ MAX_PEOPLE = 8
 MAX_NAME = 40
 MATCH_WITHIN = 1.00        # dollars
 MATCH_DAYS = 60
+# An e-Transfer that names nobody can still be offered for a split when its
+# amount is what one person owes (THL-181), but only closely and only when
+# exactly one person fits — otherwise any $20 would match any $20 share.
+AMOUNT_ONLY_WITHIN = 0.01
 
 _WORD = re.compile(r"[a-zà-ÿ0-9']+")
 
@@ -94,31 +98,54 @@ def _linked(charge_id: str, transactions: list[Transaction]) -> list[Transaction
     return sorted((t for t in transactions if t.repays == charge_id), key=lambda t: t.date)
 
 
-def people_status(charge: Transaction, split: dict, transactions: list[Transaction],
-                  payer: dict[str, str]) -> list[dict]:
-    """Each person in a split: their part, what they've paid back and when,
-    and what they still owe (S-04).
+def split_status(charge: Transaction, split: dict, transactions: list[Transaction],
+                 payer: dict[str, str]) -> dict:
+    """Each person in a split, and any repayment Pearl can't put a name to.
 
-    A repayment counts for the person you linked it to; one linked before
-    people had names counts for whoever it came from by name.
+    Every repayment linked to the charge is credited to someone (THL-181): the
+    person you linked it to; otherwise whoever it names; otherwise the one
+    person whose part it pays exactly. Anything still unplaced comes back as
+    `unassigned`, so the split card can ask who sent it rather than drop it.
     """
     names = [p["name"] for p in split["people"]]
+    share = {p["name"]: p["amount"] for p in split["people"]}
     paid = {n: 0.0 for n in names}
     when: dict[str, str] = {}
+    unplaced = []
     for t in _linked(charge.fingerprint, transactions):
         who = payer.get(t.fingerprint)
         if who not in paid:
             who = next((n for n in names if from_person(t, n)), None)
         if who is None:
+            unplaced.append(t)
             continue
         paid[who] = round(paid[who] + -t.amount, 2)
         when[who] = t.date[:10]
-    out = []
+    unassigned = []
+    for t in unplaced:
+        got = -t.amount
+        fits = [n for n in names
+                if abs((share[n] - paid[n]) - got) <= MATCH_WITHIN + 0.005]
+        if len(fits) == 1:
+            paid[fits[0]] = round(paid[fits[0]] + got, 2)
+            when[fits[0]] = t.date[:10]
+        else:
+            unassigned.append({"id": t.fingerprint, "date": t.date[:10],
+                               "amount": round(got, 2)})
+    people = []
     for p in split["people"]:
         owes = round(max(p["amount"] - paid[p["name"]], 0.0), 2)
-        out.append({"name": p["name"], "amount": p["amount"], "paid": paid[p["name"]],
-                    "owes": owes, "paid_on": when.get(p["name"]) if owes < 0.005 else None})
-    return out
+        people.append({"name": p["name"], "amount": p["amount"], "paid": paid[p["name"]],
+                       "owes": owes,
+                       "paid_on": when.get(p["name"]) if owes < 0.005 else None})
+    return {"people": people, "unassigned": unassigned}
+
+
+def people_status(charge: Transaction, split: dict, transactions: list[Transaction],
+                  payer: dict[str, str]) -> list[dict]:
+    """Each person in a split: their part, what they've paid back and when,
+    and what they still owe (S-04)."""
+    return split_status(charge, split, transactions, payer)["people"]
 
 
 def open_repayments(transactions: list[Transaction], splits: dict[str, dict],
@@ -139,40 +166,59 @@ def open_repayments(transactions: list[Transaction], splits: dict[str, dict],
 
 def suggest(inflow: Transaction, transactions: list[Transaction], splits: dict[str, dict],
             payer: dict[str, str]) -> dict | None:
-    """The split this money most likely pays back (S-02): the same first
-    name, within $1 of what they owe, within 60 days after the charge."""
+    """The split this money most likely pays back (S-02).
+
+    The same first name, within $1 of what they owe, within 60 days after the
+    charge. Failing that, an e-Transfer that names nobody is offered for the
+    one person who owes exactly that amount (THL-181) — marked as an amount
+    match, since Pearl is going on the amount alone.
+    """
     if inflow.amount >= 0 or inflow.repays:
         return None
+    from .transfers import etransfer_person
     got = -inflow.amount
     when = date.fromisoformat(inflow.date[:10])
+    nameless = not etransfer_person(inflow)
     best = None
+    by_amount = []
     for r in open_repayments(transactions, splits, payer):
         gap = (when - date.fromisoformat(r["charge"].date[:10])).days
-        if not 0 <= gap <= MATCH_DAYS or not from_person(inflow, r["name"]):
+        if not 0 <= gap <= MATCH_DAYS:
             continue
         diff = abs(r["owes"] - got)
+        if not from_person(inflow, r["name"]):
+            if nameless and diff <= AMOUNT_ONLY_WITHIN + 0.0001:
+                by_amount.append(r)
+            continue
         if diff > MATCH_WITHIN + 0.005:
             continue
         key = (diff, gap)
         if best is None or key < best[0]:
             best = (key, r)
-    return None if best is None else brief(best[1], exact=best[0][0] < 0.005)
+    if best is not None:
+        return brief(best[1], exact=best[0][0] < 0.005)
+    if len(by_amount) == 1:
+        return brief(by_amount[0], exact=True, by_name=False)
+    return None
 
 
 def for_inflow(inflow: Transaction, transactions: list[Transaction], splits: dict[str, dict],
                payer: dict[str, str]) -> tuple[list[dict], bool]:
     """Splits this money could be for (S-03): the sender's, if Pearl can
     tell who sent it, otherwise every open one. The second value says which."""
-    open_ = [r for r in open_repayments(transactions, splits, payer)
-             if r["charge"].date[:10] <= inflow.date[:10]]
+    # Any open split, whichever was recorded first: a friend can pay you
+    # back before the charge posts (THL-181). Nearest in time first.
+    when = date.fromisoformat(inflow.date[:10])
+    open_ = open_repayments(transactions, splits, payer)
     theirs = [r for r in open_ if from_person(inflow, r["name"])]
     rows = theirs or open_
-    rows.sort(key=lambda r: r["charge"].date, reverse=True)
+    rows.sort(key=lambda r: (abs((when - date.fromisoformat(r["charge"].date[:10])).days),
+                             r["charge"].date))
     return [brief(r) for r in rows[:12]], bool(theirs)
 
 
-def brief(r: dict, exact: bool = False) -> dict:
+def brief(r: dict, exact: bool = False, by_name: bool = True) -> dict:
     c = r["charge"]
     return {"charge_id": c.fingerprint, "merchant": c.merchant, "date": c.date[:10],
             "amount": round(c.amount, 2), "name": r["name"], "owes": r["owes"],
-            "share": r["amount"], "exact": exact}
+            "share": r["amount"], "exact": exact, "by_name": by_name}

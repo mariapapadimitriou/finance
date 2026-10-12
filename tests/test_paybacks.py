@@ -114,7 +114,9 @@ class TestPaidBack:
                              "CAL MARTIN"]
         # The payroll is offered last if at all: not an even split, not a name.
         assert "PAYROLL DEPOSIT" not in names[:3]
-        assert body["candidates"][0]["likely"]
+        # Listed, but not suggested: an even split alone says nothing about
+        # who sent it (THL-183).
+        assert not any(c["likely"] for c in body["candidates"])
 
     def test_a_paid_back_inflow_is_never_a_transfers_other_end(self, client, dinner):
         st = client.application.config["STORE"]

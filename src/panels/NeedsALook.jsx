@@ -351,36 +351,54 @@ function MoneyIn({ it, busy, onSkip, act, sorted }) {
 }
 
 function MoneyInChoices({ it, busy, onSkip, act, sorted }) {
-  const likely = it.guess?.action === 'payback' && it.candidates?.[0]?.likely
-    ? `pb:${it.guess.charge.id}` : '';
+  // Only a charge shared with whoever sent this is suggested (THL-183). One
+  // whose amount merely divides evenly is listed under "Someone paying me
+  // back for something else", never picked for you.
+  const candidates = it.candidates ?? [];
+  const named = candidates.filter((c) => c.likely);
+  const others = candidates.filter((c) => !c.likely);
+  const likely = it.guess?.action === 'payback' && named.length ? `pb:${it.guess.charge.id}` : '';
   const [pick, setPick] = useState(likely);
+  const [more, setMore] = useState(false);
   const name = `in-${it.txn.id}`;
   const run = () => {
     if (pick.startsWith('pb:')) {
-      const charge = it.candidates.find((c) => `pb:${c.id}` === pick);
-      return act(() => linkPayback(charge.id, it.txn.id));
+      const charge = candidates.find((c) => `pb:${c.id}` === pick);
+      return act(() => linkPayback(charge.id, it.txn.id, charge.person || undefined));
     }
     if (pick === 'own') return act(() => dismissReview(it.key));
     if (pick === 'gift') return act(() => setIncomeType(it.txn.id, 'gifts'));
     return act(() => setCategory(it.txn.id, 'Lent'), sorted('Sorted as money you lent.'));
   };
+  const chargeChoice = (c) => (
+    <Choice key={c.id} name={name} checked={pick === `pb:${c.id}`}
+            onChange={() => setPick(`pb:${c.id}`)}
+            label={`${c.person ? `${c.person} paying me back` : 'Paying me back'} for ${c.merchant}`}
+            description={`${longDate(c.date)} · ${money(c.amount, { cents: true })}. Not income.`} />
+  );
   return (
     <>
       <TxHead txn={it.txn} />
       <h2 className="pk-h2">What was this money?</h2>
       <div className="pk-choices" role="radiogroup" aria-label="What was this money?">
-        {(it.candidates ?? []).slice(0, 3).map((c) => (
-          <Choice key={c.id} name={name} checked={pick === `pb:${c.id}`}
-                  onChange={() => setPick(`pb:${c.id}`)}
-                  label={`Paying me back for ${c.merchant}`}
-                  description={`${longDate(c.date)} · ${money(c.amount, { cents: true })}, about a 1/${c.split} share. Not income.`} />
-        ))}
+        {named.slice(0, 3).map(chargeChoice)}
         <Choice name={name} checked={pick === 'own'} onChange={() => setPick('own')}
                 label="My own money" description="From an account Pearl can’t see. It won’t count as income." />
         <Choice name={name} checked={pick === 'gift'} onChange={() => setPick('gift')}
                 label="A gift" description="It counts as income." />
         <Choice name={name} checked={pick === 'lent'} onChange={() => setPick('lent')}
                 label="Paying back money I lent" description="Not income: it was yours before." />
+        {others.length > 0 && !more && (
+          <button type="button" className="txd-link" onClick={() => setMore(true)}>
+            Someone paying me back for something else
+          </button>
+        )}
+        {more && (
+          <>
+            <p className="pk-label pk-muted">Pick the charge it paid back</p>
+            {others.map(chargeChoice)}
+          </>
+        )}
       </div>
       <Actions busy={busy} ready={!!pick} onSkip={onSkip} onSave={run} />
     </>

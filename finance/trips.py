@@ -104,10 +104,55 @@ def apply_trips(transactions, trips: list[Trip]) -> int:
     return changed
 
 
-def summarize(trip: Trip, transactions) -> dict:
-    """What a trip cost, for display beside it."""
-    rows = [t for t in transactions if trip.covers(t.date) and t.amount > 0
-            and t.category not in NEVER_TRAVEL]
+def _why_not(t, trip: Trip, trips: list[Trip]) -> str | None:
+    """Why a row inside a trip's dates isn't counted toward it, or None."""
+    from .analytics import is_others
+    if t.excluded:
+        return f"Left out · {t.excluded}"
+    if is_others(t):
+        return f"{t.joint}’s, on a joint account"
+    owner = covering_trip(trips, t.date[:10]) if trips else trip
+    if owner is not None and owner.id != trip.id and t.category == "Travel":
+        return f"Counted in {owner.name}, which covers the same day"
+    if t.category == "Travel":
+        return None
+    if t.category == "Income":
+        return "Money in, not spending"
+    if t.category in ("Transfers", "Saved", "Lent"):
+        return "Money moving between accounts, not spending"
+    if t.category == "Fees & Interest":
+        return "Fees and interest aren’t counted as travel"
+    if t.category_source == "user":
+        return f"You filed it as {t.category}"
+    return f"Filed as {t.category}"
+
+
+def breakdown(trip: Trip, transactions, trips: list[Trip] | None = None) -> dict:
+    """Every transaction in a trip's dates: what counts toward it, and what
+    doesn't and why (THL-182). A row filed by hand, a fee or a transfer stays
+    out; it is listed so it can be moved in rather than silently missing."""
+    counted, not_counted = [], []
+    for t in sorted(transactions, key=lambda x: (x.date, x.fingerprint)):
+        if not trip.covers(t.date[:10]):
+            continue
+        from .transfers import display_name
+        row = {"id": t.fingerprint, "date": t.date[:10], "merchant": display_name(t),
+               "amount": round(t.amount, 2), "share": round(share_amount(t), 2),
+               "category": t.category, "bank_id": t.bank_id,
+               "bank_amount": round(t.bank_amount or 0.0, 2)}
+        why = _why_not(t, trip, trips or [trip])
+        if why is None:
+            counted.append(row)
+        else:
+            not_counted.append({**row, "reason": why})
+    return {"counted": counted, "not_counted": not_counted}
+
+
+def summarize(trip: Trip, transactions, trips: list[Trip] | None = None) -> dict:
+    """What a trip cost, for display beside it: what counts toward it, which
+    is its Travel spending in its dates."""
+    ids = {r["id"] for r in breakdown(trip, transactions, trips)["counted"]}
+    rows = [t for t in transactions if t.fingerprint in ids]
     total = round(sum(share_amount(t) for t in rows), 2)
     return {
         "transactions": len(rows),

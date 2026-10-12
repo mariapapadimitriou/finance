@@ -139,8 +139,9 @@ export function SplitThis({ tx, busy, onSave, onClear }) {
  * The split, once saved (S-04): her share, and for each person "Paid back
  * Oct 8" or "Owes $X". Edit goes back to Split this.
  */
-export function SplitSummary({ tx, onEdit }) {
+export function SplitSummary({ tx, onEdit, onAssign, busy = false }) {
   const s = tx.splitting;
+  const owing = s.people.filter((p) => p.owes >= 0.005);
   return (
     <section className="sp-card" aria-label="Split">
       <div className="sp-card-head">
@@ -164,6 +165,19 @@ export function SplitSummary({ tx, onEdit }) {
             </span>
           )}
           <span className="sp-amt">{txAmount(p.amount)}</span>
+        </div>
+      ))}
+      {/* A repayment linked here that names nobody Pearl can match (THL-181):
+          ask, rather than leave someone showing as still owing. */}
+      {(s.unassigned ?? []).map((r) => (
+        <div className="sp-ask" key={r.id}>
+          <p className="pk-label">Who sent the {txAmount(r.amount)} on {shortDate(r.date)}?</p>
+          <div className="txd-quick">
+            {(owing.length ? owing : s.people).map((p) => (
+              <button key={p.name} type="button" className="pk-opt" disabled={busy}
+                      onClick={() => onAssign?.(r.id, p.name)}>{p.name}</button>
+            ))}
+          </div>
         </div>
       ))}
     </section>
@@ -191,7 +205,9 @@ export function RepaymentMatch({ match }) {
           {partly ? ` · ${txAmount(match.owes)} still owed` : ''}
         </span>
       </div>
-      {match.exact && (
+      {match.by_name === false ? (
+        <span className="sp-paid"><PIcon name="check" size={14} /> Amount matches</span>
+      ) : match.exact && (
         <span className="sp-paid"><PIcon name="check" size={14} /> Exact match</span>
       )}
     </div>

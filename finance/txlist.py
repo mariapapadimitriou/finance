@@ -26,6 +26,7 @@ from .analytics import counts_as_spending, is_others, share_amount, spend_amount
 from .categorize import CATEGORY_GROUPS, group_of
 from .income import is_income
 from .models import Transaction
+from .transfers import display_name
 
 PAGE = 25
 NOTE_MAX = 140
@@ -160,7 +161,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
     return {
         "id": t.fingerprint,
         "date": t.date[:10],
-        "merchant": t.merchant or t.description,
+        "merchant": display_name(t),
         "description": t.description,
         "logo": raw.get("logo_url") or "",
         "account_id": t.account_id,

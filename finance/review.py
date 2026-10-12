@@ -27,7 +27,8 @@ from .categorize import is_unsure
 from .income import KINDS, cadence, is_income, kind_of
 from .models import Transaction
 from .splits import suggest as split_suggest
-from .transfers import ASK_DAYS, destination, matched_inflows, unsorted
+from .splits import from_person
+from .transfers import ASK_DAYS, destination, display_name, matched_inflows, unsorted
 
 # Where a friend's share most often comes from (doc: prefer these over $40).
 SHARED = {"Dining", "Food Delivery", "Alcohol & Bars", "Coffee", "Entertainment",
@@ -40,7 +41,7 @@ def _money(x: float) -> str:
 
 
 def _brief(t: Transaction) -> dict:
-    return {"id": t.fingerprint, "date": t.date, "merchant": t.merchant,
+    return {"id": t.fingerprint, "date": t.date, "merchant": display_name(t),
             "description": t.description, "amount": t.amount,
             "account_id": t.account_id, "account_name": t.account_name or "",
             "category": t.category, "logo": (t.raw or {}).get("logo_url") or ""}
@@ -74,15 +75,30 @@ def unsorted_groups(transactions: list[Transaction]) -> dict:
             "groups": sorted(groups.values(), key=lambda g: -g["total"])}
 
 
-def charge_candidates(inflow: Transaction, transactions: list[Transaction]) -> list[dict]:
-    """The charges this money most likely paid you back for, best first.
+def charge_candidates(inflow: Transaction, transactions: list[Transaction],
+                      splits: dict | None = None, payer: dict | None = None) -> list[dict]:
+    """The charges this money could have paid you back for, best first.
 
     A friend's share is the charge split evenly: $20 back on an $80 dinner is
     one of four. Within $3 or 5% for tips and rounding, in the 30 days before
     the money arrived. Shared kinds of spending over $40 rank first, and a
     charge that other arrivals in the window would finish paying off ranks
     above one they wouldn't.
+
+    That is only enough to list a charge, never to suggest it (THL-183): an
+    amount that happens to divide evenly says nothing about who sent it. A
+    charge is `likely` only when the sender is someone it was shared with —
+    a person on its split, or someone who already paid part of it back.
     """
+    splits, payer = splits or {}, payer or {}
+    shared_with: dict[str, set[str]] = {}
+    for cid, sp in splits.items():
+        shared_with.setdefault(cid, set()).update(p["name"] for p in sp.get("people", []))
+    for t in transactions:
+        if t.repays:
+            who = payer.get(t.fingerprint)
+            if who:
+                shared_with.setdefault(t.repays, set()).add(who)
     got = -inflow.amount
     when = date.fromisoformat(inflow.date[:10])
     arrivals = [t for t in transactions
@@ -111,10 +127,13 @@ def charge_candidates(inflow: Transaction, transactions: list[Transaction]) -> l
         # Others in the window sending about the same share: the rest of the split.
         peers = sum(1 for a in arrivals if abs(-a.amount - got) <= max(3.0, got * 0.05))
         shared = c.category in SHARED and c.amount >= 40
-        score = (0 if shared else 1, 0 if peers >= 1 else 1, gap)
-        out.append((score, best, c))
+        named = next((n for n in shared_with.get(c.fingerprint, ())
+                      if from_person(inflow, n)), None)
+        score = (0 if named else 1, 0 if shared else 1, 0 if peers >= 1 else 1, gap)
+        out.append((score, best, c, named))
     out.sort(key=lambda r: r[0])
-    return [dict(_brief(c), split=n, likely=(s[0] == 0)) for s, n, c in out[:5]]
+    return [dict(_brief(c), split=n, likely=bool(who), person=who)
+            for s, n, c, who in out[:5]]
 
 
 def build(transactions: list[Transaction], today: str | None = None,
@@ -153,7 +172,7 @@ def build(transactions: list[Transaction], today: str | None = None,
         key = "in:" + t.fingerprint
         if key in dismissed:
             continue
-        candidates = charge_candidates(t, transactions)
+        candidates = charge_candidates(t, transactions, splits, payer)
         # A split waiting for this person's share beats any guess (S-02).
         match = split_suggest(t, transactions, splits or {}, payer or {}) if splits else None
         if match:
@@ -163,11 +182,13 @@ def build(transactions: list[Transaction], today: str | None = None,
         elif candidates and candidates[0]["likely"]:
             top = candidates[0]
             guess = {"action": "payback", "charge": top}
-            reason = (f"About a 1/{top['split']} share of {top['merchant']} "
-                      f"(${top['amount']:,.2f}) a few days before.")
+            reason = (f"{top['person']} was part of {top['merchant']} "
+                      f"(${top['amount']:,.2f}).")
         elif candidates:
-            guess = {"action": "payback", "charge": candidates[0]}
-            reason = "Could be someone paying you back; more than one charge fits."
+            # The amount fits a charge, but nothing says who sent it: no guess.
+            guess = {"action": "none"}
+            reason = ("Pearl can’t tell who sent it. If someone was paying you back, "
+                      "pick the charge.")
         else:
             guess = {"action": "own"}
             reason = "It didn’t pair with any of your accounts or charges."

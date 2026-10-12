@@ -130,6 +130,10 @@ export const addTrip         = (trip) => json('POST', '/api/trips', trip);
 export const getTripSuggestions = () => req('/api/trips/suggestions');
 export const updateTrip      = (id, trip) => json('PATCH', `/api/trips/${id}`, trip);
 export const deleteTrip      = (id) => req(`/api/trips/${id}`, { method: 'DELETE' });
+// Every transaction in a trip's dates, counted or not and why (THL-182).
+export const getTrip         = (id) => req(`/api/trips/${id}`);
+export const includeInTrip   = (id, txnId) =>
+  json('POST', `/api/trips/${id}/include`, { txn_id: txnId });
 
 // One past week as it finished — the arrows on the Allowance card.
 export const getWeek         = (on) => req(`/api/plan/week?on=${encodeURIComponent(on)}`);

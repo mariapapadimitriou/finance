@@ -68,6 +68,50 @@ _MASKED = re.compile(r"(?:••|\*{2,}|x{2,})\s*(\d{4})\b", re.I)
 _REFERENCE = re.compile(r"\*+\s*\w+|#\s*\w+|\b\w*\d\w*\b")
 
 
+_ETRANSFER = re.compile(r"\be[\s-]?(?:tfr|transfer)\b|\betransfer\b|\binterac\b|\bautodeposit\b",
+                        re.I)
+# What a description says around the name: "E-TRANSFER FROM PRIYA S".
+_DIRECTION = {"from", "fr", "to", "send", "sent", "received", "receive", "deposit",
+              "autodeposit", "request"}
+
+
+def is_etransfer(t: Transaction) -> bool:
+    return bool(_ETRANSFER.search(f"{t.merchant} {t.description}"))
+
+
+def etransfer_person(t: Transaction) -> str:
+    """Who an e-Transfer came from or went to, or "" when nobody is named.
+
+    Plaid's counterparty first; otherwise whatever name the description
+    carries once the transfer words and the reference are taken out.
+    """
+    who = " ".join(str((t.raw or {}).get("counterparty") or "").split())
+    if who:
+        return who
+    text = _REFERENCE.sub(" ", t.description or "")
+    words = [w for w in re.split(r"[^A-Za-zÀ-ÿ'.]+", text)
+             if w and w.lower().strip(".") not in _GENERIC | _DIRECTION]
+    if not words or sum(len(w) for w in words) < 3:
+        return ""
+    return " ".join(w if any(c.islower() for c in w) else w.title() for w in words[:4])
+
+
+def etransfer_label(t: Transaction) -> str | None:
+    """"e-Transfer from Priya" / "e-Transfer to M. Papas", or plain
+    "e-Transfer" when nobody is named. None for anything else."""
+    if not is_etransfer(t):
+        return None
+    who = etransfer_person(t)
+    if not who:
+        return "e-Transfer"
+    return f"e-Transfer {'from' if t.amount < 0 else 'to'} {who}"
+
+
+def display_name(t: Transaction) -> str:
+    """What to call a transaction anywhere it is listed."""
+    return etransfer_label(t) or t.merchant or t.description
+
+
 def destination(t: Transaction) -> tuple[str, str] | None:
     """Where a transfer went, as (key, label), stable across transfers.
 

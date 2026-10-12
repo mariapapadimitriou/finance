@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Card, ErrorNote, Loading, Notice } from '../components/ui.jsx';
 import {
-  addTrip, dateLabel, deleteTrip, getTripSuggestions, getTrips, money, updateTrip,
+  addTrip, dateLabel, deleteTrip, getTrip, getTripSuggestions, getTrips, includeInTrip, money,
+  updateTrip,
 } from '../api.js';
 
 /**
@@ -25,6 +26,7 @@ export default function TripsPanel({ onChanged }) {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState({ name: '', start_date: '', end_date: '' });
+  const [open, setOpen] = useState(null);       // the trip whose transactions are shown
 
   /** Take a suggestion as-is. The dates came from the charges themselves. */
   async function accept(sug) {
@@ -204,6 +206,10 @@ export default function TripsPanel({ onChanged }) {
                     <td className="r">{money(t.per_day)}</td>
                     <td className="r">{money(t.total, { cents: true })}</td>
                     <td className="r">
+                      <button className="btn quiet" aria-expanded={open === t.id}
+                              onClick={() => setOpen(open === t.id ? null : t.id)}>
+                        {open === t.id ? 'Hide' : 'Details'}
+                      </button>
                       <button className="btn quiet" onClick={() => edit(t)}>Edit</button>
                       <button className="btn quiet" onClick={() => remove(t)}>Remove</button>
                     </td>
@@ -214,6 +220,110 @@ export default function TripsPanel({ onChanged }) {
           </div>
         </Card>
       )}
+
+      {open != null && (
+        <TripDetail key={open} id={open}
+                    onChanged={async () => { await load(); await onChanged?.(); }} />
+      )}
     </div>
+  );
+}
+
+/**
+ * Every transaction in a trip's dates (THL-182): what counts toward it, what
+ * doesn't and why — filed by hand, a fee, a transfer, left out — with one tap
+ * to count it, and what a piggy bank paid and couldn't.
+ */
+function TripDetail({ id, onChanged }) {
+  const [trip, setTrip] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(null);
+
+  useEffect(() => { getTrip(id).then(setTrip).catch(setError); }, [id]);
+
+  async function include(txnId) {
+    setBusy(txnId);
+    setError(null);
+    try {
+      setTrip(await includeInTrip(id, txnId));
+      await onChanged();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (error) return <ErrorNote error={error} />;
+  if (!trip) return <Loading what="the trip" />;
+  return (
+    <Card title={`${trip.name} · ${dateLabel(trip.start_date)} – ${dateLabel(trip.end_date)}`}>
+      <div className="stack" style={{ gap: 14 }}>
+        <p className="muted" style={{ margin: 0 }}>
+          {money(trip.total, { cents: true })} counted toward the trip
+          {trip.banks.length > 0 && ` · ${money(trip.from_month, { cents: true })} of it from the month`}
+        </p>
+        {trip.banks.map((b) => (
+          <Notice key={b.id}>
+            Your {b.name} piggy bank paid {money(b.paid, { cents: true })} of it.
+            {b.short > 0
+              ? ` It held ${money(b.held, { cents: true })}; the other ${money(b.short, { cents: true })} was more than it had, so it collects that back at ${money(b.monthly, { cents: true })} a month${b.caught_up_by ? ` until ${b.caught_up_by}` : ''}.`
+              : ' It had enough to cover all of it.'}
+          </Notice>
+        ))}
+
+        {trip.not_counted.length > 0 && (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Not counted</th><th>Why</th><th className="r">Amount</th><th /></tr>
+              </thead>
+              <tbody>
+                {trip.not_counted.map((r) => (
+                  <tr key={r.id}>
+                    <td className="merchant">{r.merchant}<div className="desc">{dateLabel(r.date)}</div></td>
+                    <td className="muted">{r.reason}</td>
+                    <td className="r num">{money(Math.abs(r.amount), { cents: true })}</td>
+                    <td className="r">
+                      {/* Money coming in is never trip spending: nothing to count. */}
+                      {r.amount > 0 && (
+                        <button className="btn quiet" disabled={busy === r.id}
+                                onClick={() => include(r.id)}>
+                          {busy === r.id ? 'Counting…' : 'Count it'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Counted</th><th>Paid from</th><th className="r">Amount</th></tr>
+            </thead>
+            <tbody>
+              {trip.counted.length === 0 && (
+                <tr><td colSpan={3} className="muted">Nothing in these dates counts yet.</td></tr>
+              )}
+              {trip.counted.map((r) => (
+                <tr key={r.id}>
+                  <td className="merchant">{r.merchant}<div className="desc">{dateLabel(r.date)}</div></td>
+                  <td className="muted">
+                    {r.bank_id != null
+                      ? trip.banks.find((b) => b.id === r.bank_id)?.name ?? 'A piggy bank'
+                      : 'The month'}
+                  </td>
+                  <td className="r num">{money(r.share, { cents: true })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Card>
   );
 }

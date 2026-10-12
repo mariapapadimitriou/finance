@@ -142,6 +142,7 @@ class TestSummary:
             txn("2025-07-01", "NUTBAR TORONTO ON", 16.95),
         ]
         apply_categories(rows)
+        apply_trips(rows, [NYC])
         s = summarize(NYC, rows)
         assert s["transactions"] == 2
         assert s["total"] == pytest.approx(775.79)
@@ -150,6 +151,7 @@ class TestSummary:
     def test_per_day_divides_by_days_not_nights(self):
         rows = [txn("2025-05-16", "A CAFE", 100.0)]
         apply_categories(rows)
+        apply_trips(rows, [NYC])
         # 15th to 19th inclusive is five days, not four.
         assert summarize(NYC, rows)["per_day"] == pytest.approx(20.0)
 

@@ -64,15 +64,36 @@ def test_a_friends_share_is_matched_to_the_dinner(client):
     items = {i["txn"]["description"]: i for i in q["money_in"]}
     assert set(items) == {"E-TRANSFER RECEIVED SAM", "E-TRANSFER RECEIVED JO"}
     sam = items["E-TRANSFER RECEIVED SAM"]
-    assert sam["guess"]["action"] == "payback"
-    assert sam["guess"]["charge"]["id"] == rows["UBER EATS"].fingerprint
-    assert sam["guess"]["charge"]["split"] == 4
-    assert "1/4" in sam["reason"]
+    # The dinner is listed, but an amount that divides evenly is not a reason
+    # to suggest it (THL-183): nothing says Sam was at that dinner.
+    assert sam["guess"]["action"] == "none"
+    assert sam["candidates"][0]["id"] == rows["UBER EATS"].fingerprint
+    assert sam["candidates"][0]["split"] == 4
+    assert sam["candidates"][0]["likely"] is False
     # Accepting it is the ordinary payback link, and the item goes away.
     client.post(f"/api/transactions/{rows['UBER EATS'].fingerprint}/paybacks/"
                 f"{rows['E-TRANSFER RECEIVED SAM'].fingerprint}")
     q = queue(client)
     assert [i["txn"]["description"] for i in q["money_in"]] == ["E-TRANSFER RECEIVED JO"]
+
+
+def test_a_charge_is_suggested_when_the_sender_was_on_its_split(client):
+    rows = load(client.st,
+                row(100, "UBER EATS", account="card", kind="credit", when=day(6),
+                    category="Food Delivery"),
+                row(-25, "E-TRANSFER RECEIVED SAM", when=day(3), who="Sam",
+                    issuer="TRANSFER_IN_ACCOUNT_TRANSFER"))
+    charge = rows["UBER EATS"].fingerprint
+    client.put(f"/api/transactions/{charge}/split",
+               json={"mode": "amount", "people": [{"name": "Priya", "amount": 40},
+                                                  {"name": "Sam", "amount": 30}]})
+    sam = {i["txn"]["description"]: i for i in queue(client)["money_in"]}.get(
+        "E-TRANSFER RECEIVED SAM")
+    # Sam owes $30, not $25, so this is the "paying me back" guess, not S-02.
+    assert sam["guess"]["action"] == "payback"
+    assert sam["guess"]["charge"]["id"] == charge
+    assert sam["guess"]["charge"]["person"] == "Sam"
+    assert "Sam" in sam["reason"]
 
 
 def test_money_from_your_own_account_is_not_asked_about(client):

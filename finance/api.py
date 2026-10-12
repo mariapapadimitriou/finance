@@ -466,10 +466,14 @@ def transaction_detail(txn_id: str):
         r = dict(r)
         split = splits.get(txn_id)
         if split and t.amount > 0:
+            status = sp.split_status(t, split, txns, payer)
             r["splitting"] = {
                 "mode": split["mode"], "watch": split["watch"],
                 "you": round(t.my_share if t.my_share is not None else t.amount, 2),
-                "people": sp.people_status(t, split, txns, payer),
+                "people": status["people"],
+                # Repayments linked here that Pearl can't put a name to: the
+                # split card asks who sent each one.
+                "unassigned": status["unassigned"],
             }
         if t.amount > 0:
             r["repaid_by"] = [dict(_txn_brief(x), person=payer.get(x.fingerprint))
@@ -779,7 +783,8 @@ def set_transaction_share(txn_id: str):
 # ── Where transfers went, and who paid you back ──────────────────────────────
 
 def _txn_brief(t) -> dict:
-    return {"id": t.fingerprint, "date": t.date, "merchant": t.merchant,
+    from .transfers import display_name
+    return {"id": t.fingerprint, "date": t.date, "merchant": display_name(t),
             "description": t.description, "amount": t.amount,
             "account_id": t.account_id, "account_name": t.account_name or "",
             "category": t.category}
@@ -911,7 +916,11 @@ _PAYBACK_NAMES = ("e-transfer", "etransfer", "e-tfr", "etfr", "interac",
                   "transfer", "venmo", "zelle", "wise")
 
 
-def _payback_candidates(charge, txns) -> list[dict]:
+def _payback_candidates(charge, txns, people: list[str] | None = None) -> list[dict]:
+    """Money in that could have paid back this charge. Listed by name and
+    amount, but only `likely` when it came from someone on the charge's split
+    (THL-183): an amount that divides evenly is not a reason on its own."""
+    from .splits import from_person
     from datetime import date as _date
     start = _date.fromisoformat(charge.date[:10])
     remaining = round(charge.amount - (charge.paid_back or 0.0), 2)
@@ -933,7 +942,8 @@ def _payback_candidates(charge, txns) -> list[dict]:
         even = any(abs(charge.amount / n - amount) < 0.51 for n in range(2, 11))
         out.append((0 if by_name else 1, 0 if even else 1, abs(gap), t))
     out.sort(key=lambda r: r[:3])
-    return [dict(_txn_brief(t), likely=(a == 0 and b == 0)) for a, b, _, t in out[:12]]
+    return [dict(_txn_brief(t), likely=any(from_person(t, p) for p in people or []))
+            for a, b, _, t in out[:12]]
 
 
 @bp.get("/transactions/<txn_id>/paybacks")
@@ -949,8 +959,9 @@ def list_paybacks(txn_id: str):
         "paid_back": round(charge.paid_back or 0.0, 2),
         "share": round(share_amount(charge), 2) if charge.amount > 0 else None,
         "linked": [_txn_brief(t) for t in sorted(linked, key=lambda t: t.date)],
-        "candidates": (_payback_candidates(charge, txns)
-                       if charge.amount > 0 else []),
+        "candidates": (_payback_candidates(
+            charge, txns, [p["name"] for p in (st.splits().get(txn_id) or {}).get("people", [])])
+            if charge.amount > 0 else []),
     })
 
 
@@ -980,8 +991,10 @@ def add_payback(txn_id: str, inflow_id: str):
     body = request.get_json(silent=True) or {}
     person = body.get("person")
     if person is not None:
-        names = [p["name"] for p in (st.splits().get(txn_id) or {}).get("people", [])]
-        if person not in names:
+        split = st.splits().get(txn_id)
+        names = [p["name"] for p in (split or {}).get("people", [])]
+        # Without a split, the name is whoever already paid part of it back.
+        if split and person not in names:
             return jsonify({"error": "That person isn't in this split."}), 400
     st.link_payback(txn_id, inflow_id, person)
     # Never income: Plaid sometimes calls an e-transfer in "income".
@@ -2958,7 +2971,8 @@ def trip_suggestions():
 def trips():
     st = store()
     txns = st.all_transactions()
-    rows = [t.to_dict(summarize(t, txns)) for t in st.trips()]
+    all_trips = st.trips()
+    rows = [t.to_dict(summarize(t, txns, all_trips)) for t in all_trips]
     travel = [t for t in txns if t.category == "Travel" and t.amount > 0]
     return jsonify({
         "trips": rows,
@@ -2968,6 +2982,62 @@ def trips():
             "travel_spend": round(sum(share_amount(t) for t in travel), 2),
         },
     })
+
+
+@bp.get("/trips/<int:trip_id>")
+def trip_detail(trip_id: int):
+    """Every transaction in a trip's dates, counted or not and why, and what
+    a piggy bank paid toward it and what it couldn't (THL-182)."""
+    from . import piggy
+    from .trips import breakdown
+
+    st = store()
+    all_trips = st.trips()
+    trip = next((t for t in all_trips if t.id == trip_id), None)
+    if trip is None:
+        return jsonify({"error": "No such trip."}), 404
+    txns = st.all_transactions()
+    rows = breakdown(trip, txns, all_trips)
+    charges = st.bank_charges_by_month()
+    banks = []
+    for b in st.piggy_banks():
+        paid = [r for r in rows["counted"] if r["bank_id"] == b.id]
+        if not paid:
+            continue
+        covered = round(sum(r["bank_amount"] or r["share"] for r in paid), 2)
+        status = piggy.status(b, charges.get(b.id, {}))
+        # What it paid beyond what it held: advanced, and collected again
+        # over the coming months by a higher monthly amount.
+        short = round(min(status["behind_by"], covered), 2) if status["over"] else 0.0
+        banks.append({"id": b.id, "name": b.name, "paid": covered,
+                      "held": round(covered - short, 2), "short": short,
+                      "monthly": status["monthly"], "caught_up_by": status["caught_up_by"]})
+    total = round(sum(r["share"] for r in rows["counted"]), 2)
+    from_banks = round(sum(b["paid"] for b in banks), 2)
+    return jsonify({**trip.to_dict(), **rows, "total": total, "banks": banks,
+                    "from_month": round(total - from_banks, 2)})
+
+
+@bp.post("/trips/<int:trip_id>/include")
+def include_in_trip(trip_id: int):
+    """Move a transaction in a trip's dates into the trip: it counts as Travel."""
+    st = store()
+    trip = next((t for t in st.trips() if t.id == trip_id), None)
+    if trip is None:
+        return jsonify({"error": "No such trip."}), 404
+    txn_id = str((request.get_json(silent=True) or {}).get("txn_id") or "")
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if not trip.covers(t.date[:10]):
+        return jsonify({"error": "That's outside the trip's dates."}), 400
+    if t.amount <= 0:
+        return jsonify({"error": "Money coming in isn't trip spending."}), 400
+    if t.excluded:
+        st.include(txn_id)
+    st.set_transaction_category(txn_id, "Travel")
+    _reclassify(st)
+    return trip_detail(trip_id)
 
 
 @bp.post("/trips")
