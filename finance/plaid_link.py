@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import os
 
-from .ingest.plaid_source import group_plaid_transactions, is_credit_account
+from .ingest.plaid_source import group_plaid_transactions, synced_by_default
 from .pipeline import ingest
 
 # Canada only. Both cards here are Canadian, and a narrower country list gives
@@ -221,13 +221,13 @@ def _sync_one(store, item: dict) -> dict:
     if full and accounts:
         _replace_superseded(store, item_id, accounts)
 
-    cards_only = store.setting("plaid_cards_only", "1") != "0"
+    mode = store.setting("plaid_cards_only") or ""
     for aid, a in accounts.items():
         store.note_account(
             aid,
             name=_account_label(a, aid),
             item_id=item_id,
-            enabled=(is_credit_account(a) or not cards_only),
+            enabled=synced_by_default(a, mode),
             account_type=str(a.get("type") or ""),
             subtype=str(a.get("subtype") or ""),
         )
@@ -361,6 +361,17 @@ def sync_all(store) -> dict:
             store.rewind_plaid_cursor(item["item_id"])
             item["cursor"] = None
     store.set_setting("plaid_reconciled", "1")
+
+    # Once: chequing and savings used to be skipped by default. Switch on the
+    # ones that default skipped (never one the person chose to skip), and
+    # start their bank's feed over so their history comes in too.
+    if store.setting("plaid_cash_accounts") != "1":
+        reopened = store.enable_auto_cash_accounts()
+        for item in items:
+            if item["item_id"] in reopened:
+                store.rewind_plaid_cursor(item["item_id"])
+                item["cursor"] = None
+        store.set_setting("plaid_cash_accounts", "1")
 
     out = []
     for item in items:

@@ -230,6 +230,17 @@
 @media (max-width: 720px) {
   .pk-scrim { background: var(--surface-page); }
   .pk-panel { width: 100%; box-shadow: none; padding: 20px 16px 32px; }
+  /* X-04: the iOS bottom sheet, the page still showing above it. */
+  .pk-scrim.as-sheet { background: var(--surface-scrim); align-items: flex-end; }
+  .pk-scrim.as-sheet .pk-panel {
+    height: auto; max-height: 88%; border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: 12px 24px calc(24px + env(safe-area-inset-bottom, 0px));
+    gap: var(--space-4);
+  }
+  .pk-scrim.as-sheet .pk-panel::before {
+    content: ""; align-self: center; width: 36px; height: 5px; flex-shrink: 0;
+    border-radius: var(--radius-full); background: var(--border-strong);
+  }
 }
 
 /* ── Toast ───────────────────────────────────────────────────────────────── */

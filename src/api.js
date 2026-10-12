@@ -153,6 +153,8 @@ export const undoDraw        = (id) => req(`/api/piggy/draws/${id}`, { method: '
 
 // Goals (THL-131, THL-132, THL-179): the Anchor, treasure chests (the piggy
 // banks above, by the Goals page's name) and the saving goal.
+// Home (THL-44, THL-46): safe to spend for the month and every row behind it.
+export const getHome = () => req('/api/home');
 export const getGoals        = () => req('/api/goals');
 export const setAnchor       = (fields) => json('PUT', '/api/goals/anchor', fields);
 export const setUnusualMonths = (months) => json('PUT', '/api/goals/anchor/unusual', { months });
