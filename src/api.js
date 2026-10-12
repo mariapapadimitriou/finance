@@ -151,6 +151,21 @@ export const unallocate      = (txnId) =>
 // Put back money a bank lent the month. Nothing creates these any more.
 export const undoDraw        = (id) => req(`/api/piggy/draws/${id}`, { method: 'DELETE' });
 
+// Goals (THL-131, THL-132, THL-179): the Anchor, treasure chests (the piggy
+// banks above, by the Goals page's name) and the saving goal.
+export const getGoals        = () => req('/api/goals');
+export const setAnchor       = (fields) => json('PUT', '/api/goals/anchor', fields);
+export const setUnusualMonths = (months) => json('PUT', '/api/goals/anchor/unusual', { months });
+export const anchorWhatIf    = (monthly) =>
+  req(`/api/goals/anchor/whatif?monthly=${encodeURIComponent(monthly)}`);
+export const getChest        = (id) => req(`/api/goals/chests/${id}`);
+export const openTreasure    = (id, txnIds, categories) =>
+  json('POST', `/api/goals/chests/${id}/open`, { txn_ids: txnIds, categories });
+export const seenCatchUp     = (id, monthly) =>
+  json('PUT', `/api/goals/chests/${id}/seen`, { monthly });
+export const addToChest      = (id, amount) =>
+  json('POST', `/api/goals/chests/${id}/add`, { amount });
+
 
 
 // The money plan: income in, commitments and savings out, the rest budgeted.

@@ -39,6 +39,8 @@ export const PANELS = {
                    hint: 'Every account, what syncs, and anything counted twice' },
   import:        { label: 'From a file', short: 'Files',
                    hint: "Statements for a card that can't be connected" },
+  goals:         { label: 'Goals',
+                   hint: 'Your Anchor, your treasure chests and your saving goal' },
   account:       { label: 'Sign-in',
                    hint: 'Who is signed in, and the password' },
   categories:    { label: 'Categories',
@@ -71,6 +73,12 @@ export const GROUPS = [
     panels: ['transactions', 'review', 'trips'],
     hint: 'Every transaction, what needs a look, and your trips',
     icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
+  // The Anchor (the emergency fund, and the Build phase), treasure chests and
+  // the saving goal (Pearl Handoff, THL-131/132/179). One page: the Anchor's
+  // detail, its projection and each chest open inside it.
+  { key: 'goals', label: 'Goals', panels: ['goals'],
+    hint: 'Your Anchor, your treasure chests and your saving goal',
+    icon: 'M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21ZM12 17C14.7614 17 17 14.7614 17 12C17 9.23858 14.7614 7 12 7C9.23858 7 7 9.23858 7 12C7 14.7614 9.23858 17 12 17ZM12 13C12.5523 13 13 12.5523 13 12C13 11.4477 12.5523 11 12 11C11.4477 11 11 11.4477 11 12C11 12.5523 11.4477 13 12 13Z' },
   // Everything you set once and then leave: where the transactions come from,
   // and how the categories are grouped for budgeting. Neither is somewhere
   // you go to find out how the month is going.

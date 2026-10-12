@@ -522,3 +522,169 @@
 .sp-match .pk-avatar { width: 36px; height: 36px; font-size: 13px; font-weight: 500; }
 .sp-match-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 @media (max-width: 720px) { .sp-question { padding: var(--space-5) var(--space-4); } }
+
+/* ── Goals (THL-131 Anchor, THL-132 projection, THL-179 chests) ───────────── */
+.gl-page { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-6) 0 var(--space-8); }
+.gl-page p { margin: 0; }
+.gl-head { display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-start; }
+.pk .gl-up {
+  border: 0; background: none; padding: 0; cursor: pointer;
+  font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .12em; color: var(--link);
+}
+.pk .gl-up:hover { text-decoration: underline; text-underline-offset: 3px; }
+.gl-card {
+  display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-6); min-width: 0;
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md);
+}
+.gl-row-card { flex-direction: row; align-items: center; }
+.gl-goal, .gl-mini { padding: 20px; }
+.gl-stack { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.gl-stack.tight { gap: 2px; }
+.gl-grow { flex: 1 1 auto; min-width: 0; }
+.gl-body { margin: 0; font-size: 16px; line-height: 24px; font-weight: 400; color: var(--ink-muted); }
+.gl-text { margin: 0; }
+.gl-card .pk-h1, .gl-card .pk-h2, .gl-card .pk-h3 { overflow-wrap: anywhere; }
+.gl-mark { flex: none; display: block; }
+
+/* A text link that moves somewhere: "See details  ›". */
+.pk .gl-more {
+  flex: none; align-self: flex-start; padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--link); font-size: 13px; line-height: 18px; font-weight: 500; white-space: pre; text-align: left;
+}
+.pk .gl-more:hover { text-decoration: underline; text-underline-offset: 3px; }
+.gl-row-card .gl-more, .pk .gl-more.gl-push { align-self: center; }
+.gl-push { margin-left: auto; }
+.gl-links { display: flex; flex-wrap: wrap; gap: var(--space-6); }
+
+/* The Anchor card: the phase's shell beside its overline and title. */
+.gl-anchor-head { display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
+.gl-amount { margin: 0; display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.gl-amount .pk-amount { font-variant-numeric: tabular-nums; }
+.gl-amount > span:last-child { line-height: 22px; padding-bottom: 4px; }
+.gl-amount.sm { gap: 6px; }
+.gl-amount.sm > span:last-child { line-height: 18px; padding-bottom: 3px; }
+.gl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.gl-actions .pk-btn, .pk .pk-btn.gl-hug { width: auto; }
+.pk .pk-btn.gl-text-btn { height: 44px; padding: 0 var(--space-6); font-size: 16px; line-height: 20px; }
+.pk .pk-btn.gl-text-btn.center { align-self: center; }
+
+/* Progress: a label row over an 8px track. Rose on the way, lagoon once there. */
+.gl-progress { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.gl-progress-labels {
+  display: flex; justify-content: space-between; gap: var(--space-3);
+  font-size: 13px; line-height: 18px; font-weight: 500;
+}
+.gl-progress-labels > span:last-child { text-align: right; }
+.gl-track { position: relative; height: 8px; border-radius: var(--radius-full); background: var(--track); overflow: hidden; }
+.gl-fill {
+  position: absolute; inset: 0 auto 0 0; border-radius: var(--radius-full);
+  background: linear-gradient(180deg, var(--rose-300), var(--rose-500));
+}
+.gl-fill.done { background: var(--positive); }
+.gl-pair { display: flex; gap: var(--space-4); }
+.gl-pair > .gl-progress { flex: 1 1 0; }
+
+.gl-cols { display: flex; gap: var(--space-4); align-items: flex-start; }
+.gl-cols > .gl-card { flex: 1 1 0; }
+.gl-line { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); }
+.gl-line > span:first-child { color: var(--ink-muted); min-width: 0; overflow-wrap: anywhere; }
+.gl-line > span:last-child { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gl-line.strong > span:first-child { color: var(--ink); }
+.gl-divider { height: 1px; background: var(--track); }
+
+/* Treasure chests: three to a row, neutral. */
+.gl-section { display: flex; flex-direction: column; gap: var(--space-4); }
+.gl-section-head { display: flex; align-items: center; gap: var(--space-3); justify-content: space-between; }
+.gl-chests { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); align-items: start; }
+.gl-chest { position: relative; padding: 20px; gap: var(--space-3); }
+.gl-chest:hover { border-color: var(--border-strong); }
+.gl-chest-top { display: flex; align-items: center; gap: 8px; }
+.gl-chest-top .pk-h3 { flex: 1 1 auto; min-width: 0; }
+/* The name is the chest's link; it covers the card so the whole card opens it. */
+.pk .gl-chest-link {
+  padding: 0; border: 0; background: none; cursor: pointer; text-align: left;
+  font: inherit; color: inherit; overflow-wrap: anywhere;
+}
+.gl-chest-link::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius-md); }
+.gl-chest-link:focus-visible { outline: none; }
+.gl-chest:has(.gl-chest-link:focus-visible) { outline: 2px solid var(--action); outline-offset: 2px; }
+.pk .gl-more.gl-above { position: relative; z-index: 1; }
+.gl-pill {
+  flex: none; display: inline-flex; align-items: center; padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full); background: var(--surface-page); border: 1px solid var(--border);
+  color: var(--ink-muted); font-size: 13px; line-height: 18px; position: relative; z-index: 1;
+}
+.gl-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.gl-behind { background: var(--lilac); border-color: transparent; color: var(--on-nacre); }
+.gl-behind .pk-h2 { color: var(--on-nacre); }
+
+/* Projection: the range band on a month axis (no Design System part yet, THL-110). */
+.gl-range { display: flex; flex-direction: column; gap: 8px; }
+.gl-range-track { position: relative; height: 16px; border-radius: var(--radius-full); background: var(--track); }
+.gl-range-band { position: absolute; top: 0; bottom: 0; border-radius: var(--radius-full); background: var(--rose); opacity: .55; }
+.gl-range-axis { display: flex; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.gl-range-axis > span { flex: none; white-space: nowrap; overflow: hidden; }
+
+/* Side panels on the card surface, as the Goals frames draw them. */
+.pk-panel.on-card { background: var(--surface-card); }
+.pk-panel.gl-form { gap: var(--space-4); }
+.gl-panel-foot { margin-top: auto; display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); }
+.gl-suggest {
+  display: flex; flex-direction: column; gap: 8px; padding: var(--space-6);
+  background: var(--surface-page); border-radius: var(--radius-md);
+}
+.gl-suggest p { margin: 0; }
+.gl-note-card {
+  display: flex; flex-direction: column; gap: 6px; padding: var(--space-6);
+  background: var(--lilac); color: var(--on-nacre); border-radius: var(--radius-md);
+}
+.gl-note-card.tight { padding: var(--space-4); gap: var(--space-1); }
+.gl-note-card p, .gl-note-card .pk-h3 { margin: 0; color: var(--on-nacre); }
+.gl-note-card .gl-line > span:first-child { color: inherit; }
+.gl-nudge {
+  display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-6);
+  background: var(--surface-page); border-radius: var(--radius-md);
+}
+.gl-nudge-head { display: flex; align-items: center; gap: var(--space-4); }
+.gl-confirm { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4);
+              background: var(--surface-page); border-radius: var(--radius-md); }
+.gl-confirm p { margin: 0; }
+.gl-field { display: flex; flex-direction: column; gap: var(--space-2); }
+.gl-field > label { font-size: 13px; line-height: 18px; font-weight: 500; color: var(--ink); }
+.pk .gl-field input {
+  width: 100%; height: 52px; padding: 0 var(--space-4); font: inherit; font-size: 15px; color: var(--ink);
+  background: var(--surface-card); border: 1.5px solid var(--border-strong); border-radius: var(--radius-sm);
+}
+.pk .gl-field input:focus { border-color: var(--border-focus); outline: none; box-shadow: 0 0 0 4px var(--focus-ring); }
+.gl-hint { margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.pk .gl-seg button { height: 36px; padding: 0 var(--space-4); }
+.pk .gl-seg button.on { font-size: 13px; line-height: 18px; box-shadow: var(--shadow-card); }
+
+/* What-if slider (no Design System part yet): rose fill, ringed knob. */
+.pk .gl-slider {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 8px; margin: 8px 0;
+  border-radius: var(--radius-full); cursor: pointer;
+  background: linear-gradient(90deg, var(--rose) var(--fill, 0%), var(--track) var(--fill, 0%));
+}
+.pk .gl-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--surface-card); border: 2px solid var(--rose);
+}
+.pk .gl-slider::-moz-range-thumb {
+  width: 20px; height: 20px; border-radius: 50%; background: var(--surface-card); border: 2px solid var(--rose);
+}
+.pk .gl-slider:focus-visible { outline: 2px solid var(--action); outline-offset: 4px; }
+
+@media (max-width: 1100px) {
+  .gl-chests { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .gl-page { gap: var(--space-5); padding-top: var(--space-4); }
+  .gl-card { padding: var(--space-5) var(--space-4); }
+  .gl-chests { grid-template-columns: minmax(0, 1fr); }
+  .gl-pair, .gl-cols { flex-direction: column; align-items: stretch; }
+  .gl-row-card { flex-wrap: wrap; }
+  .gl-section-head { flex-wrap: wrap; }
+  .gl-anchor-head { flex-wrap: wrap; }
+  .gl-amount .pk-amount { font-size: 36px; line-height: 42px; }
+}

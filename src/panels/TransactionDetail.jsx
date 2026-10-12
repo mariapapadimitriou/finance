@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import {
-  Avatar, CategoryChip, DetailPanel, PButton, StatusPill, txAmount,
+  Alert, Avatar, CategoryChip, Choice, DetailPanel, PButton, StatusPill, txAmount,
 } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import CategoryPicker, { categoryLabel } from './CategoryPicker.jsx';
@@ -270,7 +270,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             {canBank && (
               <button type="button" className="txd-link" onClick={() => setStep('bank')}>
                 <PIcon name="target" size={18} />
-                {bank ? 'Change piggy bank' : 'Pay from a piggy bank'}
+                {bank ? 'Change treasure chest' : 'Pay from a treasure chest'}
               </button>
             )}
             <button type="button" className="txd-link" onClick={() => setStep('note')}>
@@ -395,27 +395,37 @@ function Exclude({ tx, busy, onBack, onSave }) {
   );
 }
 
-/** A piggy bank pays for this charge instead of the month (or stops paying). */
+/**
+ * Pay from a treasure chest (Pearl G-07, THL-179): a chest pays for this
+ * charge instead of the month, or stops paying. Each chest says what is in
+ * it, and the choice says what it does to safe to spend before it is saved.
+ */
 function PiggyBank({ tx, banks, busy, onBack, onSave }) {
-  const [pick, setPick] = useState(tx.bank_id == null ? '' : String(tx.bank_id));
+  const current = tx.bank_id == null ? '' : String(tx.bank_id);
+  const [pick, setPick] = useState(current);
+  const charge = money(tx.bank_amount || tx.amount, { cents: true });
+  const chosen = banks.find((b) => String(b.id) === pick);
+  const was = banks.find((b) => String(b.id) === current);
+  let effect = null;
+  if (pick !== current) {
+    effect = chosen
+      ? (was ? `It’ll come out of ${chosen.name} instead of ${was.name}.`
+        : `It’ll come out of ${chosen.name}, so safe to spend goes up by ${charge}.`)
+      : `It’ll go back into your month, so safe to spend goes down by ${charge}.`;
+  }
   return (
-    <Step title="Pay from a piggy bank" onBack={onBack}>
-      <p className="pk-muted">A charge a piggy bank pays for leaves your week and your month:
-        the bank’s monthly contribution already paid for it.</p>
-      <Field label="Piggy bank">
-        {(id) => (
-          <select id={id} value={pick} onChange={(e) => setPick(e.target.value)}>
-            <option value="">None · count it as everyday spending</option>
-            {banks.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name} · {b.available >= 0 ? `${money(b.available)} left` : `${money(-b.available)} over`}
-              </option>
-            ))}
-          </select>
-        )}
-      </Field>
-      <PButton disabled={busy || pick === (tx.bank_id == null ? '' : String(tx.bank_id))}
-               onClick={() => onSave(pick)}>Save</PButton>
+    <Step title="Pay from a treasure chest" onBack={onBack}>
+      <div className="pk-choices" role="radiogroup" aria-label="Pay from a treasure chest">
+        <Choice name="chest" checked={pick === ''} onChange={() => setPick('')}
+                label="Don’t use a chest" />
+        {banks.map((b) => (
+          <Choice key={b.id} name="chest" checked={pick === String(b.id)}
+                  onChange={() => setPick(String(b.id))} label={b.name}
+                  description={`${money(Math.max(b.held ?? b.available, 0))} in the chest`} />
+        ))}
+      </div>
+      {effect && <Alert>{effect}</Alert>}
+      <PButton disabled={busy || pick === current} onClick={() => onSave(pick)}>Save</PButton>
     </Step>
   );
 }

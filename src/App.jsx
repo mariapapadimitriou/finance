@@ -5,6 +5,7 @@ import PiggyPanel from './panels/PiggyPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import TransactionsList from './panels/TransactionsList.jsx';
 import NeedsALook from './panels/NeedsALook.jsx';
+import Goals from './panels/Goals.jsx';
 import BudgetsPanel from './panels/BudgetsPanel.jsx';
 import TripsPanel from './panels/TripsPanel.jsx';
 import ImportPanel from './panels/ImportPanel.jsx';
@@ -44,7 +45,8 @@ function defaultMonth(summary) {
 // gets emptied, so it is reachable immediately afterwards.
 // The sign-in settings too: a brand-new account has an empty ledger, and must
 // still be able to change its password or sign out.
-const WORKS_WHEN_EMPTY = ['banks', 'import', 'accounts', 'plan', 'account', 'categories'];
+// Goals too: someone new sees what comes next there (G-02).
+const WORKS_WHEN_EMPTY = ['banks', 'import', 'accounts', 'plan', 'account', 'categories', 'goals'];
 
 /**
  * A navigation label with an optional phone-width form.
@@ -314,8 +316,8 @@ export default function App() {
       counts={{ transactions: data.review }}
       months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(panel)}
-      // The Pearl list draws its own header (overline + title).
-      ownTitle={panel === 'transactions' || panel === 'review'}
+      // The Pearl pages draw their own header (overline + title).
+      ownTitle={['transactions', 'review', 'goals'].includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
       {panel === 'plan' && (
@@ -348,6 +350,9 @@ export default function App() {
         <TransactionsList summary={summary} categories={categories} accounts={accounts}
                           reviewCount={data.review} onTab={go} onChanged={load}
                           version={version} />
+      )}
+      {panel === 'goals' && (
+        <Goals onTab={go} onChanged={load} version={version} />
       )}
       {panel === 'budgets' && (
         <BudgetsPanel onTab={go} month={shownMonth} summary={summary} version={version} />
