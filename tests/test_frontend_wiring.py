@@ -300,11 +300,12 @@ class TestExplanationsRememberThemselves:
 
 
 class TestPicturesNotArithmetic:
-    def test_the_first_tab_is_called_allowance(self, nav):
-        """It is the page people open the app for, and it lands there."""
+    def test_the_first_tab_is_home(self, nav):
+        """Home replaces the old landing tab (THL-44, THL-125): it is the page
+        people open the app for, and it lands there."""
         first = re.search(r"GROUPS = \[\s*(?://[^\n]*\n\s*)*\{ key: '(\w+)', label: '([^']+)'", nav)
         assert first, "could not find the first group in nav.js"
-        assert first.groups() == ("today", "Allowance")
+        assert first.groups() == ("home", "Home")
         assert "label: 'Today'" not in nav
 
     def test_this_month_keeps_its_ninety_day_chart(self):
@@ -325,14 +326,9 @@ class TestLessToRead:
         assert "savings" not in groups and "savings" not in panels
         assert "subscriptions" not in aliases
         assert "retirement" not in panels
-        assert "retirement" not in groups["plan"]
+        assert not any("retirement" in members for members in groups.values())
         for name in ("SavingsPanel.jsx", "RetirementPanel.jsx", "SubscriptionsPanel.jsx"):
             assert not (SRC / "panels" / name).exists()
-
-    def test_the_allowance_card_is_folded_into_the_month(self):
-        text = (SRC / "panels" / "TodayPanel.jsx").read_text(encoding="utf-8")
-        assert "MonthlyAmount" not in text
-        assert "spent_in_total" in text
 
     def test_the_piggy_banks_have_a_title_and_no_tiles(self):
         text = (SRC / "panels" / "PiggyPanel.jsx").read_text(encoding="utf-8")
@@ -341,14 +337,7 @@ class TestLessToRead:
         assert "for spending on your cards" in text
 
 
-class TestMonthlyNotWeekly:
-    def test_the_month_card_shows_the_monthly_allowance(self):
-        text = (SRC / "panels" / "TodayPanel.jsx").read_text(encoding="utf-8")
-        month = text[text.index("function ThisMonth("):]
-        month = month[:month.index("\n}\n")]
-        assert "Monthly allowance" in month and "monthly_amount" in month
-        assert "Essentials" not in month and "week.nominal" not in month
-
+class TestPlanSetup:
     def test_saving_defaults_to_a_fifth_of_take_home(self):
         """The goal is a share of take-home — 20% until you set one — so its
         dollars follow take-home; it is saved as that share, not as dollars."""
@@ -357,18 +346,22 @@ class TestMonthlyNotWeekly:
         assert "savePlanSetup(Number(income) || 0, (Number(rate) || 0) / 100)" in text
 
 
-class TestAllowanceOpensOnTheWeek:
-    def test_no_banners_above_the_week(self):
-        text = (SRC / "panels" / "TodayPanel.jsx").read_text(encoding="utf-8")
-        for gone in ("SetupChecklist", "getNudge", "getSetup", "Showing ",
-                     "Nothing yet for"):
-            assert gone not in text, gone
+class TestHomeIsWhereTheAppLands:
+    """Pearl THL-9 / THL-44 / THL-125: Home replaces the old landing tab, and
+    the Allowance page's jobs move onto it (THL-166, THL-167)."""
 
-    def test_the_week_says_which_dates_it_covers(self):
-        text = (SRC / "panels" / "TodayPanel.jsx").read_text(encoding="utf-8")
-        assert "weekDates(month, week)" in text
-        # And the arrows step through past weeks.
-        assert 'aria-label="Previous week"' in text and "getWeek(" in text
+    def test_the_app_opens_on_home(self):
+        text = (SRC / "App.jsx").read_text(encoding="utf-8")
+        assert "'transactions' : 'home'" in text
+        assert "panel === 'home'" in text and "<HomePanel" in text
+
+    def test_old_links_to_the_allowance_land_on_home(self, aliases):
+        assert aliases.get("today") == "home"
+        assert not (SRC / "panels" / "TodayPanel.jsx").exists()
+
+    def test_home_reads_one_payload(self):
+        text = (SRC / "panels" / "HomePanel.jsx").read_text(encoding="utf-8")
+        assert "getHome()" in text and "How we worked this out" in text
 
 
 class TestAccountsInTheApp:
@@ -403,13 +396,13 @@ class TestTheSetupChecklistGoesSomewhereReal:
         assert not bad, f"setup steps pointing nowhere: {bad}"
 
 
-class TestThisMonthLivesUnderAllowance:
-    def test_allowance_holds_this_month_and_it_has_no_group_of_its_own(self):
-        nav = (SRC / "nav.js").read_text(encoding="utf-8")
-        groups = nav[nav.index("export const GROUPS = ["):]
-        groups = groups[:groups.index("\n];")]
-        assert "{ key: 'today', label: 'Allowance', panels: ['today', 'overview']" in groups
-        assert "key: 'overview'" not in groups
+class TestTheSidebarIsThl104s:
+    def test_home_transactions_goals_growth_and_profile(self, groups):
+        assert list(groups) == ["home", "transactions", "goals", "growth", "profile"]
+
+    def test_insights_lives_under_growth_and_has_no_group_of_its_own(self, groups):
+        assert groups["growth"][0] == "overview"
+        assert "overview" not in groups
 
 
 class TestOneReviewQueue:

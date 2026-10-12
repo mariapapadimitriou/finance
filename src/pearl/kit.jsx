@@ -168,9 +168,11 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * category, Split this) swaps the overline for a back link naming what it
  * came from, "← Uber Eats · $24.80", as the Handoff file draws it. Focus moves in and stays in;
  * Esc and the scrim close it, and focus goes back to what opened it. On a
- * phone it is the whole page.
+ * phone it is the whole page, or with `sheet` a bottom sheet over the page
+ * (X-04, THL-126).
  */
-export function DetailPanel({ label, overline, back, onClose, children, className = '' }) {
+export function DetailPanel({ label, overline, back, onClose, children, className = '',
+                             sheet = false }) {
   const ref = useRef(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -197,7 +199,7 @@ export function DetailPanel({ label, overline, back, onClose, children, classNam
     };
   }, []);
   return (
-    <div className="pk-scrim" onClick={onClose}>
+    <div className={`pk-scrim${sheet ? ' as-sheet' : ''}`} onClick={onClose}>
       <div className={`pk-panel ${className}`} role="dialog" aria-modal="true" aria-label={label}
            ref={ref}
            onClick={(e) => e.stopPropagation()}>

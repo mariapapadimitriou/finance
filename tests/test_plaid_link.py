@@ -305,12 +305,14 @@ class TestPlaidApi:
         assert client.delete("/api/plaid/items/nope").status_code == 404
 
 
-class TestOnlyCreditCards:
+class TestWhichAccountsSync:
     """Linking a bank hands over chequing, savings and investment accounts too.
 
-    This app is about card spending. A chequing account records the payment
-    that settles the card, so importing both counts the same money twice — and
-    an investment account's activity is not spending at all.
+    Safe to spend (Pearl E05) needs the cards and the everyday accounts: pay
+    and rent move through chequing, and savings is where money set aside goes.
+    Card payments and moves between her own accounts are matched as
+    transfers, so keeping both ends counts nothing twice. An investment
+    account's activity is not spending, so it is skipped by default.
     """
 
     def _pages(self, fake):
@@ -325,24 +327,26 @@ class TestOnlyCreditCards:
             "next_cursor": "c1",
         }])
 
-    def test_only_the_card_is_imported(self, store, fake):
+    def test_cards_chequing_and_savings_are_imported(self, store, fake):
         self._pages(fake)
         store.add_plaid_item("item-1", "tok", "TD")
         out = plaid_link.sync_all(store)
-        assert out["imported"] == 1
-        assert {t.account_id for t in store.all_transactions()} == {"acc1"}
+        assert out["imported"] == 3
+        assert {t.account_id for t in store.all_transactions()} == {"acc1", "chq", "sav"}
 
     def test_the_skipped_accounts_are_named(self, store, fake):
-        """Silently dropping three of four accounts would look like a bug."""
+        """Silently dropping an account would look like a bug."""
         self._pages(fake)
         store.add_plaid_item("item-1", "tok", "TD")
         skipped = plaid_link.sync_all(store)["items"][0]["skipped_accounts"]
-        # The mask is part of the name: two cards at one bank are otherwise
-        # told apart only by an opaque id, and deciding which to drop needs
-        # more than "Credit Card" listed twice.
-        assert "TD Everyday Chequing ••1111" in skipped
         assert "Wealthsimple TFSA ••3333" in skipped
-        assert not any("Cash Back Visa" in name for name in skipped)
+        assert not any("Chequing" in name or "Cash Back Visa" in name for name in skipped)
+
+    def test_cards_only_keeps_just_the_card(self, store, fake):
+        self._pages(fake)
+        store.set_setting("plaid_cards_only", "1")
+        store.add_plaid_item("item-1", "tok", "TD")
+        assert plaid_link.sync_all(store)["imported"] == 1
 
     def test_turning_the_filter_off_imports_everything(self, store, fake):
         self._pages(fake)
@@ -356,9 +360,61 @@ class TestOnlyCreditCards:
         self._pages(fake)
         store.add_plaid_item("item-1", "tok", "TD")
         plaid_link.sync_all(store)
-        row = store.all_transactions()[0]
+        row = next(t for t in store.all_transactions() if t.account_id == "acc1")
         assert row.raw["account_type"] == "credit"
         assert row.raw["account_subtype"] == "credit card"
+
+
+class TestCashAccountsSwitchedOnOnce:
+    """Chequing and savings used to be skipped by default. Accounts that only
+    that default switched off come on once, with their history; one the
+    person switched off stays off."""
+
+    def _pages(self, fake):
+        return fake([{
+            "accounts": MIXED_ACCOUNTS,
+            "added": [
+                txn("t1", "2026-01-05", "MOS MOS COFFEE", 6.40, account="acc1"),
+                txn("t2", "2026-01-06", "PAYROLL", -2150.00, account="chq"),
+            ],
+            "next_cursor": "c1",
+        }])
+
+    def _old_defaults(self, store):
+        for aid, kind in (("acc1", "credit"), ("chq", "depository"),
+                          ("sav", "depository"), ("inv", "investment")):
+            store.note_account(aid, name=aid, item_id="item-1",
+                               enabled=kind == "credit", account_type=kind)
+
+    def test_auto_skipped_chequing_comes_on_with_its_history(self, store, fake):
+        store.add_plaid_item("item-1", "tok", "TD")
+        self._old_defaults(store)
+        store.set_plaid_cursor("item-1", "old-cursor")
+        client = self._pages(fake)
+        plaid_link.sync_all(store)
+        assert "cursor" not in client.calls[0]           # the feed started over
+        rules = store.account_sync_rules()
+        assert rules["chq"]["enabled"] is True and rules["sav"]["enabled"] is True
+        assert rules["inv"]["enabled"] is False
+        assert "chq" in {t.account_id for t in store.all_transactions()}
+
+    def test_a_choice_to_skip_chequing_is_kept(self, store, fake):
+        store.add_plaid_item("item-1", "tok", "TD")
+        self._old_defaults(store)
+        store.set_account_sync("chq", False)
+        self._pages(fake)
+        plaid_link.sync_all(store)
+        assert store.account_sync_rules()["chq"]["enabled"] is False
+
+    def test_it_happens_once(self, store, fake):
+        store.add_plaid_item("item-1", "tok", "TD")
+        self._pages(fake)
+        plaid_link.sync_all(store)
+        store.note_account("new-chq", name="x", item_id="item-1", enabled=False,
+                           account_type="depository")
+        self._pages(fake)
+        plaid_link.sync_all(store)
+        assert store.account_sync_rules()["new-chq"]["enabled"] is False
 
     @pytest.mark.parametrize("acct,expected", [
         ({"type": "credit"}, True),
@@ -559,17 +615,16 @@ class TestRemovingAnAccountSticks:
         self._pages(fake)
         store.add_plaid_item("item-1", "tok", "TD")
         plaid_link.sync_all(store)
-        assert {t.account_id for t in store.all_transactions()} == {"acc1"}
+        assert {t.account_id for t in store.all_transactions()} == {"acc1", "chq"}
 
         # Remove the card, the way the app does it, and sync from scratch.
         store.clear_transactions("acc1")
         store.set_account_sync("acc1", False)
         store.set_plaid_cursor("item-1", "")
         self._pages(fake)
-        out = plaid_link.sync_all(store)
+        plaid_link.sync_all(store)
 
-        assert out["imported"] == 0
-        assert store.all_transactions() == []
+        assert "acc1" not in {t.account_id for t in store.all_transactions()}
 
     def test_without_the_decision_it_comes_straight_back(self, store, fake):
         """The bug this exists to prevent: deleting rows alone achieves nothing."""
@@ -580,7 +635,7 @@ class TestRemovingAnAccountSticks:
         store.set_plaid_cursor("item-1", "")
         self._pages(fake)
         plaid_link.sync_all(store)
-        assert {t.account_id for t in store.all_transactions()} == {"acc1"}
+        assert "acc1" in {t.account_id for t in store.all_transactions()}
 
     def test_a_non_card_turned_on_stays_on(self, store, fake):
         """A choice outranks the default, in both directions."""
@@ -601,7 +656,8 @@ class TestRemovingAnAccountSticks:
         client = app.test_client()
         self._pages(fake)
         store.add_plaid_item("item-1", "tok", "TD")
-        plaid_link.sync_all(store)                  # chequing off by default
+        store.set_account_sync("chq", False)        # she had switched it off
+        plaid_link.sync_all(store)
         assert "chq" not in {t.account_id for t in store.all_transactions()}
         assert store.plaid_items()[0]["synced_before"]
         cards = len(store.all_transactions())
@@ -635,7 +691,8 @@ class TestRemovingAnAccountSticks:
         rules = store.account_sync_rules()
         assert set(rules) == {"acc1", "chq", "sav", "inv"}
         assert rules["acc1"]["enabled"] is True
-        assert rules["chq"]["enabled"] is False
+        assert rules["chq"]["enabled"] is True
+        assert rules["inv"]["enabled"] is False
         assert all(r["decided_by"] == "auto" for r in rules.values())
         assert rules["chq"]["item_id"] == "item-1"
 

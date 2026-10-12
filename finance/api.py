@@ -2587,6 +2587,30 @@ def _goals_safe_to_spend(st) -> float | None:
         return None
 
 
+@bp.get("/home")
+def home():
+    """Everything Home draws, in one call (THL-44, THL-46).
+
+    Worked out on every request from the ledger as it stands, so the number
+    is current as soon as a sync has written its rows (E05: within 5 minutes).
+    """
+    from datetime import date as _date
+    from . import safe_to_spend
+
+    st = store()
+    today = _date.fromisoformat(_today_iso())
+    return jsonify({
+        "month": today.strftime("%Y-%m"),
+        "today": today.isoformat(),
+        "safe_to_spend": safe_to_spend.compute(
+            st.all_transactions(), today,
+            entered_income=st.float_setting("monthly_income", 0.0),
+            savings_target=st.float_setting("savings_target", 0.0),
+            anchor_started=st.setting("anchor_started") not in (None, ""),
+        ),
+    })
+
+
 @bp.get("/goals")
 def goals():
     """The Goals page: the Anchor pinned on top, chests, the saving goal.

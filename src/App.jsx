@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import OverviewPanel from './panels/OverviewPanel.jsx';
-import TodayPanel from './panels/TodayPanel.jsx';
+import HomePanel from './panels/HomePanel.jsx';
 import PiggyPanel from './panels/PiggyPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import TransactionsList from './panels/TransactionsList.jsx';
@@ -80,10 +80,10 @@ export default function App() {
     () => localStorage.getItem('spendie-theme-2') || 'light'
   );
   // /transactions… opens the list (a link from anywhere lands there); every
-  // other address opens the app where it always opened.
-  const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() ? 'transactions' : 'today'));
+  // other address opens Home, where the app lands (THL-44, THL-125).
+  const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() ? 'transactions' : 'home'));
   const [panel, setPanel] = useState(() => (isReviewUrl() ? 'review'
-    : readTxUrl() ? 'transactions' : 'today'));
+    : readTxUrl() ? 'transactions' : 'home'));
 
   /**
    * Go to a destination named either way.
@@ -110,14 +110,12 @@ export default function App() {
       }, 350);
     }
   }, []);
-  // Both month values hold *your* choice, and empty means "follow the data".
-  // They are deliberately not seeded from the first load: a seeded value would
-  // survive an import that added newer months, leaving the dashboard pinned to
-  // a month you never picked and the Allowance tab insisting nothing was imported
-  // for this month when it just was. Derived at render instead, so new data
-  // moves them and an explicit pick still sticks.
+  // The month holds *your* choice, and empty means "follow the data". It is
+  // deliberately not seeded from the first load: a seeded value would survive
+  // an import that added newer months, leaving the dashboard pinned to a
+  // month you never picked. Derived at render instead, so new data moves it
+  // and an explicit pick still sticks.
   const [month, setMonth] = useState('');
-  const [planMonth, setPlanMonth] = useState('');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   // null while we're still asking; the app renders nothing rather than
@@ -128,7 +126,7 @@ export default function App() {
   // passkey is offered.
   const [user, setUser] = useState(null);
   const [fresh, setFresh] = useState(false);
-  // Bumped on every reload so panels that fetch their own data — Allowance,
+  // Bumped on every reload so panels that fetch their own data — Home,
   // Projections, Piggy banks — refetch after an import instead of showing what
   // they loaded when they mounted.
   const [version, setVersion] = useState(0);
@@ -152,7 +150,7 @@ export default function App() {
       if (isReviewUrl()) { setTab('transactions'); setPanel('review'); }
       else if (readTxUrl()) { setTab('transactions'); setPanel('transactions'); }
       else if (['transactions', 'review'].includes(panelRef.current)) {
-        setTab('today'); setPanel('today');
+        setTab('home'); setPanel('home');
       }
     };
     window.addEventListener('popstate', onPop);
@@ -235,7 +233,7 @@ export default function App() {
     // A different person may be signing in on this device: nothing from the
     // last session's ledger is carried over.
     return <SignedOut onSignedIn={(u, { created = false } = {}) => {
-      setData(null); setMonth(''); setPlanMonth('');
+      setData(null); setMonth('');
       synced.current = false;
       setUser(u ?? null); setFresh(created);
       setSignedIn(true); setError(null);
@@ -280,15 +278,6 @@ export default function App() {
   const autoMonth = defaultMonth(summary);
   const shownMonth = (month && summary.months?.includes(month)) ? month : autoMonth;
 
-  const thisMonth = new Date().toISOString().slice(0, 7);
-  const thisMonthHasData = (summary.monthly ?? [])
-    .some((m) => m.month === thisMonth && m.transactions > 0);
-  // Empty means "whatever month it actually is", which is what the plan wants
-  // as soon as there is anything to measure this month against. Until then it
-  // falls back to the last month with spending, because a safe-to-spend figure
-  // for a month holding no transactions is a budget nobody has spent against.
-  const shownPlanMonth = planMonth || (thisMonthHasData ? '' : autoMonth);
-
   // An empty ledger hides the panels that have nothing to show — but not the
   // ones that exist to fix that, or this is a dead end: the Connect button
   // would set the tab and the same empty state would render over it, which
@@ -317,7 +306,7 @@ export default function App() {
       months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(panel)}
       // The Pearl pages draw their own header (overline + title).
-      ownTitle={['transactions', 'review', 'goals'].includes(panel)}
+      ownTitle={['home', 'transactions', 'review', 'goals'].includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
       {panel === 'plan' && (
@@ -330,10 +319,7 @@ export default function App() {
           <div id="piggy-banks"><PiggyPanel onTab={go} version={version} /></div>
         </div>
       )}
-      {panel === 'today' && (
-        <TodayPanel month={shownPlanMonth} onMonth={setPlanMonth}
-                    onTab={go} version={version} />
-      )}
+      {panel === 'home' && <HomePanel onTab={go} version={version} />}
       {panel === 'overview' && (
         <OverviewPanel summary={summary} insights={insights} theme={theme}
                        month={shownMonth} onMonth={setMonth} onTab={go}
@@ -442,6 +428,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {},
             {GROUPS.map((g) => (
               <button
                 key={g.key}
+                className={g.foot ? 'nav-foot' : undefined}
                 role="tab"
                 aria-selected={tab === g.key}
                 // The group's first page: Transactions opens on To review.

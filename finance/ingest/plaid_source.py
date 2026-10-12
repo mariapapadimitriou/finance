@@ -230,14 +230,36 @@ def map_plaid_transaction(item: dict, accounts: dict | None = None) -> Transacti
 
 
 # Linking a bank hands over every account it holds — chequing, savings, an
-# investment account, a mortgage. This app is about card spending, and a
-# chequing account's transfers would double-count what the card already
-# records, so only credit accounts are kept by default.
+# investment account, a mortgage. Safe to spend (Pearl E05) needs the cards
+# and the everyday accounts: pay and rent arrive and leave through chequing,
+# and savings is where money set aside goes. Card payments and moves between
+# her own accounts are matched as transfers (THL-40), so keeping both ends
+# doesn't count anything twice. Investment and loan accounts are skipped by
+# default: their activity isn't spending.
 CREDIT_TYPES = ("credit",)
+CASH_TYPES = ("depository",)
 
 
 def is_credit_account(account: dict) -> bool:
     return str(account.get("type", "")).lower() in CREDIT_TYPES
+
+
+def is_cash_account(account: dict) -> bool:
+    """Chequing and savings."""
+    return str(account.get("type", "")).lower() in CASH_TYPES
+
+
+def synced_by_default(account: dict, mode: str = "") -> bool:
+    """Whether a newly seen account syncs before anyone has decided.
+
+    `mode` is the `plaid_cards_only` setting: "1" keeps only cards, "0"
+    keeps everything, and unset keeps cards, chequing and savings.
+    """
+    if mode == "0":
+        return True
+    if mode == "1":
+        return is_credit_account(account)
+    return is_credit_account(account) or is_cash_account(account)
 
 
 def group_plaid_transactions(items: list[dict], accounts: dict) -> list[IngestResult]:

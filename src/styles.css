@@ -220,7 +220,10 @@ a { color: var(--brand); text-underline-offset: 3px; }
   line-height: 1.6;
 }
 
-.sidebar-foot { margin-top: auto; padding: 0 2px; }
+/* Profile sits at the foot of the sidebar (THL-104). */
+.nav { flex: 1; }
+.nav .nav-foot { margin-top: auto; }
+.sidebar-foot { padding: 0 2px; }
 .sidebar-foot .btn { width: 100%; justify-content: flex-start; }
 
 .content { min-width: 0; }

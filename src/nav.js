@@ -15,17 +15,20 @@
 // `onTab('piggy')` in a panel still works — `resolve` turns a panel key into
 // the group that now contains it.
 export const PANELS = {
-  today:         { label: 'Allowance',
-                   hint: "What's left to spend this week" },
+  // Home (Pearl THL-125, GR-05): safe to spend for the month and how it was
+  // worked out. Where the app lands.
+  home:          { label: 'Home',
+                   hint: 'What’s safe to spend this month, and how we worked it out' },
   // `short` is what a phone shows where the full label will not fit. Only
   // set where it is needed; everything else uses its label at every width.
   plan:          { label: 'Income & commitments', short: 'Income',
                    hint: 'What comes in, what is spoken for, and what is left' },
   budgets:       { label: 'Budgets',
                    hint: 'Spent against budget, projected to month end' },
-  overview:      { label: 'This month', short: 'Month',
+  // Growth › Insights (THL-129 GR-01's tabs): where the month's money went.
+  overview:      { label: 'Insights',
                    hint: 'Spending across every card' },
-  projections:   { label: 'Looking ahead', short: 'Ahead',
+  projections:   { label: 'Projections',
                    hint: 'What saving more gets you — this year, and invested' },
   review:        { label: 'To review', short: 'Review',
                    hint: 'Everything Pearl isn’t sure about, with its best guess' },
@@ -47,26 +50,15 @@ export const PANELS = {
                    hint: 'Which categories share one line in your budget' },
 };
 
-// The four destinations. A group holding one panel shows no sub-navigation.
-//
-// A group's label is what the sidebar says, so it has to be what you find
-// when you click it. "Overview" opened a page titled This month; "Savings"
-// opened What to cut and Subscriptions — neither of them savings — while the
-// figure you actually save sat under Plan. The keys stay as they were, so
-// every link and every insight that names one still resolves.
+// The sidebar (Pearl THL-104, as every Handoff frame draws it): Home,
+// Transactions, Goals and Growth, with Profile at the foot. A group holding
+// one panel shows no sub-navigation.
 export const GROUPS = [
-  // The page people open the app for, so it is first and where the app lands.
-  // The key is still `today`, which every link and insight already names.
-  // This month sits with it: the week's number and where the month's money
-  // went are the two things you open the app to check.
-  { key: 'today', label: 'Allowance', panels: ['today', 'overview'],
-    hint: "What's left to spend this week, and where the month went",
-    icon: 'M12 3a9 9 0 1 0 9 9M12 3a9 9 0 0 1 9 9M12 3v9h9' },
-  // Looking ahead sits with the plan, not with the history: it is the plan
-  // run forward, and the savings figure it offers to move is the plan's.
-  { key: 'plan', label: 'Plan', panels: ['plan', 'budgets', 'projections'],
-    hint: 'What you earn, what it is promised to, how the rest divides, and where that leads',
-    icon: 'M3 3v18h18M7 15l4-4 3 3 5-6' },
+  // Home replaces the old landing tab (THL-9, THL-44, THL-125): the page
+  // people open the app for, so it is first and where the app lands.
+  { key: 'home', label: 'Home', panels: ['home'],
+    hint: 'What’s safe to spend this month',
+    icon: 'M3 10.5 12 3l9 7.5M5 9v11h5v-6h4v6h5V9' },
   // Opens on the list (Pearl TX-01); what needs a look is one tap away, and
   // the list's alert links there too.
   { key: 'transactions', label: 'Transactions', short: 'Charges',
@@ -79,13 +71,19 @@ export const GROUPS = [
   { key: 'goals', label: 'Goals', panels: ['goals'],
     hint: 'Your Anchor, your treasure chests and your saving goal',
     icon: 'M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21ZM12 17C14.7614 17 17 14.7614 17 12C17 9.23858 14.7614 7 12 7C9.23858 7 7 9.23858 7 12C7 14.7614 9.23858 17 12 17ZM12 13C12.5523 13 13 12.5523 13 12C13 11.4477 12.5523 11 12 11C11.4477 11 11 11.4477 11 12C11 12.5523 11.4477 13 12 13Z' },
-  // Everything you set once and then leave: where the transactions come from,
-  // and how the categories are grouped for budgeting. Neither is somewhere
-  // you go to find out how the month is going.
-  { key: 'settings', label: 'Settings',
-    panels: ['banks', 'accounts', 'import', 'categories', 'account'],
-    hint: 'Where the transactions come from, and how categories are grouped',
-    icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z' },
+  // Growth (THL-129 GR-01): Path, Insights, Projections and Learn, with
+  // Budgets and Debts beside them (THL-9 decision N1). Path and Debts arrive
+  // in later steps; Learn isn't designed yet.
+  { key: 'growth', label: 'Growth', panels: ['overview', 'projections', 'budgets'],
+    hint: 'Where your money went, where it could go, and your budgets',
+    icon: 'M3 17l6-6 4 4 8-8M15 7h6v6' },
+  // At the foot (THL-104): accounts and connections (THL-120's Profile ›
+  // Accounts), income and commitments until the confirmation flow (THL-45)
+  // replaces it, files, categories (THL-9 decision N2) and sign-in.
+  { key: 'profile', label: 'Profile',
+    panels: ['accounts', 'banks', 'plan', 'import', 'categories', 'account'], foot: true,
+    hint: 'Your accounts, income, categories and sign-in',
+    icon: 'M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z' },
 ];
 
 // Keys that are no longer panels of their own but are still linked to from
@@ -93,7 +91,9 @@ export const GROUPS = [
 // Piggy banks are a card on the Plan page now — they are already a term in its
 // arithmetic — so a link to them is a link there.
 // The Mortgage page is gone: its payments are read from your accounts now.
-export const ALIASES = { piggy: 'plan', mortgage: 'plan' };
+// The old landing tab and the old Settings group still resolve, so any link
+// or saved address that names them lands somewhere real.
+export const ALIASES = { piggy: 'plan', mortgage: 'plan', today: 'home', settings: 'profile' };
 
 // Where on that page the aliased thing actually is. Without this a link to a
 // piggy bank lands at the top of a long page with no sign of one, which is
@@ -119,7 +119,7 @@ export function resolve(key) {
   if (owner) return [owner.key, target];
   const group = GROUPS.find((g) => g.key === target);
   if (group) return [group.key, group.panels[0]];
-  return ['today', 'today'];
+  return ['home', 'home'];
 }
 
 /**

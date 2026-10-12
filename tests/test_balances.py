@@ -101,7 +101,9 @@ def test_every_sync_records_balances_even_for_switched_off_accounts(synced):
     b = st.balances()
     assert b["chq"]["current"] == 4000 and b["chq"]["available"] == 3900
     assert b["card"]["limit"] == 5000
-    assert b["sav"]["current"] == 10000           # off by default, still known
+    st.set_account_sync("sav", False)
+    plaid_link.sync_all(st)
+    assert st.balances()["sav"]["current"] == 10000   # switched off, still known
     rows = {a["account_id"]: a for a in c.get("/api/accounts").get_json()["accounts"]}
     assert rows["card"]["balance"]["current"] == 800
 
@@ -121,6 +123,7 @@ def test_removing_the_bank_forgets_its_balances(synced):
 def test_the_plan_compares_stayed_with_how_much_the_accounts_grew(synced):
     st, c = synced
     st.set_account_sync("chq", True)
+    st.set_account_sync("sav", False)      # she keeps savings out of Pearl
     first = TODAY.replace(day=1)
     prev = (first - timedelta(days=1)).replace(day=1)
     st.add_transactions([

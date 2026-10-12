@@ -1141,6 +1141,20 @@ class Store:
                     " VALUES (?, ?, ?, ?, 'user')",
                     (account_id, name, item_id, 1 if enabled else 0))
 
+    def enable_auto_cash_accounts(self) -> set[str]:
+        """Switch on chequing and savings accounts that only the old
+        cards-only default had switched off. Returns their items' ids."""
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT account_id, item_id FROM account_sync"
+                " WHERE enabled = 0 AND decided_by = 'auto'"
+                "   AND lower(account_type) = 'depository'").fetchall()
+            for r in rows:
+                c.execute("UPDATE account_sync SET enabled = 1,"
+                          " updated_at = CURRENT_TIMESTAMP WHERE account_id = ?",
+                          (r["account_id"],))
+        return {r["item_id"] for r in rows if r["item_id"]}
+
     def accounts_not_synced(self) -> set[str]:
         with self.conn() as c:
             rows = c.execute(
