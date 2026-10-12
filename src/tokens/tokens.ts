@@ -1,4 +1,4 @@
-// Pearl design tokens · generated from Figma 'Pearl Design System' (THL-106) · 2026-10-11 (v3: aligned with Handoff File; filled-secondary tokens removed). Do not edit by hand; re-export from Figma.
+// Pearl design tokens · generated from Figma 'Pearl Design System' (THL-106) · 2026-10-11 (v3: aligned with Handoff File; filled-secondary tokens removed); 2026-10-12: Nacre/Horizontal and Rose/Shell directions re-checked against Figma (THL-110). Do not edit by hand; re-export from Figma.
 
 export const color = {
   light: {
@@ -188,6 +188,8 @@ export const shadow = {
 export const gradient = {
   "nacreDiagonal": {
     "type": "linear",
+    "start": {"x": 0, "y": 0},
+    "end": {"x": 1, "y": 1},
     "colors": [
       "#ffd6e0",
       "#e3d4ff",
@@ -201,6 +203,8 @@ export const gradient = {
   },
   "nacreHorizontal": {
     "type": "linear",
+    "start": {"x": 0, "y": 0.5},
+    "end": {"x": 1, "y": 0.5},
     "colors": [
       "#ffc2d4",
       "#d9c6ff",
@@ -214,6 +218,8 @@ export const gradient = {
   },
   "roseShell": {
     "type": "linear",
+    "start": {"x": 0.5, "y": 0},
+    "end": {"x": 0.5, "y": 1},
     "colors": [
       "#ff8fb1",
       "#e2557f"

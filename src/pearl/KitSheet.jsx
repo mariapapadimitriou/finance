@@ -3,6 +3,7 @@ import {
   Alert, CategoryChip, DayHeader, EmptyState, FilterChip, PButton, SearchField, StatTile,
   StatusPill, TxRow,
 } from './kit.jsx';
+import VizSheet from './VizSheet.jsx';
 
 // Every kit component in each of its states, for review in light and dark.
 // Development only: main.jsx shows it at ?kit=1 and the build leaves it out.
@@ -77,6 +78,12 @@ export default function KitSheet() {
         <PButton variant="secondary">Change category</PButton>
         <PButton variant="text">Clear filters</PButton>
       </div>
+
+      <div>
+        <p className="pk-overline accent">Data visualisation · THL-110</p>
+        <h2 className="pk-h1">Patterns</h2>
+      </div>
+      <VizSheet />
     </div>
   );
 }

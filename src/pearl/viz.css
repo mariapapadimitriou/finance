@@ -1,0 +1,125 @@
+/* Data visualisation patterns (THL-110). Tokens only: every colour, radius
+ * and space comes from src/tokens/tokens.css. One fill, --action, for every
+ * bar but the Anchor hero's nacre; --positive once a goal is done. */
+
+.viz-muted { color: var(--ink-muted); }
+.viz-grow { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.viz-sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.viz-progress p, .viz-snapshot p, .viz-pearl-progress p, .viz-breakdown p { margin: 0; }
+
+/* A label on the left and its figure on the right. */
+.viz-labels {
+  display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2);
+  color: var(--ink); min-width: 0;
+}
+.viz-labels > span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Track and fill. The fill's width is set inline: nothing at 0, at least
+ * --space-1 above it. */
+.viz-track {
+  position: relative; height: var(--space-2); border-radius: var(--radius-full);
+  background: var(--track); overflow: hidden;
+}
+.viz-track.tall { height: 10px; }
+.viz-fill {
+  position: absolute; inset: 0 auto 0 0; border-radius: var(--radius-full);
+  background: var(--action);
+}
+.viz-fill.positive { background: var(--positive); }
+.viz-fill.nacre { background: var(--nacre-horizontal); }
+/* Over pace or over the month: champagne, a 1px gold outline, never red. */
+.viz-fill.over { background: var(--champagne); box-shadow: inset 0 0 0 1px var(--gold-700); }
+
+/* V-01 Progress bar */
+.viz-progress { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+
+/* V-01 PearlProgress */
+.viz-pearl-progress { display: flex; align-items: center; gap: var(--space-5); min-width: 0; }
+.viz-pearl-slot {
+  flex: none; display: flex; align-items: center; justify-content: center;
+  width: calc(var(--space-8) + var(--space-6)); height: calc(var(--space-8) + var(--space-6));
+}
+.viz-pearl {
+  --viz-share: 0;
+  display: block; border-radius: var(--radius-full);
+  width: calc(var(--space-4) + var(--space-6) * var(--viz-share));
+  height: calc(var(--space-4) + var(--space-6) * var(--viz-share));
+  background: var(--pearl-orb); box-shadow: var(--glow-pearl);
+}
+.viz-pearl-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.viz-pearl-title { color: var(--ink); }
+.viz-delta.positive { color: var(--positive); }
+.viz-delta.muted { color: var(--ink-muted); }
+
+/* V-02 Range band: ten month cells; the likely range filled with round ends. */
+.viz-range { display: flex; flex-direction: column; gap: var(--space-2); }
+.viz-range-track {
+  display: flex; height: var(--space-4); border-radius: var(--radius-full);
+  background: var(--track); overflow: hidden;
+}
+.viz-range-cell { flex: 1 1 0; min-width: 0; }
+.viz-range-cell.start, .viz-range-cell.middle, .viz-range-cell.end, .viz-range-cell.single {
+  background: var(--action);
+}
+.viz-range-cell.start { border-radius: var(--radius-full) 0 0 var(--radius-full); }
+.viz-range-cell.end { border-radius: 0 var(--radius-full) var(--radius-full) 0; }
+.viz-range-cell.single { border-radius: var(--radius-full); }
+.viz-range-axis { display: flex; color: var(--ink-muted); }
+.viz-range-axis > span { flex: 1 1 0; min-width: 0; overflow: hidden; white-space: nowrap; }
+
+/* V-03 Snapshot bar */
+.viz-snapshot { display: flex; flex-direction: column; gap: calc((var(--space-1) + var(--space-2)) / 2); min-width: 0; }
+.viz-tick-row { position: relative; height: var(--space-2); }
+.viz-tick {
+  position: absolute; top: 0; bottom: 0; width: 2px; transform: translateX(-50%);
+  background: var(--ink);
+}
+
+/* V-04 Category breakdown */
+.viz-breakdown { display: flex; flex-direction: column; gap: var(--space-4); }
+.viz-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-4); }
+.viz-breakdown-row > div { display: flex; flex-direction: column; gap: calc((var(--space-1) + var(--space-2)) / 2); }
+.viz-share { flex: none; min-width: calc(var(--space-8) + var(--space-1)); }
+
+/* V-05 What-if slider: an 8px track, a 24px knob, a 44px hit area. */
+input[type="range"].viz-slider {
+  -webkit-appearance: none; appearance: none; display: block; width: 100%;
+  height: calc(var(--space-8) + var(--space-3)); margin: 0; padding: 0;
+  background: transparent; cursor: pointer;
+}
+input[type="range"].viz-slider::-webkit-slider-runnable-track {
+  height: var(--space-2); border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--action) var(--viz-fill, 0%), var(--track) var(--viz-fill, 0%));
+}
+input[type="range"].viz-slider::-moz-range-track {
+  height: var(--space-2); border-radius: var(--radius-full); background: var(--track);
+}
+input[type="range"].viz-slider::-moz-range-progress {
+  height: var(--space-2); border-radius: var(--radius-full); background: var(--action);
+}
+input[type="range"].viz-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; box-sizing: border-box;
+  width: var(--space-6); height: var(--space-6); margin-top: calc(var(--space-2) / 2 - var(--space-6) / 2);
+  border-radius: var(--radius-full); background: var(--surface-card); border: 2px solid var(--action);
+  box-shadow: none;
+}
+input[type="range"].viz-slider::-moz-range-thumb {
+  box-sizing: border-box; width: var(--space-6); height: var(--space-6);
+  border-radius: var(--radius-full); background: var(--surface-card); border: 2px solid var(--action);
+  box-shadow: none;
+}
+input[type="range"].viz-slider:focus { outline: none; }
+input[type="range"].viz-slider:focus-visible, input[type="range"].viz-slider.show-focus {
+  outline: 2px solid var(--border-focus); outline-offset: var(--space-1);
+  border-radius: var(--radius-full);
+}
+
+/* Motion only for those who haven't asked for less; otherwise bars and the
+ * pearl jump straight to where they end. */
+@media (prefers-reduced-motion: no-preference) {
+  .viz-fill { transition: width 240ms ease-out; }
+  .viz-pearl { transition: width 240ms ease-out, height 240ms ease-out; }
+}

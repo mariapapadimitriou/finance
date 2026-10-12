@@ -568,21 +568,8 @@
 .pk .pk-btn.gl-text-btn { height: 44px; padding: 0 var(--space-6); font-size: 16px; line-height: 20px; }
 .pk .pk-btn.gl-text-btn.center { align-self: center; }
 
-/* Progress: a label row over an 8px track. Rose on the way, lagoon once there. */
-.gl-progress { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
-.gl-progress-labels {
-  display: flex; justify-content: space-between; gap: var(--space-3);
-  font-size: 13px; line-height: 18px; font-weight: 500;
-}
-.gl-progress-labels > span:last-child { text-align: right; }
-.gl-track { position: relative; height: 8px; border-radius: var(--radius-full); background: var(--track); overflow: hidden; }
-.gl-fill {
-  position: absolute; inset: 0 auto 0 0; border-radius: var(--radius-full);
-  background: linear-gradient(180deg, var(--rose-300), var(--rose-500));
-}
-.gl-fill.done { background: var(--positive); }
 .gl-pair { display: flex; gap: var(--space-4); }
-.gl-pair > .gl-progress { flex: 1 1 0; }
+.gl-pair > .viz-progress { flex: 1 1 0; }
 
 .gl-cols { display: flex; gap: var(--space-4); align-items: flex-start; }
 .gl-cols > .gl-card { flex: 1 1 0; }
@@ -618,13 +605,6 @@
 .gl-behind { background: var(--lilac); border-color: transparent; color: var(--on-nacre); }
 .gl-behind .pk-h2 { color: var(--on-nacre); }
 
-/* Projection: the range band on a month axis (no Design System part yet, THL-110). */
-.gl-range { display: flex; flex-direction: column; gap: 8px; }
-.gl-range-track { position: relative; height: 16px; border-radius: var(--radius-full); background: var(--track); }
-.gl-range-band { position: absolute; top: 0; bottom: 0; border-radius: var(--radius-full); background: var(--rose); opacity: .55; }
-.gl-range-axis { display: flex; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
-.gl-range-axis > span { flex: none; white-space: nowrap; overflow: hidden; }
-
 /* Side panels on the card surface, as the Goals frames draw them. */
 .pk-panel.on-card { background: var(--surface-card); }
 .pk-panel.gl-form { gap: var(--space-4); }
@@ -659,21 +639,6 @@
 .gl-hint { margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
 .pk .gl-seg button { height: 36px; padding: 0 var(--space-4); }
 .pk .gl-seg button.on { font-size: 13px; line-height: 18px; box-shadow: var(--shadow-card); }
-
-/* What-if slider (no Design System part yet): rose fill, ringed knob. */
-.pk .gl-slider {
-  -webkit-appearance: none; appearance: none; width: 100%; height: 8px; margin: 8px 0;
-  border-radius: var(--radius-full); cursor: pointer;
-  background: linear-gradient(90deg, var(--rose) var(--fill, 0%), var(--track) var(--fill, 0%));
-}
-.pk .gl-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%;
-  background: var(--surface-card); border: 2px solid var(--rose);
-}
-.pk .gl-slider::-moz-range-thumb {
-  width: 20px; height: 20px; border-radius: 50%; background: var(--surface-card); border: 2px solid var(--rose);
-}
-.pk .gl-slider:focus-visible { outline: 2px solid var(--action); outline-offset: 4px; }
 
 @media (max-width: 1100px) {
   .gl-chests { grid-template-columns: repeat(2, minmax(0, 1fr)); }

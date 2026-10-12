@@ -1,4 +1,4 @@
-/* Pearl design tokens · generated from Figma 'Pearl Design System' (THL-106) · 2026-10-11 (v3: aligned with Handoff File; filled-secondary tokens removed). Do not edit by hand; re-export from Figma. */
+/* Pearl design tokens · generated from Figma 'Pearl Design System' (THL-106) · 2026-10-11 (v3: aligned with Handoff File; filled-secondary tokens removed); 2026-10-12: Nacre/Horizontal and Rose/Shell directions re-checked against Figma (THL-110). Do not edit by hand; re-export from Figma. */
 :root {
   --pearl-50: #fbf8f6;
   --white: #ffffff;
@@ -39,8 +39,8 @@
   --shadow-raised: 0px 12px 32px 0px rgba(28, 26, 51, 0.10), 0px 2px 6px 0px rgba(28, 26, 51, 0.06);
   --shadow-sheet: 0px -8px 32px 0px rgba(28, 26, 51, 0.14), 0px -2px 8px 0px rgba(28, 26, 51, 0.08);
   --nacre-diagonal: linear-gradient(135deg, #ffd6e0 0%, #e3d4ff 50%, #cff3ee 100%);
-  --nacre-horizontal: linear-gradient(135deg, #ffc2d4 0%, #d9c6ff 50%, #b8ede6 100%);
-  --rose-shell: linear-gradient(135deg, #ff8fb1 0%, #e2557f 100%);
+  --nacre-horizontal: linear-gradient(90deg, #ffc2d4 0%, #d9c6ff 50%, #b8ede6 100%);
+  --rose-shell: linear-gradient(180deg, #ff8fb1 0%, #e2557f 100%);
   --pearl-orb: radial-gradient(circle, #ffffff 0%, #fce8f0 55%, #dccbff 100%);
 }
 
