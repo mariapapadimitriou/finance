@@ -170,7 +170,7 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * Esc and the scrim close it, and focus goes back to what opened it. On a
  * phone it is the whole page.
  */
-export function DetailPanel({ label, overline, back, onClose, children }) {
+export function DetailPanel({ label, overline, back, onClose, children, className = '' }) {
   const ref = useRef(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -198,7 +198,8 @@ export function DetailPanel({ label, overline, back, onClose, children }) {
   }, []);
   return (
     <div className="pk-scrim" onClick={onClose}>
-      <div className="pk-panel" role="dialog" aria-modal="true" aria-label={label} ref={ref}
+      <div className={`pk-panel ${className}`} role="dialog" aria-modal="true" aria-label={label}
+           ref={ref}
            onClick={(e) => e.stopPropagation()}>
         <div className="pk-panel-top">
           {back ? (

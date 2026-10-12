@@ -1681,8 +1681,21 @@ class Store:
             ).fetchone()
         return round(row["total"], 2)
 
+    def add_draw(self, bank_id: int, month: str, amount: float, note: str = "") -> int:
+        """Record money moving between a bank and a month.
+
+        Positive is the bank lending the month money; negative is the month
+        putting money into the bank ("Add money" on a treasure chest), which
+        that month's budget gives up.
+        """
+        with self.conn() as c:
+            cur = c.execute(
+                "INSERT INTO piggy_draws (bank_id, month, amount, note) VALUES (?, ?, ?, ?)",
+                (bank_id, month, round(float(amount), 2), note))
+            return int(cur.lastrowid)
+
     def draws(self, month: str | None = None) -> list[dict]:
-        sql = ("SELECT d.id, d.month, d.amount, d.note, d.created_at, b.name "
+        sql = ("SELECT d.id, d.bank_id, d.month, d.amount, d.note, d.created_at, b.name "
                "FROM piggy_draws d JOIN piggy_banks b ON b.id = d.bank_id")
         params = []
         if month:
