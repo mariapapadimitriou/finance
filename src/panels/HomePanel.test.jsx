@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { HowWeWorkedItOut, SafeToSpendCard, heroCopy, sheetRows } from './HomePanel.jsx';
+import {
+  HomeBody, HowWeWorkedItOut, IncomePanel, SafeToSpendCard, heroCopy, homeAlert, parseAmount,
+  sheetRows,
+} from './HomePanel.jsx';
 
 // The X-01 person on Friday October 9 (finance/safe_to_spend.py's tests use
 // the same numbers).
@@ -33,6 +36,7 @@ const over = {
 };
 
 const needsIncome = { ...ok, state: 'needs_income', amount: null, per_day: null, rows: [] };
+ok.shown = ok.amount; ok.estimate = null; over.shown = -84; over.estimate = null;
 
 const cents = (n) => Math.round(n * 100);
 const html = (el) => renderToStaticMarkup(el);
@@ -67,7 +71,7 @@ describe('safe-to-spend card', () => {
 
   it('asks for income instead of guessing (E1)', () => {
     const out = html(<SafeToSpendCard s={needsIncome} />);
-    expect(out).toContain('Add your income');
+    expect(out).toContain('Tell us what you expect to earn');
     expect(out).not.toContain('How we worked this out');
     expect(heroCopy(needsIncome).figure).toBeNull();
     calm(out);
@@ -134,5 +138,163 @@ describe('How we worked this out', () => {
       expect(out).toContain('Something look wrong? Edit your income or bills');
       calm(out);
     }
+  });
+});
+
+// ── Data states (THL-137 E-01 to E-04; THL-72, THL-69, THL-47, THL-70) ──
+
+const base = { history_days: 120, first_date: '2026-06-01', learning_until: '2026-07-01',
+  comparisons_from: '2026-08-01', linking_failed: false, answers: { income: null, rent: null },
+  asks_questions: false, spent_so_far: 3144.34, bills_found: 6 };
+
+const rough = {
+  ...ok, estimate: 'rough', income_source: 'told', amount: 2605, shown: 2600, per_day: 113.04,
+  rows: [
+    { key: 'income', amount: 4300, paycheques: 0, payer: '', source: 'told',
+      lines: [{ label: 'Still expected this month', date: null, amount: 4300, arrived: false, kind: 'expected' }] },
+    { key: 'bills', amount: 1650, count: 1, first: null, last: null,
+      lines: [{ label: 'Rent or mortgage', date: null, amount: 1650, estimate: false, late: false, told: true }] },
+    { key: 'spent', amount: 45, pending: 0, lines: [{ label: 'Lifestyle', amount: 45 }] },
+  ],
+};
+const cautious = {
+  ...ok, estimate: 'cautious', income_source: 'cautious', amount: 2980, shown: 2980, per_day: 129.56,
+  cautious: { lowest: 3100, month: '2026-07', highest: 4800, months: [] },
+  rows: [
+    { key: 'income', amount: 3100, paycheques: 0, payer: '', source: 'cautious',
+      cautious: { lowest: 3100, month: '2026-07' },
+      lines: [{ label: 'Client B', date: '2026-10-03', amount: 1900, arrived: true, kind: 'other' },
+              { label: 'Still expected, being cautious', date: null, amount: 1200, arrived: false, kind: 'expected' }] },
+    { key: 'bills', amount: 0, count: 0, first: null, last: null, lines: [] },
+    { key: 'spent', amount: 120, pending: 0, lines: [{ label: 'Essentials', amount: 120 }] },
+  ],
+};
+
+const STATES = {
+  'E-01 no data': [needsIncome, { ...base, kind: 'no_data', history_days: 0, first_date: null,
+    learning_until: null, comparisons_from: null, spent_so_far: 0, bills_found: 0 }],
+  'E-01 linking failed': [needsIncome, { ...base, kind: 'no_data', history_days: 0,
+    linking_failed: true, spent_so_far: 0, bills_found: 0 }],
+  'E-02 learning, asks': [needsIncome, { ...base, kind: 'learning', history_days: 15,
+    learning_until: '2026-10-25', comparisons_from: '2026-11-01', asks_questions: true,
+    spent_so_far: 45, bills_found: 0 }],
+  'E-02 learning, answered': [rough, { ...base, kind: 'learning', history_days: 15,
+    learning_until: '2026-10-25', comparisons_from: '2026-11-01', spent_so_far: 45, bills_found: 0 }],
+  'answers without linking': [rough, { ...base, kind: 'learning', history_days: 0,
+    first_date: null, learning_until: null, comparisons_from: null, spent_so_far: 0, bills_found: 0 }],
+  'E-03 irregular': [cautious, { ...base, kind: 'irregular' }],
+  'E-04 card only': [needsIncome, { ...base, kind: 'card_only',
+    card_spending: { amount: 740, lines: [{ label: 'Lifestyle', amount: 430 }, { label: 'Essentials', amount: 310 }] } }],
+  'E-04 nothing spent yet': [needsIncome, { ...base, kind: 'card_only', spent_so_far: 0,
+    card_spending: { amount: 0, lines: [] } }],
+  normal: [ok, { ...base, kind: 'normal' }],
+  'normal, no income': [needsIncome, { ...base, kind: 'normal', asks_questions: true }],
+};
+
+const body = (s, ds) => html(
+  <HomeBody s={s} ds={ds} onSave={() => Promise.resolve()} onLink={() => {}}
+            onExplain={() => {}} onIncome={() => {}} />);
+const primaries = (out) => (out.match(/pk-btn primary/g) || []).length;
+
+describe('every data state', () => {
+  for (const [name, [s, ds]] of Object.entries(STATES)) {
+    it(`${name}: calm, and exactly one primary action at most`, () => {
+      const out = body(s, ds);
+      calm(out);
+      expect(primaries(out)).toBeLessThanOrEqual(1);
+    });
+  }
+
+  it('E-01 has one primary: link the bank, or try again after a failure', () => {
+    const fresh = body(...STATES['E-01 no data']);
+    expect(primaries(fresh)).toBe(1);
+    expect(fresh).toContain('Link your bank');
+    expect(fresh).toContain('Your path');
+    expect(fresh).toContain('Prefer to start without linking?');
+    const failed = body(...STATES['E-01 linking failed']);
+    expect(failed).toContain('Try linking again');
+    expect(failed).toContain('Linking didn’t finish last time');
+  });
+
+  it('E-02 asks the starter questions, and they are the primary (E3)', () => {
+    const out = body(...STATES['E-02 learning, asks']);
+    expect(primaries(out)).toBe(1);
+    expect(out).toMatch(/pk-btn primary[^>]*>Save answers/);
+    expect(out).toContain('Monthly take-home pay');
+    expect(out).toContain('Pearl is learning your patterns');
+    expect(out).toContain('Sunday, October 25');                  // with a date
+    expect(out).toContain('Sunday, November 1');
+  });
+
+  it('E-02 answered: a rough estimate, labelled, rounded down to $10', () => {
+    const c = heroCopy(rough);
+    expect(c).toMatchObject({ pill: 'Estimate', figure: 'About $2,600' });
+    expect(c.context).toBe('Rough estimate from the income and rent you told us');
+    const out = body(...STATES['E-02 learning, answered']);
+    expect(out).not.toContain('Save answers');
+    expect(out).toContain('Spent so far');
+    expect(out).toContain('None yet');                           // bills found: 0
+  });
+
+  it('answers without linking still lead back to linking', () => {
+    const out = body(...STATES['answers without linking']);
+    expect(primaries(out)).toBe(1);
+    expect(out).toContain('Link your bank');
+  });
+
+  it('E-03 is cautious, labelled, with "Use a different amount"', () => {
+    const c = heroCopy(cautious);
+    expect(c).toMatchObject({ pill: 'Cautious', figure: '$2,980' });
+    expect(c.context).toBe('Based on your lowest month of the last 3 ($3,100)');
+    expect(homeAlert(cautious, STATES['E-03 irregular'][1]).action).toBe('Use a different amount');
+    expect(body(...STATES['E-03 irregular'])).toContain('Use a different amount');
+  });
+
+  it('E-04 shows spending only, with one prompt to link chequing', () => {
+    const out = body(...STATES['E-04 card only']);
+    expect(primaries(out)).toBe(1);
+    expect(out).toContain('Link your chequing account');
+    expect(out).toContain('$740');
+    expect(out).not.toContain('Safe to spend in');
+    expect(body(...STATES['E-04 nothing spent yet'])).toContain('Nothing yet');
+  });
+
+  it('the sheet keeps exact rows and says what was rounded (E5)', () => {
+    const { rows, total } = sheetRows(rough);
+    expect(total.display).toBe('$2,605.00');
+    expect(total.note).toBe('Shown rounded down to $2,600.');
+    expect(rows[1].lines[0].label).toBe('Rent or mortgage (what you told us)');
+    expect(rows[1].detail).toBe('1 bill');
+    const careful = sheetRows(cautious);
+    expect(careful.rows[0].detail).toBe('Your lowest month of the last 3 was July, $3,100');
+    expect(careful.rows[1].display).toBe('None');
+    const out = html(<HowWeWorkedItOut s={rough} onClose={() => {}} onEdit={() => {}} />);
+    expect(out).toContain('Safe to spend: about $2,600');
+    calm(out);
+  });
+
+  it('a rough number under $10 never reads $0', () => {
+    const tiny = { ...rough, amount: 7.5, shown: 0, per_day: 0 };
+    expect(heroCopy(tiny).figure).toBe('Less than $10');
+    calm(html(<SafeToSpendCard s={tiny} />));
+  });
+});
+
+describe('parseAmount', () => {
+  it.each([['3200', 3200], ['$3,200', 3200], ['3,200.50', 3200.5], [' 1650 ', 1650]])(
+    '%s → %s', (text, n) => expect(parseAmount(text)).toBe(n));
+  it.each(['', 'lots', '-5', '3.333', '12abc'])('%s is not an amount', (text) => {
+    expect(Number.isNaN(parseAmount(text))).toBe(true);
+  });
+});
+
+describe('changing the income (E4)', () => {
+  it('offers the way back to the cautious figure once she has overridden it', () => {
+    const overridden = { ...cautious, income_source: 'told', estimate: null, overridden: true };
+    const out = html(<IncomePanel s={overridden} told={4000} onClose={() => {}}
+                                  onSave={() => Promise.resolve()} onReset={() => Promise.resolve()} />);
+    expect(out).toContain('value="4000"');
+    expect(out).toContain('Go back to the cautious figure ($3,100)');
+    calm(out);
   });
 });

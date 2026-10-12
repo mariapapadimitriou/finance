@@ -2599,16 +2599,65 @@ def home():
 
     st = store()
     today = _date.fromisoformat(_today_iso())
+    txns = st.all_transactions()
+    told_income = st.float_setting("home_income", 0.0)
+    told_rent = st.float_setting("home_rent", 0.0)
+    sts = safe_to_spend.compute(
+        txns, today,
+        entered_income=st.float_setting("monthly_income", 0.0),
+        savings_target=st.float_setting("savings_target", 0.0),
+        anchor_started=st.setting("anchor_started") not in (None, ""),
+        told_income=told_income, told_rent=told_rent,
+        overridden=bool(_json_setting(st, "income_overrides", [])),
+    )
+    types = {aid: r.get("account_type") or ""
+             for aid, r in st.account_sync_rules().items() if r.get("enabled")}
+    failed = any(i.get("last_error") for i in st.plaid_items())
     return jsonify({
         "month": today.strftime("%Y-%m"),
         "today": today.isoformat(),
-        "safe_to_spend": safe_to_spend.compute(
-            st.all_transactions(), today,
-            entered_income=st.float_setting("monthly_income", 0.0),
-            savings_target=st.float_setting("savings_target", 0.0),
-            anchor_started=st.setting("anchor_started") not in (None, ""),
-        ),
+        "safe_to_spend": sts,
+        "data_state": safe_to_spend.home_state(
+            txns, today, sts, account_types=types, linking_failed=failed,
+            told_income=told_income, told_rent=told_rent),
     })
+
+
+@bp.put("/home/answers")
+def home_answers():
+    """The starter questions (E-02) and "Use a different amount" (E-03).
+
+    Income and rent she tells us on Home. Either can be cleared with 0. When
+    `override` is set the amount replaces the cautious figure; each override
+    is recorded with the figure it replaced (E10: "let users override it,
+    and record that they did").
+    """
+    import json
+    from datetime import date as _date
+    from . import safe_to_spend
+
+    body = request.get_json(silent=True) or {}
+    st = store()
+    saved = {}
+    for key, setting in (("income", "home_income"), ("rent", "home_rent")):
+        if key not in body:
+            continue
+        try:
+            value = round(float(body[key] or 0), 2)
+        except (TypeError, ValueError):
+            return jsonify({"error": f"Enter your {key} as an amount, like 3200."}), 400
+        if value < 0 or value > 1_000_000:
+            return jsonify({"error": f"Enter your {key} as an amount, like 3200."}), 400
+        st.set_setting(setting, str(value) if value else "")
+        saved[key] = value
+    if body.get("override") and saved.get("income"):
+        today = _date.fromisoformat(_today_iso())
+        careful = safe_to_spend.cautious_income(st.all_transactions(), today)
+        log = _json_setting(st, "income_overrides", [])
+        log.append({"on": today.isoformat(), "amount": saved["income"],
+                    "cautious": careful["lowest"] if careful else None})
+        st.set_setting("income_overrides", json.dumps(log))
+    return home()
 
 
 @bp.get("/goals")
