@@ -95,11 +95,32 @@ export function RangeBand({ now, from, to }) {
  * V-03 Snapshot bar: this month against a usual month. The fill is spent ÷
  * usual, capped; the tick is where she usually is by today. Over pace, or
  * over the month, turns champagne with a gold outline and says so in words.
+ *
+ * Rows measured against a plan rather than a usual month (Home's Income and
+ * Savings, H-01) pass `share` (0–1) with their own `value` and `note`; they
+ * have no tick and no pace. `share` null draws no bar at all, for a row with
+ * nothing yet to measure against (E10: never an empty chart).
  */
 export function SnapshotBar({
   category, spent, usualMonth, usualByToday, day, daysInMonth, monthsOfHistory = 0,
-  showTick = true,
+  showTick = true, share, value, note,
 }) {
+  if (share !== undefined) {
+    return (
+      <div className="viz-snapshot">
+        <div className="viz-labels text-body">
+          <span>{category}</span>
+          <span>{value}</span>
+        </div>
+        {share !== null && (
+          <div className="viz-track tall" aria-hidden="true">
+            <Fill percent={Math.min(Math.max(share || 0, 0), 1) * 100} className="viz-fill" />
+          </div>
+        )}
+        {note && <p className="text-label viz-muted">{note}</p>}
+      </div>
+    );
+  }
   const fraction = paceFraction({ usualByToday, usualMonth, day, daysInMonth, monthsOfHistory });
   const status = paceStatus(spent, fraction * usualMonth, usualMonth);
   const over = status === 'over' || status === 'over-month';

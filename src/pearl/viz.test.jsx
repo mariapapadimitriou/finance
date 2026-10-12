@@ -73,6 +73,20 @@ describe('RangeBand', () => {
 });
 
 describe('SnapshotBar', () => {
+  it('measures against a plan when given a share: its own value and note, no tick', () => {
+    const out = html(<SnapshotBar category="Income" share={0.5} value="$2,150 of $4,300"
+                                  note="Next pay on Friday, October 16" />);
+    expect(out).toContain('$2,150 of $4,300');
+    expect(out).toContain('Next pay on Friday, October 16');
+    expect(out).toContain('width:max(var(--space-1), 50%)');
+    expect(out).not.toContain('viz-tick');
+  });
+
+  it('draws no bar when there is nothing to measure against', () => {
+    const out = html(<SnapshotBar category="Income" share={null} value="Nothing in yet" />);
+    expect(out).not.toContain('viz-track');
+  });
+
   const base = { category: 'Lifestyle', usualMonth: 1150, day: 12, daysInMonth: 31 };
 
   it('fills the action colour on pace, and says so', () => {

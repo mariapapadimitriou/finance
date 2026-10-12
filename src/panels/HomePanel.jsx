@@ -3,6 +3,8 @@ import { ErrorNote } from '../components/ui.jsx';
 import { getHome, money, putHomeAnswers } from '../api.js';
 import { Alert, DetailPanel, PButton, StatusPill } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
+import { SnapshotBar } from '../pearl/viz.jsx';
+import { writeTxUrl } from '../router.js';
 import { Field, Mark } from './GoalsParts.jsx';
 import './home.css';
 
@@ -26,6 +28,11 @@ import './home.css';
  *   E-04 card_only — card spending only, and one prompt to link chequing
  * Rough and cautious numbers are shown rounded down to $10 (S7, E5). Exactly
  * one primary action on the page (E3); one alert at a time (C3).
+ *
+ * The snapshot (THL-48, H-01) compares Income with what's expected, Essentials
+ * and Lifestyle with her usual month and where she usually is by today
+ * (THL-184), and Savings with the monthly plan. Pace follows THL-110's ±10%
+ * rule; over pace or over the month is champagne, with words (L2).
  */
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
@@ -197,8 +204,13 @@ export default function HomePanel({ onTab, version }) {
         <p className="pk-overline">{`${MONTHS[p.m - 1]} ${p.y}`}</p>
         <h1 className="pk-h1">Home</h1>
       </header>
-      <HomeBody s={s} ds={ds} onSave={save} onLink={link}
-                onExplain={() => setExplain(true)} onIncome={() => setIncome(true)} />
+      <HomeBody s={s} ds={ds} snap={home.snapshot} onSave={save} onLink={link}
+                onExplain={() => setExplain(true)} onIncome={() => setIncome(true)}
+                onSeeWhere={(group) => {
+                  // TX-02: the list, opened on this month and the group.
+                  writeTxUrl({ filters: { month: s.month, group }, from: 'home' }, { push: true });
+                  onTab?.('transactions');
+                }} />
       {explain && s.rows.length > 0 && (
         <HowWeWorkedItOut s={s} onClose={() => setExplain(false)}
                           onEdit={() => {
@@ -221,7 +233,7 @@ export default function HomePanel({ onTab, version }) {
 }
 
 /** Which Home to draw, by data state (THL-137). Exactly one primary action. */
-export function HomeBody({ s, ds, onSave, onLink, onExplain, onIncome }) {
+export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onSeeWhere }) {
   if (ds.kind === 'no_data') {
     return (
       <>
@@ -241,11 +253,13 @@ export function HomeBody({ s, ds, onSave, onLink, onExplain, onIncome }) {
     );
   }
   const noAccounts = ds.history_days === 0;
-  const alert = homeAlert(s, ds);
+  const alert = homeAlert(s, ds, snap);
+  const act = alert?.group ? () => onSeeWhere?.(alert.group) : onIncome;
   return (
     <>
       {alert && (
-        <Alert tone="info" action={alert.action} onAction={alert.action ? onIncome : undefined}>
+        <Alert tone={alert.tone ?? 'info'} action={alert.action}
+               onAction={alert.action ? act : undefined}>
           {alert.text}
         </Alert>
       )}
@@ -261,13 +275,19 @@ export function HomeBody({ s, ds, onSave, onLink, onExplain, onIncome }) {
       )}
       {noAccounts && <ConnectCard failed={ds.linking_failed} onLink={onLink}
                                   primary={!ds.asks_questions} />}
+      {snap && ['normal', 'irregular'].includes(ds.kind) && <Snapshot snap={snap} />}
     </>
   );
 }
 
 /** One alert at a time, in the C3 order: connection, over plan, learning,
  * cautious. Connection and over plan arrive with steps 4 and 3. */
-export function homeAlert(s, ds) {
+export function homeAlert(s, ds, snap) {
+  if (s.state === 'over' && snap?.extra_went_to) {
+    // H-02: where the extra went, and a way to see it (TX-02).
+    return { tone: 'caution', text: `${snap.extra_went_to} is where the extra went.`,
+             action: 'See where it went', group: snap.extra_went_to.toLowerCase() };
+  }
   if (ds.kind === 'learning' && ds.history_days > 0 && ds.learning_until) {
     return {
       text: `Pearl is learning your patterns. Your number gets more exact after ${longDate(ds.learning_until)}, and comparisons with a usual month start on ${longDate(ds.comparisons_from)}.`,
@@ -551,5 +571,67 @@ export function IncomePanel({ s, told, onClose, onSave, onReset }) {
         )}
       </form>
     </DetailPanel>
+  );
+}
+
+/** The props for each snapshot row's bar (H-01, H-02, E-03). Whole dollars;
+ * no $0 and no empty bar anywhere (E10). */
+export function snapshotRows(snap) {
+  return snap.rows.map((r) => {
+    if (r.key === 'income') {
+      const c = r.cautious;
+      if (c) {
+        return { key: r.key, category: r.label, share: r.received / c.lowest,
+                 value: `${r.received > 0 ? shown(r.received) : 'Nothing'} so far · usually ${shown(c.lowest)} to ${shown(c.highest)}`,
+                 note: 'Freelance months vary; this updates as payments arrive' };
+      }
+      if (r.expected) {
+        const allIn = r.received >= r.expected;
+        return { key: r.key, category: r.label, share: r.received / r.expected,
+                 value: r.received > 0 ? `${shown(r.received)} of ${shown(r.expected)}`
+                   : `None of ${shown(r.expected)} in yet`,
+                 note: allIn ? 'All of this month’s pay is in'
+                   : r.next_pay ? `Next pay on ${longDate(r.next_pay)}` : null };
+      }
+      return { key: r.key, category: r.label, share: null,
+               value: r.received > 0 ? `${shown(r.received)} so far` : 'Nothing in yet', note: null };
+    }
+    if (r.key === 'savings') {
+      if (r.planned) {
+        return { key: r.key, category: r.label, share: r.saved / r.planned,
+                 value: r.saved > 0 ? `${shown(r.saved)} of ${shown(r.planned)} planned`
+                   : `None of ${shown(r.planned)} planned yet`,
+                 note: r.goal === 'anchor' ? 'Your Anchor' : 'Your saving goal' };
+      }
+      return { key: r.key, category: r.label, share: null, note: null,
+               value: r.saved > 0 ? `${shown(r.saved)} saved this month` : 'Nothing saved yet this month' };
+    }
+    // Essentials and Lifestyle: against her usual month (THL-184).
+    if (r.usual > 0 && r.spent > 0) {
+      return { key: r.key, category: r.label, spent: Math.round(r.spent),
+               usualMonth: Math.round(r.usual), usualByToday: r.usual_by_today,
+               day: snap.day, daysInMonth: snap.days_in_month,
+               monthsOfHistory: snap.months_of_history };
+    }
+    if (r.usual > 0) {
+      return { key: r.key, category: r.label, share: 0,
+               value: `Nothing yet · usually ${shown(r.usual)}`, note: null };
+    }
+    return { key: r.key, category: r.label, share: null,
+             value: r.spent > 0 ? `${shown(r.spent)} so far` : 'Nothing yet',
+             note: snap.comparisons_from
+               ? `We’ll compare with your usual month from ${longDate(snap.comparisons_from)}.` : null };
+  });
+}
+
+/** The snapshot card (THL-48): this month so far against a usual month. */
+export function Snapshot({ snap }) {
+  return (
+    <section className="hm-card hm-snapshot" aria-labelledby="hm-snap-title">
+      <h2 className="pk-h3" id="hm-snap-title">
+        {`${monthName(snap.month)} so far, compared with a usual month`}
+      </h2>
+      {snapshotRows(snap).map(({ key, ...row }) => <SnapshotBar key={key} {...row} />)}
+    </section>
   );
 }
