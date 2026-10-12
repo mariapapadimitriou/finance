@@ -171,6 +171,17 @@ class TestTheAnchorEndpoints:
         assert a["projection"]["state"] == "range"
         assert body["phase"] == "build"
 
+    def test_it_says_what_was_saved_this_month(self, client, st):
+        link_accounts(st)
+        ledger(st)
+        a = client.get("/api/goals").get_json()["anchor"]
+        assert a["saved_this_month"] == 0
+        client.put("/api/goals/anchor", json={"target": 2150, "accounts": ["sav", "tng"]})
+        st.add_transactions([t(f"{THIS_MONTH}-01", 300, "Saved", description="To savings"),
+                             t(f"{THIS_MONTH}-01", -120, "Saved", description="From savings")])
+        a = client.get("/api/goals").get_json()["anchor"]
+        assert a["saved_this_month"] == 180
+
     def test_an_account_it_cannot_count_is_refused(self, client, st):
         link_accounts(st)
         r = client.put("/api/goals/anchor", json={"target": 1000, "accounts": ["brk"]})

@@ -2482,6 +2482,7 @@ def _anchor_accounts(st) -> list[dict]:
 def _anchor(st, txns, today: str) -> dict:
     """Everything the Anchor card, its detail and its projection need."""
     from . import anchor as anchor_math
+    from .analytics import invested_in
 
     available = _anchor_accounts(st)
     started = st.setting("anchor_started") not in (None, "")
@@ -2518,6 +2519,9 @@ def _anchor(st, txns, today: str) -> dict:
         "pace": pace,
         "projection": projection,
         "recent": anchor_math.recent_saves(txns),
+        # This month so far, for the hero's "+$300 this month": the same
+        # measure as each month in `months`, less any taken back out.
+        "saved_this_month": invested_in(txns, today[:7]) if started else 0.0,
     }
 
 
