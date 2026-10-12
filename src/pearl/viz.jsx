@@ -22,6 +22,7 @@ function Fill({ percent, className }) {
 /**
  * V-01 Progress bar. `share` is 0–1; the fill is the exact percentage, at
  * least 4px above 0 and nothing at 0. Brand on the way, positive once done.
+ * `name` says whose bar it is when the label alone doesn't.
  */
 export function ProgressBar({ label, value, share, tone = 'brand', name }) {
   const pct = fillPercent(share);
@@ -31,7 +32,8 @@ export function ProgressBar({ label, value, share, tone = 'brand', name }) {
         <span className="viz-muted">{label}</span>
         <span>{value}</span>
       </div>
-      <div className="viz-track" role="progressbar" aria-label={progressLabel(name ?? label, value, pct)}
+      <div className="viz-track" role="progressbar"
+           aria-label={progressLabel(name ? `${name}, ${label}` : label, value, pct)}
            aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentWords(pct)}>
         <Fill percent={pct} className={`viz-fill${tone === 'positive' ? ' positive' : ''}`} />
       </div>

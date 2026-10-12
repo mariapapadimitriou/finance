@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Choice, DetailPanel, PButton } from '../pearl/kit.jsx';
-import { anchorWhatIf, setUnusualMonths } from '../api.js';
+import { RangeBand, Slider } from '../pearl/viz.jsx';
+import { sliderBounds, sliderWords, soonerWords, whatIf } from '../pearl/vizMath.js';
+import { setUnusualMonths } from '../api.js';
 import {
-  Line, Mark, More, PageHead, amount, listWords, monthName, monthShort, rangeWords,
+  Line, Mark, More, PageHead, amount, listWords, monthName, rangeWords,
 } from './GoalsParts.jsx';
 
 /**
@@ -11,33 +13,6 @@ import {
  * nothing put away lately there is no date at all. A month marked unusual is
  * left out, and the explanation says which.
  */
-
-const idx = (ym) => Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1;
-const fromIdx = (i) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`;
-
-/** The range band on a month axis, from this month to just past the far end. */
-function RangeBand({ now, from, to }) {
-  const start = idx(now);
-  const months = Math.min(Math.max(idx(to) - start + 2, 6), 25);
-  const axis = Array.from({ length: months }, (_, i) => fromIdx(start + i));
-  const left = ((idx(from) - start) / months) * 100;
-  const width = ((idx(to) - idx(from) + 1) / months) * 100;
-  const every = months > 13 ? 2 : 1;
-  return (
-    <div className="gl-range" aria-hidden="true">
-      <div className="gl-range-track">
-        <span className="gl-range-band" style={{ left: `${left}%`, width: `${width}%` }} />
-      </div>
-      <div className="gl-range-axis">
-        {axis.map((m, i) => (
-          <span key={m} style={{ width: `${100 / months}%` }}>
-            {i % every === 0 ? monthShort(m) : ''}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function leftOutWords(pace) {
   const names = (pace?.left_out ?? []).map((m) => monthName(m.month));
@@ -94,7 +69,7 @@ export function ProjectionPage({ goals, onBack, onHow, onWhatIf, onMonths, onTab
                 ? 'A date wouldn’t be honest right now. As soon as you save a little, we’ll show a range again.'
                 : 'Once a full month with money moved to savings is in, we’ll show a range.'}
             </p>
-            <div className="gl-range-track" aria-hidden="true" />
+            <RangeBand now={goals.month} />
             {pace && <More onClick={onMonths}>Change which months count</More>}
           </section>
           {p.subscriptions_monthly > 0 && (
@@ -167,60 +142,54 @@ export function HowWorkedOut({ goals, onClose, onMonths }) {
   );
 }
 
-function soonerWords(n) {
-  if (n == null) return '';
-  if (n <= 0) return 'About the same time';
-  return n === 1 ? 'About a month sooner' : `About ${n} months sooner`;
-}
-
-/** P-03: what putting aside more would do. A preview; nothing is saved. */
+/**
+ * P-03: what putting aside more would do. A preview; nothing is saved. The
+ * projection is worked out here on the device (vizMath.whatIf, a port of
+ * finance/anchor.py), so it follows the slider instantly.
+ */
 export function WhatIf({ goals, onClose }) {
-  const usual = goals.anchor.pace?.usual ?? 0;
-  const min = Math.max(10, Math.round(usual / 10) * 10);
-  const max = Math.max(500, min + 100);
-  const [monthly, setMonthly] = useState(Math.min(min + 50, max));
-  const [result, setResult] = useState(null);
-
-  useEffect(() => {
-    let live = true;
-    const t = setTimeout(() => {
-      anchorWhatIf(monthly).then((r) => { if (live) setResult(r); }).catch(() => {});
-    }, 120);
-    return () => { live = false; clearTimeout(t); };
-  }, [monthly]);
+  const a = goals.anchor;
+  const usual = a.pace?.usual ?? 0;
+  const bounds = sliderBounds(usual);
+  const [monthly, setMonthly] = useState(bounds?.start ?? 0);
+  const result = bounds ? whatIf({
+    toGo: a.to_go, pace: a.pace, now: goals.month, current: a.projection,
+  }, monthly) : null;
 
   const p = result?.projection;
   const extra = monthly - usual;
-  const pct = ((monthly - min) / (max - min)) * 100;
   return (
     <DetailPanel label="Try a different amount" overline="Try a different amount"
                  onClose={onClose} className="on-card">
       <h1 className="pk-h1">What if you saved a bit more?</h1>
-      <label className="pk-label pk-muted" htmlFor="whatif">Put aside</label>
-      <p className="pk-amount" aria-hidden="true">{amount(monthly)} a month</p>
-      <input id="whatif" className="gl-slider" type="range" min={min} max={max} step={10}
-             value={monthly} onChange={(e) => setMonthly(Number(e.target.value))}
-             style={{ '--fill': `${pct}%` }}
-             aria-valuetext={`${amount(monthly)} a month`} />
-      <div className="gl-line pk-label pk-muted">
-        <span>{amount(min)} {usual > 0 ? 'now' : ''}</span>
-        <span>{amount(max)}</span>
-      </div>
-      <div className="gl-note-card" role="status" aria-live="polite">
-        {p?.state === 'range' ? (
-          <>
-            <h2 className="pk-h3">{soonerWords(result.sooner_months) || 'Likely full'}</h2>
-            <p className="gl-text">Between {rangeWords(p.from, p.to)}</p>
-          </>
-        ) : p ? (
-          <h2 className="pk-h3">Still no date at that amount</h2>
-        ) : <p className="gl-text">Working it out…</p>}
-        {usual > 0 && extra > 0 && (
-          <p className="pk-label pk-muted">
-            That’s {amount(Math.round(extra))} more a month than your usual pace.
-          </p>
-        )}
-      </div>
+      {bounds ? (
+        <>
+          <label className="pk-label pk-muted" htmlFor="whatif">Put aside</label>
+          <p className="pk-amount" aria-hidden="true">{amount(monthly)} a month</p>
+          <Slider id="whatif" value={monthly} bounds={bounds} onChange={setMonthly}
+                  valueText={sliderWords(monthly, result)} />
+          <div className="gl-line pk-label pk-muted">
+            <span>{amount(bounds.min)} now</span>
+            <span>{amount(bounds.max)}</span>
+          </div>
+          <div className="gl-note-card" role="status" aria-live="polite">
+            {p?.state === 'range' ? (
+              <>
+                <h2 className="pk-h3">{soonerWords(result.sooner) || 'Likely full'}</h2>
+                <p className="gl-text">Between {rangeWords(p.from, p.to)}</p>
+              </>
+            ) : <h2 className="pk-h3">Still no date at that amount</h2>}
+            {extra > 0 && (
+              <p className="pk-label pk-muted">
+                That’s {amount(Math.round(extra))} more a month than your usual pace.
+              </p>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="gl-body">Once you’ve put a little aside for a month, you can try
+          different amounts here.</p>
+      )}
       <p className="pk-label pk-muted">This is only a preview. Nothing changes until you move
         more money.</p>
       <div className="gl-panel-foot">

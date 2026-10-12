@@ -4,8 +4,9 @@ import {
   addBank, addToChest, deleteBank, getChest, openTreasure, seenCatchUp, updateBank,
 } from '../api.js';
 import { ErrorNote } from '../components/ui.jsx';
+import { ProgressBar } from '../pearl/viz.jsx';
 import {
-  Field, Line, Mark, More, PageHead, Pill, Progress, Segments, amount, dayLong, dayShort,
+  Field, Line, Mark, More, PageHead, Pill, Segments, amount, dayLong, dayShort,
   monthName, monthShortYear, monthYear, parseAmount, useFocusHeading,
 } from './GoalsParts.jsx';
 
@@ -62,9 +63,9 @@ export function ChestCard({ chest, onOpen, onTreasure }) {
         <span className="pk-label pk-muted">of {amount(chest.target)}</span>
       </p>
       {chest.ready ? (
-        <Progress label="Ready to open" value="100%" share={1} done name={chest.name} />
+        <ProgressBar label="Ready to open" value="100%" share={1} tone="positive" name={chest.name} />
       ) : (
-        <Progress label={`${amount(chest.monthly)} a month`} value={readyLabel(chest)}
+        <ProgressBar label={`${amount(chest.monthly)} a month`} value={readyLabel(chest)}
                   share={chest.share} name={chest.name} />
       )}
       {chest.ready && <More className="gl-above" onClick={onTreasure}>Open your treasure</More>}
@@ -416,9 +417,9 @@ export function ChestDetail({ goals, id, onBack, onChanged, version }) {
               ? ` · due ${dayLong(chest.target_date)}` : ` · ${amount(chest.to_go)} to go`}
           </span>
         </p>
-        <Progress label={chest.ready ? 'Ready to open' : `${amount(chest.monthly)} a month`}
+        <ProgressBar label={chest.ready ? 'Ready to open' : `${amount(chest.monthly)} a month`}
                   value={chest.ready ? '100%' : detailRight(chest)}
-                  share={chest.share} done={chest.ready} name={chest.name} />
+                  share={chest.share} tone={chest.ready ? 'positive' : 'brand'} name={chest.name} />
         <div className="gl-actions">
           <PButton className="gl-hug" onClick={() => setPanel('treasure')}>Open your treasure</PButton>
           <PButton variant="secondary" className="gl-hug" onClick={() => setPanel('add')}>Add money</PButton>

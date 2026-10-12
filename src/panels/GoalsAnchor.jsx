@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Alert, Choice, DetailPanel, PButton } from '../pearl/kit.jsx';
 import { setAnchor } from '../api.js';
+import { ProgressBar } from '../pearl/viz.jsx';
 import {
-  Field, Line, Mark, More, PageHead, Progress, Segments, amount, dayShort, monthName,
+  Field, Line, Mark, More, PageHead, Segments, amount, dayShort, monthName,
   parseAmount, rangeShort, rangeWords, useFocusHeading,
 } from './GoalsParts.jsx';
 
@@ -71,8 +72,8 @@ export function AnchorCard({ goals, onStart, onOpen, onTab }) {
     return (
       <section className="gl-card gl-anchor" aria-label="Your Anchor">
         {head('unveil', 'Unveil', 'Your Anchor is full')}
-        <Progress label="Full Anchor" value={`${amount(a.counted)} of ${amount(a.target)}`}
-                  share={1} done />
+        <ProgressBar label="Full Anchor" value={`${amount(a.counted)} of ${amount(a.target)}`}
+                  share={1} tone="positive" />
         <p className="gl-body">You’re in Unveil. Keep it topped up and it’ll keep you steady.</p>
         <div className="gl-actions">
           <PButton variant="secondary" onClick={() => onTab('projections')}>
@@ -87,7 +88,7 @@ export function AnchorCard({ goals, onStart, onOpen, onTab }) {
     return (
       <section className="gl-card gl-anchor" aria-label="Your Anchor">
         {head('unveil', 'Unveil · Keep it going', 'Your Anchor')}
-        <Progress label="Your Anchor" value={`${amount(a.counted)} of ${amount(a.target)}`}
+        <ProgressBar label="Your Anchor" value={`${amount(a.counted)} of ${amount(a.target)}`}
                   share={a.share} />
         <p className="gl-body">A big month dipped into it, which is what it’s for. You’re still
           in Unveil.</p>
@@ -104,7 +105,7 @@ export function AnchorCard({ goals, onStart, onOpen, onTab }) {
         <span className="pk-amount">{amount(a.counted)}</span>
         <span className="pk-muted">of {amount(a.target)}</span>
       </p>
-      <Progress label={`First stop ${amount(a.first_stop)} · ${a.first_stop_done ? 'done'
+      <ProgressBar label={`First stop ${amount(a.first_stop)} · ${a.first_stop_done ? 'done'
         : `${amount(a.first_stop - a.counted)} to go`}`}
                 value={whenShort(a.projection)}
                 name="Your Anchor"
@@ -132,10 +133,10 @@ export function AnchorDetail({ goals, onBack, onProjection, onAccounts, onExplai
           <More className="gl-push" onClick={onExplain}>How we worked this out</More>
         </div>
         <div className="gl-pair">
-          <Progress label="First stop" value={firstStopLabel(a)}
-                    share={a.first_stop_share} done={a.first_stop_done} />
-          <Progress label="Full Anchor" value={a.full ? 'Full' : `${amount(a.to_go)} to go`}
-                    share={a.share} done={a.full} />
+          <ProgressBar label="First stop" value={firstStopLabel(a)}
+                    share={a.first_stop_share} tone={a.first_stop_done ? 'positive' : 'brand'} />
+          <ProgressBar label="Full Anchor" value={a.full ? 'Full' : `${amount(a.to_go)} to go`}
+                    share={a.share} tone={a.full ? 'positive' : 'brand'} />
         </div>
       </section>
 
@@ -262,11 +263,11 @@ export function StartAnchor({ goals, editing = false, onClose, onDone, onSeeAnch
               ? `${amount(counting)} is already counting. First stop: ${amount(firstStop)}, then ${amount(target)}.`
               : `First stop: ${amount(firstStop)}. Then we’ll keep going to ${amount(target)}.`}
         </p>
-        <Progress label="First stop"
+        <ProgressBar label="First stop"
                   value={counting >= firstStop ? `${amount(firstStop)} · done` : `${amount(firstStop - counting)} to go`}
-                  share={Math.min(counting / firstStop, 1)} done={counting >= firstStop} />
-        <Progress label="Full Anchor" value={`${amount(counting)} of ${amount(target)}`}
-                  share={Math.min(counting / target, 1)} done={counting >= target} />
+                  share={Math.min(counting / firstStop, 1)} tone={counting >= firstStop ? 'positive' : 'brand'} />
+        <ProgressBar label="Full Anchor" value={`${amount(counting)} of ${amount(target)}`}
+                  share={Math.min(counting / target, 1)} tone={counting >= target ? 'positive' : 'brand'} />
         <div className="gl-panel-foot">
           <PButton onClick={onSeeAnchor}>See my Anchor</PButton>
         </div>

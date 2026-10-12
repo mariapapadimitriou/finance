@@ -81,26 +81,6 @@ export function More({ children, onClick, className = '' }) {
   );
 }
 
-/**
- * A labelled progress bar. Rose while it is on its way, lagoon once it is
- * there; the words on the label row say the same thing without the colour.
- */
-export function Progress({ label, value, share, done = false, name }) {
-  const pct = Math.round(Math.min(Math.max(share ?? 0, 0), 1) * 1000) / 10;
-  return (
-    <div className="gl-progress">
-      <div className="gl-progress-labels">
-        <span className="pk-muted">{label}</span>
-        <span>{value}</span>
-      </div>
-      <div className="gl-track" role="progressbar" aria-label={name ?? label}
-           aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
-        <span className={`gl-fill${done ? ' done' : ''}`} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
-}
-
 /** A label on the left and its figure on the right. */
 export function Line({ label, value, strong = false }) {
   return (

@@ -85,32 +85,34 @@
 .viz-share { flex: none; min-width: calc(var(--space-8) + var(--space-1)); }
 
 /* V-05 What-if slider: an 8px track, a 24px knob, a 44px hit area. */
-.viz-slider {
+input[type="range"].viz-slider {
   -webkit-appearance: none; appearance: none; display: block; width: 100%;
   height: calc(var(--space-8) + var(--space-3)); margin: 0; padding: 0;
   background: transparent; cursor: pointer;
 }
-.viz-slider::-webkit-slider-runnable-track {
+input[type="range"].viz-slider::-webkit-slider-runnable-track {
   height: var(--space-2); border-radius: var(--radius-full);
   background: linear-gradient(90deg, var(--action) var(--viz-fill, 0%), var(--track) var(--viz-fill, 0%));
 }
-.viz-slider::-moz-range-track {
+input[type="range"].viz-slider::-moz-range-track {
   height: var(--space-2); border-radius: var(--radius-full); background: var(--track);
 }
-.viz-slider::-moz-range-progress {
+input[type="range"].viz-slider::-moz-range-progress {
   height: var(--space-2); border-radius: var(--radius-full); background: var(--action);
 }
-.viz-slider::-webkit-slider-thumb {
+input[type="range"].viz-slider::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none; box-sizing: border-box;
   width: var(--space-6); height: var(--space-6); margin-top: calc(var(--space-2) / 2 - var(--space-6) / 2);
   border-radius: var(--radius-full); background: var(--surface-card); border: 2px solid var(--action);
+  box-shadow: none;
 }
-.viz-slider::-moz-range-thumb {
+input[type="range"].viz-slider::-moz-range-thumb {
   box-sizing: border-box; width: var(--space-6); height: var(--space-6);
   border-radius: var(--radius-full); background: var(--surface-card); border: 2px solid var(--action);
+  box-shadow: none;
 }
-.viz-slider:focus { outline: none; }
-.viz-slider:focus-visible, .viz-slider.show-focus {
+input[type="range"].viz-slider:focus { outline: none; }
+input[type="range"].viz-slider:focus-visible, input[type="range"].viz-slider.show-focus {
   outline: 2px solid var(--border-focus); outline-offset: var(--space-1);
   border-radius: var(--radius-full);
 }

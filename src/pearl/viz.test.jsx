@@ -19,6 +19,12 @@ describe('ProgressBar', () => {
     expect(out).toContain('width:max(var(--space-1), 25%)');
   });
 
+  it('keeps the visible label when it names whose bar it is', () => {
+    const out = html(<ProgressBar label="$100 a month" value="Ready by March" share={0.3}
+                                  name="Japan" />);
+    expect(out).toContain('aria-label="Japan, $100 a month, Ready by March, 30 percent"');
+  });
+
   it('draws no fill at 0', () => {
     const out = html(<ProgressBar label="Japan trip" value="$0 of $3,000" share={0} />);
     expect(out).not.toContain('viz-fill');
