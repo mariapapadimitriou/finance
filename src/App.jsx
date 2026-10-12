@@ -45,8 +45,10 @@ function defaultMonth(summary) {
 // gets emptied, so it is reachable immediately afterwards.
 // The sign-in settings too: a brand-new account has an empty ledger, and must
 // still be able to change its password or sign out.
-// Goals too: someone new sees what comes next there (G-02).
-const WORKS_WHEN_EMPTY = ['banks', 'import', 'accounts', 'plan', 'account', 'categories', 'goals'];
+// Goals too: someone new sees what comes next there (G-02). And Home, whose
+// no-data state (E-01, THL-72) is where linking starts.
+const WORKS_WHEN_EMPTY = ['home', 'banks', 'import', 'accounts', 'plan', 'account', 'categories',
+                          'goals'];
 
 /**
  * A navigation label with an optional phone-width form.

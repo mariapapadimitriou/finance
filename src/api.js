@@ -155,6 +155,8 @@ export const undoDraw        = (id) => req(`/api/piggy/draws/${id}`, { method: '
 // banks above, by the Goals page's name) and the saving goal.
 // Home (THL-44, THL-46): safe to spend for the month and every row behind it.
 export const getHome = () => req('/api/home');
+// The starter questions (E-02) and "Use a different amount" (E-03).
+export const putHomeAnswers = (answers) => json('PUT', '/api/home/answers', answers);
 export const getGoals        = () => req('/api/goals');
 export const setAnchor       = (fields) => json('PUT', '/api/goals/anchor', fields);
 export const setUnusualMonths = (months) => json('PUT', '/api/goals/anchor/unusual', { months });

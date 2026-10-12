@@ -64,10 +64,37 @@
 /* Blush stays light in both themes, so its text is the on-nacre ink. */
 .hm-total, .hm-total .pk-h3 { color: var(--on-nacre); }
 .hm-total .hm-row-detail { color: color-mix(in srgb, var(--on-nacre) 72%, transparent); }
+.hm-note { font-size: 13px; line-height: 18px; }
+
+/* ── Cards for the data states (THL-137) ─────────────────────────────────── */
+.hm-card {
+  display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-start;
+  padding: var(--space-6); border-radius: var(--radius-md); min-width: 0;
+  background: var(--surface-card); border: 1px solid var(--border);
+}
+.hm-card .gl-field { align-self: stretch; }
+.hm-connect { align-items: center; text-align: center; }
+.hm-connect p { max-width: 44ch; }
+.hm-why { font-size: 14px; line-height: 20px; }
+.hm-path {
+  list-style: none; margin: 0; padding: 0; align-self: stretch;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3);
+}
+.hm-path li {
+  display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-4);
+  border-radius: var(--radius-sm); background: var(--surface-page);
+}
+.hm-facts { margin: 0; align-self: stretch; display: flex; flex-direction: column; gap: var(--space-2); }
+.hm-facts div { display: flex; justify-content: space-between; gap: var(--space-3); }
+.hm-facts dt { color: var(--ink-muted); }
+.hm-facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.hm-form { display: flex; flex-direction: column; gap: var(--space-4); }
+
 .hm-sheet-foot { margin-top: auto; padding-top: var(--space-4); display: flex; flex-direction: column; }
 
 @media (max-width: 720px) {
   .hm-page { gap: var(--space-5); padding-top: var(--space-4); }
   .hm-sts { padding: var(--space-5); border-radius: var(--radius-md); }
   .hm-sts .pk-amount { font-size: 36px; line-height: 42px; }
+  .hm-card { padding: var(--space-5) var(--space-4); }
 }
