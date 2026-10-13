@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { putHomeView, setSavingPace } from '../api.js';
+import { setSavingPace } from '../api.js';
 import { DetailPanel, PButton, Toast } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { Slider } from '../pearl/viz.jsx';
@@ -66,13 +66,8 @@ function Parts({ title, rows, note, onClose }) {
 export function ForecastView({ d, nav }) {
   const f = d.forecast;
   const [how, setHow] = useState(false);
-  const week = () => {
-    putHomeView('week').catch(() => {});
-    nav.onTab?.('home');
-  };
   const afford = () => {
-    // Home's "Can I afford it?" (THL-167) sits under the week.
-    putHomeView('week').catch(() => {});
+    // Home's "Can I afford it?" (THL-167).
     nav.onTab?.('home');
     setTimeout(() => {
       const input = document.getElementById('hm-afford-amount');
@@ -93,8 +88,7 @@ export function ForecastView({ d, nav }) {
         )}
       </section>
       <div className="in-actions">
-        <PButton variant="secondary" onClick={week}>See this week</PButton>
-        <button type="button" className="in-text-btn" onClick={afford}>Can I afford it?</button>
+        <PButton variant="secondary" onClick={afford}>Can I afford it?</PButton>
       </div>
       {how && (
         <Parts title="Where the month is heading" rows={forecastParts(f)} onClose={() => setHow(false)}

@@ -171,14 +171,14 @@ def client(tmp_path, monkeypatch):
 
 
 class TestTheApi:
-    def test_home_carries_the_week_and_the_view(self, client):
+    def test_home_reads_by_the_month_only(self, client):
+        """The week is still worked out (Can I afford it? and the weekly
+        check-in use it), but there is no week view to choose."""
         c, st = client
         st.add_transactions(history() + [t for t in october() if t.my_share is None and not t.repays])
         body = c.get("/api/home").get_json()
-        assert body["week"]["start"] == "2026-10-05" and body["view"] == "month"
-        assert c.put("/api/home/view", json={"view": "week"}).status_code == 200
-        assert c.get("/api/home").get_json()["view"] == "week"
-        assert c.put("/api/home/view", json={"view": "day"}).status_code == 400
+        assert body["week"]["start"] == "2026-10-05" and "view" not in body
+        assert c.put("/api/home/view", json={"view": "week"}).status_code in (404, 405)
 
     def test_afford_records_nothing(self, client):
         c, st = client
