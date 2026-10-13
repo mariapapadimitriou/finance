@@ -41,14 +41,22 @@ export const PANELS = {
                    hint: 'Everything Pearl isn’t sure about, with its best guess' },
   transactions:  { label: 'All transactions', short: 'All',
                    hint: 'Search, filter and check every transaction' },
-  // Profile › Accounts (THL-120): linking a bank through Plaid, signing in
-  // to one again and syncing live here since Connections went (C1).
+  // Profile (Pearl S-01): the hub, and the pages it opens. Each Profile page
+  // draws a breadcrumb back to the hub instead of a sub-tab strip.
+  profile:       { label: 'Profile',
+                   hint: 'Your accounts, rules, sign-in and privacy' },
+  // Profile › Accounts (THL-120, AM-01): linking a bank through Plaid,
+  // signing in to one again and syncing live here since Connections went (C1).
   accounts:      { label: 'Accounts',
-                   hint: 'Link a bank, choose what syncs, and anything counted twice' },
+                   hint: 'Your accounts, how each one counts, and linking a bank' },
+  // Profile › Categories and rules (S-03): the rules she saved.
+  rules:         { label: 'Categories and rules',
+                   hint: 'The rules Pearl sorts by, and what you leave out' },
+  // Profile › Sign-in and security, with S-02 (change the sign-in email).
+  security:      { label: 'Sign-in and security',
+                   hint: 'Your email, passkeys and signing out' },
   goals:         { label: 'Goals',
                    hint: 'Your Anchor, your treasure chests and your saving goal' },
-  account:       { label: 'Sign-in',
-                   hint: 'Who is signed in, and the password' },
 };
 
 // The sidebar (Pearl THL-104, as every Handoff frame draws it): Home,
@@ -78,14 +86,14 @@ export const GROUPS = [
   { key: 'growth', label: 'Growth', panels: ['path', 'overview', 'projections', 'budgets', 'debts'],
     hint: 'Where your money went, where it could go, and your budgets',
     icon: 'M3 17l6-6 4 4 8-8M15 7h6v6' },
-  // At the foot (THL-104): accounts, with linking a bank (THL-120's Profile ›
-  // Accounts), income and commitments until the confirmation flow (THL-45)
-  // replaces it, and sign-in. Connections, From a file and Categories went
-  // in C1: none has a screen in the design. A Categories and rules screen
-  // (merchant rules) is to be built in Categories' place.
+  // At the foot (THL-104, Pearl S-01): the Profile hub, and the pages it
+  // opens — Accounts, Categories and rules, Sign-in and security — each with
+  // a breadcrumb back to it, so the group shows no sub-tab strip (`crumbs`).
+  // Income & commitments stays reachable from the hub until the
+  // confirmation flow (THL-45) replaces it.
   { key: 'profile', label: 'Profile',
-    panels: ['accounts', 'plan', 'account'], foot: true,
-    hint: 'Your accounts, income and sign-in',
+    panels: ['profile', 'accounts', 'rules', 'security', 'plan'], foot: true, crumbs: true,
+    hint: 'Your accounts, rules, sign-in and privacy',
     icon: 'M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z' },
 ];
 
@@ -97,10 +105,12 @@ export const GROUPS = [
 // The old landing tab and the old Settings group still resolve, so any link
 // or saved address that names them lands somewhere real. So do the pages
 // removed in C1: Connections and From a file land on Accounts, where a bank is
-// linked now; Trips on the list; Categories on Profile.
+// linked now; Trips on the list; Categories on Categories and rules (S-03).
+// The old Sign-in page is Sign-in and security now.
 export const ALIASES = {
   piggy: 'plan', mortgage: 'plan', today: 'home', settings: 'profile',
-  banks: 'accounts', import: 'accounts', trips: 'transactions', categories: 'profile',
+  banks: 'accounts', import: 'accounts', trips: 'transactions', categories: 'rules',
+  account: 'security', signin: 'security',
 };
 
 // Where on that page the aliased thing actually is. Without this a link to a
@@ -146,5 +156,6 @@ export function destination(key, fromPanel) {
 
   if (!group) return section;
   if (here || group.panels.length === 1 || section === group.label) return section;
+  if (group.crumbs) return `${group.label} › ${section}`;
   return `${group.label} → ${section}`;
 }

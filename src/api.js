@@ -63,6 +63,27 @@ export const setMineAlways   = (id, on) =>
 export const setAccountSync  = (id, enabled) =>
   json('PUT', `/api/accounts/${encodeURIComponent(id)}/sync`, { enabled });
 export const getDuplicateAudit = () => req('/api/audit/duplicates');
+// Profile › Accounts (Pearl AM-01 to AM-07, C-01, C-06).
+export const getAccountsOverview = () => req('/api/accounts/overview');
+// `counted`, `joint_share` (1–99 or null), `anchor`, `nickname`.
+export const saveAccountSettings = (id, fields) =>
+  json('PUT', `/api/accounts/${encodeURIComponent(id)}/settings`, fields);
+export const addManualAccount = (name, kind, balance) =>
+  json('POST', '/api/accounts/manual', { name, kind, balance });
+export const updateManualBalance = (id, balance) =>
+  json('PUT', `/api/accounts/${encodeURIComponent(id)}/balance`, { balance });
+// `transactions` is 'keep' or 'delete'.
+export const removeAccount = (id, transactions) =>
+  json('POST', `/api/accounts/${encodeURIComponent(id)}/remove`, { transactions });
+export const keepAsManual = (id) =>
+  json('POST', `/api/accounts/${encodeURIComponent(id)}/keep-as-manual`, {});
+// Profile hub (S-01) and Categories and rules (S-03).
+export const getProfileSummary = () => req('/api/profile');
+export const getRules = () => req('/api/rules');
+export const editRule = (id, category) =>
+  json('PUT', `/api/rules/${encodeURIComponent(id)}`, { category });
+export const deleteRule = (id) =>
+  req(`/api/rules/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export const resetLedger     = (keepBanks) =>
   json('POST', '/api/reset', { confirm: 'erase', keep_banks: keepBanks });
 export const getCategories   = () => req('/api/categories');
@@ -92,7 +113,9 @@ export const forgotPassword = (identifier) =>
   authPost('/api/auth/forgot', { identifier });
 export const resetPassword  = (token, password) =>
   authPost('/api/auth/reset', { token, password });
-export const changeEmail    = (email) => authPost('/api/auth/email', { email });
+// Pearl S-02: a code to the new address, then the code.
+export const startEmailChange  = (email) => authPost('/api/auth/email/start', { email });
+export const verifyEmailChange = (code) => authPost('/api/auth/email/verify', { code });
 
 // Pearl: a six-digit code by email, and passkeys.
 // `create` is true on the sign-up screen, where a new address makes an account.

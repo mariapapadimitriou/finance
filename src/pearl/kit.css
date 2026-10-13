@@ -134,6 +134,14 @@
   font-size: 13px; line-height: 18px;
 }
 
+.pk-pill.positive { background: var(--seaglass); }
+.pk-pill.info { background: var(--lilac); }
+.pk-pill.caution { background: var(--champagne); }
+.pk-pill.neutral {
+  background: transparent; color: var(--ink-muted); border: 1px solid var(--border-strong);
+  padding: 3px 11px;
+}
+
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .pk-btn {
   width: 100%; height: 56px; padding: 0 24px; border-radius: var(--radius-full); border: 0;

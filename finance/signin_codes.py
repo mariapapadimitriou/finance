@@ -148,3 +148,100 @@ def email_text(purpose: str, code: str, first_name: str | None, link: str) -> tu
             f"{hello}\n\nYour code to {what} is:\n\n    {code}\n\n"
             "It works for 10 minutes. If you didn't ask for it, ignore this "
             "email — nobody can get in without the code.")
+
+
+# ── Changing the sign-in email (Pearl S-02) ──────────────────────────────────
+#
+# Signed in already, so the code proves only that the new address is hers. It
+# is sent to the new address, tied to the account and to that address, and
+# follows the same rules as a sign-in code: ten minutes, five tries, a new one
+# retires the old, and too many in fifteen minutes pause it. Once it's typed
+# in the old address is told (see app.py).
+
+CHANGE = "email_change"
+
+
+def _change_paused(c, user_id: int, t: float, sending: bool = False) -> float:
+    rows = c.execute(
+        "SELECT created_at, attempts FROM app_codes WHERE user_id = ? AND purpose = ? "
+        "AND created_at > ? ORDER BY created_at", (int(user_id), CHANGE, t - WINDOW)).fetchall()
+    if (sending and len(rows) >= SENDS_PER_WINDOW) or \
+            sum(int(r["attempts"]) for r in rows) >= FAILS_PER_WINDOW:
+        return max(float(rows[0]["created_at"]) + WINDOW - t, 1.0)
+    return 0.0
+
+
+def start_change(base, user_id: int, new_email: str) -> dict:
+    """A code to move this account to `new_email`.
+
+    {"code", "resend_in"} to email; {"resend_in"} when the last one is too
+    recent to replace (for the same address); {"paused": seconds}; or
+    {"taken": True} when another account has that address."""
+    email = users.normalise(new_email)
+    other = users.by_email(base, email)
+    if other is not None and other.id != int(user_id):
+        return {"taken": True}
+    t = users.now()
+    with base.conn() as c:
+        last = c.execute(
+            "SELECT created_at, email FROM app_codes WHERE user_id = ? AND purpose = ? "
+            "AND used = 0 ORDER BY created_at DESC", (int(user_id), CHANGE)).fetchone()
+        if (last is not None and last["email"] == email
+                and t - float(last["created_at"]) < RESEND_AFTER):
+            return {"resend_in": int(RESEND_AFTER - (t - float(last["created_at"]))) + 1}
+        paused = _change_paused(c, user_id, t, sending=True)
+        if paused:
+            return {"paused": int(paused)}
+        code = f"{secrets.randbelow(10 ** 6):06d}"
+        c.execute("UPDATE app_codes SET used = 1 WHERE user_id = ? AND purpose = ? "
+                  "AND used = 0", (int(user_id), CHANGE))
+        c.execute(
+            "INSERT INTO app_codes (user_id, purpose, secret_hash, payload, "
+            "expires_at, created_at, email) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (int(user_id), CHANGE, _digest(email, code), json.dumps({"email": email}),
+             t + TTL, t, email))
+    return {"code": code, "resend_in": RESEND_AFTER}
+
+
+def verify_change(base, user_id: int, code: str) -> dict:
+    """{"email": new address} when the code matches; otherwise
+    {"error": "wrong", "left": n}, {"error": "expired"} or
+    {"error": "paused", "paused": seconds}. Nothing is changed here."""
+    code = "".join(ch for ch in str(code or "") if ch.isdigit())
+    t = users.now()
+    with base.conn() as c:
+        paused = _change_paused(c, user_id, t)
+        if paused:
+            return {"error": "paused", "paused": int(paused)}
+        r = c.execute(
+            "SELECT * FROM app_codes WHERE user_id = ? AND purpose = ? AND used = 0 "
+            "ORDER BY created_at DESC", (int(user_id), CHANGE)).fetchone()
+        if r is None or float(r["expires_at"]) < t:
+            return {"error": "expired"}
+        email = r["email"] or ""
+        if not hmac.compare_digest(r["secret_hash"], _digest(email, code)):
+            tries = int(r["attempts"]) + 1
+            c.execute("UPDATE app_codes SET attempts = ?, used = ? WHERE id = ?",
+                      (tries, 1 if tries >= TRIES else 0, r["id"]))
+            if tries >= TRIES:
+                return {"error": "expired"}
+            return {"error": "wrong", "left": TRIES - tries}
+        c.execute("UPDATE app_codes SET used = 1 WHERE id = ?", (r["id"],))
+    return {"email": email}
+
+
+def change_email_text(code: str, first_name: str | None) -> tuple[str, str]:
+    hello = f"Hi {first_name}," if first_name else "Hi,"
+    return (f"Your Pearl code: {code}",
+            f"{hello}\n\nYour code to make this your Pearl sign-in email is:\n\n"
+            f"    {code}\n\nIt works for 10 minutes. If you didn't ask for it, "
+            "ignore this email — nothing changes without the code.")
+
+
+def changed_notice(new_email: str, first_name: str | None) -> tuple[str, str]:
+    """What the old address is told once the change is made."""
+    hello = f"Hi {first_name}," if first_name else "Hi,"
+    return ("Your Pearl sign-in email changed",
+            f"{hello}\n\nYour Pearl sign-in email is now {new_email}. From now on, "
+            "sign-in codes go there.\n\nIf you didn't make this change, reply to this "
+            "email straight away and we'll help you get your account back.")

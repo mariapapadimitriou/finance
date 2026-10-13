@@ -889,6 +889,21 @@ def accounts():
     cannot answer why a removed account came back.
     """
     st = store()
+    from .analytics import currency_mix, ledger_currency
+    txns = st.all_transactions()
+    return jsonify({
+        "accounts": _account_rows(st),
+        "currency": ledger_currency(txns),
+        # Totals add amounts together, so two currencies in one ledger make
+        # every total wrong in a way no label can rescue. Said plainly here
+        # rather than silently formatted as whichever is commoner.
+        "currency_mix": currency_mix(txns),
+    })
+
+
+def _account_rows(st) -> list[dict]:
+    """Every account with rows or a sync decision, labelled, with how it
+    counts (AM-02): `counted`, `nickname`, `removed` and her joint share."""
     kinds = st.account_kinds()
     rules = st.account_sync_rules()
 
@@ -932,27 +947,23 @@ def accounts():
             "item_id": rule["item_id"],
         })
 
-    from .analytics import currency_mix, ledger_currency
-
     banks = {i["item_id"]: i.get("institution") or "" for i in st.plaid_items()}
     imported = st.imports_by_account()
     joint = st.joint_accounts()
+    shares = st.joint_shares()
     balances = st.balances()
+    settings = st.account_settings()
     for row in rows:
         _label_account(row, banks, imported)
         row["joint"] = joint.get(row["account_id"])
+        row["joint_share"] = shares.get(row["account_id"])
         # What the bank says the account holds (or, for a card, what's owed).
         row["balance"] = balances.get(row["account_id"])
-
-    txns = st.all_transactions()
-    return jsonify({
-        "accounts": rows,
-        "currency": ledger_currency(txns),
-        # Totals add amounts together, so two currencies in one ledger make
-        # every total wrong in a way no label can rescue. Said plainly here
-        # rather than silently formatted as whichever is commoner.
-        "currency_mix": currency_mix(txns),
-    })
+        mine = settings.get(row["account_id"], {})
+        row["counted"] = mine.get("counted", True)
+        row["nickname"] = mine.get("nickname", "")
+        row["removed"] = mine.get("removed", False)
+    return rows
 
 
 @bp.post("/reset")
@@ -1808,9 +1819,35 @@ def plan_setup():
     })
 
 
+def _counted_rules(st) -> dict[str, dict]:
+    """The bank accounts whose balances count (AM-02), with the balances
+    added by hand (AM-05) beside them as if a bank had reported them."""
+    hidden = st.not_counted() | {aid for aid, s in st.account_settings().items()
+                                 if s["removed"]}
+    rules = {aid: r for aid, r in st.account_sync_rules().items() if aid not in hidden}
+    for m in st.manual_accounts():
+        if not m["counted"]:
+            continue
+        rules[m["account_id"]] = {
+            "account_id": m["account_id"], "account_name": m["name"], "item_id": "",
+            "enabled": True, "decided_by": "user",
+            "account_type": "credit" if m["kind"] == "credit" else "depository",
+            "account_subtype": "credit card" if m["kind"] == "credit" else m["kind"]}
+    return rules
+
+
+def _counted_balances(st) -> dict[str, dict]:
+    """Bank-reported balances, with those added by hand (AM-05)."""
+    out = dict(st.balances())
+    for m in st.manual_accounts():
+        out[m["account_id"]] = {"current": m["balance"], "available": None, "limit": None,
+                                "currency": "", "as_of": m["updated_on"]}
+    return out
+
+
 def _position(st):
     from . import balances as bal
-    return bal.position(st.balances(), st.account_sync_rules(), st.joint_accounts())
+    return bal.position(_counted_balances(st), _counted_rules(st), st.joint_accounts())
 
 
 def _observed_with_growth(st, txns):
@@ -2239,9 +2276,9 @@ def _json_setting(st, key: str, default):
 def _anchor_accounts(st) -> list[dict]:
     """Bank accounts the Anchor could count, with what each holds now."""
     import re
-    balances = st.balances()
+    balances = _counted_balances(st)
     out = []
-    for aid, rule in st.account_sync_rules().items():
+    for aid, rule in _counted_rules(st).items():
         ptype = (rule["account_type"] or "").lower()
         subtype = (rule["account_subtype"] or "").lower()
         if ptype != "depository" and subtype not in _ANCHOR_SAVINGS | _ANCHOR_CHEQUING:
@@ -2503,7 +2540,7 @@ def _budgets_summary(b: dict) -> dict:
 def _debts(st, txns, today) -> dict:
     """Every debt (THL-49), with the rate and minimum she added (D-03)."""
     from . import debts as debt_math
-    return debt_math.build(st.account_sync_rules(), st.balances(), st.first_balances(),
+    return debt_math.build(_counted_rules(st), _counted_balances(st), st.first_balances(),
                            txns, _json_setting(st, "debt_details", {}), today)
 
 
@@ -3476,6 +3513,10 @@ def exclude_transaction(txn_id: str):
 def include_transaction(txn_id: str):
     st = store()
     if not st.include(txn_id):
+        t = st.get_transaction(txn_id)
+        if t is not None and t.account_id in st.not_counted():
+            return jsonify({"error": "This account isn’t in your budget. You can count "
+                                     "it again from Profile › Accounts."}), 409
         return jsonify({"error": "That transaction isn't excluded."}), 404
     _reclassify(st)
     return jsonify({"ok": True, "transaction": st.get_transaction(txn_id).to_dict()})
@@ -3560,3 +3601,8 @@ def dismiss_review():
         return jsonify({"error": "Which item?"}), 400
     store().dismiss_review(key)
     return jsonify({"ok": True})
+
+
+# The Profile pages (Accounts, Categories and rules) register on this
+# blueprint too; imported last so they can use the helpers above.
+from . import profile_api  # noqa: E402,F401

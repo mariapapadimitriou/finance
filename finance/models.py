@@ -361,8 +361,16 @@ class Transaction:
             income_type_source=row.get("income_type_source") or None,
         )
         if t.joint and t.my_share is None:
-            # Another member's, unless it's a name you said is always yours.
-            t.my_share = t.amount if row.get("joint_mine") else 0.0
+            # Another member's, unless it's a name you said is always yours —
+            # or, on an account where she set her share (AM-04), that share
+            # of every row.
+            share = row.get("joint_share")
+            if row.get("joint_mine"):
+                t.my_share = t.amount
+            elif share is not None:
+                t.my_share = round(t.amount * float(share) / 100.0, 2)
+            else:
+                t.my_share = 0.0
         return t
 
 

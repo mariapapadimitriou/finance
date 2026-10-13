@@ -1,0 +1,118 @@
+/* Profile (Pearl "Accounts & settings": S-01 to S-03, AM-01 to AM-07, C-01,
+ * C-06). One column, 640px, on the shared .hm-page. Colours, type and
+ * spacing come from the Pearl tokens; nothing here names a colour itself. */
+
+.pf-page { max-width: 688px; gap: var(--space-5); }
+.pf-head { display: flex; flex-direction: column; gap: var(--space-1); }
+.pf-head .pk-h1 { overflow-wrap: anywhere; }
+.pf-section { display: flex; flex-direction: column; gap: var(--space-3); }
+.pf-section > .pk-h3 { margin-top: var(--space-1); }
+.pf-intro { color: var(--ink-muted); }
+.pf-foot { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+
+/* ── Breadcrumb ──────────────────────────────────────────────────────────── */
+.pf-crumbs ol {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center;
+  gap: 2px var(--space-2); font-size: 13px; line-height: 18px; color: var(--ink-muted);
+}
+.pf-crumbs li { display: inline-flex; align-items: center; gap: var(--space-2); }
+.pf-crumbs li + li::before { content: "›"; }
+.pk .pf-crumbs button {
+  border: 0; background: none; padding: 0; cursor: pointer; color: var(--ink-muted); font-weight: 500;
+}
+.pk .pf-crumbs button:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.pf-crumbs [aria-current] { color: var(--ink-muted); }
+
+/* ── Grouped list (the hub's cards, the accounts, the rules) ─────────────── */
+.pf-list {
+  list-style: none; margin: 0; padding: 0; background: var(--surface-card);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden;
+}
+.pf-row { display: flex; align-items: center; min-width: 0; }
+.pf-row + .pf-row { border-top: 1px solid var(--border); }
+.pk .pf-row-main {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--space-3);
+  padding: 14px 20px; border: 0; background: none; text-align: left; cursor: pointer;
+}
+.pk .pf-row-main:hover { background: var(--hover); }
+.pf-row.soon .pf-row-main, .pf-row.static .pf-row-main { cursor: default; }
+.pf-row.soon .pf-row-main:hover, .pf-row.static .pf-row-main:hover { background: none; }
+.pf-row.soon .pf-row-name, .pf-row.soon .pf-row-sub { color: var(--ink-disabled); }
+.pf-row-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pf-row-name { overflow-wrap: anywhere; }
+.pf-row-sub { font-size: 13px; line-height: 18px; color: var(--ink-muted); font-weight: 400;
+              overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.pf-row-end { flex: none; display: inline-flex; align-items: center; gap: var(--space-3); }
+.pf-row-end > svg { color: var(--ink-muted); }
+.pf-soon { font-size: 13px; line-height: 18px; color: var(--ink-muted); font-weight: 400; }
+.pk .pf-row-link {
+  flex: none; display: inline-flex; align-items: center; gap: 2px; margin-right: 20px;
+  border: 0; background: none; padding: 4px 0; cursor: pointer;
+  color: var(--link); font-size: 13px; line-height: 18px; font-weight: 600;
+}
+.pk .pf-row-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.pf-row .pk-pill { align-self: center; white-space: nowrap; }
+
+
+/* ── Buttons side by side (AM-01, C-06) ──────────────────────────────────── */
+.pf-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.pf-actions .pk-btn { width: 300px; max-width: 100%; }
+.pf-stack { display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-start; }
+.pf-stack .pk-btn { width: 300px; max-width: 100%; }
+.pf-form { display: flex; flex-direction: column; gap: var(--space-4); }
+.pf-form .pk-btn.text { align-self: center; font-size: 15px; }
+.pf-form .pk-choices { gap: var(--space-3); }
+.pf-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); }
+.pf-tiles .pk-tile { border-radius: var(--radius-lg); }
+.pk .pf-text-link {
+  align-self: flex-start; border: 0; background: none; padding: 0; cursor: pointer;
+  color: var(--link); font-size: 13px; line-height: 18px; font-weight: 600; text-align: left;
+}
+.pk .pf-text-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.pf-readonly { color: var(--ink-muted); }
+
+/* ── Dialogs (AM-04, AM-07): a card in the middle on a desktop, a sheet on a
+ * phone. Built on the kit's DetailPanel. ─────────────────────────────────── */
+.pk-scrim:has(> .pf-dialog) { align-items: center; justify-content: center; padding: var(--space-4); }
+.pk-panel.pf-dialog {
+  width: 480px; height: auto; max-height: calc(100% - 32px); border-radius: var(--radius-lg);
+  background: var(--surface-card); padding: 28px 32px 24px; gap: var(--space-4);
+}
+.pf-dialog .pk-panel-top { position: absolute; right: 16px; top: 16px; }
+.pf-dialog { position: relative; }
+.pf-dialog .pk-btn.text { align-self: center; font-size: 15px; }
+.pf-dialog .pk-h2 { padding-right: 40px; }
+@media (max-width: 720px) {
+  .pk-scrim:has(> .pf-dialog) { padding: 0; align-items: flex-end; background: var(--surface-scrim); }
+  .pk-panel.pf-dialog {
+    width: 100%; max-height: 92%; border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: 24px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+  .pf-actions .pk-btn, .pf-stack .pk-btn { width: 100%; }
+  .pk .pf-row-main { padding: 14px 16px; }
+  .pk .pf-row-link { margin-right: 16px; }
+  .pf-row-end { gap: var(--space-2); }
+  .pf-tiles { grid-template-columns: 1fr; gap: var(--space-2); }
+  /* An account row: the pill moves under the words, so the name and the
+   * balance keep the width. */
+  .pk .pf-row-main:has(> .pk-avatar) {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: var(--space-3);
+    row-gap: 6px; align-items: center;
+  }
+  .pf-row-main:has(> .pk-avatar) > .pk-avatar { grid-column: 1; grid-row: 1 / span 2; align-self: start; }
+  .pf-row-main:has(> .pk-avatar) > .pf-row-text { grid-column: 2; grid-row: 1; }
+  .pf-row-main:has(> .pk-avatar) > .pf-row-end { display: contents; }
+  .pf-row-main:has(> .pk-avatar) .pk-pill { grid-column: 2; grid-row: 2; justify-self: start; }
+  .pf-row-main:has(> .pk-avatar) > .pf-row-end > svg { grid-column: 3; grid-row: 1 / span 2; }
+  .pf-row:has(> .pf-row-link) { position: relative; }
+  .pk .pf-row:has(> .pf-row-main > .pk-avatar) > .pf-row-link { position: absolute; right: 0; bottom: 14px; }
+}
+
+/* ── Older tools kept from the previous Accounts page ────────────────────── */
+.pf-more { border-top: 1px solid var(--border); padding-top: var(--space-4); }
+.pf-more > summary { cursor: pointer; color: var(--ink-muted); font-size: 14px; }
+.pf-more[open] > summary { margin-bottom: var(--space-4); }
+
+/* The code step (S-02) borrows the sign-in screens' six boxes. */
+.pf-code .p-code { max-width: 100%; }
+.pf-end-link { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--link); }
