@@ -145,31 +145,6 @@ class TestForgottenPassword:
         assert "https://spendie.example/?reset=" in outbox[-1]["text"]
 
 
-class TestChangingEmail:
-    def test_is_saved_and_the_old_address_is_told(self, app, outbox):
-        c = app.test_client()
-        login(c)
-        r = c.post("/api/auth/email", json={"email": "new@example.com"})
-        assert r.status_code == 200
-        assert users.by_username(app.config["STORE"], "mariapapas").email == "new@example.com"
-        assert [m["to"] for m in outbox] == ["maria@example.com"]
-
-    def test_a_reset_goes_to_the_new_address(self, app, outbox):
-        c = app.test_client()
-        login(c)
-        c.post("/api/auth/email", json={"email": "new@example.com"})
-        app.test_client().post("/api/auth/forgot", json={"identifier": "mariapapas"})
-        assert outbox[-1]["to"] == "new@example.com"
-
-    def test_two_accounts_cannot_share_one(self, app):
-        app.test_client().post("/api/auth/signup", json={
-            "username": "sister", "email": "sis@example.com",
-            "password": "a long enough password"})
-        c = app.test_client()
-        login(c)
-        assert c.post("/api/auth/email", json={"email": "sis@example.com"}).status_code == 409
-
-
 class TestWithoutEmailSetUp:
     def test_forgot_says_so(self, tmp_path, monkeypatch):
         monkeypatch.delenv(mailer.USER_ENV, raising=False)

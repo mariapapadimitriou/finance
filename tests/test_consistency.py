@@ -179,13 +179,6 @@ class TestNumbersMoveTogetherWhenThingsChange:
         assert accounts == pytest.approx(
             ledger.get("/api/summary").get_json()["total_spend"], abs=TOLERANCE)
 
-    def test_trimming_the_ledger_moves_the_totals_down_together(self, ledger):
-        ledger.put("/api/ledger/start", json={"start": "2026-03-01", "trim": True})
-        summary = ledger.get("/api/summary").get_json()
-        accounts = round(sum(a["total_spend"] for a in ledger.get(
-            "/api/accounts").get_json()["accounts"]), 2)
-        assert accounts == pytest.approx(summary["total_spend"], abs=TOLERANCE)
-        assert all(m >= "2026-03" for m in summary["months"])
 
 
 class TestDerivedFiguresAgreeWithTheirParts:

@@ -158,6 +158,17 @@ def income_bills_expected():
     return jsonify(_payload(st))
 
 
+@bp.post("/income-bills/expected/skip")
+def income_bills_expected_skip():
+    """I-03's "Skip for now": remembered, so Home can make a rough estimate
+    from the deposits it has seen (H-03) until she gives her income."""
+    st = store()
+    state = ib.load(st)
+    state["income_skipped"] = state["income_skipped"] or _today_iso()
+    ib.save(st, state)
+    return jsonify(_payload(st))
+
+
 @bp.put("/income-bills/bills")
 def income_bills_confirm():
     """I-04's "Confirm n bills": what she left ticked counts, what she

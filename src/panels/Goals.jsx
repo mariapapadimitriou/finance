@@ -114,6 +114,7 @@ export default function Goals({ onTab, onChanged, version }) {
       )}
       {panel?.name === 'how' && (
         <HowWorkedOut goals={goals} onClose={close}
+                      onWhatIf={() => setPanel({ name: 'whatif' })}
                       onMonths={() => setPanel({ name: 'months' })} />
       )}
       {panel?.name === 'whatif' && <WhatIf goals={goals} onClose={close} initial={panel.monthly ?? null} />}

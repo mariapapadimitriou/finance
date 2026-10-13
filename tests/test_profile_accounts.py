@@ -300,5 +300,5 @@ def test_a_disconnected_account_kept_as_manual(client):
 
 def test_reset_forgets_hand_accounts(client):
     add(client)
-    client.post("/api/reset", json={"confirm": "erase", "keep_banks": True})
+    client.application.config["STORE"].reset(keep_banks=True)
     assert overview(client)["added"] == []

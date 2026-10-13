@@ -19,7 +19,8 @@ import NotificationsPanel from './panels/NotificationsPanel.jsx';
 import ConsentPanel from './panels/ConsentPanel.jsx';
 import DataPanel, { AccountDeleted } from './panels/DataPanel.jsx';
 import ProtectPanel from './panels/ProtectPanel.jsx';
-import SignedOut, { resetTokenFromUrl } from './pearl/SignedOut.jsx';
+import SignedOut, { resetTokenFromUrl, timeoutFromUrl, timeoutUrl } from './pearl/SignedOut.jsx';
+import { DeviceApprovals, SessionTimeout } from './pearl/Session.jsx';
 import Onboarding from './pearl/Onboarding.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
@@ -151,6 +152,17 @@ export default function App() {
   // GR-10), asked once per app open.
   const [moment, setMoment] = useState(null);
   const askedMoment = useRef(false);
+  // A-14: signed out for being idle in this page's life, so signing back in
+  // only needs the address put back; after a reload it needs a fresh load.
+  const timedOut = useRef(false);
+  const signOutIdle = useCallback(async () => {
+    const here = window.location.pathname + window.location.search;
+    await logout().catch(() => {});
+    timedOut.current = true;
+    window.history.replaceState(null, '', timeoutUrl(here));
+    setData(null);
+    setSignedIn(false);
+  }, []);
 
   // Applied during render rather than in an effect, on purpose. Charts read
   // their colours from CSS custom properties when they build, and React runs
@@ -278,6 +290,11 @@ export default function App() {
     // A different person may be signing in on this device: nothing from the
     // last session's ledger is carried over.
     return <SignedOut onSignedIn={(u, { created = false } = {}) => {
+      // A-15: back to the page she was on.
+      const after = timeoutFromUrl();
+      if (after && !timedOut.current) { window.location.replace(after.returnTo); return; }
+      if (after) window.history.replaceState(null, '', after.returnTo);
+      timedOut.current = false;
       setData(null);
       synced.current = false;
       setUser(u ?? null); setFresh(created);
@@ -286,14 +303,18 @@ export default function App() {
   }
 
   if (onboarding) {
+    const signOut = async () => { await logout(); setUser(null); setSignedIn(false); };
     return (
-      <Onboarding user={user} startAt={fresh ? 'passkey' : null}
-                  onSignOut={async () => { await logout(); setUser(null); setSignedIn(false); }}
-                  onDone={(dest) => {
-                    setFresh(false);
-                    setUser((u) => ({ ...u, onboarding: { ...u.onboarding, done: true } }));
-                    if (dest) go(dest);
-                  }} />
+      <>
+        <Onboarding user={user} startAt={fresh ? 'passkey' : null}
+                    onSignOut={signOut}
+                    onDone={(dest) => {
+                      setFresh(false);
+                      setUser((u) => ({ ...u, onboarding: { ...u.onboarding, done: true } }));
+                      if (dest) go(dest);
+                    }} />
+        <SessionTimeout onTimeout={signOutIdle} onSignOut={signOut} />
+      </>
     );
   }
 
@@ -345,7 +366,11 @@ export default function App() {
     );
   }
 
+  const signOut = async () => { await logout(); setData(null); setSignedIn(false); };
   return (
+    <>
+    <SessionTimeout onTimeout={signOutIdle} onSignOut={signOut} />
+    <DeviceApprovals />
     <Shell
       theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
       counts={{ transactions: data.review }}
@@ -355,7 +380,7 @@ export default function App() {
                  'transactions', 'review', 'goals', 'profile', 'accounts', 'rules', 'security',
                  'income', 'notifications', 'consent', 'data', 'protect'].includes(panel)}
       ownSections={OWN_SECTIONS.includes(panel)}
-      onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
+      onSignOut={signOut}
     >
       {panel === 'income' && <IncomeBillsPanel onTab={go} onChanged={load} version={version} />}
       {panel === 'home' && <HomePanel onTab={go} onChanged={load} version={version} />}
@@ -394,11 +419,10 @@ export default function App() {
         }} />
       )}
       {panel === 'security' && (
-        <SecurityPanel onTab={go} onSignOut={async () => {
-          await logout(); setData(null); setSignedIn(false);
-        }} />
+        <SecurityPanel onTab={go} onSignOut={signOut} />
       )}
     </Shell>
+    </>
   );
 }
 

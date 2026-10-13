@@ -10,7 +10,7 @@ import pytest
 
 from finance.ingest.base import IngestResult
 from finance.models import Transaction
-from finance.pipeline import ingest
+from finance.pipeline import ingest, recategorize_all
 
 TODAY = date.today()
 
@@ -89,7 +89,7 @@ def test_deleting_a_merchant_rule_keeps_what_it_sorted(client):
     assert st.overrides() == {}
     assert category_of(client, "NETFLIX.COM") == "Dining"
     # And a re-check of every category doesn't undo it.
-    client.post("/api/recategorize")
+    recategorize_all(st)
     assert category_of(client, "NETFLIX.COM") == "Dining"
     assert client.delete(f"/api/rules/{rid}").status_code == 404
 

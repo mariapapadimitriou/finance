@@ -25,7 +25,7 @@ from datetime import timedelta
 from flask import Flask, abort, g, jsonify, request, send_from_directory, session
 from flask_cors import CORS
 
-from finance import auth, mailer, passkeys, signin_codes, users
+from finance import auth, devices, mailer, passkeys, signin_codes, users
 from finance.api import bp
 # storage_mode is re-exported for convenience; /api/health reads it from db.
 from finance.db import database_url, is_hosted as _is_hosted, storage_mode  # noqa: F401
@@ -75,7 +75,10 @@ def _hosted_db_path() -> str | None:
 _OPEN_PATHS = frozenset({"/api/auth/status", "/api/auth/login", "/api/auth/signup",
                          "/api/auth/forgot", "/api/auth/reset",
                          "/api/auth/code/start", "/api/auth/code/verify",
-                         "/api/auth/passkey/options", "/api/auth/passkey/verify"})
+                         "/api/auth/passkey/options", "/api/auth/passkey/verify",
+                         # A-07, A-08: a sign-in waiting to confirm the device.
+                         "/api/auth/device/ask", "/api/auth/device/status",
+                         "/api/auth/device/recovery", "/api/auth/device/cancel"})
 
 
 def _is_static_asset(path: str) -> bool:
@@ -244,6 +247,10 @@ def _install_auth(app: Flask) -> None:
         if path in _OPEN_PATHS or _is_static_asset(path):
             return None
         if g.user is not None:
+            # A trusted browser in use stays trusted (A-07); checked once a day.
+            if users.now() - float(session.get("seen") or 0) > 86400:
+                devices.touch(base, g.user.id, request.cookies.get(devices.COOKIE))
+                session["seen"] = users.now()
             if path.startswith("/api/plaid/") and not may_link(g.user):
                 return jsonify({"error": "Agree to the two required choices "
                                          "before linking a bank."}), 403
@@ -283,8 +290,10 @@ def _install_auth(app: Flask) -> None:
             # The same message whatever went wrong, so it never confirms that
             # a username exists or that a guess was partly right.
             return jsonify({"error": "That username and password don't match."}), 401
+        if devices.needs_check(base, user.id, device_token()):
+            return confirm_device_reply(user)
         start_session(user)
-        return jsonify({"ok": True, "signed_in": True, "user": user.public()})
+        return keep_device(jsonify({"ok": True, "signed_in": True, "user": user.public()}), user)
 
     @app.post("/api/auth/forgot")
     def _auth_forgot():
@@ -327,31 +336,6 @@ def _install_auth(app: Flask) -> None:
         user = users.by_id(base, user.id)
         start_session(user)                    # every other session is now void
         return jsonify({"ok": True, "signed_in": True, "user": user.public()})
-
-    @app.post("/api/auth/email")
-    def _auth_email():
-        """Change your email: where a reset link would be sent."""
-        user = g.get("user")
-        if user is None:
-            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
-        body = request.get_json(silent=True) or {}
-        email = users.normalise(body.get("email"))
-        problem = users.check_email(email)
-        if problem:
-            return jsonify({"error": problem}), 400
-        if not users.set_email(base, user.id, email):
-            return jsonify({"error": "Another account uses that email."}), 409
-        if mailer.configured() and user.email and user.email != email:
-            # A heads-up to the old address, in case it wasn't them: whoever
-            # controls the email controls the account.
-            try:
-                mailer.send(user.email, "Your Pearl email changed",
-                            f"The email on your Pearl account ({user.username}) "
-                            f"is now {email}. If that wasn't you, reset your "
-                            "password straight away.")
-            except Exception:                          # noqa: BLE001
-                pass
-        return jsonify({"ok": True, "user": users.by_id(base, user.id).public()})
 
     @app.post("/api/auth/signup")
     def _auth_signup():
@@ -412,13 +396,152 @@ def _install_auth(app: Flask) -> None:
 
     def signed_in_reply(user, **extra):
         start_session(user)
-        return jsonify({"ok": True, "signed_in": True, "user": status_user(user),
-                        **extra})
+        return keep_device(jsonify({"ok": True, "signed_in": True, "user": status_user(user),
+                                    **extra}), user)
 
     def status_user(user) -> dict:
         out = user.public()
         out["passkeys"] = passkeys.count(base, user.id)
+        out["recovery_codes"] = devices.recovery_left(base, user.id)
         return out
+
+    # ── Pearl A-07, A-08: confirming a new device ───────────────────────────
+    # A sign-in by email code (or an old password) on a browser she hasn't
+    # confirmed, when another device of hers is trusted, waits here: the
+    # session holds who is signing in, not a signed-in session. See devices.py.
+    PENDING_TTL = 10 * 60
+    RECOVERY_TRIES = 5
+
+    def device_token() -> str | None:
+        return request.cookies.get(devices.COOKIE)
+
+    def keep_device(resp, user):
+        """Trust this browser for her, and give it a token if it has none."""
+        token = device_token() or devices.new_token()
+        devices.trust(base, user.id, token, devices.label_from(request.headers.get("User-Agent")))
+        resp.set_cookie(devices.COOKIE, token, max_age=400 * 86400, httponly=True,
+                        samesite="Lax", secure=_is_hosted())
+        return resp
+
+    def confirm_device_reply(user):
+        session.clear()
+        session["pending"] = {"uid": user.id, "pw": user.fingerprint, "at": users.now(),
+                              "tries": 0}
+        return jsonify({"ok": True, "signed_in": False, "confirm_device": True,
+                        "choices": devices.choices(base, user.id, device_token())})
+
+    def pending_user():
+        p = session.get("pending")
+        if not p or users.now() - float(p.get("at") or 0) > PENDING_TTL:
+            return None
+        user = users.by_id(base, p.get("uid"))
+        if user is None or user.fingerprint != p.get("pw"):
+            return None
+        return user
+
+    def pending_over():
+        session.pop("pending", None)
+        return jsonify({"error": "That took too long. Sign in again.", "expired": True}), 400
+
+    @app.post("/api/auth/device/ask")
+    def _device_ask():
+        """A-07 "Approve on another device": ask her other devices."""
+        user = pending_user()
+        if user is None:
+            return pending_over()
+        label = devices.label_from(request.headers.get("User-Agent"))
+        near = devices.near_from(request.headers)
+        approval_id, secret = devices.ask(base, user.id, label, near)
+        session["pending"] = {**session["pending"], "aid": approval_id, "secret": secret}
+        return jsonify({"ok": True, "from": label, "near": near,
+                        "expires_in": devices.APPROVAL_TTL})
+
+    @app.get("/api/auth/device/status")
+    def _device_status():
+        """A-08 asks this until her other device answers."""
+        user = pending_user()
+        p = session.get("pending") or {}
+        if user is None or not p.get("aid"):
+            return pending_over()
+        answer = devices.state(base, p["aid"], p.get("secret", ""))
+        if answer == "approved":
+            devices.finish(base, p["aid"])
+            return signed_in_reply(user)
+        if answer != "pending":
+            session["pending"] = {k: v for k, v in p.items() if k not in ("aid", "secret")}
+        return jsonify({"ok": True, "signed_in": False,
+                        "state": answer if answer != "gone" else "expired"})
+
+    @app.post("/api/auth/device/recovery")
+    def _device_recovery():
+        """A-07 "Use a recovery code"."""
+        user = pending_user()
+        if user is None:
+            return pending_over()
+        code = str((request.get_json(silent=True) or {}).get("code", ""))
+        if devices.use_recovery(base, user.id, code):
+            return signed_in_reply(user)
+        p = session["pending"]
+        tries = int(p.get("tries") or 0) + 1
+        if tries >= RECOVERY_TRIES:
+            session.pop("pending", None)
+            return jsonify({"error": "That didn't match too many times. Sign in again.",
+                            "expired": True}), 400
+        session["pending"] = {**p, "tries": tries}
+        left = RECOVERY_TRIES - tries
+        return jsonify({"error": f"That recovery code didn't work. Check it and try again. "
+                                 f"{left} {'try' if left == 1 else 'tries'} left.",
+                        "wrong": True, "left": left}), 400
+
+    @app.post("/api/auth/device/cancel")
+    def _device_cancel():
+        session.pop("pending", None)
+        return jsonify({"ok": True})
+
+    @app.get("/api/auth/approvals")
+    def _approvals():
+        """What her other devices are asking this one to approve."""
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        return jsonify({"approvals": devices.waiting(base, user.id)})
+
+    @app.post("/api/auth/approvals/<int:approval_id>")
+    def _approval_answer(approval_id: int):
+        """Approve, or "This wasn't me": refused, and a security notice sent."""
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        approve = bool((request.get_json(silent=True) or {}).get("approve"))
+        row = devices.answer(base, user.id, approval_id, approve)
+        if row is None:
+            return jsonify({"error": "That sign-in has expired, so there’s nothing to "
+                                     "answer."}), 404
+        if not approve and user.email:
+            where = f"{row['label']}, near {row['near']}" if row.get("near") else row["label"]
+            subject = "Someone tried to sign in to Pearl"
+            text = (f"Hi {user.first_name or 'there'},\n\nSomeone with a sign-in code for "
+                    f"your email tried to sign in to Pearl on {where}. You said it wasn't "
+                    "you, so we stopped it.\n\nWhoever it was had a code sent to your "
+                    "email, so change your email password now, and check that only you "
+                    "can get into your inbox.\n\nPearl")
+            if mailer.configured():
+                try:
+                    mailer.send(user.email, subject, text)
+                except Exception:                      # noqa: BLE001
+                    pass
+            else:
+                print(f"[pearl] {subject} → {user.email}", file=sys.stderr)
+        return jsonify({"ok": True})
+
+    @app.post("/api/auth/recovery-codes")
+    def _recovery_codes():
+        """Ten new recovery codes, shown once; the old ones stop working."""
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        codes = devices.make_recovery_codes(base, user.id)
+        return jsonify({"ok": True, "codes": codes, "user": status_user(user)})
 
     app.config["STATUS_USER"] = status_user
 
@@ -484,6 +607,8 @@ def _install_auth(app: Flask) -> None:
         has_accounts["yes"] = True
         if out["created"]:
             send_welcome(user)
+        elif devices.needs_check(base, user.id, device_token()):
+            return confirm_device_reply(user)
         return signed_in_reply(user, created=out["created"])
 
     # ── Pearl S-02: change the sign-in email with a code ────────────────────

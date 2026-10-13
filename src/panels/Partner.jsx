@@ -1,5 +1,4 @@
-import { useEffect, useRef } from 'react';
-import { PButton } from '../pearl/kit.jsx';
+import { Dialog, PButton } from '../pearl/kit.jsx';
 import { Mark } from './GoalsParts.jsx';
 import { More } from './InsightsParts.jsx';
 
@@ -27,29 +26,6 @@ import { More } from './InsightsParts.jsx';
  * The link out carries a tracking ID only: no transaction, balance or name
  * of hers goes to the partner (THL-13).
  */
-
-/** A modal over the page: a scrim, focus inside, Escape closes. */
-export function Dialog({ labelledBy, onClose, children, className = '' }) {
-  const box = useRef(null);
-  useEffect(() => {
-    const before = document.activeElement;
-    box.current?.querySelector('button')?.focus();
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      before?.focus?.();
-    };
-  }, [onClose]);
-  return (
-    <div className="gr-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
-      <div className={`gr-dialog ${className}`} role="dialog" aria-modal="true" aria-labelledby={labelledBy}
-           ref={box}>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 /** GR-19 Before you go. */
 export function BeforeYouGo({ name, busy = false, error = '', onGo, onClose }) {

@@ -107,7 +107,6 @@ class TestLockedDeployment:
     def test_the_destructive_routes_are_covered_too(self, c):
         assert c.delete("/api/transactions").status_code == 401
         assert c.post("/api/plaid/sync", json={}).status_code == 401
-        assert c.post("/api/recategorize").status_code == 401
 
     def test_a_wrong_password_is_refused(self, c):
         assert c.post("/api/auth/login", json={"username": "mariapapas", "password": "wrong"}).status_code == 401

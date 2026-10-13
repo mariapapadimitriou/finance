@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   addBill, addPay, answerPay, answerRent, confirmBills, editBill, editPay, getIncomeBills,
-  money, removeBill, saveExpected,
+  money, removeBill, saveExpected, skipExpected,
 } from '../api.js';
 import { ActionToast, Alert, Choice, StatTile } from './kit.jsx';
 import PIcon from './icons.jsx';
@@ -437,7 +437,9 @@ export default function IncomeBillsFlow({ onDone, onDoc, initial = null, start =
     return layout('income', '1 of 2', (
       <ExpectedForm expected={data.expected}
                     onSave={(amount, varies) => saveExpected(amount, varies).then((d) => { setData(d); step('bills'); })}
-                    onSkip={() => step('bills')} />
+                    // Remembered, so Home can make a rough estimate (H-03).
+                    onSkip={() => skipExpected().then((d) => { setData(d); step('bills'); })
+                      .catch(() => step('bills'))} />
     ), { onBack: back });
   }
 

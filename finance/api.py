@@ -20,7 +20,7 @@ from .categorize import CATEGORIES, TRAVEL_BANK_CATEGORIES, is_spend_category
 from .db import storage_mode
 from .ingest import get_source
 from .insights import detect_recurring, recurring_summary
-from .pipeline import ingest, recategorize_all
+from .pipeline import ingest
 from .categorize import apply_categories, group_of
 from .dedupe import split_new
 from . import manual, spend_plan
@@ -964,46 +964,6 @@ def _account_rows(st) -> list[dict]:
     return rows
 
 
-@bp.post("/reset")
-def reset_ledger():
-    """Empty the ledger. Irreversible, so it asks for the word in writing."""
-    body = request.get_json(silent=True) or {}
-    if str(body.get("confirm", "")).strip().lower() != "erase":
-        return jsonify({
-            "error": 'Type "erase" to confirm. This cannot be undone.',
-            "needs_confirmation": True,
-        }), 400
-
-    st = store()
-    keep_banks = bool(body.get("keep_banks", True))
-    before = len(st.all_transactions())
-    revoked = 0
-    if not keep_banks:
-        # Disconnected at Plaid too, not only forgotten here: a connection
-        # left live keeps counting against the Plaid plan's limit.
-        from . import plaid_link
-        for item in st.plaid_items():
-            revoked += 1 if plaid_link.unlink(st, item["item_id"]) else 0
-    removed = st.reset(keep_banks=keep_banks)
-    return jsonify({
-        "ok": True,
-        "transactions_removed": before,
-        "removed": removed,
-        "banks_kept": keep_banks,
-        "revoked_at_plaid": revoked,
-        "note": ("Bank connections kept, and their sync positions rewound so "
-                 "the next sync re-fetches everything."
-                 if keep_banks else "Bank connections removed too."),
-    })
-
-
-@bp.get("/audit/duplicates")
-def audit_duplicates():
-    """Rows that may describe the same purchase under two account ids."""
-    from . import audit
-    return jsonify(audit.report(_txns()))
-
-
 @bp.delete("/accounts/<path:account_id>")
 def delete_account(account_id: str):
     """Remove an account and everything imported from it.
@@ -1059,57 +1019,11 @@ def set_account_sync(account_id: str):
                     "enabled": bool(body["enabled"]), "resync": rewound})
 
 
-@bp.get("/ledger/start")
-def get_ledger_start():
-    """The earliest date that counts, and what sits before it."""
-    st = store()
-    start = st.ledger_start()
-    rows = st.all_transactions()
-    earlier = [t for t in rows if start and t.date < start]
-    return jsonify({
-        "start": start,
-        "earliest": min((t.date for t in rows), default=None),
-        "latest": max((t.date for t in rows), default=None),
-        "total": len(rows),
-        "before_start": len(earlier),
-    })
-
-
-@bp.put("/ledger/start")
-def set_ledger_start():
-    """Set the earliest date that counts, and optionally remove what precedes it.
-
-    Two things, because either alone is a trap. Deleting without recording the
-    date leaves the next Plaid sync free to backfill the same months straight
-    back — a fresh link fetches two years. Recording without deleting leaves
-    the rows that prompted it sitting in every total.
-    """
-    from datetime import date as _date
-
-    body = request.get_json(silent=True) or {}
-    raw = str(body.get("start", "")).strip()
-
-    if raw:
-        try:
-            _date.fromisoformat(raw)
-        except ValueError:
-            return jsonify({"error": "Send a date as YYYY-MM-DD."}), 400
-
-    st = store()
-    st.set_ledger_start(raw)
-    removed = st.delete_before(raw) if (raw and body.get("trim")) else 0
-    return jsonify({"ok": True, "start": raw, "removed": removed})
-
 @bp.delete("/transactions")
 def clear():
     account = request.args.get("account")
     deleted = store().clear_transactions(account)
     return jsonify({"ok": True, "deleted": deleted})
-
-
-@bp.post("/recategorize")
-def recategorize():
-    return jsonify({"ok": True, "updated": recategorize_all(store())})
 
 
 # ── Analytics ────────────────────────────────────────────────────────────────

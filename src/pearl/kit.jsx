@@ -238,6 +238,36 @@ export function Toast({ children, onDone, ms = 2400 }) {
 }
 
 /**
+ * A modal over the page: a scrim, focus on its first button, Escape closes.
+ * `role` is "alertdialog" when it interrupts (A-14).
+ */
+export function Dialog({ labelledBy, describedBy, onClose, children, className = '',
+                         role = 'dialog' }) {
+  const box = useRef(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const before = document.activeElement;
+    box.current?.querySelector('button')?.focus();
+    const onKey = (e) => { if (e.key === 'Escape') close.current?.(); };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      before?.focus?.();
+    };
+  }, []);
+  return (
+    <div className="pk pk-dialog-scrim"
+         onMouseDown={(e) => { if (e.target === e.currentTarget) close.current?.(); }}>
+      <div className={`pk-dialog ${className}`} role={role} aria-modal="true"
+           aria-labelledby={labelledBy} aria-describedby={describedBy} ref={box}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
  * A radio or checkbox row (Handoff "Choice"). The whole row is the target;
  * the native input inside is what a keyboard and a screen reader use. A
  * chosen radio row is blush with a rose edge; a checkbox row stays plain.
