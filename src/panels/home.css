@@ -181,3 +181,18 @@
 .db-balance { font-family: var(--display); font-variation-settings: "SOFT" 0, "WONK" 1; font-size: 28px; line-height: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .db-card .db-kind { align-self: flex-start; margin-top: var(--space-1); }
 .db-card .hm-link { align-self: flex-start; display: inline-flex; align-items: center; gap: 2px; }
+
+/* ── Budgets (THL-168 B-01, B-02) ────────────────────────────────────────── */
+.bd-page { max-width: 760px; }
+.bd-list { align-items: stretch; gap: var(--space-5); }
+.bd-row { display: flex; align-items: center; gap: var(--space-4); }
+.bd-bar { flex: 1 1 auto; min-width: 0; }
+.pk .bd-change { flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: 14px; }
+.bd-change-panel .pk-amount { font-size: 40px; line-height: 46px; }
+.bd-change-panel input[type="range"] { width: 100%; accent-color: var(--action); }
+.bd-list .hm-link { align-self: flex-start; display: inline-flex; align-items: center; gap: 2px; }
+.pk .bd-change-panel .gl-field input[type="range"] { border: 0; padding: 0; height: auto; box-shadow: none; }
+@media (max-width: 720px) {
+  .bd-row { flex-direction: column; align-items: stretch; gap: var(--space-1); }
+  .pk .bd-change { align-self: flex-start; }
+}

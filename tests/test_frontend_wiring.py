@@ -194,8 +194,8 @@ class TestTheEmptyLedger:
 
 class TestTheMonthSelector:
     def test_it_is_offered_on_the_panels_that_read_a_month(self, panels, source):
-        """It is shown per panel now, not per group: Overview and Budgets live
-        in different groups and both need it, and their neighbours do not."""
+        """It is shown per panel, not per group: Insights needs it and its
+        neighbours do not. Budgets (THL-168) is always this month."""
         m = re.search(r"showMonth=\{(.+?)\}", source)
         assert m, "could not find the showMonth prop — update this test"
         assert "includes(panel)" in m.group(1), (

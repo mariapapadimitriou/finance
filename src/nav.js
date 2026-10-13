@@ -23,8 +23,9 @@ export const PANELS = {
   // set where it is needed; everything else uses its label at every width.
   plan:          { label: 'Income & commitments', short: 'Income',
                    hint: 'What comes in, what is spoken for, and what is left' },
+  // Growth › Budgets (THL-168 B-01): every category, from her usual month.
   budgets:       { label: 'Budgets',
-                   hint: 'Spent against budget, projected to month end' },
+                   hint: 'A budget for every category, starting at your usual month' },
   // Growth › Path (THL-129 GR-01): Protect, Build, Unveil and the next step.
   path:          { label: 'Path',
                    hint: 'Where you are on your path, and the one next step' },

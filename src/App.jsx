@@ -8,7 +8,7 @@ import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import TransactionsList from './panels/TransactionsList.jsx';
 import NeedsALook from './panels/NeedsALook.jsx';
 import Goals from './panels/Goals.jsx';
-import BudgetsPanel from './panels/BudgetsPanel.jsx';
+import CategoryBudgetsPanel from './panels/CategoryBudgetsPanel.jsx';
 import TripsPanel from './panels/TripsPanel.jsx';
 import ImportPanel from './panels/ImportPanel.jsx';
 import PlanPanel from './panels/PlanPanel.jsx';
@@ -51,7 +51,7 @@ function defaultMonth(summary) {
 // still be able to change its password or sign out.
 // Goals too: someone new sees what comes next there (G-02). And Home, whose
 // no-data state (E-01, THL-72) is where linking starts.
-const WORKS_WHEN_EMPTY = ['home', 'path', 'debts', 'banks', 'import', 'accounts', 'plan', 'account', 'categories',
+const WORKS_WHEN_EMPTY = ['home', 'path', 'debts', 'budgets', 'banks', 'import', 'accounts', 'plan', 'account', 'categories',
                           'goals'];
 
 /**
@@ -313,9 +313,10 @@ export default function App() {
       theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
       counts={{ transactions: data.review }}
       months={summary.months} month={shownMonth} onMonth={setMonth}
-      showMonth={['overview', 'budgets'].includes(panel)}
+      // Budgets (THL-168) is always this month, so only Insights picks one.
+      showMonth={['overview'].includes(panel)}
       // The Pearl pages draw their own header (overline + title).
-      ownTitle={['home', 'path', 'debts', 'transactions', 'review', 'goals'].includes(panel)}
+      ownTitle={['home', 'path', 'debts', 'budgets', 'transactions', 'review', 'goals'].includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
       {panel === 'plan' && (
@@ -351,9 +352,7 @@ export default function App() {
       {panel === 'goals' && (
         <Goals onTab={go} onChanged={load} version={version} />
       )}
-      {panel === 'budgets' && (
-        <BudgetsPanel onTab={go} month={shownMonth} summary={summary} version={version} />
-      )}
+      {panel === 'budgets' && <CategoryBudgetsPanel onChanged={load} version={version} />}
       {panel === 'trips' && <TripsPanel onChanged={load} />}
       {panel === 'accounts' && <AccountsPanel onChanged={load} onTab={go} />}
       {panel === 'banks' && <BanksPanel onChanged={load} onTab={go} />}

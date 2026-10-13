@@ -99,11 +99,16 @@ export function RangeBand({ now, from, to }) {
  * Rows measured against a plan rather than a usual month (Home's Income and
  * Savings, H-01) pass `share` (0–1) with their own `value` and `note`; they
  * have no tick and no pace. `share` null draws no bar at all, for a row with
- * nothing yet to measure against (E10: never an empty chart).
+ * nothing yet to measure against (E10: never an empty chart); `over` draws
+ * it in champagne.
+ *
+ * Budget rows (THL-168 B-01) use the pace mode against the budget, with
+ * their own `value` ("$412 of $460") and `note`, a string or a function of
+ * the pace status, so the ±10% rule and the champagne stay the snapshot's.
  */
 export function SnapshotBar({
   category, spent, usualMonth, usualByToday, day, daysInMonth, monthsOfHistory = 0,
-  showTick = true, share, value, note,
+  showTick = true, share, value, note, over: overShare = false,
 }) {
   if (share !== undefined) {
     return (
@@ -114,7 +119,8 @@ export function SnapshotBar({
         </div>
         {share !== null && (
           <div className="viz-track tall" aria-hidden="true">
-            <Fill percent={Math.min(Math.max(share || 0, 0), 1) * 100} className="viz-fill" />
+            <Fill percent={Math.min(Math.max(share || 0, 0), 1) * 100}
+                  className={`viz-fill${overShare ? ' over' : ''}`} />
           </div>
         )}
         {note && <p className="text-label viz-muted">{note}</p>}
@@ -128,7 +134,7 @@ export function SnapshotBar({
     <div className="viz-snapshot">
       <div className="viz-labels text-body">
         <span>{category}</span>
-        <span>{dollars(spent)} of a usual {dollars(usualMonth)}</span>
+        <span>{value ?? `${dollars(spent)} of a usual ${dollars(usualMonth)}`}</span>
       </div>
       <div className="viz-track tall" aria-hidden="true">
         <Fill percent={snapshotFill(spent, usualMonth) * 100}
@@ -140,7 +146,7 @@ export function SnapshotBar({
         </div>
       )}
       <p className="text-label viz-muted" data-status={status}>
-        {paceNote(status, spent, usualMonth)}
+        {typeof note === 'function' ? note(status) : note ?? paceNote(status, spent, usualMonth)}
       </p>
     </div>
   );
