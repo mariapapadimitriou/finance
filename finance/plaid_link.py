@@ -293,9 +293,13 @@ def _sync_one(store, item: dict) -> dict:
     results = group_plaid_transactions(added + modified, accounts)
     for result in results:
         imported += ingest(store, result, filename=f"Plaid · {item.get('institution') or item_id}")["imported"]
-    # Categories she chose on a reconnected bank's rows, back on them.
-    for txn_id, category in chosen.items():
-        store.set_transaction_category(txn_id, category)
+    # Categories she chose on a reconnected bank's rows, back on them —
+    # unless she chose one on the newer copy too.
+    if chosen:
+        mine = {t.fingerprint for t in store.all_transactions() if t.category_source == "user"}
+        for txn_id, category in chosen.items():
+            if txn_id not in mine:
+                store.set_transaction_category(txn_id, category)
 
     store.set_plaid_cursor(item_id, cursor or "")
     return {
@@ -396,6 +400,27 @@ def _replace_superseded(store, item_id: str, accounts: dict) -> dict[str, str]:
     return categories
 
 
+def doubled_items(store) -> list[str]:
+    """Connections that hold an account an older connection also holds —
+    same last four digits, same kind — so the same purchases are counted
+    twice. The newer of each pair is the one to keep."""
+    items = store.plaid_items()                       # oldest first
+    order = {i["item_id"]: n for n, i in enumerate(items)}
+    removed = {aid for aid, s in store.account_settings().items() if s["removed"]}
+    newest: dict[tuple[str, str], list[str]] = {}
+    for r in store.account_sync_rules().values():
+        key = (_mask_of(r["account_name"]), (r["account_type"] or "").lower())
+        if key[0] and r["item_id"] in order and r["account_id"] not in removed:
+            newest.setdefault(key, []).append(r["item_id"])
+    out = []
+    for item_ids in newest.values():
+        if len(set(item_ids)) > 1:
+            keep = max(set(item_ids), key=order.get)
+            if keep not in out:
+                out.append(keep)
+    return out
+
+
 def _account_label(account: dict, fallback: str = "") -> str:
     """What to call an account in a list the person reads.
 
@@ -442,6 +467,15 @@ def sync_all(store) -> dict:
                 store.rewind_plaid_cursor(item["item_id"])
                 item["cursor"] = None
         store.set_setting("plaid_cash_accounts", "1")
+
+    # Accounts doubled by a reconnect made before replacement worked account
+    # by account: start the newer connection over, so its full sync replaces
+    # them (`_replace_superseded`).
+    for item_id in doubled_items(store):
+        store.rewind_plaid_cursor(item_id)
+        for item in items:
+            if item["item_id"] == item_id:
+                item["cursor"] = None
 
     out = []
     for item in items:

@@ -139,3 +139,45 @@ def test_what_she_said_about_the_rows_comes_back_with_them(setup):
     assert new.category == "Dining" and new.category_source == "user"
     assert new.my_share == 20.0
     assert st.notes() == {new.fingerprint: "Team lunch"}
+
+
+def test_accounts_doubled_before_the_fix_are_merged_on_the_next_sync(setup, monkeypatch):
+    """Her ledger today: a reconnect from before replacement worked account
+    by account left the card under both connections, counted twice."""
+    st, plaid = setup
+    st.add_plaid_item("item-1", "tok-1", "TD")
+    plaid.feeds["tok-1"] = {"accounts": accounts("a"),
+                            "added": [txn("t1", "a-card"), txn("t2", "a-chq", "RENT", 900)]}
+    plaid_link.sync_all(st)
+    [old_card] = [t for t in st.all_transactions() if t.account_id == "a-card"]
+    st.set_note(old_card.fingerprint, "Groceries for the cottage")
+    st.add_plaid_item("item-2", "tok-2", "TD")
+    plaid.feeds["tok-2"] = {"accounts": accounts("b")[:1], "added": [txn("u1", "b-card")]}
+    real = plaid_link._replace_superseded
+    monkeypatch.setattr(plaid_link, "_replace_superseded", lambda *a: {})   # the old behaviour
+    plaid_link.sync_all(st)
+    assert sorted(t.account_id for t in st.all_transactions()) == ["a-card", "a-chq", "b-card"]
+    assert plaid_link.doubled_items(st) == ["item-2"]
+
+    monkeypatch.setattr(plaid_link, "_replace_superseded", real)
+    plaid.feeds["tok-1"]["added"] = []
+    plaid_link.sync_all(st)
+
+    rows = sorted((t.account_id, t.description) for t in st.all_transactions())
+    assert rows == [("a-chq", "RENT"), ("b-card", "LOBLAWS")]        # counted once
+    [card] = [t for t in st.all_transactions() if t.account_id == "b-card"]
+    assert st.notes() == {card.fingerprint: "Groceries for the cottage"}
+    assert plaid_link.doubled_items(st) == []
+    plaid_link.sync_all(st)                                          # and it stays that way
+    assert len(st.all_transactions()) == 2
+
+
+def test_two_different_cards_are_not_doubled(setup):
+    st, plaid = setup
+    st.add_plaid_item("item-1", "tok-1", "TD")
+    plaid.feeds["tok-1"] = {"accounts": accounts("a"), "added": []}
+    st.add_plaid_item("item-2", "tok-2", "RBC")
+    plaid.feeds["tok-2"] = {"accounts": [{"account_id": "rbc", "name": "RBC Visa", "mask": "9999",
+                                          "type": "credit", "subtype": "credit card"}], "added": []}
+    plaid_link.sync_all(st)
+    assert plaid_link.doubled_items(st) == []
