@@ -161,6 +161,10 @@ export const getHome = () => req('/api/home');
 export const getPath = () => req('/api/path');
 // The starter questions (E-02) and "Use a different amount" (E-03).
 export const putHomeAnswers = (answers) => json('PUT', '/api/home/answers', answers);
+// Month or week as Home's main view (THL-166), saved on her account.
+export const putHomeView = (view) => json('PUT', '/api/home/view', { view });
+// "Can I afford it?" (THL-167): works it out and records nothing.
+export const checkAfford = (amount) => json('POST', '/api/home/afford', { amount });
 export const getGoals        = () => req('/api/goals');
 export const setAnchor       = (fields) => json('PUT', '/api/goals/anchor', fields);
 export const setUnusualMonths = (months) => json('PUT', '/api/goals/anchor/unusual', { months });
