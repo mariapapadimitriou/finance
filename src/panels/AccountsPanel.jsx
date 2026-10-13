@@ -12,7 +12,6 @@ import PIcon from '../pearl/icons.jsx';
 import { Field, parseAmount } from './GoalsParts.jsx';
 import { MONTH_NAMES, ReconnectPanel, shown } from './HomePanel.jsx';
 import { ListRow, PageHead } from './ProfilePanel.jsx';
-import AccountsTools from './AccountsTools.jsx';
 import './home.css';
 import './profile.css';
 
@@ -153,7 +152,7 @@ function AccountRow({ a, onOpen, onReconnect, now }) {
 
 /** AM-01 / C-01: every account, and the two ways to add one. */
 export function AccountsList({ data, onTab, onOpen, onReconnect, onLink, onAdd, linking = false,
-                               now = Date.now(), children = null }) {
+                               now = Date.now() }) {
   const { linked = [], added = [], plaid = {} } = data;
   const canLink = plaid.configured && plaid.encryption_ready;
   const mixed = (data.currency_mix ?? []).length > 1;
@@ -202,7 +201,6 @@ export function AccountsList({ data, onTab, onOpen, onReconnect, onLink, onAdd, 
       {plaid.configured && plaid.environment === 'sandbox' && (
         <p className="pf-foot">Plaid sandbox: test banks only.</p>
       )}
-      {children}
     </div>
   );
 }
@@ -651,10 +649,7 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
       <AccountsList data={data} onTab={onTab} linking={linking}
                     onOpen={(a) => setView({ name: 'detail', id: a.id })}
                     onReconnect={onReconnect} onLink={openLink}
-                    onAdd={() => setView({ name: 'add' })}>
-        <AccountsTools total={all.reduce((n, a) => n + (a.transactions || 0), 0)}
-                       connected={data.linked.map((a) => a.name)} onChanged={refresh} />
-      </AccountsList>
+                    onAdd={() => setView({ name: 'add' })} />
     );
   }
 

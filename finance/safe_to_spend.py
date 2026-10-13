@@ -29,7 +29,9 @@ Decisions this follows (THL-9 comment, 2026-10-12):
   goal less what has already been saved. No goal, no row.
 * S6: days left include today.
 * E1: with no income detected and none given there is no number at all;
-  Home asks for her income instead of guessing.
+  Home asks for her income instead of guessing. Once she has skipped the
+  check's I-03, though, Home makes a rough estimate from the deposits it
+  has seen (H-03), rounded to the nearest $50, and asks again.
 * E4 (THL-47, THL-70): when pay isn't regular, income is cautious: the
   lowest of the last three full months, or what has already arrived if that
   is more. An amount she gives instead lasts until she changes it, and each
@@ -55,6 +57,8 @@ from .models import Transaction
 
 # A paycheque that lands a few days early is the one expected, not an extra.
 PAY_TOLERANCE_DAYS = 5
+# H-03: with income skipped, the deposits of this many days stand in for it.
+DEPOSIT_DAYS = 30
 # Pay stops counting as regular once this long has passed with none arriving
 # (two cycles, plus the tolerance): a job that ended is not income to expect.
 STALE_PAY_DAYS = {"biweekly": 28 + PAY_TOLERANCE_DAYS,
@@ -259,7 +263,8 @@ def _confirmed_pay(pays: list[dict], received: list[Transaction], lines: list,
 def income_this_month(transactions: list[Transaction], today: date,
                       entered_monthly: float = 0.0, *, told: float = 0.0,
                       overridden: bool = False, pays: list[dict] | None = None,
-                      varies: bool = False, checked: bool = False) -> dict:
+                      varies: bool = False, checked: bool = False,
+                      skipped: bool = False) -> dict:
     """What comes in this month: what has arrived plus what is still expected.
 
     In order: the pay she confirmed (THL-127 I-01, I-02); detected regular
@@ -267,8 +272,9 @@ def income_this_month(transactions: list[Transaction], today: date,
     she confirmed counts; then what she told us (I-03's expected income, the
     starter questions, or "Use a different amount"); then the cautious
     figure when pay isn't regular — first, when she said her income varies;
-    then the monthly income from the older plan page. Never less than what
-    has already arrived. With none, `amount` is None.
+    then the monthly income from the older plan page; then, once she has
+    skipped I-03 (`skipped`), the deposits of the last 30 days (H-03).
+    Never less than what has already arrived. With none, `amount` is None.
     """
     month = today.strftime("%Y-%m")
     end = month_end(today)
@@ -333,6 +339,15 @@ def income_this_month(transactions: list[Transaction], today: date,
     if entered_monthly and entered_monthly > 0:
         amount_c = _at_least(entered_monthly, received_c, lines, "Still expected this month")
         return {**none, "amount": _dollars(amount_c), "source": "entered", "lines": lines}
+    if skipped:
+        since = (today - timedelta(days=DEPOSIT_DAYS - 1)).isoformat()
+        seen_c = sum(_cents(-t.amount) for t in transactions
+                     if since <= t.date <= today.isoformat() and _counts_as_income(t))
+        if seen_c > 0:
+            amount_c = _at_least(_dollars(seen_c), received_c, lines,
+                                 "Still expected, from deposits we’ve seen")
+            return {**none, "amount": _dollars(amount_c), "source": "deposits",
+                    "lines": lines}
     return {**none, "amount": None, "source": None, "lines": lines}
 
 
@@ -517,6 +532,11 @@ def round_down_10(amount: float) -> int:
     return int(amount // 10) * 10
 
 
+def round_50(amount: float) -> int:
+    """A number from deposits alone is shown to the nearest $50 (H-03)."""
+    return int((amount + 25) // 50) * 50
+
+
 def compute(transactions: list[Transaction], today: date, *,
             entered_income: float = 0.0, savings_target: float = 0.0,
             anchor_started: bool = False, told_income: float = 0.0,
@@ -535,9 +555,10 @@ def compute(transactions: list[Transaction], today: date, *,
                                told=told_income, overridden=overridden,
                                pays=(confirm or {}).get("pays") or None,
                                varies=bool((confirm or {}).get("varies")),
-                               checked=bool((confirm or {}).get("income_on")))
+                               checked=bool((confirm or {}).get("income_on")),
+                               skipped=bool((confirm or {}).get("income_skipped")))
     days = history_days(transactions, today)
-    estimate = ("rough" if days < LEARNING_DAYS
+    estimate = ("rough" if days < LEARNING_DAYS or income["source"] == "deposits"
                 else "cautious" if income["source"] == "cautious" else None)
     base = {"month": month, "today": today.isoformat(), "days_left": left,
             "next_pay": income["next_pay"], "income_source": income["source"],
@@ -582,12 +603,15 @@ def compute(transactions: list[Transaction], today: date, *,
         r["amount"] = _dollars(r.pop("amount_c"))
     over = total_c < 0
     amount = _dollars(total_c)
-    shown = round_down_10(amount) if estimate and not over else amount
+    shown = (amount if over or not estimate
+             else round_50(amount) if income["source"] == "deposits"
+             else round_down_10(amount))
     return {
         **base,
         "state": "over" if over else "ok",
         "amount": amount,
-        # What the card shows: rounded down to $10 for an estimate (S7, E5).
+        # What the card shows: rounded down to $10 for an estimate (S7, E5),
+        # or to the nearest $50 from deposits alone (H-03).
         "shown": shown,
         "per_day": None if over else _dollars(_cents(shown) // left),
         "over_by": _dollars(-total_c) if over else None,

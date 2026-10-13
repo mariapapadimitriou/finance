@@ -109,9 +109,6 @@
 }
 
 /* ── Older tools kept from the previous Accounts page ────────────────────── */
-.pf-more { border-top: 1px solid var(--border); padding-top: var(--space-4); }
-.pf-more > summary { cursor: pointer; color: var(--ink-muted); font-size: 14px; }
-.pf-more[open] > summary { margin-bottom: var(--space-4); }
 
 /* The code step (S-02) borrows the sign-in screens' six boxes. */
 .pf-code .p-code { max-width: 100%; }
@@ -160,4 +157,12 @@ a.pk-btn { text-decoration: none; box-sizing: border-box; }
 .pv-page .pf-head .pf-intro { margin: var(--space-3) 0 0; }
 .pk.pv-page .p-link {
   border: 0; background: none; padding: 0; cursor: pointer; color: var(--link); font-weight: 500;
+}
+
+/* Recovery codes: two columns of codes to copy down. */
+.sc-codes {
+  list-style: none; margin: 0; padding: var(--space-4); align-self: stretch;
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-2) var(--space-4);
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-page);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 16px; letter-spacing: .04em;
 }

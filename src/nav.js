@@ -1,10 +1,7 @@
 // Where everything is, and what it is called.
 //
-// One module, imported by the shell that draws the navigation and by every
-// component that names a destination in a sentence. It used to live inside
-// App.jsx, which meant a panel saying "sync on the Banks tab" had no way to
-// ask what the tab was now called — and it went on saying Banks for months
-// after the tab became Connections, inside a group called Cards & data.
+// One module, imported by the shell that draws the navigation and by the
+// panels that link across it.
 
 // Every panel the app can show, keyed the way it always was.
 //
@@ -145,10 +142,6 @@ export const ALIASES = {
 // pointed at, which is indistinguishable from a button that did nothing.
 export const ANCHORS = {};
 
-// What an alias is called in a sentence, since it has no panel label of its
-// own to borrow.
-const ALIAS_LABELS = { piggy: 'Treasure chests' };
-
 /**
  * Turn a group key or a panel key into both.
  *
@@ -165,24 +158,4 @@ export function resolve(key) {
   const group = GROUPS.find((g) => g.key === target);
   if (group) return [group.key, group.panels[0]];
   return ['home', 'home'];
-}
-
-/**
- * What to call a destination in running text, from wherever you are.
- *
- * Inside the same group, the section name is enough — you can see the
- * switcher. From anywhere else it is the sidebar's word and then the
- * section's, because the section name alone ("Accounts") is not something
- * you can find in the sidebar.
- */
-export function destination(key, fromPanel) {
-  const [groupKey, panelKey] = resolve(key);
-  const group = GROUPS.find((g) => g.key === groupKey);
-  const section = ALIAS_LABELS[key] ?? PANELS[panelKey]?.label ?? group?.label;
-  const here = fromPanel && resolve(fromPanel)[0] === groupKey;
-
-  if (!group) return section;
-  if (here || group.panels.length === 1 || section === group.label) return section;
-  if (group.crumbs) return `${group.label} › ${section}`;
-  return `${group.label} → ${section}`;
 }

@@ -143,6 +143,21 @@ describe('How we worked this out', () => {
 
 // ── Data states (THL-137 E-01 to E-04; THL-72, THL-69, THL-47, THL-70) ──
 
+// H-03: income skipped, so the number is from the deposits of 30 days.
+const fromDeposits = {
+  ...ok, estimate: 'rough', income_source: 'deposits', amount: 627.4, shown: 650, per_day: 28.26,
+  next_pay: null,
+  rows: [
+    { key: 'income', amount: 1230, paycheques: 0, payer: '', source: 'deposits',
+      lines: [{ label: 'Client B', date: '2026-10-03', amount: 590, arrived: true, kind: 'other' },
+              { label: 'Still expected, from deposits we’ve seen', date: null, amount: 640,
+                arrived: false, kind: 'expected' }] },
+    { key: 'bills', amount: 557.6, count: 1, first: '2026-10-15', last: '2026-10-15',
+      lines: [{ label: 'Rogers', date: '2026-10-15', amount: 557.6, estimate: false, late: false }] },
+    { key: 'spent', amount: 45, pending: 0, lines: [{ label: 'Lifestyle', amount: 45 }] },
+  ],
+};
+
 const base = { history_days: 120, first_date: '2026-06-01', learning_until: '2026-07-01',
   comparisons_from: '2026-08-01', linking_failed: false, answers: { income: null, rent: null },
   asks_questions: false, spent_so_far: 3144.34, bills_found: 6 };
@@ -189,6 +204,7 @@ const STATES = {
     card_spending: { amount: 0, lines: [] } }],
   normal: [ok, { ...base, kind: 'normal' }],
   'normal, no income': [needsIncome, { ...base, kind: 'normal', asks_questions: true }],
+  'H-03 rough, from deposits': [fromDeposits, { ...base, kind: 'learning', history_days: 15 }],
 };
 
 const body = (s, ds) => html(
@@ -517,5 +533,45 @@ describe('connection health (THL-120)', () => {
     expect(whenWords('2026-10-06 08:00:00', '2026-10-09')).toBe('Tuesday');
     expect(whenWords('2026-09-28T08:00:00', '2026-10-09')).toBe('Sep 28');
     expect(whenWords(null, '2026-10-09')).toBe('a while ago');
+  });
+});
+
+describe('rough estimate (H-03)', () => {
+  const ds = STATES['H-03 rough, from deposits'][1];
+  const out = html(
+    <HomeBody s={fromDeposits} ds={ds} path={buildPath} reviewCount={3} today="2026-10-09"
+              onSave={() => Promise.resolve()} onLink={() => {}} />);
+
+  it('says it is rough, from deposits, to the nearest $50', () => {
+    const c = heroCopy(fromDeposits);
+    expect(c.label).toBe('Safe to spend in October · rough estimate');
+    expect(c.pill).toBe('Estimate');
+    expect(c.figure).toBe('About $650');
+    expect(c.context).toBe('Based on deposits we’ve seen. Add your income for a real number.');
+    expect(heroCopy({ ...fromDeposits, shown: 0 }).figure).toBe('Less than $50');
+  });
+
+  it('asks for her income once, with nothing to tap in the alert', () => {
+    expect(homeAlert(fromDeposits, ds)).toEqual({
+      text: 'Tell us what you expect to earn and this number gets much more accurate.' });
+    expect(out).toContain('Tell us what you expect to earn and this number gets much more accurate.');
+  });
+
+  it('makes "Add your income" the one primary, on the path card', () => {
+    expect(primaries(out)).toBe(1);
+    expect(out).toMatch(/pk-btn primary[^>]*>Add your income/);
+    expect(out).toContain('Your path · Build');
+    expect(out).toContain('First, add your income');
+    expect(out).toContain('Needed for an accurate safe-to-spend');
+    expect(out).toContain('It takes about 30 seconds.');
+    expect(out).not.toContain('Monthly take-home pay');              // no starter questions
+    expect(out).toContain('3 transactions need a look');
+    calm(out);
+  });
+
+  it('the sheet names the deposits and what was rounded', () => {
+    const { rows, total } = sheetRows(fromDeposits);
+    expect(rows[0].detail).toBe('Deposits we’ve seen in the last 30 days');
+    expect(total.note).toBe('Shown to the nearest $50, $650.');
   });
 });

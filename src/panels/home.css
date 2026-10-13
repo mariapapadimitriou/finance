@@ -118,6 +118,10 @@
 }
 .hm-pathcard-next .hm-row-text { flex: 1 1 260px; }
 
+/* ── Income first (H-03) ─────────────────────────────────────────────────── */
+.hm-income-first { align-items: stretch; }
+.hm-income-first-head { display: flex; align-items: center; gap: var(--space-3); }
+
 /* ── Path page (GR-01) ───────────────────────────────────────────────────── */
 .pt-phases {
   list-style: none; margin: 0; padding: 0;

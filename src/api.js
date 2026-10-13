@@ -34,7 +34,6 @@ const json = (method, path, payload) =>
   });
 
 export const getSummary      = () => req('/api/summary');
-export const getRecurring    = () => req('/api/recurring');
 export const getAccounts     = () => req('/api/accounts');
 
 /**
@@ -48,20 +47,9 @@ export function accountTitle(a) {
     : `${a.institution} · ${a.kind_label}${a.mask ? ` ••${a.mask}` : ''}`;
   return a.joint ? `${base} · Joint with ${a.joint}` : base;
 }
-// Removing a connected account has to stop it syncing too, or the next sync
-// fetches the whole thing again. `stopSyncing: false` deletes the rows only.
-export const deleteAccount   = (id, stopSyncing = true) =>
-  req(`/api/accounts/${encodeURIComponent(id)}`
-      + (stopSyncing ? '' : '?stop_syncing=0'), { method: 'DELETE' });
-// Mark an account as shared ("Family"), or null for yours alone.
-export const setAccountJoint = (id, label) =>
-  json('PUT', `/api/accounts/${encodeURIComponent(id)}/joint`, { label });
 // On joint accounts, purchases at this name are always yours.
 export const setMineAlways   = (id, on) =>
   json('PUT', `/api/transactions/${id}/mine-always`, { on });
-export const setAccountSync  = (id, enabled) =>
-  json('PUT', `/api/accounts/${encodeURIComponent(id)}/sync`, { enabled });
-export const getDuplicateAudit = () => req('/api/audit/duplicates');
 // Profile › Accounts (Pearl AM-01 to AM-07, C-01, C-06).
 export const getAccountsOverview = () => req('/api/accounts/overview');
 // `counted`, `joint_share` (1–99 or null), `anchor`, `nickname`.
@@ -83,8 +71,6 @@ export const editRule = (id, category) =>
   json('PUT', `/api/rules/${encodeURIComponent(id)}`, { category });
 export const deleteRule = (id) =>
   req(`/api/rules/${encodeURIComponent(id)}`, { method: 'DELETE' });
-export const resetLedger     = (keepBanks) =>
-  json('POST', '/api/reset', { confirm: 'erase', keep_banks: keepBanks });
 export const getCategories   = () => req('/api/categories');
 
 // ── Signing in ───────────────────────────────────────────────────────────────
@@ -106,8 +92,6 @@ export const login          = (username, password) =>
   authPost('/api/auth/login', { username, password });
 export const changePassword = (current, next) =>
   authPost('/api/auth/password', { current, new: next });
-export const signupWithEmail = (username, email, password) =>
-  authPost('/api/auth/signup', { username, email, password });
 export const forgotPassword = (identifier) =>
   authPost('/api/auth/forgot', { identifier });
 export const resetPassword  = (token, password) =>
@@ -129,6 +113,22 @@ export const passkeyRegisterOptions = () =>
   json('POST', '/api/auth/passkey/register/options', {});
 export const passkeyRegister = (credential) =>
   json('POST', '/api/auth/passkey/register/verify', credential);
+
+// Pearl A-07, A-08: a sign-in on a new browser waits for her other device to
+// approve it, or for a recovery code (finance/devices.py).
+export const askDeviceApproval = () => authPost('/api/auth/device/ask', {});
+export async function deviceStatus() {
+  const r = await fetch(`${API}/api/auth/device/status`, CREDENTIALS);
+  const body = await r.json().catch(() => ({}));
+  return { ok: r.ok, ...body };
+}
+export const signInWithRecoveryCode = (code) => authPost('/api/auth/device/recovery', { code });
+export const cancelDeviceCheck = () => authPost('/api/auth/device/cancel', {});
+// On her signed-in devices: what's waiting for approval, and her answer.
+export const getApprovals   = () => req('/api/auth/approvals');
+export const answerApproval = (id, approve) =>
+  json('POST', `/api/auth/approvals/${id}`, { approve });
+export const makeRecoveryCodes = () => json('POST', '/api/auth/recovery-codes', {});
 // Onboarding: province, the Quebec waitlist, consents, which step you're on.
 export const getOnboarding  = () => req('/api/onboarding');
 export const saveOnboarding = (fields) => json('POST', '/api/onboarding', fields);
@@ -155,7 +155,6 @@ export const deleteAccountNow = (proof) => authPost('/api/account/delete', proof
 
 
 // ── Plaid ────────────────────────────────────────────────────────────────────
-export const getPlaidItems   = () => req('/api/plaid/items');
 // With an item id, Link opens in update mode to sign in to that bank again (C-04).
 export const createLinkToken = (itemId) =>
   json('POST', '/api/plaid/link-token', itemId ? { item_id: itemId } : {});
@@ -163,8 +162,6 @@ export const exchangePublicToken = (publicToken, institution) =>
   json('POST', '/api/plaid/exchange',
        { public_token: publicToken, institution });
 export const syncPlaid       = () => json('POST', '/api/plaid/sync', {});
-export const unlinkBank      = (id) =>
-  req(`/api/plaid/items/${id}`, { method: 'DELETE' });
 
 // Piggy banks: annual costs collected monthly, and spending charged to them
 // instead of to the month it fell in.
@@ -176,8 +173,6 @@ export const allocateToBank  = (id, txnId) =>
   json('POST', `/api/piggy/${id}/allocate`, { txn_id: txnId });
 export const unallocate      = (txnId) =>
   req(`/api/piggy/allocations/${txnId}`, { method: 'DELETE' });
-// Put back money a bank lent the month. Nothing creates these any more.
-export const undoDraw        = (id) => req(`/api/piggy/draws/${id}`, { method: 'DELETE' });
 
 // Goals (THL-131, THL-132, THL-179): the Anchor, treasure chests (the piggy
 // banks above, by the Goals page's name) and the saving goal.
@@ -241,8 +236,8 @@ export const getIncomeBills   = () => req(IB);
 export const answerPay        = (payer, answer) => json('POST', `${IB}/pay/answer`, { payer, answer });
 export const addPay           = (pay) => json('POST', `${IB}/pay`, pay);
 export const editPay          = (id, pay) => json('PUT', `${IB}/pay/${encodeURIComponent(id)}`, pay);
-export const removePay        = (id) => req(`${IB}/pay/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export const saveExpected     = (amount, varies) => json('PUT', `${IB}/expected`, { amount, varies });
+export const skipExpected     = () => json('POST', `${IB}/expected/skip`, {});
 export const confirmBills     = (ticked) => json('PUT', `${IB}/bills`, { ticked });
 export const addBill          = (bill) => json('POST', `${IB}/bills`, bill);
 export const editBill         = (key, bill) => json('PUT', billPath(key), bill);
@@ -365,14 +360,6 @@ export const batchConfirm = (ids) => json('POST', '/api/transactions/batch/confi
 export const getPreferences = () => req('/api/preferences');
 export const savePreferences = (prefs) => json('PUT', '/api/preferences', prefs);
 
-// Where the ledger starts, and re-running categorization over what is already
-// in it. Both exist for the same reason: a rule that improved after the rows
-// were imported does not reach them until something asks it to.
-export const getLedgerStart  = () => req('/api/ledger/start');
-export const setLedgerStart  = (start, trim) =>
-  json('PUT', '/api/ledger/start', { start, trim });
-export const recategorizeAll = () => json('POST', '/api/recategorize', {});
-
 // ── Formatting ───────────────────────────────────────────────────────────────
 
 /**
@@ -419,24 +406,4 @@ export function money(n, { cents = false, sign = false, currency } = {}) {
 export function pct(n, digits = 0) {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';
   return `${(n * 100).toFixed(digits)}%`;
-}
-
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-const FULL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
-                     'August', 'September', 'October', 'November', 'December'];
-
-export function monthLabel(month, { long = false, full = false } = {}) {
-  if (!month) return '—';
-  const [y, m] = month.split('-').map(Number);
-  if (full) return `${FULL_MONTHS[m - 1] ?? month} ${y}`;
-  const name = MONTH_NAMES[m - 1] ?? month;
-  return long ? `${name} ${y}` : `${name} '${String(y).slice(2)}`;
-}
-
-export function dateLabel(iso) {
-  if (!iso) return '—';
-  const [y, m, d] = iso.split('-').map(Number);
-  return `${MONTH_NAMES[m - 1]} ${d}`;
 }

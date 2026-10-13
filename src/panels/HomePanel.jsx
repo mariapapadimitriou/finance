@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
 import {
-  createLinkToken, dismissSuggestion, getHome, money, putHomeAnswers, putHomeView, syncPlaid,
-  undoDismissSuggestion,
+  createLinkToken, dismissSuggestion, getHome, money, putHomeAnswers, putHomeView, saveExpected,
+  syncPlaid, undoDismissSuggestion,
 } from '../api.js';
 import { loadPlaidScript } from '../plaid.js';
 import { ActionToast, Alert, DetailPanel, PButton, StatusPill } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
-import { SnapshotBar } from '../pearl/viz.jsx';
+import { ExpectedForm } from '../pearl/IncomeBills.jsx';
+import { ProgressBar, SnapshotBar } from '../pearl/viz.jsx';
 import { setGoalsIntent, writeTxUrl } from '../router.js';
 import { Field, Mark } from './GoalsParts.jsx';
 import { AffordCard, ViewToggle, WeekSheet, WeekStrip, weekHeroCopy } from './HomeWeek.jsx';
@@ -37,6 +38,10 @@ import './home.css';
  *   E-04 card_only — card spending only, and one prompt to link chequing
  * Rough and cautious numbers are shown rounded down to $10 (S7, E5). Exactly
  * one primary action on the page (E3); one alert at a time (C3).
+ *
+ * H-03: once she skipped the check's "We didn't spot a regular paycheque"
+ * (I-03), the number is a rough estimate from the deposits we've seen, to
+ * the nearest $50, and the one primary action is "Add your income" (I-03).
  *
  * The snapshot (THL-48, H-01) compares Income with what's expected, Essentials
  * and Lifestyle with her usual month and where she usually is by today
@@ -88,6 +93,13 @@ export function heroCopy(s) {
     };
   }
   const next = s.next_pay ? `Your next pay arrives on ${longDate(s.next_pay)}.` : null;
+  if (s.state === 'ok' && s.income_source === 'deposits') {
+    return {
+      label: `${label} · rough estimate`, pill: 'Estimate',
+      figure: s.shown >= 50 ? `About ${shown(s.shown)}` : 'Less than $50',
+      context: 'Based on deposits we’ve seen. Add your income for a real number.',
+    };
+  }
   if (s.state === 'ok' && s.estimate === 'rough') {
     return {
       label, pill: 'Estimate',
@@ -136,6 +148,7 @@ export function sheetRows(s) {
       const other = r.lines.some((l) => l.kind !== 'salary');
       let detail = `${plural(r.paycheques, 'paycheque')}${r.payer ? ` from ${r.payer}` : ''}${other ? ', and other income' : ''}`;
       if (r.source === 'entered' || r.source === 'told') detail = 'What you told us you earn';
+      if (r.source === 'deposits') detail = 'Deposits we’ve seen in the last 30 days';
       if (r.source === 'cautious') {
         detail = `Your lowest month of the last 3 was ${monthName(r.cautious.month)}, ${shown(r.cautious.lowest)}`;
       }
@@ -189,9 +202,12 @@ export function sheetRows(s) {
     ...r, display: r.amount > 0 ? shown(r.amount, true) : NOTHING[r.key],
   }));
   // E5: the sheet keeps the exact rows and says what the card rounded.
-  const note = s.state === 'ok' && s.estimate && s.amount > 0
-    ? (s.shown >= 10 ? `Shown rounded down to ${shown(s.shown)}.` : 'Shown as less than $10.')
-    : null;
+  let note = null;
+  if (s.state === 'ok' && s.income_source === 'deposits' && s.amount > 0) {
+    note = s.shown >= 50 ? `Shown to the nearest $50, ${shown(s.shown)}.` : 'Shown as less than $50.';
+  } else if (s.state === 'ok' && s.estimate && s.amount > 0) {
+    note = s.shown >= 10 ? `Shown rounded down to ${shown(s.shown)}.` : 'Shown as less than $10.';
+  }
   return {
     rows: withText,
     total: { ...total, display: total.amount > 0 ? shown(total.amount, true) : 'Nothing left', note },
@@ -203,6 +219,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
   const [error, setError] = useState(null);
   const [explain, setExplain] = useState(false);
   const [income, setIncome] = useState(false);
+  const [expected, setExpected] = useState(false);
   const [reconnect, setReconnect] = useState(null);
   const [back, setBack] = useState(null);
   const [explainWeek, setExplainWeek] = useState(false);
@@ -269,6 +286,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
                 onReview={() => onTab?.('review')}
                 onReconnect={(c) => (c.state === 'needs_sign_in' ? setReconnect(c) : onTab?.('accounts'))}
                 onExplain={() => setExplain(true)} onIncome={() => setIncome(true)}
+                onAddIncome={() => setExpected(true)}
                 onSeeWhere={(group) => {
                   // TX-02: the list, opened on this month and the group.
                   writeTxUrl({ filters: { month: s.month, group }, from: 'home' }, { push: true });
@@ -282,6 +300,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
                             // changed here; pay and bills are confirmed on
                             // Profile › Income and bills (THL-127).
                             if (['told', 'cautious'].includes(s.income_source)) setIncome(true);
+                            else if (s.income_source === 'deposits') setExpected(true);
                             else onTab?.('income');
                           }} />
       )}
@@ -301,6 +320,19 @@ export default function HomePanel({ onTab, onChanged, version }) {
                           await load();
                         }} />
       )}
+      {expected && (
+        // H-03's "Add your income": the check's I-03, over Home.
+        <DetailPanel label="Add your income" overline="Your income" onClose={() => setExpected(false)}>
+          <ExpectedForm expected={null} eyebrow={null} title="What you expect each month"
+                        sub="Tell us roughly what comes in after tax."
+                        onSkip={() => setExpected(false)} skipLabel="Cancel"
+                        onSave={(amount, varies) => saveExpected(amount, varies).then(async () => {
+                          setExpected(false);
+                          await onChanged?.();
+                          await load();
+                        })} />
+        </DetailPanel>
+      )}
       {income && (
         <IncomePanel s={s} told={ds.answers.income} onClose={() => setIncome(false)}
                      onSave={(amount) => save({ income: amount, override: !!s.cautious })
@@ -316,7 +348,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
 const PATH_ACTIONS = { goals: 'goals', path: 'path', bills: 'income', income: 'income' };
 
 export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onSeeWhere,
-                           path, reviewCount = 0, connections = [], back = null, today,
+                           onAddIncome, path, reviewCount = 0, connections = [], back = null, today,
                            onPath, onReview, onReconnect, week = null, view = 'month',
                            onView, onExplainWeek, onChest, debts = null, onDebts,
                            budgets = null, onBudgets, cards = [], onCard, onWhy, onNotForMe }) {
@@ -344,6 +376,22 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
   const alert = homeAlert(s, ds, snap, connections, back, today);
   const act = alert?.connection ? () => onReconnect?.(alert.connection)
     : alert?.group ? () => onSeeWhere?.(alert.group) : onIncome;
+  if (s.income_source === 'deposits') {
+    // H-03: the rough number, and adding her income is the one thing to do.
+    return (
+      <>
+        {alert && (
+          <Alert tone={alert.tone ?? 'info'} action={alert.action}
+                 onAction={alert.action ? act : undefined}>
+            {alert.text}
+          </Alert>
+        )}
+        <SafeToSpendCard s={s} onExplain={onExplain} />
+        <IncomeFirstCard phase={path?.phase ?? 'protect'} onAdd={onAddIncome} />
+        {review}
+      </>
+    );
+  }
   const trouble = connections.find((c) => c.state !== 'disconnected');
   // THL-166: the week reads the month, so there is one only with a number.
   const weekly = week && s.amount !== null && !noAccounts;
@@ -414,6 +462,9 @@ export function homeAlert(s, ds, snap, connections = [], back = null, today = nu
              text: `${c.institution} isn’t responding right now. We’ll keep trying; there’s nothing you need to do.` };
   }
   if (back) return { tone: 'positive', text: `${back} is back up to date.` };
+  if (s.income_source === 'deposits') {
+    return { text: 'Tell us what you expect to earn and this number gets much more accurate.' };
+  }
   if (s.state === 'over' && snap?.extra_went_to) {
     // H-02: where the extra went, and a way to see it (TX-02).
     return { tone: 'caution', text: `${snap.extra_went_to} is where the extra went.`,
@@ -463,9 +514,55 @@ export function SafeToSpendCard({ s, onExplain, updated = null, copy = null }) {
   );
 }
 
+/**
+ * The ledger behind "How we worked this out" (X-01 to X-04): rows that add up
+ * to a total, each opening in place on the lines behind it (X-02). The same
+ * component explains a goal's projection (X-03, GoalsProjection.jsx).
+ * A row is `{ key, label, detail, display, lines: [{ label, amount | display }] }`.
+ */
+export function Ledger({ rows, total }) {
+  const [open, setOpen] = useState(null);
+  return (
+    <div className="hm-ledger">
+      {rows.map((r) => {
+        const expanded = open === r.key;
+        const id = `hm-lines-${r.key}`;
+        return (
+          <div key={r.key} className="hm-row">
+            <button type="button" className="hm-row-head" aria-expanded={expanded}
+                    aria-controls={r.lines.length ? id : undefined}
+                    disabled={!r.lines.length}
+                    onClick={() => setOpen(expanded ? null : r.key)}>
+              <PIcon name={expanded ? 'chevronDown' : 'chevronRight'} size={16} />
+              <span className="hm-row-text">
+                <span className="hm-row-label">{r.label}</span>
+                {r.detail && <span className="hm-row-detail">{r.detail}</span>}
+              </span>
+              <span className="hm-row-amount">{r.display}</span>
+            </button>
+            {expanded && (
+              <ul className="hm-lines" id={id}>
+                {r.lines.map((l, i) => (
+                  <li key={i}><span>{l.label}</span><span>{l.display ?? shown(l.amount, true)}</span></li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })}
+      <div className="hm-total">
+        <span className="hm-row-text">
+          <span className="pk-h3">{total.label}</span>
+          {total.detail && <span className="hm-row-detail">{total.detail}</span>}
+        </span>
+        <span className="pk-h3">{total.display}</span>
+      </div>
+    </div>
+  );
+}
+
 /** "How we worked this out" (X-01 to X-04): every input, adding up to the number. */
 export function HowWeWorkedItOut({ s, onClose, onEdit }) {
-  const [open, setOpen] = useState(null);
   const { rows, total } = sheetRows(s);
   const title = s.state === 'over'
     ? `Past this month’s plan: ${shown(s.over_by, true)}`
@@ -477,41 +574,7 @@ export function HowWeWorkedItOut({ s, onClose, onEdit }) {
                  onClose={onClose} sheet className="hm-sheet">
       <h1 className="pk-h2">{title}</h1>
       <p className="pk-muted">{`Every number behind it, for ${monthName(s.month)}.`}</p>
-      <div className="hm-ledger">
-        {rows.map((r) => {
-          const expanded = open === r.key;
-          const id = `hm-lines-${r.key}`;
-          return (
-            <div key={r.key} className="hm-row">
-              <button type="button" className="hm-row-head" aria-expanded={expanded}
-                      aria-controls={r.lines.length ? id : undefined}
-                      disabled={!r.lines.length}
-                      onClick={() => setOpen(expanded ? null : r.key)}>
-                <PIcon name={expanded ? 'chevronDown' : 'chevronRight'} size={16} />
-                <span className="hm-row-text">
-                  <span className="hm-row-label">{r.label}</span>
-                  {r.detail && <span className="hm-row-detail">{r.detail}</span>}
-                </span>
-                <span className="hm-row-amount">{r.display}</span>
-              </button>
-              {expanded && (
-                <ul className="hm-lines" id={id}>
-                  {r.lines.map((l, i) => (
-                    <li key={i}><span>{l.label}</span><span>{shown(l.amount, true)}</span></li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          );
-        })}
-        <div className="hm-total">
-          <span className="hm-row-text">
-            <span className="pk-h3">{total.label}</span>
-            {total.detail && <span className="hm-row-detail">{total.detail}</span>}
-          </span>
-          <span className="pk-h3">{total.display}</span>
-        </div>
-      </div>
+      <Ledger rows={rows} total={total} />
       {total.note && <p className="pk-muted hm-note">{total.note}</p>}
       <button type="button" className="hm-link" onClick={onEdit}>
         Something look wrong? Edit your income or bills
@@ -805,6 +868,25 @@ export function PathCard({ path, onPath, primary = true }) {
           <PButton onClick={() => onPath?.(path.next.action)}>{path.next.label}</PButton>
         )}
       </div>
+    </section>
+  );
+}
+
+/** H-03's path card: before anything else on the path, her income. */
+export function IncomeFirstCard({ phase, onAdd }) {
+  return (
+    <section className="hm-card hm-income-first" aria-labelledby="hm-income-first-title">
+      <div className="hm-income-first-head">
+        <Mark phase={phase} width={52} />
+        <div className="hm-row-text">
+          <p className="pk-overline accent">{`Your path · ${PHASE_WORDS[phase]}`}</p>
+          <h2 className="pk-h3" id="hm-income-first-title">First, add your income</h2>
+        </div>
+      </div>
+      <p className="pk-label pk-muted">Needed for an accurate safe-to-spend</p>
+      <ProgressBar label="Your income" value="not added yet" share={0} showLabel={false} />
+      <p>It takes about 30 seconds.</p>
+      <PButton onClick={onAdd}>Add your income</PButton>
     </section>
   );
 }

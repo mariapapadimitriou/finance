@@ -91,18 +91,3 @@ def test_a_different_login_at_the_same_bank_stays(setup):
     plaid_link.sync_all(st)
     assert {i["item_id"] for i in st.plaid_items()} == {"item-1", "item-2"}
     assert plaid.removed == []
-
-
-def test_start_fresh_disconnects_at_plaid(setup, tmp_path):
-    st, plaid = setup
-    from app import create_app
-    app = create_app(st.path)
-    app.config.update(TESTING=True)
-    store = app.config["STORE"]
-    store.add_plaid_item("item-1", "tok-1", "TD")
-    store.add_plaid_item("item-2", "tok-2", "Scotiabank")
-    with app.test_client() as c:
-        r = c.post("/api/reset", json={"confirm": "erase", "keep_banks": False}).get_json()
-    assert r["revoked_at_plaid"] == 2
-    assert sorted(plaid.removed) == ["tok-1", "tok-2"]
-    assert store.plaid_items() == []

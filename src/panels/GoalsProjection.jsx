@@ -1,12 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Alert, Choice, DetailPanel, PButton } from '../pearl/kit.jsx';
 import { RangeBand, Slider } from '../pearl/viz.jsx';
-import { sliderBounds, sliderWords, soonerWords, whatIf } from '../pearl/vizMath.js';
-import { setUnusualMonths } from '../api.js';
+import {
+  addMonths, monthsTo, sliderBounds, sliderWords, soonerWords, whatIf,
+} from '../pearl/vizMath.js';
+import { money, setUnusualMonths } from '../api.js';
 import { writeInsightsUrl } from '../router.js';
 import {
-  Line, Mark, More, PageHead, amount, listWords, monthName, rangeWords,
+  Mark, More, PageHead, amount, listWords, monthName, monthYear, rangeWords,
 } from './GoalsParts.jsx';
+import { Ledger } from './HomePanel.jsx';
+import './home.css';
 
 /**
  * When the Anchor is likely to be full (THL-132). Always a range — the best
@@ -109,39 +113,70 @@ export function ProjectionPage({ goals, onBack, onHow, onWhatIf, onMonths, onTab
   );
 }
 
-/** P-02: how the range was worked out. */
-export function HowWorkedOut({ goals, onClose, onMonths }) {
+const cents = (n) => money(n, { cents: true });
+
+/** "Likely full between March and June 2027", or one month when that's all. */
+function likelyWords(p) {
+  if (p?.state !== 'range') return 'No date yet';
+  return p.from === p.to ? `Likely full in ${monthYear(p.from)}`
+    : `Likely full between ${rangeWords(p.from, p.to)}`;
+}
+
+/**
+ * X-03's sheet for the Anchor: the goal, what's saved, what's left and her
+ * usual monthly amount, adding up to the months to go at that pace. The
+ * answer stays P-02's range, from her best and quietest months.
+ */
+export function anchorSheet(goals) {
   const a = goals.anchor;
   const p = a.projection;
   const pace = a.pace;
+  const tag = (m) => (m.month === pace.best.month ? ' · best month'
+    : m.month === pace.quietest.month ? ' · quietest month' : '');
+  const saved = (m) => (m.saved >= 0 ? `${amount(m.saved)} saved` : `${amount(-m.saved)} taken out`);
+  const rows = [
+    { key: 'goal', label: 'Your goal', display: cents(a.target), lines: [] },
+    { key: 'saved', label: 'Already saved', display: cents(a.counted),
+      detail: a.counting.length ? `In ${listWords(a.counting.map((acct) => acct.name))}` : null,
+      lines: a.counting.map((acct) => ({ label: acct.name, amount: acct.balance })) },
+    { key: 'left', label: 'Left to save', display: cents(a.to_go), lines: [] },
+    { key: 'monthly', label: 'You add each month', display: cents(pace.usual),
+      detail: `Your usual amount over ${listWords(pace.used.map((m) => monthName(m.month)))}`,
+      lines: [
+        ...pace.used.map((m) => ({ label: `${monthName(m.month)}${tag(m)}`, display: saved(m) })),
+        ...pace.left_out.map((m) => ({ label: `${monthName(m.month)} · left out, marked unusual`,
+                                       display: saved(m) })),
+      ] },
+  ];
+  const n = monthsTo(a.to_go, pace.usual);
+  const total = {
+    label: 'Months to go',
+    detail: `Starting from ${monthName(addMonths(goals.month, 1))}`,
+    display: n == null ? 'No date yet' : `${n} → ${monthYear(addMonths(goals.month, n))}`,
+  };
+  const note = `Your best month (${monthName(pace.best.month)}) and your quietest `
+    + `(${monthName(pace.quietest.month)}) give the range, so it’s honest about ups and downs. `
+    + 'Interest isn’t included, so you may get there a little sooner.';
+  return { title: likelyWords(p), sub: 'If you keep saving like you do now.', rows, total, note };
+}
+
+/** P-02, laid out as X-03: how the range was worked out. */
+export function HowWorkedOut({ goals, onClose, onWhatIf, onMonths }) {
+  if (!goals.anchor.pace) return null;
+  const { title, sub, rows, total, note } = anchorSheet(goals);
   return (
     <DetailPanel label="How we worked this out" overline="How we worked this out"
-                 onClose={onClose} className="on-card">
-      <h1 className="pk-h1">Your Anchor date</h1>
-      <Line label="Still to go" value={amount(a.to_go)} />
-      {pace && (
-        <>
-          <Line label="Months used" value={pace.used.map((m) => monthName(m.month)).join(', ')} />
-          <Line label={`Best month · ${monthName(pace.best.month)}`}
-                value={`${amount(pace.best.saved)} saved`} />
-          <Line label={`Quietest month · ${monthName(pace.quietest.month)}`}
-                value={pace.quietest.saved >= 0 ? `${amount(pace.quietest.saved)} saved`
-                  : `${amount(-pace.quietest.saved)} taken out`} />
-          <Line label="Your usual pace" value={`${amount(Math.round(pace.usual))} a month`} />
-          {pace.left_out.length > 0 && (
-            <Line label="Left out" value={`${leftOutWords(pace)}, marked unusual`} />
-          )}
-        </>
-      )}
-      <div className="gl-divider" />
-      <Line strong label="Likely full"
-            value={p?.state === 'range' ? rangeWords(p.from, p.to, 'to') : 'No date yet'} />
-      <p className="pk-label pk-muted">We use your best and quietest months for the range, so
-        it’s honest about ups and downs. Interest isn’t included, so you may get there a
-        little sooner.</p>
-      <More onClick={onMonths}>Change which months count</More>
-      <div className="gl-panel-foot">
-        <PButton variant="secondary" onClick={onClose}>Done</PButton>
+                 onClose={onClose} sheet className="hm-sheet">
+      <h1 className="pk-h2">{title}</h1>
+      <p className="pk-muted">{sub}</p>
+      <Ledger rows={rows} total={total} />
+      <p className="pk-muted hm-note">{note}</p>
+      <button type="button" className="hm-link" onClick={onWhatIf}>
+        Want it sooner? Try a different monthly amount
+      </button>
+      <button type="button" className="hm-link" onClick={onMonths}>Change which months count</button>
+      <div className="hm-sheet-foot">
+        <PButton onClick={onClose}>Got it</PButton>
       </div>
     </DetailPanel>
   );

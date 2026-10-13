@@ -18,20 +18,16 @@ the same coffee, the same fare, the same lunch — and a $6.40 on the TD card
 three days after a $6.40 on the Wealthsimple card is two coffees, not one
 counted twice. Flagging those buries the real finding in noise.
 
-So the account-level question is asked first: do these two ids look like the
-same card? Only pairs that do are examined row by row. Everything here
-reports rather than decides, because a tool that silently deleted half of
-these would eventually delete something real.
+So this asks only the account-level question: do these two ids look like the
+same card? Only pairs that do are examined row by row, by
+`duplicates.detect`, which asks about each pair rather than deciding,
+because a tool that silently deleted half of these would eventually delete
+something real.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
-
-# A charge re-posted by a different source can sit a few days off: a statement
-# shows the posted date, Plaid usually shows the authorised one.
-WINDOW_DAYS = 5
 
 # An account-level overlap claims something strong — "these two ids are the
 # same card" — and a percentage computed over two or three amounts cannot
@@ -50,60 +46,6 @@ MIN_AMOUNTS_FOR_OVERLAP = 6
 SAME_CARD_OVERLAP = 0.6
 
 
-def _days_apart(a: str, b: str) -> int:
-    return abs((date.fromisoformat(a) - date.fromisoformat(b)).days)
-
-
-def cross_account_duplicates(transactions, same_card=None) -> list[dict]:
-    """Same amount, near-same day, on two ids that look like the same card.
-
-    Grouped by amount first because that is the one field neither source
-    rewrites — a descriptor is reformatted, a date shifts, but $23.73 is
-    $23.73 in a PDF and in an API response.
-
-    `same_card` is the set of account-id pairs worth comparing at all. Without
-    it, every coincidence between two real cards is reported as a duplicate,
-    which is both wrong and loud enough to hide the real ones. Pass an empty
-    set to compare nothing; omit it and it is worked out from the data.
-    """
-    if same_card is None:
-        same_card = same_card_pairs(transactions)
-    if not same_card:
-        return []
-
-    by_amount: dict[str, list] = defaultdict(list)
-    for t in transactions:
-        if t.amount <= 0:
-            continue                      # refunds and payments handled below
-        by_amount[f"{t.amount:.2f}"].append(t)
-
-    findings = []
-    for amount, rows in by_amount.items():
-        if len(rows) < 2:
-            continue
-        rows.sort(key=lambda r: r.date)
-        for i, a in enumerate(rows):
-            for b in rows[i + 1:]:
-                if _days_apart(a.date, b.date) > WINDOW_DAYS:
-                    break               # sorted, so everything later is worse
-                if a.account_id == b.account_id:
-                    continue            # the importer's job, not this one
-                if _pair(a.account_id, b.account_id) not in same_card:
-                    continue            # two different cards, two purchases
-                findings.append({
-                    "amount": float(amount),
-                    "days_apart": _days_apart(a.date, b.date),
-                    "same_merchant": a.merchant == b.merchant,
-                    "rows": [_row(a), _row(b)],
-                })
-
-    # Most likely first: same merchant and same day is about as sure as this
-    # gets without asking the bank.
-    findings.sort(key=lambda f: (not f["same_merchant"], f["days_apart"],
-                                 -f["amount"]))
-    return findings
-
-
 def _pair(a: str, b: str) -> tuple[str, str]:
     """An unordered pair of account ids, so lookups don't depend on order."""
     return (a, b) if a <= b else (b, a)
@@ -114,20 +56,6 @@ def same_card_pairs(transactions) -> set[tuple[str, str]]:
     return {
         _pair(o["accounts"][0]["account_id"], o["accounts"][1]["account_id"])
         for o in overlapping_accounts(transactions)
-    }
-
-
-def _row(t) -> dict:
-    return {
-        "id": t.fingerprint,
-        "date": t.date,
-        "merchant": t.merchant,
-        "description": t.description,
-        "amount": t.amount,
-        "account_id": t.account_id,
-        "account": t.account_name or t.account_id,
-        "source": t.source,
-        "category": t.category,
     }
 
 
@@ -188,19 +116,3 @@ def overlapping_accounts(transactions) -> list[dict]:
     out.sort(key=lambda o: -o["overlap"])
     return out
 
-
-def report(transactions) -> dict:
-    overlaps = overlapping_accounts(transactions)
-    pairs = {_pair(o["accounts"][0]["account_id"], o["accounts"][1]["account_id"])
-             for o in overlaps}
-    rows = cross_account_duplicates(transactions, pairs)
-    return {
-        "checked": len(transactions),
-        "account_overlaps": overlaps,
-        "duplicates": rows[:100],
-        "duplicate_count": len(rows),
-        "note": ("Only accounts that look like one card under two ids are "
-                 "compared. Two different cards sharing an amount within a "
-                 "few days is two purchases, not one counted twice, so it is "
-                 "not reported. What is found here is reported, not removed."),
-    }

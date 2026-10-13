@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  forgotPassword, login, passkeyOptions, passkeyRegister, passkeyRegisterOptions,
-  passkeySignIn, resetPassword, startCode, verifyCode,
+  askDeviceApproval, cancelDeviceCheck, deviceStatus, forgotPassword, login, passkeyOptions,
+  passkeyRegister, passkeyRegisterOptions, passkeySignIn, resetPassword, signInWithRecoveryCode,
+  startCode, verifyCode,
 } from '../api.js';
 import { DocSheet } from './docs.jsx';
 import {
-  AuthLayout, Banner, BigIcon, Callout, CodeInput, Field, Heading, TrustPoint,
+  AuthLayout, Banner, BigIcon, Callout, Choice, CodeInput, Field, Heading, TrustPoint,
 } from './ui.jsx';
 import { createPasskey, getPasskey, passkeysSupported } from './webauthn.js';
 
@@ -17,6 +18,27 @@ export function resetTokenFromUrl() {
     return null;
   }
 }
+
+/**
+ * A-15: signed out after 15 minutes idle, at /sign-in?reason=timeout with
+ * where she was as `returnTo`. Only a path on this site is taken back to.
+ */
+export function timeoutFromUrl() {
+  try {
+    const { pathname, search } = window.location;
+    const params = new URLSearchParams(search);
+    if (pathname !== '/sign-in' || params.get('reason') !== 'timeout') return null;
+    const back = params.get('returnTo') || '/';
+    const safe = back.startsWith('/') && !back.startsWith('//') && !back.startsWith('/\\')
+      && !back.startsWith('/sign-in');
+    return { returnTo: safe ? back : '/' };
+  } catch {
+    return null;
+  }
+}
+
+/** The address A-15 lives at, remembering the page she was on. */
+export const timeoutUrl = (here) => `/sign-in?reason=timeout&returnTo=${encodeURIComponent(here)}`;
 
 function clearResetFromUrl() {
   try {
@@ -34,11 +56,37 @@ const returning = () => { try { return localStorage.getItem(RETURNING) === '1'; 
 
 const WELCOME_BACK = { mark: 'pearl', headline: 'Welcome back.',
                        body: 'Your money, sorted and up to date.' };
+const NEW_DEVICE = { mark: 'opening', headline: 'A new device, a quick check.',
+                     body: 'We confirm it’s you whenever someone signs in somewhere new.' };
+// How often A-08 asks whether her other device has answered.
+const POLL_MS = 3000;
+
+/** "phone" for a phone, else what it is: A-08 says where to look. */
+export function deviceWord(label = '') {
+  if (/iPhone|Android/.test(label)) return 'phone';
+  if (/iPad/.test(label)) return 'iPad';
+  return 'other device';
+}
+
+/** "used today", "used Tuesday", "used Oct 2", from seconds since 1970. */
+export function usedWords(seconds, now = Date.now()) {
+  if (!seconds) return '';
+  const day = (ms) => new Date(ms).toDateString();
+  const then = seconds * 1000;
+  if (day(then) === day(now)) return 'used today';
+  const days = Math.floor((now - then) / 86400000);
+  if (days < 7) return `used ${new Date(then).toLocaleDateString('en-CA', { weekday: 'long' })}`;
+  return `used ${new Date(then).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}`;
+}
 
 /**
  * Everything before you're signed in: the welcome (O-01), making an account
  * (O-02, O-03), and signing back in with a passkey or an email code
  * (A-01 to A-06, A-09, A-10). Accounts that still have a password can use it.
+ *
+ * A code or password sign-in on a browser she hasn't confirmed, when another
+ * device of hers is trusted, confirms it's her first (A-07): approve it on
+ * that device (A-08), or use a recovery code. See finance/devices.py.
  */
 export default function SignedOut({ onSignedIn }) {
   const resetToken = resetTokenFromUrl();
@@ -46,7 +94,8 @@ export default function SignedOut({ onSignedIn }) {
   // Without passkeys in this browser, "sign in" means the email code.
   const pick = (s) => (s === 'signin' && !canPasskey ? 'email' : s);
   const [screen, setScreen] = useState(
-    () => pick(resetToken ? 'reset' : returning() ? 'signin' : 'welcome'));
+    () => pick(resetToken ? 'reset' : timeoutFromUrl() ? 'timedOut'
+      : returning() ? 'signin' : 'welcome'));
   const [history, setHistory] = useState([]);
   const [doc, setDoc] = useState(null);
   const [firstName, setFirstName] = useState('');
@@ -61,7 +110,35 @@ export default function SignedOut({ onSignedIn }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [note, setNote] = useState(null);
+  const [device, setDevice] = useState(null);
+  const [how, setHow] = useState('approve');
+  const [asked, setAsked] = useState(null);
+  const [recovery, setRecovery] = useState('');
   const abort = useRef(null);
+
+  // A-08: carry on by itself once her other device answers.
+  useEffect(() => {
+    if (screen !== 'approval') return undefined;
+    let live = true;
+    const tick = async () => {
+      const r = await deviceStatus().catch(() => ({ state: 'pending' }));
+      if (!live) return;
+      if (r.signed_in) { signedIn(r); return; }
+      if (r.expired || r.state === 'expired') {
+        setScreen('device');
+        setError('That took too long, so we stopped waiting. Ask again, or use another way.');
+        return;
+      }
+      if (r.state === 'denied') {
+        setScreen('device');
+        setError('That sign-in was refused on your other device.');
+        return;
+      }
+      timer = setTimeout(tick, POLL_MS);
+    };
+    let timer = setTimeout(tick, POLL_MS);
+    return () => { live = false; clearTimeout(timer); };
+  }, [screen]);
 
   useEffect(() => {
     if (resendIn <= 0) return undefined;
@@ -91,6 +168,71 @@ export default function SignedOut({ onSignedIn }) {
     remember();
     clearResetFromUrl();
     onSignedIn(user, extra);
+  }
+
+  /** Signed in by a code, a password or a confirmed device. */
+  function signedIn(r) {
+    // A returning account with no passkey on this device is offered one.
+    if (!r.created && canPasskey && !(r.user?.passkeys > 0)) {
+      setSignedInUser(r.user);
+      remember();
+      show('addPasskey');
+      return;
+    }
+    finish(r.user, { created: r.created });
+  }
+
+  /** A-07: the sign-in waits until it's confirmed this is her. */
+  function confirmDevice(r) {
+    setDevice(r.choices);
+    setHow('approve');
+    show('device');
+  }
+
+  async function continueDevice() {
+    setError(null);
+    if (how === 'recovery') { setRecovery(''); show('recovery'); return; }
+    setBusy(true);
+    try {
+      const r = await askDeviceApproval();
+      if (r.expired) { startOver(r.error); return; }
+      if (!r.ok) { setError(r.error || 'That didn’t work.'); return; }
+      setAsked(r);
+      show('approval');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function checkRecovery(e) {
+    e.preventDefault();
+    if (!recovery.trim()) { setError('Enter one of your recovery codes.'); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await signInWithRecoveryCode(recovery);
+      if (r.signed_in) { finish(r.user); return; }
+      if (r.expired) { startOver(r.error); return; }
+      setError(r.error || 'That didn’t work.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** The waiting sign-in is over: back to signing in, saying why. */
+  function startOver(message) {
+    setHistory([]);
+    setScreen(pick('signin'));
+    setError(message || 'That took too long. Sign in again.');
+  }
+
+  function leaveDeviceCheck() {
+    cancelDeviceCheck().catch(() => {});
+    back();
   }
 
   async function sendCode(nextScreen) {
@@ -123,14 +265,8 @@ export default function SignedOut({ onSignedIn }) {
       if (r.paused) { show('paused'); return; }
       if (r.expired) { show('expired'); return; }
       if (!r.ok) { setError(r.error); setLeft(r.left ?? null); return; }
-      // A returning account with no passkey on this device is offered one.
-      if (!r.created && canPasskey && !(r.user?.passkeys > 0)) {
-        setSignedInUser(r.user);
-        remember();
-        show('addPasskey');
-        return;
-      }
-      finish(r.user, { created: r.created });
+      if (r.confirm_device) { confirmDevice(r); return; }
+      signedIn(r);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -181,6 +317,7 @@ export default function SignedOut({ onSignedIn }) {
     try {
       const r = await fn();
       if (!r.ok) { setError(r.error || 'That didn’t work.'); return; }
+      if (r.confirm_device) { setPassword(''); confirmDevice(r); return; }
       if (r.signed_in) { setPassword(''); finish(r.user); return; }
       if (r.message) { setNote(r.message); show('sent'); }
     } catch (e) {
@@ -350,6 +487,25 @@ export default function SignedOut({ onSignedIn }) {
     ));
   }
 
+  // ── A-15 Signed out ───────────────────────────────────────────────────────
+  if (screen === 'timedOut') {
+    return layout({
+      mark: 'closed', headline: 'Signed out to keep things private.',
+      body: 'We do this after 15 minutes without activity.', centered: true,
+    }, (
+      <>
+        <BigIcon name="lock" />
+        <Heading title="You’ve been signed out"
+                 sub="We sign you out after 15 minutes without activity to keep your money private." />
+        <div className="p-actions">
+          <button type="button" className="p-btn primary" onClick={() => show('signin')}>
+            Sign in again
+          </button>
+        </div>
+      </>
+    ));
+  }
+
   // ── A-09 Short pause ──────────────────────────────────────────────────────
   if (screen === 'paused') {
     return layout({
@@ -440,6 +596,72 @@ export default function SignedOut({ onSignedIn }) {
               Use my passkey instead
             </button>
           )}
+        </div>
+      </form>
+    ));
+  }
+
+  // ── A-07 New device: confirm it's you ─────────────────────────────────────
+  if (screen === 'device' && device) {
+    return layout({ ...NEW_DEVICE, onBack: leaveDeviceCheck }, (
+      <>
+        <Heading eyebrow="New device" title="Confirm it’s you"
+                 sub="You’re signing in on a device we haven’t seen before." />
+        <div className="p-choices" role="radiogroup" aria-label="How to confirm">
+          <Choice type="radio" name="how" checked={how === 'approve'}
+                  onChange={() => setHow('approve')}
+                  label={`Approve on your ${deviceWord(device.approve.label)}`}
+                  description={[device.approve.label, usedWords(device.approve.used_at)]
+                    .filter(Boolean).join(' · ')} />
+          {device.recovery && (
+            <Choice type="radio" name="how" checked={how === 'recovery'}
+                    onChange={() => setHow('recovery')} label="Use a recovery code" />
+          )}
+        </div>
+        {error && <Banner tone="caution">{error}</Banner>}
+        <div className="p-actions">
+          <button type="button" className="p-btn primary" disabled={busy} onClick={continueDevice}>
+            {busy ? 'One moment…' : 'Continue'}
+          </button>
+        </div>
+      </>
+    ));
+  }
+
+  // ── A-08 Waiting for approval ─────────────────────────────────────────────
+  if (screen === 'approval' && device) {
+    const where = deviceWord(device.approve.label);
+    return layout({ ...NEW_DEVICE, onBack: back, centered: true }, (
+      <>
+        <BigIcon name="phone" />
+        <Heading title={`Check your ${where}`}
+                 sub={`Open Pearl on your ${where} and tap Approve. This page will continue on its own.`} />
+        {asked && (
+          <Banner>{`Signing in from ${asked.from}${asked.near ? `, near ${asked.near}` : ''}`}</Banner>
+        )}
+        <div className="p-actions">
+          <button type="button" className="p-btn secondary" onClick={back}>Use another way</button>
+        </div>
+      </>
+    ));
+  }
+
+  // ── A-07 Use a recovery code ──────────────────────────────────────────────
+  if (screen === 'recovery') {
+    return layout({ ...NEW_DEVICE, onBack: back }, (
+      <form className="p-form" style={{ width: '100%' }} noValidate onSubmit={checkRecovery}>
+        <Heading eyebrow="New device" title="Use a recovery code"
+                 sub="One of the ten codes you saved when you set them up. Each works once." />
+        <Field label="Recovery code" error={error}>
+          {(p) => <input {...p} type="text" value={recovery} autoFocus required
+                         autoComplete="one-time-code" autoCapitalize="characters"
+                         autoCorrect="off" spellCheck={false} placeholder="ABCD-EFGH"
+                         onChange={(e) => setRecovery(e.target.value)} />}
+        </Field>
+        <div className="p-actions">
+          <button className="p-btn primary" type="submit" disabled={busy}>
+            {busy ? 'Checking…' : 'Sign in'}
+          </button>
         </div>
       </form>
     ));

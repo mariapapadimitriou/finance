@@ -13,6 +13,8 @@ answers behind Profile › Income and bills afterwards:
   as the income she tells Home (`home_income`): one number, not two.
   "My income varies" plans with the lowest of the last three months once
   there is data for it.
+  "Skip for now" is remembered, so Home can make a rough estimate from the
+  deposits it has seen instead of showing no number (H-03).
 * I-04 "Are these your regular bills?": the recurring bills Pearl found,
   high-confidence ones pre-ticked. What she leaves ticked counts; what she
   unticks stops counting in "Bills still to come". Rent paid by e-Transfer is
@@ -67,7 +69,8 @@ _ETRANSFER = re.compile(r"\b(e-?\s?transfer|e-?tfr|etfr|interac|autodeposit)\b",
 
 def empty() -> dict:
     return {"income_on": None, "bills_on": None, "pays": [], "pay_no": [],
-            "varies": False, "bills": {}, "added": [], "rent": {}, "seq": 0}
+            "varies": False, "bills": {}, "added": [], "rent": {}, "seq": 0,
+            "income_skipped": None}
 
 
 def load(st) -> dict:

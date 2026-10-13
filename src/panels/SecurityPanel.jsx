@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
 import {
-  changePassword, getAuthStatus, passkeyRegister, passkeyRegisterOptions,
+  changePassword, getAuthStatus, makeRecoveryCodes, passkeyRegister, passkeyRegisterOptions,
   startEmailChange, verifyEmailChange,
 } from '../api.js';
-import { Alert, PButton, Toast } from '../pearl/kit.jsx';
+import { Alert, DetailPanel, PButton, Toast } from '../pearl/kit.jsx';
 import { CodeInput } from '../pearl/ui.jsx';
 import { createPasskey, passkeysSupported } from '../pearl/webauthn.js';
 import { Field } from './GoalsParts.jsx';
@@ -23,13 +23,17 @@ import './profile.css';
  * Changing the email sends a 6-digit code to the new address — the same code
  * rules as signing in (ten minutes, five tries, a pause after too many) — and
  * lets the old address know once it's done.
+ *
+ * Recovery codes are for a sign-in on a new device when her other one isn't
+ * to hand (A-07): ten, shown once, each working once.
  */
 
 const TRAIL = [{ label: 'Profile', to: 'profile' }, { label: 'Sign-in and security' }];
 
 export function SecurityPage({ user, mail, onTab, onChangeEmail, onPasskey, passkeyBusy = false,
-                               canPasskey = false, onSignOut, children = null }) {
+                               canPasskey = false, onRecovery, onSignOut, children = null }) {
   const n = user?.passkeys ?? 0;
+  const codes = user?.recovery_codes ?? 0;
   return (
     <div className="pk hm-page pf-page">
       <PageHead trail={TRAIL} title="Sign-in and security" onTab={onTab} />
@@ -45,6 +49,11 @@ export function SecurityPage({ user, mail, onTab, onChangeEmail, onPasskey, pass
                    end={canPasskey && (
                      <span className="pf-end-link">{passkeyBusy ? 'Waiting…' : 'Add one on this device'}</span>
                    )} />
+          <ListRow name="Recovery codes" chevron={false} onOpen={onRecovery}
+                   sub={codes === 0
+                     ? 'None yet. For signing in on a new device when your other one isn’t to hand.'
+                     : `${codes} of 10 left. Each works once.`}
+                   end={<span className="pf-end-link">{codes === 0 ? 'Make codes' : 'Make new ones'}</span>} />
         </ul>
         {mail === false && (
           <p className="pf-foot">Email isn’t set up on this copy of Pearl yet, so codes print to the server’s log.</p>
@@ -99,6 +108,64 @@ function PasswordForm({ onDone }) {
         </div>
       </form>
     </section>
+  );
+}
+
+/** Recovery codes: new ones replace the old, so that's asked first. */
+export function RecoveryCodes({ had = 0, onClose, onMade }) {
+  const [codes, setCodes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const make = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await makeRecoveryCodes();
+      setCodes(r.codes);
+      onMade?.();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <DetailPanel label="Recovery codes" overline="Sign-in and security" onClose={onClose}>
+      {codes ? (
+        <>
+          <h1 className="pk-h2">Your recovery codes</h1>
+          <p className="pk-muted">Keep them somewhere safe, like a password manager. Each works
+            once, and you won’t see them again here.</p>
+          <ul className="sc-codes" aria-label="Recovery codes">
+            {codes.map((c) => <li key={c}>{c}</li>)}
+          </ul>
+          <div className="pf-stack">
+            <PButton variant="secondary" onClick={() => {
+              navigator.clipboard?.writeText(codes.join('\n')).then(() => setCopied(true))
+                .catch(() => {});
+            }}>{copied ? 'Copied' : 'Copy codes'}</PButton>
+            <PButton onClick={onClose}>Done</PButton>
+          </div>
+        </>
+      ) : (
+        <>
+          <h1 className="pk-h2">{had > 0 ? 'Make new recovery codes?' : 'Make recovery codes'}</h1>
+          <p className="pk-muted">
+            {had > 0
+              ? 'The codes you have now stop working, so throw them away once you’ve saved the new ones.'
+              : 'If you sign in on a new device and your other one isn’t to hand, one of these confirms it’s you. You get ten, and each works once.'}
+          </p>
+          {error && <Alert tone="caution">{error}</Alert>}
+          <div className="pf-stack">
+            <PButton disabled={busy} onClick={make}>
+              {busy ? 'Making…' : had > 0 ? 'Make new codes' : 'Make codes'}
+            </PButton>
+            <PButton variant="text" onClick={onClose}>Cancel</PButton>
+          </div>
+        </>
+      )}
+    </DetailPanel>
   );
 }
 
@@ -205,7 +272,7 @@ export default function SecurityPanel({ onTab, onSignOut, version }) {
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const load = useCallback(() => getAuthStatus().then(setStatus).catch(setError), []);
   useEffect(() => { load(); }, [load, version]);
-  useEffect(() => { window.scrollTo?.(0, 0); }, [view]);
+  useEffect(() => { if (view !== 'recovery') window.scrollTo?.(0, 0); }, [view]);
   const user = status?.user;
 
   async function addPasskey() {
@@ -237,9 +304,13 @@ export default function SecurityPanel({ onTab, onSignOut, version }) {
       <SecurityPage user={user} mail={status.mail} onTab={onTab}
                     onChangeEmail={() => setView('email')}
                     canPasskey={passkeysSupported()} onPasskey={addPasskey} passkeyBusy={passkeyBusy}
-                    onSignOut={onSignOut}>
+                    onRecovery={() => setView('recovery')} onSignOut={onSignOut}>
         {user?.has_password && <PasswordForm onDone={() => setNote('Password changed.')} />}
       </SecurityPage>
+      {view === 'recovery' && (
+        <RecoveryCodes had={user?.recovery_codes ?? 0} onMade={load}
+                       onClose={() => setView('page')} />
+      )}
       {note && <div className="pk"><Toast onDone={() => setNote(null)}>{note}</Toast></div>}
     </>
   );

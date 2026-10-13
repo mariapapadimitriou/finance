@@ -354,31 +354,23 @@ Codes need email: set `SPENDIE_SMTP_USER` and `SPENDIE_SMTP_PASSWORD` (see
 `finance/mailer.py`). Without them a hosted deployment refuses to send a code
 and says so; locally the code is printed to the terminal instead.
 
+A code (or an old password) proves only the inbox, so signing in that way on a
+browser Pearl hasn't seen, when another of your devices is trusted, waits for
+that device to tap **Approve** — or for a **recovery code**, which you make in
+Profile › Sign-in and security. "This wasn't me" stops it and emails you. A
+passkey proves the device by itself and skips the check. A confirmed browser
+stays trusted for 30 days from when it was last used (`finance/devices.py`).
+
+With the app open and nothing touched for 14 minutes, Pearl asks "Still
+there?", and signs you out at 15; signing back in returns you to the page you
+were on.
+
 After the first sign-in a new account goes through onboarding — where you live
 (Quebec gets a waitlist), how Pearl protects your data, two required and two
 optional consents, then linking a bank through Plaid — before the app opens.
 Accounts that existed before onboarding are treated as already set up. Code in
 `finance/signin_codes.py`, `finance/passkeys.py` and `src/pearl/`; the design
 is the "Pearl Handoff File" in Figma.
-
-### Starting fresh
-
-The **Accounts** tab can empty the ledger: every transaction, and the budgets,
-merchant corrections and dismissed findings worked out from them. Your
-piggy banks survive, since they are decisions about the future rather than a
-record of the past, but whatever was charged to them goes with the
-transactions. Your password and Plaid credentials are untouched, and bank connections
-are kept unless you say otherwise — but their sync cursors are rewound either
-way, since a cursor pointing past an emptied ledger would make the next sync
-report nothing new and leave the cards empty for good.
-
-It asks you to type `erase`, because against a hosted database there is no
-undo.
-
-One subtlety it has to handle: the seeder loads a committed ledger into an
-*empty* database on cold start, and after a reset the database is very much
-empty. So a reset leaves a marker and the seeder respects it; otherwise a
-serverless instance starting cold would quietly put everything back.
 
 ### Only the cards
 
@@ -388,12 +380,11 @@ account records the payment that settles the card and importing both counts
 the same money twice. Set `plaid_cards_only` to `0` to take everything.
 
 The **Accounts** tab lists every account in the ledger with its kind, where it
-came from and what it holds, and removes the ones that shouldn't be there. It
-also reports possible overlap: the same amount within five days under two
-different account ids, which is what a card imported by statement *and* later
-connected through Plaid looks like. The importer never merges across accounts
-— two $12 lunches on two cards are two lunches — so these are reported and you
-decide.
+came from and what it holds, and removes the ones that shouldn't be there. A
+card imported by statement *and* later connected through Plaid shows up as the
+same amounts under two account ids; the importer never merges across accounts
+— two $12 lunches on two cards are two lunches — so Transactions asks about
+each possible duplicate and you decide.
 
 ### Connecting a bank
 

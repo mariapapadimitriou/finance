@@ -111,8 +111,6 @@ h3 { font-size: .98rem; }
 
 a { color: var(--brand); text-underline-offset: 3px; }
 
-.num { font-variant-numeric: tabular-nums; }
-
 /* ── App shell: sidebar + content ────────────────────────────────────────── */
 
 .app {
@@ -419,12 +417,7 @@ input[type="range"]::-webkit-slider-runnable-track {
   border-radius: 3px;
   background: transparent;
 }
-input[type="range"].measure {
-  border-radius: 3px;
-  background-repeat: no-repeat;
-  background-size: 100% 6px;
-  background-position: 0 9px;
-}
+
 input[type="range"]::-moz-range-track {
   height: 6px;
   border-radius: 3px;
@@ -482,9 +475,6 @@ select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-v
 .btn.quiet:hover { background: var(--surface-2); color: var(--ink); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 
-.controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.controls label { color: var(--muted); font-size: .84rem; font-weight: 500; }
-
 /* ── Cards ───────────────────────────────────────────────────────────────── */
 
 .card {
@@ -495,14 +485,6 @@ select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-v
   border: 1px solid var(--border);
 }
 
-.card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 18px;
-}
-
 /* This rule was simply missing, so every three-tile row in the app — the
    piggy bank totals, the projection's basis — stacked one tile per line at
    full width and made those pages several screens longer than they are. */
@@ -511,85 +493,7 @@ select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-v
   .card { padding: 18px; border-radius: var(--r); }
 }
 
-/* ── Stat cards ──────────────────────────────────────────────────────────── */
-
-.tile { padding: 20px 22px; }
-
-.tile .label {
-  color: var(--muted);
-  font-size: .76rem;
-  font-weight: 600;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-.tile .value {
-  font-size: 1.9rem;
-  font-weight: 680;
-  letter-spacing: -0.03em;
-  margin-top: 10px;
-  line-height: 1.1;
-}
-.tile .note { color: var(--ink-2); font-size: .83rem; margin-top: 8px; }
-
-.delta { font-weight: 650; }
-.delta.up { color: var(--critical); }     /* spending more is the bad direction */
-.delta.down { color: var(--good-text); }
-
-/* ── Bar rows ────────────────────────────────────────────────────────────── */
-
-.bars { display: flex; flex-direction: column; gap: 2px; }
-
-.bar-row {
-  display: grid;
-  grid-template-columns: minmax(100px, 170px) 1fr auto;
-  align-items: center;
-  gap: 14px;
-  padding: 8px 10px;
-  margin: 0 -10px;
-  border-radius: var(--r-sm);
-  transition: background .15s ease;
-}
-.bar-row:hover { background: var(--surface-2); }
-
-.bar-row .name {
-  color: var(--ink);
-  font-size: .9rem;
-  font-weight: 550;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.bar-row .track {
-  background: var(--surface-2);
-  border-radius: 4px;
-  height: 8px;
-  overflow: hidden;
-}
-.bar-row:hover .track { background: var(--surface-3); }
-.bar-row .fill {
-  height: 100%;
-  background: var(--series-1);
-  border-radius: 4px;
-  min-width: 3px;
-  transition: width .5s cubic-bezier(.22, 1, .36, 1);
-}
-.bar-row .fill.alt { background: var(--series-2); }
-.bar-row .val {
-  font-variant-numeric: tabular-nums;
-  font-size: .92rem;
-  font-weight: 650;
-  min-width: 80px;
-  text-align: right;
-}
-.bar-row .sub { color: var(--muted); font-size: .77rem; font-weight: 450; }
-
-/* Two-segment split: a small gap separates the fills instead of a border. */
-
-.legend { display: flex; gap: 20px; flex-wrap: wrap; font-size: .86rem; color: var(--ink-2); }
-.legend .item { display: flex; align-items: center; gap: 8px; font-weight: 500; }
-.legend .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
-
 /* ── Tables ──────────────────────────────────────────────────────────────── */
-
-.table-wrap { overflow-x: auto; margin: 0 -8px; }
 
 table { width: 100%; border-collapse: collapse; font-size: .88rem; }
 th {
@@ -608,36 +512,8 @@ tbody tr:first-child td { border-top: none; }
 tbody tr { transition: background .12s ease; }
 tbody tr:hover { background: var(--surface-2); }
 td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
-td.merchant { font-weight: 550; }
-td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top: 2px; }
 
 /* ── Tags & status ───────────────────────────────────────────────────────── */
-
-.pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 2px 8px;
-  font-size: .76rem;
-  font-weight: 550;
-  color: var(--ink-2);
-  white-space: nowrap;
-}
-.pill.good     { background: color-mix(in srgb, var(--good) 12%, transparent); color: var(--good-text); border-color: transparent; }
-.pill.warning  { background: color-mix(in srgb, var(--warning) 20%, transparent); color: var(--ink); border-color: transparent; }
-.pill.critical { background: color-mix(in srgb, var(--critical) 12%, transparent); color: var(--critical); border-color: transparent; }
-
-/* The hero keeps the green edge; a month running behind switches it to the
- * critical colour, and the pill beside the number says "over by" in words so
- * the edge is reinforcement rather than the only signal. */
-
-.tile-label {
-  color: var(--muted); font-size: .74rem; font-weight: 600;
-  letter-spacing: .04em; text-transform: uppercase;
-}
-
-.num.good, .value.good{ color: var(--good-text); }
 
 /* Each state carries a second cue besides hue — solid, striped, dashed outline,
  * or a faint dot — so the grid survives any colour vision deficiency, and every
@@ -671,16 +547,13 @@ td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top:
     min-height: 44px;
     width: 100%;
   }
-  .controls { gap: 8px; }
+
   /* Controls stack rather than wrapping into orphaned half-rows. */
-  .controls > input, .controls > select, .controls > .btn { flex: 1 1 100%; }
-  .controls label { flex: 1 1 100%; margin-bottom: -2px; }
 
   .btn { min-height: 44px; padding: 10px 16px; }
   .btn.quiet { min-height: 40px; }
 
   .card { padding: 16px; border-radius: var(--r); }
-  .card-head { flex-direction: column; align-items: flex-start; gap: 10px; }
 
   h1 { font-size: 1.28rem; }
   
@@ -698,10 +571,9 @@ td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top:
   /* Tables scroll inside their card instead of widening the page. The
      negative margin lets a row reach the card edge so the scroll feels like
      the table rather than a box inside it. */
-  .table-wrap { margin: 0 -16px; padding: 0 16px; }
+
   table { font-size: .84rem; }
   th, td { white-space: nowrap; }
-  td.merchant { white-space: normal; min-width: 150px; }
 
   /* The ledger, on a phone.
    *
@@ -712,50 +584,18 @@ td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top:
    * changes. Order is set explicitly because the visual order stops
    * matching the column order.
    */
-  table.stacked thead { display: none; }
-  table.stacked tr {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 3px 10px;
-    padding: 12px 2px;
-    border-top: 1px solid var(--border);
-  }
-  table.stacked tbody tr:first-child { border-top: none; }
-  table.stacked td { border: none; padding: 0; white-space: normal; }
 
   /* Merchant and amount are sized to fill the first line between them, which
      is what pushes the date, category and card onto the second. Letting them
      merely wrap put the date beside the amount whenever it happened to fit —
      two numbers competing for the same corner. */
-  table.stacked td:nth-child(2) { order: 1; flex: 1 1 55%; min-width: 0; }
-  table.stacked td:nth-child(5) {
-    order: 2; flex: 1 1 0; text-align: right;
-    font-weight: 680; font-size: .96rem;
-  }
-  table.stacked td:nth-child(1) { order: 3; font-size: .8rem; }
-  table.stacked td:nth-child(3) { order: 4; }
-  table.stacked td:nth-child(4) { order: 5; font-size: .78rem; }
-  table.stacked td:nth-child(6) { order: 6; margin-left: auto; }
 
   /* One line of raw descriptor, not three. The merchant name above it is the
      part you read; this is here to disambiguate, and it can be tapped open on
      a wider screen if it matters. */
-  table.stacked td .desc {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 
   /* The category is a button; it needs to read as one at a glance here,
      where there is no column header explaining the row. */
-  table.stacked td:nth-child(3) .btn.quiet {
-    min-height: 0;
-    padding: 2px 8px;
-    font-size: .76rem;
-    background: var(--surface-2);
-    border-radius: 999px;
-  }
 
     
   
@@ -773,7 +613,6 @@ td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top:
   
   .day { width: 13px; height: 13px; }
 
-  .legend { gap: 12px; font-size: .8rem; }
 }
 
 /* ── Misc ────────────────────────────────────────────────────────────────── */
@@ -798,33 +637,9 @@ td .desc { color: var(--muted); font-size: .77rem; font-weight: 400; margin-top:
   background: var(--warning);
 }
 .notice.error::before { background: var(--critical); }
-.notice.good::before  { background: var(--good); }
-
-/* ── A strip of notices: the first open, the rest one line each ───────── */
-.notice-stack { display: flex; flex-direction: column; gap: 6px; }
-details.notice.folded { padding-top: 10px; padding-bottom: 10px; }
-details.notice.folded > summary {
-  cursor: pointer;
-  list-style: none;
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-details.notice.folded > summary::-webkit-details-marker { display: none; }
-details.notice.folded > summary::after {
-  content: "Show";
-  margin-left: auto;
-  flex: none;
-  color: var(--brand);
-  font-size: .8rem;
-  font-weight: 500;
-}
-details.notice.folded[open] > summary::after { content: "Hide"; }
-details.notice.folded .folded-body { margin-top: 8px; }
 
 /* ── Setup checklist on Today ─────────────────────────────────────────── */
 
-.stack { display: flex; flex-direction: column; gap: 16px; }
 .row { display: flex; gap: 11px; align-items: center; flex-wrap: wrap; }
 
 .muted { color: var(--muted); }
@@ -855,8 +670,6 @@ details.notice.folded .folded-body { margin-top: 8px; }
   border-radius: 2px;
 }
 
-/* Mortgage: interest against principal, as one bar split in two. The 2px
-   surface gap between the segments is the same spacer the charts use. */
 tr.current td { background: var(--surface-2); }
 
 /* ── Quiet surfaces, big numbers ─────────────────────────────────────────
@@ -876,14 +689,6 @@ h3 { font-size: 1.02rem; font-weight: 680; }
 
 .card { border: none; padding: 24px; }
 @media (max-width: 920px) { .card { padding: 20px; border-radius: var(--r-lg); } }
-.card-head { margin-bottom: 16px; }
-
-.tile .label {
-  text-transform: none; letter-spacing: -0.005em;
-  font-size: .9rem; font-weight: 550; color: var(--muted);
-}
-.tile .value { font-size: 2.1rem; font-weight: 780; letter-spacing: -0.04em; margin-top: 6px; }
-.tile .note { color: var(--muted); }
 
 /* Section tabs: one rounded track, the chosen one a raised pill. */
 .sections-wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px 16px; }
@@ -929,11 +734,9 @@ select:focus-visible, input:focus-visible { outline: none; border-color: var(--i
 .btn.primary { background: var(--ink); color: var(--surface); }
 .btn.primary:hover { background: var(--ink); opacity: .88; }
 .btn.quiet { background: transparent; }
-.controls label { color: var(--muted); font-size: .88rem; }
 
 .notice { border: 0; border-radius: var(--r); background: var(--surface);
           box-shadow: var(--shadow); color: var(--ink-2); }
-.pill { border-radius: 999px; border: 0; padding: 3px 10px; font-weight: 600; }
 
 th { text-transform: none; letter-spacing: 0; font-size: .82rem; font-weight: 560; }
 td { border-top-color: var(--border); }
@@ -948,19 +751,8 @@ td { border-top-color: var(--border); }
 
 /* ── This month ──────────────────────────────────────────────────────── */
 
-.pace { position: relative; height: 340px; margin: 4px -4px 0; }
-@media (max-width: 860px) { .pace { height: 300px; } }
-
 @media (max-width: 860px) {
   .topbar-inner { align-items: center; row-gap: 10px; }
-}
-
-/* Big figures everywhere read the same way: no accent bars, labels in
-   sentence case, the number itself the loudest thing in the card. */
-
-.tile-label {
-  text-transform: none; letter-spacing: -0.005em;
-  font-size: .92rem; font-weight: 560; color: var(--muted);
 }
 
 @media (max-width: 860px) {
@@ -972,8 +764,4 @@ td { border-top-color: var(--border); }
   .sections { gap: 0; padding: 4px; }
   .sections button { padding: 8px 6px; font-size: .84rem; flex: 1 1 auto; }
 }
-
-.merchant-mark { display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; border-radius: 6px; margin-right: 8px; vertical-align: middle;
-  background: var(--surface-2); color: var(--muted); font-size: .72rem; font-weight: 700; }
 

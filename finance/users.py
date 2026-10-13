@@ -73,6 +73,26 @@ CREATE TABLE IF NOT EXISTS app_deleted_accounts (
     created_at  TEXT,
     deleted_at  REAL NOT NULL
 );
+-- Browsers she has confirmed (A-07), by the hash of their cookie token, and
+-- the approvals a new one asks her other devices for (A-08). See devices.py.
+CREATE TABLE IF NOT EXISTS app_devices (
+    id             TEXT PRIMARY KEY,
+    user_id        INTEGER NOT NULL,
+    label          TEXT,
+    trusted_until  REAL NOT NULL,
+    created_at     REAL NOT NULL,
+    last_used_at   REAL
+);
+CREATE TABLE IF NOT EXISTS app_device_approvals (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL,
+    secret_hash  TEXT NOT NULL,
+    label        TEXT,
+    near         TEXT,
+    state        TEXT NOT NULL,
+    created_at   REAL NOT NULL,
+    expires_at   REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS app_codes (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER NOT NULL,
@@ -638,7 +658,7 @@ def ledger_location(base_path: str, user: User) -> tuple[str, str]:
 
 def forget(base, user: User) -> None:
     """Remove an account's sign-in and everything kept about it here — its
-    passkeys, codes, consent history and the row itself — keeping only that it
+    passkeys, codes, devices, consent history and the row itself — keeping only that it
     existed and when it was deleted (THL-116 D-03). Its ledger is the caller's
     to remove (see `finance/account_deletion.py`)."""
     with base.conn() as c:
@@ -647,6 +667,8 @@ def forget(base, user: User) -> None:
         if user.email:
             c.execute("DELETE FROM app_codes WHERE email = ?", (normalise(user.email),))
         c.execute("DELETE FROM app_consent_log WHERE user_id = ?", (int(user.id),))
+        c.execute("DELETE FROM app_devices WHERE user_id = ?", (int(user.id),))
+        c.execute("DELETE FROM app_device_approvals WHERE user_id = ?", (int(user.id),))
         c.execute("DELETE FROM app_users WHERE id = ?", (int(user.id),))
         c.execute("INSERT INTO app_deleted_accounts (user_id, created_at, deleted_at) "
                   "VALUES (?, ?, ?)", (int(user.id), user.created_at, now()))

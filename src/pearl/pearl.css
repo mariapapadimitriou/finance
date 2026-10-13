@@ -70,12 +70,6 @@
 .p-scrim *, .p-scrim *::before, .p-scrim *::after { box-sizing: border-box; }
 .pearl :focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 
-.p-display {
-  font-family: var(--display);
-  font-weight: 600;
-  font-variation-settings: "SOFT" 0, "WONK" 1;
-}
-
 /* ── The nacre panel ─────────────────────────────────────────────────────── */
 .p-panel {
   flex: 0 0 560px;
@@ -362,34 +356,6 @@
 .p-checks li.active svg { animation: p-spin 1.2s linear infinite; }
 @keyframes p-spin { to { transform: rotate(360deg); } }
 
-/* ── The path (O-12) ─────────────────────────────────────────────────────── */
-.p-path { flex: 1 1 auto; display: flex; flex-direction: column; padding: 40px 72px; gap: var(--space-6); max-width: 1000px; }
-.p-path .p-lockup { margin-bottom: 16px; }
-.p-phases { display: flex; gap: var(--space-4); flex-wrap: wrap; }
-.p-phase {
-  width: 200px; padding: 24px 16px 20px; border: 1.5px solid var(--border); border-radius: var(--radius-md);
-  background: var(--surface-card); display: flex; flex-direction: column; align-items: center;
-  gap: var(--space-1); text-align: center;
-}
-.p-phase img { width: 84px; height: 70px; margin-bottom: 4px; }
-.p-phase.upcoming img { opacity: .55; }
-.p-phase.current { border: 2px solid var(--action); }
-.p-phase small { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
-.p-phase .p-eyebrow { margin-top: 4px; }
-.p-next { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-card); overflow: hidden; max-width: 720px; }
-.p-next button {
-  width: 100%; display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-5);
-  background: none; border: 0; border-top: 1px solid var(--border); font: inherit; color: var(--ink);
-  cursor: pointer; text-align: left;
-}
-.p-next button:first-child { border-top: 0; }
-.p-next button:hover { background: #fdf6f8; }
-.p-next .p-bubble { width: 40px; height: 40px; }
-.p-next .p-bubble svg { width: 20px; height: 20px; }
-.p-next small { display: block; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
-.p-next .grow { flex: 1 1 auto; min-width: 0; }
-.p-path .p-btn { max-width: 720px; }
-
 /* ── Detail sheet (T-02, T-03, Privacy, Terms, Help) ─────────────────────── */
 .p-scrim {
   position: fixed; inset: 0; background: var(--surface-scrim); z-index: 50;
@@ -497,10 +463,5 @@
     background: var(--surface-page);
   }
   .p-footer { flex-direction: column-reverse; align-items: flex-start; gap: 8px; }
-  .p-path { padding: 20px 16px 32px; }
-  .p-phase { width: calc(50% - 8px); }
   .p-sheet { padding: 20px 16px; }
-}
-@media (max-width: 380px) {
-  .p-phase { width: 100%; }
 }

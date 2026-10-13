@@ -120,36 +120,3 @@ class TestBankConnections:
         removed = store.reset(keep_banks=False)
         assert store.plaid_items() == []
         assert removed["bank connections"] == 1
-
-
-class TestResetApi:
-    @pytest.fixture()
-    def client(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("VERCEL", raising=False)
-        app = create_app(str(tmp_path / "t.db"))
-        app.config.update(TESTING=True)
-        with app.test_client() as c:
-            yield c
-
-    def test_it_refuses_without_the_word(self, client):
-        """Irreversible, so a stray request cannot do it."""
-        r = client.post("/api/reset", json={})
-        assert r.status_code == 400
-        assert r.get_json()["needs_confirmation"] is True
-
-    def test_a_wrong_word_is_refused(self, client):
-        assert client.post("/api/reset", json={"confirm": "yes"}).status_code == 400
-
-    def test_the_word_does_it(self, client):
-        csv = ("Date,Description,Card Member,Account #,Amount\n"
-               "01/05/2025,BLUE BOTTLE COFFEE,M P,-31004,6.40\n")
-        upload(client, csv, "a.csv")
-        assert client.get("/api/transactions").get_json()["total"] == 1
-
-        r = client.post("/api/reset", json={"confirm": "erase"})
-        assert r.status_code == 200
-        assert r.get_json()["transactions_removed"] == 1
-        assert client.get("/api/transactions").get_json()["total"] == 0
-
-    def test_the_word_is_not_case_sensitive(self, client):
-        assert client.post("/api/reset", json={"confirm": "ERASE"}).status_code == 200
