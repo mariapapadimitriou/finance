@@ -133,6 +133,26 @@ export const passkeyRegister = (credential) =>
 export const getOnboarding  = () => req('/api/onboarding');
 export const saveOnboarding = (fields) => json('POST', '/api/onboarding', fields);
 
+// ── Profile › Privacy (THL-115, THL-116, THL-117, THL-139) ──────────────────
+// Consents with their dates, the change log, who to write to and the linked
+// banks (T-04, CN-04).
+export const getPrivacy = () => req('/api/privacy');
+// Only the optional ones: ai_sort, tips, analytics (CN-04, CN-05).
+export const setConsent = (key, value) => json('PUT', '/api/privacy/consents', { key, value });
+export const getNotifications = () => req('/api/notifications');
+export const saveNotifications = (changes) => json('PUT', '/api/notifications', changes);
+// N-01: `answer` is 'on' or 'not_now'.
+export const answerNotifyPrompt = (answer, milestone) =>
+  json('POST', '/api/notifications/prompt', { answer, milestone });
+// D-01 / D-02: what the .zip holds, and where to download it.
+export const getExportSummary = () => req('/api/data/export');
+export const exportUrl = () => `${API}/api/data/export.zip`;
+// D-04: how she can confirm it's her, then the deletion itself.
+export const getDeleteOptions = () => req('/api/account/delete');
+export const deletePasskeyOptions = () => json('POST', '/api/account/delete/passkey-options', {});
+export const sendDeleteCode = () => authPost('/api/account/delete/code', {});
+export const deleteAccountNow = (proof) => authPost('/api/account/delete', proof);
+
 
 // ── Plaid ────────────────────────────────────────────────────────────────────
 export const getPlaidItems   = () => req('/api/plaid/items');

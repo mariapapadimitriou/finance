@@ -271,6 +271,10 @@
 }
 .p-choice.on .p-box { background: var(--action); border-color: var(--action); }
 .p-choice .p-box svg { width: 20px; height: 20px; }
+/* A radio is round, and chosen is a ring, not a tick (CN-02). */
+.p-choice.radio .p-box { border-radius: 999px; }
+.p-choice.radio.on .p-box { background: var(--surface-card); border: 6px solid var(--action); }
+.p-choice.radio .p-box svg { display: none; }
 .p-choice input:focus-visible + .p-box { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 .p-choice-text { display: flex; flex-direction: column; gap: var(--space-1); }
 .p-choice-text small { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
@@ -411,6 +415,19 @@
 .p-fact .p-eyebrow { color: var(--ink-muted); }
 .p-fact .tag { font-size: 13px; line-height: 18px; color: var(--ink-muted); flex: none; }
 .p-fact .tag.needed { color: var(--positive); }
+/* A card of rows, each a title and a line under it (CN-01, CN-05, D-03,
+ * N-01). Unscoped and token-only, so the Profile pages draw it too. */
+.p-rows {
+  list-style: none; margin: 0; padding: 0; width: 100%; background: var(--surface-card);
+  border: 1px solid var(--border); border-radius: var(--radius-md, 16px); overflow: hidden;
+}
+.p-rows li { display: flex; flex-direction: column; gap: 2px; padding: 14px 20px; text-align: left; }
+.p-rows li + li { border-top: 1px solid var(--border); }
+.p-rows-title { font-size: 15px; line-height: 22px; color: var(--ink); font-weight: 500; }
+.p-rows-sub { font-size: 13px; line-height: 18px; color: var(--ink-muted); font-weight: 400; }
+.p-uses { display: flex; flex-direction: column; gap: var(--space-2); text-align: left; }
+.p-uses p { margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.p-small { margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: left; }
 .p-sheet .p-prose { display: flex; flex-direction: column; gap: 12px; color: var(--ink); }
 .p-sheet .p-prose p { margin: 0; }
 .p-sheet .p-prose h4 { margin: 8px 0 0; font-size: 15px; }

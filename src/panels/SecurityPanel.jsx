@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
 import {
-  changePassword, getAuthStatus, passkeyRegister, passkeyRegisterOptions, saveOnboarding,
+  changePassword, getAuthStatus, passkeyRegister, passkeyRegisterOptions,
   startEmailChange, verifyEmailChange,
 } from '../api.js';
-import { Alert, Choice, PButton, Toast } from '../pearl/kit.jsx';
+import { Alert, PButton, Toast } from '../pearl/kit.jsx';
 import { CodeInput } from '../pearl/ui.jsx';
 import { createPasskey, passkeysSupported } from '../pearl/webauthn.js';
 import { Field } from './GoalsParts.jsx';
@@ -17,18 +17,19 @@ import './profile.css';
  * Change your sign-in email.
  *
  * What she signs in with: her email (with Change, S-02), passkeys, a
- * password if her account has one, the two optional choices from setup, and
- * signing out. Changing the email sends a 6-digit code to the new address —
- * the same code rules as signing in (ten minutes, five tries, a pause after
- * too many) — and lets the old address know once it's done.
+ * password if her account has one, and signing out. The choices from setup
+ * moved to Privacy and consent (THL-117 CN-04, ConsentPanel.jsx).
+ *
+ * Changing the email sends a 6-digit code to the new address — the same code
+ * rules as signing in (ten minutes, five tries, a pause after too many) — and
+ * lets the old address know once it's done.
  */
 
 const TRAIL = [{ label: 'Profile', to: 'profile' }, { label: 'Sign-in and security' }];
 
 export function SecurityPage({ user, mail, onTab, onChangeEmail, onPasskey, passkeyBusy = false,
-                               canPasskey = false, onSignOut, onChoice, children = null }) {
+                               canPasskey = false, onSignOut, children = null }) {
   const n = user?.passkeys ?? 0;
-  const consents = user?.onboarding?.consents ?? {};
   return (
     <div className="pk hm-page pf-page">
       <PageHead trail={TRAIL} title="Sign-in and security" onTab={onTab} />
@@ -50,19 +51,6 @@ export function SecurityPage({ user, mail, onTab, onChangeEmail, onPasskey, pass
         )}
       </section>
       {children}
-      {consents.terms && (
-        <section className="pf-section" aria-labelledby="sc-choices">
-          <h2 className="pk-h3" id="sc-choices">Your choices</h2>
-          <div className="pk-choices">
-            <Choice type="checkbox" checked={!!consents.improve?.value}
-                    onChange={(on) => onChoice('improve', on)}
-                    label="Use my categorized transactions to improve suggestions" />
-            <Choice type="checkbox" checked={!!consents.tips?.value}
-                    onChange={(on) => onChoice('tips', on)}
-                    label="Send me tips and product news by email" />
-          </div>
-        </section>
-      )}
       <div className="pf-stack">
         <PButton variant="secondary" onClick={onSignOut}>Sign out</PButton>
       </div>
@@ -234,20 +222,6 @@ export default function SecurityPanel({ onTab, onSignOut, version }) {
     }
   }
 
-  async function choose(key, value) {
-    const c = user.onboarding.consents;
-    try {
-      await saveOnboarding({ consents: {
-        terms: true, read_data: true,
-        improve: key === 'improve' ? value : !!c.improve?.value,
-        tips: key === 'tips' ? value : !!c.tips?.value,
-      } });
-      await load();
-    } catch (e) {
-      setError(e);
-    }
-  }
-
   if (!status && error) return <div className="pk hm-page pf-page"><ErrorNote error={error} onRetry={load} /></div>;
   if (!status) return <div className="pk hm-page pf-page"><p className="pk-muted" role="status">Loading…</p></div>;
 
@@ -263,7 +237,7 @@ export default function SecurityPanel({ onTab, onSignOut, version }) {
       <SecurityPage user={user} mail={status.mail} onTab={onTab}
                     onChangeEmail={() => setView('email')}
                     canPasskey={passkeysSupported()} onPasskey={addPasskey} passkeyBusy={passkeyBusy}
-                    onSignOut={onSignOut} onChoice={choose}>
+                    onSignOut={onSignOut}>
         {user?.has_password && <PasswordForm onDone={() => setNote('Password changed.')} />}
       </SecurityPage>
       {note && <div className="pk"><Toast onDone={() => setNote(null)}>{note}</Toast></div>}

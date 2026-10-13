@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
 import { getAuthStatus, getProfileSummary, undoInvesting } from '../api.js';
+import { DocSheet } from '../pearl/docs.jsx';
 import { StatusPill } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import './home.css';
@@ -12,10 +13,14 @@ import './profile.css';
  * with a breadcrumb back here; the Profile group has no sub-tab strip.
  *
  * Accounts (AM-01, AccountsPanel.jsx), Categories and rules (S-03,
- * RulesPanel.jsx) and Sign-in and security (SecurityPanel.jsx, with S-02)
- * are built, and Income and bills (THL-45, THL-127, IncomeBillsPanel.jsx)
- * under Money. The rest are drawn but marked "Coming soon" until their pages
- * exist; each names its panel key in `SOON` so a later PR only wires it.
+ * RulesPanel.jsx) and Income and bills (THL-45, THL-127,
+ * IncomeBillsPanel.jsx) under Money; Sign-in and security
+ * (SecurityPanel.jsx, with S-02) and Notifications (THL-139 N-02,
+ * NotificationsPanel.jsx) under You; Privacy and consent (THL-117 CN-04,
+ * ConsentPanel.jsx), Your data (THL-116 D-01 to D-04, DataPanel.jsx) and How
+ * we protect you (THL-115 T-04, ProtectPanel.jsx) under Privacy. Help has no
+ * pages of its own in the design: its two rows open the existing drafts
+ * (pearl/docs.jsx) as a sheet.
  */
 
 /** The breadcrumb over every Profile page: "Profile › Accounts › TD Visa". */
@@ -93,22 +98,24 @@ export function hubRows(summary, user) {
         sub: [user?.email, passkeys > 0 ? plural(passkeys, 'passkey') : 'email codes']
           .filter(Boolean).join(' · ') },
       { key: 'notifications', name: 'Notifications',
-        sub: 'Payday, weekly check-in, progress, milestones', soon: true },
+        sub: 'Payday, weekly check-in, progress, milestones' },
     ] },
     { title: 'Privacy', rows: [
       { key: 'consent', name: 'Privacy and consent',
-        sub: 'What you’ve agreed to, and how to change it', soon: true },
-      { key: 'data', name: 'Your data', sub: 'Download a copy or delete your account', soon: true },
-      { key: 'protect', name: 'How we protect you', sub: 'What Pearl can and can’t do', soon: true },
+        sub: 'What you’ve agreed to, and how to change it' },
+      { key: 'data', name: 'Your data', sub: 'Download a copy or delete your account' },
+      { key: 'protect', name: 'How we protect you', sub: 'What Pearl can and can’t do' },
     ] },
+    // No pages of their own: the drafts the sign-in screens already show.
     { title: 'Help', rows: [
-      { key: 'help', name: 'Help and support', soon: true },
-      { key: 'legal', name: 'Privacy policy and terms', soon: true },
+      { key: 'help', name: 'Help and support', doc: 'help', sub: 'Signing in, and new devices' },
+      { key: 'legal', name: 'Privacy policy and terms', doc: 'legal',
+        sub: 'Plain-language drafts' },
     ] },
   ];
 }
 
-export function ProfileHub({ summary, user, onTab, onUndoInvesting }) {
+export function ProfileHub({ summary, user, onTab, onUndoInvesting, onDoc }) {
   const who = [user?.first_name || user?.username, user?.email].filter(Boolean).join(' · ');
   return (
     <div className="pk hm-page pf-page">
@@ -123,7 +130,7 @@ export function ProfileHub({ summary, user, onTab, onUndoInvesting }) {
           <ul className="pf-list">
             {group.rows.map((r) => (
               <ListRow key={r.key} name={r.name} sub={r.sub} soon={r.soon}
-                       onOpen={r.undo ? null : () => onTab?.(r.key)}
+                       onOpen={r.undo ? null : r.doc ? () => onDoc?.(r.doc) : () => onTab?.(r.key)}
                        end={r.undo ? (
                          <button type="button" className="gl-more" onClick={onUndoInvesting}>Undo</button>
                        ) : r.needs > 0 && (
@@ -143,6 +150,7 @@ export default function ProfilePanel({ onTab, version }) {
   const [summary, setSummary] = useState(null);
   const [user, setUser] = useState(null);
   const [error, setError] = useState(null);
+  const [doc, setDoc] = useState(null);
   const load = useCallback(() => {
     setError(null);
     return Promise.all([getProfileSummary(), getAuthStatus()])
@@ -152,7 +160,10 @@ export default function ProfilePanel({ onTab, version }) {
   useEffect(() => { load(); }, [load, version]);
   if (error) return <div className="pk hm-page pf-page"><ErrorNote error={error} onRetry={load} /></div>;
   return (
-    <ProfileHub summary={summary} user={user} onTab={onTab}
-                onUndoInvesting={() => undoInvesting().then(load).catch(setError)} />
+    <>
+      <ProfileHub summary={summary} user={user} onTab={onTab} onDoc={setDoc}
+                  onUndoInvesting={() => undoInvesting().then(load).catch(setError)} />
+      {doc && <DocSheet name={doc} onClose={() => setDoc(null)} />}
+    </>
   );
 }

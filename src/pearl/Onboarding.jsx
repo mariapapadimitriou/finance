@@ -7,8 +7,9 @@ import { loadPlaidScript } from '../plaid.js';
 import { DocSheet } from './docs.jsx';
 import IncomeBillsFlow from './IncomeBills.jsx';
 import PIcon from './icons.jsx';
+import { LINKING, ProtectPoints, Rows, TIPS, USES } from './privacy.jsx';
 import {
-  AuthLayout, Banner, Callout, Choice, Field, Heading, Initials, Lockup, MARKS, TrustPoint,
+  AuthLayout, Banner, Callout, Choice, Field, Heading, Initials, Lockup, MARKS,
 } from './ui.jsx';
 import { createPasskey, passkeysSupported } from './webauthn.js';
 
@@ -31,7 +32,11 @@ const PANEL = {
   protect: { step: 4, headline: 'Your money stays yours.',
              body: 'Pearl can look, but it can never touch.' },
   consents: { step: 5, headline: 'You’re in control.',
-              body: 'You can change the optional ones later in Settings.' },
+              body: 'Change your mind any time in Profile › Privacy and consent.' },
+  uses: { headline: 'Your numbers, your call.', body: 'Pearl only uses your transactions for you.',
+          footnote: false },
+  email: { headline: 'You’re in control.',
+           body: 'Change this any time in Profile › Privacy and consent.', footnote: false },
   bank: { step: 6, headline: 'Start with the account your pay goes into.',
           body: 'You can add more banks later.' },
   syncing: { step: 6, headline: 'Almost there.', body: 'We’re bringing in your accounts.' },
@@ -46,27 +51,31 @@ function screenFor(user, startAt) {
   if (startAt === 'passkey' && passkeysSupported() && !(user?.passkeys > 0)) return 'passkey';
   if (ob.province === 'QC') return 'quebec';
   return { protect: 'protect', consents: 'consents', bank: 'bank', linked: 'linked',
-           income: 'income', path: 'path' }[ob.step] ?? 'province';
+           uses: 'uses', income: 'income', email: 'email', path: 'path' }[ob.step] ?? 'province';
 }
 
 /**
  * Setting up a new account once it exists: a passkey (O-04), where you live
- * (O-05, with Quebec's waitlist O-05b), how Pearl protects you (O-06), your
- * choices (O-07), linking a bank through Plaid (O-08 to O-11), confirming
- * income and regular bills (THL-127 I-01 to I-06, IncomeBills.jsx), and a
- * first look at your path (O-12). Each step is saved, so leaving and coming
- * back resumes where you were.
+ * (O-05, with Quebec's waitlist O-05b), how Pearl protects you (O-06, THL-115
+ * T-01), linking your bank (THL-117 CN-01, which replaced O-07's checkboxes),
+ * linking through Plaid (O-08 to O-11), how Pearl uses your transactions
+ * (CN-02), confirming income and regular bills (THL-127 I-01 to I-06,
+ * IncomeBills.jsx), one last thing (CN-03, tips by email) and a first look at
+ * your path (O-12). Each step is saved, so leaving and coming back resumes
+ * where you were. The consent moments share their words with Profile ›
+ * Privacy and consent (privacy.jsx).
  */
 export default function Onboarding({ user: initialUser, startAt, onDone, onSignOut }) {
   const [user, setUser] = useState(initialUser);
   const [screen, setScreen] = useState(() => screenFor(initialUser, startAt));
   const [provinces, setProvinces] = useState(null);
   const [province, setProvince] = useState(initialUser?.onboarding?.province || '');
-  const [consents, setConsents] = useState(() => {
-    const c = initialUser?.onboarding?.consents ?? {};
-    return { terms: !!c.terms?.value, read_data: !!c.read_data?.value,
-             improve: !!c.improve?.value, tips: !!c.tips?.value };
+  // CN-02's AI choice starts unchosen; CN-03's box starts unticked.
+  const [ai, setAi] = useState(() => {
+    const c = initialUser?.onboarding?.consents?.ai_sort;
+    return c ? (c.value ? 'yes' : 'no') : null;
   });
+  const [tips, setTips] = useState(!!initialUser?.onboarding?.consents?.tips?.value);
   const [doc, setDoc] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -270,26 +279,7 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
       <>
         <Heading eyebrow="Before you link" title="How we protect you"
                  sub="Here’s exactly what Pearl can and can’t do with your bank." />
-        <div className="p-points">
-          <TrustPoint icon="eye" title="Read-only access">
-            Pearl can see your balances and transactions. That’s all.
-          </TrustPoint>
-          <TrustPoint icon="ban" title="Pearl can’t move money">
-            No payments, transfers or withdrawals, ever.
-          </TrustPoint>
-          <TrustPoint icon="key" title="We never see your bank password"
-                      link="How signing in through Plaid works" onLink={() => setDoc('plaid')}>
-            You sign in to your bank through Plaid. Your login goes to your bank, not to us.
-          </TrustPoint>
-          <TrustPoint icon="database" title="What we store"
-                      link="See everything we store" onLink={() => setDoc('store')}>
-            Account names, balances and transactions, encrypted.
-          </TrustPoint>
-          <TrustPoint icon="users" title="Who we share with"
-                      link="See who we share with" onLink={() => setDoc('share')}>
-            We don’t sell your data. We share only what’s needed to run Pearl.
-          </TrustPoint>
-        </div>
+        <ProtectPoints onDoc={setDoc} />
         {error && <Banner tone="caution">{error}</Banner>}
         <div className="p-actions">
           <button type="button" className="p-btn primary" disabled={busy}
@@ -301,40 +291,25 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
     ));
   }
 
-  // ── O-07 Consents ─────────────────────────────────────────────────────────
+  // ── CN-01 Linking your bank (replaces O-07) ───────────────────────────────
   if (screen === 'consents') {
-    const set = (k) => (v) => { setConsents((c) => ({ ...c, [k]: v })); setError(null); };
+    const openDoc = (name) => (e) => { e.preventDefault(); setDoc(name); };
     return layout('consents', { onBack: () => setScreen('protect') }, (
       <>
-        <Heading eyebrow="Before you link" title="Your choices"
-                 sub="Two agreements are needed to link a bank. The rest is up to you." />
-        <div className="p-choices">
-          <Choice checked={consents.terms} onChange={set('terms')} description="Required"
-                  label={<>I agree to the{' '}
-                    <button type="button" className="p-link"
-                            onClick={(e) => { e.preventDefault(); setDoc('terms'); }}>Terms</button>
-                    {' '}and the{' '}
-                    <button type="button" className="p-link"
-                            onClick={(e) => { e.preventDefault(); setDoc('privacy'); }}>Privacy policy</button>
-                  </>} />
-          <Choice checked={consents.read_data} onChange={set('read_data')} description="Required"
-                  label="Pearl can read my balances and transactions to build my budget" />
-          <Choice checked={consents.improve} onChange={set('improve')} description="Optional"
-                  label="Use my categorized transactions to improve suggestions" />
-          <Choice checked={consents.tips} onChange={set('tips')} description="Optional"
-                  label="Send me tips and product news by email" />
-        </div>
+        <Heading eyebrow={LINKING.eyebrow} title={LINKING.title} sub={LINKING.sub} />
+        <Rows rows={LINKING.rows} label="What linking means" />
+        <p className="p-small">
+          By continuing, you agree to the{' '}
+          <button type="button" className="p-link small" onClick={openDoc('terms')}>Terms</button>
+          {' '}and{' '}
+          <button type="button" className="p-link small" onClick={openDoc('privacy')}>Privacy policy</button>
+          , and that Pearl can read the accounts you link.
+        </p>
         {error && <Banner tone="caution">{error}</Banner>}
         <div className="p-actions">
           <button type="button" className="p-btn primary" disabled={busy}
-                  onClick={() => {
-                    if (!consents.terms || !consents.read_data) {
-                      setError('Both required agreements are needed to link a bank.');
-                      return;
-                    }
-                    save({ consents }, 'bank');
-                  }}>
-            Agree and continue
+                  onClick={() => save({ consents: { terms: true, read_data: true } }, 'bank')}>
+            {LINKING.agree}
           </button>
         </div>
       </>
@@ -452,7 +427,7 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
         {error && <Banner tone="caution">{error}</Banner>}
         <div className="p-actions">
           <button type="button" className="p-btn primary" disabled={busy}
-                  onClick={() => save({ step: 'income' }, 'income')}>
+                  onClick={() => save({ step: 'uses' }, 'uses')}>
             See your path
           </button>
           <button type="button" className="p-btn secondary"
@@ -464,11 +439,67 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
     ));
   }
 
+  // ── CN-02 How Pearl uses your transactions (after linking) ────────────────
+  if (screen === 'uses') {
+    const choose = (v) => () => { setAi(v); setError(null); };
+    return layout('uses', {}, (
+      <>
+        <Heading eyebrow={USES.eyebrow} title={USES.title} />
+        <section className="p-uses">
+          <h2 className="p-h3">{USES.needTitle}</h2>
+          <p>{USES.need}</p>
+        </section>
+        <section className="p-uses">
+          <h2 className="p-h3">{USES.aiTitle}</h2>
+          <p>{USES.ai}</p>
+        </section>
+        <div className="p-choices" role="radiogroup" aria-label="Sort with AI">
+          <Choice type="radio" name="ai" checked={ai === 'yes'} onChange={choose('yes')}
+                  label={USES.yes.label} description={USES.yes.description} />
+          <Choice type="radio" name="ai" checked={ai === 'no'} onChange={choose('no')}
+                  label={USES.no.label} description={USES.no.description} />
+        </div>
+        {error && <Banner tone="caution">{error}</Banner>}
+        <div className="p-actions">
+          <button type="button" className="p-btn primary" disabled={busy}
+                  onClick={() => {
+                    if (!ai) { setError('Choose yes or no to continue.'); return; }
+                    save({ consents: { insights: true, ai_sort: ai === 'yes' }, step: 'income' },
+                         'income');
+                  }}>
+            Continue
+          </button>
+        </div>
+      </>
+    ));
+  }
+
+  // ── CN-03 One last thing ──────────────────────────────────────────────────
+  if (screen === 'email') {
+    return layout('email', {}, (
+      <>
+        <Heading eyebrow={TIPS.eyebrow} title={TIPS.title} />
+        <div className="p-choices">
+          <Choice checked={tips} onChange={setTips} label={TIPS.label}
+                  description={TIPS.description} />
+        </div>
+        <p className="p-small">{TIPS.foot}</p>
+        {error && <Banner tone="caution">{error}</Banner>}
+        <div className="p-actions">
+          <button type="button" className="p-btn primary" disabled={busy}
+                  onClick={() => save({ consents: { tips }, step: 'path' }, 'path')}>
+            Finish
+          </button>
+        </div>
+      </>
+    ));
+  }
+
   // ── I-01 to I-06 Income and recurring bills (THL-127) ─────────────────────
   if (screen === 'income') {
     return (
       <>
-        <IncomeBillsFlow onDoc={setDoc} onDone={() => save({ step: 'path' }, 'path')} />
+        <IncomeBillsFlow onDoc={setDoc} onDone={() => save({ step: 'email' }, 'email')} />
         {doc && <DocSheet name={doc} onClose={() => setDoc(null)} />}
       </>
     );

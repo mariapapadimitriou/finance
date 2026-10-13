@@ -13,6 +13,10 @@ import AccountsPanel from './panels/AccountsPanel.jsx';
 import ProfilePanel from './panels/ProfilePanel.jsx';
 import RulesPanel from './panels/RulesPanel.jsx';
 import SecurityPanel from './panels/SecurityPanel.jsx';
+import NotificationsPanel from './panels/NotificationsPanel.jsx';
+import ConsentPanel from './panels/ConsentPanel.jsx';
+import DataPanel, { AccountDeleted } from './panels/DataPanel.jsx';
+import ProtectPanel from './panels/ProtectPanel.jsx';
 import SignedOut, { resetTokenFromUrl } from './pearl/SignedOut.jsx';
 import Onboarding from './pearl/Onboarding.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
@@ -33,13 +37,15 @@ import {
 // linked and which decides what keeps arriving — and which is also where the
 // ledger gets emptied, so it is reachable immediately afterwards.
 // The Profile hub and Sign-in and security too: a brand-new account has an
-// empty ledger, and must still be able to change its email or sign out.
+// empty ledger, and must still be able to change its email or sign out — and
+// its notifications, consents and data (download, or delete the account).
 // Goals too: someone new sees what comes next there (G-02). And Home, whose
 // no-data state (E-01, THL-72) is where linking starts. Projections says what
 // it can in words with nothing in, and holds Unveil's screens, which the Path
 // links to.
 const WORKS_WHEN_EMPTY = ['home', 'path', 'projections', 'debts', 'budgets', 'accounts', 'income',
-                          'profile', 'security', 'rules', 'goals'];
+                          'profile', 'security', 'rules', 'goals', 'notifications', 'consent',
+                          'data', 'protect'];
 
 // Pages that draw their section pills themselves, under their own title
 // (Growth › Insights, THL-196 GR-28; Growth › Projections, THL-197 GR-33), so
@@ -125,6 +131,8 @@ export default function App() {
   // passkey is offered.
   const [user, setUser] = useState(null);
   const [fresh, setFresh] = useState(false);
+  // THL-116 D-05: set once her account is deleted, shown until she closes it.
+  const [deleted, setDeleted] = useState(null);
   // Bumped on every reload so panels that fetch their own data — Home,
   // Projections, Income and bills — refetch after an import instead of showing what
   // they loaded when they mounted.
@@ -231,6 +239,10 @@ export default function App() {
     return <Shell theme={theme} setTheme={setTheme}><Loading what="Pearl" /></Shell>;
   }
 
+  if (deleted) {
+    return <AccountDeleted sentTo={deleted.sentTo} onClose={() => setDeleted(null)} />;
+  }
+
   // A reset link opens the reset screen even on a device that is signed in.
   if (!signedIn || resetTokenFromUrl()) {
     // A different person may be signing in on this device: nothing from the
@@ -301,7 +313,7 @@ export default function App() {
       // has its own month switcher too (GR-28), so the shell picks no month.
       ownTitle={['home', 'path', 'insights', 'projections', 'debts', 'budgets', 'transactions',
                  'review', 'goals', 'profile', 'accounts', 'rules', 'security',
-                 'income'].includes(panel)}
+                 'income', 'notifications', 'consent', 'data', 'protect'].includes(panel)}
       ownSections={OWN_SECTIONS.includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
@@ -329,6 +341,16 @@ export default function App() {
       {panel === 'accounts' && <AccountsPanel onChanged={load} onTab={go} version={version} />}
       {panel === 'rules' && (
         <RulesPanel categories={categories} onTab={go} onChanged={load} version={version} />
+      )}
+      {panel === 'notifications' && <NotificationsPanel onTab={go} version={version} />}
+      {panel === 'consent' && <ConsentPanel onTab={go} version={version} />}
+      {panel === 'protect' && <ProtectPanel onTab={go} version={version} />}
+      {panel === 'data' && (
+        <DataPanel onTab={go} onDeleted={(info) => {
+          // Signed out on the server already; nothing of hers stays on screen.
+          setData(null); setUser(null); synced.current = false;
+          setDeleted(info); setSignedIn(false); go('home');
+        }} />
       )}
       {panel === 'security' && (
         <SecurityPanel onTab={go} onSignOut={async () => {
