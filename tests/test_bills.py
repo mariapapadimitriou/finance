@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import pytest
+from ledger_files import add_fixed
 
 from finance.analytics import bill_categories, bills_paid
 from finance.money_plan import FixedCost
@@ -51,8 +52,7 @@ def october(c, mortgage=2400):
 
 class TestMonth:
     def test_the_headline_is_everyday_spending(self, client):
-        client.post("/api/plan/fixed", json={"name": "Mortgage", "amount": 2400,
-                                             "category": "Rent & Housing"})
+        add_fixed(client, "Mortgage", 2400, "Rent & Housing")
         october(client)
         body = client.get(f"/api/breakdown?month={MONTH}").get_json()
         assert body["pace"]["total"] == pytest.approx(1400)
@@ -70,8 +70,7 @@ class TestMonth:
         assert body["pace"]["total"] == pytest.approx(3800)
 
     def test_allowance_splits_its_total(self, client):
-        client.post("/api/plan/fixed", json={"name": "Mortgage", "amount": 2400,
-                                             "category": "Rent & Housing"})
+        add_fixed(client, "Mortgage", 2400, "Rent & Housing")
         october(client)
         body = client.get(f"/api/plan?month={MONTH}").get_json()
         assert body["spent_in_total"] == pytest.approx(3800)

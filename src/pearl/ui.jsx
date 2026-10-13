@@ -29,10 +29,12 @@ export function Lockup() {
  *
  * `step` is 1–6 inside onboarding (the panel shows the stepper and the top
  * bar "Step n of 6"), `'done'` when it has finished, and absent elsewhere,
- * where the panel shows its footnote instead.
+ * where the panel shows its footnote instead — unless `footnote` is false, as
+ * on the income and bills check (THL-127), whose panel foot is empty.
  */
 export function AuthLayout({
   headline, body, mark, step, topRight, onBack, onDoc, children, centered = false,
+  footnote = true,
 }) {
   const inOnboarding = step != null;
   const stepNo = step === 'done' ? STEPS.length + 1 : step;
@@ -62,7 +64,7 @@ export function AuthLayout({
                 );
               })}
             </ol>
-          ) : (
+          ) : footnote && (
             <p className="p-footnote">{FOOTNOTE}</p>
           )}
         </div>

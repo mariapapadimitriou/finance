@@ -306,5 +306,4 @@ class TestLoansAndTheMortgagePage:
         from finance.store import Store
         Store(st.path)                                   # reopened: terms forgotten
         assert st.setting("mortgage") in (None, "")
-        assert client.patch(f"/api/plan/fixed/{cost}", json={"amount": 2500}).status_code == 200
-        assert client.delete(f"/api/plan/fixed/{cost}").status_code == 200
+        assert any(f.id == cost and f.amount == 2400 for f in st.fixed_costs())

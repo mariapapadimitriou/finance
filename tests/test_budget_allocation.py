@@ -9,7 +9,7 @@ give them something. The weekly allowance is the discretionary part of it.
 from __future__ import annotations
 
 import pytest
-from ledger_files import load_bundled
+from ledger_files import add_fixed, load_bundled
 
 TOL = 0.011
 
@@ -22,8 +22,7 @@ def ledger(tmp_path):
     with app.test_client() as c:
         load_bundled(c)
         c.put("/api/plan/setup", json={"income": 5200, "savings": 900})
-        c.post("/api/plan/fixed", json={"name": "Rent", "amount": 2100,
-                                        "category": "Rent & Housing"})
+        add_fixed(c, "Rent", 2100, "Rent & Housing")
         yield c
 
 

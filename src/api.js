@@ -204,23 +204,30 @@ export const addToChest      = (id, amount) =>
 
 
 
-// The money plan: income in, commitments and savings out, the rest budgeted.
-export const getPlanSetup    = () => req('/api/plan/setup');
-// The saving goal is a share of income; its dollars follow income.
-export const savePlanSetup   = (income, savingsRate) =>
-  json('PUT', '/api/plan/setup', { income, savings_rate: savingsRate });
-// The savings figure on its own. The endpoint writes only the fields it is
-// given, and the slider has no business sending an income it never showed.
+// The savings figure on its own (Projections' slider). The endpoint writes
+// only the fields it is given.
 export const saveSavings     = (savings) =>
   json('PUT', '/api/plan/setup', { savings });
-export const applyPlanBudgets = () => json('POST', '/api/plan/setup/apply', {});
 // Your own split of the monthly total: the lines you focus on, and every
 // amount. The server refuses one that does not add up to the total.
 export const setAllocation   = (focus, budgets) =>
   json('PUT', '/api/budgets/allocation', { focus, budgets });
-export const addFixedCost    = (cost) => json('POST', '/api/plan/fixed', cost);
-export const deleteFixedCost = (id) =>
-  req(`/api/plan/fixed/${id}`, { method: 'DELETE' });
+
+// Income and bills (THL-45, THL-127 I-01 to I-06): the check after linking,
+// and Profile › Income and bills. Every call returns the whole check.
+const IB = '/api/income-bills';
+const billPath = (key) => `${IB}/bills/${encodeURIComponent(key)}`;
+export const getIncomeBills   = () => req(IB);
+export const answerPay        = (payer, answer) => json('POST', `${IB}/pay/answer`, { payer, answer });
+export const addPay           = (pay) => json('POST', `${IB}/pay`, pay);
+export const editPay          = (id, pay) => json('PUT', `${IB}/pay/${encodeURIComponent(id)}`, pay);
+export const removePay        = (id) => req(`${IB}/pay/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export const saveExpected     = (amount, varies) => json('PUT', `${IB}/expected`, { amount, varies });
+export const confirmBills     = (ticked) => json('PUT', `${IB}/bills`, { ticked });
+export const addBill          = (bill) => json('POST', `${IB}/bills`, bill);
+export const editBill         = (key, bill) => json('PUT', billPath(key), bill);
+export const removeBill       = (key) => req(billPath(key), { method: 'DELETE' });
+export const answerRent       = (key) => json('POST', `${IB}/rent`, { key, answer: 'yes' });
 
 
 /**

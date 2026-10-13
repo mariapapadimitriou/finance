@@ -147,7 +147,7 @@ function SavingGoal({ goal, onTab }) {
     return (
       <section className="gl-card gl-row-card gl-goal" aria-label="Saving goal">
         <p className="gl-text gl-grow">No saving goal yet</p>
-        <More onClick={() => onTab('plan')}>Set one</More>
+        <More onClick={() => onTab('projections')}>Set one</More>
       </section>
     );
   }
@@ -162,7 +162,7 @@ function SavingGoal({ goal, onTab }) {
             : `${amount(goal.target)} a month`}
         </p>
       </div>
-      <More onClick={() => onTab('plan')}>{goal.saved >= goal.target ? 'See your plan' : 'See the gap'}</More>
+      <More onClick={() => onTab('projections')}>{goal.saved >= goal.target ? 'See your plan' : 'See the gap'}</More>
     </section>
   );
 }

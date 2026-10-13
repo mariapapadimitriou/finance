@@ -23,7 +23,7 @@ const PHASE_TEXT = {
   unveil: 'Your first investment account',
 };
 const STATE_WORDS = { done: 'Done', now: 'Now', ahead: 'Ahead' };
-const ACTIONS = { goals: 'goals', path: 'path', bills: 'plan', income: 'plan' };
+const ACTIONS = { goals: 'goals', path: 'path', bills: 'income', income: 'income' };
 
 /** One line on where a step stands, in her numbers where there are any. */
 export function stepDetail(step, current) {

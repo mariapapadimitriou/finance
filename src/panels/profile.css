@@ -116,3 +116,10 @@
 /* The code step (S-02) borrows the sign-in screens' six boxes. */
 .pf-code .p-code { max-width: 100%; }
 .pf-end-link { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--link); }
+
+/* ── Income and bills (THL-127) ──────────────────────────────────────────── */
+.ib-page .pk-tiles { flex-wrap: wrap; }
+.ib-page .hm-link { align-self: flex-start; }
+.ib-link { color: var(--link); font-weight: 600; }
+.ib-hug { align-self: flex-start; }
+.ib-page .pk-alert { width: 100%; }

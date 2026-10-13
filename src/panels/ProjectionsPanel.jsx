@@ -93,7 +93,7 @@ export default function ProjectionsPanel({ insights, onTab, onChanged,
             <strong className="num">{money(data.monthly_income)}</strong>
             <span className="muted">a month</span>
             <span className="spacer" />
-            <GoTo to="plan" from="projections" onTab={onTab}>Edit</GoTo>
+            <GoTo to="income" from="projections" onTab={onTab}>Edit</GoTo>
           </div>
         </Card>
       )}

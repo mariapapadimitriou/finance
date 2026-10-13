@@ -19,10 +19,6 @@ export const PANELS = {
   // worked out. Where the app lands.
   home:          { label: 'Home',
                    hint: 'What’s safe to spend this month, and how we worked it out' },
-  // `short` is what a phone shows where the full label will not fit. Only
-  // set where it is needed; everything else uses its label at every width.
-  plan:          { label: 'Income & commitments', short: 'Income',
-                   hint: 'What comes in, what is spoken for, and what is left' },
   // Growth › Budgets (THL-168 B-01): every category, from her usual month.
   budgets:       { label: 'Budgets',
                    hint: 'A budget for every category, starting at your usual month' },
@@ -55,6 +51,12 @@ export const PANELS = {
   // Profile › Sign-in and security, with S-02 (change the sign-in email).
   security:      { label: 'Sign-in and security',
                    hint: 'Your email, passkeys and signing out' },
+  // Profile › Income and bills (THL-45, THL-127): the pay and regular bills
+  // she confirmed after linking, and the check run again. It replaced the
+  // prototype "Income & commitments" page and its piggy banks. `short` is
+  // what a phone shows where the full label will not fit.
+  income:        { label: 'Income and bills', short: 'Income',
+                   hint: 'What comes in, and the regular bills set aside' },
   goals:         { label: 'Goals',
                    hint: 'Your Anchor, your treasure chests and your saving goal' },
 };
@@ -89,45 +91,44 @@ export const GROUPS = [
   // At the foot (THL-104, Pearl S-01): the Profile hub, and the pages it
   // opens — Accounts, Categories and rules, Sign-in and security — each with
   // a breadcrumb back to it, so the group shows no sub-tab strip (`crumbs`).
-  // Income & commitments stays reachable from the hub until the
-  // confirmation flow (THL-45) replaces it.
   { key: 'profile', label: 'Profile',
-    panels: ['profile', 'accounts', 'rules', 'security', 'plan'], foot: true, crumbs: true,
+    panels: ['profile', 'accounts', 'rules', 'security', 'income'], foot: true, crumbs: true,
     hint: 'Your accounts, rules, sign-in and privacy',
     icon: 'M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z' },
 ];
 
 // Keys that are no longer panels of their own but are still linked to from
 // across the app and from the insights, which carry a tab name in their data.
-// Piggy banks are a card on the Plan page now — they are already a term in its
-// arithmetic — so a link to them is a link there.
-// The Mortgage page is gone: its payments are read from your accounts now.
+// The Income and commitments page (`plan`) became Income and bills (THL-127);
+// its piggy banks are Goals' treasure chests, so a link to them lands there.
+// The Mortgage page is gone: its payments are read from your accounts now,
+// and a mortgage payment is a regular bill.
 // The old landing tab and the old Settings group still resolve, so any link
 // or saved address that names them lands somewhere real. So do the pages
 // removed in C1: Connections and From a file land on Accounts, where a bank is
 // linked now; Trips on the list; Categories on Categories and rules (S-03).
 // The old Sign-in page is Sign-in and security now.
 export const ALIASES = {
-  piggy: 'plan', mortgage: 'plan', today: 'home', settings: 'profile',
+  plan: 'income', piggy: 'goals', mortgage: 'income', today: 'home', settings: 'profile',
   banks: 'accounts', import: 'accounts', trips: 'transactions', categories: 'rules',
   account: 'security', signin: 'security',
 };
 
-// Where on that page the aliased thing actually is. Without this a link to a
-// piggy bank lands at the top of a long page with no sign of one, which is
-// indistinguishable from a button that did nothing.
-export const ANCHORS = { piggy: 'piggy-banks' };
+// Where on that page the aliased thing actually is, when it isn't the top.
+// Without this a link lands at the top of a long page with no sign of what it
+// pointed at, which is indistinguishable from a button that did nothing.
+export const ANCHORS = {};
 
 // What an alias is called in a sentence, since it has no panel label of its
 // own to borrow.
-const ALIAS_LABELS = { piggy: 'Piggy banks' };
+const ALIAS_LABELS = { piggy: 'Treasure chests' };
 
 /**
  * Turn a group key or a panel key into both.
  *
  * Panels link to each other by panel key and should not have to know about the
  * grouping, so this accepts either: 'settings' opens the group at its first
- * panel, 'plan' opens the same group at that panel.
+ * panel, 'income' opens the same group at that panel.
  */
 export function resolve(key) {
   const target = ALIASES[key] ?? key;
