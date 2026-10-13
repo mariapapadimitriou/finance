@@ -183,8 +183,18 @@ export const undoDraw        = (id) => req(`/api/piggy/draws/${id}`, { method: '
 // banks above, by the Goals page's name) and the saving goal.
 // Home (THL-44, THL-46): safe to spend for the month and every row behind it.
 export const getHome = () => req('/api/home');
-// The Path page (THL-129 GR-01).
+// The Path page (THL-129 GR-01), and one step with her numbers (GR-02 to GR-04).
 export const getPath = () => req('/api/path');
+export const getPathStep = (key) => req(`/api/path/step/${encodeURIComponent(key)}`);
+// Where she starts (THL-130 GR-06, GR-07), at the end of onboarding.
+export const getPlacement = () => req('/api/path/placement');
+export const placeOnPath  = () => json('POST', '/api/path/placement', {});
+// A phase done, once (GR-08 to GR-10), and GR-20's "Welcome back".
+export const getMoments   = () => req('/api/moments');
+export const seeMoment    = (phase) => json('POST', `/api/moments/${encodeURIComponent(phase)}`, {});
+// Learn (THL-134 GR-11 to GR-14): her place in each module, saved per screen.
+export const getLearn     = () => req('/api/learn');
+export const saveLearn    = (id, body) => json('PUT', `/api/learn/${encodeURIComponent(id)}`, body);
 // The starter questions (E-02) and "Use a different amount" (E-03).
 export const putHomeAnswers = (answers) => json('PUT', '/api/home/answers', answers);
 // Month or week as Home's main view (THL-166), saved on her account.
@@ -249,8 +259,13 @@ export const setSavingPace   = (monthly) => json('PUT', '/api/projections/pace',
 // Unveil (THL-135 GR-16, THL-195 GR-37): the readiness checklist, and
 // "Opened an investing account?" — the kind of account only.
 export const getUnveil       = () => req('/api/unveil');
-export const reportInvesting = (type) => json('PUT', '/api/unveil', { type });
+export const reportInvesting = (type, via) => json('PUT', '/api/unveil', via ? { type, via } : { type });
 export const undoInvesting   = () => req('/api/unveil', { method: 'DELETE' });
+// The partner handoff (THL-136 GR-19 to GR-23, post-MVP, only when one is
+// configured): the link out, GR-20's "Not yet", GR-22's "Tell me when".
+export const goToPartner     = () => json('POST', '/api/unveil/partner', {});
+export const partnerNotYet   = () => json('PUT', '/api/unveil/partner/welcome', { answer: 'not_yet' });
+export const partnerNotify   = () => json('PUT', '/api/unveil/partner/notify', {});
 
 /**
  * Add a transaction by hand.

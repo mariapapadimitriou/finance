@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import HomePanel from './panels/HomePanel.jsx';
 import InsightsPanel from './panels/InsightsPanel.jsx';
 import PathPanel from './panels/PathPanel.jsx';
+import LearnPanel from './panels/LearnPanel.jsx';
+import { MomentScreen } from './panels/Moments.jsx';
 import DebtsPanel from './panels/DebtsPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import TransactionsList from './panels/TransactionsList.jsx';
@@ -23,12 +25,13 @@ import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
-  clearUrl, isInsightsUrl, isPathUrl, isProjectionsUrl, isReviewUrl, readTxUrl, writeInsightsUrl,
-  writePathUrl, writeProjectionsUrl, writeReviewUrl,
+  clearUrl, fromPartner, isInsightsUrl, isLearnUrl, isPathUrl, isProjectionsUrl, isReviewUrl,
+  readTxUrl, setGoalsIntent, writeInsightsUrl, writeLearnUrl, writePathUrl, writeProjectionsUrl,
+  writeReviewUrl,
 } from './router.js';
 import {
-  getAccounts, getAuthStatus, getCategories, getReview, getSummary, logout, setLedgerCurrency,
-  setUnauthorizedHandler, syncPlaid,
+  getAccounts, getAuthStatus, getCategories, getMoments, getReview, getSummary, logout,
+  setLedgerCurrency, setUnauthorizedHandler, syncPlaid,
 } from './api.js';
 
 // Icons are 24×24 stroke paths, drawn in currentColor.
@@ -42,15 +45,21 @@ import {
 // Goals too: someone new sees what comes next there (G-02). And Home, whose
 // no-data state (E-01, THL-72) is where linking starts. Projections says what
 // it can in words with nothing in, and holds Unveil's screens, which the Path
-// links to.
-const WORKS_WHEN_EMPTY = ['home', 'path', 'projections', 'debts', 'budgets', 'accounts', 'income',
-                          'profile', 'security', 'rules', 'goals', 'notifications', 'consent',
-                          'data', 'protect'];
+// links to. Learn is open to everyone from day one (THL-134).
+const WORKS_WHEN_EMPTY = ['home', 'path', 'projections', 'learn', 'debts', 'budgets', 'accounts',
+                          'income', 'profile', 'security', 'rules', 'goals', 'notifications',
+                          'consent', 'data', 'protect'];
 
 // Pages that draw their section pills themselves, under their own title
-// (Growth › Insights, THL-196 GR-28; Growth › Projections, THL-197 GR-33), so
-// the shell's strip would say it twice.
-const OWN_SECTIONS = ['insights', 'projections'];
+// (Growth › Path, THL-129 GR-01; Insights, THL-196 GR-28; Projections, THL-197
+// GR-33; Learn, THL-134 GR-11), so the shell's strip would say it twice.
+const OWN_SECTIONS = ['path', 'insights', 'projections', 'learn'];
+
+// Back from the partner (THL-136 GR-20) at any address: Ready to invest,
+// where "Welcome back" asks whether she opened an account.
+if (typeof window !== 'undefined' && fromPartner() && !isProjectionsUrl()) {
+  window.history.replaceState(null, '', '/growth/ready?from=partner');
+}
 
 /**
  * A navigation label with an optional phone-width form.
@@ -86,10 +95,10 @@ export default function App() {
   // /transactions… opens the list (a link from anywhere lands there); every
   // other address opens Home, where the app lands (THL-44, THL-125).
   const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() ? 'transactions'
-    : isPathUrl() || isInsightsUrl() || isProjectionsUrl() ? 'growth' : 'home'));
+    : isPathUrl() || isInsightsUrl() || isProjectionsUrl() || isLearnUrl() ? 'growth' : 'home'));
   const [panel, setPanel] = useState(() => (isReviewUrl() ? 'review'
     : readTxUrl() ? 'transactions' : isPathUrl() ? 'path' : isInsightsUrl() ? 'insights'
-      : isProjectionsUrl() ? 'projections' : 'home'));
+      : isProjectionsUrl() ? 'projections' : isLearnUrl() ? 'learn' : 'home'));
 
   /**
    * Go to a destination named either way.
@@ -103,13 +112,14 @@ export default function App() {
     setTab(group);
     setPanel(target);
     // The list writes its own address when it mounts; Needs a look, Path,
-    // Insights and Projections have one too. Everything else lives at "/". A
+    // Insights, Projections and Learn have one too. Everything else lives at "/". A
     // link straight to one of Insights' or Projections' views has already
     // written its address.
     if (target === 'review') writeReviewUrl();
     else if (target === 'path') writePathUrl();
     else if (target === 'insights') { if (!isInsightsUrl()) writeInsightsUrl(); }
     else if (target === 'projections') { if (!isProjectionsUrl()) writeProjectionsUrl(); }
+    else if (target === 'learn') { if (!isLearnUrl()) writeLearnUrl(); }
     else if (target !== 'transactions') clearUrl();
     const anchor = ANCHORS[key];
     if (anchor) {
@@ -137,6 +147,10 @@ export default function App() {
   // Projections, Income and bills — refetch after an import instead of showing what
   // they loaded when they mounted.
   const [version, setVersion] = useState(0);
+  // A phase done that she hasn't seen the moment for (THL-130 GR-08 to
+  // GR-10), asked once per app open.
+  const [moment, setMoment] = useState(null);
+  const askedMoment = useRef(false);
 
   // Applied during render rather than in an effect, on purpose. Charts read
   // their colours from CSS custom properties when they build, and React runs
@@ -158,8 +172,9 @@ export default function App() {
       else if (isPathUrl()) { setTab('growth'); setPanel('path'); }
       else if (isInsightsUrl()) { setTab('growth'); setPanel('insights'); }
       else if (isProjectionsUrl()) { setTab('growth'); setPanel('projections'); }
+      else if (isLearnUrl()) { setTab('growth'); setPanel('learn'); }
       else if (readTxUrl()) { setTab('transactions'); setPanel('transactions'); }
-      else if (['transactions', 'review', 'path', 'insights', 'projections']
+      else if (['transactions', 'review', 'path', 'insights', 'projections', 'learn']
         .includes(panelRef.current)) {
         setTab('home'); setPanel('home');
       }
@@ -235,6 +250,21 @@ export default function App() {
       .catch(() => {});
   }, [signedIn, data, load]);
 
+  // Once the app has opened: a phase's moment plays once, full screen, on the
+  // next open after it passes. Otherwise, if she went to the partner in the
+  // last 14 days and hasn't said, Ready to invest asks (THL-136 GR-20).
+  useEffect(() => {
+    if (!signedIn || !data || askedMoment.current) return;
+    askedMoment.current = true;
+    getMoments().then((m) => {
+      if (m.phase) setMoment(m);
+      else if (m.partner_welcome && panelRef.current === 'home') {
+        writeProjectionsUrl('ready');
+        setTab('growth'); setPanel('projections');
+      }
+    }).catch(() => {});
+  }, [signedIn, data]);
+
   if (signedIn === null) {
     return <Shell theme={theme} setTheme={setTheme}><Loading what="Pearl" /></Shell>;
   }
@@ -287,6 +317,16 @@ export default function App() {
 
   const { summary, accounts, categories } = data;
 
+  if (moment) {
+    return (
+      <div className="gr-moment-page">
+        <MomentScreen moment={moment} onClose={() => setMoment(null)} go={go}
+                      toReady={() => { writeProjectionsUrl('ready'); go('projections'); }}
+                      toAnchor={(view) => { setGoalsIntent({ view }); go('goals'); }} />
+      </div>
+    );
+  }
+
   // An empty ledger hides the panels that have nothing to show — but not the
   // ones that exist to fix that, or this is a dead end: the Connect button
   // would set the tab and the same empty state would render over it, which
@@ -311,8 +351,8 @@ export default function App() {
       counts={{ transactions: data.review }}
       // The Pearl pages draw their own header (overline + title). Insights
       // has its own month switcher too (GR-28), so the shell picks no month.
-      ownTitle={['home', 'path', 'insights', 'projections', 'debts', 'budgets', 'transactions',
-                 'review', 'goals', 'profile', 'accounts', 'rules', 'security',
+      ownTitle={['home', 'path', 'insights', 'projections', 'learn', 'debts', 'budgets',
+                 'transactions', 'review', 'goals', 'profile', 'accounts', 'rules', 'security',
                  'income', 'notifications', 'consent', 'data', 'protect'].includes(panel)}
       ownSections={OWN_SECTIONS.includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
@@ -320,6 +360,7 @@ export default function App() {
       {panel === 'income' && <IncomeBillsPanel onTab={go} onChanged={load} version={version} />}
       {panel === 'home' && <HomePanel onTab={go} onChanged={load} version={version} />}
       {panel === 'path' && <PathPanel onTab={go} version={version} />}
+      {panel === 'learn' && <LearnPanel onTab={go} version={version} />}
       {panel === 'debts' && <DebtsPanel onChanged={load} version={version} />}
       {panel === 'insights' && <InsightsPanel onTab={go} version={version} />}
       {panel === 'projections' && (

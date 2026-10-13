@@ -6,7 +6,7 @@ import { monthFull } from './insightsMath.js';
 // GR-28 to GR-32, THL-186 GR-25 to GR-27): the Growth pills, the month
 // switcher, the "See more  ›" link and a category's dot.
 
-/** The Growth pills (GR-01's tabs): Path, Insights, Projections, Budgets, Debts, and Learn to come. */
+/** The Growth pills (GR-01's tabs): Path, Insights, Projections, Learn, Budgets and Debts. */
 export function GrowthTabs({ current = 'insights', onTab }) {
   const growth = GROUPS.find((g) => g.key === 'growth');
   return (
@@ -17,10 +17,6 @@ export function GrowthTabs({ current = 'insights', onTab }) {
           {PANELS[key].label}
         </button>
       ))}
-      <button type="button" className="in-tab" disabled aria-describedby="in-learn-soon">
-        Learn
-      </button>
-      <span id="in-learn-soon" className="pk-sr">Coming later</span>
     </nav>
   );
 }

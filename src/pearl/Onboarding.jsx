@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  createLinkToken, exchangePublicToken, getAccounts, getOnboarding, money,
-  passkeyRegister, passkeyRegisterOptions, saveOnboarding,
+  createLinkToken, exchangePublicToken, getAccounts, getOnboarding, getPlacement, money,
+  passkeyRegister, passkeyRegisterOptions, placeOnPath, saveOnboarding,
 } from '../api.js';
+import { Placement } from '../panels/Moments.jsx';
+import { UnveilDone } from '../panels/Unveil.jsx';
 import { loadPlaidScript } from '../plaid.js';
 import { DocSheet } from './docs.jsx';
 import IncomeBillsFlow from './IncomeBills.jsx';
 import PIcon from './icons.jsx';
 import { LINKING, ProtectPoints, Rows, TIPS, USES } from './privacy.jsx';
 import {
-  AuthLayout, Banner, Callout, Choice, Field, Heading, Initials, Lockup, MARKS,
+  AuthLayout, Banner, Callout, Choice, Field, Heading, Initials, MARKS,
 } from './ui.jsx';
 import { createPasskey, passkeysSupported } from './webauthn.js';
 
@@ -61,7 +63,8 @@ function screenFor(user, startAt) {
  * linking through Plaid (O-08 to O-11), how Pearl uses your transactions
  * (CN-02), confirming income and regular bills (THL-127 I-01 to I-06,
  * IncomeBills.jsx), one last thing (CN-03, tips by email) and a first look at
- * your path (O-12). Each step is saved, so leaving and coming back resumes
+ * your path (O-12): where you start (THL-130 GR-06, GR-07, or GR-10 with an
+ * investment account already linked). Each step is saved, so leaving and coming back resumes
  * where you were. The consent moments share their words with Profile ›
  * Privacy and consent (privacy.jsx).
  */
@@ -85,10 +88,17 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
   const [phase, setPhase] = useState(0);
   const [itemId, setItemId] = useState(null);
   const [accounts, setAccounts] = useState(null);
+  const [placement, setPlacement] = useState(null);
 
   useEffect(() => {
     getOnboarding().then((r) => setProvinces(r.provinces)).catch(() => {});
   }, []);
+
+  // O-12: where she starts, once the check before it is done.
+  useEffect(() => {
+    if (screen !== 'path' || placement) return;
+    getPlacement().then(setPlacement).catch((e) => setError(e.message));
+  }, [screen, placement]);
 
   useEffect(() => {
     if (screen !== 'linked') return;
@@ -505,57 +515,36 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
     );
   }
 
-  // ── O-12 First look at your path ──────────────────────────────────────────
-  const finish = async (dest) => {
-    await save({ done: true });
-    onDone?.(dest);
+  // ── O-12 First look at your path: where you start (THL-130 GR-06, GR-07) ──
+  // Steps already true are credited and named; "See my path" credits savings
+  // that already hold a month of Essentials as her Anchor, and leaves no
+  // phase's moment to play again. An investment account already linked goes
+  // straight to Unveil done (GR-10).
+  const finish = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await placeOnPath();
+      await saveOnboarding({ done: true });
+      onDone?.('path');
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
   };
+  const phases = ['protect', 'build', 'unveil'].map((key) => ({
+    key, label: { protect: 'Protect', build: 'Build', unveil: 'Unveil' }[key], state: 'done' }));
   return (
-    <div className="pearl">
-      <main className="p-path">
-        <Lockup />
-        <Heading eyebrow="Your path" title="Here’s where you’re starting"
-                 sub="Pearl grows in three phases. You’re in Shell: cover the basics." />
-        <div className="p-phases">
-          <div className="p-phase current" aria-current="step">
-            <img src={MARKS.closed} alt="" />
-            <h2 className="p-h3">Shell</h2>
-            <small>Cover the basics</small>
-            <p className="p-eyebrow">You are here</p>
-          </div>
-          <div className="p-phase upcoming">
-            <img src={MARKS.opening} alt="" />
-            <h2 className="p-h3">Glimmer</h2>
-            <small>Build your safety net</small>
-          </div>
-          <div className="p-phase upcoming">
-            <img src={MARKS.pearl} alt="" />
-            <h2 className="p-h3">Pearl</h2>
-            <small>Ready to invest</small>
-          </div>
-        </div>
-        <h2 className="p-h3">Next in Shell</h2>
-        <div className="p-next">
-          {[
-            { icon: 'eye', title: 'Check your safe-to-spend',
-              sub: 'See what you can spend until payday', dest: 'today' },
-            { icon: 'list', title: 'Review a few transactions',
-              sub: 'Fix anything Pearl sorted wrong', dest: 'review' },
-            { icon: 'target', title: 'Set up your safety net',
-              sub: 'Pick a starter amount to save', dest: 'goals' },
-          ].map((r) => (
-            <button key={r.title} type="button" disabled={busy} onClick={() => finish(r.dest)}>
-              <span className="p-bubble" aria-hidden="true"><PIcon name={r.icon} /></span>
-              <span className="grow">{r.title}<small>{r.sub}</small></span>
-              <PIcon name="chevronRight" />
-            </button>
-          ))}
-        </div>
-        {error && <Banner tone="caution">{error}</Banner>}
-        <button type="button" className="p-btn primary" disabled={busy}
-                onClick={() => finish('today')}>
-          Go to Home
-        </button>
+    <div className="pearl p-placement">
+      <main className="pk">
+        {!placement && !error && <p className="pk-muted" role="status">Looking at your accounts…</p>}
+        {!placement && error && <Banner tone="caution">{error}</Banner>}
+        {placement && placement.invested && (
+          <UnveilDone data={{ path: { phases }, report: null }} onPath={finish} />
+        )}
+        {placement && !placement.invested && (
+          <Placement data={placement} onContinue={finish} busy={busy} error={error ?? ''} />
+        )}
       </main>
       {doc && <DocSheet name={doc} onClose={() => setDoc(null)} />}
     </div>

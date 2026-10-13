@@ -133,12 +133,14 @@ const tables = (out) => (out.match(/<table class="pk-sr"/g) || []).length;
 describe('GR-28 the page', () => {
   const out = html(<InsightsPage d={october} show={() => {}} onTab={() => {}} />);
 
-  it('has the header, the Growth pills with Learn disabled, and the month switcher', () => {
+  it('has the header, the Growth pills with Learn, and the month switcher', () => {
     for (const text of ['Insights', 'Growth', 'October so far', 'Path', 'Projections', 'Budgets', 'Debts']) {
       expect(out).toContain(text);
     }
     expect(out).toMatch(/aria-current="page"[^>]*>Insights</);
-    expect(out).toMatch(/disabled=""[^>]*>Learn</);
+    // Learn is built (THL-134): its pill opens it.
+    expect(out).toMatch(/class="in-tab">Learn</);
+    expect(out).not.toMatch(/disabled=""[^>]*>Learn</);
     expect(out).toContain('aria-label="Review September"');
   });
 

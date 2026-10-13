@@ -91,10 +91,16 @@ def bills_confirmed(confirm: dict | None, bills_found: int = 0, told_rent: float
 def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int = 0,
          told_rent: float = 0.0, account_types: dict[str, str] | None = None,
          protect_done_before: bool = False, confirm: dict | None = None,
-         told_income: float = 0.0, invest_reported: bool = False) -> dict:
+         told_income: float = 0.0, invest_reported: bool = False,
+         every_step: bool = False) -> dict:
     """Where she is on the path, every step's state, and the next step.
     `confirm` is her income and bills check (`income_bills.load`);
-    `invest_reported` is her saying she opened an investing account (GR-37)."""
+    `invest_reported` is her saying she opened an investing account (GR-37).
+
+    `lapse` is GR-04's "Keep it going": Protect is done and stays done, but
+    the last full month's Essentials came to more than its income. With
+    `every_step`, `all` holds every phase's steps, for a step's own screen
+    (GR-02, GR-03), whichever phase she's in."""
     types = account_types or {}
     months = covered_months(transactions, today)
     last = months[-1] if months else None
@@ -110,6 +116,10 @@ def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int
          "month": last, "income": income, "essentials": essentials},
     ]
     protect_done = protect_done_before or all(s["done"] for s in protect)
+    lapse = None
+    if protect_done and last and essentials > 0 and income < essentials:
+        lapse = {"step": "essentials", "month": last, "income": income, "essentials": essentials}
+        protect[2]["lapsed"] = True
     if protect_done:
         for s in protect:
             s["done"] = True
@@ -147,7 +157,10 @@ def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int
         phase, steps = "unveil", unveil
     current = next((i for i, s in enumerate(steps) if not s["done"]), None)
     order = PHASES.index(phase)
+    extra = {"all": {"protect": protect, "build": build, "also": also, "unveil": unveil}} \
+        if every_step else {}
     return {
+        **extra,
         "phase": phase,
         "phases": [{"key": p, "label": PHASE_LABELS[p],
                     "state": "done" if i < order else "now" if i == order else "ahead"}
@@ -157,6 +170,7 @@ def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int
         "step": (current + 1) if current is not None else None,
         "of": len(steps),
         "protect_done": protect_done,
+        "lapse": lapse,
         "next": _next(phase, steps[current]["key"] if current is not None else None, started),
     }
 
