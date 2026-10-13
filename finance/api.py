@@ -1776,7 +1776,6 @@ def home():
         "usual_month": usual,
         # THL-166: the week under the month, and which one she reads first.
         "week": weekly.week(txns, today, sts),
-        "view": "week" if st.setting("home_view") == "week" else "month",
         # THL-49 D-01: carried balances, beside safe-to-spend, never in it.
         "debts": debts,
         # THL-12 E08 RC-01: "For you", at most two cards.
@@ -1972,17 +1971,6 @@ def debt_details(account_id):
         details.pop(account_id, None)
     st.set_setting("debt_details", json.dumps(details))
     return debts_page()
-
-
-@bp.put("/home/view")
-def home_view():
-    """Month or week as the main view (THL-166 W-02). Saved on her account,
-    so it follows her to every device (W4)."""
-    view = (request.get_json(silent=True) or {}).get("view")
-    if view not in ("month", "week"):
-        return jsonify({"error": "Choose month or week."}), 400
-    store().set_setting("home_view", view)
-    return jsonify({"view": view})
 
 
 @bp.post("/home/afford")

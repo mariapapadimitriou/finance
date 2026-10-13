@@ -193,10 +193,11 @@ describe('the detail views', () => {
     const out = html(<ForecastView d={d} nav={nav} />);
     for (const text of ['Projections', 'Where October is heading', 'What you can spend this month: $3,570',
                         'Today · $1,760', '$3,390', '$3,150', 'Phone $65', 'Spent so far', 'Likely range',
-                        'Bill still to come', 'How we worked this out', 'See this week', 'Can I afford it?']) {
+                        'Bill still to come', 'How we worked this out', 'Can I afford it?']) {
       expect(out).toContain(text);
     }
     expect(out).toContain('Gym, due October 22, not confirmed yet');
+    expect(out).not.toContain('See this week');                 // Home reads by the month only
     expect(out).not.toContain('pk-btn primary');
     expect(out).not.toMatch(BAD);
   });

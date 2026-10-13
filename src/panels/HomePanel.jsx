@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
 import {
-  createLinkToken, dismissSuggestion, getHome, money, putHomeAnswers, putHomeView, saveExpected,
+  createLinkToken, dismissSuggestion, getHome, money, putHomeAnswers, saveExpected,
   syncPlaid, undoDismissSuggestion,
 } from '../api.js';
 import { loadPlaidScript } from '../plaid.js';
@@ -11,7 +11,7 @@ import { ExpectedForm } from '../pearl/IncomeBills.jsx';
 import { ProgressBar, SnapshotBar } from '../pearl/viz.jsx';
 import { setGoalsIntent, writeTxUrl } from '../router.js';
 import { Field, Mark } from './GoalsParts.jsx';
-import { AffordCard, ViewToggle, WeekSheet, WeekStrip, weekHeroCopy } from './HomeWeek.jsx';
+import { AffordCard } from './HomeAfford.jsx';
 import { DebtsCard } from './DebtsPanel.jsx';
 import { BudgetsCard } from './CategoryBudgetsPanel.jsx';
 import { ForYou, WhyPanel, dismissedWords } from './ForYou.jsx';
@@ -22,9 +22,10 @@ import './home.css';
  * Home (Pearl THL-125 H-01/H-02, laid out as THL-129 GR-05; THL-44, THL-46).
  *
  * The landing screen. This step draws its header, the safe-to-spend card and
- * "How we worked this out" (X-01 to X-04). The cards below it (week strip,
- * path, Can I afford it?, snapshot, suggestions, needs a look, budgets,
- * debts) arrive in later steps, in that order (THL-9 decision L1).
+ * "How we worked this out" (X-01 to X-04). The cards below it (path, Can I
+ * afford it?, snapshot, suggestions, needs a look, budgets, debts) arrive in
+ * later steps, in that order (THL-9 decision L1). Home reads by the month
+ * only: there is no week view.
  *
  * Copy rules from the THL-9 decisions: the hero is in cents, everything else
  * in whole dollars (S7); no display number carries a sign (S3); a month past
@@ -53,8 +54,7 @@ import './home.css';
  * her to sign in again, or isn't answering, comes first among the alerts
  * (THL-120 C-02, C-03), and Reconnect signs in again in place (C-04, C-05).
  *
- * Under the card, the week (THL-166) and "Can I afford it?" (THL-167): see
- * HomeWeek.jsx. The Month / Week toggle picks which one the card leads with.
+ * Under the path, "Can I afford it?" (THL-167): see HomeAfford.jsx.
  * After the snapshot, "For you": up to two recommendation cards (THL-12,
  * ForYou.jsx), their actions secondary. Then budgets that need a look (THL-168 B-03, CategoryBudgetsPanel.jsx) and
  * debts (THL-49 D-01, DebtsPanel.jsx), each only when there's something.
@@ -222,7 +222,6 @@ export default function HomePanel({ onTab, onChanged, version }) {
   const [expected, setExpected] = useState(false);
   const [reconnect, setReconnect] = useState(null);
   const [back, setBack] = useState(null);
-  const [explainWeek, setExplainWeek] = useState(false);
   const [why, setWhy] = useState(null);
   const [hidden, setHidden] = useState(null);
 
@@ -264,10 +263,6 @@ export default function HomePanel({ onTab, onChanged, version }) {
     setHidden(null);
     undoDismissSuggestion(type).then(load).catch(() => load());
   };
-  const setView = (view) => {
-    setHome((h) => ({ ...h, view }));
-    putHomeView(view).catch(() => {});
-  };
   return (
     <div className="pk hm-page">
       <header className="hm-head">
@@ -275,11 +270,10 @@ export default function HomePanel({ onTab, onChanged, version }) {
         <h1 className="pk-h1">Home</h1>
       </header>
       <HomeBody s={s} ds={ds} snap={home.snapshot} onSave={save} onLink={link}
-                week={home.week} view={home.view ?? 'month'} onView={setView}
                 debts={home.debts} onDebts={() => onTab?.('debts')}
                 budgets={home.budgets} onBudgets={() => onTab?.('budgets')}
                 cards={home.recommendations} onCard={act} onWhy={setWhy} onNotForMe={notForMe}
-                onExplainWeek={() => setExplainWeek(true)} onChest={() => onTab?.('goals')}
+                onChest={() => onTab?.('goals')}
                 path={home.path} reviewCount={home.review_count}
                 connections={home.connections} back={back} today={home.today}
                 onPath={(action) => onTab?.(PATH_ACTIONS[action] ?? 'path')}
@@ -306,9 +300,6 @@ export default function HomePanel({ onTab, onChanged, version }) {
       )}
       {why && <WhyPanel card={why} onClose={() => setWhy(null)} onAction={act} onNotForMe={notForMe} />}
       {hidden && <ActionToast title={dismissedWords(hidden)} onUndo={undo} onDone={() => setHidden(null)} />}
-      {explainWeek && home.week && (
-        <WeekSheet w={home.week} s={s} onClose={() => setExplainWeek(false)} />
-      )}
       {/* THL-139 N-01: once safe to spend has a number. */}
       <NotifyPrime sts={s} path={home.path} />
       {reconnect && (
@@ -349,8 +340,7 @@ const PATH_ACTIONS = { goals: 'goals', path: 'path', bills: 'income', income: 'i
 
 export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onSeeWhere,
                            onAddIncome, path, reviewCount = 0, connections = [], back = null, today,
-                           onPath, onReview, onReconnect, week = null, view = 'month',
-                           onView, onExplainWeek, onChest, debts = null, onDebts,
+                           onPath, onReview, onReconnect, onChest, debts = null, onDebts,
                            budgets = null, onBudgets, cards = [], onCard, onWhy, onNotForMe }) {
   const review = reviewCount > 0 && <NeedsALook count={reviewCount} onReview={onReview} />;
   if (ds.kind === 'no_data') {
@@ -393,9 +383,8 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
     );
   }
   const trouble = connections.find((c) => c.state !== 'disconnected');
-  // THL-166: the week reads the month, so there is one only with a number.
-  const weekly = week && s.amount !== null && !noAccounts;
-  const byWeek = weekly && view === 'week';
+  // "Can I afford it?" answers from the month, so only once there's a number.
+  const affordable = s.amount !== null && !noAccounts;
   return (
     <>
       {alert && (
@@ -404,16 +393,13 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
           {alert.text}
         </Alert>
       )}
-      {weekly && <ViewToggle view={view} onView={onView} />}
-      <SafeToSpendCard s={s} onExplain={byWeek ? onExplainWeek : onExplain}
-                       copy={byWeek ? weekHeroCopy(week, s) : null}
+      <SafeToSpendCard s={s} onExplain={onExplain}
                        updated={trouble ? `${trouble.institution} last updated ${whenWords(trouble.last_synced, today)}` : null} />
-      {weekly && <WeekStrip view={view} s={s} w={week} onView={onView} />}
       {ds.asks_questions && <StarterQuestions onSave={onSave} primary />}
       {path && ['normal', 'irregular'].includes(ds.kind) && (
         <PathCard path={path} onPath={onPath} primary={!ds.asks_questions} />
       )}
-      {weekly && <AffordCard s={s} onChest={onChest} />}
+      {affordable && <AffordCard s={s} onChest={onChest} />}
       {ds.kind === 'learning' && !noAccounts && (
         <MonthSoFar month={s.month}
                     lines={[{ label: 'Spent so far', amount: ds.spent_so_far },
@@ -483,8 +469,8 @@ export function homeAlert(s, ds, snap, connections = [], back = null, today = nu
 }
 
 /** SafeToSpendCard (H-01, H-02). */
-export function SafeToSpendCard({ s, onExplain, updated = null, copy = null }) {
-  const c = copy ?? heroCopy(s);
+export function SafeToSpendCard({ s, onExplain, updated = null }) {
+  const c = heroCopy(s);
   const canExplain = s.rows.length > 0;
   return (
     <section className="hm-sts" aria-labelledby="hm-sts-label">

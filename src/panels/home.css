@@ -144,26 +144,6 @@
 .pt-status.now { border-color: var(--action); border-width: 3px; }
 .pt-bottom { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-4); }
 
-/* ── Month / Week and the week strip (THL-166 W-01, W-02) ────────────────── */
-.hm-toggle { width: 248px; max-width: 100%; }
-.hm-toggle .pk-seg button { font-size: 14px; }
-.hm-strip {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3);
-  padding: var(--space-4) var(--space-5); border-radius: var(--radius-md);
-  background: var(--surface-card); border: 1px solid var(--border);
-}
-.hm-strip-label { font-weight: 500; }
-.hm-strip-text { flex: 1 1 200px; min-width: 0; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-.pk .hm-strip-link { display: inline-flex; align-items: center; gap: 2px; font-size: 14px; }
-
-/* ── The weekly working (W-03) ───────────────────────────────────────────── */
-.hm-row-static {
-  display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4);
-}
-.hm-adds { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); }
-.hm-adds-total { padding-top: var(--space-2); border-top: 1px solid var(--border); font-weight: 600; }
-.hm-adds .hm-adds-total dt { color: var(--ink); }
-
 /* ── Can I afford it? (THL-167 AF-01 to AF-03) ───────────────────────────── */
 .hm-afford { align-items: stretch; }
 .hm-afford-row { display: flex; align-items: flex-end; gap: var(--space-3); }
