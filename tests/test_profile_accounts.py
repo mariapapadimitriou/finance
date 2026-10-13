@@ -10,6 +10,7 @@ import pytest
 from finance.ingest.base import IngestResult
 from finance.models import Transaction
 from finance.pipeline import ingest
+from ledger_files import set_plan
 
 TODAY = date.today()
 MONTH = f"{TODAY:%Y-%m}"
@@ -37,7 +38,7 @@ def client(tmp_path, monkeypatch):
     app = create_app(str(tmp_path / "profile.db"))
     app.config.update(TESTING=True)
     with app.test_client() as c:
-        c.put("/api/plan/setup", json={"income": 5200, "savings": 0})
+        set_plan(c, income=5200, savings=0)
         st = c.application.config["STORE"]
         st.add_plaid_item("item-td", "token", "TD")
         st.note_account("visa", name="TD Visa ••1203", item_id="item-td",
@@ -212,21 +213,19 @@ def test_adding_by_hand_needs_name_type_and_balance(client, body, field):
     assert r.status_code == 400 and r.get_json()["field"] == field
 
 
-def test_hand_balances_count_in_the_position_and_the_anchor(client):
+def test_hand_balances_count_in_the_anchor(client):
     aid = add(client).get_json()["account"]["id"]
     add(client, "Line card", "credit", 250)
-    plan = client.get("/api/plan").get_json()["position"]
-    assert plan["cash"] == pytest.approx(6100 + 3000)
-    assert plan["owed"] == pytest.approx(412.55 + 250)
 
     client.put(f"/api/accounts/{aid}/settings", json={"anchor": True})
     anchor = client.get("/api/goals").get_json()["anchor"]
     assert aid in anchor["accounts"]
     assert any(a["account_id"] == aid for a in anchor["available_accounts"])
 
-    # Not counted: out of the position.
+    # Not counted: no longer an account the Anchor can count.
     client.put(f"/api/accounts/{aid}/settings", json={"counted": False})
-    assert client.get("/api/plan").get_json()["position"]["cash"] == pytest.approx(6100)
+    anchor = client.get("/api/goals").get_json()["anchor"]
+    assert all(a["account_id"] != aid for a in anchor["available_accounts"])
 
 
 def test_a_hand_added_card_is_money_owed(client):

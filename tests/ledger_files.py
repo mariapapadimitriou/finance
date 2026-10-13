@@ -45,3 +45,14 @@ def add_fixed(client, name: str, amount: float, category: str = "Other") -> int:
     and its endpoints went with THL-127; commitments already saved still
     count in the plan's arithmetic, so tests put them in the store directly."""
     return _store(client).add_fixed_cost(name, amount, category)
+
+
+def set_plan(client, income: float | None = None, savings: float | None = None) -> None:
+    """Take-home pay and the monthly saving goal, as the old plan page saved
+    them (PUT /api/plan/setup, removed with the prototype Projections page).
+    Home's safe-to-spend still reads both, so tests put them in the store."""
+    st = _store(client)
+    if income is not None:
+        st.set_setting("monthly_income", max(float(income), 0.0))
+    if savings is not None:
+        st.set_setting("savings_target", max(float(savings), 0.0))

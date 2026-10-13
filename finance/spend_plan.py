@@ -36,7 +36,6 @@ restraint on a Tuesday changes the hydro bill.
 from __future__ import annotations
 
 import calendar
-from dataclasses import dataclass
 from datetime import date
 
 from .analytics import counts_as_spending, spend_amount
@@ -236,118 +235,6 @@ def _week(transactions, month: str, day: int, total_days: int,
 def _money(value: float) -> str:
     """Format for prose. A negative reads as −$12.00, never as $-12.00."""
     return f"{'−' if value < 0 else ''}${abs(value):,.2f}"
-
-
-def simulate(state: dict, amount: float, pots=None) -> dict:
-    """Answer "can I buy this?" with the consequence either way.
-
-    Against the week, like the headline: a purchase fits if it fits in what is
-    left of this week. `pots` is a list of (piggy bank, available balance)
-    pairs. The balance is passed in rather than read off the bank because it
-    is derived — months accrued less what has been charged — and the one
-    place that derives it is finance/piggy.py.
-    """
-    amount = round(float(amount), 2)
-    left = state["week"]["left"]
-    after = round(left - amount, 2)
-
-    if after >= 0:
-        return {
-            "amount": amount,
-            "affordable": True,
-            "leaves_week": after,
-            "message": f"Yes — that leaves {_money(after)} for the rest of the week.",
-            "options": [],
-        }
-
-    short = round(-after, 2)
-    days_left = state["days_left"]
-    # Spreading the shortfall over the rest of the month, today excluded:
-    # today has already been spent by the purchase itself. Quoted per week,
-    # because that is the number the reader is looking at.
-    future_days = max(days_left - 1, 1)
-    new_daily = round((state["remaining"] - amount) / future_days, 2)
-    new_weekly = round(new_daily * 7, 2)
-
-    if new_daily >= 0:
-        detail = (f"Every week after this drops to about {_money(new_weekly)}."
-                  if future_days > 7 else
-                  f"What is left of the month drops to {_money(new_daily)} a day.")
-    else:
-        # Saying "every week drops to −$2,148" is arithmetic nobody can act on.
-        # What it means is that the month has already run out.
-        detail = ("There is nothing left in the month to spread it over — the "
-                  f"budget is already {_money(-state['remaining'])} short "
-                  "before this purchase.")
-
-    options = [{
-        "kind": "spread",
-        "label": "Spread it over the rest of the month",
-        "detail": detail,
-        "new_daily": new_daily,
-        "new_weekly": new_weekly,
-        "viable": new_daily >= 0,
-    }]
-
-    # What paying from a bank would do — nothing is taken from it here. The
-    # real charge is charged to the bank when it arrives, and the bank pays
-    # the whole of it, so that is the figure shown.
-    for bank, available in (pots or []):
-        options.append({
-            "kind": "cover",
-            "bank_id": bank.id,
-            "label": f"Pay it from {bank.name}",
-            "detail": f"{bank.name} goes from {_money(available)} to "
-                      f"{_money(round(available - amount, 2))}.",
-            "viable": available >= amount,
-        })
-
-    if left < 0:
-        message = (f"This week is already {_money(-left)} over, so that "
-                   f"purchase needs {_money(short)} from somewhere.")
-    else:
-        message = (f"That's {_money(short)} more than the {_money(left)} left "
-                   "this week.")
-
-    return {
-        "amount": amount,
-        "affordable": False,
-        "short_by": short,
-        "message": message,
-        "options": options,
-    }
-
-
-def how_am_i_doing(state: dict, baseline: float | None = None) -> dict:
-    """A plain verdict on the month, with the number it rests on."""
-    budget, spent, day = state["budget"], state["spent_mtd"], state["day"]
-    total_days = state["days_in_month"]
-    expected = state["flat_daily"] * day
-    projected = round(spent / day * total_days, 2) if day else 0.0
-
-    if budget <= 0:
-        verdict, tone = "No budget set yet", "neutral"
-    elif spent == 0:
-        verdict, tone = "Nothing spent yet this month", "good"
-    elif spent <= expected * 0.8:
-        verdict, tone = "Comfortably under", "good"
-    elif spent <= expected:
-        verdict, tone = "On track", "good"
-    elif projected <= budget:
-        verdict, tone = "Ahead of pace, but the month still balances", "warning"
-    else:
-        verdict, tone = "Over pace — this month lands above budget", "critical"
-
-    return {
-        "verdict": verdict,
-        "tone": tone,
-        "spent": spent,
-        "expected_by_now": round(expected, 2),
-        "projected_month_end": projected,
-        "projected_over": round(projected - budget, 2),
-        "budget": budget,
-        "vs_baseline": round(projected - baseline, 2) if baseline else None,
-    }
 
 
 def suggest_monthly_amount(transactions) -> float:

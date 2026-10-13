@@ -1,11 +1,10 @@
-"""Safe-to-spend, gamification, projections and manual entry."""
+"""The weekly allowance (spend_plan), piggy-bank draws and manual entry."""
 
 from datetime import date
 
 import pytest
 
-from finance import manual, money_plan, projections, spend_plan
-from finance.piggy import Bank
+from finance import manual, spend_plan
 from finance.categorize import apply_categories
 from finance.models import Transaction
 from ledger_files import upload
@@ -122,208 +121,6 @@ class TestSafeToSpend:
         assert state["day"] == 31
         assert state["days_left"] == 1
 
-
-class TestCanIBuyThis:
-    def _state(self):
-        # $310 over January's 31 days is $10 a day. 1 January 2025 is a
-        # Wednesday, so the 3rd sits in a five-day week (Wed 1 – Sun 5) worth
-        # $50, with $5 already spent in it.
-        rows = [dining("2025-01-01", 5.0)]
-        apply_categories(rows)
-        return spend_plan.compute(rows, 310.0, "2025-01", today=date(2025, 1, 3))
-
-    def test_it_answers_against_the_week(self):
-        week = self._state()["week"]
-        assert (week["first_day"], week["last_day"]) == (1, 5)
-        assert week["left"] == pytest.approx(45.0)
-
-    def test_an_affordable_purchase_says_what_is_left(self):
-        r = spend_plan.simulate(self._state(), 10.0)
-        assert r["affordable"] is True
-        assert r["leaves_week"] == pytest.approx(35.0)
-        assert "rest of the week" in r["message"]
-
-    def test_an_unaffordable_one_says_by_how_much(self):
-        r = spend_plan.simulate(self._state(), 100.0)
-        assert r["affordable"] is False
-        assert r["short_by"] == pytest.approx(55.0)
-
-    def test_it_offers_to_spread_the_shortfall(self):
-        r = spend_plan.simulate(self._state(), 100.0)
-        spread = next(o for o in r["options"] if o["kind"] == "spread")
-        assert spread["new_daily"] < self._state()["flat_daily"]
-
-    def test_it_offers_a_piggy_bank_that_can_cover_it(self):
-        bank = Bank(id=1, name="Fun", target=200.0, opening=200.0)
-        r = spend_plan.simulate(self._state(), 100.0, [(bank, 200.0)])
-        cover = next(o for o in r["options"] if o["kind"] == "cover")
-        assert cover["viable"] is True
-        assert cover["bank_id"] == 1
-        # The bank would pay the whole purchase, not just the shortfall.
-        assert "$200.00 to $100.00" in cover["detail"].replace(",", "")
-
-    def test_a_bank_that_is_too_small_is_shown_as_not_viable(self):
-        bank = Bank(id=1, name="Fun", target=200.0, opening=10.0)
-        r = spend_plan.simulate(self._state(), 100.0, [(bank, 10.0)])
-        cover = next(o for o in r["options"] if o["kind"] == "cover")
-        assert cover["viable"] is False
-
-    def test_spreading_below_zero_is_flagged_as_not_viable(self):
-        rows = [dining("2025-01-01", 300.0)]
-        apply_categories(rows)
-        state = spend_plan.compute(rows, 310.0, "2025-01", today=date(2025, 1, 30))
-        r = spend_plan.simulate(state, 500.0)
-        spread = next(o for o in r["options"] if o["kind"] == "spread")
-        assert spread["viable"] is False
-
-
-class TestProseFormatting:
-    """Server-written sentences are read by a person, not parsed."""
-
-    def test_a_negative_never_renders_as_a_dollar_minus(self):
-        state = spend_plan.compute([], 300.0, "2025-01", today=date(2025, 1, 31))
-        state["week"]["left"] = -56.89
-        state["remaining"] = -56.89
-        state["days_left"] = 1
-        r = spend_plan.simulate(state, 250.0)
-        blob = r["message"] + " ".join(o["detail"] + o["label"] for o in r["options"])
-        assert "$-" not in blob
-        assert "already" in r["message"]
-
-    def test_spreading_says_the_month_ran_out_rather_than_a_negative_daily(self):
-        state = spend_plan.compute([], 300.0, "2025-01", today=date(2025, 1, 31))
-        state["week"]["left"] = -56.89
-        state["remaining"] = -56.89
-        state["days_left"] = 1
-        spread = spend_plan.simulate(state, 250.0)["options"][0]
-        assert spread["viable"] is False
-        assert "nothing left" in spread["detail"].lower()
-
-
-class TestHowAmIDoing:
-    def test_nothing_spent_reads_as_good(self):
-        state = spend_plan.compute([], 310.0, "2025-01", today=date(2025, 1, 10))
-        assert spend_plan.how_am_i_doing(state)["tone"] == "good"
-
-    def test_on_pace_reads_as_good(self):
-        rows = [dining(f"2025-01-{d:02d}", 10.0) for d in range(1, 11)]
-        apply_categories(rows)
-        state = spend_plan.compute(rows, 310.0, "2025-01", today=date(2025, 1, 10))
-        assert spend_plan.how_am_i_doing(state)["tone"] == "good"
-
-    def test_heavy_overspending_reads_as_critical(self):
-        rows = [dining("2025-01-01", 400.0)]
-        apply_categories(rows)
-        state = spend_plan.compute(rows, 310.0, "2025-01", today=date(2025, 1, 10))
-        status = spend_plan.how_am_i_doing(state)
-        assert status["tone"] == "critical"
-        assert status["projected_over"] > 0
-
-    def test_it_reports_the_projection_it_judged_on(self):
-        rows = [dining("2025-01-01", 40.0)]
-        apply_categories(rows)
-        state = spend_plan.compute(rows, 310.0, "2025-01", today=date(2025, 1, 4))
-        # $40 over 4 days, carried across 31 days.
-        assert spend_plan.how_am_i_doing(state)["projected_month_end"] == pytest.approx(310.0)
-
-
-class TestProjections:
-    def test_a_card_payment_is_not_income(self):
-        """The bug that would project savings out of your own debt repayment."""
-        rows = [txn("2025-01-25", "PAYMENT FROM - ****", -1000.0),
-                dining("2025-01-02", 50.0)]
-        apply_categories(rows)
-        r = projections.project(rows, None, 0.0)
-        assert r["available"] is False
-        assert "take-home pay" in r["reason"]
-
-    def test_with_income_it_projects_both_lines(self):
-        """Without a plan there is nothing to follow, so the second line falls
-        back to the pace with the cuts applied."""
-        rows = [dining(f"2025-0{m}-05", 200.0) for m in range(1, 5)]
-        apply_categories(rows)
-        r = projections.project(rows, 3000.0, 1200.0, months_ahead=12)
-        assert r["available"] is True
-        assert r["monthly_cuts"] == pytest.approx(100.0)
-        assert r["monthly_on_plan"] is None
-        assert r["at_12"]["on_plan"] > r["at_12"]["pace"]
-
-    def test_with_a_plan_the_second_line_is_what_the_plan_puts_away(self):
-        """The fix for "it says I will never make money": the plan line is the
-        savings figure, which does not depend on the spending history at all."""
-        rows = [dining(f"2025-0{m}-05", 2000.0) for m in range(1, 5)]
-        apply_categories(rows)
-        # $3,000 in, $1,500 of rent and $400 put away leaves $1,100 — against
-        # $2,000 a month of actual spending.
-        rent = money_plan.FixedCost(id=1, name="Rent", amount=1500.0,
-                                    category="Rent & Housing")
-        plan = money_plan.plan(3000.0, [rent], 400.0)
-        r = projections.project(rows, 3000.0, 0.0, months_ahead=12, plan=plan)
-
-        # Spending far above the leftover, so the recent pace goes backwards.
-        assert r["monthly_surplus"] < 0
-        # The plan still accumulates, because following it means spending the
-        # budget rather than the history.
-        assert r["monthly_on_plan"] == pytest.approx(400.0)
-        assert r["at_12"]["on_plan"] == pytest.approx(4800.0)
-        assert r["at_12"]["pace"] < 0
-
-    def test_commitments_are_not_subtracted_twice(self):
-        """`leftover` already excludes them; a commitment paid by card was in
-        the spending as well, so both came off and the surplus read low."""
-        rows = [txn("2025-01-20", "ROGERS WIRELESS", 65.0),
-                txn("2025-02-20", "ROGERS WIRELESS", 65.0),
-                dining("2025-01-05", 100.0), dining("2025-02-05", 100.0)]
-        apply_categories(rows)
-        for t in rows:
-            if "ROGERS" in t.description:
-                t.category, t.category_source = "Phone & Internet", "user"
-
-        phone = money_plan.FixedCost(id=1, name="Phone", amount=65.0,
-                                     category="Phone & Internet")
-        plan = money_plan.plan(3000.0, [phone], 0.0)
-        r = projections.project(rows, 3000.0, 0.0, plan=plan)
-
-        # The phone category is out of the figure the leftover is measured
-        # against, though still in the headline typical month.
-        assert r["plan_spend"] < r["typical_monthly_spend"]
-        assert r["typical_monthly_spend"] - r["plan_spend"] == pytest.approx(65.0)
-
-    def test_it_states_that_one_card_is_not_all_your_spending(self):
-        rows = [dining("2025-01-05", 200.0)]
-        apply_categories(rows)
-        r = projections.project(rows, 3000.0, 0.0)
-        assert "imported" in r["caveat"]
-
-    def test_confidence_reflects_how_little_data_there_is(self):
-        thin = [dining("2025-01-05", 200.0)]
-        apply_categories(thin)
-        assert projections.project(thin, 3000.0, 0.0)["confidence"] == "thin"
-
-    def test_an_empty_ledger_projects_nothing(self):
-        assert projections.project([], 3000.0, 0.0)["available"] is False
-
-    def test_goal_eta_answers_under_each_scenario(self):
-        rows = [dining(f"2025-0{m}-05", 200.0) for m in range(1, 5)]
-        apply_categories(rows)
-        r = projections.project(rows, 3000.0, 6000.0)
-        eta = projections.goal_eta(r, 10000.0)
-        assert eta["plan_months"] <= eta["pace_months"]
-
-    def test_a_goal_is_reachable_on_the_plan_even_when_the_pace_says_never(self):
-        rows = [dining(f"2025-0{m}-05", 2000.0) for m in range(1, 5)]
-        apply_categories(rows)
-        rent = money_plan.FixedCost(id=1, name="Rent", amount=1500.0,
-                                    category="Rent & Housing")
-        plan = money_plan.plan(3000.0, [rent], 400.0)
-        r = projections.project(rows, 3000.0, 0.0, plan=plan)
-        eta = projections.goal_eta(r, 4800.0)
-
-        assert eta["pace_months"] is None          # going backwards
-        assert eta["plan_months"] == 12
-
-
-# ── Manual entry ─────────────────────────────────────────────────────────────
 
 class TestManualEntry:
     def test_it_builds_a_normal_transaction(self):
@@ -467,7 +264,7 @@ class TestManualApi:
         assert client.get("/api/transactions").get_json()["total"] == 0
 
 
-class TestPlanApi:
+class TestPiggyDraws:
     @pytest.fixture()
     def client(self, tmp_path):
         from app import create_app
@@ -476,33 +273,10 @@ class TestPlanApi:
         with app.test_client() as c:
             yield c
 
-    def test_plan_endpoint_shape(self, client):
-        body = client.get("/api/plan").get_json()
-        assert "state" in body and "status" in body and "banks" in body
-
-    def test_there_is_nowhere_left_to_type_a_daily_number(self, client):
-        """It is derived from the Plan tab, so the setter is gone rather than
-        deprecated: two ways to decide one figure is how they drift apart."""
-        assert client.put("/api/plan", json={"monthly_amount": 600}).status_code == 405
-
     def _bank(self, client):
         return client.post("/api/piggy", json={
             "name": "Fun", "target": 1200, "cadence": "annual", "opening": 100,
         }).get_json()["id"]
-
-    def test_asking_can_i_moves_no_money(self, client):
-        """It is a question. Nothing was bought, so nothing comes out of a
-        bank and the week gets nothing added to it."""
-        bank_id = self._bank(client)
-        before = client.get("/api/plan").get_json()
-        r = client.post("/api/plan/simulate", json={"amount": 5000})
-        assert r.status_code == 200
-        cover = next(o for o in r.get_json()["options"] if o["kind"] == "cover")
-        assert cover["bank_id"] == bank_id
-        after = client.get("/api/plan").get_json()
-        assert after["banks"][0]["available"] == before["banks"][0]["available"]
-        assert after["state"]["week"]["left"] == before["state"]["week"]["left"]
-        assert after["draws"] == []
 
     def test_there_is_no_endpoint_that_draws_any_more(self, client):
         bank_id = self._bank(client)
@@ -512,28 +286,21 @@ class TestPlanApi:
     def test_an_old_draw_can_be_undone(self, client):
         bank_id = self._bank(client)
         st = client.application.config["STORE"]
-        month = client.get("/api/plan").get_json()["state"]["month"]
-        before = client.get("/api/plan").get_json()["banks"][0]["available"]
+        month = date.today().strftime("%Y-%m")
+        before = client.get("/api/piggy").get_json()["banks"][0]["available"]
         with st.conn() as c:
             c.execute("INSERT INTO piggy_draws (bank_id, month, amount, note) "
                       "VALUES (?,?,?,?)", (bank_id, month, 50.0, ""))
-        drawn = client.get("/api/plan").get_json()
+        drawn = client.get("/api/piggy").get_json()
         assert drawn["banks"][0]["available"] == pytest.approx(before - 50.0)
         assert st.covered_in(month) == pytest.approx(50.0)
 
-        draw_id = drawn["draws"][0]["id"]
+        draw_id = next(d["id"] for d in st.draws() if d["amount"] > 0)
         assert client.delete(f"/api/piggy/draws/{draw_id}").status_code == 200
-        undone = client.get("/api/plan").get_json()
+        undone = client.get("/api/piggy").get_json()
         assert undone["banks"][0]["available"] == pytest.approx(before)
-        assert undone["draws"] == []
         assert st.covered_in(month) == 0
         assert client.delete(f"/api/piggy/draws/{draw_id}").status_code == 404
-
-    def test_simulate_needs_a_positive_amount(self, client):
-        assert client.post("/api/plan/simulate", json={"amount": 0}).status_code == 400
-
-    def test_projections_respond(self, client):
-        assert client.get("/api/projections").status_code == 200
 
 
 class TestTheWeek:

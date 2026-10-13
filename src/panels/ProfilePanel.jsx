@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
-import { getAuthStatus, getProfileSummary } from '../api.js';
+import { getAuthStatus, getProfileSummary, undoInvesting } from '../api.js';
 import { StatusPill } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import './home.css';
@@ -84,6 +84,9 @@ export function hubRows(summary, user) {
         sub: s.rules ? plural(s.rules, 'saved rule') : 'No saved rules yet' },
       { key: 'income', name: 'Income and bills',
         sub: 'Your pay, and the regular bills set aside' },
+      // Unveil's self-report (THL-195 GR-37), undone here.
+      ...(s.investing ? [{ key: 'investing', name: 'Investing account', undo: true,
+                           sub: `You told Pearl you opened one: ${s.investing.label}` }] : []),
     ] },
     { title: 'You', rows: [
       { key: 'security', name: 'Sign-in and security',
@@ -105,7 +108,7 @@ export function hubRows(summary, user) {
   ];
 }
 
-export function ProfileHub({ summary, user, onTab }) {
+export function ProfileHub({ summary, user, onTab, onUndoInvesting }) {
   const who = [user?.first_name || user?.username, user?.email].filter(Boolean).join(' · ');
   return (
     <div className="pk hm-page pf-page">
@@ -120,8 +123,10 @@ export function ProfileHub({ summary, user, onTab }) {
           <ul className="pf-list">
             {group.rows.map((r) => (
               <ListRow key={r.key} name={r.name} sub={r.sub} soon={r.soon}
-                       onOpen={() => onTab?.(r.key)}
-                       end={r.needs > 0 && (
+                       onOpen={r.undo ? null : () => onTab?.(r.key)}
+                       end={r.undo ? (
+                         <button type="button" className="gl-more" onClick={onUndoInvesting}>Undo</button>
+                       ) : r.needs > 0 && (
                          <StatusPill icon="alert" tone="caution">
                            <span className="pf-needs">{`${r.needs} needs you`}</span>
                          </StatusPill>
@@ -146,5 +151,8 @@ export default function ProfilePanel({ onTab, version }) {
   }, []);
   useEffect(() => { load(); }, [load, version]);
   if (error) return <div className="pk hm-page pf-page"><ErrorNote error={error} onRetry={load} /></div>;
-  return <ProfileHub summary={summary} user={user} onTab={onTab} />;
+  return (
+    <ProfileHub summary={summary} user={user} onTab={onTab}
+                onUndoInvesting={() => undoInvesting().then(load).catch(setError)} />
+  );
 }

@@ -1,0 +1,141 @@
+/* Growth › Projections and Unveil (Pearl THL-197 GR-33 to GR-37, THL-135
+ * GR-16 to GR-18, THL-130 GR-10). Built on insights.css (the pills, cards,
+ * legends and detail heads). Colours, type and spacing come from the Pearl
+ * tokens; nothing here names a colour itself, and nothing is red. */
+
+.pj-body { font-size: 15px; line-height: 22px; font-weight: 500; overflow-wrap: anywhere; }
+.pj-figure-big { margin: 0; overflow-wrap: anywhere; }
+.pj-page .in-actions .pk-btn { min-width: 152px; }
+.pj-page .in-actions .pk-btn.primary { min-width: 327px; }
+
+/* ── YOUR ANCHOR line ────────────────────────────────────────────────────── */
+.pk .pj-anchor {
+  flex-direction: row; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-5);
+}
+.pj-anchor h2 { margin: 0; }
+
+/* ── Look-ahead cards ────────────────────────────────────────────────────── */
+.pj-cards { display: flex; flex-direction: column; gap: var(--space-6); }
+.pj-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); align-items: stretch; }
+
+/* ── Charts ──────────────────────────────────────────────────────────────── */
+.pj-figure { gap: var(--space-4); }
+.pj-line { fill: none; stroke: var(--action); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.pj-point { fill: var(--surface-card); stroke: var(--action); stroke-width: 2; }
+.pj-dash { stroke: var(--action); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.pj-wedge { fill: var(--blush); opacity: .9; }
+.pj-wedge-more { fill: var(--lilac); }
+.pj-limit { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.pj-today { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.pj-axis { stroke: var(--track); stroke-width: 2; }
+.pj-note { fill: var(--ink-muted); font-family: var(--text); font-size: 13px; font-weight: 500; }
+.pj-note.strong { fill: var(--ink); }
+.pj-end { fill: var(--ink); font-family: var(--text); font-size: 15px; font-weight: 500; }
+.pj-bill { fill: var(--champagne); stroke: var(--gold-700); stroke-width: 1; }
+.pj-bill.unconfirmed { stroke-dasharray: 2 2; fill: var(--surface-card); }
+.pj-payday { fill: var(--seaglass); stroke: var(--ink); stroke-width: 1.5; }
+.pj-swatch-limit { background: none; border: 1.5px dashed var(--ink); }
+.pj-swatch-unconfirmed { background: none; border: 1.5px dashed var(--gold-700); border-radius: var(--radius-full); }
+.pk .pj-how { align-self: flex-start; }
+
+/* ── Coming up (GR-35) ───────────────────────────────────────────────────── */
+.pj-coming { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.pj-coming li { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.pj-day { min-width: 48px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pj-dot { width: 12px; height: 12px; border-radius: var(--radius-full); flex: none; }
+.pj-dot.bill { background: var(--champagne); }
+.pj-dot.payday { background: var(--seaglass); }
+.pj-dot.unconfirmed { background: none; border: 1.5px dashed var(--ink-muted); }
+
+/* ── Savings slider (GR-36) ──────────────────────────────────────────────── */
+.pj-slider-row { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.pj-slider-label { font-size: 15px; font-weight: 500; }
+.pj-slider-row .viz-slider { flex: 0 1 380px; min-width: 160px; }
+.pj-slider-value {
+  font-family: var(--display); font-weight: 600; font-size: 18px; line-height: 24px;
+  font-variation-settings: "SOFT" 0, "WONK" 1; white-space: nowrap;
+}
+
+/* ── How we worked this out ──────────────────────────────────────────────── */
+.pj-parts { margin: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.pj-parts div { display: flex; justify-content: space-between; gap: var(--space-4); }
+.pj-parts dt { color: var(--ink-muted); min-width: 0; }
+.pj-parts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pj-parts .strong { border-top: 1px solid var(--border); padding-top: var(--space-3); }
+.pj-parts .strong dt, .pj-parts .strong dd { color: var(--ink); font-weight: 600; }
+
+/* ── The growth calculator (GR-17, GR-18) ────────────────────────────────── */
+.pk .pj-calc { gap: var(--space-5); }
+.pj-calc-head { gap: var(--space-3); align-items: flex-start; }
+.pj-calc-head h2 { margin: 0; }
+.pj-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.pj-field-note { margin: 0; font-size: 13px; line-height: 18px; color: var(--caution); }
+.pj-rates { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-4); }
+.pj-rates li { display: flex; align-items: center; gap: var(--space-5); min-width: 0; }
+.pj-rate-label { width: 120px; flex: none; font-size: 15px; font-weight: 500; }
+.pj-bar {
+  display: flex; flex: 0 1 600px; min-width: 0; height: 16px; overflow: hidden;
+  border-radius: var(--radius-full); background: var(--track);
+}
+.pj-bar-in { background: var(--lilac); }
+.pj-bar-growth { background: var(--action); }
+.pj-rate-value {
+  margin-left: auto; font-family: var(--display); font-weight: 600; font-size: 24px; line-height: 30px;
+  letter-spacing: -.01em; font-variation-settings: "SOFT" 0, "WONK" 1; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pj-calc-foot { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
+.pk .pj-calc-foot .in-more:disabled { color: var(--ink-disabled); cursor: default; text-decoration: none; }
+.pk .pj-calc-foot .pk-btn.pj-hug { width: auto; margin-left: auto; }
+
+/* ── GR-16 Ready to invest ───────────────────────────────────────────────── */
+.pj-title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
+.pj-ready { display: grid; grid-template-columns: minmax(0, 664fr) minmax(0, 360fr); gap: var(--space-6); align-items: start; }
+.pj-ready h2 { margin: 0; }
+.pj-ready .pk-btn { align-self: stretch; }
+.pj-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-4); }
+.pj-checklist li { display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
+.pj-check {
+  width: 28px; height: 28px; flex: none; border-radius: var(--radius-full);
+  border: 2px solid var(--action); display: inline-flex; align-items: center; justify-content: center;
+}
+.pj-check.done { background: var(--action); color: var(--on-action); }
+.pj-why { border-top: 1px solid var(--border); padding-top: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+
+/* ── GR-37 Opened an investing account? ──────────────────────────────────── */
+.pj-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.pj-fieldset legend { padding: 0; margin-bottom: var(--space-3); }
+
+/* ── GR-10 Unveil done ───────────────────────────────────────────────────── */
+.pj-done { align-items: center; text-align: center; max-width: 720px; margin: 0 auto; padding-top: 72px; gap: var(--space-4); }
+.pj-done h1 { margin: 0; }
+.pj-done-mark {
+  width: 168px; height: 168px; border-radius: var(--radius-full); background: var(--blush);
+  display: flex; align-items: center; justify-content: center; box-shadow: var(--glow-pearl);
+}
+.pj-done-phases {
+  list-style: none; margin: var(--space-6) 0 var(--space-2); padding: 0;
+  display: flex; justify-content: center; gap: 76px;
+}
+.pj-done-phases li { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); }
+.pj-done .pk-btn { width: 328px; max-width: 100%; }
+
+/* ── Phones ──────────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .pj-row, .pj-ready { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .pk .pj-anchor { flex-direction: column; align-items: flex-start; }
+  .pj-inputs { grid-template-columns: minmax(0, 1fr); }
+  .pj-rates li { flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
+  .pj-rate-label { width: auto; }
+  .pj-bar { order: 3; flex: 1 1 100%; }
+  .pj-rate-value { font-size: 20px; line-height: 26px; }
+  .pk .pj-calc-foot .pk-btn.pj-hug { margin-left: 0; width: 100%; }
+  .pj-page .in-actions .pk-btn.primary { min-width: 0; }
+  .pj-done { padding-top: var(--space-6); }
+  .pj-done-mark { width: 128px; height: 128px; }
+  .pj-done-phases { gap: var(--space-6); }
+  .pj-title-row img { width: 44px; height: auto; }
+}

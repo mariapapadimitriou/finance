@@ -7,7 +7,9 @@ Steps, as THL-129 (2026-10-12) lists them:
 * Build: the Anchor's first stop ($500); the Anchor full (one month of
   Essentials). Also counts: saved more than spent in 2 of the last 3 months;
   no card balance growing.
-* Unveil: first investment account opened.
+* Unveil: first investment account opened — an investment account linked,
+  or her own word for it (THL-195 GR-37: "Opened an investing account?"
+  asks only the kind of account, never where, a login or a balance).
 
 Income and bills are confirmed in the income and bills check (THL-45,
 THL-127, `income_bills`). Income is confirmed once she has said yes to her
@@ -62,6 +64,14 @@ def _cards_not_growing(transactions, month: str | None, card_accounts: set[str])
     return all(v <= 0.005 for v in net.values())
 
 
+def cards_steady(transactions, months: list[str], card_accounts: set[str]) -> dict:
+    """GR-16's "No card balance growing": no card balance grew in any of
+    `months`. Says which month one did, if one did."""
+    grew = [m for m in months if not _cards_not_growing(transactions, m, card_accounts)]
+    return {"done": not grew, "months": len(months), "grew_in": grew[-1] if grew else None,
+            "cards": len(card_accounts)}
+
+
 def income_confirmed(sts: dict, confirm: dict | None, told_income: float = 0.0) -> bool:
     """Is her income confirmed (THL-127)? Her answers once she has given
     them; before that, regular pay Pearl can see or an amount she told us."""
@@ -81,9 +91,10 @@ def bills_confirmed(confirm: dict | None, bills_found: int = 0, told_rent: float
 def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int = 0,
          told_rent: float = 0.0, account_types: dict[str, str] | None = None,
          protect_done_before: bool = False, confirm: dict | None = None,
-         told_income: float = 0.0) -> dict:
+         told_income: float = 0.0, invest_reported: bool = False) -> dict:
     """Where she is on the path, every step's state, and the next step.
-    `confirm` is her income and bills check (`income_bills.load`)."""
+    `confirm` is her income and bills check (`income_bills.load`);
+    `invest_reported` is her saying she opened an investing account (GR-37)."""
     types = account_types or {}
     months = covered_months(transactions, today)
     last = months[-1] if months else None
@@ -124,7 +135,8 @@ def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int
     ]
     unveil = [
         {"key": "invest", "label": "Open your first investment account",
-         "done": any((t or "").lower() == "investment" for t in types.values())},
+         "done": invest_reported
+         or any((t or "").lower() == "investment" for t in types.values())},
     ]
 
     if not protect_done:

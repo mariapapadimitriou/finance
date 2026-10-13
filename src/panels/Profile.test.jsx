@@ -67,6 +67,16 @@ describe('S-01 the Profile hub', () => {
     expect(primaries(<ProfileHub summary={summary} user={user} />)).toBe(0);
   });
 
+  it('an investing account she told Pearl about can be undone here (GR-37)', () => {
+    const rows = hubRows({ ...summary, investing: { type: 'tfsa', label: 'TFSA' } }, user)[0].rows;
+    expect(rows.at(-1)).toMatchObject({ key: 'investing', undo: true,
+                                       sub: 'You told Pearl you opened one: TFSA' });
+    const t = text(<ProfileHub summary={{ ...summary, investing: { type: 'tfsa', label: 'TFSA' } }} user={user} />);
+    expect(t).toContain('Investing account');
+    expect(t).toContain('Undo');
+    expect(hubRows(summary, user)[0].rows.some((r) => r.key === 'investing')).toBe(false);
+  });
+
   it('says nothing needs her when nothing does, and reads well before it loads', () => {
     const t = text(<ProfileHub summary={null} user={null} />);
     expect(t).not.toContain('needs you');

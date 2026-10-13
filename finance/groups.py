@@ -30,7 +30,7 @@ a grouping saved before then, and will until they are replaced.
 
 from __future__ import annotations
 
-from .categorize import CATEGORIES, NON_SPEND, is_discretionary
+from .categorize import CATEGORIES, NON_SPEND
 
 MAX_NAME = 40
 
@@ -50,26 +50,6 @@ def lines(groups: dict[str, str] | None) -> dict[str, list[str]]:
     for category in spend_categories():
         out.setdefault(line_of(category, groups), []).append(category)
     return out
-
-
-def line_bank_funded(members: list[str], bank_funded) -> bool:
-    """Is every category on this line paid for by a piggy bank?"""
-    return bool(members) and all(m in bank_funded for m in members)
-
-
-def line_daily(members: list[str]) -> str:
-    """Which side of the weekly number a line falls on: all, none, or part.
-
-    A line is a budgeting convenience; the weekly number is still decided per
-    category, so a line holding Health (budgeted monthly) and Personal Care
-    (in the weekly number) is honestly "part", and says so.
-    """
-    flags = {is_discretionary(m) for m in members}
-    if flags == {True}:
-        return "all"
-    if flags == {False}:
-        return "none"
-    return "part"
 
 
 def validate(mapping: dict, bank_funded=frozenset()

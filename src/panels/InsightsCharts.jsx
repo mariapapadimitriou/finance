@@ -15,7 +15,7 @@ import {
  */
 
 /** The width a chart has to draw in, so its text stays its own size. */
-function useWidth(fallback = 560) {
+export function useWidth(fallback = 560) {
   const ref = useRef(null);
   const [width, setWidth] = useState(fallback);
   useEffect(() => {

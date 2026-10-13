@@ -11,7 +11,7 @@ from datetime import date
 
 import pytest
 
-from ledger_files import load_bundled
+from ledger_files import load_bundled, set_plan
 
 
 @pytest.fixture()
@@ -21,8 +21,7 @@ def ledger(tmp_path):
     app.config.update(TESTING=True)
     with app.test_client() as c:
         load_bundled(c)
-        c.put("/api/plan/setup", json={"income": 5200, "savings": 900})
-        c.post("/api/plan/setup/apply")
+        set_plan(c, income=5200, savings=900)
         yield c
 
 
@@ -35,13 +34,16 @@ def add_charge(c, amount=120.0, category="Dining", description="DINNER WITH FRIE
 
 
 def plan(c):
-    return c.get(f"/api/plan?month={date.today():%Y-%m}").get_json()
+    """Home's month and week: already spent this month, and this week."""
+    home = c.get("/api/home").get_json()
+    rows = home["safe_to_spend"]["rows"]
+    return {"spent": next(r["amount"] for r in rows if r["key"] == "spent"),
+            "week": home["week"]["spent"]}
 
 
 def dining_spent(c):
-    body = c.get(f"/api/budgets?month={date.today():%Y-%m}").get_json()
-    row = next((r for r in body["rows"] if r["category"] == "Dining"), None)
-    return row["spent"] if row else 0.0
+    rows = c.get("/api/insights/month").get_json()["categories"]
+    return next((r["spent"] for r in rows if r["category"] == "Dining"), 0) / 100
 
 
 def month_total(c):
@@ -57,12 +59,8 @@ class TestYourShareIsWhatCounts:
         assert r.status_code == 200 and r.get_json()["my_share"] == 40.0
         after = plan(ledger), dining_spent(ledger), month_total(ledger)
 
-        assert after[0]["state"]["week"]["spent"] == pytest.approx(
-            before[0]["state"]["week"]["spent"] - 80, abs=0.01)
-        assert after[0]["status"]["spent"] == pytest.approx(
-            before[0]["status"]["spent"] - 80, abs=0.01)
-        assert after[0]["spent_in_total"] == pytest.approx(
-            before[0]["spent_in_total"] - 80, abs=0.01)
+        assert after[0]["week"] == pytest.approx(before[0]["week"] - 80, abs=0.01)
+        assert after[0]["spent"] == pytest.approx(before[0]["spent"] - 80, abs=0.01)
         assert after[1] == pytest.approx(before[1] - 80, abs=0.01)
         assert after[2] == pytest.approx(before[2] - 80, abs=0.01)
 
@@ -75,17 +73,17 @@ class TestYourShareIsWhatCounts:
 
     def test_paid_back_in_full_counts_for_nothing(self, ledger):
         txn = add_charge(ledger)
-        before = plan(ledger)["status"]["spent"]
+        before = plan(ledger)["spent"]
         ledger.put(f"/api/transactions/{txn}/share", json={"my_share": 0})
-        assert plan(ledger)["status"]["spent"] == pytest.approx(before - 120, abs=0.01)
+        assert plan(ledger)["spent"] == pytest.approx(before - 120, abs=0.01)
 
     def test_clearing_it_puts_the_whole_charge_back(self, ledger):
         txn = add_charge(ledger)
-        before = plan(ledger)["status"]["spent"]
+        before = plan(ledger)["spent"]
         ledger.put(f"/api/transactions/{txn}/share", json={"my_share": 40})
         r = ledger.put(f"/api/transactions/{txn}/share", json={"my_share": None})
         assert r.get_json()["my_share"] is None
-        assert plan(ledger)["status"]["spent"] == pytest.approx(before, abs=0.01)
+        assert plan(ledger)["spent"] == pytest.approx(before, abs=0.01)
 
     def test_the_whole_amount_is_the_same_as_no_split(self, ledger):
         txn = add_charge(ledger)
@@ -122,12 +120,10 @@ class TestPiggyBanksPayYourShare:
                         if b["id"] == bank_id)["available"]
 
         start = available()
-        week = plan(ledger)["state"]["week"]["spent"]
         txn = add_charge(ledger, amount=3000.0, category="Lodging", description="GROUP CABIN")
         assert available() == pytest.approx(start - 3000, abs=0.01)
         ledger.put(f"/api/transactions/{txn}/share", json={"my_share": 1000})
         assert available() == pytest.approx(start - 1000, abs=0.01)
-        assert plan(ledger)["state"]["week"]["spent"] == pytest.approx(week, abs=0.01)
 
 
 class TestItStays:
