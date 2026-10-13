@@ -68,6 +68,41 @@ export default function BanksPanel({ onChanged, onTab }) {
     }
   }
 
+  /** C-04: sign in to a bank again, in Plaid Link's update mode. The
+   * connection, its accounts and its history stay; a sync follows. */
+  async function reconnect(item) {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const [Plaid, { link_token: token }] = await Promise.all([
+        loadPlaidScript(), createLinkToken(item.item_id),
+      ]);
+      Plaid.create({
+        token,
+        onSuccess: async () => {
+          try {
+            setResult(await syncPlaid());
+            await load();
+            await onChanged?.();
+          } catch (err) {
+            setError(err);
+          } finally {
+            setBusy(false);
+          }
+        },
+        onExit: (err) => {
+          setBusy(false);
+          if (err) setError(new Error(err.display_message || err.error_message
+                                      || 'Signing in didn’t finish.'));
+        },
+      }).open();
+    } catch (e) {
+      setError(e);
+      setBusy(false);
+    }
+  }
+
   async function check() {
     setBusy(true);
     setError(null);
@@ -207,6 +242,10 @@ export default function BanksPanel({ onChanged, onTab }) {
                       )}
                     </td>
                     <td className="r">
+                      {it.last_error && (
+                        <button className="btn" disabled={busy}
+                                onClick={() => reconnect(it)}>Reconnect</button>
+                      )}
                       <button className="btn quiet" disabled={busy}
                               onClick={() => remove(it)}>Disconnect</button>
                     </td>

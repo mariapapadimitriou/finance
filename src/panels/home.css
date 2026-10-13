@@ -99,3 +99,43 @@
   .hm-sts .pk-amount { font-size: 36px; line-height: 42px; }
   .hm-card { padding: var(--space-5) var(--space-4); }
 }
+
+/* ── Path card (GR-05) ───────────────────────────────────────────────────── */
+.hm-pathcard { align-items: stretch; }
+.hm-row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.hm-phases {
+  list-style: none; margin: 0; padding: 0 0 var(--space-4);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.hm-phase { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--ink-muted); }
+.hm-phase + .hm-phase::before { content: "—"; margin-right: var(--space-1); }
+.hm-phase.now { color: var(--ink); font-weight: 600; }
+.hm-phase.ahead img { opacity: .55; }
+.hm-pathcard-next {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: var(--space-4);
+}
+.hm-pathcard-next .hm-row-text { flex: 1 1 260px; }
+
+/* ── Path page (GR-01) ───────────────────────────────────────────────────── */
+.pt-phases {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4);
+}
+.pt-phase { align-items: center; text-align: center; }
+.pt-phase.now { border-color: var(--border-focus); }
+.pt-phase.ahead img { opacity: .55; }
+.pt-state.done { background: var(--seaglass); }
+.pt-state.ahead { background: var(--surface-page); color: var(--ink-muted); }
+.pt-steps { align-items: stretch; }
+.pt-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-4); }
+.pt-list li { display: flex; align-items: flex-start; gap: var(--space-3); }
+.pt-status {
+  flex: none; width: 28px; height: 28px; border-radius: var(--radius-full);
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--border-strong); color: var(--ink);
+}
+.pt-status.done { background: var(--seaglass); border-color: transparent; color: var(--on-nacre); }
+.pt-status.now { border-color: var(--action); border-width: 3px; }
+.pt-bottom { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-4); }
