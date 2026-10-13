@@ -222,7 +222,8 @@ export default function HomePanel({ onTab, onChanged, version }) {
   const ds = home.data_state;
   const p = parts(`${home.month}-01`);
   const save = (answers) => putHomeAnswers(answers).then(setHome);
-  const link = () => onTab?.('banks');
+  // Linking a bank lives on Profile › Accounts since Connections went (C1).
+  const link = () => onTab?.('accounts');
   // A card's action (THL-12 R3): the list it points at, or Goals.
   const act = (card) => {
     setWhy(null);
@@ -265,7 +266,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
                 connections={home.connections} back={back} today={home.today}
                 onPath={(action) => onTab?.(PATH_ACTIONS[action] ?? 'path')}
                 onReview={() => onTab?.('review')}
-                onReconnect={(c) => (c.state === 'needs_sign_in' ? setReconnect(c) : onTab?.('banks'))}
+                onReconnect={(c) => (c.state === 'needs_sign_in' ? setReconnect(c) : onTab?.('accounts'))}
                 onExplain={() => setExplain(true)} onIncome={() => setIncome(true)}
                 onSeeWhere={(group) => {
                   // TX-02: the list, opened on this month and the group.

@@ -30,20 +30,16 @@ from .analytics import (
 from .categorize import (CATEGORIES, TRAVEL_BANK_CATEGORIES, is_discretionary,
                          is_spend_category)
 from .db import storage_mode
-from .ingest import all_sources, get_source, parse_csv, parse_statement
+from .ingest import get_source
 from .insights import (detect_recurring, findings_summary, generate_findings,
                        observe, recurring_summary)
 from .pipeline import ingest, recategorize_all
 from .categorize import apply_categories, group_of
 from .dedupe import split_new
-from .trips import apply_trips
-from .trips import summarize, validate
 from . import manual, projections, spend_plan
 from .store import Store
 
 bp = Blueprint("api", __name__, url_prefix="/api")
-
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
 def store() -> Store:
@@ -63,21 +59,12 @@ def _txns():
 
 @bp.get("/health")
 def health():
-    # `storage` is what the Import tab reads before it promises anything: on a
-    # serverless instance with no database, an upload survives only until that
-    # instance is recycled, and the UI has to say so rather than let it vanish
-    # quietly an hour later.
+    # `storage` says how durable this instance's ledger is: on a serverless
+    # instance with no database, it lasts only until the instance is recycled.
     return jsonify({
         "ok": True,
         "transactions": len(_txns()),
         "storage": storage_mode(),
-    })
-
-
-@bp.get("/sources")
-def sources():
-    return jsonify({
-        "sources": [s.status().to_dict() for s in all_sources()],
     })
 
 
@@ -94,212 +81,10 @@ def categories():
     })
 
 
-def _category_groups_payload(st) -> dict:
-    from . import groups as budget_lines
-
-    grouping = st.category_groups()
-    lines = budget_lines.lines(grouping)
-    funded = st.bank_funded_categories()
-    return {
-        "groups": grouping,
-        "categories": budget_lines.spend_categories(),
-        "lines": [
-            {"name": name, "members": members,
-             "bank_funded": budget_lines.line_bank_funded(members, funded),
-             "daily": budget_lines.line_daily(members)}
-            for name, members in lines.items()
-        ],
-        # Named lines that are not categories — the ones you made up — so the
-        # picker can offer them as somewhere to put a category.
-        "named": sorted({p for p in grouping.values() if p not in CATEGORIES}),
-    }
-
-
-@bp.get("/category-groups")
-def get_category_groups():
-    """Which categories share a budget line."""
-    return jsonify(_category_groups_payload(store()))
-
-
-@bp.put("/category-groups")
-def set_category_groups():
-    """Replace the grouping, carrying saved budgets across.
-
-    Folding lines together adds their saved budgets, so a figure tuned by hand
-    survives regrouping. See `groups.carry_budgets` for what happens when a
-    line is broken up.
-    """
-    from . import groups as budget_lines
-
-    body = request.get_json(silent=True) or {}
-    st = store()
-    proposed = body.get("groups", body)
-    owners = {c: bank_id for bank_id, cats in st.bank_categories().items()
-              for c in cats}
-
-    # Joining a line a piggy bank pays for means the bank pays for this too:
-    # putting Lodging under Travel is saying the hotel is part of the trip.
-    # Decided before validating, so the line checks as all bank-paid; written
-    # only once it has passed, so a refused grouping changes nothing.
-    adopted: dict[str, int] = {}
-    if isinstance(proposed, dict):
-        # A named line ("Trips") belongs to the bank paying for what is in it.
-        line_owner = {p: owners[c] for c, p in proposed.items()
-                      if isinstance(p, str) and c in owners}
-        for category, parent in proposed.items():
-            if not isinstance(parent, str) or category in owners:
-                continue
-            bank_id = owners.get(parent, line_owner.get(parent))
-            if bank_id is not None:
-                adopted[category] = bank_id
-    funded = set(owners) | set(adopted)
-
-    clean, error = budget_lines.validate(proposed, funded)
-    if error:
-        return jsonify({"error": error}), 400
-
-    names = {b.id: b.name for b in st.piggy_banks()}
-    for bank_id in set(adopted.values()):
-        mine = [c for c, b in owners.items() if b == bank_id]
-        st.set_bank_categories(bank_id, mine + [c for c, b in adopted.items() if b == bank_id])
-
-    old = st.category_groups()
-    carried = budget_lines.carry_budgets(st.budgets(), old, clean, funded)
-    st.set_category_groups(clean)
-    for key in list(st.budgets()):
-        if key not in carried:
-            st.set_budget(key, 0)
-    for line, amount in carried.items():
-        st.set_budget(line, amount)
-    return jsonify({"ok": True,
-                    "adopted": {c: names.get(b, "") for c, b in adopted.items()},
-                    **_category_groups_payload(st)})
-
-
-# ── Import ───────────────────────────────────────────────────────────────────
-
-@bp.post("/import")
-def import_files():
-    """Accept CSV or PDF statements.
-
-    Multipart is the real path — PDFs are binary and must not be decoded. The
-    JSON form is kept for CSV text and for tests, and accepts base64 for
-    binary payloads.
-    """
-    payloads: list[dict] = []
-
-    if request.files:
-        for f in request.files.getlist("files") or list(request.files.values()):
-            data = f.read()
-            if len(data) > MAX_UPLOAD_BYTES:
-                return jsonify({"error": f"{f.filename} exceeds the 25 MB limit."}), 413
-            payloads.append({"name": f.filename or "upload", "data": data,
-                             "account_name": request.form.get("account_name") or None})
-    else:
-        body = request.get_json(silent=True) or {}
-        for item in body.get("files", []):
-            content = item.get("content", "")
-            if item.get("encoding") == "base64":
-                import base64
-                content = base64.b64decode(content)
-            payloads.append({
-                "name": item.get("name", "upload.csv"),
-                "data": content,
-                "account_name": item.get("account_name"),
-            })
-
-    if not payloads:
-        return jsonify({"error": "No files supplied."}), 400
-
-    results = []
-    for p in payloads:
-        results.append(ingest(store(), _parse_upload(p), filename=p["name"]))
-
-    return jsonify({
-        "results": results,
-        "imported": sum(r["imported"] for r in results),
-        "duplicates": sum(r["duplicates"] for r in results),
-    })
-
-
-def _may_use_bundled() -> bool:
-    """The bundled statements are the owner's own card. Nobody else's ledger
-    may see or load them; with no sign-in (a local copy) there is only one."""
-    from flask import g
-    user = g.get("user")
-    return user is None or bool(user.owner)
-
-
-@bp.get("/import/bundled")
-def bundled_available():
-    """Statement sets shipped with the app, and whether each is already loaded."""
-    from seed_data.bundled import available
-    if not _may_use_bundled():
-        return jsonify({"bundled": []})
-    s = store()
-    loaded = {a["account_id"] for a in s.accounts()}
-    return jsonify({"bundled": [{**b, "loaded": b["account_id"] in loaded}
-                                for b in available()]})
-
-
-@bp.post("/import/bundled")
-def bundled_import():
-    """Load one shipped statement set into the ledger.
-
-    Separate from the upload route because there is no file to choose: a closed
-    card's history is fixed, and the account it belongs to is decided here
-    rather than guessed from a filename. Safe to call twice — the rows go
-    through the same pipeline as an upload, so the second call finds duplicates
-    and inserts nothing.
-    """
-    from seed_data.bundled import read
-
-    if not _may_use_bundled():
-        return jsonify({"error": "These statements belong to another account."}), 403
-    key = (request.get_json(silent=True) or {}).get("key", "")
-    try:
-        text, entry = read(key)
-    except KeyError:
-        return jsonify({"error": f"No statements are bundled under '{key}'."}), 404
-    except FileNotFoundError:
-        return jsonify({"error": "The bundled file is missing from this build."}), 410
-
-    result = parse_csv(content=text, filename=entry["file"],
-                       account_name=entry["account_name"],
-                       account_id=entry["account_id"])
-    out = ingest(store(), result, filename=f"{entry['label']} (bundled)")
-    return jsonify(out)
-
-def _is_pdf(name: str, data) -> bool:
-    if name.lower().endswith(".pdf"):
-        return True
-    head = data[:5] if isinstance(data, bytes) else data[:5].encode("latin-1", "ignore")
-    return head.startswith(b"%PDF")
-
-
-def _parse_upload(payload: dict):
-    """Route an uploaded file to the importer that understands it."""
-    name, data = payload["name"], payload["data"]
-
-    if _is_pdf(name, data):
-        if isinstance(data, str):
-            data = data.encode("latin-1", "ignore")
-        return parse_statement(data, filename=name,
-                               account_name=payload.get("account_name"))
-
-    text = _decode(data) if isinstance(data, bytes) else data
-    return parse_csv(content=text, filename=name,
-                     account_name=payload.get("account_name"))
-
-
-def _decode(data: bytes) -> str:
-    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
-        try:
-            return data.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    return data.decode("utf-8", errors="replace")
-
+# ── Sources ──────────────────────────────────────────────────────────────────
+# Uploading a statement (Profile › From a file) and the bundled statements were
+# removed (C1): a bank arrives through Plaid now. The CSV reader stays for the
+# demo ledger (`python app.py --demo`).
 
 @bp.post("/sync/<source_key>")
 def sync_source(source_key: str):
@@ -331,11 +116,6 @@ def sync_source(source_key: str):
         "imported": sum(r["imported"] for r in out),
         "duplicates": sum(r["duplicates"] for r in out),
     })
-
-
-@bp.get("/imports")
-def imports():
-    return jsonify({"imports": store().import_history()})
 
 
 # ── Transactions ─────────────────────────────────────────────────────────────
@@ -1471,9 +1251,9 @@ def setup_steps():
          "done": bool(st.ledger_start()), "tab": "accounts",
          "action": "Choose a date"},
         {"id": "data", "optional": False,
-         "label": "Connect a card, or load a statement",
-         "detail": "Everything else is worked out from these.",
-         "done": bool(st.accounts()), "tab": "banks",
+         "label": "Link your bank",
+         "detail": "Everything else is worked out from it.",
+         "done": bool(st.accounts()), "tab": "accounts",
          "action": "Connect"},
         {"id": "income", "optional": False,
          "label": "Enter your take-home pay",
@@ -1828,16 +1608,8 @@ def plaid_items():
         "configured": plaid_link.configured(),
         "environment": plaid_link.environment(),
         "encryption_ready": secrets_box.available(),
-        "credentials": plaid_link.credential_shape(),
         "items": st.plaid_items(),
     })
-
-
-@bp.post("/plaid/check")
-def plaid_check():
-    """Does Plaid accept these keys? Answered without creating an Item."""
-    from . import plaid_link
-    return jsonify(plaid_link.check_credentials())
 
 
 @bp.post("/plaid/link-token")
@@ -1955,7 +1727,6 @@ def add_manual_transaction():
 
     if not candidate.category:
         apply_categories([candidate], st.overrides())
-    apply_trips([candidate], st.trips())
     st.add_transactions([candidate])
 
     return jsonify({"ok": True, "id": candidate.fingerprint,
@@ -1969,10 +1740,6 @@ def delete_transaction(txn_id: str):
         return jsonify({"error": "No such transaction."}), 404
     return jsonify({"ok": True})
 
-
-# ── Trips ────────────────────────────────────────────────────────────────
-# Declared date ranges whose spending is reclassified as Travel. See
-# finance/trips.py for why this is declared rather than inferred.
 
 # ── The money plan: income, commitments, and what is left ────────────────────
 
@@ -2215,8 +1982,7 @@ def _bank_categories(st, body: dict, bank_id: int | None):
               if other != bank_id for c in cats} | set(wanted)
     _, error = budget_lines.validate(st.category_groups(), funded)
     if error:
-        return None, (error + " Change the grouping in Settings → Categories "
-                      "first, or choose the whole line.")
+        return None, error + " Choose the whole line instead."
     return wanted, None
 
 
@@ -3303,78 +3069,6 @@ def nudge():
     return jsonify({"nudge": nudge_mod.for_yesterday(txns, state)})
 
 
-@bp.get("/trips/suggestions")
-def trip_suggestions():
-    """Trips the ledger can see, which nobody has had to remember.
-
-    Suggested only. Declaring a trip recategorises every charge inside it, so
-    the dates and the charges behind them are shown and the decision stays
-    with the person.
-    """
-    from .trip_finder import suggest_trips
-
-    st = store()
-    found = suggest_trips(st.all_transactions(),
-                          declared=[t.to_dict() for t in st.trips()])
-    return jsonify({"suggestions": found})
-
-
-@bp.get("/trips")
-def trips():
-    st = store()
-    txns = st.all_transactions()
-    rows = [t.to_dict(summarize(t, txns)) for t in st.trips()]
-    travel = [t for t in txns if t.category == "Travel" and t.amount > 0]
-    return jsonify({
-        "trips": rows,
-        "summary": {
-            "count": len(rows),
-            "total": round(sum(r["total"] for r in rows), 2),
-            "travel_spend": round(sum(share_amount(t) for t in travel), 2),
-        },
-    })
-
-
-@bp.post("/trips")
-def add_trip():
-    body = request.get_json(silent=True) or {}
-    name = body.get("name", "")
-    start, end = body.get("start_date", ""), body.get("end_date", "")
-
-    problem = validate(name, start, end)
-    if problem:
-        return jsonify({"error": problem}), 400
-
-    trip_id = store().add_trip(name, start, end)
-    # Recategorize immediately so the dashboard reflects the trip at once.
-    updated = recategorize_all(store())
-    return jsonify({"ok": True, "id": trip_id, "recategorized": updated})
-
-
-@bp.patch("/trips/<int:trip_id>")
-def edit_trip(trip_id: int):
-    body = request.get_json(silent=True) or {}
-    name = body.get("name", "")
-    start, end = body.get("start_date", ""), body.get("end_date", "")
-
-    problem = validate(name, start, end)
-    if problem:
-        return jsonify({"error": problem}), 400
-
-    if not store().update_trip(trip_id, name, start, end):
-        return jsonify({"error": "No such trip."}), 404
-
-    return jsonify({"ok": True, "recategorized": recategorize_all(store())})
-
-
-@bp.delete("/trips/<int:trip_id>")
-def remove_trip(trip_id: int):
-    if not store().delete_trip(trip_id):
-        return jsonify({"error": "No such trip."}), 404
-    # Rows fall back to their merchant category once the trip is gone.
-    return jsonify({"ok": True, "recategorized": recategorize_all(store())})
-
-
 # ── Budgets ──────────────────────────────────────────────────────────────────
 
 @bp.get("/budgets")
@@ -3387,8 +3081,9 @@ def budgets():
     months = sorted({t.month for t in txns})
     month = request.args.get("month") or (months[-1] if months else None)
 
-    # Everything on this page is per budget line: a category, or several you
-    # folded together in Settings → Categories. With no grouping every line is
+    # Everything on this page is per budget line: a category, or several
+    # folded together under the old Settings → Categories (removed in C1; a
+    # grouping saved then is still honoured). With no grouping every line is
     # one category and this is exactly the per-category page it used to be.
     grouping = st.category_groups()
     lines = budget_lines.lines(grouping)
@@ -3408,8 +3103,7 @@ def budgets():
     # line from, so a budget adopted from the plan reads as exactly that.
     typical = money_plan.typical_monthly(txns, groups=grouping)
 
-    # One row per line in Settings → Categories, in that order, so this page
-    # is the list you made there. A line used to appear only if it had a
+    # One row per budget line (see finance/groups.py), in that order. A line used to appear only if it had a
     # saved budget or the plan's split gave it one, and the split drops lines
     # under 2% of spending — so a line you had just set up could be missing.
     # A line with nothing saved is drawn against the plan's figure, or $0
@@ -3487,7 +3181,7 @@ def budgets():
     return jsonify({
         "budgets": b,
         "month": month,
-        # Every budgeted line in Settings → Categories, in that order, saved,
+        # Every budgeted line (finance/groups.py), in that order, saved,
         # proposed by the plan, or neither yet.
         "rows": rows,
         # The lines a piggy bank pays for instead, in the same order.
@@ -3676,8 +3370,7 @@ def set_allocation():
     focus = list(dict.fromkeys(focus))
     for name in [*focus, *amounts]:
         if name not in budgetable:
-            return jsonify({"error": f"'{name}' isn't a category you can budget. "
-                                     "Check Settings → Categories."}), 400
+            return jsonify({"error": f"'{name}' isn't a category you can budget."}), 400
 
     clean: dict[str, float] = {}
     for name in budgetable:

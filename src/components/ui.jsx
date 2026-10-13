@@ -10,7 +10,7 @@ import { destination } from '../nav.js';
  * Panels used to write the destination into their own sentences — "sync on
  * the Banks tab" — and went on saying it long after Banks became Connections
  * inside Settings. The text comes from `nav.js` instead: the section name
- * when you are already in its group, "Settings → Connections" when you are
+ * when you are already in its group, "Profile → Accounts" when you are
  * not. `from` is the panel the sentence is on.
  */
 export function GoTo({ to, from, onTab, children }) {
@@ -199,7 +199,7 @@ export function freshness(month, summary, { onTab, from } = {}) {
     kind: '',
     emphasis: true,
     summary: <>Data stops at day {lastDay ? Number(lastDay) : '—'}</>,
-    detail: <GoTo to="banks" from={from} onTab={onTab}>Sync</GoTo>,
+    detail: <GoTo to="accounts" from={from} onTab={onTab}>Sync</GoTo>,
   };
 }
 

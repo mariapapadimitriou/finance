@@ -9,13 +9,9 @@ import TransactionsList from './panels/TransactionsList.jsx';
 import NeedsALook from './panels/NeedsALook.jsx';
 import Goals from './panels/Goals.jsx';
 import CategoryBudgetsPanel from './panels/CategoryBudgetsPanel.jsx';
-import TripsPanel from './panels/TripsPanel.jsx';
-import ImportPanel from './panels/ImportPanel.jsx';
 import PlanPanel from './panels/PlanPanel.jsx';
-import BanksPanel from './panels/BanksPanel.jsx';
 import AccountsPanel from './panels/AccountsPanel.jsx';
 import AccountPanel from './panels/AccountPanel.jsx';
-import CategoriesPanel from './panels/CategoriesPanel.jsx';
 import SignedOut, { resetTokenFromUrl } from './pearl/SignedOut.jsx';
 import Onboarding from './pearl/Onboarding.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
@@ -44,14 +40,14 @@ function defaultMonth(summary) {
   return withSpending.at(-1)?.month ?? summary.latest_month ?? '';
 }
 
-// Panels worth opening with nothing in the ledger: the two that bring data in,
-// and the one that decides what keeps arriving — which is also where the ledger
-// gets emptied, so it is reachable immediately afterwards.
+// Panels worth opening with nothing in the ledger: Accounts, where a bank is
+// linked and which decides what keeps arriving — and which is also where the
+// ledger gets emptied, so it is reachable immediately afterwards.
 // The sign-in settings too: a brand-new account has an empty ledger, and must
 // still be able to change its password or sign out.
 // Goals too: someone new sees what comes next there (G-02). And Home, whose
 // no-data state (E-01, THL-72) is where linking starts.
-const WORKS_WHEN_EMPTY = ['home', 'path', 'debts', 'budgets', 'banks', 'import', 'accounts', 'plan', 'account', 'categories',
+const WORKS_WHEN_EMPTY = ['home', 'path', 'debts', 'budgets', 'accounts', 'plan', 'account',
                           'goals'];
 
 /**
@@ -219,7 +215,7 @@ export default function App() {
   // Pull from the banks as soon as the app opens, after the first paint so
   // the page never waits on Plaid. Once per sign-in; the figures reload only
   // if something actually came in, changed or went away. A failure is left
-  // for the Connections page to report.
+  // for Profile › Accounts to report.
   const synced = useRef(false);
   useEffect(() => {
     if (!signedIn || !data || synced.current) return;
@@ -296,11 +292,8 @@ export default function App() {
       <Shell theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}>
         <Empty title="No spending yet">
           <div className="row" style={{ justifyContent: 'center', marginTop: 14 }}>
-            <button className="btn primary" onClick={() => go('banks')}>
-              Connect a card
-            </button>
-            <button className="btn" onClick={() => go('import')}>
-              Import a file
+            <button className="btn primary" onClick={() => go('accounts')}>
+              Link your bank
             </button>
           </div>
         </Empty>
@@ -353,17 +346,11 @@ export default function App() {
         <Goals onTab={go} onChanged={load} version={version} />
       )}
       {panel === 'budgets' && <CategoryBudgetsPanel onChanged={load} version={version} />}
-      {panel === 'trips' && <TripsPanel onChanged={load} />}
       {panel === 'accounts' && <AccountsPanel onChanged={load} onTab={go} />}
-      {panel === 'banks' && <BanksPanel onChanged={load} onTab={go} />}
-      {panel === 'categories' && <CategoriesPanel onChanged={load} />}
       {panel === 'account' && (
         <AccountPanel onSignOut={async () => {
           await logout(); setData(null); setSignedIn(false);
         }} />
-      )}
-      {panel === 'import' && (
-        <ImportPanel accounts={accounts} onImported={load} onTab={go} />
       )}
     </Shell>
   );

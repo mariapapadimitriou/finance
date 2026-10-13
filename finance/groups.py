@@ -21,6 +21,11 @@ Two rules, both to keep the arithmetic honest:
   *Bank-funded stays with bank-funded.* Travel and Lodging are paid for by a
   piggy bank and have no budget line. Folding one into a budgeted line would
   pull its spending into a budget that was never given money for it.
+
+Choosing a grouping (Profile › Categories) was removed (C1): it has no screen
+in the Pearl design, whose budgets are per category (finance/category_budgets.py).
+What is here stays because the old Budgets, Plan and Overview pages still read
+a grouping saved before then, and will until they are replaced.
 """
 
 from __future__ import annotations
@@ -115,30 +120,3 @@ def validate(mapping: dict, bank_funded=frozenset()
                 "that was never given money for it.")
 
     return clean, None
-
-
-def carry_budgets(saved: dict[str, float], old: dict[str, str],
-                  new: dict[str, str], bank_funded=frozenset()) -> dict[str, float]:
-    """Saved budgets re-expressed under a new grouping.
-
-    Folding lines together adds their budgets, so a hand-tuned total survives
-    regrouping exactly: Health at $85 and Personal Care at $40 become one line
-    at $125, not a fresh split from the plan. A line that is broken up has no
-    honest way to divide its figure, so it is dropped, and the drift notice on
-    Budgets says the saved total no longer matches — with a button to re-split.
-    """
-    old_lines = lines(old)
-    new_lines = lines(new)
-    out: dict[str, float] = {}
-    for key, amount in saved.items():
-        if key in CATEGORIES:
-            target = line_of(key, new)
-        elif key in new_lines and sorted(new_lines[key]) == sorted(
-                old_lines.get(key, [])):
-            target = key                  # a named line that came through intact
-        else:
-            continue                      # a line that no longer exists as it was
-        if line_bank_funded(new_lines.get(target, []), bank_funded):
-            continue
-        out[target] = round(out.get(target, 0.0) + amount, 2)
-    return out

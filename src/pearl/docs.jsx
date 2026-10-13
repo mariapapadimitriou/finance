@@ -29,7 +29,7 @@ const STORE_ROWS = [
   { label: 'We keep', text: 'Account names and types, balances, transactions, and the categories and goals you set' },
   { label: 'We never keep', text: 'Your bank username or password, or full card or account numbers' },
   { label: 'Where', text: 'Our cloud database, encrypted when stored and when it moves. Bank connections are encrypted again with a key only Pearl holds.' },
-  { label: 'For how long', text: 'While you use Pearl. You can erase everything any time from Connections → Start fresh, which also disconnects your banks.' },
+  { label: 'For how long', text: 'While you use Pearl. You can erase everything any time from Profile › Accounts → Start fresh, which also disconnects your banks.' },
 ];
 
 const SHARE_ROWS = [
@@ -71,7 +71,7 @@ export const DOCS = {
           <p>Your bank then lets Plaid share a read-only view: your accounts, their
             balances and your transactions. Pearl can&apos;t move money, make payments or
             change anything at your bank.</p>
-          <p>You can disconnect a bank any time from Connections, and Pearl stops
+          <p>You can disconnect a bank any time from Profile › Accounts, and Pearl stops
             receiving anything from it.</p>
         </div>
       </>

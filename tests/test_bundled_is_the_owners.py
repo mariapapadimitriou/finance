@@ -1,7 +1,8 @@
 """The bundled statements are the owner's card, and no other account's.
 
 They were offered to every account in Settings → From a file, and loading
-them copied the owner's statements into another ledger.
+them copied the owner's statements into another ledger. The button is gone
+(C1); the clean-up of a copy left behind in another ledger stays.
 """
 
 from __future__ import annotations
@@ -9,6 +10,8 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
+
+from ledger_files import load_bundled
 
 
 @pytest.fixture()
@@ -30,32 +33,14 @@ def accounts(tmp_path, monkeypatch):
     return app, owner, other
 
 
-def test_only_the_owner_sees_or_loads_them(accounts):
-    _, owner, other = accounts
-    assert owner.get("/api/import/bundled").get_json()["bundled"]
-    assert other.get("/api/import/bundled").get_json()["bundled"] == []
-    assert other.post("/api/import/bundled",
-                      json={"key": "scotiabank_amex"}).status_code == 403
-    assert other.get("/api/transactions").get_json()["transactions"] == []
-    assert owner.post("/api/import/bundled",
-                      json={"key": "scotiabank_amex"}).status_code == 200
-
-
 def test_a_copy_already_in_another_account_is_removed(accounts):
     app, _, other = accounts
     # The state the bug left behind: the statements loaded into the other
     # account's ledger, beside a transaction of its own that shares nothing.
     from finance import users
-    from finance.ingest import parse_csv
-    from finance.pipeline import ingest
-    from seed_data.bundled import read
     user = users.by_identifier(app.config["STORE"], "anastasia")
     st = app.config["STORE_FOR"](user)
-    text, entry = read("scotiabank_amex")
-    ingest(st, parse_csv(content=text, filename=entry["file"],
-                         account_name=entry["account_name"],
-                         account_id=entry["account_id"]),
-           filename=f"{entry['label']} (bundled)")
+    load_bundled(st)
     other.post("/api/transactions", json={
         "date": date.today().isoformat(), "description": "MY OWN COFFEE",
         "amount": 5, "category": "Coffee", "confirm": True})
@@ -65,13 +50,14 @@ def test_a_copy_already_in_another_account_is_removed(accounts):
     app.config["STORES"].clear()
     rows = other.get("/api/transactions").get_json()["transactions"]
     assert [r["description"] for r in rows] == ["MY OWN COFFEE"]
-    assert not any("(bundled)" in (i.get("filename") or "")
-                   for i in other.get("/api/imports").get_json().get("imports", []))
+    with st.conn() as c:
+        logged = [r["filename"] for r in c.execute("SELECT filename FROM imports").fetchall()]
+    assert not any("(bundled)" in (f or "") for f in logged)
 
 
 def test_the_owners_own_copy_stays(accounts):
     app, owner, _ = accounts
-    owner.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+    load_bundled(app.config["STORE"])
     n = len(owner.get("/api/transactions?limit=1000").get_json()["transactions"])
     app.config["STORES"].clear()
     assert len(owner.get("/api/transactions?limit=1000").get_json()["transactions"]) == n > 0

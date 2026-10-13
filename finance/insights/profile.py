@@ -489,10 +489,10 @@ def history_is_thin(p: Profile) -> Observation | None:
                 "more, because that is the point at which a habit can be told "
                 "apart from a one-off. Until then the budget split is working "
                 "from very little, and anything described as a trend should be "
-                "read as a coincidence. Importing a longer date range is the "
+                "read as a coincidence. Linking every account you use is the "
                 "fastest fix."),
-        severity="watch", metric=str(p.months_of_history), tab="banks",
-        action="Import more history",
+        severity="watch", metric=str(p.months_of_history), tab="accounts",
+        action="Link your accounts",
         figures={"months": p.months_of_history},
     )
 

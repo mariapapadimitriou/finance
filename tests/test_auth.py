@@ -100,13 +100,13 @@ class TestLockedDeployment:
         """The gate is a before_request over the whole app, so a route added
         later is protected without anyone having to remember."""
         for path in ("/api/summary", "/api/transactions", "/api/plan",
-                     "/api/piggy", "/api/projections", "/api/trips",
+                     "/api/piggy", "/api/projections", "/api/debts",
                      "/api/accounts", "/api/insights", "/api/budgets"):
             assert c.get(path).status_code == 401, path
 
     def test_the_destructive_routes_are_covered_too(self, c):
         assert c.delete("/api/transactions").status_code == 401
-        assert c.post("/api/import", json={"files": []}).status_code == 401
+        assert c.post("/api/plaid/sync", json={}).status_code == 401
         assert c.post("/api/recategorize").status_code == 401
 
     def test_a_wrong_password_is_refused(self, c):

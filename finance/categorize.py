@@ -78,8 +78,8 @@ def is_spend_category(category: str) -> bool:
 
 # The five groups the transactions list filters by (Pearl Handoff, TX-01):
 # what you need, what you choose, what came in, what you put away, and money
-# moving between pockets. Not the budget lines in Settings → Categories,
-# which are yours to arrange; these are fixed.
+# moving between pockets. Not the budget lines of finance/groups.py; these
+# are fixed.
 CATEGORY_GROUPS = {"essentials": "Essentials", "lifestyle": "Lifestyle",
                    "income": "Income", "savings": "Savings", "transfer": "Transfer"}
 

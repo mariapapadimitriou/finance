@@ -1,10 +1,12 @@
-"""Lodging joining Travel, the month's whole spend, and hidden insights."""
+"""The month's whole spend, and hidden insights. (Lodging joining Travel
+went with budget lines, C1.)"""
 
 from __future__ import annotations
 
 from datetime import date
 
 import pytest
+from ledger_files import load_bundled
 
 
 @pytest.fixture()
@@ -13,7 +15,7 @@ def ledger(tmp_path):
     app = create_app(str(tmp_path / "lines.db"))
     app.config.update(TESTING=True)
     with app.test_client() as c:
-        c.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        load_bundled(c)
         c.put("/api/plan/setup", json={"income": 5200, "savings": 900})
         c.post("/api/plan/fixed", json={"name": "Rent", "amount": 2100,
                                         "category": "Rent & Housing"})
@@ -30,48 +32,6 @@ def bank(c, categories, name="Travel"):
                                    "cadence": "annual", "categories": categories})
     assert r.status_code == 200, r.get_json()
     return r.get_json()["id"]
-
-
-class TestLodgingJoinsTravel:
-    """Putting Lodging under Travel says the hotel is part of the trip, so the
-    bank paying for the trip pays for the hotel too."""
-
-    def test_the_bank_takes_lodging_on(self, ledger):
-        bank_id = bank(ledger, ["Travel"])
-        ledger.put("/api/budgets", json={"budgets": {"Lodging": 120}})
-        r = ledger.put("/api/category-groups", json={"groups": {"Lodging": "Travel"}})
-        assert r.status_code == 200, r.get_json()
-        assert r.get_json()["adopted"] == {"Lodging": "Travel"}
-        assert store(ledger).bank_categories()[bank_id] == ["Lodging", "Travel"]
-        assert store(ledger).category_groups() == {"Lodging": "Travel"}
-        assert "Lodging" not in store(ledger).budgets()
-
-    def test_already_paid_for_is_just_grouped(self, ledger):
-        bank_id = bank(ledger, ["Travel", "Lodging"])
-        r = ledger.put("/api/category-groups", json={"groups": {"Lodging": "Travel"}})
-        assert r.status_code == 200
-        assert r.get_json()["adopted"] == {}
-        assert store(ledger).bank_categories()[bank_id] == ["Lodging", "Travel"]
-
-    def test_a_named_line_a_bank_pays_for_takes_newcomers(self, ledger):
-        bank_id = bank(ledger, ["Travel"])
-        r = ledger.put("/api/category-groups",
-                       json={"groups": {"Travel": "Trips", "Lodging": "Trips"}})
-        assert r.status_code == 200, r.get_json()
-        assert store(ledger).bank_categories()[bank_id] == ["Lodging", "Travel"]
-
-    def test_bank_paid_into_a_budgeted_line_is_still_refused(self, ledger):
-        bank_id = bank(ledger, ["Travel"])
-        r = ledger.put("/api/category-groups", json={"groups": {"Travel": "Dining"}})
-        assert r.status_code == 400
-        assert store(ledger).bank_categories()[bank_id] == ["Travel"]
-        assert store(ledger).category_groups() == {}
-
-    def test_without_banks_it_is_only_a_grouping(self, ledger):
-        r = ledger.put("/api/category-groups", json={"groups": {"Lodging": "Travel"}})
-        assert r.status_code == 200
-        assert r.get_json()["adopted"] == {}
-        assert store(ledger).bank_funded_categories() == set()
 
 
 class TestSpentInTotal:

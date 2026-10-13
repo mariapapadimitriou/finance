@@ -31,7 +31,7 @@ PAGE = 25
 NOTE_MAX = 140
 
 # Sources that mean a person, not Pearl, chose the category.
-_CHOSEN = {"user", "merchant_override", "trip"}
+_CHOSEN = {"user", "merchant_override"}
 
 _CARD_PAYMENT = re.compile(
     r"\b(visa|mastercard|master card|amex|american express|credit card|card payment|"

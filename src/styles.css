@@ -857,23 +857,6 @@ details.evidence summary::-webkit-details-marker { display: none; }
 details.evidence summary::before { content: "▸"; transition: transform .15s ease; }
 details.evidence[open] summary::before { transform: rotate(90deg); }
 
-/* ── Import ──────────────────────────────────────────────────────────────── */
-
-.dropzone {
-  border: 1.5px dashed var(--border-firm);
-  border-radius: var(--r-lg);
-  padding: 44px 28px;
-  text-align: center;
-  color: var(--ink-2);
-  background: var(--surface);
-  transition: background .15s, border-color .15s;
-}
-.dropzone.over {
-  border-color: var(--brand);
-  background: var(--series-1-soft);
-}
-.dropzone h3 { margin-bottom: 6px; color: var(--ink); font-size: 1.08rem; }
-
 .steps { margin: 12px 0 0; padding-left: 20px; color: var(--ink-2); font-size: .88rem; }
 .steps li { margin: 6px 0; }
 

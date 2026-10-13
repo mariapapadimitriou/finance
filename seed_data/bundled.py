@@ -1,4 +1,11 @@
-"""Statements shipped with the app, loaded on request and only on request.
+"""Statements shipped with the app: the owner's closed card.
+
+The button that loaded them (Profile › From a file) was removed with file
+import (C1). What stays is the list and `read`, for two reasons: `app.py`
+uses them to find and remove a copy that was once loaded into another
+account's ledger, and the tests use the file as a real-world ledger.
+
+What follows is why they were committed in the first place.
 
 This is not the seeder. The seeder ran on a cold start and filled an empty
 ledger by itself, which is why a reset has to leave a marker telling it not to;
@@ -47,25 +54,6 @@ BUNDLED: list[dict] = [
 
 def _entry(key: str) -> dict | None:
     return next((b for b in BUNDLED if b["key"] == key), None)
-
-
-def available() -> list[dict]:
-    """The sets present on disk, with their row counts.
-
-    Counted rather than asserted: a file can be removed from the repository
-    without this list being updated, and offering a load that cannot happen is
-    worse than not offering it.
-    """
-    out = []
-    for b in BUNDLED:
-        path = HERE / b["file"]
-        if not path.exists():
-            continue
-        rows = sum(1 for line in path.read_text(encoding="utf-8").splitlines()
-                   if line.strip())
-        out.append({**{k: v for k, v in b.items() if k != "file"},
-                    "rows": max(rows - 1, 0)})   # less the header
-    return out
 
 
 def read(key: str) -> tuple[str, dict]:

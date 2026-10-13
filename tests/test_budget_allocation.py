@@ -9,6 +9,7 @@ give them something. The weekly allowance is the discretionary part of it.
 from __future__ import annotations
 
 import pytest
+from ledger_files import load_bundled
 
 TOL = 0.011
 
@@ -19,7 +20,7 @@ def ledger(tmp_path):
     app = create_app(str(tmp_path / "alloc.db"))
     app.config.update(TESTING=True)
     with app.test_client() as c:
-        c.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        load_bundled(c)
         c.put("/api/plan/setup", json={"income": 5200, "savings": 900})
         c.post("/api/plan/fixed", json={"name": "Rent", "amount": 2100,
                                         "category": "Rent & Housing"})
@@ -108,15 +109,6 @@ def test_the_weekly_allowance_is_the_discretionary_part(ledger):
     assert d["buffer"] == pytest.approx(0, abs=TOL)
 
 
-def test_a_mixed_line_counts_its_weekly_share(ledger):
-    ledger.put("/api/category-groups", json={"groups": {
-        "Health": "Health & care", "Personal Care": "Health & care"}})
-    total = budgets(ledger)["monthly_total"]
-    allocate(ledger, ["Health & care"], {"Health & care": 100, "Dining": total - 100})
-    amount = ledger.get("/api/plan").get_json()["state"]["monthly_amount"]
-    assert total - 100 < amount < total
-
-
 def test_when_the_plan_moves_the_split_is_reported(ledger):
     allocate(ledger, ["Dining"], {"Dining": 2200})
     ledger.put("/api/plan/setup", json={"income": 5300, "savings": 900})
@@ -138,6 +130,6 @@ def test_without_a_plan_there_is_nothing_to_split(tmp_path):
     app = create_app(str(tmp_path / "empty.db"))
     app.config.update(TESTING=True)
     c = app.test_client()
-    c.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+    load_bundled(c)
     r = allocate(c, ["Dining"], {"Dining": 100})
     assert r.status_code == 400 and "plan" in r.get_json()["error"]
