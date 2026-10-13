@@ -5,6 +5,7 @@ import { DetailPanel, PButton } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { Field } from './GoalsParts.jsx';
 import { MONTH_NAMES, shown } from './HomePanel.jsx';
+import { GrowthTabs } from './InsightsParts.jsx';
 import './home.css';
 
 /**
@@ -82,7 +83,7 @@ export function DebtsCard({ debts, onSee }) {
   );
 }
 
-export default function DebtsPanel({ onChanged, version }) {
+export default function DebtsPanel({ onTab, onChanged, version }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -96,7 +97,7 @@ export default function DebtsPanel({ onChanged, version }) {
   if (!data) return <div className="pk hm-page"><p className="pk-muted" role="status">Loading your debts…</p></div>;
   const debt = editing && data.debts.find((d) => d.account_id === editing);
   return (
-    <DebtsPage data={data} onEdit={setEditing}>
+    <DebtsPage data={data} onEdit={setEditing} onTab={onTab}>
       {debt && (
         <DetailsPanel debt={debt} onClose={() => setEditing(null)}
                       onSave={(fields) => putDebtDetails(debt.account_id, fields).then((next) => {
@@ -110,13 +111,14 @@ export default function DebtsPanel({ onChanged, version }) {
 }
 
 /** D-02: every debt, the total and this month's minimums. */
-export function DebtsPage({ data, onEdit, children = null }) {
+export function DebtsPage({ data, onEdit, onTab, children = null }) {
   return (
     <div className="pk hm-page db-page">
       <header className="hm-head">
-        <p className="pk-overline">Growth</p>
-        <h1 className="pk-h1">Debts</h1>
+        <p className="pk-overline accent">Debts</p>
+        <h1 className="pk-h1">Growth</h1>
       </header>
+      <GrowthTabs current="debts" onTab={onTab} />
       <p className="pk-muted">
         Everything you owe, including balances from before Pearl. Balances aren’t taken out of
         safe-to-spend; minimum payments are counted as bills.

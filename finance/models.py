@@ -272,10 +272,15 @@ class Transaction:
     # On money coming in: the charge it paid you back for.
     repays: str | None = None
     # The label of the joint account this row is on ("Family"), if it is one.
-    # On a joint account a row is another member's unless you said otherwise,
-    # so its share defaults to nothing — `share_set` says whether you did.
+    # A row on one is hers, less what the other person put in that month,
+    # unless she set a share — `share_set` says whether she did on this row.
+    # Money in: who put it there, "me" or "them" (finance/joint.py).
     joint: str | None = None
     share_set: bool = False
+    joint_from: str | None = None
+    # The person an e-Transfer was from or to, as she typed it (THL-122);
+    # see finance/etransfers.py for the bank's own.
+    party: str | None = None
     # Why you left this row out, if you did: one transaction, or every row a
     # rule of yours matches. An excluded row counts as nothing — not spending,
     # not income, not savings — and never pairs with another as a transfer.
@@ -376,18 +381,17 @@ class Transaction:
                            if row.get("one_off_since") else None),
             duplicate_of=row.get("duplicate_of") or None,
             duplicate_state=row.get("duplicate_state") or None,
+            party=row.get("party") or None,
         )
         if t.joint and t.my_share is None:
-            # Another member's, unless it's a name you said is always yours —
-            # or, on an account where she set her share (AM-04), that share
-            # of every row.
-            share = row.get("joint_share")
-            if row.get("joint_mine"):
-                t.my_share = t.amount
-            elif share is not None:
-                t.my_share = round(t.amount * float(share) / 100.0, 2)
-            else:
-                t.my_share = 0.0
+            # Hers, less what the other person put in that month; money in
+            # only once she says whose it was. See finance/joint.py.
+            from .joint import my_share
+            t.my_share = my_share(t.amount, category=t.category,
+                                  mine=bool(row.get("joint_mine")),
+                                  share=row.get("joint_share"), who=row.get("joint_from"),
+                                  ratio=row.get("joint_ratio"))
+            t.joint_from = row.get("joint_from") or None
         return t
 
 

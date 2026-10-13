@@ -54,7 +54,7 @@ const WORKS_WHEN_EMPTY = ['home', 'path', 'projections', 'learn', 'debts', 'budg
 // Pages that draw their section pills themselves, under their own title
 // (Growth › Path, THL-129 GR-01; Insights, THL-196 GR-28; Projections, THL-197
 // GR-33; Learn, THL-134 GR-11), so the shell's strip would say it twice.
-const OWN_SECTIONS = ['path', 'insights', 'projections', 'learn'];
+const OWN_SECTIONS = ['path', 'insights', 'projections', 'learn', 'budgets', 'debts'];
 
 // Back from the partner (THL-136 GR-20) at any address: Ready to invest,
 // where "Welcome back" asks whether she opened an account.
@@ -386,7 +386,7 @@ export default function App() {
       {panel === 'home' && <HomePanel onTab={go} onChanged={load} version={version} />}
       {panel === 'path' && <PathPanel onTab={go} version={version} />}
       {panel === 'learn' && <LearnPanel onTab={go} version={version} />}
-      {panel === 'debts' && <DebtsPanel onChanged={load} version={version} />}
+      {panel === 'debts' && <DebtsPanel onTab={go} onChanged={load} version={version} />}
       {panel === 'insights' && <InsightsPanel onTab={go} version={version} />}
       {panel === 'projections' && (
         <ProjectionsPanel onTab={go} onChanged={load} version={version} />
@@ -402,7 +402,9 @@ export default function App() {
       {panel === 'goals' && (
         <Goals onTab={go} onChanged={load} version={version} />
       )}
-      {panel === 'budgets' && <CategoryBudgetsPanel onChanged={load} version={version} />}
+      {panel === 'budgets' && (
+        <CategoryBudgetsPanel onTab={go} onChanged={load} version={version} />
+      )}
       {panel === 'profile' && <ProfilePanel onTab={go} version={version} />}
       {panel === 'accounts' && <AccountsPanel onChanged={load} onTab={go} version={version} />}
       {panel === 'rules' && (

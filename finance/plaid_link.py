@@ -245,8 +245,9 @@ def _sync_one(store, item: dict) -> dict:
     # rest — and from then on the stored decision governs. Removing an account
     # in the app writes a decision here, which is what stops the next sync
     # fetching it all over again.
+    chosen: dict[str, str] = {}
     if full and accounts:
-        _replace_superseded(store, item_id, accounts)
+        chosen = _replace_superseded(store, item_id, accounts)
 
     mode = store.setting("plaid_cards_only") or ""
     for aid, a in accounts.items():
@@ -292,6 +293,9 @@ def _sync_one(store, item: dict) -> dict:
     results = group_plaid_transactions(added + modified, accounts)
     for result in results:
         imported += ingest(store, result, filename=f"Plaid · {item.get('institution') or item_id}")["imported"]
+    # Categories she chose on a reconnected bank's rows, back on them.
+    for txn_id, category in chosen.items():
+        store.set_transaction_category(txn_id, category)
 
     store.set_plaid_cursor(item_id, cursor or "")
     return {
@@ -312,45 +316,84 @@ def _mask_of(name: str) -> str:
     return m.group(1) if m else ""
 
 
-def _replace_superseded(store, item_id: str, accounts: dict) -> list[str]:
-    """Reconnecting a bank replaces the connection it duplicates.
+def _replace_superseded(store, item_id: str, accounts: dict) -> dict[str, str]:
+    """Reconnecting a bank replaces the accounts it brings back.
 
     Each Plaid reconnect is a new Item with new account ids, so the same
-    purchases arrive again under ids nothing de-duplicates against, and the
-    old connection goes on syncing beside it. An earlier connection whose
-    every account reappears here — same last four digits, same kind — is that
-    duplicate: its rows go (this connection brings them back), it is revoked
-    at Plaid, and what you decided about its accounts (switched on, joint)
-    carries over to their new ids. Two different logins at one bank share no
-    accounts, so neither replaces the other.
+    purchases arrive again under ids nothing de-duplicates against. An
+    account of an earlier connection that reappears here — same last four
+    digits, same kind — is that account: what she decided about it (whether
+    it syncs, joint and her share, nickname, counted, Anchor) moves to its new
+    id, and so does everything she said about its rows, under the ids those
+    rows will come back with. Its old rows go; this connection brings them
+    back. Account by account, so a reconnect that shares fewer accounts than
+    before still replaces the ones it does share. An earlier connection with
+    no accounts left is revoked at Plaid. Two different logins at one bank
+    share no accounts, so neither replaces the other.
+
+    Returns {new row id: category} for categories she chose by hand, to put
+    back once the rows have arrived.
     """
+    import json
+    from dataclasses import replace
+
     new = {(str(a.get("mask") or ""), str(a.get("type") or "").lower()): aid
            for aid, a in accounts.items() if a.get("mask")}
     if not new:
-        return []
+        return {}
     rules = store.account_sync_rules()
-    joint = store.joint_accounts()
-    replaced = []
+    joint, shares = store.joint_accounts(), store.joint_shares()
+    settings = store.account_settings()
+    categories: dict[str, str] = {}
     for other in store.plaid_items():
-        old_id = other["item_id"]
-        if old_id == item_id:
+        old_item = other["item_id"]
+        if old_item == item_id:
             continue
-        olds = [r for r in rules.values() if r["item_id"] == old_id]
-        keys = [(_mask_of(r["account_name"]), (r["account_type"] or "").lower())
-                for r in olds]
-        if not olds or not all(k in new and k[0] for k in keys):
+        olds = [r for r in rules.values() if r["item_id"] == old_item]
+        moved = {}
+        for r in olds:
+            key = (_mask_of(r["account_name"]), (r["account_type"] or "").lower())
+            if key[0] and key in new and new[key] != r["account_id"]:
+                moved[r["account_id"]] = new[key]
+        if not moved:
             continue
-        for r, k in zip(olds, keys):
+        for old_id, new_id in moved.items():
+            r = rules[old_id]
             if r["decided_by"] == "user":
-                store.set_account_sync(new[k], r["enabled"], name=r["account_name"],
+                store.set_account_sync(new_id, r["enabled"], name=r["account_name"],
                                        item_id=item_id)
-            if r["account_id"] in joint:
-                store.set_joint(new[k], joint[r["account_id"]])
-                store.set_joint(r["account_id"], None)
-        store.forget_rows(store.row_ids_for_accounts([r["account_id"] for r in olds]))
-        unlink(store, old_id)
-        replaced.append(old_id)
-    return replaced
+            if old_id in joint:
+                if shares.get(old_id) is not None:
+                    store.set_joint_share(new_id, shares[old_id])
+                store.set_joint(new_id, joint[old_id])
+            if old_id in settings:
+                s = settings[old_id]
+                store.set_account_setting(new_id, counted=s["counted"], nickname=s["nickname"],
+                                          removed=s["removed"])
+        anchor = set(json.loads(store.setting("anchor_accounts") or "[]"))
+        if anchor & set(moved):
+            store.set_setting("anchor_accounts", json.dumps(sorted(
+                {moved.get(a, a) for a in anchor})))
+        rows = [t for t in store.all_transactions() if t.account_id in moved]
+        mapping = {}
+        for t in rows:
+            again = replace(t, account_id=moved[t.account_id]).fingerprint
+            mapping[t.fingerprint] = again
+            if t.category_source == "user" and t.category:
+                categories[again] = t.category
+        store.rekey_rows(mapping)
+        store.forget_rows({t.fingerprint for t in rows})
+        store.forget_accounts(list(moved))
+        if len(moved) == len(olds):
+            unlink(store, old_item)
+        else:
+            # The old connection still syncs its other accounts; these it
+            # must skip, or they come back under their old ids.
+            for old_id in moved:
+                store.set_account_sync(old_id, False, name=rules[old_id]["account_name"],
+                                       item_id=old_item)
+                store.set_account_setting(old_id, removed=True)
+    return categories
 
 
 def _account_label(account: dict, fallback: str = "") -> str:

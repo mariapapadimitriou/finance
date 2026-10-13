@@ -232,13 +232,25 @@ def test_left_out_rows_are_listed_on_their_own(client):
     assert client.get(f"/api/transactions/{ids['WORK LUNCH']}").get_json()["excluded"] == "Work"
 
 
-def test_someone_elses_joint_rows_are_listed_on_their_own(client):
+def test_joint_rows_are_hers_until_she_says_one_was_theirs(client):
     ids = load(client.st, row(60, "COSTCO", account="fam", category="Groceries"))
     client.put("/api/accounts/fam/joint", json={"label": "Alex"})
+    mine = listing(client)
+    assert mine["transactions"][0]["counts"] == "spending" and mine["totals"]["spent"] == 60
+    # Saying it was Alex's moves it to the joint rows, not counted.
+    client.put(f"/api/transactions/{ids['COSTCO']}/share", json={"my_share": 0})
     assert listing(client)["transactions"] == []
     r = listing(client, joint=1)["transactions"][0]
     assert r["chip"]["label"] == "Not yours" and r["joint"] == "Alex" and r["counts"] == "none"
-    # Saying it was hers brings it into the list, counted.
-    client.put(f"/api/transactions/{ids['COSTCO']}/share", json={"my_share": 60})
-    mine = listing(client)
-    assert mine["transactions"][0]["counts"] == "spending" and mine["totals"]["spent"] == 60
+    assert r["note"] == "Alex’s · you said this one was theirs"
+
+
+def test_money_into_a_joint_account_asks_whose(client):
+    ids = load(client.st, row(-200, "E-TRANSFER FROM ALEX", account="fam", category="Transfers"))
+    client.put("/api/accounts/fam/joint", json={"label": "Alex"})
+    r = listing(client, joint=1)["transactions"][0]
+    assert r["chip"] == {"label": "Whose?", "suggested": True}
+    assert r["note"] == "Yours or Alex’s? Tell us"
+    client.put(f"/api/transactions/{ids['E-TRANSFER FROM ALEX']}/joint-from", json={"who": "them"})
+    r = listing(client, joint=1)["transactions"][0]
+    assert r["chip"]["label"] == "Alex’s" and r["joint_from"] == "them"

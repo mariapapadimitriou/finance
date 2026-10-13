@@ -298,6 +298,13 @@ export const setTxNote   = (id, note) =>
 // null puts the whole charge back.
 export const setShare      = (id, myShare) =>
   json('PUT', `/api/transactions/${id}/share`, { my_share: myShare });
+// Money into a joint account: who put it in, 'me' or 'them' (null asks
+// again); `remember` answers for every deposit from that sender.
+// Who an e-Transfer was from or to; '' goes back to the bank's name.
+export const setParty      = (id, name) =>
+  json('PUT', `/api/transactions/${id}/party`, { name });
+export const setJointFrom  = (id, who, remember = false) =>
+  json('PUT', `/api/transactions/${id}/joint-from`, { who, remember });
 // Say where a group of transfers went; `remember` makes it the rule for
 // those names.
 export const sortTransfers = (ids, category, remember) =>

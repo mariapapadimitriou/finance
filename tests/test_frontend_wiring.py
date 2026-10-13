@@ -654,7 +654,8 @@ class TestGrowthInsights:
         for view in ("month", "category", "subscriptions", "trend", "where", "money", "savings"):
             assert f"'{view}'" in router, view
         assert "isInsightsUrl()" in source and "writeInsightsUrl()" in source
-        assert "OWN_SECTIONS = ['path', 'insights', 'projections', 'learn']" in source
+        assert ("OWN_SECTIONS = ['path', 'insights', 'projections', 'learn', 'budgets', 'debts']"
+                in source)
         assert "!ownSections" in source
         parts = (SRC / "panels" / "InsightsParts.jsx").read_text(encoding="utf-8")
         # Learn is built (THL-134): every Growth pill is a page now.

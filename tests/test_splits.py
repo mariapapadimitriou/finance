@@ -174,3 +174,38 @@ def test_clearing_a_split_puts_the_whole_charge_back(client):
     r = client.delete(f"/api/transactions/{tid}/split").get_json()
     assert "splitting" not in r
     assert listing(client)["totals"]["spent"] == 85
+
+
+# ── Paid back before the purchase posted ─────────────────────────────────
+
+def test_money_before_the_charge_posted_can_pay_it_back(client):
+    """Priya paid on Friday; the card purchase from Thursday posted Monday."""
+    bought = charge(85, "SUSHI NAMI", "Sushi Nami", when=day(1))
+    bought.post_date = day(4)                       # the bank feed's purchase date
+    ids = load(client.st, bought, etransfer_in(42.5, "Priya", when=day(3)))
+    split(client, ids["SUSHI NAMI"], [{"name": "Priya"}])
+    r = detail(client, ids["E-TRANSFER RECEIVED PRIYA"])["repayment"]
+    assert r["suggestion"]["charge_id"] == ids["SUSHI NAMI"]
+    assert [s["charge_id"] for s in r["splits"]] == [ids["SUSHI NAMI"]]
+    listed = client.get(f"/api/transactions/{ids['SUSHI NAMI']}/paybacks").get_json()
+    assert ids["E-TRANSFER RECEIVED PRIYA"] in [p["id"] for p in listed["candidates"]]
+
+
+def test_up_to_a_week_before_the_purchase(client):
+    ids = load(client.st, charge(85, "DINNER", when=day(1)),
+               etransfer_in(42.5, "Priya", when=day(8)), etransfer_in(42.5, "Sam", when=day(9)))
+    split(client, ids["DINNER"], [{"name": "Priya", "amount": 42.5},
+                                  {"name": "Sam", "amount": 42.5}], mode="amount")
+    rows = {t.description: t.fingerprint for t in client.st.all_transactions()}
+    assert detail(client, rows["E-TRANSFER RECEIVED PRIYA"])["repayment"]["suggestion"]
+    assert detail(client, rows["E-TRANSFER RECEIVED SAM"])["repayment"]["suggestion"] is None
+
+
+def test_bought_on_is_the_earlier_date():
+    from finance.splits import bought_on
+    t = charge(10, "X", when="2026-10-06")
+    assert bought_on(t).isoformat() == "2026-10-06"
+    t.post_date = "2026-10-03"
+    assert bought_on(t).isoformat() == "2026-10-03"
+    t.post_date = "2026-10-08"                       # a statement: posted later
+    assert bought_on(t).isoformat() == "2026-10-06"

@@ -18,9 +18,7 @@ from .analytics import (
 )
 from .categorize import CATEGORIES, TRAVEL_BANK_CATEGORIES, is_spend_category
 from .db import storage_mode
-from .ingest import get_source
 from .insights import detect_recurring, recurring_summary
-from .pipeline import ingest
 from .categorize import apply_categories, group_of
 from .dedupe import split_new
 from . import manual, spend_plan
@@ -65,43 +63,6 @@ def categories():
             for name, meta in CATEGORIES.items()
         ],
         "overrides": store().overrides(),
-    })
-
-
-# ── Sources ──────────────────────────────────────────────────────────────────
-# Uploading a statement (Profile › From a file) and the bundled statements were
-# removed (C1): a bank arrives through Plaid now. The CSV reader stays for the
-# demo ledger (`python app.py --demo`).
-
-@bp.post("/sync/<source_key>")
-def sync_source(source_key: str):
-    """Pull from a non-CSV source. Returns setup guidance when unconfigured."""
-    src = get_source(source_key)
-    if src is None:
-        return jsonify({"error": f"Unknown source '{source_key}'."}), 404
-
-    status = src.status()
-    if not status.available:
-        return jsonify({"error": status.detail, "setup": status.to_dict()}), 501
-
-    # Plaid has its own endpoints, which read the stored token rather than
-    # taking one from the caller. Routing it here keeps one way to sync and
-    # stops this generic path from accepting an arbitrary access token.
-    if source_key == "plaid":
-        from . import plaid_link
-        return jsonify(plaid_link.sync_all(store()))
-
-    body = request.get_json(silent=True) or {}
-    try:
-        results = src.fetch(**body)
-    except (RuntimeError, ValueError) as exc:
-        return jsonify({"error": str(exc)}), 502
-
-    out = [ingest(store(), r, filename=f"{source_key} sync") for r in results]
-    return jsonify({
-        "results": out,
-        "imported": sum(r["imported"] for r in out),
-        "duplicates": sum(r["duplicates"] for r in out),
     })
 
 
@@ -692,8 +653,9 @@ def unsort_transaction(txn_id: str):
                     "category": st.get_transaction(txn_id).category})
 
 
-# How far either side of a charge a repayment is looked for.
-_PAYBACK_BEFORE_DAYS = 3
+# How far either side of a purchase a repayment is looked for: friends often
+# pay before a card purchase posts.
+_PAYBACK_BEFORE_DAYS = 7
 _PAYBACK_AFTER_DAYS = 45
 _PAYBACK_NAMES = ("e-transfer", "etransfer", "e-tfr", "etfr", "interac",
                   "transfer", "venmo", "zelle", "wise")
@@ -701,7 +663,8 @@ _PAYBACK_NAMES = ("e-transfer", "etransfer", "e-tfr", "etfr", "interac",
 
 def _payback_candidates(charge, txns) -> list[dict]:
     from datetime import date as _date
-    start = _date.fromisoformat(charge.date[:10])
+    from .splits import bought_on
+    start = bought_on(charge)
     remaining = round(charge.amount - (charge.paid_back or 0.0), 2)
     out = []
     for t in txns:
@@ -872,6 +835,48 @@ def set_mine_always(txn_id: str):
         return jsonify({"error": "No such transaction."}), 404
     st.set_joint_mine(t.merchant, bool(body.get("on")))
     return jsonify({"ok": True})
+
+
+@bp.put("/transactions/<txn_id>/party")
+def set_transaction_party(txn_id: str):
+    """Who an e-Transfer was from or to, when the bank didn't say (or said it
+    wrong); an empty name goes back to the bank's."""
+    from .etransfers import is_etransfer
+    name = " ".join(str((request.get_json(silent=True) or {}).get("name") or "").split())[:60]
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if not is_etransfer(t):
+        return jsonify({"error": "Only an e-Transfer has someone it was from or to."}), 400
+    st.set_party(txn_id, name or None)
+    return jsonify({"ok": True, "name": name or None})
+
+
+@bp.put("/transactions/<txn_id>/joint-from")
+def set_joint_from(txn_id: str):
+    """Who put this money into a joint account: "me" (her own money, from an
+    account not in Pearl) or "them" (the other person, whose money pays for
+    that much of the month's joint spending), or null to ask again.
+    `remember` answers for every deposit from that sender too."""
+    from .joint import ME, THEM
+    body = request.get_json(silent=True) or {}
+    who = body.get("who")
+    if who not in (ME, THEM, None):
+        return jsonify({"error": "Say who put it in: you, or the other person."}), 400
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if not t.joint or t.amount >= 0:
+        return jsonify({"error": "Only money into a joint account is asked about."}), 400
+    st.set_joint_deposit(txn_id, who)
+    if body.get("remember"):
+        st.set_joint_deposit_rule(t.account_id, t.merchant, who)
+    # Her own money moving between her pockets is never income.
+    if who == ME and t.category == "Income":
+        st.set_transaction_category(txn_id, "Transfers")
+    return jsonify({"ok": True, "who": who})
 
 
 @bp.get("/accounts")

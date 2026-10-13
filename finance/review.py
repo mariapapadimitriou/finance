@@ -14,6 +14,9 @@ from last spring was for):
 * duplicate        the same purchase from two places (THL-165): a statement
                    file and the bank connection, say. Counted once until
                    answered, so it is asked about however old it is.
+* joint_in         money into a joint account from outside Pearl: hers,
+                   or the other person's (finance/joint.py). Counted as
+                   nothing until answered.
 
 Nothing is decided here; each item says what Pearl would do and why. Acting
 on one goes through the ordinary endpoints (category, payback, exclusion,
@@ -28,6 +31,7 @@ from datetime import date, timedelta
 from .analytics import is_others
 from .categorize import is_unsure
 from .duplicates import questions as duplicate_questions
+from .etransfers import party
 from .income import KINDS, cadence, is_income, kind_of
 from .models import Transaction
 from .splits import suggest as split_suggest
@@ -44,7 +48,9 @@ def _money(x: float) -> str:
 
 
 def _brief(t: Transaction) -> dict:
-    return {"id": t.fingerprint, "date": t.date, "merchant": t.merchant,
+    who = party(t)
+    return {"id": t.fingerprint, "date": t.date,
+            "merchant": (who or {}).get("name") or t.merchant,
             "description": t.description, "amount": t.amount,
             "account_id": t.account_id, "account_name": t.account_name or "",
             "category": t.category, "logo": (t.raw or {}).get("logo_url") or ""}
@@ -178,6 +184,19 @@ def build(transactions: list[Transaction], today: str | None = None,
         money_in.append({"key": key, "txn": _brief(t), "guess": guess,
                          "candidates": candidates, "reason": reason})
 
+    # 3b. Money into a joint account from outside: whose was it?
+    joint_in = []
+    for t in live:
+        if (not t.joint or t.amount >= 0 or t.date[:10] < since or t.repays
+                or t.joint_from or t.share_set or t.fingerprint in paired):
+            continue
+        key = "joint:" + t.fingerprint
+        if key in dismissed:
+            continue
+        joint_in.append({"key": key, "txn": _brief(t), "label": t.joint,
+                         "reason": f"It came into your account with {t.joint} from "
+                                   "outside Pearl, so it could be yours or theirs."})
+
     # 4. Income whose type is a guess.
     income = []
     for t in live:
@@ -211,8 +230,8 @@ def build(transactions: list[Transaction], today: str | None = None,
     # until answered, however old: until then the copy is counted once.
     dupes = duplicate_questions(transactions, found_on)
 
-    count = (groups["count"] + len(unsure) + len(money_in) + len(income)
+    count = (groups["count"] + len(unsure) + len(money_in) + len(joint_in) + len(income)
              + len(three) + len(dupes))
     return {"count": count, "unsorted": groups, "unsure_category": unsure,
-            "money_in": money_in, "income_type": income, "three_pay_month": three,
+            "money_in": money_in, "joint_in": joint_in, "income_type": income, "three_pay_month": three,
             "duplicate": dupes, "kinds": KINDS}

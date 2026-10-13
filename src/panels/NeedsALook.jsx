@@ -9,7 +9,7 @@ import { RepaymentMatch } from './Splits.jsx';
 import { DuplicateQuestion } from './Duplicates.jsx';
 import {
   INCOME_KINDS, answerDuplicate, confirmTx, dismissReview, getReview, linkPayback, money,
-  setCategory, setIncomeType, sortTransfers, undoChange,
+  setCategory, setIncomeType, setJointFrom, sortTransfers, undoChange,
 } from '../api.js';
 
 /**
@@ -52,6 +52,7 @@ export function queue(data) {
     })),
     ...(data.unsure_category ?? []).map((it) => ({ ...it, kind: 'category', date: it.txn.date })),
     ...(data.money_in ?? []).map((it) => ({ ...it, kind: 'money_in', date: it.txn.date })),
+    ...(data.joint_in ?? []).map((it) => ({ ...it, kind: 'joint_in', date: it.txn.date })),
     ...(data.income_type ?? []).map((it) => ({ ...it, kind: 'income', date: it.txn.date })),
     ...(data.three_pay_month ?? []).map((it) => ({ ...it, kind: 'pay3', date: `${it.month}-28` })),
     // THL-165 D-02: the same purchase from two places.
@@ -68,6 +69,8 @@ const WHY = {
     'Your budgets and your usual month are worked out by category.'],
   money_in: ['Money in isn’t income until you say so.',
     'If a friend paid you back, it comes off what you spent instead. Nothing counts twice.'],
+  joint_in: ['Until you say, it counts as nothing.',
+    'Your own money isn’t income. What the other person puts in pays for part of your joint spending.'],
   income: ['Your plan is built on your usual pay.',
     'Knowing what kind of income this was keeps a one-off from looking like a raise.'],
   pay3: ['Two months a year hold a third paycheque.',
@@ -268,6 +271,8 @@ function Question({ it, categories, busy, onSkip, act, sorted }) {
       );
     case 'income':
       return <IncomeKind it={it} busy={busy} onSkip={onSkip} act={act} />;
+    case 'joint_in':
+      return <JointIn it={it} busy={busy} onSkip={onSkip} act={act} />;
     default:
       return (
         <>
@@ -416,6 +421,31 @@ function IncomeKind({ it, busy, onSkip, act }) {
       </div>
       <Actions busy={busy} ready={!!kind} onSkip={onSkip}
                onSave={() => act(() => setIncomeType(it.txn.id, kind))} />
+    </>
+  );
+}
+
+/** Money into a joint account from outside Pearl: hers, or theirs? */
+export function JointIn({ it, busy, onSkip, act }) {
+  const [who, setWho] = useState('');
+  const [remember, setRemember] = useState(true);
+  const name = `joint-${it.txn.id}`;
+  return (
+    <>
+      <TxHead txn={it.txn} />
+      <h2 className="pk-h2">Who put this in?</h2>
+      <div className="pk-choices" role="radiogroup" aria-label="Who put this in?">
+        <Choice name={name} checked={who === 'me'} onChange={() => setWho('me')} label="Me"
+                description="From an account of mine that isn’t in Pearl. It isn’t income." />
+        <Choice name={name} checked={who === 'them'} onChange={() => setWho('them')}
+                label={it.label}
+                description="It pays for that much of this month’s joint spending, so less of it is yours." />
+      </div>
+      <Choice type="checkbox" checked={remember} onChange={setRemember}
+              label={`The same for every deposit from ${it.txn.merchant}`}
+              description="We’ll sort the next ones the same way." />
+      <Actions busy={busy} ready={!!who} onSkip={onSkip}
+               onSave={() => act(() => setJointFrom(it.txn.id, who, remember))} />
     </>
   );
 }
