@@ -1376,15 +1376,22 @@ class Store:
         pairs = [(old, new) for old, new in mapping.items() if old != new]
         if not pairs:
             return
+        # Where the new id already has an answer (both copies of a row were
+        # in the ledger, and she answered the newer one), the newer stays.
         with self.conn() as c:
             for old, new in pairs:
                 for table in _ROW_TABLES:
-                    c.execute(f"DELETE FROM {table} WHERE txn_id = ?", (new,))
-                    c.execute(f"UPDATE {table} SET txn_id = ? WHERE txn_id = ?", (new, old))
+                    if c.execute(f"SELECT 1 FROM {table} WHERE txn_id = ?", (new,)).fetchone():
+                        c.execute(f"DELETE FROM {table} WHERE txn_id = ?", (old,))
+                    else:
+                        c.execute(f"UPDATE {table} SET txn_id = ? WHERE txn_id = ?", (new, old))
                 c.execute("UPDATE txn_duplicates SET twin_id = ? WHERE twin_id = ?", (new, old))
-                for table, col in (("txn_paybacks", "inflow_id"), ("txn_paybacks", "charge_id"),
-                                   ("txn_payback_person", "inflow_id")):
-                    c.execute(f"UPDATE {table} SET {col} = ? WHERE {col} = ?", (new, old))
+                for table, col in (("txn_paybacks", "inflow_id"), ("txn_payback_person", "inflow_id")):
+                    if c.execute(f"SELECT 1 FROM {table} WHERE {col} = ?", (new,)).fetchone():
+                        c.execute(f"DELETE FROM {table} WHERE {col} = ?", (old,))
+                    else:
+                        c.execute(f"UPDATE {table} SET {col} = ? WHERE {col} = ?", (new, old))
+                c.execute("UPDATE txn_paybacks SET charge_id = ? WHERE charge_id = ?", (new, old))
 
     def forget_accounts(self, account_ids: list[str]) -> None:
         """Drop what is known about these accounts themselves, for ones a
