@@ -1,873 +1,708 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ErrorNote } from '../components/ui.jsx';
 import {
-  Card, ErrorNote, GoTo, Loading, Notice, StatusPill, } from '../components/ui.jsx';
-import {
-  accountTitle, createLinkToken, dateLabel, deleteAccount, deleteExclusion, exchangePublicToken,
-  getAccounts, getDuplicateAudit, getExclusions, getLedgerStart, getPlaidItems, money,
-  recategorizeAll, resetLedger, setAccountJoint, setAccountSync, setLedgerStart, syncPlaid,
-  unlinkBank,
+  addManualAccount, createLinkToken, exchangePublicToken, getAccountsOverview, keepAsManual,
+  removeAccount, saveAccountSettings, syncPlaid, updateManualBalance,
 } from '../api.js';
 import { loadPlaidScript } from '../plaid.js';
+import {
+  ActionToast, Alert, Choice, DetailPanel, PButton, StatTile, StatusPill, Toast,
+} from '../pearl/kit.jsx';
+import PIcon from '../pearl/icons.jsx';
+import { Field, parseAmount } from './GoalsParts.jsx';
+import { MONTH_NAMES, ReconnectPanel, shown } from './HomePanel.jsx';
+import { ListRow, PageHead } from './ProfilePanel.jsx';
+import AccountsTools from './AccountsTools.jsx';
+import './home.css';
+import './profile.css';
 
 /**
- * Every account the app knows about, and the two ways it can hold a charge twice.
+ * Profile › Accounts (THL-120; Pearl "Accounts & settings" AM-01 to AM-07,
+ * C-01 and C-06).
  *
- * Some banks' consent screens are all-or-nothing: you grant the whole login,
- * and the chequing, savings and investment accounts arrive beside the card you
- * wanted. The choosing therefore happens here rather than at the bank, and it
- * has to be a decision rather than a deletion — deleting the rows of an
- * account the bank still holds just means the next sync brings them back.
+ *   AM-01 / C-01  every account, Linked and Added by you, with its state
+ *   AM-02 / AM-03 one account: how it counts (Count in my budget, joint),
+ *                 a nickname, and Remove; leaving it out says what safe to
+ *                 spend is now, with Undo
+ *   AM-04         her share of a joint account
+ *   AM-05 / AM-06 a balance added by hand, and its page
+ *   AM-07         remove an account, keeping or deleting its transactions
+ *   C-06          a disconnected account: Reconnect, keep it as a manual
+ *                 account, or remove it
  *
- * So each connected account carries a switch, and what it records outlives the
- * rows. An imported statement has no bank behind it and so has no switch.
- *
- * Linking a bank, signing in to one again and syncing are here too (C1): they
- * were the Connections page, which has no screen in the design. Everything
- * else that page said went with it.
+ * Linking a bank (Plaid Link), signing in to one again (update mode,
+ * `createLinkToken(itemId)`, C-04) and syncing afterwards live here since
+ * Connections went (C1). Calm copy: states in words and an icon, never
+ * colour alone; no red; amounts without a sign; one primary action a screen.
  */
-export default function AccountsPanel({ onChanged, onTab }) {
-  const [accounts, setAccounts] = useState(null);
-  const [mix, setMix] = useState([]);
-  const [audit, setAudit] = useState(null);
-  const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
-  // The account whose history is being fetched after switching it on.
-  const [syncing, setSyncing] = useState(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const [a, d] = await Promise.all([
-        getAccounts(), getDuplicateAudit().catch(() => null),
-      ]);
-      setAccounts(a.accounts ?? []);
-      setMix(a.currency_mix ?? []);
-      setAudit(d);
-    } catch (e) {
-      setError(e);
-    }
-  }, []);
+const plural = (n, one, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-  useEffect(() => { load(); }, [load]);
+/** "October 1" from "2026-10-01" (or an ISO timestamp). */
+export const monthDay = (iso) => `${MONTH_NAMES[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(8, 10))}`;
+/** "March 2026". */
+export const monthYear = (iso) => `${MONTH_NAMES[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
 
-  async function remove(account) {
-    const connected = account.syncs !== null;
-    if (!window.confirm(
-      `Remove "${accountTitle(account)}" and all ${account.transactions} of its `
-      + 'transactions? This can\'t be undone.'
-      + (connected
-        ? ' It will also stop syncing, so the next sync won\'t bring it back. '
-          + 'You can switch it back on here afterwards.'
-        : '')
-    )) return;
-    setBusy(true);
-    try {
-      await deleteAccount(account.account_id);
-      await load();
-      await onChanged?.();
-    } catch (e) {
-      setError(e);
-    } finally {
-      setBusy(false);
-    }
+/** "5 minutes ago", "6 hours ago", "Tuesday, October 6" — when it last updated. */
+export function updatedWords(iso, now = Date.now(), short = false) {
+  if (!iso) return null;
+  const at = Date.parse(iso.length <= 10 ? `${iso}T12:00:00` : iso);
+  if (Number.isNaN(at)) return null;
+  const mins = Math.max(0, Math.round((now - at) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return short ? `${mins} min ago` : `${plural(mins, 'minute')} ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return short ? `${hours} hr ago` : `${plural(hours, 'hour')} ago`;
+  const d = new Date(at);
+  const day = `${MONTH_NAMES[d.getMonth()]} ${d.getDate()}`;
+  return short ? day : `${DAYS[d.getDay()]}, ${day}`;
+}
+
+/** The account's balance as a phrase: "$412.55 owing", "$2,340.18". */
+export function balanceWords(a) {
+  if (a.balance === null || a.balance === undefined || Number.isNaN(Number(a.balance))) return null;
+  const n = Math.abs(Number(a.balance));
+  if (n < 0.005) return a.owing ? 'Nothing owing' : 'Nothing in it';
+  return a.owing ? `${shown(n, true)} owing` : shown(n, true);
+}
+
+/** A tile's figure: the amount alone, the tile's label says "owing". */
+export function tileAmount(a) {
+  if (a.balance === null || a.balance === undefined || Number.isNaN(Number(a.balance))) return null;
+  const n = Math.abs(Number(a.balance));
+  if (n < 0.005) return a.owing ? 'Nothing owing' : 'Nothing in it';
+  return shown(n, true);
+}
+
+/** "TD Visa ••1203". */
+export const titleOf = (a) => (a.mask ? `${a.name} ••${a.mask}` : a.name);
+
+/** What the row under the name says (AM-01, C-01). */
+export function accountMeta(a, now = Date.now()) {
+  const bal = balanceWords(a);
+  const updated = updatedWords(a.updated_at, now);
+  let rest;
+  if (a.source === 'statement') {
+    return `${plural(a.transactions, 'transaction')} from a statement`;
   }
+  if (a.source === 'hand') rest = a.updated_at ? `you updated it ${monthDay(a.updated_at)}` : null;
+  else if (a.status === 'disconnected') {
+    rest = a.disconnected_on ? `disconnected on ${monthDay(a.disconnected_on)}` : 'disconnected';
+  } else if (a.status === 'sign_in' || a.status === 'retrying') {
+    rest = updated ? `last updated ${updated}` : null;
+  } else if (a.status === 'not_counted') rest = 'not in your budget';
+  else if (a.joint) rest = a.joint_share ? `joint, your share is ${Math.round(a.joint_share)}%` : 'joint';
+  else if (a.anchor) rest = 'counts toward your Anchor';
+  else rest = updated ? `updated ${updated}` : 'waiting for its first update';
+  const out = [bal, rest].filter(Boolean).join(' · ');
+  return out.charAt(0).toUpperCase() + out.slice(1);
+}
 
-  async function markJoint(account, label) {
-    setBusy(true);
-    setError(null);
-    try {
-      await setAccountJoint(account.account_id, label);
-      await load();
-      await onChanged?.();
-    } catch (e) {
-      setError(e);
-    } finally {
-      setBusy(false);
-    }
+/** The status pill (C-01): the state in a word, with an icon. */
+export function pillFor(a) {
+  switch (a.status) {
+    case 'up_to_date': return { label: 'Up to date', tone: 'positive', icon: 'check' };
+    case 'joint': return { label: 'Joint', tone: 'info', icon: 'info' };
+    case 'not_counted': return { label: 'Not counted', tone: 'neutral', icon: null };
+    case 'manual': return { label: 'Manual', tone: 'neutral', icon: null };
+    case 'sign_in': return { label: 'Sign in again', tone: 'caution', icon: 'alert' };
+    case 'retrying': return { label: 'We’re retrying', tone: 'info', icon: 'info' };
+    case 'disconnected': return { label: 'Disconnected', tone: 'neutral', icon: null };
+    default: return null;
   }
+}
 
-  async function toggleSync(account, enabled) {
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await setAccountSync(account.account_id, enabled);
-      // Switched on after being off: its history was skipped while it was
-      // off, so fetch it now rather than at the next app open.
-      if (r?.resync) {
-        setSyncing(account.account_id);
-        // A sync that fails is reported under Linked banks; the switch
-        // itself was saved, so the table still has to show it.
-        try { await syncPlaid(); } catch { /* shown under Linked banks */ } finally {
-          setSyncing(null);
-        }
-      }
-      await load();
-      await onChanged?.();
-    } catch (e) {
-      setError(e);
-    } finally {
-      setBusy(false);
-    }
-  }
+const needsReconnect = (a) => a.status === 'sign_in' || a.status === 'disconnected';
 
-  /** Switch these on and fetch their history once, however many there are. */
-  async function turnOn(list) {
-    setBusy(true);
-    setError(null);
-    try {
-      let resync = false;
-      for (const a of list) {
-        const r = await setAccountSync(a.account_id, true);
-        resync = resync || !!r?.resync;
-      }
-      if (resync) {
-        setSyncing(list[0].account_id);
-        // A sync that fails is reported under Linked banks; the switch
-        // itself was saved, so the table still has to show it.
-        try { await syncPlaid(); } catch { /* shown under Linked banks */ } finally {
-          setSyncing(null);
-        }
-      }
-      await load();
-      await onChanged?.();
-    } catch (e) {
-      setError(e);
-    } finally {
-      setBusy(false);
-    }
-  }
+/** Two to three letters for the avatar, from the bank: "TD", "T", "AB". */
+export function bankInitials(a) {
+  const words = String(a.institution || a.bank_name || a.name || '')
+    .replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+  if (!words.length) return '•';
+  const first = words[0];
+  if (first.length <= 3 && first === first.toUpperCase()) return first;
+  if (words.length === 1) return first[0].toUpperCase();
+  return (first[0] + words[1][0]).toUpperCase();
+}
 
-  if (!accounts && !error) return <Loading what="your accounts" />;
-  if (!accounts) return <ErrorNote error={error} onRetry={load} />;
-
-  const syncingNotCards = accounts.filter((a) => !a.is_card && a.syncs === true);
-  const off = accounts.filter((a) => a.syncs === false);
-  // A savings account left off is where transfers out of chequing go to look
-  // like spending: their other end is never seen.
-  const savingsOff = off.filter((a) => a.kind_label === 'Savings'
-    || ['savings', 'money market', 'hisa'].includes((a.plaid_subtype || '').toLowerCase()));
-  const total = accounts.reduce((n, a) => n + a.transactions, 0);
-  // A connected account has a sync decision; an imported statement has none.
-  const connectedNames = accounts.filter((a) => a.syncs !== null)
-                                 .map((a) => a.name);
-  const overlaps = audit?.account_overlaps ?? [];
-  const dupes = audit?.duplicates ?? [];
-
+function AccountRow({ a, onOpen, onReconnect, now }) {
+  const pill = pillFor(a);
+  const reconnect = needsReconnect(a);
   return (
-    <div className="stack">
-      <ErrorNote error={error} onRetry={load} />
-
-      {mix.length > 1 && (
-        <Notice kind="error">
-          <strong>
-            This ledger holds {mix.length} currencies:{' '}
-            {mix.map((m) => `${m.currency} (${m.transactions})`).join(', ')}.
-          </strong>{' '}
-          Totals add amounts together, so every figure mixing them is wrong by
-          whatever the exchange rate is. Amounts are shown in{' '}
-          {mix[0].currency} because that is most of them. Remove the odd card,
-          or treat anything that spans both as indicative only.
-        </Notice>
+    <li className="pf-row">
+      <button type="button" className="pf-row-main" onClick={() => onOpen(a)}>
+        <span className="pk-avatar" aria-hidden="true">{bankInitials(a)}</span>
+        <span className="pf-row-text">
+          <span className="pf-row-name">{titleOf(a)}</span>
+          <span className="pf-row-sub">{accountMeta(a, now)}</span>
+        </span>
+        <span className="pf-row-end">
+          {pill && <StatusPill icon={pill.icon} tone={pill.tone}>{pill.label}</StatusPill>}
+          {!reconnect && <PIcon name="chevronRight" size={18} />}
+        </span>
+      </button>
+      {reconnect && (
+        <button type="button" className="pf-row-link" onClick={() => onReconnect(a)}>
+          Reconnect <PIcon name="chevronRight" size={14} />
+        </button>
       )}
+    </li>
+  );
+}
 
-      {savingsOff.length > 0 && (
-        <Notice>
-          <strong>
-            {savingsOff.map(accountTitle).join(', ')}{' '}
-            {savingsOff.length === 1 ? 'is' : 'are'} off.
-          </strong>{' '}
-          Money you move into {savingsOff.length === 1 ? 'it' : 'them'} counts as
-          spent until {savingsOff.length === 1 ? "it's" : "they're"} on.{' '}
-          <button className="btn primary" disabled={busy}
-                  onClick={() => turnOn(savingsOff)}>
-            {syncing ? 'Syncing…' : savingsOff.length === 1 ? 'Turn on' : 'Turn all on'}
-          </button>
-        </Notice>
+/** AM-01 / C-01: every account, and the two ways to add one. */
+export function AccountsList({ data, onTab, onOpen, onReconnect, onLink, onAdd, linking = false,
+                               now = Date.now(), children = null }) {
+  const { linked = [], added = [], plaid = {} } = data;
+  const canLink = plaid.configured && plaid.encryption_ready;
+  const mixed = (data.currency_mix ?? []).length > 1;
+  const none = linked.length === 0 && added.length === 0;
+  return (
+    <div className="pk hm-page pf-page">
+      <PageHead trail={[{ label: 'Profile', to: 'profile' }, { label: 'Accounts' }]}
+                title="Accounts" onTab={onTab} />
+      <p className="pf-intro">
+        {none ? 'Link your bank and Pearl does the rest. Or add a balance by hand for a bank Pearl can’t link yet.'
+          : 'Pearl checks your banks a few times a day. Every balance shows when it was last updated.'}
+      </p>
+      {mixed && (
+        <Alert tone="info">
+          {`Your accounts hold ${data.currency_mix.length} currencies, so totals that mix them are approximate.`}
+        </Alert>
       )}
-
-      {syncingNotCards.length > 0 && (
-        <Notice>
-          Chequing works too: card payments, transfers between your accounts
-          and pay are kept out of spending.
-        </Notice>
+      {linked.length > 0 && (
+        <section className="pf-section" aria-labelledby="ac-linked">
+          <h2 className="pk-h3" id="ac-linked">Linked</h2>
+          <ul className="pf-list">
+            {linked.map((a) => <AccountRow key={a.id} a={a} onOpen={onOpen} onReconnect={onReconnect} now={now} />)}
+          </ul>
+        </section>
       )}
-
-      {/* A link or a sync brings accounts in, so the table reloads with it. */}
-      <LinkedBanks onChanged={async () => { await load(); await onChanged?.(); }} />
-
-      <Card title="Accounts">
-        <div className="table-wrap">
-          <table className="acct-stacked">
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th>Kind</th>
-                <th>Sync</th>
-                <th>Range</th>
-                <th className="r">Balance</th>
-                <th className="r">Rows</th>
-                <th className="r">Spend</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {accounts.map((a) => (
-                <tr key={a.account_id}>
-                  <td className="merchant">
-                    <strong>{accountTitle(a)}</strong>
-                    {a.institution && a.account_name && (
-                      <div className="desc" title={a.account_name}>{a.account_name}</div>
-                    )}
-                    <div className="desc">
-                      {a.source === 'plaid' ? 'Connected through Plaid'
-                        : a.source === 'manual' ? 'Added by hand'
-                        : a.imported_from?.filename
-                          ? `From ${a.imported_from.filename}`
-                            + (a.imported_from.format_label
-                              ? ` (${a.imported_from.format_label})` : '')
-                          : 'Imported from statements'}
-                    </div>
-                  </td>
-                  <td>
-                    <span className="pill">
-                      {a.kind_label || (a.is_card ? 'Card' : 'Account')}
-                    </span>
-                    <JointControl account={a} busy={busy}
-                                  onSave={(label) => markJoint(a, label)} />
-                  </td>
-                  <td>
-                    {a.syncs === null ? (
-                      <span className="small muted">—</span>
-                    ) : (
-                      <label className="row" style={{ gap: 7, margin: 0 }}>
-                        <input type="checkbox" checked={a.syncs} disabled={busy}
-                               onChange={(e) => toggleSync(a, e.target.checked)} />
-                        <span className="small">
-                          {syncing === a.account_id ? 'Syncing…' : a.syncs ? 'On' : 'Off'}
-                          {a.decided_by === 'user' && (
-                            <span className="muted"> · your choice</span>
-                          )}
-                        </span>
-                      </label>
-                    )}
-                  </td>
-                  <td className="muted">
-                    {a.transactions === 0
-                      ? <span className="small">no transactions</span>
-                      : <>{dateLabel(a.first_date)} – {dateLabel(a.last_date)}</>}
-                  </td>
-                  <td className="r num"><Balance a={a} /></td>
-                  <td className="r">{a.transactions}</td>
-                  <td className="r num">{money(a.total_spend)}</td>
-                  <td className="r">
-                    <button className="btn quiet" disabled={busy}
-                            onClick={() => remove(a)}>Remove</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {/* Live, so it stays out of the fold below. */}
-        {off.length > 0 && (
-          <p className="small" style={{ margin: '12px 0 0' }}>
-            {off.length} off
-          </p>
-        )}
-      </Card>
-
-      {/* Trimming changes the row counts in the table above, so this panel's
-          own data has to be reloaded alongside the app's. */}
-      <TrendBasis onChanged={async () => { await load(); await onChanged?.(); }} />
-
-      <ExclusionRules onChanged={onChanged} />
-
-      <StartFresh total={total} connected={connectedNames} busy={busy} setBusy={setBusy}
-                  setError={setError} onDone={async () => {
-                    await load(); await onChanged?.();
-                  }} />
-
-      <Card title="Possible overlap">
-        {overlaps.length === 0 && dupes.length === 0 ? (
-          <Notice kind="good">Nothing overlapping</Notice>
-        ) : (
-          <>
-            {overlaps.length > 0 && (
-              <>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>These two accounts</th>
-                        <th className="r">Shared amounts</th>
-                        <th className="r">Overlap</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {overlaps.map((o, i) => (
-                        <tr key={i}>
-                          <td className="merchant">
-                            {o.accounts[0].account} ({o.accounts[0].source})
-                            <div className="desc">
-                              and {o.accounts[1].account} ({o.accounts[1].source})
-                            </div>
-                          </td>
-                          <td className="r">{o.shared_amounts}</td>
-                          <td className="r">
-                            {Math.round(o.overlap * 100)}%
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-
-            {dupes.length > 0 && (
-              <>
-                <div className="tile-label" style={{ marginTop: 18 }}>
-                  {audit.duplicate_count} charge
-                  {audit.duplicate_count === 1 ? '' : 's'} to look at
-                </div>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Charge</th><th>Also on</th>
-                        <th className="r">Amount</th><th>Match</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dupes.slice(0, 40).map((d, i) => (
-                        <tr key={i}>
-                          <td className="merchant">
-                            {d.rows[0].merchant}
-                            <div className="desc">
-                              {dateLabel(d.rows[0].date)} · {d.rows[0].account}{' '}
-                              ({d.rows[0].source})
-                            </div>
-                          </td>
-                          <td className="merchant">
-                            {d.rows[1].merchant}
-                            <div className="desc">
-                              {dateLabel(d.rows[1].date)} · {d.rows[1].account}{' '}
-                              ({d.rows[1].source})
-                            </div>
-                          </td>
-                          <td className="r num">{money(d.amount, { cents: true })}</td>
-                          <td>
-                            <StatusPill
-                              state={d.same_merchant && d.days_apart <= 1
-                                ? 'critical' : 'warning'}>
-                              {d.same_merchant ? 'Same merchant' : 'Amount only'}
-                            </StatusPill>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </>
-        )}
-
-      </Card>
+      {added.length > 0 && (
+        <section className="pf-section" aria-labelledby="ac-added">
+          <h2 className="pk-h3" id="ac-added">Added by you</h2>
+          <ul className="pf-list">
+            {added.map((a) => <AccountRow key={a.id} a={a} onOpen={onOpen} onReconnect={onReconnect} now={now} />)}
+          </ul>
+        </section>
+      )}
+      <div className="pf-actions">
+        <PButton onClick={onLink} disabled={!canLink || linking}>
+          {linking ? 'Opening…' : linked.length ? 'Link another bank' : 'Link your bank'}
+        </PButton>
+        <PButton variant="secondary" onClick={onAdd}>Add a balance by hand</PButton>
+      </div>
+      {!plaid.configured && (
+        <p className="pf-foot">Linking a bank isn’t set up on this copy of Pearl yet.</p>
+      )}
+      {plaid.configured && !plaid.encryption_ready && (
+        <p className="pf-foot">Linking a bank needs an encryption key on this copy of Pearl first.</p>
+      )}
+      {plaid.configured && plaid.environment === 'sandbox' && (
+        <p className="pf-foot">Plaid sandbox: test banks only.</p>
+      )}
+      {children}
     </div>
   );
 }
 
-/**
- * Banks linked through Plaid: link one, sign in to one again, sync, or
- * disconnect (C1, from the old Connections page).
- *
- * The public token Link hands back is single-use and useless on its own; the
- * access token it becomes is created and kept server-side, and never reaches
- * this page. Reconnecting (C-04) opens Link in update mode for that bank: the
- * connection, its accounts and its history stay, and a sync follows.
- */
-function LinkedBanks({ onChanged }) {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null);
+const trailFor = (a, onBack) => [
+  { label: 'Profile', to: 'profile' },
+  { label: 'Accounts', onClick: onBack },
+  { label: a.name },
+];
 
-  const load = useCallback(async () => {
-    try {
-      setData(await getPlaidItems());
-    } catch (e) {
-      setError(e);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function run(fn) {
-    setBusy(true);
-    setError(null);
-    setResult(null);
-    try {
-      await fn();
-    } catch (e) {
-      setError(e);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const done = async (r) => {
-    setResult(r ?? { imported: 0 });
-    await load();
-    await onChanged?.();
+/** AM-02, AM-03, AM-06 and C-06: one account. */
+export function AccountDetail({ a, onTab, onBack, onSave, onShare, onRemove, onReconnect,
+                                onKeepManual, onUpdateBalance, now = Date.now(), busy = false }) {
+  const [nickname, setNickname] = useState(a.nickname || a.bank_name || '');
+  useEffect(() => { setNickname(a.nickname || a.bank_name || ''); }, [a.id, a.nickname, a.bank_name]);
+  const trail = trailFor(a, onBack);
+  const head = <PageHead trail={trail} title={titleOf(a)} onTab={onTab} />;
+  const history = a.history_from ? monthYear(a.history_from) : null;
+  const saveNickname = () => {
+    let next = nickname.trim();
+    if (next === a.bank_name) next = '';
+    if (next !== (a.nickname || '')) onSave({ nickname: next });
   };
 
-  /** Open Plaid Link; with `item`, in update mode to sign in to that bank. */
-  async function openLink(item) {
+  if (a.source === 'hand') {
+    return (
+      <div className="pk hm-page pf-page">
+        {head}
+        <div className="pf-tiles">
+          <StatTile label={a.owing ? 'Balance owing' : 'Balance'} value={tileAmount(a) ?? 'Not added'} />
+          {a.updated_at && <StatTile label="You updated it" value={monthDay(a.updated_at)} />}
+        </div>
+        <p className="pk-label pk-muted">
+          Added by you. Pearl can’t see its transactions, so it only counts in your snapshot.
+        </p>
+        <div className="pf-stack">
+          <PButton variant="secondary" onClick={onUpdateBalance}>Update balance</PButton>
+        </div>
+        <div className="pk-choices">
+          <Choice type="checkbox" checked={a.counted} disabled={busy}
+                  onChange={(on) => onSave({ counted: on })} label="Count in my snapshot" />
+          <Choice type="checkbox" checked={a.anchor} disabled={busy || !a.can_anchor}
+                  onChange={(on) => onSave({ anchor: on })} label="Counts toward my Anchor"
+                  description="Savings accounts only" />
+        </div>
+        <button type="button" className="pf-text-link" onClick={() => onRemove()}>
+          Remove this account
+        </button>
+      </div>
+    );
+  }
+
+  if (a.status === 'disconnected') {
+    const on = a.disconnected_on ? monthDay(a.disconnected_on) : null;
+    return (
+      <div className="pk hm-page pf-page">
+        {head}
+        <Alert tone="info">
+          {`${on ? `Disconnected on ${on}.` : 'Disconnected.'} Your past transactions stay in Pearl, but new ones won’t come in.`}
+        </Alert>
+        <div className="pf-tiles">
+          {tileAmount(a) && (
+            <StatTile label={on ? `Balance on ${on}` : 'Last balance'} value={tileAmount(a)} />
+          )}
+          <StatTile label="Transactions in Pearl" value={a.transactions.toLocaleString()} />
+          {history && <StatTile label="History from" value={history} />}
+        </div>
+        <div className="pf-stack">
+          <PButton onClick={() => onReconnect(a)}>Reconnect</PButton>
+          <PButton variant="secondary" disabled={busy} onClick={onKeepManual}>
+            Keep it as a manual account
+          </PButton>
+          <button type="button" className="pf-text-link" onClick={() => onRemove('delete')}>
+            Or remove this account and its history from Pearl.
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const linked = a.source === 'plaid';
+  const updated = updatedWords(a.updated_at, now, true);
+  return (
+    <div className="pk hm-page pf-page">
+      {head}
+      {a.status === 'sign_in' && (
+        <Alert tone="caution" action="Reconnect" onAction={() => onReconnect(a)}>
+          {`${a.institution || 'Your bank'} needs you to sign in again. Transactions since ${updatedWords(a.updated_at, now) ?? 'then'} aren’t counted yet.`}
+        </Alert>
+      )}
+      {a.status === 'retrying' && (
+        <Alert tone="info">
+          {`${a.institution || 'Your bank'} isn’t responding right now. We’ll keep trying; there’s nothing you need to do.`}
+        </Alert>
+      )}
+      {!a.counted && (
+        <Alert tone="info">
+          This account isn’t in your budget. Its transactions stay here, but they don’t count toward
+          safe to spend, spending or your snapshot.
+        </Alert>
+      )}
+      <div className="pf-tiles">
+        {tileAmount(a) && <StatTile label={a.owing ? 'Balance owing' : 'Balance'} value={tileAmount(a)} />}
+        {linked && updated && <StatTile label="Updated" value={updated} />}
+        {!linked && <StatTile label="Transactions" value={a.transactions.toLocaleString()} />}
+        {history && <StatTile label="History from" value={history} />}
+      </div>
+      <section className="pf-section" aria-labelledby="ac-counts">
+        <h2 className="pk-h3" id="ac-counts">How it counts</h2>
+        <div className="pk-choices">
+          <Choice type="checkbox" checked={a.counted} disabled={busy}
+                  onChange={(on) => onSave({ counted: on })} label="Count in my budget"
+                  description="Its spending, bills and balance count toward safe to spend and your snapshot." />
+          {linked && (
+            <Choice type="checkbox" checked={a.joint} disabled={busy}
+                    onChange={(on) => (on ? onShare() : onSave({ joint_share: null }))}
+                    label="This is a joint account"
+                    description={a.joint && a.joint_share
+                      ? `Only your share counts. Your share is ${Math.round(a.joint_share)}%.`
+                      : 'Only your share counts. You choose the share.'} />
+          )}
+          {a.can_anchor && (
+            <Choice type="checkbox" checked={a.anchor} disabled={busy}
+                    onChange={(on) => onSave({ anchor: on })} label="Counts toward my Anchor"
+                    description="Savings accounts only" />
+          )}
+        </div>
+        {a.joint && (
+          <button type="button" className="pf-text-link" onClick={onShare}>Change your share</button>
+        )}
+      </section>
+      <form className="pf-form" onSubmit={(e) => { e.preventDefault(); saveNickname(); }}>
+        <Field label="Nickname" id="ac-nickname">
+          <input id="ac-nickname" autoComplete="off" maxLength={40} value={nickname}
+                 placeholder={a.bank_name} onChange={(e) => setNickname(e.target.value)}
+                 onBlur={saveNickname} />
+        </Field>
+      </form>
+      <button type="button" className="pf-text-link" onClick={() => onRemove()}>
+        Remove this account
+      </button>
+    </div>
+  );
+}
+
+/** AM-07: remove an account, keeping or deleting its transactions. */
+export function RemoveDialog({ a, start = 'keep', onClose, onRemove }) {
+  const [what, setWhat] = useState(start);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const hand = a.source === 'hand';
+  const go = () => {
     setBusy(true);
     setError(null);
-    setResult(null);
+    onRemove(hand ? 'keep' : what).catch((e) => { setError(e.message); setBusy(false); });
+  };
+  return (
+    <DetailPanel label={`Remove ${a.name}?`} overline="" onClose={onClose} className="pf-dialog" sheet>
+      <h1 className="pk-h2">{`Remove ${a.name}?`}</h1>
+      <p className="pk-muted">
+        {hand ? 'It comes out of your snapshot straight away.'
+          : a.source === 'plaid'
+            ? 'Pearl stops syncing it and disconnects it from your bank straight away.'
+            : 'It comes off your accounts straight away.'}
+      </p>
+      {!hand && a.transactions > 0 && (
+        <>
+          <h2 className="pk-h3">{`Its ${plural(a.transactions, 'transaction')}`}</h2>
+          <div className="pk-choices" role="radiogroup" aria-label="Its transactions">
+            <Choice name="ac-keep" checked={what === 'keep'} onChange={() => setWhat('keep')}
+                    label="Keep them" description="Past months stay accurate. Nothing new comes in." />
+            <Choice name="ac-keep" checked={what === 'delete'} onChange={() => setWhat('delete')}
+                    label="Delete them too" description="Your averages will change. This can’t be undone." />
+          </div>
+        </>
+      )}
+      {error && <Alert tone="caution">{error}</Alert>}
+      <PButton onClick={go} disabled={busy}>{busy ? 'Removing…' : 'Remove account'}</PButton>
+      <PButton variant="text" onClick={onClose}>Keep it</PButton>
+    </DetailPanel>
+  );
+}
+
+/** "50", "50%", " 33.5 % " → 50, 50, 33.5; anything else → NaN. */
+export function parseShare(text) {
+  const clean = String(text ?? '').replace(/[%\s]/g, '');
+  return /^\d+(\.\d{1,2})?$/.test(clean) ? Number(clean) : NaN;
+}
+
+/** AM-04: her share of a joint account. */
+export function ShareDialog({ a, onClose, onSave }) {
+  const initial = a.joint_share ?? 50;
+  const [half, setHalf] = useState(initial === 50);
+  const [text, setText] = useState(`${initial}%`);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const submit = (e) => {
+    e.preventDefault();
+    const share = half ? 50 : parseShare(text);
+    if (Number.isNaN(share) || share < 1 || share > 99) {
+      setError('Enter a share between 1% and 99%.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    onSave(share).catch((err) => { setError(err.message); setBusy(false); });
+  };
+  return (
+    <DetailPanel label={`Your share of ${a.name}`} overline="" onClose={onClose} className="pf-dialog" sheet>
+      <form className="pf-form" onSubmit={submit}>
+        <h1 className="pk-h2">{`Your share of ${a.name}`}</h1>
+        <p className="pk-muted">
+          Only your share of its spending, income and balance will count. Change it any time.
+        </p>
+        <div className="pk-choices" role="radiogroup" aria-label="Your share">
+          <Choice name="ac-share" checked={half} label="Half (50%)"
+                  onChange={() => { setHalf(true); setText('50%'); setError(null); }} />
+          <Choice name="ac-share" checked={!half} label="A different share"
+                  onChange={() => { setHalf(false); setError(null); }} />
+        </div>
+        <Field label="Your share" id="ac-share-pc" error={error}>
+          <input id="ac-share-pc" inputMode="decimal" autoComplete="off" value={text}
+                 onChange={(e) => { setText(e.target.value); setHalf(false); setError(null); }} />
+          {!error && <p className="gl-hint">Between 1% and 99%</p>}
+        </Field>
+        <PButton type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save'}</PButton>
+        <PButton variant="text" onClick={onClose}>Cancel</PButton>
+      </form>
+    </DetailPanel>
+  );
+}
+
+/** AM-06 "Update balance": what a hand-added account holds today. */
+export function BalanceDialog({ a, onClose, onSave }) {
+  const [text, setText] = useState(a.balance ? String(a.balance) : '');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const submit = (e) => {
+    e.preventDefault();
+    const n = parseAmount(text);
+    if (!text.trim() || Number.isNaN(n)) { setError('Enter the balance today, like 3,000.'); return; }
+    setBusy(true);
+    onSave(n).catch((err) => { setError(err.message); setBusy(false); });
+  };
+  return (
+    <DetailPanel label={`Update ${a.name}`} overline="" onClose={onClose} className="pf-dialog" sheet>
+      <form className="pf-form" onSubmit={submit}>
+        <h1 className="pk-h2">{`Update ${a.name}`}</h1>
+        <p className="pk-muted">What it holds today, from your bank’s app or statement.</p>
+        <Field label={a.owing ? 'Balance owing today' : 'Balance today'} id="ac-balance-new" error={error}>
+          <input id="ac-balance-new" inputMode="decimal" autoComplete="off" placeholder="$3,000.00"
+                 value={text} onChange={(e) => { setText(e.target.value); setError(null); }} />
+        </Field>
+        <PButton type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save'}</PButton>
+        <PButton variant="text" onClick={onClose}>Cancel</PButton>
+      </form>
+    </DetailPanel>
+  );
+}
+
+const KINDS = [
+  { value: 'chequing', label: 'Chequing' },
+  { value: 'savings', label: 'Savings' },
+  { value: 'credit', label: 'Credit card', description: 'Counts as money you owe' },
+];
+
+/** AM-05: add a balance by hand. */
+export function AddByHand({ onTab, onBack, onAdd }) {
+  const [name, setName] = useState('');
+  const [kind, setKind] = useState('savings');
+  const [balance, setBalance] = useState('');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const submit = (e) => {
+    e.preventDefault();
+    if (!name.trim()) { setError({ field: 'name', text: 'Give it a name, like the bank and account.' }); return; }
+    const n = parseAmount(balance);
+    if (!balance.trim() || Number.isNaN(n)) {
+      setError({ field: 'balance', text: 'Enter the balance today, like 3,000.' });
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    onAdd(name.trim(), kind, n).catch((err) => {
+      setError({ field: 'balance', text: err.message });
+      setBusy(false);
+    });
+  };
+  return (
+    <div className="pk hm-page pf-page">
+      <PageHead trail={[{ label: 'Profile', to: 'profile' }, { label: 'Accounts', onClick: onBack },
+                        { label: 'Add a balance' }]}
+                title="Add a balance by hand" onTab={onTab} />
+      <p className="pf-intro">
+        For a bank Pearl can’t link yet. The balance shows in your snapshot. Transactions won’t
+        come in, so it won’t change your spending.
+      </p>
+      <form className="pf-form" onSubmit={submit} noValidate>
+        <Field label="Name" id="ac-name" error={error?.field === 'name' ? error.text : null}>
+          <input id="ac-name" autoComplete="off" maxLength={40} placeholder="Meridian Savings"
+                 value={name} onChange={(e) => { setName(e.target.value); setError(null); }} />
+        </Field>
+        <h2 className="pk-h3">Type</h2>
+        <div className="pk-choices" role="radiogroup" aria-label="Type">
+          {KINDS.map((k) => (
+            <Choice key={k.value} name="ac-kind" checked={kind === k.value}
+                    onChange={() => setKind(k.value)} label={k.label} description={k.description} />
+          ))}
+        </div>
+        <Field label={kind === 'credit' ? 'Balance owing today' : 'Balance today'} id="ac-balance"
+               error={error?.field === 'balance' ? error.text : null}>
+          <input id="ac-balance" inputMode="decimal" autoComplete="off" placeholder="$3,000.00"
+                 value={balance} onChange={(e) => { setBalance(e.target.value); setError(null); }} />
+        </Field>
+        <PButton type="submit" disabled={busy}>{busy ? 'Adding…' : 'Add account'}</PButton>
+        <PButton variant="text" onClick={onBack}>Cancel</PButton>
+      </form>
+    </div>
+  );
+}
+
+/** The toast after Count in my budget changes (AM-03). */
+export function countedToast(a, counted, safeToSpend) {
+  const what = counted ? `${a.name} counts again.` : `${a.name} no longer counts.`;
+  const sts = safeToSpend > 0 ? ` Safe to spend is now ${shown(safeToSpend, true)}.` : '';
+  return `${what}${sts}`;
+}
+
+export default function AccountsPanel({ onChanged, onTab, version }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [view, setView] = useState({ name: 'list' });
+  const [dialog, setDialog] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [note, setNote] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const [reconnect, setReconnect] = useState(null);
+
+  const load = useCallback(() => getAccountsOverview().then(setData).catch(setError), []);
+  useEffect(() => { load(); }, [load, version]);
+  // A new page within Accounts opens at its top, as a new panel would.
+  useEffect(() => { window.scrollTo?.(0, 0); }, [view.name, view.id]);
+
+  const refresh = async () => { await load(); await onChanged?.(); };
+
+  /** Open Plaid Link for a new bank; the public token becomes an item here. */
+  async function openLink() {
+    setLinking(true);
+    setError(null);
     try {
       const [Plaid, { link_token: token }] = await Promise.all([
-        loadPlaidScript(), createLinkToken(item?.item_id),
-      ]);
+        loadPlaidScript(), createLinkToken()]);
       Plaid.create({
         token,
-        onSuccess: (publicToken, metadata) => run(async () => {
-          if (item) {
-            await done(await syncPlaid());
-          } else {
-            const r = await exchangePublicToken(
-              publicToken, metadata?.institution?.name || '');
-            await done(r.sync);
+        onSuccess: async (publicToken, metadata) => {
+          try {
+            const r = await exchangePublicToken(publicToken, metadata?.institution?.name || '');
+            if (!r.sync) await syncPlaid();
+            setNote(`${metadata?.institution?.name || 'Your bank'} is linked.`);
+            await refresh();
+          } catch (e) {
+            setError(e);
+          } finally {
+            setLinking(false);
           }
-        }),
+        },
         onExit: (err) => {
-          setBusy(false);
-          // Closing the window deliberately is not an error worth shouting
-          // about; a real failure from Plaid is.
-          if (err) setError(new Error(err.display_message || err.error_message
-                                      || (item ? 'Signing in didn’t finish.'
-                                        : 'Linking was cancelled.')));
+          setLinking(false);
+          if (err) setError(new Error(err.display_message || err.error_message || 'Linking didn’t finish. You can try again.'));
         },
       }).open();
     } catch (e) {
       setError(e);
-      setBusy(false);
+      setLinking(false);
     }
   }
 
-  function disconnect(item) {
-    if (!window.confirm(
-      `Disconnect ${item.institution || 'this bank'}? Transactions already `
-      + 'imported stay in your ledger; only the live connection goes.'
-    )) return;
-    run(async () => { await unlinkBank(item.item_id); await load(); });
-  }
+  // Reconnect (C-04): Link in update mode for a login Pearl still holds; a
+  // login that's gone entirely is linked afresh.
+  const onReconnect = (a) => {
+    if (a.item_id) setReconnect({ item_id: a.item_id, institution: a.institution || a.name });
+    else openLink();
+  };
 
-  if (!data) return error ? <ErrorNote error={error} onRetry={load} /> : null;
-  const { configured, environment, encryption_ready: encrypted, items } = data;
-
-  return (
-    <Card
-      title="Linked banks"
-      actions={
-        <div className="row" style={{ gap: 8 }}>
-          {items.length > 0 && (
-            <button className="btn" disabled={busy || !configured}
-                    onClick={() => run(async () => done(await syncPlaid()))}>
-              {busy ? 'Working…' : 'Sync now'}
-            </button>
-          )}
-          <button className="btn primary" onClick={() => openLink()}
-                  disabled={busy || !configured || !encrypted}>
-            + Link your bank
-          </button>
-        </div>
+  async function save(a, fields) {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await saveAccountSettings(a.id, fields);
+      if (r.resync) { try { await syncPlaid(); } catch { /* the next sync catches up */ } }
+      if ('counted' in fields && a.source !== 'hand') {
+        setToast({ text: countedToast(r.account ?? a, fields.counted, r.safe_to_spend),
+                   undo: () => save(a, { counted: !fields.counted }) });
+      } else if ('nickname' in fields) {
+        setNote('Nickname saved.');
       }
-    >
-      <ErrorNote error={error} />
-      {!configured && <Notice><strong>Plaid isn&apos;t set up</strong></Notice>}
-      {configured && !encrypted && (
-        <Notice kind="error"><strong>SPENDIE_SECRET_KEY isn&apos;t set</strong></Notice>
-      )}
-      {configured && environment === 'sandbox' && (
-        <Notice>Plaid <strong>sandbox</strong> · test data</Notice>
-      )}
-
-      {items.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>Nothing linked</p>
-      ) : (
-        <ul className="rules-list">
-          {items.map((it) => (
-            <li key={it.item_id}>
-              <div>
-                <strong>{it.institution || 'Linked bank'}</strong>{' '}
-                {it.last_error ? (
-                  <StatusPill state="critical">Needs attention</StatusPill>
-                ) : it.synced_before ? (
-                  <StatusPill state="good">Connected</StatusPill>
-                ) : (
-                  <StatusPill state="warning">Awaiting first sync</StatusPill>
-                )}
-                <div className="muted small">
-                  Last synced{' '}
-                  {it.last_synced ? it.last_synced.replace('T', ' ').slice(0, 16) : 'not yet'}
-                  {it.last_error && <> · {it.last_error}</>}
-                </div>
-              </div>
-              <div className="row" style={{ gap: 8 }}>
-                {it.last_error && (
-                  <button className="btn" disabled={busy}
-                          onClick={() => openLink(it)}>Reconnect</button>
-                )}
-                <button className="btn quiet" disabled={busy}
-                        onClick={() => disconnect(it)}>Disconnect</button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {result && (
-        <Notice kind="good">
-          {result.imported > 0
-            ? `Brought in ${result.imported} new transaction${result.imported === 1 ? '' : 's'}.`
-            : 'Up to date'}
-          {result.errors?.length > 0 && (
-            <> {result.errors.length} connection(s) reported a problem.</>
-          )}
-        </Notice>
-      )}
-    </Card>
-  );
-}
-
-/**
- * "Leave out every transaction like this": the rules made from a
- * transaction's Exclude… They apply to every row now and to every row that
- * arrives later; removing one puts its rows back. Moved here from Profile ›
- * Categories when that page went (C1), until Categories and rules is built.
- */
-function ExclusionRules({ onChanged }) {
-  const [rules, setRules] = useState(null);
-  const [error, setError] = useState(null);
-  const load = () => getExclusions().then((d) => setRules(d.rules ?? [])).catch(setError);
-  useEffect(() => { load(); }, []);
-  if (!rules?.length) return error ? <ErrorNote error={error} /> : null;
-
-  const describe = (r) => [
-    r.keyword && `“${r.keyword}”`,
-    r.counterparty && `with ${r.counterparty}`,
-    r.account_id && `on ${r.account_name || r.account_id}`,
-    (r.date_from || r.date_to) && `${r.date_from ? dateLabel(r.date_from) : '…'} – ${r.date_to ? dateLabel(r.date_to) : '…'}`,
-    (r.amount_min != null || r.amount_max != null)
-      && `${r.amount_min != null ? money(r.amount_min) : '$0'}–${r.amount_max != null ? money(r.amount_max) : '…'}`,
-  ].filter(Boolean).join(' · ');
-
-  return (
-    <Card title="Exclusions">
-      <ul className="rules-list">
-        {rules.map((r) => (
-          <li key={r.id}>
-            <div>
-              <strong>{r.reason}</strong>
-              <div className="muted small">{describe(r)} · {r.matched} left out</div>
-            </div>
-            <button className="btn quiet" onClick={async () => {
-              try {
-                await deleteExclusion(r.id);
-                await load();
-                await onChanged?.();
-              } catch (e) { setError(e); }
-            }}>Remove</button>
-          </li>
-        ))}
-      </ul>
-      <ErrorNote error={error} />
-    </Card>
-  );
-}
-
-/**
- * Emptying the ledger.
- *
- * Irreversible against a hosted database, so it asks for the word in writing
- * rather than offering a button that does it on one click. The list of what
- * goes is spelled out because "start fresh" means different things to
- * different people, and the difference here is a year of spending.
- */
-function StartFresh({ total, connected = [], busy, setBusy, setError, onDone }) {
-  const [open, setOpen] = useState(false);
-  const [word, setWord] = useState('');
-  const [keepBanks, setKeepBanks] = useState(true);
-  const [done, setDone] = useState(null);
-
-  async function go(e) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      setDone(await resetLedger(keepBanks));
-      setWord('');
-      setOpen(false);
-      await onDone();
-    } catch (err) {
-      setError(err);
+      await refresh();
+      return r;
+    } catch (e) {
+      setError(e);
+      throw e;
     } finally {
       setBusy(false);
     }
   }
 
+  if (!data && error) return <div className="pk hm-page pf-page"><ErrorNote error={error} onRetry={load} /></div>;
+  if (!data) return <div className="pk hm-page pf-page"><p className="pk-muted" role="status">Loading your accounts…</p></div>;
+
+  const all = [...data.linked, ...data.added];
+  const current = view.name === 'detail' ? all.find((a) => a.id === view.id) : null;
+  const back = () => { setView({ name: 'list' }); setDialog(null); };
+
+  let page;
+  if (view.name === 'add') {
+    page = (
+      <AddByHand onTab={onTab} onBack={back}
+                 onAdd={async (name, kind, balance) => {
+                   const r = await addManualAccount(name, kind, balance);
+                   setNote(`${r.account?.name ?? name} is added.`);
+                   await refresh();
+                   setView({ name: 'list' });
+                 }} />
+    );
+  } else if (current) {
+    page = (
+      <AccountDetail a={current} onTab={onTab} onBack={back} busy={busy}
+                     onSave={(fields) => save(current, fields).catch(() => {})}
+                     onShare={() => setDialog({ kind: 'share' })}
+                     onRemove={(start = 'keep') => setDialog({ kind: 'remove', start })}
+                     onReconnect={onReconnect}
+                     onUpdateBalance={() => setDialog({ kind: 'balance' })}
+                     onKeepManual={async () => {
+                       setBusy(true);
+                       try {
+                         const r = await keepAsManual(current.id);
+                         setNote(`${current.name} is now a manual account.`);
+                         await refresh();
+                         setView(r.account ? { name: 'detail', id: r.account.id } : { name: 'list' });
+                       } catch (e) { setError(e); } finally { setBusy(false); }
+                     }} />
+    );
+  } else {
+    page = (
+      <AccountsList data={data} onTab={onTab} linking={linking}
+                    onOpen={(a) => setView({ name: 'detail', id: a.id })}
+                    onReconnect={onReconnect} onLink={openLink}
+                    onAdd={() => setView({ name: 'add' })}>
+        <AccountsTools total={all.reduce((n, a) => n + (a.transactions || 0), 0)}
+                       connected={data.linked.map((a) => a.name)} onChanged={refresh} />
+      </AccountsList>
+    );
+  }
+
   return (
-    <Card title="Start fresh"
-          actions={!open && (
-            <button className="btn" onClick={() => setOpen(true)}>
-              Start fresh…
-            </button>
-          )}>
-      {done ? (
-        <Notice kind="good">
-          Removed {done.transactions_removed} transaction
-          {done.transactions_removed === 1 ? '' : 's'}. {done.note}
-        </Notice>
-      ) : !open ? (
-        <p className="small muted" style={{ margin: 0 }}>
-          {total.toLocaleString()} transaction{total === 1 ? '' : 's'}
-        </p>
-      ) : (
-        <form onSubmit={go}>
-          <Notice kind="error">
-            <strong>This cannot be undone.</strong> It removes{' '}
-            {total.toLocaleString()} transaction{total === 1 ? '' : 's'}, every
-            budget, trip, merchant correction and dismissed finding. What
-            stays: your password, your plan and your piggy banks
-            {connected.length > 0 && ', and — unless you untick below — your bank connections'}.
-          </Notice>
-
-          {/* Only offered when there is something to keep. It used to name two
-              institutions from the author's own ledger, shown to everyone
-              including someone with nothing connected at all — on the most
-              irreversible control in the app. */}
-          {connected.length > 0 && (
-            <label className="row" style={{ marginTop: 14, gap: 8 }}>
-              <input type="checkbox" checked={keepBanks}
-                     onChange={(e) => setKeepBanks(e.target.checked)} />
-              <span className="small">
-                Keep {connected.length === 1 ? 'this connection' : `these ${connected.length} connections`}:{' '}
-                {connected.slice(0, 3).join(', ')}
-                {connected.length > 3 && ` and ${connected.length - 3} more`}.
-                Their sync position is rewound either way, so the next sync
-                re-fetches the full history rather than reporting nothing new
-                against an empty ledger.
-              </span>
-            </label>
-          )}
-          {connected.length > 0 && !keepBanks && (
-            <p className="small" style={{ margin: '10px 0 0' }}>
-              <strong>Disconnects every bank, here and at Plaid.</strong> Link
-              each bank once afterwards, above.
-            </p>
-          )}
-
-          <div className="controls" style={{ marginTop: 14 }}>
-            <label htmlFor="erase">Type <code>erase</code> to confirm</label>
-            <input id="erase" type="text" value={word} autoComplete="off"
-                   onChange={(e) => setWord(e.target.value)}
-                   style={{ width: 140 }} />
-            <button className="btn" type="submit"
-                    disabled={busy || word.trim().toLowerCase() !== 'erase'}>
-              {busy ? 'Erasing…' : 'Erase everything'}
-            </button>
-            <button type="button" className="btn quiet"
-                    onClick={() => { setOpen(false); setWord(''); }}>
-              Cancel
-            </button>
-          </div>
-        </form>
+    <>
+      {error && <div className="pk"><ErrorNote error={error} /></div>}
+      {page}
+      <div className="pk">
+        {current && dialog?.kind === 'remove' && (
+          <RemoveDialog a={current} start={dialog.start} onClose={() => setDialog(null)}
+                        onRemove={async (what) => {
+                          await removeAccount(current.id, what);
+                          setNote(`${current.name} is removed.`);
+                          back();
+                          await refresh();
+                        }} />
+        )}
+        {current && dialog?.kind === 'share' && (
+          <ShareDialog a={current} onClose={() => setDialog(null)}
+                       onSave={async (share) => { await save(current, { joint_share: share }); setDialog(null); }} />
+        )}
+        {current && dialog?.kind === 'balance' && (
+          <BalanceDialog a={current} onClose={() => setDialog(null)}
+                         onSave={async (n) => {
+                           await updateManualBalance(current.id, n);
+                           setDialog(null);
+                           setNote('Balance updated.');
+                           await refresh();
+                         }} />
+        )}
+      </div>
+      {reconnect && (
+        <div className="pk">
+          <ReconnectPanel connection={reconnect} onClose={() => setReconnect(null)}
+                          onDone={async () => {
+                            setReconnect(null);
+                            setNote(`${reconnect.institution} is back up to date.`);
+                            await refresh();
+                          }} />
+        </div>
       )}
-    </Card>
-  );
-}
-
-/**
- * The two reasons a total can be wrong about you.
- *
- * Both are about history rather than about any one transaction, which is why
- * they sit together.
- *
- * A month where only some cards were imported reads as restraint. It is not —
- * it is a month with cards missing, and averaged in with the complete ones it
- * drags every trend down and quietly flatters the picture. The honest fix is
- * to say where the complete record starts.
- *
- * That date has to persist, not just delete. A fresh Plaid link backfills two
- * years, so a one-time deletion would be undone by the next sync; the date is
- * applied to everything that arrives afterwards too.
- *
- * The second: categorization rules improve after rows are already stored, and
- * nothing re-runs them on their own. The rule that matters most here is the
- * one that keeps a card payment out of spending — a payment is negative, so
- * misreading it does not merely mislabel a row, it subtracts from the month.
- */
-function TrendBasis({ onChanged }) {
-  const [info, setInfo] = useState(null);
-  const [start, setStart] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(null);
-  const [error, setError] = useState(null);
-
-  const load = useCallback(async () => {
-    try {
-      const i = await getLedgerStart();
-      setInfo(i);
-      setStart(i.start || '');
-    } catch (e) {
-      setError(e);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function save(trim) {
-    if (trim && !window.confirm(
-      `Remove every transaction before ${start}? This can't be undone, and `
-      + 'the date is remembered — later syncs and imports will skip those '
-      + 'months too, until you change it back.'
-    )) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await setLedgerStart(start, trim);
-      setDone(trim
-        ? `Removed ${r.removed} transaction${r.removed === 1 ? '' : 's'} from before ${r.start}.`
-        : (r.start ? `Counting from ${r.start}.` : 'No start date — everything counts.'));
-      await load();
-      await onChanged?.();
-    } catch (e) {
-      setError(e);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function recheck() {
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await recategorizeAll();
-      setDone(`Re-checked every transaction; ${r.updated} changed category.`);
-      await onChanged?.();
-    } catch (e) {
-      setError(e);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (!info) return null;
-
-  const changed = (start || '') !== (info.start || '');
-  const wouldRemove = start && info.earliest && start > info.earliest;
-
-  return (
-    <Card title="What counts toward trends">
-      <ErrorNote error={error} />
-
-      <p className="small muted" style={{ marginTop: 0 }}>
-        {info.total.toLocaleString()} transaction{info.total === 1 ? '' : 's'}
-        {info.earliest && <> · {info.earliest} – {info.latest}</>}
-      </p>
-
-      <div className="controls">
-        <label htmlFor="ledger-start">Count from</label>
-        <input id="ledger-start" type="date" value={start}
-               onChange={(e) => setStart(e.target.value)} />
-        <button className="btn" type="button" disabled={busy || !changed}
-                onClick={() => save(false)}>
-          Save date
-        </button>
-        <button className="btn" type="button"
-                disabled={busy || !start || !wouldRemove}
-                onClick={() => save(true)}>
-          {busy ? 'Working…' : 'Save and remove earlier'}
-        </button>
-      </div>
-
-      {done && <Notice kind="good">{done}</Notice>}
-
-
-      <div className="controls" style={{ marginTop: 4 }}>
-        <button className="btn quiet" type="button" disabled={busy}
-                onClick={recheck}>
-          Re-check categories
-        </button>
-      </div>
-    </Card>
-  );
-}
-
-/**
- * Whether an account is shared, and with whom. On a joint account, anything
- * that can't be matched to your own accounts is another member's until you
- * mark it yours on Transactions.
- */
-function JointControl({ account, busy, onSave }) {
-  const [editing, setEditing] = useState(false);
-  const [label, setLabel] = useState('');
-
-  if (account.joint && !editing) {
-    return (
-      <div className="joint-line small">
-        Joint · {account.joint}{' '}
-        <button className="link-btn" disabled={busy} onClick={() => onSave(null)}>
-          Not joint
-        </button>
-      </div>
-    );
-  }
-  if (!editing) {
-    return (
-      <div className="joint-line small">
-        <button className="link-btn" disabled={busy}
-                onClick={() => { setLabel(''); setEditing(true); }}>Joint?</button>
-      </div>
-    );
-  }
-  return (
-    <form className="joint-line row small" style={{ gap: 6 }}
-          onSubmit={(e) => { e.preventDefault(); if (label.trim()) { onSave(label.trim()); setEditing(false); } }}>
-      <input type="text" value={label} onChange={(e) => setLabel(e.target.value)}
-             placeholder="Shared with… (e.g. Family)" aria-label="Shared with"
-             style={{ width: 170 }} maxLength={40}
-             // eslint-disable-next-line jsx-a11y/no-autofocus
-             autoFocus />
-      <button className="btn primary" type="submit" disabled={busy || !label.trim()}>Save</button>
-      <button className="link-btn" type="button" onClick={() => setEditing(false)}>Cancel</button>
-    </form>
-  );
-}
-
-/**
- * What the bank says an account holds — or, for a card, what's owed — as of
- * the last sync.
- */
-function Balance({ a }) {
-  const b = a.balance;
-  if (!b || b.current == null) return <span className="small muted">—</span>;
-  if (a.plaid_type === 'credit') {
-    return (
-      <span>
-        {money(b.current, { cents: true })} owed
-        {b.limit ? <div className="small muted">of {money(b.limit)}</div> : null}
-      </span>
-    );
-  }
-  const avail = b.available != null && Math.abs(b.available - b.current) >= 1;
-  return (
-    <span>
-      {money(b.current, { cents: true })}
-      {avail && <div className="small muted">{money(b.available, { cents: true })} available</div>}
-    </span>
+      {toast && (
+        <div className="pk">
+          <ActionToast title={toast.text} onUndo={() => { const u = toast.undo; setToast(null); u(); }}
+                       onDone={() => setToast(null)} />
+        </div>
+      )}
+      {note && !toast && <div className="pk"><Toast onDone={() => setNote(null)}>{note}</Toast></div>}
+    </>
   );
 }

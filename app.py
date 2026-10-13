@@ -463,6 +463,76 @@ def _install_auth(app: Flask) -> None:
         has_accounts["yes"] = True
         return signed_in_reply(user, created=out["created"])
 
+    # ── Pearl S-02: change the sign-in email with a code ────────────────────
+    @app.post("/api/auth/email/start")
+    def _email_change_start():
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        body = request.get_json(silent=True) or {}
+        email = users.normalise(body.get("email"))
+        problem = users.check_email(email)
+        if problem:
+            return jsonify({"error": problem}), 400
+        if email == users.normalise(user.email):
+            return jsonify({"error": "That’s already your sign-in email."}), 400
+        if _is_hosted() and not mailer.configured():
+            return jsonify({"error": "Email isn't set up on this deployment yet, "
+                                     "so a code can't be sent."}), 503
+        out = signin_codes.start_change(base, user.id, email)
+        if out.get("taken"):
+            return jsonify({"error": "Another account uses that email."}), 409
+        if out.get("paused"):
+            return jsonify({"error": "There were too many tries, so we’ve paused this "
+                                     "for 15 minutes.", "paused": True,
+                            "retry_in": out["paused"]}), 429
+        if out.get("code"):
+            subject, text = signin_codes.change_email_text(out["code"], user.first_name)
+            if mailer.configured():
+                try:
+                    mailer.send(email, subject, text)
+                except Exception:                      # noqa: BLE001
+                    return jsonify({"error": "The email didn't send. Try again "
+                                             "in a minute."}), 502
+            else:
+                print(f"[pearl] {subject} → {email}: {out['code']}", file=sys.stderr)
+        return jsonify({"ok": True, "sent_to": email,
+                        "resend_in": out.get("resend_in", signin_codes.RESEND_AFTER),
+                        "ttl": signin_codes.TTL})
+
+    @app.post("/api/auth/email/verify")
+    def _email_change_verify():
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        body = request.get_json(silent=True) or {}
+        out = signin_codes.verify_change(base, user.id, body.get("code", ""))
+        if out.get("error") == "paused":
+            return jsonify({"error": "There were too many tries, so we’ve paused this "
+                                     "for 15 minutes.", "paused": True,
+                            "retry_in": out["paused"]}), 429
+        if out.get("error") == "wrong":
+            left = out["left"]
+            return jsonify({"error": f"That code didn't match. Check it and try "
+                                     f"again. {left} {'try' if left == 1 else 'tries'} "
+                                     "left.", "wrong": True, "left": left}), 400
+        if out.get("error"):
+            return jsonify({"error": "That code has expired. Send a new one.",
+                            "expired": True}), 400
+        old = user.email
+        if not users.set_email(base, user.id, out["email"], verified=True):
+            return jsonify({"error": "Another account uses that email."}), 409
+        if old and old != out["email"]:
+            subject, text = signin_codes.changed_notice(out["email"], user.first_name)
+            if mailer.configured():
+                try:
+                    mailer.send(old, subject, text)
+                except Exception:                      # noqa: BLE001
+                    pass
+            else:
+                print(f"[pearl] {subject} → {old}", file=sys.stderr)
+        return jsonify({"ok": True, "user": status_user(users.by_id(base, user.id))})
+
     @app.post("/api/auth/passkey/register/options")
     def _passkey_register_options():
         user = g.get("user")

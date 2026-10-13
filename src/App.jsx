@@ -11,7 +11,9 @@ import Goals from './panels/Goals.jsx';
 import CategoryBudgetsPanel from './panels/CategoryBudgetsPanel.jsx';
 import PlanPanel from './panels/PlanPanel.jsx';
 import AccountsPanel from './panels/AccountsPanel.jsx';
-import AccountPanel from './panels/AccountPanel.jsx';
+import ProfilePanel, { PageHead } from './panels/ProfilePanel.jsx';
+import RulesPanel from './panels/RulesPanel.jsx';
+import SecurityPanel from './panels/SecurityPanel.jsx';
 import SignedOut, { resetTokenFromUrl } from './pearl/SignedOut.jsx';
 import Onboarding from './pearl/Onboarding.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
@@ -43,12 +45,12 @@ function defaultMonth(summary) {
 // Panels worth opening with nothing in the ledger: Accounts, where a bank is
 // linked and which decides what keeps arriving — and which is also where the
 // ledger gets emptied, so it is reachable immediately afterwards.
-// The sign-in settings too: a brand-new account has an empty ledger, and must
-// still be able to change its password or sign out.
+// The Profile hub and Sign-in and security too: a brand-new account has an
+// empty ledger, and must still be able to change its email or sign out.
 // Goals too: someone new sees what comes next there (G-02). And Home, whose
 // no-data state (E-01, THL-72) is where linking starts.
-const WORKS_WHEN_EMPTY = ['home', 'path', 'debts', 'budgets', 'accounts', 'plan', 'account',
-                          'goals'];
+const WORKS_WHEN_EMPTY = ['home', 'path', 'debts', 'budgets', 'accounts', 'plan', 'profile',
+                          'security', 'rules', 'goals'];
 
 /**
  * A navigation label with an optional phone-width form.
@@ -309,11 +311,17 @@ export default function App() {
       // Budgets (THL-168) is always this month, so only Insights picks one.
       showMonth={['overview'].includes(panel)}
       // The Pearl pages draw their own header (overline + title).
-      ownTitle={['home', 'path', 'debts', 'budgets', 'transactions', 'review', 'goals'].includes(panel)}
+      ownTitle={['home', 'path', 'debts', 'budgets', 'transactions', 'review', 'goals', 'profile',
+                 'accounts', 'rules', 'security', 'plan'].includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
       {panel === 'plan' && (
         <div className="stack">
+          <div className="pk">
+            <PageHead trail={[{ label: 'Profile', to: 'profile' },
+                              { label: 'Income and commitments' }]}
+                      title="Income and commitments" onTab={go} />
+          </div>
           <PlanPanel onChanged={load} onTab={go} />
           {/* Not a section of its own any more. A piggy bank is a commitment
               like rent — it is the `− Piggy banks` term in the sum above — and
@@ -346,9 +354,13 @@ export default function App() {
         <Goals onTab={go} onChanged={load} version={version} />
       )}
       {panel === 'budgets' && <CategoryBudgetsPanel onChanged={load} version={version} />}
-      {panel === 'accounts' && <AccountsPanel onChanged={load} onTab={go} />}
-      {panel === 'account' && (
-        <AccountPanel onSignOut={async () => {
+      {panel === 'profile' && <ProfilePanel onTab={go} version={version} />}
+      {panel === 'accounts' && <AccountsPanel onChanged={load} onTab={go} version={version} />}
+      {panel === 'rules' && (
+        <RulesPanel categories={categories} onTab={go} onChanged={load} version={version} />
+      )}
+      {panel === 'security' && (
+        <SecurityPanel onTab={go} onSignOut={async () => {
           await logout(); setData(null); setSignedIn(false);
         }} />
       )}
@@ -468,7 +480,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {},
             <div className="topbar-actions">{accountActions}</div>
           </div>
 
-          {group && group.panels.length > 1 && (
+          {group && group.panels.length > 1 && !group.crumbs && (
             <div className="sections-wrap">
             <nav className="sections" role="tablist" ref={sectionsRef}
                  aria-label={`${group.label} sections`}>

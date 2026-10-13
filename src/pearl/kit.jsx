@@ -104,10 +104,12 @@ export function Alert({ tone = 'info', children, action, onAction }) {
   );
 }
 
-export function StatusPill({ icon = 'info', children }) {
+/** Status pill. `tone` is positive, info, caution or neutral (C-01); the
+ * word and the icon carry it, so it reads without colour. */
+export function StatusPill({ icon = 'info', tone, children }) {
   return (
-    <span className="pk-pill">
-      <PIcon name={icon} size={14} /> {children}
+    <span className={`pk-pill${tone ? ` ${tone}` : ''}`}>
+      {icon && <PIcon name={icon} size={14} />} {children}
     </span>
   );
 }

@@ -391,6 +391,29 @@ CREATE TABLE IF NOT EXISTS txn_payback_person (
     inflow_id TEXT PRIMARY KEY,
     person    TEXT NOT NULL
 );
+-- How each account counts (Pearl AM-02, AM-03, AM-07), whoever it came from.
+-- `counted` = 0 keeps an account's rows in the ledger but out of safe to
+-- spend, spending, income and the snapshot ("Count in my budget"), the same
+-- way an exclusion does. `removed` = 1 is an account taken off the Accounts
+-- page whose past rows were kept: they stay counted, nothing new comes in.
+CREATE TABLE IF NOT EXISTS account_settings (
+    account_id TEXT PRIMARY KEY,
+    counted    INTEGER NOT NULL DEFAULT 1,
+    nickname   TEXT,
+    removed    INTEGER NOT NULL DEFAULT 0
+);
+-- A balance added by hand for a bank Pearl can't link (AM-05, AM-06). No
+-- transactions: it counts in the snapshot (and, for savings, toward the
+-- Anchor) and never in spending. Its account id is "hand:<id>".
+CREATE TABLE IF NOT EXISTS manual_accounts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    balance    REAL NOT NULL,
+    updated_on TEXT NOT NULL,
+    counted    INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -450,13 +473,15 @@ _CHARGE_COLUMNS = """sh.my_share AS my_share,
                           pbx.total AS paid_back,
                           rpx.charge_id AS repays,
                           jax.label AS joint,
+                          jax.share AS joint_share,
                           CASE WHEN jmx.merchant_key IS NULL THEN 0 ELSE 1 END
                               AS joint_mine,
                           a.bank_id AS bank_id,
                           CASE WHEN a.bank_id IS NULL THEN 0 ELSE a.charged
                           END AS bank_amount,
                           COALESCE(a.auto, 0) AS bank_auto,
-                          exx.reason AS excluded,
+                          COALESCE(exx.reason, CASE WHEN acs.counted = 0
+                                   THEN 'Not in your budget' END) AS excluded,
                           itx.kind AS income_type,
                           itx.source AS income_type_source"""
 
@@ -493,6 +518,7 @@ class Store:
         self._migrate_buckets()
         self._migrate_allocation_amounts()
         self._migrate_plaid_error_code()
+        self._migrate_joint_share()
         self._migrate_travel_ownership()
         self._drop_bank_funded_budgets()
         self._migrate_saved()
@@ -651,6 +677,16 @@ class Store:
         except Exception:                                        # noqa: BLE001
             return
 
+    def _migrate_joint_share(self) -> None:
+        """Add `joint_accounts.share`: the percent of a joint account that is
+        hers (AM-04). Null on accounts marked joint before there was one,
+        which keep the older rule — another member's unless she says."""
+        try:
+            with self.conn() as c:
+                c.execute("ALTER TABLE joint_accounts ADD COLUMN share REAL")
+        except Exception:                                        # noqa: BLE001
+            return
+
     # ── Transactions ─────────────────────────────────────────────────────────
     def add_transactions(self, transactions: list[Transaction]) -> int:
         rows = []
@@ -691,6 +727,7 @@ class Store:
                      LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
                      LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
                      LEFT JOIN txn_exclusions exx ON exx.txn_id = t.id AND exx.kept = 0
+                     LEFT JOIN account_settings acs ON acs.account_id = t.account_id
                      LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
                     ORDER BY t.date DESC, t.id""").fetchall()
         return [Transaction.from_row(dict(r)) for r in rows]
@@ -739,6 +776,7 @@ class Store:
                       LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
                       LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
                      LEFT JOIN txn_exclusions exx ON exx.txn_id = t.id AND exx.kept = 0
+                     LEFT JOIN account_settings acs ON acs.account_id = t.account_id
                      LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
                     {clause}
                     ORDER BY t.date DESC, t.id LIMIT ? OFFSET ?""",
@@ -773,6 +811,7 @@ class Store:
                      LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
                      LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
                      LEFT JOIN txn_exclusions exx ON exx.txn_id = t.id AND exx.kept = 0
+                     LEFT JOIN account_settings acs ON acs.account_id = t.account_id
                      LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
                     WHERE t.id = ?""", (txn_id,)).fetchone()
         return Transaction.from_row(dict(row)) if row else None
@@ -1241,6 +1280,7 @@ class Store:
             ("review_dismissed", "settled review items"),
             ("txn_confirmed", "confirmed categories"),
             ("txn_notes", "notes on transactions"),
+            ("manual_accounts", "accounts added by hand"),
         ]
         with self.conn() as c:
             for table, label in tables:
@@ -1260,6 +1300,7 @@ class Store:
                 # them would leave a relink inheriting choices about accounts
                 # nobody can see any more.
                 c.execute("DELETE FROM account_sync")
+                c.execute("DELETE FROM account_settings")
                 c.execute("DELETE FROM account_balance")
                 c.execute("DELETE FROM account_balance_days")
 
@@ -1856,6 +1897,142 @@ class Store:
             if label:
                 c.execute("INSERT INTO joint_accounts (account_id, label) VALUES (?, ?)",
                           (account_id, label))
+
+    def joint_shares(self) -> dict[str, float | None]:
+        """Her share of each joint account, in percent; None where unset."""
+        with self.conn() as c:
+            rows = c.execute("SELECT account_id, share FROM joint_accounts").fetchall()
+        return {r["account_id"]: (None if r["share"] is None else float(r["share"]))
+                for r in rows}
+
+    def set_joint_share(self, account_id: str, share: float | None,
+                        label: str = "Joint") -> None:
+        """Mark an account joint with her share in percent (AM-04), or not
+        joint at all with None. Keeps the label it already had."""
+        with self.conn() as c:
+            if share is None:
+                c.execute("DELETE FROM joint_accounts WHERE account_id = ?", (account_id,))
+                return
+            cur = c.execute("UPDATE joint_accounts SET share = ? WHERE account_id = ?",
+                            (float(share), account_id))
+            if not cur.rowcount or cur.rowcount <= 0:
+                c.execute("INSERT INTO joint_accounts (account_id, label, share) "
+                          "VALUES (?, ?, ?)", (account_id, label, float(share)))
+
+    # ── How each account counts (AM-02 to AM-07) ─────────────────────────
+    def account_settings(self) -> dict[str, dict]:
+        with self.conn() as c:
+            rows = c.execute("SELECT * FROM account_settings").fetchall()
+        return {r["account_id"]: {"counted": bool(r["counted"]),
+                                  "nickname": r["nickname"] or "",
+                                  "removed": bool(r["removed"])} for r in rows}
+
+    def set_account_setting(self, account_id: str, **fields) -> None:
+        """Change `counted`, `nickname` or `removed` for one account."""
+        allowed = {"counted", "nickname", "removed"}
+        fields = {k: v for k, v in fields.items() if k in allowed}
+        if not fields:
+            return
+        values = {k: (int(bool(v)) if k != "nickname" else (v or None))
+                  for k, v in fields.items()}
+        with self.conn() as c:
+            exists = c.execute("SELECT 1 FROM account_settings WHERE account_id = ?",
+                               (account_id,)).fetchone()
+            if not exists:
+                c.execute("INSERT INTO account_settings (account_id) VALUES (?)",
+                          (account_id,))
+            sets = ", ".join(f"{k} = ?" for k in values)
+            c.execute(f"UPDATE account_settings SET {sets} WHERE account_id = ?",
+                      (*values.values(), account_id))
+
+    def not_counted(self) -> set[str]:
+        """Accounts whose rows and balance stay out of her budget."""
+        with self.conn() as c:
+            rows = c.execute("SELECT account_id FROM account_settings "
+                             "WHERE counted = 0").fetchall()
+        return {r["account_id"] for r in rows}
+
+    # ── Balances added by hand (AM-05, AM-06) ────────────────────────────
+    MANUAL_KINDS = ("chequing", "savings", "credit")
+
+    def manual_accounts(self) -> list[dict]:
+        with self.conn() as c:
+            rows = c.execute("SELECT * FROM manual_accounts ORDER BY id").fetchall()
+        return [{"id": int(r["id"]), "account_id": f"hand:{int(r['id'])}",
+                 "name": r["name"], "kind": r["kind"],
+                 "balance": round(float(r["balance"]), 2),
+                 "updated_on": r["updated_on"], "counted": bool(r["counted"])}
+                for r in rows]
+
+    def manual_account(self, account_id: str) -> dict | None:
+        return next((a for a in self.manual_accounts() if a["account_id"] == account_id),
+                    None)
+
+    def add_manual_account(self, name: str, kind: str, balance: float,
+                           updated_on: str) -> str:
+        with self.conn() as c:
+            c.execute("INSERT INTO manual_accounts (name, kind, balance, updated_on) "
+                      "VALUES (?, ?, ?, ?)", (name, kind, round(float(balance), 2),
+                                              updated_on))
+            new = c.execute("SELECT MAX(id) AS id FROM manual_accounts").fetchone()["id"]
+        return f"hand:{int(new)}"
+
+    def update_manual_account(self, account_id: str, **fields) -> bool:
+        allowed = {"name", "balance", "updated_on", "counted", "kind"}
+        fields = {k: v for k, v in fields.items() if k in allowed}
+        try:
+            mid = int(str(account_id).split(":", 1)[1])
+        except (IndexError, ValueError):
+            return False
+        if not fields:
+            return self.manual_account(account_id) is not None
+        if "counted" in fields:
+            fields["counted"] = int(bool(fields["counted"]))
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        with self.conn() as c:
+            cur = c.execute(f"UPDATE manual_accounts SET {sets} WHERE id = ?",
+                            (*fields.values(), mid))
+            return (cur.rowcount or 0) > 0
+
+    def delete_manual_account(self, account_id: str) -> bool:
+        try:
+            mid = int(str(account_id).split(":", 1)[1])
+        except (IndexError, ValueError):
+            return False
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM manual_accounts WHERE id = ?", (mid,))
+            return (cur.rowcount or 0) > 0
+
+    # ── Saved sorting rules (S-03) ───────────────────────────────────────
+    def delete_override(self, key: str) -> bool:
+        """Forget one merchant rule without touching the rows it sorted: they
+        are kept as sorted by her, so nothing already sorted changes."""
+        key = key.strip().lower()
+        with self.conn() as c:
+            found = c.execute("SELECT 1 FROM merchant_overrides WHERE merchant_key = ?",
+                              (key,)).fetchone()
+            if not found:
+                return False
+            c.execute("UPDATE transactions SET category_source = 'user' "
+                      "WHERE LOWER(merchant) = ? AND category_source = 'merchant_override'",
+                      (key,))
+        rows_raw = []
+        with self.conn() as c:
+            rows_raw = c.execute("SELECT raw FROM transactions WHERE LOWER(merchant) = ?",
+                                 (key,)).fetchall()
+            c.execute("DELETE FROM merchant_overrides WHERE merchant_key = ?", (key,))
+            for r in rows_raw:
+                try:
+                    eid = (json.loads(r["raw"] or "{}") or {}).get("merchant_entity_id")
+                except (TypeError, ValueError):
+                    eid = None
+                if eid:
+                    c.execute("DELETE FROM merchant_overrides WHERE merchant_key = ?",
+                              (f"entity:{eid}",))
+                    c.execute("UPDATE transactions SET category_source = 'user' "
+                              "WHERE raw LIKE ? AND category_source = 'merchant_override'",
+                              (f'%"merchant_entity_id": "{eid}"%',))
+        return True
 
     def set_joint_mine(self, merchant: str, on: bool) -> None:
         key = merchant.strip().lower()

@@ -558,3 +558,46 @@ class TestSplitsAndRepayments:
         assert "linkPayback(o.charge_id, tx.id, o.name)" in detail
         review = (SRC / "panels" / "NeedsALook.jsx").read_text(encoding="utf-8")
         assert "it.guess?.action === 'split'" in review
+
+
+class TestTheProfileHub:
+    """Pearl S-01: Profile is a hub; its pages carry a breadcrumb back to it
+    instead of a sub-tab strip, and the old pages' links land on the new ones."""
+
+    def test_the_group_opens_on_the_hub(self, groups):
+        assert groups["profile"][0] == "profile"
+        for key in ("accounts", "rules", "security", "plan"):
+            assert key in groups["profile"], key
+
+    def test_no_sub_tab_strip_for_profile(self, nav, source):
+        assert "crumbs: true" in nav.split("key: 'profile'")[1].split("}")[0]
+        assert "!group.crumbs" in source
+
+    def test_old_keys_land_on_the_new_pages(self, aliases):
+        assert aliases["account"] == "security"
+        assert aliases["categories"] == "rules"
+        assert aliases["banks"] == "accounts" and aliases["import"] == "accounts"
+        assert not (SRC / "panels" / "AccountPanel.jsx").exists()
+
+    def test_nothing_links_to_the_old_sign_in_page(self):
+        stale = [p.name for p in sorted(SRC.rglob("*.jsx"))
+                 if re.search(r"""(onTab\??\.?\(|go\()['"]account['"]""",
+                              p.read_text(encoding="utf-8"))]
+        assert not stale, stale
+
+    def test_exclusions_moved_to_categories_and_rules(self):
+        accounts = (SRC / "panels" / "AccountsPanel.jsx").read_text(encoding="utf-8")
+        assert "ExclusionRules" not in accounts and "getExclusions" not in accounts
+        rules = (SRC / "panels" / "RulesPanel.jsx").read_text(encoding="utf-8")
+        assert "getRules()" in rules and "deleteRule(" in rules and "Always left out" in rules
+
+    def test_the_email_changes_with_a_code(self):
+        text = (SRC / "panels" / "SecurityPanel.jsx").read_text(encoding="utf-8")
+        assert "startEmailChange(" in text and "verifyEmailChange(" in text
+        assert "<CodeInput" in text
+
+    def test_reconnect_opens_link_in_update_mode(self):
+        text = (SRC / "panels" / "AccountsPanel.jsx").read_text(encoding="utf-8")
+        assert "<ReconnectPanel" in text
+        home = (SRC / "panels" / "HomePanel.jsx").read_text(encoding="utf-8")
+        assert "createLinkToken(connection.item_id)" in home
