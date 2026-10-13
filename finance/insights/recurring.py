@@ -20,6 +20,8 @@ CADENCES = [
     ("weekly", 7, 2, 52),
     ("biweekly", 14, 3, 26),
     ("monthly", 30.4, 6, 12),
+    # Every two months: Ontario's hydro bills, some water and gas (THL-127).
+    ("bimonthly", 60.9, 8, 6),
     ("quarterly", 91.3, 12, 4),
     ("semiannual", 182.6, 20, 2),
     ("annual", 365.25, 35, 1),

@@ -3,7 +3,7 @@
 import pytest
 
 from app import create_app
-from ledger_files import load_bundled, upload
+from ledger_files import add_fixed, load_bundled, upload
 
 AMEX = """Date,Description,Card Member,Account #,Amount
 07/14/2026,SQ *BLUE BOTTLE COFFEE OAKLAND CA,M P,-31004,6.40
@@ -386,8 +386,7 @@ class TestThePlanEndpoints:
     def setup_plan(self, client, income=5200, savings=900):
         load_bundled(client)
         client.put("/api/plan/setup", json={"income": income, "savings": savings})
-        client.post("/api/plan/fixed", json={"name": "Rent", "amount": 2100,
-                                             "category": "Rent & Housing"})
+        add_fixed(client, "Rent", 2100, "Rent & Housing")
 
     def test_the_arithmetic_is_reported_with_its_working(self, client):
         self.setup_plan(client)
@@ -398,20 +397,15 @@ class TestThePlanEndpoints:
         assert p["leftover"] == 2200
         assert p["verdict"] == "ok"
 
-    def test_commitments_can_be_added_changed_and_removed(self, client):
+    def test_the_commitment_endpoints_went_with_the_page(self, client):
+        """Income and commitments was replaced by the income and bills check
+        (THL-127); commitments already saved still count, but there is no
+        endpoint to add, change or remove one."""
         self.setup_plan(client)
-        cost_id = client.post("/api/plan/fixed",
-                              json={"name": "Hydro", "amount": 95}).get_json()["id"]
-        client.patch(f"/api/plan/fixed/{cost_id}", json={"amount": 110})
-        fixed = client.get("/api/plan/fixed").get_json()["fixed"]
-        assert next(f for f in fixed if f["id"] == cost_id)["amount"] == 110
-        assert client.delete(f"/api/plan/fixed/{cost_id}").status_code == 200
+        assert client.get("/api/plan/fixed").status_code in (404, 405)
+        assert client.post("/api/plan/fixed", json={"name": "X", "amount": 10}).status_code in (404, 405)
+        assert client.delete("/api/plan/fixed/1").status_code in (404, 405)
         assert client.get("/api/plan/setup").get_json()["fixed_total"] == 2100
-
-    def test_a_commitment_needs_a_name_and_a_cost(self, client):
-        assert client.post("/api/plan/fixed", json={"amount": 10}).status_code == 400
-        assert client.post("/api/plan/fixed",
-                           json={"name": "X", "amount": 0}).status_code == 400
 
     def test_applying_sets_budgets_that_sum_to_the_leftover(self, client):
         self.setup_plan(client)

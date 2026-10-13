@@ -254,10 +254,11 @@ class TestNumberInputsAcceptTheAmountsPeopleType:
 class TestTheMortgagePageIsGone:
     def test_no_panel_route_or_calls(self):
         """Mortgage payments are read from the accounts now; the calculator
-        that declared them by hand went, and an old link lands on Plan."""
+        that declared them by hand went, and an old link lands on Income and
+        bills, where a mortgage payment is a regular bill."""
         assert not (SRC / "panels" / "MortgagePanel.jsx").exists()
         nav = (SRC / "nav.js").read_text(encoding="utf-8")
-        assert "mortgage: 'plan'" in nav
+        assert "mortgage: 'income'" in nav
         assert "'mortgage'" not in nav.split("export const GROUPS")[1].split("];")[0]
         for name in ("App.jsx", "api.js"):
             assert "ortgage" not in (SRC / name).read_text(encoding="utf-8"), name
@@ -347,20 +348,38 @@ class TestLessToRead:
         for name in ("SavingsPanel.jsx", "RetirementPanel.jsx", "SubscriptionsPanel.jsx"):
             assert not (SRC / "panels" / name).exists()
 
-    def test_the_piggy_banks_have_a_title_and_no_tiles(self):
-        text = (SRC / "panels" / "PiggyPanel.jsx").read_text(encoding="utf-8")
-        assert "<Tile" not in text
-        assert ">\n        Piggy banks\n" in text
-        assert "for spending on your cards" in text
 
 
-class TestPlanSetup:
-    def test_saving_defaults_to_a_fifth_of_take_home(self):
-        """The goal is a share of take-home — 20% until you set one — so its
-        dollars follow take-home; it is saved as that share, not as dollars."""
-        text = (SRC / "panels" / "PlanPanel.jsx").read_text(encoding="utf-8")
-        assert "DEFAULT_RATE = 20" in text
-        assert "savePlanSetup(Number(income) || 0, (Number(rate) || 0) / 100)" in text
+class TestIncomeAndBillsReplacedThePlan:
+    """THL-45 / THL-127: the income and bills check replaced the prototype
+    Income and commitments page and the piggy banks under it. Goals'
+    treasure chests are the piggy banks now."""
+
+    def test_the_old_pages_are_gone(self, panels, aliases):
+        for name in ("PlanPanel.jsx", "PiggyPanel.jsx"):
+            assert not (SRC / "panels" / name).exists(), name
+        assert "plan" not in panels
+        assert aliases["plan"] == "income" and aliases["piggy"] == "goals"
+        api = (SRC / "api.js").read_text(encoding="utf-8")
+        for gone in ("getPlanSetup", "savePlanSetup", "addFixedCost", "deleteFixedCost"):
+            assert gone not in api, gone
+
+    def test_nothing_links_to_the_old_page(self):
+        stale = [p.name for p in sorted(SRC.rglob("*.jsx"))
+                 if re.search(r"""(onTab\??\.?\(|go\(|to=|dest: )['"](plan|piggy)['"]""",
+                              p.read_text(encoding="utf-8"))]
+        assert not stale, stale
+
+    def test_path_and_home_open_income_and_bills(self):
+        for name in ("HomePanel.jsx", "PathPanel.jsx"):
+            text = (SRC / "panels" / name).read_text(encoding="utf-8")
+            assert "bills: 'income', income: 'income'" in text, name
+
+    def test_onboarding_runs_the_check_before_the_path(self):
+        text = (SRC / "pearl" / "Onboarding.jsx").read_text(encoding="utf-8")
+        assert "<IncomeBillsFlow" in text
+        assert "save({ step: 'income' }, 'income')" in text
+        assert "save({ step: 'path' }, 'path')" in text
 
 
 class TestHomeIsWhereTheAppLands:
@@ -566,7 +585,7 @@ class TestTheProfileHub:
 
     def test_the_group_opens_on_the_hub(self, groups):
         assert groups["profile"][0] == "profile"
-        for key in ("accounts", "rules", "security", "plan"):
+        for key in ("accounts", "rules", "security", "income"):
             assert key in groups["profile"], key
 
     def test_no_sub_tab_strip_for_profile(self, nav, source):

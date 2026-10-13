@@ -5,6 +5,7 @@ import {
 } from '../api.js';
 import { loadPlaidScript } from '../plaid.js';
 import { DocSheet } from './docs.jsx';
+import IncomeBillsFlow from './IncomeBills.jsx';
 import PIcon from './icons.jsx';
 import {
   AuthLayout, Banner, Callout, Choice, Field, Heading, Initials, Lockup, MARKS, TrustPoint,
@@ -45,15 +46,16 @@ function screenFor(user, startAt) {
   if (startAt === 'passkey' && passkeysSupported() && !(user?.passkeys > 0)) return 'passkey';
   if (ob.province === 'QC') return 'quebec';
   return { protect: 'protect', consents: 'consents', bank: 'bank', linked: 'linked',
-           path: 'path' }[ob.step] ?? 'province';
+           income: 'income', path: 'path' }[ob.step] ?? 'province';
 }
 
 /**
  * Setting up a new account once it exists: a passkey (O-04), where you live
  * (O-05, with Quebec's waitlist O-05b), how Pearl protects you (O-06), your
- * choices (O-07), linking a bank through Plaid (O-08 to O-11), and a first
- * look at your path (O-12). Each step is saved, so leaving and coming back
- * resumes where you were.
+ * choices (O-07), linking a bank through Plaid (O-08 to O-11), confirming
+ * income and regular bills (THL-127 I-01 to I-06, IncomeBills.jsx), and a
+ * first look at your path (O-12). Each step is saved, so leaving and coming
+ * back resumes where you were.
  */
 export default function Onboarding({ user: initialUser, startAt, onDone, onSignOut }) {
   const [user, setUser] = useState(initialUser);
@@ -450,7 +452,7 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
         {error && <Banner tone="caution">{error}</Banner>}
         <div className="p-actions">
           <button type="button" className="p-btn primary" disabled={busy}
-                  onClick={() => save({ step: 'path' }, 'path')}>
+                  onClick={() => save({ step: 'income' }, 'income')}>
             See your path
           </button>
           <button type="button" className="p-btn secondary"
@@ -460,6 +462,16 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
         </div>
       </>
     ));
+  }
+
+  // ── I-01 to I-06 Income and recurring bills (THL-127) ─────────────────────
+  if (screen === 'income') {
+    return (
+      <>
+        <IncomeBillsFlow onDoc={setDoc} onDone={() => save({ step: 'path' }, 'path')} />
+        {doc && <DocSheet name={doc} onClose={() => setDoc(null)} />}
+      </>
+    );
   }
 
   // ── O-12 First look at your path ──────────────────────────────────────────
@@ -499,7 +511,7 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
             { icon: 'list', title: 'Review a few transactions',
               sub: 'Fix anything Pearl sorted wrong', dest: 'review' },
             { icon: 'target', title: 'Set up your safety net',
-              sub: 'Pick a starter amount to save', dest: 'plan' },
+              sub: 'Pick a starter amount to save', dest: 'goals' },
           ].map((r) => (
             <button key={r.title} type="button" disabled={busy} onClick={() => finish(r.dest)}>
               <span className="p-bubble" aria-hidden="true"><PIcon name={r.icon} /></span>

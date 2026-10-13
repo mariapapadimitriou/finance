@@ -361,7 +361,7 @@ UNAVAILABLE = {"QC"}
 # What O-07 asks. The first two are needed to link a bank.
 CONSENTS = {"terms": True, "read_data": True, "improve": False, "tips": False}
 
-STEPS = ("province", "protect", "consents", "bank", "linked", "path")
+STEPS = ("province", "protect", "consents", "bank", "linked", "income", "path")
 
 
 def update_onboarding(base, user_id: int, **fields) -> User | None:

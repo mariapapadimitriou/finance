@@ -21,7 +21,7 @@ from __future__ import annotations
 import pytest
 
 from finance.categorize import NON_SPEND, is_discretionary
-from ledger_files import load_bundled
+from ledger_files import add_fixed, load_bundled
 
 TOLERANCE = 0.011          # a cent, plus room for float noise
 
@@ -40,8 +40,7 @@ def ledger(client):
     """A ledger with a plan on it, as the app is meant to be used."""
     load_bundled(client)
     client.put("/api/plan/setup", json={"income": 5200, "savings": 900})
-    client.post("/api/plan/fixed", json={"name": "Rent", "amount": 2100,
-                                         "category": "Rent & Housing"})
+    add_fixed(client, "Rent", 2100, "Rent & Housing")
     client.post("/api/plan/setup/apply")
     return client
 
@@ -255,16 +254,15 @@ class TestNumbersMoveTogetherWhenThingsChange:
 
     def test_adding_a_commitment_reduces_what_is_left(self, ledger):
         before = ledger.get("/api/plan/setup").get_json()["leftover"]
-        ledger.post("/api/plan/fixed", json={"name": "Gym", "amount": 80})
+        add_fixed(ledger, "Gym", 80)
         after = ledger.get("/api/plan/setup").get_json()
         assert after["leftover"] == pytest.approx(before - 80, abs=TOLERANCE)
         assert after["fixed_total"] == pytest.approx(2180, abs=TOLERANCE)
 
     def test_removing_a_commitment_puts_it_back(self, ledger):
         before = ledger.get("/api/plan/setup").get_json()["leftover"]
-        cost_id = ledger.post("/api/plan/fixed",
-                              json={"name": "Gym", "amount": 80}).get_json()["id"]
-        ledger.delete(f"/api/plan/fixed/{cost_id}")
+        cost_id = add_fixed(ledger, "Gym", 80)
+        ledger.application.config["STORE"].delete_fixed_cost(cost_id)
         assert ledger.get("/api/plan/setup").get_json()["leftover"] == pytest.approx(
             before, abs=TOLERANCE)
 
@@ -528,7 +526,7 @@ class TestOneFigureOneAuthority:
         """It used to be take-home less card spending, which treated rent as
         money available to save."""
         ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
-        ledger.post("/api/plan/fixed", json={"name": "Rent", "amount": 1850})
+        add_fixed(ledger, "Rent", 1850)
 
         plan = ledger.get("/api/plan/setup").get_json()
         proj = ledger.get("/api/projections").get_json()
@@ -1075,8 +1073,7 @@ class TestTheSetupChecklist:
         client.put("/api/plan/setup", json={"income": 5200, "savings": 700})
         assert self._step(client, "income")["done"]
 
-        client.post("/api/plan/fixed", json={"name": "Rent", "amount": 1800,
-                                             "category": "Rent & Housing"})
+        add_fixed(client, "Rent", 1800, "Rent & Housing")
         assert self._step(client, "commitments")["done"]
 
         client.post("/api/piggy", json={"name": "Concerts", "target": 600,

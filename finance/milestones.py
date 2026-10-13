@@ -9,10 +9,14 @@ Steps, as THL-129 (2026-10-12) lists them:
   no card balance growing.
 * Unveil: first investment account opened.
 
-Until the confirmation flow (THL-45, THL-127) exists, income counts as
-confirmed once Pearl has an income for the month (detected, told or
-cautious) and bills once at least one is found or she has told us her rent.
-Protect, once done, stays done (THL-53): a rough month doesn't undo it.
+Income and bills are confirmed in the income and bills check (THL-45,
+THL-127, `income_bills`). Income is confirmed once she has said yes to her
+pay, edited it, or given the income she expects (I-03); bills once she has
+confirmed them (I-04). Someone who hasn't run the check yet keeps the
+earlier reading: income counts once Pearl can see regular pay or she has
+told us what she earns (a cautious guess from irregular deposits is not a
+confirmation), and bills once at least one is found or she has told us her
+rent. Protect, once done, stays done (THL-53): a rough month doesn't undo it.
 
 Also here: what each linked bank's connection needs (THL-120), from Plaid's
 error code.
@@ -58,10 +62,28 @@ def _cards_not_growing(transactions, month: str | None, card_accounts: set[str])
     return all(v <= 0.005 for v in net.values())
 
 
+def income_confirmed(sts: dict, confirm: dict | None, told_income: float = 0.0) -> bool:
+    """Is her income confirmed (THL-127)? Her answers once she has given
+    them; before that, regular pay Pearl can see or an amount she told us."""
+    if confirm and confirm.get("income_on"):
+        return bool(confirm.get("pays")) or told_income > 0
+    return sts.get("income_source") in ("detected", "told", "entered", "confirmed")
+
+
+def bills_confirmed(confirm: dict | None, bills_found: int = 0, told_rent: float = 0.0) -> bool:
+    """Are her bills confirmed (THL-127)? Once she has confirmed I-04;
+    before that, once a bill is found or she has told us her rent."""
+    if confirm and confirm.get("bills_on"):
+        return True
+    return bills_found > 0 or told_rent > 0
+
+
 def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int = 0,
          told_rent: float = 0.0, account_types: dict[str, str] | None = None,
-         protect_done_before: bool = False) -> dict:
-    """Where she is on the path, every step's state, and the next step."""
+         protect_done_before: bool = False, confirm: dict | None = None,
+         told_income: float = 0.0) -> dict:
+    """Where she is on the path, every step's state, and the next step.
+    `confirm` is her income and bills check (`income_bills.load`)."""
     types = account_types or {}
     months = covered_months(transactions, today)
     last = months[-1] if months else None
@@ -69,9 +91,9 @@ def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int
 
     protect = [
         {"key": "income", "label": "Confirm your income",
-         "done": sts.get("income_source") is not None},
+         "done": income_confirmed(sts, confirm, told_income)},
         {"key": "bills", "label": "Confirm your bills",
-         "done": bills_found > 0 or told_rent > 0},
+         "done": bills_confirmed(confirm, bills_found, told_rent)},
         {"key": "essentials", "label": "Cover your Essentials",
          "done": bool(last) and essentials > 0 and income >= essentials,
          "month": last, "income": income, "essentials": essentials},

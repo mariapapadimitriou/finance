@@ -21,6 +21,10 @@ Decisions this follows (THL-9 comment, 2026-10-12):
 * S9: a suggested bill counts straight away, and one past its usual date
   stays "still to come" until the month ends. Income counts once it is a
   regular, detected paycheque or she has told us what she earns.
+* THL-127 (income and bills confirmed): once she has run the check, her
+  answers replace the guesses — confirmed or edited pay is what comes in,
+  an unticked bill stops counting, a bill she adds counts. Before that,
+  nothing changes. See `income_bills`.
 * S5: set aside is what a monthly saving goal still needs this month: the
   goal less what has already been saved. No goal, no row.
 * S6: days left include today.
@@ -91,13 +95,21 @@ def _next_month(d: date) -> date:
 
 # ── Money coming in ──────────────────────────────────────────────────────
 
+def _counts_as_income(t: Transaction) -> bool:
+    """A deposit that is income. A friend paying back their share of
+    something never is (THL-125): linked to a split it comes off the charge
+    instead, and an e-Transfer from a friend that isn't marked as pay looks
+    like a repayment, not Income (THL-127 I-01)."""
+    from .income_bills import looks_like_etransfer
+    return (is_income(t) and not t.repays and not is_others(t)
+            and not (looks_like_etransfer(t) and kind_of(t) != "salary"))
+
+
 def _received(transactions: list[Transaction], month: str, today: date) -> list[Transaction]:
-    """Income that has arrived this month. A friend paying back their share
-    of something is never income (THL-125): it comes off the charge instead."""
+    """Income that has arrived this month (`_counts_as_income`)."""
     return sorted(
         (t for t in transactions
-         if t.month == month and t.date <= today.isoformat()
-         and is_income(t) and not t.repays and not is_others(t)),
+         if t.month == month and t.date <= today.isoformat() and _counts_as_income(t)),
         key=lambda t: t.date)
 
 
@@ -182,7 +194,7 @@ def cautious_income(transactions: list[Transaction], today: date) -> dict | None
         return None
     totals = {m: 0 for m in months}
     for t in transactions:
-        if t.month in totals and is_income(t) and not t.repays and not is_others(t):
+        if t.month in totals and _counts_as_income(t):
             totals[t.month] += _cents(-t.amount)
     if min(totals.values()) <= 0:
         return None
@@ -203,15 +215,60 @@ def _at_least(amount: float, received_c: int, lines: list, label: str) -> int:
     return received_c + rest_c
 
 
+def _confirmed_pay(pays: list[dict], received: list[Transaction], lines: list,
+                   today: date) -> tuple[int, str | None]:
+    """The paydays of her confirmed pay (THL-127 I-01, I-02) still to come
+    this month, as lines; returns their cents and the next payday.
+
+    Pay Pearl found keeps its payer, so a paycheque from that payer within a
+    few days of a payday means it landed; late ones still count (S9). Pay
+    she added by hand has no payer to watch for, so only its paydays from
+    today on are still to come. Irregular pay is a monthly figure: whatever
+    hasn't arrived from that payer yet."""
+    from .income_bills import occurrences
+    first, end = today.replace(day=1), month_end(today)
+    expected_c = 0
+    upcoming: list[date] = []
+    for p in pays:
+        each_c = _cents(p["amount"])
+        from_payer = [date.fromisoformat(t.date[:10]) for t in received
+                      if p.get("payer") and (t.merchant or t.description) == p["payer"]]
+        if p["cadence"] == "irregular" or not p.get("next"):
+            got_c = sum(_cents(-t.amount) for t in received
+                        if p.get("payer") and (t.merchant or t.description) == p["payer"])
+            rest_c = max(each_c - got_c, 0)
+            if rest_c:
+                lines.append({"label": p["name"], "date": None, "amount": _dollars(rest_c),
+                              "arrived": False, "kind": "salary"})
+                expected_c += rest_c
+            continue
+        anchor = date.fromisoformat(p["next"])
+        start = first if p.get("payer") else today
+        for d in occurrences(anchor, p["cadence"], start, end):
+            if any(abs((d - a).days) <= PAY_TOLERANCE_DAYS for a in from_payer):
+                continue
+            lines.append({"label": p["name"], "date": d.isoformat(),
+                          "amount": _dollars(each_c), "arrived": False, "kind": "salary"})
+            expected_c += each_c
+        upcoming += [d for d in occurrences(anchor, p["cadence"], today + timedelta(days=1),
+                                            end + timedelta(days=62))]
+    nxt = min(upcoming).isoformat() if upcoming else None
+    return expected_c, nxt
+
+
 def income_this_month(transactions: list[Transaction], today: date,
                       entered_monthly: float = 0.0, *, told: float = 0.0,
-                      overridden: bool = False) -> dict:
+                      overridden: bool = False, pays: list[dict] | None = None,
+                      varies: bool = False, checked: bool = False) -> dict:
     """What comes in this month: what has arrived plus what is still expected.
 
-    In order: detected regular pay; then what she told us on Home (starter
-    questions, or "Use a different amount"); then the cautious figure when
-    pay isn't regular; then the monthly income from the older plan page.
-    Never less than what has already arrived. With none, `amount` is None.
+    In order: the pay she confirmed (THL-127 I-01, I-02); detected regular
+    pay, until she has answered the check (`checked`) — after that only what
+    she confirmed counts; then what she told us (I-03's expected income, the
+    starter questions, or "Use a different amount"); then the cautious
+    figure when pay isn't regular — first, when she said her income varies;
+    then the monthly income from the older plan page. Never less than what
+    has already arrived. With none, `amount` is None.
     """
     month = today.strftime("%Y-%m")
     end = month_end(today)
@@ -222,7 +279,17 @@ def income_this_month(transactions: list[Transaction], today: date,
               "kind": kind_of(t)} for t in received]
 
     pay = cadence(transactions, today.isoformat())
-    regular = (pay is not None and pay["cadence"] in STALE_PAY_DAYS
+    if pays:
+        expected_c, next_pay = _confirmed_pay(pays, received, lines, today)
+        names = {p.get("payer") for p in pays if p.get("payer")}
+        paycheques = sum(1 for line in lines
+                         if (line["kind"] == "salary" and not line["arrived"])
+                         or (line["arrived"] and line["label"] in names))
+        return {"amount": _dollars(received_c + expected_c), "source": "confirmed",
+                "payer": pays[0]["name"], "paycheques": paycheques, "lines": lines,
+                "next_pay": next_pay, "cadence": pays[0]["cadence"], "cautious": None,
+                "overridden": False}
+    regular = not checked and (pay is not None and pay["cadence"] in STALE_PAY_DAYS
                and (today - date.fromisoformat(max(pay["paydays"]))).days
                <= STALE_PAY_DAYS[pay["cadence"]])
     next_pay = None
@@ -249,6 +316,11 @@ def income_this_month(transactions: list[Transaction], today: date,
             "cadence": pay["cadence"] if pay else None, "cautious": None,
             "overridden": False}
     careful = cautious_income(transactions, today)
+    if varies and careful:
+        amount_c = _at_least(careful["lowest"], received_c, lines,
+                             "Still expected, being cautious")
+        return {**none, "amount": _dollars(amount_c), "source": "cautious",
+                "lines": lines, "cautious": careful}
     if told and told > 0:
         amount_c = _at_least(told, received_c, lines, "Still expected this month")
         return {**none, "amount": _dollars(amount_c), "source": "told", "lines": lines,
@@ -282,50 +354,98 @@ def _is_bill(rec: dict) -> bool:
 RENT = "Rent & Housing"
 
 
+def _due(rec: dict, today: date) -> list[date]:
+    """When a recurring charge is still due this month, from its history."""
+    month = today.strftime("%Y-%m")
+    first, end = today.replace(day=1), month_end(today)
+    dates = [date.fromisoformat(d) for d in rec["dates"]]
+    last = dates[-1]
+    charged_this_month = any(d.strftime("%Y-%m") == month for d in dates)
+    due: list[date] = []
+    if rec["cadence"] in ("weekly", "biweekly"):
+        step = timedelta(days=7 if rec["cadence"] == "weekly" else 14)
+        d = last + step
+        while d <= end:
+            if d >= first:
+                due.append(d)
+            d += step
+    elif rec["cadence"] == "monthly":
+        if not charged_this_month:
+            due.append(_on_day(today.year, today.month, last.day))
+    else:                                   # bimonthly, quarterly, semiannual, annual
+        d = date.fromisoformat(rec["next_expected"])
+        if first <= d <= end and not charged_this_month:
+            due.append(d)
+    return due
+
+
+def _answered(confirm: dict | None) -> bool:
+    return bool(confirm and (confirm.get("bills") or confirm.get("added")
+                             or confirm.get("rent")))
+
+
+def _confirmed_bills(transactions: list[Transaction], today: date,
+                     confirm: dict) -> tuple[list[dict], bool]:
+    """Bills still to come once she has answered I-04 or I-05 (THL-127).
+
+    A bill she unticked never counts; one she ticked or edited counts with
+    her amount and schedule; one she added counts from its next due date,
+    each date from today on (one before today is taken as paid, and is in
+    "already spent" if it was). One she hasn't answered counts as a
+    suggestion (S9)."""
+    from .income_bills import bills, occurrences
+    first, end = today.replace(day=1), month_end(today)
+    out, rent_seen = [], False
+    for b in bills(transactions, today, confirm):
+        if b["counts"] is False:
+            continue
+        rent_seen = rent_seen or b["category"] == RENT
+        if b["source"] == "added":
+            due = occurrences(date.fromisoformat(b["next"]), b["cadence"], today, end)
+        elif b["edited"]:
+            charged = [date.fromisoformat(d) for d in b["dates"]]
+            due = [d for d in occurrences(date.fromisoformat(b["next"]), b["cadence"], first, end)
+                   if not any(abs((d - c).days) <= PAY_TOLERANCE_DAYS for c in charged)]
+        else:
+            due = _due(b["rec"], today)
+        for d in due:
+            out.append({"label": b["name"], "date": d.isoformat(),
+                        "amount": b["amount"], "estimate": b["varies"],
+                        "late": d < today, "category": b["category"],
+                        "suggested": b["counts"] is None,
+                        "confirmed": b["counts"] is True,
+                        "added": b["source"] == "added"})
+    return out, rent_seen
+
+
 def bills_to_come(transactions: list[Transaction], today: date,
-                  told_rent: float = 0.0) -> list[dict]:
+                  told_rent: float = 0.0, confirm: dict | None = None) -> list[dict]:
     """Recurring charges expected between now and the month's end that
     haven't been charged yet, suggested ones included (S9).
 
     A monthly bill already charged this month is paid; one that hasn't come
     by its usual day is still to come until the month ends, marked late.
     Rent she told us about (E-02's starter questions) is a bill until rent is
-    seen: as a recurring charge, or paid this month.
+    seen: as a recurring charge, or paid this month. Once she has confirmed
+    her bills (`confirm`, THL-127) her answers decide which count.
     """
     month = today.strftime("%Y-%m")
-    first, end = today.replace(day=1), month_end(today)
     out = []
     rent_seen = False
-    for rec in detect_recurring(transactions, as_of=today.isoformat()):
-        if not _is_bill(rec):
-            continue
-        rent_seen = rent_seen or rec["category"] == RENT
-        dates = [date.fromisoformat(d) for d in rec["dates"]]
-        last = dates[-1]
-        charged_this_month = any(d.strftime("%Y-%m") == month for d in dates)
-        due: list[date] = []
-        if rec["cadence"] in ("weekly", "biweekly"):
-            step = timedelta(days=7 if rec["cadence"] == "weekly" else 14)
-            d = last + step
-            while d <= end:
-                if d >= first:
-                    due.append(d)
-                d += step
-        elif rec["cadence"] == "monthly":
-            if not charged_this_month:
-                due.append(_on_day(today.year, today.month, last.day))
-        else:                                   # quarterly, semiannual, annual
-            d = date.fromisoformat(rec["next_expected"])
-            if first <= d <= end and not charged_this_month:
-                due.append(d)
-
-        estimate = abs(_cents(rec["amount"]) - _cents(rec["typical_amount"])) >= ESTIMATE_CENTS
-        each_c = _cents(rec["typical_amount"] if estimate else rec["amount"])
-        for d in due:
-            out.append({"label": rec["merchant"], "date": d.isoformat(),
-                        "amount": _dollars(each_c), "estimate": estimate,
-                        "late": d < today, "category": rec["category"],
-                        "suggested": True})
+    if _answered(confirm):
+        out, rent_seen = _confirmed_bills(transactions, today, confirm)
+    else:
+        for rec in detect_recurring(transactions, as_of=today.isoformat()):
+            if not _is_bill(rec):
+                continue
+            rent_seen = rent_seen or rec["category"] == RENT
+            estimate = abs(_cents(rec["amount"]) - _cents(rec["typical_amount"])) >= ESTIMATE_CENTS
+            each_c = _cents(rec["typical_amount"] if estimate else rec["amount"])
+            for d in _due(rec, today):
+                out.append({"label": rec["merchant"], "date": d.isoformat(),
+                            "amount": _dollars(each_c), "estimate": estimate,
+                            "late": d < today, "category": rec["category"],
+                            "suggested": True})
     if told_rent and told_rent > 0 and not rent_seen:
         paid_c = sum(_cents(spend_amount(t)) for t in transactions
                      if t.month == month and t.category == RENT and counts_as_spending(t))
@@ -401,16 +521,21 @@ def compute(transactions: list[Transaction], today: date, *,
             entered_income: float = 0.0, savings_target: float = 0.0,
             anchor_started: bool = False, told_income: float = 0.0,
             told_rent: float = 0.0, overridden: bool = False,
-            debt_bills: dict | None = None) -> dict:
+            debt_bills: dict | None = None, confirm: dict | None = None) -> dict:
     """Safe to spend this month and the four rows behind it.
 
     `debt_bills` (from `debts.bills`) adds this month's debt minimums: the
     ones still to come join the bills, and what's been paid of them joins
-    what's already spent (D1, D2)."""
+    what's already spent (D1, D2). `confirm` is her income and bills check
+    (`income_bills.load`, THL-127): confirmed pay drives what comes in, and
+    the bills she ticked or added are the bills."""
     month = today.strftime("%Y-%m")
     left = days_left(today)
     income = income_this_month(transactions, today, entered_income,
-                               told=told_income, overridden=overridden)
+                               told=told_income, overridden=overridden,
+                               pays=(confirm or {}).get("pays") or None,
+                               varies=bool((confirm or {}).get("varies")),
+                               checked=bool((confirm or {}).get("income_on")))
     days = history_days(transactions, today)
     estimate = ("rough" if days < LEARNING_DAYS
                 else "cautious" if income["source"] == "cautious" else None)
@@ -422,7 +547,7 @@ def compute(transactions: list[Transaction], today: date, *,
         return {**base, "state": "needs_income", "amount": None, "shown": None,
                 "per_day": None, "over_by": None, "rows": []}
 
-    bills = bills_to_come(transactions, today, told_rent)
+    bills = bills_to_come(transactions, today, told_rent, confirm)
     spent = already_spent(transactions, today)
     debt_paid_c = 0
     if debt_bills:

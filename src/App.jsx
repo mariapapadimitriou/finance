@@ -3,15 +3,14 @@ import OverviewPanel from './panels/OverviewPanel.jsx';
 import HomePanel from './panels/HomePanel.jsx';
 import PathPanel from './panels/PathPanel.jsx';
 import DebtsPanel from './panels/DebtsPanel.jsx';
-import PiggyPanel from './panels/PiggyPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import TransactionsList from './panels/TransactionsList.jsx';
 import NeedsALook from './panels/NeedsALook.jsx';
 import Goals from './panels/Goals.jsx';
 import CategoryBudgetsPanel from './panels/CategoryBudgetsPanel.jsx';
-import PlanPanel from './panels/PlanPanel.jsx';
+import IncomeBillsPanel from './panels/IncomeBillsPanel.jsx';
 import AccountsPanel from './panels/AccountsPanel.jsx';
-import ProfilePanel, { PageHead } from './panels/ProfilePanel.jsx';
+import ProfilePanel from './panels/ProfilePanel.jsx';
 import RulesPanel from './panels/RulesPanel.jsx';
 import SecurityPanel from './panels/SecurityPanel.jsx';
 import SignedOut, { resetTokenFromUrl } from './pearl/SignedOut.jsx';
@@ -49,7 +48,7 @@ function defaultMonth(summary) {
 // empty ledger, and must still be able to change its email or sign out.
 // Goals too: someone new sees what comes next there (G-02). And Home, whose
 // no-data state (E-01, THL-72) is where linking starts.
-const WORKS_WHEN_EMPTY = ['home', 'path', 'debts', 'budgets', 'accounts', 'plan', 'profile',
+const WORKS_WHEN_EMPTY = ['home', 'path', 'debts', 'budgets', 'accounts', 'income', 'profile',
                           'security', 'rules', 'goals'];
 
 /**
@@ -93,7 +92,7 @@ export default function App() {
   /**
    * Go to a destination named either way.
    *
-   * Panels link to each other by panel key — `onTab('piggy')` — and must not
+   * Panels link to each other by panel key — `onTab('income')` — and must not
    * have to know which group now owns it, so every one of those calls still
    * works unchanged.
    */
@@ -133,7 +132,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [fresh, setFresh] = useState(false);
   // Bumped on every reload so panels that fetch their own data — Home,
-  // Projections, Piggy banks — refetch after an import instead of showing what
+  // Projections, Income and bills — refetch after an import instead of showing what
   // they loaded when they mounted.
   const [version, setVersion] = useState(0);
 
@@ -312,24 +311,10 @@ export default function App() {
       showMonth={['overview'].includes(panel)}
       // The Pearl pages draw their own header (overline + title).
       ownTitle={['home', 'path', 'debts', 'budgets', 'transactions', 'review', 'goals', 'profile',
-                 'accounts', 'rules', 'security', 'plan'].includes(panel)}
+                 'accounts', 'rules', 'security', 'income'].includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
-      {panel === 'plan' && (
-        <div className="stack">
-          <div className="pk">
-            <PageHead trail={[{ label: 'Profile', to: 'profile' },
-                              { label: 'Income and commitments' }]}
-                      title="Income and commitments" onTab={go} />
-          </div>
-          <PlanPanel onChanged={load} onTab={go} />
-          {/* Not a section of its own any more. A piggy bank is a commitment
-              like rent — it is the `− Piggy banks` term in the sum above — and
-              splitting it off put a third page in a group that was already
-              saying the same thing twice. */}
-          <div id="piggy-banks"><PiggyPanel onTab={go} version={version} /></div>
-        </div>
-      )}
+      {panel === 'income' && <IncomeBillsPanel onTab={go} onChanged={load} version={version} />}
       {panel === 'home' && <HomePanel onTab={go} onChanged={load} version={version} />}
       {panel === 'path' && <PathPanel onTab={go} version={version} />}
       {panel === 'debts' && <DebtsPanel onChanged={load} version={version} />}

@@ -38,3 +38,10 @@ def load_bundled(client_or_store, key: str = "scotiabank_amex") -> dict:
                        account_name=entry["account_name"],
                        account_id=entry["account_id"])
     return ingest(st, result, filename=f"{entry['label']} (bundled)")
+
+
+def add_fixed(client, name: str, amount: float, category: str = "Other") -> int:
+    """A commitment as the old Income and commitments page saved it. That page
+    and its endpoints went with THL-127; commitments already saved still
+    count in the plan's arithmetic, so tests put them in the store directly."""
+    return _store(client).add_fixed_cost(name, amount, category)

@@ -13,10 +13,9 @@ import './profile.css';
  *
  * Accounts (AM-01, AccountsPanel.jsx), Categories and rules (S-03,
  * RulesPanel.jsx) and Sign-in and security (SecurityPanel.jsx, with S-02)
- * are built. The rest are drawn but marked "Coming soon" until their pages
+ * are built, and Income and bills (THL-45, THL-127, IncomeBillsPanel.jsx)
+ * under Money. The rest are drawn but marked "Coming soon" until their pages
  * exist; each names its panel key in `SOON` so a later PR only wires it.
- * Income & commitments stays reachable under Money until the confirmation
- * flow (THL-45) replaces it.
  */
 
 /** The breadcrumb over every Profile page: "Profile › Accounts › TD Visa". */
@@ -83,9 +82,8 @@ export function hubRows(summary, user) {
         needs: s.needs_you || 0 },
       { key: 'rules', name: 'Categories and rules',
         sub: s.rules ? plural(s.rules, 'saved rule') : 'No saved rules yet' },
-      // Until the confirmation flow (THL-45) replaces it.
-      { key: 'plan', name: 'Income and commitments',
-        sub: 'What comes in, and what’s spoken for' },
+      { key: 'income', name: 'Income and bills',
+        sub: 'Your pay, and the regular bills set aside' },
     ] },
     { title: 'You', rows: [
       { key: 'security', name: 'Sign-in and security',

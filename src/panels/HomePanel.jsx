@@ -278,10 +278,10 @@ export default function HomePanel({ onTab, onChanged, version }) {
                           onEdit={() => {
                             setExplain(false);
                             // Income she gave us, or the cautious figure, is
-                            // changed here; detected pay is confirmed on the
-                            // income page until THL-45's flow replaces it.
+                            // changed here; pay and bills are confirmed on
+                            // Profile › Income and bills (THL-127).
                             if (['told', 'cautious'].includes(s.income_source)) setIncome(true);
-                            else onTab?.('plan');
+                            else onTab?.('income');
                           }} />
       )}
       {why && <WhyPanel card={why} onClose={() => setWhy(null)} onAction={act} onNotForMe={notForMe} />}
@@ -310,7 +310,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
 
 /** Which Home to draw, by data state (THL-137). Exactly one primary action. */
 // Where each path action goes (GR-05's button).
-const PATH_ACTIONS = { goals: 'goals', path: 'path', bills: 'plan', income: 'plan' };
+const PATH_ACTIONS = { goals: 'goals', path: 'path', bills: 'income', income: 'income' };
 
 export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onSeeWhere,
                            path, reviewCount = 0, connections = [], back = null, today,

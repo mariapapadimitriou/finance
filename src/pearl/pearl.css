@@ -19,6 +19,7 @@
   --rose: var(--rose-500);
   --blush: var(--blush-100);
   --lavender: var(--lilac-200);
+  --lilac: var(--lilac-200);
   --seaglass: var(--seaglass-200);
   --positive: var(--lagoon-700);
   --caution: var(--gold-700);
@@ -151,6 +152,9 @@
   flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
   padding: 40px 0; min-width: 0;
 }
+/* The app's own `main` rule (styles.css) centres it with auto margins, which
+ * would shrink a form to its content; the column always takes the width. */
+.pearl .p-body { width: 100%; max-width: none; margin: 0; }
 .p-form { width: min(440px, 100%); min-width: 0; display: flex; flex-direction: column; gap: var(--space-6); }
 .p-form.centered { text-align: center; align-items: center; }
 .p-footer {
@@ -220,14 +224,15 @@
 }
 .p-control.error { border-color: var(--border-error); }
 .p-control svg { width: 20px; height: 20px; flex: none; color: var(--ink); }
-.pearl .p-control input, .pearl .p-control select {
+.pearl .p-control input, .pearl .p-control select,
+.pk .p-control input, .pk .p-control select {
   flex: 1 1 auto; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent;
   font: inherit; font-size: 15px; color: var(--ink); appearance: none; -webkit-appearance: none;
   padding: 0; border-radius: 0; box-shadow: none;
 }
 .pearl .p-control input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .p-control input::placeholder { color: var(--ink-muted); opacity: 1; }
-.pearl .p-control select { cursor: pointer; padding-right: 28px; }
+.pearl .p-control select, .pk .p-control select { cursor: pointer; padding-right: 28px; }
 .p-control .p-chevron { position: absolute; right: 16px; pointer-events: none; }
 .p-hint { margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
 .p-hint.error { color: var(--caution); }
@@ -415,6 +420,41 @@
   clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 
+/* ── Income and bills (THL-127 I-01 to I-06) ───────────────────────────── */
+.ib-form { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--space-6); }
+.ib-choices { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; }
+.ib-muted { color: var(--ink-muted); }
+.ib-add { font-size: 15px; line-height: 22px; align-self: flex-start; }
+.ib-list { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; }
+.ib-row {
+  display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  text-align: left; color: var(--ink);
+}
+.ib-row.off .ib-row-text, .ib-row.off .ib-amt { color: var(--ink-muted); }
+.ib-tick { position: relative; display: inline-flex; flex: none; cursor: pointer; }
+.ib-tick input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.ib-box {
+  width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--border);
+  background: var(--surface-card); display: inline-flex; align-items: center; justify-content: center;
+}
+.ib-row:not(.off) .ib-box { background: var(--action); border-color: var(--action); color: var(--on-action); }
+.ib-tick input:focus-visible + .ib-box { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.ib-row-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.ib-row-text small { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.ib-amt { flex: none; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ib-edit {
+  flex: none; background: none; border: 0; padding: 4px 0; font: inherit; font-size: 13px;
+  line-height: 18px; color: var(--link); cursor: pointer;
+}
+.ib-edit:hover { text-decoration: underline; }
+.pk .ib-edit, .pk .ib-add { color: var(--link); }
+.pk .ib-edit { font-size: 13px; line-height: 18px; }
+.ib-pay { width: 100%; }
+.ib-tiles { width: 100%; gap: var(--space-3); text-align: left; }
+.pearl .pk-alert { width: 100%; text-align: left; }
+.ib-overlay { position: fixed; inset: 0; z-index: 60; overflow-y: auto; background: var(--surface-page, #fbf8f6); }
+
 /* ── Narrow screens: the panel becomes a band ────────────────────────────── */
 @media (max-width: 1100px) {
   .p-panel { flex-basis: 420px; width: 420px; padding: 40px; }
@@ -435,6 +475,10 @@
   .p-code { gap: 6px; width: 100%; }
   .p-digit { flex: 1 1 0; width: auto; min-width: 0; height: 56px; }
   .p-tiles { grid-template-columns: 1fr; }
+  .ib-sticky {
+    position: sticky; bottom: 0; padding: var(--space-3) 0 var(--space-4);
+    background: var(--surface-page);
+  }
   .p-footer { flex-direction: column-reverse; align-items: flex-start; gap: 8px; }
   .p-path { padding: 20px 16px 32px; }
   .p-phase { width: calc(50% - 8px); }

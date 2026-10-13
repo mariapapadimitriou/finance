@@ -1269,18 +1269,18 @@ def setup_steps():
         {"id": "income", "optional": False,
          "label": "Enter your take-home pay",
          "detail": "Card statements can't see your pay, so the plan starts here.",
-         "done": st.float_setting("monthly_income", 0.0) > 0, "tab": "plan",
+         "done": st.float_setting("monthly_income", 0.0) > 0, "tab": "income",
          "action": "Enter it"},
         {"id": "commitments", "optional": False,
          "label": "Add rent and your other commitments",
          "detail": "Anything paid by transfer never reaches a card statement.",
-         "done": bool(st.fixed_costs()), "tab": "plan",
+         "done": bool(st.fixed_costs()), "tab": "income",
          "action": "Add them"},
         {"id": "travel", "optional": True,
          "label": "Open a piggy bank for your big spending",
          "detail": "Travel, say: a bank that pays for it keeps the trips "
                    "off your weekly allowance.",
-         "done": bool(funded), "tab": "piggy",
+         "done": bool(funded), "tab": "goals",
          "action": "Open one"},
         {"id": "budgets", "optional": False,
          "label": "Split your monthly total across categories",
@@ -1753,6 +1753,11 @@ def delete_transaction(txn_id: str):
 
 
 # ── The money plan: income, commitments, and what is left ────────────────────
+# The page that set these (Income and commitments) went with THL-127; its
+# income is confirmed in the income and bills check now (income_bills_api),
+# and commitments can no longer be added (their endpoints went with it).
+# Projections still saves its savings figure here, and reads the same plan;
+# the setup endpoint stays as the read side of that.
 
 @bp.get("/plan/setup")
 def plan_setup():
@@ -1872,7 +1877,7 @@ def _observed_with_growth(st, txns):
 
 @bp.put("/plan/setup")
 def save_plan_setup():
-    """Income and the savings figure. Commitments have their own endpoints."""
+    """Income and the savings figure (Projections' slider sends only savings)."""
     body = request.get_json(silent=True) or {}
     st = store()
     rate = None
@@ -2466,7 +2471,7 @@ def home():
 def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
     """Safe to spend this month, from the ledger and what she told us, with
     debt minimums among the bills (THL-49 D1, D2)."""
-    from . import debts as debt_math, safe_to_spend
+    from . import debts as debt_math, income_bills, safe_to_spend
     debts = debts if debts is not None else _debts(st, txns, today)
     return safe_to_spend.compute(
         txns, today,
@@ -2478,6 +2483,7 @@ def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
         overridden=bool(_json_setting(st, "income_overrides", [])),
         debt_bills=debt_math.bills(debts["debts"], txns, today,
                                    safe_to_spend.recurring_bills(txns, today)),
+        confirm=income_bills.load(st),
     )
 
 
@@ -2681,12 +2687,13 @@ def home_afford():
 def _path(st, txns, today, sts: dict, state: dict, types: dict) -> dict:
     """THL-129's path for Home's path card (GR-05) and the Path page (GR-01).
     Protect, once done, is remembered and stays done."""
-    from . import milestones
+    from . import income_bills, milestones
     p = milestones.path(
         txns, today, sts, anchor=_anchor(st, txns, today.isoformat()),
         bills_found=state.get("bills_found", 0),
         told_rent=st.float_setting("home_rent", 0.0), account_types=types,
-        protect_done_before=st.setting("protect_done_on") not in (None, ""))
+        protect_done_before=st.setting("protect_done_on") not in (None, ""),
+        confirm=income_bills.load(st), told_income=st.float_setting("home_income", 0.0))
     if p["protect_done"] and st.setting("protect_done_on") in (None, ""):
         st.set_setting("protect_done_on", today.isoformat())
     return p
@@ -2696,7 +2703,7 @@ def _path(st, txns, today, sts: dict, state: dict, types: dict) -> dict:
 def path_page():
     """The Path page (THL-129 GR-01): the same path Home shows."""
     from datetime import date as _date
-    from . import safe_to_spend
+    from . import income_bills, safe_to_spend
 
     st = store()
     today = _date.fromisoformat(_today_iso())
@@ -2706,7 +2713,7 @@ def path_page():
     sts = safe_to_spend.compute(
         txns, today, entered_income=st.float_setting("monthly_income", 0.0),
         savings_target=st.float_setting("savings_target", 0.0),
-        told_income=told_income, told_rent=told_rent)
+        told_income=told_income, told_rent=told_rent, confirm=income_bills.load(st))
     types = {aid: r.get("account_type") or ""
              for aid, r in st.account_sync_rules().items() if r.get("enabled")}
     state = safe_to_spend.home_state(txns, today, sts, account_types=types,
@@ -3035,54 +3042,6 @@ def add_to_chest(bank_id: int):
         return jsonify({"error": "No such treasure chest."}), 404
     st.add_draw(bank_id, _today_iso()[:7], -amount, "Added")
     return jsonify({"ok": True, "added": amount})
-
-
-@bp.get("/plan/fixed")
-def list_fixed():
-    st = store()
-    return jsonify({"fixed": [f.to_dict() for f in st.fixed_costs()]})
-
-
-@bp.post("/plan/fixed")
-def add_fixed():
-    body = request.get_json(silent=True) or {}
-    name = str(body.get("name", "")).strip()
-    if not name:
-        return jsonify({"error": "Give the commitment a name."}), 400
-    try:
-        amount = float(body.get("amount", 0))
-    except (TypeError, ValueError):
-        return jsonify({"error": "Amount must be a number."}), 400
-    if amount <= 0:
-        return jsonify({"error": "A commitment costs more than nothing."}), 400
-
-    cost_id = store().add_fixed_cost(name, amount,
-                                     str(body.get("category") or "Other"))
-    return jsonify({"ok": True, "id": cost_id})
-
-
-@bp.patch("/plan/fixed/<int:cost_id>")
-def edit_fixed(cost_id: int):
-    body = request.get_json(silent=True) or {}
-    existing = next((f for f in store().fixed_costs() if f.id == cost_id), None)
-    if existing is None:
-        return jsonify({"error": "No such commitment."}), 404
-    try:
-        amount = float(body.get("amount", existing.amount))
-    except (TypeError, ValueError):
-        return jsonify({"error": "Amount must be a number."}), 400
-    store().update_fixed_cost(
-        cost_id, str(body.get("name") or existing.name), amount,
-        str(body.get("category") or existing.category))
-    return jsonify({"ok": True})
-
-
-@bp.delete("/plan/fixed/<int:cost_id>")
-def remove_fixed(cost_id: int):
-    if not store().delete_fixed_cost(cost_id):
-        return jsonify({"error": "No such commitment."}), 404
-    return jsonify({"ok": True})
-
 
 
 def _today_iso() -> str:
@@ -3605,4 +3564,4 @@ def dismiss_review():
 
 # The Profile pages (Accounts, Categories and rules) register on this
 # blueprint too; imported last so they can use the helpers above.
-from . import profile_api  # noqa: E402,F401
+from . import income_bills_api, profile_api  # noqa: E402,F401
