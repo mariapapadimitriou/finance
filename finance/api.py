@@ -2610,7 +2610,8 @@ def home():
     txns = st.all_transactions()
     told_income = st.float_setting("home_income", 0.0)
     told_rent = st.float_setting("home_rent", 0.0)
-    sts = _home_sts(st, txns, today)
+    debts = _debts(st, txns, today)
+    sts = _home_sts(st, txns, today, debts)
     types = {aid: r.get("account_type") or ""
              for aid, r in st.account_sync_rules().items() if r.get("enabled")}
     failed = any(i.get("last_error") for i in st.plaid_items())
@@ -2635,6 +2636,8 @@ def home():
         # THL-166: the week under the month, and which one she reads first.
         "week": weekly.week(txns, today, sts),
         "view": "week" if st.setting("home_view") == "week" else "month",
+        # THL-49 D-01: carried balances, beside safe-to-spend, never in it.
+        "debts": debts,
         "snapshot": usual_month.snapshot(
             txns, today, sts, usual,
             savings_target=st.float_setting("savings_target", 0.0),
@@ -2643,9 +2646,11 @@ def home():
     })
 
 
-def _home_sts(st, txns, today) -> dict:
-    """Safe to spend this month, from the ledger and what she told us."""
-    from . import safe_to_spend
+def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
+    """Safe to spend this month, from the ledger and what she told us, with
+    debt minimums among the bills (THL-49 D1, D2)."""
+    from . import debts as debt_math, safe_to_spend
+    debts = debts if debts is not None else _debts(st, txns, today)
     return safe_to_spend.compute(
         txns, today,
         entered_income=st.float_setting("monthly_income", 0.0),
@@ -2654,7 +2659,63 @@ def _home_sts(st, txns, today) -> dict:
         told_income=st.float_setting("home_income", 0.0),
         told_rent=st.float_setting("home_rent", 0.0),
         overridden=bool(_json_setting(st, "income_overrides", [])),
+        debt_bills=debt_math.bills(debts["debts"], txns, today,
+                                   safe_to_spend.recurring_bills(txns, today)),
     )
+
+
+def _debts(st, txns, today) -> dict:
+    """Every debt (THL-49), with the rate and minimum she added (D-03)."""
+    from . import debts as debt_math
+    return debt_math.build(st.account_sync_rules(), st.balances(), st.first_balances(),
+                           txns, _json_setting(st, "debt_details", {}), today)
+
+
+@bp.get("/debts")
+def debts_page():
+    """D-02: every debt, the total, and this month's minimums."""
+    from datetime import date as _date
+    st = store()
+    return jsonify(_debts(st, st.all_transactions(), _date.fromisoformat(_today_iso())))
+
+
+@bp.put("/debts/<account_id>")
+def debt_details(account_id):
+    """D-03: the rate, minimum and due day the bank doesn't share. Each can
+    be cleared by sending it empty."""
+    import json
+    from . import debts as debt_math
+
+    st = store()
+    rule = st.account_sync_rules().get(account_id)
+    if not rule or not debt_math.kind_of(rule):
+        return jsonify({"error": "That account isn't one Pearl sees as a debt."}), 404
+    body = request.get_json(silent=True) or {}
+    details = _json_setting(st, "debt_details", {})
+    entry = dict(details.get(account_id) or {})
+    limits = {"rate": (0, 100, "Enter the interest rate as a percent, like 5.7."),
+              "minimum": (0, 1_000_000, "Enter the minimum payment, like 120."),
+              "due_day": (1, 31, "Enter the day of the month it's due, from 1 to 31.")}
+    for key, (low, high, message) in limits.items():
+        if key not in body:
+            continue
+        raw = body[key]
+        if raw in (None, ""):
+            entry.pop(key, None)
+            continue
+        try:
+            value = float(str(raw).replace("%", "").replace("$", "").replace(",", ""))
+        except ValueError:
+            return jsonify({"error": message, "field": key}), 400
+        if not low <= value <= high or (key == "due_day" and value != int(value)):
+            return jsonify({"error": message, "field": key}), 400
+        entry[key] = int(value) if key == "due_day" else round(value, 2)
+    if entry:
+        details[account_id] = entry
+    else:
+        details.pop(account_id, None)
+    st.set_setting("debt_details", json.dumps(details))
+    return debts_page()
 
 
 @bp.put("/home/view")

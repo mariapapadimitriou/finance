@@ -32,9 +32,9 @@ Decisions this follows (THL-9 comment, 2026-10-12):
   time she overrides the cautious figure is recorded.
 * S7, E5: rough and cautious numbers are shown rounded down to $10; the
   sheet keeps the exact rows and says what was rounded.
+* D1, D2 (THL-49): debt minimums due this month are bills; see `debts`.
 
 Data states (THL-14 / E10, THL-137 E-01 to E-04) are chosen by `home_state`.
-Debt minimums (THL-49) join the bills in a later step.
 """
 
 from __future__ import annotations
@@ -337,14 +337,18 @@ def bills_to_come(transactions: list[Transaction], today: date,
     return out
 
 
+def recurring_bills(transactions: list[Transaction], today: date) -> list[dict]:
+    """Every recurring charge that is a bill (`_is_bill`)."""
+    return [r for r in detect_recurring(transactions, as_of=today.isoformat()) if _is_bill(r)]
+
+
 def bill_charges(transactions: list[Transaction], today: date) -> set[tuple[str, str]]:
     """(merchant, date) of every charge that was a bill: a recurring bill's
     charges, and rent. The week leaves these out, because the month already
     takes bills out before it is split into weeks (W3)."""
     out = set()
-    for rec in detect_recurring(transactions, as_of=today.isoformat()):
-        if _is_bill(rec):
-            out.update((rec["merchant"], d) for d in rec["dates"])
+    for rec in recurring_bills(transactions, today):
+        out.update((rec["merchant"], d) for d in rec["dates"])
     out.update((t.merchant, t.date) for t in transactions if t.category == RENT)
     return out
 
@@ -396,8 +400,13 @@ def round_down_10(amount: float) -> int:
 def compute(transactions: list[Transaction], today: date, *,
             entered_income: float = 0.0, savings_target: float = 0.0,
             anchor_started: bool = False, told_income: float = 0.0,
-            told_rent: float = 0.0, overridden: bool = False) -> dict:
-    """Safe to spend this month and the four rows behind it."""
+            told_rent: float = 0.0, overridden: bool = False,
+            debt_bills: dict | None = None) -> dict:
+    """Safe to spend this month and the four rows behind it.
+
+    `debt_bills` (from `debts.bills`) adds this month's debt minimums: the
+    ones still to come join the bills, and what's been paid of them joins
+    what's already spent (D1, D2)."""
     month = today.strftime("%Y-%m")
     left = days_left(today)
     income = income_this_month(transactions, today, entered_income,
@@ -414,8 +423,15 @@ def compute(transactions: list[Transaction], today: date, *,
                 "per_day": None, "over_by": None, "rows": []}
 
     bills = bills_to_come(transactions, today, told_rent)
-    dated = [b for b in bills if b["date"]]
     spent = already_spent(transactions, today)
+    debt_paid_c = 0
+    if debt_bills:
+        bills = sorted(bills + debt_bills["lines"], key=lambda b: (b["date"] or "9999", b["label"]))
+        debt_paid_c = _cents(debt_bills["paid"])
+        if debt_paid_c:
+            spent["amount_c"] += debt_paid_c
+            spent["lines"].append({"label": "Debt payments", "amount": _dollars(debt_paid_c)})
+    dated = [b for b in bills if b["date"]]
     rows = [
         {"key": "income", "amount_c": _cents(income["amount"]),
          "paycheques": income["paycheques"], "payer": income["payer"],
@@ -426,7 +442,7 @@ def compute(transactions: list[Transaction], today: date, *,
          "first": dated[0]["date"] if dated else None,
          "last": dated[-1]["date"] if dated else None, "lines": bills},
         {"key": "spent", "amount_c": spent["amount_c"], "pending": spent["pending"],
-         "lines": spent["lines"]},
+         "debt_paid": _dollars(debt_paid_c), "lines": spent["lines"]},
     ]
     if savings_target > 0:
         target_c = _cents(savings_target)

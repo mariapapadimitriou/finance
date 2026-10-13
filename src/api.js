@@ -165,6 +165,10 @@ export const putHomeAnswers = (answers) => json('PUT', '/api/home/answers', answ
 export const putHomeView = (view) => json('PUT', '/api/home/view', { view });
 // "Can I afford it?" (THL-167): works it out and records nothing.
 export const checkAfford = (amount) => json('POST', '/api/home/afford', { amount });
+// Debts (THL-49): every debt, and the rate and minimum she adds (D-03).
+export const getDebts = () => req('/api/debts');
+export const putDebtDetails = (accountId, fields) =>
+  json('PUT', `/api/debts/${encodeURIComponent(accountId)}`, fields);
 export const getGoals        = () => req('/api/goals');
 export const setAnchor       = (fields) => json('PUT', '/api/goals/anchor', fields);
 export const setUnusualMonths = (months) => json('PUT', '/api/goals/anchor/unusual', { months });
