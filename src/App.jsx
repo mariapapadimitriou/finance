@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import OverviewPanel from './panels/OverviewPanel.jsx';
 import HomePanel from './panels/HomePanel.jsx';
+import InsightsPanel from './panels/InsightsPanel.jsx';
 import PathPanel from './panels/PathPanel.jsx';
 import DebtsPanel from './panels/DebtsPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
@@ -19,27 +19,16 @@ import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
-  clearUrl, isPathUrl, isReviewUrl, readTxUrl, writePathUrl, writeReviewUrl,
+  clearUrl, isInsightsUrl, isPathUrl, isReviewUrl, readTxUrl, writeInsightsUrl, writePathUrl,
+  writeReviewUrl,
 } from './router.js';
 import {
   getAccounts, getAuthStatus, getCategories, getInsights,
-  getReview, getSummary, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
+  getReview, getSummary, logout, setLedgerCurrency, setUnauthorizedHandler,
   syncPlaid,
 } from './api.js';
 
 // Icons are 24×24 stroke paths, drawn in currentColor.
-/**
- * The month to open on.
- *
- * Not simply the latest month in range: a ledger can end with a month that
- * holds only a closing credit, or a gap, and landing there shows an empty
- * dashboard that looks broken. Open on the most recent month that has
- * spending in it.
- */
-function defaultMonth(summary) {
-  const withSpending = (summary.monthly ?? []).filter((m) => m.transactions > 0);
-  return withSpending.at(-1)?.month ?? summary.latest_month ?? '';
-}
 
 // Panels worth opening with nothing in the ledger: Accounts, where a bank is
 // linked and which decides what keeps arriving — and which is also where the
@@ -50,6 +39,10 @@ function defaultMonth(summary) {
 // no-data state (E-01, THL-72) is where linking starts.
 const WORKS_WHEN_EMPTY = ['home', 'path', 'debts', 'budgets', 'accounts', 'income', 'profile',
                           'security', 'rules', 'goals'];
+
+// Pages that draw their section pills themselves, under their own title
+// (Growth › Insights, THL-196 GR-28), so the shell's strip would say it twice.
+const OWN_SECTIONS = ['insights'];
 
 /**
  * A navigation label with an optional phone-width form.
@@ -85,9 +78,9 @@ export default function App() {
   // /transactions… opens the list (a link from anywhere lands there); every
   // other address opens Home, where the app lands (THL-44, THL-125).
   const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() ? 'transactions'
-    : isPathUrl() ? 'growth' : 'home'));
+    : isPathUrl() || isInsightsUrl() ? 'growth' : 'home'));
   const [panel, setPanel] = useState(() => (isReviewUrl() ? 'review'
-    : readTxUrl() ? 'transactions' : isPathUrl() ? 'path' : 'home'));
+    : readTxUrl() ? 'transactions' : isPathUrl() ? 'path' : isInsightsUrl() ? 'insights' : 'home'));
 
   /**
    * Go to a destination named either way.
@@ -100,10 +93,12 @@ export default function App() {
     const [group, target] = resolve(key);
     setTab(group);
     setPanel(target);
-    // The list writes its own address when it mounts; Needs a look has one
-    // too. Everything else lives at "/".
+    // The list writes its own address when it mounts; Needs a look, Path and
+    // Insights have one too. Everything else lives at "/". A link straight to
+    // one of Insights' views has already written its address.
     if (target === 'review') writeReviewUrl();
     else if (target === 'path') writePathUrl();
+    else if (target === 'insights') { if (!isInsightsUrl()) writeInsightsUrl(); }
     else if (target !== 'transactions') clearUrl();
     const anchor = ANCHORS[key];
     if (anchor) {
@@ -115,12 +110,6 @@ export default function App() {
       }, 350);
     }
   }, []);
-  // The month holds *your* choice, and empty means "follow the data". It is
-  // deliberately not seeded from the first load: a seeded value would survive
-  // an import that added newer months, leaving the dashboard pinned to a
-  // month you never picked. Derived at render instead, so new data moves it
-  // and an explicit pick still sticks.
-  const [month, setMonth] = useState('');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   // null while we're still asking; the app renders nothing rather than
@@ -154,8 +143,9 @@ export default function App() {
     const onPop = () => {
       if (isReviewUrl()) { setTab('transactions'); setPanel('review'); }
       else if (isPathUrl()) { setTab('growth'); setPanel('path'); }
+      else if (isInsightsUrl()) { setTab('growth'); setPanel('insights'); }
       else if (readTxUrl()) { setTab('transactions'); setPanel('transactions'); }
-      else if (['transactions', 'review', 'path'].includes(panelRef.current)) {
+      else if (['transactions', 'review', 'path', 'insights'].includes(panelRef.current)) {
         setTab('home'); setPanel('home');
       }
     };
@@ -239,7 +229,7 @@ export default function App() {
     // A different person may be signing in on this device: nothing from the
     // last session's ledger is carried over.
     return <SignedOut onSignedIn={(u, { created = false } = {}) => {
-      setData(null); setMonth('');
+      setData(null);
       synced.current = false;
       setUser(u ?? null); setFresh(created);
       setSignedIn(true); setError(null);
@@ -278,12 +268,6 @@ export default function App() {
 
   const { summary, insights, accounts, categories } = data;
 
-  // Your pick wins while the month still exists — clearing a card or an account
-  // can remove it — and otherwise both fall back to the data, so an import that
-  // brings in newer months moves them without a reload.
-  const autoMonth = defaultMonth(summary);
-  const shownMonth = (month && summary.months?.includes(month)) ? month : autoMonth;
-
   // An empty ledger hides the panels that have nothing to show — but not the
   // ones that exist to fix that, or this is a dead end: the Connect button
   // would set the tab and the same empty state would render over it, which
@@ -306,23 +290,18 @@ export default function App() {
     <Shell
       theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
       counts={{ transactions: data.review }}
-      months={summary.months} month={shownMonth} onMonth={setMonth}
-      // Budgets (THL-168) is always this month, so only Insights picks one.
-      showMonth={['overview'].includes(panel)}
-      // The Pearl pages draw their own header (overline + title).
-      ownTitle={['home', 'path', 'debts', 'budgets', 'transactions', 'review', 'goals', 'profile',
-                 'accounts', 'rules', 'security', 'income'].includes(panel)}
+      // The Pearl pages draw their own header (overline + title). Insights
+      // has its own month switcher too (GR-28), so the shell picks no month.
+      ownTitle={['home', 'path', 'insights', 'debts', 'budgets', 'transactions', 'review', 'goals',
+                 'profile', 'accounts', 'rules', 'security', 'income'].includes(panel)}
+      ownSections={OWN_SECTIONS.includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
       {panel === 'income' && <IncomeBillsPanel onTab={go} onChanged={load} version={version} />}
       {panel === 'home' && <HomePanel onTab={go} onChanged={load} version={version} />}
       {panel === 'path' && <PathPanel onTab={go} version={version} />}
       {panel === 'debts' && <DebtsPanel onChanged={load} version={version} />}
-      {panel === 'overview' && (
-        <OverviewPanel summary={summary} insights={insights} theme={theme}
-                       month={shownMonth} onMonth={setMonth} onTab={go}
-                       version={version} />
-      )}
+      {panel === 'insights' && <InsightsPanel onTab={go} version={version} />}
       {panel === 'projections' && (
         <ProjectionsPanel insights={insights} onTab={go} onChanged={load}
                          version={version} />
@@ -353,9 +332,8 @@ export default function App() {
   );
 }
 
-function Shell({ theme, setTheme, tab, panel, onTab, counts = {},
-                 months = [], month, onMonth, showMonth = false, onSignOut,
-                 ownTitle = false, children }) {
+function Shell({ theme, setTheme, tab, panel, onTab, counts = {}, onSignOut,
+                 ownTitle = false, ownSections = false, children }) {
   const group = GROUPS.find((g) => g.key === tab);
   // The heading names the panel you are actually looking at; the group label is
   // already on the selected button in the sidebar, so repeating it here would
@@ -450,22 +428,10 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {},
               {!ownTitle && <h1>{current?.label ?? 'Pearl'}</h1>}
             </div>
 
-            {showMonth && months.length > 0 && (
-              <>
-                <label htmlFor="month-select" className="sr-only">Month</label>
-                <select id="month-select" value={month}
-                        onChange={(e) => onMonth(e.target.value)}>
-                  {[...months].reverse().map((m) => (
-                    <option key={m} value={m}>{monthLabel(m, { full: true })}</option>
-                  ))}
-                </select>
-              </>
-            )}
-
             <div className="topbar-actions">{accountActions}</div>
           </div>
 
-          {group && group.panels.length > 1 && !group.crumbs && (
+          {group && group.panels.length > 1 && !group.crumbs && !ownSections && (
             <div className="sections-wrap">
             <nav className="sections" role="tablist" ref={sectionsRef}
                  aria-label={`${group.label} sections`}>

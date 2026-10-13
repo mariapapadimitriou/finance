@@ -1,7 +1,7 @@
 // The transactions screen keeps its place in the address bar, so a filtered
 // list (/transactions?month=2026-10&group=lifestyle) can be linked to from
 // anywhere — Home, an alert, an explanation sheet — and back/forward work.
-// The rest of the app has no addresses yet: everything else lives at "/".
+// Growth's Path and Insights have addresses too; everything else lives at "/".
 
 export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'joint', 'recurring', 'q'];
 
@@ -20,6 +20,53 @@ export function isPathUrl(loc = window.location) {
 export function writePathUrl({ push = true } = {}) {
   if (isPathUrl()) return;
   window.history[push ? 'pushState' : 'replaceState'](null, '', PATH_PATH);
+}
+
+// Growth › Insights (THL-186, THL-196 GR-28) and its detail views (GR-25 to
+// GR-27, GR-29 to GR-32), so a detail can be linked to and Back works:
+// /growth/insights/<view>?month=2026-09&category=Dining.
+export const INSIGHTS_PATH = '/growth/insights';
+export const INSIGHTS_VIEWS = ['month', 'category', 'subscriptions', 'trend', 'where', 'money',
+                               'savings'];
+const INSIGHTS_EVENT = 'pearl:insights';
+
+/** {view, month, category} at /growth/insights…, or null anywhere else. */
+export function readInsightsUrl(loc = window.location) {
+  const m = loc.pathname.match(/^\/growth\/insights(?:\/([a-z]+))?\/?$/);
+  if (!m) return null;
+  const params = new URLSearchParams(loc.search);
+  const view = INSIGHTS_VIEWS.includes(m[1]) ? m[1] : '';
+  const month = /^\d{4}-\d{2}$/.test(params.get('month') ?? '') ? params.get('month') : '';
+  return { view, month, category: view === 'category' ? params.get('category') ?? '' : '' };
+}
+
+export const isInsightsUrl = (loc = window.location) => readInsightsUrl(loc) !== null;
+
+export function insightsHref({ view = '', month = '', category = '' } = {}) {
+  const params = new URLSearchParams();
+  if (month) params.set('month', month);
+  if (view === 'category' && category) params.set('category', category);
+  const qs = params.toString();
+  return `${INSIGHTS_PATH}${view ? `/${view}` : ''}${qs ? `?${qs}` : ''}`;
+}
+
+/** Point the address bar at Insights or one of its views, and tell the page. */
+export function writeInsightsUrl(state = {}, { push = true } = {}) {
+  const href = insightsHref(state);
+  if (href !== window.location.pathname + window.location.search) {
+    window.history[push ? 'pushState' : 'replaceState'](null, '', href);
+  }
+  window.dispatchEvent(new Event(INSIGHTS_EVENT));
+}
+
+/** Calls `fn` whenever the Insights address changes, by Back or by a link. */
+export function onInsightsUrl(fn) {
+  window.addEventListener('popstate', fn);
+  window.addEventListener(INSIGHTS_EVENT, fn);
+  return () => {
+    window.removeEventListener('popstate', fn);
+    window.removeEventListener(INSIGHTS_EVENT, fn);
+  };
 }
 
 /** True at /transactions/review. */

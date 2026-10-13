@@ -18,14 +18,8 @@ from .analytics import (
     spend_amount,
     budget_status,
     by_category,
-    by_merchant,
-    daily_series,
-    fixed_vs_discretionary,
-    month_over_month,
-    month_pace,
     monthly_totals,
     summary as build_summary,
-    weekday_profile,
 )
 from .categorize import (CATEGORIES, TRAVEL_BANK_CATEGORIES, is_discretionary,
                          is_spend_category)
@@ -1119,29 +1113,6 @@ def recategorize():
 @bp.get("/summary")
 def summary():
     return jsonify(build_summary(_txns(), store().budgets()))
-
-
-@bp.get("/breakdown")
-def breakdown():
-    st = store()
-    txns = st.all_transactions()
-    month = request.args.get("month")
-    fixed = st.fixed_costs()
-    bills = bill_categories(fixed)
-    return jsonify({
-        "month": month,
-        # Bills the plan already set aside are shown apart from the headline:
-        # a mortgage isn't this month's spending to watch.
-        "bills": bills_paid(txns, month, fixed) if month and bills else None,
-        "split": fixed_vs_discretionary(txns, month),
-        "categories": by_category(txns, month),
-        "merchants": by_merchant(txns, month, limit=int(request.args.get("limit", 25))),
-        "changes": month_over_month(txns, month) if month else [],
-        "monthly": monthly_totals(txns),
-        "daily": daily_series(txns, int(request.args.get("days", 90))),
-        "weekday": weekday_profile(txns),
-        "pace": month_pace(txns, month, exclude=bills) if month else None,
-    })
 
 
 @bp.get("/recurring")
@@ -2278,6 +2249,13 @@ def _json_setting(st, key: str, default):
         return default
 
 
+def _unusual_months(st) -> set[str]:
+    """Months she left out of her usual (THL-59): a move, a car repair. One
+    list, read by the Anchor's pace, the usual month (Home's snapshot,
+    budgets) and Growth › Insights."""
+    return set(_json_setting(st, "anchor_unusual", []))
+
+
 def _anchor_accounts(st) -> list[dict]:
     """Bank accounts the Anchor could count, with what each holds now."""
     import re
@@ -2322,7 +2300,7 @@ def _anchor(st, txns, today: str) -> dict:
     if started and status["full"] and not earned:
         st.set_setting("anchor_earned_on", today)
 
-    unusual = set(_json_setting(st, "anchor_unusual", []))
+    unusual = _unusual_months(st)
     months = anchor_math.saved_by_month(txns, today)
     pace = anchor_math.pace(months, unusual)
     projection = anchor_math.projection(status["to_go"], pace, today) if started else None
@@ -2438,7 +2416,7 @@ def home():
         told_income=told_income, told_rent=told_rent)
     # THL-184: the usual month comes with the Home payload, so Home needs no
     # other call.
-    usual = usual_month.usual(txns, today)
+    usual = usual_month.usual(txns, today, unusual=_unusual_months(st))
     from .review import build as review_build
     review = review_build(txns, dismissed=st.dismissed_reviews(), splits=st.splits(),
                           payer=st.payback_people())
@@ -2554,7 +2532,8 @@ def _category_budgets(st, txns, today, sts: dict, usual: dict | None = None,
                       comparisons_from: str | None = None) -> dict:
     """Budgets per category (THL-168), from her usual month and the % she set."""
     from . import category_budgets, usual_month
-    usual = usual if usual is not None else usual_month.usual(txns, today)
+    usual = (usual if usual is not None
+             else usual_month.usual(txns, today, unusual=_unusual_months(st)))
     bills = next((r["lines"] for r in sts.get("rows", []) if r["key"] == "bills"), [])
     return category_budgets.build(txns, today, usual, _json_setting(st, "category_budgets", {}),
                                   bills, comparisons_from)
@@ -2569,7 +2548,7 @@ def category_budgets_page():
     today = _date.fromisoformat(_today_iso())
     txns = st.all_transactions()
     sts = _home_sts(st, txns, today)
-    covered = usual_month.covered_months(txns, today)
+    covered = usual_month.covered_months(txns, today, unusual=_unusual_months(st))
     starts = None
     if not covered:
         state = safe_to_spend.home_state(txns, today, sts,
@@ -3564,4 +3543,4 @@ def dismiss_review():
 
 # The Profile pages (Accounts, Categories and rules) register on this
 # blueprint too; imported last so they can use the helpers above.
-from . import income_bills_api, profile_api  # noqa: E402,F401
+from . import income_bills_api, insights_api, profile_api  # noqa: E402,F401

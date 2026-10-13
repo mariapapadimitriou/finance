@@ -25,9 +25,10 @@ export const PANELS = {
   // Growth › Path (THL-129 GR-01): Protect, Build, Unveil and the next step.
   path:          { label: 'Path',
                    hint: 'Where you are on your path, and the one next step' },
-  // Growth › Insights (THL-129 GR-01's tabs): where the month's money went.
-  overview:      { label: 'Insights',
-                   hint: 'Spending across every card' },
+  // Growth › Insights (THL-186, THL-196 GR-28, at /growth/insights): the
+  // month against her usual, in pictures, with a detail view behind each.
+  insights:      { label: 'Insights',
+                   hint: 'Your month against your usual, and where the money went' },
   // Growth › Debts (THL-49 D-02): every balance owed, from before Pearl too.
   debts:         { label: 'Debts',
                    hint: 'Everything you owe, and the minimums counted as bills' },
@@ -83,9 +84,9 @@ export const GROUPS = [
     hint: 'Your Anchor, your treasure chests and your saving goal',
     icon: 'M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21ZM12 17C14.7614 17 17 14.7614 17 12C17 9.23858 14.7614 7 12 7C9.23858 7 7 9.23858 7 12C7 14.7614 9.23858 17 12 17ZM12 13C12.5523 13 13 12.5523 13 12C13 11.4477 12.5523 11 12 11C11.4477 11 11 11.4477 11 12C11 12.5523 11.4477 13 12 13Z' },
   // Growth (THL-129 GR-01): Path, Insights, Projections and Learn, with
-  // Budgets and Debts beside them (THL-9 decision N1). Learn isn't designed
-  // yet.
-  { key: 'growth', label: 'Growth', panels: ['path', 'overview', 'projections', 'budgets', 'debts'],
+  // Budgets and Debts beside them (THL-9 decision N1). Learn isn't built
+  // yet: Insights draws it as a disabled pill.
+  { key: 'growth', label: 'Growth', panels: ['path', 'insights', 'projections', 'budgets', 'debts'],
     hint: 'Where your money went, where it could go, and your budgets',
     icon: 'M3 17l6-6 4 4 8-8M15 7h6v6' },
   // At the foot (THL-104, Pearl S-01): the Profile hub, and the pages it
@@ -107,11 +108,12 @@ export const GROUPS = [
 // or saved address that names them lands somewhere real. So do the pages
 // removed in C1: Connections and From a file land on Accounts, where a bank is
 // linked now; Trips on the list; Categories on Categories and rules (S-03).
-// The old Sign-in page is Sign-in and security now.
+// The old Sign-in page is Sign-in and security now. The prototype Insights
+// page (`overview`) was replaced by Growth › Insights (THL-196 GR-28).
 export const ALIASES = {
   plan: 'income', piggy: 'goals', mortgage: 'income', today: 'home', settings: 'profile',
   banks: 'accounts', import: 'accounts', trips: 'transactions', categories: 'rules',
-  account: 'security', signin: 'security',
+  account: 'security', signin: 'security', overview: 'insights',
 };
 
 // Where on that page the aliased thing actually is, when it isn't the top.

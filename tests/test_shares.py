@@ -45,7 +45,8 @@ def dining_spent(c):
 
 
 def month_total(c):
-    return c.get(f"/api/breakdown?month={date.today():%Y-%m}").get_json()["pace"]["total"]
+    tiles = c.get(f"/api/insights/month?month={date.today():%Y-%m}").get_json()["tiles"]
+    return (tiles["essentials"] + tiles["lifestyle"]) / 100
 
 
 class TestYourShareIsWhatCounts:
