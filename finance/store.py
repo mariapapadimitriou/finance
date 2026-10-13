@@ -490,6 +490,7 @@ class Store:
             c.executescript(SCHEMA)
         self._migrate_buckets()
         self._migrate_allocation_amounts()
+        self._migrate_plaid_error_code()
         self._migrate_travel_ownership()
         self._drop_bank_funded_budgets()
         self._migrate_saved()
@@ -619,6 +620,17 @@ class Store:
                 """UPDATE piggy_allocations SET amount = (
                        SELECT t.amount FROM transactions t WHERE t.id = txn_id)
                     WHERE amount IS NULL""")
+
+    def _migrate_plaid_error_code(self) -> None:
+        """Add `plaid_items.error_code`: Plaid's own code for the last error
+        (ITEM_LOGIN_REQUIRED, INSTITUTION_DOWN…), which says which connection
+        state to show (THL-120). Tried, and a failure read as "already there",
+        as above."""
+        try:
+            with self.conn() as c:
+                c.execute("ALTER TABLE plaid_items ADD COLUMN error_code TEXT")
+        except Exception:                                        # noqa: BLE001
+            return
 
     # ── Transactions ─────────────────────────────────────────────────────────
     def add_transactions(self, transactions: list[Transaction]) -> int:
@@ -1220,7 +1232,7 @@ class Store:
                 # alone against an empty ledger, the next sync would report
                 # "nothing new" and the cards would stay empty forever.
                 c.execute("UPDATE plaid_items SET cursor = NULL, "
-                          "last_synced = NULL, last_error = NULL")
+                          "last_synced = NULL, last_error = NULL, error_code = NULL")
             else:
                 cur = c.execute("DELETE FROM plaid_items")
                 removed["bank connections"] = max(cur.rowcount, 0)
@@ -1777,7 +1789,7 @@ class Store:
         with self.conn() as c:
             rows = c.execute(
                 """SELECT item_id, institution, cursor, last_synced, last_error,
-                          created_at
+                          error_code, created_at
                    FROM plaid_items ORDER BY created_at"""
             ).fetchall()
         return [{**dict(r), "synced_before": bool(r["cursor"])} for r in rows]
@@ -1943,15 +1955,15 @@ class Store:
         with self.conn() as c:
             c.execute(
                 """UPDATE plaid_items
-                   SET cursor = ?, last_synced = ?, last_error = NULL
+                   SET cursor = ?, last_synced = ?, last_error = NULL, error_code = NULL
                    WHERE item_id = ?""",
                 (cursor, _now(), item_id),
             )
 
-    def set_plaid_error(self, item_id: str, message: str) -> None:
+    def set_plaid_error(self, item_id: str, message: str, code: str = "") -> None:
         with self.conn() as c:
-            c.execute("UPDATE plaid_items SET last_error = ? WHERE item_id = ?",
-                      (message[:500], item_id))
+            c.execute("UPDATE plaid_items SET last_error = ?, error_code = ? WHERE item_id = ?",
+                      (message[:500], (code or "")[:64] or None, item_id))
 
     def delete_plaid_item(self, item_id: str) -> bool:
         with self.conn() as c:

@@ -8,6 +8,20 @@ export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'jo
 // Needs a look (R-01, THL-123) has an address under the list's.
 export const REVIEW_PATH = '/transactions/review';
 
+// The Path page (THL-129 GR-01) has an address too, so Home can link to it.
+export const PATH_PATH = '/growth';
+
+/** True at /growth. */
+export function isPathUrl(loc = window.location) {
+  return /^\/growth\/?$/.test(loc.pathname);
+}
+
+/** Point the address bar at the Path page. */
+export function writePathUrl({ push = true } = {}) {
+  if (isPathUrl()) return;
+  window.history[push ? 'pushState' : 'replaceState'](null, '', PATH_PATH);
+}
+
 /** True at /transactions/review. */
 export function isReviewUrl(loc = window.location) {
   return /^\/transactions\/review\/?$/.test(loc.pathname);

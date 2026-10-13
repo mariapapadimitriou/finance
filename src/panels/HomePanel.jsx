@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
-import { getHome, money, putHomeAnswers } from '../api.js';
+import { createLinkToken, getHome, money, putHomeAnswers, syncPlaid } from '../api.js';
+import { loadPlaidScript } from '../plaid.js';
 import { Alert, DetailPanel, PButton, StatusPill } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { SnapshotBar } from '../pearl/viz.jsx';
@@ -33,6 +34,11 @@ import './home.css';
  * and Lifestyle with her usual month and where she usually is by today
  * (THL-184), and Savings with the monthly plan. Pace follows THL-110's ±10%
  * rule; over pace or over the month is champagne, with words (L2).
+ *
+ * The path card (THL-129 GR-05) carries Home's one primary action: the next
+ * step. "Needs a look" (THL-123) opens R-01 and hides at 0. A bank that wants
+ * her to sign in again, or isn't answering, comes first among the alerts
+ * (THL-120 C-02, C-03), and Reconnect signs in again in place (C-04, C-05).
  */
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
@@ -177,11 +183,13 @@ export function sheetRows(s) {
   };
 }
 
-export default function HomePanel({ onTab, version }) {
+export default function HomePanel({ onTab, onChanged, version }) {
   const [home, setHome] = useState(null);
   const [error, setError] = useState(null);
   const [explain, setExplain] = useState(false);
   const [income, setIncome] = useState(false);
+  const [reconnect, setReconnect] = useState(null);
+  const [back, setBack] = useState(null);
 
   const load = useCallback(() => {
     setError(null);
@@ -205,6 +213,11 @@ export default function HomePanel({ onTab, version }) {
         <h1 className="pk-h1">Home</h1>
       </header>
       <HomeBody s={s} ds={ds} snap={home.snapshot} onSave={save} onLink={link}
+                path={home.path} reviewCount={home.review_count}
+                connections={home.connections} back={back} today={home.today}
+                onPath={(action) => onTab?.(PATH_ACTIONS[action] ?? 'path')}
+                onReview={() => onTab?.('review')}
+                onReconnect={(c) => (c.state === 'needs_sign_in' ? setReconnect(c) : onTab?.('banks'))}
                 onExplain={() => setExplain(true)} onIncome={() => setIncome(true)}
                 onSeeWhere={(group) => {
                   // TX-02: the list, opened on this month and the group.
@@ -222,6 +235,15 @@ export default function HomePanel({ onTab, version }) {
                             else onTab?.('plan');
                           }} />
       )}
+      {reconnect && (
+        <ReconnectPanel connection={reconnect} onClose={() => setReconnect(null)}
+                        onDone={async () => {
+                          setReconnect(null);
+                          setBack(reconnect.institution);
+                          await onChanged?.();
+                          await load();
+                        }} />
+      )}
       {income && (
         <IncomePanel s={s} told={ds.answers.income} onClose={() => setIncome(false)}
                      onSave={(amount) => save({ income: amount, override: !!s.cautious })
@@ -233,7 +255,13 @@ export default function HomePanel({ onTab, version }) {
 }
 
 /** Which Home to draw, by data state (THL-137). Exactly one primary action. */
-export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onSeeWhere }) {
+// Where each path action goes (GR-05's button).
+const PATH_ACTIONS = { goals: 'goals', path: 'path', bills: 'plan', income: 'plan' };
+
+export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onSeeWhere,
+                           path, reviewCount = 0, connections = [], back = null, today,
+                           onPath, onReview, onReconnect }) {
+  const review = reviewCount > 0 && <NeedsALook count={reviewCount} onReview={onReview} />;
   if (ds.kind === 'no_data') {
     return (
       <>
@@ -249,12 +277,15 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
         <CardOnlyHero ds={ds} month={s.month} onLink={onLink} />
         <MonthSoFar month={s.month} lines={ds.card_spending.lines}
                     note="Usual-month comparisons start once we’ve seen a full month." />
+        {review}
       </>
     );
   }
   const noAccounts = ds.history_days === 0;
-  const alert = homeAlert(s, ds, snap);
-  const act = alert?.group ? () => onSeeWhere?.(alert.group) : onIncome;
+  const alert = homeAlert(s, ds, snap, connections, back, today);
+  const act = alert?.connection ? () => onReconnect?.(alert.connection)
+    : alert?.group ? () => onSeeWhere?.(alert.group) : onIncome;
+  const trouble = connections.find((c) => c.state !== 'disconnected');
   return (
     <>
       {alert && (
@@ -263,8 +294,12 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
           {alert.text}
         </Alert>
       )}
-      <SafeToSpendCard s={s} onExplain={onExplain} />
+      <SafeToSpendCard s={s} onExplain={onExplain}
+                       updated={trouble ? `${trouble.institution} last updated ${whenWords(trouble.last_synced, today)}` : null} />
       {ds.asks_questions && <StarterQuestions onSave={onSave} primary />}
+      {path && ['normal', 'irregular'].includes(ds.kind) && (
+        <PathCard path={path} onPath={onPath} primary={!ds.asks_questions} />
+      )}
       {ds.kind === 'learning' && !noAccounts && (
         <MonthSoFar month={s.month}
                     lines={[{ label: 'Spent so far', amount: ds.spent_so_far },
@@ -276,13 +311,38 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
       {noAccounts && <ConnectCard failed={ds.linking_failed} onLink={onLink}
                                   primary={!ds.asks_questions} />}
       {snap && ['normal', 'irregular'].includes(ds.kind) && <Snapshot snap={snap} />}
+      {review}
     </>
   );
 }
 
+/** "today", "Tuesday" within the week, else "Oct 2". */
+export function whenWords(iso, today) {
+  if (!iso) return 'a while ago';
+  const day = iso.slice(0, 10);
+  if (!today || day === today) return 'today';
+  const days = Math.round((Date.parse(today) - Date.parse(day)) / 86400000);
+  return days > 0 && days < 7 ? parts(day).weekday : shortDate(day);
+}
+
 /** One alert at a time, in the C3 order: connection, over plan, learning,
- * cautious. Connection and over plan arrive with steps 4 and 3. */
-export function homeAlert(s, ds, snap) {
+ * cautious. Signed back in (C-05) is said once, right after. */
+export function homeAlert(s, ds, snap, connections = [], back = null, today = null) {
+  const c = connections[0];
+  if (c?.state === 'needs_sign_in') {
+    const what = c.cards_only ? 'Card purchases' : 'Transactions';
+    return { tone: 'caution', action: 'Reconnect', connection: c,
+             text: `${c.institution} needs you to sign in again. ${what} since ${whenWords(c.last_synced, today)} aren’t counted yet.` };
+  }
+  if (c?.state === 'disconnected') {
+    return { tone: 'caution', action: 'See accounts', connection: c,
+             text: `${c.institution} is no longer connected, so its transactions aren’t coming in.` };
+  }
+  if (c?.state === 'bank_down') {
+    return { tone: 'info', action: 'Details', connection: c,
+             text: `${c.institution} isn’t responding right now. We’ll keep trying; there’s nothing you need to do.` };
+  }
+  if (back) return { tone: 'positive', text: `${back} is back up to date.` };
   if (s.state === 'over' && snap?.extra_went_to) {
     // H-02: where the extra went, and a way to see it (TX-02).
     return { tone: 'caution', text: `${snap.extra_went_to} is where the extra went.`,
@@ -301,7 +361,7 @@ export function homeAlert(s, ds, snap) {
 }
 
 /** SafeToSpendCard (H-01, H-02). */
-export function SafeToSpendCard({ s, onExplain }) {
+export function SafeToSpendCard({ s, onExplain, updated = null }) {
   const c = heroCopy(s);
   const canExplain = s.rows.length > 0;
   return (
@@ -318,6 +378,7 @@ export function SafeToSpendCard({ s, onExplain }) {
       )}
       <p className="hm-sts-context">
         {c.context}
+        {updated && ` · ${updated}`}
         {canExplain && (
           <>
             {' · '}
@@ -633,5 +694,106 @@ export function Snapshot({ snap }) {
       </h2>
       {snapshotRows(snap).map(({ key, ...row }) => <SnapshotBar key={key} {...row} />)}
     </section>
+  );
+}
+
+const PHASE_WORDS = { protect: 'Protect', build: 'Build', unveil: 'Unveil' };
+
+/** "Build · step 2 of 2" (GR-05). */
+export function stepWords(path) {
+  const phase = PHASE_WORDS[path.phase];
+  return path.step ? `${phase} · step ${path.step} of ${path.of}` : `${phase} · every step done`;
+}
+
+/** The path card (THL-129 GR-05): the phases, where she is, and the one next
+ * step, which is Home's primary action. */
+export function PathCard({ path, onPath, primary = true }) {
+  return (
+    <section className="hm-card hm-pathcard" aria-labelledby="hm-pathcard-title">
+      <div className="hm-row-between">
+        <p className="pk-overline" id="hm-pathcard-title">Your path</p>
+        <button type="button" className="hm-link" onClick={() => onPath?.('path')}>
+          See your path
+        </button>
+      </div>
+      <ol className="hm-phases" aria-label="Phases">
+        {path.phases.map((ph) => (
+          <li key={ph.key} className={`hm-phase ${ph.state}`}
+              aria-current={ph.state === 'now' ? 'step' : undefined}>
+            <Mark phase={ph.key} width={38} />
+            <span>{ph.label}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="hm-pathcard-next">
+        <div className="hm-row-text">
+          <span className="pk-label pk-muted">{stepWords(path)}</span>
+          <span className="pk-h3">{path.next.text}</span>
+        </div>
+        {primary && (
+          <PButton onClick={() => onPath?.(path.next.action)}>{path.next.label}</PButton>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** "3 transactions need a look" (THL-123, H-01): hidden at 0, opens R-01. */
+export function NeedsALook({ count, onReview }) {
+  return (
+    <section className="hm-card" aria-labelledby="hm-look-title">
+      <h2 className="pk-h3" id="hm-look-title">
+        {count === 1 ? '1 transaction needs a look' : `${count} transactions need a look`}
+      </h2>
+      <p className="pk-muted">We weren’t sure how to sort these. Sorting them keeps your numbers right.</p>
+      <button type="button" className="hm-link" onClick={onReview}>
+        Review <PIcon name="chevronRight" size={14} />
+      </button>
+    </section>
+  );
+}
+
+/** C-04: sign in to the bank again, through Plaid in update mode. */
+export function ReconnectPanel({ connection, onClose, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const inst = connection.institution;
+  const start = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const [Plaid, { link_token: token }] = await Promise.all([
+        loadPlaidScript(), createLinkToken(connection.item_id)]);
+      Plaid.create({
+        token,
+        // Update mode: the connection carries on, so there's nothing to
+        // exchange. Sync straight away so Home is current again.
+        onSuccess: async () => {
+          try { await syncPlaid(); } catch { /* the next sync catches up */ }
+          setBusy(false);
+          onDone?.();
+        },
+        onExit: (err) => {
+          setBusy(false);
+          if (err) setError(err.display_message || err.error_message || 'Signing in didn’t finish. You can try again.');
+        },
+      }).open();
+    } catch (err) {
+      setBusy(false);
+      setError(err.message);
+    }
+  };
+  return (
+    <DetailPanel label={`Sign in to ${inst} again`} overline="Reconnect" onClose={onClose}>
+      <h1 className="pk-h2">{`Sign in to ${inst} again`}</h1>
+      <p className="pk-muted">
+        Banks ask you to sign in again every so often. It’s routine, and nothing is wrong with
+        your account.
+      </p>
+      {error && <Alert tone="caution">{error}</Alert>}
+      <PButton onClick={start} disabled={busy}>{busy ? 'Opening…' : `Continue to ${inst}`}</PButton>
+      <PButton variant="secondary" onClick={onClose}>Not now</PButton>
+      <p className="pk-label pk-muted">You’ll sign in through Plaid. Pearl stays read-only.</p>
+    </DetailPanel>
   );
 }

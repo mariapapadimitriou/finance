@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  HomeBody, HowWeWorkedItOut, IncomePanel, SafeToSpendCard, Snapshot, heroCopy, homeAlert,
-  parseAmount, sheetRows, snapshotRows,
+  HomeBody, HowWeWorkedItOut, IncomePanel, NeedsALook, PathCard, ReconnectPanel, SafeToSpendCard,
+  Snapshot, heroCopy, homeAlert, parseAmount, sheetRows, snapshotRows, stepWords, whenWords,
 } from './HomePanel.jsx';
 
 // The X-01 person on Friday October 9 (finance/safe_to_spend.py's tests use
@@ -393,5 +393,129 @@ describe('snapshot', () => {
   it('the snapshot waits while Pearl is learning (E-02 has its own card)', () => {
     const out = body(...STATES['E-02 learning, answered']);
     expect(out).not.toContain('compared with a usual month');
+  });
+});
+
+// ── Path card, needs a look, connection health (THL-129, THL-123, THL-120) ──
+
+const buildPath = {
+  phase: 'build', step: 1, of: 2, protect_done: true, also: [],
+  phases: [{ key: 'protect', label: 'Protect', state: 'done' },
+           { key: 'build', label: 'Build', state: 'now' },
+           { key: 'unveil', label: 'Unveil', state: 'ahead' }],
+  steps: [{ key: 'first_stop', label: 'Reach your Anchor’s first stop', done: false, first_stop: 500 },
+          { key: 'full', label: 'Fill your Anchor', done: false, target: null }],
+  next: { text: 'Next: start your Anchor, so a surprise bill doesn’t become a problem.',
+          label: 'Start your Anchor', action: 'goals' },
+};
+const tdSignIn = { item_id: 'td', institution: 'TD', state: 'needs_sign_in',
+                   last_synced: '2026-10-06T08:00:00', cards_only: true };
+const eqDown = { item_id: 'eq', institution: 'EQ Bank', state: 'bank_down',
+                 last_synced: '2026-10-09T03:00:00', cards_only: false };
+const full = (extra = {}) => html(
+  <HomeBody s={ok} ds={{ ...base, kind: 'normal' }} snap={h01} path={buildPath} reviewCount={3}
+            today="2026-10-09" onSave={() => Promise.resolve()} onLink={() => {}} {...extra} />);
+
+describe('path card (GR-05)', () => {
+  it('says the phase, the step and the next step, and holds the one primary', () => {
+    const out = full();
+    expect(out).toContain('Your path');
+    expect(out).toContain('See your path');
+    expect(out).toContain('Build · step 1 of 2');
+    expect(out).toContain('Next: start your Anchor');
+    expect(primaries(out)).toBe(1);
+    expect(out).toMatch(/pk-btn primary[^>]*>Start your Anchor/);
+    calm(out);
+  });
+
+  it('the phase she is in is marked as the current step', () => {
+    expect(html(<PathCard path={buildPath} />)).toMatch(/hm-phase now" aria-current="step"/);
+  });
+
+  it('every step done', () => {
+    expect(stepWords({ ...buildPath, phase: 'unveil', step: null })).toBe('Unveil · every step done');
+  });
+
+  it('gives way to the starter questions, which stay the one primary', () => {
+    const out = html(<HomeBody s={needsIncome} ds={{ ...base, kind: 'normal', asks_questions: true }}
+                               path={{ ...buildPath, phase: 'protect' }}
+                               onSave={() => Promise.resolve()} onLink={() => {}} />);
+    expect(primaries(out)).toBe(1);
+    expect(out).toMatch(/pk-btn primary[^>]*>Save answers/);
+  });
+
+  it('is not on Home while Pearl is learning, or with no data', () => {
+    for (const k of ['E-02 learning, answered', 'E-01 no data']) {
+      const [s, ds] = STATES[k];
+      expect(html(<HomeBody s={s} ds={ds} path={buildPath} onSave={() => Promise.resolve()}
+                            onLink={() => {}} />)).not.toContain('Your path</p>');
+    }
+  });
+});
+
+describe('needs a look (THL-123)', () => {
+  it('counts, explains and links to the queue', () => {
+    expect(html(<NeedsALook count={3} />)).toContain('3 transactions need a look');
+    expect(html(<NeedsALook count={1} />)).toContain('1 transaction needs a look');
+    expect(full()).toContain('Sorting them keeps your numbers right.');
+  });
+
+  it('is hidden at 0', () => {
+    expect(full({ reviewCount: 0 })).not.toContain('need a look');
+  });
+
+  it('shows on E-04 too, but not on E-01', () => {
+    const [s, ds] = STATES['E-04 card only'];
+    expect(html(<HomeBody s={s} ds={ds} reviewCount={2} onLink={() => {}} />))
+      .toContain('2 transactions need a look');
+    const [s1, ds1] = STATES['E-01 no data'];
+    expect(html(<HomeBody s={s1} ds={ds1} reviewCount={2} onLink={() => {}}
+                          onSave={() => Promise.resolve()} />)).not.toContain('need a look');
+  });
+});
+
+describe('connection health (THL-120)', () => {
+  it('C-02: a bank that wants her to sign in again comes first, with Reconnect', () => {
+    const over = { ...ok, state: 'over', over_by: 84, amount: -84 };
+    const a = homeAlert(over, { ...base, kind: 'normal' }, { ...h01, extra_went_to: 'Lifestyle' },
+                        [tdSignIn], null, '2026-10-09');
+    expect(a).toMatchObject({ tone: 'caution', action: 'Reconnect' });
+    expect(a.text).toBe('TD needs you to sign in again. Card purchases since Tuesday aren’t counted yet.');
+  });
+
+  it('C-02: the card says when that bank last updated, and keeps "On track" (C2)', () => {
+    const out = full({ connections: [tdSignIn] });
+    expect(out).toContain('TD last updated Tuesday');
+    expect(out).toContain('On track');
+    expect(out).toContain('How we worked this out');
+    calm(out);
+  });
+
+  it('C-03: a bank that isn’t answering is calm, with nothing to do', () => {
+    const a = homeAlert(ok, { ...base, kind: 'normal' }, h01, [eqDown], null, '2026-10-09');
+    expect(a).toMatchObject({ tone: 'info', action: 'Details' });
+    expect(a.text).toBe('EQ Bank isn’t responding right now. We’ll keep trying; there’s nothing you need to do.');
+    expect(full({ connections: [eqDown] })).toContain('EQ Bank last updated today');
+  });
+
+  it('C-05: back up to date, said once after reconnecting', () => {
+    expect(homeAlert(ok, { ...base, kind: 'normal' }, h01, [], 'TD'))
+      .toEqual({ tone: 'positive', text: 'TD is back up to date.' });
+  });
+
+  it('C-04: the reconnect panel', () => {
+    const out = html(<ReconnectPanel connection={tdSignIn} onClose={() => {}} />);
+    expect(out).toContain('Sign in to TD again');
+    expect(out).toContain('It’s routine, and nothing is wrong with your account.');
+    expect(out).toContain('Continue to TD');
+    expect(out).toContain('Not now');
+    expect(out).toContain('Pearl stays read-only.');
+  });
+
+  it('when words', () => {
+    expect(whenWords('2026-10-09T03:00:00', '2026-10-09')).toBe('today');
+    expect(whenWords('2026-10-06 08:00:00', '2026-10-09')).toBe('Tuesday');
+    expect(whenWords('2026-09-28T08:00:00', '2026-10-09')).toBe('Sep 28');
+    expect(whenWords(null, '2026-10-09')).toBe('a while ago');
   });
 });

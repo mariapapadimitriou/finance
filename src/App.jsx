@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import OverviewPanel from './panels/OverviewPanel.jsx';
 import HomePanel from './panels/HomePanel.jsx';
+import PathPanel from './panels/PathPanel.jsx';
 import PiggyPanel from './panels/PiggyPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import TransactionsList from './panels/TransactionsList.jsx';
@@ -19,7 +20,9 @@ import Onboarding from './pearl/Onboarding.jsx';
 import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
-import { clearUrl, isReviewUrl, readTxUrl, writeReviewUrl } from './router.js';
+import {
+  clearUrl, isPathUrl, isReviewUrl, readTxUrl, writePathUrl, writeReviewUrl,
+} from './router.js';
 import {
   getAccounts, getAuthStatus, getCategories, getInsights,
   getReview, getSummary, logout, monthLabel, setLedgerCurrency, setUnauthorizedHandler,
@@ -47,7 +50,7 @@ function defaultMonth(summary) {
 // still be able to change its password or sign out.
 // Goals too: someone new sees what comes next there (G-02). And Home, whose
 // no-data state (E-01, THL-72) is where linking starts.
-const WORKS_WHEN_EMPTY = ['home', 'banks', 'import', 'accounts', 'plan', 'account', 'categories',
+const WORKS_WHEN_EMPTY = ['home', 'path', 'banks', 'import', 'accounts', 'plan', 'account', 'categories',
                           'goals'];
 
 /**
@@ -83,9 +86,10 @@ export default function App() {
   );
   // /transactions… opens the list (a link from anywhere lands there); every
   // other address opens Home, where the app lands (THL-44, THL-125).
-  const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() ? 'transactions' : 'home'));
+  const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() ? 'transactions'
+    : isPathUrl() ? 'growth' : 'home'));
   const [panel, setPanel] = useState(() => (isReviewUrl() ? 'review'
-    : readTxUrl() ? 'transactions' : 'home'));
+    : readTxUrl() ? 'transactions' : isPathUrl() ? 'path' : 'home'));
 
   /**
    * Go to a destination named either way.
@@ -101,6 +105,7 @@ export default function App() {
     // The list writes its own address when it mounts; Needs a look has one
     // too. Everything else lives at "/".
     if (target === 'review') writeReviewUrl();
+    else if (target === 'path') writePathUrl();
     else if (target !== 'transactions') clearUrl();
     const anchor = ANCHORS[key];
     if (anchor) {
@@ -150,8 +155,9 @@ export default function App() {
   useEffect(() => {
     const onPop = () => {
       if (isReviewUrl()) { setTab('transactions'); setPanel('review'); }
+      else if (isPathUrl()) { setTab('growth'); setPanel('path'); }
       else if (readTxUrl()) { setTab('transactions'); setPanel('transactions'); }
-      else if (['transactions', 'review'].includes(panelRef.current)) {
+      else if (['transactions', 'review', 'path'].includes(panelRef.current)) {
         setTab('home'); setPanel('home');
       }
     };
@@ -308,7 +314,7 @@ export default function App() {
       months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(panel)}
       // The Pearl pages draw their own header (overline + title).
-      ownTitle={['home', 'transactions', 'review', 'goals'].includes(panel)}
+      ownTitle={['home', 'path', 'transactions', 'review', 'goals'].includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
       {panel === 'plan' && (
@@ -321,7 +327,8 @@ export default function App() {
           <div id="piggy-banks"><PiggyPanel onTab={go} version={version} /></div>
         </div>
       )}
-      {panel === 'home' && <HomePanel onTab={go} version={version} />}
+      {panel === 'home' && <HomePanel onTab={go} onChanged={load} version={version} />}
+      {panel === 'path' && <PathPanel onTab={go} version={version} />}
       {panel === 'overview' && (
         <OverviewPanel summary={summary} insights={insights} theme={theme}
                        month={shownMonth} onMonth={setMonth} onTab={go}

@@ -92,6 +92,22 @@ def explain(exc: Exception) -> str:
     return _plaid_message(body) or f"Plaid returned an error ({env} environment)."
 
 
+def error_code(exc: Exception) -> str:
+    """Plaid's own error code from a failed call, or "" when there is none.
+
+    The code, not the message, decides what Home shows (THL-120): a bank that
+    wants her to sign in again, or one that isn't answering for now.
+    """
+    import json
+    import re
+    body = str(getattr(exc, "body", "") or exc)
+    try:
+        return str(json.loads(body).get("error_code") or "")
+    except (ValueError, AttributeError):
+        m = re.search(r'"error_code"\s*:\s*"([A-Z_]+)"', body)
+        return m.group(1) if m else ""
+
+
 def _plaid_message(body: str) -> str:
     """Pull error_message out of a stringified ApiException, if it's in there."""
     import json
@@ -120,22 +136,33 @@ def _plaid_message(body: str) -> str:
 DAYS_REQUESTED = 730
 
 
-def create_link_token(user_id: str = "spendie-user") -> dict:
-    """A short-lived token that authorises one run of Plaid Link."""
+def create_link_token(user_id: str = "spendie-user", access_token: str | None = None) -> dict:
+    """A short-lived token that authorises one run of Plaid Link.
+
+    With an `access_token` it opens Link in update mode: she signs in to the
+    bank again and the same connection carries on (THL-120 C-04), so nothing
+    is exchanged and no history is lost.
+    """
     from plaid.model.country_code import CountryCode
     from plaid.model.link_token_create_request import LinkTokenCreateRequest
     from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
     from plaid.model.link_token_transactions import LinkTokenTransactions
     from plaid.model.products import Products
 
-    resp = _client().link_token_create(LinkTokenCreateRequest(
+    common = dict(
         user=LinkTokenCreateRequestUser(client_user_id=user_id),
         client_name="Pearl",
-        products=[Products("transactions")],
         country_codes=[CountryCode(c) for c in COUNTRY_CODES],
         language="en",
-        transactions=LinkTokenTransactions(days_requested=DAYS_REQUESTED),
-    )).to_dict()
+    )
+    if access_token:
+        request = LinkTokenCreateRequest(access_token=access_token, **common)
+    else:
+        request = LinkTokenCreateRequest(
+            products=[Products("transactions")],
+            transactions=LinkTokenTransactions(days_requested=DAYS_REQUESTED),
+            **common)
+    resp = _client().link_token_create(request).to_dict()
     return {"link_token": resp["link_token"], "expiration": str(resp.get("expiration", ""))}
 
 
@@ -379,7 +406,7 @@ def sync_all(store) -> dict:
             out.append(_sync_one(store, item))
         except Exception as exc:                     # noqa: BLE001
             message = explain(exc)
-            store.set_plaid_error(item["item_id"], message)
+            store.set_plaid_error(item["item_id"], message, error_code(exc))
             out.append({"item_id": item["item_id"],
                         "institution": item.get("institution") or "",
                         "error": message})

@@ -352,7 +352,7 @@ class TestHomeIsWhereTheAppLands:
 
     def test_the_app_opens_on_home(self):
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
-        assert "'transactions' : 'home'" in text
+        assert ": isPathUrl() ? 'growth' : 'home'" in text   # anything else lands on Home
         assert "panel === 'home'" in text and "<HomePanel" in text
 
     def test_old_links_to_the_allowance_land_on_home(self, aliases):
@@ -400,9 +400,14 @@ class TestTheSidebarIsThl104s:
     def test_home_transactions_goals_growth_and_profile(self, groups):
         assert list(groups) == ["home", "transactions", "goals", "growth", "profile"]
 
-    def test_insights_lives_under_growth_and_has_no_group_of_its_own(self, groups):
-        assert groups["growth"][0] == "overview"
+    def test_growth_opens_on_the_path(self, groups):
+        """THL-129 GR-01: Path, then Insights, Projections and Budgets."""
+        assert groups["growth"][:3] == ["path", "overview", "projections"]
         assert "overview" not in groups
+
+    def test_the_path_page_has_an_address(self):
+        text = (SRC / "App.jsx").read_text(encoding="utf-8")
+        assert "isPathUrl()" in text and "writePathUrl()" in text
 
 
 class TestOneReviewQueue:

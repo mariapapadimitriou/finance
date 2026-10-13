@@ -1843,8 +1843,16 @@ def plaid_link_token():
             "error": "No encryption key is set, so a bank token can't be "
                      "stored safely. Set SPENDIE_SECRET_KEY and redeploy.",
         }), 503
+    # With an item_id, Link opens in update mode to sign in to that bank again
+    # (THL-120 C-04); the connection, its accounts and its history stay.
+    item_id = str((request.get_json(silent=True) or {}).get("item_id") or "")
+    access_token = None
+    if item_id:
+        access_token = store().plaid_token(item_id)
+        if not access_token:
+            return jsonify({"error": "That bank isn't linked any more."}), 404
     try:
-        return jsonify(plaid_link.create_link_token())
+        return jsonify(plaid_link.create_link_token(access_token=access_token))
     except Exception as exc:                          # noqa: BLE001
         return jsonify({"error": plaid_link.explain(exc),
                         "environment": plaid_link.environment()}), 502
@@ -2595,7 +2603,7 @@ def home():
     is current as soon as a sync has written its rows (E05: within 5 minutes).
     """
     from datetime import date as _date
-    from . import safe_to_spend, usual_month
+    from . import milestones, safe_to_spend, usual_month
 
     st = store()
     today = _date.fromisoformat(_today_iso())
@@ -2619,11 +2627,17 @@ def home():
     # THL-184: the usual month comes with the Home payload, so Home needs no
     # other call.
     usual = usual_month.usual(txns, today)
+    from .review import build as review_build
+    review = review_build(txns, dismissed=st.dismissed_reviews(), splits=st.splits(),
+                          payer=st.payback_people())
     return jsonify({
         "month": today.strftime("%Y-%m"),
         "today": today.isoformat(),
         "safe_to_spend": sts,
         "data_state": state,
+        "path": _path(st, txns, today, sts, state, types),
+        "review_count": review.get("count", 0),
+        "connections": milestones.connections(st.plaid_items(), st.account_sync_rules()),
         "usual_month": usual,
         "snapshot": usual_month.snapshot(
             txns, today, sts, usual,
@@ -2631,6 +2645,42 @@ def home():
             anchor_started=st.setting("anchor_started") not in (None, ""),
             comparisons_from=state["comparisons_from"]),
     })
+
+
+def _path(st, txns, today, sts: dict, state: dict, types: dict) -> dict:
+    """THL-129's path for Home's path card (GR-05) and the Path page (GR-01).
+    Protect, once done, is remembered and stays done."""
+    from . import milestones
+    p = milestones.path(
+        txns, today, sts, anchor=_anchor(st, txns, today.isoformat()),
+        bills_found=state.get("bills_found", 0),
+        told_rent=st.float_setting("home_rent", 0.0), account_types=types,
+        protect_done_before=st.setting("protect_done_on") not in (None, ""))
+    if p["protect_done"] and st.setting("protect_done_on") in (None, ""):
+        st.set_setting("protect_done_on", today.isoformat())
+    return p
+
+
+@bp.get("/path")
+def path_page():
+    """The Path page (THL-129 GR-01): the same path Home shows."""
+    from datetime import date as _date
+    from . import safe_to_spend
+
+    st = store()
+    today = _date.fromisoformat(_today_iso())
+    txns = st.all_transactions()
+    told_income = st.float_setting("home_income", 0.0)
+    told_rent = st.float_setting("home_rent", 0.0)
+    sts = safe_to_spend.compute(
+        txns, today, entered_income=st.float_setting("monthly_income", 0.0),
+        savings_target=st.float_setting("savings_target", 0.0),
+        told_income=told_income, told_rent=told_rent)
+    types = {aid: r.get("account_type") or ""
+             for aid, r in st.account_sync_rules().items() if r.get("enabled")}
+    state = safe_to_spend.home_state(txns, today, sts, account_types=types,
+                                     told_income=told_income, told_rent=told_rent)
+    return jsonify(_path(st, txns, today, sts, state, types))
 
 
 @bp.put("/home/answers")

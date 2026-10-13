@@ -115,7 +115,9 @@ export const saveOnboarding = (fields) => json('POST', '/api/onboarding', fields
 
 // ── Plaid ────────────────────────────────────────────────────────────────────
 export const getPlaidItems   = () => req('/api/plaid/items');
-export const createLinkToken = () => json('POST', '/api/plaid/link-token', {});
+// With an item id, Link opens in update mode to sign in to that bank again (C-04).
+export const createLinkToken = (itemId) =>
+  json('POST', '/api/plaid/link-token', itemId ? { item_id: itemId } : {});
 export const checkPlaidKeys  = () => json('POST', '/api/plaid/check', {});
 export const exchangePublicToken = (publicToken, institution) =>
   json('POST', '/api/plaid/exchange',
@@ -155,6 +157,8 @@ export const undoDraw        = (id) => req(`/api/piggy/draws/${id}`, { method: '
 // banks above, by the Goals page's name) and the saving goal.
 // Home (THL-44, THL-46): safe to spend for the month and every row behind it.
 export const getHome = () => req('/api/home');
+// The Path page (THL-129 GR-01).
+export const getPath = () => req('/api/path');
 // The starter questions (E-02) and "Use a different amount" (E-03).
 export const putHomeAnswers = (answers) => json('PUT', '/api/home/answers', answers);
 export const getGoals        = () => req('/api/goals');
