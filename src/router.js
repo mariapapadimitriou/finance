@@ -3,7 +3,7 @@
 // anywhere — Home, an alert, an explanation sheet — and back/forward work.
 // The rest of the app has no addresses yet: everything else lives at "/".
 
-export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'joint', 'q'];
+export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'joint', 'recurring', 'q'];
 
 // Needs a look (R-01, THL-123) has an address under the list's.
 export const REVIEW_PATH = '/transactions/review';
@@ -66,5 +66,24 @@ export function writeTxUrl(state, { push = false } = {}) {
 export function clearUrl() {
   if (window.location.pathname !== '/' && !window.location.search.includes('reset=')) {
     window.history.pushState(null, '', '/');
+  }
+}
+
+// Where Goals should open when another page sends her there (THL-12 R3: a
+// recommendation's "Try it" or "Move to savings"). Kept for the one visit;
+// Goals takes it on arrival. Storage can be blocked, so it's only a nicety.
+const GOALS_INTENT = 'pearl.goalsIntent';
+
+export function setGoalsIntent(intent) {
+  try { window.sessionStorage.setItem(GOALS_INTENT, JSON.stringify(intent)); } catch { /* blocked */ }
+}
+
+export function takeGoalsIntent() {
+  try {
+    const raw = window.sessionStorage.getItem(GOALS_INTENT);
+    window.sessionStorage.removeItem(GOALS_INTENT);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
 }

@@ -56,12 +56,12 @@ function fromUrl() {
   const f = url?.filters ?? {};
   return { month: f.month || thisMonth(), account: f.account || '', group: f.group || '',
            category: f.category || '', excluded: f.excluded || '', joint: f.joint || '',
-           q: f.q || '',
+           recurring: f.recurring || '', q: f.q || '',
            from: url?.from || '' };
 }
 
 const DEFAULTS = () => ({ month: thisMonth(), account: '', group: '', category: '',
-                          excluded: '', joint: '', from: '' });
+                          excluded: '', joint: '', recurring: '', from: '' });
 
 export default function TransactionsList({ summary, categories, accounts, reviewCount = 0,
                                            onTab, onChanged, version }) {
@@ -114,7 +114,8 @@ export default function TransactionsList({ summary, categories, accounts, review
     setFilters(next);
   };
   const filtered = filters.month !== thisMonth() || !!filters.account
-    || !!filters.group || !!filters.category || !!filters.excluded || !!filters.joint;
+    || !!filters.group || !!filters.category || !!filters.excluded || !!filters.joint
+    || !!filters.recurring;
   // Back to TX-01's defaults; the search, if any, is its own control.
   const clearFilters = () => choose(DEFAULTS());
   const clearSearch = () => { setQuery(''); choose({ q: '' }); };
@@ -167,13 +168,17 @@ export default function TransactionsList({ summary, categories, accounts, review
     // one was hers.
     { group: 'Other', options: [
       { value: 'x:excluded', label: 'Left out' },
+      { value: 'x:recurring', label: 'Subscriptions' },
       ...(accounts.some((a) => a.joint) ? [{ value: 'x:joint', label: 'Joint: not yours' }] : []),
     ] },
   ], [categories, groups, accounts]);
-  const special = filters.excluded ? 'Left out' : filters.joint ? 'Joint: not yours' : '';
+  // "Review subscriptions" (THL-63) opens the list on their charges.
+  const special = filters.excluded ? 'Left out' : filters.joint ? 'Joint: not yours'
+    : filters.recurring ? 'Subscriptions' : '';
   const categoryValue = filters.group ? `g:${filters.group}`
     : filters.category ? `c:${filters.category}`
-      : filters.excluded ? 'x:excluded' : filters.joint ? 'x:joint' : '';
+      : filters.excluded ? 'x:excluded' : filters.joint ? 'x:joint'
+        : filters.recurring ? 'x:recurring' : '';
   const categoryLabel = filters.group ? groups[filters.group]
     : filters.category || special || 'All categories';
   const pickCategory = (v) => choose({
@@ -181,6 +186,7 @@ export default function TransactionsList({ summary, categories, accounts, review
     category: v.startsWith('c:') ? v.slice(2) : '',
     excluded: v === 'x:excluded' ? '1' : '',
     joint: v === 'x:joint' ? '1' : '',
+    recurring: v === 'x:recurring' ? '1' : '',
   });
 
   // ── Rows by day ───────────────────────────────────────────────────────

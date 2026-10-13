@@ -419,7 +419,8 @@ def transactions_list():
     income, savings, transfer) or category, counts (spending | income | none)
     and q, which searches merchant, description, your note and amount.
     excluded=1 lists the rows you left out instead, and joint=1 the rows on a
-    joint account that are someone else's. The totals cover every
+    joint account that are someone else's; recurring=1 keeps only the
+    subscriptions' charges. The totals cover every
     matching row, not just the page.
     """
     from . import txlist
@@ -439,6 +440,15 @@ def transactions_list():
                "q": a.get("q") or None}
     rows = _txlist_rows(store(), excluded=a.get("excluded") in ("1", "true"),
                         joint=a.get("joint") in ("1", "true"))
+    if a.get("recurring") in ("1", "true"):
+        # "Review subscriptions" (THL-63, R3): the subscriptions' charges only.
+        from datetime import date as _date
+        from .recommendations import subscription_records
+        charges = {(r["merchant"], d)
+                   for r in subscription_records([t for t, _ in rows],
+                                                 _date.fromisoformat(_today_iso()))
+                   for d in r["dates"]}
+        rows = [(t, r) for t, r in rows if (t.merchant, t.date[:10]) in charges]
     chosen = txlist.select(rows, **filters)
     return jsonify({
         "transactions": [r for _, r in chosen[offset:offset + limit]],
@@ -2638,6 +2648,8 @@ def home():
         "view": "week" if st.setting("home_view") == "week" else "month",
         # THL-49 D-01: carried balances, beside safe-to-spend, never in it.
         "debts": debts,
+        # THL-12 E08 RC-01: "For you", at most two cards.
+        "recommendations": _recommendations(st, txns, today, sts, usual),
         # THL-168 B-03: how many budgets need a look.
         "budgets": _budgets_summary(_category_budgets(st, txns, today, sts, usual)),
         "snapshot": usual_month.snapshot(
@@ -2664,6 +2676,58 @@ def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
         debt_bills=debt_math.bills(debts["debts"], txns, today,
                                    safe_to_spend.recurring_bills(txns, today)),
     )
+
+
+def _recommendations(st, txns, today, sts: dict, usual: dict) -> list[dict]:
+    """Up to two cards (THL-12 E08), the biggest yearly impact first."""
+    from . import anchor as anchor_math, recommendations as rec
+    anchor = _anchor(st, txns, today.isoformat())
+    chequing = {a["account_id"]: a["balance"] for a in _anchor_accounts(st)
+                if a["kind"] == "chequing"}
+    income = next((r for r in sts.get("rows", []) if r["key"] == "income"), None)
+    essentials = anchor_math.essentials(txns, today.isoformat())
+    cards = [
+        rec.trend(txns, today, usual),
+        rec.subscriptions(txns, today),
+        rec.pace(anchor, (income or {}).get("paycheques") or 1),
+        rec.idle(anchor, rec.lowest_balance(chequing, txns, today),
+                 essentials["average"] if essentials else None),
+    ]
+    return rec.choose(cards, _json_setting(st, "rec_dismissed", {}), today)
+
+
+@bp.put("/recommendations/<kind>/dismiss")
+def dismiss_recommendation(kind):
+    """ "Not for me" (THL-62): hide this type for 30 days."""
+    import json
+    from . import recommendations as rec
+    if kind not in rec.TYPES:
+        return jsonify({"error": "No such suggestion."}), 404
+    st = store()
+    dismissed = _json_setting(st, "rec_dismissed", {})
+    dismissed[kind] = _today_iso()
+    st.set_setting("rec_dismissed", json.dumps(dismissed))
+    return jsonify({"type": kind, "hidden_until": _hidden_until(dismissed[kind])})
+
+
+@bp.delete("/recommendations/<kind>/dismiss")
+def undo_dismiss_recommendation(kind):
+    """Undo on the toast: show this type again."""
+    import json
+    from . import recommendations as rec
+    if kind not in rec.TYPES:
+        return jsonify({"error": "No such suggestion."}), 404
+    st = store()
+    dismissed = _json_setting(st, "rec_dismissed", {})
+    dismissed.pop(kind, None)
+    st.set_setting("rec_dismissed", json.dumps(dismissed))
+    return jsonify({"type": kind, "hidden_until": None})
+
+
+def _hidden_until(on: str) -> str:
+    from datetime import date as _date, timedelta
+    from . import recommendations as rec
+    return (_date.fromisoformat(on) + timedelta(days=rec.DISMISS_DAYS)).isoformat()
 
 
 def _budgets_summary(b: dict) -> dict:
