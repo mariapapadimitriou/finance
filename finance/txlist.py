@@ -14,6 +14,11 @@ The rules come from analytics (`counts_as_spending`, `share_amount`,
 `spend_amount`, `is_others`) so the list and the month can never disagree:
 pending charges count, a split counts for your share, and a row that is not
 yours at all is not listed.
+
+Two more things a row can be (Pearl THL-71, THL-165): a one-off she marked
+("Unusual · left out of your usual month"), still counted here; and the
+second copy of a likely duplicate, listed as not counted until she answers,
+then hidden if she says it was the same purchase (`duplicates`).
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ import re
 from collections import defaultdict
 from datetime import date
 
+from . import duplicates as dup
 from .analytics import counts_as_spending, is_others, share_amount, spend_amount
 from .categorize import CATEGORY_GROUPS, group_of
 from .income import is_income
@@ -73,12 +79,21 @@ class Context:
         # Who a split charge was split with, as you named them (THL-124).
         self.split_with = {cid: [p["name"] for p in sp["people"]]
                            for cid, sp in (splits or {}).items()}
+        # Rows with a copy still waiting for an answer (D-01), and the copies:
+        # both sides say where they came from.
+        self.twins = {t.duplicate_of for t in transactions if _waiting(t)}
         self.paid_by: dict[str, list[str]] = defaultdict(list)
         for t in transactions:
             if t.repays:
                 name = _who(t)
                 if name and name not in self.paid_by[t.repays]:
                     self.paid_by[t.repays].append(name)
+
+
+def _waiting(t: Transaction) -> bool:
+    """The copy of a likely duplicate, counted once until she answers."""
+    return (t.duplicate_state == dup.PENDING and bool(t.duplicate_of)
+            and t.excluded == dup.REASON)
 
 
 def describe(t: Transaction, ctx: Context) -> dict:
@@ -92,7 +107,15 @@ def describe(t: Transaction, ctx: Context) -> dict:
     structural = False       # a chip Pearl worked out from your accounts, not a guess
     note, note_link = "", False
 
-    if t.excluded:
+    copy = t.excluded == dup.REASON and dup.is_copy(t)
+    if copy and t.duplicate_state == dup.PENDING:
+        # D-01: counted once until she checks; a question, so a dashed chip.
+        chip = "Possible duplicate"
+        note = "Possible duplicate · counted once until you check"
+    elif copy:
+        chip, structural = "Duplicate", True
+        note = "Same purchase as another · hidden"
+    elif t.excluded:
         chip, structural = "Left out", True
         note = f"Left out · {t.excluded}"
     elif is_others(t):
@@ -143,6 +166,10 @@ def describe(t: Transaction, ctx: Context) -> dict:
                      else " · joint account" if t.joint else "")
         note = f"Your share of {money(t.amount)}{with_whom}"
 
+    one_off = t.one_off and counts in ("spending", "income")
+    if one_off and not note:
+        note = "Unusual · left out of your usual month"
+
     if counts == "spending" and cat == "Unsorted transfers":
         toward = "Spending until it’s sorted"
     elif counts == "spending":
@@ -154,7 +181,8 @@ def describe(t: Transaction, ctx: Context) -> dict:
 
     confirmed = (t.category_source in _CHOSEN
                  or ctx.confirmed.get(t.fingerprint) == cat)
-    suggested = chip == "Not sorted yet" or (not structural and not confirmed)
+    suggested = (chip in ("Not sorted yet", "Possible duplicate")
+                 or (not structural and not confirmed))
 
     raw = t.raw or {}
     return {
@@ -181,7 +209,17 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "my_note": ctx.notes.get(t.fingerprint, ""),
         "split": split,
         "repays": t.repays,
-        "excluded": t.excluded or "",
+        "excluded": "" if copy else (t.excluded or ""),
+        # THL-71: only a row that counts can be a one-off — not a transfer,
+        # a repayment you linked, or a row left out.
+        "one_off": one_off,
+        "one_off_since": t.one_off_since if one_off else None,
+        "can_one_off": counts in ("spending", "income") and not t.repays,
+        # THL-165: the pair it is in, while the question is open or answered.
+        "duplicate": ({"of": t.duplicate_of, "state": t.duplicate_state}
+                      if copy or t.duplicate_state == dup.DIFFERENT else None),
+        "source_label": (dup.source_label(t)
+                         if _waiting(t) or t.fingerprint in ctx.twins else ""),
         "joint": t.joint or "",
         "share_set": bool(t.share_set),
         "bank_id": t.bank_id,
@@ -219,13 +257,15 @@ def matches(row: dict, q: str) -> bool:
 
 
 def visible(transactions: list[Transaction]) -> list[Transaction]:
-    """Rows that are yours: not excluded, not another joint member's."""
-    return [t for t in transactions if not is_others(t)]
+    """Rows that are yours: not excluded, not another joint member's — and
+    the copy of a likely duplicate, shown as not counted until she answers.
+    A copy she said was the same purchase is not listed."""
+    return [t for t in transactions if not is_others(t) or _waiting(t)]
 
 
 def left_out(transactions: list[Transaction]) -> list[Transaction]:
     """Rows you excluded, listed on their own so they can be put back."""
-    return [t for t in transactions if t.excluded]
+    return [t for t in transactions if t.excluded and t.excluded != dup.REASON]
 
 
 def theirs(transactions: list[Transaction]) -> list[Transaction]:
@@ -303,13 +343,16 @@ def focus(all_rows: list[tuple[Transaction, dict]], *, month: str, account: str 
     kind = {"income": "income", "savings": "none", "transfer": "none"}.get(key, "spending")
     label = category or CATEGORY_GROUPS.get(group, group)
 
-    def total(m: str) -> float:
+    def total(m: str, usual: bool = False) -> float:
         rows = select(all_rows, month=m, account=account, group=group, category=category)
+        if usual:
+            # A one-off (THL-71) isn't part of a usual month.
+            rows = [(t, r) for t, r in rows if not t.one_off]
         return _focus_value(totals(rows), kind)
 
     first = min((r["date"][:7] for _, r in all_rows), default=month)
     prior = [m for m in _months_before(month, 3) if m >= first]
-    usual = round(sum(total(m) for m in prior) / len(prior), 2) if prior else None
+    usual = round(sum(total(m, True) for m in prior) / len(prior), 2) if prior else None
     return {"label": label, "kind": kind, "total": round(total(month), 2), "usual": usual}
 
 

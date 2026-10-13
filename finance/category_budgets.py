@@ -19,6 +19,8 @@ Decisions this follows (THL-9 comment, 2026-10-12):
   at 0.
 * E2: budgets start after one full month; until then there's no usual month
   to start from.
+* THL-71: a one-off is left out of the months a budget's pace is read from,
+  as it is from the usual month; in this month it still counts as spent.
 """
 
 from __future__ import annotations
@@ -82,6 +84,10 @@ def build(transactions: list[Transaction], today: date, usual: dict, pcts: dict[
         cat = t.category or "Other"
         c = _cents(spend_amount(t))
         if t.month in covered:
+            # A one-off (THL-71) isn't part of a usual month, so it shapes
+            # neither the budget nor its pace; this month it still counts.
+            if t.one_off:
+                continue
             all_c[cat] += c
             if int(t.date[8:10]) <= today.day:
                 by_today_c[cat] += c

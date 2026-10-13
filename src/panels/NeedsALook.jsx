@@ -6,9 +6,10 @@ import PIcon from '../pearl/icons.jsx';
 import CategoryPicker, { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
 import { ErrorNote } from '../components/ui.jsx';
 import { RepaymentMatch } from './Splits.jsx';
+import { DuplicateQuestion } from './Duplicates.jsx';
 import {
-  INCOME_KINDS, confirmTx, dismissReview, getReview, linkPayback, money, setCategory,
-  setIncomeType, sortTransfers, undoChange,
+  INCOME_KINDS, answerDuplicate, confirmTx, dismissReview, getReview, linkPayback, money,
+  setCategory, setIncomeType, sortTransfers, undoChange,
 } from '../api.js';
 
 /**
@@ -17,7 +18,8 @@ import {
  * Everything Pearl isn't sure about, one question at a time, oldest first,
  * so the queue takes about a minute: where a transfer went, a category Pearl
  * guessed, money that came in, a kind of income, a month with a third
- * paycheque. Beside each question, why Pearl asks. Answering moves to the
+ * paycheque, the same purchase from two places (THL-165 D-02). Beside each
+ * question, why Pearl asks. Answering moves to the
  * next; Skip for now leaves it in the queue for next time. A change that
  * moves safe to spend says by how much, with Undo (R-03).
  *
@@ -52,6 +54,8 @@ export function queue(data) {
     ...(data.money_in ?? []).map((it) => ({ ...it, kind: 'money_in', date: it.txn.date })),
     ...(data.income_type ?? []).map((it) => ({ ...it, kind: 'income', date: it.txn.date })),
     ...(data.three_pay_month ?? []).map((it) => ({ ...it, kind: 'pay3', date: `${it.month}-28` })),
+    // THL-165 D-02: the same purchase from two places.
+    ...(data.duplicate ?? []).map((it) => ({ ...it, kind: 'duplicate', date: it.txn.date })),
   ];
   return items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
@@ -68,6 +72,8 @@ const WHY = {
     'Knowing what kind of income this was keeps a one-off from looking like a raise.'],
   pay3: ['Two months a year hold a third paycheque.',
     'Your plan uses a typical month, so the extra one is yours to put somewhere.'],
+  duplicate: ['Until you decide, we count it once.',
+    'The same amount came in from two places on the same day. We’d rather check than count it twice.'],
 };
 
 const minutes = (n) => (n <= 4 ? 'about a minute' : `about ${Math.ceil((n * 15) / 60)} minutes`);
@@ -251,6 +257,15 @@ function Question({ it, categories, busy, onSkip, act, sorted }) {
       );
     case 'money_in':
       return <MoneyIn it={it} busy={busy} onSkip={onSkip} act={act} sorted={sorted} />;
+    case 'duplicate':
+      // D-02 → D-03: the toast says what it did to her numbers, with Undo.
+      return (
+        <DuplicateQuestion it={it} busy={busy} onSkip={onSkip}
+                           onAnswer={(answer) => act(() => answerDuplicate(it.txn.id, answer),
+                                                     (res) => ({ title: res.title,
+                                                                 detail: res.detail,
+                                                                 undo: res.undo }))} />
+      );
     case 'income':
       return <IncomeKind it={it} busy={busy} onSkip={onSkip} act={act} />;
     default:

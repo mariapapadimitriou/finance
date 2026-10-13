@@ -11,6 +11,9 @@ from last spring was for):
                    you back, a gift, a loan repaid, or your own money
 * income_type      income whose type is only a guess (other, or bonus-sized)
 * three_pay_month  a month that held a third paycheque
+* duplicate        the same purchase from two places (THL-165): a statement
+                   file and the bank connection, say. Counted once until
+                   answered, so it is asked about however old it is.
 
 Nothing is decided here; each item says what Pearl would do and why. Acting
 on one goes through the ordinary endpoints (category, payback, exclusion,
@@ -24,6 +27,7 @@ from datetime import date, timedelta
 
 from .analytics import is_others
 from .categorize import is_unsure
+from .duplicates import questions as duplicate_questions
 from .income import KINDS, cadence, is_income, kind_of
 from .models import Transaction
 from .splits import suggest as split_suggest
@@ -119,7 +123,7 @@ def charge_candidates(inflow: Transaction, transactions: list[Transaction]) -> l
 
 def build(transactions: list[Transaction], today: str | None = None,
           dismissed: set[str] | None = None, splits: dict | None = None,
-          payer: dict | None = None) -> dict:
+          payer: dict | None = None, found_on: dict[str, str] | None = None) -> dict:
     today_d = date.fromisoformat(today) if today else date.today()
     since = (today_d - timedelta(days=ASK_DAYS)).isoformat()
     dismissed = dismissed or set()
@@ -203,8 +207,12 @@ def build(transactions: list[Transaction], today: str | None = None,
                                 "third paycheque. Your plan uses a typical month: "
                                 "one paycheque × 26 ÷ 12."})
 
+    # 6. Likely duplicates: is this the same purchase? (THL-165 D-02). Asked
+    # until answered, however old: until then the copy is counted once.
+    dupes = duplicate_questions(transactions, found_on)
+
     count = (groups["count"] + len(unsure) + len(money_in) + len(income)
-             + len(three))
+             + len(three) + len(dupes))
     return {"count": count, "unsorted": groups, "unsure_category": unsure,
             "money_in": money_in, "income_type": income, "three_pay_month": three,
-            "kinds": KINDS}
+            "duplicate": dupes, "kinds": KINDS}

@@ -3,9 +3,18 @@ import {
   ActionToast, Alert, CategoryChip, DayHeader, EmptyState, FilterChip, PButton, SearchField,
   StatTile, Toast, TxRow, txAmount,
 } from '../pearl/kit.jsx';
+import PIcon from '../pearl/icons.jsx';
 import TransactionDetail, { AddTransaction } from './TransactionDetail.jsx';
+import { BatchPicker, KeyHints, SelectedBar, ShortcutsPanel } from './KeyboardReview.jsx';
+import { duplicateAlert } from './Duplicates.jsx';
+import {
+  initialState, isTextTarget, keyAction, reduce, rowName, selectRange, targets,
+} from './keyboardKeys.js';
 import { ErrorNote } from '../components/ui.jsx';
-import { accountTitle, getTxList, undoChange } from '../api.js';
+import {
+  accountTitle, batchCategory, batchConfirm, getPreferences, getTxList, savePreferences,
+  setOneOff, undoChange,
+} from '../api.js';
 import { readTxUrl, writeTxUrl } from '../router.js';
 
 /**
@@ -21,7 +30,34 @@ import { readTxUrl, writeTxUrl } from '../router.js';
  * went"), the title names it and the tiles compare it with a usual month.
  * With nothing to show (TX-03) the filters stay in view so she can see why,
  * and nothing is drawn in an error colour.
+ *
+ * A one-off (THL-71 U-02) says so on its row. The second copy of a likely
+ * duplicate (THL-165 D-01) is listed as not counted, with an alert that
+ * leads to the question; each copy says where it came from.
+ *
+ * On a desktop (≥1,024px) the list is also a keyboard review (THL-83 K-01
+ * to K-04): rows are one tab stop with a roving focus, each has a checkbox,
+ * and the keys in `keyboardKeys.js` move, select, confirm, change, mark
+ * one-offs, open and undo — only while the list has focus. Several selected
+ * swap the toolbar for the selected bar; their new category is one batch
+ * with one Undo, and never a merchant rule.
  */
+
+const DESKTOP = '(min-width: 1024px)';
+
+/** Keyboard review is for a desktop-sized window. */
+function useDesktop() {
+  const [on, setOn] = useState(() => typeof window !== 'undefined'
+    && !!window.matchMedia?.(DESKTOP).matches);
+  useEffect(() => {
+    const m = window.matchMedia?.(DESKTOP);
+    if (!m) return undefined;
+    const update = () => setOn(m.matches);
+    m.addEventListener?.('change', update);
+    return () => m.removeEventListener?.('change', update);
+  }, []);
+  return on;
+}
 
 const PAGE = 25;
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
@@ -80,6 +116,19 @@ export default function TransactionsList({ summary, categories, accounts, review
   const [error, setError] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const request = useRef(0);
+  // Keyboard review (THL-83): focus and selection, the batch picker, the
+  // shortcuts panel, and her single-key preference.
+  const desktop = useDesktop();
+  const [kb, setKb] = useState(initialState);
+  const [picking, setPicking] = useState(null);
+  const [help, setHelp] = useState(false);
+  const [singleKey, setSingleKey] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const listRef = useRef(null);
+  const searchRef = useRef(null);
+  const moved = useRef(false);
+  // The last change with an Undo, for Ctrl/⌘+Z once its toast has gone.
+  const lastChange = useRef(null);
 
   // The address bar follows the filters. Defaults stay out of it, so the
   // plain list is just /transactions.
@@ -205,6 +254,8 @@ export default function TransactionsList({ summary, categories, accounts, review
   const more = (data?.total ?? 0) - rows.length;
   const empty = !!data && rows.length === 0;
   const anySuggested = rows.some((r) => r.suggested);
+  const dupes = data?.duplicates ?? 0;
+  const index = new Map(rows.map((r, i) => [r.id, i]));
   const open = (id) => { setOpenId(id); toUrl(filters, true, id); };
   const close = () => { setOpenId(null); toUrl(filters, true, null); };
   // After a change in the panel: say so, and refresh everything that counts
@@ -213,7 +264,9 @@ export default function TransactionsList({ summary, categories, accounts, review
     if (what) {
       setToast('');
       setChange(what);
-      setFlash(new Set([what.id, ...(what.undo?.rows ?? []).map((r) => r.id)]));
+      if (what.undo) lastChange.current = what;
+      setFlash(new Set([what.id, ...(what.ids ?? []),
+                        ...(what.undo?.rows ?? []).map((r) => r.id)].filter(Boolean)));
     } else {
       setToast('Saved');
     }
@@ -225,17 +278,135 @@ export default function TransactionsList({ summary, categories, accounts, review
     const t = setTimeout(() => setFlash(new Set()), 2600);
     return () => clearTimeout(t);
   }, [flash]);
-  const undo = async () => {
-    const what = change;
+  const undo = async (what = change ?? lastChange.current) => {
+    if (!what?.undo) return;
     setChange(null);
+    lastChange.current = null;
     try {
       await undoChange(what.undo);
-      setFlash(new Set([what.id]));
+      setFlash(new Set([what.id, ...(what.ids ?? [])].filter(Boolean)));
       setToast('Undone');
     } catch (e) {
       setError(e);
     }
     onChanged?.();
+  };
+
+  // ── Keyboard review (THL-83) ──────────────────────────────────────────
+  const ids = useMemo(() => rows.map((r) => r.id), [rows]);
+  const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
+  const selected = kb.selected.filter((id) => byId.has(id));
+
+  useEffect(() => {
+    if (!desktop) return undefined;
+    let live = true;
+    getPreferences().then((p) => { if (live) setSingleKey(p.single_key_shortcuts !== false); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [desktop]);
+
+  // Moving with the keys moves focus too: the row is one tab stop.
+  useEffect(() => {
+    if (!moved.current) return;
+    moved.current = false;
+    listRef.current?.querySelector(`[data-row-index="${kb.focus}"]`)?.focus();
+  }, [kb.focus]);
+
+  const toggleShortcuts = async (on) => {
+    setSingleKey(on);
+    try { await savePreferences({ single_key_shortcuts: on }); } catch (e) { setError(e); }
+  };
+
+  // A pending duplicate's question is in Needs a look (D-01 → D-02).
+  const openRow = (r) => (r.duplicate?.state === 'pending' ? onTab?.('review') : open(r.id));
+
+  async function run(fn, after) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fn();
+      after?.(res);
+      onChanged?.();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // K-03: one toast, one Undo, for the whole batch; rows flash, the
+  // selection clears and focus stays where it was.
+  const focusRow = () => setTimeout(() => {
+    listRef.current?.querySelector('.pk-row[tabindex="0"]')?.focus();
+  }, 0);
+  const applyCategory = (targetIds, category) => run(() => batchCategory(targetIds, category), (res) => {
+    setPicking(null);
+    setKb((k) => ({ ...k, selected: [], anchor: null }));
+    focusRow();
+    saved({ change: { ids: targetIds, title: res.title, detail: res.detail, undo: res.undo } });
+  });
+
+  const confirmRows = (targetIds) => {
+    const usable = targetIds.filter((id) => byId.get(id)?.suggested);
+    if (!usable.length) { setToast('Nothing to confirm'); return; }
+    run(() => batchConfirm(usable), (res) => {
+      setKb((k) => ({ ...k, selected: [], anchor: null }));
+      if (res.undo) saved({ change: { ids: res.confirmed, title: res.title, detail: res.detail,
+                                      undo: res.undo } });
+      else setToast(res.title);
+    });
+  };
+
+  const toggleOneOff = (r) => {
+    if (!r.can_one_off) {
+      setToast('Transfers and repayments already stay out of your usual month');
+      return;
+    }
+    run(() => setOneOff(r.id, !r.one_off), (res) => {
+      saved({ change: { id: r.id, title: res.title, detail: res.detail, undo: res.undo } });
+    });
+  };
+
+  const onListKey = (e) => {
+    if (!desktop || picking || help) return;
+    const action = keyAction(e, { singleKey, inText: isTextTarget(e.target) });
+    if (!action) return;
+    e.preventDefault();
+    const focused = byId.get(ids[Math.min(kb.focus, ids.length - 1)]);
+    switch (action) {
+      case 'open':
+        if (focused) openRow(focused);
+        return;
+      case 'search':
+        searchRef.current?.focus();
+        return;
+      case 'help':
+        setHelp(true);
+        return;
+      case 'undo':
+        undo();
+        return;
+      case 'change': {
+        const t = targets(kb, ids);
+        if (t.length) setPicking(t);
+        return;
+      }
+      case 'confirm':
+        confirmRows(targets(kb, ids));
+        return;
+      case 'oneoff':
+        if (focused) toggleOneOff(focused);
+        return;
+      default:
+        moved.current = action !== 'clear' && action !== 'select';
+        setKb((k) => reduce(k, action, ids));
+    }
+  };
+
+  const onCheck = (e, i) => {
+    e.preventDefault();
+    if (e.shiftKey) setKb((k) => selectRange(k, ids, i));
+    else setKb((k) => reduce({ ...k, focus: i }, 'select', ids));
   };
 
   // The title says what the list is: "Lifestyle in October" when it is one
@@ -254,9 +425,16 @@ export default function TransactionsList({ summary, categories, accounts, review
         <PButton variant="text" onClick={() => setAdding(true)}>Add a transaction</PButton>
       </header>
 
+      {desktop && selected.length > 0 ? (
+        <SelectedBar count={selected.length} singleKey={singleKey}
+                     onChange={() => setPicking(selected)}
+                     onConfirm={() => confirmRows(selected)}
+                     onClear={() => setKb((k) => reduce(k, 'clear', ids))} />
+      ) : (
       <div className="tx-toolbar">
         <SearchField value={query} onChange={setQuery} label="Search transactions"
-                     placeholder="Search merchants or amounts" />
+                     placeholder="Search merchants or amounts" inputRef={searchRef}
+                     aria-keyshortcuts={desktop && singleKey ? '/' : undefined} />
         <div className="tx-chips">
           <FilterChip label="Month" value={filters.month} options={monthOptions}
                       active={filters.month !== thisMonth()}
@@ -272,6 +450,13 @@ export default function TransactionsList({ summary, categories, accounts, review
           )}
         </div>
       </div>
+      )}
+
+      {desktop && picking && (
+        <BatchPicker ids={picking} categories={categories} busy={busy}
+                     onApply={(cat) => applyCategory(picking, cat)}
+                     onClose={() => { setPicking(null); focusRow(); }} />
+      )}
 
       {error && <ErrorNote error={error} onRetry={() => fetchPage(0)} />}
 
@@ -297,9 +482,13 @@ export default function TransactionsList({ summary, categories, accounts, review
 
           {reviewCount > 0 && !focus && (
             <Alert action="Review" onAction={() => onTab?.('review')}>
-              {reviewCount === 1 ? '1 transaction needs a look.'
-                : `${reviewCount} transactions need a look.`}
-              {' '}Sorting them keeps your numbers right.
+              {dupes > 0 ? duplicateAlert(dupes) : (
+                <>
+                  {reviewCount === 1 ? '1 transaction needs a look.'
+                    : `${reviewCount} transactions need a look.`}
+                  {' '}Sorting them keeps your numbers right.
+                </>
+              )}
             </Alert>
           )}
 
@@ -310,19 +499,56 @@ export default function TransactionsList({ summary, categories, accounts, review
             </div>
           )}
 
+          {desktop && rows.length > 0 && !(selected.length > 0) && (
+            <KeyHints singleKey={singleKey} />
+          )}
+
           {rows.length > 0 && (
-            <section className="pk-list" aria-label={title}>
+            <section className={`pk-list${desktop ? ' tx-keys' : ''}`} aria-label={title}
+                     ref={listRef} onKeyDown={onListKey}
+                     aria-describedby={desktop ? 'tx-keys-help' : undefined}>
+              {desktop && (
+                <p className="pk-sr" id="tx-keys-help">
+                  {singleKey ? 'Use the arrow keys or J and K to move, X to select, Y to confirm, '
+                    + 'C to change the category, U for a one-off and question mark for every shortcut.'
+                    : 'Use the arrow keys to move and Shift with the arrow keys to select.'}
+                </p>
+              )}
               {days.map((d) => (
                 <div key={d.date} role="group" aria-label={dayLabel(d.date)}>
                   <DayHeader>{dayLabel(d.date)}</DayHeader>
-                  {d.rows.map((r) => (
-                    <TxRow key={r.id} name={r.merchant} logo={r.logo}
-                           meta={r.account + (r.pending ? ' · Pending' : '')}
-                           note={r.note || r.my_note} noteLink={r.note_link}
-                           chip={r.chip} amount={r.amount} inflow={r.inflow}
-                           muted={r.counts === 'none'} flash={flash.has(r.id)}
-                           onOpen={() => open(r.id)} />
-                  ))}
+                  {d.rows.map((r) => {
+                    const row = (
+                      <TxRow key={r.id} name={r.merchant} logo={r.logo}
+                             meta={r.account + (r.pending ? ' · Pending' : '')
+                               + (r.source_label ? ` · ${r.source_label}` : '')}
+                             note={r.note || r.my_note} noteLink={r.note_link}
+                             chip={r.chip} amount={r.amount} inflow={r.inflow}
+                             muted={r.counts === 'none'} flash={flash.has(r.id)}
+                             onOpen={() => openRow(r)}
+                             {...(desktop ? {
+                               tabIndex: index.get(r.id) === Math.min(kb.focus, ids.length - 1) ? 0 : -1,
+                               'data-row-index': index.get(r.id),
+                               onFocus: () => setKb((k) => ({ ...k, focus: index.get(r.id) })),
+                             } : {})} />
+                    );
+                    if (!desktop) return row;
+                    const on = selected.includes(r.id);
+                    const i = index.get(r.id);
+                    return (
+                      <div key={r.id} className={`tx-sel${on ? ' on' : ''}${flash.has(r.id) ? ' flash' : ''}`}>
+                        <label className="tx-check">
+                          <input type="checkbox" tabIndex={-1} checked={on} onChange={() => {}}
+                                 onClick={(e) => onCheck(e, i)}
+                                 aria-label={`Select ${rowName(r, txAmount(r.amount, { inflow: r.inflow }))}`} />
+                          <span className="tx-check-box" aria-hidden="true">
+                            {on && <PIcon name="check" size={14} />}
+                          </span>
+                        </label>
+                        {row}
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
               {more > 0 && (
@@ -333,6 +559,13 @@ export default function TransactionsList({ summary, categories, accounts, review
                 </div>
               )}
             </section>
+          )}
+
+          {desktop && rows.length > 0 && (
+            <PButton variant="text" className="tx-keys-link" onClick={() => setHelp(true)}
+                     aria-keyshortcuts={singleKey ? '?' : undefined}>
+              Keyboard shortcuts
+            </PButton>
           )}
         </>
       )}
@@ -347,9 +580,14 @@ export default function TransactionsList({ summary, categories, accounts, review
       )}
       {change && (
         <ActionToast title={change.title} detail={change.detail}
-                     onUndo={change.undo ? undo : undefined} onDone={() => setChange(null)} />
+                     onUndo={change.undo ? () => undo() : undefined}
+                     onDone={() => setChange(null)} />
       )}
       {toast && !change && <Toast onDone={() => setToast('')}>{toast}</Toast>}
+      {help && (
+        <ShortcutsPanel singleKey={singleKey} onToggle={toggleShortcuts}
+                        onClose={() => setHelp(false)} />
+      )}
     </div>
   );
 }

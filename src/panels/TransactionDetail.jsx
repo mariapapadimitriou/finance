@@ -8,8 +8,9 @@ import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Split
 import {
   addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTx,
   includeTransaction, money, setCategory, setMineAlways, setShare, setTxNote, sortTransfers,
-  unallocate, setSplit, clearSplit, unlinkPayback, linkPayback,
+  unallocate, setSplit, clearSplit, unlinkPayback, linkPayback, setOneOff,
 } from '../api.js';
+import './txextras.css';
 
 /**
  * One transaction (Pearl TX-04, THL-122): a 560px panel over the list, the
@@ -20,9 +21,13 @@ import {
  * category stays. Change category (R-02, THL-123) takes the panel over, with a
  * back link to the transaction; saving closes it with a toast that says what
  * changed and offers Undo (R-03).
+ *
+ * A row that counts can be marked a one-off (THL-71 U-01, U-03; `OneOffCard`).
  */
 
 const NOTE_MAX = 140;
+// The list's note for a one-off; the one-off card says it here instead.
+const ONE_OFF_NOTE = 'Unusual · left out of your usual month';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December'];
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -201,6 +206,11 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
       {body ?? (
         <>
           {tx.pending && <StatusPill>Pending · usually clears in 1–3 days</StatusPill>}
+          {tx.one_off && (
+            <span className="txd-pill"><StatusPill icon={null} tone="neutral">
+              Unusual · not in your averages
+            </StatusPill></span>
+          )}
 
           {tx.splitting && <SplitSummary tx={tx} onEdit={() => setStep('split')} />}
 
@@ -217,7 +227,8 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             <Detail label="Account" value={tx.account} />
             <Detail label="From your bank" value={tx.description} />
             <Detail label="Counts toward" value={tx.counts_toward} />
-            {tx.note && !tx.note_link && <Detail label="Why" value={tx.note} />}
+            {tx.note && !tx.note_link && !(tx.one_off && tx.note === ONE_OFF_NOTE)
+              && <Detail label="Why" value={tx.note} />}
             {tx.split && <Detail label="Whole charge" value={txAmount(tx.full_amount)} />}
             {tx.repays_charge && (
               <Detail label="Pays back"
@@ -230,6 +241,15 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             {bank && <Detail label="Paid from" value={`${bank.name}${tx.bank_auto ? ' · automatically' : ''}`} />}
             {tx.my_note && <Detail label="Your note" value={tx.my_note} />}
           </dl>
+
+          {tx.can_one_off && !left && (
+            <OneOffCard tx={tx} busy={busy}
+                        onToggle={() => save(() => setOneOff(tx.id, !tx.one_off), {
+                          close: true,
+                          change: (res) => ({ id: tx.id, title: res.title, detail: res.detail,
+                                              undo: res.undo }),
+                        })} />
+          )}
 
           <section className="txd-category" aria-labelledby="txd-cat">
             <p className="pk-overline" id="txd-cat">Category</p>
@@ -321,6 +341,25 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
         </>
       )}
     </DetailPanel>
+  );
+}
+
+/**
+ * "This was a one-off" (Pearl THL-71, U-01 and U-03). Ticked, it is left out
+ * of her usual month, projections and trend suggestions, and still counts in
+ * its own month and in safe to spend. Ticking closes the panel with a toast
+ * that names the average it moved (U-02); unticking puts it back the same way.
+ */
+export function OneOffCard({ tx, busy = false, onToggle }) {
+  const month = MONTHS[Number(tx.date.slice(5, 7)) - 1];
+  return (
+    <section className="txd-oneoff" aria-label="One-off">
+      <Choice type="checkbox" checked={!!tx.one_off} disabled={busy} onChange={onToggle}
+              label="This was a one-off"
+              description={`Leave it out of my usual month. It still counts in ${month}.`} />
+      <p>{tx.one_off ? (tx.one_off_line?.line || 'Left out of your usual month.')
+        : 'Good for tax refunds, moving costs or a big one-time purchase.'}</p>
+    </section>
   );
 }
 

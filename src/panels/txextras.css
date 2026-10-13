@@ -1,0 +1,119 @@
+/* Transactions extras: keyboard review (THL-83 K-01 to K-04), one-offs
+   (THL-71 U-01 to U-03) and possible duplicates (THL-165 D-01 to D-03).
+   Colours come from the tokens only. */
+
+/* ── A key, as drawn on the screens ──────────────────────────────────────── */
+.kr-keys { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.kr-key {
+  display: inline-flex; align-items: center; padding: 2px 7px; min-width: 22px; justify-content: center;
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px;
+  font: inherit; font-size: 13px; line-height: 18px; font-weight: 500; color: var(--ink);
+}
+
+/* ── K-01: the keys under the toolbar ────────────────────────────────────── */
+.kr-hints {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 16px;
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: 12px;
+  font-size: 13px; line-height: 18px; color: var(--ink);
+}
+.kr-hint { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ── K-02: several selected ──────────────────────────────────────────────── */
+.kr-selected {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 12px 16px;
+  background: var(--blush); border-radius: 12px; color: var(--on-nacre);
+}
+.kr-selected-count { flex: 1 1 auto; margin: 0; font-size: 15px; line-height: 22px; }
+.pk .kr-action {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; border: 0;
+  background: none; cursor: pointer; color: var(--link); font: inherit;
+  font-size: 13px; line-height: 18px; font-weight: 500;
+}
+.pk .kr-action:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.kr-picker {
+  display: flex; flex-direction: column; gap: 10px; padding: 16px;
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: 16px;
+}
+.kr-picker .pk-overline { margin: 0; color: var(--ink-muted); }
+.kr-filter {
+  display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px;
+  background: var(--surface-card); border: 2px solid var(--border-focus); border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+}
+.pk .kr-filter input {
+  flex: 1 1 auto; min-width: 0; border: 0; outline: none; background: transparent;
+  font: inherit; font-size: 15px; line-height: 22px; color: var(--ink);
+}
+.kr-filter:focus-within { box-shadow: 0 0 0 4px var(--focus-ring); }
+.kr-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.kr-option {
+  display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px;
+  cursor: pointer; color: var(--ink);
+}
+.kr-option:hover { background: var(--hover); }
+.kr-option.on { background: var(--blush); color: var(--on-nacre); }
+.kr-option-name { flex: 1 1 auto; min-width: 0; font-size: 15px; line-height: 22px; }
+.kr-option-group { font-size: 13px; line-height: 18px; }
+.kr-none { padding: 8px 12px; color: var(--ink-muted); font-size: 13px; line-height: 18px; }
+.kr-line { margin: 0; min-height: 18px; font-size: 13px; line-height: 18px; color: var(--ink); }
+
+/* ── Rows you can select ─────────────────────────────────────────────────── */
+.tx-sel {
+  position: relative; display: flex; align-items: center; gap: 4px; padding-left: 16px;
+  border-radius: 12px;
+}
+.tx-sel.on { background: var(--blush); }
+.tx-sel.on .pk-row { background: transparent; }
+.tx-sel .pk-row { flex: 1 1 auto; min-width: 0; }
+.tx-sel.flash { animation: pk-flash 2.4s ease-out; }
+/* The focus ring sits 2px inside the whole row, checkbox and all. */
+.tx-keys .pk-row:focus-visible { outline: none; }
+.tx-sel:has(.pk-row:focus-visible) { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.pk-list > div:last-child .tx-sel:last-child .pk-row { border-bottom: 0; }
+.tx-check { flex: none; display: inline-flex; position: relative; cursor: pointer; }
+.tx-check input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.tx-check-box {
+  width: 20px; height: 20px; border-radius: 6px; display: inline-flex; align-items: center;
+  justify-content: center; background: var(--surface-card); border: 1.5px solid var(--border-strong);
+}
+.tx-sel.on .tx-check-box { background: var(--action); border-color: var(--action); color: var(--on-action); }
+.tx-check:has(input:focus-visible) .tx-check-box { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.pk .tx-keys-link { align-self: flex-start; }
+@media (prefers-reduced-motion: reduce) { .tx-sel.flash { animation: none; } }
+
+/* ── K-04: every key ─────────────────────────────────────────────────────── */
+.kr-panel { gap: 20px; }
+.kr-list {
+  margin: 0; background: var(--surface-card); border: 1px solid var(--border);
+  border-radius: var(--radius-md); overflow: hidden;
+}
+.kr-list-row {
+  display: flex; align-items: center; gap: 16px; padding: 8px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.kr-list-row:last-child { border-bottom: 0; }
+.kr-list-row dt { flex: 1 1 auto; min-width: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted); }
+.kr-list-row dd { margin: 0; }
+
+/* ── U-01 / U-03: a one-off ──────────────────────────────────────────────── */
+.txd-oneoff {
+  display: flex; flex-direction: column; gap: 10px; padding: 20px;
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md);
+}
+.txd-oneoff > p { margin: 0; font-size: 15px; line-height: 22px; color: var(--ink); }
+.txd-pill { display: flex; }
+
+/* ── D-02: two copies side by side ───────────────────────────────────────── */
+.dp-compare { display: flex; gap: 16px; }
+.dp-copy {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px;
+  border: 1px solid var(--border); border-radius: var(--radius-md); overflow-wrap: anywhere;
+}
+.dp-copy p { margin: 0; }
+.dp-merchant { font-size: 15px; line-height: 22px; }
+.dp-amt { font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) {
+  .dp-compare { flex-direction: column; }
+  .dp-copy { padding: 16px; gap: 8px; }
+}
