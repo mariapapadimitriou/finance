@@ -196,3 +196,13 @@
   .bd-row { flex-direction: column; align-items: stretch; gap: var(--space-1); }
   .pk .bd-change { align-self: flex-start; }
 }
+
+/* ── For you (THL-12, THL-133 RC-01 to RC-03) ─────────────────────────────── */
+.rc-section { display: flex; flex-direction: column; gap: var(--space-3); }
+.rc-card { gap: var(--space-2); }
+.rc-card .pk-overline { color: var(--link); }
+.pk .rc-why { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; }
+.rc-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5); margin-top: var(--space-2); }
+.rc-actions .pk-btn { width: auto; }
+.rc-lines dd { text-align: right; }
+.rc-panel-foot { gap: var(--space-3); }

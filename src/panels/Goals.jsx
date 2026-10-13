@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
 import { getGoals } from '../api.js';
+import { takeGoalsIntent } from '../router.js';
 import {
   AnchorAccounts, AnchorCard, AnchorDetail, StartAnchor, TargetExplained,
 } from './GoalsAnchor.jsx';
@@ -28,6 +29,21 @@ export default function Goals({ onTab, onChanged, version }) {
     return getGoals().then(setGoals).catch(setError);
   }, []);
   useEffect(() => { load(); }, [load, version]);
+
+  // Sent here by a recommendation (THL-12 R3): open where it said.
+  const [intent, setIntent] = useState(takeGoalsIntent);
+  useEffect(() => {
+    if (!goals || !intent) return;
+    setIntent(null);
+    if (!goals.anchor.started) {
+      if (intent.view === 'start') setPanel({ name: 'start' });
+    } else if (intent.view === 'whatif') {
+      setView({ name: 'projection' });
+      setPanel({ name: 'whatif', monthly: intent.monthly });
+    } else if (intent.view === 'anchor') {
+      setView({ name: 'anchor' });
+    }
+  }, [goals, intent]);
 
   const go = (next) => {
     setView(next);
@@ -97,7 +113,7 @@ export default function Goals({ onTab, onChanged, version }) {
         <HowWorkedOut goals={goals} onClose={close}
                       onMonths={() => setPanel({ name: 'months' })} />
       )}
-      {panel?.name === 'whatif' && <WhatIf goals={goals} onClose={close} />}
+      {panel?.name === 'whatif' && <WhatIf goals={goals} onClose={close} initial={panel.monthly ?? null} />}
       {panel?.name === 'months' && (
         <UnusualMonths goals={goals} onClose={close} onDone={took} />
       )}

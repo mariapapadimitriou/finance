@@ -147,11 +147,13 @@ export function HowWorkedOut({ goals, onClose, onMonths }) {
  * projection is worked out here on the device (vizMath.whatIf, a port of
  * finance/anchor.py), so it follows the slider instantly.
  */
-export function WhatIf({ goals, onClose }) {
+export function WhatIf({ goals, onClose, initial = null }) {
   const a = goals.anchor;
   const usual = a.pace?.usual ?? 0;
   const bounds = sliderBounds(usual);
-  const [monthly, setMonthly] = useState(bounds?.start ?? 0);
+  // A recommendation's "Try it" (THL-12) opens on the amount it suggested.
+  const [monthly, setMonthly] = useState(() => (
+    bounds && initial !== null ? Math.min(Math.max(initial, bounds.min), bounds.max) : bounds?.start ?? 0));
   const result = bounds ? whatIf({
     toGo: a.to_go, pace: a.pace, now: goals.month, current: a.projection,
   }, monthly) : null;

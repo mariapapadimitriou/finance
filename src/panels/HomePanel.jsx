@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
-import { createLinkToken, getHome, money, putHomeAnswers, putHomeView, syncPlaid } from '../api.js';
+import {
+  createLinkToken, dismissSuggestion, getHome, money, putHomeAnswers, putHomeView, syncPlaid,
+  undoDismissSuggestion,
+} from '../api.js';
 import { loadPlaidScript } from '../plaid.js';
-import { Alert, DetailPanel, PButton, StatusPill } from '../pearl/kit.jsx';
+import { ActionToast, Alert, DetailPanel, PButton, StatusPill } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { SnapshotBar } from '../pearl/viz.jsx';
-import { writeTxUrl } from '../router.js';
+import { setGoalsIntent, writeTxUrl } from '../router.js';
 import { Field, Mark } from './GoalsParts.jsx';
 import { AffordCard, ViewToggle, WeekSheet, WeekStrip, weekHeroCopy } from './HomeWeek.jsx';
 import { DebtsCard } from './DebtsPanel.jsx';
 import { BudgetsCard } from './CategoryBudgetsPanel.jsx';
+import { ForYou, WhyPanel, dismissedWords } from './ForYou.jsx';
 import './home.css';
 
 /**
@@ -45,7 +49,8 @@ import './home.css';
  *
  * Under the card, the week (THL-166) and "Can I afford it?" (THL-167): see
  * HomeWeek.jsx. The Month / Week toggle picks which one the card leads with.
- * Then budgets that need a look (THL-168 B-03, CategoryBudgetsPanel.jsx) and
+ * After the snapshot, "For you": up to two recommendation cards (THL-12,
+ * ForYou.jsx), their actions secondary. Then budgets that need a look (THL-168 B-03, CategoryBudgetsPanel.jsx) and
  * debts (THL-49 D-01, DebtsPanel.jsx), each only when there's something.
  */
 
@@ -200,6 +205,8 @@ export default function HomePanel({ onTab, onChanged, version }) {
   const [reconnect, setReconnect] = useState(null);
   const [back, setBack] = useState(null);
   const [explainWeek, setExplainWeek] = useState(false);
+  const [why, setWhy] = useState(null);
+  const [hidden, setHidden] = useState(null);
 
   const load = useCallback(() => {
     setError(null);
@@ -216,6 +223,28 @@ export default function HomePanel({ onTab, onChanged, version }) {
   const p = parts(`${home.month}-01`);
   const save = (answers) => putHomeAnswers(answers).then(setHome);
   const link = () => onTab?.('banks');
+  // A card's action (THL-12 R3): the list it points at, or Goals.
+  const act = (card) => {
+    setWhy(null);
+    if (card.action.to === 'transactions') {
+      writeTxUrl({ filters: card.action.filters, from: 'home' }, { push: true });
+    } else if (card.action.goals) {
+      setGoalsIntent(card.action.goals);
+    }
+    onTab?.(card.action.to);
+  };
+  // "Not for me" (THL-62): gone at once, back with Undo.
+  const notForMe = (card) => {
+    setWhy(null);
+    setHome((h) => ({ ...h, recommendations: h.recommendations.filter((c) => c.type !== card.type) }));
+    setHidden(card.type);
+    dismissSuggestion(card.type).catch(() => load());
+  };
+  const undo = () => {
+    const type = hidden;
+    setHidden(null);
+    undoDismissSuggestion(type).then(load).catch(() => load());
+  };
   const setView = (view) => {
     setHome((h) => ({ ...h, view }));
     putHomeView(view).catch(() => {});
@@ -230,6 +259,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
                 week={home.week} view={home.view ?? 'month'} onView={setView}
                 debts={home.debts} onDebts={() => onTab?.('debts')}
                 budgets={home.budgets} onBudgets={() => onTab?.('budgets')}
+                cards={home.recommendations} onCard={act} onWhy={setWhy} onNotForMe={notForMe}
                 onExplainWeek={() => setExplainWeek(true)} onChest={() => onTab?.('goals')}
                 path={home.path} reviewCount={home.review_count}
                 connections={home.connections} back={back} today={home.today}
@@ -253,6 +283,8 @@ export default function HomePanel({ onTab, onChanged, version }) {
                             else onTab?.('plan');
                           }} />
       )}
+      {why && <WhyPanel card={why} onClose={() => setWhy(null)} onAction={act} onNotForMe={notForMe} />}
+      {hidden && <ActionToast title={dismissedWords(hidden)} onUndo={undo} onDone={() => setHidden(null)} />}
       {explainWeek && home.week && (
         <WeekSheet w={home.week} s={s} onClose={() => setExplainWeek(false)} />
       )}
@@ -283,7 +315,7 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
                            path, reviewCount = 0, connections = [], back = null, today,
                            onPath, onReview, onReconnect, week = null, view = 'month',
                            onView, onExplainWeek, onChest, debts = null, onDebts,
-                           budgets = null, onBudgets }) {
+                           budgets = null, onBudgets, cards = [], onCard, onWhy, onNotForMe }) {
   const review = reviewCount > 0 && <NeedsALook count={reviewCount} onReview={onReview} />;
   if (ds.kind === 'no_data') {
     return (
@@ -341,6 +373,9 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
       {noAccounts && <ConnectCard failed={ds.linking_failed} onLink={onLink}
                                   primary={!ds.asks_questions} />}
       {snap && ['normal', 'irregular'].includes(ds.kind) && <Snapshot snap={snap} />}
+      {['normal', 'irregular'].includes(ds.kind) && (
+        <ForYou cards={cards} onAction={onCard} onWhy={onWhy} onNotForMe={onNotForMe} />
+      )}
       {review}
       {['normal', 'irregular'].includes(ds.kind) && <BudgetsCard budgets={budgets} onSee={onBudgets} />}
       {debts?.count > 0 && <DebtsCard debts={debts} onSee={onDebts} />}

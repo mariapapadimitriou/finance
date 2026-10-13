@@ -168,6 +168,9 @@ export const checkAfford = (amount) => json('POST', '/api/home/afford', { amount
 // Category budgets (THL-168): each one a percent of her usual month.
 export const getCategoryBudgets = () => req('/api/category-budgets');
 export const putCategoryBudget = (category, pct) => json('PUT', '/api/category-budgets', { category, pct });
+// Recommendation cards (THL-12): "Not for me" hides a type for 30 days.
+export const dismissSuggestion = (type) => json('PUT', `/api/recommendations/${type}/dismiss`, {});
+export const undoDismissSuggestion = (type) => req(`/api/recommendations/${type}/dismiss`, { method: 'DELETE' });
 // Debts (THL-49): every debt, and the rate and minimum she adds (D-03).
 export const getDebts = () => req('/api/debts');
 export const putDebtDetails = (accountId, fields) =>
