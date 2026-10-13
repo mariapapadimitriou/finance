@@ -173,6 +173,11 @@ class _PgConnection:
 
     def executescript(self, script):
         cur = self._cursor()
+        # Two requests on a cold start both create the schema, and Postgres
+        # lets CREATE TABLE IF NOT EXISTS race: the second fails on the table's
+        # type name instead of finding the table. A lock held until this
+        # transaction ends makes the second wait, then find it there.
+        cur.execute(f"SELECT pg_advisory_xact_lock({SCHEMA_LOCK})")
         # Postgres runs a multi-statement string in one call, but only when the
         # statements carry no parameters — which is true of the schema.
         cur.execute(to_postgres(script))
@@ -184,6 +189,10 @@ class _PgConnection:
 
     def close(self):
         self._raw.close()
+
+
+# The advisory lock schema creation takes (any fixed number will do).
+SCHEMA_LOCK = 7_370_517
 
 
 @contextmanager
