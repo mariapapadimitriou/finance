@@ -2603,21 +2603,14 @@ def home():
     is current as soon as a sync has written its rows (E05: within 5 minutes).
     """
     from datetime import date as _date
-    from . import milestones, safe_to_spend, usual_month
+    from . import milestones, safe_to_spend, usual_month, weekly
 
     st = store()
     today = _date.fromisoformat(_today_iso())
     txns = st.all_transactions()
     told_income = st.float_setting("home_income", 0.0)
     told_rent = st.float_setting("home_rent", 0.0)
-    sts = safe_to_spend.compute(
-        txns, today,
-        entered_income=st.float_setting("monthly_income", 0.0),
-        savings_target=st.float_setting("savings_target", 0.0),
-        anchor_started=st.setting("anchor_started") not in (None, ""),
-        told_income=told_income, told_rent=told_rent,
-        overridden=bool(_json_setting(st, "income_overrides", [])),
-    )
+    sts = _home_sts(st, txns, today)
     types = {aid: r.get("account_type") or ""
              for aid, r in st.account_sync_rules().items() if r.get("enabled")}
     failed = any(i.get("last_error") for i in st.plaid_items())
@@ -2639,12 +2632,63 @@ def home():
         "review_count": review.get("count", 0),
         "connections": milestones.connections(st.plaid_items(), st.account_sync_rules()),
         "usual_month": usual,
+        # THL-166: the week under the month, and which one she reads first.
+        "week": weekly.week(txns, today, sts),
+        "view": "week" if st.setting("home_view") == "week" else "month",
         "snapshot": usual_month.snapshot(
             txns, today, sts, usual,
             savings_target=st.float_setting("savings_target", 0.0),
             anchor_started=st.setting("anchor_started") not in (None, ""),
             comparisons_from=state["comparisons_from"]),
     })
+
+
+def _home_sts(st, txns, today) -> dict:
+    """Safe to spend this month, from the ledger and what she told us."""
+    from . import safe_to_spend
+    return safe_to_spend.compute(
+        txns, today,
+        entered_income=st.float_setting("monthly_income", 0.0),
+        savings_target=st.float_setting("savings_target", 0.0),
+        anchor_started=st.setting("anchor_started") not in (None, ""),
+        told_income=st.float_setting("home_income", 0.0),
+        told_rent=st.float_setting("home_rent", 0.0),
+        overridden=bool(_json_setting(st, "income_overrides", [])),
+    )
+
+
+@bp.put("/home/view")
+def home_view():
+    """Month or week as the main view (THL-166 W-02). Saved on her account,
+    so it follows her to every device (W4)."""
+    view = (request.get_json(silent=True) or {}).get("view")
+    if view not in ("month", "week"):
+        return jsonify({"error": "Choose month or week."}), 400
+    store().set_setting("home_view", view)
+    return jsonify({"view": view})
+
+
+@bp.post("/home/afford")
+def home_afford():
+    """Can I afford it? (THL-167 AF-01 to AF-03). Works it out and records
+    nothing: no transaction, no setting, no log."""
+    from datetime import date as _date
+    from . import weekly
+
+    body = request.get_json(silent=True) or {}
+    try:
+        amount = round(float(body.get("amount")), 2)
+    except (TypeError, ValueError):
+        amount = 0.0
+    if not 0 < amount <= 1_000_000:
+        return jsonify({"error": "Enter what it costs, like 180."}), 400
+    st = store()
+    today = _date.fromisoformat(_today_iso())
+    txns = st.all_transactions()
+    sts = _home_sts(st, txns, today)
+    if sts["amount"] is None:
+        return jsonify({"error": "Tell us what you expect to earn first, and we can check."}), 409
+    return jsonify(weekly.afford(txns, today, sts, weekly.week(txns, today, sts), amount))
 
 
 def _path(st, txns, today, sts: dict, state: dict, types: dict) -> dict:

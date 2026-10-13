@@ -337,6 +337,18 @@ def bills_to_come(transactions: list[Transaction], today: date,
     return out
 
 
+def bill_charges(transactions: list[Transaction], today: date) -> set[tuple[str, str]]:
+    """(merchant, date) of every charge that was a bill: a recurring bill's
+    charges, and rent. The week leaves these out, because the month already
+    takes bills out before it is split into weeks (W3)."""
+    out = set()
+    for rec in detect_recurring(transactions, as_of=today.isoformat()):
+        if _is_bill(rec):
+            out.update((rec["merchant"], d) for d in rec["dates"])
+    out.update((t.merchant, t.date) for t in transactions if t.category == RENT)
+    return out
+
+
 # ── Already spent ────────────────────────────────────────────────────────
 
 GROUP_LABELS = {"essentials": "Essentials", "lifestyle": "Lifestyle",
