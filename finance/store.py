@@ -1870,6 +1870,18 @@ class Store:
                                   "limit": r["credit_limit"], "currency": r["currency"],
                                   "as_of": r["as_of"]} for r in rows}
 
+    def first_balances(self) -> dict[str, dict]:
+        """Each account's first reading: what it held when Pearl first synced
+        it. A card's is its before-Pearl balance (THL-9 D3)."""
+        with self.conn() as c:
+            rows = c.execute(
+                """SELECT d.account_id, d.day, d.current FROM account_balance_days d
+                    WHERE d.current IS NOT NULL AND d.day = (
+                          SELECT MIN(day) FROM account_balance_days
+                           WHERE account_id = d.account_id AND current IS NOT NULL)"""
+            ).fetchall()
+        return {r["account_id"]: {"day": r["day"], "current": r["current"]} for r in rows}
+
     # ── Joint accounts ───────────────────────────────────────────────────
     def joint_accounts(self) -> dict[str, str]:
         with self.conn() as c:

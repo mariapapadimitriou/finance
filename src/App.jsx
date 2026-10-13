@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import OverviewPanel from './panels/OverviewPanel.jsx';
 import HomePanel from './panels/HomePanel.jsx';
 import PathPanel from './panels/PathPanel.jsx';
+import DebtsPanel from './panels/DebtsPanel.jsx';
 import PiggyPanel from './panels/PiggyPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import TransactionsList from './panels/TransactionsList.jsx';
@@ -50,7 +51,7 @@ function defaultMonth(summary) {
 // still be able to change its password or sign out.
 // Goals too: someone new sees what comes next there (G-02). And Home, whose
 // no-data state (E-01, THL-72) is where linking starts.
-const WORKS_WHEN_EMPTY = ['home', 'path', 'banks', 'import', 'accounts', 'plan', 'account', 'categories',
+const WORKS_WHEN_EMPTY = ['home', 'path', 'debts', 'banks', 'import', 'accounts', 'plan', 'account', 'categories',
                           'goals'];
 
 /**
@@ -314,7 +315,7 @@ export default function App() {
       months={summary.months} month={shownMonth} onMonth={setMonth}
       showMonth={['overview', 'budgets'].includes(panel)}
       // The Pearl pages draw their own header (overline + title).
-      ownTitle={['home', 'path', 'transactions', 'review', 'goals'].includes(panel)}
+      ownTitle={['home', 'path', 'debts', 'transactions', 'review', 'goals'].includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
       {panel === 'plan' && (
@@ -329,6 +330,7 @@ export default function App() {
       )}
       {panel === 'home' && <HomePanel onTab={go} onChanged={load} version={version} />}
       {panel === 'path' && <PathPanel onTab={go} version={version} />}
+      {panel === 'debts' && <DebtsPanel onChanged={load} version={version} />}
       {panel === 'overview' && (
         <OverviewPanel summary={summary} insights={insights} theme={theme}
                        month={shownMonth} onMonth={setMonth} onTab={go}

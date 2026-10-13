@@ -31,6 +31,9 @@ export const PANELS = {
   // Growth › Insights (THL-129 GR-01's tabs): where the month's money went.
   overview:      { label: 'Insights',
                    hint: 'Spending across every card' },
+  // Growth › Debts (THL-49 D-02): every balance owed, from before Pearl too.
+  debts:         { label: 'Debts',
+                   hint: 'Everything you owe, and the minimums counted as bills' },
   projections:   { label: 'Projections',
                    hint: 'What saving more gets you — this year, and invested' },
   review:        { label: 'To review', short: 'Review',
@@ -75,9 +78,9 @@ export const GROUPS = [
     hint: 'Your Anchor, your treasure chests and your saving goal',
     icon: 'M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21ZM12 17C14.7614 17 17 14.7614 17 12C17 9.23858 14.7614 7 12 7C9.23858 7 7 9.23858 7 12C7 14.7614 9.23858 17 12 17ZM12 13C12.5523 13 13 12.5523 13 12C13 11.4477 12.5523 11 12 11C11.4477 11 11 11.4477 11 12C11 12.5523 11.4477 13 12 13Z' },
   // Growth (THL-129 GR-01): Path, Insights, Projections and Learn, with
-  // Budgets and Debts beside them (THL-9 decision N1). Debts arrives in a
-  // later step; Learn isn't designed yet.
-  { key: 'growth', label: 'Growth', panels: ['path', 'overview', 'projections', 'budgets'],
+  // Budgets and Debts beside them (THL-9 decision N1). Learn isn't designed
+  // yet.
+  { key: 'growth', label: 'Growth', panels: ['path', 'overview', 'projections', 'budgets', 'debts'],
     hint: 'Where your money went, where it could go, and your budgets',
     icon: 'M3 17l6-6 4 4 8-8M15 7h6v6' },
   // At the foot (THL-104): accounts and connections (THL-120's Profile ›

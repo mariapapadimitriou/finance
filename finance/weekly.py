@@ -151,7 +151,7 @@ def next_month(transactions: list[Transaction], today: date, sts: dict, price_c:
     paid_c = sum(_cents(spend_amount(t)) for t in transactions
                  if t.month == month and t.date <= today.isoformat()
                  and counts_as_spending(t) and (t.merchant, t.date) in bills)
-    bills_c = paid_c + _cents(rows["bills"]["amount"])
+    bills_c = paid_c + _cents(rows["spent"].get("debt_paid") or 0) + _cents(rows["bills"]["amount"])
     set_aside_c = _cents(rows["set_aside"]["target"]) if "set_aside" in rows else 0
     room_c = income_c - bills_c - set_aside_c
     days = calendar.monthrange(first.year, first.month)[1]

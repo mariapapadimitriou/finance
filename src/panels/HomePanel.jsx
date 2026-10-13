@@ -8,6 +8,7 @@ import { SnapshotBar } from '../pearl/viz.jsx';
 import { writeTxUrl } from '../router.js';
 import { Field, Mark } from './GoalsParts.jsx';
 import { AffordCard, ViewToggle, WeekSheet, WeekStrip, weekHeroCopy } from './HomeWeek.jsx';
+import { DebtsCard } from './DebtsPanel.jsx';
 import './home.css';
 
 /**
@@ -43,10 +44,12 @@ import './home.css';
  *
  * Under the card, the week (THL-166) and "Can I afford it?" (THL-167): see
  * HomeWeek.jsx. The Month / Week toggle picks which one the card leads with.
+ * Debts (THL-49 D-01) come last, only when she has one: DebtsPanel.jsx.
  */
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
                 'August', 'September', 'October', 'November', 'December'];
+export const MONTH_NAMES = MONTHS;
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function parts(iso) {
@@ -223,6 +226,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
       </header>
       <HomeBody s={s} ds={ds} snap={home.snapshot} onSave={save} onLink={link}
                 week={home.week} view={home.view ?? 'month'} onView={setView}
+                debts={home.debts} onDebts={() => onTab?.('debts')}
                 onExplainWeek={() => setExplainWeek(true)} onChest={() => onTab?.('goals')}
                 path={home.path} reviewCount={home.review_count}
                 connections={home.connections} back={back} today={home.today}
@@ -275,7 +279,7 @@ const PATH_ACTIONS = { goals: 'goals', path: 'path', bills: 'plan', income: 'pla
 export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onSeeWhere,
                            path, reviewCount = 0, connections = [], back = null, today,
                            onPath, onReview, onReconnect, week = null, view = 'month',
-                           onView, onExplainWeek, onChest }) {
+                           onView, onExplainWeek, onChest, debts = null, onDebts }) {
   const review = reviewCount > 0 && <NeedsALook count={reviewCount} onReview={onReview} />;
   if (ds.kind === 'no_data') {
     return (
@@ -334,6 +338,7 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
                                   primary={!ds.asks_questions} />}
       {snap && ['normal', 'irregular'].includes(ds.kind) && <Snapshot snap={snap} />}
       {review}
+      {debts?.count > 0 && <DebtsCard debts={debts} onSee={onDebts} />}
     </>
   );
 }

@@ -170,3 +170,14 @@
   display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-start;
   padding: var(--space-4); border-radius: var(--radius-md); background: var(--surface-page);
 }
+
+/* ── Debts (THL-49 D-01, D-02) ───────────────────────────────────────────── */
+.hm-debts { align-items: stretch; }
+.db-page { max-width: 760px; }
+.db-summary { padding: 0 var(--space-5); }
+.db-summary .db-total { color: var(--ink); font-weight: 500; }
+.db-card { align-items: stretch; gap: var(--space-2); }
+.db-card .db-head { margin-bottom: var(--space-2); }
+.db-balance { font-family: var(--display); font-variation-settings: "SOFT" 0, "WONK" 1; font-size: 28px; line-height: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.db-card .db-kind { align-self: flex-start; margin-top: var(--space-1); }
+.db-card .hm-link { align-self: flex-start; display: inline-flex; align-items: center; gap: 2px; }
