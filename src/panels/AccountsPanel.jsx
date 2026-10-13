@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
 import {
   addManualAccount, createLinkToken, exchangePublicToken, getAccountsOverview, keepAsManual,
+  mergeAccount,
   removeAccount, saveAccountSettings, syncPlaid, updateManualBalance,
 } from '../api.js';
 import { loadPlaidScript } from '../plaid.js';
@@ -213,7 +214,14 @@ const trailFor = (a, onBack) => [
 
 /** AM-02, AM-03, AM-06 and C-06: one account. */
 export function AccountDetail({ a, onTab, onBack, onSave, onShare, onRemove, onReconnect,
-                                onKeepManual, onUpdateBalance, now = Date.now(), busy = false }) {
+                                onKeepManual, onUpdateBalance, onMerge, now = Date.now(),
+                                busy = false }) {
+  // "Same account as…", for two copies of one card (finance/merge.py).
+  const merge = onMerge && (
+    <button type="button" className="pf-text-link" onClick={onMerge}>
+      Same account as another one?
+    </button>
+  );
   const [nickname, setNickname] = useState(a.nickname || a.bank_name || '');
   useEffect(() => { setNickname(a.nickname || a.bank_name || ''); }, [a.id, a.nickname, a.bank_name]);
   const trail = trailFor(a, onBack);
@@ -276,6 +284,7 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onRemove, onR
           <button type="button" className="pf-text-link" onClick={() => onRemove('delete')}>
             Or remove this account and its history from Pearl.
           </button>
+          {merge}
         </div>
       </div>
     );
@@ -339,6 +348,7 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onRemove, onR
                  onBlur={saveNickname} />
         </Field>
       </form>
+      {merge}
       <button type="button" className="pf-text-link" onClick={() => onRemove()}>
         Remove this account
       </button>
@@ -380,6 +390,52 @@ export function RemoveDialog({ a, start = 'keep', onClose, onRemove }) {
       {error && <Alert tone="caution">{error}</Alert>}
       <PButton onClick={go} disabled={busy}>{busy ? 'Removing…' : 'Remove account'}</PButton>
       <PButton variant="text" onClick={onClose}>Keep it</PButton>
+    </DetailPanel>
+  );
+}
+
+/** The accounts this one could be another copy of: the same kind, with
+ * transactions (not one added by hand). */
+export function mergeCandidates(a, all) {
+  return all.filter((o) => o.id !== a.id && o.source !== 'hand' && o.kind === a.kind);
+}
+
+/** "Same account as…": merge two copies of one card, keeping the other. */
+export function MergeDialog({ a, candidates, onClose, onMerge }) {
+  const [into, setInto] = useState(candidates.length === 1 ? candidates[0].id : '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const go = () => {
+    setBusy(true);
+    setError(null);
+    onMerge(into).catch((e) => { setError(e.message); setBusy(false); });
+  };
+  const kept = candidates.find((o) => o.id === into);
+  return (
+    <DetailPanel label={`Is ${a.name} the same as another account?`} overline="" onClose={onClose}
+                 className="pf-dialog" sheet>
+      <h1 className="pk-h2">Same account as another one?</h1>
+      <p className="pk-muted">
+        {`If ${a.name} is another copy of an account below, merge them. Transactions in both count once, what you’ve said about them carries over, and nothing else is lost.`}
+      </p>
+      {candidates.length === 0 ? (
+        <p className="pk-muted">There’s no other account of the same kind to merge with.</p>
+      ) : (
+        <div className="pk-choices" role="radiogroup" aria-label="Keep which account">
+          {candidates.map((o) => (
+            <Choice key={o.id} name="ac-merge" checked={into === o.id} onChange={() => setInto(o.id)}
+                    label={o.name}
+                    description={[o.institution, o.mask && `••${o.mask}`,
+                                  o.transactions ? plural(o.transactions, 'transaction') : null,
+                                  o.source === 'plaid' ? 'connected' : 'imported']
+                      .filter(Boolean).join(' · ')} />
+          ))}
+        </div>
+      )}
+      {kept && <p className="pk-label pk-muted">{`${kept.name} stays; ${a.name} comes off your accounts.`}</p>}
+      {error && <Alert tone="caution">{error}</Alert>}
+      <PButton onClick={go} disabled={busy || !into}>{busy ? 'Merging…' : 'Merge them'}</PButton>
+      <PButton variant="text" onClick={onClose}>Cancel</PButton>
     </DetailPanel>
   );
 }
@@ -634,6 +690,7 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
                      onRemove={(start = 'keep') => setDialog({ kind: 'remove', start })}
                      onReconnect={onReconnect}
                      onUpdateBalance={() => setDialog({ kind: 'balance' })}
+                     onMerge={() => setDialog({ kind: 'merge' })}
                      onKeepManual={async () => {
                        setBusy(true);
                        try {
@@ -666,6 +723,17 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
                           back();
                           await refresh();
                         }} />
+        )}
+        {current && dialog?.kind === 'merge' && (
+          <MergeDialog a={current} candidates={mergeCandidates(current, all)}
+                       onClose={() => setDialog(null)}
+                       onMerge={async (into) => {
+                         const r = await mergeAccount(current.id, into);
+                         setNote(`Merged into ${r.account?.name ?? 'the other account'}.`);
+                         await refresh();
+                         setView(r.account ? { name: 'detail', id: r.account.id } : { name: 'list' });
+                         setDialog(null);
+                       }} />
         )}
         {current && dialog?.kind === 'share' && (
           <ShareDialog a={current} onClose={() => setDialog(null)}

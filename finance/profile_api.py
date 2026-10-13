@@ -337,6 +337,48 @@ def remove_account(account_id: str):
     return jsonify({"ok": True, "removed": deleted, "disconnected": disconnected})
 
 
+@bp.post("/accounts/<path:account_id>/merge")
+def merge_account(account_id: str):
+    """"Same account as…": merge this account into another one (`into`),
+    for two copies of one card the automatic check didn't recognise. See
+    finance/merge.py. The kept account keeps its own settings, and takes this
+    one's joint share, nickname and Anchor where it has none."""
+    from . import merge, plaid_link
+    st = store()
+    into_id = str((request.get_json(silent=True) or {}).get("into") or "")
+    account, into = _find(st, account_id), _find(st, into_id)
+    if account is None or into is None or account_id == into_id:
+        return jsonify({"error": "Choose the other account to keep."}), 404
+    if "hand" in (account["source"], into["source"]):
+        return jsonify({"error": "An account you added by hand has no transactions to merge."}), 400
+    if account["kind"] != into["kind"]:
+        return jsonify({"error": "Only the same kind of account can be merged."}), 400
+    out = merge.merge(st, account_id, into_id)
+    if account["joint"] and not into["joint"]:
+        st.set_joint(into_id, (st.joint_accounts() or {}).get(account_id) or "Joint")
+        if account["joint_share"] is not None:
+            st.set_joint_share(into_id, account["joint_share"])
+    if account["nickname"] and not into["nickname"]:
+        st.set_account_setting(into_id, nickname=account["nickname"])
+    if account["anchor"]:
+        _set_anchor(st, account_id, False)
+        _set_anchor(st, into_id, True)
+    # The copy goes: no more syncing, off the list, and a connection with
+    # nothing else listed is disconnected (as AM-07 does).
+    rule = st.account_sync_rules().get(account_id)
+    if rule:
+        st.set_account_sync(account_id, False, name=rule["account_name"], item_id=rule["item_id"])
+    st.set_account_setting(account_id, removed=True)
+    st.set_joint_share(account_id, None)
+    item_id = account["item_id"]
+    if item_id and item_id != into["item_id"]:
+        still = [a for a in _linked_rows(st) if a["item_id"] == item_id]
+        if not still and any(i["item_id"] == item_id for i in st.plaid_items()):
+            plaid_link.unlink(st, item_id)
+    _reclassify(st)
+    return jsonify({"ok": True, **out, "account": _find(st, into_id)})
+
+
 @bp.post("/accounts/<path:account_id>/keep-as-manual")
 def keep_as_manual(account_id: str):
     """C-06 "Keep it as a manual account": a disconnected account becomes a
