@@ -8,6 +8,7 @@ from finance import manual, money_plan, projections, spend_plan
 from finance.piggy import Bank
 from finance.categorize import apply_categories
 from finance.models import Transaction
+from ledger_files import upload
 
 
 def txn(d, desc, amount, category="", source="rule"):
@@ -407,7 +408,7 @@ class TestManualApi:
             "date": "2025-01-05", "description": "BLUE BOTTLE COFFEE", "amount": 6.40})
         csv = ("Date,Description,Card Member,Account #,Amount\n"
                "01/05/2025,BLUE BOTTLE COFFEE,M P,-31004,6.40\n")
-        client.post("/api/import", json={"files": [{"name": "a.csv", "content": csv}]})
+        upload(client, csv, "a.csv")
         rows = client.get("/api/transactions").get_json()["transactions"]
         assert len(rows) == 1
         # The statement's version is the one kept: it knows the real card.
@@ -419,7 +420,7 @@ class TestManualApi:
             "date": "2025-01-05", "description": "coffee w/ Sam", "amount": 6.40})
         csv = ("Date,Description,Card Member,Account #,Amount\n"
                "01/07/2025,SQ *BLUE BOTTLE 4471,M P,-31004,6.40\n")
-        client.post("/api/import", json={"files": [{"name": "a.csv", "content": csv}]})
+        upload(client, csv, "a.csv")
         assert client.get("/api/transactions").get_json()["total"] == 1
 
     def test_a_category_set_by_hand_survives_the_import(self, client):
@@ -428,7 +429,7 @@ class TestManualApi:
             "category": "Gifts & Charity"})
         csv = ("Date,Description,Card Member,Account #,Amount\n"
                "01/06/2025,SQ *BLUE BOTTLE 4471,M P,-31004,6.40\n")
-        client.post("/api/import", json={"files": [{"name": "a.csv", "content": csv}]})
+        upload(client, csv, "a.csv")
         rows = client.get("/api/transactions").get_json()["transactions"]
         assert len(rows) == 1
         assert rows[0]["category"] == "Gifts & Charity"
@@ -442,7 +443,7 @@ class TestManualApi:
         csv = ("Date,Description,Card Member,Account #,Amount\n"
                "01/05/2025,SQ *BLUE BOTTLE,M P,-31004,6.40\n"
                "01/06/2025,SQ *BLUE BOTTLE,M P,-31004,6.40\n")
-        client.post("/api/import", json={"files": [{"name": "a.csv", "content": csv}]})
+        upload(client, csv, "a.csv")
         rows = client.get("/api/transactions").get_json()["transactions"]
         assert len(rows) == 2
         assert all(r["source"] != "manual" for r in rows)
@@ -452,7 +453,7 @@ class TestManualApi:
             "date": "2025-01-05", "description": "coffee", "amount": 6.40})
         csv = ("Date,Description,Card Member,Account #,Amount\n"
                "01/05/2025,LOBLAWS 1042,M P,-31004,84.12\n")
-        client.post("/api/import", json={"files": [{"name": "a.csv", "content": csv}]})
+        upload(client, csv, "a.csv")
         assert client.get("/api/transactions").get_json()["total"] == 2
 
     def test_bad_input_is_rejected(self, client):

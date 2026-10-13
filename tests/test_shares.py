@@ -11,6 +11,8 @@ from datetime import date
 
 import pytest
 
+from ledger_files import load_bundled
+
 
 @pytest.fixture()
 def ledger(tmp_path):
@@ -18,7 +20,7 @@ def ledger(tmp_path):
     app = create_app(str(tmp_path / "shares.db"))
     app.config.update(TESTING=True)
     with app.test_client() as c:
-        c.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        load_bundled(c)
         c.put("/api/plan/setup", json={"income": 5200, "savings": 900})
         c.post("/api/plan/setup/apply")
         yield c
@@ -134,7 +136,7 @@ class TestItStays:
         ledger.put(f"/api/transactions/{txn.fingerprint}/share",
                    json={"my_share": round(txn.amount / 2, 2)})
         count = len(st.all_transactions())
-        ledger.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        load_bundled(ledger)
         assert len(st.all_transactions()) == count
         again = st.get_transaction(txn.fingerprint)
         assert again.my_share == pytest.approx(round(txn.amount / 2, 2))

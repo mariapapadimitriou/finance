@@ -90,15 +90,9 @@ typed — the statement knows the real date, descriptor and card.
 
 ## Importing your statements
 
-Drag PDF statements or CSV exports onto the Import tab. The format is detected
-automatically and re-importing the same file is safe and idempotent.
-
-**PDF statements.** Scotiabank's layout is implemented: the statement period
-supplies the year that transaction lines omit, wallet markers like `(APPLE PAY)`
-are ignored, and a trailing minus marks a credit. Every import is reconciled
-against the statement's own declared purchase and credit totals. Text-based
-statements only — a scanned image needs OCR first, and the importer says so
-rather than silently returning nothing.
+Banks arrive through Plaid (Profile › Accounts › Link your bank). Uploading a
+statement file was removed (C1); the CSV reader below stays, because the demo
+ledger (`python app.py --demo`) and the tests go through it.
 
 **CSV exports.** American Express, Chase, Capital One, Citi, Discover, Bank of
 America, RBC, Scotiabank, Wells Fargo and TD (both headerless). Anything else
@@ -315,7 +309,7 @@ to the import history, had no slot at all.
 
 They are grouped now: **Today**, **Plan** (income and commitments, budgets, piggy
 banks), **Overview** (this month, looking ahead), **Savings** (what to cut,
-subscriptions), **Transactions** (every charge, trips) and **Cards & data**
+subscriptions), **Transactions** (every charge) and **Cards & data**
 (connections, accounts, from a file). Six fit across a phone without scrolling,
 which is most of the reason there are six. A group holding one panel shows no
 second row.
@@ -370,7 +364,7 @@ is the "Pearl Handoff File" in Figma.
 ### Starting fresh
 
 The **Accounts** tab can empty the ledger: every transaction, and the budgets,
-trips, merchant corrections and dismissed findings worked out from them. Your
+merchant corrections and dismissed findings worked out from them. Your
 piggy banks survive, since they are decisions about the future rather than a
 record of the past, but whatever was charged to them goes with the
 transactions. Your password and Plaid credentials are untouched, and bank connections
@@ -453,7 +447,6 @@ finance/
     base.py                 The source interface every importer implements
     schemas.py              Per-issuer CSV column layouts and detection
     csv_source.py           CSV export import
-    pdf_source.py           PDF statement import
     plaid_source.py         Plaid adapter (implemented, needs credentials)
   dedupe.py                 Cross-export de-duplication, double-charge detection
   categorize.py             Category rules, issuer mapping, user overrides
@@ -462,7 +455,6 @@ finance/
     recurring.py            Subscription and recurring-bill detection
     profile.py              Insights written in advance, shown when they apply
     rules.py                The savings engine
-  trips.py                  Declared date ranges whose spending reads as Travel
   spend_plan.py             Safe to spend: the rolling daily allowance
   projections.py            Forward projections under two scenarios
   manual.py                 Hand-typed rows, and keeping imports off them
@@ -507,17 +499,16 @@ follows the plan without anything being re-applied.
 
 `GET /api/health` (reports the storage mode) · `/api/auth/status` ·
 `/api/plaid/items` · `/api/summary` · `/api/breakdown` · `/api/transactions` · `/api/recurring` ·
-`/api/insights` · `/api/budgets` · `/api/accounts` · `/api/sources` ·
-`/api/imports` · `/api/trips` · `/api/plan` · `/api/plan/setup` · `/api/piggy` ·
+`/api/insights` · `/api/budgets` · `/api/accounts` · `/api/plan` · `/api/plan/setup` · `/api/piggy` ·
 `/api/projections` · `/api/nudge`
-`POST /api/import` · `/api/sync/<source>` · `/api/insights/<id>/dismiss` ·
-`/api/transactions` · `/api/trips` · `/api/plan/simulate` ·
+`POST /api/sync/<source>` · `/api/insights/<id>/dismiss` ·
+`/api/transactions` · `/api/plan/simulate` ·
 `/api/plan/setup/apply` · `/api/piggy` · `/api/piggy/<id>/allocate` ·
 `/api/piggy/<id>/cover` · `/api/auth/login` · `/api/auth/logout` ·
 `/api/plaid/link-token` · `/api/plaid/exchange` · `/api/plaid/sync`
-`PATCH /api/transactions/<id>` · `/api/trips/<id>` · `/api/piggy/<id>`
+`PATCH /api/transactions/<id>` · `/api/piggy/<id>`
 `PUT /api/budgets` · `/api/plan/setup`
-`DELETE /api/transactions` · `/api/transactions/<id>` · `/api/trips/<id>` ·
+`DELETE /api/transactions` · `/api/transactions/<id>` ·
 `/api/piggy/<id>` · `/api/piggy/allocations/<txn_id>` · `/api/plaid/items/<id>`
 
 There is deliberately no route that sets take-home pay from the Projections tab

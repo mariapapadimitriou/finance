@@ -117,11 +117,28 @@ class TestEveryPanelIsReachableAndRendered:
             f"{stray} have a render branch but are in no group, so no "
             "navigation can reach them")
 
-    def test_the_import_panel_is_reachable_again(self, groups):
-        """It used to be hidden from the strip entirely, which left the import
-        history unreachable in normal use once Plaid was working."""
-        owners = [g for g, members in groups.items() if "import" in members]
-        assert owners, "'import' is in no group, so nothing can reach it"
+    def test_linking_a_bank_is_still_reachable(self, groups, aliases):
+        """Connections went in C1, and with it the page that linked, signed
+        in to and synced a bank. Those moved to Accounts, and every old link
+        to Connections has to land there rather than on Home."""
+        owners = [g for g, members in groups.items() if "accounts" in members]
+        assert owners, "'accounts' is in no group, so a bank cannot be linked"
+        assert aliases.get("banks") == "accounts"
+        accounts = (SRC / "panels" / "AccountsPanel.jsx").read_text(encoding="utf-8")
+        for call in ("createLinkToken(", "exchangePublicToken(", "syncPlaid(",
+                     "Reconnect"):
+            assert call in accounts, f"Accounts no longer does {call}"
+
+    def test_nothing_links_to_a_removed_page(self):
+        """Trips, From a file, Categories and Connections (C1) are gone; an
+        onTab to one would only work by way of an alias."""
+        stale = []
+        for path in sorted(SRC.rglob("*.jsx")):
+            text = path.read_text(encoding="utf-8")
+            for key in ("banks", "import", "trips", "categories"):
+                if re.search(rf"""(onTab\??\.?\(|go\(|to=)['"]{key}['"]""", text):
+                    stale.append(f"{path.name}: {key}")
+        assert not stale, f"links to removed pages: {stale}"
 
 
 class TestLinksBetweenPanels:
@@ -445,7 +462,7 @@ class TestPearlTransactionsList:
 
     def test_the_group_opens_on_the_list(self):
         nav = (SRC / "nav.js").read_text(encoding="utf-8")
-        assert "panels: ['transactions', 'review', 'trips']" in nav
+        assert "panels: ['transactions', 'review']" in nav
         app = (SRC / "App.jsx").read_text(encoding="utf-8")
         assert "<TransactionsList" in app and "<TransactionsPanel" not in app
 

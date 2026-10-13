@@ -66,7 +66,6 @@ export const getDuplicateAudit = () => req('/api/audit/duplicates');
 export const resetLedger     = (keepBanks) =>
   json('POST', '/api/reset', { confirm: 'erase', keep_banks: keepBanks });
 export const getCategories   = () => req('/api/categories');
-export const getSources      = () => req('/api/sources');
 
 // ── Signing in ───────────────────────────────────────────────────────────────
 export const getAuthStatus   = () => req('/api/auth/status');
@@ -118,20 +117,12 @@ export const getPlaidItems   = () => req('/api/plaid/items');
 // With an item id, Link opens in update mode to sign in to that bank again (C-04).
 export const createLinkToken = (itemId) =>
   json('POST', '/api/plaid/link-token', itemId ? { item_id: itemId } : {});
-export const checkPlaidKeys  = () => json('POST', '/api/plaid/check', {});
 export const exchangePublicToken = (publicToken, institution) =>
   json('POST', '/api/plaid/exchange',
        { public_token: publicToken, institution });
 export const syncPlaid       = () => json('POST', '/api/plaid/sync', {});
 export const unlinkBank      = (id) =>
   req(`/api/plaid/items/${id}`, { method: 'DELETE' });
-export const getHealth       = () => req('/api/health');
-export const getImports      = () => req('/api/imports');
-export const getTrips        = () => req('/api/trips');
-export const addTrip         = (trip) => json('POST', '/api/trips', trip);
-export const getTripSuggestions = () => req('/api/trips/suggestions');
-export const updateTrip      = (id, trip) => json('PATCH', `/api/trips/${id}`, trip);
-export const deleteTrip      = (id) => req(`/api/trips/${id}`, { method: 'DELETE' });
 
 // One past week as it finished — the arrows on the Allowance card.
 export const getWeek         = (on) => req(`/api/plan/week?on=${encodeURIComponent(on)}`);
@@ -213,11 +204,6 @@ export const deleteFixedCost = (id) =>
  * `savings` previews a different savings figure without saving it, so the
  * slider on the tab moves the real arithmetic rather than a copy of it.
  */
-// Which categories share a budget line. Budgeting only — see finance/groups.py.
-export const getCategoryGroups = () => req('/api/category-groups');
-export const setCategoryGroups = (groups) =>
-  json('PUT', '/api/category-groups', { groups });
-
 export const getProjections  = (target, savings) => {
   const q = new URLSearchParams();
   if (target) q.set('target', target);
@@ -275,18 +261,6 @@ export const confirmTx   = (id) => json('PUT', `/api/transactions/${encodeURICom
 export const setTxNote   = (id, note) =>
   json('PUT', `/api/transactions/${encodeURIComponent(id)}/note`, { note });
 
-// Statements shipped with the app for a card that cannot be connected. Safe to
-// call twice: the server runs them through the same de-duplication as an upload.
-export const getBundled    = () => req('/api/import/bundled');
-export const importBundled = (key) =>
-  json('POST', '/api/import/bundled', { key });
-
-export const importFiles = (payload) =>
-  // FormData carries binary PDFs correctly; the browser sets the boundary
-  // header itself, so we must not set Content-Type here.
-  (payload instanceof FormData
-    ? req('/api/import', { method: 'POST', body: payload })
-    : json('POST', '/api/import', { files: payload }));
 export const setBudgets    = (budgets) => json('PUT', '/api/budgets', { budgets });
 // How much of a charge was yours, when friends paid you back the rest.
 // null puts the whole charge back.

@@ -12,7 +12,6 @@ from .dedupe import dedupe_batch, split_new
 from .ingest.base import IngestResult
 from .store import Store
 from .transfers import apply_transfer_matches, migrate_overrides
-from .trips import apply_trips
 
 
 def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
@@ -36,9 +35,6 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
     new, dupes = split_new(batch, existing)
 
     apply_categories(new, store.overrides())
-    # Declared trips outrank the merchant rules: a restaurant on holiday is
-    # travel spending, not dining.
-    apply_trips(new, store.trips())
 
     # A row typed in by hand was a placeholder for a charge that hadn't posted.
     # Now it has, so the statement's version replaces it — carrying across the
@@ -82,7 +78,6 @@ def recategorize_all(store: Store) -> int:
     transactions = store.all_transactions()
     overrides = store.overrides()
     apply_categories(transactions, overrides)
-    apply_trips(transactions, store.trips())
 
     updated = 0
     with store.conn() as c:

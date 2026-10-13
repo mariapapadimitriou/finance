@@ -308,7 +308,7 @@ function WhereDidThisGo({ it, categories, busy, onSkip, act, sorted }) {
       {it.learnable && (
         <Choice type="checkbox" checked={remember} onChange={setRemember}
                 label={`Remember where ${kind} to ${it.to} go`}
-                description="We’ll sort the next ones the same way. Change it any time in Settings › Categories." />
+                description="We’ll sort the next ones the same way." />
       )}
       <Actions busy={busy} ready={!!category} onSkip={onSkip}
                onSave={() => act(() => sortTransfers([it.txn.id], category, it.learnable && remember),

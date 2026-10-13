@@ -85,6 +85,8 @@ CREATE TABLE IF NOT EXISTS imports (
     created_at   TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Trips were removed (C1). The table stays so an existing database keeps
+-- what was typed into it; nothing reads or writes it but a reset.
 CREATE TABLE IF NOT EXISTS trips (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT NOT NULL,
@@ -495,6 +497,7 @@ class Store:
         self._drop_bank_funded_budgets()
         self._migrate_saved()
         self._forget_mortgage_terms()
+        self._forget_trips()
 
     def _migrate_buckets(self) -> None:
         """Carry the buckets that piggy banks replaced into piggy banks.
@@ -573,6 +576,22 @@ class Store:
         it put in the plan stays, as an ordinary line you can change."""
         with self.conn() as c:
             c.execute("DELETE FROM settings WHERE key = 'mortgage'")
+
+    def _forget_trips(self) -> None:
+        """Trips are gone (C1): nothing recategorizes spending as Travel by
+        its dates any more. A charge a trip moved to Travel goes back to what
+        its merchant says it is — a category set by hand is never touched.
+        The `trips` table stays, unused, rather than a migration dropping what
+        someone typed in; a no-op on every open after the first."""
+        with self.conn() as c:
+            if not c.execute("SELECT 1 FROM transactions "
+                             "WHERE category_source = 'trip' LIMIT 1").fetchone():
+                return
+        from .categorize import apply_categories
+        moved = [t for t in self.all_transactions() if t.category_source == "trip"]
+        apply_categories(moved, self.overrides())
+        self.set_categories({t.fingerprint: (t.category, t.category_source)
+                             for t in moved})
 
     def _migrate_saved(self) -> None:
         """Investments became Saved: one bucket for money put away, wherever
@@ -1201,6 +1220,7 @@ class Store:
             ("imports", "import history"),
             ("merchant_overrides", "merchant overrides"),
             ("budgets", "budgets"),
+            # Unused since Trips went (C1), but a reset still empties it.
             ("trips", "trips"),
             ("piggy_allocations", "piggy-bank allocations"),
             ("piggy_optouts", "charges kept out of piggy banks"),
@@ -1333,20 +1353,12 @@ class Store:
         return {r["category"]: r["monthly"] for r in rows}
 
     def category_groups(self) -> dict[str, str]:
-        """Category -> the budget line it is folded into. Absent = its own."""
+        """Category -> the budget line it is folded into. Absent = its own.
+        Read-only since Profile › Categories went (C1); see finance/groups.py."""
         with self.conn() as c:
             rows = c.execute(
                 "SELECT category, parent FROM category_groups").fetchall()
         return {r["category"]: r["parent"] for r in rows}
-
-    def set_category_groups(self, mapping: dict[str, str]) -> None:
-        """Replace the whole grouping. Validation is the caller's job."""
-        with self.conn() as c:
-            c.execute("DELETE FROM category_groups")
-            for category, parent in sorted(mapping.items()):
-                c.execute(
-                    "INSERT INTO category_groups (category, parent) VALUES (?, ?)",
-                    (category, parent))
 
     def set_budget(self, category: str, monthly: float) -> None:
         with self.conn() as c:
@@ -1382,13 +1394,6 @@ class Store:
                                   "format_label": r["format_label"] or ""}
                 for r in rows if r["account_id"]}
 
-    def import_history(self, limit: int = 25) -> list[dict]:
-        with self.conn() as c:
-            rows = c.execute(
-                "SELECT * FROM imports ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
-        return [dict(r) for r in rows]
-
     # ── Settings ─────────────────────────────────────────────────────────────
     # ── Fixed monthly commitments ────────────────────────────────────────
 
@@ -1406,7 +1411,8 @@ class Store:
         sql = "INSERT INTO fixed_costs (name, amount, category) VALUES (?, ?, ?)"
         args = (name.strip(), float(amount), category)
         with self.conn() as c:
-            # Postgres has no lastrowid; see add_trip for the same split.
+            # Postgres has no lastrowid, and RETURNING needs SQLite 3.35 or
+            # newer — this stays a local-first app — so the two are split.
             if self.is_postgres:
                 return c.execute(sql + " RETURNING id", args).fetchone()["id"]
             return c.execute(sql, args).lastrowid
@@ -1730,50 +1736,6 @@ class Store:
         sql += " ORDER BY d.id DESC"
         with self.conn() as c:
             return [dict(r) for r in c.execute(sql, params).fetchall()]
-
-    # ── Trips ────────────────────────────────────────────────────────────────
-    def trips(self) -> list:
-        from .trips import Trip
-        with self.conn() as c:
-            rows = c.execute(
-                "SELECT id, name, start_date, end_date FROM trips "
-                "ORDER BY start_date DESC"
-            ).fetchall()
-        return [Trip(id=r["id"], name=r["name"], start_date=r["start_date"],
-                     end_date=r["end_date"]) for r in rows]
-
-    def add_trip(self, name: str, start_date: str, end_date: str) -> int:
-        with self.conn() as c:
-            # The only query in the store that needs the new row's id back, and
-            # the only one that can't be written once for both databases:
-            # Postgres has no lastrowid. RETURNING would work on both, but only
-            # on SQLite 3.35 and newer, and this stays a local-first app.
-            if self.is_postgres:
-                cur = c.execute(
-                    "INSERT INTO trips (name, start_date, end_date) "
-                    "VALUES (?,?,?) RETURNING id",
-                    (name.strip(), start_date, end_date),
-                )
-                return cur.fetchone()["id"]
-            cur = c.execute(
-                "INSERT INTO trips (name, start_date, end_date) VALUES (?,?,?)",
-                (name.strip(), start_date, end_date),
-            )
-            return cur.lastrowid
-
-    def update_trip(self, trip_id: int, name: str, start_date: str,
-                    end_date: str) -> bool:
-        with self.conn() as c:
-            cur = c.execute(
-                "UPDATE trips SET name = ?, start_date = ?, end_date = ? WHERE id = ?",
-                (name.strip(), start_date, end_date, trip_id),
-            )
-            return cur.rowcount > 0
-
-    def delete_trip(self, trip_id: int) -> bool:
-        with self.conn() as c:
-            cur = c.execute("DELETE FROM trips WHERE id = ?", (trip_id,))
-            return cur.rowcount > 0
 
     # ── Dismissed insights ───────────────────────────────────────────────────
     # ── Plaid items ──────────────────────────────────────────────────────────

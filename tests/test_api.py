@@ -3,6 +3,7 @@
 import pytest
 
 from app import create_app
+from ledger_files import load_bundled, upload
 
 AMEX = """Date,Description,Card Member,Account #,Amount
 07/14/2026,SQ *BLUE BOTTLE COFFEE OAKLAND CA,M P,-31004,6.40
@@ -33,21 +34,18 @@ def client(tmp_path):
         yield c
 
 
-def upload(client, content, name="export.csv"):
-    return client.post("/api/import", json={"files": [{"name": name, "content": content}]})
-
-
 class TestImport:
+    """CSV statements through the pipeline: no longer uploaded from the app
+    (C1), but the demo ledger is built this way."""
+
     def test_import_reports_format_and_count(self, client):
-        r = upload(client, AMEX, "amex.csv")
-        assert r.status_code == 200
-        body = r.get_json()
+        body = upload(client, AMEX, "amex.csv")
         assert body["imported"] == 5
         assert body["results"][0]["format_label"] == "American Express"
 
     def test_importing_twice_imports_nothing_the_second_time(self, client):
         upload(client, AMEX, "amex.csv")
-        second = upload(client, AMEX, "amex.csv").get_json()
+        second = upload(client, AMEX, "amex.csv")
         assert second["imported"] == 0
         assert second["duplicates"] == 5
 
@@ -60,15 +58,6 @@ class TestImport:
 
         total = client.get("/api/transactions?limit=500").get_json()["total"]
         assert total == 7
-
-    def test_rejects_an_empty_request(self, client):
-        assert client.post("/api/import", json={"files": []}).status_code == 400
-
-    def test_import_history_is_recorded(self, client):
-        upload(client, AMEX, "amex.csv")
-        history = client.get("/api/imports").get_json()["imports"]
-        assert history[0]["filename"] == "amex.csv"
-        assert history[0]["imported"] == 5
 
 
 class TestTransactions:
@@ -200,16 +189,6 @@ class TestBudgets:
 
 
 class TestSources:
-    def test_csv_is_available_and_plaid_reports_setup_steps(self, client):
-        body = client.get("/api/sources").get_json()
-        sources = {s["key"]: s for s in body["sources"]}
-
-        assert sources["csv"]["available"] is True
-        # Plaid is implemented but unconfigured — it must explain itself
-        # rather than simply appearing broken.
-        assert sources["plaid"]["available"] is False
-        assert sources["plaid"]["setup_steps"]
-
     def test_syncing_an_unconfigured_source_returns_setup_guidance(self, client):
         r = client.post("/api/sync/plaid", json={})
         assert r.status_code == 501
@@ -220,47 +199,30 @@ class TestSources:
 
 
 class TestBundledStatements:
-    """A closed card's statements: loaded on request, never by themselves."""
-
-    def test_the_set_is_listed_with_its_size(self, client):
-        body = client.get("/api/import/bundled").get_json()
-        scotia = next(b for b in body["bundled"] if b["key"] == "scotiabank_amex")
-        assert scotia["rows"] == 207
-        assert scotia["loaded"] is False
+    """The owner's closed card, read as a real-world ledger. The button that
+    loaded it went with file import (C1)."""
 
     def test_loading_brings_the_rows_in(self, client):
-        r = client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
-        body = r.get_json()
-        assert r.status_code == 200
+        body = load_bundled(client)
         assert body["imported"] == 207
         assert body["date_range"] == ["2025-03-19", "2026-08-05"]
 
     def test_loading_twice_adds_nothing(self, client):
-        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
-        again = client.post("/api/import/bundled",
-                            json={"key": "scotiabank_amex"}).get_json()
+        load_bundled(client)
+        again = load_bundled(client)
         assert again["imported"] == 0
         assert again["duplicates"] == 207
 
     def test_the_rows_land_in_one_named_account(self, client):
-        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        load_bundled(client)
         accounts = client.get("/api/accounts").get_json()["accounts"]
         assert len(accounts) == 1
         assert accounts[0]["account_id"] == "scotiabank_amex"
         assert accounts[0]["account_name"] == "Scotiabank Amex (closed)"
 
-    def test_the_listing_says_so_once_it_is_loaded(self, client):
-        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
-        body = client.get("/api/import/bundled").get_json()
-        assert body["bundled"][0]["loaded"] is True
-
-    def test_an_unknown_set_is_a_404(self, client):
-        assert client.post("/api/import/bundled",
-                           json={"key": "nonesuch"}).status_code == 404
-
     def test_purchases_are_spending_and_payments_are_not(self, client):
         """The export writes purchases positive; the schema said otherwise."""
-        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        load_bundled(client)
         rows = client.get("/api/transactions?limit=500").get_json()["transactions"]
         by_desc = {t["description"]: t for t in rows}
         assert by_desc["QUEEN'S CROSS FOOD HALL TORONTO ON (APPLE PAY)"]["amount"] > 0
@@ -269,7 +231,7 @@ class TestBundledStatements:
         assert payment["category"] == "Transfers"
 
     def test_a_redemption_does_not_reduce_the_spending_total(self, client):
-        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        load_bundled(client)
         rows = client.get("/api/transactions?limit=500").get_json()["transactions"]
         credits = [t for t in rows if "SCENE+" in t["description"]]
         assert len(credits) == 2
@@ -336,7 +298,7 @@ class TestAccountSyncDecisions:
 
     def test_an_imported_account_has_no_sync_state(self, client):
         """A statement has no bank behind it, so there is nothing to switch."""
-        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        load_bundled(client)
         rows = client.get("/api/accounts").get_json()["accounts"]
         scotia = next(r for r in rows if r["account_id"] == "scotiabank_amex")
         assert scotia["syncs"] is None
@@ -352,7 +314,7 @@ class TestWhereTheLedgerStarts:
     """
 
     def _loaded(self, client):
-        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        load_bundled(client)
 
     def test_it_reports_what_is_there_before_anything_is_set(self, client):
         self._loaded(client)
@@ -383,18 +345,17 @@ class TestWhereTheLedgerStarts:
         self._loaded(client)
         client.put("/api/ledger/start",
                    json={"start": "2026-03-01", "trim": True})
-        again = client.post("/api/import/bundled",
-                            json={"key": "scotiabank_amex"}).get_json()
+        again = load_bundled(client)
         assert again["imported"] == 0
         assert again["before_start"] == 92
         assert client.get("/api/ledger/start").get_json()["total"] == 115
 
     def test_an_upload_is_filtered_the_same_way(self, client):
         client.put("/api/ledger/start", json={"start": "2026-07-01"})
-        r = upload(client, AMEX, "amex.csv").get_json()
+        r = upload(client, AMEX, "amex.csv")
         assert r["results"][0]["before_start"] == 0   # AMEX fixture is July 2026
         client.put("/api/ledger/start", json={"start": "2027-01-01"})
-        r = upload(client, CHASE, "chase.csv").get_json()
+        r = upload(client, CHASE, "chase.csv")
         assert r["imported"] == 0
         assert r["results"][0]["before_start"] > 0
 
@@ -423,7 +384,7 @@ class TestThePlanEndpoints:
     """Income and commitments in, category budgets out."""
 
     def setup_plan(self, client, income=5200, savings=900):
-        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        load_bundled(client)
         client.put("/api/plan/setup", json={"income": income, "savings": savings})
         client.post("/api/plan/fixed", json={"name": "Rent", "amount": 2100,
                                              "category": "Rent & Housing"})
@@ -482,7 +443,7 @@ class TestThePlanEndpoints:
         assert p["typical_total"] != p["leftover"]
 
     def test_nothing_left_to_budget_is_refused_with_a_reason(self, client):
-        client.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+        load_bundled(client)
         client.put("/api/plan/setup", json={"income": 1000, "savings": 1200})
         r = client.post("/api/plan/setup/apply")
         assert r.status_code == 400

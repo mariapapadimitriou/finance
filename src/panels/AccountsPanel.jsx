@@ -2,9 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Card, ErrorNote, GoTo, Loading, Notice, StatusPill, } from '../components/ui.jsx';
 import {
-  accountTitle, dateLabel, deleteAccount, setAccountJoint, getAccounts, getDuplicateAudit, getLedgerStart,
-  money, recategorizeAll, resetLedger, setAccountSync, setLedgerStart, syncPlaid,
+  accountTitle, createLinkToken, dateLabel, deleteAccount, deleteExclusion, exchangePublicToken,
+  getAccounts, getDuplicateAudit, getExclusions, getLedgerStart, getPlaidItems, money,
+  recategorizeAll, resetLedger, setAccountJoint, setAccountSync, setLedgerStart, syncPlaid,
+  unlinkBank,
 } from '../api.js';
+import { loadPlaidScript } from '../plaid.js';
 
 /**
  * Every account the app knows about, and the two ways it can hold a charge twice.
@@ -17,6 +20,10 @@ import {
  *
  * So each connected account carries a switch, and what it records outlives the
  * rows. An imported statement has no bank behind it and so has no switch.
+ *
+ * Linking a bank, signing in to one again and syncing are here too (C1): they
+ * were the Connections page, which has no screen in the design. Everything
+ * else that page said went with it.
  */
 export default function AccountsPanel({ onChanged, onTab }) {
   const [accounts, setAccounts] = useState(null);
@@ -88,9 +95,9 @@ export default function AccountsPanel({ onChanged, onTab }) {
       // off, so fetch it now rather than at the next app open.
       if (r?.resync) {
         setSyncing(account.account_id);
-        // A sync that fails is reported on Connections; the switch itself
-        // was saved, so the table still has to show it.
-        try { await syncPlaid(); } catch { /* shown on Connections */ } finally {
+        // A sync that fails is reported under Linked banks; the switch
+        // itself was saved, so the table still has to show it.
+        try { await syncPlaid(); } catch { /* shown under Linked banks */ } finally {
           setSyncing(null);
         }
       }
@@ -115,9 +122,9 @@ export default function AccountsPanel({ onChanged, onTab }) {
       }
       if (resync) {
         setSyncing(list[0].account_id);
-        // A sync that fails is reported on Connections; the switch itself
-        // was saved, so the table still has to show it.
-        try { await syncPlaid(); } catch { /* shown on Connections */ } finally {
+        // A sync that fails is reported under Linked banks; the switch
+        // itself was saved, so the table still has to show it.
+        try { await syncPlaid(); } catch { /* shown under Linked banks */ } finally {
           setSyncing(null);
         }
       }
@@ -184,6 +191,9 @@ export default function AccountsPanel({ onChanged, onTab }) {
           and pay are kept out of spending.
         </Notice>
       )}
+
+      {/* A link or a sync brings accounts in, so the table reloads with it. */}
+      <LinkedBanks onChanged={async () => { await load(); await onChanged?.(); }} />
 
       <Card title="Accounts">
         <div className="table-wrap">
@@ -269,6 +279,8 @@ export default function AccountsPanel({ onChanged, onTab }) {
       {/* Trimming changes the row counts in the table above, so this panel's
           own data has to be reloaded alongside the app's. */}
       <TrendBasis onChanged={async () => { await load(); await onChanged?.(); }} />
+
+      <ExclusionRules onChanged={onChanged} />
 
       <StartFresh total={total} connected={connectedNames} busy={busy} setBusy={setBusy}
                   setError={setError} onDone={async () => {
@@ -367,6 +379,217 @@ export default function AccountsPanel({ onChanged, onTab }) {
 }
 
 /**
+ * Banks linked through Plaid: link one, sign in to one again, sync, or
+ * disconnect (C1, from the old Connections page).
+ *
+ * The public token Link hands back is single-use and useless on its own; the
+ * access token it becomes is created and kept server-side, and never reaches
+ * this page. Reconnecting (C-04) opens Link in update mode for that bank: the
+ * connection, its accounts and its history stay, and a sync follows.
+ */
+function LinkedBanks({ onChanged }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      setData(await getPlaidItems());
+    } catch (e) {
+      setError(e);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function run(fn) {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const done = async (r) => {
+    setResult(r ?? { imported: 0 });
+    await load();
+    await onChanged?.();
+  };
+
+  /** Open Plaid Link; with `item`, in update mode to sign in to that bank. */
+  async function openLink(item) {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const [Plaid, { link_token: token }] = await Promise.all([
+        loadPlaidScript(), createLinkToken(item?.item_id),
+      ]);
+      Plaid.create({
+        token,
+        onSuccess: (publicToken, metadata) => run(async () => {
+          if (item) {
+            await done(await syncPlaid());
+          } else {
+            const r = await exchangePublicToken(
+              publicToken, metadata?.institution?.name || '');
+            await done(r.sync);
+          }
+        }),
+        onExit: (err) => {
+          setBusy(false);
+          // Closing the window deliberately is not an error worth shouting
+          // about; a real failure from Plaid is.
+          if (err) setError(new Error(err.display_message || err.error_message
+                                      || (item ? 'Signing in didn’t finish.'
+                                        : 'Linking was cancelled.')));
+        },
+      }).open();
+    } catch (e) {
+      setError(e);
+      setBusy(false);
+    }
+  }
+
+  function disconnect(item) {
+    if (!window.confirm(
+      `Disconnect ${item.institution || 'this bank'}? Transactions already `
+      + 'imported stay in your ledger; only the live connection goes.'
+    )) return;
+    run(async () => { await unlinkBank(item.item_id); await load(); });
+  }
+
+  if (!data) return error ? <ErrorNote error={error} onRetry={load} /> : null;
+  const { configured, environment, encryption_ready: encrypted, items } = data;
+
+  return (
+    <Card
+      title="Linked banks"
+      actions={
+        <div className="row" style={{ gap: 8 }}>
+          {items.length > 0 && (
+            <button className="btn" disabled={busy || !configured}
+                    onClick={() => run(async () => done(await syncPlaid()))}>
+              {busy ? 'Working…' : 'Sync now'}
+            </button>
+          )}
+          <button className="btn primary" onClick={() => openLink()}
+                  disabled={busy || !configured || !encrypted}>
+            + Link your bank
+          </button>
+        </div>
+      }
+    >
+      <ErrorNote error={error} />
+      {!configured && <Notice><strong>Plaid isn&apos;t set up</strong></Notice>}
+      {configured && !encrypted && (
+        <Notice kind="error"><strong>SPENDIE_SECRET_KEY isn&apos;t set</strong></Notice>
+      )}
+      {configured && environment === 'sandbox' && (
+        <Notice>Plaid <strong>sandbox</strong> · test data</Notice>
+      )}
+
+      {items.length === 0 ? (
+        <p className="muted" style={{ margin: 0 }}>Nothing linked</p>
+      ) : (
+        <ul className="rules-list">
+          {items.map((it) => (
+            <li key={it.item_id}>
+              <div>
+                <strong>{it.institution || 'Linked bank'}</strong>{' '}
+                {it.last_error ? (
+                  <StatusPill state="critical">Needs attention</StatusPill>
+                ) : it.synced_before ? (
+                  <StatusPill state="good">Connected</StatusPill>
+                ) : (
+                  <StatusPill state="warning">Awaiting first sync</StatusPill>
+                )}
+                <div className="muted small">
+                  Last synced{' '}
+                  {it.last_synced ? it.last_synced.replace('T', ' ').slice(0, 16) : 'not yet'}
+                  {it.last_error && <> · {it.last_error}</>}
+                </div>
+              </div>
+              <div className="row" style={{ gap: 8 }}>
+                {it.last_error && (
+                  <button className="btn" disabled={busy}
+                          onClick={() => openLink(it)}>Reconnect</button>
+                )}
+                <button className="btn quiet" disabled={busy}
+                        onClick={() => disconnect(it)}>Disconnect</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {result && (
+        <Notice kind="good">
+          {result.imported > 0
+            ? `Brought in ${result.imported} new transaction${result.imported === 1 ? '' : 's'}.`
+            : 'Up to date'}
+          {result.errors?.length > 0 && (
+            <> {result.errors.length} connection(s) reported a problem.</>
+          )}
+        </Notice>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * "Leave out every transaction like this": the rules made from a
+ * transaction's Exclude… They apply to every row now and to every row that
+ * arrives later; removing one puts its rows back. Moved here from Profile ›
+ * Categories when that page went (C1), until Categories and rules is built.
+ */
+function ExclusionRules({ onChanged }) {
+  const [rules, setRules] = useState(null);
+  const [error, setError] = useState(null);
+  const load = () => getExclusions().then((d) => setRules(d.rules ?? [])).catch(setError);
+  useEffect(() => { load(); }, []);
+  if (!rules?.length) return error ? <ErrorNote error={error} /> : null;
+
+  const describe = (r) => [
+    r.keyword && `“${r.keyword}”`,
+    r.counterparty && `with ${r.counterparty}`,
+    r.account_id && `on ${r.account_name || r.account_id}`,
+    (r.date_from || r.date_to) && `${r.date_from ? dateLabel(r.date_from) : '…'} – ${r.date_to ? dateLabel(r.date_to) : '…'}`,
+    (r.amount_min != null || r.amount_max != null)
+      && `${r.amount_min != null ? money(r.amount_min) : '$0'}–${r.amount_max != null ? money(r.amount_max) : '…'}`,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <Card title="Exclusions">
+      <ul className="rules-list">
+        {rules.map((r) => (
+          <li key={r.id}>
+            <div>
+              <strong>{r.reason}</strong>
+              <div className="muted small">{describe(r)} · {r.matched} left out</div>
+            </div>
+            <button className="btn quiet" onClick={async () => {
+              try {
+                await deleteExclusion(r.id);
+                await load();
+                await onChanged?.();
+              } catch (e) { setError(e); }
+            }}>Remove</button>
+          </li>
+        ))}
+      </ul>
+      <ErrorNote error={error} />
+    </Card>
+  );
+}
+
+/**
  * Emptying the ledger.
  *
  * Irreversible against a hosted database, so it asks for the word in writing
@@ -442,8 +665,8 @@ function StartFresh({ total, connected = [], busy, setBusy, setError, onDone }) 
           )}
           {connected.length > 0 && !keepBanks && (
             <p className="small" style={{ margin: '10px 0 0' }}>
-              <strong>Disconnects every bank, here and at Plaid.</strong> Connect
-              each bank once afterwards on Connections.
+              <strong>Disconnects every bank, here and at Plaid.</strong> Link
+              each bank once afterwards, above.
             </p>
           )}
 

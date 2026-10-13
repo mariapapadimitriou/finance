@@ -6,6 +6,7 @@ import pytest
 
 from finance import money_plan, projections
 from finance.models import Transaction
+from ledger_files import load_bundled
 
 
 def dining(d, amount):
@@ -74,7 +75,7 @@ def test_the_endpoint_reports_the_pace(tmp_path):
     from app import create_app
     app = create_app(str(tmp_path / "p.db"))
     c = app.test_client()
-    c.post("/api/import/bundled", json={"key": "scotiabank_amex"})
+    load_bundled(c)
     c.put("/api/plan/setup", json={"income": 5200, "savings": 900})
     body = c.get("/api/projections").get_json()
     assert body["pace_month"]["projected_spend"] >= 0

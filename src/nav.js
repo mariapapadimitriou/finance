@@ -41,20 +41,14 @@ export const PANELS = {
                    hint: 'Everything Pearl isn’t sure about, with its best guess' },
   transactions:  { label: 'All transactions', short: 'All',
                    hint: 'Search, filter and check every transaction' },
-  trips:         { label: 'Trips',
-                   hint: 'Date ranges whose spending counts as Travel' },
-  banks:         { label: 'Connections',
-                   hint: 'Connect a card through Plaid and let it sync itself' },
+  // Profile › Accounts (THL-120): linking a bank through Plaid, signing in
+  // to one again and syncing live here since Connections went (C1).
   accounts:      { label: 'Accounts',
-                   hint: 'Every account, what syncs, and anything counted twice' },
-  import:        { label: 'From a file', short: 'Files',
-                   hint: "Statements for a card that can't be connected" },
+                   hint: 'Link a bank, choose what syncs, and anything counted twice' },
   goals:         { label: 'Goals',
                    hint: 'Your Anchor, your treasure chests and your saving goal' },
   account:       { label: 'Sign-in',
                    hint: 'Who is signed in, and the password' },
-  categories:    { label: 'Categories',
-                   hint: 'Which categories share one line in your budget' },
 };
 
 // The sidebar (Pearl THL-104, as every Handoff frame draws it): Home,
@@ -69,8 +63,8 @@ export const GROUPS = [
   // Opens on the list (Pearl TX-01); what needs a look is one tap away, and
   // the list's alert links there too.
   { key: 'transactions', label: 'Transactions', short: 'Charges',
-    panels: ['transactions', 'review', 'trips'],
-    hint: 'Every transaction, what needs a look, and your trips',
+    panels: ['transactions', 'review'],
+    hint: 'Every transaction, and what needs a look',
     icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
   // The Anchor (the emergency fund, and the Build phase), treasure chests and
   // the saving goal (Pearl Handoff, THL-131/132/179). One page: the Anchor's
@@ -84,12 +78,14 @@ export const GROUPS = [
   { key: 'growth', label: 'Growth', panels: ['path', 'overview', 'projections', 'budgets', 'debts'],
     hint: 'Where your money went, where it could go, and your budgets',
     icon: 'M3 17l6-6 4 4 8-8M15 7h6v6' },
-  // At the foot (THL-104): accounts and connections (THL-120's Profile ›
+  // At the foot (THL-104): accounts, with linking a bank (THL-120's Profile ›
   // Accounts), income and commitments until the confirmation flow (THL-45)
-  // replaces it, files, categories (THL-9 decision N2) and sign-in.
+  // replaces it, and sign-in. Connections, From a file and Categories went
+  // in C1: none has a screen in the design. A Categories and rules screen
+  // (merchant rules) is to be built in Categories' place.
   { key: 'profile', label: 'Profile',
-    panels: ['accounts', 'banks', 'plan', 'import', 'categories', 'account'], foot: true,
-    hint: 'Your accounts, income, categories and sign-in',
+    panels: ['accounts', 'plan', 'account'], foot: true,
+    hint: 'Your accounts, income and sign-in',
     icon: 'M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z' },
 ];
 
@@ -99,8 +95,13 @@ export const GROUPS = [
 // arithmetic — so a link to them is a link there.
 // The Mortgage page is gone: its payments are read from your accounts now.
 // The old landing tab and the old Settings group still resolve, so any link
-// or saved address that names them lands somewhere real.
-export const ALIASES = { piggy: 'plan', mortgage: 'plan', today: 'home', settings: 'profile' };
+// or saved address that names them lands somewhere real. So do the pages
+// removed in C1: Connections and From a file land on Accounts, where a bank is
+// linked now; Trips on the list; Categories on Profile.
+export const ALIASES = {
+  piggy: 'plan', mortgage: 'plan', today: 'home', settings: 'profile',
+  banks: 'accounts', import: 'accounts', trips: 'transactions', categories: 'profile',
+};
 
 // Where on that page the aliased thing actually is. Without this a link to a
 // piggy bank lands at the top of a long page with no sign of one, which is
@@ -116,7 +117,7 @@ const ALIAS_LABELS = { piggy: 'Piggy banks' };
  *
  * Panels link to each other by panel key and should not have to know about the
  * grouping, so this accepts either: 'settings' opens the group at its first
- * panel, 'import' opens the same group at that panel.
+ * panel, 'plan' opens the same group at that panel.
  */
 export function resolve(key) {
   const target = ALIASES[key] ?? key;
@@ -134,7 +135,7 @@ export function resolve(key) {
  *
  * Inside the same group, the section name is enough — you can see the
  * switcher. From anywhere else it is the sidebar's word and then the
- * section's, because the section name alone ("Connections") is not something
+ * section's, because the section name alone ("Accounts") is not something
  * you can find in the sidebar.
  */
 export function destination(key, fromPanel) {

@@ -13,6 +13,7 @@ import pytest
 from app import create_app, seed_ledger_if_empty
 from finance.models import Transaction
 from finance.store import Store
+from ledger_files import upload
 
 
 def txn(date="2025-11-14", desc="MOS MOS COFFEE", amount=8.08, account="a"):
@@ -26,7 +27,6 @@ def store(tmp_path):
     st.add_transactions([txn(), txn("2025-11-15", "IQ FOOD CO", 23.73)])
     st.set_override("mos mos coffee", "Coffee")
     st.set_budget("Dining", 200.0)
-    st.add_trip("Lisbon", "2025-11-01", "2025-11-07")
     bank = st.add_piggy_bank("Fun", 400.0, "annual", None, "2025-11", 400.0)
     st.allocate(st.all_transactions()[0].fingerprint, bank, 40.0)
     st.dismiss("finding-1")
@@ -45,7 +45,6 @@ class TestReset:
         store.reset()
         assert store.overrides() == {}
         assert store.budgets() == {}
-        assert store.trips() == []
         assert store.dismissed() == set()
         # The piggy banks themselves are a standing decision and survive, but
         # what was charged to them cannot: those transactions are gone.
@@ -54,7 +53,6 @@ class TestReset:
     def test_it_reports_what_it_removed(self, store):
         removed = store.reset()
         assert removed["transactions"] == 2
-        assert removed["trips"] == 1
 
     def test_the_spending_plan_goes_too(self, store):
         """Yours rather than imported, but a plan sized to a ledger that no
@@ -145,7 +143,7 @@ class TestResetApi:
     def test_the_word_does_it(self, client):
         csv = ("Date,Description,Card Member,Account #,Amount\n"
                "01/05/2025,BLUE BOTTLE COFFEE,M P,-31004,6.40\n")
-        client.post("/api/import", json={"files": [{"name": "a.csv", "content": csv}]})
+        upload(client, csv, "a.csv")
         assert client.get("/api/transactions").get_json()["total"] == 1
 
         r = client.post("/api/reset", json={"confirm": "erase"})
