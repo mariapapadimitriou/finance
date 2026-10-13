@@ -166,6 +166,16 @@ class TestEachAccountIsItsOwnSchema:
                            "COMMIT",
                            'SET LOCAL search_path TO "u_7"', "SELECT 3"]
 
+    def test_creating_the_schema_waits_its_turn(self):
+        """Two cold starts at once raced to create the same table and one
+        failed on its type name (seen in production); the lock serialises them."""
+        from finance.db import SCHEMA_LOCK, _PgConnection
+        raw = self._Raw()
+        _PgConnection(raw, "u_7").executescript("CREATE TABLE IF NOT EXISTS x (a TEXT);")
+        assert raw.log[:2] == ['SET LOCAL search_path TO "u_7"',
+                               f"SELECT pg_advisory_xact_lock({SCHEMA_LOCK})"]
+        assert raw.log[2].startswith("CREATE TABLE IF NOT EXISTS x")
+
     def test_the_owner_is_pinned_to_public_too(self):
         from finance.db import _PgConnection
         raw = self._Raw()
