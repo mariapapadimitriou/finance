@@ -5,6 +5,7 @@ import { DetailPanel, PButton, Segmented } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { SnapshotBar } from '../pearl/viz.jsx';
 import { longDate, monthName, shown } from './HomePanel.jsx';
+import { GrowthTabs } from './InsightsParts.jsx';
 import './home.css';
 
 /**
@@ -70,7 +71,7 @@ export function BudgetsCard({ budgets, onSee }) {
   );
 }
 
-export default function CategoryBudgetsPanel({ onChanged, version }) {
+export default function CategoryBudgetsPanel({ onTab, onChanged, version }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -84,7 +85,7 @@ export default function CategoryBudgetsPanel({ onChanged, version }) {
   if (!data) return <div className="pk hm-page"><p className="pk-muted" role="status">Loading your budgets…</p></div>;
   const row = editing && data.rows.find((r) => r.category === editing);
   return (
-    <BudgetsPage data={data} onChange={setEditing}>
+    <BudgetsPage data={data} onChange={setEditing} onTab={onTab}>
       {row && (
         <ChangeBudget row={row} onClose={() => setEditing(null)}
                       onSave={(pct) => putCategoryBudget(row.category, pct).then((next) => {
@@ -98,7 +99,7 @@ export default function CategoryBudgetsPanel({ onChanged, version }) {
 }
 
 /** B-01: every budget this month, the five largest first. */
-export function BudgetsPage({ data, onChange, children = null }) {
+export function BudgetsPage({ data, onChange, onTab, children = null }) {
   const [all, setAll] = useState(false);
   const month = monthName(data.month);
   const top = data.rows.slice(0, data.top ?? 5);
@@ -106,9 +107,11 @@ export function BudgetsPage({ data, onChange, children = null }) {
   return (
     <div className="pk hm-page bd-page">
       <header className="hm-head">
-        <p className="pk-overline">Growth</p>
-        <h1 className="pk-h1">{`Budgets for ${month}`}</h1>
+        <p className="pk-overline accent">Budgets</p>
+        <h1 className="pk-h1">Growth</h1>
       </header>
+      <GrowthTabs current="budgets" onTab={onTab} />
+      <h2 className="pk-h2">{`Budgets for ${month}`}</h2>
       {!data.ready ? (
         <section className="hm-card">
           <h2 className="pk-h3">Budgets start after your first full month</h2>

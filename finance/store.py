@@ -194,6 +194,26 @@ CREATE TABLE IF NOT EXISTS joint_mine (
     merchant_key TEXT PRIMARY KEY
 );
 
+-- Money that came into a joint account from outside: who put it in, "me"
+-- (from an account not in Pearl) or "them" (the other person), for one row
+-- or for every deposit from that sender to that account. What "them" puts
+-- in pays for that much of the month's joint spending. See finance/joint.py.
+CREATE TABLE IF NOT EXISTS joint_deposits (
+    txn_id TEXT PRIMARY KEY,
+    who    TEXT NOT NULL
+);
+-- Who an e-Transfer was from or to, when she named them (finance/etransfers.py).
+CREATE TABLE IF NOT EXISTS txn_party (
+    txn_id TEXT PRIMARY KEY,
+    name   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS joint_deposit_rules (
+    account_id TEXT NOT NULL,
+    sender_key TEXT NOT NULL,
+    who        TEXT NOT NULL,
+    PRIMARY KEY (account_id, sender_key)
+);
+
 -- Money friends sent back for a charge you paid for everyone. An inflow repays
 -- at most one charge; the charge's share is what is left once they have: an
 -- $80 dinner with $60 sent back cost you $20, and the $60 is neither income
@@ -478,6 +498,12 @@ _CHARGES = """(
                         WHERE d.txn_id = t.id AND d.state != 'different')
 )"""
 
+# Tables of what she said about one row, keyed by its id (`txn_id`).
+_ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts",
+               "txn_exclusions", "txn_income_type", "txn_confirmed", "txn_notes",
+               "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
+               "joint_deposits", "txn_party")
+
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
     SELECT p.charge_id AS charge_id, -SUM(r.amount) AS total
@@ -498,6 +524,8 @@ _CHARGE_COLUMNS = """sh.my_share AS my_share,
                           jax.share AS joint_share,
                           CASE WHEN jmx.merchant_key IS NULL THEN 0 ELSE 1 END
                               AS joint_mine,
+                          COALESCE(jdx.who, jrx.who) AS joint_from,
+                          ptx.name AS party,
                           a.bank_id AS bank_id,
                           CASE WHEN a.bank_id IS NULL THEN 0 ELSE a.charged
                           END AS bank_amount,
@@ -754,13 +782,17 @@ class Store:
                      LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
                      LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
                      LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
+                     LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
+                     LEFT JOIN txn_party ptx ON ptx.txn_id = t.id
+                     LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
+                                                      AND jrx.sender_key = LOWER(t.merchant)
                      LEFT JOIN txn_exclusions exx ON exx.txn_id = t.id AND exx.kept = 0
                      LEFT JOIN account_settings acs ON acs.account_id = t.account_id
                      LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
                      LEFT JOIN txn_oneoff oox ON oox.txn_id = t.id
                      LEFT JOIN txn_duplicates dpx ON dpx.txn_id = t.id
                     ORDER BY t.date DESC, t.id""").fetchall()
-        return [Transaction.from_row(dict(r)) for r in rows]
+        return self._loaded(rows)
 
     def query_transactions(self, month: str | None = None, category: str | None = None,
                            account_id: str | None = None, search: str | None = None,
@@ -805,6 +837,10 @@ class Store:
                       LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
                       LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
                       LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
+                      LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
+                      LEFT JOIN txn_party ptx ON ptx.txn_id = t.id
+                      LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
+                                                       AND jrx.sender_key = LOWER(t.merchant)
                      LEFT JOIN txn_exclusions exx ON exx.txn_id = t.id AND exx.kept = 0
                      LEFT JOIN account_settings acs ON acs.account_id = t.account_id
                      LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
@@ -814,7 +850,7 @@ class Store:
                     ORDER BY t.date DESC, t.id LIMIT ? OFFSET ?""",
                 params + [limit, offset],
             ).fetchall()
-        return [Transaction.from_row(dict(r)) for r in rows], total
+        return self._loaded(rows), total
 
     def set_transaction_category(self, txn_id: str, category: str) -> bool:
         with self.conn() as c:
@@ -842,18 +878,35 @@ class Store:
                      LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
                      LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
                      LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
+                     LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
+                     LEFT JOIN txn_party ptx ON ptx.txn_id = t.id
+                     LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
+                                                      AND jrx.sender_key = LOWER(t.merchant)
                      LEFT JOIN txn_exclusions exx ON exx.txn_id = t.id AND exx.kept = 0
                      LEFT JOIN account_settings acs ON acs.account_id = t.account_id
                      LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
                      LEFT JOIN txn_oneoff oox ON oox.txn_id = t.id
                      LEFT JOIN txn_duplicates dpx ON dpx.txn_id = t.id
                     WHERE t.id = ?""", (txn_id,)).fetchone()
-        return Transaction.from_row(dict(row)) if row else None
+        return self._loaded([row])[0] if row else None
 
+    def _loaded(self, rows) -> list[Transaction]:
+        """Rows as transactions, with each joint charge carrying the part of
+        it the other person's deposits that month didn't pay for."""
+        from .joint import ratios
+        dicts = [dict(r) for r in rows]
+        if any(d.get("joint") for d in dicts):
+            got = ratios(self)
+            for d in dicts:
+                if d.get("joint"):
+                    d["joint_ratio"] = got.get((d["account_id"], str(d["date"])[:7]))
+        return [Transaction.from_row(d) for d in dicts]
     def delete_transaction(self, txn_id: str) -> bool:
         with self.conn() as c:
             cur = c.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
             c.execute("DELETE FROM txn_shares WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM joint_deposits WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_party WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_invested WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_paybacks WHERE inflow_id = ? OR charge_id = ?",
                       (txn_id, txn_id))
@@ -1204,10 +1257,7 @@ class Store:
                 marks = ",".join("?" * len(chunk))
                 cur = c.execute(f"DELETE FROM transactions WHERE id IN ({marks})", chunk)
                 removed += max(cur.rowcount or 0, 0)
-                for table in ("txn_shares", "txn_invested", "piggy_allocations",
-                              "piggy_optouts", "txn_exclusions", "txn_income_type",
-                              "txn_confirmed", "txn_notes", "txn_splits",
-                              "txn_split_people", "txn_oneoff", "txn_duplicates"):
+                for table in _ROW_TABLES:
                     c.execute(f"DELETE FROM {table} WHERE txn_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_payback_person WHERE inflow_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_paybacks WHERE inflow_id IN ({marks})", chunk)
@@ -1319,6 +1369,32 @@ class Store:
                 "SELECT account_id FROM account_sync WHERE enabled = 0").fetchall()
         return {r["account_id"] for r in rows}
 
+    def rekey_rows(self, mapping: dict[str, str]) -> None:
+        """Move what she said about rows to the ids they will have next: a
+        reconnected bank brings the same purchases back under new account
+        ids, so new fingerprints (`plaid_link._replace_superseded`)."""
+        pairs = [(old, new) for old, new in mapping.items() if old != new]
+        if not pairs:
+            return
+        with self.conn() as c:
+            for old, new in pairs:
+                for table in _ROW_TABLES:
+                    c.execute(f"DELETE FROM {table} WHERE txn_id = ?", (new,))
+                    c.execute(f"UPDATE {table} SET txn_id = ? WHERE txn_id = ?", (new, old))
+                c.execute("UPDATE txn_duplicates SET twin_id = ? WHERE twin_id = ?", (new, old))
+                for table, col in (("txn_paybacks", "inflow_id"), ("txn_paybacks", "charge_id"),
+                                   ("txn_payback_person", "inflow_id")):
+                    c.execute(f"UPDATE {table} SET {col} = ? WHERE {col} = ?", (new, old))
+
+    def forget_accounts(self, account_ids: list[str]) -> None:
+        """Drop what is known about these accounts themselves, for ones a
+        reconnected bank has replaced."""
+        with self.conn() as c:
+            for aid in account_ids:
+                for table in ("account_sync", "account_balance", "account_balance_days",
+                              "account_settings", "joint_accounts"):
+                    c.execute(f"DELETE FROM {table} WHERE account_id = ?", (aid,))
+
     def forget_account_rules(self, item_id: str) -> int:
         """Drop the rules for one bank, for when the bank itself is removed."""
         with self.conn() as c:
@@ -1361,6 +1437,9 @@ class Store:
             ("transfer_destinations", "where transfers go"),
             ("joint_accounts", "joint accounts"),
             ("joint_mine", "names always yours on a joint account"),
+            ("joint_deposits", "who put money into a joint account"),
+            ("joint_deposit_rules", "senders into a joint account"),
+            ("txn_party", "names on e-Transfers"),
             ("dismissed_insights", "dismissed findings"),
             ("txn_exclusions", "excluded transactions"),
             ("exclusion_rules", "exclusion rules"),
@@ -2106,6 +2185,34 @@ class Store:
                               "WHERE raw LIKE ? AND category_source = 'merchant_override'",
                               (f'%"merchant_entity_id": "{eid}"%',))
         return True
+
+    def set_joint_deposit(self, txn_id: str, who: str | None) -> None:
+        """Who put this money into a joint account: "me", "them", or None
+        to ask again."""
+        with self.conn() as c:
+            c.execute("DELETE FROM joint_deposits WHERE txn_id = ?", (txn_id,))
+            if who:
+                c.execute("INSERT INTO joint_deposits (txn_id, who) VALUES (?, ?)",
+                          (txn_id, who))
+
+    def set_party(self, txn_id: str, name: str | None) -> None:
+        """Who an e-Transfer was from or to, or None for the bank's name."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_party WHERE txn_id = ?", (txn_id,))
+            if name:
+                c.execute("INSERT INTO txn_party (txn_id, name) VALUES (?, ?)", (txn_id, name))
+
+    def set_joint_deposit_rule(self, account_id: str, sender: str, who: str | None) -> None:
+        """Every deposit from this sender into this joint account."""
+        key = (sender or "").strip().lower()
+        if not key:
+            return
+        with self.conn() as c:
+            c.execute("DELETE FROM joint_deposit_rules WHERE account_id = ? AND sender_key = ?",
+                      (account_id, key))
+            if who:
+                c.execute("INSERT INTO joint_deposit_rules (account_id, sender_key, who) "
+                          "VALUES (?, ?, ?)", (account_id, key, who))
 
     def set_joint_mine(self, merchant: str, on: bool) -> None:
         key = merchant.strip().lower()

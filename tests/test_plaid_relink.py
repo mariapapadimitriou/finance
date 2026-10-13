@@ -1,5 +1,5 @@
-"""Connecting a bank again replaces the old connection instead of doubling
-every purchase; Start fresh disconnects at Plaid too."""
+"""Connecting a bank again replaces the accounts it brings back instead of
+doubling every purchase, keeping what she said about them and their rows."""
 
 import pytest
 
@@ -91,3 +91,51 @@ def test_a_different_login_at_the_same_bank_stays(setup):
     plaid_link.sync_all(st)
     assert {i["item_id"] for i in st.plaid_items()} == {"item-1", "item-2"}
     assert plaid.removed == []
+
+
+def test_a_reconnect_that_shares_fewer_accounts_still_replaces_them(setup):
+    """The reported bug: the second time she shared only the card, so the
+    old connection wasn't replaced and the card showed up twice."""
+    st, plaid = setup
+    st.add_plaid_item("item-1", "tok-1", "TD")
+    plaid.feeds["tok-1"] = {"accounts": accounts("a"),
+                            "added": [txn("t1", "a-card"), txn("t2", "a-chq", "RENT", 900)]}
+    plaid_link.sync_all(st)
+    st.set_account_sync("a-chq", True)
+
+    st.add_plaid_item("item-2", "tok-2", "TD")
+    plaid.feeds["tok-2"] = {"accounts": accounts("b")[:1], "added": [txn("u1", "b-card")]}
+    plaid_link.sync_all(st)
+
+    rows = sorted((t.account_id, t.description) for t in st.all_transactions())
+    assert rows == [("a-chq", "RENT"), ("b-card", "LOBLAWS")]       # one card, not two
+    assert {i["item_id"] for i in st.plaid_items()} == {"item-1", "item-2"}
+    assert plaid.removed == []                    # the old login still has the chequing
+    rules = st.account_sync_rules()
+    assert rules["a-card"]["enabled"] is False   # the old login skips the card now
+
+    # Its next sync brings the card again; it isn't counted twice.
+    plaid.feeds["tok-1"]["added"] = [txn("t3", "a-card", "COSTCO", 80)]
+    plaid_link.sync_all(st)
+    assert all(t.account_id != "a-card" for t in st.all_transactions())
+
+
+def test_what_she_said_about_the_rows_comes_back_with_them(setup):
+    st, plaid = setup
+    st.add_plaid_item("item-1", "tok-1", "TD")
+    plaid.feeds["tok-1"] = {"accounts": accounts("a"), "added": [txn("t1", "a-card")]}
+    plaid_link.sync_all(st)
+    [old] = st.all_transactions()
+    st.set_transaction_category(old.fingerprint, "Dining")
+    st.set_share(old.fingerprint, 20.0)
+    st.set_note(old.fingerprint, "Team lunch")
+
+    st.add_plaid_item("item-2", "tok-2", "TD")
+    plaid.feeds["tok-2"] = {"accounts": accounts("b"), "added": [txn("u1", "b-card")]}
+    plaid_link.sync_all(st)
+
+    [new] = st.all_transactions()
+    assert new.account_id == "b-card" and new.fingerprint != old.fingerprint
+    assert new.category == "Dining" and new.category_source == "user"
+    assert new.my_share == 20.0
+    assert st.notes() == {new.fingerprint: "Team lunch"}

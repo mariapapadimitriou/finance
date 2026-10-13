@@ -8,6 +8,9 @@ category totals, the usual month, safe to spend — already counts only it.
 Each other person's part is a repayment you can watch for. When an
 e-Transfer arrives from the same first name, for about what they owe
 (within $1), within 60 days of the charge, Pearl suggests linking it (S-02).
+Friends often pay before a card purchase posts, so "the charge" is the day
+of the purchase, not the day it posted, and money from up to a week before
+it counts too.
 You can also link any money in to any open split by hand (S-03), and a
 repayment can be partial: what is left stays open. A linked repayment is
 never income: it was always theirs.
@@ -24,8 +27,17 @@ MAX_PEOPLE = 8
 MAX_NAME = 40
 MATCH_WITHIN = 1.00        # dollars
 MATCH_DAYS = 60
+# Money that arrived this long before the purchase can still be paying it back.
+EARLY_DAYS = 7
 
 _WORD = re.compile(r"[a-zà-ÿ0-9']+")
+
+
+def bought_on(t: Transaction) -> date:
+    """The day of the purchase: the earlier of its two dates, since a bank
+    feed's date is when it posted and a statement's is when it was made."""
+    days = [d[:10] for d in (t.date, t.post_date) if d]
+    return date.fromisoformat(min(days))
 
 
 def first_name(name: str) -> str:
@@ -36,7 +48,8 @@ def first_name(name: str) -> str:
 def sender(t: Transaction) -> str:
     """Who money in came from, as the bank wrote it."""
     raw = t.raw or {}
-    return " ".join(str(x) for x in (raw.get("counterparty"), t.merchant, t.description) if x)
+    return " ".join(str(x) for x in (t.party, raw.get("counterparty"), t.merchant,
+                                       t.description) if x)
 
 
 def from_person(inflow: Transaction, name: str) -> bool:
@@ -140,20 +153,21 @@ def open_repayments(transactions: list[Transaction], splits: dict[str, dict],
 def suggest(inflow: Transaction, transactions: list[Transaction], splits: dict[str, dict],
             payer: dict[str, str]) -> dict | None:
     """The split this money most likely pays back (S-02): the same first
-    name, within $1 of what they owe, within 60 days after the charge."""
+    name, within $1 of what they owe, from a week before the purchase to 60
+    days after it."""
     if inflow.amount >= 0 or inflow.repays:
         return None
     got = -inflow.amount
     when = date.fromisoformat(inflow.date[:10])
     best = None
     for r in open_repayments(transactions, splits, payer):
-        gap = (when - date.fromisoformat(r["charge"].date[:10])).days
-        if not 0 <= gap <= MATCH_DAYS or not from_person(inflow, r["name"]):
+        gap = (when - bought_on(r["charge"])).days
+        if not -EARLY_DAYS <= gap <= MATCH_DAYS or not from_person(inflow, r["name"]):
             continue
         diff = abs(r["owes"] - got)
         if diff > MATCH_WITHIN + 0.005:
             continue
-        key = (diff, gap)
+        key = (diff, abs(gap))
         if best is None or key < best[0]:
             best = (key, r)
     return None if best is None else brief(best[1], exact=best[0][0] < 0.005)
@@ -163,8 +177,9 @@ def for_inflow(inflow: Transaction, transactions: list[Transaction], splits: dic
                payer: dict[str, str]) -> tuple[list[dict], bool]:
     """Splits this money could be for (S-03): the sender's, if Pearl can
     tell who sent it, otherwise every open one. The second value says which."""
+    when = date.fromisoformat(inflow.date[:10])
     open_ = [r for r in open_repayments(transactions, splits, payer)
-             if r["charge"].date[:10] <= inflow.date[:10]]
+             if (when - bought_on(r["charge"])).days >= -EARLY_DAYS]
     theirs = [r for r in open_ if from_person(inflow, r["name"])]
     rows = theirs or open_
     rows.sort(key=lambda r: r["charge"].date, reverse=True)

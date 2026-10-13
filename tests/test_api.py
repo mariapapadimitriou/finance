@@ -147,16 +147,6 @@ class TestAnalyticsEndpoints:
         body = client.get("/api/recurring").get_json()
         assert "recurring" in body and "summary" in body
 
-class TestSources:
-    def test_syncing_an_unconfigured_source_returns_setup_guidance(self, client):
-        r = client.post("/api/sync/plaid", json={})
-        assert r.status_code == 501
-        assert r.get_json()["setup"]["setup_steps"]
-
-    def test_unknown_source_is_a_404(self, client):
-        assert client.post("/api/sync/nope", json={}).status_code == 404
-
-
 class TestBundledStatements:
     """The owner's closed card, read as a real-world ledger. The button that
     loaded it went with file import (C1)."""

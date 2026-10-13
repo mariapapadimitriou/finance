@@ -7,7 +7,9 @@ import CategoryPicker, { categoryLabel } from './CategoryPicker.jsx';
 import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
 import {
   addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTx,
-  includeTransaction, money, setCategory, setMineAlways, setShare, setTxNote, sortTransfers,
+  includeTransaction, money, setCategory, setJointFrom, setMineAlways, setParty, setShare,
+  setTxNote,
+  sortTransfers,
   unallocate, setSplit, clearSplit, unlinkPayback, linkPayback, setOneOff,
 } from '../api.js';
 import './txextras.css';
@@ -182,6 +184,10 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                     await setShare(tx.id, share);
                     if (always) await setMineAlways(tx.id, true);
                   })} />,
+    party: <Party tx={tx} busy={busy} onBack={back}
+                  onSave={(name) => save(() => setParty(tx.id, name))} />,
+    from: <JointFrom tx={tx} busy={busy} onBack={back}
+                     onSave={(who, remember) => save(() => setJointFrom(tx.id, who, remember))} />,
   }[step];
 
   return (
@@ -282,7 +288,18 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                   : `Unlink ${r.merchant} · ${txAmount(-r.amount)}`}
               </button>
             ))}
-            {tx.joint && !left && (
+            {tx.etransfer && (
+              <button type="button" className="txd-link" onClick={() => setStep('party')}>
+                <PIcon name="user" size={18} />
+                {partyTitle(tx.etransfer)}
+              </button>
+            )}
+            {tx.joint && !left && tx.inflow && (
+              <button type="button" className="txd-link" onClick={() => setStep('from')}>
+                <PIcon name="users" size={18} /> Who put this in?
+              </button>
+            )}
+            {tx.joint && !left && !tx.inflow && (
               <button type="button" className="txd-link" onClick={() => setStep('whose')}>
                 <PIcon name="users" size={18} /> Whose was it?
               </button>
@@ -312,9 +329,9 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             )}
             {notYours && (
               <PButton disabled={busy}
-                       onClick={() => save(() => setShare(tx.id, tx.inflow ? -tx.full_amount
-                                                                       : tx.full_amount),
-                                           { close: true })}>
+                       // Back to the joint default: hers, less what they put in.
+                       onClick={() => save(() => setShare(tx.id, tx.joint ? null
+                         : tx.inflow ? -tx.full_amount : tx.full_amount), { close: true })}>
                 It was mine
               </PButton>
             )}
@@ -415,6 +432,39 @@ function Note({ tx, busy, onBack, onSave }) {
   );
 }
 
+/** "Who sent this?", or "Change who it was from" once there's a name. */
+export function partyTitle(et) {
+  if (!et.name) return et.direction === 'from' ? 'Who sent this?' : 'Who was it to?';
+  return `Change who it was ${et.direction}`;
+}
+
+/** An e-Transfer's person, when the bank didn't name them (THL-122). */
+function Party({ tx, busy, onBack, onSave }) {
+  const et = tx.etransfer;
+  const [name, setName] = useState(et.named_by === 'you' ? et.name : '');
+  return (
+    <Step title={partyTitle(et)} onBack={onBack}>
+      <p className="pk-muted">
+        {et.name && et.named_by === 'bank' ? `Your bank says ${et.name}.`
+          : et.named_by === 'you' ? 'You named them.'
+            : 'Your bank didn’t say. Naming them helps match repayments to splits.'}
+      </p>
+      <Field label={et.direction === 'from' ? 'Who sent it' : 'Who it went to'}>
+        {(id) => (
+          <input id={id} type="text" value={name} maxLength={60} autoComplete="off"
+                 placeholder="First and last name" onChange={(e) => setName(e.target.value)} />
+        )}
+      </Field>
+      <PButton disabled={busy || !name.trim()} onClick={() => onSave(name.trim())}>Save</PButton>
+      {et.named_by === 'you' && (
+        <PButton variant="text" disabled={busy} onClick={() => onSave('')}>
+          Use your bank’s name instead
+        </PButton>
+      )}
+    </Step>
+  );
+}
+
 function Exclude({ tx, busy, onBack, onSave }) {
   const [reason, setReason] = useState('');
   return (
@@ -469,20 +519,22 @@ function PiggyBank({ tx, banks, busy, onBack, onSave }) {
   );
 }
 
-/** On a joint account: whose was it, all or part. */
+/**
+ * A charge on a joint account: hers by default, less what the other person
+ * put in that month (finance/joint.py); or all theirs, or a part she says.
+ */
 function Whose({ tx, busy, onBack, onSave }) {
-  const sign = tx.inflow ? -1 : 1;
   const full = tx.full_amount;
-  const mine = tx.share_set && Math.abs(tx.amount - full) < 0.005;
-  const theirs = !tx.share_set || tx.amount < 0.005;
-  const [mode, setMode] = useState(mine ? 'mine' : theirs ? 'theirs' : 'part');
-  const [part, setPart] = useState(!mine && !theirs ? String(tx.amount) : '');
+  const theirs = tx.share_set && tx.amount < 0.005;
+  const part = tx.share_set && !theirs && Math.abs(tx.amount - full) >= 0.005;
+  const [mode, setMode] = useState(theirs ? 'theirs' : part ? 'part' : 'mine');
+  const [amount, setAmount] = useState(part ? String(tx.amount) : '');
   const [always, setAlways] = useState(false);
-  const n = Number(part);
+  const n = Number(amount);
   return (
     <Step title="Whose was it?" onBack={onBack}>
-      <p className="pk-muted">On a joint account a transaction is {tx.joint}’s until you say
-        it was yours. Only your part counts.</p>
+      <p className="pk-muted">On a joint account, spending is yours, less what {tx.joint} puts
+        in that month. Only your part counts.</p>
       <div className="txd-quick" role="radiogroup" aria-label="Whose was it">
         {[['mine', 'Mine'], ['theirs', `${tx.joint}’s`], ['part', 'Part of it']].map(([k, l]) => (
           <button key={k} type="button" role="radio" aria-checked={mode === k}
@@ -495,21 +547,44 @@ function Whose({ tx, busy, onBack, onSave }) {
         <Field label="Your part">
           {(id) => (
             <input id={id} type="number" inputMode="decimal" min="0" step="0.01" max={full}
-                   value={part} onChange={(e) => setPart(e.target.value)} />
+                   value={amount} onChange={(e) => setAmount(e.target.value)} />
           )}
         </Field>
       )}
-      {mode === 'mine' && !tx.inflow && (
+      {mode === 'mine' && (
         <label className="txd-check">
           <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
-          Always mine at {tx.merchant}
+          Always all mine at {tx.merchant}
         </label>
       )}
       <PButton disabled={busy || (mode === 'part' && !(n > 0 && n <= full))}
-               onClick={() => onSave(mode === 'mine' ? sign * full : mode === 'theirs' ? null
-                                     : sign * n, mode === 'mine' && always)}>
+               onClick={() => onSave(mode === 'mine' ? null : mode === 'theirs' ? 0 : n,
+                                     mode === 'mine' && always)}>
         Save
       </PButton>
+    </Step>
+  );
+}
+
+/** Money into a joint account from outside: hers, or the other person's. */
+function JointFrom({ tx, busy, onBack, onSave }) {
+  const [who, setWho] = useState(tx.joint_from || '');
+  const [remember, setRemember] = useState(true);
+  return (
+    <Step title="Who put this in?" onBack={onBack}>
+      <p className="pk-muted">It came into your account with {tx.joint} from outside Pearl.</p>
+      <div className="pk-choices" role="radiogroup" aria-label="Who put this in?">
+        <Choice name="joint-from" checked={who === 'me'} onChange={() => setWho('me')}
+                label="Me" description="From an account of mine that isn’t in Pearl. It isn’t income." />
+        <Choice name="joint-from" checked={who === 'them'} onChange={() => setWho('them')}
+                label={tx.joint}
+                description={`It pays for that much of this month’s joint spending, so less of it is yours.`} />
+      </div>
+      <label className="txd-check">
+        <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+        The same for every deposit from {tx.merchant}
+      </label>
+      <PButton disabled={busy || !who} onClick={() => onSave(who, remember)}>Save</PButton>
     </Step>
   );
 }

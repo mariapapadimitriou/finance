@@ -157,10 +157,10 @@ def test_a_joint_share_is_between_1_and_99(client, share):
     assert r.status_code == 400 and "1%" in r.get_json()["error"]
 
 
-def test_an_older_joint_account_keeps_its_rule(client):
-    """Marked joint before there was a share: another member's unless she says."""
+def test_a_joint_account_without_a_share_is_hers(client):
+    """Marked joint with no share: hers by default, less what others put in."""
     client.put("/api/accounts/visa/joint", json={"label": "Family"})
-    assert spend(client) == 300
+    assert spend(client) == 480
     assert find(client, "visa")["joint_share"] is None
 
 

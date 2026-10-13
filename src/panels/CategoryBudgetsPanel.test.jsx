@@ -51,6 +51,9 @@ describe('B-01 budgets', () => {
   it('renders the five largest, champagne for over, and the rest behind a link', () => {
     const out = html(<BudgetsPage data={data} onChange={() => {}} />);
     expect(out).toContain('Budgets for October');
+    // The same Growth tabs as Path, Insights and Projections, Budgets current.
+    expect(out).toContain('class="in-tabs"');
+    expect(out).toMatch(/aria-current="page"[^>]*>Budgets</);
     expect(out).toContain('Each budget starts at your usual month for that category.');
     expect((out.match(/viz-fill over/g) || []).length).toBe(3);          // Groceries, Shopping, Dining
     expect(out).toContain('Everything else (2 categories)');

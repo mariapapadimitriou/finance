@@ -30,6 +30,7 @@ from datetime import date
 from . import duplicates as dup
 from .analytics import counts_as_spending, is_others, share_amount, spend_amount
 from .categorize import CATEGORY_GROUPS, group_of
+from .etransfers import party
 from .income import is_income
 from .models import Transaction
 
@@ -118,9 +119,17 @@ def describe(t: Transaction, ctx: Context) -> dict:
     elif t.excluded:
         chip, structural = "Left out", True
         note = f"Left out · {t.excluded}"
+    elif is_others(t) and t.joint and inflow and not t.joint_from and not t.share_set:
+        # Into a joint account from outside: hers or theirs? (finance/joint.py)
+        chip = "Whose?"
+        note, note_link = f"Yours or {t.joint}’s? Tell us", True
+    elif is_others(t) and t.joint and inflow:
+        chip, structural = f"{t.joint}’s", True
+        note = f"{t.joint} put this in · pays for part of this month’s joint spending"
     elif is_others(t):
         chip, structural = "Not yours", True
-        note = f"{t.joint}’s · joint account, not yours unless you say so"
+        note = (f"{t.joint}’s · you said this one was theirs" if t.joint
+                else "Not yours")
     elif t.repays:
         charge = ctx.by_id.get(t.repays)
         chip, structural, group = "Repayment", True, "transfer"
@@ -163,7 +172,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
     if split and counts == "spending" and abs(amount - abs(t.amount)) >= 0.005:
         names = ctx.split_with.get(t.fingerprint) or ctx.paid_by.get(t.fingerprint) or []
         with_whom = (" · split with " + ", ".join(names) if names
-                     else " · joint account" if t.joint else "")
+                     else f" · {t.joint} paid the rest" if t.joint else "")
         note = f"Your share of {money(t.amount)}{with_whom}"
 
     one_off = t.one_off and counts in ("spending", "income")
@@ -181,14 +190,17 @@ def describe(t: Transaction, ctx: Context) -> dict:
 
     confirmed = (t.category_source in _CHOSEN
                  or ctx.confirmed.get(t.fingerprint) == cat)
-    suggested = (chip in ("Not sorted yet", "Possible duplicate")
+    suggested = (chip in ("Not sorted yet", "Possible duplicate", "Whose?")
                  or (not structural and not confirmed))
 
     raw = t.raw or {}
+    # An e-Transfer reads as the person it was from or to (finance/etransfers.py).
+    who = party(t)
     return {
         "id": t.fingerprint,
         "date": t.date[:10],
-        "merchant": t.merchant or t.description,
+        "merchant": (who or {}).get("name") or t.merchant or t.description,
+        "etransfer": who,
         "description": t.description,
         "logo": raw.get("logo_url") or "",
         "account_id": t.account_id,
@@ -222,6 +234,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
                          if _waiting(t) or t.fingerprint in ctx.twins else ""),
         "joint": t.joint or "",
         "share_set": bool(t.share_set),
+        "joint_from": t.joint_from or "",
         "bank_id": t.bank_id,
         "bank_auto": bool(t.bank_auto),
     }
