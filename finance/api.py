@@ -2595,7 +2595,7 @@ def home():
     is current as soon as a sync has written its rows (E05: within 5 minutes).
     """
     from datetime import date as _date
-    from . import safe_to_spend
+    from . import safe_to_spend, usual_month
 
     st = store()
     today = _date.fromisoformat(_today_iso())
@@ -2613,13 +2613,23 @@ def home():
     types = {aid: r.get("account_type") or ""
              for aid, r in st.account_sync_rules().items() if r.get("enabled")}
     failed = any(i.get("last_error") for i in st.plaid_items())
+    state = safe_to_spend.home_state(
+        txns, today, sts, account_types=types, linking_failed=failed,
+        told_income=told_income, told_rent=told_rent)
+    # THL-184: the usual month comes with the Home payload, so Home needs no
+    # other call.
+    usual = usual_month.usual(txns, today)
     return jsonify({
         "month": today.strftime("%Y-%m"),
         "today": today.isoformat(),
         "safe_to_spend": sts,
-        "data_state": safe_to_spend.home_state(
-            txns, today, sts, account_types=types, linking_failed=failed,
-            told_income=told_income, told_rent=told_rent),
+        "data_state": state,
+        "usual_month": usual,
+        "snapshot": usual_month.snapshot(
+            txns, today, sts, usual,
+            savings_target=st.float_setting("savings_target", 0.0),
+            anchor_started=st.setting("anchor_started") not in (None, ""),
+            comparisons_from=state["comparisons_from"]),
     })
 
 

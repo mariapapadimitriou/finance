@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  HomeBody, HowWeWorkedItOut, IncomePanel, SafeToSpendCard, heroCopy, homeAlert, parseAmount,
-  sheetRows,
+  HomeBody, HowWeWorkedItOut, IncomePanel, SafeToSpendCard, Snapshot, heroCopy, homeAlert,
+  parseAmount, sheetRows, snapshotRows,
 } from './HomePanel.jsx';
 
 // The X-01 person on Friday October 9 (finance/safe_to_spend.py's tests use
@@ -296,5 +296,102 @@ describe('changing the income (E4)', () => {
     expect(out).toContain('value="4000"');
     expect(out).toContain('Go back to the cautious figure ($3,100)');
     calm(out);
+  });
+});
+
+// ── Snapshot vs a usual month (THL-48, THL-184), H-01's and H-02's numbers ──
+
+const snap = (rows, extra = {}) => ({
+  month: '2026-10', day: 9, days_in_month: 31, months_of_history: 3, curve: 'daily',
+  usual_months: ['2026-07', '2026-08', '2026-09'], comparisons_from: '2026-08-01',
+  extra_went_to: null, rows, ...extra,
+});
+const h01 = snap([
+  { key: 'income', label: 'Income', received: 2150, expected: 4300, next_pay: '2026-10-16', cautious: null },
+  // Rent on the 1st makes her usual Essentials by the 9th most of a month.
+  { key: 'essentials', label: 'Essentials', spent: 2732, usual: 2900, usual_by_today: 2700 },
+  // $412 against $345 usually by the 9th is 19% ahead: over pace (L2).
+  { key: 'lifestyle', label: 'Lifestyle', spent: 412.34, usual: 1150, usual_by_today: 345 },
+  { key: 'savings', label: 'Savings', saved: 150, planned: 300, goal: 'anchor' },
+]);
+
+describe('snapshot', () => {
+  it('reads like H-01, in whole dollars', () => {
+    const rows = snapshotRows(h01);
+    expect(rows[0]).toMatchObject({ value: '$2,150 of $4,300', note: 'Next pay on Friday, October 16', share: 0.5 });
+    expect(rows[1]).toMatchObject({ spent: 2732, usualMonth: 2900, usualByToday: 2700, monthsOfHistory: 3 });
+    expect(rows[2]).toMatchObject({ spent: 412, usualMonth: 1150 });
+    expect(rows[3]).toMatchObject({ value: '$150 of $300 planned', note: 'Your Anchor', share: 0.5 });
+  });
+
+  it('marks over pace in champagne and in words, and on pace calmly (L2)', () => {
+    const out = html(<Snapshot snap={h01} />);
+    expect(out).toContain('October so far, compared with a usual month');
+    expect(out).toContain('Ahead of your usual pace');           // Lifestyle
+    expect(out).toContain('About where you usually are');         // Essentials, on its curve
+    expect((out.match(/viz-fill over/g) || []).length).toBe(1);
+    calm(out);
+  });
+
+  it('says how far over a usual month, never in red (H-02)', () => {
+    const h02 = snap([...h01.rows.slice(0, 2),
+      { key: 'lifestyle', label: 'Lifestyle', spent: 1290, usual: 1150, usual_by_today: 1000 },
+      h01.rows[3]], { day: 26 });
+    const out = html(<Snapshot snap={h02} />);
+    expect(out).toContain('$140 over a usual month');
+    calm(out);
+  });
+
+  it('all of the pay in, and Savings without a plan (L3)', () => {
+    const rows = snapshotRows(snap([
+      { key: 'income', label: 'Income', received: 4300, expected: 4300, next_pay: '2026-11-01', cautious: null },
+      h01.rows[1], h01.rows[2],
+      { key: 'savings', label: 'Savings', saved: 150, planned: null, goal: null },
+    ]));
+    expect(rows[0].note).toBe('All of this month’s pay is in');
+    expect(rows[3]).toMatchObject({ value: '$150 saved this month', share: null });
+  });
+
+  it('cautious income fills against the cautious figure (E4)', () => {
+    const [income] = snapshotRows(snap([
+      { key: 'income', label: 'Income', received: 1900, expected: 3100, next_pay: null,
+        cautious: { lowest: 3100, highest: 4800, month: '2026-07' } },
+      ...h01.rows.slice(1)]));
+    expect(income.value).toBe('$1,900 so far · usually $3,100 to $4,800');
+    expect(income.share).toBeCloseTo(1900 / 3100);
+  });
+
+  it('nothing yet, and no usual month yet: words, no $0, no empty bar (E10)', () => {
+    const thin = snap([
+      { key: 'income', label: 'Income', received: 0, expected: null, next_pay: null, cautious: null },
+      { key: 'essentials', label: 'Essentials', spent: 0, usual: 2900, usual_by_today: 2700 },
+      { key: 'lifestyle', label: 'Lifestyle', spent: 45, usual: null, usual_by_today: null },
+      { key: 'savings', label: 'Savings', saved: 0, planned: null, goal: null },
+    ], { months_of_history: 0, comparisons_from: '2026-11-01' });
+    const out = html(<Snapshot snap={thin} />);
+    expect(out).toContain('Nothing in yet');
+    expect(out).toContain('Nothing yet · usually $2,900');
+    expect(out).toContain('$45 so far');
+    expect(out).toContain('We’ll compare with your usual month from Sunday, November 1.');
+    expect(out).toContain('Nothing saved yet this month');
+    expect((out.match(/viz-track/g) || []).length).toBe(1);       // only Essentials has a bar
+    calm(out);
+  });
+
+  it('past the plan, the alert says where the extra went and links there (H-02, C3)', () => {
+    const over = { ...ok, state: 'over', over_by: 84, amount: -84, shown: -84 };
+    const s2 = { ...h01, extra_went_to: 'Lifestyle' };
+    const alert = homeAlert(over, { ...base, kind: 'normal' }, s2);
+    expect(alert).toMatchObject({ tone: 'caution', action: 'See where it went', group: 'lifestyle',
+                                  text: 'Lifestyle is where the extra went.' });
+    const out = html(<HomeBody s={over} ds={{ ...base, kind: 'normal' }} snap={s2}
+                               onSave={() => Promise.resolve()} onLink={() => {}} />);
+    expect(out).toContain('See where it went');
+    expect(out).toContain('compared with a usual month');
+  });
+
+  it('the snapshot waits while Pearl is learning (E-02 has its own card)', () => {
+    const out = body(...STATES['E-02 learning, answered']);
+    expect(out).not.toContain('compared with a usual month');
   });
 });

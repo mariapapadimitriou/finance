@@ -89,6 +89,7 @@
 .hm-facts dt { color: var(--ink-muted); }
 .hm-facts dd { margin: 0; font-variant-numeric: tabular-nums; }
 .hm-form { display: flex; flex-direction: column; gap: var(--space-4); }
+.hm-snapshot { gap: var(--space-5); align-items: stretch; }
 
 .hm-sheet-foot { margin-top: auto; padding-top: var(--space-4); display: flex; flex-direction: column; }
 
