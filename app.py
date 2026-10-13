@@ -194,7 +194,22 @@ def _install_auth(app: Flask) -> None:
         return all((given.get(k) or {}).get("value") for k, need in
                    users.CONSENTS.items() if need)
 
-    # ── Email: a link for a forgotten password ──────────────────────────────
+    # ── Email ───────────────────────────────────────────────────────────────
+    def send_welcome(user) -> None:
+        """THL-139 N-04, once, when an account is made. Never in the way of
+        signing up: a failure to send is let go."""
+        from finance import emails
+        if not user.email:
+            return
+        subject, text, html = emails.welcome(user.first_name, public_url())
+        if not mailer.configured():
+            print(f"[pearl] {subject} → {user.email}", file=sys.stderr)
+            return
+        try:
+            mailer.send(user.email, subject, text, html=html)
+        except Exception:                              # noqa: BLE001
+            pass
+
     def public_url() -> str:
         # A link in an email must not be built from a Host header a stranger
         # can set, so the deployment's own address wins when it is known.
@@ -391,6 +406,10 @@ def _install_auth(app: Flask) -> None:
             origins.add(public_url())
         return rp_id, sorted(origins)
 
+    # What the privacy pages (finance/privacy_api.py) need from in here.
+    app.config["RELYING_PARTY"] = relying_party
+    app.config["PUBLIC_URL"] = public_url
+
     def signed_in_reply(user, **extra):
         start_session(user)
         return jsonify({"ok": True, "signed_in": True, "user": status_user(user),
@@ -400,6 +419,8 @@ def _install_auth(app: Flask) -> None:
         out = user.public()
         out["passkeys"] = passkeys.count(base, user.id)
         return out
+
+    app.config["STATUS_USER"] = status_user
 
     def pause_reply(seconds: int):
         return jsonify({"error": "There were too many sign-in attempts, so we've "
@@ -461,6 +482,8 @@ def _install_auth(app: Flask) -> None:
         user = out["user"]
         store_for(user)                    # its ledger exists from the start
         has_accounts["yes"] = True
+        if out["created"]:
+            send_welcome(user)
         return signed_in_reply(user, created=out["created"])
 
     # ── Pearl S-02: change the sign-in email with a code ────────────────────
@@ -614,16 +637,25 @@ def _install_auth(app: Flask) -> None:
                 return jsonify({"error": "The waitlist is for Quebec."}), 400
             fields["waitlist"] = True
         if "consents" in body:
+            # CN-01 "Agree and continue" (the Terms and Privacy policy, and
+            # reading linked accounts), CN-02 (working out her numbers, and
+            # sorting with AI or not) and CN-03 (tips by email). Each answer
+            # is logged with its time (THL-117).
             given = body["consents"] or {}
-            missing = [k for k, need in users.CONSENTS.items()
-                       if need and not given.get(k)]
-            if missing:
-                return jsonify({"error": "Both required agreements are needed to "
-                                         "link a bank.", "missing": missing}), 400
-            at = users.now()
-            fields["consents"] = {k: {"value": bool(given.get(k)), "at": at}
-                                  for k in users.CONSENTS}
-            if user.onboarded_at is None:
+            if not isinstance(given, dict):
+                return jsonify({"error": "Unknown consent."}), 400
+            if any(k in given for k in users.CONSENTS):
+                missing = [k for k, need in users.CONSENTS.items()
+                           if need and not given.get(k)]
+                if missing:
+                    return jsonify({"error": "Both required agreements are needed to "
+                                             "link a bank.", "missing": missing}), 400
+            if "insights" in given and not given["insights"]:
+                return jsonify({"error": "Pearl needs this to work out your "
+                                         "numbers."}), 400
+            user = users.record_consents(base, user.id, given, source="onboarding")
+            if user.onboarded_at is None and any(k in given for k in users.CONSENTS) \
+                    and "step" not in body:
                 fields["onboarding_step"] = "bank"
         if "step" in body:
             step = str(body["step"])
@@ -633,7 +665,7 @@ def _install_auth(app: Flask) -> None:
             province = fields.get("province") or user.province
             if later > 0 and (not province or province in users.UNAVAILABLE):
                 return jsonify({"error": "Choose where you live first."}), 400
-            consents = fields.get("consents") or user.consents or {}
+            consents = user.consents or {}
             if later >= users.STEPS.index("bank") and not all(
                     (consents.get(k) or {}).get("value")
                     for k, need in users.CONSENTS.items() if need):

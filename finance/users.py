@@ -55,6 +55,24 @@ CREATE TABLE IF NOT EXISTS app_secrets (
     name  TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+-- Every consent she gives or takes back, with when (THL-117 CN-01 to CN-05).
+-- The current answer is also on app_users.consents; this is the history.
+CREATE TABLE IF NOT EXISTS app_consent_log (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id  INTEGER NOT NULL,
+    consent  TEXT NOT NULL,
+    value    INTEGER NOT NULL,
+    at       REAL NOT NULL,
+    source   TEXT
+);
+-- What is kept once an account is deleted (THL-116 D-03 "What we keep"):
+-- that it existed and when it went. No email, no name, no data.
+CREATE TABLE IF NOT EXISTS app_deleted_accounts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    created_at  TEXT,
+    deleted_at  REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS app_codes (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER NOT NULL,
@@ -74,7 +92,9 @@ _NEW_COLUMNS = (("email", "TEXT"), ("email_verified", "INTEGER NOT NULL DEFAULT 
                 # to, and how far through setup you got.
                 ("first_name", "TEXT"), ("province", "TEXT"), ("consents", "TEXT"),
                 ("onboarding_step", "TEXT"), ("onboarded_at", "REAL"),
-                ("waitlist", "INTEGER NOT NULL DEFAULT 0"))
+                ("waitlist", "INTEGER NOT NULL DEFAULT 0"),
+                # THL-139 N-02: which nudges she wants, and how (JSON).
+                ("notifications", "TEXT"))
 # Sign-in codes are found by the address they were sent to, before there may
 # be an account to tie them to.
 _CODE_COLUMNS = (("email", "TEXT"),)
@@ -99,6 +119,8 @@ class User:
     onboarding_step: str | None = None
     onboarded_at: float | None = None
     waitlist: bool = False
+    notifications: dict | None = None
+    created_at: str | None = None
 
     @property
     def has_password(self) -> bool:
@@ -119,7 +141,7 @@ class User:
                                "step": self.onboarding_step,
                                "province": self.province,
                                "waitlist": self.waitlist,
-                               "consents": self.consents or {}}}
+                               "consents": effective_consents(self)}}
 
 
 def _col(r, name):
@@ -134,14 +156,21 @@ def _row(r) -> User:
         consents = json.loads(_col(r, "consents") or "null")
     except ValueError:
         consents = None
+    try:
+        notes = json.loads(_col(r, "notifications") or "null")
+    except ValueError:
+        notes = None
     done = _col(r, "onboarded_at")
+    made = _col(r, "created_at")
     return User(int(r["id"]), r["username"], r["password_hash"], bool(r["owner"]),
                 r["email"] or None, bool(r["email_verified"]),
                 _col(r, "first_name") or None, _col(r, "province") or None,
                 consents if isinstance(consents, dict) else None,
                 _col(r, "onboarding_step") or None,
                 float(done) if done is not None else None,
-                bool(_col(r, "waitlist")))
+                bool(_col(r, "waitlist")),
+                notes if isinstance(notes, dict) else None,
+                str(made) if made is not None else None)
 
 
 def ensure_table(base) -> None:
@@ -358,10 +387,151 @@ PROVINCES = {
 # Where Pearl can't be offered yet; people there can join a waitlist.
 UNAVAILABLE = {"QC"}
 
-# What O-07 asks. The first two are needed to link a bank.
-CONSENTS = {"terms": True, "read_data": True, "improve": False, "tips": False}
+# What linking a bank needs (CN-01 "Agree and continue", which replaced
+# O-07's checkboxes): the Terms and Privacy policy, and reading the accounts
+# she links.
+CONSENTS = {"terms": True, "read_data": True}
 
-STEPS = ("province", "protect", "consents", "bank", "linked", "income", "path")
+# Every consent Pearl records (THL-117). Working out her numbers is needed and
+# is agreed after linking (CN-02); the rest are hers to give and take back:
+# sorting with AI (CN-02, nothing chosen for her), tips by email (CN-03,
+# unticked) and anonymous usage data (CN-04, on unless she turns it off,
+# THL-138). O-07's "improve suggestions" box was dropped for that last one.
+REQUIRED = ("terms", "read_data", "insights")
+OPTIONAL = ("ai_sort", "tips", "analytics")
+KNOWN = REQUIRED + OPTIONAL
+DEFAULT_ON = {"analytics"}
+
+STEPS = ("province", "protect", "consents", "bank", "linked", "uses", "income", "email",
+         "path")
+
+
+def effective_consents(user: User) -> dict:
+    """Her consents as recorded, with what she hasn't been asked filled in.
+
+    Someone set up before CN-02 agreed to Pearl reading her accounts "to build
+    my budget", which is working out her numbers, so that counts from then.
+    Usage data is on until she turns it off, and carries no date."""
+    given = {k: v for k, v in (user.consents or {}).items()
+             if k in KNOWN and isinstance(v, dict)}
+    read = given.get("read_data") or {}
+    if "insights" not in given and read.get("value"):
+        given["insights"] = {"value": True, "at": read.get("at")}
+    for key in DEFAULT_ON:
+        given.setdefault(key, {"value": True, "at": None})
+    return given
+
+
+def record_consents(base, user_id: int, changes: dict, source: str) -> User | None:
+    """Save consent answers and log each one that is new or different, with
+    the time. Unknown keys are ignored."""
+    user = by_id(base, user_id)
+    if user is None:
+        return None
+    current = dict(user.consents or {})
+    t = now()
+    logged = []
+    for key, value in changes.items():
+        if key not in KNOWN:
+            continue
+        value = bool(value)
+        before = current.get(key)
+        if isinstance(before, dict) and bool(before.get("value")) == value:
+            continue
+        current[key] = {"value": value, "at": t}
+        logged.append((int(user_id), key, 1 if value else 0, t, source))
+    with base.conn() as c:
+        c.execute("UPDATE app_users SET consents = ? WHERE id = ?",
+                  (json.dumps(current), int(user_id)))
+        if logged:
+            c.executemany("INSERT INTO app_consent_log (user_id, consent, value, at, source) "
+                          "VALUES (?, ?, ?, ?, ?)", logged)
+    return by_id(base, user_id)
+
+
+def consent_log(base, user_id: int) -> list[dict]:
+    """Every consent change, oldest first."""
+    with base.conn() as c:
+        rows = c.execute("SELECT consent, value, at, source FROM app_consent_log "
+                         "WHERE user_id = ? ORDER BY at, id", (int(user_id),)).fetchall()
+    return [{"consent": r["consent"], "value": bool(r["value"]), "at": float(r["at"]),
+             "source": r["source"]} for r in rows]
+
+
+# ── Notifications (THL-139 N-01, N-02) ───────────────────────────────────────
+# Stored here and nothing more: push is the iOS app's (not built yet), and
+# none of these moments sends an email today.
+
+NOTIFY_TYPES = ("payday", "weekly", "progress", "milestones", "bank")
+# As N-02 draws them.
+NOTIFY_DEFAULTS = {
+    "types": {"payday": {"phone": True, "email": True},
+              "weekly": {"phone": True, "email": False},
+              "progress": {"phone": True, "email": False},
+              "milestones": {"phone": True, "email": True},
+              "bank": {"phone": True, "email": True}},
+    "quiet": {"from": "21:00", "to": "08:00"},
+    "lock_amounts": False,
+    # N-01: her answer to the priming sheet, how many times she was asked,
+    # and where on her path she was when she said "Not now".
+    "prompt": {"answer": None, "asked": 0, "milestone": None, "at": None},
+}
+_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def notification_prefs(user: User) -> dict:
+    saved = user.notifications or {}
+    out = json.loads(json.dumps(NOTIFY_DEFAULTS))
+    for key in NOTIFY_TYPES:
+        for channel in ("phone", "email"):
+            v = ((saved.get("types") or {}).get(key) or {}).get(channel)
+            if isinstance(v, bool):
+                out["types"][key][channel] = v
+    for end in ("from", "to"):
+        v = (saved.get("quiet") or {}).get(end)
+        if isinstance(v, str) and _TIME.match(v):
+            out["quiet"][end] = v
+    if isinstance(saved.get("lock_amounts"), bool):
+        out["lock_amounts"] = saved["lock_amounts"]
+    if isinstance(saved.get("prompt"), dict):
+        out["prompt"].update({k: saved["prompt"].get(k) for k in out["prompt"]
+                              if k in saved["prompt"]})
+    return out
+
+
+def set_notifications(base, user_id: int, changes: dict) -> tuple[dict | None, str | None]:
+    """Merge changes into her preferences. (prefs, None), or (None, what's wrong)."""
+    user = by_id(base, user_id)
+    if user is None:
+        return None, "No such account."
+    prefs = notification_prefs(user)
+    for key, chans in (changes.get("types") or {}).items():
+        if key not in NOTIFY_TYPES or not isinstance(chans, dict):
+            return None, "Unknown notification."
+        for channel, value in chans.items():
+            if channel not in ("phone", "email") or not isinstance(value, bool):
+                return None, "Unknown notification."
+            prefs["types"][key][channel] = value
+    for end, value in (changes.get("quiet") or {}).items():
+        if end not in ("from", "to") or not isinstance(value, str) or not _TIME.match(value):
+            return None, "Choose a time for quiet hours."
+        prefs["quiet"][end] = value
+    if "lock_amounts" in changes:
+        prefs["lock_amounts"] = bool(changes["lock_amounts"])
+    if "prompt" in changes:
+        answer = (changes["prompt"] or {}).get("answer")
+        if answer not in ("on", "not_now"):
+            return None, "Unknown answer."
+        p = prefs["prompt"]
+        p.update({"answer": answer, "asked": int(p.get("asked") or 0) + 1, "at": now(),
+                  "milestone": (changes["prompt"] or {}).get("milestone")})
+        if answer == "on":
+            for key in NOTIFY_TYPES:
+                prefs["types"][key]["phone"] = True
+    with base.conn() as c:
+        c.execute("UPDATE app_users SET notifications = ? WHERE id = ?",
+                  (json.dumps(prefs), int(user_id)))
+    return prefs, None
 
 
 def update_onboarding(base, user_id: int, **fields) -> User | None:
@@ -464,3 +634,19 @@ def ledger_location(base_path: str, user: User) -> tuple[str, str]:
         return base_path, "public"
     root, ext = os.path.splitext(base_path)
     return f"{root}-u{user.id}{ext or '.db'}", f"u_{user.id}"
+
+
+def forget(base, user: User) -> None:
+    """Remove an account's sign-in and everything kept about it here — its
+    passkeys, codes, consent history and the row itself — keeping only that it
+    existed and when it was deleted (THL-116 D-03). Its ledger is the caller's
+    to remove (see `finance/account_deletion.py`)."""
+    with base.conn() as c:
+        c.execute("DELETE FROM app_passkeys WHERE user_id = ?", (int(user.id),))
+        c.execute("DELETE FROM app_codes WHERE user_id = ?", (int(user.id),))
+        if user.email:
+            c.execute("DELETE FROM app_codes WHERE email = ?", (normalise(user.email),))
+        c.execute("DELETE FROM app_consent_log WHERE user_id = ?", (int(user.id),))
+        c.execute("DELETE FROM app_users WHERE id = ?", (int(user.id),))
+        c.execute("INSERT INTO app_deleted_accounts (user_id, created_at, deleted_at) "
+                  "VALUES (?, ?, ?)", (int(user.id), user.created_at, now()))

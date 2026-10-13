@@ -14,6 +14,7 @@ import { AffordCard, ViewToggle, WeekSheet, WeekStrip, weekHeroCopy } from './Ho
 import { DebtsCard } from './DebtsPanel.jsx';
 import { BudgetsCard } from './CategoryBudgetsPanel.jsx';
 import { ForYou, WhyPanel, dismissedWords } from './ForYou.jsx';
+import NotifyPrime from './NotifyPrime.jsx';
 import './home.css';
 
 /**
@@ -289,6 +290,8 @@ export default function HomePanel({ onTab, onChanged, version }) {
       {explainWeek && home.week && (
         <WeekSheet w={home.week} s={s} onClose={() => setExplainWeek(false)} />
       )}
+      {/* THL-139 N-01: once safe to spend has a number. */}
+      <NotifyPrime sts={s} path={home.path} />
       {reconnect && (
         <ReconnectPanel connection={reconnect} onClose={() => setReconnect(null)}
                         onDone={async () => {

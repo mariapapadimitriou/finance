@@ -5,8 +5,9 @@ import { Banner, Heading, Sheet } from './ui.jsx';
  * footer's Privacy, Terms and Help.
  *
  * Written to describe what this app actually does. Where the design promises
- * more than is true today — data centres in Canada, a download of your data —
- * the copy says what is true instead.
+ * more than is true today — data centres in Canada — the copy says what is
+ * true instead. The download and deletion it mentions are Profile › Your data
+ * (THL-116). `legal` is Profile's "Privacy policy and terms" row: both drafts.
  */
 
 function Facts({ rows }) {
@@ -29,14 +30,14 @@ const STORE_ROWS = [
   { label: 'We keep', text: 'Account names and types, balances, transactions, and the categories and goals you set' },
   { label: 'We never keep', text: 'Your bank username or password, or full card or account numbers' },
   { label: 'Where', text: 'Our cloud database, encrypted when stored and when it moves. Bank connections are encrypted again with a key only Pearl holds.' },
-  { label: 'For how long', text: 'While you use Pearl. You can erase everything any time from Profile › Accounts → Start fresh, which also disconnects your banks.' },
+  { label: 'For how long', text: 'While you use Pearl. When you delete your account, we delete your data straight away, and the last copies in our host’s backups within 30 days.' },
 ];
 
 const SHARE_ROWS = [
   { label: 'Plaid', text: 'Connects to your bank, read-only', tag: 'Needed', needed: true },
   { label: 'Our cloud host', text: 'Runs Pearl and stores your data (Vercel and Neon)', tag: 'Needed', needed: true },
   { label: 'Our email service', text: 'Delivers your sign-in codes', tag: 'Needed', needed: true },
-  { label: 'An investing partner', text: 'Only if you choose to go there in the Pearl phase. We always ask first.', tag: 'Your choice' },
+  { label: 'An investing partner', text: 'Only if you choose to go there in the Unveil phase. We always ask first.', tag: 'Your choice' },
 ];
 
 export const DOCS = {
@@ -46,6 +47,7 @@ export const DOCS = {
       <>
         <Heading level={2} eyebrow="What we store" title="Your data, plainly" />
         <Facts rows={STORE_ROWS} />
+        <p className="p-small">You can download or delete your data any time in Profile › Your data.</p>
       </>
     ),
   },
@@ -55,7 +57,7 @@ export const DOCS = {
       <>
         <Heading level={2} eyebrow="Who we share with" title="Who sees your data" />
         <Facts rows={SHARE_ROWS} />
-        <Banner tone="positive">We never sell your data.</Banner>
+        <Banner tone="positive">We don’t sell your data, and we don’t show you ads.</Banner>
       </>
     ),
   },
@@ -104,8 +106,18 @@ export const DOCS = {
           <p>Keep your email and devices secure, since a code sent to your email or a
             passkey on your device is how you get in.</p>
           <h4>Ending</h4>
-          <p>You can stop any time. Start fresh erases your data and disconnects your banks.</p>
+          <p>You can stop any time. Deleting your account in Profile › Your data disconnects
+            your banks and deletes your data.</p>
         </div>
+      </>
+    ),
+  },
+  legal: {
+    label: 'Privacy policy and terms',
+    render: () => (
+      <>
+        {DOCS.privacy.render()}
+        {DOCS.terms.render()}
       </>
     ),
   },
