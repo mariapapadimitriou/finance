@@ -253,7 +253,7 @@ class TestTreasureChests:
         chest = client.get("/api/goals").get_json()["chests"][0]
         assert chest["held"] == 150
         # It is not shown as money a chest lent the month.
-        assert client.get("/api/plan").get_json()["draws"] == []
+        assert [d for d in st.draws() if d["amount"] > 0] == []
 
     def test_got_it_quiets_the_catching_up_note_until_the_amount_changes(self, client, st):
         bank = self._open(client, name="Car insurance", target=1200)

@@ -34,7 +34,6 @@ const json = (method, path, payload) =>
   });
 
 export const getSummary      = () => req('/api/summary');
-export const getInsights     = () => req('/api/insights');
 export const getRecurring    = () => req('/api/recurring');
 export const getAccounts     = () => req('/api/accounts');
 
@@ -147,13 +146,6 @@ export const syncPlaid       = () => json('POST', '/api/plaid/sync', {});
 export const unlinkBank      = (id) =>
   req(`/api/plaid/items/${id}`, { method: 'DELETE' });
 
-// One past week as it finished — the arrows on the Allowance card.
-export const getWeek         = (on) => req(`/api/plan/week?on=${encodeURIComponent(on)}`);
-export const getPlan         = (month) =>
-  req(`/api/plan${month ? `?month=${month}` : ''}`);
-export const simulateSpend   = (amount, month) =>
-  json('POST', `/api/plan/simulate${month ? `?month=${month}` : ''}`, { amount });
-
 // Piggy banks: annual costs collected monthly, and spending charged to them
 // instead of to the month it fell in.
 export const getBanks        = () => req('/api/piggy');
@@ -211,16 +203,6 @@ export const addToChest      = (id, amount) =>
   json('POST', `/api/goals/chests/${id}/add`, { amount });
 
 
-
-// The savings figure on its own (Projections' slider). The endpoint writes
-// only the fields it is given.
-export const saveSavings     = (savings) =>
-  json('PUT', '/api/plan/setup', { savings });
-// Your own split of the monthly total: the lines you focus on, and every
-// amount. The server refuses one that does not add up to the total.
-export const setAllocation   = (focus, budgets) =>
-  json('PUT', '/api/budgets/allocation', { focus, budgets });
-
 // Income and bills (THL-45, THL-127 I-01 to I-06): the check after linking,
 // and Profile › Income and bills. Every call returns the whole check.
 const IB = '/api/income-bills';
@@ -238,17 +220,17 @@ export const removeBill       = (key) => req(billPath(key), { method: 'DELETE' }
 export const answerRent       = (key) => json('POST', `${IB}/rent`, { key, answer: 'yes' });
 
 
-/**
- * `savings` previews a different savings figure without saving it, so the
- * slider on the tab moves the real arithmetic rather than a copy of it.
- */
-export const getProjections  = (target, savings) => {
-  const q = new URLSearchParams();
-  if (target) q.set('target', target);
-  if (savings !== undefined && savings !== null) q.set('savings', savings);
-  const s = q.toString();
-  return req(`/api/projections${s ? `?${s}` : ''}`);
-};
+// Growth › Projections (THL-197 GR-33 to GR-36): this month, the next 30
+// days and savings in a year, with `extra` dollars more a month as the
+// what-if; "Use this pace for my Anchor" sets the monthly saving goal.
+export const getProjections  = (extra = 0) =>
+  req(`/api/projections${extra > 0 ? `?extra=${encodeURIComponent(extra)}` : ''}`);
+export const setSavingPace   = (monthly) => json('PUT', '/api/projections/pace', { monthly });
+// Unveil (THL-135 GR-16, THL-195 GR-37): the readiness checklist, and
+// "Opened an investing account?" — the kind of account only.
+export const getUnveil       = () => req('/api/unveil');
+export const reportInvesting = (type) => json('PUT', '/api/unveil', { type });
+export const undoInvesting   = () => req('/api/unveil', { method: 'DELETE' });
 
 /**
  * Add a transaction by hand.
@@ -268,21 +250,6 @@ export async function addTransaction(entry) {
   return { conflict: false, ...body };
 }
 
-export const deleteTransaction = (id) =>
-  req(`/api/transactions/${id}`, { method: 'DELETE' });
-
-export const getBudgets      = (month) =>
-  req(`/api/budgets${month ? `?month=${month}` : ''}`);
-
-
-export function getTransactions(filters = {}) {
-  const params = new URLSearchParams();
-  Object.entries(filters).forEach(([k, v]) => {
-    if (v !== '' && v !== null && v !== undefined) params.set(k, v);
-  });
-  return req(`/api/transactions?${params}`);
-}
-
 // The transactions list (THL-122): a page of rows, the totals above them,
 // and — with a group or category chosen — that total against a usual month.
 export function getTxList(filters = {}) {
@@ -297,24 +264,15 @@ export const confirmTx   = (id) => json('PUT', `/api/transactions/${encodeURICom
 export const setTxNote   = (id, note) =>
   json('PUT', `/api/transactions/${encodeURIComponent(id)}/note`, { note });
 
-export const setBudgets    = (budgets) => json('PUT', '/api/budgets', { budgets });
 // How much of a charge was yours, when friends paid you back the rest.
 // null puts the whole charge back.
 export const setShare      = (id, myShare) =>
   json('PUT', `/api/transactions/${id}/share`, { my_share: myShare });
-// Money that left a bank account for somewhere Pearl can't see, waiting to
-// be called spent or saved.
-export const getUnsorted   = () => req('/api/transfers/unsorted');
 // Say where a group of transfers went; `remember` makes it the rule for
 // those names.
 export const sortTransfers = (ids, category, remember) =>
   json('POST', '/api/transfers/sort', { ids, category, remember });
-// What counts as saved lately, to check and undo.
-export const getSaved      = (months = 2) => req(`/api/transfers/saved?months=${months}`);
-// Undo where you said something went.
-export const unsortTransaction = (id) => json('POST', `/api/transactions/${id}/unsort`, {});
-// Money friends sent back for a charge: what is linked, and what might be.
-export const getPaybacks   = (id) => req(`/api/transactions/${id}/paybacks`);
+// Money a friend sent back, linked to the charge it repays.
 export const linkPayback   = (id, inflowId, person) =>
   json('POST', `/api/transactions/${id}/paybacks/${inflowId}`, person ? { person } : {});
 // A charge split with people (S-01, THL-124): {mode, people: [{name, amount}], watch}.
@@ -323,9 +281,6 @@ export const clearSplit    = (id) =>
   req(`/api/transactions/${id}/split`, { method: 'DELETE' });
 export const unlinkPayback = (id, inflowId) =>
   req(`/api/transactions/${id}/paybacks/${inflowId}`, { method: 'DELETE' });
-// How much of a transaction was put away (saved). null clears it.
-export const setInvested   = (id, amount) =>
-  json('PUT', `/api/transactions/${id}/invested`, { amount });
 export const setCategory   = (id, category, applyToMerchant = false) =>
   json('PATCH', `/api/transactions/${id}`, {
     category, apply_to_merchant: applyToMerchant,
@@ -338,17 +293,12 @@ export const previewCategory = (id, category, applyToMerchant = false) =>
   });
 export const undoChange = (undo) => json('POST', '/api/transactions/undo', undo);
 
-// Leaving transactions out: one row, or every row like it. Your exclusion
-// wins over every rule; excluded rows stay listed and can be put back.
+// Leaving one transaction out, and putting it back (the rules that leave
+// every one like it out are on Profile › Categories and rules).
 export const excludeTransaction = (id, reason) =>
   json('PUT', `/api/transactions/${id}/exclude`, { reason });
 export const includeTransaction = (id) =>
   req(`/api/transactions/${id}/exclude`, { method: 'DELETE' });
-export const getExclusions   = () => req('/api/exclusions');
-// `dry` says how many rows the rule would catch, without saving it.
-export const addExclusion    = (rule, dry = false) =>
-  json('POST', `/api/exclusions${dry ? '?dry=1' : ''}`, rule);
-export const deleteExclusion = (id) => req(`/api/exclusions/${id}`, { method: 'DELETE' });
 
 // What kind of income a deposit is: salary, bonus, interest, gifts,
 // government, tax_refund or other.
@@ -371,9 +321,6 @@ export const getLedgerStart  = () => req('/api/ledger/start');
 export const setLedgerStart  = (start, trim) =>
   json('PUT', '/api/ledger/start', { start, trim });
 export const recategorizeAll = () => json('POST', '/api/recategorize', {});
-
-export const dismissFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'POST' });
-export const restoreFinding = (id) => req(`/api/insights/${id}/dismiss`, { method: 'DELETE' });
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 
@@ -441,8 +388,4 @@ export function dateLabel(iso) {
   if (!iso) return '—';
   const [y, m, d] = iso.split('-').map(Number);
   return `${MONTH_NAMES[m - 1]} ${d}`;
-}
-
-export function cssVar(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }

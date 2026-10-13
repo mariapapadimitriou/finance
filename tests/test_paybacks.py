@@ -10,6 +10,7 @@ import pytest
 from finance.ingest.base import IngestResult
 from finance.pipeline import ingest
 from finance.models import Transaction
+from ledger_files import set_plan
 
 TODAY = date.today()
 MONTH = f"{TODAY:%Y-%m}"
@@ -26,7 +27,7 @@ def client(tmp_path):
     app = create_app(str(tmp_path / "pb.db"))
     app.config.update(TESTING=True)
     with app.test_client() as c:
-        c.put("/api/plan/setup", json={"income": 5200, "savings": 900})
+        set_plan(c, income=5200, savings=900)
         yield c
 
 

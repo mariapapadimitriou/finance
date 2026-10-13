@@ -466,45 +466,6 @@ def daily_series(transactions: list[Transaction], days: int = 90) -> list[dict]:
     return out
 
 
-def bill_categories(fixed) -> set[str]:
-    """The categories a plan's fixed costs are paid under: its bills.
-
-    "Other" is left out — a fixed cost nobody categorised would otherwise
-    take every uncategorised charge with it.
-    """
-    return {f.category for f in fixed
-            if f.category and f.category != "Other" and is_spend_category(f.category)}
-
-
-def bills_paid(transactions: list[Transaction], month: str, fixed) -> dict:
-    """What the plan's bills cost this month, beside what the plan expected.
-
-    One item per category: a mortgage and a property tax both under Rent &
-    Housing are one line, because the ledger can't tell their payments apart.
-    """
-    cats = bill_categories(fixed)
-    planned: dict[str, float] = defaultdict(float)
-    names: dict[str, list[str]] = defaultdict(list)
-    for f in fixed:
-        if f.category in cats:
-            planned[f.category] += f.amount
-            names[f.category].append(f.name)
-    paid: dict[str, float] = defaultdict(float)
-    for t in transactions:
-        if t.month == month and t.category in cats \
-                and is_spend_category(t.category):
-            paid[t.category] += share_amount(t) if t.amount > 0 else t.amount
-    items = []
-    for cat in sorted(cats, key=lambda c: -planned[c]):
-        label = names[cat][0] if len(names[cat]) == 1 else cat
-        items.append({"name": label, "category": cat, "names": names[cat],
-                      "planned": round(planned[cat], 2),
-                      "paid": round(max(paid.get(cat, 0.0), 0.0), 2)})
-    return {"paid": round(sum(i["paid"] for i in items), 2),
-            "planned": round(sum(i["planned"] for i in items), 2),
-            "items": items}
-
-
 def weekday_profile(transactions: list[Transaction]) -> list[dict]:
     """Average spend by day of week — where the discretionary bulges sit."""
     rows = [t for t in spend_only(transactions) if t.amount > 0]

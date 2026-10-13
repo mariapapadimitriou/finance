@@ -21,7 +21,7 @@ from __future__ import annotations
 import pytest
 
 from finance.categorize import NON_SPEND, is_discretionary
-from ledger_files import add_fixed, load_bundled
+from ledger_files import add_fixed, load_bundled, set_plan
 
 TOLERANCE = 0.011          # a cent, plus room for float noise
 
@@ -37,11 +37,10 @@ def client(tmp_path):
 
 @pytest.fixture()
 def ledger(client):
-    """A ledger with a plan on it, as the app is meant to be used."""
+    """A ledger with income, a saving goal and rent on it."""
     load_bundled(client)
-    client.put("/api/plan/setup", json={"income": 5200, "savings": 900})
+    set_plan(client, income=5200, savings=900)
     add_fixed(client, "Rent", 2100, "Rent & Housing")
-    client.post("/api/plan/setup/apply")
     return client
 
 
@@ -85,22 +84,6 @@ class TestOneMonthOneNumber:
         assert overview == pytest.approx(truth, abs=TOLERANCE)
         assert breakdown == pytest.approx(truth, abs=TOLERANCE)
 
-    def test_the_budgets_tab_accounts_for_the_whole_month(self, ledger):
-        """Budgeted, bank-funded and unbudgeted are the month, with nothing
-        unexplained. Travel is the third term: it has no budget line and is
-        not a missing one either."""
-        add_travel(ledger)
-        month = busiest_month(ledger)
-        b = ledger.get(f"/api/budgets?month={month}").get_json()
-        assert (b["covered_spend"] + b["unbudgeted_spend"]
-                + b["bank_funded"]["unallocated_total"]) == pytest.approx(
-            b["month_spend"], abs=TOLERANCE)
-        assert b["budgetable_spend"] == pytest.approx(
-            b["month_spend"] - b["bank_funded"]["unallocated_total"],
-            abs=TOLERANCE)
-        assert b["month_spend"] == pytest.approx(ledger_spend(ledger, month),
-                                                 abs=TOLERANCE)
-
 
 class TestSpendMeansSpend:
     def test_accounts_and_overview_agree_on_the_total(self, ledger):
@@ -123,120 +106,8 @@ class TestSpendMeansSpend:
         assert any(r["inflows"] > 0 for r in monthly)
 
 
-class TestThePlanTiesOut:
-    def test_the_leftover_is_the_arithmetic(self, ledger):
-        p = ledger.get("/api/plan/setup").get_json()
-        assert p["leftover"] == pytest.approx(
-            p["income"] - p["fixed_total"] - p["savings"], abs=TOLERANCE)
-
-    def test_the_budget_lines_and_the_buffer_sum_to_the_leftover_exactly(self, ledger):
-        """Not to within a few cents. Exactly."""
-        p = ledger.get("/api/plan/setup").get_json()
-        assert round(sum(p["suggested_budgets"].values()) + p["buffer"], 2) \
-            == p["leftover"]
-
-    def test_the_budgets_on_disk_and_the_buffer_sum_to_the_leftover(self, ledger):
-        p = ledger.get("/api/plan/setup").get_json()
-        body = ledger.get("/api/budgets").get_json()
-        assert round(sum(body["budgets"].values()) + p["buffer"], 2) == p["leftover"]
-        assert body["unassigned"] == pytest.approx(p["buffer"], abs=TOLERANCE)
-
-    def test_the_daily_number_divides_the_discretionary_slice(self, ledger):
-        """Not the whole leftover.
-
-        Groceries come out of the leftover and are not pocket money: no
-        amount of restraint on a Tuesday changes the grocery bill. Dividing
-        the whole leftover by the days in the month handed the grocery money
-        out as a daily allowance and then budgeted it a second time.
-        """
-        p = ledger.get("/api/plan/setup").get_json()
-        state = ledger.get("/api/plan").get_json()["state"]
-        assert state["monthly_amount"] == pytest.approx(p["daily_pool"],
-                                                        abs=TOLERANCE)
-        assert p["daily_pool"] < p["leftover"]
-
-    def test_the_budgets_still_cover_the_whole_leftover(self, ledger):
-        """Everything not committed has a line, essentials included."""
-        p = ledger.get("/api/plan/setup").get_json()
-        saved = ledger.get("/api/budgets").get_json()["budgets"]
-        assert round(sum(saved.values()) + p["buffer"], 2) == p["leftover"]
-        assert any(c in saved for c in ("Groceries", "Health", "Utilities"))
-
-    def test_the_daily_arithmetic_is_internally_consistent(self, ledger):
-        s = ledger.get("/api/plan").get_json()["state"]
-        assert s["flat_daily"] == pytest.approx(
-            s["budget"] / s["days_in_month"], abs=0.02)
-        assert s["remaining"] == pytest.approx(
-            s["budget"] - s["spent_mtd"], abs=TOLERANCE)
-        assert s["safe_today"] == pytest.approx(
-            s["flat_daily"] + s["carried_in"] - s["spent_today"], abs=0.02)
-        assert s["spread_daily"] == pytest.approx(
-            s["remaining"] / s["days_left"], abs=0.02)
-
-
 class TestNumbersMoveTogetherWhenThingsChange:
     """The part that actually breaks: consistency after an edit."""
-
-    def test_changing_income_moves_the_budgets_and_the_daily_number(self, ledger):
-        # Tight enough that the leftover is less than you usually spend, so
-        # every line is scaled down to fit and there is no buffer.
-        ledger.put("/api/plan/setup", json={"income": 2800, "savings": 500})
-        ledger.post("/api/plan/setup/apply")
-
-        p = ledger.get("/api/plan/setup").get_json()
-        assert p["leftover"] == 200
-        assert p["short"] > 0 and p["buffer"] == 0
-        saved = ledger.get("/api/budgets").get_json()["budgets"]
-        assert round(sum(saved.values()), 2) == 200
-        state = ledger.get("/api/plan").get_json()["state"]
-        assert state["monthly_amount"] == pytest.approx(p["daily_pool"],
-                                                        abs=TOLERANCE)
-
-    def test_the_daily_number_follows_the_plan_without_being_re_applied(self, ledger):
-        """The bug this replaced: it used to be stored when you pressed "Use
-        these budgets", so raising your pay moved the Plan tab and left Today
-        quoting the figure from whenever that button was last pressed."""
-        ledger.put("/api/plan/setup", json={"income": 2700, "savings": 500})
-        before = ledger.get("/api/plan").get_json()["state"]["monthly_amount"]
-
-        # Note: no /api/plan/setup/apply. Nothing is pressed. Both incomes
-        # leave less than you usually spend, so the raise reaches the lines.
-        ledger.put("/api/plan/setup", json={"income": 2800, "savings": 500})
-        after = ledger.get("/api/plan").get_json()["state"]["monthly_amount"]
-
-        assert after > before
-
-    def test_todays_number_can_be_traced_back_to_the_plans_leftover(self, ledger):
-        """The two tabs show different figures on purpose — the Plan's leftover
-        still has the groceries in it — so Today publishes the whole chain."""
-        ledger.put("/api/plan/setup", json={"income": 4000, "savings": 500})
-        d = ledger.get("/api/plan").get_json()["derivation"]
-        setup = ledger.get("/api/plan/setup").get_json()
-
-        assert d["from_plan"] is True
-        assert d["leftover"] == pytest.approx(setup["leftover"], abs=TOLERANCE)
-        assert d["income"] - d["fixed_total"] - d["savings"] - d["banks"] == (
-            pytest.approx(d["leftover"], abs=TOLERANCE))
-        assert d["leftover"] - d["essentials"] - d["buffer"] == pytest.approx(
-            d["discretionary"], abs=TOLERANCE)
-        assert d["discretionary"] == pytest.approx(
-            ledger.get("/api/plan").get_json()["state"]["monthly_amount"],
-            abs=TOLERANCE)
-
-    def test_a_piggy_bank_moves_the_plan_and_the_daily_number_together(self, ledger):
-        # Tight: a leftover under your usual spending, so the bank's $200
-        # comes out of the lines rather than out of a buffer.
-        ledger.put("/api/plan/setup", json={"income": 2900, "savings": 500})
-        before_left = ledger.get("/api/plan/setup").get_json()["leftover"]
-        before_daily = ledger.get("/api/plan").get_json()["state"]["monthly_amount"]
-
-        ledger.post("/api/piggy", json={"name": "Trip", "target": 2400,
-                                        "cadence": "annual"})
-
-        after_left = ledger.get("/api/plan/setup").get_json()["leftover"]
-        after_daily = ledger.get("/api/plan").get_json()["state"]["monthly_amount"]
-        assert before_left - after_left == pytest.approx(200.0, abs=TOLERANCE)
-        assert after_daily < before_daily
 
     def test_charging_a_purchase_to_a_bank_takes_it_out_of_every_total(self, ledger):
         month = busiest_month(ledger)
@@ -256,20 +127,6 @@ class TestNumbersMoveTogetherWhenThingsChange:
             before_month - charge.amount, abs=TOLERANCE)
         assert ledger.get("/api/summary").get_json()["total_spend"] == (
             pytest.approx(before_total - charge.amount, abs=TOLERANCE))
-
-    def test_adding_a_commitment_reduces_what_is_left(self, ledger):
-        before = ledger.get("/api/plan/setup").get_json()["leftover"]
-        add_fixed(ledger, "Gym", 80)
-        after = ledger.get("/api/plan/setup").get_json()
-        assert after["leftover"] == pytest.approx(before - 80, abs=TOLERANCE)
-        assert after["fixed_total"] == pytest.approx(2180, abs=TOLERANCE)
-
-    def test_removing_a_commitment_puts_it_back(self, ledger):
-        before = ledger.get("/api/plan/setup").get_json()["leftover"]
-        cost_id = add_fixed(ledger, "Gym", 80)
-        ledger.application.config["STORE"].delete_fixed_cost(cost_id)
-        assert ledger.get("/api/plan/setup").get_json()["leftover"] == pytest.approx(
-            before, abs=TOLERANCE)
 
     def test_adding_a_transaction_moves_every_total_that_includes_it(self, ledger):
         month = busiest_month(ledger)
@@ -341,24 +198,9 @@ class TestDerivedFiguresAgreeWithTheirParts:
         assert split["discretionary"] + split["fixed"] == pytest.approx(
             split["total"], abs=TOLERANCE)
 
-    def test_each_budget_row_is_internally_consistent(self, ledger):
-        for r in ledger.get("/api/budgets").get_json()["status"]:
-            assert r["remaining"] == pytest.approx(r["budget"] - r["spent"],
-                                                   abs=TOLERANCE)
-            if r["budget"]:
-                assert r["used"] == pytest.approx(r["spent"] / r["budget"], abs=1e-3)
-
 
 class TestOneFigureOneName:
     """The same quantity quoted on two tabs has to be the same quantity."""
-
-    def test_the_typical_month_is_the_same_on_overview_and_projections(self, ledger):
-        """They disagreed by half: a mean of complete months against a median
-        including a partial one, both labelled the typical month."""
-        summary = ledger.get("/api/summary").get_json()
-        projections = ledger.get("/api/projections").get_json()
-        assert projections["typical_monthly_spend"] == pytest.approx(
-            summary["typical_monthly_spend"], abs=TOLERANCE)
 
     def test_the_summary_keeps_both_names_pointing_at_one_number(self, ledger):
         summary = ledger.get("/api/summary").get_json()
@@ -371,19 +213,6 @@ class TestOneFigureOneName:
 
 
 class TestHeadlinesMatchTheirLists:
-    def test_the_savings_headline_is_the_sum_of_its_findings(self, ledger):
-        ins = ledger.get("/api/insights").get_json()
-        listed = round(sum(f.get("annual_saving") or 0 for f in ins["findings"]), 2)
-        assert ins["summary"]["annual_total"] == pytest.approx(listed, abs=TOLERANCE)
-
-    def test_the_savings_split_by_effort_adds_up(self, ledger):
-        s = ledger.get("/api/insights").get_json()["summary"]
-        assert sum(s["by_effort"].values()) == pytest.approx(
-            s["annual_total"], abs=TOLERANCE)
-
-    def test_the_weighted_figure_never_exceeds_the_raw_one(self, ledger):
-        s = ledger.get("/api/insights").get_json()["summary"]
-        assert s["weighted_annual"] <= s["annual_total"] + TOLERANCE
 
     def test_the_subscription_tiles_are_the_sum_of_the_rows(self, ledger):
         body = ledger.get("/api/recurring").get_json()
@@ -467,203 +296,6 @@ class TestTheLedgerKnowsItsCurrency:
         assert ledger.get("/api/summary").get_json()["currency"] == "CAD"
 
 
-class TestOneFigureOneAuthority:
-    """The class of bug this suite exists for: a number decided in one place
-    and read in another, which then drift apart without saying so."""
-
-    def test_budgets_report_when_they_no_longer_match_the_plan(self, ledger):
-        """Adopt budgets, then change the plan underneath them.
-
-        With room to spare the bank would only shrink the buffer, which is
-        not drift; so the plan here is tight and the budgets fill it."""
-        ledger.put("/api/plan/setup", json={"income": 2900, "savings": 500})
-        ledger.post("/api/plan/setup/apply")
-        assert ledger.get("/api/budgets").get_json()["drift"] is None
-
-        # A piggy bank takes $200 a month out of the leftover the saved budgets
-        # are still dividing.
-        ledger.post("/api/piggy", json={"name": "Trip", "target": 2400,
-                                        "cadence": "annual"})
-
-        drift = ledger.get("/api/budgets").get_json()["drift"]
-        assert drift is not None
-        assert drift["gap"] == pytest.approx(200.0, abs=TOLERANCE)
-        assert drift["saved_total"] - drift["plan_total"] == pytest.approx(
-            200.0, abs=TOLERANCE)
-        assert drift["banks"] == pytest.approx(200.0, abs=TOLERANCE)
-
-    def test_re_applying_clears_the_drift(self, ledger):
-        ledger.put("/api/plan/setup", json={"income": 2900, "savings": 500})
-        ledger.post("/api/plan/setup/apply")
-        ledger.post("/api/piggy", json={"name": "Trip", "target": 2400,
-                                        "cadence": "annual"})
-        assert ledger.get("/api/budgets").get_json()["drift"] is not None
-
-        ledger.post("/api/plan/setup/apply")
-        assert ledger.get("/api/budgets").get_json()["drift"] is None
-
-    def test_no_drift_is_reported_before_a_plan_exists(self, client):
-        """Nothing to disagree with yet, so the notice must stay silent."""
-        client.put("/api/budgets", json={"budgets": {"Coffee": 60}})
-        assert client.get("/api/budgets").get_json()["drift"] is None
-
-    def test_editing_one_category_by_hand_is_also_reported(self, ledger):
-        """The notice states the discrepancy without claiming the plan moved —
-        it cannot tell that from a budget edited here. Lowering a line only
-        grows the buffer; raising it past the leftover is what is reported."""
-        before = ledger.get("/api/budgets").get_json()
-        coffee = before["budgets"]["Coffee"]
-        ledger.put("/api/budgets", json={"budgets": {"Coffee": 1}})
-        body = ledger.get("/api/budgets").get_json()
-        assert body["drift"] is None
-        assert body["unassigned"] == pytest.approx(
-            before["unassigned"] + coffee - 1, abs=TOLERANCE)
-
-        ledger.put("/api/budgets", json={"budgets": {
-            "Coffee": 1 + body["unassigned"] + 50}})
-        drift = ledger.get("/api/budgets").get_json()["drift"]
-        assert drift["gap"] == pytest.approx(50, abs=TOLERANCE)
-
-    def test_the_projected_surplus_never_exceeds_what_the_plan_leaves(self, ledger):
-        """It used to be take-home less card spending, which treated rent as
-        money available to save."""
-        ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
-        add_fixed(ledger, "Rent", 1850)
-
-        plan = ledger.get("/api/plan/setup").get_json()
-        proj = ledger.get("/api/projections").get_json()
-
-        assert proj["from_plan"] is True
-        assert proj["monthly_surplus"] <= plan["leftover"] + plan["savings"]
-        # And the terms add up to the figure shown.
-        b = proj["basis"]
-        assert b["saving"] + b["unspent"] == pytest.approx(
-            proj["monthly_surplus"], abs=TOLERANCE)
-        assert b["leftover"] - b["pace_spend"] == pytest.approx(
-            b["unspent"], abs=TOLERANCE)
-
-    def test_a_piggy_bank_is_not_counted_as_savings(self, ledger):
-        """It accumulates in order to be spent on the thing it is named after."""
-        ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
-        before = ledger.get("/api/projections").get_json()["monthly_surplus"]
-        ledger.post("/api/piggy", json={"name": "Trip", "target": 2400,
-                                        "cadence": "annual"})
-        after = ledger.get("/api/projections").get_json()
-
-        # The bank's $200 leaves the leftover and does not reappear as savings.
-        assert after["monthly_surplus"] == pytest.approx(before - 200.0,
-                                                         abs=TOLERANCE)
-        assert after["basis"]["banks"] == pytest.approx(200.0, abs=TOLERANCE)
-
-    def test_without_a_plan_the_projection_keeps_the_ceiling_caveat(self, client):
-        """The fallback is still take-home less card spending, which genuinely
-        is only a ceiling — so there the old warning is the honest one."""
-        load_bundled(client)
-        client.put("/api/plan/setup", json={"income": 5200})
-        proj = client.get("/api/projections").get_json()
-
-        # Income but no commitments and no savings: the plan exists, so the
-        # derived path is used and the leftover is the whole income.
-        assert proj["from_plan"] is True
-        assert proj["basis"]["fixed_total"] == 0
-
-    def test_the_plan_and_today_divide_by_the_same_number_of_days(self, ledger):
-        ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
-        setup = ledger.get("/api/plan/setup").get_json()
-        state = ledger.get("/api/plan").get_json()["state"]
-
-        assert setup["days_this_month"] == state["days_in_month"]
-        assert setup["daily_pool"] / setup["days_this_month"] == pytest.approx(
-            state["flat_daily"], abs=0.02)
-
-    def test_every_category_called_essential_on_today_actually_is(self, ledger):
-        """Today's Essentials note named 'transport', which categorize.py marks
-        discretionary — a counter-example inside the one figure on the page
-        whose purpose is to be checkable."""
-        ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
-        d = ledger.get("/api/plan").get_json()["derivation"]
-
-        assert d["from_plan"] is True
-        for category in d["essential_categories"]:
-            assert not is_discretionary(category), category
-
-
-class TestTheBudgetsTableHasOneRowPerCategory:
-    """One list, once.
-
-    The per-category list used to be rendered three times — the plan's split on
-    one tab, bars and an editor on another — and two of the three were
-    editable. The server now hands over a single row list, and these are the
-    invariants that keep it a single list: it covers everything either side
-    knew about, it carries the plan's figure whether or not the two agree, and
-    each row says which side of the daily number it falls on using the same
-    predicate the daily number itself uses.
-    """
-
-    def test_the_plans_split_is_served_even_when_the_budgets_match_it(self, ledger):
-        """The bug this replaces: the split travelled inside `drift`, which is
-        absent precisely when the saved budgets agree with the plan — so the
-        column was blank in the one case where it is reassuring."""
-        body = ledger.get("/api/budgets").get_json()
-        setup = ledger.get("/api/plan/setup").get_json()
-
-        assert body["drift"] is None, "the fixture applies the plan, so it ties out"
-        assert body["plan_budgets"], "the plan's split went missing with the drift"
-        assert body["plan_leftover"] == pytest.approx(setup["leftover"],
-                                                      abs=TOLERANCE)
-        assert sum(body["plan_budgets"].values()) + body["plan_buffer"] \
-            == pytest.approx(body["plan_leftover"], abs=TOLERANCE)
-
-    def test_the_split_survives_the_plan_moving_underneath_it(self, ledger):
-        # Tight, so the budgets fill the leftover and a bank pushes them over.
-        ledger.put("/api/plan/setup", json={"income": 2900, "savings": 500})
-        ledger.post("/api/plan/setup/apply")
-        ledger.post("/api/piggy", json={"name": "Trip", "target": 2400,
-                                        "cadence": "annual"})
-        body = ledger.get("/api/budgets").get_json()
-
-        assert body["drift"], "opening a bank should put the budgets out"
-        assert body["plan_budgets"]
-        # The notice compares these two; they have to come from one place.
-        assert body["drift"]["plan_total"] == pytest.approx(
-            body["plan_leftover"], abs=TOLERANCE)
-
-    def test_every_row_knows_which_side_of_the_daily_number_it_is_on(self, ledger):
-        rows = ledger.get("/api/budgets").get_json()["rows"]
-        assert rows
-        for r in rows:
-            assert r["essential"] == (not is_discretionary(r["category"])), \
-                r["category"]
-
-    def test_the_rows_cover_the_saved_budgets_and_the_plans_proposals(self, ledger):
-        ledger.post("/api/piggy", json={"name": "Trip", "target": 2400,
-                                        "cadence": "annual"})
-        body = ledger.get("/api/budgets").get_json()
-
-        expected = set(body["budgets"]) | set(body["plan_budgets"])
-        assert expected <= {r["category"] for r in body["rows"]}
-        for r in body["rows"]:
-            assert r["adopted"] is (r["category"] in body["budgets"])
-            assert r["plan_budget"] == body["plan_budgets"].get(r["category"])
-            # A row the plan proposes is drawn against the plan's figure, so
-            # the bar means something before anything has been adopted.
-            if not r["adopted"] and r["plan_budget"] is not None:
-                assert r["budget"] == pytest.approx(r["plan_budget"],
-                                                    abs=TOLERANCE)
-
-    def test_a_category_the_plan_pays_for_is_on_the_page_before_adoption(self, ledger):
-        """The table was empty until budgets were adopted, on the one tab whose
-        job is to get them adopted."""
-        saved = ledger.get("/api/budgets").get_json()["budgets"]
-        ledger.put("/api/budgets", json={"budgets": {c: 0 for c in saved}})
-
-        body = ledger.get("/api/budgets").get_json()
-        assert body["budgets"] == {}
-        assert body["status"] == []          # nothing saved…
-        assert body["rows"]                  # …and still a page to read
-        assert all(r["adopted"] is False for r in body["rows"])
-
-
 def add_travel(client, amount: float = 1800.0) -> float:
     """Put a year's worth of travel in the ledger, in two lumps.
 
@@ -714,57 +346,10 @@ class TestBanksOwnTheirCategories:
     the same trip twice — and every charge in them is paid by the bank.
     """
 
-    def test_travel_nobody_owns_is_an_ordinary_line(self, ledger):
-        from finance import money_plan
-        add_travel(ledger)
-        st = ledger.application.config["STORE"]
-        assert "Travel" in money_plan.variable_shares(
-            st.all_transactions(), bank_funded=st.bank_funded_categories())
-        assert ledger.put("/api/budgets", json={
-            "budgets": {"Travel": 300}}).status_code == 200
-
-    def test_an_owned_category_gets_no_share_of_the_leftover(self, ledger):
-        from finance import money_plan
-        add_travel(ledger)
-        travel_bank(ledger)
-        st = ledger.application.config["STORE"]
-        txns = st.all_transactions()
-        assert any(t.category == "Travel" and t.amount > 0 for t in txns), \
-            "the fixture has no travel, so this test proves nothing"
-        assert "Travel" not in money_plan.variable_shares(
-            txns, bank_funded=st.bank_funded_categories())
-
-    def test_no_row_no_budget_and_not_reported_missing(self, ledger):
-        add_travel(ledger)
-        travel_bank(ledger)
-        ledger.post("/api/plan/setup/apply")
-        body = ledger.get("/api/budgets").get_json()
-        assert "Travel" not in body["plan_budgets"]
-        assert "Travel" not in body["budgets"]
-        assert "Travel" not in {r["category"] for r in body["rows"]}
-        assert "Travel" not in {r["category"] for r in body["unbudgeted"]}
-        assert body["bank_funded"]["categories"] == ["Lodging", "Travel"]
-        assert body["bank_funded"]["paid_by"] == [
-            {"bank": "Travel", "id": 1, "categories": ["Lodging", "Travel"]}]
-
-    def test_a_budget_for_it_is_refused(self, ledger):
-        travel_bank(ledger)
-        r = ledger.put("/api/budgets", json={"budgets": {"Travel": 300}})
-        assert r.status_code == 400
-        assert "piggy bank" in r.get_json()["error"]
-
     def test_a_budget_it_had_goes_when_a_bank_takes_it(self, ledger):
-        ledger.put("/api/budgets", json={"budgets": {"Travel": 300}})
+        ledger.application.config["STORE"].set_budget("Travel", 300)
         travel_bank(ledger)
         assert "Travel" not in ledger.application.config["STORE"].budgets()
-
-    def test_the_leftover_still_divides_exactly(self, ledger):
-        """Dropping a category must redistribute its share, not lose it."""
-        add_travel(ledger)
-        travel_bank(ledger)
-        body = ledger.get("/api/budgets").get_json()
-        assert sum(body["plan_budgets"].values()) + body["plan_buffer"] \
-            == pytest.approx(body["plan_leftover"], abs=TOLERANCE)
 
     def test_a_category_belongs_to_one_bank(self, ledger):
         travel_bank(ledger)
@@ -812,7 +397,8 @@ class TestOwnedChargesGoToTheBankByThemselves:
         travel_bank(ledger)
 
         def spent():
-            return ledger.get(f"/api/budgets?month={month}").get_json()["month_spend"]
+            monthly = ledger.get("/api/summary").get_json()["monthly"]
+            return next((m["spend"] for m in monthly if m["month"] == month), 0.0)
         before = spent()
         charge_today(ledger, 6000)
         assert spent() == pytest.approx(before, abs=TOLERANCE)
@@ -916,229 +502,4 @@ class TestTheFirstBankIsTravel:
                                         "cadence": "annual"})
         assert ledger.get("/api/piggy").get_json()["suggested"] is None
 
-    def test_the_insight_and_the_suggestion_quote_one_figure(self, ledger):
-        """Both are "what travel costs you a year" and they are read off the
-        same function, so they cannot disagree."""
-        add_travel(ledger)
-        suggested = ledger.get("/api/piggy").get_json()["suggested"]
-        rows = ledger.get("/api/insights").get_json()["observations"]
-        row = next((r for r in rows if r["id"] == "travel_no_bank"), None)
-        assert row, "the fixture travels but is offered no bank"
-        assert row["figures"]["annual"] == pytest.approx(
-            suggested["annual_spend"], abs=TOLERANCE)
 
-
-class TestTheSavingsSliderAsksTheServer:
-    """Nothing about the preview is computed in the browser.
-
-    The slider moves a real projection by asking for one, so the figure under
-    the handle and the figure that gets saved are produced by the same code.
-    A client-side preview would be a second implementation of the plan's
-    arithmetic, which is how two versions of one sum start disagreeing.
-    """
-
-    def test_previewing_does_not_write_anything(self, ledger):
-        before = ledger.get("/api/plan/setup").get_json()["savings"]
-        body = ledger.get("/api/projections?savings=1500").get_json()
-
-        assert body["savings_previewing"] is True
-        assert body["basis"]["saving"] == pytest.approx(1500.0, abs=TOLERANCE)
-        assert ledger.get("/api/plan/setup").get_json()["savings"] == before
-        assert body["savings_saved"] == pytest.approx(before, abs=TOLERANCE)
-
-    def test_the_preview_matches_what_saving_it_would_give(self, ledger):
-        preview = ledger.get("/api/projections?savings=1500").get_json()
-        ledger.put("/api/plan/setup", json={"savings": 1500})
-        saved = ledger.get("/api/projections").get_json()
-
-        assert saved["savings_previewing"] is False
-        for key in ("monthly_on_plan", "monthly_surplus"):
-            assert saved[key] == pytest.approx(preview[key], abs=TOLERANCE)
-        assert saved["at_12"]["on_plan"] == pytest.approx(
-            preview["at_12"]["on_plan"], abs=TOLERANCE)
-        assert saved["year_end"]["on_plan"] == pytest.approx(
-            preview["year_end"]["on_plan"], abs=TOLERANCE)
-
-    def test_saving_more_moves_the_plan_line_and_not_the_pace(self, ledger):
-        """The honest part, and what the copy on the card promises: this does
-        not conjure money, it relabels money. What you accumulate is the same;
-        how much of it was a decision is not."""
-        low = ledger.get("/api/projections?savings=200").get_json()
-        high = ledger.get("/api/projections?savings=1200").get_json()
-
-        assert high["at_12"]["on_plan"] > low["at_12"]["on_plan"]
-        assert high["at_12"]["pace"] == pytest.approx(low["at_12"]["pace"],
-                                                      abs=TOLERANCE)
-        # And it comes out of what is left to spend, pound for pound.
-        assert high["basis"]["leftover"] == pytest.approx(
-            low["basis"]["leftover"] - 1000.0, abs=TOLERANCE)
-
-    def test_the_ceiling_is_everything_not_already_promised(self, ledger):
-        body = ledger.get("/api/projections").get_json()
-        setup = ledger.get("/api/plan/setup").get_json()
-        assert body["savings_ceiling"] == pytest.approx(
-            setup["income"] - setup["fixed_total"] - setup["banks"],
-            abs=TOLERANCE)
-
-    def test_a_nonsense_figure_is_refused_rather_than_guessed_at(self, ledger):
-        assert ledger.get("/api/projections?savings=lots").status_code == 400
-
-    def test_the_year_end_figure_is_the_months_that_are_left(self, ledger):
-        from finance import projections
-        from datetime import date
-
-        body = ledger.get("/api/projections").get_json()
-        months = projections.months_left_in_year(date.today().isoformat())
-        assert body["year_end"]["months"] == months
-        assert body["year_end"]["on_plan"] == pytest.approx(
-            body["monthly_on_plan"] * months, abs=TOLERANCE)
-
-
-class TestWhatItComesToIfInvested:
-    def test_the_compounding_is_an_ordinary_annuity(self):
-        from finance.projections import future_value
-        # $500 a month at 7% for ten years, the figure every calculator gives.
-        assert future_value(500, 0.07, 120) == pytest.approx(86542.40, abs=1.0)
-        # No return is just the contributions, with nothing conjured.
-        assert future_value(500, 0.0, 120) == pytest.approx(60000.0, abs=0.01)
-        assert future_value(0, 0.07, 120, opening=1000) == pytest.approx(
-            2009.66, abs=1.0)
-
-    def test_every_value_is_reported_beside_what_was_paid_in(self, ledger):
-        inv = ledger.get("/api/projections").get_json()["invested"]
-        assert inv
-        for rate in inv["rates"]:
-            for years in inv["horizons"]:
-                row = rate["at"][str(years)]
-                assert row["contributed"] == pytest.approx(
-                    inv["monthly"] * years * 12, abs=TOLERANCE)
-                assert row["growth"] == pytest.approx(
-                    row["value"] - row["contributed"], abs=TOLERANCE)
-                # A positive rate can only beat holding it in a drawer.
-                assert row["value"] >= row["contributed"] - TOLERANCE
-
-    def test_a_higher_assumption_is_never_worth_less(self, ledger):
-        inv = ledger.get("/api/projections").get_json()["invested"]
-        values = [r["at"]["30"]["value"] for r in
-                  sorted(inv["rates"], key=lambda r: r["rate"])]
-        assert values == sorted(values)
-
-    def test_it_compounds_the_figure_the_plan_sets_aside(self, ledger):
-        body = ledger.get("/api/projections?savings=800").get_json()
-        assert body["invested"]["monthly"] == pytest.approx(800.0, abs=TOLERANCE)
-
-    def test_nothing_is_offered_when_nothing_is_being_saved(self, ledger):
-        body = ledger.get("/api/projections?savings=0").get_json()
-        assert body["invested"] is None
-
-    def test_the_chart_is_drawn_on_the_middle_assumption(self, ledger):
-        """Never the flattering one — the chart is the figure people
-        remember, so it is not allowed to be the best case."""
-        inv = ledger.get("/api/projections").get_json()["invested"]
-        rates = sorted(r["rate"] for r in inv["rates"])
-        assert inv["chart_rate"] == rates[len(rates) // 2]
-        assert inv["chart_rate"] < max(rates)
-
-    def test_the_chart_series_starts_at_nothing_and_matches_the_table(self, ledger):
-        inv = ledger.get("/api/projections").get_json()["invested"]
-        assert inv["series"][0] == {"year": 0, "contributed": 0.0, "value": 0.0}
-        middle = next(r for r in inv["rates"] if r["rate"] == inv["chart_rate"])
-        for years in inv["horizons"]:
-            point = next(p for p in inv["series"] if p["year"] == years)
-            assert point["value"] == pytest.approx(
-                middle["at"][str(years)]["value"], abs=TOLERANCE)
-
-
-class TestTheSetupChecklist:
-    """Every tick comes from the data, so a step done anywhere ticks itself."""
-
-    def _setup(self, client):
-        return client.get("/api/setup").get_json()
-
-    def _step(self, client, step_id):
-        return next(s for s in self._setup(client)["steps"] if s["id"] == step_id)
-
-    def test_a_fresh_ledger_has_everything_to_do(self, client):
-        body = self._setup(client)
-        assert [s["id"] for s in body["steps"]] == [
-            "start", "data", "income", "commitments", "travel", "budgets"]
-        assert not any(s["done"] for s in body["steps"])
-        assert body["remaining"] == 6
-
-    def test_each_step_ticks_itself_from_the_ordinary_endpoint(self, client):
-        client.put("/api/ledger/start", json={"start": "2026-03-01"})
-        assert self._step(client, "start")["done"]
-
-        load_bundled(client)
-        assert self._step(client, "data")["done"]
-
-        client.put("/api/plan/setup", json={"income": 5200, "savings": 700})
-        assert self._step(client, "income")["done"]
-
-        add_fixed(client, "Rent", 1800, "Rent & Housing")
-        assert self._step(client, "commitments")["done"]
-
-        client.post("/api/piggy", json={"name": "Concerts", "target": 600,
-                                        "cadence": "annual"})
-        assert not self._step(client, "travel")["done"], \
-            "a bank that pays for nothing keeps nothing off the week"
-        travel_bank(client, target=1200)
-        assert self._step(client, "travel")["done"]
-
-        client.post("/api/plan/setup/apply")
-        assert not self._step(client, "budgets")["done"], \
-            "the plan's own split is not yours until you divide the total"
-        total = client.get("/api/budgets").get_json()["monthly_total"]
-        assert client.put("/api/budgets/allocation", json={
-            "focus": ["Dining"], "budgets": {"Dining": total}}).status_code == 200
-        assert self._step(client, "budgets")["done"]
-
-        assert self._setup(client)["remaining"] == 0
-
-    def test_remaining_counts_what_is_left(self, ledger):
-        body = self._setup(ledger)
-        assert body["remaining"] == sum(
-            1 for s in body["steps"] if not s["done"] and not s["skipped"])
-
-    def test_only_optional_steps_can_be_skipped(self, client):
-        for step_id in ("start", "travel", "income"):
-            client.post(f"/api/insights/setup.{step_id}/dismiss")
-        steps = {s["id"]: s for s in self._setup(client)["steps"]}
-        assert steps["start"]["skipped"] and steps["travel"]["skipped"]
-        # A core step is not skippable however it is asked.
-        assert steps["income"]["skipped"] is False
-        assert self._setup(client)["remaining"] == 4
-
-    def test_a_bank_funded_budget_does_not_count_as_adopted(self, ledger):
-        """Only a real budget line ticks the step — a stale Travel row a
-        piggy bank pays for is not a budget being kept."""
-        st = ledger.application.config["STORE"]
-        travel_bank(ledger)
-        for key in list(st.budgets()):
-            st.set_budget(key, 0)
-        st.set_budget("Travel", 300)          # written directly, past the API
-        assert self._step(ledger, "budgets")["done"] is False
-
-
-class TestTheWeeklyNumberIsOneNumber:
-    def test_the_plan_and_today_quote_the_same_week(self, ledger):
-        """Plan says "about $X a week"; Today's derivation ends in "a week".
-        They are one figure and come from one place."""
-        ledger.put("/api/plan/setup", json={"income": 5200, "savings": 700})
-        setup = ledger.get("/api/plan/setup").get_json()
-        state = ledger.get("/api/plan").get_json()["state"]
-        assert setup["weekly_share"] == pytest.approx(
-            state["week"]["nominal"], abs=0.02)
-
-    def test_a_purchase_is_judged_against_what_is_left_this_week(self, ledger):
-        state = ledger.get("/api/plan").get_json()["state"]
-        left = state["week"]["left"]
-        if left <= 1:
-            pytest.skip("the fixture's week is already spent")
-        r = ledger.post("/api/plan/simulate",
-                        json={"amount": round(left - 1, 2)}).get_json()
-        assert r["affordable"] is True
-        r = ledger.post("/api/plan/simulate",
-                        json={"amount": round(left + 50, 2)}).get_json()
-        assert r["affordable"] is False
-        assert r["short_by"] == pytest.approx(50.0, abs=0.02)

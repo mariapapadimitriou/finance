@@ -11,6 +11,7 @@ from finance.ingest.base import IngestResult
 from finance.models import Transaction
 from finance.pipeline import ingest, recategorize_all
 from finance.transfers import UNSORTED, destination
+from ledger_files import set_plan
 
 TODAY = date.today()
 
@@ -33,7 +34,7 @@ def client(tmp_path):
     app = create_app(str(tmp_path / "dest.db"))
     app.config.update(TESTING=True)
     with app.test_client() as c:
-        c.put("/api/plan/setup", json={"income": 5200, "savings": 900})
+        set_plan(c, income=5200, savings=900)
         yield c
 
 

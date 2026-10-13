@@ -19,13 +19,12 @@ import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
-  clearUrl, isInsightsUrl, isPathUrl, isReviewUrl, readTxUrl, writeInsightsUrl, writePathUrl,
-  writeReviewUrl,
+  clearUrl, isInsightsUrl, isPathUrl, isProjectionsUrl, isReviewUrl, readTxUrl, writeInsightsUrl,
+  writePathUrl, writeProjectionsUrl, writeReviewUrl,
 } from './router.js';
 import {
-  getAccounts, getAuthStatus, getCategories, getInsights,
-  getReview, getSummary, logout, setLedgerCurrency, setUnauthorizedHandler,
-  syncPlaid,
+  getAccounts, getAuthStatus, getCategories, getReview, getSummary, logout, setLedgerCurrency,
+  setUnauthorizedHandler, syncPlaid,
 } from './api.js';
 
 // Icons are 24×24 stroke paths, drawn in currentColor.
@@ -36,13 +35,16 @@ import {
 // The Profile hub and Sign-in and security too: a brand-new account has an
 // empty ledger, and must still be able to change its email or sign out.
 // Goals too: someone new sees what comes next there (G-02). And Home, whose
-// no-data state (E-01, THL-72) is where linking starts.
-const WORKS_WHEN_EMPTY = ['home', 'path', 'debts', 'budgets', 'accounts', 'income', 'profile',
-                          'security', 'rules', 'goals'];
+// no-data state (E-01, THL-72) is where linking starts. Projections says what
+// it can in words with nothing in, and holds Unveil's screens, which the Path
+// links to.
+const WORKS_WHEN_EMPTY = ['home', 'path', 'projections', 'debts', 'budgets', 'accounts', 'income',
+                          'profile', 'security', 'rules', 'goals'];
 
 // Pages that draw their section pills themselves, under their own title
-// (Growth › Insights, THL-196 GR-28), so the shell's strip would say it twice.
-const OWN_SECTIONS = ['insights'];
+// (Growth › Insights, THL-196 GR-28; Growth › Projections, THL-197 GR-33), so
+// the shell's strip would say it twice.
+const OWN_SECTIONS = ['insights', 'projections'];
 
 /**
  * A navigation label with an optional phone-width form.
@@ -78,9 +80,10 @@ export default function App() {
   // /transactions… opens the list (a link from anywhere lands there); every
   // other address opens Home, where the app lands (THL-44, THL-125).
   const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() ? 'transactions'
-    : isPathUrl() || isInsightsUrl() ? 'growth' : 'home'));
+    : isPathUrl() || isInsightsUrl() || isProjectionsUrl() ? 'growth' : 'home'));
   const [panel, setPanel] = useState(() => (isReviewUrl() ? 'review'
-    : readTxUrl() ? 'transactions' : isPathUrl() ? 'path' : isInsightsUrl() ? 'insights' : 'home'));
+    : readTxUrl() ? 'transactions' : isPathUrl() ? 'path' : isInsightsUrl() ? 'insights'
+      : isProjectionsUrl() ? 'projections' : 'home'));
 
   /**
    * Go to a destination named either way.
@@ -93,12 +96,14 @@ export default function App() {
     const [group, target] = resolve(key);
     setTab(group);
     setPanel(target);
-    // The list writes its own address when it mounts; Needs a look, Path and
-    // Insights have one too. Everything else lives at "/". A link straight to
-    // one of Insights' views has already written its address.
+    // The list writes its own address when it mounts; Needs a look, Path,
+    // Insights and Projections have one too. Everything else lives at "/". A
+    // link straight to one of Insights' or Projections' views has already
+    // written its address.
     if (target === 'review') writeReviewUrl();
     else if (target === 'path') writePathUrl();
     else if (target === 'insights') { if (!isInsightsUrl()) writeInsightsUrl(); }
+    else if (target === 'projections') { if (!isProjectionsUrl()) writeProjectionsUrl(); }
     else if (target !== 'transactions') clearUrl();
     const anchor = ANCHORS[key];
     if (anchor) {
@@ -144,8 +149,10 @@ export default function App() {
       if (isReviewUrl()) { setTab('transactions'); setPanel('review'); }
       else if (isPathUrl()) { setTab('growth'); setPanel('path'); }
       else if (isInsightsUrl()) { setTab('growth'); setPanel('insights'); }
+      else if (isProjectionsUrl()) { setTab('growth'); setPanel('projections'); }
       else if (readTxUrl()) { setTab('transactions'); setPanel('transactions'); }
-      else if (['transactions', 'review', 'path', 'insights'].includes(panelRef.current)) {
+      else if (['transactions', 'review', 'path', 'insights', 'projections']
+        .includes(panelRef.current)) {
         setTab('home'); setPanel('home');
       }
     };
@@ -178,8 +185,8 @@ export default function App() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [summary, insights, accounts, categories, review] = await Promise.all([
-        getSummary(), getInsights(), getAccounts(), getCategories(),
+      const [summary, accounts, categories, review] = await Promise.all([
+        getSummary(), getAccounts(), getCategories(),
         // Only a badge: a failure here must not stop the app loading.
         getReview().catch(() => ({ count: 0 })),
       ]);
@@ -188,7 +195,7 @@ export default function App() {
       // US dollars.
       setLedgerCurrency(summary.currency);
       setData({
-        summary, insights,
+        summary,
         accounts: accounts.accounts ?? [],
         categories: categories.categories ?? [],
         review: review.count ?? 0,
@@ -266,7 +273,7 @@ export default function App() {
     return <Shell theme={theme} setTheme={setTheme}><Loading what="your spending" /></Shell>;
   }
 
-  const { summary, insights, accounts, categories } = data;
+  const { summary, accounts, categories } = data;
 
   // An empty ledger hides the panels that have nothing to show — but not the
   // ones that exist to fix that, or this is a dead end: the Connect button
@@ -292,8 +299,9 @@ export default function App() {
       counts={{ transactions: data.review }}
       // The Pearl pages draw their own header (overline + title). Insights
       // has its own month switcher too (GR-28), so the shell picks no month.
-      ownTitle={['home', 'path', 'insights', 'debts', 'budgets', 'transactions', 'review', 'goals',
-                 'profile', 'accounts', 'rules', 'security', 'income'].includes(panel)}
+      ownTitle={['home', 'path', 'insights', 'projections', 'debts', 'budgets', 'transactions',
+                 'review', 'goals', 'profile', 'accounts', 'rules', 'security',
+                 'income'].includes(panel)}
       ownSections={OWN_SECTIONS.includes(panel)}
       onSignOut={async () => { await logout(); setData(null); setSignedIn(false); }}
     >
@@ -303,8 +311,7 @@ export default function App() {
       {panel === 'debts' && <DebtsPanel onChanged={load} version={version} />}
       {panel === 'insights' && <InsightsPanel onTab={go} version={version} />}
       {panel === 'projections' && (
-        <ProjectionsPanel insights={insights} onTab={go} onChanged={load}
-                         version={version} />
+        <ProjectionsPanel onTab={go} onChanged={load} version={version} />
       )}
       {panel === 'review' && (
         <NeedsALook categories={categories} onChanged={load} onTab={go} version={version} />

@@ -128,10 +128,14 @@ class TestEachLedgerIsPrivate:
     def test_the_plan_stays_with_its_account(self, app):
         maria = sign_in(app, "mariapapas", "maria's password")
         sister = sign_up(app, "sister")
-        maria.put("/api/plan/setup", json={"income": 5200, "savings": 1040})
-        sister.put("/api/plan/setup", json={"income": 3000, "savings": 600})
-        assert maria.get("/api/plan/setup").get_json()["income"] == 5200
-        assert sister.get("/api/plan/setup").get_json()["income"] == 3000
+        maria.put("/api/home/answers", json={"income": 5200})
+        sister.put("/api/home/answers", json={"income": 3000})
+
+        def income(c):
+            rows = c.get("/api/home").get_json()["safe_to_spend"]["rows"]
+            return next(r for r in rows if r["key"] == "income")["amount"]
+        assert income(maria) == 5200
+        assert income(sister) == 3000
 
     def test_a_third_account_sees_neither(self, app):
         add_charge(sign_up(app, "sister"), "ONLY SISTER", 20)

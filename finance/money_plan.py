@@ -29,17 +29,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .analytics import counts_as_spending, spend_amount
-from .categorize import CATEGORIES, is_discretionary
+from .categorize import is_discretionary
 
 # A plan that leaves nothing over is not a plan anyone keeps, and one that
 # leaves almost everything over is not telling you anything. Outside this
 # band the app says so rather than quietly producing a strange daily number.
 LOW_SHARE = 0.10
 HIGH_SHARE = 0.75
-
-# Below this a category's share is noise — a one-off in a category you do not
-# really use, which would otherwise be handed a line in the budget forever.
-MIN_CATEGORY_SHARE = 0.02
 
 
 @dataclass
@@ -52,62 +48,6 @@ class FixedCost:
     def to_dict(self) -> dict:
         return {"id": self.id, "name": self.name,
                 "amount": round(self.amount, 2), "category": self.category}
-
-
-def variable_shares(transactions, months_back: int = 12,
-                    discretionary_only: bool = False,
-                    groups: dict[str, str] | None = None,
-                    bank_funded=frozenset()) -> dict[str, float]:
-    """How you divide the spending a budget can cover, as proportions of 1.0.
-
-    Everything that is not a fixed commitment, which is what the leftover
-    actually has to pay for. Groceries are essential and they are still bought
-    with the money left after rent, so a budget that omitted them left a
-    third of the month unaccounted for and read as if the plan had more room
-    than it did.
-
-    `bank_funded` — the categories a piggy bank pays for — are left out for
-    the opposite reason: their money has already gone. A bank's contribution
-    is subtracted in `plan()` alongside rent, so handing Travel a share of
-    what remains would fund the same trip twice — once through the bank and
-    again as a monthly line nobody is spending.
-
-    Proportions, never amounts. The amounts are what we are deliberately not
-    taking from history; the shares are the part history genuinely knows.
-
-    `groups` folds categories into budget lines (see finance/groups.py). The
-    exclusions above are still decided per category — a line is a label, not
-    a reason to budget something a piggy bank pays for — and the slivers are
-    dropped per line, so two small categories folded together can clear the
-    threshold that would have dropped each on its own.
-    """
-    totals: dict[str, float] = {}
-    months = sorted({t.month for t in transactions})[-months_back:]
-    recent = set(months)
-
-    for t in transactions:
-        if t.month not in recent or t.amount <= 0:
-            continue
-        category = t.category or "Other"
-        if not counts_as_spending(t) or category in bank_funded:
-            continue
-        if discretionary_only and not is_discretionary(category):
-            continue
-        line = (groups or {}).get(category, category)
-        totals[line] = totals.get(line, 0.0) + spend_amount(t)
-
-    grand = sum(totals.values())
-    if grand <= 0:
-        return {}
-
-    shares = {c: v / grand for c, v in totals.items()}
-    # Drop the slivers, then renormalise so the kept shares still sum to one.
-    kept = {c: s for c, s in shares.items() if s >= MIN_CATEGORY_SHARE}
-    if not kept:
-        return {}
-    scale = sum(kept.values())
-    return {c: round(s / scale, 4) for c, s in sorted(
-        kept.items(), key=lambda kv: -kv[1])}
 
 
 def _months_by_line(transactions, months_back: int = 12,
@@ -142,18 +82,6 @@ def _months_by_line(transactions, months_back: int = 12,
         per[line][t.month] = per[line].get(t.month, 0.0) + spend_amount(t)
     return window, {line: [by_month.get(m, 0.0) for m in window]
                     for line, by_month in per.items()}
-
-
-def history_stats(transactions, months_back: int = 12,
-                  groups: dict[str, str] | None = None,
-                  bank_funded=frozenset()) -> dict[str, dict[str, float]]:
-    """Each line's average and median month — the guide beside a target."""
-    import statistics
-
-    _, by_line = _months_by_line(transactions, months_back, groups, bank_funded)
-    return {line: {"average": round(sum(v) / len(v), 2),
-                   "median": round(statistics.median(v), 2)}
-            for line, v in by_line.items()}
 
 
 def typical_monthly(transactions, months_back: int = 12,
@@ -241,13 +169,6 @@ def split(transactions, leftover: float, groups: dict[str, str] | None = None,
             "short": round(total - leftover, 2), "typical": typical}
 
 
-def discretionary_shares(transactions, months_back: int = 12,
-                         bank_funded=frozenset()) -> dict[str, float]:
-    """Only the part a daily allowance can influence."""
-    return variable_shares(transactions, months_back, discretionary_only=True,
-                           bank_funded=bank_funded)
-
-
 def discretionary_pool(budgets: dict[str, float]) -> float:
     """The slice of the budget a daily number governs.
 
@@ -318,19 +239,6 @@ def plan(income: float, fixed: list[FixedCost], savings: float,
     }
 
 
-def days_in_month(month: str) -> int:
-    """How many days the month being shown actually has.
-
-    There is one divisor for "a day" and this is it. The Plan tab used to
-    divide by 30.44 — the average length of a month — while Today divided by
-    the real length of the month on screen, so the two pages quoted $41.86 and
-    $41.10 for the same figure. An average month is also not a month anyone
-    ever has to budget for.
-    """
-    import calendar
-    return calendar.monthrange(int(month[:4]), int(month[5:7]))[1]
-
-
 def monthly_allowance(income: float, fixed: list[FixedCost], savings: float,
                       banks: float, transactions,
                       bank_funded=frozenset()) -> float:
@@ -357,163 +265,3 @@ def monthly_allowance(income: float, fixed: list[FixedCost], savings: float,
 # nobody can act on.
 UNCATEGORISED_WARN = 0.25
 
-
-def uncategorised_warning(shares: dict[str, float]) -> str | None:
-    """Say when the budget's biggest line is really a missing one."""
-    share = shares.get("Other", 0.0)
-    if share < UNCATEGORISED_WARN:
-        return None
-    return (
-        f"{share:.0%} of your discretionary spending is uncategorised, so "
-        f"that share of the budget is a line called \u201cOther\u201d. The "
-        "money is real, but you cannot act on it. Correcting a few merchants "
-        "on the Transactions tab \u2014 ticking \u201capply to every charge "
-        "from this merchant\u201d \u2014 moves a lot of it at once, and the "
-        "budget gets sharper every time you do.")
-
-
-def category_budgets(leftover: float, shares: dict[str, float]) -> dict[str, float]:
-    """Split the leftover across categories in the proportions already used.
-
-    The parts sum to the whole exactly. Rounding each share on its own left
-    the budget lines adding up to a few cents either side of the pool, which
-    is the kind of discrepancy that makes someone stop trusting every other
-    number on the page. The remainder goes to the largest line, where a cent
-    is least visible.
-    """
-    if leftover <= 0 or not shares:
-        return {}
-
-    raw = {c: leftover * s for c, s in shares.items()}
-    # Slivers are dropped first, then the rest are rescaled, so what is
-    # dropped is redistributed rather than quietly lost from the total.
-    kept = {c: v for c, v in raw.items() if v >= 1}
-    if not kept:
-        return {}
-    scale = leftover / sum(kept.values())
-    out = {c: round(v * scale, 2) for c, v in kept.items()}
-
-    drift = round(leftover - sum(out.values()), 2)
-    if drift:
-        biggest = max(out, key=lambda c: out[c])
-        out[biggest] = round(out[biggest] + drift, 2)
-    return out
-
-
-def headroom(leftover: float, typical_total: float) -> dict | None:
-    """When the plan leaves more than you actually spend.
-
-    Good news, and easy to present badly. A budget line reading "$574 more
-    than you usually spend" is an invitation, and this app is built so that
-    nothing in it pays out for buying something. The same fact put the other
-    way round — that much of your pay is drifting rather than being saved —
-    is the one worth acting on.
-    """
-    if leftover <= 0 or typical_total <= 0:
-        return None
-    spare = round(leftover - typical_total, 2)
-    if spare < max(typical_total * 0.15, 50):
-        return None
-    return {
-        "spare": spare,
-        "typical_total": round(typical_total, 2),
-        "note": (
-            f"You typically spend about {_money(typical_total)} a month of "
-            f"this, leaving {_money(spare)} unallocated. That is not spare "
-            "money to find a use for — it is the clearest saving available "
-            "to you. Raising the savings figure above by some of it makes it "
-            "happen on purpose rather than by accident."),
-    }
-
-
-def _money(value: float) -> str:
-    return f"${value:,.0f}"
-
-
-def explain(leftover: float, shares: dict[str, float],
-            historical: dict[str, float] | None = None,
-            budgets_override: dict[str, float] | None = None) -> list[dict]:
-    """Each category's new budget beside what it used to cost.
-
-    Shown together because the difference is the whole point: a category
-    whose budget is well under what you spend is where the plan is asking
-    something of you, and it is better to see that on the day you set it than
-    to meet it as a failure three weeks later.
-    """
-    budgets = (budgets_override if budgets_override is not None
-               else category_budgets(leftover, shares))
-    rows = []
-    for category, amount in budgets.items():
-        was = round((historical or {}).get(category, 0.0), 2)
-        rows.append({
-            "category": category,
-            "budget": amount,
-            "share": shares.get(category, 0.0),
-            "typical": was,
-            "change": round(amount - was, 2) if was else None,
-            "essential": not CATEGORIES.get(category, {}).get("discretionary", True),
-        })
-    rows.sort(key=lambda r: -r["budget"])
-    return rows
-
-
-def observed(transactions, today: str, months: int = 3) -> dict | None:
-    """What actually came in, went out and stayed, in recent full months.
-
-    The plan is decisions; this is the check on them. Over the last `months`
-    complete months with data (the month under way is only part of one):
-
-    * income  — pay and other money categorised Income;
-    * spent   — everything you spent, bills included, your share only;
-    * stayed  — income minus spent: what was left with you, wherever it sits;
-    * moved   — what you moved to savings (transfers marked Saved).
-
-    Another member's money on a joint account is none of these. Returns None
-    when no month has any income to measure against.
-    """
-    import statistics
-
-    from .analytics import invested_in, is_others, share_amount
-    from .categorize import is_spend_category
-
-    current = today[:7]
-    by_month: dict[str, dict] = {}
-    for t in transactions:
-        if t.month >= current or is_others(t):
-            continue
-        m = by_month.setdefault(t.month, {"income": 0.0, "spent": 0.0})
-        if (t.category or "") == "Income" and t.amount < 0:
-            m["income"] += -t.amount
-        elif is_spend_category(t.category or "Other"):
-            m["spent"] += share_amount(t)
-    chosen = sorted(by_month)[-months:]
-    rows = []
-    for month in chosen:
-        m = by_month[month]
-        income, spent = round(m["income"], 2), round(m["spent"], 2)
-        rows.append({"month": month, "income": income, "spent": spent,
-                     "stayed": round(income - spent, 2),
-                     "moved": invested_in(transactions, month)})
-    if not any(r["income"] > 0 for r in rows):
-        return None
-    from .income import by_type, cadence
-    for r in rows:
-        r["by_type"] = by_type(transactions, r["month"])
-    pay = cadence(transactions, today)
-    median = round(statistics.median(r["income"] for r in rows), 2)
-    # Paid every two weeks: a typical month is one paycheque × 26 ÷ 12, plus
-    # whatever else usually comes in. A month that happened to hold a third
-    # paycheque doesn't get to set the figure.
-    income = median
-    if pay and pay["cadence"] == "biweekly" and pay["monthly"]:
-        other = statistics.median(
-            r["income"] - r["by_type"].get("salary", 0.0) for r in rows)
-        income = round(pay["monthly"] + max(other, 0.0), 2)
-    return {
-        "months": rows,
-        "income": income,
-        "income_median": median,
-        "pay": pay,
-        "stayed": round(statistics.fmean(r["stayed"] for r in rows), 2),
-        "moved": round(statistics.fmean(r["moved"] for r in rows), 2),
-    }

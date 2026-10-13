@@ -10,6 +10,7 @@ from finance import groups
 from finance.analytics import counts_as_spending, invested_in
 from finance.categorize import CATEGORIES, categorize
 from finance.models import Transaction
+from ledger_files import set_plan
 
 TODAY = date.today()
 MONTH = f"{TODAY:%Y-%m}"
@@ -48,7 +49,7 @@ def client(tmp_path):
     app = create_app(str(tmp_path / "inv.db"))
     app.config.update(TESTING=True)
     with app.test_client() as c:
-        c.put("/api/plan/setup", json={"income": 5200, "savings": 900})
+        set_plan(c, income=5200, savings=900)
         yield c
 
 
@@ -61,12 +62,15 @@ def add(c, amount, category="Shopping", description="BIG TRANSFER"):
 
 
 def spent(c):
-    return c.get(f"/api/plan?month={MONTH}").get_json()["status"]["spent"]
+    """Already spent this month, as Home's safe-to-spend counts it."""
+    rows = c.get("/api/home").get_json()["safe_to_spend"]["rows"]
+    return next(r["amount"] for r in rows if r["key"] == "spent")
 
 
 def shopping(c):
-    rows = c.get(f"/api/budgets?month={MONTH}").get_json()["rows"]
-    return next((r["spent"] for r in rows if r["category"] == "Shopping"), 0)
+    """Shopping this month, as Growth › Insights shows it (in cents)."""
+    rows = c.get("/api/insights/month").get_json()["categories"]
+    return next((r["spent"] for r in rows if r["category"] == "Shopping"), 0) / 100
 
 
 class TestPartOfATransaction:
@@ -121,7 +125,7 @@ class TestPartOfATransaction:
             assert c.execute("SELECT COUNT(*) AS n FROM txn_invested").fetchone()["n"] == 0
 
 
-class TestAheadShowsIt:
+class TestHomeShowsIt:
     def test_invested_this_month_counts_both_ways_once(self, client):
         add(client, 500, category="Saved", description="QUESTRADE INC")
         part = add(client, 1000)
@@ -129,9 +133,9 @@ class TestAheadShowsIt:
         # A Saved row with a partial amount still counts once, in full.
         both = add(client, 200, category="Saved", description="TFSA CONTRIBUTION")
         client.put(f"/api/transactions/{both}/invested", json={"amount": 50})
-        body = client.get("/api/projections").get_json()
-        assert body["invested_month"] == {"month": MONTH, "amount": 1000.0,
-                                          "saving": 900.0}
+        rows = client.get("/api/home").get_json()["snapshot"]["rows"]
+        savings = next(r for r in rows if r["key"] == "savings")
+        assert (savings["saved"], savings["planned"]) == (1000.0, 900.0)
 
     def test_the_sum_itself(self):
         rows = [

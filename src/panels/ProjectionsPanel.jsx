@@ -1,407 +1,240 @@
 import { useCallback, useEffect, useState } from 'react';
-import Chart from '../components/Chart.jsx';
+import { ErrorNote } from '../components/ui.jsx';
+import { getProjections } from '../api.js';
+import { PButton, StatusPill } from '../pearl/kit.jsx';
+import { onProjectionsUrl, readProjectionsUrl, setGoalsIntent, writeProjectionsUrl } from '../router.js';
+import { GrowthTabs, More } from './InsightsParts.jsx';
+import { ForecastChart, Next30Chart, SavingsChart } from './ProjectionsCharts.jsx';
+import { ForecastView, Next30View, SavingsView } from './ProjectionsViews.jsx';
+import UnveilScreens from './Unveil.jsx';
 import {
-  Card, ErrorNote, GoTo, Loading, Notice, StatusPill, } from '../components/ui.jsx';
-import { getProjections, money, monthLabel, saveSavings } from '../api.js';
-import { investedConfig, projectionConfig } from '../charts.js';
-import { OPEN_SAVED_KEY } from './TransactionsPanel.jsx';
-
-const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
-                     'July', 'August', 'September', 'October', 'November',
-                     'December'];
+  CALC_START, anchorLine, calculator, dollarsWords, forecastLine, next30Line, parseAmount, parseYears,
+  savingsWords,
+} from './projectionsMath.js';
+import './home.css';
+import './insights.css';
+import './projections.css';
 
 /**
- * Ahead: the plan against your current pace, and what saving gets you.
+ * Growth › Projections (Pearl THL-197 GR-33, at /growth/projections). It
+ * replaced the prototype Projections page and the "leave a transaction out"
+ * manager it held (leave-out rules live in Profile › Categories and rules).
  *
- * *Plan* is what the plan puts away. *Current pace* is that plus whatever this
- * month's spending, carried to its end, leaves of the budget — so the gap
- * between them is how this month is going, a month at a time.
+ * GR-33 is the GR-17 layout — the Growth pills, YOUR ANCHOR and the growth
+ * calculator (THL-135 GR-17, GR-18) — with three look-ahead cards between the
+ * Anchor line and the calculator, each opening its detail view at its own
+ * address: GR-34 this month (/forecast, THL-191), GR-35 the next 30 days
+ * (/next30, THL-192) and GR-36 savings in a year (/savings, THL-194). GR-17
+ * itself, the calculator without the cards, is /calculator, which GR-16's
+ * "Try the growth calculator" opens.
+ *
+ * Unveil's screens are here too, reached from the Path: GR-16 Ready to
+ * invest (/growth/ready), GR-37 "Opened an investing account?"
+ * (/growth/unveil) and GR-10 Unveil done (/growth/unveil/done) — Unveil.jsx.
+ *
+ * Every projection is a range, every chart has a table for a screen reader,
+ * nothing is red and nothing is signed. Learn isn't built: its pill is
+ * disabled, and "Learn how fees change this" says it's coming.
  */
-export default function ProjectionsPanel({ insights, onTab, onChanged,
-                                          version = 0 }) {
+
+const VIEWS = { forecast: ForecastView, next30: Next30View, savings: SavingsView };
+const UNVEIL = ['ready', 'unveil', 'done'];
+
+export default function ProjectionsPanel({ onTab, onChanged, version }) {
+  const [route, setRoute] = useState(() => readProjectionsUrl() ?? { view: '' });
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [target, setTarget] = useState('');
-  // The slider's own position, and the figure the server has been asked to
-  // project. Null in both means "whatever is saved" — dragging sets the
-  // first immediately so the handle keeps up with the finger, and the second
-  // follows a beat later so a drag is not one request per pixel.
-  const [slider, setSlider] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const unveil = UNVEIL.includes(route.view);
 
-  const load = useCallback(async (goal, savings) => {
+  useEffect(() => onProjectionsUrl(() => {
+    const next = readProjectionsUrl();
+    if (next) setRoute(next);
+  }), []);
+
+  const load = useCallback(() => {
     setError(null);
-    try {
-      // Not cleared first: on a re-fetch the previous figures stay on screen
-      // rather than collapsing to a spinner under the slider being dragged.
-      setData(await getProjections(goal || undefined, savings));
-    } catch (e) {
-      setError(e);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version]);   // an import changes the spend history the projection rests on
+    return getProjections().then(setData).catch(setError);
+  }, []);
+  useEffect(() => { if (!unveil) load(); }, [load, version, unveil]);
 
-  useEffect(() => {
-    if (slider === null) return undefined;
-    const id = setTimeout(() => setPreview(slider), 180);
-    return () => clearTimeout(id);
-  }, [slider]);
+  const show = (view = '') => {
+    writeProjectionsUrl(view);
+    window.scrollTo?.({ top: 0 });
+  };
+  const nav = {
+    show, onTab, onChanged, reload: load, setData,
+    toGoals: (view) => { setGoalsIntent({ view }); onTab?.('goals'); },
+  };
 
-  useEffect(() => { load(target, preview ?? undefined); },
-    [load, target, preview]);
-
-  async function commit() {
-    setSaving(true);
-    setError(null);
-    try {
-      // The same endpoint and the same setting the plan's own field writes. One
-      // figure with two editors is fine; two figures would not be.
-      await saveSavings(slider);
-      setSlider(null);
-      setPreview(null);
-      await load(target);
-      await onChanged?.();
-    } catch (e) {
-      setError(e);
-    } finally {
-      setSaving(false);
-    }
+  if (unveil) return <UnveilScreens view={route.view} nav={nav} version={version} />;
+  if (error) return <div className="pk hm-page"><ErrorNote error={error} onRetry={load} /></div>;
+  if (!data) {
+    return <div className="pk hm-page"><p className="pk-muted" role="status">Loading your projections…</p></div>;
   }
+  const View = VIEWS[route.view];
+  if (View) return <View d={data} nav={nav} />;
+  return <ProjectionsPage d={data} nav={nav} cards={route.view !== 'calculator'} />;
+}
 
-
-  // Before the unavailable branch below, not after: on a failed load `data` is
-  // null, so `!data?.available` was true and the page rendered an empty grey
-  // notice under the error — a failure dressed as furniture.
-  if (error && !data) return <ErrorNote error={error} onRetry={() => load(target)} />;
-  if (!data) return <Loading what="projections" />;
-
-  const foundAnnual = insights?.summary?.weighted_annual ?? 0;
-
+/** "YOUR ANCHOR · Likely full between March and June 2027 · See the projection ›". */
+export function AnchorLine({ anchor, nav }) {
+  const line = anchorLine(anchor);
   return (
-    <div className="stack">
-      <ErrorNote error={error} onRetry={() => load(target)} />
+    <section className="hm-card pj-anchor" aria-labelledby="pj-anchor-title">
+      <div className="in-stack">
+        <p className="pk-overline">Your Anchor</p>
+        <h2 className="pk-h3" id="pj-anchor-title">{line.text}</h2>
+      </div>
+      <More onClick={() => nav.toGoals(line.view)}>{line.link}</More>
+    </section>
+  );
+}
 
-      {/* Without a plan there is no slider to frame the figures, so this is
-          the only place that says what they rest on. With one, the slider
-          card says it in its first line and this card would be a repeat.
-          Shown, not edited: take-home pay had a Save button here and another
-          in the plan, and whichever was touched last won silently. */}
-      {!data.basis?.from_plan && (
-        <Card title="What this is built on">
-          <div className="row">
-            <strong className="num">{money(data.monthly_income)}</strong>
-            <span className="muted">a month</span>
-            <span className="spacer" />
-            <GoTo to="income" from="projections" onTab={onTab}>Edit</GoTo>
+function CardHead({ title, id, link, onLink, label }) {
+  return (
+    <div className="in-card-head">
+      <h2 className="pk-h3" id={id}>{title}</h2>
+      <More onClick={onLink} label={label}>{link}</More>
+    </div>
+  );
+}
+
+/** GR-33 (and GR-17 without the look-ahead cards). */
+export function ProjectionsPage({ d, nav, cards = true }) {
+  const f = d.forecast;
+  const n = d.next30;
+  const s = d.savings;
+  const words = savingsWords(s);
+  return (
+    <div className="pk hm-page in-page pj-page">
+      <header className="hm-head">
+        <p className="pk-overline accent">What could happen</p>
+        <h1 className="pk-h1">Growth</h1>
+      </header>
+      <GrowthTabs current="projections" onTab={nav.onTab} />
+      <AnchorLine anchor={d.anchor} nav={nav} />
+
+      {cards && (
+        <div className="pj-cards">
+          <section className="hm-card in-card" aria-labelledby="pj-month-title">
+            <CardHead id="pj-month-title" title="This month" link="See the forecast"
+                      onLink={() => nav.show('forecast')} label="See the forecast for this month" />
+            <p className="pj-body">{forecastLine(f)}</p>
+            {f.state !== 'none' && <ForecastChart f={f} />}
+          </section>
+          <div className="pj-row">
+            <section className="hm-card in-card" aria-labelledby="pj-next-title">
+              <CardHead id="pj-next-title" title="The next 30 days" link="See all"
+                        onLink={() => nav.show('next30')} label="See all of the next 30 days" />
+              <p className="pj-body">{next30Line(n)}</p>
+              {(n.series.length > 0 || n.events.length > 0) && <Next30Chart n={n} />}
+            </section>
+            <section className="hm-card in-card" aria-labelledby="pj-savings-title">
+              <CardHead id="pj-savings-title" title="Your savings in a year" link="See more"
+                        onLink={() => nav.show('savings')} label="See more of your savings in a year" />
+              <p className="pk-h2 pj-figure-big">{words.figure}</p>
+              <p className="pk-label pk-muted">{words.line}</p>
+              {s.state === 'ok' && <SavingsChart s={s} />}
+            </section>
           </div>
-        </Card>
+        </div>
       )}
 
-      {!data?.available ? (
-        <Notice>
-          {data?.reason}
-
-        </Notice>
-      ) : (
-        <>
-          {/* First: it is the one thing on the page you can move, and every
-              figure below it moves with it. */}
-          {data.from_plan && (
-            <SavingsSlider
-              onTab={onTab}
-              data={data}
-              value={slider ?? data.savings_saved ?? 0}
-              onChange={setSlider}
-              onCommit={commit}
-              onReset={() => { setSlider(null); setPreview(null); }}
-              saving={saving}
-              dirty={slider !== null
-                     && Math.abs(slider - (data.savings_saved ?? 0)) > 0.005}
-            />
-          )}
-
-
-          <Card
-            title="Plan vs current pace"
-            actions={<Confidence level={data.confidence}
-                                 months={data.months_observed} />}
-          >
-            <PaceBadge data={data} />
-            <div className="chart">
-              <Chart
-                config={projectionConfig(data.series)}
-                ariaLabel={`Saved over twelve months: `
-                  + `${money(data.at_12.on_plan)} on the plan, `
-                  + `${money(data.at_12.pace)} at your current pace`}
-              />
-            </div>
-            <div className="legend" style={{ marginTop: 6 }}>
-              <span className="item">
-                <span className="swatch" style={{ background: 'var(--series-3)' }} />
-                Plan — {money(data.at_12.on_plan)} in 12 months
-              </span>
-              <span className="item">
-                <span className="swatch" style={{ background: 'var(--series-1)' }} />
-                Current pace — {money(data.at_12.pace)}
-              </span>
-            </div>
-          </Card>
-
-          {data.invested_month && <InvestedThisMonth im={data.invested_month} onTab={onTab} />}
-
-          {data.invested && <Invested invested={data.invested} />}
-        </>
-      )}
+      <Calculator onReady={() => nav.show('ready')} />
     </div>
   );
 }
 
 /**
- * The savings figure, as something you can move and watch.
- *
- * Two things make this honest rather than a toy. The first is that nothing
- * here is computed in the browser: every figure comes back from the same
- * endpoint the saved value uses, asked a hypothetical question. The second is
- * that it shows the cost as well as the benefit — raising this does not
- * conjure money, it moves it out of what you may spend, and the tile for that
- * sits beside the two that go up.
+ * GR-17 and GR-18: what regular investing could grow to at 3%, 5% and 7%.
+ * Illustrative, not a prediction: it uses only the two figures she types.
+ * Once she changes one, "Ready to invest" appears (GR-18).
  */
-function SavingsSlider({ data, value, onChange, onCommit, onReset, saving,
-                         dirty, onTab }) {
-  const ceiling = Math.max(data.savings_ceiling ?? 0, value, 100);
-  const max = Math.ceil(ceiling / 25) * 25;
-  const filled = Math.round((value / max) * 100);
-  const months = data.year_end?.months ?? 0;
-  const from = MONTH_NAMES[12 - months] ?? '';
-
+export function Calculator({ onReady, initial = CALC_START }) {
+  const [monthly, setMonthly] = useState(`$${initial.monthly}`);
+  const [years, setYears] = useState(`${initial.years} years`);
+  const amount = parseAmount(monthly);
+  const span = parseYears(years);
+  const result = calculator(amount, span);
+  const changed = amount !== Number(initial.monthly) || span !== Number(initial.years);
   return (
-    <Card title="What if you put away more"
-          actions={dirty && (
-            <div className="row" style={{ gap: 8 }}>
-              <button className="btn quiet" onClick={onReset} disabled={saving}>
-                Reset
-              </button>
-              <button className="btn primary" onClick={onCommit} disabled={saving}>
-                {saving ? 'Saving…' : 'Make it the plan'}
-              </button>
-            </div>
-          )}>
-      <div className="controls" style={{ alignItems: 'center', gap: 14 }}>
-        <label htmlFor="savings-slider" style={{ whiteSpace: 'nowrap' }}>
-          Saving each month
-        </label>
-        <input
-          id="savings-slider"
-          className="measure"
-          type="range"
-          min="0"
-          max={max}
-          step="25"
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          style={{
-            flex: '1 1 220px',
-            minWidth: 160,
-            // The filled part of the track, which Chromium will not draw.
-            backgroundImage: `linear-gradient(to right, var(--brand) 0 ${
-              filled}%, var(--surface-2) ${filled}% 100%)`,
-          }}
-          aria-valuetext={`${money(value)} a month`}
-        />
-        <strong className="num" style={{ fontSize: 20, minWidth: 96,
-                                         textAlign: 'right' }}>
-          {money(value)}
-        </strong>
+    <section className="hm-card in-card pj-calc" aria-labelledby="pj-calc-title">
+      <div className="in-stack pj-calc-head">
+        <StatusPill icon="info" tone="info">Illustrative · not a prediction</StatusPill>
+        <h2 className="pk-h2" id="pj-calc-title">What regular investing could grow to</h2>
       </div>
-
-
-      <div className="grid cols-3" style={{ marginTop: 16 }}>
-        <Tile label={`By 31 December`} value={money(data.year_end?.on_plan ?? 0)}
-              note={months > 0
-                ? `${months} more month${months === 1 ? '' : 's'}, ${from} on`
-                : 'the year is done'}
-              tone="good" />
-        <Tile label="Over twelve months" value={money(data.at_12?.on_plan ?? 0)}
-              note="following the plan" tone="good" />
-        <Tile label="Left to spend" value={money(data.basis?.leftover ?? 0)}
-              note="a month"
-              tone={(data.basis?.leftover ?? 0) <= 0 ? 'bad' : undefined} />
+      <div className="pj-inputs">
+        <div className="gl-field">
+          <label htmlFor="pj-monthly">Each month</label>
+          <input id="pj-monthly" inputMode="decimal" autoComplete="off" value={monthly}
+                 aria-invalid={amount == null ? 'true' : undefined}
+                 aria-describedby={amount == null ? 'pj-monthly-error' : undefined}
+                 onChange={(e) => setMonthly(e.target.value)}
+                 onBlur={() => { if (amount != null) setMonthly(dollarsWords(amount)); }} />
+          {amount == null && (
+            <p className="pj-field-note" id="pj-monthly-error">Enter an amount, like $100.</p>
+          )}
+        </div>
+        <div className="gl-field">
+          <label htmlFor="pj-years">For how long</label>
+          <input id="pj-years" inputMode="numeric" autoComplete="off" value={years}
+                 aria-invalid={span == null ? 'true' : undefined}
+                 aria-describedby={span == null ? 'pj-years-error' : undefined}
+                 onChange={(e) => setYears(e.target.value)}
+                 onBlur={() => { if (span != null) setYears(`${span} year${span === 1 ? '' : 's'}`); }} />
+          {span == null && (
+            <p className="pj-field-note" id="pj-years-error">Enter whole years, from 1 to 50.</p>
+          )}
+        </div>
       </div>
-
-      {/* Live state, so never folded away with the explanation below. */}
-      {dirty && (
-        <p className="small muted" style={{ margin: '14px 0 0' }}>Not saved</p>
-      )}
-
-      {/* The thing a slider like this usually hides: it is not a tap that
-          makes more money come out. The recent-pace line does not move at
-          all, because what you actually accumulate is unchanged — what
-          changes is how much of it was a decision. */}
-    </Card>
-  );
-}
-
-/**
- * The same contribution, left to compound.
- *
- * Deliberately a range rather than a figure. One rate would be a forecast
- * wearing arithmetic's clothes; three make the point that the answer depends
- * on an assumption the app cannot make for her. Contributions are shown
- * against every value, because the gap is the only part that is news.
- */
-function Invested({ invested }) {
-  const chart = invested.rates.find((r) => r.rate === invested.chart_rate)
-    ?? invested.rates[1] ?? invested.rates[0];
-  const at30 = chart.at['30'];
-
-  return (
-    <Card title="If invested">
-      <div className="chart">
-        <Chart
-          config={investedConfig(invested.series)}
-          ariaLabel={`Invested at ${Math.round(invested.chart_rate * 100)}% a `
-            + `year, ${money(invested.monthly)} a month grows to `
-            + `${money(at30.value)} over thirty years, of which `
-            + `${money(at30.contributed)} is what you put in`}
-        />
-      </div>
-      <div className="legend" style={{ marginTop: 6 }}>
-        <span className="item">
-          <span className="swatch" style={{ background: 'var(--series-3)' }} />
-          What it is worth at {Math.round(invested.chart_rate * 100)}% a year
-        </span>
-        <span className="item">
-          <span className="swatch" style={{ background: 'var(--series-1)' }} />
-          What you put in — {money(at30.contributed)} over thirty years
-        </span>
-      </div>
-
-      <div className="table-wrap" style={{ marginTop: 16 }}>
-        <table>
-          <thead>
-            <tr>
-              <th>If it returned</th>
-              {invested.horizons.map((y) => (
-                <th key={y} className="r">{y} years</th>
+      {result && (
+        <>
+          <p className="pj-body pk-muted" aria-live="polite">
+            {`You’d put in ${dollarsWords(result.putIn)}. At illustrative rates it could become:`}
+          </p>
+          <ul className="in-legend in-legend-dots" aria-hidden="true">
+            <li><span className="in-dot in-set-aside" />What you put in</li>
+            <li><span className="in-dot in-essentials" />Illustrative growth</li>
+          </ul>
+          <table className="pk-sr">
+            <caption>What regular investing could grow to, illustrative</caption>
+            <thead><tr><th scope="col">Rate</th><th scope="col">What you put in</th>
+              <th scope="col">Illustrative growth</th><th scope="col">Could become</th></tr></thead>
+            <tbody>
+              {result.rows.map((r) => (
+                <tr key={r.rate}><th scope="row">{r.label}</th><td>{dollarsWords(result.putIn)}</td>
+                  <td>{dollarsWords(Math.max(r.value - result.putIn, 0))}</td><td>{dollarsWords(r.value)}</td></tr>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {invested.rates.map((r) => (
-              <tr key={r.rate}>
-                <td>
-                  {r.label}{' '}
-                  <span className="muted small">
-                    {Math.round(r.rate * 100)}% a year
-                  </span>
-                </td>
-                {invested.horizons.map((y) => (
-                  <td key={y} className="r num">
-                    {money(r.at[String(y)].value)}
-                  </td>
-                ))}
-              </tr>
+            </tbody>
+          </table>
+          <ul className="pj-rates" aria-hidden="true">
+            {result.rows.map((r) => (
+              <li key={r.rate}>
+                <span className="pj-rate-label">{r.label}</span>
+                <span className="pj-bar">
+                  <span className="pj-bar-in" style={{ width: `${(r.putInShare * 100).toFixed(2)}%` }} />
+                  <span className="pj-bar-growth" style={{ width: `${(r.growthShare * 100).toFixed(2)}%` }} />
+                </span>
+                <span className="pj-rate-value">{dollarsWords(r.value)}</span>
+              </li>
             ))}
-            <tr>
-              <td className="muted">What you put in</td>
-              {invested.horizons.map((y) => (
-                <td key={y} className="r num muted">
-                  {money(invested.rates[0].at[String(y)].contributed)}
-                </td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-    </Card>
-  );
-}
-
-function Tile({ label, value, note, tone }) {
-  return (
-    <div className="card tile">
-      <div className="label">{label}</div>
-      <div className={`value num${tone ? ` ${tone}` : ''}`}>{value}</div>
-      {note && <div className="note">{note}</div>}
-    </div>
-  );
-}
-
-function Confidence({ level, months }) {
-  const tone = { thin: 'warning', fair: 'warning', reasonable: 'good' }[level];
-  return (
-    <StatusPill state={tone}>
-      {months} month{months === 1 ? '' : 's'}
-    </StatusPill>
-  );
-}
-
-/**
- * How this month is going against the plan, as one badge: ahead (spending
- * under the budget) or behind, a month at a time.
- */
-function PaceBadge({ data }) {
-  const pm = data.pace_month;
-  if (data.ahead == null || !pm) return null;
-  const ahead = data.ahead >= 0;
-  return (
-    <div className="pace-badge-row">
-      <span className={`pace-badge ${ahead ? 'good' : 'bad'}`}>
-        {ahead ? '▲' : '▼'} {money(Math.abs(data.ahead))} a month {ahead ? 'ahead of' : 'behind'} plan
-      </span>
-      <span className="small muted">
-        On pace to spend {money(pm.projected_spend)} of {money(pm.leftover)}
-        {pm.basis === '30 days' ? ' (last 30 days)' : ` in ${monthLabel(pm.month, { long: true })}`}
-      </span>
-    </div>
-  );
-}
-
-/**
- * What was actually put away this month, beside the saving the plan asks
- * for: transfers marked Saved, plus the saved part of any other transaction.
- */
-function InvestedThisMonth({ im, onTab }) {
-  function seeSaved() {
-    // Read once by the review page, whose "Where did this go" card opens on
-    // what's saved.
-    try { window.sessionStorage.setItem(OPEN_SAVED_KEY, '1'); } catch { /* fine */ }
-    onTab?.('review');
-  }
-  const target = im.saving ?? 0;
-  const done = target > 0 && im.amount >= target - 0.5;
-  const share = target > 0 ? Math.min(Math.max(im.amount, 0) / target, 1) : 0;
-  return (
-    <Card title="Saved this month"
-          actions={onTab && (
-            <button className="link-btn" onClick={seeSaved}>See what's counted</button>
-          )}>
-      {im.amount > 0 ? (
-        <>
-          <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
-            <strong className="num" style={{ fontSize: '1.5rem' }}>{money(im.amount)}</strong>
-            {target > 0 && (
-              <span className="muted">of your {money(target)} saving</span>
-            )}
-            <span className="spacer" />
-            {done && <StatusPill state="good">Done</StatusPill>}
-          </div>
-          {target > 0 && (
-            <div className="track" style={{ background: 'var(--surface-2)', borderRadius: 4,
-                                             height: 8, overflow: 'hidden', marginTop: 10 }}>
-              <div style={{ width: `${share * 100}%`, height: '100%', borderRadius: 4,
-                            background: done ? 'var(--good)' : 'var(--brand)' }} />
-            </div>
-          )}
+          </ul>
         </>
-      ) : (
-        <p className="muted" style={{ margin: 0 }}>
-          Nothing marked as saved yet. Sort a transfer as Saved on
-          Transactions, or mark part of one under Split….
-        </p>
       )}
-    </Card>
+      <p className="pk-label pk-muted">
+        Illustrative rates of 3%, 5% and 7% a year, added monthly, before fees and taxes. Not a
+        prediction or advice. Real returns go up and down and can be negative.
+      </p>
+      <div className="pj-calc-foot">
+        {/* Learn (where this article lives) isn't built yet. */}
+        <button type="button" className="in-more" disabled aria-describedby="pj-learn-soon">
+          Learn how fees change this<span aria-hidden="true">  ›</span>
+        </button>
+        <span id="pj-learn-soon" className="pk-label pk-muted">Coming with Learn</span>
+        {changed && result && (
+          <PButton variant="secondary" className="pj-hug" onClick={onReady}>Ready to invest</PButton>
+        )}
+      </div>
+    </section>
   );
 }

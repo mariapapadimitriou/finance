@@ -3,7 +3,7 @@
 import pytest
 
 from app import create_app
-from ledger_files import add_fixed, load_bundled, upload
+from ledger_files import load_bundled, upload
 
 AMEX = """Date,Description,Card Member,Account #,Amount
 07/14/2026,SQ *BLUE BOTTLE COFFEE OAKLAND CA,M P,-31004,6.40
@@ -142,51 +142,10 @@ class TestAnalyticsEndpoints:
         assert body["where"]["groups"][0]["categories"] or body["where"]["groups"][1]["categories"]
         assert client.get("/api/breakdown?month=2026-07").status_code == 404
 
-    def test_insights_endpoint_shape(self, client):
-        upload(client, AMEX, "amex.csv")
-        body = client.get("/api/insights").get_json()
-        assert "findings" in body and "summary" in body
-
     def test_recurring_endpoint_shape(self, client):
         upload(client, AMEX, "amex.csv")
         body = client.get("/api/recurring").get_json()
         assert "recurring" in body and "summary" in body
-
-    def test_dismissing_an_insight_hides_it(self, client):
-        upload(client, YEAR_OF_FEES, "amex-year.csv")
-        findings = client.get("/api/insights").get_json()["findings"]
-        assert findings
-
-        target = findings[0]["id"]
-        client.post(f"/api/insights/{target}/dismiss")
-        after = client.get("/api/insights").get_json()["findings"]
-        assert all(f["id"] != target for f in after)
-
-        client.delete(f"/api/insights/{target}/dismiss")
-        restored = client.get("/api/insights").get_json()["findings"]
-        assert any(f["id"] == target for f in restored)
-
-
-class TestBudgets:
-    def test_set_and_read_back(self, client):
-        upload(client, AMEX, "amex.csv")
-        r = client.put("/api/budgets", json={"budgets": {"Coffee": 60, "Dining": 300}})
-        assert r.status_code == 200
-
-        body = client.get("/api/budgets?month=2026-07").get_json()
-        assert body["budgets"]["Coffee"] == 60
-        coffee = [s for s in body["status"] if s["category"] == "Coffee"][0]
-        assert coffee["spent"] == 6.40
-        assert coffee["remaining"] == pytest.approx(53.60)
-
-    def test_rejects_unknown_category(self, client):
-        assert client.put("/api/budgets", json={"budgets": {"Nope": 10}}).status_code == 400
-
-    def test_zero_clears_a_budget(self, client):
-        client.put("/api/budgets", json={"budgets": {"Coffee": 60}})
-        client.put("/api/budgets", json={"budgets": {"Coffee": 0}})
-        assert "Coffee" not in client.get("/api/budgets").get_json()["budgets"]
-
 
 class TestSources:
     def test_syncing_an_unconfigured_source_returns_setup_guidance(self, client):
@@ -378,82 +337,3 @@ class TestWhereTheLedgerStarts:
                    json={"start": "2026-03-01", "trim": True})
         after = client.get("/api/summary").get_json()["total_spend"]
         assert after < before
-
-
-class TestThePlanEndpoints:
-    """Income and commitments in, category budgets out."""
-
-    def setup_plan(self, client, income=5200, savings=900):
-        load_bundled(client)
-        client.put("/api/plan/setup", json={"income": income, "savings": savings})
-        add_fixed(client, "Rent", 2100, "Rent & Housing")
-
-    def test_the_arithmetic_is_reported_with_its_working(self, client):
-        self.setup_plan(client)
-        p = client.get("/api/plan/setup").get_json()
-        assert p["income"] == 5200
-        assert p["fixed_total"] == 2100
-        assert p["savings"] == 900
-        assert p["leftover"] == 2200
-        assert p["verdict"] == "ok"
-
-    def test_the_commitment_endpoints_went_with_the_page(self, client):
-        """Income and commitments was replaced by the income and bills check
-        (THL-127); commitments already saved still count, but there is no
-        endpoint to add, change or remove one."""
-        self.setup_plan(client)
-        assert client.get("/api/plan/fixed").status_code in (404, 405)
-        assert client.post("/api/plan/fixed", json={"name": "X", "amount": 10}).status_code in (404, 405)
-        assert client.delete("/api/plan/fixed/1").status_code in (404, 405)
-        assert client.get("/api/plan/setup").get_json()["fixed_total"] == 2100
-
-    def test_applying_sets_budgets_that_sum_to_the_leftover(self, client):
-        self.setup_plan(client)
-        applied = client.post("/api/plan/setup/apply").get_json()
-        assert applied["leftover"] == 2200
-        buffer = client.get("/api/plan/setup").get_json()["buffer"]
-        assert sum(applied["budgets"].values()) + buffer == pytest.approx(
-            2200, abs=0.011)
-
-    def test_the_daily_pool_is_only_the_discretionary_part(self, client):
-        """Groceries come out of the leftover and are not pocket money."""
-        self.setup_plan(client)
-        applied = client.post("/api/plan/setup/apply").get_json()
-        assert applied["monthly_amount"] < applied["leftover"]
-
-    def test_applying_also_drives_the_daily_number(self, client):
-        """The daily figure divides the same pool, or they disagree."""
-        self.setup_plan(client)
-        applied = client.post("/api/plan/setup/apply").get_json()
-        plan = client.get("/api/plan").get_json()
-        assert plan["state"]["monthly_amount"] == applied["monthly_amount"]
-
-    def test_the_budget_is_not_last_months_spending(self, client):
-        """The point of the whole thing."""
-        self.setup_plan(client, income=3500, savings=200)
-        applied = client.post("/api/plan/setup/apply").get_json()
-        assert applied["leftover"] == 1200
-        p = client.get("/api/plan/setup").get_json()
-        assert p["typical_total"] != p["leftover"]
-
-    def test_nothing_left_to_budget_is_refused_with_a_reason(self, client):
-        load_bundled(client)
-        client.put("/api/plan/setup", json={"income": 1000, "savings": 1200})
-        r = client.post("/api/plan/setup/apply")
-        assert r.status_code == 400
-        assert "nothing left" in r.get_json()["error"].lower()
-
-    def test_no_history_is_refused_rather_than_guessed(self, client):
-        client.put("/api/plan/setup", json={"income": 5000, "savings": 500})
-        r = client.post("/api/plan/setup/apply")
-        assert r.status_code == 400
-        assert "history" in r.get_json()["error"].lower()
-
-    def test_income_must_be_a_number(self, client):
-        assert client.put("/api/plan/setup",
-                          json={"income": "lots"}).status_code == 400
-
-    def test_the_nudge_endpoint_answers_even_with_nothing_to_say(self, client):
-        self.setup_plan(client)
-        body = client.get("/api/nudge").get_json()
-        assert "nudge" in body

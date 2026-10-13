@@ -1,7 +1,8 @@
 // The transactions screen keeps its place in the address bar, so a filtered
 // list (/transactions?month=2026-10&group=lifestyle) can be linked to from
 // anywhere — Home, an alert, an explanation sheet — and back/forward work.
-// Growth's Path and Insights have addresses too; everything else lives at "/".
+// Growth's Path, Insights and Projections have addresses too; everything else
+// lives at "/".
 
 export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'joint', 'recurring', 'q'];
 
@@ -66,6 +67,52 @@ export function onInsightsUrl(fn) {
   return () => {
     window.removeEventListener('popstate', fn);
     window.removeEventListener(INSIGHTS_EVENT, fn);
+  };
+}
+
+// Growth › Projections (THL-197 GR-33) and its detail views — GR-34 this
+// month, GR-35 the next 30 days, GR-36 savings in a year, GR-17 and GR-18
+// the growth calculator on its own — at /growth/projections/<view>. Unveil's
+// screens live beside them, reached from the Path: GR-16 Ready to invest at
+// /growth/ready, GR-37 "Opened an investing account?" at /growth/unveil and
+// GR-10, Unveil done, at /growth/unveil/done.
+export const PROJECTIONS_PATH = '/growth/projections';
+export const PROJECTIONS_VIEWS = ['forecast', 'next30', 'savings', 'calculator'];
+const UNVEIL_PATHS = { ready: '/growth/ready', unveil: '/growth/unveil', done: '/growth/unveil/done' };
+const PROJECTIONS_EVENT = 'pearl:projections';
+
+/** {view} at /growth/projections…, /growth/ready or /growth/unveil…, or null. */
+export function readProjectionsUrl(loc = window.location) {
+  const path = loc.pathname.replace(/\/+$/, '');
+  const unveil = Object.entries(UNVEIL_PATHS).find(([, p]) => p === path);
+  if (unveil) return { view: unveil[0] };
+  const m = path.match(/^\/growth\/projections(?:\/([a-z0-9]+))?$/);
+  if (!m) return null;
+  return { view: PROJECTIONS_VIEWS.includes(m[1]) ? m[1] : '' };
+}
+
+export const isProjectionsUrl = (loc = window.location) => readProjectionsUrl(loc) !== null;
+
+export function projectionsHref(view = '') {
+  return UNVEIL_PATHS[view] ?? `${PROJECTIONS_PATH}${view ? `/${view}` : ''}`;
+}
+
+/** Point the address bar at Projections, one of its views or an Unveil screen. */
+export function writeProjectionsUrl(view = '', { push = true } = {}) {
+  const href = projectionsHref(view);
+  if (href !== window.location.pathname) {
+    window.history[push ? 'pushState' : 'replaceState'](null, '', href);
+  }
+  window.dispatchEvent(new Event(PROJECTIONS_EVENT));
+}
+
+/** Calls `fn` whenever the Projections address changes, by Back or by a link. */
+export function onProjectionsUrl(fn) {
+  window.addEventListener('popstate', fn);
+  window.addEventListener(PROJECTIONS_EVENT, fn);
+  return () => {
+    window.removeEventListener('popstate', fn);
+    window.removeEventListener(PROJECTIONS_EVENT, fn);
   };
 }
 

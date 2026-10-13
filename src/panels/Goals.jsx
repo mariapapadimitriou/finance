@@ -42,6 +42,9 @@ export default function Goals({ onTab, onChanged, version }) {
       setPanel({ name: 'whatif', monthly: intent.monthly });
     } else if (intent.view === 'anchor') {
       setView({ name: 'anchor' });
+    } else if (intent.view === 'projection') {
+      // Growth › Projections' "See the projection" (THL-197 GR-33).
+      setView({ name: 'projection' });
     }
   }, [goals, intent]);
 

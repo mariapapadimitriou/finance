@@ -32,8 +32,12 @@ export const PANELS = {
   // Growth › Debts (THL-49 D-02): every balance owed, from before Pearl too.
   debts:         { label: 'Debts',
                    hint: 'Everything you owe, and the minimums counted as bills' },
+  // Growth › Projections (THL-197 GR-33, at /growth/projections): this
+  // month, the next 30 days and savings in a year, each as a range, and the
+  // growth calculator (THL-135). Unveil's screens (GR-16, GR-37, GR-10) live
+  // under it too.
   projections:   { label: 'Projections',
-                   hint: 'What saving more gets you — this year, and invested' },
+                   hint: 'Where this month, the next 30 days and your savings are heading' },
   review:        { label: 'To review', short: 'Review',
                    hint: 'Everything Pearl isn’t sure about, with its best guess' },
   transactions:  { label: 'All transactions', short: 'All',

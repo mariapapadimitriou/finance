@@ -99,9 +99,9 @@ class TestLockedDeployment:
     def test_every_route_is_covered_not_just_the_ones_we_remembered(self, c):
         """The gate is a before_request over the whole app, so a route added
         later is protected without anyone having to remember."""
-        for path in ("/api/summary", "/api/transactions", "/api/plan",
+        for path in ("/api/summary", "/api/transactions", "/api/home",
                      "/api/piggy", "/api/projections", "/api/debts",
-                     "/api/accounts", "/api/insights", "/api/budgets"):
+                     "/api/accounts", "/api/insights/month", "/api/category-budgets"):
             assert c.get(path).status_code == 401, path
 
     def test_the_destructive_routes_are_covered_too(self, c):

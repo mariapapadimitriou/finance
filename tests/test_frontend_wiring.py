@@ -381,8 +381,9 @@ class TestHomeIsWhereTheAppLands:
 
     def test_the_app_opens_on_home(self):
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
-        # Growth's Path and Insights have addresses; anything else lands on Home.
-        assert ": isPathUrl() || isInsightsUrl() ? 'growth' : 'home'" in text
+        # Growth's Path, Insights and Projections have addresses; anything
+        # else lands on Home.
+        assert ": isPathUrl() || isInsightsUrl() || isProjectionsUrl() ? 'growth' : 'home'" in text
         assert "panel === 'home'" in text and "<HomePanel" in text
 
     def test_old_links_to_the_allowance_land_on_home(self, aliases):
@@ -409,21 +410,6 @@ class TestAccountsInTheApp:
     def test_new_accounts_set_up_before_the_app_opens(self):
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
         assert "<Onboarding" in text and "user.onboarding.done" in text
-
-
-class TestTheSetupChecklistGoesSomewhereReal:
-    def test_every_step_names_a_destination_that_exists(self, tmp_path, panels,
-                                                        groups, aliases):
-        """The checklist's buttons take their destination from the server, so
-        the static link check above cannot see them."""
-        from app import create_app
-        app = create_app(str(tmp_path / "setup.db"))
-        app.config.update(TESTING=True)
-        with app.test_client() as c:
-            steps = c.get("/api/setup").get_json()["steps"]
-        valid = panels | set(groups) | set(aliases)
-        bad = {s["id"]: s["tab"] for s in steps if s["tab"] not in valid}
-        assert not bad, f"setup steps pointing nowhere: {bad}"
 
 
 class TestTheSidebarIsThl104s:
@@ -455,19 +441,20 @@ class TestOneReviewQueue:
         assert "<NeedsALook" in app and "ReviewPanel" not in app
 
     def test_rows_can_be_excluded_and_put_back(self):
-        tx = (SRC / "panels" / "TransactionsPanel.jsx").read_text(encoding="utf-8")
+        """One transaction at a time, from its detail; every one like it is a
+        rule on Profile › Categories and rules (the old manager went with the
+        prototype Projections page)."""
+        tx = (SRC / "panels" / "TransactionDetail.jsx").read_text(encoding="utf-8")
         assert "excludeTransaction(" in tx and "includeTransaction(" in tx
-        assert "__excluded__" in tx
+        assert not (SRC / "panels" / "TransactionsPanel.jsx").exists()
 
 
 class TestWhereDidThisGoIsPerTransfer:
-    def test_rows_not_groups_and_no_rule(self):
-        tx = (SRC / "panels" / "TransactionsPanel.jsx").read_text(encoding="utf-8")
-        card = tx[tx.index("export function WhereDidThisGo"):]
+    def test_one_row_at_a_time(self):
+        review = (SRC / "panels" / "NeedsALook.jsx").read_text(encoding="utf-8")
+        card = review[review.index("function WhereDidThisGo"):]
         card = card[:card.index("\n}\n")]
-        assert "data?.transfers" in card and "data?.groups" not in card
-        assert "sortTransfers([r.id], category, false)" in card
-        assert "Remember where these go" not in card
+        assert "sortTransfers([it.txn.id], category" in card
 
 
 class TestPearlTransactionsList:
@@ -641,7 +628,7 @@ class TestGrowthInsights:
         for view in ("month", "category", "subscriptions", "trend", "where", "money", "savings"):
             assert f"'{view}'" in router, view
         assert "isInsightsUrl()" in source and "writeInsightsUrl()" in source
-        assert "OWN_SECTIONS = ['insights']" in source and "!ownSections" in source
+        assert "OWN_SECTIONS = ['insights', 'projections']" in source and "!ownSections" in source
         parts = (SRC / "panels" / "InsightsParts.jsx").read_text(encoding="utf-8")
         assert "export function GrowthTabs" in parts and "disabled" in parts
 
@@ -653,4 +640,55 @@ class TestGrowthInsights:
             assert "<ChartTable" in body, name
             assert 'aria-hidden="true"' in body, name
         pkg = json.loads((SRC.parent / "package.json").read_text(encoding="utf-8"))
-        assert set(pkg["dependencies"]) == {"chart.js", "react", "react-dom"}
+        # Chart.js went with the prototype Projections page, its last user.
+        assert set(pkg["dependencies"]) == {"react", "react-dom"}
+
+
+class TestGrowthProjections:
+    """THL-197 GR-33 to GR-37, THL-135 GR-16 to GR-18: Growth › Projections
+    replaced the prototype Projections page, at an address of its own with
+    one for each detail view, and Unveil's screens beside it."""
+
+    def test_the_old_page_and_what_only_it_used_are_gone(self):
+        for path in ("panels/TransactionsPanel.jsx", "components/Chart.jsx", "charts.js"):
+            assert not (SRC / path).exists(), path
+        api = (SRC / "api.js").read_text(encoding="utf-8")
+        for gone in ("getInsights ", "getPlan", "getWeek", "simulateSpend", "saveSavings",
+                     "setAllocation", "getBudgets", "setBudgets", "/api/plan", "/api/budgets",
+                     "cssVar"):
+            assert gone not in api, gone
+        assert "getProjections" in api and "getUnveil" in api and "reportInvesting" in api
+        app = (SRC / "App.jsx").read_text(encoding="utf-8")
+        assert "insights" not in app.split("const { summary")[1].split("}")[0]
+        css = (SRC / "styles.css").read_text(encoding="utf-8")
+        for gone in (".treemap", ".ring", ".month-hero", "#month-select", ".pace-badge"):
+            assert gone not in css, gone
+
+    def test_projections_has_an_address_and_draws_its_own_pills(self, source):
+        router = (SRC / "router.js").read_text(encoding="utf-8")
+        assert "PROJECTIONS_PATH = '/growth/projections'" in router
+        for view in ("forecast", "next30", "savings", "calculator"):
+            assert f"'{view}'" in router, view
+        for path in ("/growth/ready", "/growth/unveil", "/growth/unveil/done"):
+            assert path in router, path
+        assert "isProjectionsUrl()" in source and "writeProjectionsUrl()" in source
+        page = (SRC / "panels" / "ProjectionsPanel.jsx").read_text(encoding="utf-8")
+        assert '<GrowthTabs current="projections"' in page
+
+    def test_the_path_opens_ready_to_invest_and_the_self_report(self):
+        path = (SRC / "panels" / "PathPanel.jsx").read_text(encoding="utf-8")
+        assert "open('ready')" in path and "open('unveil')" in path
+        unveil = (SRC / "panels" / "Unveil.jsx").read_text(encoding="utf-8")
+        assert "I’ve opened one" in unveil and "Mark Unveil done" in unveil
+        assert "nav.show('done')" in unveil
+
+    def test_every_chart_has_a_table_for_a_screen_reader(self):
+        charts = (SRC / "panels" / "ProjectionsCharts.jsx").read_text(encoding="utf-8")
+        for name in ("ForecastChart", "Next30Chart", "SavingsChart"):
+            body = charts[charts.index(f"export function {name}"):]
+            body = body[:body.index("\n}\n")]
+            assert "<ChartTable" in body, name
+            assert 'aria-hidden="true"' in body, name
+        calc = (SRC / "panels" / "ProjectionsPanel.jsx").read_text(encoding="utf-8")
+        body = calc[calc.index("export function Calculator"):]
+        assert '<table className="pk-sr">' in body and 'aria-hidden="true"' in body

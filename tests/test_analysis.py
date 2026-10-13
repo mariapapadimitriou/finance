@@ -1,6 +1,4 @@
-"""Dedupe, categorization, analytics, recurring detection and the savings rules."""
-
-from datetime import date, timedelta
+"""Dedupe, categorization, analytics and recurring detection."""
 
 import pytest
 
@@ -15,7 +13,7 @@ from finance.analytics import (
 from finance.categorize import apply_categories, categorize
 from finance.dedupe import dedupe_batch, find_duplicate_charges, split_new
 from finance.ingest import parse_csv
-from finance.insights import detect_recurring, findings_summary, generate_findings
+from finance.insights import detect_recurring
 from finance.models import Transaction
 
 
@@ -293,104 +291,6 @@ class TestRecurring:
         found = detect_recurring(rows, as_of="2025-10-20")
         prime = [r for r in found if "Prime" in r["merchant"]]
         assert prime and prime[0]["cadence"] == "monthly"
-
-
-# ── Savings rules ────────────────────────────────────────────────────────────
-
-class TestSavingsRules:
-    def test_fees_produce_a_high_confidence_finding(self):
-        rows = monthly_series("INTEREST CHARGE ON PURCHASES", 31.40, 12)
-        rows += monthly_series("WHOLE FOODS MKT", 84.20, 12, day=3)
-        apply_categories(rows)
-
-        findings = generate_findings(rows)
-        fees = [f for f in findings if f["kind"] == "fees"]
-        assert fees
-        assert fees[0]["confidence"] >= 0.9
-        assert fees[0]["annual_saving"] == pytest.approx(376.8, rel=0.05)
-
-    def test_price_creep_finding_reports_the_annual_delta(self):
-        amounts = [15.49] * 6 + [22.99] * 6
-        rows = monthly_series("NETFLIX.COM", 0, 12, amounts=amounts)
-        apply_categories(rows)
-
-        findings = generate_findings(rows)
-        creep = [f for f in findings if f["kind"] == "price_creep"]
-        assert creep
-        assert creep[0]["annual_saving"] == pytest.approx(90.0, abs=0.01)
-
-    def test_a_frequent_small_habit_is_surfaced(self):
-        rows = []
-        for month in range(1, 13):
-            for day in range(1, 21):
-                rows.append(txn(f"2025-{month:02d}-{day:02d}", "BLUE BOTTLE COFFEE", 6.40))
-        apply_categories(rows)
-
-        findings = generate_findings(rows)
-        habits = [f for f in findings if f["kind"] == "habit"]
-        assert habits
-        # 20/month × $6.40 × 12 ≈ $1,536/yr; halving it is the stated assumption.
-        assert habits[0]["annual_saving"] == pytest.approx(768, rel=0.1)
-        assert "half" in habits[0]["assumption"].lower()
-
-    def test_every_finding_carries_evidence_and_an_assumption(self):
-        rows = monthly_series("NETFLIX.COM", 22.99, 12)
-        rows += monthly_series("HULU", 17.99, 12, day=12)
-        rows += monthly_series("DISNEY PLUS", 13.99, 12, day=15)
-        rows += monthly_series("HBO MAX", 16.99, 12, day=18)
-        rows += monthly_series("SPOTIFY USA", 11.99, 12, day=9)
-        rows += monthly_series("INTEREST CHARGE ON PURCHASES", 30.0, 12, day=26)
-        apply_categories(rows)
-
-        findings = generate_findings(rows)
-        assert findings
-        for f in findings:
-            assert f["annual_saving"] > 0
-            assert f["assumption"], f"{f['kind']} has no stated assumption"
-            assert 0 < f["confidence"] <= 1
-
-    def test_overlapping_streaming_services_are_flagged(self):
-        rows = []
-        for i, (name, amount) in enumerate(
-            [("NETFLIX.COM", 22.99), ("HULU", 17.99), ("DISNEY PLUS", 13.99),
-             ("HBO MAX", 16.99)]
-        ):
-            rows += monthly_series(name, amount, 12, day=4 + i * 3)
-        apply_categories(rows)
-
-        findings = generate_findings(rows)
-        overlap = [f for f in findings if f["kind"] == "overlap"]
-        assert overlap
-        # Conservative: only the cheapest of the stack is counted as droppable.
-        assert overlap[0]["annual_saving"] == pytest.approx(13.99 * 12, abs=0.01)
-
-    def test_dismissed_findings_are_withheld(self):
-        rows = monthly_series("INTEREST CHARGE ON PURCHASES", 31.40, 12)
-        apply_categories(rows)
-
-        findings = generate_findings(rows)
-        assert findings
-        dismissed = {findings[0]["id"]}
-        assert all(f["id"] not in dismissed for f in generate_findings(rows, dismissed))
-
-    def test_no_findings_from_an_empty_ledger(self):
-        assert generate_findings([]) == []
-
-    def test_summary_totals_are_confidence_weighted(self):
-        rows = monthly_series("INTEREST CHARGE ON PURCHASES", 31.40, 12)
-        apply_categories(rows)
-        s = findings_summary(generate_findings(rows))
-        assert s["weighted_annual"] <= s["annual_total"]
-
-    def test_findings_are_ranked_by_expected_value(self):
-        rows = monthly_series("INTEREST CHARGE ON PURCHASES", 40.0, 12)
-        rows += monthly_series("NOTION LABS", 10.0, 12, day=24)
-        rows += monthly_series("EQUINOX", 215.0, 12, day=2)
-        apply_categories(rows)
-
-        findings = generate_findings(rows)
-        scores = [f["annual_saving"] * max(f["confidence"], 0.3) for f in findings]
-        assert scores == sorted(scores, reverse=True)
 
 
 class TestMonthCompleteness:

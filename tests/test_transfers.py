@@ -14,6 +14,7 @@ from finance.models import Transaction
 from finance.pipeline import ingest, recategorize_all
 from finance.store import Store
 from finance.transfers import UNSORTED, match_transfers
+from ledger_files import set_plan
 
 TODAY = date.today()
 MONTH = f"{TODAY:%Y-%m}"
@@ -177,7 +178,7 @@ def client(tmp_path):
     app = create_app(str(tmp_path / "api.db"))
     app.config.update(TESTING=True)
     with app.test_client() as c:
-        c.put("/api/plan/setup", json={"income": 5200, "savings": 900})
+        set_plan(c, income=5200, savings=900)
         yield c
 
 
@@ -200,12 +201,13 @@ class TestSortingThem:
         t = body["transfers"][0]
         assert t["merchant"] and t["account_name"] == "Chequing" and t["amount"] == 500
 
-    def test_saved_stops_counting_and_shows_on_ahead(self, client, unsorted_row):
+    def test_saved_stops_counting_and_shows_as_saved(self, client, unsorted_row):
         _, t = unsorted_row
         before = month_spend(client)
         client.patch(f"/api/transactions/{t.fingerprint}", json={"category": "Saved"})
         assert month_spend(client) == pytest.approx(before - 500)
-        assert client.get("/api/projections").get_json()["invested_month"]["amount"] == 500
+        rows = client.get("/api/home").get_json()["snapshot"]["rows"]
+        assert next(r for r in rows if r["key"] == "savings")["saved"] == 500
         assert client.get("/api/transfers/unsorted").get_json()["count"] == 0
 
     def test_spent_takes_its_category(self, client, unsorted_row):

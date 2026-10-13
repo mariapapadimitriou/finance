@@ -441,11 +441,10 @@ class TestTheEndpoints:
         assert body["covered"] == 2000.0         # all of it
         assert body["over"] is True
 
-    def test_the_contribution_comes_out_of_the_plan(self, client):
-        client.put("/api/plan/setup", json={"income": 5200, "savings": 500})
-        before = client.get("/api/plan/setup").get_json()["banks"]
+    def test_the_contribution_is_a_monthly_cost(self, client):
+        before = client.get("/api/piggy").get_json()["monthly_total"]
         self._open(client, target=8000)
-        after = client.get("/api/plan/setup").get_json()["banks"]
+        after = client.get("/api/piggy").get_json()["monthly_total"]
         assert after - before == pytest.approx(666.67, abs=0.01)
 
     def test_an_inflow_cannot_be_charged_to_a_bank(self, client):
@@ -504,13 +503,7 @@ class TestTheEndpoints:
         # And the charge is back in its month.
         assert st.all_transactions()[0].bank_id is None
 
-    def test_a_bank_lowers_the_daily_number(self, client):
-        client.put("/api/plan/setup", json={"income": 4000, "savings": 500})
-        st = client.application.config["STORE"]
-        st.add_transactions([txn("2026-09-12", "DINER", 50.0, category="Dining")])
-
-        before = client.get("/api/plan/setup").get_json()["leftover"]
+    def test_a_bank_collects_its_target_over_the_year(self, client):
         self._open(client, target=1200)
-        after = client.get("/api/plan/setup").get_json()
-        assert before - after["leftover"] == pytest.approx(100.0)
-        assert after["banks"] == 100.0
+        assert client.get("/api/piggy").get_json()["monthly_total"] == 100.0
+

@@ -75,16 +75,6 @@ class TestCadence:
         assert income.cadence(biweekly(date(2026, 9, 1), 2), today="2026-10-09") is None
 
 
-class TestPlanUsesTheTypicalMonth:
-    def test_a_three_paycheque_month_does_not_set_income(self, tmp_path):
-        from finance.money_plan import observed
-        rows = biweekly(date(2026, 4, 3), 14)
-        seen = observed(rows, today="2026-10-09")
-        assert seen["income"] == round(2400 * 26 / 12, 2)
-        assert seen["pay"]["cadence"] == "biweekly"
-        assert seen["months"][-1]["by_type"] == {"salary": seen["months"][-1]["income"]}
-
-
 class TestSavingsAndLending:
     def test_money_back_from_a_brokerage_is_a_drawdown(self):
         assert categorize("QUESTRADE INC", "QUESTRADE INC")[0] == "Saved"
