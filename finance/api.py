@@ -2638,6 +2638,8 @@ def home():
         "view": "week" if st.setting("home_view") == "week" else "month",
         # THL-49 D-01: carried balances, beside safe-to-spend, never in it.
         "debts": debts,
+        # THL-168 B-03: how many budgets need a look.
+        "budgets": _budgets_summary(_category_budgets(st, txns, today, sts, usual)),
         "snapshot": usual_month.snapshot(
             txns, today, sts, usual,
             savings_target=st.float_setting("savings_target", 0.0),
@@ -2664,11 +2666,68 @@ def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
     )
 
 
+def _budgets_summary(b: dict) -> dict:
+    return {"ready": b["ready"], "needs_look": b["needs_look"], "count": len(b["rows"])}
+
+
 def _debts(st, txns, today) -> dict:
     """Every debt (THL-49), with the rate and minimum she added (D-03)."""
     from . import debts as debt_math
     return debt_math.build(st.account_sync_rules(), st.balances(), st.first_balances(),
                            txns, _json_setting(st, "debt_details", {}), today)
+
+
+def _category_budgets(st, txns, today, sts: dict, usual: dict | None = None,
+                      comparisons_from: str | None = None) -> dict:
+    """Budgets per category (THL-168), from her usual month and the % she set."""
+    from . import category_budgets, usual_month
+    usual = usual if usual is not None else usual_month.usual(txns, today)
+    bills = next((r["lines"] for r in sts.get("rows", []) if r["key"] == "bills"), [])
+    return category_budgets.build(txns, today, usual, _json_setting(st, "category_budgets", {}),
+                                  bills, comparisons_from)
+
+
+@bp.get("/category-budgets")
+def category_budgets_page():
+    """B-01: every budget this month, largest first."""
+    from datetime import date as _date
+    from . import safe_to_spend, usual_month
+    st = store()
+    today = _date.fromisoformat(_today_iso())
+    txns = st.all_transactions()
+    sts = _home_sts(st, txns, today)
+    covered = usual_month.covered_months(txns, today)
+    starts = None
+    if not covered:
+        state = safe_to_spend.home_state(txns, today, sts,
+                                         told_income=st.float_setting("home_income", 0.0),
+                                         told_rent=st.float_setting("home_rent", 0.0))
+        starts = state.get("comparisons_from")
+    return jsonify(_category_budgets(st, txns, today, sts, comparisons_from=starts))
+
+
+@bp.put("/category-budgets")
+def set_category_budget():
+    """B-02: one budget as a percent of usual, 50% to 150% in 5% steps (B3).
+    100% clears it back to the usual month."""
+    import json
+    from . import category_budgets
+
+    body = request.get_json(silent=True) or {}
+    category = str(body.get("category") or "").strip()
+    pct = body.get("pct")
+    if not category:
+        return jsonify({"error": "Choose a category."}), 400
+    if isinstance(pct, bool) or not category_budgets.valid_pct(pct):
+        return jsonify({"error": "Choose a share of usual from 50% to 150%, in steps of 5%."}), 400
+    st = store()
+    pcts = _json_setting(st, "category_budgets", {})
+    if int(pct) == 100:
+        pcts.pop(category, None)
+    else:
+        pcts[category] = int(pct)
+    st.set_setting("category_budgets", json.dumps(pcts))
+    return category_budgets_page()
 
 
 @bp.get("/debts")
