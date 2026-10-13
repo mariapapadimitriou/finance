@@ -62,6 +62,9 @@ export const updateManualBalance = (id, balance) =>
 // `transactions` is 'keep' or 'delete'.
 export const removeAccount = (id, transactions) =>
   json('POST', `/api/accounts/${encodeURIComponent(id)}/remove`, { transactions });
+// "Same account as…": merge this account into `into`, for two copies of a card.
+export const mergeAccount = (id, into) =>
+  json('POST', `/api/accounts/${encodeURIComponent(id)}/merge`, { into });
 export const keepAsManual = (id) =>
   json('POST', `/api/accounts/${encodeURIComponent(id)}/keep-as-manual`, {});
 // Profile hub (S-01) and Categories and rules (S-03).
