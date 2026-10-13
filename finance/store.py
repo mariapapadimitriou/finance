@@ -580,6 +580,17 @@ class Store:
         self._migrate_saved()
         self._forget_mortgage_terms()
         self._forget_trips()
+        self._drop_self_twins()
+
+    def _drop_self_twins(self) -> None:
+        """Clear "same purchase?" questions that pair a row with itself.
+
+        Merging two copies of an account (reconnect, `rekey_rows`) used to
+        carry the question between a row's copies onto the kept row, so the
+        row was asked about — and hidden as a copy — against itself.
+        """
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_duplicates WHERE txn_id = twin_id")
 
     def _migrate_buckets(self) -> None:
         """Carry the buckets that piggy banks replaced into piggy banks.
@@ -1392,6 +1403,10 @@ class Store:
                     else:
                         c.execute(f"UPDATE {table} SET {col} = ? WHERE {col} = ?", (new, old))
                 c.execute("UPDATE txn_paybacks SET charge_id = ? WHERE charge_id = ?", (new, old))
+            # A "same purchase?" question between the two copies is answered
+            # by the merge itself: both sides are now one row. Left in, it
+            # would ask whether a row is a copy of itself, and hide it.
+            c.execute("DELETE FROM txn_duplicates WHERE txn_id = twin_id")
 
     def forget_accounts(self, account_ids: list[str]) -> None:
         """Drop what is known about these accounts themselves, for ones a

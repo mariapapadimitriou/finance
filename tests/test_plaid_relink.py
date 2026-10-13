@@ -181,3 +181,44 @@ def test_two_different_cards_are_not_doubled(setup):
                                           "type": "credit", "subtype": "credit card"}], "added": []}
     plaid_link.sync_all(st)
     assert plaid_link.doubled_items(st) == []
+
+
+def test_a_merge_never_leaves_a_row_asked_about_against_itself(setup):
+    """Seen in production: 224 rows each a "possible duplicate" of
+    themselves after a reconnect merged two copies of a card, so the real
+    rows were hidden as copies."""
+    st, plaid = setup
+    st.add_plaid_item("item-1", "tok-1", "TD")
+    plaid.feeds["tok-1"] = {"accounts": accounts("a"), "added": [txn("t1", "a-card")]}
+    plaid_link.sync_all(st)
+    st.add_plaid_item("item-2", "tok-2", "TD")
+    plaid.feeds["tok-2"] = {"accounts": accounts("b")[:1], "added": [txn("u1", "b-card")]}
+    real = plaid_link._replace_superseded
+    plaid_link._replace_superseded = lambda *a: {}            # the old behaviour: both copies
+    try:
+        plaid_link.sync_all(st)
+    finally:
+        plaid_link._replace_superseded = real
+    old = next(t for t in st.all_transactions() if t.account_id == "a-card")
+    new = next(t for t in st.all_transactions() if t.account_id == "b-card")
+    st.add_duplicate(old.fingerprint, new.fingerprint)     # "Is this the same purchase?"
+
+    plaid_link.sync_all(st)
+
+    [row] = st.all_transactions()
+    assert row.account_id == "b-card" and not row.excluded   # counted, not hidden
+    assert st.duplicates() == {}
+
+
+def test_rows_already_asked_about_against_themselves_are_cleared_on_open(setup):
+    st, _ = setup
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    ingest(st, IngestResult([Transaction(date="2026-10-02", description="CHIPOTLE", amount=14.35,
+                                         account_id="card", account_name="card")], "card"))
+    [row] = st.all_transactions()
+    st.add_duplicate(row.fingerprint, row.fingerprint)
+    assert st.all_transactions()[0].excluded                 # hidden as a copy of itself
+    again = Store(st.path)
+    assert again.duplicates() == {} and not again.all_transactions()[0].excluded
