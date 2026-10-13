@@ -136,11 +136,11 @@ class TestAnalyticsEndpoints:
         assert "Transfers" not in categories
         assert body["total_spend"] == pytest.approx(42.10)
 
-    def test_breakdown(self, client):
+    def test_insights_month(self, client):
         upload(client, AMEX, "amex.csv")
-        body = client.get("/api/breakdown?month=2026-07").get_json()
-        assert body["categories"]
-        assert body["merchants"][0]["merchant"] == "Whole Foods Mkt"
+        body = client.get("/api/insights/month?month=2026-07").get_json()
+        assert body["where"]["groups"][0]["categories"] or body["where"]["groups"][1]["categories"]
+        assert client.get("/api/breakdown?month=2026-07").status_code == 404
 
     def test_insights_endpoint_shape(self, client):
         upload(client, AMEX, "amex.csv")

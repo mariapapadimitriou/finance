@@ -65,17 +65,22 @@ def ledger_spend(client, month: str) -> float:
                      and t.bank_id is None), 2)
 
 
+def insights_total(client, month: str) -> float:
+    """What Growth › Insights says the month cost, across its categories."""
+    where = client.get(f"/api/insights/month?month={month}").get_json()["where"]
+    return sum(c["amount"] for g in where["groups"] for c in g["categories"]) / 100
+
+
 class TestOneMonthOneNumber:
     """What the month cost, according to each tab that says so."""
 
-    def test_overview_breakdown_and_the_ledger_agree(self, ledger):
+    def test_overview_insights_and_the_ledger_agree(self, ledger):
         month = busiest_month(ledger)
         truth = ledger_spend(ledger, month)
 
         monthly = ledger.get("/api/summary").get_json()["monthly"]
         overview = next(r["spend"] for r in monthly if r["month"] == month)
-        breakdown = round(sum(r["amount"] for r in ledger.get(
-            f"/api/breakdown?month={month}").get_json()["categories"]), 2)
+        breakdown = insights_total(ledger, month)
 
         assert overview == pytest.approx(truth, abs=TOLERANCE)
         assert breakdown == pytest.approx(truth, abs=TOLERANCE)
@@ -280,8 +285,7 @@ class TestNumbersMoveTogetherWhenThingsChange:
         summary = ledger.get("/api/summary").get_json()
         assert summary["total_spend"] == pytest.approx(
             before_total + 42.50, abs=TOLERANCE)
-        breakdown = round(sum(r["amount"] for r in ledger.get(
-            f"/api/breakdown?month={month}").get_json()["categories"]), 2)
+        breakdown = insights_total(ledger, month)
         assert breakdown == pytest.approx(before_month + 42.50, abs=TOLERANCE)
         accounts = round(sum(a["total_spend"] for a in ledger.get(
             "/api/accounts").get_json()["accounts"]), 2)
@@ -297,8 +301,7 @@ class TestNumbersMoveTogetherWhenThingsChange:
         ledger.patch(f"/api/transactions/{row['id']}", json={"category": "Travel"})
 
         assert ledger_spend(ledger, month) == pytest.approx(before, abs=TOLERANCE)
-        breakdown = round(sum(r["amount"] for r in ledger.get(
-            f"/api/breakdown?month={month}").get_json()["categories"]), 2)
+        breakdown = insights_total(ledger, month)
         assert breakdown == pytest.approx(before, abs=TOLERANCE)
 
     def test_moving_a_charge_to_transfers_removes_it_from_spending(self, ledger):
@@ -312,8 +315,7 @@ class TestNumbersMoveTogetherWhenThingsChange:
 
         after = ledger_spend(ledger, month)
         assert after == pytest.approx(before - row["amount"], abs=TOLERANCE)
-        breakdown = round(sum(r["amount"] for r in ledger.get(
-            f"/api/breakdown?month={month}").get_json()["categories"]), 2)
+        breakdown = insights_total(ledger, month)
         assert breakdown == pytest.approx(after, abs=TOLERANCE)
         accounts = round(sum(a["total_spend"] for a in ledger.get(
             "/api/accounts").get_json()["accounts"]), 2)

@@ -6,7 +6,7 @@
 // every chart ships a tooltip, since a chart on a web page is interactive by
 // default.
 
-import { money, cssVar, monthLabel, dateLabel } from './api.js';
+import { money, cssVar, monthLabel } from './api.js';
 
 function ink() {
   return {
@@ -187,58 +187,6 @@ export function projectionConfig(series) {
   };
 }
 
-/** Daily spend for the trailing window, as thin bars with rounded data-ends. */
-export function dailySpendConfig(daily) {
-  const c = ink();
-  return {
-    type: 'bar',
-    data: {
-      labels: daily.map((d) => d.date),
-      datasets: [{
-        data: daily.map((d) => d.amount),
-        backgroundColor: c.series,
-        borderRadius: 3,
-        borderSkipped: false,
-        barPercentage: 0.9,
-        categoryPercentage: 0.92,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: tooltip(c, {
-          title: (items) => dateLabel(items[0].label),
-          label: (ctx) => money(ctx.parsed.y, { cents: true }),
-        }),
-      },
-      scales: {
-        x: {
-          grid: { display: false },
-          border: { color: c.axis },
-          ticks: {
-            color: c.muted, font: AXIS_FONT, maxRotation: 0, autoSkip: true,
-            maxTicksLimit: 8,
-            callback(i) { return dateLabel(this.getLabelForValue(i)); },
-          },
-        },
-        y: {
-          beginAtZero: true,
-          grid: { color: c.grid, drawTicks: false },
-          border: { display: false },
-          ticks: {
-            color: c.muted, font: AXIS_FONT, padding: 8, maxTicksLimit: 4,
-            callback: (v) => money(v),
-          },
-        },
-      },
-    },
-  };
-}
-
 /**
  * Contributions against what they are worth, year by year.
  *
@@ -314,73 +262,6 @@ export function investedConfig(series) {
             callback: (v) => money(v),
           },
         },
-      },
-    },
-  };
-}
-
-export function paceConfig(pace) {
-  const c = ink();
-  const baseline = cssVar('--baseline');
-  const baselineSoft = cssVar('--baseline-soft');
-  const days = Array.from({ length: pace.days }, (_, i) => i + 1);
-  const thisMonth = days.map((d) => (d <= pace.through ? pace.this[d - 1] : null));
-  const last = pace.through - 1;
-
-  return {
-    type: 'line',
-    data: {
-      labels: days,
-      datasets: [
-        {
-          label: 'This month',
-          data: thisMonth,
-          borderColor: c.series,
-          borderWidth: 3,
-          tension: 0.35,
-          fill: false,
-          pointRadius: (ctx) => (ctx.dataIndex === last ? 6 : 0),
-          pointBackgroundColor: c.series,
-          pointBorderColor: c.series,
-          pointHoverRadius: 6,
-          pointHitRadius: 14,
-          spanGaps: false,
-        },
-        {
-          label: 'Usual month',
-          data: pace.average,
-          borderColor: baseline,
-          backgroundColor: baselineSoft,
-          borderWidth: 2,
-          tension: 0.35,
-          fill: 'origin',
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          pointHitRadius: 14,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      interaction: { mode: 'index', intersect: false },
-      layout: { padding: { top: 8, right: 8 } },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          ...tooltip(c, {
-            title: (items) => `Day ${items[0].label}`,
-            label: (ctx) => (ctx.parsed.y == null ? null
-              : `${ctx.dataset.label}: ${money(ctx.parsed.y)}`),
-          }),
-          displayColors: true,
-          boxPadding: 4,
-        },
-      },
-      scales: {
-        x: { display: false },
-        y: { display: false, beginAtZero: true },
       },
     },
   };

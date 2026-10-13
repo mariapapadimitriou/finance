@@ -192,6 +192,14 @@ export const putDebtDetails = (accountId, fields) =>
 export const getGoals        = () => req('/api/goals');
 export const setAnchor       = (fields) => json('PUT', '/api/goals/anchor', fields);
 export const setUnusualMonths = (months) => json('PUT', '/api/goals/anchor/unusual', { months });
+// Growth › Insights (THL-186, THL-196): the month, a month left out of the
+// usual (THL-59), and Keep or Review on a subscription (THL-63).
+export const getInsightsMonth = (month) =>
+  req(`/api/insights/month${month ? `?month=${encodeURIComponent(month)}` : ''}`);
+export const setMonthUnusual = (month, unusual) =>
+  json('PUT', '/api/insights/unusual', { month, unusual });
+export const setSubscriptionChoice = (merchant, choice) =>
+  json('PUT', '/api/insights/subscriptions', { merchant, choice });
 export const anchorWhatIf    = (monthly) =>
   req(`/api/goals/anchor/whatif?monthly=${encodeURIComponent(monthly)}`);
 export const getChest        = (id) => req(`/api/goals/chests/${id}`);
@@ -266,8 +274,6 @@ export const deleteTransaction = (id) =>
 export const getBudgets      = (month) =>
   req(`/api/budgets${month ? `?month=${month}` : ''}`);
 
-export const getBreakdown = (month, days = 90) =>
-  req(`/api/breakdown?${new URLSearchParams({ ...(month ? { month } : {}), days })}`);
 
 export function getTransactions(filters = {}) {
   const params = new URLSearchParams();

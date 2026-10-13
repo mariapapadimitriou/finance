@@ -51,24 +51,6 @@ def october(c, mortgage=2400):
 
 
 class TestMonth:
-    def test_the_headline_is_everyday_spending(self, client):
-        add_fixed(client, "Mortgage", 2400, "Rent & Housing")
-        october(client)
-        body = client.get(f"/api/breakdown?month={MONTH}").get_json()
-        assert body["pace"]["total"] == pytest.approx(1400)
-        # The months it's compared with leave the mortgage out too.
-        assert body["pace"]["average_total"] == pytest.approx(1000)
-        assert body["bills"]["paid"] == 2400 and body["bills"]["planned"] == 2400
-        assert body["bills"]["items"][0]["name"] == "Mortgage"
-        # The categories still have everything.
-        assert any(c["category"] == "Rent & Housing" for c in body["categories"])
-
-    def test_no_fixed_costs_no_change(self, client):
-        october(client)
-        body = client.get(f"/api/breakdown?month={MONTH}").get_json()
-        assert body["bills"] is None
-        assert body["pace"]["total"] == pytest.approx(3800)
-
     def test_allowance_splits_its_total(self, client):
         add_fixed(client, "Mortgage", 2400, "Rent & Housing")
         october(client)

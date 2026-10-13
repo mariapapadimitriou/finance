@@ -164,63 +164,6 @@ export function ErrorNote({ error, onRetry }) {
 }
 
 /**
- * One voice for "the data behind this month may be incomplete".
- *
- * Overview and Budgets both face exactly this situation and each had its own
- * wording for it — "the data stops at day 27" on one tab, "the data stops short
- * of its last day" on the other — so one fact read as two different problems
- * depending on where you happened to be standing. The distinction that does
- * matter is kept: a month still running will fill up by itself, and a finished
- * month the data stops short of will not.
- *
- * `month` is the month being shown, `summary` the payload from /api/summary.
- */
-export function freshness(month, summary, { onTab, from } = {}) {
-  const shown = month === summary?.latest_month;
-  if (!shown || summary?.latest_month_complete) return null;
-
-  const lastDay = summary?.date_range?.[1]?.slice(8);
-  const running = summary?.latest_month_running;
-  const label = monthName(month);
-
-  if (running) {
-    // A month still running fills itself in; it is information, not a
-    // warning, so it is not set in bold on its own.
-    return {
-      key: 'freshness',
-      kind: '',
-      emphasis: false,
-      summary: <>{label} so far{lastDay && <> · to day {Number(lastDay)}</>}</>,
-      detail: null,
-    };
-  }
-  return {
-    key: 'freshness',
-    kind: '',
-    emphasis: true,
-    summary: <>Data stops at day {lastDay ? Number(lastDay) : '—'}</>,
-    detail: <GoTo to="accounts" from={from} onTab={onTab}>Sync</GoTo>,
-  };
-}
-
-/** The same notice on its own, for a page with nothing else to stack it with. */
-export function MonthFreshness({ month, summary, onTab, from }) {
-  const it = freshness(month, summary, { onTab, from });
-  if (!it) return null;
-  return (
-    <Notice kind={it.kind}>
-      {it.emphasis ? <strong>{it.summary}</strong> : it.summary} {it.detail}
-    </Notice>
-  );
-}
-
-function monthName(month) {
-  if (!month) return 'This month';
-  const d = new Date(`${month}-01T00:00:00`);
-  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-}
-
-/**
  * A merchant's logo when Plaid sent one, otherwise the letter it starts with.
  * A logo that fails to load falls back to the letter rather than a broken
  * image.

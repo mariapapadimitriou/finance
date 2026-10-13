@@ -210,15 +210,13 @@ class TestTheEmptyLedger:
 
 
 class TestTheMonthSelector:
-    def test_it_is_offered_on_the_panels_that_read_a_month(self, panels, source):
-        """It is shown per panel, not per group: Insights needs it and its
-        neighbours do not. Budgets (THL-168) is always this month."""
-        m = re.search(r"showMonth=\{(.+?)\}", source)
-        assert m, "could not find the showMonth prop — update this test"
-        assert "includes(panel)" in m.group(1), (
-            "showMonth no longer keys off the active panel")
-        for key in re.findall(r"'([^']+)'", m.group(1)):
-            assert key in panels, f"showMonth names '{key}', which is not a panel"
+    def test_the_shell_picks_no_month(self, source):
+        """Growth › Insights (THL-196 GR-28) has its own month switcher, and
+        it was the only page that read the shell's; Budgets (THL-168) is
+        always this month. So the shell's picker went with the old page."""
+        assert "showMonth" not in source and "month-select" not in source
+        page = (SRC / "panels" / "InsightsPanel.jsx").read_text(encoding="utf-8")
+        assert "<MonthSwitcher" in page
 
 
 class TestNumberInputsAcceptTheAmountsPeopleType:
@@ -326,11 +324,6 @@ class TestPicturesNotArithmetic:
         assert first.groups() == ("home", "Home")
         assert "label: 'Today'" not in nav
 
-    def test_this_month_keeps_its_ninety_day_chart(self):
-        """It was dropped once in a redesign; it is wanted."""
-        text = (SRC / "panels" / "OverviewPanel.jsx").read_text(encoding="utf-8")
-        assert "dailySpendConfig(" in text
-
     def test_no_sums_of_terms_are_back(self):
         """The + − × ÷ = rows were replaced by rings with their parts beside
         them. A sum drawn in boxes is the thing that was asked to go."""
@@ -388,7 +381,8 @@ class TestHomeIsWhereTheAppLands:
 
     def test_the_app_opens_on_home(self):
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
-        assert ": isPathUrl() ? 'growth' : 'home'" in text   # anything else lands on Home
+        # Growth's Path and Insights have addresses; anything else lands on Home.
+        assert ": isPathUrl() || isInsightsUrl() ? 'growth' : 'home'" in text
         assert "panel === 'home'" in text and "<HomePanel" in text
 
     def test_old_links_to_the_allowance_land_on_home(self, aliases):
@@ -438,7 +432,7 @@ class TestTheSidebarIsThl104s:
 
     def test_growth_opens_on_the_path(self, groups):
         """THL-129 GR-01: Path, then Insights, Projections and Budgets."""
-        assert groups["growth"][:3] == ["path", "overview", "projections"]
+        assert groups["growth"][:3] == ["path", "insights", "projections"]
         assert "overview" not in groups
 
     def test_the_path_page_has_an_address(self):
@@ -620,3 +614,43 @@ class TestTheProfileHub:
         assert "<ReconnectPanel" in text
         home = (SRC / "panels" / "HomePanel.jsx").read_text(encoding="utf-8")
         assert "createLinkToken(connection.item_id)" in home
+
+
+class TestGrowthInsights:
+    """THL-186 / THL-196 GR-28: Growth › Insights replaced the prototype
+    Insights page, at an address of its own with one for each detail view."""
+
+    def test_the_old_page_and_what_only_it_used_are_gone(self, panels, aliases):
+        for path in ("panels/OverviewPanel.jsx", "components/Treemap.jsx",
+                     "components/Ring.jsx", "categoryColors.js"):
+            assert not (SRC / path).exists(), path
+        assert "overview" not in panels and aliases["overview"] == "insights"
+        api = (SRC / "api.js").read_text(encoding="utf-8")
+        assert "getBreakdown" not in api and "/api/breakdown" not in api
+        assert "getInsightsMonth" in api and "setMonthUnusual" in api
+
+    def test_nothing_links_to_the_old_key(self):
+        stale = [p.name for p in sorted(SRC.rglob("*.jsx"))
+                 if re.search(r"""(onTab\??\.?\(|go\()['"]overview['"]""",
+                              p.read_text(encoding="utf-8"))]
+        assert not stale, stale
+
+    def test_insights_has_an_address_and_draws_its_own_pills(self, source):
+        router = (SRC / "router.js").read_text(encoding="utf-8")
+        assert "INSIGHTS_PATH = '/growth/insights'" in router
+        for view in ("month", "category", "subscriptions", "trend", "where", "money", "savings"):
+            assert f"'{view}'" in router, view
+        assert "isInsightsUrl()" in source and "writeInsightsUrl()" in source
+        assert "OWN_SECTIONS = ['insights']" in source and "!ownSections" in source
+        parts = (SRC / "panels" / "InsightsParts.jsx").read_text(encoding="utf-8")
+        assert "export function GrowthTabs" in parts and "disabled" in parts
+
+    def test_every_chart_has_a_table_for_a_screen_reader(self):
+        charts = (SRC / "panels" / "InsightsCharts.jsx").read_text(encoding="utf-8")
+        for name in ("TrendBars", "InOutBars", "CategoryBars", "SavingsArea", "IncomeBar"):
+            body = charts[charts.index(f"export function {name}"):]
+            body = body[:body.index("\n}\n")]
+            assert "<ChartTable" in body, name
+            assert 'aria-hidden="true"' in body, name
+        pkg = json.loads((SRC.parent / "package.json").read_text(encoding="utf-8"))
+        assert set(pkg["dependencies"]) == {"chart.js", "react", "react-dom"}

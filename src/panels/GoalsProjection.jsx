@@ -3,6 +3,7 @@ import { Alert, Choice, DetailPanel, PButton } from '../pearl/kit.jsx';
 import { RangeBand, Slider } from '../pearl/viz.jsx';
 import { sliderBounds, sliderWords, soonerWords, whatIf } from '../pearl/vizMath.js';
 import { setUnusualMonths } from '../api.js';
+import { writeInsightsUrl } from '../router.js';
 import {
   Line, Mark, More, PageHead, amount, listWords, monthName, rangeWords,
 } from './GoalsParts.jsx';
@@ -78,7 +79,11 @@ export function ProjectionPage({ goals, onBack, onHow, onWhatIf, onMonths, onTab
               <h2 className="pk-h2">Your subscriptions cost {amount(Math.round(p.subscriptions_monthly))} a month</h2>
               <p className="gl-body">Pausing one you don’t use would get your Anchor moving again.</p>
               <div className="gl-actions">
-                <PButton variant="secondary" onClick={() => onTab('overview')}>See the suggestion</PButton>
+                <PButton variant="secondary" onClick={() => {
+                  // Growth › Insights › Your subscriptions (GR-27).
+                  writeInsightsUrl({ view: 'subscriptions' });
+                  onTab('insights');
+                }}>See the suggestion</PButton>
               </div>
             </section>
           )}

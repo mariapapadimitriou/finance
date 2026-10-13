@@ -12,6 +12,12 @@ day by day (THL-184), for the Home snapshot (THL-48) and budgets (THL-168).
 
 A month counts only when the history covers it from its first day, so a
 first partial month never drags the average down.
+
+A month she marks as unusual (a move, a car repair; THL-59, the same list
+Goals' Anchor pace leaves out, `anchor_unusual`) is left out, and the next
+older full month is pulled in instead, up to LOOKBACK months back, so the
+usual month still rests on three when there are three to be had. Home's
+snapshot, budgets and Growth › Insights all read it this way.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ from .models import Transaction
 
 USUAL_MONTHS = 3          # the usual month is the average of this many
 CURVE_MONTHS = 3          # a daily curve needs this many behind it
+LOOKBACK = 12             # how far back to look past unusual months
 GROUPS = ("essentials", "lifestyle")
 GROUP_LABELS = {"essentials": "Essentials", "lifestyle": "Lifestyle"}
 
@@ -39,17 +46,22 @@ def _dollars(c: float) -> float:
 
 
 def covered_months(transactions: list[Transaction], today: date,
-                   n: int = USUAL_MONTHS) -> list[str]:
+                   n: int = USUAL_MONTHS, unusual: set[str] | frozenset = frozenset()
+                   ) -> list[str]:
     """Up to `n` full months before this one that the history covers from
-    their first day, oldest first."""
+    their first day, oldest first. Months marked unusual are skipped and an
+    older one taken instead, looking back at most LOOKBACK months."""
     if not transactions:
         return []
     first = min(t.date for t in transactions)
     out, cursor = [], today.replace(day=1)
-    for _ in range(n):
+    for _ in range(LOOKBACK if unusual else n):
         cursor = (cursor - timedelta(days=1)).replace(day=1)
-        if first <= cursor.isoformat():
-            out.append(cursor.strftime("%Y-%m"))
+        if first > cursor.isoformat() or len(out) >= n:
+            break
+        month = cursor.strftime("%Y-%m")
+        if month not in unusual:
+            out.append(month)
     return out[::-1]
 
 
@@ -57,14 +69,15 @@ def _days(month: str) -> int:
     return calendar.monthrange(int(month[:4]), int(month[5:7]))[1]
 
 
-def usual(transactions: list[Transaction], today: date) -> dict:
-    """The usual month and its daily curve, in dollars.
+def usual(transactions: list[Transaction], today: date,
+          unusual: set[str] | frozenset = frozenset()) -> dict:
+    """The usual month and its daily curve, in dollars, unusual months left out.
 
     {"months": [...], "curve": "daily" | "day_fraction" | None,
      "groups": {group: {"usual": float, "by_day": [31 floats] | None}},
      "categories": {category: {"usual": float, "group": str}}}
     """
-    months = covered_months(transactions, today)
+    months = covered_months(transactions, today, unusual=unusual)
     if not months:
         return {"months": [], "curve": None, "groups": {}, "categories": {}}
     wanted = set(months)
