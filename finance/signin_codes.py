@@ -161,17 +161,23 @@ def email_text(purpose: str, code: str, first_name: str | None, link: str) -> tu
 CHANGE = "email_change"
 
 
-def _change_paused(c, user_id: int, t: float, sending: bool = False) -> float:
+# The same code, sent to her own address, confirms deleting the account
+# (THL-116 D-04, "Use an email code instead").
+DELETE = "delete_account"
+
+
+def _change_paused(c, user_id: int, t: float, sending: bool = False,
+                   purpose: str = CHANGE) -> float:
     rows = c.execute(
         "SELECT created_at, attempts FROM app_codes WHERE user_id = ? AND purpose = ? "
-        "AND created_at > ? ORDER BY created_at", (int(user_id), CHANGE, t - WINDOW)).fetchall()
+        "AND created_at > ? ORDER BY created_at", (int(user_id), purpose, t - WINDOW)).fetchall()
     if (sending and len(rows) >= SENDS_PER_WINDOW) or \
             sum(int(r["attempts"]) for r in rows) >= FAILS_PER_WINDOW:
         return max(float(rows[0]["created_at"]) + WINDOW - t, 1.0)
     return 0.0
 
 
-def start_change(base, user_id: int, new_email: str) -> dict:
+def start_change(base, user_id: int, new_email: str, purpose: str = CHANGE) -> dict:
     """A code to move this account to `new_email`.
 
     {"code", "resend_in"} to email; {"resend_in"} when the last one is too
@@ -185,37 +191,37 @@ def start_change(base, user_id: int, new_email: str) -> dict:
     with base.conn() as c:
         last = c.execute(
             "SELECT created_at, email FROM app_codes WHERE user_id = ? AND purpose = ? "
-            "AND used = 0 ORDER BY created_at DESC", (int(user_id), CHANGE)).fetchone()
+            "AND used = 0 ORDER BY created_at DESC", (int(user_id), purpose)).fetchone()
         if (last is not None and last["email"] == email
                 and t - float(last["created_at"]) < RESEND_AFTER):
             return {"resend_in": int(RESEND_AFTER - (t - float(last["created_at"]))) + 1}
-        paused = _change_paused(c, user_id, t, sending=True)
+        paused = _change_paused(c, user_id, t, sending=True, purpose=purpose)
         if paused:
             return {"paused": int(paused)}
         code = f"{secrets.randbelow(10 ** 6):06d}"
         c.execute("UPDATE app_codes SET used = 1 WHERE user_id = ? AND purpose = ? "
-                  "AND used = 0", (int(user_id), CHANGE))
+                  "AND used = 0", (int(user_id), purpose))
         c.execute(
             "INSERT INTO app_codes (user_id, purpose, secret_hash, payload, "
             "expires_at, created_at, email) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (int(user_id), CHANGE, _digest(email, code), json.dumps({"email": email}),
+            (int(user_id), purpose, _digest(email, code), json.dumps({"email": email}),
              t + TTL, t, email))
     return {"code": code, "resend_in": RESEND_AFTER}
 
 
-def verify_change(base, user_id: int, code: str) -> dict:
+def verify_change(base, user_id: int, code: str, purpose: str = CHANGE) -> dict:
     """{"email": new address} when the code matches; otherwise
     {"error": "wrong", "left": n}, {"error": "expired"} or
     {"error": "paused", "paused": seconds}. Nothing is changed here."""
     code = "".join(ch for ch in str(code or "") if ch.isdigit())
     t = users.now()
     with base.conn() as c:
-        paused = _change_paused(c, user_id, t)
+        paused = _change_paused(c, user_id, t, purpose=purpose)
         if paused:
             return {"error": "paused", "paused": int(paused)}
         r = c.execute(
             "SELECT * FROM app_codes WHERE user_id = ? AND purpose = ? AND used = 0 "
-            "ORDER BY created_at DESC", (int(user_id), CHANGE)).fetchone()
+            "ORDER BY created_at DESC", (int(user_id), purpose)).fetchone()
         if r is None or float(r["expires_at"]) < t:
             return {"error": "expired"}
         email = r["email"] or ""

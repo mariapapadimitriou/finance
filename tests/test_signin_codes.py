@@ -75,8 +75,11 @@ def test_signup_by_code_makes_a_passwordless_account(app, outbox, clock):
     u = body["user"]
     assert u["first_name"] == "Alex" and u["email_verified"]
     assert u["has_password"] is False
+    # Usage data is on until she turns it off (THL-117 CN-04); nothing else
+    # has been asked yet.
     assert u["onboarding"] == {"done": False, "step": "province", "province": None,
-                               "waitlist": False, "consents": {}}
+                               "waitlist": False,
+                               "consents": {"analytics": {"value": True, "at": None}}}
     assert c.get("/api/auth/status").get_json()["user"]["email"] == "alex@example.com"
 
 

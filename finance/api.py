@@ -2580,4 +2580,4 @@ def dismiss_review():
 
 # The Profile pages, Growth › Insights and Growth › Projections register on this
 # blueprint too; imported last so they can use the helpers above.
-from . import income_bills_api, insights_api, profile_api, projections_api  # noqa: E402,F401
+from . import income_bills_api, insights_api, privacy_api, profile_api, projections_api  # noqa: E402,F401,I001

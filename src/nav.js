@@ -62,6 +62,19 @@ export const PANELS = {
   // what a phone shows where the full label will not fit.
   income:        { label: 'Income and bills', short: 'Income',
                    hint: 'What comes in, and the regular bills set aside' },
+  // Profile › Notifications (THL-139 N-02): which nudges, and how.
+  notifications: { label: 'Notifications',
+                   hint: 'Payday, weekly check-in, progress and milestones' },
+  // Profile › Privacy and consent (THL-117 CN-04, CN-05).
+  consent:       { label: 'Privacy and consent',
+                   hint: 'What you’ve agreed to, and how to change it' },
+  // Profile › Your data (THL-116 D-01 to D-04): download a copy, or delete
+  // the account.
+  data:          { label: 'Your data',
+                   hint: 'Download a copy or delete your account' },
+  // Profile › How we protect you (THL-115 T-04, with T-02 and T-03).
+  protect:       { label: 'How we protect you',
+                   hint: 'What Pearl can and can’t do' },
   goals:         { label: 'Goals',
                    hint: 'Your Anchor, your treasure chests and your saving goal' },
 };
@@ -94,10 +107,12 @@ export const GROUPS = [
     hint: 'Where your money went, where it could go, and your budgets',
     icon: 'M3 17l6-6 4 4 8-8M15 7h6v6' },
   // At the foot (THL-104, Pearl S-01): the Profile hub, and the pages it
-  // opens — Accounts, Categories and rules, Sign-in and security — each with
+  // opens — Accounts, Categories and rules, Sign-in and security, Income and
+  // bills, Notifications and the three Privacy pages — each with
   // a breadcrumb back to it, so the group shows no sub-tab strip (`crumbs`).
   { key: 'profile', label: 'Profile',
-    panels: ['profile', 'accounts', 'rules', 'security', 'income'], foot: true, crumbs: true,
+    panels: ['profile', 'accounts', 'rules', 'security', 'income', 'notifications', 'consent',
+             'data', 'protect'], foot: true, crumbs: true,
     hint: 'Your accounts, rules, sign-in and privacy',
     icon: 'M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z' },
 ];

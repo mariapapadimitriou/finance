@@ -369,10 +369,14 @@ class TestIncomeAndBillsReplacedThePlan:
             assert "bills: 'income', income: 'income'" in text, name
 
     def test_onboarding_runs_the_check_before_the_path(self):
+        """Linked → how Pearl uses your transactions (THL-117 CN-02) → the
+        income and bills check → one last thing (CN-03) → the path."""
         text = (SRC / "pearl" / "Onboarding.jsx").read_text(encoding="utf-8")
         assert "<IncomeBillsFlow" in text
-        assert "save({ step: 'income' }, 'income')" in text
-        assert "save({ step: 'path' }, 'path')" in text
+        assert "save({ step: 'uses' }, 'uses')" in text
+        assert "step: 'income' },\n" in text and "'income');" in text
+        assert "save({ step: 'email' }, 'email')" in text
+        assert "step: 'path' }, 'path')" in text
 
 
 class TestHomeIsWhereTheAppLands:
@@ -566,8 +570,29 @@ class TestTheProfileHub:
 
     def test_the_group_opens_on_the_hub(self, groups):
         assert groups["profile"][0] == "profile"
-        for key in ("accounts", "rules", "security", "income"):
+        for key in ("accounts", "rules", "security", "income", "notifications", "consent",
+                    "data", "protect"):
             assert key in groups["profile"], key
+
+    def test_the_privacy_pages_are_wired(self, source):
+        """THL-115, THL-116, THL-117, THL-139: the hub's You and Privacy rows
+        open real pages, each works with an empty ledger, and none is left
+        'Coming soon'."""
+        hub = (SRC / "panels" / "ProfilePanel.jsx").read_text(encoding="utf-8")
+        assert "soon: true" not in hub
+        assert "doc: 'help'" in hub and "doc: 'legal'" in hub
+        empty = _string_list(source, "WORKS_WHEN_EMPTY")
+        for key in ("notifications", "consent", "data", "protect"):
+            assert key in empty, key
+        assert "<AccountDeleted" in source
+
+    def test_the_choices_moved_to_privacy_and_consent(self):
+        security = (SRC / "panels" / "SecurityPanel.jsx").read_text(encoding="utf-8")
+        assert "Your choices" not in security and "saveOnboarding" not in security
+        consent = (SRC / "panels" / "ConsentPanel.jsx").read_text(encoding="utf-8")
+        assert "setConsent(" in consent and "<AiOffDialog" in consent
+        onboarding = (SRC / "pearl" / "Onboarding.jsx").read_text(encoding="utf-8")
+        assert "improve" not in onboarding
 
     def test_no_sub_tab_strip_for_profile(self, nav, source):
         assert "crumbs: true" in nav.split("key: 'profile'")[1].split("}")[0]

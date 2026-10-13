@@ -58,11 +58,18 @@ describe('S-01 the Profile hub', () => {
     expect(you.rows[0].sub).toBe('alex@example.com · 1 passkey');
   });
 
-  it('draws the rows without a page as coming soon, and nothing else', () => {
+  it('every row opens something now: a page, or for Help the drafts as a sheet', () => {
     const t = text(<ProfileHub summary={summary} user={user} />);
     expect(t).toContain('Alex · alex@example.com');
     expect(t).toContain('1 needs you');
-    expect(t.match(/Coming soon/g)).toHaveLength(6);
+    expect(t).not.toContain('Coming soon');
+    const rows = hubRows(summary, user).flatMap((g) => g.rows);
+    expect(rows.filter((r) => r.soon)).toEqual([]);
+    expect(rows.find((r) => r.key === 'help')).toMatchObject({ doc: 'help' });
+    expect(rows.find((r) => r.key === 'legal')).toMatchObject({ doc: 'legal' });
+    for (const key of ['notifications', 'consent', 'data', 'protect']) {
+      expect(rows.find((r) => r.key === key).doc).toBeUndefined();
+    }
     calm(t);
     expect(primaries(<ProfileHub summary={summary} user={user} />)).toBe(0);
   });
@@ -279,9 +286,12 @@ describe('Sign-in and security, and S-02', () => {
   it('shows the email with Change, passkeys and sign out', () => {
     const t = text(<SecurityPage user={user} />);
     for (const s of ['Sign-in and security', 'alex@example.com', 'Change', 'Passkeys',
-      'None yet. You sign in with a code sent to your email.', 'Your choices', 'Sign out']) {
+      'None yet. You sign in with a code sent to your email.', 'Sign out']) {
       expect(t).toContain(s);
     }
+    // The choices from setup live on Privacy and consent now (THL-117 CN-04).
+    expect(t).not.toContain('Your choices');
+    expect(t).not.toContain('improve suggestions');
     calm(t);
   });
 

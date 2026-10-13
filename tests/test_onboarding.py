@@ -72,8 +72,11 @@ def test_consents_need_both_required_and_are_timestamped(client):
     ob = r.get_json()["user"]["onboarding"]
     assert ob["step"] == "bank"
     assert ob["consents"]["tips"]["value"] is True
-    assert ob["consents"]["improve"]["value"] is False
-    assert all("at" in v for v in ob["consents"].values())
+    # O-07's "improve suggestions" box was dropped (THL-117); usage data is on
+    # until she turns it off, and has no date of its own.
+    assert "improve" not in ob["consents"]
+    assert ob["consents"]["analytics"] == {"value": True, "at": None}
+    assert all(v["at"] for k, v in ob["consents"].items() if k != "analytics")
 
 
 def test_bank_linking_waits_for_consent(client):
