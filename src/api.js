@@ -334,6 +334,22 @@ export const setIncomeType = (id, kind) =>
 export const getReview     = () => req('/api/review');
 export const dismissReview = (key) => json('POST', '/api/review/dismiss', { key });
 
+// "This was a one-off" (THL-71): out of her usual month, still in its own.
+export const setOneOff = (id, on) =>
+  json('PUT', `/api/transactions/${encodeURIComponent(id)}/one-off`, { on });
+// "Is this the same purchase?" (THL-165): answer is 'same' or 'different'.
+export const answerDuplicate = (id, answer) =>
+  json('POST', `/api/review/duplicates/${encodeURIComponent(id)}`, { answer });
+// Keyboard review (THL-83): many rows at once, never a merchant rule.
+export const previewBatchCategory = (ids, category) =>
+  json('POST', '/api/transactions/batch/category/preview', { ids, category });
+export const batchCategory = (ids, category) =>
+  json('POST', '/api/transactions/batch/category', { ids, category });
+export const batchConfirm = (ids) => json('POST', '/api/transactions/batch/confirm', { ids });
+// Her preferences: single-key shortcuts on or off (WCAG 2.1.4).
+export const getPreferences = () => req('/api/preferences');
+export const savePreferences = (prefs) => json('PUT', '/api/preferences', prefs);
+
 // Where the ledger starts, and re-running categorization over what is already
 // in it. Both exist for the same reason: a rule that improved after the rows
 // were imported does not reach them until something asks it to.

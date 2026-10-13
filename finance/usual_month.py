@@ -3,7 +3,10 @@ day by day (THL-184), for the Home snapshot (THL-48) and budgets (THL-168).
 
 * Usual month = the average of the last three full months, for Essentials,
   Lifestyle and every spending category. Transfers and card payments never
-  count (`counts_as_spending`); one-offs do until THL-71 can mark them.
+  count (`counts_as_spending`), and neither does a transaction she marked
+  as a one-off (THL-71): a tax refund, moving costs, a big one-time
+  purchase. A one-off still counts in its own month and in safe to spend;
+  it just isn't what a usual month looks like.
 * The usual-by-day curve says how much she has usually spent by each day of
   the month. It drives the snapshot's pace tick and the ±10% pace rule.
 * With fewer than three full months there is no curve: the pace falls back to
@@ -86,7 +89,7 @@ def usual(transactions: list[Transaction], today: date,
     daily: dict[str, dict[str, list[int]]] = {
         g: {m: [0] * (_days(m) + 1) for m in months} for g in GROUPS}
     for t in transactions:
-        if t.month not in wanted or not counts_as_spending(t):
+        if t.month not in wanted or not in_usual(t):
             continue
         c = _cents(spend_amount(t))
         cat = t.category or "Other"
@@ -112,6 +115,48 @@ def usual(transactions: list[Transaction], today: date,
                   for cat, c in sorted(by_cat.items(), key=lambda kv: -kv[1])
                   if group_of(cat) in GROUPS and c > 0}
     return {"months": months, "curve": curve, "groups": groups, "categories": categories}
+
+
+def in_usual(t: Transaction) -> bool:
+    """Whether a row may shape an average: spending that isn't a one-off.
+    Projections, budgets, Insights and the trend card ask this of the months
+    they average over (THL-71)."""
+    return counts_as_spending(t) and not t.one_off
+
+
+def one_off_effect(transactions: list[Transaction], txn: Transaction, today: date,
+                   unusual: set[str] | frozenset = frozenset()) -> dict | None:
+    """What marking `txn` a one-off does to a usual month of its group, for
+    U-02's toast and U-03's line: {group, label, usual, without, in_usual}.
+
+    `usual` is the usual month with it left out and `without` with it in.
+    When its month is one of the months the usual month averages, both are
+    worked out on the ledger. When it isn't yet (this month, usually),
+    `without` is what a usual month would rise to with this purchase in it:
+    its share of the months averaged. None when it isn't Essentials or
+    Lifestyle spending, or there is no usual month yet.
+    """
+    from dataclasses import replace
+    g = group_of(txn.category or "Other")
+    if g not in GROUPS or not counts_as_spending(txn):
+        return None
+    flagged = txn.one_off_since or today.isoformat()
+    on = [replace(t, one_off_since=flagged) if t.fingerprint == txn.fingerprint else t
+          for t in transactions]
+    off = [replace(t, one_off_since=None) if t.fingerprint == txn.fingerprint else t
+           for t in transactions]
+    u_on = usual(on, today, unusual)
+    if not u_on["months"] or g not in u_on["groups"]:
+        return None
+    left_out = u_on["groups"][g]["usual"]
+    if txn.month in u_on["months"]:
+        kept_in = usual(off, today, unusual)["groups"][g]["usual"]
+        inside = True
+    else:
+        kept_in = _dollars(_cents(left_out) + _cents(spend_amount(txn)) / len(u_on["months"]))
+        inside = False
+    return {"group": g, "label": GROUP_LABELS[g], "usual": left_out, "without": kept_in,
+            "in_usual": inside}
 
 
 def snapshot(transactions: list[Transaction], today: date, sts: dict, u: dict, *,

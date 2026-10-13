@@ -285,6 +285,19 @@ class Transaction:
     # "user" when you chose it.
     income_type: str | None = None
     income_type_source: str | None = None
+    # A one-off (THL-71): the day she marked it. Left out of her usual month,
+    # projections and trend suggestions, but still counted in its own month
+    # and in safe to spend. Beside the row, like a share.
+    one_off_since: str | None = None
+    # A likely duplicate (THL-165): the row this one repeats, and whether she
+    # has answered — pending (counted once until she does), same (soft-hidden)
+    # or different (both count). See finance/duplicates.py.
+    duplicate_of: str | None = None
+    duplicate_state: str | None = None
+
+    @property
+    def one_off(self) -> bool:
+        return bool(self.one_off_since)
 
     def __post_init__(self):
         if not self.merchant:
@@ -359,6 +372,10 @@ class Transaction:
             excluded=row.get("excluded") or None,
             income_type=row.get("income_type") or None,
             income_type_source=row.get("income_type_source") or None,
+            one_off_since=(str(row["one_off_since"])[:10]
+                           if row.get("one_off_since") else None),
+            duplicate_of=row.get("duplicate_of") or None,
+            duplicate_state=row.get("duplicate_state") or None,
         )
         if t.joint and t.my_share is None:
             # Another member's, unless it's a name you said is always yours —

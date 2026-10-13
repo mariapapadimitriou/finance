@@ -254,6 +254,26 @@ CREATE TABLE IF NOT EXISTS txn_confirmed (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- One-offs (THL-71): a transaction she marked as unusual, with the day she
+-- did. Left out of her usual month, projections and trend suggestions; still
+-- counted in its own month and in safe to spend.
+CREATE TABLE IF NOT EXISTS txn_oneoff (
+    txn_id TEXT PRIMARY KEY,
+    since  TEXT NOT NULL
+);
+
+-- Likely duplicates (THL-165): the copy, the row it repeats, and her answer.
+-- pending = counted once until she answers; same = the copy is soft-hidden
+-- (kept, with its link to the twin, so Undo works); different = both count.
+CREATE TABLE IF NOT EXISTS txn_duplicates (
+    txn_id     TEXT PRIMARY KEY,
+    twin_id    TEXT NOT NULL,
+    state      TEXT NOT NULL DEFAULT 'pending',
+    found_on   TEXT,
+    decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dup_twin ON txn_duplicates(twin_id);
+
 -- Your private note on a transaction (140 characters at most).
 CREATE TABLE IF NOT EXISTS txn_notes (
     txn_id     TEXT PRIMARY KEY,
@@ -454,6 +474,8 @@ _CHARGES = """(
      WHERE (m.txn_id IS NOT NULL OR o.bank_id IS NOT NULL)
        AND NOT EXISTS (SELECT 1 FROM txn_exclusions e
                         WHERE e.txn_id = t.id AND e.kept = 0)
+       AND NOT EXISTS (SELECT 1 FROM txn_duplicates d
+                        WHERE d.txn_id = t.id AND d.state != 'different')
 )"""
 
 # What friends have sent back for each charge, as a positive total.
@@ -480,10 +502,16 @@ _CHARGE_COLUMNS = """sh.my_share AS my_share,
                           CASE WHEN a.bank_id IS NULL THEN 0 ELSE a.charged
                           END AS bank_amount,
                           COALESCE(a.auto, 0) AS bank_auto,
-                          COALESCE(exx.reason, CASE WHEN acs.counted = 0
+                          COALESCE(exx.reason,
+                                   CASE WHEN dpx.state IN ('pending', 'same')
+                                   THEN 'Possible duplicate' END,
+                                   CASE WHEN acs.counted = 0
                                    THEN 'Not in your budget' END) AS excluded,
                           itx.kind AS income_type,
-                          itx.source AS income_type_source"""
+                          itx.source AS income_type_source,
+                          oox.since AS one_off_since,
+                          dpx.twin_id AS duplicate_of,
+                          dpx.state AS duplicate_state"""
 
 
 class Store:
@@ -729,6 +757,8 @@ class Store:
                      LEFT JOIN txn_exclusions exx ON exx.txn_id = t.id AND exx.kept = 0
                      LEFT JOIN account_settings acs ON acs.account_id = t.account_id
                      LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
+                     LEFT JOIN txn_oneoff oox ON oox.txn_id = t.id
+                     LEFT JOIN txn_duplicates dpx ON dpx.txn_id = t.id
                     ORDER BY t.date DESC, t.id""").fetchall()
         return [Transaction.from_row(dict(r)) for r in rows]
 
@@ -778,6 +808,8 @@ class Store:
                      LEFT JOIN txn_exclusions exx ON exx.txn_id = t.id AND exx.kept = 0
                      LEFT JOIN account_settings acs ON acs.account_id = t.account_id
                      LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
+                     LEFT JOIN txn_oneoff oox ON oox.txn_id = t.id
+                     LEFT JOIN txn_duplicates dpx ON dpx.txn_id = t.id
                     {clause}
                     ORDER BY t.date DESC, t.id LIMIT ? OFFSET ?""",
                 params + [limit, offset],
@@ -813,6 +845,8 @@ class Store:
                      LEFT JOIN txn_exclusions exx ON exx.txn_id = t.id AND exx.kept = 0
                      LEFT JOIN account_settings acs ON acs.account_id = t.account_id
                      LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
+                     LEFT JOIN txn_oneoff oox ON oox.txn_id = t.id
+                     LEFT JOIN txn_duplicates dpx ON dpx.txn_id = t.id
                     WHERE t.id = ?""", (txn_id,)).fetchone()
         return Transaction.from_row(dict(row)) if row else None
 
@@ -830,6 +864,9 @@ class Store:
             c.execute("DELETE FROM txn_splits WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_split_people WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_payback_person WHERE inflow_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_oneoff WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_duplicates WHERE txn_id = ? OR twin_id = ?",
+                      (txn_id, txn_id))
             return cur.rowcount > 0
 
     def set_share(self, txn_id: str, my_share: float | None) -> None:
@@ -937,6 +974,57 @@ class Store:
         with self.conn() as c:
             c.execute("INSERT OR IGNORE INTO review_dismissed (item_key) VALUES (?)",
                       (key,))
+
+    def undismiss_review(self, key: str) -> None:
+        """Ask about it again: an Undo of the answer that settled it."""
+        with self.conn() as c:
+            c.execute("DELETE FROM review_dismissed WHERE item_key = ?", (key,))
+
+    # ── One-offs (THL-71) ────────────────────────────────────────────────
+    def one_offs(self) -> dict[str, str]:
+        """{txn_id: the day she marked it a one-off}."""
+        with self.conn() as c:
+            return {r["txn_id"]: r["since"] for r in
+                    c.execute("SELECT txn_id, since FROM txn_oneoff").fetchall()}
+
+    def set_one_off(self, txn_id: str, on: bool, since: str | None = None) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_oneoff WHERE txn_id = ?", (txn_id,))
+            if on:
+                from datetime import date as _date
+                c.execute("INSERT INTO txn_oneoff (txn_id, since) VALUES (?, ?)",
+                          (txn_id, since or _date.today().isoformat()))
+
+    # ── Possible duplicates (THL-165) ────────────────────────────────────
+    def duplicate_ids(self) -> set[str]:
+        """Every row in a pair, either side, answered or not."""
+        with self.conn() as c:
+            rows = c.execute("SELECT txn_id, twin_id FROM txn_duplicates").fetchall()
+        return {r["txn_id"] for r in rows} | {r["twin_id"] for r in rows}
+
+    def duplicates(self) -> dict[str, dict]:
+        """copy id → {twin, state, found_on}."""
+        with self.conn() as c:
+            rows = c.execute("SELECT txn_id, twin_id, state, found_on "
+                             "FROM txn_duplicates").fetchall()
+        return {r["txn_id"]: {"twin": r["twin_id"], "state": r["state"],
+                              "found_on": r["found_on"] or ""} for r in rows}
+
+    def add_duplicate(self, txn_id: str, twin_id: str, state: str = "pending") -> None:
+        from datetime import date as _date
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_duplicates WHERE txn_id = ?", (txn_id,))
+            c.execute("INSERT INTO txn_duplicates (txn_id, twin_id, state, found_on, "
+                      "decided_at) VALUES (?, ?, ?, ?, ?)",
+                      (txn_id, twin_id, state, _date.today().isoformat(),
+                       None if state == "pending" else _now()))
+
+    def set_duplicate_state(self, txn_id: str, state: str) -> bool:
+        with self.conn() as c:
+            cur = c.execute("UPDATE txn_duplicates SET state = ?, decided_at = ? "
+                            "WHERE txn_id = ?",
+                            (state, None if state == "pending" else _now(), txn_id))
+            return (cur.rowcount or 0) > 0
 
     # ── Confirmed categories and notes ──────────────────────────────────
     def confirmed_categories(self) -> dict[str, str]:
@@ -1119,7 +1207,7 @@ class Store:
                 for table in ("txn_shares", "txn_invested", "piggy_allocations",
                               "piggy_optouts", "txn_exclusions", "txn_income_type",
                               "txn_confirmed", "txn_notes", "txn_splits",
-                              "txn_split_people"):
+                              "txn_split_people", "txn_oneoff", "txn_duplicates"):
                     c.execute(f"DELETE FROM {table} WHERE txn_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_payback_person WHERE inflow_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_paybacks WHERE inflow_id IN ({marks})", chunk)
@@ -1280,6 +1368,8 @@ class Store:
             ("review_dismissed", "settled review items"),
             ("txn_confirmed", "confirmed categories"),
             ("txn_notes", "notes on transactions"),
+            ("txn_oneoff", "one-offs"),
+            ("txn_duplicates", "possible duplicates"),
             ("manual_accounts", "accounts added by hand"),
         ]
         with self.conn() as c:

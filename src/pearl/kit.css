@@ -429,7 +429,7 @@
 }
 
 /* ── A row that just changed ─────────────────────────────────────────────── */
-@keyframes pk-flash { from { background: var(--track); } to { background: transparent; } }
+@keyframes pk-flash { from { background: var(--seaglass); } to { background: transparent; } }
 .pk-row.flash { animation: pk-flash 2.4s ease-out; }
 @media (prefers-reduced-motion: reduce) { .pk-row.flash { animation: none; outline: 2px solid var(--border-focus); } }
 

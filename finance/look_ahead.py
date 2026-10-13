@@ -20,6 +20,10 @@ Three look-ahead questions, each answered as a range and never one figure:
   of the months the Anchor's pace rests on (`anchor.pace`) — and the same
   with a little more each month (the what-if).
 
+A transaction she marked as a one-off (THL-71) is left out of every pace
+and range here — it says nothing about what comes next — though it still
+counts in what she has spent so far.
+
 Everything is in whole cents. Ranges are rounded outwards to a figure she can
 read ($10 for a month, $100 for a year), so the low end is never higher than
 the arithmetic and the high end never lower.
@@ -88,7 +92,8 @@ def rest_of_month(transactions: list[Transaction], today: date, months: list[str
     after: dict[str, int] = {m: 0 for m in months}
     so_far = 0
     for t in transactions:
-        if not counts_as_spending(t) or (t.merchant, t.date) in bills:
+        # A one-off (THL-71) is no guide to what comes next.
+        if not counts_as_spending(t) or t.one_off or (t.merchant, t.date) in bills:
             continue
         if t.month in wanted and int(t.date[8:10]) > day:
             after[t.month] += cents(spend_amount(t))
@@ -164,7 +169,8 @@ def everyday_per_day(transactions: list[Transaction], today: date, months: list[
     month = today.strftime("%Y-%m")
     so_far = 0
     for t in transactions:
-        if not counts_as_spending(t) or (t.merchant, t.date) in bills:
+        # A one-off (THL-71) is no guide to what comes next.
+        if not counts_as_spending(t) or t.one_off or (t.merchant, t.date) in bills:
             continue
         if t.month in wanted:
             totals[t.month] += cents(spend_amount(t))

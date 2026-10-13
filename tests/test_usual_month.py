@@ -56,11 +56,14 @@ class TestUsualMonth:
         u = um.usual([tx("2026-09-20", "Loblaws", 80.00, "Groceries")], TODAY)
         assert u == {"months": [], "curve": None, "groups": {}, "categories": {}}
 
-    def test_one_offs_still_count_until_thl_71(self):
+    def test_a_big_purchase_counts_until_she_marks_it_a_one_off(self):
         rows = history() + [tx("2026-08-15", "Garage", 1900.00, "Home")]
         u = um.usual(rows, TODAY)
         # Rounded once, at the end: (3 × $2,275 + $181 of Hydro + $1,900) ÷ 3.
         assert u["groups"]["essentials"]["usual"] == round((3 * 2275 + 181 + 1900) / 3, 2)
+        # THL-71: marked as a one-off, it's left out.
+        rows[-1].one_off_since = "2026-10-09"
+        assert um.usual(rows, TODAY)["groups"]["essentials"]["usual"] == ESSENTIALS
 
 
 class TestSnapshot:

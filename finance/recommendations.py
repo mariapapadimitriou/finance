@@ -9,7 +9,8 @@ appears without the data behind it.
    above her usual for this point in the month: the average of the last
    three full months by today's day. Needs those three months, and a gap of
    at least MIN_GAP so small categories don't make noise. The largest gap
-   wins. Yearly impact: the gap, twelve times.
+   wins. Yearly impact: the gap, twelve times. One-offs (THL-71) are left
+   out on both sides.
 2. Subscriptions (THL-63): her recurring charges in a subscription category
    (streaming, news, software, fitness, entertainment), billed monthly or
    less often, and what they cost a year. Shown with at least
@@ -90,7 +91,9 @@ def trend(transactions: list[Transaction], today: date, usual: dict) -> dict | N
     by_today: dict[str, float] = defaultdict(float)
     spent: dict[str, float] = defaultdict(float)
     for t in transactions:
-        if not counts_as_spending(t):
+        # A one-off (THL-71) is neither part of usual nor a trend: one big
+        # purchase this month is not "running above usual".
+        if not counts_as_spending(t) or t.one_off:
             continue
         cat = t.category or "Other"
         if group_of(cat) != "lifestyle":

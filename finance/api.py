@@ -223,6 +223,9 @@ def transactions_list():
         "totals": txlist.totals(chosen),
         "focus": txlist.focus(rows, month=month, account=filters["account"],
                               group=group, category=filters["category"]),
+        # Copies waiting for "Is this the same purchase?" (THL-165 D-01).
+        "duplicates": sum(1 for _, r in rows
+                          if (r.get("duplicate") or {}).get("state") == "pending"),
         "groups": CATEGORY_GROUPS,
     })
 
@@ -241,6 +244,9 @@ def transaction_detail(txn_id: str):
         txns = [x for x, _ in rows]
         splits, payer = st.splits(), st.payback_people()
         r = dict(r)
+        # U-03: when it was left out, and a usual month of its group.
+        from .transactions_extras_api import one_off_line
+        r["one_off_line"] = one_off_line(st, txns, t)
         split = splits.get(txn_id)
         if split and t.amount > 0:
             r["splitting"] = {
@@ -457,6 +463,11 @@ def undo_change():
         if not isinstance(key, str) or len(key) > 200 or (
                 d is not None and (not isinstance(d, dict) or d.get("category") not in CATEGORIES)):
             return jsonify({"error": "That change can’t be undone."}), 400
+    # One-offs, duplicate answers and confirmations (THL-71, THL-165, THL-83).
+    from .transactions_extras_api import undo_extras
+    extra, problem = undo_extras(st, body)
+    if problem:
+        return jsonify({"error": problem}), 400
     for key, cat in overrides.items():
         st.restore_override(key, cat)
     for key, d in dests.items():
@@ -466,7 +477,7 @@ def undo_change():
             st.set_destination(key, d["category"], str(d.get("label") or "")[:200])
     st.write_categories(changes)
     apply_transfer_matches(st)
-    return jsonify({"ok": True, "undone": len(changes)})
+    return jsonify({"ok": True, "undone": len(changes) + extra})
 
 
 @bp.put("/transactions/<txn_id>/invested")
@@ -1310,6 +1321,9 @@ def add_manual_transaction():
     if not candidate.category:
         apply_categories([candidate], st.overrides())
     st.add_transactions([candidate])
+    if matches and body.get("confirm"):
+        # She said it's a different purchase: never ask again (THL-165).
+        st.add_duplicate(candidate.fingerprint, matches[0]["id"], state="different")
 
     return jsonify({"ok": True, "id": candidate.fingerprint,
                     "merchant": candidate.merchant,
@@ -2565,8 +2579,10 @@ def set_income_type(txn_id: str):
 def review_queue():
     from .review import build
     st = store()
+    found_on = {k: v["found_on"] for k, v in st.duplicates().items()}
     return jsonify(build(st.all_transactions(), dismissed=st.dismissed_reviews(),
-                         splits=st.splits(), payer=st.payback_people()))
+                         splits=st.splits(), payer=st.payback_people(),
+                         found_on=found_on))
 
 
 @bp.post("/review/dismiss")
@@ -2581,3 +2597,4 @@ def dismiss_review():
 # The Profile pages, Growth › Insights and Growth › Projections register on this
 # blueprint too; imported last so they can use the helpers above.
 from . import income_bills_api, insights_api, privacy_api, profile_api, projections_api  # noqa: E402,F401,I001
+from . import transactions_extras_api  # noqa: E402,F401

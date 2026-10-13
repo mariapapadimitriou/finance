@@ -47,10 +47,17 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
         store.delete_transaction(placeholder.fingerprint)
 
     inserted = store.add_transactions(new)
+    possible = 0
     if inserted:
         # A new arrival can be the other end of a transfer already here, and a
         # new departure may have its other end here already.
         classify_ledger(store)
+        # The same purchase from a second source (a statement file beside the
+        # bank connection, a card linked twice, a pending row whose posted
+        # twin never named it) is asked about, not merged (THL-165). Exact
+        # repeats were skipped above and only counted in the import log.
+        from .duplicates import scan
+        possible = scan(store)
 
     duplicate_count = len(dupes) + self_dupes
     store.log_import(filename or "upload.csv", result, inserted, duplicate_count)
@@ -60,6 +67,7 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
         "filename": filename,
         "imported": inserted,
         "duplicates": duplicate_count,
+        "possible_duplicates": possible,
         "before_start": before_start,
         "ledger_start": start,
         "replaced_manual": len(replaced),

@@ -61,13 +61,14 @@ export function FilterChip({ label, value, options, onChange, active = false, sh
   );
 }
 
-export function SearchField({ value, onChange, placeholder, label = 'Search' }) {
+export function SearchField({ value, onChange, placeholder, label = 'Search', inputRef, onKeyDown,
+                             ...rest }) {
   return (
     <label className="pk-search">
       <PIcon name="search" size={18} />
       <span className="pk-sr">{label}</span>
-      <input type="search" value={value} placeholder={placeholder}
-             onChange={(e) => onChange(e.target.value)} />
+      <input type="search" value={value} placeholder={placeholder} ref={inputRef}
+             onKeyDown={onKeyDown} onChange={(e) => onChange(e.target.value)} {...rest} />
       {value && (
         <button type="button" className="pk-clear" aria-label="Clear search"
                 onClick={() => onChange('')}>
@@ -130,10 +131,10 @@ export function DayHeader({ children }) {
  *   inflow  — money in, shown with a "+"
  */
 export function TxRow({ name, logo, meta, note, noteLink = false, chip, amount,
-                        inflow = false, muted = false, flash = false, onOpen }) {
+                        inflow = false, muted = false, flash = false, onOpen, ...rest }) {
   return (
     <button type="button" className={`pk-row${muted ? ' muted' : ''}${flash ? ' flash' : ''}`}
-            onClick={onOpen}>
+            onClick={onOpen} {...rest}>
       <Avatar name={name} logo={logo} />
       <span className="pk-row-text">
         <span className="pk-row-name">{name}</span>

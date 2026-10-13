@@ -24,7 +24,8 @@ so a screen never works out a total itself:
 Every gate is the one the rest of the app uses: `counts_as_spending` and
 `spend_amount` for spending (so excluded accounts, joint shares, splits and
 chest-paid charges all count the way they do on Home), `invested_in` for
-what was saved. Money is integer cents throughout and rounded once, here.
+what was saved. A one-off (THL-71) counts in its own month's bars and totals
+but not in anything averaged: the usual band, or where she usually is by today. Money is integer cents throughout and rounded once, here.
 """
 
 from __future__ import annotations
@@ -104,6 +105,9 @@ class Ledger:
         # Spending by category and day, for "by today" (GR-26).
         self.daily: dict[str, dict[str, list[int]]] = defaultdict(dict)
         self.unsure: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        # The same, one-offs left out (THL-71): what an average is made of.
+        self.usual_group: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self.usual_daily: dict[str, dict[str, list[int]]] = defaultdict(dict)
         self.months: set[str] = set()
         for t in transactions:
             self.months.add(t.month)
@@ -119,6 +123,10 @@ class Ledger:
             self.category[t.month][cat] += c
             days = self.daily[t.month].setdefault(cat, [0] * 32)
             days[int(t.date[8:10])] += c
+            if not t.one_off:
+                self.usual_group[t.month][group_of(cat)] += c
+                days = self.usual_daily[t.month].setdefault(cat, [0] * 32)
+                days[int(t.date[8:10])] += c
             if (t.amount > 0 and t.category_source != "user" and is_unsure(t)
                     and confirmed.get(t.fingerprint) != cat):
                 self.unsure[t.month][cat] += 1
@@ -128,6 +136,14 @@ class Ledger:
 
     def by_day(self, month: str, category: str, day: int) -> int:
         days = self.daily.get(month, {}).get(category)
+        return sum(days[1:day + 1]) if days else 0
+
+    def usual_spent(self, month: str) -> int:
+        """What a month spent, one-offs left out: how it counts in an average."""
+        return sum(self.usual_group[month].get(g, 0) for g in GROUPS)
+
+    def usual_by_day(self, month: str, category: str, day: int) -> int:
+        days = self.usual_daily.get(month, {}).get(category)
         return sum(days[1:day + 1]) if days else 0
 
 
@@ -222,7 +238,8 @@ def categories(led: Ledger, u: dict, month: str, day: int, running: bool) -> lis
         usual_c = cents(usual) if usual else (0 if usual_months else None)
         by_today = None
         if running and usual_months:
-            by_today = round(sum(led.by_day(m, cat, day) for m in usual_months) / len(usual_months))
+            by_today = round(sum(led.usual_by_day(m, cat, day) for m in usual_months)
+                             / len(usual_months))
         spent = max(led.category[month].get(cat, 0), 0)
         history = []
         for m in months:
@@ -271,7 +288,8 @@ def months_shown(led: Ledger, end: str, n: int = SPAN) -> list[str]:
 def trend(led: Ledger, u: dict, months: list[str], today: date) -> dict:
     """GR-29: Essentials and Lifestyle each month, and the usual band."""
     now = today.strftime("%Y-%m")
-    totals = {m: led.spent(m) for m in u.get("months") or []}
+    # The band is made of usual months, so a one-off doesn't widen it.
+    totals = {m: led.usual_spent(m) for m in u.get("months") or []}
     band = None
     if totals:
         band = {"low": min(totals.values()), "high": max(totals.values()),
