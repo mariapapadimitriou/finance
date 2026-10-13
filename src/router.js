@@ -1,27 +1,97 @@
 // The transactions screen keeps its place in the address bar, so a filtered
 // list (/transactions?month=2026-10&group=lifestyle) can be linked to from
 // anywhere — Home, an alert, an explanation sheet — and back/forward work.
-// Growth's Path, Insights and Projections have addresses too; everything else
-// lives at "/".
+// Growth's Path, Insights, Projections and Learn have addresses too;
+// everything else lives at "/".
 
 export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'joint', 'recurring', 'q'];
 
 // Needs a look (R-01, THL-123) has an address under the list's.
 export const REVIEW_PATH = '/transactions/review';
 
-// The Path page (THL-129 GR-01) has an address too, so Home can link to it.
+// The Path page (THL-129 GR-01) has an address too, so Home can link to it,
+// and each step's own screen (GR-02 to GR-04) one beneath it:
+// /growth/path/<step>.
 export const PATH_PATH = '/growth';
+export const PATH_STEPS = ['income', 'bills', 'essentials', 'first_stop', 'full', 'saved_more',
+                           'cards', 'invest'];
+const PATH_EVENT = 'pearl:path';
 
-/** True at /growth. */
-export function isPathUrl(loc = window.location) {
-  return /^\/growth\/?$/.test(loc.pathname);
+/** {step} at /growth or /growth/path/<step>, or null anywhere else. */
+export function readPathUrl(loc = window.location) {
+  const path = loc.pathname.replace(/\/+$/, '') || '/';
+  if (path === PATH_PATH) return { step: '' };
+  const m = path.match(/^\/growth\/path\/([a-z_]+)$/);
+  return m && PATH_STEPS.includes(m[1]) ? { step: m[1] } : null;
 }
 
-/** Point the address bar at the Path page. */
-export function writePathUrl({ push = true } = {}) {
-  if (isPathUrl()) return;
-  window.history[push ? 'pushState' : 'replaceState'](null, '', PATH_PATH);
+/** True at /growth and at a step's own screen. */
+export const isPathUrl = (loc = window.location) => readPathUrl(loc) !== null;
+
+export const pathHref = (step = '') => (step ? `${PATH_PATH}/path/${step}` : PATH_PATH);
+
+/** Point the address bar at the Path page or one of its steps, and tell the page. */
+export function writePathUrl({ step = '', push = true } = {}) {
+  const href = pathHref(step);
+  if (href !== window.location.pathname) {
+    window.history[push ? 'pushState' : 'replaceState'](null, '', href);
+  }
+  window.dispatchEvent(new Event(PATH_EVENT));
 }
+
+/** Calls `fn` whenever the Path address changes, by Back or by a link. */
+export function onPathUrl(fn) {
+  window.addEventListener('popstate', fn);
+  window.addEventListener(PATH_EVENT, fn);
+  return () => {
+    window.removeEventListener('popstate', fn);
+    window.removeEventListener(PATH_EVENT, fn);
+  };
+}
+
+// Growth › Learn (THL-134 GR-11, at /growth/learn) and a module (GR-12 to
+// GR-14) at /growth/learn/<module>. ?from=ready means she came from the
+// readiness checklist (GR-16), so the done state offers the way back. The
+// safe-to-spend explainer is a page of its own there too.
+export const LEARN_PATH = '/growth/learn';
+const LEARN_EVENT = 'pearl:learn';
+
+/** {module, from} at /growth/learn…, or null anywhere else. */
+export function readLearnUrl(loc = window.location) {
+  const m = loc.pathname.match(/^\/growth\/learn(?:\/([a-z-]+))?\/?$/);
+  if (!m) return null;
+  const from = new URLSearchParams(loc.search).get('from') === 'ready' ? 'ready' : '';
+  return { module: m[1] ?? '', from };
+}
+
+export const isLearnUrl = (loc = window.location) => readLearnUrl(loc) !== null;
+
+export function learnHref({ module = '', from = '' } = {}) {
+  return `${LEARN_PATH}${module ? `/${module}` : ''}${module && from ? `?from=${from}` : ''}`;
+}
+
+/** Point the address bar at Learn or one of its modules, and tell the page. */
+export function writeLearnUrl(state = {}, { push = true } = {}) {
+  const href = learnHref(state);
+  if (href !== window.location.pathname + window.location.search) {
+    window.history[push ? 'pushState' : 'replaceState'](null, '', href);
+  }
+  window.dispatchEvent(new Event(LEARN_EVENT));
+}
+
+/** Calls `fn` whenever the Learn address changes, by Back or by a link. */
+export function onLearnUrl(fn) {
+  window.addEventListener('popstate', fn);
+  window.addEventListener(LEARN_EVENT, fn);
+  return () => {
+    window.removeEventListener('popstate', fn);
+    window.removeEventListener(LEARN_EVENT, fn);
+  };
+}
+
+/** True when the partner sent her back (THL-136 GR-20): ?from=partner. */
+export const fromPartner = (loc = window.location) =>
+  new URLSearchParams(loc.search).get('from') === 'partner';
 
 // Growth › Insights (THL-186, THL-196 GR-28) and its detail views (GR-25 to
 // GR-27, GR-29 to GR-32), so a detail can be linked to and Back works:

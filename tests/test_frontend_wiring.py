@@ -385,9 +385,10 @@ class TestHomeIsWhereTheAppLands:
 
     def test_the_app_opens_on_home(self):
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
-        # Growth's Path, Insights and Projections have addresses; anything
-        # else lands on Home.
-        assert ": isPathUrl() || isInsightsUrl() || isProjectionsUrl() ? 'growth' : 'home'" in text
+        # Growth's Path, Insights, Projections and Learn have addresses;
+        # anything else lands on Home.
+        assert (": isPathUrl() || isInsightsUrl() || isProjectionsUrl() || isLearnUrl() ? 'growth'"
+                " : 'home'") in text
         assert "panel === 'home'" in text and "<HomePanel" in text
 
     def test_old_links_to_the_allowance_land_on_home(self, aliases):
@@ -653,9 +654,13 @@ class TestGrowthInsights:
         for view in ("month", "category", "subscriptions", "trend", "where", "money", "savings"):
             assert f"'{view}'" in router, view
         assert "isInsightsUrl()" in source and "writeInsightsUrl()" in source
-        assert "OWN_SECTIONS = ['insights', 'projections']" in source and "!ownSections" in source
+        assert "OWN_SECTIONS = ['path', 'insights', 'projections', 'learn']" in source
+        assert "!ownSections" in source
         parts = (SRC / "panels" / "InsightsParts.jsx").read_text(encoding="utf-8")
-        assert "export function GrowthTabs" in parts and "disabled" in parts
+        # Learn is built (THL-134): every Growth pill is a page now.
+        tabs = parts[parts.index("export function GrowthTabs"):]
+        tabs = tabs[:tabs.index("\n}\n")]
+        assert "disabled" not in tabs and "growth.panels.map" in tabs
 
     def test_every_chart_has_a_table_for_a_screen_reader(self):
         charts = (SRC / "panels" / "InsightsCharts.jsx").read_text(encoding="utf-8")
@@ -704,7 +709,9 @@ class TestGrowthProjections:
         path = (SRC / "panels" / "PathPanel.jsx").read_text(encoding="utf-8")
         assert "open('ready')" in path and "open('unveil')" in path
         unveil = (SRC / "panels" / "Unveil.jsx").read_text(encoding="utf-8")
-        assert "I’ve opened one" in unveil and "Mark Unveil done" in unveil
+        partner = (SRC / "panels" / "Partner.jsx").read_text(encoding="utf-8")
+        assert "I’ve opened one elsewhere" in partner and "I opened an account elsewhere" in partner
+        assert "onReport={() => nav.show('unveil')}" in unveil and "Mark Unveil done" in unveil
         assert "nav.show('done')" in unveil
 
     def test_every_chart_has_a_table_for_a_screen_reader(self):
@@ -717,3 +724,59 @@ class TestGrowthProjections:
         calc = (SRC / "panels" / "ProjectionsPanel.jsx").read_text(encoding="utf-8")
         body = calc[calc.index("export function Calculator"):]
         assert '<table className="pk-sr">' in body and 'aria-hidden="true"' in body
+
+
+class TestGrowthRest:
+    """THL-129 GR-02 to GR-04, THL-130 GR-06 to GR-09, THL-134 GR-11 to
+    GR-14 and THL-136 GR-19 to GR-23: the rest of Growth."""
+
+    def test_steps_and_learn_have_addresses(self, source):
+        router = (SRC / "router.js").read_text(encoding="utf-8")
+        assert "LEARN_PATH = '/growth/learn'" in router
+        assert "`${PATH_PATH}/path/${step}`" in router
+        for step in ("income", "bills", "essentials", "first_stop", "full", "saved_more", "cards",
+                     "invest"):
+            assert f"'{step}'" in router, step
+        assert "from=partner" in router or "'partner'" in router
+        assert "isLearnUrl()" in source and "writeLearnUrl()" in source
+        assert "panel === 'learn' && <LearnPanel" in source
+
+    def test_learn_is_a_growth_page_open_when_empty(self, groups, source):
+        assert groups["growth"][:4] == ["path", "insights", "projections", "learn"]
+        assert "learn" in _string_list(source, "WORKS_WHEN_EMPTY")
+
+    def test_the_path_opens_each_step(self):
+        path = (SRC / "panels" / "PathPanel.jsx").read_text(encoding="utf-8")
+        assert "<StepScreen" in path and "onStep={show}" in path
+        assert '<GrowthTabs current="path"' in path
+        step = (SRC / "panels" / "PathStep.jsx").read_text(encoding="utf-8")
+        assert "getPathStep(step)" in step and "setMonthUnusual" in step
+
+    def test_every_learn_link_is_live(self):
+        calc = (SRC / "panels" / "ProjectionsPanel.jsx").read_text(encoding="utf-8")
+        assert "Coming with Learn" not in calc and "nav.toLearn?.('fees')" in calc
+        unveil = (SRC / "panels" / "Unveil.jsx").read_text(encoding="utf-8")
+        assert "Coming soon, with Learn" not in unveil and "nav.toLearn?.(c.next, 'ready')" in unveil
+
+    def test_the_modules_match_the_server(self):
+        from finance import learn
+        content = (SRC / "panels" / "learnModules.js").read_text(encoding="utf-8")
+        ids = re.findall(r"^    id: '([a-z-]+)',", content, re.M)
+        assert ids == [m["id"] for m in learn.MODULES]
+        answers = re.findall(r"^      answer: '([a-z_]+)',", content, re.M)
+        assert answers == [m["answer"] for m in learn.MODULES]
+
+    def test_placement_ends_onboarding_and_moments_open_the_app(self, source):
+        onboarding = (SRC / "pearl" / "Onboarding.jsx").read_text(encoding="utf-8")
+        assert "<Placement" in onboarding and "placeOnPath()" in onboarding
+        assert "Shell" not in onboarding and "Glimmer" not in onboarding
+        assert "getMoments()" in source and "<MomentScreen" in source
+
+    def test_the_partner_is_configured_not_built_in(self):
+        unveil = (SRC / "panels" / "Unveil.jsx").read_text(encoding="utf-8")
+        partner = (SRC / "panels" / "Partner.jsx").read_text(encoding="utf-8")
+        assert "<PartnerCard" in unveil and "goToPartner()" in unveil
+        assert "reportInvesting('not_sure', 'partner')" in unveil
+        assert "Pearl may be paid if you open an account." in partner
+        # No partner's name is written into the app.
+        assert not re.search(r"Wealthsimple|Questrade|Example Invest", partner + unveil)

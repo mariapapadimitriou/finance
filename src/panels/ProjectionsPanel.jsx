@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
 import { getProjections } from '../api.js';
 import { PButton, StatusPill } from '../pearl/kit.jsx';
-import { onProjectionsUrl, readProjectionsUrl, setGoalsIntent, writeProjectionsUrl } from '../router.js';
+import {
+  onProjectionsUrl, readProjectionsUrl, setGoalsIntent, writeLearnUrl, writePathUrl, writeProjectionsUrl,
+} from '../router.js';
 import { GrowthTabs, More } from './InsightsParts.jsx';
 import { ForecastChart, Next30Chart, SavingsChart } from './ProjectionsCharts.jsx';
 import { ForecastView, Next30View, SavingsView } from './ProjectionsViews.jsx';
@@ -33,8 +35,8 @@ import './projections.css';
  * (/growth/unveil) and GR-10 Unveil done (/growth/unveil/done) — Unveil.jsx.
  *
  * Every projection is a range, every chart has a table for a screen reader,
- * nothing is red and nothing is signed. Learn isn't built: its pill is
- * disabled, and "Learn how fees change this" says it's coming.
+ * nothing is red and nothing is signed. "Learn how fees change this" opens
+ * Learn's Fees module (THL-134).
  */
 
 const VIEWS = { forecast: ForecastView, next30: Next30View, savings: SavingsView };
@@ -64,6 +66,8 @@ export default function ProjectionsPanel({ onTab, onChanged, version }) {
   const nav = {
     show, onTab, onChanged, reload: load, setData,
     toGoals: (view) => { setGoalsIntent({ view }); onTab?.('goals'); },
+    toLearn: (module = '', from = '') => { writeLearnUrl({ module, from }); onTab?.('learn'); },
+    toStep: (step) => { writePathUrl({ step }); onTab?.('path'); },
   };
 
   if (unveil) return <UnveilScreens view={route.view} nav={nav} version={version} />;
@@ -140,7 +144,7 @@ export function ProjectionsPage({ d, nav, cards = true }) {
         </div>
       )}
 
-      <Calculator onReady={() => nav.show('ready')} />
+      <Calculator onReady={() => nav.show('ready')} onLearn={() => nav.toLearn?.('fees')} />
     </div>
   );
 }
@@ -150,7 +154,7 @@ export function ProjectionsPage({ d, nav, cards = true }) {
  * Illustrative, not a prediction: it uses only the two figures she types.
  * Once she changes one, "Ready to invest" appears (GR-18).
  */
-export function Calculator({ onReady, initial = CALC_START }) {
+export function Calculator({ onReady, onLearn, initial = CALC_START }) {
   const [monthly, setMonthly] = useState(`$${initial.monthly}`);
   const [years, setYears] = useState(`${initial.years} years`);
   const amount = parseAmount(monthly);
@@ -226,11 +230,9 @@ export function Calculator({ onReady, initial = CALC_START }) {
         prediction or advice. Real returns go up and down and can be negative.
       </p>
       <div className="pj-calc-foot">
-        {/* Learn (where this article lives) isn't built yet. */}
-        <button type="button" className="in-more" disabled aria-describedby="pj-learn-soon">
+        <button type="button" className="in-more" onClick={onLearn}>
           Learn how fees change this<span aria-hidden="true">  ›</span>
         </button>
-        <span id="pj-learn-soon" className="pk-label pk-muted">Coming with Learn</span>
         {changed && result && (
           <PButton variant="secondary" className="pj-hug" onClick={onReady}>Ready to invest</PButton>
         )}

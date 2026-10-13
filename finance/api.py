@@ -2089,9 +2089,10 @@ def home_afford():
     return jsonify(weekly.afford(txns, today, sts, weekly.week(txns, today, sts), amount))
 
 
-def _path(st, txns, today, sts: dict, state: dict, types: dict) -> dict:
+def _path(st, txns, today, sts: dict, state: dict, types: dict, **kw) -> dict:
     """THL-129's path for Home's path card (GR-05) and the Path page (GR-01).
-    Protect, once done, is remembered and stays done."""
+    Protect, once done, is remembered and stays done. `kw` goes to
+    `milestones.path` (`every_step` for a step's own screen, GR-02 to GR-04)."""
     from . import income_bills, milestones
     p = milestones.path(
         txns, today, sts, anchor=_anchor(st, txns, today.isoformat()),
@@ -2099,7 +2100,7 @@ def _path(st, txns, today, sts: dict, state: dict, types: dict) -> dict:
         told_rent=st.float_setting("home_rent", 0.0), account_types=types,
         protect_done_before=st.setting("protect_done_on") not in (None, ""),
         confirm=income_bills.load(st), told_income=st.float_setting("home_income", 0.0),
-        invest_reported=bool(_json_setting(st, "unveil_reported", None)))
+        invest_reported=bool(_json_setting(st, "unveil_reported", None)), **kw)
     if p["protect_done"] and st.setting("protect_done_on") in (None, ""):
         st.set_setting("protect_done_on", today.isoformat())
     return p
@@ -2597,4 +2598,4 @@ def dismiss_review():
 # The Profile pages, Growth › Insights and Growth › Projections register on this
 # blueprint too; imported last so they can use the helpers above.
 from . import income_bills_api, insights_api, privacy_api, profile_api, projections_api  # noqa: E402,F401,I001
-from . import transactions_extras_api  # noqa: E402,F401
+from . import growth_api, transactions_extras_api  # noqa: E402,F401

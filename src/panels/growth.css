@@ -1,0 +1,191 @@
+/* Growth: a step's own screen (THL-129 GR-02 to GR-04), where you start and
+ * the moments a phase is done (THL-130 GR-06 to GR-09), Learn (THL-134 GR-11
+ * to GR-14) and the partner handoff (THL-136 GR-19 to GR-23). Built on
+ * home.css, insights.css and projections.css. Colours, type and spacing come
+ * from the Pearl tokens; nothing here names a colour itself, and nothing is
+ * red. */
+
+/* ── Path: steps open their screen ───────────────────────────────────────── */
+.pk .pt-step {
+  display: flex; align-items: flex-start; gap: var(--space-3); width: 100%;
+  margin: calc(-1 * var(--space-2)); padding: var(--space-2); box-sizing: content-box;
+  border: 0; border-radius: var(--radius-sm); background: none; cursor: pointer; text-align: left;
+}
+.pk .pt-step:hover { background: var(--hover); }
+.pt-step-go { flex: none; margin: 6px 0 0 auto; color: var(--ink-muted); }
+.gr-pills { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
+.gr-step .gr-pills { justify-content: flex-start; }
+
+/* ── A step's screen (GR-02 to GR-04) ────────────────────────────────────── */
+.gr-rows { align-self: stretch; }
+.gr-rows dd { color: var(--ink); }
+.pk .gr-rows .strong dt { font-weight: 500; color: var(--ink); }
+.gr-total {
+  font-family: var(--display); font-weight: 600; font-size: 18px; line-height: 24px;
+  font-variation-settings: "SOFT" 0, "WONK" 1;
+}
+.pk .gr-how { align-self: flex-start; }
+.gr-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-5); }
+.gr-actions .pk-btn { width: auto; min-width: 152px; }
+.gr-actions p { margin: 0; }
+.gr-rule { border-top: 1px solid var(--border); padding-top: var(--space-4); align-self: stretch; }
+
+/* ── Moments (GR-06 to GR-10) ────────────────────────────────────────────── */
+.gr-moment-page { min-height: 100vh; background: var(--surface-page); padding: 0 var(--space-4); }
+.pk.gr-moment { width: 100%; max-width: 640px; padding-top: 120px; gap: var(--space-4); }
+.gr-moment .pj-done-mark { margin-bottom: var(--space-2); }
+.gr-moment .pj-done-mark img { width: 115px; height: auto; }
+.gr-moment .pk-overline { margin-top: var(--space-2); }
+.gr-moment-sub { max-width: 640px; }
+.gr-moment > .pk-btn { width: 327px; max-width: 100%; margin-top: var(--space-2); }
+.gr-moment .pj-done-phases { margin-top: var(--space-4); }
+.pk .gr-credited {
+  list-style: none; margin: var(--space-2) 0 0; width: 520px; max-width: 100%;
+  gap: var(--space-4); text-align: left; align-items: stretch;
+}
+.gr-credited li { display: flex; align-items: center; gap: var(--space-4); }
+.gr-unlocked {
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2);
+  width: 520px; max-width: 100%; padding: var(--space-5); margin-top: var(--space-2);
+  border-radius: var(--radius-md); background: var(--lilac); color: var(--on-nacre); text-align: left;
+}
+.gr-unlocked h2 { margin: 0; }
+.gr-unlocked .pk-muted { color: color-mix(in srgb, var(--on-nacre) 72%, transparent); }
+.pk .gr-later { font-size: 15px; font-weight: 600; padding: var(--space-3) var(--space-4); }
+.pj-check.todo { border-color: var(--border-strong); }
+
+/* Onboarding's last screen hosts the reveal (O-12). */
+.p-placement { min-height: 100vh; background: var(--surface-page); padding: 0 var(--space-4); }
+.p-placement > main {
+  display: flex; flex-direction: column; align-items: center; flex: 1 1 auto; width: 100%; min-width: 0;
+}
+
+/* ── Learn (GR-11 to GR-14) ──────────────────────────────────────────────── */
+.lr-modules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.lr-modules li + li { border-top: 1px solid var(--border); }
+.pk .lr-module {
+  display: flex; align-items: center; gap: var(--space-4); width: 100%;
+  padding: var(--space-4) 0; border: 0; background: none; cursor: pointer; text-align: left;
+}
+.pk .lr-modules li:first-child .lr-module { padding-top: 0; }
+.pk .lr-modules li:last-child .lr-module { padding-bottom: 0; }
+.pk .lr-module:hover .pk-h3 { text-decoration: underline; text-underline-offset: 3px; }
+.lr-badge {
+  flex: none; width: 56px; height: 48px; border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface-page); color: var(--ink-muted); font-size: 13px; line-height: 18px;
+}
+.lr-badge.done { background: var(--blush); color: var(--action); }
+.lr-module-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.lr-module-text .pk-h3 { overflow-wrap: anywhere; }
+.lr-module .pk-pill, .lr-module .in-more { flex: none; }
+.lr-explainers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.pk .lr-explainer { padding: var(--space-5); gap: var(--space-2); }
+.lr-explainer h2 { margin: 0; }
+
+.lr-progress { display: flex; gap: var(--space-2); margin-top: calc(-1 * var(--space-2)); }
+.lr-progress span { width: 72px; height: 6px; border-radius: var(--radius-full); background: var(--blush); }
+.lr-progress span.on { background: var(--action); }
+.lr-screen { display: flex; flex-direction: column; gap: var(--space-5); }
+.lr-screen h1 { margin: 0; }
+.lr-screen h1:focus { outline: none; }
+.lr-body { font-size: 15px; line-height: 22px; max-width: 72ch; }
+.lr-table-card { padding: var(--space-3) var(--space-6) var(--space-4); }
+.lr-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.pk .lr-table th, .pk .lr-table td {
+  text-align: left; vertical-align: top; padding: var(--space-4) var(--space-4) var(--space-4) 0;
+  border: 0; border-top: 1px solid var(--border); background: none; color: var(--ink);
+  font-size: 14px; line-height: 20px; white-space: normal; text-transform: none; letter-spacing: 0;
+}
+.pk .lr-table thead th, .pk .lr-table thead td { border-top: 0; }
+.pk .lr-table th {
+  font-family: var(--display); font-weight: 600; font-size: 16px; line-height: 22px;
+  font-variation-settings: "SOFT" 0, "WONK" 1;
+}
+.lr-table tbody tr:hover { background: none; }
+.lr-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.lr-nav .pk-btn { width: auto; min-width: 84px; }
+.lr-disclaimer { text-align: center; }
+.lr-check { max-width: 560px; }
+.lr-check legend { margin-bottom: var(--space-4); }
+.lr-explain {
+  max-width: 560px; padding: var(--space-5); border-radius: var(--radius-md);
+  background: var(--lilac); color: var(--on-nacre); display: flex; flex-direction: column; gap: var(--space-2);
+}
+.pk .lr-done { gap: var(--space-4); padding: var(--space-8); }
+.lr-done h1 { margin: 0; }
+.lr-tick {
+  width: 64px; height: 64px; border-radius: var(--radius-full); background: var(--blush); color: var(--action);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pk .lr-next { align-items: stretch; }
+.lr-next-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.lr-next-row h2 { margin: 0; }
+.pk .lr-hug { width: auto; min-width: 116px; }
+
+/* ── Partner handoff (GR-19 to GR-23) ────────────────────────────────────── */
+.gr-scrim {
+  position: fixed; inset: 0; z-index: 1000; background: var(--surface-scrim);
+  display: flex; align-items: center; justify-content: center; padding: var(--space-4);
+}
+.gr-dialog {
+  width: 560px; max-width: 100%; max-height: calc(100vh - 2 * var(--space-4)); overflow: auto;
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-4);
+  padding: var(--space-8); border-radius: var(--radius-lg); background: var(--surface-card);
+  box-shadow: var(--shadow-sheet);
+}
+.gr-dialog p { margin: 0; }
+.gr-dialog-title { margin: 0; }
+.gr-go-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-5); }
+.gr-go-steps li { display: flex; align-items: flex-start; gap: var(--space-4); }
+.gr-go-num {
+  flex: none; width: 28px; height: 28px; border-radius: var(--radius-full); background: var(--blush);
+  color: var(--action); display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600;
+}
+.gr-disclosure {
+  align-self: stretch; padding: var(--space-4) var(--space-5); border-radius: var(--radius-md);
+  background: var(--champagne); color: var(--on-nacre); display: flex; flex-direction: column; gap: var(--space-1);
+}
+.gr-dialog-actions { align-self: stretch; display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.gr-dialog-actions .pk-btn { width: auto; }
+.gr-dialog-actions .in-text-btn { font-size: 15px; font-weight: 600; padding: var(--space-3) var(--space-4); }
+.gr-welcome {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4);
+  padding: var(--space-6); border-radius: var(--radius-md); background: var(--lilac); color: var(--on-nacre);
+}
+.gr-welcome h2 { margin: 0; }
+.gr-welcome-actions { display: flex; gap: var(--space-3); }
+.gr-welcome-actions .pk-btn { width: auto; }
+.gr-welcome .pk-btn.secondary { color: var(--on-nacre); border-color: var(--on-nacre); }
+
+/* ── Phones ──────────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .pk.gr-moment { padding-top: var(--space-8); }
+  .gr-moment > .pk-btn { width: 100%; }
+  .lr-explainers { grid-template-columns: minmax(0, 1fr); }
+  .lr-progress span { flex: 1 1 0; width: auto; }
+  .lr-nav { flex-wrap: wrap; }
+  .lr-disclaimer { order: 3; flex: 1 1 100%; }
+  .lr-table-card { padding: var(--space-2) var(--space-4) var(--space-3); }
+  .lr-table thead { display: none; }
+  .lr-table, .lr-table tbody, .lr-table tr, .lr-table th, .lr-table td { display: block; }
+  .lr-table tr { padding: var(--space-3) 0; border-top: 1px solid var(--border); }
+  .lr-table tbody tr:first-child { border-top: 0; }
+  .pk .lr-table th, .pk .lr-table td { border: 0; padding: var(--space-1) 0; }
+  .lr-table td[data-col]::before { content: attr(data-col) ": "; color: var(--ink-muted); }
+  .lr-next-row { flex-direction: column; align-items: stretch; }
+  .pk .lr-hug { width: 100%; }
+  .pk .lr-done { padding: var(--space-5) var(--space-4); }
+  .gr-actions .pk-btn { width: 100%; }
+  .gr-dialog { padding: var(--space-6) var(--space-5); }
+  .gr-dialog-actions { flex-direction: column-reverse; align-items: stretch; }
+  .gr-dialog-actions .pk-btn { width: 100%; }
+  .gr-welcome-actions { width: 100%; }
+  .gr-welcome-actions .pk-btn { flex: 1 1 0; padding: 0 var(--space-3); }
+}
+
+/* A long label ("Tell me when Pearl partners with a provider") wraps rather
+ * than spilling out of a narrow card. */
+.pj-ready .pk-btn { height: auto; min-height: 56px; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+.gr-faded img { opacity: .55; }

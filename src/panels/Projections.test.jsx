@@ -232,8 +232,9 @@ const unveil = {
     { key: 'protect', done: true },
     { key: 'anchor', done: false, started: true, counted: 62000, target: 215000 },
     { key: 'cards', done: true, months: 3, cards: 1, grew_in: null },
-    { key: 'basics', done: false, available: false },
+    { key: 'basics', done: false, available: true, read: 2, of: 5, next: 'index-funds-etfs' },
   ],
+  partner: { configured: false, name: null, welcome: false, notify: false },
   report: null,
   path: { phases: [{ key: 'protect', label: 'Protect', state: 'done' },
                    { key: 'build', label: 'Build', state: 'done' },
@@ -243,18 +244,21 @@ const unveil = {
 };
 
 describe('Unveil (GR-16, GR-37, GR-10)', () => {
-  it('GR-16 the checklist is guidance, and its one primary is I’ve opened one', () => {
+  it('GR-16 the checklist is guidance; with no partner, GR-22 is its one primary', () => {
     const out = html(<ReadyPage data={unveil} nav={nav} />);
     for (const text of ['Path', 'Unveil', 'Ready to invest', 'guidance, not a gate', 'Your checklist',
                         'Protect is done', 'Your income covers your Essentials', 'Your Anchor is under way',
                         '$620 of $2,150', 'See Anchor', 'No card balance growing', 'Checked over the last 3 months',
-                        'Read the basics', 'Coming soon, with Learn', 'Why both matter',
-                        'When you’re ready', 'Opened an investing account?', 'I’ve opened one',
+                        'Read the basics', '2 of 5 modules', 'Continue', 'Why both matter',
+                        'Coming soon', 'We’re choosing a partner', 'registered in Canada',
+                        'Tell me when Pearl partners with a provider', 'I opened an account elsewhere',
                         'Try the growth calculator']) {
       expect(out).toContain(text);
     }
+    expect(out).not.toContain('Coming soon, with Learn');
     expect((out.match(/pk-btn primary/g) || []).length).toBe(1);
-    expect(out).not.toMatch(/partner|disclos/i);
+    // No partner, so nothing is disclosed and nothing leaves Pearl.
+    expect(out).not.toMatch(/may be paid|Continue to/i);
     expect(out).not.toMatch(BAD);
   });
 

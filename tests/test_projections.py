@@ -319,7 +319,8 @@ class TestUnveilEndpoints:
         d = client.get("/api/unveil").get_json()
         assert [c["key"] for c in d["checklist"]] == ["protect", "anchor", "cards", "basics"]
         assert d["report"] is None
-        assert d["checklist"][3]["available"] is False       # Learn isn't built yet
+        assert d["checklist"][3] == {"key": "basics", "done": False, "available": True,
+                                     "read": 0, "of": 5, "next": "tfsa-rrsp-fhsa"}
         assert [t["label"] for t in d["types"]] == ["TFSA", "RRSP", "FHSA", "Non-registered",
                                                     "Not sure"]
 

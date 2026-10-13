@@ -13,6 +13,11 @@ THL-135 GR-16, THL-130 GR-10). The maths is in `look_ahead`.
   step done, as a linked investment account already does.
 * DELETE /api/unveil: undo it (GR-37's "You can undo this in Profile").
 
+GR-16 also carries "Read the basics" from Learn (THL-134, `learn.py`) and
+the partner card's state (THL-136, post-MVP, `growth_api.py`). GR-21's "I
+opened an account", after the partner, is this same self-report with
+`via: "partner"`, so there is one record of it.
+
 The growth calculator (GR-17, GR-18) is worked out on the device: it uses
 nothing of hers but the two figures she types.
 """
@@ -26,7 +31,7 @@ from flask import jsonify, request
 
 from . import api as core
 from . import growth_insights as gi
-from . import look_ahead
+from . import growth_api, learn, look_ahead
 from .api import bp, store
 
 ACCOUNT_TYPES = {"tfsa": "TFSA", "rrsp": "RRSP", "fhsa": "FHSA",
@@ -212,7 +217,18 @@ def _report(st) -> dict | None:
     raw = core._json_setting(st, REPORT_KEY, None)
     if not isinstance(raw, dict) or raw.get("type") not in ACCOUNT_TYPES:
         return None
-    return {"type": raw["type"], "label": ACCOUNT_TYPES[raw["type"]], "on": raw.get("on")}
+    out = {"type": raw["type"], "label": ACCOUNT_TYPES[raw["type"]], "on": raw.get("on")}
+    if raw.get("via") == "partner":
+        out["via"] = "partner"
+    return out
+
+
+def _protect_left(path: dict) -> dict:
+    """GR-23's "1 step left: your income covers your Essentials"."""
+    if path["protect_done"]:
+        return {}
+    left = [s["key"] for s in path["steps"] if not s["done"]]
+    return {"left": len(left), "next": left[0] if left else None}
 
 
 def unveil(st) -> dict:
@@ -236,14 +252,16 @@ def unveil(st) -> dict:
     months = usual_month.covered_months(txns, today)
     steady = milestones.cards_steady(txns, months, cards)
     checklist = [
-        {"key": "protect", "done": path["protect_done"]},
+        {"key": "protect", "done": path["protect_done"], **_protect_left(path)},
         {"key": "anchor", "done": bool(anchor["earned"]), "started": anchor["started"],
          "counted": _c(anchor["counted"]), "target": _c(anchor["target"])},
         {"key": "cards", **steady},
-        # Learn (the basics modules) isn't built yet, so this can't be done.
-        {"key": "basics", "done": False, "available": False},
+        # "Read the basics": the five Learn modules (THL-134 GR-14).
+        learn.basics(st),
     ]
-    return {"checklist": checklist, "report": _report(st), "path": path,
+    report = _report(st)
+    return {"checklist": checklist, "report": report, "path": path,
+            "partner": growth_api.partner_state(st, path, report),
             "types": [{"key": k, "label": v} for k, v in ACCOUNT_TYPES.items()]}
 
 
@@ -258,8 +276,16 @@ def report_account():
     kind = body.get("type")
     if kind not in ACCOUNT_TYPES:
         return jsonify({"error": "Choose the kind of account."}), 400
+    via = body.get("via")
+    if via not in (None, "self", "partner"):
+        return jsonify({"error": "Say how you opened it: yourself or with the partner."}), 400
     st = store()
-    st.set_setting(REPORT_KEY, json.dumps({"type": kind, "on": _today().isoformat()}))
+    record = {"type": kind, "on": _today().isoformat()}
+    if via == "partner":
+        record["via"] = "partner"
+    st.set_setting(REPORT_KEY, json.dumps(record))
+    growth_api.answered(st)
+    growth_api.mark_unveil_seen(st)
     return jsonify(unveil(st))
 
 

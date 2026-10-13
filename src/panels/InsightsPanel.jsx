@@ -35,7 +35,7 @@ import './insights.css';
  *
  * Every chart has its figures as a table for a screen reader, and empty or
  * thin months are said in words; nothing is red and no amount is signed.
- * Learn, the fourth Growth pill, isn't built yet, so it shows disabled.
+ * Learn, the fourth Growth pill, opens Growth › Learn (THL-134).
  */
 
 const VIEWS = { month: ReviewMonth, category: CategoryView, subscriptions: SubscriptionsView,
