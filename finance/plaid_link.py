@@ -219,6 +219,11 @@ def _sync_one(store, item: dict) -> dict:
         if not resp.get("has_more"):
             break
 
+    # The feed names only accounts with transactions in it, so a card or
+    # savings account quiet in the first pull would never be listed. Every
+    # account the bank shared, from /accounts/get (free; no extra product).
+    accounts = {**_item_accounts(client, access_token), **accounts}
+
     # A removal is Plaid saying that row no longer exists — usually a pending
     # charge that has now posted under a new id. Applied before the additions
     # so the posted version doesn't briefly sit alongside its own pending twin.
@@ -436,6 +441,17 @@ def _account_label(account: dict, fallback: str = "") -> str:
 
 def _accounts_from(resp: dict) -> dict:
     return {a["account_id"]: a for a in (resp or {}).get("accounts", [])}
+
+
+def _item_accounts(client, access_token: str) -> dict:
+    """Every account on the connection, or nothing if Plaid won't say: the
+    sync carries on with the accounts its feed named."""
+    from plaid.model.accounts_get_request import AccountsGetRequest
+    try:
+        resp = client.accounts_get(AccountsGetRequest(access_token=access_token)).to_dict()
+    except Exception:                                    # noqa: BLE001
+        return {}
+    return _accounts_from(resp)
 
 
 def sync_all(store) -> dict:
