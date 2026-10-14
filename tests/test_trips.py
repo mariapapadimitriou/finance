@@ -120,12 +120,53 @@ def test_a_bill_stays_even_the_first_time_it_shows_up(client):
     assert by_merchant(client)["Rogers"].category == "Phone & Internet"
 
 
-def test_her_own_category_is_never_overwritten(client):
+def test_what_the_bank_already_called_travel_joins_the_trip(client):
+    ingest(client.st, IngestResult([tx("2026-10-02", "Aegean Airlines", 240.0, "Travel")], "card"))
+    flight = by_merchant(client)["Aegean Airlines"].fingerprint
+    client.st.set_categories({flight: ("Travel", "plaid")})
+    p = preview(client)
+    assert p["count"] == 5 and "transfer" not in p["staying"]
+    trip = save(client).get_json()["trip"]
+    assert trip["count"] == 5
+    client.delete(f"/api/trips/{trip['id']}")
+    assert by_merchant(client)["Aegean Airlines"].category == "Travel"
+
+
+def test_the_preview_says_when_there_is_nothing_in_the_dates(client):
+    p = preview(client, start="2026-06-01", end="2026-06-10")
+    assert p["count"] == 0 and p["in_dates"] == 0
+    assert preview(client)["in_dates"] == 8
+
+
+def test_spending_she_sorted_herself_moves_and_comes_back(client):
+    """Dining she confirmed is still the trip; removing it gives her Dining back."""
     soda = by_merchant(client)["Soda La Casita"].fingerprint
     client.st.set_transaction_category(soda, "Gifts")
-    assert preview(client)["staying"].get("yours") == 1
-    save(client)
+    assert preview(client)["count"] == 4
+    trip = save(client).get_json()["trip"]
+    assert by_merchant(client)["Soda La Casita"].category == "Travel"
+    client.delete(f"/api/trips/{trip['id']}")
+    row = by_merchant(client)["Soda La Casita"]
+    assert (row.category, row.category_source) == ("Gifts", "user")
+
+
+def test_a_trip_row_she_resorts_afterwards_keeps_her_choice(client):
+    trip = save(client).get_json()["trip"]
+    soda = by_merchant(client)["Soda La Casita"].fingerprint
+    client.st.set_transaction_category(soda, "Gifts")
+    assert preview(client, trip_id=trip["id"])["staying"].get("yours") == 1
+    save(client, trip_id=trip["id"])
     assert by_merchant(client)["Soda La Casita"].category == "Gifts"
+
+
+def test_rows_that_are_not_hers_are_not_looked_at(client):
+    """Left out, or another joint member's: not in the trip, not in the counts."""
+    uber = by_merchant(client)["Uber"].fingerprint
+    client.st.exclude(uber, "manual")
+    p = preview(client)
+    assert p["count"] == 3 and p["in_dates"] == 7 and "excluded" not in p["staying"]
+    save(client)
+    assert by_merchant(client)["Uber"].category == "Transport"
 
 
 def test_a_charge_that_posts_later_joins_the_trip(client):

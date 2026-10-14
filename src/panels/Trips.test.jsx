@@ -37,10 +37,15 @@ describe('Trips (THL-174)', () => {
   it('words', () => {
     expect(mostlyWords([{ category: 'Dining' }])).toBe('Mostly Dining');
     expect(mostlyWords([])).toBe('');
-    expect(stayingWords({ yours: 1 })).toBe('1 you sorted yourself');
+    expect(stayingWords({ yours: 1 })).toBe('1 you re-sorted by hand');
     const none = html(<TripSummary preview={{ count: 0, total: 0, categories: [], staying: {},
-                                              staying_count: 0 }} />);
-    expect(none).toContain('No spending in these dates yet');
+                                              staying_count: 0, in_dates: 0 }} />);
+    expect(none).toContain('No transactions between these dates');
+    expect(none).toContain('Profile › Accounts');
+    const kept = html(<TripSummary preview={{ count: 0, total: 0, categories: [], staying: { bill: 2 },
+                                              staying_count: 2, in_dates: 2 }} />);
+    expect(kept).toContain('Nothing here looks like trip spending');
+    expect(kept).toContain('Staying as they are: 2 bills and subscriptions.');
     expect(none).not.toMatch(/\$0/);
   });
 
