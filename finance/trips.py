@@ -5,18 +5,18 @@ A week away produces restaurant, coffee, transit and shop charges that look
 exactly like the same charges at home. Sorted one by one they scatter over
 eight categories and quietly inflate her usual Dining and Coffee; and
 there are dozens to sort. So she marks the trip — a name and its dates —
-and everything she was spending on while away becomes Travel, after a
-preview where she can untick anything that wasn't.
+and everything she was spending on while away becomes Travel, on its own:
+no list to tick (2026-10-14). The panel says what moves and what stays.
 
-What starts unticked: anything that isn't spending on the trip — income,
+What stays as it is: anything that isn't spending on the trip — income,
 money moving between her accounts, card payments, savings, lending, fees
 and interest, repayments — anything that recurs (rent, bills,
 subscriptions), rows she left out, and rows she already sorted herself
 (her category is never overwritten).
 
 New rows that arrive inside a trip's dates later (a pending charge posting)
-join it by the same rule. Removing a trip, or unticking a row, puts it back
-to what its merchant says it is. Rows a trip moved carry
+join it by the same rule. Changing a trip's dates re-applies the rule;
+removing a trip puts its rows back. Rows a trip moved carry
 `category_source = 'trip'` and a `trip_rows` entry that remembers the
 category each had before, which is what it goes back to.
 """
@@ -34,6 +34,10 @@ SOURCE = "trip"
 # Not spending on a trip, wherever it lands.
 NOT_TRIP = {"Income", "Transfers", "Unsorted transfers", "Saved", "Lent", "Fees & Interest",
             TRAVEL}
+# Bills by what they are, even before they've recurred enough to be spotted.
+BILL_CATEGORIES = {"Rent & Housing", "Utilities", "Bills & Utilities", "Phone & Internet",
+                   "Insurance", "Taxes", "Education", "Streaming", "Software", "News & Media",
+                   "Subscriptions"}
 MAX_NAME = 60
 
 
@@ -59,20 +63,21 @@ def _recurring(transactions: list[Transaction], today: date) -> set[tuple[str, s
 
 
 def why_not(t: Transaction, recurring: set) -> str | None:
-    """Why a row starts unticked, or None when it's trip spending."""
+    """Why a row stays as it is, or None when it's trip spending:
+    excluded, yours, money_in, repayment, transfer or bill."""
     from .txlist import _is_card_payment
     if t.excluded:
-        return "You left it out"
+        return "excluded"
     if t.category_source == "user":
-        return "You sorted it yourself"
+        return "yours"
     if t.amount <= 0 and not t.repays:
-        return "Money in"
+        return "money_in"
     if t.repays:
-        return "A repayment"
+        return "repayment"
     if (t.category or "Other") in NOT_TRIP or _is_card_payment(t):
-        return "Not spending"
-    if (t.merchant, t.date) in recurring:
-        return "A regular bill or subscription"
+        return "transfer"
+    if (t.merchant, t.date) in recurring or (t.category or "") in BILL_CATEGORIES:
+        return "bill"
     return None
 
 
@@ -81,22 +86,43 @@ def in_range(transactions: list[Transaction], start: str, end: str) -> list[Tran
                   key=lambda t: (t.date, t.fingerprint))
 
 
-def preview(transactions: list[Transaction], start: str, end: str, today: date,
-            trip_id: int | None = None, trip_rows: dict | None = None) -> dict:
-    """Every row in the dates, with whether it starts ticked and why not."""
+def sort_out(transactions: list[Transaction], start: str, end: str, today: date,
+             trip_id: int | None = None, trip_rows: dict | None = None
+             ) -> tuple[list[Transaction], dict[str, int]]:
+    """The rows in the dates that become Travel, and how many stay as they
+    are, by reason (another trip's rows: "other_trip")."""
     recurring = _recurring(transactions, today)
     trip_rows = trip_rows or {}
-    rows = []
+    moving, staying = [], {}
     for t in in_range(transactions, start, end):
-        mine = trip_id is not None and trip_rows.get(t.fingerprint) == trip_id
-        reason = None if mine else why_not(t, recurring)
-        if not mine and trip_rows.get(t.fingerprint):
-            reason = "In another trip"
-        rows.append({"id": t.fingerprint, "date": t.date[:10], "merchant": t.merchant,
-                     "amount": round(t.amount, 2), "category": t.category,
-                     "ticked": reason is None, "why_not": reason})
-    total = round(sum(r["amount"] for r in rows if r["ticked"]), 2)
-    return {"rows": rows, "total": total, "ticked": sum(r["ticked"] for r in rows)}
+        owner = trip_rows.get(t.fingerprint)
+        if trip_id is not None and owner == trip_id and t.category_source == SOURCE:
+            moving.append(t)
+            continue
+        reason = "other_trip" if owner else why_not(t, recurring)
+        if reason is None:
+            moving.append(t)
+        else:
+            staying[reason] = staying.get(reason, 0) + 1
+    return moving, staying
+
+
+def preview(transactions: list[Transaction], start: str, end: str, today: date,
+            trip_id: int | None = None, trip_rows: dict | None = None,
+            before: dict | None = None) -> dict:
+    """What saving would do: how much moves to Travel, from which
+    categories, and what stays as it is."""
+    moving, staying = sort_out(transactions, start, end, today, trip_id, trip_rows)
+    before = before or {}
+    by_cat: dict[str, list[float]] = {}
+    for t in moving:
+        cat = (before.get(t.fingerprint) if t.category == TRAVEL else None) or t.category or "Other"
+        by_cat.setdefault(cat, []).append(t.amount)
+    categories = sorted(({"category": c, "count": len(a), "total": round(sum(a), 2)}
+                         for c, a in by_cat.items()), key=lambda c: -c["total"])
+    return {"count": len(moving), "total": round(sum(t.amount for t in moving), 2),
+            "categories": categories, "staying": staying,
+            "staying_count": sum(staying.values())}
 
 
 def _move(store, rows: list[Transaction], trip_id: int) -> None:
@@ -120,17 +146,20 @@ def _put_back(store, rows: list[Transaction]) -> None:
     store.set_categories(changes)
 
 
-def save(store, name: str, start: str, end: str, ids: list[str],
+def save(store, name: str, start: str, end: str, today: date,
          trip_id: int | None = None) -> int:
-    """Create a trip (or change one) and move exactly the rows she ticked."""
+    """Create a trip (or change one): its spending becomes Travel, and rows
+    no longer in its dates go back."""
     name = " ".join(name.split())[:MAX_NAME]
     if trip_id is None:
         trip_id = store.add_marked_trip(name, start, end)
     else:
         store.update_marked_trip(trip_id, name, start, end)
-    by_id = {t.fingerprint: t for t in store.all_transactions()}
+    transactions = store.all_transactions()
+    by_id = {t.fingerprint: t for t in transactions}
     owned = store.trip_rows()
-    wanted = {i for i in ids if i in by_id and owned.get(i, trip_id) == trip_id}
+    moving, _ = sort_out(transactions, start, end, today, trip_id, owned)
+    wanted = {t.fingerprint for t in moving}
     had = {i for i, tid in owned.items() if tid == trip_id}
     _put_back(store, [by_id[i] for i in had - wanted if i in by_id])
     _move(store, [by_id[i] for i in wanted - had
