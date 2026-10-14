@@ -56,6 +56,9 @@
   --on-action: var(--white);
   --link: var(--rose-700);
   --positive: var(--lagoon-700);
+  /* A transaction's amount (2026-10-14): money out red, money in green. */
+  --money-out: #c0392b;
+  --money-in: #1e7b4c;
   --caution: var(--gold-700);
   --action: var(--rose-700);
   --rose: var(--rose-500);
@@ -85,6 +88,8 @@
     --on-action: var(--ink-base);
     --link: var(--rose-300);
     --positive: var(--lagoon-400);
+    --money-out: #ff7b72;
+    --money-in: #56d48f;
     --caution: var(--gold-300);
     --action: var(--rose-300);
     --rose: var(--rose-500);
@@ -114,6 +119,8 @@
   --on-action: var(--ink-base);
   --link: var(--rose-300);
   --positive: var(--lagoon-400);
+  --money-out: #ff7b72;
+  --money-in: #56d48f;
   --caution: var(--gold-300);
   --action: var(--rose-300);
   --rose: var(--rose-500);
