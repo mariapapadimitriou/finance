@@ -257,3 +257,4 @@ class TestNamesAndForgetting:
         with base.conn() as c:
             assert c.execute("SELECT COUNT(*) AS n FROM app_devices").fetchone()["n"] == 0
         assert devices.recovery_left(base, user.id) == 0
+

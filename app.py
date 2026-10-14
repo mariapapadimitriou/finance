@@ -502,6 +502,10 @@ def _install_auth(app: Flask) -> None:
     def _approvals():
         """What her other devices are asking this one to approve."""
         user = g.get("user")
+        if user is None and not required():
+            # Running locally with nobody to sign in as: nothing to approve,
+            # and a 401 here would sign the app out.
+            return jsonify({"approvals": []})
         if user is None:
             return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
         return jsonify({"approvals": devices.waiting(base, user.id)})
