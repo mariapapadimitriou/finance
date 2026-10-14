@@ -199,13 +199,13 @@ export const saveLearn    = (id, body) => json('PUT', `/api/learn/${encodeURICom
 export const answerCarryover = (month, choice) =>
   json('PUT', `/api/carryover/${month}`, { choice });
 
-// Trips (THL-174): a date range whose spending becomes Travel.
+// Trips (THL-174): a date range whose spending becomes Travel, on its own.
 export const getTrips    = () => req('/api/trips');
 export const previewTrip = (start, end, tripId = null) =>
   json('POST', '/api/trips/preview', { start, end, trip_id: tripId });
-export const saveTrip    = (trip, ids) => (trip.id
-  ? json('PUT', `/api/trips/${trip.id}`, { ...trip, ids })
-  : json('POST', '/api/trips', { ...trip, ids }));
+export const saveTrip    = (trip) => (trip.id
+  ? json('PUT', `/api/trips/${trip.id}`, trip)
+  : json('POST', '/api/trips', trip));
 export const deleteTrip  = (id) => req(`/api/trips/${id}`, { method: 'DELETE' });
 export const putHomeAnswers = (answers) => json('PUT', '/api/home/answers', answers);
 // Month or week as Home's main view (THL-166), saved on her account.

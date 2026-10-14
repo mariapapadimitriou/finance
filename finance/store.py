@@ -2288,6 +2288,12 @@ class Store:
             rows = c.execute("SELECT txn_id, trip_id FROM trip_rows").fetchall()
         return {r["txn_id"]: int(r["trip_id"]) for r in rows}
 
+    def trip_rows_before(self) -> dict[str, str | None]:
+        """{txn_id: the category it had before its trip}."""
+        with self.conn() as c:
+            rows = c.execute("SELECT txn_id, prev_category FROM trip_rows").fetchall()
+        return {r["txn_id"]: r["prev_category"] for r in rows}
+
     def add_trip_rows(self, trip_id: int, rows: list[tuple[str, str | None, str | None]]) -> None:
         """(txn_id, its category before, its source before) for each row."""
         with self.conn() as c:

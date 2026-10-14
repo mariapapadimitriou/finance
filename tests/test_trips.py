@@ -58,22 +58,25 @@ def preview(c, start="2026-10-01", end="2026-10-05", **kw):
     return c.post("/api/trips/preview", json={"start": start, "end": end, **kw}).get_json()
 
 
-def test_the_preview_ticks_only_what_she_spent_while_away(client):
+def save(c, name="Costa Rica", start="2026-10-01", end="2026-10-05", trip_id=None):
+    body = {"name": name, "start": start, "end": end}
+    if trip_id:
+        return c.put(f"/api/trips/{trip_id}", json=body)
+    return c.post("/api/trips", json=body)
+
+
+def test_the_preview_says_what_moves_and_what_stays(client):
     p = preview(client)
-    ticked = {r["merchant"] for r in p["rows"] if r["ticked"]}
-    assert ticked == {"Soda La Casita", "Cafe Monteverde", "Hotel Belmar", "Uber"}
-    why = {r["merchant"]: r["why_not"] for r in p["rows"] if not r["ticked"]}
-    assert why["Parkside Properties"] == "A regular bill or subscription"
-    assert why["Netflix"] == "A regular bill or subscription"
-    assert why["Northwind Ltd"] == "Money in"
-    assert why["TD Visa Payment"] in ("Money in", "Not spending")
+    assert p["count"] == 4
     assert p["total"] == round(18.40 + 4.80 + 410.0 + 23.10, 2)
+    assert [c["category"] for c in p["categories"]] == ["Lodging", "Transport", "Dining", "Coffee"]
+    assert p["staying"] == {"bill": 2, "money_in": 2}     # pay, and the card payment
+    assert p["staying_count"] == 4
+    assert "rows" not in p                                   # nothing to tick
 
 
-def test_saving_moves_the_ticked_rows_to_travel_and_names_the_trip(client):
-    ids = [r["id"] for r in preview(client)["rows"] if r["ticked"]]
-    r = client.post("/api/trips", json={"name": "Costa Rica", "start": "2026-10-01",
-                                        "end": "2026-10-05", "ids": ids})
+def test_saving_moves_the_spending_and_leaves_bills_and_transfers(client):
+    r = save(client)
     assert r.status_code == 200
     trip = r.get_json()["trip"]
     assert trip["name"] == "Costa Rica" and trip["count"] == 4 and trip["total"] == 456.3
@@ -81,41 +84,52 @@ def test_saving_moves_the_ticked_rows_to_travel_and_names_the_trip(client):
     assert rows["Soda La Casita"].category == "Travel"
     assert rows["Soda La Casita"].category_source == "trip"
     assert rows["Parkside Properties"].category == "Rent & Housing"
+    assert rows["Netflix"].category == "Subscriptions"
+    assert rows["TD Visa Payment"].category == "Transfers"
+    assert rows["Northwind Ltd"].category == "Income"
+    assert rows["Loblaws"].category == "Groceries"            # after the trip
     listed = client.get("/api/transactions/list", query_string={"month": "2026-10"}).get_json()
     soda = next(t for t in listed["transactions"] if t["merchant"] == "Soda La Casita")
     assert soda["note"] == "Costa Rica trip" and soda["trip"] == "Costa Rica"
 
 
-def test_unticking_and_removing_put_rows_back(client):
-    ids = [r["id"] for r in preview(client)["rows"] if r["ticked"]]
-    trip = client.post("/api/trips", json={"name": "CR", "start": "2026-10-01",
-                                           "end": "2026-10-05", "ids": ids}).get_json()["trip"]
-    uber = by_merchant(client)["Uber"].fingerprint
-    client.put(f"/api/trips/{trip['id']}", json={"name": "CR", "start": "2026-10-01",
-                                                 "end": "2026-10-05",
-                                                 "ids": [i for i in ids if i != uber]})
+def test_the_preview_of_a_saved_trip_still_names_the_categories(client):
+    trip = save(client).get_json()["trip"]
+    p = preview(client, trip_id=trip["id"])
+    assert p["count"] == 4
+    assert "Travel" not in [c["category"] for c in p["categories"]]
+
+
+def test_changing_the_dates_and_removing_put_rows_back(client):
+    trip = save(client).get_json()["trip"]
+    save(client, end="2026-10-04", trip_id=trip["id"])        # Uber was on the 5th
     assert by_merchant(client)["Uber"].category == "Transport"
+    assert by_merchant(client)["Hotel Belmar"].category == "Travel"
     assert client.delete(f"/api/trips/{trip['id']}").get_json()["put_back"] == 3
     rows = by_merchant(client)
     assert rows["Soda La Casita"].category == "Dining" and rows["Hotel Belmar"].category == "Lodging"
     assert client.get("/api/trips").get_json()["trips"] == []
 
 
+def test_a_bill_stays_even_the_first_time_it_shows_up(client):
+    ingest(client.st, IngestResult([tx("2026-10-03", "Rogers", 85.0, "Phone & Internet")], "card"))
+    rogers = by_merchant(client)["Rogers"].fingerprint
+    client.st.set_categories({rogers: ("Phone & Internet", "plaid")})
+    assert preview(client)["staying"]["bill"] == 3
+    save(client)
+    assert by_merchant(client)["Rogers"].category == "Phone & Internet"
+
+
 def test_her_own_category_is_never_overwritten(client):
     soda = by_merchant(client)["Soda La Casita"].fingerprint
     client.st.set_transaction_category(soda, "Gifts")
-    p = preview(client)
-    row = next(r for r in p["rows"] if r["id"] == soda)
-    assert row["ticked"] is False and row["why_not"] == "You sorted it yourself"
-    client.post("/api/trips", json={"name": "CR", "start": "2026-10-01", "end": "2026-10-05",
-                                    "ids": [soda]})
+    assert preview(client)["staying"].get("yours") == 1
+    save(client)
     assert by_merchant(client)["Soda La Casita"].category == "Gifts"
 
 
 def test_a_charge_that_posts_later_joins_the_trip(client):
-    ids = [r["id"] for r in preview(client)["rows"] if r["ticked"]]
-    client.post("/api/trips", json={"name": "CR", "start": "2026-10-01", "end": "2026-10-05",
-                                    "ids": ids})
+    save(client)
     ingest(client.st, IngestResult([tx("2026-10-04", "Selvatura Park", 65.0, "Entertainment")],
                                    "card"))
     assert by_merchant(client)["Selvatura Park"].category == "Travel"
@@ -126,18 +140,16 @@ def test_a_charge_that_posts_later_joins_the_trip(client):
 def test_trips_survive_reopening_the_ledger(client):
     """The cleanup for the old Trips tab mustn't undo a trip she marked."""
     from finance.store import Store
-    ids = [r["id"] for r in preview(client)["rows"] if r["ticked"]]
-    client.post("/api/trips", json={"name": "CR", "start": "2026-10-01", "end": "2026-10-05",
-                                    "ids": ids})
+    save(client)
     again = Store(client.st.path)
     soda = next(t for t in again.all_transactions() if t.merchant == "Soda La Casita")
     assert soda.category == "Travel"
 
 
 @pytest.mark.parametrize("body, words", [
-    ({"name": "", "start": "2026-10-01", "end": "2026-10-05", "ids": []}, "name"),
-    ({"name": "CR", "start": "2026-10-05", "end": "2026-10-01", "ids": []}, "ends before"),
-    ({"name": "CR", "start": "2026-01-01", "end": "2026-10-01", "ids": []}, "three months"),
+    ({"name": "", "start": "2026-10-01", "end": "2026-10-05"}, "name"),
+    ({"name": "CR", "start": "2026-10-05", "end": "2026-10-01"}, "ends before"),
+    ({"name": "CR", "start": "2026-01-01", "end": "2026-10-01"}, "three months"),
 ])
 def test_bad_trips_are_refused(client, body, words):
     r = client.post("/api/trips", json=body)
