@@ -336,7 +336,8 @@ function Question({ it, categories, busy, onSkip, act, sorted }) {
                                                                  undo: res.undo }))} />
       );
     case 'income':
-      return <IncomeKind it={it} busy={busy} onSkip={onSkip} act={act} />;
+      return <IncomeKind it={it} categories={categories} busy={busy} onSkip={onSkip} act={act}
+                         sorted={sorted} />;
     case 'joint_in':
       return <JointIn it={it} busy={busy} onSkip={onSkip} act={act} />;
     default:
@@ -473,9 +474,28 @@ function MoneyInChoices({ it, busy, onSkip, act, sorted }) {
   );
 }
 
-function IncomeKind({ it, busy, onSkip, act }) {
+/** What kind of income — or, when it isn't income at all, what it is
+ * (2026-10-14): her own money, money she lent coming back, or any category. */
+export function IncomeKind({ it, categories = [], busy, onSkip, act, sorted }) {
   const [kind, setKind] = useState(it.guess);
+  const [cat, setCat] = useState('');
+  const others = useMemo(() => groupCategories(categories, {
+    only: (c) => c.name !== 'Income',
+  }), [categories]);
   const name = `inc-${it.txn.id}`;
+  const ready = !!kind && (kind !== 'not:else' || !!cat);
+  const save = () => {
+    if (kind === 'not:own') {
+      return act(() => setCategory(it.txn.id, 'Transfers'), sorted('Sorted as your own money, not income.'));
+    }
+    if (kind === 'not:lent') {
+      return act(() => setCategory(it.txn.id, 'Lent'), sorted('Sorted as money you lent.'));
+    }
+    if (kind === 'not:else') {
+      return act(() => setCategory(it.txn.id, cat), sorted(`Sorted as ${categoryLabel(cat)}.`));
+    }
+    return act(() => setIncomeType(it.txn.id, kind));
+  };
   return (
     <>
       <TxHead txn={it.txn} />
@@ -485,8 +505,23 @@ function IncomeKind({ it, busy, onSkip, act }) {
           <Choice key={k} name={name} checked={kind === k} onChange={() => setKind(k)} label={label} />
         ))}
       </div>
-      <Actions busy={busy} ready={!!kind} onSkip={onSkip}
-               onSave={() => act(() => setIncomeType(it.txn.id, kind))} />
+      <p className="pk-label">Or it isn’t income</p>
+      <div className="pk-choices" role="radiogroup" aria-label="It isn’t income">
+        <Choice name={name} checked={kind === 'not:own'} onChange={() => setKind('not:own')}
+                label="My own money"
+                description="From another account of mine. It won’t count as income." />
+        <Choice name={name} checked={kind === 'not:lent'} onChange={() => setKind('not:lent')}
+                label="Paying back money I lent" description="Not income: it was yours before." />
+        <Choice name={name} checked={kind === 'not:else'} onChange={() => setKind('not:else')}
+                label="Something else" description="A refund, or anything else. Choose a category." />
+      </div>
+      {kind === 'not:else' && (
+        <div className="nl-spent">
+          <p className="pk-label">What was it?</p>
+          <CategoryChips groups={others} value={cat} onChange={setCat} label="What was it?" />
+        </div>
+      )}
+      <Actions busy={busy} ready={ready} onSkip={onSkip} onSave={save} />
     </>
   );
 }
