@@ -285,6 +285,9 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onR
                   onChange={(on) => onSave({ anchor: on })} label="Counts toward my Anchor"
                   description="Savings accounts only" />
         </div>
+        {['savings', 'investment'].includes(a.kind) && (
+          <HandDigits a={a} onSave={onSave} />
+        )}
         <button type="button" className="pf-text-link" onClick={() => onRemove()}>
           Remove this account
         </button>
@@ -399,6 +402,25 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onR
         Remove this account
       </button>
     </div>
+  );
+}
+
+/** The last four digits of a savings or investment account added by hand
+ * (2026-10-14): a transfer naming them is Saved. */
+export function HandDigits({ a, onSave }) {
+  const [digits, setDigits] = useState(a.mask || '');
+  useEffect(() => { setDigits(a.mask || ''); }, [a.id, a.mask]);
+  const save = () => {
+    const next = digits.replace(/\D/g, '').slice(-4);
+    if (next !== (a.mask || '') && (next.length === 4 || next === '')) onSave({ last4: next });
+  };
+  return (
+    <form className="pf-form" onSubmit={(e) => { e.preventDefault(); save(); }}>
+      <Field label="Last four digits · transfers naming them count as saved" id="ac-last4">
+        <input id="ac-last4" inputMode="numeric" autoComplete="off" maxLength={4} placeholder="3333"
+               value={digits} onChange={(e) => setDigits(e.target.value)} onBlur={save} />
+      </Field>
+    </form>
   );
 }
 
@@ -598,15 +620,20 @@ export function BalanceDialog({ a, onClose, onSave }) {
 
 const KINDS = [
   { value: 'chequing', label: 'Chequing' },
-  { value: 'savings', label: 'Savings' },
+  { value: 'savings', label: 'Savings', description: 'Money you move into it is saved' },
+  { value: 'investment', label: 'Investment', description: 'Money you move into it is saved' },
   { value: 'credit', label: 'Credit card', description: 'Counts as money you owe' },
 ];
+// Savings and investments can carry their last four digits, so a transfer
+// that names them is Saved without asking (2026-10-14).
+const DIGITS_KINDS = ['savings', 'investment'];
 
 /** AM-05: add a balance by hand. */
 export function AddByHand({ onTab, onBack, onAdd }) {
   const [name, setName] = useState('');
   const [kind, setKind] = useState('savings');
   const [balance, setBalance] = useState('');
+  const [last4, setLast4] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const submit = (e) => {
@@ -617,9 +644,14 @@ export function AddByHand({ onTab, onBack, onAdd }) {
       setError({ field: 'balance', text: 'Enter the balance today, like 3,000.' });
       return;
     }
+    const digits = last4.replace(/\D/g, '');
+    if (DIGITS_KINDS.includes(kind) && digits && digits.length < 4) {
+      setError({ field: 'last4', text: 'The last four digits, like 3333.' });
+      return;
+    }
     setBusy(true);
     setError(null);
-    onAdd(name.trim(), kind, n).catch((err) => {
+    onAdd(name.trim(), kind, n, DIGITS_KINDS.includes(kind) ? digits.slice(-4) : '').catch((err) => {
       setError({ field: 'balance', text: err.message });
       setBusy(false);
     });
@@ -650,6 +682,13 @@ export function AddByHand({ onTab, onBack, onAdd }) {
           <input id="ac-balance" inputMode="decimal" autoComplete="off" placeholder="$3,000.00"
                  value={balance} onChange={(e) => { setBalance(e.target.value); setError(null); }} />
         </Field>
+        {DIGITS_KINDS.includes(kind) && (
+          <Field label="Last four digits (optional) · transfers naming them count as saved" id="ac-last4"
+                 error={error?.field === 'last4' ? error.text : null}>
+            <input id="ac-last4" inputMode="numeric" autoComplete="off" placeholder="3333" maxLength={4}
+                   value={last4} onChange={(e) => { setLast4(e.target.value); setError(null); }} />
+          </Field>
+        )}
         <PButton type="submit" disabled={busy}>{busy ? 'Adding…' : 'Add account'}</PButton>
         <PButton variant="text" onClick={onBack}>Cancel</PButton>
       </form>
@@ -732,6 +771,8 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
                    undo: () => save(a, { counted: !fields.counted }) });
       } else if ('nickname' in fields) {
         setNote('Nickname saved.');
+      } else if ('last4' in fields) {
+        setNote(fields.last4 ? 'Transfers naming these digits count as saved.' : 'Digits removed.');
       }
       await refresh();
       return r;
@@ -754,8 +795,8 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
   if (view.name === 'add') {
     page = (
       <AddByHand onTab={onTab} onBack={back}
-                 onAdd={async (name, kind, balance) => {
-                   const r = await addManualAccount(name, kind, balance);
+                 onAdd={async (name, kind, balance, last4) => {
+                   const r = await addManualAccount(name, kind, balance, last4);
                    setNote(`${r.account?.name ?? name} is added.`);
                    await refresh();
                    setView({ name: 'list' });

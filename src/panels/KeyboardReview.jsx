@@ -47,7 +47,8 @@ export function KeyHints({ singleKey = true }) {
 }
 
 /** K-02: the selection, and what can be done to all of it. */
-export function SelectedBar({ count, singleKey = true, onChange, onConfirm, onClear }) {
+export function SelectedBar({ count, singleKey = true, onChange, onConfirm, onClear, onMark,
+                              onTag, onLeaveOut }) {
   const key = (k) => (singleKey ? k : undefined);
   return (
     <div className="kr-selected" role="region" aria-label="Selected transactions">
@@ -55,11 +56,20 @@ export function SelectedBar({ count, singleKey = true, onChange, onConfirm, onCl
       <button type="button" className="kr-action" onClick={onChange} aria-keyshortcuts={key('C')}>
         Change category {singleKey && <Keys keys={['C']} />}
       </button>
+      {onMark && (
+        <button type="button" className="kr-action" onClick={onMark}>Mark as…</button>
+      )}
+      {onTag && (
+        <button type="button" className="kr-action" onClick={onTag}>Tag</button>
+      )}
+      {onLeaveOut && (
+        <button type="button" className="kr-action" onClick={onLeaveOut}>Leave out</button>
+      )}
       <button type="button" className="kr-action" onClick={onConfirm} aria-keyshortcuts={key('Y')}>
         Confirm suggestions {singleKey && <Keys keys={['Y']} />}
       </button>
-      <button type="button" className="kr-action" onClick={onClear} aria-keyshortcuts="Escape">
-        Clear <Keys keys={['Esc']} />
+      <button type="button" className="kr-action" onClick={onClear} aria-keyshortcuts={singleKey ? 'Escape' : undefined}>
+        Clear {singleKey && <Keys keys={['Esc']} />}
       </button>
     </div>
   );

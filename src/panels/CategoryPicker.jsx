@@ -22,7 +22,7 @@ const GROUPS = [
       'Fitness', 'Entertainment', 'Streaming', 'Travel', 'Gifts & Charity'] },
   { key: 'savings', title: 'Savings', order: ['Saved'] },
   { key: 'income', title: 'Income', order: ['Income'] },
-  { key: 'transfer', title: 'Not spending', order: ['Transfers', 'Lent'] },
+  { key: 'transfer', title: 'Not spending', order: ['Transfers', 'Lent', 'Borrowed'] },
 ];
 
 // Names that read better as an answer than as a ledger heading. Transfers
@@ -31,9 +31,12 @@ export const CATEGORY_LABEL = {};
 export const categoryLabel = (name) => CATEGORY_LABEL[name] ?? name;
 
 /** The categories laid out by group, as R-02 shows them. */
-export function groupCategories(categories, { only } = {}) {
+export function groupCategories(categories, { only, keep } = {}) {
+  // A category she hid (Profile › Categories and rules) stays out of the
+  // chips, except the one a row is already in.
   const names = categories
-    .filter((c) => c.name !== 'Unsorted transfers' && (!only || only(c)));
+    .filter((c) => c.name !== 'Unsorted transfers' && (!c.hidden || c.name === keep)
+      && (!only || only(c)));
   return GROUPS.map((g) => {
     const mine = names.filter((c) => c.group === g.key).map((c) => c.name);
     const ordered = [
@@ -82,7 +85,8 @@ export default function CategoryPicker({ tx, categories, busy, onSave, saveLabel
   const [always, setAlways] = useState(false);
   const [impact, setImpact] = useState(null);
   const [count, setCount] = useState(null);
-  const groups = useMemo(() => groupCategories(categories, { only }), [categories, only]);
+  const groups = useMemo(() => groupCategories(categories, { only, keep: current }),
+                         [categories, only, current]);
   const applyAll = allowApplyAll && !unsorted;
 
   // How many rows "Apply to all" would re-file, once.

@@ -63,13 +63,17 @@ CATEGORIES: dict[str, dict] = {
     # Money lent to someone, and their paying it back. Neither spending nor
     # income: it was yours before and is yours again.
     "Lent":             {"essential": False, "discretionary": False},
+    # Money borrowed from someone, and paying it back (2026-10-14). The
+    # mirror of Lent: neither income nor spending — what it bought was
+    # counted when it was bought.
+    "Borrowed":         {"essential": False, "discretionary": False},
     "Income":           {"essential": False, "discretionary": False},
     "Transfers":        {"essential": False, "discretionary": False},
     "Other":            {"essential": False, "discretionary": True},
 }
 
 # Categories that are money movement, not consumption. Excluded from spend.
-NON_SPEND = {"Income", "Transfers", "Saved", "Lent"}
+NON_SPEND = {"Income", "Transfers", "Saved", "Lent", "Borrowed"}
 
 
 def is_spend_category(category: str) -> bool:
@@ -91,7 +95,7 @@ def group_of(category: str) -> str:
         return "income"
     if category == "Saved":
         return "savings"
-    if category in ("Transfers", "Lent", "Unsorted transfers"):
+    if category in ("Transfers", "Lent", "Borrowed", "Unsorted transfers"):
         return "transfer"
     return "essentials" if CATEGORIES.get(category, {}).get("essential") else "lifestyle"
 

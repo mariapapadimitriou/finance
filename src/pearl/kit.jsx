@@ -33,14 +33,23 @@ export function Avatar({ name, logo, large = false }) {
  * confirmed) is a dashed outline with a question mark, so it reads without
  * colour; a screen reader hears "Food Delivery, suggested by Pearl".
  */
-export function CategoryChip({ label, suggested = false }) {
+export function CategoryChip({ label, suggested = false, ruled = false }) {
+  // Decided by a rule of hers: a small lock, so it's clear why it won't
+  // change on its own (2026-10-14).
+  const name = suggested ? `${label}, suggested by Pearl` : ruled ? `${label}, from your rule` : label;
   return (
-    <span className={`pk-cat${suggested ? ' suggested' : ''}`}
-          aria-label={suggested ? `${label}, suggested by Pearl` : label} role="img">
+    <span className={`pk-cat${suggested ? ' suggested' : ''}${ruled ? ' ruled' : ''}`}
+          aria-label={name} role="img">
       {suggested && <PIcon name="help" size={12} />}
+      {ruled && !suggested && <PIcon name="lock" size={11} />}
       <span aria-hidden="true">{label}</span>
     </span>
   );
+}
+
+/** A tag of hers on a row: a small plain chip. */
+export function TagChip({ label }) {
+  return <span className="pk-tag">{label}</span>;
 }
 
 /**
@@ -138,7 +147,8 @@ export function DayHeader({ children }) {
  *   muted   — neither: grey, no sign (a transfer changes nothing)
  */
 export function TxRow({ name, logo, meta, note, noteLink = false, chip, amount,
-                        inflow = false, muted = false, flash = false, onOpen, ...rest }) {
+                        inflow = false, muted = false, flash = false, onOpen, tags = [],
+                        ruled = false, ...rest }) {
   return (
     <button type="button" className={`pk-row${muted ? ' muted' : ''}${flash ? ' flash' : ''}`}
             onClick={onOpen} {...rest}>
@@ -149,7 +159,8 @@ export function TxRow({ name, logo, meta, note, noteLink = false, chip, amount,
         {note && <span className={`pk-row-note${noteLink ? ' accent' : ''}`}>{note}</span>}
       </span>
       <span className="pk-row-cat">
-        {chip && <CategoryChip label={chip.label} suggested={chip.suggested} />}
+        {chip && <CategoryChip label={chip.label} suggested={chip.suggested} ruled={ruled} />}
+        {tags.map((t) => <TagChip key={t} label={t} />)}
       </span>
       <span className={`pk-amt ${muted ? 'muted' : amountTone(inflow)}`}>
         {txAmount(amount, { inflow: inflow && !muted, signed: !muted })}

@@ -1,0 +1,462 @@
+"""What was this? (2026-10-14; finance/marks.py, finance/marks_api.py): one
+list of cases, applied through the same tables everything else reads, with
+tags, savings accounts, refunds, reimbursements, merchant names, hidden
+categories, and the list's new filters and views."""
+
+from __future__ import annotations
+
+from datetime import date, timedelta
+
+import pytest
+
+from finance.ingest.base import IngestResult
+from finance.models import Transaction
+from finance.pipeline import ingest
+
+TODAY = date.today()
+MONTH = TODAY.isoformat()[:7]
+
+
+def in_month(d=1):
+    return f"{MONTH}-{d:02d}"
+
+
+def days_ago(n):
+    return (TODAY - timedelta(days=n)).isoformat()
+
+
+def row(amount, description, account="chq", when=None, kind="depository",
+        category=None, who=None, merchant=None, mask=""):
+    raw = {"account_type": kind, "issuer_category": ""}
+    if who:
+        raw["counterparty"] = who
+    t = Transaction(date=when or in_month(2), description=description, amount=amount,
+                    account_id=account, account_name=account + (f" ••{mask}" if mask else ""),
+                    raw=raw, merchant=merchant or "")
+    if category:
+        t.category, t.category_source = category, "user"
+    return t
+
+
+@pytest.fixture()
+def client(tmp_path):
+    from app import create_app
+    app = create_app(str(tmp_path / "w.db"))
+    app.config.update(TESTING=True)
+    with app.test_client() as c:
+        c.st = app.config["STORE"]
+        yield c
+
+
+def load(st, *rows):
+    by: dict[str, list] = {}
+    for r in rows:
+        by.setdefault(r.account_id, []).append(r)
+    for acct, txns in by.items():
+        ingest(st, IngestResult(transactions=txns, account_id=acct))
+    return {t.description: t.fingerprint for t in st.all_transactions()}
+
+
+def listing(c, **params):
+    params.setdefault("month", MONTH)
+    res = c.get("/api/transactions/list", query_string=params)
+    assert res.status_code == 200, res.get_json()
+    return res.get_json()
+
+
+def by_desc(data):
+    return {r["description"]: r for r in data["transactions"]}
+
+
+def mark(c, tid, **body):
+    res = c.post(f"/api/transactions/{tid}/mark", json=body)
+    assert res.status_code == 200, res.get_json()
+    return res.get_json()
+
+
+def cases(c, tid):
+    res = c.get(f"/api/transactions/{tid}/cases")
+    assert res.status_code == 200, res.get_json()
+    return res.get_json()
+
+
+def undo(c, payload):
+    res = c.post("/api/transactions/undo", json=payload["undo"])
+    assert res.status_code == 200, res.get_json()
+
+
+# ── The cases ────────────────────────────────────────────────────────────
+
+def test_money_out_offers_the_cases_and_names_what_each_does(client):
+    ids = load(client.st, row(120, "SEND E-TFR ***Q7K", who="M. Papas"))
+    d = cases(client, ids["SEND E-TFR ***Q7K"])
+    assert d["direction"] == "out"
+    keys = [c["key"] for c in d["cases"]]
+    assert keys == ["spending", "bill", "moved", "saved", "saved_part", "lent", "shared",
+                    "paying_back", "work", "not_mine"]
+    saved = next(c for c in d["cases"] if c["key"] == "saved")
+    assert saved["needs"] == "account" and saved["remember"] == "destination"
+    assert saved["remember_label"] == "Do this for every transfer to M. Papas from now on"
+    assert saved["effect"] == "Adds to what you put away. Not spending."
+    assert d["current"] is None            # not sorted yet
+    assert d["accounts"] == []             # no savings account to pick from yet
+
+
+def test_money_in_offers_its_cases(client):
+    ids = load(client.st, row(-300, "E-TRANSFER FROM SAM", who="Sam"))
+    d = cases(client, ids["E-TRANSFER FROM SAM"])
+    assert d["direction"] == "in"
+    assert [c["key"] for c in d["cases"]] == [
+        "pay", "own", "out_of_savings", "payback", "refund", "reimbursement", "borrowed",
+        "lent_back", "not_mine"]
+    assert d["income_kinds"]["salary"] == "Salary"
+
+
+def test_a_purchase_with_a_rule_for_the_merchant(client):
+    ids = load(client.st, row(14.5, "SQ *ROASTED NUT", account="card", kind="credit",
+                              merchant="Roasted Nut"),
+               row(9.0, "SQ *ROASTED NUT", account="card", kind="credit",
+                   merchant="Roasted Nut", when=in_month(5)))
+    tid = ids["SQ *ROASTED NUT"]
+    res = mark(client, tid, case="spending", category="Coffee", remember=True)
+    assert res["title"] == "Moved to Coffee." and res["remember"]
+    rows = list(by_desc(listing(client)).values())
+    assert {r["category"] for r in rows} == {"Coffee"}
+    assert all(r["ruled"] for r in rows)                 # the chip can say so
+    assert client.st.overrides() == {"roasted nut": "Coffee"}
+    undo(client, res)
+    assert client.st.overrides() == {}
+
+
+def test_saved_to_an_account_she_added_by_hand(client):
+    ids = load(client.st, row(500, "TFR-TO 12343333"))
+    tid = ids["TFR-TO 12343333"]
+    r = client.post("/api/accounts/manual", json={"name": "Wealthsimple TFSA", "kind": "investment",
+                                                  "balance": 1000, "last4": "3333"})
+    assert r.status_code == 201, r.get_json()
+    aid = r.get_json()["account"]["id"]
+    assert r.get_json()["account"]["mask"] == "3333"
+    # The digits alone make the transfer Saved (finance/transfers.py).
+    assert by_desc(listing(client))["TFR-TO 12343333"]["category"] == "Saved"
+    d = cases(client, tid)
+    assert d["current"] == "saved"
+    assert [a["id"] for a in d["accounts"]] == [aid]
+    res = mark(client, tid, case="saved", account=aid)
+    assert res["title"] == "Put away to Wealthsimple TFSA."
+    listed = by_desc(listing(client))["TFR-TO 12343333"]
+    assert listed["saved_to"] == aid and listed["saved_to_label"] == "Wealthsimple TFSA"
+    assert listed["note"] == "Put away to Wealthsimple TFSA · not counted as spending"
+    assert client.get("/api/home").get_json()["savings"]["put_away"]["contributions"] == 500.0
+    assert client.get(f"/api/transactions/{tid}").get_json()["saved_to_label"] == "Wealthsimple TFSA"
+    undo(client, res)
+    assert client.st.saved_to() == {}
+    # Not one of her savings accounts: refused.
+    assert client.post(f"/api/transactions/{tid}/mark",
+                       json={"case": "saved", "account": "nope"}).status_code == 400
+
+
+def test_a_linked_investment_account_is_offered_too(client):
+    client.st.note_account("inv1", name="RRSP ••4444", item_id="it", account_type="investment",
+                           subtype="rrsp")
+    client.st.set_account_setting("inv1", nickname="My RRSP")
+    ids = load(client.st, row(200, "TRANSFER TO 4444"))
+    d = cases(client, ids["TRANSFER TO 4444"])
+    assert d["accounts"] == [{"id": "inv1", "label": "My RRSP", "kind": "investment",
+                              "source": "linked"}]
+
+
+def test_moved_remembers_the_destination(client):
+    ids = load(client.st, row(80, "SEND E-TFR ***ABC", who="Landlord Co"))
+    res = mark(client, ids["SEND E-TFR ***ABC"], case="moved", remember=True)
+    assert res["remember"] and client.st.destinations() == {"to:landlord co": "Transfers"}
+    assert by_desc(listing(client))["SEND E-TFR ***ABC"]["chip"]["label"] == "Transfer"
+
+
+def test_a_bill_counts_as_spending_and_as_one_of_her_bills(client):
+    ids = load(client.st, row(85, "ROGERS", account="card", kind="credit", merchant="Rogers"))
+    res = mark(client, ids["ROGERS"], case="bill", category="Phone & Internet")
+    assert res["title"] == "Counted as a bill, in Phone & Internet."
+    bills = client.get("/api/income-bills").get_json()["bills"]
+    assert any(b["name"] == "Rogers" and b["ticked"] for b in bills)
+    assert by_desc(listing(client))["ROGERS"]["kind"] == "fixed"
+
+
+def test_lent_borrowed_and_paying_back(client):
+    ids = load(client.st, row(200, "SEND E-TFR SAM", who="Sam"),
+               row(-150, "E-TFR FROM ALEX", who="Alex", when=in_month(3)),
+               row(150, "SEND E-TFR ALEX", who="Alex", when=in_month(9)))
+    mark(client, ids["SEND E-TFR SAM"], case="lent")
+    mark(client, ids["E-TFR FROM ALEX"], case="borrowed")
+    res = mark(client, ids["SEND E-TFR ALEX"], case="paying_back")
+    assert res["title"] == "Sorted as paying back what you borrowed."
+    rows = by_desc(listing(client))
+    assert rows["SEND E-TFR SAM"]["note"] == "Lent · not counted as spending"
+    assert rows["E-TFR FROM ALEX"]["note"] == "Borrowed · not income"
+    assert rows["SEND E-TFR ALEX"]["note"] == "Paid back what you borrowed · not counted as spending"
+    assert listing(client)["totals"] == {"spent": 0, "income": 0, "not_counted": 500, "count": 3}
+    # Paying back something that was never in Pearl is spending.
+    res = mark(client, ids["SEND E-TFR ALEX"], case="paying_back", counted=False,
+               category="Shopping")
+    assert by_desc(listing(client))["SEND E-TFR ALEX"]["category"] == "Shopping"
+
+
+def test_a_work_expense_and_its_reimbursement_both_vanish(client):
+    ids = load(client.st, row(240, "AIR CANADA", account="card", kind="credit",
+                              merchant="Air Canada", when=in_month(2)),
+               row(-240, "PAYROLL EXPENSES", when=in_month(9)))
+    flight, back = ids["AIR CANADA"], ids["PAYROLL EXPENSES"]
+    res = mark(client, flight, case="work")
+    assert res["title"] == "Left out until it’s reimbursed."
+    assert listing(client)["totals"]["spent"] == 0
+    left = by_desc(listing(client, excluded=1))["AIR CANADA"]
+    assert left["note"] == "Left out · Work expense · waiting to be reimbursed"
+    assert cases(client, flight)["current"] == "work"
+    # The deposit's reimbursement case offers the flight first.
+    d = cases(client, back)
+    cand = next(c for c in d["cases"] if c["key"] == "reimbursement")["candidates"]
+    assert cand[0]["id"] == flight and cand[0]["work"] and cand[0]["exact"]
+    res = mark(client, back, case="reimbursement", charge=flight)
+    assert res["title"] == "Reimbursement for Air Canada. Both are out of your numbers."
+    rows = by_desc(listing(client))
+    assert rows["PAYROLL EXPENSES"]["chip"]["label"] == "Reimbursement"
+    assert rows["PAYROLL EXPENSES"]["note"] == "Reimbursed you for Air Canada · not income"
+    assert rows["PAYROLL EXPENSES"]["reimbursement"] is True
+    assert rows["AIR CANADA"]["note"] == "Reimbursed · not your spending"
+    assert rows["AIR CANADA"]["counts"] == "none" and rows["AIR CANADA"]["excluded"] == ""
+    assert listing(client)["totals"]["spent"] == 0 and listing(client)["totals"]["income"] == 0
+    assert cases(client, back)["current"] == "reimbursement"
+    undo(client, res)
+    rows = by_desc(listing(client, excluded=1))
+    assert rows["AIR CANADA"]["note"].startswith("Left out · Work expense")
+    assert client.st.payback_kinds() == {}
+
+
+def test_a_refund_nets_in_the_purchases_category(client):
+    ids = load(client.st, row(89, "LULULEMON", account="card", kind="credit",
+                              merchant="Lululemon", category="Shopping", when=in_month(3)),
+               row(-89, "LULULEMON", account="card", kind="credit", merchant="Lululemon",
+                   when=in_month(8)))
+    buy = ids["LULULEMON"]
+    back = next(t.fingerprint for t in client.st.all_transactions() if t.amount < 0)
+    d = cases(client, back)
+    cand = next(c for c in d["cases"] if c["key"] == "refund")["candidates"]
+    assert cand[0]["id"] == buy and cand[0]["exact"]
+    res = mark(client, back, case="refund", charge=buy)
+    assert res["title"] == "Refund of Lululemon. Comes off Shopping."
+    data = listing(client)
+    r = next(x for x in data["transactions"] if x["id"] == back)
+    assert r["category"] == "Shopping" and r["counts"] == "spending"
+    assert r["note"] == "Refund of Lululemon · comes off Shopping"
+    assert r["refund_of"]["id"] == buy
+    assert data["totals"]["spent"] == 0 and data["totals"]["income"] == 0
+    assert cases(client, back)["current"] == "refund"
+    # Without a purchase to point at, a category is enough.
+    res = mark(client, back, case="refund", category="Groceries")
+    assert res["title"] == "Refund. Comes off Groceries."
+
+
+def test_someone_paying_me_back_links_to_the_charge(client):
+    ids = load(client.st, row(80, "SUSHI NAMI", account="card", kind="credit",
+                              merchant="Sushi Nami", category="Dining", when=in_month(2)),
+               row(-20, "E-TRANSFER FROM PRIYA", who="Priya", when=in_month(4)))
+    dinner, back = ids["SUSHI NAMI"], ids["E-TRANSFER FROM PRIYA"]
+    cand = next(c for c in cases(client, back)["cases"] if c["key"] == "payback")["candidates"]
+    assert cand[0]["id"] == dinner and cand[0]["share"] == 4
+    res = mark(client, back, case="payback", charge=dinner, person="Priya")
+    assert res["title"] == "Linked to Sushi Nami. Not income."
+    rows = by_desc(listing(client))
+    assert rows["SUSHI NAMI"]["amount"] == 60 and rows["E-TRANSFER FROM PRIYA"]["chip"]["label"] == "Repayment"
+    assert cases(client, back)["current"] == "payback"
+
+
+def test_pay_sets_the_kind_and_makes_it_income(client):
+    ids = load(client.st, row(-2000, "DEPOSIT NORTHWIND"))
+    res = mark(client, ids["DEPOSIT NORTHWIND"], case="pay", income_kind="salary")
+    assert res["title"] == "Counted as income: Salary."
+    assert listing(client)["totals"]["income"] == 2000
+    assert cases(client, ids["DEPOSIT NORTHWIND"])["income_kind"] == "salary"
+
+
+def test_not_mine_leaves_it_out_with_a_rule_if_asked(client):
+    ids = load(client.st, row(45, "NETFLIX", account="card", kind="credit", merchant="Netflix"))
+    res = mark(client, ids["NETFLIX"], case="not_mine", reason="My sister’s", remember=True)
+    assert res["title"] == "Left out."
+    assert listing(client)["transactions"] == []
+    assert by_desc(listing(client, excluded=1))["NETFLIX"]["note"] == "Left out · My sister’s"
+    rules = client.get("/api/rules").get_json()["rules"]
+    assert any(r["kind"] == "exclusion" and r["name"] == "Netflix" for r in rules)
+    undo(client, res)
+    assert by_desc(listing(client))["NETFLIX"]["counts"] == "spending"
+
+
+def test_on_a_joint_account_not_mine_is_theirs(client):
+    ids = load(client.st, row(60, "COSTCO", account="fam", category="Groceries"))
+    client.put("/api/accounts/fam/joint", json={"label": "Alex"})
+    d = cases(client, ids["COSTCO"])
+    nm = next(c for c in d["cases"] if c["key"] == "not_mine")
+    assert nm["label"] == "Alex’s, not mine" and nm["needs"] is None
+    assert "shared" not in {c["key"] for c in d["cases"]}
+    res = mark(client, ids["COSTCO"], case="not_mine")
+    assert res["title"] == "Counted as Alex’s."
+    assert listing(client)["transactions"] == []
+    undo(client, res)
+    assert listing(client)["totals"]["spent"] == 60
+
+
+def test_someone_else_put_this_into_a_joint_account(client):
+    ids = load(client.st, row(-200, "E-TRANSFER FROM ALEX", account="fam", category="Transfers"))
+    client.put("/api/accounts/fam/joint", json={"label": "Alex"})
+    client.put("/api/accounts/fam/settings", json={"joint_people": ["Alex", "Jo"]})
+    d = cases(client, ids["E-TRANSFER FROM ALEX"])
+    assert d["joint_people"] == ["Alex", "Jo"]
+    assert any(c["key"] == "joint_them" for c in d["cases"])
+    res = mark(client, ids["E-TRANSFER FROM ALEX"], case="joint_them", person="Jo", remember=True)
+    assert res["title"] == "Jo put this in."
+    r = listing(client, joint=1)["transactions"][0]
+    assert r["chip"]["label"] == "Jo’s"
+
+
+def test_part_of_it_was_put_away(client):
+    ids = load(client.st, row(500, "TFR-TO 9999", category="Shopping"))
+    res = mark(client, ids["TFR-TO 9999"], case="saved_part", amount=300)
+    assert res["title"] == "$300.00 of it put away."
+    r = by_desc(listing(client))["TFR-TO 9999"]
+    assert r["amount"] == 200 and r["counts"] == "spending"
+    assert client.get("/api/home").get_json()["savings"]["put_away"]["contributions"] == 300.0
+    assert client.post(f"/api/transactions/{ids['TFR-TO 9999']}/mark",
+                       json={"case": "saved_part", "amount": 500}).status_code == 400
+
+
+def test_the_preview_says_what_it_would_do_without_writing(client):
+    ids = load(client.st, row(120, "SEND E-TFR ***Q7K", who="M. Papas"))
+    tid = ids["SEND E-TFR ***Q7K"]
+    r = client.post(f"/api/transactions/{tid}/mark?dry=1", json={"case": "saved"}).get_json()
+    assert "line" in r and r["line"]
+    r = client.post(f"/api/transactions/{tid}/mark?dry=1", json={"case": "lent"}).get_json()
+    assert r["line"]
+    assert by_desc(listing(client))["SEND E-TFR ***Q7K"]["category"] == "Unsorted transfers"
+    assert client.post(f"/api/transactions/{tid}/mark", json={"case": "pay"}).status_code == 400
+    assert client.post(f"/api/transactions/{tid}/mark", json={"case": "shared"}).status_code == 400
+
+
+def test_a_selection_answers_at_once_with_one_undo(client):
+    ids = load(client.st, row(50, "SEND E-TFR A", who="A"), row(60, "SEND E-TFR B", who="B"),
+               row(70, "SEND E-TFR C", who="C"))
+    res = client.post("/api/transactions/batch/mark",
+                      json={"ids": list(ids.values()), "case": "moved"}).get_json()
+    assert res["updated"] == 3 and res["title"] == "Marked 3 as Moved between my accounts."
+    assert listing(client)["totals"]["spent"] == 0
+    undo(client, res)
+    assert listing(client)["totals"]["spent"] == 180
+    res = client.post("/api/transactions/batch/mark",
+                      json={"ids": list(ids.values())[:2], "case": "spending",
+                            "category": "Gifts & Charity"}).get_json()
+    assert res["title"] == "Marked 2 as Gifts & Charity."
+    assert client.post("/api/transactions/batch/mark",
+                       json={"ids": list(ids.values()), "case": "refund"}).status_code == 400
+
+
+# ── Tags ─────────────────────────────────────────────────────────────────
+
+def test_tags_group_rows_without_moving_them(client):
+    ids = load(client.st, row(900, "FLIGHTS", account="card", kind="credit", category="Travel",
+                              when=in_month(1)),
+               row(40, "TAPAS", account="card", kind="credit", category="Dining", when=in_month(3)),
+               row(30, "LOBLAWS", account="card", kind="credit", category="Groceries",
+                   when=in_month(4)))
+    r = client.put(f"/api/transactions/{ids['FLIGHTS']}/tags", json={"tags": ["Ibiza", " ibiza ", "Work"]})
+    assert r.status_code == 200 and r.get_json()["tags"] == ["Ibiza", "Work"]
+    r = client.post("/api/transactions/batch/tags",
+                    json={"ids": [ids["TAPAS"]], "add": ["Ibiza"]}).get_json()
+    assert r["title"] == "Tagged Ibiza."
+    data = listing(client, tag="Ibiza")
+    assert {x["description"] for x in data["transactions"]} == {"FLIGHTS", "TAPAS"}
+    assert data["focus"] == {"label": "Ibiza", "kind": "spending", "total": 940, "usual": None} \
+        or data["focus"]["total"] == 940
+    assert data["tags"] == ["Ibiza", "Work"]
+    assert by_desc(listing(client))["FLIGHTS"]["tags"] == ["Ibiza", "Work"]
+    tags = client.get("/api/tags").get_json()["tags"]
+    assert tags[0] == {"tag": "Ibiza", "count": 2, "spent": 940, "first": in_month(1),
+                       "last": in_month(3)}
+    # Across every month, with a tag, the total is the tag's whole total.
+    assert listing(client, month="all", tag="Ibiza")["focus"]["usual"] is None
+    # Rename, then take it off.
+    assert client.put("/api/tags/Ibiza", json={"name": "Spain"}).get_json()["rows"] == 2
+    assert listing(client, tag="Spain")["total"] == 2
+    assert client.put("/api/tags/Spain", json={"name": None}).get_json()["rows"] == 2
+    assert listing(client)["tags"] == ["Work"]
+    assert client.put("/api/tags/Nope", json={"name": "x"}).status_code == 404
+    # Undo of a batch tag.
+    undo(client, r)
+    assert by_desc(listing(client))["TAPAS"]["tags"] == []
+
+
+# ── Views and filters ────────────────────────────────────────────────────
+
+def test_folded_by_merchant_and_by_category(client):
+    load(client.st, row(12, "COFFEE A", account="card", kind="credit", category="Coffee",
+                        merchant="Pilot", when=in_month(1)),
+         row(8, "COFFEE B", account="card", kind="credit", category="Coffee", merchant="Pilot",
+             when=in_month(2)),
+         row(60, "LOBLAWS", account="card", kind="credit", category="Groceries",
+             merchant="Loblaws", when=in_month(3)),
+         row(-2000, "PAYROLL", category="Income", when=in_month(1)))
+    data = listing(client, by="merchant")
+    assert data["transactions"] == [] and data["total"] == 4
+    assert [(m["merchant"], m["count"], m["spent"]) for m in data["merchants"]][:2] == [
+        ("Loblaws", 1, 60), ("Pilot", 2, 20)]
+    assert data["merchants"][2]["income"] == 2000
+    cats = listing(client, by="category")["categories"]
+    assert [(c["category"], c["spent"]) for c in cats][:2] == [("Groceries", 60), ("Coffee", 20)]
+    assert listing(client, merchant="pilot")["total"] == 2
+    assert listing(client, merchant="Pilot")["focus"]["total"] == 20
+    assert client.get("/api/transactions/list?by=x").status_code == 400
+
+
+def test_counts_amount_pending_and_needs_a_look_filters(client):
+    ids = load(client.st, row(12, "COFFEE", account="card", kind="credit", merchant="Pilot",
+                              when=in_month(1)),
+               row(250, "IKEA", account="card", kind="credit", category="Home", when=in_month(2)),
+               row(-2000, "PAYROLL", category="Income", when=in_month(1)),
+               row(300, "VISA PAYMENT", category="Transfers", when=in_month(3)))
+    assert listing(client, counts="income")["total"] == 1
+    assert listing(client, counts="none")["total"] == 1
+    assert listing(client, amount_min=100, amount_max=500)["total"] == 2
+    assert listing(client, amount_max=20)["total"] == 1
+    assert listing(client, look=1)["total"] == 1            # only the guessed coffee
+    assert listing(client, pending=1)["total"] == 0
+    assert client.get("/api/transactions/list?counts=x").status_code == 400
+    assert listing(client, month="all")["total"] == 4
+
+
+def test_a_merchant_nickname_shows_everywhere_the_merchant_is_named(client):
+    ids = load(client.st, row(14.5, "SQ *THE ROASTED NUT", account="card", kind="credit",
+                              merchant="Roasted Nut", category="Coffee"))
+    r = client.put("/api/merchants/name", json={"merchant": "Roasted Nut", "name": "The Nut"})
+    assert r.status_code == 200
+    row_ = by_desc(listing(client))["SQ *THE ROASTED NUT"]
+    assert row_["merchant"] == "The Nut" and row_["bank_merchant"] == "Roasted Nut"
+    rules = client.get("/api/rules").get_json()
+    assert rules["names"] == [{"merchant": "Roasted Nut", "key": "roasted nut", "name": "The Nut"}]
+    assert client.delete("/api/rules/name:roasted nut").status_code == 200
+    assert by_desc(listing(client))["SQ *THE ROASTED NUT"]["merchant"] == "Roasted Nut"
+
+
+def test_hidden_categories_leave_the_pickers_but_not_the_rows(client):
+    load(client.st, row(20, "PETS R US", account="card", kind="credit", category="Pets"))
+    r = client.put("/api/rules/categories", json={"category": "Pets", "hidden": True})
+    assert r.status_code == 200 and r.get_json()["hidden"] == ["Pets"]
+    cats = client.get("/api/categories").get_json()
+    assert cats["hidden"] == ["Pets"]
+    assert next(c for c in cats["categories"] if c["name"] == "Pets")["hidden"] is True
+    assert by_desc(listing(client))["PETS R US"]["category"] == "Pets"
+    assert client.put("/api/rules/categories", json={"category": "Income", "hidden": True}).status_code == 400
+    client.put("/api/rules/categories", json={"category": "Pets", "hidden": False})
+    assert client.get("/api/categories").get_json()["hidden"] == []
+
+
+def test_start_over_clears_the_answers_too(client):
+    ids = load(client.st, row(500, "TFR-TO 3333"))
+    client.put(f"/api/transactions/{ids['TFR-TO 3333']}/tags", json={"tags": ["x"]})
+    client.post("/api/data/start-over", json={"confirm": "start over"})
+    assert client.st.tags() == {} and client.st.saved_to() == {}

@@ -6,10 +6,11 @@ import { depositChoices } from './joint.js';
 import PIcon from '../pearl/icons.jsx';
 import CategoryPicker, { categoryLabel } from './CategoryPicker.jsx';
 import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
+import WhatWasThis, { TagEditor } from './WhatWasThis.jsx';
 import {
-  addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTx,
-  includeTransaction, money, setCategory, setJointFrom, setMineAlways, setParty, setShare,
-  setTxNote,
+  addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTags, getTx,
+  includeTransaction, money, setCategory, setJointFrom, setMerchantName, setMineAlways, setParty,
+  setShare, setTxNote, setTxTags,
   sortTransfers,
   unallocate, setSplit, clearSplit, unlinkPayback, linkPayback, setOneOff,
 } from '../api.js';
@@ -54,11 +55,12 @@ function suggestionReason(tx) {
   return 'Pearl suggested this from the merchant name. Is it right?';
 }
 
-export default function TransactionDetail({ id, initial, categories, onClose, onSaved }) {
+export default function TransactionDetail({ id, initial, categories, onClose, onSaved,
+                                            startStep = 'main' }) {
   const [tx, setTx] = useState(initial && initial.id === id ? initial : null);
   const [error, setError] = useState(null);
-  // main | category | split | note | exclude | bank | whose
-  const [step, setStep] = useState('main');
+  // main | what | category | split | note | exclude | bank | whose | tags | name
+  const [step, setStep] = useState(startStep);
   const [busy, setBusy] = useState(false);
   const [banks, setBanks] = useState([]);
 
@@ -112,6 +114,27 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
     detail: res?.impact?.detail ?? '',
     undo: res?.undo,
   });
+
+  // What was this? (2026-10-14): the one list of answers, from here, the
+  // list and Needs a look. Saving closes with what it did and Undo.
+  if (step === 'what') {
+    return (
+      <DetailPanel label="What was this?" onClose={onClose}
+                   back={{ label: `${tx.merchant} · ${txAmount(tx.amount, { inflow: tx.inflow, signed: true })}`,
+                           onClick: back }}>
+        <h2 className="pk-h2">What was this?</h2>
+        <WhatWasThis tx={tx} categories={categories} busy={busy}
+                     onSplit={() => setStep('split')}
+                     onDone={(res) => {
+                       onSaved?.({ close: true, change: {
+                         id: tx.id,
+                         title: [res.title, res.impact?.title].filter(Boolean).join(' '),
+                         detail: res.impact?.detail ?? '', undo: res.undo,
+                       } });
+                     }} />
+      </DetailPanel>
+    );
+  }
 
   if (step === 'category') {
     const unsorted = tx.category === 'Unsorted transfers';
@@ -189,6 +212,10 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                   onSave={(name) => save(() => setParty(tx.id, name))} />,
     from: <JointFrom tx={tx} busy={busy} onBack={back}
                      onSave={(who, remember, person) => save(() => setJointFrom(tx.id, who, remember, person))} />,
+    tags: <Tags tx={tx} busy={busy} onBack={back}
+                onSave={(tags) => save(() => setTxTags(tx.id, tags))} />,
+    name: <MerchantName tx={tx} busy={busy} onBack={back}
+                        onSave={(name) => save(() => setMerchantName(tx.bank_merchant || tx.merchant, name))} />,
   }[step];
 
   return (
@@ -246,6 +273,17 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                       value={`${r.merchant} · ${txAmount(-r.amount)} · not income`} />
             ))}
             {bank && <Detail label="Paid from" value={`${bank.name}${tx.bank_auto ? ' · automatically' : ''}`} />}
+            {tx.saved_to_label && (
+              <Detail label={tx.inflow ? 'Taken out of' : 'Put away to'} value={tx.saved_to_label} />
+            )}
+            {tx.refund_of && (
+              <Detail label="Refund of"
+                      value={`${tx.refund_of.merchant} · ${longDate(tx.refund_of.date)} · ${txAmount(tx.refund_of.amount)}`} />
+            )}
+            {tx.tags?.length > 0 && <Detail label="Tags" value={tx.tags.join(', ')} />}
+            {tx.bank_merchant && tx.bank_merchant !== tx.merchant && (
+              <Detail label="Bank calls it" value={tx.bank_merchant} />
+            )}
             {tx.my_note && <Detail label="Your note" value={tx.my_note} />}
           </dl>
 
@@ -311,9 +349,21 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                 {bank ? 'Change treasure chest' : 'Pay from a treasure chest'}
               </button>
             )}
+            <button type="button" className="txd-link" onClick={() => setStep('tags')}>
+              <PIcon name="tag" size={18} /> {tx.tags?.length ? 'Edit tags' : 'Add a tag'}
+            </button>
             <button type="button" className="txd-link" onClick={() => setStep('note')}>
               <PIcon name="info" size={18} /> {tx.my_note ? 'Edit note' : 'Add a note'}
             </button>
+            <button type="button" className="txd-link" onClick={() => setStep('name')}>
+              <PIcon name="edit" size={18} /> Rename merchant
+            </button>
+            {!left && !notYours && (
+              <button type="button" className="txd-link" onClick={() => setStep('category')}>
+                <PIcon name="list" size={18} />
+                {tx.category === 'Unsorted transfers' ? 'Tell Pearl where it went' : 'Change category'}
+              </button>
+            )}
             {!left && (
               <button type="button" className="txd-link" onClick={() => setStep('exclude')}>
                 <PIcon name="ban" size={18} /> Leave it out
@@ -349,10 +399,10 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                 Yes, that’s right
               </PButton>
             )}
-            {!left && !notYours && !match && (
-              <PButton variant="secondary" disabled={busy} onClick={() => setStep('category')}>
-                {tx.category === 'Unsorted transfers' ? 'Tell Pearl where it went'
-                  : 'Change category'}
+            {!match && (
+              <PButton variant={canConfirm || left || notYours ? 'secondary' : 'primary'}
+                       disabled={busy} onClick={() => setStep('what')}>
+                What was this?
               </PButton>
             )}
           </div>
@@ -460,6 +510,50 @@ function Party({ tx, busy, onBack, onSave }) {
       {et.named_by === 'you' && (
         <PButton variant="text" disabled={busy} onClick={() => onSave('')}>
           Use your bank’s name instead
+        </PButton>
+      )}
+    </Step>
+  );
+}
+
+/** Her tags on this row (2026-10-14): free words that group rows without
+ * moving them. */
+function Tags({ tx, busy, onBack, onSave }) {
+  const [tags, setTags] = useState(tx.tags || []);
+  const [known, setKnown] = useState([]);
+  useEffect(() => {
+    let live = true;
+    getTags().then((d) => { if (live) setKnown((d.tags ?? []).map((t) => t.tag)); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  return (
+    <Step title={tx.tags?.length ? 'Edit tags' : 'Add a tag'} onBack={onBack}>
+      <p className="pk-muted">A tag groups transactions without changing their category: a trip,
+        a renovation, a wedding. Filter the list by tag to see its total.</p>
+      <TagEditor tags={tags} known={known} onChange={setTags} />
+      <PButton disabled={busy} onClick={() => onSave(tags)}>Save</PButton>
+    </Step>
+  );
+}
+
+/** Her name for the merchant, applied to every row from it. */
+function MerchantName({ tx, busy, onBack, onSave }) {
+  const bank = tx.bank_merchant || tx.merchant;
+  const [name, setName] = useState(tx.merchant !== bank ? tx.merchant : '');
+  return (
+    <Step title="Rename merchant" onBack={onBack}>
+      <p className="pk-muted">Your bank calls it {bank}. Give it a name you’d use, and every
+        transaction from it shows that name.</p>
+      <Field label="Name">
+        {(id) => (
+          <input id={id} type="text" value={name} maxLength={60} autoComplete="off"
+                 placeholder={bank} onChange={(e) => setName(e.target.value)} />
+        )}
+      </Field>
+      <PButton disabled={busy || !name.trim()} onClick={() => onSave(name.trim())}>Save</PButton>
+      {tx.merchant !== bank && (
+        <PButton variant="text" disabled={busy} onClick={() => onSave('')}>
+          Use the bank’s name instead
         </PButton>
       )}
     </Step>

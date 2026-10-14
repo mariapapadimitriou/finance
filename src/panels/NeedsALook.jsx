@@ -8,9 +8,10 @@ import { ErrorNote } from '../components/ui.jsx';
 import { RepaymentMatch } from './Splits.jsx';
 import { DuplicateQuestion } from './Duplicates.jsx';
 import { depositChoices } from './joint.js';
+import WhatWasThis from './WhatWasThis.jsx';
 import {
-  INCOME_KINDS, answerDuplicate, confirmTx, dismissReview, getReview, linkPayback, money,
-  setCategory, setIncomeType, setJointFrom, skipReview, sortTransfers, undoChange,
+  INCOME_KINDS, answerDuplicate, confirmTx, dismissReview, getReview, getTxCases, linkPayback,
+  markTx, money, setCategory, setIncomeType, setJointFrom, skipReview, sortTransfers, undoChange,
 } from '../api.js';
 
 /**
@@ -306,26 +307,11 @@ function Question({ it, categories, busy, onSkip, act, sorted }) {
       return <WhereDidThisGo it={it} categories={categories} busy={busy} onSkip={onSkip}
                              act={act} sorted={sorted} />;
     case 'category':
-      return (
-        <>
-          <TxHead txn={it.txn} />
-          <h2 className="pk-h2">{it.guess === 'Other' ? 'What was this?' : `Is this ${it.guess}?`}</h2>
-          <CategoryPicker tx={{ id: it.txn.id, category: it.guess, merchant: it.txn.merchant,
-                                suggested: true }}
-                          categories={categories} busy={busy} confirmable saveLabel="Save and next"
-                          onSave={(cat, always) => act(
-                            () => (cat === it.guess && !always ? confirmTx(it.txn.id)
-                              : setCategory(it.txn.id, cat, always)),
-                            cat === it.guess && !always ? undefined
-                              : sorted(`Moved to ${categoryLabel(cat)}.`),
-                          )} />
-          <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>
-            Skip for now
-          </PButton>
-        </>
-      );
+      return <CategoryQuestion it={it} categories={categories} busy={busy} onSkip={onSkip}
+                               act={act} sorted={sorted} />;
     case 'money_in':
-      return <MoneyIn it={it} busy={busy} onSkip={onSkip} act={act} sorted={sorted} />;
+      return <MoneyIn it={it} categories={categories} busy={busy} onSkip={onSkip} act={act}
+                      sorted={sorted} />;
     case 'duplicate':
       // D-02 → D-03: the toast says what it did to her numbers, with Undo.
       return (
@@ -354,6 +340,50 @@ function Question({ it, categories, busy, onSkip, act, sorted }) {
 }
 
 /**
+ * Is this Groceries? (R-02) — or, when it wasn't a purchase at all, the one
+ * "What was this?" sheet (2026-10-14), with every case.
+ */
+function CategoryQuestion({ it, categories, busy, onSkip, act, sorted }) {
+  const [sheet, setSheet] = useState(false);
+  if (sheet) {
+    return (
+      <>
+        <TxHead txn={it.txn} />
+        <h2 className="pk-h2">What was this?</h2>
+        <WhatWasThis tx={{ id: it.txn.id, merchant: it.txn.merchant, amount: Math.abs(it.txn.amount),
+                           inflow: it.txn.amount < 0, logo: it.txn.logo }}
+                     categories={categories} busy={busy} saveLabel="Save and next"
+                     onDone={(res) => act(() => Promise.resolve(res), sorted(res.title))} />
+        <PButton variant="text" className="nl-skip" disabled={busy} onClick={() => setSheet(false)}>
+          Back to the category
+        </PButton>
+      </>
+    );
+  }
+  return (
+    <>
+      <TxHead txn={it.txn} />
+      <h2 className="pk-h2">{it.guess === 'Other' ? 'What was this?' : `Is this ${it.guess}?`}</h2>
+      <CategoryPicker tx={{ id: it.txn.id, category: it.guess, merchant: it.txn.merchant,
+                            suggested: true }}
+                      categories={categories} busy={busy} confirmable saveLabel="Save and next"
+                      onSave={(cat, always) => act(
+                        () => (cat === it.guess && !always ? confirmTx(it.txn.id)
+                          : setCategory(it.txn.id, cat, always)),
+                        cat === it.guess && !always ? undefined
+                          : sorted(`Moved to ${categoryLabel(cat)}.`),
+                      )} />
+      <button type="button" className="txd-link nl-other" onClick={() => setSheet(true)}>
+        It wasn’t a purchase…
+      </button>
+      <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>
+        Skip for now
+      </PButton>
+    </>
+  );
+}
+
+/**
  * Where did this go? (R-01, THL-163): Saved, Spent (and on what), or moved
  * between her own accounts, and "Remember where these go" — a rule for that
  * destination, on by default when Pearl can recognise it next time.
@@ -361,17 +391,36 @@ function Question({ it, categories, busy, onSkip, act, sorted }) {
 function WhereDidThisGo({ it, categories, busy, onSkip, act, sorted }) {
   const [where, setWhere] = useState('');
   const [cat, setCat] = useState('');
+  const [account, setAccount] = useState('');
+  const [accounts, setAccounts] = useState(null);
   const [remember, setRemember] = useState(it.learnable);
   const spending = useMemo(() => groupCategories(categories, {
     only: (c) => ['essentials', 'lifestyle'].includes(c.group),
   }), [categories]);
+  // Saved: which savings or investment account it went to (2026-10-14),
+  // from the same list the What was this? sheet offers.
+  useEffect(() => {
+    if (where !== 'saved' || accounts !== null) return undefined;
+    let live = true;
+    getTxCases(it.txn.id).then((d) => { if (live) setAccounts(d.accounts ?? []); })
+      .catch(() => { if (live) setAccounts([]); });
+    return () => { live = false; };
+  }, [where, accounts, it.txn.id]);
   const kind = /e-?\s?t(ransfe)?r|interac/i.test(`${it.txn.description} ${it.txn.merchant}`)
     ? 'e-Transfers' : 'transfers';
   const category = where === 'saved' ? 'Saved' : where === 'moved' ? 'Transfers' : cat;
-  const title = where === 'saved' ? 'Sorted as savings.'
+  const label = (accounts ?? []).find((a) => a.id === account)?.label;
+  const title = where === 'saved' ? (label ? `Put away to ${label}.` : 'Sorted as savings.')
     : where === 'moved' ? 'Sorted as moved between your accounts.'
       : `Sorted as ${category}.`;
   const name = `where-${it.txn.id}`;
+  const save = () => {
+    const keep = it.learnable && remember;
+    if (where === 'saved') {
+      return act(() => markTx(it.txn.id, { case: 'saved', account, remember: keep }), sorted(title));
+    }
+    return act(() => sortTransfers([it.txn.id], category, keep), sorted(title));
+  };
   return (
     <>
       <TxHead txn={it.txn} name={it.to} />
@@ -386,6 +435,19 @@ function WhereDidThisGo({ it, categories, busy, onSkip, act, sorted }) {
                 label="Moved between my own accounts"
                 description="It won’t count as spending or saving." />
       </div>
+      {where === 'saved' && accounts?.length > 0 && (
+        <div className="nl-spent">
+          <p className="pk-label">Which account did it go to?</p>
+          <div className="pk-choices" role="radiogroup" aria-label="Which account?">
+            <Choice name={`${name}-acct`} checked={!account} onChange={() => setAccount('')}
+                    label="Not sure" />
+            {accounts.map((a) => (
+              <Choice key={a.id} name={`${name}-acct`} checked={account === a.id}
+                      onChange={() => setAccount(a.id)} label={a.label} />
+            ))}
+          </div>
+        </div>
+      )}
       {where === 'spent' && (
         <div className="nl-spent">
           <p className="pk-label">What was it for?</p>
@@ -397,9 +459,7 @@ function WhereDidThisGo({ it, categories, busy, onSkip, act, sorted }) {
                 label={`Remember where ${kind} to ${it.to} go`}
                 description="We’ll sort the next ones the same way." />
       )}
-      <Actions busy={busy} ready={!!category} onSkip={onSkip}
-               onSave={() => act(() => sortTransfers([it.txn.id], category, it.learnable && remember),
-                                 sorted(title))} />
+      <Actions busy={busy} ready={!!category} onSkip={onSkip} onSave={save} />
     </>
   );
 }
@@ -408,7 +468,7 @@ function WhereDidThisGo({ it, categories, busy, onSkip, act, sorted }) {
  * Money that came in from somewhere Pearl can't see. When it matches a
  * split someone still owes on, the question is that one (S-02).
  */
-function MoneyIn({ it, busy, onSkip, act, sorted }) {
+function MoneyIn({ it, categories = [], busy, onSkip, act, sorted }) {
   const [other, setOther] = useState(false);
   const match = it.guess?.action === 'split' ? it.guess.split : null;
   if (match && !other) {
@@ -434,48 +494,17 @@ function MoneyIn({ it, busy, onSkip, act, sorted }) {
       </>
     );
   }
-  return <MoneyInChoices it={it} busy={busy} onSkip={onSkip} act={act} sorted={sorted} />;
-}
-
-function MoneyInChoices({ it, busy, onSkip, act, sorted }) {
-  const likely = it.guess?.action === 'payback' && it.candidates?.[0]?.likely
-    ? `pb:${it.guess.charge.id}` : '';
-  const [pick, setPick] = useState(likely);
-  const name = `in-${it.txn.id}`;
-  const run = () => {
-    if (pick.startsWith('pb:')) {
-      const charge = it.candidates.find((c) => `pb:${c.id}` === pick);
-      return act(() => linkPayback(charge.id, it.txn.id));
-    }
-    if (pick === 'own') return act(() => dismissReview(it.key));
-    if (pick === 'gift') return act(() => setIncomeType(it.txn.id, 'gifts'));
-    if (pick === 'savings') {
-      return act(() => setCategory(it.txn.id, 'Saved'), sorted('Sorted as taken out of savings.'));
-    }
-    return act(() => setCategory(it.txn.id, 'Lent'), sorted('Sorted as money you lent.'));
-  };
   return (
     <>
       <TxHead txn={it.txn} />
       <h2 className="pk-h2">What was this money?</h2>
-      <div className="pk-choices" role="radiogroup" aria-label="What was this money?">
-        {(it.candidates ?? []).slice(0, 3).map((c) => (
-          <Choice key={c.id} name={name} checked={pick === `pb:${c.id}`}
-                  onChange={() => setPick(`pb:${c.id}`)}
-                  label={`Paying me back for ${c.merchant}`}
-                  description={`${longDate(c.date)} · ${money(c.amount, { cents: true })}, about a 1/${c.split} share. Not income.`} />
-        ))}
-        <Choice name={name} checked={pick === 'own'} onChange={() => setPick('own')}
-                label="My own money" description="From an account Pearl can’t see. It won’t count as income." />
-        <Choice name={name} checked={pick === 'gift'} onChange={() => setPick('gift')}
-                label="A gift" description="It counts as income." />
-        <Choice name={name} checked={pick === 'savings'} onChange={() => setPick('savings')}
-                label="Taken out of my savings"
-                description="Money I’d put away, coming back. It comes off what you’ve saved; not income." />
-        <Choice name={name} checked={pick === 'lent'} onChange={() => setPick('lent')}
-                label="Paying back money I lent" description="Not income: it was yours before." />
-      </div>
-      <Actions busy={busy} ready={!!pick} onSkip={onSkip} onSave={run} />
+      <WhatWasThis tx={{ id: it.txn.id, merchant: it.txn.merchant, amount: Math.abs(it.txn.amount),
+                         inflow: true, logo: it.txn.logo }}
+                   categories={categories} busy={busy} saveLabel="Save and next"
+                   onDone={(res) => act(() => Promise.resolve(res), sorted(res.title))} />
+      <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>
+        Skip for now
+      </PButton>
     </>
   );
 }

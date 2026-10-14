@@ -26,7 +26,7 @@ from datetime import date
 from flask import jsonify, request
 
 from .api import (_account_rows, _anchor_accounts, _home_sts, _json_setting,
-                  _reclassify, _today_iso, bp, store)
+                  _reclassify, _today_iso, _txlist_rows, bp, store)
 
 _MASK = re.compile(r"\s*(?:••|\*{2,}|x{2,})\s*\d{2,4}\s*$", re.I)
 _SAVINGS = {"savings", "money market", "hsa", "cash management", "hisa", "tfsa savings"}
@@ -153,7 +153,9 @@ def _hand_rows(st) -> list[dict]:
     anchor = _anchor_ids(st)
     return [{
         "id": m["account_id"], "name": m["name"], "bank_name": m["name"], "nickname": "",
-        "mask": "", "institution": "", "logo": "",
+        # The last four digits she gave it (2026-10-14): a transfer naming
+        # them is Saved, like one to an investment account Plaid pulled in.
+        "mask": m.get("last4") or "", "institution": "", "logo": "",
         "kind": "card" if m["kind"] == "credit" else m["kind"],
         "source": "hand", "status": "manual", "counted": m["counted"], "syncs": None,
         "joint": False, "joint_share": None, "joint_people": [],
@@ -162,6 +164,14 @@ def _hand_rows(st) -> list[dict]:
         "owing": m["kind"] == "credit", "updated_at": m["updated_on"],
         "disconnected_on": None, "history_from": None, "transactions": 0, "item_id": "",
     } for m in st.manual_accounts()]
+
+
+def _last4(value) -> str | None:
+    """Four digits, or "" for none; None when it isn't four digits."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    if not digits:
+        return ""
+    return digits[-4:] if len(digits) >= 4 else None
 
 
 def _all_rows(st) -> list[dict]:
@@ -218,6 +228,16 @@ def account_settings(account_id: str):
         else:
             nickname = " ".join(str(body.get("nickname") or "").split())[:40]
             st.set_account_setting(account_id, nickname=nickname)
+
+    if "last4" in body:
+        if not hand or account["kind"] not in ("savings", "investment"):
+            return jsonify({"error": "Digits go on a savings or investment account you "
+                                     "added by hand."}), 400
+        last4 = _last4(body.get("last4"))
+        if last4 is None:
+            return jsonify({"error": "The last four digits, like 3333."}), 400
+        st.update_manual_account(account_id, last4=last4 or None)
+        reclassify = True
 
     if "joint_share" in body:
         if hand:
@@ -307,7 +327,13 @@ def add_manual_account():
     if balance is None:
         return jsonify({"error": "Enter the balance today, like 3,000.",
                         "field": "balance"}), 400
-    account_id = st.add_manual_account(name, kind, balance, _today_iso())
+    last4 = _last4(body.get("last4"))
+    if last4 is None:
+        return jsonify({"error": "The last four digits, like 3333.", "field": "last4"}), 400
+    account_id = st.add_manual_account(name, kind, balance, _today_iso(),
+                                       last4 if kind in ("savings", "investment") else "")
+    if last4:
+        _reclassify(st)
     return jsonify({"ok": True, "account": _find(st, account_id)}), 201
 
 
@@ -493,10 +519,17 @@ def _rules(st) -> list[dict]:
 
 @bp.get("/rules")
 def list_rules():
-    from . import kinds
+    from . import kinds, marks, txlist
     st = store()
     rules = _rules(st)
-    return jsonify({"rules": rules, "count": len(rules), "kinds": kinds.category_kinds(st)})
+    bank_names = _merchant_names(st)
+    return jsonify({"rules": rules, "count": len(rules), "kinds": kinds.category_kinds(st),
+                    # Her names for merchants, and her tags (2026-10-14).
+                    "names": [{"merchant": bank_names.get(key) or key.title(), "key": key,
+                               "name": name}
+                              for key, name in sorted(st.merchant_names().items())],
+                    "tags": txlist.tag_totals(_txlist_rows(st, everything=True)),
+                    "hidden": sorted(marks.hidden_categories(st))})
 
 
 @bp.put("/rules/kinds")
@@ -567,6 +600,10 @@ def delete_rule(rule_id: str):
         if not st.delete_exclusion_rule(rid):
             return jsonify({"error": "No such rule."}), 404
         _reclassify(st)
+    elif kind == "name":
+        if key not in st.merchant_names():
+            return jsonify({"error": "No such rule."}), 404
+        st.set_merchant_name(key, None)
     else:
         return jsonify({"error": "No such rule."}), 404
     return jsonify({"ok": True, "count": len(_rules(st))})

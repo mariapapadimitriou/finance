@@ -33,6 +33,7 @@ from .categorize import CATEGORY_GROUPS, group_of
 from .etransfers import party
 from .income import is_income
 from .models import Transaction
+from .transfers import RULED
 
 PAGE = 25
 NOTE_MAX = 140
@@ -66,19 +67,49 @@ def _who(t: Transaction) -> str:
     return str((t.raw or {}).get("counterparty") or t.merchant or "").strip()
 
 
+def _key(merchant: str) -> str:
+    return " ".join((merchant or "").lower().split())
+
+
+def _name(t: Transaction | None, ctx: "Context") -> str:
+    """What to call a row's merchant: her name for it, else the bank's."""
+    if t is None:
+        return ""
+    return ctx.names.get(_key(t.merchant)) or t.merchant or t.description
+
+
 class Context:
     """What a row needs to know about the others: the charge a repayment paid
     for, who paid back a split, and what the piggy banks are called."""
 
     def __init__(self, transactions: list[Transaction], confirmed: dict[str, str],
                  notes: dict[str, str], banks: dict[int, str],
-                 splits: dict[str, dict] | None = None, kinds: dict[str, str] | None = None):
+                 splits: dict[str, dict] | None = None, kinds: dict[str, str] | None = None,
+                 tags: dict[str, list[str]] | None = None,
+                 saved_to: dict[str, str] | None = None,
+                 refunds: dict[str, str] | None = None,
+                 payback_kinds: dict[str, str] | None = None,
+                 names: dict[str, str] | None = None,
+                 accounts: dict[str, str] | None = None):
         self.by_id = {t.fingerprint: t for t in transactions}
         # Fixed or Variable, per spending row (finance/kinds.py).
         self.kinds = kinds or {}
         self.confirmed = confirmed
         self.notes = notes
         self.banks = banks
+        # What was this? (2026-10-14, finance/marks.py): her tags, which
+        # account a Saved row went to, the purchase a refund is of, which
+        # repayments were reimbursements, her names for merchants, and what
+        # each account is called (for "Put away to TD TFSA").
+        self.tags = tags or {}
+        self.saved_to = saved_to or {}
+        self.refunds = refunds or {}
+        self.payback_kinds = payback_kinds or {}
+        self.names = names or {}
+        self.accounts = accounts or {}
+        self.reimbursed = {t.repays for t in transactions
+                           if t.repays and self.payback_kinds.get(t.fingerprint) == "reimbursement"}
+        self.names_for = {t.fingerprint for t in transactions if _key(t.merchant) in self.names}
         # Who a split charge was split with, as you named them (THL-124).
         self.split_with = {cid: [p["name"] for p in sp["people"]]
                            for cid, sp in (splits or {}).items()}
@@ -133,10 +164,15 @@ def describe(t: Transaction, ctx: Context) -> dict:
         chip, structural = "Not yours", True
         note = (f"{t.joint}’s · you said this one was theirs" if t.joint
                 else "Not yours")
+    elif t.repays and ctx.payback_kinds.get(t.fingerprint) == "reimbursement":
+        charge = ctx.by_id.get(t.repays)
+        chip, structural, group = "Reimbursement", True, "transfer"
+        note = (f"Reimbursed you for {_name(charge, ctx)} · not income" if charge
+                else "Reimbursement · not income")
     elif t.repays:
         charge = ctx.by_id.get(t.repays)
         chip, structural, group = "Repayment", True, "transfer"
-        note = (f"Paid you back for {charge.merchant} · not income" if charge
+        note = (f"Paid you back for {_name(charge, ctx)} · not income" if charge
                 else "Paid you back · not income")
     elif cat == "Unsorted transfers":
         chip, counts = "Not sorted yet", "spending"
@@ -146,24 +182,34 @@ def describe(t: Transaction, ctx: Context) -> dict:
         note = ("Card payment · not counted as spending" if _is_card_payment(t)
                 else "Transfer · not counted")
     elif cat == "Saved":
-        note = ("Taken out of savings · not income" if inflow
-                else "Put away · not counted as spending")
+        where = ctx.accounts.get(ctx.saved_to.get(t.fingerprint, ""), "")
+        note = ((f"Taken out of {where} · not income" if where
+                 else "Taken out of savings · not income") if inflow
+                else (f"Put away to {where} · not counted as spending" if where
+                      else "Put away · not counted as spending"))
     elif cat == "Lent":
         note = ("Paid back a loan · not income" if inflow
                 else "Lent · not counted as spending")
+    elif cat == "Borrowed":
+        note = ("Borrowed · not income" if inflow
+                else "Paid back what you borrowed · not counted as spending")
     elif cat == "Income":
         counts = "income" if is_income(t) else "none"
     elif counts_as_spending(t):
         counts = "spending"
         amount = abs(share_amount(t))
         if inflow:
-            note = "Refund"
+            charge = ctx.by_id.get(ctx.refunds.get(t.fingerprint, ""))
+            note = (f"Refund of {_name(charge, ctx)} · comes off {cat}" if charge
+                    else f"Refund · comes off {cat}")
     else:
         # A charge something else paid for: a piggy bank, or friends in full.
         amount = abs(share_amount(t))
         if t.bank_id is not None:
             bank = ctx.banks.get(t.bank_id, "piggy bank")
             note = f"Paid from {bank} · not this month’s spending"
+        elif t.paid_back and t.fingerprint in ctx.reimbursed:
+            note = "Reimbursed · not your spending"
         elif t.paid_back:
             note = "Paid back in full · not your spending"
 
@@ -199,10 +245,16 @@ def describe(t: Transaction, ctx: Context) -> dict:
     raw = t.raw or {}
     # An e-Transfer reads as the person it was from or to (finance/etransfers.py).
     who = party(t)
+    # Decided by a rule of hers: "Apply to all from…" or "Remember where
+    # these go". The chip says so, so it's clear why it won't change.
+    ruled = t.category_source in ("merchant_override", RULED)
+    refund_of = ctx.by_id.get(ctx.refunds.get(t.fingerprint, ""))
     return {
         "id": t.fingerprint,
         "date": t.date[:10],
-        "merchant": (who or {}).get("name") or t.merchant or t.description,
+        "merchant": _name(t, ctx) if t.fingerprint in ctx.names_for
+        else ((who or {}).get("name") or t.merchant or t.description),
+        "bank_merchant": t.merchant,
         "etransfer": who,
         "description": t.description,
         "logo": raw.get("logo_url") or "",
@@ -211,8 +263,16 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "pending": bool(raw.get("pending")),
         "category": cat,
         "category_source": t.category_source,
+        "ruled": ruled,
         "group": group,
         "kind": ctx.kinds.get(t.fingerprint),
+        "tags": list(ctx.tags.get(t.fingerprint, [])),
+        "saved_to": ctx.saved_to.get(t.fingerprint),
+        "saved_to_label": ctx.accounts.get(ctx.saved_to.get(t.fingerprint, ""), ""),
+        "refund_of": ({"id": refund_of.fingerprint, "merchant": _name(refund_of, ctx),
+                       "date": refund_of.date[:10], "amount": abs(refund_of.amount)}
+                      if refund_of else None),
+        "reimbursement": ctx.payback_kinds.get(t.fingerprint) == "reimbursement",
         "chip": {"label": chip, "suggested": suggested},
         "suggested": suggested,
         "amount": round(amount, 2),
@@ -296,10 +356,14 @@ def theirs(transactions: list[Transaction]) -> list[Transaction]:
 def select(rows: list[tuple[Transaction, dict]], *, month: str | None = None,
            account: str | None = None, group: str | None = None,
            category: str | None = None, counts: str | None = None,
-           q: str | None = None) -> list[tuple[Transaction, dict]]:
+           q: str | None = None, tag: str | None = None,
+           merchant: str | None = None, amount_min: float | None = None,
+           amount_max: float | None = None, pending: bool = False,
+           look: bool = False) -> list[tuple[Transaction, dict]]:
+    """The rows the filters keep. `month` of "all" keeps every month."""
     out = []
     for t, r in rows:
-        if month and r["date"][:7] != month:
+        if month and month != "all" and r["date"][:7] != month:
             continue
         if account and r["account_id"] != account:
             continue
@@ -312,11 +376,90 @@ def select(rows: list[tuple[Transaction, dict]], *, month: str | None = None,
             continue
         if counts and r["counts"] != counts:
             continue
+        if tag and tag not in r.get("tags", []):
+            continue
+        if merchant and r["merchant"].strip().lower() != merchant.strip().lower():
+            continue
+        if amount_min is not None and r["amount"] < amount_min - 0.005:
+            continue
+        if amount_max is not None and r["amount"] > amount_max + 0.005:
+            continue
+        if pending and not r["pending"]:
+            continue
+        if look and not r["suggested"]:
+            continue
         if q and not matches(r, q):
             continue
         out.append((t, r))
     out.sort(key=lambda p: (p[1]["date"], p[1]["id"]), reverse=True)
     return out
+
+
+def by_merchant(rows: list[tuple[Transaction, dict]]) -> list[dict]:
+    """The rows folded by merchant, biggest spending first: where "I didn't
+    know I spent that much at X" shows up."""
+    out: dict[str, dict] = {}
+    for t, r in rows:
+        key = r["merchant"].strip().lower()
+        g = out.setdefault(key, {"merchant": r["merchant"], "logo": r["logo"], "count": 0,
+                                 "spent": 0.0, "income": 0.0, "not_counted": 0.0,
+                                 "last": r["date"]})
+        g["count"] += 1
+        g["last"] = max(g["last"], r["date"])
+        if not g["logo"]:
+            g["logo"] = r["logo"]
+        if r["counts"] == "spending":
+            g["spent"] += spend_amount(t)
+        elif r["counts"] == "income":
+            g["income"] += -t.amount
+        else:
+            g["not_counted"] += r["amount"]
+    groups = list(out.values())
+    for g in groups:
+        for k in ("spent", "income", "not_counted"):
+            g[k] = round(g[k], 2)
+    groups.sort(key=lambda g: (-g["spent"], -g["income"], -g["not_counted"], g["merchant"].lower()))
+    return groups
+
+
+def by_category(rows: list[tuple[Transaction, dict]]) -> list[dict]:
+    """The rows folded by category, biggest first, each with its group."""
+    out: dict[str, dict] = {}
+    for t, r in rows:
+        cat = r["category"]
+        g = out.setdefault(cat, {"category": cat, "group": r["group"], "count": 0,
+                                 "spent": 0.0, "income": 0.0, "not_counted": 0.0})
+        g["count"] += 1
+        if r["counts"] == "spending":
+            g["spent"] += spend_amount(t)
+        elif r["counts"] == "income":
+            g["income"] += -t.amount
+        else:
+            g["not_counted"] += r["amount"]
+    groups = list(out.values())
+    for g in groups:
+        for k in ("spent", "income", "not_counted"):
+            g[k] = round(g[k], 2)
+    groups.sort(key=lambda g: (-g["spent"], -g["income"], -g["not_counted"], g["category"]))
+    return groups
+
+
+def tag_totals(rows: list[tuple[Transaction, dict]]) -> list[dict]:
+    """Every tag, how many rows wear it and what they came to."""
+    out: dict[str, dict] = {}
+    for t, r in rows:
+        for tag in r.get("tags", []):
+            g = out.setdefault(tag, {"tag": tag, "count": 0, "spent": 0.0, "first": r["date"],
+                                     "last": r["date"]})
+            g["count"] += 1
+            g["first"], g["last"] = min(g["first"], r["date"]), max(g["last"], r["date"])
+            if r["counts"] == "spending":
+                g["spent"] += spend_amount(t)
+    groups = list(out.values())
+    for g in groups:
+        g["spent"] = round(g["spent"], 2)
+    groups.sort(key=lambda g: g["tag"].lower())
+    return groups
 
 
 # ── Totals ───────────────────────────────────────────────────────────────
@@ -355,24 +498,30 @@ def _months_before(month: str, n: int) -> list[str]:
 
 
 def focus(all_rows: list[tuple[Transaction, dict]], *, month: str, account: str | None,
-          group: str | None, category: str | None) -> dict | None:
-    """With a group or category chosen: its total this month against a usual
-    month — the average of the three full months before, counting only months
-    the ledger covers."""
-    if not month or not (group or category):
+          group: str | None, category: str | None, tag: str | None = None,
+          merchant: str | None = None) -> dict | None:
+    """With a group, category, tag or merchant chosen: its total this month
+    against a usual month — the average of the three full months before,
+    counting only months the ledger covers. With every month shown, the
+    total is across all of them and there is no usual month."""
+    if not month or not (group or category or tag or merchant):
         return None
-    key = group or group_of(category)
+    key = group or (group_of(category) if category else "spending")
     kind = {"income": "income", "savings": "none", "transfer": "none"}.get(key, "spending")
     from .kinds import KIND_LABELS
-    label = category or CATEGORY_GROUPS.get(group) or KIND_LABELS.get(group) or group
+    label = (tag or merchant or category or CATEGORY_GROUPS.get(group)
+             or KIND_LABELS.get(group) or group)
 
     def total(m: str, usual: bool = False) -> float:
-        rows = select(all_rows, month=m, account=account, group=group, category=category)
+        rows = select(all_rows, month=m, account=account, group=group, category=category,
+                      tag=tag, merchant=merchant)
         if usual:
             # A one-off (THL-71) isn't part of a usual month.
             rows = [(t, r) for t, r in rows if not t.one_off]
         return _focus_value(totals(rows), kind)
 
+    if month == "all":
+        return {"label": label, "kind": kind, "total": round(total("all"), 2), "usual": None}
     first = min((r["date"][:7] for _, r in all_rows), default=month)
     prior = [m for m in _months_before(month, 3) if m >= first]
     usual = round(sum(total(m, True) for m in prior) / len(prior), 2) if prior else None

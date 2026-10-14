@@ -200,7 +200,7 @@ def test_amounts_are_never_negative_and_excluded_rows_hidden(client):
     data = listing(client)
     assert [r["description"] for r in data["transactions"]] == ["REFUND SHOP"]
     r = data["transactions"][0]
-    assert r["amount"] == 30 and r["inflow"] and r["note"] == "Refund"
+    assert r["amount"] == 30 and r["inflow"] and r["note"] == "Refund · comes off Shopping"
     assert data["totals"]["spent"] == -30
 
 

@@ -55,14 +55,19 @@ def health():
 
 @bp.get("/categories")
 def categories():
+    from .marks import hidden_categories
+    hidden = hidden_categories(store())
     return jsonify({
         "categories": [
             # The group (Essentials, Lifestyle…) is what Change category
-            # (R-02) lays its chips out by.
-            {"name": name, "group": group_of(name), **meta}
+            # (R-02) lays its chips out by. `hidden` is a category she never
+            # uses (Profile › Categories and rules): out of the pickers, but
+            # still a category wherever it already is.
+            {"name": name, "group": group_of(name), "hidden": name in hidden, **meta}
             for name, meta in CATEGORIES.items()
         ],
         "overrides": store().overrides(),
+        "hidden": sorted(hidden),
     })
 
 
@@ -125,11 +130,14 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
     `excluded`, only the rows you left out; with `joint`, only the rows on a
     joint account that are someone else's."""
     from datetime import date as _date
-    from . import kinds, txlist
+    from . import kinds, marks, txlist
     txns = st.all_transactions()
     ctx = txlist.Context(txns, st.confirmed_categories(), st.notes(),
                          {b.id: b.name for b in st.piggy_banks()}, splits=st.splits(),
-                         kinds=kinds.kind_map(st, txns, _date.fromisoformat(_today_iso())))
+                         kinds=kinds.kind_map(st, txns, _date.fromisoformat(_today_iso())),
+                         tags=st.tags(), saved_to=st.saved_to(), refunds=st.refunds(),
+                         payback_kinds=st.payback_kinds(), names=st.merchant_names(),
+                         accounts=marks.account_labels(st))
     if everything:
         rows = txlist.visible(txns) + txlist.left_out(txns) + txlist.theirs(txns)
     elif excluded:
@@ -165,9 +173,26 @@ def transactions_list():
     except ValueError:
         return jsonify({"error": "limit and offset are numbers."}), 400
     month = a.get("month") or None
+    counts = a.get("counts") or None
+    if counts not in (None, "spending", "income", "none"):
+        return jsonify({"error": "counts is spending, income or none."}), 400
+
+    def _amount(key):
+        raw = a.get(key)
+        if raw in (None, ""):
+            return None
+        try:
+            return round(abs(float(raw)), 2)
+        except ValueError:
+            return None
+
     filters = {"month": month, "account": a.get("account") or None, "group": group,
-               "category": a.get("category") or None, "counts": a.get("counts") or None,
-               "q": a.get("q") or None}
+               "category": a.get("category") or None, "counts": counts,
+               "q": a.get("q") or None, "tag": a.get("tag") or None,
+               "merchant": a.get("merchant") or None,
+               "amount_min": _amount("amount_min"), "amount_max": _amount("amount_max"),
+               "pending": a.get("pending") in ("1", "true"),
+               "look": a.get("look") in ("1", "true")}
     rows = _txlist_rows(store(), excluded=a.get("excluded") in ("1", "true"),
                         joint=a.get("joint") in ("1", "true"))
     if a.get("recurring") in ("1", "true"):
@@ -180,18 +205,32 @@ def transactions_list():
                    for d in r["dates"]}
         rows = [(t, r) for t, r in rows if (t.merchant, t.date[:10]) in charges]
     chosen = txlist.select(rows, **filters)
-    return jsonify({
-        "transactions": [r for _, r in chosen[offset:offset + limit]],
+    by = a.get("by") or "day"
+    if by not in ("day", "merchant", "category"):
+        return jsonify({"error": "by is day, merchant or category."}), 400
+    out = {
+        "transactions": [r for _, r in chosen[offset:offset + limit]] if by == "day" else [],
         "total": len(chosen),
         "totals": txlist.totals(chosen),
         "focus": txlist.focus(rows, month=month, account=filters["account"],
-                              group=group, category=filters["category"]),
+                              group=group, category=filters["category"],
+                              tag=filters["tag"], merchant=filters["merchant"]),
         # Copies waiting for "Is this the same purchase?" (THL-165 D-01).
         "duplicates": sum(1 for _, r in rows
                           if (r.get("duplicate") or {}).get("state") == "pending"),
         "groups": CATEGORY_GROUPS,
         "kinds": {"fixed": "Fixed", "variable": "Variable"},
-    })
+        # Her tags, for the filter (every row, not just the month's).
+        "tags": [g["tag"] for g in txlist.tag_totals(rows)],
+        "by": by,
+    }
+    # Folded by merchant or category (2026-10-14): one line each, the whole
+    # selection, so "I didn't know I spent that much at X" shows up.
+    if by == "merchant":
+        out["merchants"] = txlist.by_merchant(chosen)
+    elif by == "category":
+        out["categories"] = txlist.by_category(chosen)
+    return jsonify(out)
 
 
 @bp.get("/transactions/<txn_id>")
@@ -2565,4 +2604,4 @@ def skip_review():
 # The Profile pages, Growth › Insights and Growth › Projections register on this
 # blueprint too; imported last so they can use the helpers above.
 from . import income_bills_api, insights_api, privacy_api, profile_api, projections_api  # noqa: E402,F401,I001
-from . import growth_api, transactions_extras_api  # noqa: E402,F401
+from . import growth_api, marks_api, transactions_extras_api  # noqa: E402,F401

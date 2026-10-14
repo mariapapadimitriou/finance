@@ -340,4 +340,12 @@ def undo_extras(st, body: dict) -> tuple[int, str | None]:
     for i in unconfirm:
         st.unconfirm_category(i)
         st.undismiss_review("cat:" + i)
-    return len(one_off) + len(dupes) + len(unconfirm), None
+    # What was this? (2026-10-14): the parts a category doesn't cover.
+    extra = 0
+    if body.get("marks"):
+        from . import marks
+        try:
+            extra = marks.undo_marks(st, body["marks"])
+        except marks.Problem as exc:
+            return 0, str(exc)
+    return len(one_off) + len(dupes) + len(unconfirm) + extra, None
