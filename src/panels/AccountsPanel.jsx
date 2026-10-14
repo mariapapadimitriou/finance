@@ -632,7 +632,7 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
         onSuccess: async (publicToken, metadata) => {
           try {
             const r = await exchangePublicToken(publicToken, metadata?.institution?.name || '');
-            if (!r.sync) await syncPlaid();
+            if (!r.sync) await syncPlaid(true);
             setNote(`${metadata?.institution?.name || 'Your bank'} is linked.`);
             await refresh();
           } catch (e) {
@@ -664,7 +664,7 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
     setError(null);
     try {
       const r = await saveAccountSettings(a.id, fields);
-      if (r.resync) { try { await syncPlaid(); } catch { /* the next sync catches up */ } }
+      if (r.resync) { try { await syncPlaid(true); } catch { /* the next sync catches up */ } }
       if ('counted' in fields && a.source !== 'hand') {
         setToast({ text: countedToast(r.account ?? a, fields.counted, r.safe_to_spend),
                    undo: () => save(a, { counted: !fields.counted }) });

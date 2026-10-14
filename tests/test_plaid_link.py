@@ -780,3 +780,68 @@ class TestQuietTwinsAndInvestments:
         assert store.plaid_items()[0]["logo"] == "data:image/png;base64,QUJD"
         plaid_link.sync_all(store)
         assert calls == ["item", "inst"]
+
+
+class TestReadingLessOfTheLedger:
+    """Every ledger load reads every row from the database, which on a hosted
+    one is metered (Neon's network transfer ran out, 2026-10-14)."""
+
+    def test_a_sync_loads_the_ledger_once_and_settles_once_for_all_accounts(
+            self, store, fake, monkeypatch):
+        from finance.store import Store
+        fake([{"accounts": MIXED_ACCOUNTS,
+               "added": [txn("t1", "2026-01-05", "COFFEE", 6.40, account="acc1"),
+                         txn("t2", "2026-01-06", "GROCER", 50.00, account="chq"),
+                         txn("t3", "2026-01-07", "BAKERY", 8.00, account="sav")],
+               "next_cursor": "c1"}])
+        store.add_plaid_item("item-1", "tok", "TD")
+        from finance.categorize import RULES_VERSION
+        store.set_setting("categories_version", RULES_VERSION)   # no one-time re-sort
+        store.set_setting("destinations_migrated", "1")          # nor migration
+        loads = []
+        orig = Store.all_transactions
+        monkeypatch.setattr(Store, "all_transactions",
+                            lambda self: (loads.append(1), orig(self))[1])
+        out = plaid_link.sync_all(store)
+        assert out["imported"] == 3
+        # One load to check for repeats, then transfers, income types and
+        # duplicates once — not all of it once per account.
+        assert len(loads) == 4
+
+    def test_opening_the_app_syncs_at_most_hourly(self, tmp_path, monkeypatch):
+        app = create_app(str(tmp_path / "s.db"))
+        app.config.update(TESTING=True)
+        st = app.config["STORE"]
+        client = FakePlaid([{"next_cursor": "c1"}, {"next_cursor": "c2"}])
+        monkeypatch.setattr(plaid_link, "_client", lambda: client)
+        monkeypatch.setattr(plaid_link, "configured", lambda: True)
+        st.add_plaid_item("item-1", "tok", "TD")
+        with app.test_client() as c:
+            assert "recent" not in c.post("/api/plaid/sync", json={}).get_json()
+            assert c.post("/api/plaid/sync", json={}).get_json()["recent"] is True
+            assert len(client.calls) == 1
+            assert "recent" not in c.post("/api/plaid/sync", json={"force": True}).get_json()
+            assert len(client.calls) == 2
+
+    def test_an_old_or_failed_sync_is_not_recent(self, store):
+        from datetime import datetime, timedelta, timezone
+        store.add_plaid_item("item-1", "tok", "TD")
+        assert not plaid_link.synced_recently(store)              # never synced
+        store.set_plaid_cursor("item-1", "c1")
+        assert plaid_link.synced_recently(store)
+        later = datetime.now(timezone.utc) + timedelta(minutes=61)
+        assert not plaid_link.synced_recently(store, now=later)
+        store.set_plaid_error("item-1", "Sign in again", "ITEM_LOGIN_REQUIRED")
+        assert not plaid_link.synced_recently(store)
+
+    def test_a_doubled_connection_starts_over_at_most_once_a_day(self, store, fake, monkeypatch):
+        store.add_plaid_item("item-1", "tok", "TD")
+        monkeypatch.setattr(plaid_link, "doubled_items", lambda st: ["item-1"])
+        rewinds = []
+        orig = store.rewind_plaid_cursor
+        monkeypatch.setattr(store, "rewind_plaid_cursor",
+                            lambda i: (rewinds.append(i), orig(i))[1])
+        fake([{"next_cursor": "c1"}, {"next_cursor": "c2"}])
+        plaid_link.sync_all(store)
+        plaid_link.sync_all(store)
+        assert rewinds.count("item-1") == 1

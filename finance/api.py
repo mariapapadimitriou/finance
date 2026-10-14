@@ -1187,7 +1187,12 @@ def plaid_sync():
     from . import plaid_link
     if not plaid_link.configured():
         return jsonify({"error": "Plaid isn't configured on this deployment."}), 501
-    return jsonify(plaid_link.sync_all(store()))
+    st = store()
+    # Opening the app asks without `force`; linking, reconnecting and
+    # switching an account on ask with it.
+    if not (request.get_json(silent=True) or {}).get("force") and plaid_link.synced_recently(st):
+        return jsonify({"items": [], "imported": 0, "recent": True})
+    return jsonify(plaid_link.sync_all(st))
 
 
 @bp.delete("/plaid/items/<item_id>")

@@ -110,6 +110,14 @@ export function TimeoutWarning({ left, onStay, onSignOut }) {
 // How often her signed-in devices look for a sign-in to approve (A-08 waits
 // five minutes, so this is well inside it), and again whenever she comes back.
 const APPROVALS_EVERY = 15000;
+// Only while she's using the device: an open, untouched tab asking every 15
+// seconds kept the database awake around the clock (Neon's quota, 2026-10-14).
+export const APPROVALS_IDLE_MS = 2 * 60 * 1000;
+
+/** Whether a device should look for a sign-in to approve right now. */
+export function shouldLookForApprovals(now, lastActive, visible) {
+  return visible && now - lastActive < APPROVALS_IDLE_MS;
+}
 
 /** On her signed-in devices: "Is this you signing in?" (A-07, A-08). */
 export function DeviceApprovals() {
@@ -120,15 +128,18 @@ export function DeviceApprovals() {
 
   useEffect(() => {
     let live = true;
-    const look = async () => {
-      if (document.visibilityState === 'hidden') return;
+    const look = async (e) => {
+      const visible = document.visibilityState !== 'hidden';
+      // Coming back to the tab always looks; the timer only while she's active.
+      if (!(e?.type === 'visibilitychange' && visible)
+          && !shouldLookForApprovals(Date.now(), sharedActive(), visible)) return;
       try {
         const { approvals } = await getApprovals();
         const next = approvals.find((a) => !seen.current.has(a.id)) ?? null;
         if (live && next) setAsking((now) => now ?? next);
       } catch { /* asked again on the next look */ }
     };
-    look();
+    look({ type: 'visibilitychange' });
     const timer = setInterval(look, APPROVALS_EVERY);
     document.addEventListener('visibilitychange', look);
     return () => {

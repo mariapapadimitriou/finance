@@ -30,7 +30,7 @@ from __future__ import annotations
 import os
 
 from .ingest.plaid_source import group_plaid_transactions, synced_by_default
-from .pipeline import ingest
+from .pipeline import ingest_many
 
 # Canada only. Both cards here are Canadian, and a narrower country list gives
 # Link a shorter, correct institution picker instead of a mostly-US one.
@@ -294,10 +294,9 @@ def _sync_one(store, item: dict) -> dict:
             returned[aid] = (ids, min(earliest, day))
         deleted += store.reconcile_plaid(returned)
 
-    imported = 0
     results = group_plaid_transactions(added + modified, accounts)
-    for result in results:
-        imported += ingest(store, result, filename=f"Plaid · {item.get('institution') or item_id}")["imported"]
+    imported = ingest_many(store, results,
+                           filename=f"Plaid · {item.get('institution') or item_id}")
     # Categories she chose on a reconnected bank's rows, back on them —
     # unless she chose one on the newer copy too.
     if chosen:
@@ -530,6 +529,30 @@ def _item_accounts(client, access_token: str) -> dict:
     return _accounts_from(resp)
 
 
+# Opening the app syncs at most this often; Plaid itself refreshes a bank's
+# transactions a few times a day, and every sync reads the ledger.
+SYNC_EVERY_MINUTES = 60
+
+
+def synced_recently(store, now=None) -> bool:
+    """Whether every connection synced within SYNC_EVERY_MINUTES."""
+    from datetime import datetime, timedelta, timezone
+    items = store.plaid_items()
+    if not items:
+        return False
+    now = now or datetime.now(timezone.utc)
+    for i in items:
+        try:
+            last = datetime.fromisoformat(str(i.get("last_synced") or ""))
+        except ValueError:
+            return False
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if now - last > timedelta(minutes=SYNC_EVERY_MINUTES) or i.get("last_error"):
+            return False
+    return True
+
+
 def sync_all(store) -> dict:
     """Sync every linked item, reporting each one's outcome separately.
 
@@ -562,8 +585,18 @@ def sync_all(store) -> dict:
 
     # Accounts doubled by a reconnect made before replacement worked account
     # by account: start the newer connection over, so its full sync replaces
-    # them (`_replace_superseded`).
+    # them (`_replace_superseded`). At most once a day per connection: a full
+    # sync re-reads the bank's whole history, and one that didn't settle it
+    # must not repeat on every open.
+    import json as _json
+    from datetime import date as _day
+    rewound = _json.loads(store.setting("doubled_rewound") or "{}")
+    today_iso = _day.today().isoformat()
     for item_id in doubled_items(store):
+        if rewound.get(item_id) == today_iso:
+            continue
+        rewound[item_id] = today_iso
+        store.set_setting("doubled_rewound", _json.dumps(rewound))
         store.rewind_plaid_cursor(item_id)
         for item in items:
             if item["item_id"] == item_id:
@@ -584,7 +617,9 @@ def sync_all(store) -> dict:
     import json
     from .transfers import known_destinations
     where = json.dumps(sorted(known_destinations(store).items()))
-    rematch = store.setting("transfer_destinations") != where
+    # Matched already when this sync brought rows in.
+    rematch = ((store.setting("transfer_destinations") or "[]") != where
+               and not any(o.get("imported") for o in out))
     store.set_setting("transfer_destinations", where)
     # When the categorising rules have changed since the ledger was last
     # sorted, sort what is already there once — your own choices are kept.

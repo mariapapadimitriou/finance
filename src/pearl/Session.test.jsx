@@ -105,3 +105,13 @@ describe('recovery codes', () => {
     expect(html(<RecoveryCodes had={0} onClose={() => {}} />)).toContain('Make recovery codes');
   });
 });
+
+describe('looking for sign-ins to approve only while she uses the device', () => {
+  it('asks while she is active, not from an open, untouched tab', async () => {
+    const { shouldLookForApprovals, APPROVALS_IDLE_MS } = await import('./Session.jsx');
+    const now = 10_000_000;
+    expect(shouldLookForApprovals(now, now - 5_000, true)).toBe(true);
+    expect(shouldLookForApprovals(now, now - APPROVALS_IDLE_MS - 1, true)).toBe(false);
+    expect(shouldLookForApprovals(now, now, false)).toBe(false);
+  });
+});
