@@ -67,7 +67,7 @@ describe('last month carried in (THL-212)', () => {
     const sheet = html(<ShortfallSheet c={short} now="October" was="September"
                                        onClose={() => {}} onAnswer={() => Promise.resolve()} />);
     for (const t of ['Take it from October', 'Spread over 2 months', 'Spread over 3 months',
-                     '$4,500 came in, $5,000 went out', 'easy to make up']) {
+                     '$4,500 came in and $5,000 went out', 'easy to make up']) {
       expect(sheet).toContain(t);
     }
     calm(sheet);

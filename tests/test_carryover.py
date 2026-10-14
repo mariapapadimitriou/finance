@@ -30,11 +30,12 @@ def st(tmp_path):
 
 
 class TestTheResult:
-    def test_the_whole_month_income_less_spending_less_saving(self):
+    def test_the_month_is_counted_income_less_counted_spending(self):
+        """What she put away is reported, never subtracted (2026-10-14)."""
         r = carryover.result(september(income=5500.0, spent=(2000.0, 3000.0), saved=300.0),
                              "2026-09")
         assert r["income"] == 5500.0 and r["spent"] == 5000.0 and r["saved"] == 300.0
-        assert r["amount"] == 200.0
+        assert r["amount"] == 500.0
 
     def test_short(self):
         assert carryover.result(september(income=4500.0), "2026-09")["amount"] == -500.0

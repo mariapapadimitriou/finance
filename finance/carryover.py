@@ -1,10 +1,12 @@
 """Last month's surplus or shortfall, carried into this one (THL-212).
 
 When a month ends, the next adjusts for how it really went (Maria,
-2026-10-13). What carries is the whole month's result: the income that
-actually arrived, less everything spent (bills included), less what was
-actually put away. An income that came in under what she planned with, or
-a month she overspent, both show up here; so does money left over.
+2026-10-13). What carries is the month's result: the income that
+actually arrived, less everything counted as spent (bills included). What
+she put away is reported beside it, never subtracted — money moved to
+savings is still hers (2026-10-14) — and transfers she hasn't sorted are
+left out. An income that came in under what she planned with, or a month
+she overspent, both show up here; so does money left over.
 
 * A shortfall is asked about each time: take it from this month, or spread
   it over two or three. Until she answers, nothing changes.
@@ -53,7 +55,10 @@ def _months_after(start: str, month: str) -> int:
 
 
 def result(transactions, month: str, saved: float | None = None) -> dict | None:
-    """The whole month's result, or None when it can't be told."""
+    """The month's result — counted income less counted spending — or None
+    when it can't be told. What she put away (`saved`) is reported beside
+    it but never subtracted (2026-10-14): money moved to savings is still
+    hers, not a shortfall; and transfers she hasn't sorted are left out."""
     if not transactions or min(t.date for t in transactions) > f"{month}-03":
         return None                                     # Pearl didn't see all of it
     income_c = sum(_cents(-t.amount) for t in transactions
@@ -72,7 +77,7 @@ def result(transactions, month: str, saved: float | None = None) -> dict | None:
     saved_c = _cents(saved if saved is not None else invested_in(transactions, month))
     return {"month": month, "income": _dollars(income_c), "spent": _dollars(spent_c),
             "saved": _dollars(saved_c), "unsorted": _dollars(unsorted_c),
-            "amount": _dollars(income_c - spent_c - saved_c)}
+            "amount": _dollars(income_c - spent_c)}
 
 
 def load(store) -> dict:
