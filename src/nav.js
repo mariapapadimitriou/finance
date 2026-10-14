@@ -133,7 +133,7 @@ export const GROUPS = [
 // page (`overview`) was replaced by Growth › Insights (THL-196 GR-28).
 export const ALIASES = {
   plan: 'income', piggy: 'goals', mortgage: 'income', today: 'home', settings: 'profile',
-  banks: 'accounts', import: 'accounts', trips: 'transactions', categories: 'rules',
+  banks: 'accounts', import: 'accounts', categories: 'rules',
   account: 'security', signin: 'security', overview: 'insights',
 };
 

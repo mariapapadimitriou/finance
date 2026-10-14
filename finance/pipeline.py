@@ -19,7 +19,7 @@ def ingest(store: Store, result: IngestResult, filename: str = "",
     """Persist one ingestion result, returning what happened.
 
     `existing` is the ledger as already loaded, and `settle=False` leaves the
-    across-the-ledger work (transfers, duplicates, trips) to the caller:
+    across-the-ledger work (transfers, duplicates) to the caller:
     `ingest_many` loads the ledger once and settles once for a whole sync,
     rather than once per account (each load reads every row from the
     database, which on a hosted one is metered).
@@ -45,7 +45,7 @@ def ingest(store: Store, result: IngestResult, filename: str = "",
     inserted = store.add_transactions(new)
     possible = 0
     if inserted and settle:
-        possible = _settle(store, {t.fingerprint for t in new})
+        possible = _settle(store)
 
     duplicate_count = len(dupes) + self_dupes
     store.log_import(filename or "upload.csv", result, inserted, duplicate_count)
@@ -63,7 +63,7 @@ def ingest(store: Store, result: IngestResult, filename: str = "",
     }
 
 
-def _settle(store: Store, fresh: set[str]) -> int:
+def _settle(store: Store) -> int:
     """What new rows change across the ledger. Returns possible duplicates."""
     # A new arrival can be the other end of a transfer already here, and a
     # new departure may have its other end here already.
@@ -73,14 +73,7 @@ def _settle(store: Store, fresh: set[str]) -> int:
     # twin never named it) is asked about, not merged (THL-165). Exact
     # repeats were skipped above and only counted in the import log.
     from .duplicates import scan
-    possible = scan(store)
-    # A row that arrives inside a trip she marked joins it (THL-174).
-    from datetime import date as _date
-    from .trips import join_new
-    if store.marked_trips():
-        join_new(store, [t for t in store.all_transactions() if t.fingerprint in fresh],
-                 _date.today())
-    return possible
+    return scan(store)
 
 
 def ingest_many(store: Store, results: list[IngestResult], filename: str = "") -> int:
@@ -89,16 +82,12 @@ def ingest_many(store: Store, results: list[IngestResult], filename: str = "") -
     if not results:
         return 0
     existing = store.all_transactions()
-    fresh: set[str] = set()
     imported = 0
     for result in results:
-        before = {t.fingerprint for t in result.transactions}
-        out = ingest(store, result, filename=filename, existing=existing, settle=False)
-        imported += out["imported"]
-        if out["imported"]:
-            fresh |= before
-    if fresh:
-        _settle(store, fresh)
+        imported += ingest(store, result, filename=filename, existing=existing,
+                           settle=False)["imported"]
+    if imported:
+        _settle(store)
     return imported
 
 

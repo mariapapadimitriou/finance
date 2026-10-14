@@ -41,8 +41,8 @@ def client(tmp_path, monkeypatch):
         st.set_note(pai, "Birthday dinner")
         st.exclude(rogers, "manual")
         st.skip_review("u:" + pai)
-        trip = st.add_marked_trip("Lisbon", "2026-10-01", "2026-10-05")
-        st.add_trip_rows(trip, [(pai, "Dining", "plaid")])
+        edit = st.add_bulk_edit("Lisbon", "Travel", "2026-10-01", "2026-10-05")
+        st.add_bulk_edit_rows(edit, [(pai, "Dining", "plaid")])
         # Rules, income and bills, budgets.
         st.set_override("Pai", "Dining")
         st.set_destination("acct:3333", "Saved")
@@ -72,7 +72,7 @@ def test_it_clears_the_transactions_and_her_organizing(client):
     assert r.status_code == 200 and r.get_json()["resync"] is True
     st = client.st
     assert st.all_transactions() == []
-    assert st.notes() == {} and st.marked_trips() == [] and st.trip_rows() == {}
+    assert st.notes() == {} and st.bulk_edits() == [] and st.bulk_edit_rows() == {}
     assert not st.skipped_reviews()
     assert st.overrides() == {} and st.destinations() == {} and st.exclusion_rules() == []
     assert st.budgets() == {}

@@ -135,7 +135,7 @@ class TestEveryPanelIsReachableAndRendered:
         stale = []
         for path in sorted(SRC.rglob("*.jsx")):
             text = path.read_text(encoding="utf-8")
-            for key in ("banks", "import", "trips", "categories"):
+            for key in ("banks", "import", "categories"):
                 if re.search(rf"""(onTab\??\.?\(|go\(|to=)['"]{key}['"]""", text):
                     stale.append(f"{path.name}: {key}")
         assert not stale, f"links to removed pages: {stale}"

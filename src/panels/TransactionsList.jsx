@@ -7,7 +7,7 @@ import PIcon from '../pearl/icons.jsx';
 import TransactionDetail, { AddTransaction } from './TransactionDetail.jsx';
 import { BatchPicker, KeyHints, SelectedBar, ShortcutsPanel } from './KeyboardReview.jsx';
 import { duplicateAlert } from './Duplicates.jsx';
-import { MarkTrip, TripsPanel } from './Trips.jsx';
+import { BulkEditsPanel, SortRange } from './BulkEdits.jsx';
 import {
   initialState, isTextTarget, keyAction, reduce, rowName, selectRange, targets,
 } from './keyboardKeys.js';
@@ -111,7 +111,8 @@ export default function TransactionsList({ summary, categories, accounts, review
   // Rows that just changed, highlighted for a moment.
   const [flash, setFlash] = useState(() => new Set());
   const [adding, setAdding] = useState(false);
-  const [trips, setTrips] = useState(null);
+  // Sort a date range: 'new' opens the panel, 'list' the edits so far.
+  const [sorting, setSorting] = useState(null);
   const [query, setQuery] = useState(filters.q);
   const [data, setData] = useState(null);
   const [rows, setRows] = useState([]);
@@ -425,9 +426,11 @@ export default function TransactionsList({ summary, categories, accounts, review
           <h1 className="pk-h1">{title}</h1>
         </div>
         <div className="tx-head-actions">
-          <PButton variant="text" onClick={() => setTrips('list')}>Trips</PButton>
-          <PButton variant="text" onClick={() => setTrips('new')}>Mark a trip</PButton>
-          <PButton variant="text" onClick={() => setAdding(true)}>Add a transaction</PButton>
+          <PButton variant="text" onClick={() => setSorting('list')}>Sorted together</PButton>
+          <PButton variant="secondary" onClick={() => setSorting('new')}>Sort a date range</PButton>
+          <PButton onClick={() => setAdding(true)}>
+            <PIcon name="plus" size={16} /> Add a transaction
+          </PButton>
         </div>
       </header>
 
@@ -584,11 +587,14 @@ export default function TransactionsList({ summary, categories, accounts, review
         <AddTransaction categories={categories} onClose={() => setAdding(false)}
                         onSaved={() => { setAdding(false); saved(); }} />
       )}
-      {trips === 'new' && (
-        <MarkTrip onClose={() => setTrips(null)}
-                  onSaved={() => { setTrips(null); saved(); }} />
+      {sorting === 'new' && (
+        <SortRange categories={categories} onClose={() => setSorting(null)}
+                   onSaved={() => { setSorting(null); saved(); }} />
       )}
-      {trips === 'list' && <TripsPanel onClose={() => setTrips(null)} onChanged={() => saved()} />}
+      {sorting === 'list' && (
+        <BulkEditsPanel categories={categories} onClose={() => setSorting(null)}
+                        onChanged={() => saved()} />
+      )}
       {change && (
         <ActionToast title={change.title} detail={change.detail}
                      onUndo={change.undo ? () => undo() : undefined}
