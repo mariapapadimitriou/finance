@@ -195,3 +195,27 @@ def test_trips_survive_reopening_the_ledger(client):
 def test_bad_trips_are_refused(client, body, words):
     r = client.post("/api/trips", json=body)
     assert r.status_code == 400 and words in r.get_json()["error"]
+
+
+def test_places_she_goes_often_are_still_trip_spending(client):
+    """Uber and coffee recur, but they aren't bills: on the trip they're the
+    trip. Netflix and rent stay bills (2026-10-14)."""
+    regulars = []
+    for m in ("07", "08", "09"):
+        for d in ("04", "11", "18", "25"):
+            regulars.append(tx(f"2026-{m}-{d}", "Uber", 21.0, "Transport"))
+    regulars.append(tx("2026-10-04", "Uber", 21.0, "Transport"))
+    regulars.append(tx("2026-10-03", "Foreign transaction fee", 4.10, "Fees & Interest"))
+    regulars.append(tx("2026-10-03", "Interest charge", 12.00, "Fees & Interest"))
+    ingest(client.st, IngestResult(regulars, "card"))
+    client.st.set_categories({t.fingerprint: (t.category or "Transport", "plaid")
+                              for t in client.st.all_transactions()
+                              if t.merchant in ("Uber", "Foreign transaction fee", "Interest charge")})
+    save(client)
+    october = [t for t in client.st.all_transactions() if t.date.startswith("2026-10")]
+    by = {(t.merchant, t.date): t.category for t in october}
+    assert by[("Uber", "2026-10-04")] == "Travel"
+    assert by[("Foreign transaction fee", "2026-10-03")] == "Travel"
+    assert by[("Interest charge", "2026-10-03")] == "Fees & Interest"
+    assert by[("Netflix", "2026-10-03")] == "Subscriptions"
+    assert by[("Parkside Properties", "2026-10-01")] == "Rent & Housing"

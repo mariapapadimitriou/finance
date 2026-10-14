@@ -30,7 +30,8 @@ from __future__ import annotations
 from datetime import date
 
 from .categorize import apply_categories
-from .insights.recurring import detect_recurring
+import re
+
 from .models import Transaction
 
 TRAVEL = "Travel"
@@ -58,9 +59,21 @@ def validate(name: str, start: str, end: str) -> str | None:
     return None
 
 
+# A foreign transaction fee charged while away is part of the trip.
+_TRIP_FEE = re.compile(r"\b(foreign|fx|forex|conversion|non-sterling|currency)\b", re.I)
+
+
 def _recurring(transactions: list[Transaction], today: date) -> set[tuple[str, str]]:
+    """The charges that were bills: recurring bills and subscriptions only
+    (safe_to_spend.recurring_bills). Not every merchant she visits often —
+    Uber, coffee, transit on the trip are trip spending (2026-10-14)."""
+    from .safe_to_spend import recurring_bills
     out = set()
-    for rec in detect_recurring(transactions, as_of=today.isoformat()):
+    for rec in recurring_bills(transactions, today):
+        # Weekly and every-other-week charges (rides, transit) are the trip
+        # while she's away; a bill comes monthly or less often.
+        if rec["cadence"] in ("weekly", "biweekly"):
+            continue
         out.update((rec["merchant"], d) for d in rec["dates"])
     return out
 
@@ -75,6 +88,8 @@ def why_not(t: Transaction, recurring: set) -> str | None:
         return "money_in"
     if t.repays:
         return "repayment"
+    if t.category == "Fees & Interest" and _TRIP_FEE.search(f"{t.description} {t.merchant}"):
+        return None
     if (t.category or "Other") in NOT_TRIP or _is_card_payment(t):
         return "transfer"
     if (t.merchant, t.date) in recurring or (t.category or "") in BILL_CATEGORIES:
