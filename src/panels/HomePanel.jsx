@@ -944,7 +944,7 @@ export function ReconnectPanel({ connection, onClose, onDone }) {
         // Update mode: the connection carries on, so there's nothing to
         // exchange. Sync straight away so Home is current again.
         onSuccess: async () => {
-          try { await syncPlaid(); } catch { /* the next sync catches up */ }
+          try { await syncPlaid(true); } catch { /* the next sync catches up */ }
           setBusy(false);
           onDone?.();
         },

@@ -166,7 +166,8 @@ export const createLinkToken = (itemId) =>
 export const exchangePublicToken = (publicToken, institution) =>
   json('POST', '/api/plaid/exchange',
        { public_token: publicToken, institution });
-export const syncPlaid       = () => json('POST', '/api/plaid/sync', {});
+// `force`: sync now; without it, at most once an hour (opening the app).
+export const syncPlaid       = (force = false) => json('POST', '/api/plaid/sync', { force });
 
 // Piggy banks: annual costs collected monthly, and spending charged to them
 // instead of to the month it fell in.

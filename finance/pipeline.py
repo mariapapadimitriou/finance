@@ -14,11 +14,20 @@ from .store import Store
 from .transfers import apply_transfer_matches, migrate_overrides
 
 
-def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
-    """Persist one ingestion result, returning what happened."""
+def ingest(store: Store, result: IngestResult, filename: str = "",
+           existing: list | None = None, settle: bool = True) -> dict:
+    """Persist one ingestion result, returning what happened.
+
+    `existing` is the ledger as already loaded, and `settle=False` leaves the
+    across-the-ledger work (transfers, duplicates, trips) to the caller:
+    `ingest_many` loads the ledger once and settles once for a whole sync,
+    rather than once per account (each load reads every row from the
+    database, which on a hosted one is metered).
+    """
     batch, self_dupes = dedupe_batch(result.transactions)
 
-    existing = store.all_transactions()
+    if existing is None:
+        existing = store.all_transactions()
     new, dupes = split_new(batch, existing)
 
     apply_categories(new, store.overrides())
@@ -35,23 +44,8 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
 
     inserted = store.add_transactions(new)
     possible = 0
-    if inserted:
-        # A new arrival can be the other end of a transfer already here, and a
-        # new departure may have its other end here already.
-        classify_ledger(store)
-        # The same purchase from a second source (a statement file beside the
-        # bank connection, a card linked twice, a pending row whose posted
-        # twin never named it) is asked about, not merged (THL-165). Exact
-        # repeats were skipped above and only counted in the import log.
-        from .duplicates import scan
-        possible = scan(store)
-        # A row that arrives inside a trip she marked joins it (THL-174).
-        from datetime import date as _date
-        from .trips import join_new
-        if store.marked_trips():
-            fresh = {t.fingerprint for t in new}
-            join_new(store, [t for t in store.all_transactions() if t.fingerprint in fresh],
-                     _date.today())
+    if inserted and settle:
+        possible = _settle(store, {t.fingerprint for t in new})
 
     duplicate_count = len(dupes) + self_dupes
     store.log_import(filename or "upload.csv", result, inserted, duplicate_count)
@@ -67,6 +61,45 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
             [min(t.date for t in new), max(t.date for t in new)] if new else None
         ),
     }
+
+
+def _settle(store: Store, fresh: set[str]) -> int:
+    """What new rows change across the ledger. Returns possible duplicates."""
+    # A new arrival can be the other end of a transfer already here, and a
+    # new departure may have its other end here already.
+    classify_ledger(store)
+    # The same purchase from a second source (a statement file beside the
+    # bank connection, a card linked twice, a pending row whose posted
+    # twin never named it) is asked about, not merged (THL-165). Exact
+    # repeats were skipped above and only counted in the import log.
+    from .duplicates import scan
+    possible = scan(store)
+    # A row that arrives inside a trip she marked joins it (THL-174).
+    from datetime import date as _date
+    from .trips import join_new
+    if store.marked_trips():
+        join_new(store, [t for t in store.all_transactions() if t.fingerprint in fresh],
+                 _date.today())
+    return possible
+
+
+def ingest_many(store: Store, results: list[IngestResult], filename: str = "") -> int:
+    """Several accounts' rows at once (one bank's sync): the ledger is loaded
+    once and settled once. Returns how many rows were added."""
+    if not results:
+        return 0
+    existing = store.all_transactions()
+    fresh: set[str] = set()
+    imported = 0
+    for result in results:
+        before = {t.fingerprint for t in result.transactions}
+        out = ingest(store, result, filename=filename, existing=existing, settle=False)
+        imported += out["imported"]
+        if out["imported"]:
+            fresh |= before
+    if fresh:
+        _settle(store, fresh)
+    return imported
 
 
 def recategorize_all(store: Store) -> int:
