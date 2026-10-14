@@ -64,9 +64,14 @@ export function ShortfallSheet({ c, now, was, onClose, onAnswer }) {
       <h1 className="pk-h2">{`${was} ended ${shown(c.amount)} short`}</h1>
       <p className="pk-muted">
         {c.income != null
-          ? `${shown(c.income)} came in, ${shown(c.spent)} went out${c.saved > 0 ? ` and ${shown(c.saved)} went to savings` : ''}. That happens, and it’s easy to make up.`
+          ? `${shown(c.income)} came in and ${shown(c.spent)} went out. That happens, and it’s easy to make up.`
           : 'That happens, and it’s easy to make up.'}
       </p>
+      {c.saved > 0 && (
+        <p className="pk-muted">
+          {`You also put ${shown(c.saved)} away, which isn’t counted here — that’s yours.`}
+        </p>
+      )}
       {c.unsorted > 0 && (
         <p className="pk-muted">
           {`Not counting ${shown(c.unsorted)} of transfers you haven’t sorted yet. Sorting them in Needs a look can change this.`}
