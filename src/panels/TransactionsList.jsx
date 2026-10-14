@@ -7,6 +7,7 @@ import PIcon from '../pearl/icons.jsx';
 import TransactionDetail, { AddTransaction } from './TransactionDetail.jsx';
 import { BatchPicker, KeyHints, SelectedBar, ShortcutsPanel } from './KeyboardReview.jsx';
 import { duplicateAlert } from './Duplicates.jsx';
+import { MarkTrip, TripsPanel } from './Trips.jsx';
 import {
   initialState, isTextTarget, keyAction, reduce, rowName, selectRange, targets,
 } from './keyboardKeys.js';
@@ -110,6 +111,7 @@ export default function TransactionsList({ summary, categories, accounts, review
   // Rows that just changed, highlighted for a moment.
   const [flash, setFlash] = useState(() => new Set());
   const [adding, setAdding] = useState(false);
+  const [trips, setTrips] = useState(null);
   const [query, setQuery] = useState(filters.q);
   const [data, setData] = useState(null);
   const [rows, setRows] = useState([]);
@@ -422,7 +424,11 @@ export default function TransactionsList({ summary, categories, accounts, review
           <p className="pk-overline accent">{overline}</p>
           <h1 className="pk-h1">{title}</h1>
         </div>
-        <PButton variant="text" onClick={() => setAdding(true)}>Add a transaction</PButton>
+        <div className="tx-head-actions">
+          <PButton variant="text" onClick={() => setTrips('list')}>Trips</PButton>
+          <PButton variant="text" onClick={() => setTrips('new')}>Mark a trip</PButton>
+          <PButton variant="text" onClick={() => setAdding(true)}>Add a transaction</PButton>
+        </div>
       </header>
 
       {desktop && selected.length > 0 ? (
@@ -578,6 +584,11 @@ export default function TransactionsList({ summary, categories, accounts, review
         <AddTransaction categories={categories} onClose={() => setAdding(false)}
                         onSaved={() => { setAdding(false); saved(); }} />
       )}
+      {trips === 'new' && (
+        <MarkTrip onClose={() => setTrips(null)}
+                  onSaved={() => { setTrips(null); saved(); }} />
+      )}
+      {trips === 'list' && <TripsPanel onClose={() => setTrips(null)} onChanged={() => saved()} />}
       {change && (
         <ActionToast title={change.title} detail={change.detail}
                      onUndo={change.undo ? () => undo() : undefined}

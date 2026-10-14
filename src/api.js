@@ -194,6 +194,14 @@ export const seeMoment    = (phase) => json('POST', `/api/moments/${encodeURICom
 export const getLearn     = () => req('/api/learn');
 export const saveLearn    = (id, body) => json('PUT', `/api/learn/${encodeURIComponent(id)}`, body);
 // The starter questions (E-02) and "Use a different amount" (E-03).
+// Trips (THL-174): a date range whose spending becomes Travel.
+export const getTrips    = () => req('/api/trips');
+export const previewTrip = (start, end, tripId = null) =>
+  json('POST', '/api/trips/preview', { start, end, trip_id: tripId });
+export const saveTrip    = (trip, ids) => (trip.id
+  ? json('PUT', `/api/trips/${trip.id}`, { ...trip, ids })
+  : json('POST', '/api/trips', { ...trip, ids }));
+export const deleteTrip  = (id) => req(`/api/trips/${id}`, { method: 'DELETE' });
 export const putHomeAnswers = (answers) => json('PUT', '/api/home/answers', answers);
 // Month or week as Home's main view (THL-166), saved on her account.
 // "Can I afford it?" (THL-167): works it out and records nothing.

@@ -126,8 +126,10 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
     joint account that are someone else's."""
     from . import txlist
     txns = st.all_transactions()
+    from .trips import names as trip_names
     ctx = txlist.Context(txns, st.confirmed_categories(), st.notes(),
-                         {b.id: b.name for b in st.piggy_banks()}, splits=st.splits())
+                         {b.id: b.name for b in st.piggy_banks()}, splits=st.splits(),
+                         trips=trip_names(st))
     if everything:
         rows = txlist.visible(txns) + txlist.left_out(txns) + txlist.theirs(txns)
     elif excluded:
@@ -2505,4 +2507,4 @@ def dismiss_review():
 # The Profile pages, Growth › Insights and Growth › Projections register on this
 # blueprint too; imported last so they can use the helpers above.
 from . import income_bills_api, insights_api, privacy_api, profile_api, projections_api  # noqa: E402,F401,I001
-from . import growth_api, transactions_extras_api  # noqa: E402,F401
+from . import growth_api, transactions_extras_api, trips_api  # noqa: E402,F401
