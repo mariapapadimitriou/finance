@@ -38,13 +38,15 @@ export const getAccounts     = () => req('/api/accounts');
 
 /**
  * What to call an account so you can tell which it is: the bank, the kind of
- * account and its last four digits — "TD Bank · Chequing ••1234". Falls back
- * to the name the bank or the statement gave it when the bank isn't known.
+ * account and its last four digits — "TD Bank · Chequing ••1234" — or her
+ * nickname for it when she gave one. Falls back to the name the bank or the
+ * statement gave it when the bank isn't known.
  */
 export function accountTitle(a) {
   if (!a) return '';
-  const base = !a.institution ? (a.account_name || a.account_id)
-    : `${a.institution} · ${a.kind_label}${a.mask ? ` ••${a.mask}` : ''}`;
+  // Her nickname wins everywhere (Profile › Accounts).
+  const base = a.nickname || (!a.institution ? (a.account_name || a.account_id)
+    : `${a.institution} · ${a.kind_label}${a.mask ? ` ••${a.mask}` : ''}`);
   return a.joint ? `${base} · Joint with ${a.joint}` : base;
 }
 // On joint accounts, purchases at this name are always yours.

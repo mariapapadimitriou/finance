@@ -181,7 +181,7 @@ def _facts(st, c, key: str, step: dict) -> dict:
         for aid in sorted(cards):
             net = sum(t.amount for t in c.txns
                       if last and t.month == last and t.account_id == aid and not t.excluded)
-            rows.append({"name": (rules.get(aid) or {}).get("account_name") or "A card",
+            rows.append({"name": (rules.get(aid) or {}).get("label") or "A card",
                          "grew_by": round(net, 2) if net > 0.005 else 0})
         return {"month": last, "cards": rows}
     if key == "invest":

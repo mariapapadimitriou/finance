@@ -561,7 +561,8 @@ _CHARGE_COLUMNS = """sh.my_share AS my_share,
                           itx.source AS income_type_source,
                           oox.since AS one_off_since,
                           dpx.twin_id AS duplicate_of,
-                          dpx.state AS duplicate_state"""
+                          dpx.state AS duplicate_state,
+                          acs.nickname AS account_nickname"""
 
 
 class Store:
@@ -1345,9 +1346,11 @@ class Store:
         """Every account this app has seen from a bank, keyed by account id."""
         with self.conn() as c:
             rows = c.execute(
-                "SELECT account_id, account_name, item_id, enabled, decided_by,"
-                "       account_type, account_subtype"
-                "  FROM account_sync ORDER BY account_name"
+                "SELECT s.account_id, s.account_name, s.item_id, s.enabled, s.decided_by,"
+                "       s.account_type, s.account_subtype, acs.nickname"
+                "  FROM account_sync s"
+                "  LEFT JOIN account_settings acs ON acs.account_id = s.account_id"
+                " ORDER BY s.account_name"
             ).fetchall()
         return {r["account_id"]: {
             "account_id": r["account_id"],
@@ -1357,6 +1360,8 @@ class Store:
             "decided_by": r["decided_by"],
             "account_type": r["account_type"] or "",
             "account_subtype": r["account_subtype"] or "",
+            # Her name for it, to show; `account_name` stays the bank's.
+            "label": r["nickname"] or r["account_name"] or r["account_id"],
         } for r in rows}
 
     def note_account(self, account_id: str, *, name: str = "", item_id: str = "",
@@ -2151,6 +2156,11 @@ class Store:
         return {r["account_id"]: {"counted": bool(r["counted"]),
                                   "nickname": r["nickname"] or "",
                                   "removed": bool(r["removed"])} for r in rows}
+
+    def account_nicknames(self) -> dict[str, str]:
+        """{account_id: her name for it}, for the accounts she named."""
+        return {aid: s["nickname"] for aid, s in self.account_settings().items()
+                if s["nickname"]}
 
     def set_account_setting(self, account_id: str, **fields) -> None:
         """Change `counted`, `nickname` or `removed` for one account."""

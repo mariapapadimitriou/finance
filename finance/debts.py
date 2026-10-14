@@ -101,7 +101,7 @@ def build(rules: dict[str, dict], balances: dict[str, dict], first: dict[str, di
             continue
         current_c = _cents(current)
         d = details.get(aid) or {}
-        debt = {"account_id": aid, "name": rule.get("account_name") or "Account",
+        debt = {"account_id": aid, "name": rule.get("label") or rule.get("account_name") or "Account",
                 "kind": kind, "balance": _dollars(current_c),
                 "rate": d.get("rate"), "minimum": d.get("minimum"),
                 "due_day": d.get("due_day"),

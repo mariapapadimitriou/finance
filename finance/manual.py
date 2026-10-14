@@ -81,7 +81,7 @@ def find_possible_duplicates(candidate: Transaction, existing: list[Transaction]
             "merchant": e.merchant,
             "description": e.description,
             "amount": e.amount,
-            "account": e.account_name or e.account_id,
+            "account": e.account_label,
             "source": e.source,
             "days_apart": gap,
             "merchant_similarity": round(similarity, 2),

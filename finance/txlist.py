@@ -50,7 +50,7 @@ def money(x: float) -> str:
 
 
 def _account_label(t: Transaction) -> str:
-    return (t.account_name or t.account_id or "").replace("••", "··")
+    return (t.account_label or "").replace("••", "··")
 
 
 def _is_card_payment(t: Transaction) -> bool:

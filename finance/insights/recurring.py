@@ -162,7 +162,7 @@ def _analyze_merchant(merchant: str, rows: list[Transaction], today: date) -> di
         yield_rec = {
             "merchant": merchant,
             "category": cluster[-1].category or "Other",
-            "account_name": cluster[-1].account_name or cluster[-1].account_id,
+            "account_name": cluster[-1].account_label,
             "cadence": cadence,
             "charges_per_year": per_year,
             "occurrences": len(cluster),
