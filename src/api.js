@@ -352,6 +352,8 @@ export const setIncomeType = (id, kind) =>
 // Everything Pearl isn't sure about, each with its best guess.
 export const getReview     = () => req('/api/review');
 export const dismissReview = (key) => json('POST', '/api/review/dismiss', { key });
+// Needs a look's Skipped (THL-213): into Skipped, or back to the queue.
+export const skipReview = (key, skip = true) => json('POST', '/api/review/skip', { key, skip });
 
 // "This was a one-off" (THL-71): out of her usual month, still in its own.
 export const setOneOff = (id, on) =>

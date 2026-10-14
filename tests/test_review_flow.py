@@ -161,3 +161,26 @@ def test_undo_refuses_what_it_did_not_make(client):
     for body in bad:
         assert client.post("/api/transactions/undo", json=body).status_code == 400, body
     assert cat(client.st, ids["COFFEE"]) == "Coffee"
+
+
+# ── Skipped (THL-213) ────────────────────────────────────────────────────
+
+def test_skipped_stays_skipped_and_leaves_the_badge(client):
+    load(client.st, row(40, "SEND E-TFR ***Ab1", account="chq", kind="depository"),
+         row(25, "MYSTERY SHOP", merchant="Mystery Shop"))
+    before = client.get("/api/review").get_json()
+    assert before["count"] == 2 and before["skipped"] == 0
+    key = "u:" + before["unsorted"]["transfers"][0]["id"]
+    assert client.post("/api/review/skip", json={"key": key}).status_code == 200
+    after = client.get("/api/review").get_json()
+    assert after["count"] == 1 and after["skipped"] == 1
+    assert after["unsorted"]["transfers"][0]["skipped"] is True        # still listed
+    assert client.get("/api/home").get_json()["review_count"] == 1
+    # Back to the queue.
+    client.post("/api/review/skip", json={"key": key, "skip": False})
+    again = client.get("/api/review").get_json()
+    assert again["count"] == 2 and again["skipped"] == 0
+
+
+def test_skipping_needs_an_item(client):
+    assert client.post("/api/review/skip", json={}).status_code == 400

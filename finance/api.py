@@ -1764,7 +1764,7 @@ def home():
     usual = usual_month.usual(txns, today, unusual=_unusual_months(st))
     from .review import build as review_build
     review = review_build(txns, dismissed=st.dismissed_reviews(), splits=st.splits(),
-                          payer=st.payback_people())
+                          payer=st.payback_people(), skipped=st.skipped_reviews())
     return jsonify({
         "month": today.strftime("%Y-%m"),
         "today": today.isoformat(),
@@ -2490,7 +2490,7 @@ def review_queue():
     found_on = {k: v["found_on"] for k, v in st.duplicates().items()}
     return jsonify(build(st.all_transactions(), dismissed=st.dismissed_reviews(),
                          splits=st.splits(), payer=st.payback_people(),
-                         found_on=found_on))
+                         found_on=found_on, skipped=st.skipped_reviews()))
 
 
 @bp.post("/review/dismiss")
@@ -2499,6 +2499,18 @@ def dismiss_review():
     if not key or ":" not in key:
         return jsonify({"error": "Which item?"}), 400
     store().dismiss_review(key)
+    return jsonify({"ok": True})
+
+
+@bp.post("/review/skip")
+def skip_review():
+    """Needs a look's "Skip for now" (THL-213): into Skipped, kept between
+    visits; `{"skip": false}` puts it back in the queue."""
+    body = request.get_json(silent=True) or {}
+    key = str(body.get("key") or "")
+    if not key or ":" not in key:
+        return jsonify({"error": "Which item?"}), 400
+    store().skip_review(key, body.get("skip", True) is not False)
     return jsonify({"ok": True})
 
 

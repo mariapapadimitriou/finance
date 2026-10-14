@@ -9,7 +9,7 @@ import { RepaymentMatch } from './Splits.jsx';
 import { DuplicateQuestion } from './Duplicates.jsx';
 import {
   INCOME_KINDS, answerDuplicate, confirmTx, dismissReview, getReview, linkPayback, money,
-  setCategory, setIncomeType, setJointFrom, sortTransfers, undoChange,
+  setCategory, setIncomeType, setJointFrom, skipReview, sortTransfers, undoChange,
 } from '../api.js';
 
 /**
@@ -19,9 +19,10 @@ import {
  * so the queue takes about a minute: where a transfer went, a category Pearl
  * guessed, money that came in, a kind of income, a month with a third
  * paycheque, the same purchase from two places (THL-165 D-02). Beside each
- * question, why Pearl asks. Answering moves to the
- * next; Skip for now leaves it in the queue for next time. A change that
- * moves safe to spend says by how much, with Undo (R-03).
+ * question, why Pearl asks. Answering moves to the next. Skip for now puts
+ * it in Skipped (THL-213), kept between visits and out of the badge; chips
+ * filter the queue by type, and Skipped has Back to the queue. A change
+ * that moves safe to spend says by how much, with Undo (R-03).
  *
  * At zero, All sorted (R-04): the alert on Transactions and the count in the
  * navigation go too.
@@ -48,7 +49,7 @@ export function queue(data) {
   const items = [
     ...(data.unsorted?.transfers ?? []).map((t) => ({
       key: `u:${t.id}`, kind: 'unsorted', date: t.date, txn: t, to: t.to || t.merchant,
-      learnable: learnable.has(t.id),
+      learnable: learnable.has(t.id), skipped: !!t.skipped,
     })),
     ...(data.unsure_category ?? []).map((it) => ({ ...it, kind: 'category', date: it.txn.date })),
     ...(data.money_in ?? []).map((it) => ({ ...it, kind: 'money_in', date: it.txn.date })),
@@ -79,13 +80,40 @@ const WHY = {
     'The same amount came in from two places on the same day. We’d rather check than count it twice.'],
 };
 
+// The chips over the queue, in this order; a type with nothing shows none.
+export const KIND_LABELS = {
+  unsorted: 'Where it went', category: 'Categories', money_in: 'Money in',
+  joint_in: 'Joint deposits', income: 'Income', pay3: 'Paycheques', duplicate: 'Duplicates',
+};
+
+/** The chips: All, each type with questions not skipped, then Skipped. */
+export function chips(items) {
+  const open = items.filter((i) => !i.skipped);
+  const out = [{ key: 'all', label: 'All', count: open.length }];
+  for (const [kind, label] of Object.entries(KIND_LABELS)) {
+    const n = open.filter((i) => i.kind === kind).length;
+    if (n) out.push({ key: kind, label, count: n });
+  }
+  const held = items.length - open.length;
+  if (held) out.push({ key: 'skipped', label: 'Skipped', count: held });
+  return out;
+}
+
+/** What a chip shows. */
+export function inView(items, filter) {
+  if (filter === 'skipped') return items.filter((i) => i.skipped);
+  return items.filter((i) => !i.skipped && (filter === 'all' || i.kind === filter));
+}
+
 const minutes = (n) => (n <= 4 ? 'about a minute' : `about ${Math.ceil((n * 15) / 60)} minutes`);
 
 export default function NeedsALook({ categories, onChanged, onTab, version }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [skipped, setSkipped] = useState(() => new Set());
+  const [filter, setFilter] = useState('all');
+  // Passed over in this visit, within Skipped (Skip for now there moves on).
+  const [passed, setPassed] = useState(() => new Set());
   const [change, setChange] = useState(null);
   const [toast, setToast] = useState('');
 
@@ -100,8 +128,13 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
   useEffect(() => { load(); }, [load, version]);
 
   const items = useMemo(() => queue(data), [data]);
-  const current = items.find((i) => !skipped.has(i.key));
-  const position = current ? items.indexOf(current) + 1 : 0;
+  const shown = useMemo(() => inView(items, filter), [items, filter]);
+  const current = shown.find((i) => !passed.has(i.key));
+  const position = current ? shown.indexOf(current) + 1 : 0;
+  // A chip whose questions are all answered falls back to All.
+  useEffect(() => {
+    if (filter !== 'all' && data && !chips(items).some((c) => c.key === filter)) setFilter('all');
+  }, [items, filter, data]);
 
   async function act(fn, makeChange) {
     setBusy(true);
@@ -109,7 +142,8 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
     try {
       const res = await fn();
       const what = makeChange?.(res);
-      if (what) { setToast(''); setChange(what); } else { setChange(null); setToast('Saved'); }
+      if (what && typeof what === 'object') { setToast(''); setChange(what); }
+      else { setChange(null); setToast(what || 'Saved'); }
       await load();
       onChanged?.();
     } catch (e) {
@@ -135,7 +169,14 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
       setError(e);
     }
   };
-  const skip = () => setSkipped((s) => new Set([...s, current.key]));
+  // In the queue, Skip for now puts it in Skipped; in Skipped, it moves on.
+  const skip = () => {
+    if (current.skipped) { setPassed((s) => new Set([...s, current.key])); return; }
+    act(() => skipReview(current.key), () => 'Moved to Skipped');
+  };
+  const unskip = () => act(() => skipReview(current.key, false), () => 'Back in the queue');
+  const pick = (key) => { setFilter(key); setPassed(new Set()); };
+  const tabs = chips(items);
 
   if (!data && !error) return <div className="pk nl-page"><p className="pk-muted">Loading…</p></div>;
 
@@ -155,13 +196,27 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
             : `${count} transaction${count === 1 ? '' : 's'} need${count === 1 ? 's' : ''} a look`}
         </h1>
         {current && (
-          <p className="pk-label pk-muted">{position} of {items.length} · {minutes(items.length)}</p>
+          <p className="pk-label pk-muted">{position} of {shown.length} · {minutes(shown.length)}</p>
         )}
       </header>
 
       {error && <ErrorNote error={error} onRetry={load} />}
 
-      {data && count === 0 && (
+      {tabs.length > 1 && (
+        <nav className="nl-chips" aria-label="Filter by type">
+          {tabs.map((c) => (
+            <button key={c.key} type="button" aria-pressed={filter === c.key}
+                    className={`pk-filter nl-chip${filter === c.key ? ' active' : ''}`} onClick={() => pick(c.key)}>
+              {c.label} ({c.count})
+            </button>
+          ))}
+        </nav>
+      )}
+      {filter === 'skipped' && (
+        <p className="pk-muted nl-skipped-note">Skipped ones count the way Pearl guessed.</p>
+      )}
+
+      {data && count === 0 && !data.skipped && (
         <section className="nl-card nl-empty" aria-label="All sorted">
           <span className="nl-empty-icon" aria-hidden="true"><PIcon name="check" size={28} /></span>
           <h2 className="pk-h2">All sorted</h2>
@@ -171,15 +226,18 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
         </section>
       )}
 
-      {data && count > 0 && !current && (
+      {data && (count > 0 || data.skipped > 0) && !current && (
         <section className="nl-card nl-empty" aria-label="Skipped">
           <h2 className="pk-h2">That’s everything for now</h2>
-          <p className="pk-muted">You skipped {skipped.size}. {skipped.size === 1 ? 'It’ll' : 'They’ll'} be
-            here next time, and until then {skipped.size === 1 ? 'it counts' : 'they count'} the
-            way Pearl guessed.</p>
-          <PButton className="nl-empty-btn" onClick={() => setSkipped(new Set())}>
-            Go through them again
-          </PButton>
+          {data.skipped > 0 && (
+            <p className="pk-muted">{data.skipped} skipped. {data.skipped === 1 ? 'It counts' : 'They count'} the
+              way Pearl guessed until you answer.</p>
+          )}
+          {data.skipped > 0 && (
+            <PButton className="nl-empty-btn" onClick={() => pick('skipped')}>
+              Go through skipped
+            </PButton>
+          )}
           <PButton variant="text" onClick={() => onTab?.('transactions')}>Back to transactions</PButton>
         </section>
       )}
@@ -189,6 +247,11 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
           <section className="nl-card" aria-label="Question" key={current.key}>
             <Question it={current} categories={categories} busy={busy} onSkip={skip}
                       act={act} sorted={sorted} />
+            {current.skipped && (
+              <PButton variant="text" className="nl-unskip" disabled={busy} onClick={unskip}>
+                Back to the queue
+              </PButton>
+            )}
           </section>
           <aside className="nl-why" aria-label="Why we ask">
             <p className="pk-overline accent">Why we ask</p>
