@@ -596,6 +596,7 @@ class Store:
         self._migrate_buckets()
         self._migrate_allocation_amounts()
         self._migrate_plaid_error_code()
+        self._migrate_plaid_logo()
         self._migrate_joint_share()
         self._migrate_travel_ownership()
         self._drop_bank_funded_budgets()
@@ -767,6 +768,15 @@ class Store:
         try:
             with self.conn() as c:
                 c.execute("ALTER TABLE plaid_items ADD COLUMN error_code TEXT")
+        except Exception:                                        # noqa: BLE001
+            return
+
+    def _migrate_plaid_logo(self) -> None:
+        """Add `plaid_items.logo`: the bank's logo as a data URI, from
+        Plaid's institution details. "" once looked up and none was found."""
+        try:
+            with self.conn() as c:
+                c.execute("ALTER TABLE plaid_items ADD COLUMN logo TEXT")
         except Exception:                                        # noqa: BLE001
             return
 
@@ -2007,7 +2017,7 @@ class Store:
         with self.conn() as c:
             rows = c.execute(
                 """SELECT item_id, institution, cursor, last_synced, last_error,
-                          error_code, created_at
+                          error_code, created_at, logo
                    FROM plaid_items ORDER BY created_at"""
             ).fetchall()
         return [{**dict(r), "synced_before": bool(r["cursor"])} for r in rows]
@@ -2409,6 +2419,10 @@ class Store:
                    WHERE item_id = ?""",
                 (cursor, _now(), item_id),
             )
+
+    def set_plaid_logo(self, item_id: str, logo: str) -> None:
+        with self.conn() as c:
+            c.execute("UPDATE plaid_items SET logo = ? WHERE item_id = ?", (logo or "", item_id))
 
     def set_plaid_error(self, item_id: str, message: str, code: str = "") -> None:
         with self.conn() as c:

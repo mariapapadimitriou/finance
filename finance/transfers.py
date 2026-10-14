@@ -269,12 +269,30 @@ def matched_inflows(transactions: list[Transaction], today: str | None = None) -
     return used
 
 
+def known_destinations(store) -> dict[str, str]:
+    """Where transfers go: her own rules, and her linked investment accounts.
+
+    Plaid's Transactions product lists an investment account and its balance
+    but not its transactions, so a transfer into it has no other end to match.
+    Its last four digits do: "TFR-TO 12343333" with a TFSA ••3333 linked is
+    money put away, so Saved. Her own rule for those digits wins.
+    """
+    from .plaid_link import _mask_of
+    removed = {aid for aid, s in store.account_settings().items() if s["removed"]}
+    out = {}
+    for aid, r in store.account_sync_rules().items():
+        mask = _mask_of(r["account_name"])
+        if mask and aid not in removed and (r["account_type"] or "").lower() == "investment":
+            out["acct:" + mask] = "Saved"
+    return {**out, **store.destinations()}
+
+
 def apply_transfer_matches(store, transactions: list[Transaction] | None = None) -> int:
     """Run the match over the ledger and write what changed."""
     txns = transactions if transactions is not None else store.all_transactions()
     current = {t.fingerprint: (t.category, t.category_source) for t in txns}
     changes = {}
-    for tid, cat in match_transfers(txns, destinations=store.destinations()).items():
+    for tid, cat in match_transfers(txns, destinations=known_destinations(store)).items():
         source = "transfer_match" if cat in (NEUTRAL, UNSORTED) else RULED
         if current.get(tid) != (cat, source):
             changes[tid] = (cat, source)

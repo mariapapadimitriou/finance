@@ -91,7 +91,8 @@ export function accountMeta(a, now = Date.now()) {
     rest = a.disconnected_on ? `disconnected on ${monthDay(a.disconnected_on)}` : 'disconnected';
   } else if (a.status === 'sign_in' || a.status === 'retrying') {
     rest = updated ? `last updated ${updated}` : null;
-  } else if (a.status === 'not_counted') rest = 'not in your budget';
+  } else if (a.status === 'investment') rest = 'balance only';
+  else if (a.status === 'not_counted') rest = 'not in your budget';
   else if (a.joint) rest = a.joint_share ? `joint, your share is ${Math.round(a.joint_share)}%` : 'joint';
   else if (a.anchor) rest = 'counts toward your Anchor';
   else rest = updated ? `updated ${updated}` : 'waiting for its first update';
@@ -105,6 +106,7 @@ export function pillFor(a) {
     case 'up_to_date': return { label: 'Up to date', tone: 'positive', icon: 'check' };
     case 'joint': return { label: 'Joint', tone: 'info', icon: 'info' };
     case 'not_counted': return { label: 'Not counted', tone: 'neutral', icon: null };
+    case 'investment': return { label: 'Investments', tone: 'neutral', icon: null };
     case 'manual': return { label: 'Manual', tone: 'neutral', icon: null };
     case 'sign_in': return { label: 'Sign in again', tone: 'caution', icon: 'alert' };
     case 'retrying': return { label: 'We’re retrying', tone: 'info', icon: 'info' };
@@ -126,13 +128,22 @@ export function bankInitials(a) {
   return (first[0] + words[1][0]).toUpperCase();
 }
 
+/** The bank's logo where Plaid has one, its initials otherwise. */
+export function BankMark({ a }) {
+  return (
+    <span className={`pk-avatar${a.logo ? ' pf-logo' : ''}`} aria-hidden="true">
+      {a.logo ? <img src={a.logo} alt="" /> : bankInitials(a)}
+    </span>
+  );
+}
+
 function AccountRow({ a, onOpen, onReconnect, now }) {
   const pill = pillFor(a);
   const reconnect = needsReconnect(a);
   return (
     <li className="pf-row">
       <button type="button" className="pf-row-main" onClick={() => onOpen(a)}>
-        <span className="pk-avatar" aria-hidden="true">{bankInitials(a)}</span>
+        <BankMark a={a} />
         <span className="pf-row-text">
           <span className="pf-row-name">{titleOf(a)}</span>
           <span className="pf-row-sub">{accountMeta(a, now)}</span>
@@ -305,7 +316,13 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onRemove, onR
           {`${a.institution || 'Your bank'} isn’t responding right now. We’ll keep trying; there’s nothing you need to do.`}
         </Alert>
       )}
-      {!a.counted && (
+      {a.kind === 'investment' && (
+        <Alert tone="info">
+          Pearl sees this account’s balance. Money you move into it counts as saved, never as
+          spending.
+        </Alert>
+      )}
+      {!a.counted && a.kind !== 'investment' && (
         <Alert tone="info">
           This account isn’t in your budget. Its transactions stay here, but they don’t count toward
           safe to spend, spending or your snapshot.
@@ -320,9 +337,9 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onRemove, onR
       <section className="pf-section" aria-labelledby="ac-counts">
         <h2 className="pk-h3" id="ac-counts">How it counts</h2>
         <div className="pk-choices">
-          <Choice type="checkbox" checked={a.counted} disabled={busy}
+          {a.kind !== 'investment' && <Choice type="checkbox" checked={a.counted} disabled={busy}
                   onChange={(on) => onSave({ counted: on })} label="Count in my budget"
-                  description="Its spending, bills and balance count toward safe to spend and your snapshot." />
+                  description="Its spending, bills and balance count toward safe to spend and your snapshot." />}
           {linked && (
             <Choice type="checkbox" checked={a.joint} disabled={busy}
                     onChange={(on) => (on ? onShare() : onSave({ joint_share: null }))}
