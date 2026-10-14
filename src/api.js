@@ -204,14 +204,6 @@ export const saveLearn    = (id, body) => json('PUT', `/api/learn/${encodeURICom
 export const answerCarryover = (month, choice) =>
   json('PUT', `/api/carryover/${month}`, { choice });
 
-// Sort a date range: one category for every purchase in it, kept as an
-// edit with running totals (finance/bulk_edits.py).
-export const getBulkEdits    = () => req('/api/bulk-edits');
-export const previewBulkEdit = (body) => json('POST', '/api/bulk-edits/preview', body);
-export const saveBulkEdit    = (edit) => (edit.id
-  ? json('PUT', `/api/bulk-edits/${edit.id}`, edit)
-  : json('POST', '/api/bulk-edits', edit));
-export const deleteBulkEdit  = (id) => req(`/api/bulk-edits/${id}`, { method: 'DELETE' });
 export const putHomeAnswers = (answers) => json('PUT', '/api/home/answers', answers);
 // Month or week as Home's main view (THL-166), saved on her account.
 // "Can I afford it?" (THL-167): works it out and records nothing.

@@ -7,7 +7,6 @@ import PIcon from '../pearl/icons.jsx';
 import TransactionDetail, { AddTransaction } from './TransactionDetail.jsx';
 import { BatchPicker, KeyHints, SelectedBar, ShortcutsPanel } from './KeyboardReview.jsx';
 import { duplicateAlert } from './Duplicates.jsx';
-import { BulkEditsPanel, SortRange } from './BulkEdits.jsx';
 import {
   initialState, isTextTarget, keyAction, reduce, rowName, selectRange, targets,
 } from './keyboardKeys.js';
@@ -111,8 +110,6 @@ export default function TransactionsList({ summary, categories, accounts, review
   // Rows that just changed, highlighted for a moment.
   const [flash, setFlash] = useState(() => new Set());
   const [adding, setAdding] = useState(false);
-  // Sort a date range: 'new' opens the panel, 'list' the edits so far.
-  const [sorting, setSorting] = useState(null);
   const [query, setQuery] = useState(filters.q);
   const [data, setData] = useState(null);
   const [rows, setRows] = useState([]);
@@ -426,8 +423,6 @@ export default function TransactionsList({ summary, categories, accounts, review
           <h1 className="pk-h1">{title}</h1>
         </div>
         <div className="tx-head-actions">
-          <PButton variant="text" onClick={() => setSorting('list')}>Sorted together</PButton>
-          <PButton variant="secondary" onClick={() => setSorting('new')}>Sort a date range</PButton>
           <PButton onClick={() => setAdding(true)}>
             <PIcon name="plus" size={16} /> Add a transaction
           </PButton>
@@ -586,14 +581,6 @@ export default function TransactionsList({ summary, categories, accounts, review
       {adding && (
         <AddTransaction categories={categories} onClose={() => setAdding(false)}
                         onSaved={() => { setAdding(false); saved(); }} />
-      )}
-      {sorting === 'new' && (
-        <SortRange categories={categories} onClose={() => setSorting(null)}
-                   onSaved={() => { setSorting(null); saved(); }} />
-      )}
-      {sorting === 'list' && (
-        <BulkEditsPanel categories={categories} onClose={() => setSorting(null)}
-                        onChanged={() => saved()} />
       )}
       {change && (
         <ActionToast title={change.title} detail={change.detail}
