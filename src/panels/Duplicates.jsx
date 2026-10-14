@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Choice, PButton, txAmount } from '../pearl/kit.jsx';
+import { Choice, PButton, amountTone, txAmount } from '../pearl/kit.jsx';
 import './txextras.css';
 
 /**
@@ -55,7 +55,9 @@ export function CopyCard({ side, found }) {
       <p className="pk-overline accent">{side.source_label}</p>
       <p className="pk-muted dp-merchant">{side.merchant}</p>
       <p className="pk-label pk-muted">{longDate(side.date)} · {side.account}</p>
-      <p className="pk-h3 dp-amt">{txAmount(side.amount, { inflow: side.amount < 0 })}</p>
+      <p className={`pk-h3 dp-amt ${amountTone(side.amount < 0)}`}>
+        {txAmount(side.amount, { inflow: side.amount < 0, signed: true })}
+      </p>
       <p className="pk-label pk-muted dp-raw">{side.description} · {how}</p>
     </div>
   );

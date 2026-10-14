@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import {
-  Alert, Avatar, CategoryChip, Choice, DetailPanel, PButton, StatusPill, txAmount,
+  Alert, Avatar, CategoryChip, Choice, DetailPanel, PButton, StatusPill, amountTone, txAmount,
 } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import CategoryPicker, { categoryLabel } from './CategoryPicker.jsx';
@@ -116,7 +116,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
     const unsorted = tx.category === 'Unsorted transfers';
     return (
       <DetailPanel label="Change category" onClose={onClose}
-                   back={{ label: `${tx.merchant} · ${txAmount(tx.amount, { inflow: tx.inflow })}`,
+                   back={{ label: `${tx.merchant} · ${txAmount(tx.amount, { inflow: tx.inflow, signed: true })}`,
                            onClick: back }}>
         <h2 className="pk-h2">{unsorted ? 'Where did this go?' : 'Change category'}</h2>
         {error && <p className="txd-error" role="alert">{error.message}</p>}
@@ -158,7 +158,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
   if (step === 'link') {
     return (
       <DetailPanel label="Which split is this for?" onClose={onClose}
-                   back={{ label: `${tx.merchant} · ${txAmount(tx.amount, { inflow: tx.inflow })}`,
+                   back={{ label: `${tx.merchant} · ${txAmount(tx.amount, { inflow: tx.inflow, signed: true })}`,
                            onClick: back }}>
         <h2 className="pk-h2">Which split is this for?</h2>
         {error && <p className="txd-error" role="alert">{error.message}</p>}
@@ -191,7 +191,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
   }[step];
 
   return (
-    <DetailPanel label={`${tx.merchant}, ${txAmount(tx.amount, { inflow: tx.inflow })}`}
+    <DetailPanel label={`${tx.merchant}, ${txAmount(tx.amount, { inflow: tx.inflow, signed: true })}`}
                  overline="Transaction" onClose={onClose}>
       <div className="txd-hero">
         <Avatar name={tx.merchant} logo={tx.logo} large />
@@ -199,8 +199,8 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
           <h2 className="pk-h2">{tx.merchant}</h2>
           <span className="pk-label pk-muted">{longDate(tx.date)}</span>
         </div>
-        <span className={`txd-amount${muted ? ' muted' : tx.inflow ? ' in' : ''}`}>
-          <span className="pk-h1">{txAmount(tx.amount, { inflow: tx.inflow })}</span>
+        <span className={`txd-amount ${amountTone(tx.inflow)}${muted ? ' muted' : ''}`}>
+          <span className="pk-h1">{txAmount(tx.amount, { inflow: tx.inflow, signed: true })}</span>
           {tx.split && (
             <span className="pk-label pk-muted txd-sub">your share of {txAmount(tx.full_amount)}</span>
           )}

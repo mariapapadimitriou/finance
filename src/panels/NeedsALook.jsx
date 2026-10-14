@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActionToast, Avatar, Choice, PButton, Toast, txAmount,
+  ActionToast, Avatar, Choice, PButton, Toast, amountTone, txAmount,
 } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import CategoryPicker, { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
@@ -283,7 +283,9 @@ function TxHead({ txn, name }) {
           {longDate(txn.date)}{txn.account_name ? ` · ${inflow ? 'to' : 'from'} ${txn.account_name}` : ''}
         </span>
       </div>
-      <span className="pk-h2 nl-tx-amt">{txAmount(Math.abs(txn.amount), { inflow })}</span>
+      <span className={`pk-h2 nl-tx-amt ${amountTone(inflow)}`}>
+        {txAmount(Math.abs(txn.amount), { inflow, signed: true })}
+      </span>
     </div>
   );
 }
