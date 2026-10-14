@@ -161,7 +161,7 @@ def one_off_effect(transactions: list[Transaction], txn: Transaction, today: dat
 
 def snapshot(transactions: list[Transaction], today: date, sts: dict, u: dict, *,
              savings_target: float = 0.0, anchor_started: bool = False,
-             comparisons_from: str | None = None) -> dict:
+             comparisons_from: str | None = None, saved: float | None = None) -> dict:
     """The Home snapshot (H-01): Income, Essentials, Lifestyle and Savings.
 
     Income compares what has arrived with what's expected this month;
@@ -194,7 +194,8 @@ def snapshot(transactions: list[Transaction], today: date, sts: dict, u: dict, *
         rows.append({"key": g, "label": GROUP_LABELS[g], "spent": _dollars(spent[g]),
                      "usual": grp["usual"] if grp else None, "usual_by_today": by_today})
 
-    saved = invested_in(transactions, month)
+    if saved is None:
+        saved = invested_in(transactions, month)
     rows.append({"key": "savings", "label": "Savings", "saved": saved,
                  "planned": savings_target or None,
                  "goal": ("anchor" if anchor_started else "saving_goal") if savings_target else None})

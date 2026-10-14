@@ -51,8 +51,9 @@ def client(tmp_path, monkeypatch):
 def test_both_totals_since_the_start(client):
     s = client.get("/api/home").get_json()["savings"]
     assert s["since"] == "2026-09-01"
-    assert s["put_away"] == {"contributions": 500.0, "withdrawals": 200.0, "net": 300.0}
-    assert s["left_over"] == {"income": 4300.0, "spent": 130.0, "net": 4170.0}
+    assert s["put_away"] == {"contributions": 500.0, "chests": 0.0, "withdrawals": 200.0,
+                             "net": 300.0}
+    assert s["left_over"] == {"income": 4300.0, "spent": 130.0, "net": 4170.0, "estimate": False}
 
 
 def test_nothing_before_the_start_counts(client):

@@ -48,11 +48,12 @@ export function tileRows(d) {
   const t = d.tiles;
   const so = d.running ? 'So far' : `In ${monthFull(d.month)}`;
   const arrived = t.arrived ?? [];
-  const income = t.income > 0
-    ? arrived.length === 1 ? `Arrived ${dayShort(arrived[0])}`
-      : arrived.length > 1 ? `${arrived.length} payments, latest ${dayShort(arrived[arrived.length - 1])}`
-        : 'Arrived'
-    : d.running ? 'Nothing has arrived yet' : 'None arrived';
+  const income = t.estimate ? 'What you told Pearl'
+    : t.income > 0
+      ? arrived.length === 1 ? `Arrived ${dayShort(arrived[0])}`
+        : arrived.length > 1 ? `${arrived.length} payments, latest ${dayShort(arrived[arrived.length - 1])}`
+          : 'Arrived'
+      : d.running ? 'Nothing has arrived yet' : 'None arrived';
   return [
     { key: 'income', label: 'Income', value: t.income > 0 ? cash(t.income) : 'None yet', note: income },
     { key: 'essentials', label: 'Essentials', value: t.essentials > 0 ? cash(t.essentials) : 'Nothing yet', note: so },

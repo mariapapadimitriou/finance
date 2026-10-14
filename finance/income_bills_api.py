@@ -40,7 +40,7 @@ def _payload(st) -> dict:
         "bills": [{k: r[k] for k in _ROW_FIELDS if k in r} for r in rows],
         "rent_question": ib.rent_question(rows),
         "totals": {"income": ib.income_each_month(state, told, estimate),
-                   "bills": ib.bills_each_month(rows)},
+                   "bills": ib.bills_each_month(rows, st.float_setting("home_rent", 0.0))},
     }
 
 

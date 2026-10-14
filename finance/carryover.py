@@ -52,7 +52,7 @@ def _months_after(start: str, month: str) -> int:
     return (y2 - y1) * 12 + (m2 - m1)
 
 
-def result(transactions, month: str) -> dict | None:
+def result(transactions, month: str, saved: float | None = None) -> dict | None:
     """The whole month's result, or None when it can't be told."""
     if not transactions or min(t.date for t in transactions) > f"{month}-03":
         return None                                     # Pearl didn't see all of it
@@ -62,7 +62,7 @@ def result(transactions, month: str) -> dict | None:
         return None
     end = month_end(date.fromisoformat(f"{month}-01"))
     spent_c = already_spent(transactions, end)["amount_c"]
-    saved_c = _cents(invested_in(transactions, month))
+    saved_c = _cents(saved if saved is not None else invested_in(transactions, month))
     return {"month": month, "income": _dollars(income_c), "spent": _dollars(spent_c),
             "saved": _dollars(saved_c), "amount": _dollars(income_c - spent_c - saved_c)}
 
@@ -86,7 +86,8 @@ def question(store, transactions, today: date) -> dict | None:
     data = load(store)
     entry = data.get(month)
     if entry is None or entry.get("choice") is None:
-        r = result(transactions, month)
+        from .savings import put_away_month
+        r = result(transactions, month, saved=put_away_month(store, transactions, month))
         if r is None or abs(_cents(r["amount"])) < MIN_C:
             return None
         found = (entry or {}).get("found_on") or today.isoformat()

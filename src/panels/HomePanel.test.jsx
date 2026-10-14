@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   HomeBody, HowWeWorkedItOut, IncomePanel, NeedsALook, PathCard, ReconnectPanel, SafeToSpendCard,
-  SavingsCard, netWords,
+  SavingsCard, netWords, putAwayWords,
   Snapshot, heroCopy, homeAlert, parseAmount, sheetRows, snapshotRows, stepWords, whenWords,
 } from './HomePanel.jsx';
 
@@ -596,5 +596,12 @@ describe('Savings so far (2026-10-14)', () => {
     expect(t).toContain('More taken out than put in');
     calm(t);
     expect(html(<SavingsCard savings={null} />)).toBe('');
+    // Chests count as put away, and an estimated income says so.
+    expect(putAwayWords({ contributions: 500, chests: 200, withdrawals: 100 }, false))
+      .toBe('$500 in, $200 to chests, $100 taken out');
+    expect(putAwayWords({ contributions: 0, chests: 0, withdrawals: 0 }, false))
+      .toContain('money in your chests');
+    const est = html(<SavingsCard savings={{ ...savings, left_over: { ...savings.left_over, estimate: true } }} />);
+    expect(est).toContain('$4,300 expected, $130 spent');
   });
 });

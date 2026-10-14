@@ -36,19 +36,24 @@ PHASES = ("protect", "build", "unveil")
 PHASE_LABELS = {"protect": "Protect", "build": "Build", "unveil": "Unveil"}
 
 
-def _month_income_and_spending(transactions, month: str) -> tuple[float, float, float]:
-    """Income, all spending and Essentials in one month."""
+def _month_income_and_spending(transactions, month: str,
+                               income_of=None) -> tuple[float, float, float]:
+    """Income, all spending and Essentials in one month. `income_of(month)`
+    is the one income rule (safe_to_spend.income_for_month) when given."""
     income = spent = essentials = 0.0
     for t in transactions:
         if t.month != month:
             continue
         if t.category == "Income" and t.amount < 0 and not t.repays and not is_others(t):
-            income += -t.amount
+            if income_of is None:
+                income += -t.amount
         elif counts_as_spending(t):
             amount = spend_amount(t)
             spent += amount
             if group_of(t.category or "Other") == "essentials":
                 essentials += amount
+    if income_of is not None:
+        income = float(income_of(month)[0])
     return round(income, 2), round(spent, 2), round(essentials, 2)
 
 
@@ -92,7 +97,7 @@ def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int
          told_rent: float = 0.0, account_types: dict[str, str] | None = None,
          protect_done_before: bool = False, confirm: dict | None = None,
          told_income: float = 0.0, invest_reported: bool = False,
-         every_step: bool = False) -> dict:
+         every_step: bool = False, income_of=None) -> dict:
     """Where she is on the path, every step's state, and the next step.
     `confirm` is her income and bills check (`income_bills.load`);
     `invest_reported` is her saying she opened an investing account (GR-37).
@@ -104,7 +109,9 @@ def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int
     types = account_types or {}
     months = covered_months(transactions, today)
     last = months[-1] if months else None
-    income, spent, essentials = _month_income_and_spending(transactions, last) if last else (0, 0, 0)
+    income, spent, essentials = (_month_income_and_spending(transactions, last, income_of)
+                                 if last else (0, 0, 0))
+    estimate = bool(last and income_of and income_of(last)[1])
 
     protect = [
         {"key": "income", "label": "Confirm your income",
@@ -113,7 +120,7 @@ def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int
          "done": bills_confirmed(confirm, bills_found, told_rent)},
         {"key": "essentials", "label": "Cover your Essentials",
          "done": bool(last) and essentials > 0 and income >= essentials,
-         "month": last, "income": income, "essentials": essentials},
+         "month": last, "income": income, "essentials": essentials, "estimate": estimate},
     ]
     protect_done = protect_done_before or all(s["done"] for s in protect)
     lapse = None
@@ -133,8 +140,8 @@ def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int
          "done": bool(anchor.get("earned")), "target": anchor.get("target") or None},
     ]
     saving_months = sum(1 for m in months
-                        if _month_income_and_spending(transactions, m)[0]
-                        > _month_income_and_spending(transactions, m)[1])
+                        if _month_income_and_spending(transactions, m, income_of)[0]
+                        > _month_income_and_spending(transactions, m, income_of)[1])
     cards = {a for a, t in types.items() if (t or "").lower() == "credit"}
     also = [
         {"key": "saved_more", "label": "Save more than you spend in 2 of the last 3 months",

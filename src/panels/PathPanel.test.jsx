@@ -40,6 +40,9 @@ describe('Path page (GR-01)', () => {
   });
 
   it('each step says where it stands in her numbers', () => {
+    expect(stepDetail({ key: 'essentials', done: false, month: '2026-09', income: 4300, essentials: 2000,
+                        estimate: true }, true))
+      .toBe('In September: $4,300 expected (what you told Pearl), $2,000 went on Essentials');
     expect(stepDetail({ key: 'essentials', done: false, month: '2026-09', income: 1500, essentials: 2000 }, true))
       .toBe('In September: $1,500 came in, $2,000 went on Essentials');
     expect(stepDetail({ key: 'first_stop', done: false, first_stop: 500 }, true)).toBe('Your first stop is $500');

@@ -95,10 +95,15 @@ def is_income(t: Transaction) -> bool:
 class Ledger:
     """Per-month aggregates, in cents, from one pass."""
 
-    def __init__(self, transactions: list[Transaction], confirmed: dict[str, str] | None = None):
+    def __init__(self, transactions: list[Transaction], confirmed: dict[str, str] | None = None,
+                 income: dict[str, int] | None = None, estimated: set[str] | None = None):
+        from .safe_to_spend import _counts_as_income
         self.transactions = transactions
         confirmed = confirmed or {}
         self.income: dict[str, int] = defaultdict(int)
+        # A month's income by the one rule (safe_to_spend.income_for_month),
+        # and the months where that is the planned figure, not deposits.
+        self.estimated: set[str] = set(estimated or ())
         self.arrived: dict[str, list[str]] = defaultdict(list)
         self.group: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         self.category: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -111,9 +116,11 @@ class Ledger:
         self.months: set[str] = set()
         for t in transactions:
             self.months.add(t.month)
-            if is_income(t):
+            if _counts_as_income(t):
                 self.income[t.month] += cents(-t.amount)
                 self.arrived[t.month].append(t.date[:10])
+                continue
+            if is_income(t):
                 continue
             if not counts_as_spending(t):
                 continue
@@ -130,6 +137,10 @@ class Ledger:
             if (t.amount > 0 and t.category_source != "user" and is_unsure(t)
                     and confirmed.get(t.fingerprint) != cat):
                 self.unsure[t.month][cat] += 1
+
+        if income:
+            for m, c in income.items():
+                self.income[m] = c
 
     def spent(self, month: str) -> int:
         return sum(self.group[month].get(g, 0) for g in GROUPS)
@@ -160,8 +171,14 @@ def chest_monthly(banks: list[piggy.Bank], charges: dict[int, dict], month: str)
     return total
 
 
-def set_aside(transactions, banks, charges, month: str) -> int:
-    return cents(invested_in(transactions, month)) + chest_monthly(banks, charges, month)
+def set_aside(transactions, banks, charges, month: str,
+              adds: dict[str, float] | None = None) -> int:
+    """What a month put away, in cents: Saved transfers less withdrawals,
+    the chests' monthly amounts, and anything added to a chest by hand
+    (`adds`, {month: dollars}). The one saving figure; finance/savings.py
+    wraps it as `put_away_month`."""
+    return (cents(invested_in(transactions, month)) + chest_monthly(banks, charges, month)
+            + cents((adds or {}).get(month, 0.0)))
 
 
 def chest_held(bank: piggy.Bank, charges: dict, month: str) -> int:
@@ -177,6 +194,7 @@ def chest_held(bank: piggy.Bank, charges: dict, month: str) -> int:
 def tiles(led: Ledger, sa: int, month: str) -> dict:
     return {
         "income": led.income.get(month, 0),
+        "estimate": month in led.estimated,
         "arrived": sorted(led.arrived.get(month, [])),
         "essentials": led.group[month].get("essentials", 0),
         "lifestyle": led.group[month].get("lifestyle", 0),
@@ -319,6 +337,7 @@ def money(led: Ledger, set_asides: dict[str, int], months: list[str], today: dat
     for m in months:
         income, spent, sa = led.income.get(m, 0), led.spent(m), set_asides[m]
         out.append({"month": m, "income": income, "spent": max(spent, 0), "set_aside": sa,
+                    "estimate": m in led.estimated,
                     "kept": None if m >= now else income - spent - sa})
     return out
 
@@ -330,6 +349,7 @@ def income_went(led: Ledger, sa: int, month: str) -> dict:
     income = led.income.get(month, 0)
     left = income - e - life - max(sa, 0)
     return {"income": income, "essentials": e, "lifestyle": life, "set_aside": max(sa, 0),
+            "estimate": month in led.estimated,
             "left_over": max(left, 0), "short": max(-left, 0)}
 
 
@@ -392,7 +412,9 @@ def subscriptions(records: list[dict], choices: dict, today: date) -> dict:
 def build(transactions: list[Transaction], today: date, month: str, *, u_today: dict,
           u_month: dict, unusual: set[str], banks: list[piggy.Bank], charges: dict,
           confirmed: dict, anchor: dict, anchor_accounts: list[dict],
-          subscription_records: list[dict], subscription_choices: dict) -> dict:
+          subscription_records: list[dict], subscription_choices: dict,
+          income: dict[str, int] | None = None, estimated: set[str] | None = None,
+          adds: dict[str, float] | None = None) -> dict:
     """Everything Growth › Insights draws for `month`.
 
     `u_today` is her usual month as of today (the page and the trend);
@@ -402,9 +424,10 @@ def build(transactions: list[Transaction], today: date, month: str, *, u_today: 
     now = today.strftime("%Y-%m")
     running = month == now
     day = today.day if running else days_in(month)
-    led = Ledger(transactions, confirmed)
+    led = Ledger(transactions, confirmed, income=income, estimated=estimated)
     span = months_shown(led, now)
-    set_asides = {m: set_aside(transactions, banks, charges, m) for m in sorted(set(span) | {month})}
+    set_asides = {m: set_aside(transactions, banks, charges, m, adds)
+                  for m in sorted(set(span) | {month})}
     # The months the switcher steps through: from the ledger's first to now.
     first = min((t.month for t in transactions), default=now)
     all_months = window(now, _idx(now) - _idx(first) + 1) if first <= now else [now]
