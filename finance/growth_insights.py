@@ -96,10 +96,17 @@ class Ledger:
     """Per-month aggregates, in cents, from one pass."""
 
     def __init__(self, transactions: list[Transaction], confirmed: dict[str, str] | None = None,
-                 income: dict[str, int] | None = None, estimated: set[str] | None = None):
+                 income: dict[str, int] | None = None, estimated: set[str] | None = None,
+                 kinds: dict[str, str] | None = None):
         from .safe_to_spend import _counts_as_income
         self.transactions = transactions
         confirmed = confirmed or {}
+        # Fixed or Variable, per row (finance/kinds.py): the second lens.
+        self.kinds = kinds or {}
+        self.kind: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self.usual_kind: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self.kind_category: dict[str, dict[str, dict[str, int]]] = defaultdict(
+            lambda: defaultdict(lambda: defaultdict(int)))
         self.income: dict[str, int] = defaultdict(int)
         # A month's income by the one rule (safe_to_spend.income_for_month),
         # and the months where that is the planned figure, not deposits.
@@ -128,10 +135,14 @@ class Ledger:
             c = cents(spend_amount(t))
             self.group[t.month][group_of(cat)] += c
             self.category[t.month][cat] += c
+            k = self.kinds.get(t.fingerprint, "variable")
+            self.kind[t.month][k] += c
+            self.kind_category[t.month][k][cat] += c
             days = self.daily[t.month].setdefault(cat, [0] * 32)
             days[int(t.date[8:10])] += c
             if not t.one_off:
                 self.usual_group[t.month][group_of(cat)] += c
+                self.usual_kind[t.month][k] += c
                 days = self.usual_daily[t.month].setdefault(cat, [0] * 32)
                 days[int(t.date[8:10])] += c
             if (t.amount > 0 and t.category_source != "user" and is_unsure(t)
@@ -195,6 +206,8 @@ def tiles(led: Ledger, sa: int, month: str) -> dict:
     return {
         "income": led.income.get(month, 0),
         "estimate": month in led.estimated,
+        "fixed": led.kind[month].get("fixed", 0),
+        "variable": led.kind[month].get("variable", 0),
         "arrived": sorted(led.arrived.get(month, [])),
         "essentials": led.group[month].get("essentials", 0),
         "lifestyle": led.group[month].get("lifestyle", 0),
@@ -289,7 +302,18 @@ def where(led: Ledger, month: str) -> dict:
     for g in groups:
         for c in g["categories"]:
             c["share"] = round(c["amount"] * 100 / total) if total else 0
-    return {"month": month, "total": total, "groups": groups,
+    # The same month through the other lens (finance/kinds.py).
+    from .kinds import KIND_LABELS, KINDS
+    kinds = []
+    for k in KINDS:
+        cats = sorted(((c, v) for c, v in led.kind_category[month][k].items() if v > 0),
+                      key=lambda kv: (-kv[1], kv[0]))
+        kinds.append({"key": k, "label": KIND_LABELS[k], "total": sum(v for _, v in cats),
+                      "categories": [{"category": c, "amount": v,
+                                      "unsure": led.unsure[month].get(c, 0),
+                                      "share": round(v * 100 / total) if total else 0}
+                                     for c, v in cats]})
+    return {"month": month, "total": total, "groups": groups, "kinds": kinds,
             "unsure": sum(c["unsure"] for g in groups for c in g["categories"])}
 
 
@@ -316,6 +340,8 @@ def trend(led: Ledger, u: dict, months: list[str], today: date) -> dict:
     for m in months:
         e, life = led.group[m].get("essentials", 0), led.group[m].get("lifestyle", 0)
         rows.append({"month": m, "essentials": max(e, 0), "lifestyle": max(life, 0),
+                     "fixed": max(led.kind[m].get("fixed", 0), 0),
+                     "variable": max(led.kind[m].get("variable", 0), 0),
                      "total": max(e + life, 0), "running": m == now,
                      "above": bool(band) and m != now and e + life > band["high"]})
     above = {g: [r["month"] for r in rows if not r["running"] and _group_above(led, u, g, r["month"])]
@@ -414,7 +440,8 @@ def build(transactions: list[Transaction], today: date, month: str, *, u_today: 
           confirmed: dict, anchor: dict, anchor_accounts: list[dict],
           subscription_records: list[dict], subscription_choices: dict,
           income: dict[str, int] | None = None, estimated: set[str] | None = None,
-          adds: dict[str, float] | None = None) -> dict:
+          adds: dict[str, float] | None = None, kinds: dict[str, str] | None = None,
+          n: int = SPAN) -> dict:
     """Everything Growth › Insights draws for `month`.
 
     `u_today` is her usual month as of today (the page and the trend);
@@ -424,8 +451,8 @@ def build(transactions: list[Transaction], today: date, month: str, *, u_today: 
     now = today.strftime("%Y-%m")
     running = month == now
     day = today.day if running else days_in(month)
-    led = Ledger(transactions, confirmed, income=income, estimated=estimated)
-    span = months_shown(led, now)
+    led = Ledger(transactions, confirmed, income=income, estimated=estimated, kinds=kinds)
+    span = months_shown(led, now, n)
     set_asides = {m: set_aside(transactions, banks, charges, m, adds)
                   for m in sorted(set(span) | {month})}
     # The months the switcher steps through: from the ledger's first to now.

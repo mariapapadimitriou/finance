@@ -19,6 +19,15 @@ const trendMonth = (month, essentials, lifestyle, extra = {}) => ({
 const cat = (category, group, amount, unsure = 0, share = 0) => ({ category, amount, unsure, share, group });
 const where = (month) => ({
   month, total: 360000, unsure: 2,
+  kinds: [
+    { key: 'fixed', label: 'Fixed', total: 163400, categories: [
+      cat('Rent', 'essentials', 145000, 0, 40), cat('Bills and phone', 'essentials', 18400, 0, 5)] },
+    { key: 'variable', label: 'Variable', total: 196600, categories: [
+      cat('Groceries', 'essentials', 42000, 0, 12), cat('Eating out', 'lifestyle', 39000, 0, 11),
+      cat('Fun and going out', 'lifestyle', 31000, 0, 9), cat('Shopping', 'lifestyle', 28000, 2, 8),
+      cat('Gifts', 'lifestyle', 21000, 0, 6), cat('Transit', 'essentials', 15600, 0, 4),
+      cat('Books', 'lifestyle', 15000, 0, 4), cat('Pets', 'lifestyle', 5000, 0, 1)] },
+  ],
   groups: [
     { key: 'essentials', label: 'Essentials', total: 221000, categories: [
       cat('Rent', 'essentials', 145000, 0, 40), cat('Groceries', 'essentials', 42000, 0, 12),
@@ -36,7 +45,10 @@ const history = (amounts, usual, running = true) => MONTHS.map((month, i) => ({
 const october = {
   today: '2026-10-12', month: '2026-10', running: true, day: 12, days_in_month: 31, empty: false,
   months: MONTHS,
-  tiles: { income: 420000, arrived: ['2026-10-01'], essentials: 124000, lifestyle: 52000, set_aside: 35000 },
+  tiles: { income: 420000, arrived: ['2026-10-01'], essentials: 124000, lifestyle: 52000, set_aside: 35000,
+           fixed: 150000, variable: 26000 },
+  accounts: [{ id: 'chq', name: 'Everyday' }, { id: 'card', name: 'Visa' }],
+  filters: { account: null, span: 12, one_offs: 'in', show: null },
   usual: { months: ['2026-06', '2026-07', '2026-08'], curve: 'daily', left_out: ['2026-09'],
            unusual: ['2026-09'], month_unusual: false },
   vs_usual: [
@@ -250,7 +262,9 @@ describe('GR-29 spending trend', () => {
 });
 
 describe('GR-30 where the month went', () => {
-  const out = html(<WhereView d={october} route={{ view: 'where', month: '' }} nav={nav} />);
+  // A past month, asked for by name (this month is shown first otherwise).
+  const out = html(<WhereView d={{ ...october, where: where('2026-09') }}
+                              route={{ view: 'where', month: '2026-09' }} nav={nav} />);
   it('a ring, both groups, a dashed marker for what Pearl isn’t sure of, and the way to confirm', () => {
     for (const text of ['Where September went', 'Essentials · $2,210', 'Lifestyle · $1,390', 'Rent', '$1,450', '40%',
                         'Shopping', 'needs a look', 'Everything else', '$200',
@@ -356,5 +370,32 @@ describe('the words and the geometry', () => {
     expect(a.top).toEqual([[0, 80], [100, 60]]);
     expect(b.top).toEqual([[0, 70], [100, 50]]);
     expect(stackedAreas([[0]], 100, 100, 0)).toEqual([]);
+  });
+});
+
+describe('the Fixed / Variable lens and the filters (2026-10-14)', () => {
+  it('the page has the lens switch and the four filters', () => {
+    const out = html(<InsightsPage d={october} show={() => {}} onTab={() => {}} filters={{}} onFilter={() => {}} />);
+    for (const s of ['By need', 'By kind', 'aria-label="Account"', 'aria-label="Months"', 'aria-label="Show"',
+      'aria-label="One-offs"', 'Everyday', 'Fixed only', 'One-offs left out']) {
+      expect(out).toContain(s);
+    }
+  });
+
+  it('by kind, the tiles, the trend and where-it-went read Fixed and Variable', () => {
+    const out = html(<InsightsPage d={october} show={() => {}} onTab={() => {}} lens="kind"
+                                   filters={{}} onFilter={() => {}} />);
+    expect(out).toContain('Fixed');
+    expect(out).toContain('$1,500');                       // the fixed tile
+    expect(out).toContain('Fixed and Variable each month');
+    expect(out).toContain('in-fixed');                     // the kind lens's own colours
+    expect(out).not.toContain('Essentials and Lifestyle each month');
+  });
+
+  it('by need is unchanged', () => {
+    const out = html(<InsightsPage d={october} show={() => {}} onTab={() => {}} lens="need"
+                                   filters={{}} onFilter={() => {}} />);
+    expect(out).toContain('Essentials and Lifestyle each month');
+    expect(out).not.toContain('Fixed and Variable each month');
   });
 });

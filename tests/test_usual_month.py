@@ -54,7 +54,7 @@ class TestUsualMonth:
 
     def test_no_full_month_no_usual(self):
         u = um.usual([tx("2026-09-20", "Loblaws", 80.00, "Groceries")], TODAY)
-        assert u == {"months": [], "curve": None, "groups": {}, "categories": {}}
+        assert u == {"months": [], "curve": None, "groups": {}, "kinds": {}, "categories": {}}
 
     def test_a_big_purchase_counts_until_she_marks_it_a_one_off(self):
         rows = history() + [tx("2026-08-15", "Garage", 1900.00, "Home")]
@@ -123,5 +123,4 @@ def test_the_home_payload_carries_both(tmp_path, monkeypatch):
     with app.test_client() as c:
         body = c.get("/api/home").get_json()
     assert body["usual_month"]["curve"] == "daily"
-    assert [r["key"] for r in body["snapshot"]["rows"]] == [
-        "income", "essentials", "lifestyle", "savings"]
+    assert [r["key"] for r in body["snapshot"]["rows"]] == ["income", "essentials", "lifestyle", "savings", "fixed", "variable"]

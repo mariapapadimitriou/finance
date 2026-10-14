@@ -9,6 +9,7 @@ import { ActionToast, Alert, DetailPanel, PButton, StatusPill } from '../pearl/k
 import PIcon from '../pearl/icons.jsx';
 import { ExpectedForm } from '../pearl/IncomeBills.jsx';
 import { ProgressBar, SnapshotBar } from '../pearl/viz.jsx';
+import { LensToggle, readLens, writeLens } from './Lens.jsx';
 import { setGoalsIntent, writeTxUrl } from '../router.js';
 import { Field, Mark } from './GoalsParts.jsx';
 import { AffordCard } from './HomeAfford.jsx';
@@ -843,8 +844,11 @@ export function IncomePanel({ s, told, onClose, onSave, onReset }) {
 
 /** The props for each snapshot row's bar (H-01, H-02, E-03). Whole dollars;
  * no $0 and no empty bar anywhere (E10). */
-export function snapshotRows(snap) {
-  return snap.rows.map((r) => {
+export function snapshotRows(snap, lens = 'need') {
+  // One lens at a time: Essentials and Lifestyle, or Fixed and Variable.
+  const rows = snap.rows.filter((r) => (r.lens === 'kind') === (lens === 'kind')
+    || !['essentials', 'lifestyle', 'fixed', 'variable'].includes(r.key));
+  return rows.map((r) => {
     if (r.key === 'income') {
       const c = r.cautious;
       if (c) {
@@ -893,12 +897,18 @@ export function snapshotRows(snap) {
 
 /** The snapshot card (THL-48): this month so far against a usual month. */
 export function Snapshot({ snap }) {
+  const [lens, setLensState] = useState(readLens);
+  const setLens = (l) => { setLensState(l); writeLens(l); };
+  const hasKinds = snap.rows.some((r) => r.lens === 'kind');
   return (
     <section className="hm-card hm-snapshot" aria-labelledby="hm-snap-title">
-      <h2 className="pk-h3" id="hm-snap-title">
-        {`${monthName(snap.month)} so far, compared with a usual month`}
-      </h2>
-      {snapshotRows(snap).map(({ key, ...row }) => <SnapshotBar key={key} {...row} />)}
+      <div className="hm-row-between">
+        <h2 className="pk-h3" id="hm-snap-title">
+          {`${monthName(snap.month)} so far, compared with a usual month`}
+        </h2>
+        {hasKinds && <LensToggle lens={lens} onChange={setLens} />}
+      </div>
+      {snapshotRows(snap, lens).map(({ key, ...row }) => <SnapshotBar key={key} {...row} />)}
     </section>
   );
 }

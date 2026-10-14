@@ -210,6 +210,8 @@ export default function TransactionsList({ summary, categories, accounts, review
   const categoryOptions = useMemo(() => [
     { value: '', label: 'All categories' },
     { group: 'Groups', options: Object.entries(groups).map(([k, v]) => ({ value: `g:${k}`, label: v })) },
+    { group: 'Kind', options: Object.entries(data?.kinds ?? { fixed: 'Fixed', variable: 'Variable' })
+        .map(([k, v]) => ({ value: `g:${k}`, label: v })) },
     { group: 'Categories', options: categories.map((c) => ({ value: `c:${c.name}`, label: c.name })) },
     // Rows you excluded are not in the list; this is where they can be found
     // and put back.

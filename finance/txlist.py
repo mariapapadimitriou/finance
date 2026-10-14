@@ -72,8 +72,10 @@ class Context:
 
     def __init__(self, transactions: list[Transaction], confirmed: dict[str, str],
                  notes: dict[str, str], banks: dict[int, str],
-                 splits: dict[str, dict] | None = None):
+                 splits: dict[str, dict] | None = None, kinds: dict[str, str] | None = None):
         self.by_id = {t.fingerprint: t for t in transactions}
+        # Fixed or Variable, per spending row (finance/kinds.py).
+        self.kinds = kinds or {}
         self.confirmed = confirmed
         self.notes = notes
         self.banks = banks
@@ -210,6 +212,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "category": cat,
         "category_source": t.category_source,
         "group": group,
+        "kind": ctx.kinds.get(t.fingerprint),
         "chip": {"label": chip, "suggested": suggested},
         "suggested": suggested,
         "amount": round(amount, 2),
@@ -300,7 +303,10 @@ def select(rows: list[tuple[Transaction, dict]], *, month: str | None = None,
             continue
         if account and r["account_id"] != account:
             continue
-        if group and r["group"] != group:
+        if group in ("fixed", "variable"):
+            if r.get("kind") != group:
+                continue
+        elif group and r["group"] != group:
             continue
         if category and r["category"] != category:
             continue
@@ -357,7 +363,8 @@ def focus(all_rows: list[tuple[Transaction, dict]], *, month: str, account: str 
         return None
     key = group or group_of(category)
     kind = {"income": "income", "savings": "none", "transfer": "none"}.get(key, "spending")
-    label = category or CATEGORY_GROUPS.get(group, group)
+    from .kinds import KIND_LABELS
+    label = category or CATEGORY_GROUPS.get(group) or KIND_LABELS.get(group) or group
 
     def total(m: str, usual: bool = False) -> float:
         rows = select(all_rows, month=m, account=account, group=group, category=category)

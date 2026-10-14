@@ -44,8 +44,11 @@ export function addMonths(ym, n) {
 // ── Tiles (GR-28) ─────────────────────────────────────────────────────────
 
 /** The four tiles: label, figure and the line under it. No tile says $0. */
-export function tileRows(d) {
+export function tileRows(d, lens = 'need') {
   const t = d.tiles;
+  const [a, b] = lens === 'kind'
+    ? [['fixed', 'Fixed', t.fixed ?? 0], ['variable', 'Variable', t.variable ?? 0]]
+    : [['essentials', 'Essentials', t.essentials], ['lifestyle', 'Lifestyle', t.lifestyle]];
   const so = d.running ? 'So far' : `In ${monthFull(d.month)}`;
   const arrived = t.arrived ?? [];
   const income = t.estimate ? 'What you told Pearl'
@@ -56,8 +59,8 @@ export function tileRows(d) {
       : d.running ? 'Nothing has arrived yet' : 'None arrived';
   return [
     { key: 'income', label: 'Income', value: t.income > 0 ? cash(t.income) : 'None yet', note: income },
-    { key: 'essentials', label: 'Essentials', value: t.essentials > 0 ? cash(t.essentials) : 'Nothing yet', note: so },
-    { key: 'lifestyle', label: 'Lifestyle', value: t.lifestyle > 0 ? cash(t.lifestyle) : 'Nothing yet', note: so },
+    { key: a[0], label: a[1], value: a[2] > 0 ? cash(a[2]) : 'Nothing yet', note: so },
+    { key: b[0], label: b[1], value: b[2] > 0 ? cash(b[2]) : 'Nothing yet', note: so },
     { key: 'set_aside', label: 'Set aside', value: t.set_aside > 0 ? cash(t.set_aside) : 'Nothing yet',
       note: 'Anchor and chests' },
   ];

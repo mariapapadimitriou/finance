@@ -50,7 +50,7 @@ def merchant_of(c, description):
 
 
 def test_no_rules_yet(client):
-    assert rules(client) == {"rules": [], "count": 0}
+    assert rules(client) == {"count": 0, "rules": [], "kinds": {}}
     assert client.get("/api/profile").get_json()["rules"] == 0
 
 

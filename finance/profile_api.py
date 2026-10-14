@@ -493,9 +493,23 @@ def _rules(st) -> list[dict]:
 
 @bp.get("/rules")
 def list_rules():
+    from . import kinds
     st = store()
     rules = _rules(st)
-    return jsonify({"rules": rules, "count": len(rules)})
+    return jsonify({"rules": rules, "count": len(rules), "kinds": kinds.category_kinds(st)})
+
+
+@bp.put("/rules/kinds")
+def set_rule_kind():
+    """Mark a category always Fixed or always Variable (finance/kinds.py),
+    or let Pearl decide again with `kind` null."""
+    from . import kinds
+    body = request.get_json(silent=True) or {}
+    try:
+        data = kinds.set_category_kind(store(), str(body.get("category") or ""), body.get("kind"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True, "kinds": data})
 
 
 def _split(rule_id: str) -> tuple[str, str]:

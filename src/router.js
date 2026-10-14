@@ -108,15 +108,25 @@ export function readInsightsUrl(loc = window.location) {
   const params = new URLSearchParams(loc.search);
   const view = INSIGHTS_VIEWS.includes(m[1]) ? m[1] : '';
   const month = /^\d{4}-\d{2}$/.test(params.get('month') ?? '') ? params.get('month') : '';
-  return { view, month, category: view === 'category' ? params.get('category') ?? '' : '' };
+  const span = ['3', '6', '12'].includes(params.get('span') ?? '') ? params.get('span') : '';
+  const show = ['essentials', 'lifestyle', 'fixed', 'variable'].includes(params.get('show') ?? '')
+    ? params.get('show') : '';
+  return { view, month, category: view === 'category' ? params.get('category') ?? '' : '',
+           account: params.get('account') ?? '', span, one_offs: params.get('one_offs') === 'out' ? 'out' : '',
+           show };
 }
 
 export const isInsightsUrl = (loc = window.location) => readInsightsUrl(loc) !== null;
 
-export function insightsHref({ view = '', month = '', category = '' } = {}) {
+export function insightsHref({ view = '', month = '', category = '', account = '', span = '',
+                               one_offs = '', show = '' } = {}) {
   const params = new URLSearchParams();
   if (month) params.set('month', month);
   if (view === 'category' && category) params.set('category', category);
+  if (account) params.set('account', account);
+  if (span) params.set('span', span);
+  if (one_offs) params.set('one_offs', one_offs);
+  if (show) params.set('show', show);
   const qs = params.toString();
   return `${INSIGHTS_PATH}${view ? `/${view}` : ''}${qs ? `?${qs}` : ''}`;
 }

@@ -223,8 +223,18 @@ export const setAnchor       = (fields) => json('PUT', '/api/goals/anchor', fiel
 export const setUnusualMonths = (months) => json('PUT', '/api/goals/anchor/unusual', { months });
 // Growth › Insights (THL-186, THL-196): the month, a month left out of the
 // usual (THL-59), and Keep or Review on a subscription (THL-63).
-export const getInsightsMonth = (month) =>
-  req(`/api/insights/month${month ? `?month=${encodeURIComponent(month)}` : ''}`);
+// `filters`: {month, account, span, one_offs, show} — any left out means all.
+export const getInsightsMonth = (filters = {}) => {
+  const f = typeof filters === 'string' ? { month: filters } : filters;
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(f)) if (v) params.set(k, v);
+  const qs = params.toString();
+  return req(`/api/insights/month${qs ? `?${qs}` : ''}`);
+};
+// Profile › Categories and rules: a category always Fixed or Variable, or
+// null to let Pearl decide (finance/kinds.py).
+export const setCategoryKind = (category, kind) =>
+  json('PUT', '/api/rules/kinds', { category, kind });
 export const setMonthUnusual = (month, unusual) =>
   json('PUT', '/api/insights/unusual', { month, unusual });
 export const setSubscriptionChoice = (merchant, choice) =>
