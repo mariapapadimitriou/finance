@@ -264,6 +264,11 @@ CREATE TABLE IF NOT EXISTS review_dismissed (
     item_key   TEXT PRIMARY KEY,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- Needs a look items she skipped (THL-213): still asked, but in Skipped.
+CREATE TABLE IF NOT EXISTS review_skipped (
+    item_key   TEXT PRIMARY KEY,
+    skipped_on TEXT DEFAULT CURRENT_TIMESTAMP
+);
 
 -- A category Pearl suggested that you said was right. Kept with the category
 -- you confirmed: if a later sync files the row somewhere else, that new
@@ -1039,6 +1044,18 @@ class Store:
             c.execute("INSERT OR IGNORE INTO review_dismissed (item_key) VALUES (?)",
                       (key,))
 
+    def skipped_reviews(self) -> set[str]:
+        with self.conn() as c:
+            return {r["item_key"] for r in
+                    c.execute("SELECT item_key FROM review_skipped").fetchall()}
+
+    def skip_review(self, key: str, on: bool = True) -> None:
+        """Into Skipped, or back to the queue."""
+        with self.conn() as c:
+            c.execute("DELETE FROM review_skipped WHERE item_key = ?", (key,))
+            if on:
+                c.execute("INSERT INTO review_skipped (item_key) VALUES (?)", (key,))
+
     def undismiss_review(self, key: str) -> None:
         """Ask about it again: an Undo of the answer that settled it."""
         with self.conn() as c:
@@ -1467,6 +1484,7 @@ class Store:
             ("exclusion_rules", "exclusion rules"),
             ("txn_income_type", "income types"),
             ("review_dismissed", "settled review items"),
+            ("review_skipped", "skipped review items"),
             ("txn_confirmed", "confirmed categories"),
             ("txn_notes", "notes on transactions"),
             ("txn_oneoff", "one-offs"),

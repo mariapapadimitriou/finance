@@ -459,6 +459,10 @@
 .nl-spent > p { margin: 0; }
 .nl-actions { display: flex; flex-direction: column; gap: var(--space-2); }
 .pk .nl-skip { align-self: center; height: 44px; font-size: 16px; line-height: 20px; }
+.nl-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-4); }
+.pk .nl-chip { cursor: pointer; padding: 0 14px; }
+.nl-skipped-note { margin: 0 0 var(--space-4); }
+.pk .nl-unskip { align-self: center; margin-top: var(--space-2); }
 .nl-card .txd-step { gap: var(--space-5); }
 .nl-empty { align-items: center; text-align: center; gap: var(--space-3); padding: 64px 40px; box-shadow: none; }
 .nl-empty p { margin: 0; max-width: 420px; }
