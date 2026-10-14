@@ -96,6 +96,23 @@ CREATE TABLE IF NOT EXISTS trips (
 );
 CREATE INDEX IF NOT EXISTS idx_trip_dates ON trips(start_date, end_date);
 
+-- Trips she marked (THL-174, 2026-10-13): a date range whose spending she
+-- sorted as Travel, and the rows it moved. Separate from `trips` above,
+-- which holds what the removed Trips tab kept (C1). See finance/trips.py.
+CREATE TABLE IF NOT EXISTS marked_trips (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date   TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS trip_rows (
+    txn_id      TEXT PRIMARY KEY,
+    trip_id     INTEGER NOT NULL,
+    prev_category TEXT,
+    prev_source   TEXT
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -263,6 +280,11 @@ CREATE TABLE IF NOT EXISTS txn_income_type (
 CREATE TABLE IF NOT EXISTS review_dismissed (
     item_key   TEXT PRIMARY KEY,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+-- Needs a look items she skipped (THL-213): still asked, but in Skipped.
+CREATE TABLE IF NOT EXISTS review_skipped (
+    item_key   TEXT PRIMARY KEY,
+    skipped_on TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- A category Pearl suggested that you said was right. Kept with the category
@@ -502,7 +524,7 @@ _CHARGES = """(
 _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts",
                "txn_exclusions", "txn_income_type", "txn_confirmed", "txn_notes",
                "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
-               "joint_deposits", "txn_party")
+               "joint_deposits", "txn_party", "trip_rows")
 
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
@@ -677,11 +699,15 @@ class Store:
         The `trips` table stays, unused, rather than a migration dropping what
         someone typed in; a no-op on every open after the first."""
         with self.conn() as c:
-            if not c.execute("SELECT 1 FROM transactions "
-                             "WHERE category_source = 'trip' LIMIT 1").fetchone():
+            if not c.execute("SELECT 1 FROM transactions t WHERE t.category_source = 'trip' "
+                             "AND NOT EXISTS (SELECT 1 FROM trip_rows r WHERE r.txn_id = t.id) "
+                             "LIMIT 1").fetchone():
                 return
+            # Rows a trip she marked moved (THL-174) stay where it put them.
+            kept = {r["txn_id"] for r in c.execute("SELECT txn_id FROM trip_rows").fetchall()}
         from .categorize import apply_categories
-        moved = [t for t in self.all_transactions() if t.category_source == "trip"]
+        moved = [t for t in self.all_transactions()
+                 if t.category_source == "trip" and t.fingerprint not in kept]
         apply_categories(moved, self.overrides())
         self.set_categories({t.fingerprint: (t.category, t.category_source)
                              for t in moved})
@@ -1038,6 +1064,18 @@ class Store:
         with self.conn() as c:
             c.execute("INSERT OR IGNORE INTO review_dismissed (item_key) VALUES (?)",
                       (key,))
+
+    def skipped_reviews(self) -> set[str]:
+        with self.conn() as c:
+            return {r["item_key"] for r in
+                    c.execute("SELECT item_key FROM review_skipped").fetchall()}
+
+    def skip_review(self, key: str, on: bool = True) -> None:
+        """Into Skipped, or back to the queue."""
+        with self.conn() as c:
+            c.execute("DELETE FROM review_skipped WHERE item_key = ?", (key,))
+            if on:
+                c.execute("INSERT INTO review_skipped (item_key) VALUES (?)", (key,))
 
     def undismiss_review(self, key: str) -> None:
         """Ask about it again: an Undo of the answer that settled it."""
@@ -1447,6 +1485,8 @@ class Store:
             ("budgets", "budgets"),
             # Unused since Trips went (C1), but a reset still empties it.
             ("trips", "trips"),
+            ("marked_trips", "trips you marked"),
+            ("trip_rows", "transactions in trips"),
             ("piggy_allocations", "piggy-bank allocations"),
             ("piggy_optouts", "charges kept out of piggy banks"),
             ("piggy_draws", "piggy-bank draws"),
@@ -1467,6 +1507,7 @@ class Store:
             ("exclusion_rules", "exclusion rules"),
             ("txn_income_type", "income types"),
             ("review_dismissed", "settled review items"),
+            ("review_skipped", "skipped review items"),
             ("txn_confirmed", "confirmed categories"),
             ("txn_notes", "notes on transactions"),
             ("txn_oneoff", "one-offs"),
@@ -2216,6 +2257,56 @@ class Store:
             if who:
                 c.execute("INSERT INTO joint_deposits (txn_id, who) VALUES (?, ?)",
                           (txn_id, who))
+
+    # ── Trips she marked (THL-174) ───────────────────────────────────────
+    def marked_trips(self) -> list[dict]:
+        with self.conn() as c:
+            rows = c.execute("SELECT id, name, start_date, end_date FROM marked_trips "
+                             "ORDER BY start_date DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    def add_marked_trip(self, name: str, start: str, end: str) -> int:
+        sql = "INSERT INTO marked_trips (name, start_date, end_date) VALUES (?, ?, ?)"
+        with self.conn() as c:
+            if self.is_postgres:
+                return int(c.execute(sql + " RETURNING id", (name, start, end)).fetchone()["id"])
+            return int(c.execute(sql, (name, start, end)).lastrowid)
+
+    def update_marked_trip(self, trip_id: int, name: str, start: str, end: str) -> None:
+        with self.conn() as c:
+            c.execute("UPDATE marked_trips SET name = ?, start_date = ?, end_date = ? WHERE id = ?",
+                      (name, start, end, int(trip_id)))
+
+    def delete_marked_trip(self, trip_id: int) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM marked_trips WHERE id = ?", (int(trip_id),))
+            c.execute("DELETE FROM trip_rows WHERE trip_id = ?", (int(trip_id),))
+
+    def trip_rows(self) -> dict[str, int]:
+        """{txn_id: trip_id} for every row a trip moved."""
+        with self.conn() as c:
+            rows = c.execute("SELECT txn_id, trip_id FROM trip_rows").fetchall()
+        return {r["txn_id"]: int(r["trip_id"]) for r in rows}
+
+    def add_trip_rows(self, trip_id: int, rows: list[tuple[str, str | None, str | None]]) -> None:
+        """(txn_id, its category before, its source before) for each row."""
+        with self.conn() as c:
+            for txn_id, category, source in rows:
+                c.execute("DELETE FROM trip_rows WHERE txn_id = ?", (txn_id,))
+                c.execute("INSERT INTO trip_rows (txn_id, trip_id, prev_category, prev_source) "
+                          "VALUES (?, ?, ?, ?)", (txn_id, int(trip_id), category, source))
+
+    def remove_trip_rows(self, ids: list[str]) -> dict[str, tuple[str | None, str | None]]:
+        """Take rows out of their trip; returns what each was before."""
+        out = {}
+        with self.conn() as c:
+            for txn_id in ids:
+                r = c.execute("SELECT prev_category, prev_source FROM trip_rows WHERE txn_id = ?",
+                              (txn_id,)).fetchone()
+                if r:
+                    out[txn_id] = (r["prev_category"], r["prev_source"])
+                c.execute("DELETE FROM trip_rows WHERE txn_id = ?", (txn_id,))
+        return out
 
     def set_party(self, txn_id: str, name: str | None) -> None:
         """Who an e-Transfer was from or to, or None for the bank's name."""

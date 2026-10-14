@@ -198,6 +198,15 @@ export const saveLearn    = (id, body) => json('PUT', `/api/learn/${encodeURICom
 // or "save", "chest", "spend".
 export const answerCarryover = (month, choice) =>
   json('PUT', `/api/carryover/${month}`, { choice });
+
+// Trips (THL-174): a date range whose spending becomes Travel.
+export const getTrips    = () => req('/api/trips');
+export const previewTrip = (start, end, tripId = null) =>
+  json('POST', '/api/trips/preview', { start, end, trip_id: tripId });
+export const saveTrip    = (trip, ids) => (trip.id
+  ? json('PUT', `/api/trips/${trip.id}`, { ...trip, ids })
+  : json('POST', '/api/trips', { ...trip, ids }));
+export const deleteTrip  = (id) => req(`/api/trips/${id}`, { method: 'DELETE' });
 export const putHomeAnswers = (answers) => json('PUT', '/api/home/answers', answers);
 // Month or week as Home's main view (THL-166), saved on her account.
 // "Can I afford it?" (THL-167): works it out and records nothing.
@@ -358,6 +367,8 @@ export const setIncomeType = (id, kind) =>
 // Everything Pearl isn't sure about, each with its best guess.
 export const getReview     = () => req('/api/review');
 export const dismissReview = (key) => json('POST', '/api/review/dismiss', { key });
+// Needs a look's Skipped (THL-213): into Skipped, or back to the queue.
+export const skipReview = (key, skip = true) => json('POST', '/api/review/skip', { key, skip });
 
 // "This was a one-off" (THL-71): out of her usual month, still in its own.
 export const setOneOff = (id, on) =>

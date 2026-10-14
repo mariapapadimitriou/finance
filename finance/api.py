@@ -126,8 +126,10 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
     joint account that are someone else's."""
     from . import txlist
     txns = st.all_transactions()
+    from .trips import names as trip_names
     ctx = txlist.Context(txns, st.confirmed_categories(), st.notes(),
-                         {b.id: b.name for b in st.piggy_banks()}, splits=st.splits())
+                         {b.id: b.name for b in st.piggy_banks()}, splits=st.splits(),
+                         trips=trip_names(st))
     if everything:
         rows = txlist.visible(txns) + txlist.left_out(txns) + txlist.theirs(txns)
     elif excluded:
@@ -1767,7 +1769,7 @@ def home():
     usual = usual_month.usual(txns, today, unusual=_unusual_months(st))
     from .review import build as review_build
     review = review_build(txns, dismissed=st.dismissed_reviews(), splits=st.splits(),
-                          payer=st.payback_people())
+                          payer=st.payback_people(), skipped=st.skipped_reviews())
     return jsonify({
         "month": today.strftime("%Y-%m"),
         "today": today.isoformat(),
@@ -2510,7 +2512,7 @@ def review_queue():
     found_on = {k: v["found_on"] for k, v in st.duplicates().items()}
     return jsonify(build(st.all_transactions(), dismissed=st.dismissed_reviews(),
                          splits=st.splits(), payer=st.payback_people(),
-                         found_on=found_on))
+                         found_on=found_on, skipped=st.skipped_reviews()))
 
 
 @bp.post("/review/dismiss")
@@ -2522,7 +2524,19 @@ def dismiss_review():
     return jsonify({"ok": True})
 
 
+@bp.post("/review/skip")
+def skip_review():
+    """Needs a look's "Skip for now" (THL-213): into Skipped, kept between
+    visits; `{"skip": false}` puts it back in the queue."""
+    body = request.get_json(silent=True) or {}
+    key = str(body.get("key") or "")
+    if not key or ":" not in key:
+        return jsonify({"error": "Which item?"}), 400
+    store().skip_review(key, body.get("skip", True) is not False)
+    return jsonify({"ok": True})
+
+
 # The Profile pages, Growth › Insights and Growth › Projections register on this
 # blueprint too; imported last so they can use the helpers above.
 from . import income_bills_api, insights_api, privacy_api, profile_api, projections_api  # noqa: E402,F401,I001
-from . import growth_api, transactions_extras_api  # noqa: E402,F401
+from . import growth_api, transactions_extras_api, trips_api  # noqa: E402,F401

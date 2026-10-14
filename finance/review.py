@@ -18,6 +18,11 @@ from last spring was for):
                    or the other person's (finance/joint.py). Counted as
                    nothing until answered.
 
+Skipped (THL-213): "Skip for now" puts an item in Skipped, kept between
+visits. A skipped item is still listed, marked `skipped`; it leaves `count`
+(the Home and navigation badge) and is counted in `skipped` instead. Each
+item's key is what's skipped: "u:<id>" for a transfer, otherwise its `key`.
+
 Nothing is decided here; each item says what Pearl would do and why. Acting
 on one goes through the ordinary endpoints (category, payback, exclusion,
 income type). An item you settle without changing anything is dismissed by
@@ -129,7 +134,8 @@ def charge_candidates(inflow: Transaction, transactions: list[Transaction]) -> l
 
 def build(transactions: list[Transaction], today: str | None = None,
           dismissed: set[str] | None = None, splits: dict | None = None,
-          payer: dict | None = None, found_on: dict[str, str] | None = None) -> dict:
+          payer: dict | None = None, found_on: dict[str, str] | None = None,
+          skipped: set[str] | None = None) -> dict:
     today_d = date.fromisoformat(today) if today else date.today()
     since = (today_d - timedelta(days=ASK_DAYS)).isoformat()
     dismissed = dismissed or set()
@@ -230,8 +236,18 @@ def build(transactions: list[Transaction], today: str | None = None,
     # until answered, however old: until then the copy is counted once.
     dupes = duplicate_questions(transactions, found_on)
 
+    # Skipped items stay listed, marked, and leave the badge (THL-213).
+    keys = ({"u:" + t["id"] for t in groups["transfers"]}
+            | {it["key"] for part in (unsure, money_in, joint_in, income, three, dupes)
+               for it in part})
+    held = keys & (skipped or set())
+    for t in groups["transfers"]:
+        t["skipped"] = "u:" + t["id"] in held
+    for part in (unsure, money_in, joint_in, income, three, dupes):
+        for it in part:
+            it["skipped"] = it["key"] in held
     count = (groups["count"] + len(unsure) + len(money_in) + len(joint_in) + len(income)
-             + len(three) + len(dupes))
-    return {"count": count, "unsorted": groups, "unsure_category": unsure,
+             + len(three) + len(dupes)) - len(held)
+    return {"count": count, "skipped": len(held), "unsorted": groups, "unsure_category": unsure,
             "money_in": money_in, "joint_in": joint_in, "income_type": income, "three_pay_month": three,
             "duplicate": dupes, "kinds": KINDS}
