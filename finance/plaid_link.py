@@ -307,6 +307,8 @@ def _sync_one(store, item: dict) -> dict:
                 store.set_transaction_category(txn_id, category)
 
     store.set_plaid_cursor(item_id, cursor or "")
+    if item.get("logo") is None:
+        store.set_plaid_logo(item_id, _bank_logo(client, access_token))
     return {
         "item_id": item_id,
         "institution": item.get("institution") or "",
@@ -443,6 +445,80 @@ def _accounts_from(resp: dict) -> dict:
     return {a["account_id"]: a for a in (resp or {}).get("accounts", [])}
 
 
+def _bank_logo(client, access_token: str) -> str:
+    """The bank's logo as a data URI, or "" when Plaid has none: looked up
+    once per connection, from /item/get and /institutions/get_by_id (free)."""
+    from plaid.model.country_code import CountryCode
+    from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
+    from plaid.model.institutions_get_by_id_request_options import (
+        InstitutionsGetByIdRequestOptions,
+    )
+    from plaid.model.item_get_request import ItemGetRequest
+    try:
+        item = client.item_get(ItemGetRequest(access_token=access_token)).to_dict()
+        inst_id = (item.get("item") or {}).get("institution_id")
+        if not inst_id:
+            return ""
+        inst = client.institutions_get_by_id(InstitutionsGetByIdRequest(
+            institution_id=inst_id, country_codes=[CountryCode(c) for c in COUNTRY_CODES],
+            options=InstitutionsGetByIdRequestOptions(include_optional_metadata=True),
+        )).to_dict().get("institution") or {}
+    except Exception:                                    # noqa: BLE001
+        return ""
+    logo = inst.get("logo")
+    return f"data:image/png;base64,{logo}" if logo else ""
+
+
+def _twin_key(rule: dict, institution: str) -> tuple:
+    """What makes two listed accounts the same one: the bank, the kind, and
+    the last four digits — or the name, for accounts with no digits (often
+    investment accounts)."""
+    name = rule.get("account_name") or ""
+    mask = _mask_of(name)
+    kind = (rule.get("account_type") or "").lower()
+    if mask:
+        return (institution.lower(), kind, "mask", mask)
+    return (institution.lower(), kind, "name", name.lower(),
+            (rule.get("account_subtype") or "").lower())
+
+
+def hide_quiet_twins(store) -> list[str]:
+    """Copies of one account, listed once.
+
+    Linking the same bank more than once leaves connections that each hand
+    over every account, so one TFSA can arrive three times. Where an account
+    is listed from more than one connection, the copies with no transactions
+    are taken off the list (and not synced): the one with transactions stays,
+    or the newest connection's. Copies that both have transactions are left
+    to `doubled_items` and "Same account as…", which move what she said
+    about them. Returns the ids hidden.
+    """
+    items = store.plaid_items()                       # oldest first
+    order = {i["item_id"]: n for n, i in enumerate(items)}
+    banks = {i["item_id"]: i.get("institution") or "" for i in items}
+    settings = store.account_settings()
+    rows = {a["account_id"]: a.get("transactions") or 0 for a in store.accounts()}
+    groups: dict[tuple, list[dict]] = {}
+    for aid, r in store.account_sync_rules().items():
+        if r["item_id"] not in order or settings.get(aid, {}).get("removed"):
+            continue
+        groups.setdefault(_twin_key(r, banks[r["item_id"]]), []).append(r)
+    hidden = []
+    for twins in groups.values():
+        if len({r["item_id"] for r in twins}) < 2:
+            continue
+        keep = max(twins, key=lambda r: (rows.get(r["account_id"], 0) > 0,
+                                         order[r["item_id"]]))
+        for r in twins:
+            if r is keep or rows.get(r["account_id"], 0) > 0:
+                continue
+            store.set_account_sync(r["account_id"], False, name=r["account_name"],
+                                   item_id=r["item_id"])
+            store.set_account_setting(r["account_id"], removed=True)
+            hidden.append(r["account_id"])
+    return hidden
+
+
 def _item_accounts(client, access_token: str) -> dict:
     """Every account on the connection, or nothing if Plaid won't say: the
     sync carries on with the accounts its feed named."""
@@ -503,6 +579,13 @@ def sync_all(store) -> dict:
             out.append({"item_id": item["item_id"],
                         "institution": item.get("institution") or "",
                         "error": message})
+    hide_quiet_twins(store)
+    # A newly listed investment account sorts the transfers into it (Saved).
+    import json
+    from .transfers import known_destinations
+    where = json.dumps(sorted(known_destinations(store).items()))
+    rematch = store.setting("transfer_destinations") != where
+    store.set_setting("transfer_destinations", where)
     # When the categorising rules have changed since the ledger was last
     # sorted, sort what is already there once — your own choices are kept.
     from .categorize import RULES_VERSION
@@ -510,8 +593,9 @@ def sync_all(store) -> dict:
     if store.setting("categories_version") != str(RULES_VERSION):
         recategorize_all(store)
         store.set_setting("categories_version", RULES_VERSION)
-    elif any(o.get("deleted") for o in out):
-        # A transfer whose other end was withdrawn is no longer matched.
+    elif rematch or any(o.get("deleted") for o in out):
+        # A transfer whose other end was withdrawn is no longer matched, and
+        # one into an investment account just listed now is.
         from .transfers import apply_transfer_matches
         apply_transfer_matches(store)
 

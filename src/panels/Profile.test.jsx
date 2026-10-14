@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ProfileHub, hubRows } from './ProfilePanel.jsx';
 import {
   AccountDetail, AccountsList, AddByHand, RemoveDialog, ShareDialog, accountMeta, balanceWords,
-  bankInitials, countedToast, parseShare, pillFor, updatedWords,
+  BankMark, bankInitials, countedToast, parseShare, pillFor, updatedWords,
 } from './AccountsPanel.jsx';
 import { RulePanel, RulesPage, ruleWords } from './RulesPanel.jsx';
 import { ChangeEmail, SecurityPage } from './SecurityPanel.jsx';
@@ -313,6 +313,30 @@ describe('Sign-in and security, and S-02', () => {
     expect(t).toContain('We sent a 6-digit code to alex.papas@example.com. It works for 10 minutes.');
     expect(t).toContain('Use a different email');
     expect(primaries(el)).toBe(1);
+    calm(t);
+  });
+});
+
+describe('Accounts: logos and investment accounts', () => {
+  const tfsa = { ...base, id: 'tfsa', name: 'Wealthsimple TFSA', institution: 'Wealthsimple',
+                 mask: '3333', kind: 'investment', status: 'investment', counted: false,
+                 syncs: false, balance: 18250, transactions: 0, history_from: null };
+
+  it('shows the bank logo where Plaid has one, initials otherwise', () => {
+    expect(html(<BankMark a={{ ...base, logo: 'data:image/png;base64,QUJD' }} />))
+      .toContain('<img src="data:image/png;base64,QUJD"');
+    expect(html(<BankMark a={base} />)).toContain('>TD<');
+    expect(html(<AccountsList data={{ linked: [{ ...base, logo: 'data:image/png;base64,QUJD' }],
+                                      added: [], plaid: {} }} now={NOW} />)).toContain('pf-logo');
+  });
+
+  it('an investment account is balance only, with no way to count it as spending', () => {
+    expect(pillFor(tfsa)).toEqual({ label: 'Investments', tone: 'neutral', icon: null });
+    expect(accountMeta(tfsa, NOW)).toBe('$18,250.00 · balance only');
+    const t = text(<AccountDetail a={tfsa} now={NOW} />);
+    expect(t).toContain('Money you move into it counts as saved, never as spending.');
+    expect(t).not.toContain('Count in my budget');
+    expect(t).not.toContain('isn’t in your budget');
     calm(t);
   });
 });

@@ -104,6 +104,10 @@ def _linked_rows(st) -> list[dict]:
             status = "retrying"
         elif state == "disconnected":
             status = "disconnected"
+        elif kind == "investment":
+            # Balance only: Plaid's Transactions product doesn't carry its
+            # activity, and money moved into it is Saved, never spending.
+            status = "investment"
         elif not counted:
             status = "not_counted"
         elif joint:
@@ -119,6 +123,7 @@ def _linked_rows(st) -> list[dict]:
             "nickname": row.get("nickname") or "",
             "mask": row.get("mask") or "",
             "institution": row.get("institution") or "",
+            "logo": (item or {}).get("logo") or "",
             "kind": kind,
             "source": "plaid" if plaid else "statement",
             "status": status,
@@ -147,7 +152,7 @@ def _hand_rows(st) -> list[dict]:
     anchor = _anchor_ids(st)
     return [{
         "id": m["account_id"], "name": m["name"], "bank_name": m["name"], "nickname": "",
-        "mask": "", "institution": "",
+        "mask": "", "institution": "", "logo": "",
         "kind": "card" if m["kind"] == "credit" else m["kind"],
         "source": "hand", "status": "manual", "counted": m["counted"], "syncs": None,
         "joint": False, "joint_share": None, "anchor": m["account_id"] in anchor,
@@ -234,6 +239,9 @@ def account_settings(account_id: str):
                                      "Anchor."}), 400
         _set_anchor(st, account_id, on)
 
+    if "counted" in body and account["kind"] == "investment":
+        return jsonify({"error": "Spending doesn’t happen from an investment account, so it "
+                                 "isn’t counted in your budget."}), 400
     if "counted" in body:
         on = bool(body.get("counted"))
         if hand:

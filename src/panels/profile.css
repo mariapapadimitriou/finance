@@ -166,3 +166,7 @@ a.pk-btn { text-decoration: none; box-sizing: border-box; }
   border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-page);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 16px; letter-spacing: .04em;
 }
+
+/* The bank's own logo (from Plaid), on white so it reads in both themes. */
+.pk-avatar.pf-logo { background: #fff; overflow: hidden; }
+.pk-avatar.pf-logo img { object-fit: contain; padding: 4px; box-sizing: border-box; }

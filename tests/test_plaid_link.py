@@ -397,7 +397,7 @@ class TestWhichAccountsSync:
         rows = {r["id"]: r for r in profile_api._linked_rows(store)}
         assert set(rows) == {"acc1", "chq", "sav", "inv"}
         assert rows["acc1"]["kind"] == "card"
-        assert rows["inv"]["status"] == "not_counted"
+        assert rows["inv"]["status"] == "investment"
 
     def test_a_sync_carries_on_when_accounts_get_fails(self, store, fake):
         fake([{"accounts": [MIXED_ACCOUNTS[1]], "added": [], "next_cursor": "c1"}])
@@ -691,3 +691,92 @@ class TestHistoryRequested:
     def test_it_is_the_most_plaid_allows(self):
         """Higher is rejected outright, and the window cannot be raised later."""
         assert plaid_link.DAYS_REQUESTED == 730
+
+
+class TestQuietTwinsAndInvestments:
+    """The same bank linked more than once hands over every account each time;
+    listed once. Investment accounts are balance only, and a transfer into one
+    is Saved."""
+
+    TFSA = {"account_id": "inv-new", "name": "Wealthsimple TFSA", "mask": None,
+            "type": "investment", "subtype": "tfsa"}
+
+    def _two_logins(self, store, fake):
+        store.add_plaid_item("item-old", "tok-old", "Wealthsimple")
+        store.add_plaid_item("item-new", "tok-new", "Wealthsimple")
+        for aid, item in (("inv-old", "item-old"), ("inv-new", "item-new")):
+            store.note_account(aid, name="Wealthsimple TFSA", item_id=item, enabled=False,
+                               account_type="investment", subtype="tfsa")
+
+    def test_a_copy_with_nothing_in_it_comes_off_the_list(self, store, fake):
+        self._two_logins(store, fake)
+        assert plaid_link.hide_quiet_twins(store) == ["inv-old"]       # the newer one stays
+        from finance import profile_api
+        assert [r["id"] for r in profile_api._linked_rows(store)] == ["inv-new"]
+        assert plaid_link.hide_quiet_twins(store) == []
+
+    def test_the_copy_with_transactions_stays(self, store, fake):
+        store.add_plaid_item("item-old", "tok-old", "TD")
+        store.add_plaid_item("item-new", "tok-new", "TD")
+        store.note_account("chq-old", name="TD Chequing ••1111", item_id="item-old",
+                           account_type="depository", subtype="checking")
+        store.note_account("chq-new", name="TD Chequing ••1111", item_id="item-new",
+                           account_type="depository", subtype="checking")
+        from finance.models import Transaction
+        store.add_transactions([Transaction(date="2026-01-05", description="COFFEE",
+                                            merchant="Coffee", amount=5.0, category="Coffee",
+                                            account_id="chq-old", account_name="TD Chequing")])
+        assert plaid_link.hide_quiet_twins(store) == ["chq-new"]
+
+    def test_different_banks_are_never_twins(self, store, fake):
+        store.add_plaid_item("item-a", "tok-a", "TD")
+        store.add_plaid_item("item-b", "tok-b", "RBC")
+        store.note_account("a", name="Chequing ••1111", item_id="item-a", account_type="depository")
+        store.note_account("b", name="Chequing ••1111", item_id="item-b", account_type="depository")
+        assert plaid_link.hide_quiet_twins(store) == []
+
+    def test_an_investment_account_is_balance_only_and_never_counted(self, tmp_path):
+        from finance import profile_api
+        app = create_app(str(tmp_path / "inv.db"))
+        app.config.update(TESTING=True)
+        st = app.config["STORE"]
+        st.add_plaid_item("item-1", "tok", "Wealthsimple")
+        st.note_account("inv", name="Wealthsimple TFSA ••3333", item_id="item-1",
+                        enabled=False, account_type="investment", subtype="tfsa")
+        row = profile_api._linked_rows(st)[0]
+        assert row["kind"] == "investment" and row["status"] == "investment"
+        with app.test_client() as c:
+            r = c.put("/api/accounts/inv/settings", json={"counted": True})
+        assert r.status_code == 400 and "investment" in r.get_json()["error"]
+        assert st.account_sync_rules()["inv"]["enabled"] is False
+
+    def test_a_transfer_into_a_linked_investment_account_is_saved(self, store):
+        from finance.models import Transaction
+        from finance.transfers import apply_transfer_matches, known_destinations
+        store.add_plaid_item("item-1", "tok", "Wealthsimple")
+        store.note_account("inv", name="Wealthsimple TFSA ••3333", item_id="item-1",
+                           enabled=False, account_type="investment", subtype="tfsa")
+        assert known_destinations(store) == {"acct:3333": "Saved"}
+        from datetime import date
+        day = date.today().isoformat()
+        store.add_transactions([Transaction(
+            date=day, description="TFR-TO 12343333", merchant="Transfer", amount=500.0,
+            category="Transfers", account_id="chq", account_name="Chequing",
+            raw={"account_type": "depository"})])
+        apply_transfer_matches(store)
+        assert store.all_transactions()[0].category == "Saved"
+        store.set_destination("acct:3333", "Transfers")
+        assert known_destinations(store)["acct:3333"] == "Transfers"     # her rule wins
+
+    def test_the_bank_logo_is_looked_up_once(self, store, fake):
+        client = fake([{"next_cursor": "c1"}, {"next_cursor": "c2"}])
+        calls = []
+        client.item_get = lambda req: (calls.append("item"),
+                                       _Resp({"item": {"institution_id": "ins_1"}}))[1]
+        client.institutions_get_by_id = lambda req: (calls.append("inst"),
+                                                     _Resp({"institution": {"logo": "QUJD"}}))[1]
+        store.add_plaid_item("item-1", "tok", "TD")
+        plaid_link.sync_all(store)
+        assert store.plaid_items()[0]["logo"] == "data:image/png;base64,QUJD"
+        plaid_link.sync_all(store)
+        assert calls == ["item", "inst"]
