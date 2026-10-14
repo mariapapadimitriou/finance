@@ -1746,7 +1746,7 @@ def home():
     is current as soon as a sync has written its rows (E05: within 5 minutes).
     """
     from datetime import date as _date
-    from . import milestones, safe_to_spend, usual_month, weekly
+    from . import carryover, milestones, safe_to_spend, usual_month, weekly
 
     st = store()
     today = _date.fromisoformat(_today_iso())
@@ -1754,6 +1754,9 @@ def home():
     told_income = st.float_setting("home_income", 0.0)
     told_rent = st.float_setting("home_rent", 0.0)
     debts = _debts(st, txns, today)
+    # Last month's result, asked about once a month (THL-212). Worked out
+    # before the number so a fresh answer-free surplus starts its 7 days.
+    carry_question = carryover.question(st, txns, today)
     sts = _home_sts(st, txns, today, debts)
     types = {aid: r.get("account_type") or ""
              for aid, r in st.account_sync_rules().items() if r.get("enabled")}
@@ -1774,6 +1777,7 @@ def home():
         "data_state": state,
         "path": _path(st, txns, today, sts, state, types),
         "review_count": review.get("count", 0),
+        "carryover": carry_question,
         "connections": milestones.connections(st.plaid_items(), st.account_sync_rules()),
         "usual_month": usual,
         # THL-166: the week under the month, and which one she reads first.
@@ -1795,7 +1799,7 @@ def home():
 def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
     """Safe to spend this month, from the ledger and what she told us, with
     debt minimums among the bills (THL-49 D1, D2)."""
-    from . import debts as debt_math, income_bills, safe_to_spend
+    from . import carryover, debts as debt_math, income_bills, safe_to_spend
     debts = debts if debts is not None else _debts(st, txns, today)
     return safe_to_spend.compute(
         txns, today,
@@ -1808,6 +1812,7 @@ def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
         debt_bills=debt_math.bills(debts["debts"], txns, today,
                                    safe_to_spend.recurring_bills(txns, today)),
         confirm=income_bills.load(st),
+        carry=carryover.applied(st, today),
     )
 
 
@@ -1975,6 +1980,20 @@ def debt_details(account_id):
     return debts_page()
 
 
+@bp.put("/carryover/<month>")
+def answer_carryover(month: str):
+    """Her answer for last month's result (THL-212): for a shortfall "now",
+    "spread2" or "spread3"; for money to spare "save", "chest" or "spend"."""
+    from datetime import date as _date
+    from . import carryover
+    st = store()
+    choice = str((request.get_json(silent=True) or {}).get("choice") or "")
+    entry = carryover.answer(st, month, choice, _date.fromisoformat(_today_iso()))
+    if entry is None:
+        return jsonify({"error": "That isn’t one of the choices for that month."}), 400
+    return jsonify({"ok": True, "month": month, "choice": choice})
+
+
 @bp.post("/home/afford")
 def home_afford():
     """Can I afford it? (THL-167 AF-01 to AF-03). Works it out and records
@@ -2019,7 +2038,7 @@ def _path(st, txns, today, sts: dict, state: dict, types: dict, **kw) -> dict:
 def path_page():
     """The Path page (THL-129 GR-01): the same path Home shows."""
     from datetime import date as _date
-    from . import income_bills, safe_to_spend
+    from . import carryover, income_bills, safe_to_spend
 
     st = store()
     today = _date.fromisoformat(_today_iso())
@@ -2029,7 +2048,8 @@ def path_page():
     sts = safe_to_spend.compute(
         txns, today, entered_income=st.float_setting("monthly_income", 0.0),
         savings_target=st.float_setting("savings_target", 0.0),
-        told_income=told_income, told_rent=told_rent, confirm=income_bills.load(st))
+        told_income=told_income, told_rent=told_rent, confirm=income_bills.load(st),
+        carry=carryover.applied(st, today))
     types = {aid: r.get("account_type") or ""
              for aid, r in st.account_sync_rules().items() if r.get("enabled")}
     state = safe_to_spend.home_state(txns, today, sts, account_types=types,

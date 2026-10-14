@@ -40,6 +40,12 @@ def freelancer(october_in=1900.00):
     return rows
 
 
+def careful():
+    """Her answer to I-03's "My income varies month to month"."""
+    from finance import income_bills
+    return {**income_bills.empty(), "varies": True}
+
+
 def new_user():
     """Linked two weeks ago."""
     return [tx("2026-09-25", "Loblaws", 80.00, "Groceries", account="visa"),
@@ -64,8 +70,18 @@ class TestCautiousIncome:
         assert c["highest"] == 4800.00
         assert [m["amount"] for m in c["months"]] == [3100.00, 4800.00, 3900.00]
 
-    def test_it_is_the_income_and_labelled_cautious(self):
+    def test_without_asking_for_caution_it_is_her_usual_income(self):
+        """2026-10-13 (THL-47): the 3-month average, labelled an estimate."""
         s, h = state(freelancer())
+        assert s["income_source"] == "usual" and s["estimate"] == "usual"
+        assert h["kind"] == "irregular"
+        income = next(r for r in s["rows"] if r["key"] == "income")
+        assert income["amount"] == round((3100 + 4800 + 3900) / 3, 2)
+        assert s["usual"]["months"] == ["2026-07", "2026-08", "2026-09"]
+        calm(s, h)
+
+    def test_it_is_the_income_and_labelled_cautious(self):
+        s, h = state(freelancer(), confirm=careful())
         assert s["income_source"] == "cautious" and s["estimate"] == "cautious"
         assert h["kind"] == "irregular"
         income = next(r for r in s["rows"] if r["key"] == "income")
@@ -76,14 +92,15 @@ class TestCautiousIncome:
 
     def test_more_arriving_than_the_cautious_figure_counts(self):
         """E4: the larger of the cautious figure and what has arrived."""
-        s, _ = state(freelancer(october_in=3500.00))
+        s, _ = state(freelancer(october_in=3500.00), confirm=careful())
         assert next(r for r in s["rows"] if r["key"] == "income")["amount"] == 3500.00
 
     def test_shown_rounded_down_to_ten(self):
-        s, _ = state(freelancer())
+        s, _ = state(freelancer(), confirm=careful())
         assert s["amount"] == 3100.00 - 120.00                 # no bills, no goal
         assert s["shown"] == 2980
-        s2, _ = state(freelancer() + [tx("2026-10-06", "Shop", 5.55, "Shopping")])
+        s2, _ = state(freelancer() + [tx("2026-10-06", "Shop", 5.55, "Shopping")],
+                      confirm=careful())
         assert s2["amount"] == 2974.45 and s2["shown"] == 2970
 
     def test_needs_three_full_months(self):
@@ -220,12 +237,12 @@ class TestTheEndpoint:
         log = json.loads(st.setting("income_overrides"))
         assert log == [{"on": "2026-10-09", "amount": 4000.0, "cautious": 3100.0}]
 
-    def test_going_back_to_the_cautious_figure(self, client):
+    def test_going_back_to_her_usual_figure(self, client):
         st, c = client
         st.add_transactions(freelancer())
         c.put("/api/home/answers", json={"income": 4000, "override": True})
         body = c.put("/api/home/answers", json={"income": 0}).get_json()
-        assert body["safe_to_spend"]["income_source"] == "cautious"
+        assert body["safe_to_spend"]["income_source"] == "usual"     # her usual month again
         assert body["data_state"]["kind"] == "irregular"
 
     def test_bad_amounts_are_refused(self, client):

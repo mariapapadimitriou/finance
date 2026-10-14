@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
 import {
-  createLinkToken, dismissSuggestion, getHome, money, putHomeAnswers, saveExpected,
+  answerCarryover, createLinkToken, dismissSuggestion, getHome, money, putHomeAnswers, saveExpected,
   syncPlaid, undoDismissSuggestion,
 } from '../api.js';
 import { loadPlaidScript } from '../plaid.js';
@@ -12,6 +12,7 @@ import { ProgressBar, SnapshotBar } from '../pearl/viz.jsx';
 import { setGoalsIntent, writeTxUrl } from '../router.js';
 import { Field, Mark } from './GoalsParts.jsx';
 import { AffordCard } from './HomeAfford.jsx';
+import { CarryoverPrompt, carryoverRow } from './HomeCarryover.jsx';
 import { DebtsCard } from './DebtsPanel.jsx';
 import { BudgetsCard } from './CategoryBudgetsPanel.jsx';
 import { ForYou, WhyPanel, dismissedWords } from './ForYou.jsx';
@@ -109,6 +110,13 @@ export function heroCopy(s) {
         : 'Rough estimate from your first few weeks',
     };
   }
+  if (s.state === 'ok' && s.estimate === 'usual') {
+    return {
+      label, pill: 'Estimate',
+      figure: s.shown >= 10 ? shown(s.shown) : 'Less than $10',
+      context: `Based on your usual income, the average of ${usualMonths(s)}`,
+    };
+  }
   if (s.state === 'ok' && s.estimate === 'cautious') {
     return {
       label, pill: 'Cautious',
@@ -136,6 +144,13 @@ export function heroCopy(s) {
   };
 }
 
+/** "July, August and September": the months her usual income comes from. */
+export function usualMonths(s) {
+  const names = (s.usual?.months ?? []).map((m) => monthName(m));
+  if (names.length < 2) return names.join('') || 'your last 3 months';
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+}
+
 const LINE_NOTES = { estimate: 'estimate', late: 'usually here by now' };
 
 // What a row says instead of "$0.00" (S1: never $0 on Home).
@@ -149,6 +164,7 @@ export function sheetRows(s) {
       let detail = `${plural(r.paycheques, 'paycheque')}${r.payer ? ` from ${r.payer}` : ''}${other ? ', and other income' : ''}`;
       if (r.source === 'entered' || r.source === 'told') detail = 'What you told us you earn';
       if (r.source === 'deposits') detail = 'Deposits we’ve seen in the last 30 days';
+      if (r.source === 'usual') detail = `Your usual income: the average of ${usualMonths(s)}`;
       if (r.source === 'cautious') {
         detail = `Your lowest month of the last 3 was ${monthName(r.cautious.month)}, ${shown(r.cautious.lowest)}`;
       }
@@ -178,6 +194,10 @@ export function sheetRows(s) {
                    amount: b.amount };
         }),
       };
+    }
+    if (r.key === 'carryover') {
+      // THL-212: last month's surplus or shortfall, added or taken off.
+      return { key: r.key, ...carryoverRow(r), amount: r.amount, lines: [] };
     }
     if (r.key === 'spent') {
       return {
@@ -281,6 +301,11 @@ export default function HomePanel({ onTab, onChanged, version }) {
                 onReconnect={(c) => (c.state === 'needs_sign_in' ? setReconnect(c) : onTab?.('accounts'))}
                 onExplain={() => setExplain(true)} onIncome={() => setIncome(true)}
                 onAddIncome={() => setExpected(true)}
+                carry={home.carryover}
+                onCarry={(choice) => answerCarryover(home.carryover.month, choice).then(async () => {
+                  await onChanged?.();
+                  await load();
+                })}
                 onSeeWhere={(group) => {
                   // TX-02: the list, opened on this month and the group.
                   writeTxUrl({ filters: { month: s.month, group }, from: 'home' }, { push: true });
@@ -293,7 +318,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
                             // Income she gave us, or the cautious figure, is
                             // changed here; pay and bills are confirmed on
                             // Profile › Income and bills (THL-127).
-                            if (['told', 'cautious'].includes(s.income_source)) setIncome(true);
+                            if (['told', 'cautious', 'usual'].includes(s.income_source)) setIncome(true);
                             else if (s.income_source === 'deposits') setExpected(true);
                             else onTab?.('income');
                           }} />
@@ -339,7 +364,8 @@ export default function HomePanel({ onTab, onChanged, version }) {
 const PATH_ACTIONS = { goals: 'goals', path: 'path', bills: 'income', income: 'income' };
 
 export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onSeeWhere,
-                           onAddIncome, path, reviewCount = 0, connections = [], back = null, today,
+                           onAddIncome, carry = null, onCarry, path, reviewCount = 0,
+                           connections = [], back = null, today,
                            onPath, onReview, onReconnect, onChest, debts = null, onDebts,
                            budgets = null, onBudgets, cards = [], onCard, onWhy, onNotForMe }) {
   const review = reviewCount > 0 && <NeedsALook count={reviewCount} onReview={onReview} />;
@@ -393,6 +419,7 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
           {alert.text}
         </Alert>
       )}
+      <CarryoverPrompt c={carry} onAnswer={onCarry} onChest={onChest} />
       <SafeToSpendCard s={s} onExplain={onExplain}
                        updated={trouble ? `${trouble.institution} last updated ${whenWords(trouble.last_synced, today)}` : null} />
       {ds.asks_questions && <StarterQuestions onSave={onSave} primary />}
@@ -460,6 +487,10 @@ export function homeAlert(s, ds, snap, connections = [], back = null, today = nu
     return {
       text: `Pearl is learning your patterns. Your number gets more exact after ${longDate(ds.learning_until)}, and comparisons with a usual month start on ${longDate(ds.comparisons_from)}.`,
     };
+  }
+  if (ds.kind === 'irregular' && s.income_source === 'usual') {
+    return { text: `This uses your usual income, the average of ${usualMonths(s)}. If you expect something different, tell us.`,
+             action: 'Use a different amount' };
   }
   if (ds.kind === 'irregular') {
     return { text: 'Your income changes month to month, so this is a cautious estimate.',
@@ -735,19 +766,24 @@ export function IncomePanel({ s, told, onClose, onSave, onReset }) {
     <DetailPanel label="Use a different amount" overline="Your income" onClose={onClose}>
       <form className="hm-form" onSubmit={submit}>
         <h1 className="pk-h2">Use a different amount</h1>
-        {s.cautious && (
+        {s.income_source === 'cautious' && s.cautious ? (
           <p className="pk-muted">
             {`We used ${shown(s.cautious.lowest)}, your lowest month of the last 3. If you expect more, tell us what you usually take home in a month. You can change it any time.`}
           </p>
-        )}
+        ) : s.usual ? (
+          <p className="pk-muted">
+            {`Pearl’s estimate is ${shown(s.usual.average)} a month, the average of ${usualMonths(s)}. If you expect something different, use your own amount. You can change it any time.`}
+          </p>
+        ) : null}
         <Field label="Monthly take-home pay" id="hm-override" error={error}>
           <input id="hm-override" inputMode="decimal" autoComplete="off" value={value}
                  onChange={(e) => setValue(e.target.value)} />
         </Field>
         <PButton type="submit">Save</PButton>
-        {told && s.cautious && (
+        {told && (s.usual || s.cautious) && (
           <PButton variant="secondary" onClick={() => onReset().catch((err) => setError(err.message))}>
-            {`Go back to the cautious figure (${shown(s.cautious.lowest)})`}
+            {s.usual ? `Use Pearl’s estimate (${shown(s.usual.average)})`
+              : `Go back to the cautious figure (${shown(s.cautious.lowest)})`}
           </PButton>
         )}
       </form>

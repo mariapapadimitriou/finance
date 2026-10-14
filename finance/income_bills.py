@@ -387,11 +387,16 @@ def bills_each_month(rows: list[dict]) -> float:
     return round(sum(monthly(r["amount"], r["cadence"]) for r in rows if r["ticked"]), 2)
 
 
-def income_each_month(state: dict, told: float = 0.0) -> float | None:
+def income_each_month(state: dict, told: float = 0.0, estimate: float | None = None) -> float | None:
+    """A typical month's income, as I-06 and Income and bills count it: her
+    own amount when she gave one (it overrides the rest, 2026-10-13), else
+    her pay, else Pearl's estimate from her last three months."""
+    if told > 0:
+        return round(told, 2)
     pays = state.get("pays") or []
     if pays:
         return round(sum(p["amount"] * PAY_PER_MONTH.get(p["cadence"], 1) for p in pays), 2)
-    return round(told, 2) if told > 0 else None
+    return round(estimate, 2) if estimate else None
 
 
 # ── Validation (the endpoints) ──────────────────────────────────────────
