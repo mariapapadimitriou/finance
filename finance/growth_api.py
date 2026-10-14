@@ -139,7 +139,9 @@ def _facts(st, c, key: str, step: dict) -> dict:
                 "confirmed": bool(confirm.get("bills_on"))}
     if key == "essentials":
         month = step.get("month")
-        out = {"month": month, "income": step.get("income"), "essentials": step.get("essentials")}
+        out = {"month": month, "income": step.get("income"), "essentials": step.get("essentials"),
+               # Income by the one rule; True when it's what she told Pearl.
+               "estimate": bool(step.get("estimate"))}
         if month:
             out["left"] = round((step.get("income") or 0) - (step.get("essentials") or 0), 2)
             if step.get("lapsed"):

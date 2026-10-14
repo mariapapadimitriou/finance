@@ -47,9 +47,20 @@ def _payload(st, month: str | None = None) -> dict:
     accounts = [{"account_id": a["account_id"], "balance": a["balance"],
                  "as_of": (balances.get(a["account_id"]) or {}).get("as_of")}
                 for a in anchor["counting"]]
+    # One income for every month shown (safe_to_spend.income_for_month).
+    from . import savings
+    from .safe_to_spend import income_for_month
+    wanted = {t.month for t in txns} | {month, today.strftime("%Y-%m")}
+    income_by, estimated = {}, set()
+    for m in sorted(wanted):
+        amount, est = income_for_month(st, txns, m, today)
+        income_by[m] = gi.cents(amount)
+        if est:
+            estimated.add(m)
     body = gi.build(
         txns, today, month, u_today=u_today, u_month=u_month, unusual=unusual,
         banks=st.piggy_banks(), charges=st.bank_charges_by_month(),
+        income=income_by, estimated=estimated, adds=savings.chest_adds(st),
         confirmed=st.confirmed_categories(), anchor=anchor, anchor_accounts=accounts,
         subscription_records=rec.subscription_records(txns, today),
         subscription_choices=core._json_setting(st, "subscription_choices", {}))

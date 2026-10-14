@@ -383,8 +383,15 @@ def monthly(amount: float, cadence: str) -> float:
     return amount * PER_YEAR.get(cadence, 12) / 12
 
 
-def bills_each_month(rows: list[dict]) -> float:
-    return round(sum(monthly(r["amount"], r["cadence"]) for r in rows if r["ticked"]), 2)
+def bills_each_month(rows: list[dict], told_rent: float = 0.0) -> float:
+    """What the ticked bills come to each month — with the rent she told
+    Home about until a rent bill is among them, so Profile and Home count
+    the same bills (2026-10-14)."""
+    total = sum(monthly(r["amount"], r["cadence"]) for r in rows if r["ticked"])
+    rent_in = any(r["ticked"] and (r.get("rent") or r.get("category") == RENT) for r in rows)
+    if told_rent and told_rent > 0 and not rent_in:
+        total += told_rent
+    return round(total, 2)
 
 
 def income_each_month(state: dict, told: float = 0.0, estimate: float | None = None) -> float | None:

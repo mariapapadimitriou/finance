@@ -509,6 +509,16 @@ export function netWords(net) {
   return { figure: money(Math.abs(net)), short: net < 0 };
 }
 
+/** "$500 in, $200 to chests, $100 taken out", or what counts when nothing has. */
+export function putAwayWords(p, short) {
+  if (short) return 'More taken out than put in';
+  const parts = [];
+  if (p.contributions > 0) parts.push(`${money(p.contributions)} in`);
+  if ((p.chests ?? 0) > 0) parts.push(`${money(p.chests)} to chests`);
+  if (p.withdrawals > 0) parts.push(`${money(p.withdrawals)} taken out`);
+  return parts.length ? parts.join(', ') : 'Transfers you mark as saved, and money in your chests';
+}
+
 /** Savings so far (2026-10-14): what she put away, and what was left over,
  * since the day she started — never a balance Pearl can't see. */
 export function SavingsCard({ savings }) {
@@ -526,19 +536,14 @@ export function SavingsCard({ savings }) {
         <div className="hm-savings-tile">
           <p className="pk-label pk-muted">Put away</p>
           <p className="pk-amount">{put.figure}</p>
-          <p className="pk-label pk-muted">
-            {put.short ? 'More taken out than put in'
-              : savings.put_away.withdrawals > 0
-                ? `${money(savings.put_away.contributions)} in, ${money(savings.put_away.withdrawals)} taken out`
-                : 'Transfers you marked as saved'}
-          </p>
+          <p className="pk-label pk-muted">{putAwayWords(savings.put_away, put.short)}</p>
         </div>
         <div className="hm-savings-tile">
           <p className="pk-label pk-muted">Left over</p>
           <p className="pk-amount">{left.figure}</p>
           <p className="pk-label pk-muted">
             {left.short ? 'Spent more than you earned'
-              : `${money(savings.left_over.income)} earned, ${money(savings.left_over.spent)} spent`}
+              : `${money(savings.left_over.income)} ${savings.left_over.estimate ? 'expected' : 'earned'}, ${money(savings.left_over.spent)} spent`}
           </p>
         </div>
       </div>

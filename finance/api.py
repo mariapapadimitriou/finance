@@ -1740,11 +1740,16 @@ def _saving_goal(st, txns, today: str) -> dict:
 
 
 def _goals_safe_to_spend(st) -> float | None:
-    """What is left to spend this month, for "this month: $842 → $592"."""
+    """What is left to spend this month, for "this month: $842 → $592" —
+    Home's own number (2026-10-14), never a second model of it."""
+    from datetime import date as _date
     try:
-        return round(_plan_state(st, _plan_month())["remaining"], 2)
-    except Exception:              # no plan and no history: nothing to quote
+        sts = _home_sts(st, st.all_transactions(), _date.fromisoformat(_today_iso()))
+    except Exception:              # nothing to quote yet
         return None
+    if sts.get("amount") is None:
+        return None
+    return round(sts.get("shown", sts["amount"]), 2)
 
 
 @bp.get("/home")
@@ -1789,7 +1794,7 @@ def home():
         "review_count": review.get("count", 0),
         "carryover": carry_question,
         # Savings so far: put away, and left over, since she started.
-        "savings": savings.so_far(txns, savings.since(st, g.get("user"), txns)),
+        "savings": savings.so_far(st, txns, savings.since(st, g.get("user"), txns), today),
         "connections": milestones.connections(st.plaid_items(), st.account_sync_rules()),
         "usual_month": usual,
         # THL-166: the week under the month, and which one she reads first.
@@ -1804,14 +1809,15 @@ def home():
             txns, today, sts, usual,
             savings_target=st.float_setting("savings_target", 0.0),
             anchor_started=st.setting("anchor_started") not in (None, ""),
-            comparisons_from=state["comparisons_from"]),
+            comparisons_from=state["comparisons_from"],
+            saved=savings.put_away_month(st, txns, today.strftime("%Y-%m"))),
     })
 
 
 def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
     """Safe to spend this month, from the ledger and what she told us, with
     debt minimums among the bills (THL-49 D1, D2)."""
-    from . import carryover, debts as debt_math, income_bills, safe_to_spend
+    from . import carryover, debts as debt_math, income_bills, safe_to_spend, savings
     debts = debts if debts is not None else _debts(st, txns, today)
     return safe_to_spend.compute(
         txns, today,
@@ -1825,6 +1831,7 @@ def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
                                    safe_to_spend.recurring_bills(txns, today)),
         confirm=income_bills.load(st),
         carry=carryover.applied(st, today),
+        saved_this_month=savings.put_away_month(st, txns, today.strftime("%Y-%m")),
     )
 
 
@@ -2033,9 +2040,10 @@ def _path(st, txns, today, sts: dict, state: dict, types: dict, **kw) -> dict:
     """THL-129's path for Home's path card (GR-05) and the Path page (GR-01).
     Protect, once done, is remembered and stays done. `kw` goes to
     `milestones.path` (`every_step` for a step's own screen, GR-02 to GR-04)."""
-    from . import income_bills, milestones
+    from . import income_bills, milestones, safe_to_spend
     p = milestones.path(
         txns, today, sts, anchor=_anchor(st, txns, today.isoformat()),
+        income_of=lambda m: safe_to_spend.income_for_month(st, txns, m, today),
         bills_found=state.get("bills_found", 0),
         told_rent=st.float_setting("home_rent", 0.0), account_types=types,
         protect_done_before=st.setting("protect_done_on") not in (None, ""),
@@ -2050,7 +2058,7 @@ def _path(st, txns, today, sts: dict, state: dict, types: dict, **kw) -> dict:
 def path_page():
     """The Path page (THL-129 GR-01): the same path Home shows."""
     from datetime import date as _date
-    from . import carryover, income_bills, safe_to_spend
+    from . import carryover, income_bills, safe_to_spend, savings
 
     st = store()
     today = _date.fromisoformat(_today_iso())
@@ -2061,7 +2069,8 @@ def path_page():
         txns, today, entered_income=st.float_setting("monthly_income", 0.0),
         savings_target=st.float_setting("savings_target", 0.0),
         told_income=told_income, told_rent=told_rent, confirm=income_bills.load(st),
-        carry=carryover.applied(st, today))
+        carry=carryover.applied(st, today),
+        saved_this_month=savings.put_away_month(st, txns, today.strftime("%Y-%m")))
     types = {aid: r.get("account_type") or ""
              for aid, r in st.account_sync_rules().items() if r.get("enabled")}
     state = safe_to_spend.home_state(txns, today, sts, account_types=types,

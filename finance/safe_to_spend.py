@@ -280,6 +280,38 @@ def _confirmed_pay(pays: list[dict], received: list[Transaction], lines: list,
     return expected_c, nxt
 
 
+def received_income(transactions: list[Transaction], month: str) -> float:
+    """Income that arrived in a month, by the one rule (`_counts_as_income`)."""
+    return round(sum(-t.amount for t in transactions
+                     if t.month == month and _counts_as_income(t)), 2)
+
+
+def income_for_month(store, transactions: list[Transaction], month: str,
+                     today: date) -> tuple[float, bool]:
+    """One month's income, the way Home counts it, for every screen that
+    names a month's income (Insights, the Path, Savings so far; 2026-10-14).
+
+    What arrived, when Pearl can see deposits — a chequing or savings account
+    is linked, or income has ever arrived in the ledger — so a month with
+    none really had none. Otherwise (cards only) the planned figure Home and
+    Profile use (`income_bills.income_each_month`: her own amount, else her
+    confirmed pay, else Pearl's estimate), flagged as an estimate. Returns
+    (amount, estimate)."""
+    from .income_bills import income_each_month, load
+    received = received_income(transactions, month)
+    sees_deposits = (any((r.get("account_type") or "").lower() == "depository"
+                         for r in store.account_sync_rules().values() if r.get("enabled"))
+                     or any(_counts_as_income(t) for t in transactions))
+    if sees_deposits:
+        return received, False
+    usual = usual_income(transactions, today)
+    planned = income_each_month(load(store), store.float_setting("home_income", 0.0),
+                                usual["average"] if usual else None)
+    if planned is None or planned <= 0:
+        return received, False
+    return round(float(planned), 2), True
+
+
 def income_this_month(transactions: list[Transaction], today: date,
                       entered_monthly: float = 0.0, *, told: float = 0.0,
                       overridden: bool = False, pays: list[dict] | None = None,
@@ -566,7 +598,7 @@ def compute(transactions: list[Transaction], today: date, *,
             anchor_started: bool = False, told_income: float = 0.0,
             told_rent: float = 0.0, overridden: bool = False,
             debt_bills: dict | None = None, confirm: dict | None = None,
-            carry: dict | None = None) -> dict:
+            carry: dict | None = None, saved_this_month: float | None = None) -> dict:
     """Safe to spend this month and the four rows behind it.
 
     `debt_bills` (from `debts.bills`) adds this month's debt minimums: the
@@ -622,7 +654,9 @@ def compute(transactions: list[Transaction], today: date, *,
     ]
     if savings_target > 0:
         target_c = _cents(savings_target)
-        saved_c = _cents(invested_in(transactions, month))
+        # The one saving figure (finance/savings.py), when the caller has it.
+        saved_c = _cents(saved_this_month if saved_this_month is not None
+                         else invested_in(transactions, month))
         rows.append({"key": "set_aside", "amount_c": max(target_c - saved_c, 0),
                      "goal": "anchor" if anchor_started else "saving_goal",
                      "target": _dollars(target_c), "saved": _dollars(saved_c),

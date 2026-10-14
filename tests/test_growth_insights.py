@@ -247,7 +247,7 @@ class TestMoneyInAndOut:
         load(app)
         with app.test_client() as client:
             went = month(client, "2026-09")["income_went"]
-        assert went == {"income": c(4300), "essentials": c(ESSENTIALS["2026-09"]),
+        assert went == {"estimate": False, "income": c(4300), "essentials": c(ESSENTIALS["2026-09"]),
                         "lifestyle": c(LIFESTYLE), "set_aside": 0,
                         "left_over": c(4300 - ESSENTIALS["2026-09"] - LIFESTYLE), "short": 0}
 

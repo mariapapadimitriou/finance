@@ -42,7 +42,9 @@ const ACTIONS = { goals: 'goals', path: 'path', bills: 'income', income: 'income
 export function stepDetail(step, current) {
   if (step.done) return 'Done';
   if (step.key === 'essentials' && step.month) {
-    return `In ${monthName(step.month)}: ${money(step.income)} came in, ${money(step.essentials)} went on Essentials`;
+    const came = step.estimate ? `${money(step.income)} expected (what you told Pearl)`
+      : `${money(step.income)} came in`;
+    return `In ${monthName(step.month)}: ${came}, ${money(step.essentials)} went on Essentials`;
   }
   if (step.key === 'first_stop' && step.first_stop) return `Your first stop is ${money(step.first_stop)}`;
   if (step.key === 'full' && step.target) return `One month of Essentials: ${money(step.target)}`;
