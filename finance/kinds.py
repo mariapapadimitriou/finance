@@ -70,12 +70,21 @@ def fixed_charges(transactions: list[Transaction], today: date,
     return out
 
 
+def bill_merchants(confirm: dict | None) -> set[str]:
+    """Merchants she added as bills by hand (What was this? › A bill), whose
+    every charge is Fixed: an added bill has no dates of its own."""
+    return {" ".join(str(b.get("name") or "").lower().split())
+            for b in (confirm or {}).get("added") or [] if b.get("name")}
+
+
 def kind_map(store, transactions: list[Transaction], today: date) -> dict[str, str]:
     """{txn_id: kind} for every row that counts as spending."""
     from .analytics import counts_as_spending
     from .income_bills import load
     chosen = category_kinds(store)
-    fixed = fixed_charges(transactions, today, load(store))
+    confirm = load(store)
+    fixed = fixed_charges(transactions, today, confirm)
+    added = bill_merchants(confirm)
     out = {}
     for t in transactions:
         if not counts_as_spending(t):
@@ -83,7 +92,8 @@ def kind_map(store, transactions: list[Transaction], today: date) -> dict[str, s
         cat = t.category or "Other"
         if cat in chosen:
             out[t.fingerprint] = chosen[cat]
-        elif (t.merchant, t.date) in fixed or cat == RENT:
+        elif (t.merchant, t.date) in fixed or cat == RENT \
+                or " ".join((t.merchant or "").lower().split()) in added:
             out[t.fingerprint] = "fixed"
         else:
             out[t.fingerprint] = "variable"

@@ -107,7 +107,8 @@ def charge_candidates(inflow: Transaction, transactions: list[Transaction]) -> l
     for c in transactions:
         if c.amount <= 0 or c.excluded or c.repays:
             continue
-        if c.category in ("Transfers", "Income", "Saved", "Lent", "Unsorted transfers"):
+        if c.category in ("Transfers", "Income", "Saved", "Lent", "Borrowed",
+                          "Unsorted transfers"):
             continue
         gap = (when - date.fromisoformat(c.date[:10])).days
         if gap < 0 or gap > LOOKBACK_DAYS:

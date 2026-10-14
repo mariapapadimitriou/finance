@@ -126,3 +126,78 @@
   justify-content: flex-end; align-items: center; gap: var(--space-2); margin-left: auto; }
 .tx-head-actions .pk-btn { width: auto; }
 .tx-head-actions .pk-btn.primary { display: inline-flex; align-items: center; gap: 6px; padding: 0 16px; }
+
+/* ── What was this? (2026-10-14) ───────────────────────────────────────── */
+/* A chip a rule decided: a small lock beside the name. */
+.pk-cat.ruled { gap: 5px; }
+.pk-cat.ruled svg { opacity: .7; }
+/* A tag of hers: a plain, lighter chip beside the category. */
+.pk-tag {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; max-width: 100%;
+  border-radius: var(--radius-full); border: 1px solid var(--border); background: var(--surface-card);
+  color: var(--ink-muted); font-size: 12px; line-height: 16px; font-weight: 500; white-space: nowrap;
+}
+.pk-tag.editable { padding-right: 4px; color: var(--ink); }
+.pk .pk-tag.editable button {
+  display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+  border: 0; border-radius: var(--radius-full); background: var(--track); color: var(--ink); cursor: pointer;
+}
+.pk-row-cat { flex-wrap: wrap; gap: 4px; align-items: center; }
+
+/* The sheet: each case a row; the chosen one opens underneath. */
+.wwt { display: flex; flex-direction: column; gap: var(--space-4); }
+.wwt-cases { gap: var(--space-2); }
+.wwt-case { display: flex; flex-direction: column; gap: var(--space-3); }
+.wwt-case.on {
+  padding: 0 0 var(--space-3); border-radius: var(--radius-md);
+}
+.wwt-sub { display: flex; flex-direction: column; gap: var(--space-3); padding: 0 var(--space-2); }
+.wwt-sub > p { margin: 0; }
+.pk .wwt-input {
+  width: 100%; min-height: 44px; padding: 10px 14px; font: inherit; color: var(--ink);
+  background: var(--surface-card); border: 1.5px solid var(--border-strong); border-radius: var(--radius-sm);
+}
+.pk .wwt-input:focus { border-color: var(--border-focus); outline: none; box-shadow: 0 0 0 4px var(--focus-ring); }
+.wwt-tags { display: flex; flex-direction: column; gap: var(--space-2); }
+.wwt-tag-list { display: flex; flex-wrap: wrap; gap: 6px; min-height: 8px; }
+.pk .nl-other { align-self: flex-start; }
+
+/* A row's quick actions: on a desktop they appear on hover or focus; on a
+ * phone a swipe to the left reveals them. */
+.tx-actions {
+  display: none; align-items: center; gap: 6px; flex: none; padding-right: 12px;
+}
+.pk .tx-action {
+  display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-full); background: var(--surface-card);
+  color: var(--ink); font: inherit; font-size: 13px; line-height: 18px; font-weight: 500; cursor: pointer;
+  white-space: nowrap;
+}
+.pk .tx-action:hover { border-color: var(--action); }
+.pk .tx-action.ok { color: var(--on-nacre); background: var(--blush); border-color: transparent; }
+.pk .tx-action:disabled { opacity: .5; cursor: default; }
+@media (min-width: 1024px) {
+  .tx-sel:hover .tx-actions, .tx-sel:focus-within .tx-actions { display: inline-flex; }
+}
+@media (max-width: 1023px) {
+  .tx-sel { padding-left: 0; overflow: hidden; }
+  .tx-selectable .tx-sel { padding-left: 16px; }
+  .tx-sel .pk-row { transition: transform .18s ease-out; }
+  .tx-sel.revealed .pk-row { transform: translateX(-176px); }
+  .tx-sel.revealed .tx-actions {
+    display: inline-flex; position: absolute; right: 8px; top: 0; bottom: 0; padding: 0;
+  }
+  .tx-sel.revealed .tx-action { height: 34px; }
+  .pk .tx-toggle { cursor: pointer; font: inherit; }
+}
+@media (prefers-reduced-motion: reduce) { .tx-sel .pk-row { transition: none; } }
+.pk .tx-toggle { cursor: pointer; font: inherit; font-size: 13px; line-height: 18px; font-weight: 500; }
+.pk .tx-toggle svg { margin-left: 2px; }
+
+/* The list folded by merchant or category. */
+.tx-folded .pk-row > svg:last-child { flex: none; color: var(--ink-muted); }
+
+/* Categories and rules: tags and names. */
+.pf-kind-actions { display: inline-flex; gap: var(--space-3); }
+.pf-hidden-list { flex-direction: row; flex-wrap: wrap; gap: var(--space-2) var(--space-5); }
+.pf-hidden-list li { width: auto; }

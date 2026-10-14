@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
-import { deleteRule, editRule, getRules, setCategoryKind } from '../api.js';
+import { deleteRule, editRule, getRules, renameTag, setCategoryHidden, setCategoryKind } from '../api.js';
 import { Alert, DetailPanel, PButton, Toast, FilterChip } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
@@ -57,7 +57,80 @@ export function KindsSection({ categories = [], kinds = {}, onKind }) {
   );
 }
 
-export function RulesPage({ rules, onTab, onEdit, categories = [], kinds = {}, onKind }) {
+/** Her names for merchants (2026-10-14): the bank's spelling, and hers. */
+export function NamesSection({ names = [], onForget }) {
+  if (!names.length) return null;
+  return (
+    <section className="hm-card pf-kinds" aria-labelledby="pf-names-title">
+      <h2 className="pk-h3" id="pf-names-title">Merchant names</h2>
+      <p className="pk-muted">Names you gave merchants, shown wherever they’re named.</p>
+      <ul className="pf-kind-list">
+        {names.map((n) => (
+          <li key={n.key}>
+            <span className="pf-row-name">{n.name} <span className="pk-muted">· {n.merchant}</span></span>
+            <button type="button" className="pf-text-link" onClick={() => onForget(n)}>
+              Use the bank’s name
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Her tags: how many rows wear each, rename or remove. */
+export function TagsSection({ tags = [], onRename, onRemove }) {
+  if (!tags.length) return null;
+  return (
+    <section className="hm-card pf-kinds" aria-labelledby="pf-tags-title">
+      <h2 className="pk-h3" id="pf-tags-title">Tags</h2>
+      <p className="pk-muted">Tags group transactions without changing their category.</p>
+      <ul className="pf-kind-list">
+        {tags.map((t) => (
+          <li key={t.tag}>
+            <span className="pf-row-name">
+              {t.tag} <span className="pk-muted">· {t.count} transaction{t.count === 1 ? '' : 's'}</span>
+            </span>
+            <span className="pf-kind-actions">
+              <button type="button" className="pf-text-link" onClick={() => onRename(t)}>Rename</button>
+              <button type="button" className="pf-text-link" onClick={() => onRemove(t)}>Remove</button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Categories she never uses: out of the pickers, still a category. */
+export function HiddenSection({ categories = [], hidden = [], onHide }) {
+  const spending = categories.filter((c) => !['income', 'savings', 'transfer'].includes(c.group)
+    && c.name !== 'Unsorted transfers' && c.name !== 'Other');
+  if (!spending.length) return null;
+  return (
+    <section className="hm-card pf-kinds" aria-labelledby="pf-hidden-title">
+      <h2 className="pk-h3" id="pf-hidden-title">Categories you use</h2>
+      <p className="pk-muted">
+        Untick a category you never use and it leaves the pickers. Anything already in it stays.
+      </p>
+      <ul className="pf-kind-list pf-hidden-list">
+        {spending.map((c) => (
+          <li key={c.name}>
+            <label className="txd-check">
+              <input type="checkbox" checked={!hidden.includes(c.name)}
+                     onChange={(e) => onHide(c.name, !e.target.checked)} />
+              {c.name}
+            </label>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export function RulesPage({ rules, onTab, onEdit, categories = [], kinds = {}, onKind, names = [],
+                            tags = [], hidden = [], onForgetName, onRenameTag, onRemoveTag,
+                            onHide }) {
   return (
     <div className="pk hm-page pf-page">
       <PageHead trail={[{ label: 'Profile', to: 'profile' }, { label: 'Categories and rules' }]}
@@ -92,7 +165,10 @@ export function RulesPage({ rules, onTab, onEdit, categories = [], kinds = {}, o
         </ul>
       )}
       <p className="pf-foot">Deleting a rule doesn’t change transactions you’ve already sorted.</p>
+      {onForgetName && <NamesSection names={names} onForget={onForgetName} />}
+      {onRenameTag && <TagsSection tags={tags} onRename={onRenameTag} onRemove={onRemoveTag} />}
       {onKind && <KindsSection categories={categories} kinds={kinds} onKind={onKind} />}
+      {onHide && <HiddenSection categories={categories} hidden={hidden} onHide={onHide} />}
     </div>
   );
 }
@@ -166,11 +242,31 @@ export default function RulesPanel({ categories = [], onTab, onChanged, version 
   return (
     <>
       <RulesPage rules={data.rules} onTab={onTab} onEdit={setEditing} categories={categories}
-                 kinds={data.kinds ?? {}}
+                 kinds={data.kinds ?? {}} names={data.names ?? []} tags={data.tags ?? []}
+                 hidden={data.hidden ?? []}
                  onKind={async (category, kind) => {
                    await setCategoryKind(category, kind);
                    await done(kind ? `${category} is always ${kind === 'fixed' ? 'Fixed' : 'Variable'} now.`
                      : `Pearl decides ${category} again.`);
+                 }}
+                 onForgetName={async (n) => {
+                   await deleteRule(`name:${n.key}`);
+                   await done(`${n.merchant} uses the bank’s name again.`);
+                 }}
+                 onRenameTag={async (t) => {
+                   const name = window.prompt(`Rename “${t.tag}” to:`, t.tag);
+                   if (!name || name.trim() === t.tag) return;
+                   await renameTag(t.tag, name.trim());
+                   await done(`${t.tag} is ${name.trim()} now.`);
+                 }}
+                 onRemoveTag={async (t) => {
+                   if (!window.confirm(`Take “${t.tag}” off ${t.count} transaction${t.count === 1 ? '' : 's'}?`)) return;
+                   await renameTag(t.tag, null);
+                   await done(`${t.tag} removed.`);
+                 }}
+                 onHide={async (category, hide) => {
+                   await setCategoryHidden(category, hide);
+                   await done(hide ? `${category} is out of the pickers.` : `${category} is back.`);
                  }} />
       {editing && (
         <div className="pk">

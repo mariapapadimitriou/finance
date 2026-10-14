@@ -129,6 +129,12 @@ def linked_accounts(store) -> dict:
                       flags=re.I).strip().lower()
         if len(name) >= 6 and name not in _GENERIC_NAMES:
             names.setdefault(name, []).append((aid, kind))
+    # A savings or investment account she added by hand, with its last four
+    # digits (2026-10-14): a transfer naming them is Saved, the same as one
+    # Plaid pulled in. Either kind is money put away.
+    for m in store.manual_accounts():
+        if m.get("last4") and m["kind"] in ("savings", "investment"):
+            masks.setdefault(m["last4"], (m["account_id"], "investment"))
     return {"masks": masks,
             "names": {n: ids[0] for n, ids in names.items() if len({i for i, _ in ids}) == 1}}
 

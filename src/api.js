@@ -57,8 +57,8 @@ export const getAccountsOverview = () => req('/api/accounts/overview');
 // `counted`, `joint_share` (1–99 or null), `anchor`, `nickname`.
 export const saveAccountSettings = (id, fields) =>
   json('PUT', `/api/accounts/${encodeURIComponent(id)}/settings`, fields);
-export const addManualAccount = (name, kind, balance) =>
-  json('POST', '/api/accounts/manual', { name, kind, balance });
+export const addManualAccount = (name, kind, balance, last4 = '') =>
+  json('POST', '/api/accounts/manual', { name, kind, balance, last4 });
 export const updateManualBalance = (id, balance) =>
   json('PUT', `/api/accounts/${encodeURIComponent(id)}/balance`, { balance });
 // `transactions` is 'keep' or 'delete'.
@@ -389,6 +389,28 @@ export const previewBatchCategory = (ids, category) =>
 export const batchCategory = (ids, category) =>
   json('POST', '/api/transactions/batch/category', { ids, category });
 export const batchConfirm = (ids) => json('POST', '/api/transactions/batch/confirm', { ids });
+
+// What was this? (2026-10-14, finance/marks.py): the cases that apply to a
+// row, doing one (with `dry` for the line underneath), and a selection at once.
+export const getTxCases = (id) => req(`/api/transactions/${encodeURIComponent(id)}/cases`);
+export const markTx = (id, body, dry = false) =>
+  json('POST', `/api/transactions/${encodeURIComponent(id)}/mark${dry ? '?dry=1' : ''}`, body);
+export const batchMark = (ids, body) =>
+  json('POST', '/api/transactions/batch/mark', { ids, ...body });
+// Her tags on a row, on a selection, and the list of them.
+export const setTxTags = (id, tags) =>
+  json('PUT', `/api/transactions/${encodeURIComponent(id)}/tags`, { tags });
+export const batchTags = (ids, add = [], remove = []) =>
+  json('POST', '/api/transactions/batch/tags', { ids, add, remove });
+export const getTags = () => req('/api/tags');
+export const renameTag = (tag, name) =>
+  json('PUT', `/api/tags/${encodeURIComponent(tag)}`, { name });
+// Her name for a merchant ('' goes back to the bank's), and categories she
+// never uses, kept out of the pickers.
+export const setMerchantName = (merchant, name) =>
+  json('PUT', '/api/merchants/name', { merchant, name });
+export const setCategoryHidden = (category, hidden) =>
+  json('PUT', '/api/rules/categories', { category, hidden });
 // Her preferences: single-key shortcuts on or off (WCAG 2.1.4).
 export const getPreferences = () => req('/api/preferences');
 export const savePreferences = (prefs) => json('PUT', '/api/preferences', prefs);

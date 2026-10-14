@@ -464,6 +464,36 @@ CREATE TABLE IF NOT EXISTS manual_accounts (
     counted    INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- What was this? (2026-10-14, finance/marks.py). The answers that aren't a
+-- category: a tag of her own ("Ibiza", "Kitchen reno") that groups rows
+-- without moving them; which savings or investment account a Saved transfer
+-- went to (or came out of); a refund linked to the purchase it refunds; and
+-- a repayment that was a reimbursement (work, insurance) rather than a
+-- friend's share. Each beside the row, like a share, so a sync can't undo it.
+CREATE TABLE IF NOT EXISTS txn_tags (
+    txn_id TEXT NOT NULL,
+    tag    TEXT NOT NULL,
+    PRIMARY KEY (txn_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_tag ON txn_tags(tag);
+CREATE TABLE IF NOT EXISTS txn_saved_to (
+    txn_id     TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS txn_refunds (
+    inflow_id TEXT PRIMARY KEY,
+    charge_id TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS txn_payback_kind (
+    inflow_id TEXT PRIMARY KEY,
+    kind      TEXT NOT NULL
+);
+-- Her name for a merchant ("SQ *THE ROASTED NUT" → "Roasted Nut"), shown
+-- wherever the merchant is named. The ledger keeps the bank's spelling.
+CREATE TABLE IF NOT EXISTS merchant_names (
+    merchant_key TEXT PRIMARY KEY,
+    name         TEXT NOT NULL
+);
 """
 
 
@@ -512,7 +542,7 @@ _CHARGES = """(
 _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts",
                "txn_exclusions", "txn_income_type", "txn_confirmed", "txn_notes",
                "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
-               "joint_deposits", "txn_party")
+               "joint_deposits", "txn_party", "txn_tags", "txn_saved_to")
 
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
@@ -596,7 +626,18 @@ class Store:
         self._forget_mortgage_terms()
         self._retire_trips()
         self._retire_bulk_edits()
+        self._migrate_manual_digits()
         self._drop_self_twins()
+
+    def _migrate_manual_digits(self) -> None:
+        """`manual_accounts.last4`: the last four digits of a savings or
+        investment account added by hand (2026-10-14), so a transfer that
+        names them is Saved (finance/transfers.py `own_account`)."""
+        try:
+            with self.conn() as c:
+                c.execute("ALTER TABLE manual_accounts ADD COLUMN last4 TEXT")
+        except Exception:                                        # noqa: BLE001
+            return
 
     def _drop_self_twins(self) -> None:
         """Clear "same purchase?" questions that pair a row with itself.
@@ -1203,6 +1244,7 @@ class Store:
     def unlink_payback(self, inflow_id: str) -> bool:
         with self.conn() as c:
             c.execute("DELETE FROM txn_payback_person WHERE inflow_id = ?", (inflow_id,))
+            c.execute("DELETE FROM txn_payback_kind WHERE inflow_id = ?", (inflow_id,))
             cur = c.execute("DELETE FROM txn_paybacks WHERE inflow_id = ?",
                             (inflow_id,))
             return (cur.rowcount or 0) > 0
@@ -1212,6 +1254,102 @@ class Store:
         with self.conn() as c:
             rows = c.execute("SELECT inflow_id, person FROM txn_payback_person").fetchall()
         return {r["inflow_id"]: r["person"] for r in rows}
+
+    # ── What was this? (2026-10-14) ──────────────────────────────────────
+    def payback_kinds(self) -> dict[str, str]:
+        """inflow id → "reimbursement" where a repayment was one (work,
+        insurance) rather than a friend's share."""
+        with self.conn() as c:
+            rows = c.execute("SELECT inflow_id, kind FROM txn_payback_kind").fetchall()
+        return {r["inflow_id"]: r["kind"] for r in rows}
+
+    def set_payback_kind(self, inflow_id: str, kind: str | None) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_payback_kind WHERE inflow_id = ?", (inflow_id,))
+            if kind:
+                c.execute("INSERT INTO txn_payback_kind (inflow_id, kind) VALUES (?, ?)",
+                          (inflow_id, kind))
+
+    def refunds(self) -> dict[str, str]:
+        """inflow id → the charge it refunds, where she linked them."""
+        with self.conn() as c:
+            rows = c.execute("SELECT inflow_id, charge_id FROM txn_refunds").fetchall()
+        return {r["inflow_id"]: r["charge_id"] for r in rows}
+
+    def link_refund(self, inflow_id: str, charge_id: str | None) -> None:
+        """A refund is of one purchase; None forgets the link."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_refunds WHERE inflow_id = ?", (inflow_id,))
+            if charge_id:
+                c.execute("INSERT INTO txn_refunds (inflow_id, charge_id) VALUES (?, ?)",
+                          (inflow_id, charge_id))
+
+    def saved_to(self) -> dict[str, str]:
+        """txn id → the savings or investment account a Saved row went to
+        (or, for money in, came out of)."""
+        with self.conn() as c:
+            rows = c.execute("SELECT txn_id, account_id FROM txn_saved_to").fetchall()
+        return {r["txn_id"]: r["account_id"] for r in rows}
+
+    def set_saved_to(self, txn_id: str, account_id: str | None) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_saved_to WHERE txn_id = ?", (txn_id,))
+            if account_id:
+                c.execute("INSERT INTO txn_saved_to (txn_id, account_id) VALUES (?, ?)",
+                          (txn_id, account_id))
+
+    def tags(self) -> dict[str, list[str]]:
+        """txn id → her tags on it, in alphabetical order."""
+        with self.conn() as c:
+            rows = c.execute("SELECT txn_id, tag FROM txn_tags ORDER BY tag").fetchall()
+        out: dict[str, list[str]] = {}
+        for r in rows:
+            out.setdefault(r["txn_id"], []).append(r["tag"])
+        return out
+
+    def set_tags(self, txn_id: str, tags: list[str]) -> None:
+        """Replace a row's tags."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_tags WHERE txn_id = ?", (txn_id,))
+            for tag in dict.fromkeys(tags):
+                c.execute("INSERT INTO txn_tags (txn_id, tag) VALUES (?, ?)", (txn_id, tag))
+
+    def tag_rows(self, ids: list[str], add: list[str], remove: list[str]) -> None:
+        """Add and take off tags on many rows at once."""
+        with self.conn() as c:
+            for txn_id in ids:
+                for tag in remove:
+                    c.execute("DELETE FROM txn_tags WHERE txn_id = ? AND tag = ?", (txn_id, tag))
+                for tag in add:
+                    c.execute("DELETE FROM txn_tags WHERE txn_id = ? AND tag = ?", (txn_id, tag))
+                    c.execute("INSERT INTO txn_tags (txn_id, tag) VALUES (?, ?)", (txn_id, tag))
+
+    def rename_tag(self, tag: str, new: str | None) -> int:
+        """Rename a tag everywhere, or (None) take it off every row."""
+        with self.conn() as c:
+            if new:
+                rows = c.execute("SELECT txn_id FROM txn_tags WHERE tag = ?", (tag,)).fetchall()
+                c.execute("DELETE FROM txn_tags WHERE tag = ?", (tag,))
+                for r in rows:
+                    c.execute("DELETE FROM txn_tags WHERE txn_id = ? AND tag = ?", (r["txn_id"], new))
+                    c.execute("INSERT INTO txn_tags (txn_id, tag) VALUES (?, ?)", (r["txn_id"], new))
+                return len(rows)
+            cur = c.execute("DELETE FROM txn_tags WHERE tag = ?", (tag,))
+            return max(cur.rowcount or 0, 0)
+
+    def merchant_names(self) -> dict[str, str]:
+        """merchant key (lower-cased) → her name for it."""
+        with self.conn() as c:
+            rows = c.execute("SELECT merchant_key, name FROM merchant_names").fetchall()
+        return {r["merchant_key"]: r["name"] for r in rows}
+
+    def set_merchant_name(self, merchant: str, name: str | None) -> None:
+        key = " ".join((merchant or "").lower().split())
+        with self.conn() as c:
+            c.execute("DELETE FROM merchant_names WHERE merchant_key = ?", (key,))
+            if name:
+                c.execute("INSERT INTO merchant_names (merchant_key, name) VALUES (?, ?)",
+                          (key, name))
 
     # ── Splits (THL-124) ─────────────────────────────────────────────────
     def splits(self) -> dict[str, dict]:
@@ -1338,8 +1476,11 @@ class Store:
                 for table in _ROW_TABLES:
                     c.execute(f"DELETE FROM {table} WHERE txn_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_payback_person WHERE inflow_id IN ({marks})", chunk)
+                c.execute(f"DELETE FROM txn_payback_kind WHERE inflow_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_paybacks WHERE inflow_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_paybacks WHERE charge_id IN ({marks})", chunk)
+                c.execute(f"DELETE FROM txn_refunds WHERE inflow_id IN ({marks})", chunk)
+                c.execute(f"DELETE FROM txn_refunds WHERE charge_id IN ({marks})", chunk)
             if import_suffix:
                 c.execute("DELETE FROM imports WHERE filename LIKE ?",
                           (f"%{import_suffix}",))
@@ -1582,6 +1723,8 @@ class Store:
         *((tbl, "answers about transactions") for tbl in _ROW_TABLES),
         ("txn_paybacks", "money friends paid back"),
         ("txn_payback_person", "who paid you back"),
+        ("txn_payback_kind", "reimbursements"),
+        ("txn_refunds", "refunds"),
         ("dismissed_insights", "dismissed findings"),
         ("review_dismissed", "settled review items"),
         ("review_skipped", "skipped review items"),
@@ -2276,7 +2419,7 @@ class Store:
         return {r["account_id"] for r in rows}
 
     # ── Balances added by hand (AM-05, AM-06) ────────────────────────────
-    MANUAL_KINDS = ("chequing", "savings", "credit")
+    MANUAL_KINDS = ("chequing", "savings", "investment", "credit")
 
     def manual_accounts(self) -> list[dict]:
         with self.conn() as c:
@@ -2284,7 +2427,9 @@ class Store:
         return [{"id": int(r["id"]), "account_id": f"hand:{int(r['id'])}",
                  "name": r["name"], "kind": r["kind"],
                  "balance": round(float(r["balance"]), 2),
-                 "updated_on": r["updated_on"], "counted": bool(r["counted"])}
+                 "updated_on": r["updated_on"], "counted": bool(r["counted"]),
+                 # The last four digits, so transfers naming it are Saved.
+                 "last4": (dict(r).get("last4") or "")}
                 for r in rows]
 
     def manual_account(self, account_id: str) -> dict | None:
@@ -2292,16 +2437,16 @@ class Store:
                     None)
 
     def add_manual_account(self, name: str, kind: str, balance: float,
-                           updated_on: str) -> str:
+                           updated_on: str, last4: str = "") -> str:
         with self.conn() as c:
-            c.execute("INSERT INTO manual_accounts (name, kind, balance, updated_on) "
-                      "VALUES (?, ?, ?, ?)", (name, kind, round(float(balance), 2),
-                                              updated_on))
+            c.execute("INSERT INTO manual_accounts (name, kind, balance, updated_on, last4) "
+                      "VALUES (?, ?, ?, ?, ?)", (name, kind, round(float(balance), 2),
+                                                 updated_on, last4 or None))
             new = c.execute("SELECT MAX(id) AS id FROM manual_accounts").fetchone()["id"]
         return f"hand:{int(new)}"
 
     def update_manual_account(self, account_id: str, **fields) -> bool:
-        allowed = {"name", "balance", "updated_on", "counted", "kind"}
+        allowed = {"name", "balance", "updated_on", "counted", "kind", "last4"}
         fields = {k: v for k, v in fields.items() if k in allowed}
         try:
             mid = int(str(account_id).split(":", 1)[1])
