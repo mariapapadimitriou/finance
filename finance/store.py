@@ -101,24 +101,6 @@ CREATE TABLE IF NOT EXISTS imports (
     created_at   TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
--- Sort a date range (2026-10-14): one category for every purchase in a
--- range she chose, and the rows it moved with what each was before. See
--- finance/bulk_edits.py.
-CREATE TABLE IF NOT EXISTS bulk_edits (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT NOT NULL,
-    category   TEXT NOT NULL,
-    start_date TEXT NOT NULL,
-    end_date   TEXT NOT NULL,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS bulk_edit_rows (
-    txn_id        TEXT PRIMARY KEY,
-    edit_id       INTEGER NOT NULL,
-    prev_category TEXT,
-    prev_source   TEXT
-);
-
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -530,7 +512,7 @@ _CHARGES = """(
 _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts",
                "txn_exclusions", "txn_income_type", "txn_confirmed", "txn_notes",
                "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
-               "joint_deposits", "txn_party", "bulk_edit_rows")
+               "joint_deposits", "txn_party")
 
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
@@ -613,6 +595,7 @@ class Store:
         self._migrate_saved()
         self._forget_mortgage_terms()
         self._retire_trips()
+        self._retire_bulk_edits()
         self._drop_self_twins()
 
     def _drop_self_twins(self) -> None:
@@ -715,6 +698,20 @@ class Store:
                     "DROP TABLE IF EXISTS marked_trips",
                     "DROP INDEX IF EXISTS idx_trip_dates",
                     "DROP TABLE IF EXISTS trips"):
+            try:
+                with self.conn() as c:
+                    c.execute(sql)
+            except Exception:                                    # noqa: BLE001
+                continue
+
+    def _retire_bulk_edits(self) -> None:
+        """Sort a date range is gone (2026-10-14; the selection's batch edit
+        does the job). Its tables are dropped, and a row it moved keeps its
+        category as her own choice. Each statement on its own, as above."""
+        for sql in ("UPDATE transactions SET category_source = 'user' "
+                    "WHERE category_source = 'bulk'",
+                    "DROP TABLE IF EXISTS bulk_edit_rows",
+                    "DROP TABLE IF EXISTS bulk_edits"):
             try:
                 with self.conn() as c:
                     c.execute(sql)
@@ -1519,8 +1516,6 @@ class Store:
             ("imports", "import history"),
             ("merchant_overrides", "merchant overrides"),
             ("budgets", "budgets"),
-            ("bulk_edits", "date ranges you sorted"),
-            ("bulk_edit_rows", "transactions in them"),
             ("piggy_allocations", "piggy-bank allocations"),
             ("piggy_optouts", "charges kept out of piggy banks"),
             ("piggy_draws", "piggy-bank draws"),
@@ -1587,7 +1582,6 @@ class Store:
         *((tbl, "answers about transactions") for tbl in _ROW_TABLES),
         ("txn_paybacks", "money friends paid back"),
         ("txn_payback_person", "who paid you back"),
-        ("bulk_edits", "date ranges you sorted"),
         ("dismissed_insights", "dismissed findings"),
         ("review_dismissed", "settled review items"),
         ("review_skipped", "skipped review items"),
@@ -2372,68 +2366,6 @@ class Store:
             if who:
                 c.execute("INSERT INTO joint_deposits (txn_id, who, person) VALUES (?, ?, ?)",
                           (txn_id, who, person or None))
-
-    # ── Sort a date range (finance/bulk_edits.py) ────────────────────────
-    def bulk_edits(self) -> list[dict]:
-        with self.conn() as c:
-            rows = c.execute("SELECT id, name, category, start_date, end_date FROM bulk_edits "
-                             "ORDER BY start_date DESC, id DESC").fetchall()
-        return [dict(r) for r in rows]
-
-    def add_bulk_edit(self, name: str, category: str, start: str, end: str) -> int:
-        sql = ("INSERT INTO bulk_edits (name, category, start_date, end_date) "
-               "VALUES (?, ?, ?, ?)")
-        with self.conn() as c:
-            if self.is_postgres:
-                return int(c.execute(sql + " RETURNING id",
-                                     (name, category, start, end)).fetchone()["id"])
-            return int(c.execute(sql, (name, category, start, end)).lastrowid)
-
-    def update_bulk_edit(self, edit_id: int, name: str, category: str, start: str,
-                         end: str) -> None:
-        with self.conn() as c:
-            c.execute("UPDATE bulk_edits SET name = ?, category = ?, start_date = ?, "
-                      "end_date = ? WHERE id = ?", (name, category, start, end, int(edit_id)))
-
-    def delete_bulk_edit(self, edit_id: int) -> None:
-        with self.conn() as c:
-            c.execute("DELETE FROM bulk_edits WHERE id = ?", (int(edit_id),))
-            c.execute("DELETE FROM bulk_edit_rows WHERE edit_id = ?", (int(edit_id),))
-
-    def bulk_edit_rows(self) -> dict[str, int]:
-        """{txn_id: edit_id} for every row an edit she still has moved."""
-        with self.conn() as c:
-            rows = c.execute("SELECT r.txn_id, r.edit_id FROM bulk_edit_rows r "
-                             "JOIN bulk_edits e ON e.id = r.edit_id").fetchall()
-        return {r["txn_id"]: int(r["edit_id"]) for r in rows}
-
-    def bulk_edit_rows_before(self) -> dict[str, str | None]:
-        """{txn_id: the category it had before its edit}."""
-        with self.conn() as c:
-            rows = c.execute("SELECT txn_id, prev_category FROM bulk_edit_rows").fetchall()
-        return {r["txn_id"]: r["prev_category"] for r in rows}
-
-    def add_bulk_edit_rows(self, edit_id: int,
-                           rows: list[tuple[str, str | None, str | None]]) -> None:
-        """(txn_id, its category before, its source before) for each row."""
-        with self.conn() as c:
-            for txn_id, category, source in rows:
-                c.execute("DELETE FROM bulk_edit_rows WHERE txn_id = ?", (txn_id,))
-                c.execute("INSERT INTO bulk_edit_rows (txn_id, edit_id, prev_category, "
-                          "prev_source) VALUES (?, ?, ?, ?)",
-                          (txn_id, int(edit_id), category, source))
-
-    def remove_bulk_edit_rows(self, ids: list[str]) -> dict[str, tuple[str | None, str | None]]:
-        """Take rows out of their edit; returns what each was before."""
-        out = {}
-        with self.conn() as c:
-            for txn_id in ids:
-                r = c.execute("SELECT prev_category, prev_source FROM bulk_edit_rows "
-                              "WHERE txn_id = ?", (txn_id,)).fetchone()
-                if r:
-                    out[txn_id] = (r["prev_category"], r["prev_source"])
-                c.execute("DELETE FROM bulk_edit_rows WHERE txn_id = ?", (txn_id,))
-        return out
 
     def set_party(self, txn_id: str, name: str | None) -> None:
         """Who an e-Transfer was from or to, or None for the bank's name."""

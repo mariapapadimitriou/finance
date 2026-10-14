@@ -60,7 +60,7 @@ export function readyWords(summary) {
 
 // What Start over does, in her words.
 export const START_OVER_ROWS = [
-  { title: 'Cleared', sub: 'Every transaction, and everything you sorted: categories, splits, date ranges you sorted, notes, left-out transactions and Needs a look answers.' },
+  { title: 'Cleared', sub: 'Every transaction, and everything you sorted: categories, splits, notes, left-out transactions and Needs a look answers.' },
   { title: 'Cleared', sub: 'Your rules, your income and bills setup, and your budgets.' },
   { title: 'Downloaded again', sub: 'Your banks stay connected, and Pearl brings your full history back, ready to sort from scratch.' },
   { title: 'Kept', sub: 'Your goals and treasure chests, with the money you’ve added to them, and your account nicknames and joint shares.' },

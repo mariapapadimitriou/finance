@@ -72,10 +72,8 @@ class Context:
 
     def __init__(self, transactions: list[Transaction], confirmed: dict[str, str],
                  notes: dict[str, str], banks: dict[int, str],
-                 splits: dict[str, dict] | None = None, edits: dict[str, str] | None = None):
+                 splits: dict[str, dict] | None = None):
         self.by_id = {t.fingerprint: t for t in transactions}
-        # The date-range edit each row it moved belongs to (finance/bulk_edits.py).
-        self.edits = edits or {}
         self.confirmed = confirmed
         self.notes = notes
         self.banks = banks
@@ -181,8 +179,6 @@ def describe(t: Transaction, ctx: Context) -> dict:
     one_off = t.one_off and counts in ("spending", "income")
     if one_off and not note:
         note = "Unusual · left out of your usual month"
-    if not note and t.fingerprint in ctx.edits:
-        note = f"{ctx.edits[t.fingerprint]} · sorted together"
 
     if counts == "spending" and cat == "Unsorted transfers":
         toward = "Spending until it’s sorted"
@@ -222,7 +218,6 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "counts": counts,
         "counts_toward": toward,
         "note": note,
-        "bulk_edit": ctx.edits.get(t.fingerprint),
         "note_link": note_link,
         "my_note": ctx.notes.get(t.fingerprint, ""),
         "split": split,
