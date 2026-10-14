@@ -170,3 +170,7 @@ a.pk-btn { text-decoration: none; box-sizing: border-box; }
 /* The bank's own logo (from Plaid), on white so it reads in both themes. */
 .pk-avatar.pf-logo { background: #fff; overflow: hidden; }
 .pk-avatar.pf-logo img { object-fit: contain; padding: 4px; box-sizing: border-box; }
+
+/* Fixed or variable, category by category (Categories and rules). */
+.pf-kind-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.pf-kind-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }

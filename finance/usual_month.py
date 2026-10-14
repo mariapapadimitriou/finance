@@ -73,7 +73,8 @@ def _days(month: str) -> int:
 
 
 def usual(transactions: list[Transaction], today: date,
-          unusual: set[str] | frozenset = frozenset()) -> dict:
+          unusual: set[str] | frozenset = frozenset(),
+          kinds: dict[str, str] | None = None) -> dict:
     """The usual month and its daily curve, in dollars, unusual months left out.
 
     {"months": [...], "curve": "daily" | "day_fraction" | None,
@@ -82,12 +83,15 @@ def usual(transactions: list[Transaction], today: date,
     """
     months = covered_months(transactions, today, unusual=unusual)
     if not months:
-        return {"months": [], "curve": None, "groups": {}, "categories": {}}
+        return {"months": [], "curve": None, "groups": {}, "kinds": {}, "categories": {}}
     wanted = set(months)
     by_cat: dict[str, int] = defaultdict(int)
-    # Cents spent on each day, per group and month.
+    # Cents spent on each day, per group and month — and per kind (Fixed or
+    # Variable, finance/kinds.py), the second lens.
     daily: dict[str, dict[str, list[int]]] = {
         g: {m: [0] * (_days(m) + 1) for m in months} for g in GROUPS}
+    daily_kind: dict[str, dict[str, list[int]]] = {
+        k: {m: [0] * (_days(m) + 1) for m in months} for k in ("fixed", "variable")}
     for t in transactions:
         if t.month not in wanted or not in_usual(t):
             continue
@@ -97,24 +101,30 @@ def usual(transactions: list[Transaction], today: date,
         g = group_of(cat)
         if g in daily:
             daily[g][t.month][int(t.date[8:10])] += c
+            k = (kinds or {}).get(t.fingerprint, "variable")
+            daily_kind[k][t.month][int(t.date[8:10])] += c
 
     n = len(months)
     curve = "daily" if n >= CURVE_MONTHS else "day_fraction"
-    groups = {}
-    for g in GROUPS:
-        total = sum(sum(days) for days in daily[g].values())
+
+    def summarise(per_month: dict[str, list[int]]) -> dict:
+        total = sum(sum(days) for days in per_month.values())
         by_day = None
         if curve == "daily":
             by_day = []
             for day in range(1, 32):
                 # By day 31 a 30-day month has already had all of its days.
-                upto = [sum(days[1:min(day, len(days) - 1) + 1]) for days in daily[g].values()]
+                upto = [sum(days[1:min(day, len(days) - 1) + 1]) for days in per_month.values()]
                 by_day.append(_dollars(sum(upto) / n))
-        groups[g] = {"usual": _dollars(total / n), "by_day": by_day}
+        return {"usual": _dollars(total / n), "by_day": by_day}
+
+    groups = {g: summarise(daily[g]) for g in GROUPS}
+    kinds_out = {k: summarise(daily_kind[k]) for k in ("fixed", "variable")} if kinds else {}
     categories = {cat: {"usual": _dollars(c / n), "group": group_of(cat)}
                   for cat, c in sorted(by_cat.items(), key=lambda kv: -kv[1])
                   if group_of(cat) in GROUPS and c > 0}
-    return {"months": months, "curve": curve, "groups": groups, "categories": categories}
+    return {"months": months, "curve": curve, "groups": groups, "kinds": kinds_out,
+            "categories": categories}
 
 
 def in_usual(t: Transaction) -> bool:
@@ -161,7 +171,8 @@ def one_off_effect(transactions: list[Transaction], txn: Transaction, today: dat
 
 def snapshot(transactions: list[Transaction], today: date, sts: dict, u: dict, *,
              savings_target: float = 0.0, anchor_started: bool = False,
-             comparisons_from: str | None = None, saved: float | None = None) -> dict:
+             comparisons_from: str | None = None, saved: float | None = None,
+             kinds: dict[str, str] | None = None) -> dict:
     """The Home snapshot (H-01): Income, Essentials, Lifestyle and Savings.
 
     Income compares what has arrived with what's expected this month;
@@ -183,9 +194,11 @@ def snapshot(transactions: list[Transaction], today: date, sts: dict, u: dict, *
                  "cautious": sts.get("cautious") if sts.get("income_source") == "cautious" else None})
 
     spent: dict[str, int] = defaultdict(int)
+    spent_kind: dict[str, int] = defaultdict(int)
     for t in transactions:
         if t.month == month and t.date <= today.isoformat() and counts_as_spending(t):
             spent[group_of(t.category or "Other")] += _cents(spend_amount(t))
+            spent_kind[(kinds or {}).get(t.fingerprint, "variable")] += _cents(spend_amount(t))
     for g in GROUPS:
         grp = u["groups"].get(g)
         by_today = None
@@ -199,6 +212,15 @@ def snapshot(transactions: list[Transaction], today: date, sts: dict, u: dict, *
     rows.append({"key": "savings", "label": "Savings", "saved": saved,
                  "planned": savings_target or None,
                  "goal": ("anchor" if anchor_started else "saving_goal") if savings_target else None})
+    if kinds is not None:
+        # The same month through the other lens (finance/kinds.py).
+        from .kinds import KIND_LABELS, KINDS
+        for k in KINDS:
+            grp = (u.get("kinds") or {}).get(k)
+            by_today = grp["by_day"][today.day - 1] if grp and grp["by_day"] else None
+            rows.append({"key": k, "label": KIND_LABELS[k], "spent": _dollars(spent_kind[k]),
+                         "usual": grp["usual"] if grp else None, "usual_by_today": by_today,
+                         "lens": "kind"})
 
     return {"month": month, "day": today.day, "days_in_month": days,
             "months_of_history": len(u["months"]), "curve": u["curve"],

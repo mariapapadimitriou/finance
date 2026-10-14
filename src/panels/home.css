@@ -203,3 +203,6 @@
   border-radius: var(--radius-md); background: var(--surface-page); border: 1px solid var(--border); }
 .hm-savings-tile p { margin: 0; }
 @media (max-width: 480px) { .hm-savings-tiles { grid-template-columns: 1fr; } }
+
+.bd-section + .bd-section { margin-top: var(--space-4); }
+.bd-section > .pk-overline { margin: 0 0 var(--space-2); }

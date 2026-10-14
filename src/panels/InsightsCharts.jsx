@@ -73,7 +73,8 @@ const AXIS = 26;
  * usual month (GR-28's card, GR-29). `labels` puts each month's total above
  * its bar.
  */
-export function TrendBars({ months, band, height = 170, labels = false, caption }) {
+export function TrendBars({ months, band, height = 170, labels = false, caption,
+                            names = { essentials: 'Essentials', lifestyle: 'Lifestyle' } }) {
   const [ref, width] = useWidth();
   const top = labels ? 30 : PAD_TOP;
   const plot = height - top - AXIS;
@@ -83,7 +84,7 @@ export function TrendBars({ months, band, height = 170, labels = false, caption 
   const y = (v) => top + plot - (max > 0 ? (v / max) * plot : 0);
   return (
     <figure className="in-figure">
-      <ChartTable caption={caption} head={['Month', 'Essentials', 'Lifestyle', 'Total']}
+      <ChartTable caption={caption} head={['Month', ...Object.values(names), 'Total']}
                   rows={months.map((m) => [monthFull(m.month) + (m.running ? ' so far' : ''),
                                            cash(m.essentials), cash(m.lifestyle), cash(m.total)])} />
       <div ref={ref} className="in-chart" aria-hidden="true">

@@ -605,3 +605,18 @@ describe('Savings so far (2026-10-14)', () => {
     expect(est).toContain('$4,300 expected, $130 spent');
   });
 });
+
+describe('the snapshot through either lens (2026-10-14)', () => {
+  it('shows Essentials and Lifestyle by need, Fixed and Variable by kind', () => {
+    const withKinds = { ...h01, rows: [...h01.rows,
+      { key: 'fixed', label: 'Fixed', spent: 1800, usual: 1796, usual_by_today: 1796, lens: 'kind' },
+      { key: 'variable', label: 'Variable', spent: 1344, usual: 2254, usual_by_today: 1100, lens: 'kind' }] };
+    const need = snapshotRows(withKinds, 'need').map((r) => r.key);
+    expect(need).toEqual(['income', 'essentials', 'lifestyle', 'savings']);
+    const kind = snapshotRows(withKinds, 'kind').map((r) => r.key);
+    expect(kind).toEqual(['income', 'savings', 'fixed', 'variable']);
+    const out = html(<Snapshot snap={withKinds} />);
+    expect(out).toContain('By kind');
+    expect(html(<Snapshot snap={h01} />)).not.toContain('By kind');
+  });
+});

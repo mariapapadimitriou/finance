@@ -124,10 +124,12 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
     """Every row of yours, described for the transactions list — or, with
     `excluded`, only the rows you left out; with `joint`, only the rows on a
     joint account that are someone else's."""
-    from . import txlist
+    from datetime import date as _date
+    from . import kinds, txlist
     txns = st.all_transactions()
     ctx = txlist.Context(txns, st.confirmed_categories(), st.notes(),
-                         {b.id: b.name for b in st.piggy_banks()}, splits=st.splits())
+                         {b.id: b.name for b in st.piggy_banks()}, splits=st.splits(),
+                         kinds=kinds.kind_map(st, txns, _date.fromisoformat(_today_iso())))
     if everything:
         rows = txlist.visible(txns) + txlist.left_out(txns) + txlist.theirs(txns)
     elif excluded:
@@ -155,7 +157,7 @@ def transactions_list():
     from .categorize import CATEGORY_GROUPS
     a = request.args
     group = (a.get("group") or "").lower() or None
-    if group and group not in CATEGORY_GROUPS:
+    if group and group not in CATEGORY_GROUPS and group not in ("fixed", "variable"):
         return jsonify({"error": "Unknown group."}), 400
     try:
         limit = max(1, min(int(a.get("limit", txlist.PAGE)), 200))
@@ -188,6 +190,7 @@ def transactions_list():
         "duplicates": sum(1 for _, r in rows
                           if (r.get("duplicate") or {}).get("state") == "pending"),
         "groups": CATEGORY_GROUPS,
+        "kinds": {"fixed": "Fixed", "variable": "Variable"},
     })
 
 
@@ -1781,7 +1784,9 @@ def home():
         told_income=told_income, told_rent=told_rent)
     # THL-184: the usual month comes with the Home payload, so Home needs no
     # other call.
-    usual = usual_month.usual(txns, today, unusual=_unusual_months(st))
+    from . import kinds as kinds_mod
+    kinds = kinds_mod.kind_map(st, txns, today)
+    usual = usual_month.usual(txns, today, unusual=_unusual_months(st), kinds=kinds)
     from .review import build as review_build
     review = review_build(txns, dismissed=st.dismissed_reviews(), splits=st.splits(),
                           payer=st.payback_people(), skipped=st.skipped_reviews())
@@ -1810,7 +1815,7 @@ def home():
             savings_target=st.float_setting("savings_target", 0.0),
             anchor_started=st.setting("anchor_started") not in (None, ""),
             comparisons_from=state["comparisons_from"],
-            saved=savings.put_away_month(st, txns, today.strftime("%Y-%m"))),
+            saved=savings.put_away_month(st, txns, today.strftime("%Y-%m")), kinds=kinds),
     })
 
 

@@ -6,6 +6,7 @@ import PIcon from '../pearl/icons.jsx';
 import { SnapshotBar } from '../pearl/viz.jsx';
 import { longDate, monthName, shown } from './HomePanel.jsx';
 import { GrowthTabs } from './InsightsParts.jsx';
+import { LensToggle, readLens, writeLens } from './Lens.jsx';
 import './home.css';
 
 /**
@@ -101,9 +102,17 @@ export default function CategoryBudgetsPanel({ onTab, onChanged, version }) {
 /** B-01: every budget this month, the five largest first. */
 export function BudgetsPage({ data, onChange, onTab, children = null }) {
   const [all, setAll] = useState(false);
+  const [lens, setLensState] = useState(readLens);
+  const setLens = (l) => { setLensState(l); writeLens(l); };
   const month = monthName(data.month);
   const top = data.rows.slice(0, data.top ?? 5);
   const rest = data.rows.slice(data.top ?? 5);
+  // By kind: the bills first, then everything decided week by week.
+  const shown = all ? data.rows : top;
+  const sections = lens === 'kind'
+    ? [{ key: 'fixed', label: 'Fixed', rows: shown.filter((r) => r.bill) },
+       { key: 'variable', label: 'Variable', rows: shown.filter((r) => !r.bill) }].filter((s) => s.rows.length)
+    : [{ key: 'all', label: null, rows: shown }];
   return (
     <div className="pk hm-page bd-page">
       <header className="hm-head">
@@ -111,7 +120,10 @@ export function BudgetsPage({ data, onChange, onTab, children = null }) {
         <h1 className="pk-h1">Growth</h1>
       </header>
       <GrowthTabs current="budgets" onTab={onTab} />
-      <h2 className="pk-h2">{`Budgets for ${month}`}</h2>
+      <div className="hm-row-between">
+        <h2 className="pk-h2">{`Budgets for ${month}`}</h2>
+        {data.ready && data.rows.length > 0 && <LensToggle lens={lens} onChange={setLens} />}
+      </div>
       {!data.ready ? (
         <section className="hm-card">
           <h2 className="pk-h3">Budgets start after your first full month</h2>
@@ -131,13 +143,18 @@ export function BudgetsPage({ data, onChange, onTab, children = null }) {
           <p className="pk-muted">
             Each budget starts at your usual month for that category. Change any of them as a share of usual.
           </p>
-          {(all ? data.rows : top).map((r) => (
-            <div key={r.category} className="bd-row">
-              <div className="bd-bar"><SnapshotBar {...budgetBar(r, data)} showTick={!r.bill} /></div>
-              <button type="button" className="hm-link bd-change" onClick={() => onChange(r.category)}
-                      aria-label={`Change the ${r.category} budget`}>
-                Change <PIcon name="chevronRight" size={14} />
-              </button>
+          {sections.map((s) => (
+            <div key={s.key} className="bd-section">
+              {s.label && <h3 className="pk-overline">{s.label}</h3>}
+              {s.rows.map((r) => (
+                <div key={r.category} className="bd-row">
+                  <div className="bd-bar"><SnapshotBar {...budgetBar(r, data)} showTick={!r.bill} /></div>
+                  <button type="button" className="hm-link bd-change" onClick={() => onChange(r.category)}
+                          aria-label={`Change the ${r.category} budget`}>
+                    Change <PIcon name="chevronRight" size={14} />
+                  </button>
+                </div>
+              ))}
             </div>
           ))}
           {rest.length > 0 && (

@@ -31,17 +31,64 @@ def _today() -> date:
     return date.fromisoformat(core._today_iso())
 
 
-def _payload(st, month: str | None = None) -> dict:
-    from . import recommendations as rec, usual_month
+SPANS = (3, 6, 12)
+SHOW = ("essentials", "lifestyle", "fixed", "variable")
+
+
+def _filters(args) -> dict:
+    """The page's filters (2026-10-14): one account, a span of months,
+    one-offs left out, and one group or kind."""
+    span = args.get("span")
+    show = (args.get("show") or "").lower()
+    return {"account": args.get("account") or None,
+            "span": int(span) if span and span.isdigit() and int(span) in SPANS else 12,
+            "one_offs": "out" if args.get("one_offs") == "out" else "in",
+            "show": show if show in SHOW else None}
+
+
+def _apply(txns, f: dict, kinds: dict[str, str]):
+    """The rows the filters keep. Only spending is narrowed by a group or a
+    kind; income and what's put away stay, so the money chart still adds up."""
+    from .analytics import counts_as_spending
+    from .categorize import group_of
+    out = []
+    for t in txns:
+        if f["account"] and t.account_id != f["account"]:
+            continue
+        if f["one_offs"] == "out" and t.one_off:
+            continue
+        if f["show"] and counts_as_spending(t):
+            if f["show"] in ("fixed", "variable"):
+                if kinds.get(t.fingerprint, "variable") != f["show"]:
+                    continue
+            elif group_of(t.category or "Other") != f["show"]:
+                continue
+        out.append(t)
+    return out
+
+
+def _accounts(st) -> list[dict]:
+    names = st.account_nicknames()
+    return sorted(({"id": a["account_id"],
+                    "name": names.get(a["account_id"]) or a.get("account_name") or a["account_id"]}
+                   for a in st.accounts()), key=lambda a: a["name"].lower())
+
+
+def _payload(st, month: str | None = None, filters: dict | None = None) -> dict:
+    from . import kinds as kinds_mod, recommendations as rec, usual_month
 
     today = _today()
     month = month or today.strftime("%Y-%m")
-    txns = st.all_transactions()
+    f = filters or _filters({})
+    everything = st.all_transactions()
+    # Fixed or Variable is decided on the whole ledger, then the filters apply.
+    kinds = kinds_mod.kind_map(st, everything, today)
+    txns = _apply(everything, f, kinds)
     unusual = core._unusual_months(st)
-    u_today = usual_month.usual(txns, today, unusual=unusual)
+    u_today = usual_month.usual(txns, today, unusual=unusual, kinds=kinds)
     # A past month is compared with the months before it (GR-25).
     u_month = u_today if month == today.strftime("%Y-%m") else usual_month.usual(
-        txns, date(int(month[:4]), int(month[5:7]), 1), unusual=unusual)
+        txns, date(int(month[:4]), int(month[5:7]), 1), unusual=unusual, kinds=kinds)
     anchor = core._anchor(st, txns, today.isoformat())
     balances = st.balances()
     accounts = [{"account_id": a["account_id"], "balance": a["balance"],
@@ -61,12 +108,18 @@ def _payload(st, month: str | None = None) -> dict:
         txns, today, month, u_today=u_today, u_month=u_month, unusual=unusual,
         banks=st.piggy_banks(), charges=st.bank_charges_by_month(),
         income=income_by, estimated=estimated, adds=savings.chest_adds(st),
+        kinds=kinds, n=f["span"],
         confirmed=st.confirmed_categories(), anchor=anchor, anchor_accounts=accounts,
         subscription_records=rec.subscription_records(txns, today),
         subscription_choices=core._json_setting(st, "subscription_choices", {}))
-    # "For you" (THL-12 E08): Home's cards, at most two.
-    sts = core._home_sts(st, txns, today)
-    body["recommendations"] = core._recommendations(st, txns, today, sts, u_today)
+    # "For you" (THL-12 E08): Home's cards, at most two — from the whole
+    # ledger, as Home shows them.
+    sts = core._home_sts(st, everything, today)
+    u_all = u_today if txns is everything else usual_month.usual(everything, today, unusual=unusual)
+    body["recommendations"] = core._recommendations(st, everything, today, sts, u_all)
+    body["filters"] = f
+    body["accounts"] = _accounts(st)
+    body["kind_labels"] = kinds_mod.KIND_LABELS
     return body
 
 
@@ -85,7 +138,7 @@ def insights_month():
     month, error = _month_arg(request.args.get("month"))
     if error:
         return jsonify({"error": error}), 400
-    return jsonify(_payload(store(), month))
+    return jsonify(_payload(store(), month, _filters(request.args)))
 
 
 @bp.put("/insights/unusual")

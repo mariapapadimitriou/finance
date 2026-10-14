@@ -97,6 +97,11 @@
 .in-in { fill: var(--seaglass); background: var(--seaglass); }
 .in-set-aside { fill: var(--lilac); background: var(--lilac); }
 .in-band { fill: var(--blush); background: var(--blush); }
+/* The kind lens: Fixed in the deep ink, Variable in the rose. */
+.in-fixed { fill: var(--ink); background: var(--ink); }
+.in-variable { fill: var(--rose); background: var(--rose); }
+.in-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: var(--space-3) 0; }
+.in-filter-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .in-left { fill: var(--track); background: var(--track); }
 .in-above { fill: var(--champagne); background: var(--champagne); stroke: var(--gold-700); stroke-width: 1; }
 

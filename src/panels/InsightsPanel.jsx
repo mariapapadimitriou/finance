@@ -9,6 +9,8 @@ import { ActionToast } from '../pearl/kit.jsx';
 import { SnapshotBar } from '../pearl/viz.jsx';
 import { ForYou, WhyPanel, dismissedWords } from './ForYou.jsx';
 import { CatDot, GrowthTabs, MonthSwitcher, More } from './InsightsParts.jsx';
+import { InsightsFilters } from './InsightsFilters.jsx';
+import { LENSES, lensLegend, readLens, trendForLens, whereForLens, writeLens } from './Lens.jsx';
 import { Donut, InOutBars, Legend, SavingsArea, TrendBars } from './InsightsCharts.jsx';
 import {
   CategoryView, MoneyView, ReviewMonth, SavingsView, SubscriptionsView, TrendView, WhereView,
@@ -43,6 +45,9 @@ const VIEWS = { month: ReviewMonth, category: CategoryView, subscriptions: Subsc
 
 /** Which month a view asks the server for: GR-25 and GR-30 pick one. */
 const fetchMonth = (route) => (['month', 'where'].includes(route.view) ? route.month : '');
+const FILTER_KEYS = ['account', 'span', 'one_offs', 'show'];
+const pickFilters = (route) => Object.fromEntries(FILTER_KEYS.map((k) => [k, route[k] || '']));
+const fetchKey = (route) => JSON.stringify({ month: fetchMonth(route), ...pickFilters(route) });
 
 export default function InsightsPanel({ onTab, version }) {
   const [route, setRoute] = useState(() => readInsightsUrl() ?? { view: '', month: '', category: '' });
@@ -50,7 +55,9 @@ export default function InsightsPanel({ onTab, version }) {
   const [error, setError] = useState(null);
   const [why, setWhy] = useState(null);
   const [hidden, setHidden] = useState(null);
-  const key = fetchMonth(route);
+  const [lens, setLensState] = useState(readLens);
+  const setLens = (l) => { setLensState(l); writeLens(l); };
+  const key = fetchKey(route);
 
   useEffect(() => onInsightsUrl(() => {
     const next = readInsightsUrl();
@@ -59,16 +66,18 @@ export default function InsightsPanel({ onTab, version }) {
 
   const load = useCallback(() => {
     setError(null);
-    return getInsightsMonth(key || undefined)
+    return getInsightsMonth(JSON.parse(key))
       .then((data) => setLoaded({ key, data }))
       .catch(setError);
   }, [key]);
   useEffect(() => { load(); }, [load, version]);
 
+  // The filters carry from view to view; a card's link keeps them.
   const show = (view = '', extra = {}) => {
-    writeInsightsUrl({ view, ...extra });
+    writeInsightsUrl({ view, ...pickFilters(route), ...extra });
     window.scrollTo?.({ top: 0 });
   };
+  const setFilter = (patch) => writeInsightsUrl({ ...route, ...patch }, { push: false });
   const toTransactions = (filters) => {
     writeTxUrl({ filters, from: 'insights' }, { push: true });
     onTab?.('transactions');
@@ -81,7 +90,7 @@ export default function InsightsPanel({ onTab, version }) {
   const d = loaded.data;
   const setData = (data) => setLoaded({ key, data });
   const nav = {
-    show, onTab, toTransactions,
+    show, onTab, toTransactions, lens, setLens, filters: pickFilters(route), setFilter,
     onUnusual: (month, on) => setMonthUnusual(month, on).then(setData),
     onChoice: (merchant, choice) => setSubscriptionChoice(merchant, choice).then(setData),
   };
@@ -112,7 +121,8 @@ export default function InsightsPanel({ onTab, version }) {
   return (
     <>
       <InsightsPage d={d} show={show} onTab={onTab} cards={d.recommendations ?? []}
-                    onCard={act} onWhy={setWhy} onNotForMe={notForMe} />
+                    onCard={act} onWhy={setWhy} onNotForMe={notForMe}
+                    lens={lens} onLens={setLens} filters={pickFilters(route)} onFilter={setFilter} />
       {why && <WhyPanel card={why} onClose={() => setWhy(null)} onAction={act} onNotForMe={notForMe} />}
       {hidden && <ActionToast title={dismissedWords(hidden)} onUndo={undo} onDone={() => setHidden(null)} />}
     </>
@@ -129,14 +139,15 @@ function CardHead({ title, link, onLink, label, id }) {
 }
 
 /** GR-28: the page. */
-export function InsightsPage({ d, show, onTab, cards = [], onCard, onWhy, onNotForMe }) {
+export function InsightsPage({ d, show, onTab, cards = [], onCard, onWhy, onNotForMe,
+                               lens = 'need', onLens, filters = {}, onFilter }) {
   const prev = d.months.length > 1 ? addMonths(d.month, -1) : null;
   // This month, as everywhere in the app; last month only until this one
   // has any spending to show.
-  const shownWhere = d.where.total > 0 || !(d.where_last && d.where_last.total > 0)
-    ? d.where : d.where_last;
+  const shownWhere = whereForLens(d.where.total > 0 || !(d.where_last && d.where_last.total > 0)
+    ? d.where : d.where_last, lens);
   const whereRunning = shownWhere.month === d.month && d.running;
-  const trend = d.trend.months.slice(-6);
+  const trend = trendForLens(d.trend.months.slice(-6), lens);
   const money = d.money.slice(-6);
   const anySpend = trend.some((m) => m.total > 0);
   const anyMoney = money.some((r) => r.income > 0 || r.spent > 0);
@@ -153,9 +164,10 @@ export function InsightsPage({ d, show, onTab, cards = [], onCard, onWhy, onNotF
                        onPrev={() => show('month', { month: prev })} />
       </header>
       <GrowthTabs current="insights" onTab={onTab} />
+      <InsightsFilters d={d} lens={lens} onLens={onLens} filters={filters} onFilter={onFilter} />
 
       <ul className="in-tiles" aria-label={`${monthFull(d.month)} so far`}>
-        {tileRows(d).map((t) => (
+        {tileRows(d, lens).map((t) => (
           <li key={t.key} className="in-tile">
             <span className="pk-overline">{t.label}</span>
             <span className="in-tile-figure">{t.value}</span>
@@ -170,10 +182,9 @@ export function InsightsPage({ d, show, onTab, cards = [], onCard, onWhy, onNotF
                     link="See the trend" onLink={() => show('trend')} label="See the trend" />
           {anySpend ? (
             <>
-              <TrendBars months={trend} band={d.trend.band}
-                         caption="Essentials and Lifestyle each month" />
-              <Legend items={[{ label: 'Essentials', tone: 'in-essentials' },
-                              { label: 'Lifestyle', tone: 'in-lifestyle' },
+              <TrendBars months={trend} band={d.trend.band} names={LENSES[lens].labels}
+                         caption={`${LENSES[lens].caption} each month`} />
+              <Legend items={[...lensLegend(lens),
                               ...(d.trend.band ? [{ label: 'Your usual', tone: 'in-band' }] : [])]} />
             </>
           ) : <p className="pk-muted">No spending yet. Your months show here as they come in.</p>}

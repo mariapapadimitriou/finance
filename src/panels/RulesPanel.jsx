@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
-import { deleteRule, editRule, getRules } from '../api.js';
-import { Alert, DetailPanel, PButton, Toast } from '../pearl/kit.jsx';
+import { deleteRule, editRule, getRules, setCategoryKind } from '../api.js';
+import { Alert, DetailPanel, PButton, Toast, FilterChip } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
 import { PageHead } from './ProfilePanel.jsx';
@@ -28,7 +28,36 @@ export function ruleWords(r) {
   return `Always ${categoryLabel(r.category)}`;
 }
 
-export function RulesPage({ rules, onTab, onEdit }) {
+const KIND_CHOICES = [{ value: '', label: 'Pearl decides' }, { value: 'fixed', label: 'Always Fixed' },
+                      { value: 'variable', label: 'Always Variable' }];
+
+/** Fixed or Variable, category by category (finance/kinds.py). */
+export function KindsSection({ categories = [], kinds = {}, onKind }) {
+  const spending = categories.filter((c) => !['income', 'savings', 'transfer'].includes(c.group)
+    && c.name !== 'Unsorted transfers');
+  if (!spending.length) return null;
+  return (
+    <section className="hm-card pf-kinds" aria-labelledby="pf-kinds-title">
+      <h2 className="pk-h3" id="pf-kinds-title">Fixed or variable</h2>
+      <p className="pk-muted">
+        Pearl counts the bills it sees recurring as Fixed and everything else as Variable. Say
+        otherwise for any category.
+      </p>
+      <ul className="pf-kind-list">
+        {spending.map((c) => (
+          <li key={c.name}>
+            <span className="pf-row-name">{c.name}</span>
+            <FilterChip label={`${c.name}: fixed or variable`} value={kinds[c.name] ?? ''}
+                        options={KIND_CHOICES} active={!!kinds[c.name]}
+                        onChange={(v) => onKind(c.name, v || null)} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export function RulesPage({ rules, onTab, onEdit, categories = [], kinds = {}, onKind }) {
   return (
     <div className="pk hm-page pf-page">
       <PageHead trail={[{ label: 'Profile', to: 'profile' }, { label: 'Categories and rules' }]}
@@ -63,6 +92,7 @@ export function RulesPage({ rules, onTab, onEdit }) {
         </ul>
       )}
       <p className="pf-foot">Deleting a rule doesn’t change transactions you’ve already sorted.</p>
+      {onKind && <KindsSection categories={categories} kinds={kinds} onKind={onKind} />}
     </div>
   );
 }
@@ -135,7 +165,13 @@ export default function RulesPanel({ categories = [], onTab, onChanged, version 
   };
   return (
     <>
-      <RulesPage rules={data.rules} onTab={onTab} onEdit={setEditing} />
+      <RulesPage rules={data.rules} onTab={onTab} onEdit={setEditing} categories={categories}
+                 kinds={data.kinds ?? {}}
+                 onKind={async (category, kind) => {
+                   await setCategoryKind(category, kind);
+                   await done(kind ? `${category} is always ${kind === 'fixed' ? 'Fixed' : 'Variable'} now.`
+                     : `Pearl decides ${category} again.`);
+                 }} />
       {editing && (
         <div className="pk">
           <RulePanel rule={editing} categories={categories} onClose={() => setEditing(null)}

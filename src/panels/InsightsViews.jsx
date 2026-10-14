@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LENSES, LensToggle, lensLegend, trendForLens, whereForLens } from './Lens.jsx';
 import { Choice, FilterChip, PButton } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import {
@@ -266,27 +267,31 @@ export function SubscriptionsView({ d, nav }) {
 // ── GR-29 Spending trend ─────────────────────────────────────────────────
 
 export function TrendView({ d, nav }) {
-  const [span, setSpan] = useState(6);
-  const months = d.trend.months.slice(-span);
+  const lens = nav.lens ?? 'need';
+  const span = Number(nav.filters?.span) || 12;
+  const setSpan = (n) => nav.setFilter?.({ span: n === 12 ? '' : String(n) });
+  const months = trendForLens(d.trend.months.slice(-span), lens);
   const last = lastFullMonth(d);
   const any = months.some((m) => m.total > 0);
   return (
     <div className="pk hm-page in-page">
       <DetailHead nav={nav} title="Your spending trend" />
-      <div className="in-pills" role="radiogroup" aria-label="How many months">
-        {[6, 12].map((n) => (
-          <button key={n} type="button" role="radio" aria-checked={span === n} className="in-tab"
-                  onClick={() => setSpan(n)}>{`${n} months`}</button>
-        ))}
+      <div className="in-filters">
+        <LensToggle lens={lens} onChange={(l) => nav.setLens?.(l)} />
+        <div className="in-pills" role="radiogroup" aria-label="How many months">
+          {[3, 6, 12].map((n) => (
+            <button key={n} type="button" role="radio" aria-checked={span === n} className="in-tab"
+                    onClick={() => setSpan(n)}>{`${n} months`}</button>
+          ))}
+        </div>
       </div>
       <section className="hm-card in-card in-wide" aria-label="Spending trend">
         {any ? (
           <>
-            <p>{trendSentence(d.trend, span)}</p>
-            <TrendBars months={months} band={d.trend.band} height={340} labels
-                       caption={`Essentials and Lifestyle, last ${count(months.length, 'month')}`} />
-            <Legend items={[{ label: 'Essentials', tone: 'in-essentials' },
-                            { label: 'Lifestyle', tone: 'in-lifestyle' },
+            {lens === 'need' && <p>{trendSentence(d.trend, span)}</p>}
+            <TrendBars months={months} band={d.trend.band} height={340} labels names={LENSES[lens].labels}
+                       caption={`${LENSES[lens].caption}, last ${count(months.length, 'month')}`} />
+            <Legend items={[...lensLegend(lens),
                             ...(d.trend.band ? [{ label: 'Your usual', tone: 'in-band' }] : [])]} />
             <p className="pk-label pk-muted">{bandWords(d.trend, span)}</p>
             {months.length < span && (
@@ -314,7 +319,9 @@ export function TrendView({ d, nav }) {
 // ── GR-30 Where the month went ───────────────────────────────────────────
 
 export function WhereView({ d, route, nav }) {
-  const where = !route.month && d.where_last && d.where_last.total > 0 ? d.where_last : d.where;
+  const lens = nav.lens ?? 'need';
+  const where = whereForLens(!route.month && d.where.total === 0 && d.where_last && d.where_last.total > 0
+    ? d.where_last : d.where, lens);
   const month = where.month;
   const running = month === d.months[d.months.length - 1] && d.running;
   const { prev, next } = neighbours(d, month);
