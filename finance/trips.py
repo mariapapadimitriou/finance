@@ -8,15 +8,13 @@ there are dozens to sort. So she marks the trip — a name and its dates —
 and everything she was spending on while away becomes Travel, on its own:
 no list to tick (2026-10-14). The panel says what moves and what stays.
 
-Only her own rows count: what the Transactions list shows, so not another
-joint member's. What stays as it is: anything that isn't spending on the
-trip — income, money moving between her accounts, card payments, savings,
-lending, fees and interest, repayments — bills (anything that recurs, and
-rent, utilities, phone, insurance, subscriptions… by category), and rows
-she left out. Spending she sorted or confirmed herself moves too (Dining on
-a trip is still the trip, 2026-10-14) and goes back to her category if the
-trip is removed; a trip row she re-sorts by hand afterwards keeps her
-choice.
+Simple (2026-10-14): every purchase in the dates becomes Travel — bills,
+subscriptions, fees, places she goes often, purchases she sorted herself.
+Only what isn't spending stays as it is: money in, money moving between
+her accounts, card payments, savings and lending, and rows that aren't hers
+(left out, or another joint member's). Removing the trip puts each row back
+to the category it had; a trip row she re-sorts by hand afterwards keeps
+her choice.
 
 New rows that arrive inside a trip's dates later (a pending charge posting)
 join it by the same rule. Changing a trip's dates re-applies the rule;
@@ -30,18 +28,13 @@ from __future__ import annotations
 from datetime import date
 
 from .categorize import apply_categories
-import re
 
 from .models import Transaction
 
 TRAVEL = "Travel"
 SOURCE = "trip"
 # Not spending on a trip, wherever it lands.
-NOT_TRIP = {"Income", "Transfers", "Unsorted transfers", "Saved", "Lent", "Fees & Interest"}
-# Bills by what they are, even before they've recurred enough to be spotted.
-BILL_CATEGORIES = {"Rent & Housing", "Utilities", "Bills & Utilities", "Phone & Internet",
-                   "Insurance", "Taxes", "Education", "Streaming", "Software", "News & Media",
-                   "Subscriptions"}
+NOT_TRIP = {"Income", "Transfers", "Unsorted transfers", "Saved", "Lent"}
 MAX_NAME = 60
 
 
@@ -59,28 +52,13 @@ def validate(name: str, start: str, end: str) -> str | None:
     return None
 
 
-# A foreign transaction fee charged while away is part of the trip.
-_TRIP_FEE = re.compile(r"\b(foreign|fx|forex|conversion|non-sterling|currency)\b", re.I)
 
 
-def _recurring(transactions: list[Transaction], today: date) -> set[tuple[str, str]]:
-    """The charges that were bills: recurring bills and subscriptions only
-    (safe_to_spend.recurring_bills). Not every merchant she visits often —
-    Uber, coffee, transit on the trip are trip spending (2026-10-14)."""
-    from .safe_to_spend import recurring_bills
-    out = set()
-    for rec in recurring_bills(transactions, today):
-        # Weekly and every-other-week charges (rides, transit) are the trip
-        # while she's away; a bill comes monthly or less often.
-        if rec["cadence"] in ("weekly", "biweekly"):
-            continue
-        out.update((rec["merchant"], d) for d in rec["dates"])
-    return out
 
 
-def why_not(t: Transaction, recurring: set) -> str | None:
-    """Why a row stays as it is, or None when it's trip spending:
-    excluded, money_in, repayment, transfer or bill."""
+def why_not(t: Transaction) -> str | None:
+    """Why a row stays as it is, or None when it becomes Travel: excluded,
+    money_in, repayment or transfer. Every purchase becomes Travel."""
     from .txlist import _is_card_payment
     if t.excluded:
         return "excluded"
@@ -88,12 +66,8 @@ def why_not(t: Transaction, recurring: set) -> str | None:
         return "money_in"
     if t.repays:
         return "repayment"
-    if t.category == "Fees & Interest" and _TRIP_FEE.search(f"{t.description} {t.merchant}"):
-        return None
     if (t.category or "Other") in NOT_TRIP or _is_card_payment(t):
         return "transfer"
-    if (t.merchant, t.date) in recurring or (t.category or "") in BILL_CATEGORIES:
-        return "bill"
     return None
 
 
@@ -108,7 +82,6 @@ def sort_out(transactions: list[Transaction], start: str, end: str, today: date,
     """The rows in the dates that become Travel, and how many stay as they
     are, by reason (another trip's rows: "other_trip")."""
     from .txlist import visible
-    recurring = _recurring(transactions, today)
     trip_rows = trip_rows or {}
     moving, staying = [], {}
     for t in in_range(visible(transactions), start, end):
@@ -119,7 +92,7 @@ def sort_out(transactions: list[Transaction], start: str, end: str, today: date,
             moving.append(t)
             continue
         else:
-            reason = "other_trip" if owner else why_not(t, recurring)
+            reason = "other_trip" if owner else why_not(t)
         if reason is None:
             moving.append(t)
         else:
@@ -203,11 +176,10 @@ def join_new(store, new: list[Transaction], today: date) -> int:
     if not trips or not new:
         return 0
     from .txlist import visible
-    recurring = _recurring(store.all_transactions(), today)
     moved = 0
     for trip in trips:
         rows = [t for t in visible(new) if trip["start_date"] <= t.date[:10] <= trip["end_date"]
-                and why_not(t, recurring) is None]
+                and why_not(t) is None]
         if rows:
             _move(store, rows, trip["id"])
             moved += len(rows)

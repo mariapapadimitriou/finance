@@ -15,7 +15,6 @@ import { shortDate } from './HomePanel.jsx';
 
 // What stays as it is, by the reason finance/trips.py gives.
 const STAYING = [
-  ['bill', 'bill or subscription', 'bills and subscriptions'],
   ['transfer', 'transfer or card payment', 'transfers and card payments'],
   ['money_in', 'deposit', 'deposits'],
   ['repayment', 'repayment', 'repayments'],
@@ -102,7 +101,7 @@ export function MarkTrip({ trip = null, onClose, onSaved }) {
     <DetailPanel label={trip ? `Change ${trip.name}` : 'Mark a trip'} overline="Trip" onClose={onClose}>
       <h1 className="pk-h2">{trip ? 'Change this trip' : 'Mark a trip'}</h1>
       <p className="pk-muted">What you spent while away becomes Travel, so it doesn’t make your
-        usual Dining or Coffee look higher. Bills, pay and transfers stay as they are.</p>
+        usual Dining or Coffee look higher. Pay and transfers stay as they are.</p>
       <Field label="Name" id="trip-name">
         <input id="trip-name" value={name} maxLength={60} placeholder="Costa Rica"
                onChange={(e) => setName(e.target.value)} />
