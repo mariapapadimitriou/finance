@@ -23,6 +23,22 @@ from . import db
 from .models import Transaction
 
 
+def _people(raw) -> list[str]:
+    try:
+        out = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        return []
+    return [str(p) for p in out if str(p).strip()] if isinstance(out, list) else []
+
+
+def _people_label(people: list[str]) -> str:
+    """"Sam", "Sam and Alex", "Sam, Alex and Jo"."""
+    people = [p for p in people if p]
+    if len(people) <= 1:
+        return people[0] if people else ""
+    return f"{', '.join(people[:-1])} and {people[-1]}"
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -544,6 +560,8 @@ _CHARGE_COLUMNS = """sh.my_share AS my_share,
                           rpx.charge_id AS repays,
                           jax.label AS joint,
                           jax.share AS joint_share,
+                          jax.people AS joint_people,
+                          COALESCE(jdx.person, jrx.person) AS joint_person,
                           CASE WHEN jmx.merchant_key IS NULL THEN 0 ELSE 1 END
                               AS joint_mine,
                           COALESCE(jdx.who, jrx.who) AS joint_from,
@@ -599,6 +617,7 @@ class Store:
         self._migrate_plaid_error_code()
         self._migrate_plaid_logo()
         self._migrate_joint_share()
+        self._migrate_joint_people()
         self._migrate_travel_ownership()
         self._drop_bank_funded_budgets()
         self._migrate_saved()
@@ -790,6 +809,20 @@ class Store:
                 c.execute("ALTER TABLE joint_accounts ADD COLUMN share REAL")
         except Exception:                                        # noqa: BLE001
             return
+
+    def _migrate_joint_people(self) -> None:
+        """Who a joint account is shared with (`joint_accounts.people`, a JSON
+        list of names), and which of them put money in (`person` on a deposit
+        and on a sender rule). Each tried on its own: a column already there
+        fails, and on Postgres a failed statement spoils its transaction."""
+        for sql in ("ALTER TABLE joint_accounts ADD COLUMN people TEXT",
+                    "ALTER TABLE joint_deposits ADD COLUMN person TEXT",
+                    "ALTER TABLE joint_deposit_rules ADD COLUMN person TEXT"):
+            try:
+                with self.conn() as c:
+                    c.execute(sql)
+            except Exception:                                    # noqa: BLE001
+                continue
 
     # ── Transactions ─────────────────────────────────────────────────────────
     def add_transactions(self, transactions: list[Transaction]) -> int:
@@ -2186,6 +2219,24 @@ class Store:
                 c.execute("INSERT INTO joint_accounts (account_id, label) VALUES (?, ?)",
                           (account_id, label))
 
+    def joint_people(self) -> dict[str, list[str]]:
+        """{account_id: the people she shares it with}, for joint accounts."""
+        with self.conn() as c:
+            rows = c.execute("SELECT account_id, people FROM joint_accounts").fetchall()
+        return {r["account_id"]: _people(r["people"]) for r in rows}
+
+    def set_joint_people(self, account_id: str, people: list[str]) -> None:
+        """Who a joint account is shared with. Marks it joint if it wasn't
+        (no set share: the money in decides, finance/joint.py); its label
+        becomes their names."""
+        label = _people_label(people) or "Joint"
+        with self.conn() as c:
+            cur = c.execute("UPDATE joint_accounts SET people = ?, label = ? WHERE account_id = ?",
+                            (json.dumps(people), label, account_id))
+            if not cur.rowcount or cur.rowcount <= 0:
+                c.execute("INSERT INTO joint_accounts (account_id, label, people) VALUES (?, ?, ?)",
+                          (account_id, label, json.dumps(people)))
+
     def joint_shares(self) -> dict[str, float | None]:
         """Her share of each joint account, in percent; None where unset."""
         with self.conn() as c:
@@ -2327,14 +2378,15 @@ class Store:
                               (f'%"merchant_entity_id": "{eid}"%',))
         return True
 
-    def set_joint_deposit(self, txn_id: str, who: str | None) -> None:
-        """Who put this money into a joint account: "me", "them", or None
-        to ask again."""
+    def set_joint_deposit(self, txn_id: str, who: str | None,
+                          person: str | None = None) -> None:
+        """Who put this money into a joint account: "me", "them" (and which
+        of the people she shares it with, `person`), or None to ask again."""
         with self.conn() as c:
             c.execute("DELETE FROM joint_deposits WHERE txn_id = ?", (txn_id,))
             if who:
-                c.execute("INSERT INTO joint_deposits (txn_id, who) VALUES (?, ?)",
-                          (txn_id, who))
+                c.execute("INSERT INTO joint_deposits (txn_id, who, person) VALUES (?, ?, ?)",
+                          (txn_id, who, person or None))
 
     # ── Trips she marked (THL-174) ───────────────────────────────────────
     def marked_trips(self) -> list[dict]:
@@ -2399,7 +2451,8 @@ class Store:
             if name:
                 c.execute("INSERT INTO txn_party (txn_id, name) VALUES (?, ?)", (txn_id, name))
 
-    def set_joint_deposit_rule(self, account_id: str, sender: str, who: str | None) -> None:
+    def set_joint_deposit_rule(self, account_id: str, sender: str, who: str | None,
+                               person: str | None = None) -> None:
         """Every deposit from this sender into this joint account."""
         key = (sender or "").strip().lower()
         if not key:
@@ -2408,8 +2461,8 @@ class Store:
             c.execute("DELETE FROM joint_deposit_rules WHERE account_id = ? AND sender_key = ?",
                       (account_id, key))
             if who:
-                c.execute("INSERT INTO joint_deposit_rules (account_id, sender_key, who) "
-                          "VALUES (?, ?, ?)", (account_id, key, who))
+                c.execute("INSERT INTO joint_deposit_rules (account_id, sender_key, who, person) "
+                          "VALUES (?, ?, ?, ?)", (account_id, key, who, person or None))
 
     def set_joint_mine(self, merchant: str, on: bool) -> None:
         key = merchant.strip().lower()

@@ -251,7 +251,7 @@ describe('S-03 Categories and rules', () => {
 
   it('lists each rule as "Always …", with the footnote', () => {
     expect(rules.map(ruleWords)).toEqual(['Always Groceries', 'Always Saved',
-      'Always Between my accounts', 'Always left out']);
+      'Always Transfers', 'Always left out']);
     const t = text(<RulesPage rules={rules} />);
     expect(t).toContain('When you sort something and tick “Remember”, Pearl sorts the next ones the same way. Your rules always win over ours.');
     expect(t).toContain('Deleting a rule doesn’t change transactions you’ve already sorted.');

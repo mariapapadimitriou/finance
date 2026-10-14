@@ -281,6 +281,10 @@ class Transaction:
     # The person an e-Transfer was from or to, as she typed it (THL-122);
     # see finance/etransfers.py for the bank's own.
     party: str | None = None
+    # The people a joint account is shared with, as she named them, and which
+    # of them put this money in.
+    joint_people: list = field(default_factory=list)
+    joint_person: str | None = None
     # Why you left this row out, if you did: one transaction, or every row a
     # rule of yours matches. An excluded row counts as nothing — not spending,
     # not income, not savings — and never pairs with another as a transfer.
@@ -390,6 +394,8 @@ class Transaction:
             duplicate_of=row.get("duplicate_of") or None,
             duplicate_state=row.get("duplicate_state") or None,
             party=row.get("party") or None,
+            joint_people=_people_of(row.get("joint_people")),
+            joint_person=row.get("joint_person") or None,
             account_nickname=row.get("account_nickname") or None,
         )
         if t.joint and t.my_share is None:
@@ -402,6 +408,16 @@ class Transaction:
                                   ratio=row.get("joint_ratio"))
             t.joint_from = row.get("joint_from") or None
         return t
+
+
+def _people_of(raw) -> list:
+    if not raw:
+        return []
+    try:
+        out = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    return [str(p) for p in out if str(p).strip()] if isinstance(out, list) else []
 
 
 def parse_date(value: str) -> str | None:

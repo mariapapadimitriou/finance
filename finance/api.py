@@ -860,7 +860,8 @@ def set_joint_from(txn_id: str):
     """Who put this money into a joint account: "me" (her own money, from an
     account not in Pearl) or "them" (the other person, whose money pays for
     that much of the month's joint spending), or null to ask again.
-    `remember` answers for every deposit from that sender too."""
+    `remember` answers for every deposit from that sender too. `person` is
+    which of the people she shares the account with put it in."""
     from .joint import ME, THEM
     body = request.get_json(silent=True) or {}
     who = body.get("who")
@@ -872,13 +873,16 @@ def set_joint_from(txn_id: str):
         return jsonify({"error": "No such transaction."}), 404
     if not t.joint or t.amount >= 0:
         return jsonify({"error": "Only money into a joint account is asked about."}), 400
-    st.set_joint_deposit(txn_id, who)
+    person = " ".join(str(body.get("person") or "").split()) or None
+    if person and (who != THEM or person not in t.joint_people):
+        return jsonify({"error": "Choose one of the people you share this account with."}), 400
+    st.set_joint_deposit(txn_id, who, person)
     if body.get("remember"):
-        st.set_joint_deposit_rule(t.account_id, t.merchant, who)
+        st.set_joint_deposit_rule(t.account_id, t.merchant, who, person)
     # Her own money moving between her pockets is never income.
     if who == ME and t.category == "Income":
         st.set_transaction_category(txn_id, "Transfers")
-    return jsonify({"ok": True, "who": who})
+    return jsonify({"ok": True, "who": who, "person": person})
 
 
 @bp.get("/accounts")
@@ -956,12 +960,14 @@ def _account_rows(st) -> list[dict]:
     imported = st.imports_by_account()
     joint = st.joint_accounts()
     shares = st.joint_shares()
+    people = st.joint_people()
     balances = st.balances()
     settings = st.account_settings()
     for row in rows:
         _label_account(row, banks, imported)
         row["joint"] = joint.get(row["account_id"])
         row["joint_share"] = shares.get(row["account_id"])
+        row["joint_people"] = people.get(row["account_id"], [])
         # What the bank says the account holds (or, for a card, what's owed).
         row["balance"] = balances.get(row["account_id"])
         mine = settings.get(row["account_id"], {})

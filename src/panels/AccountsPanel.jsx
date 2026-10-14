@@ -93,11 +93,31 @@ export function accountMeta(a, now = Date.now()) {
     rest = updated ? `last updated ${updated}` : null;
   } else if (a.status === 'investment') rest = 'balance only';
   else if (a.status === 'not_counted') rest = 'not in your budget';
-  else if (a.joint) rest = a.joint_share ? `joint, your share is ${Math.round(a.joint_share)}%` : 'joint';
+  else if (a.joint) {
+    const withWho = a.joint_people?.length ? `joint with ${peopleWords(a.joint_people)}` : 'joint';
+    rest = a.joint_share ? `${withWho}, your share is ${Math.round(a.joint_share)}%` : withWho;
+  }
   else if (a.anchor) rest = 'counts toward your Anchor';
   else rest = updated ? `updated ${updated}` : 'waiting for its first update';
   const out = [bal, rest].filter(Boolean).join(' · ');
   return out.charAt(0).toUpperCase() + out.slice(1);
+}
+
+/** "Sam", "Sam and Alex", "Sam, Alex and Jo". */
+export function peopleWords(people = []) {
+  const p = people.filter(Boolean);
+  if (p.length <= 1) return p[0] ?? '';
+  return `${p.slice(0, -1).join(', ')} and ${p[p.length - 1]}`;
+}
+
+/** "Sam, Alex" → ["Sam", "Alex"]: trimmed, no repeats. */
+export function parsePeople(text) {
+  const out = [];
+  for (const raw of String(text || '').split(/[,;\n]|\band\b/i)) {
+    const name = raw.trim().replace(/\s+/g, ' ');
+    if (name && !out.some((n) => n.toLowerCase() === name.toLowerCase())) out.push(name);
+  }
+  return out;
 }
 
 /** The status pill (C-01): the state in a word, with an icon. */
@@ -224,7 +244,7 @@ const trailFor = (a, onBack) => [
 ];
 
 /** AM-02, AM-03, AM-06 and C-06: one account. */
-export function AccountDetail({ a, onTab, onBack, onSave, onShare, onRemove, onReconnect,
+export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onRemove, onReconnect,
                                 onKeepManual, onUpdateBalance, onMerge, now = Date.now(),
                                 busy = false }) {
   // "Same account as…", for two copies of one card (finance/merge.py).
@@ -355,7 +375,16 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onRemove, onR
           )}
         </div>
         {a.joint && (
-          <button type="button" className="pf-text-link" onClick={onShare}>Change your share</button>
+          <>
+            <p className="pf-foot">
+              {a.joint_people?.length ? `Shared with ${peopleWords(a.joint_people)}.`
+                : 'Say who you share it with, and you can pick them when money comes in.'}
+            </p>
+            <button type="button" className="pf-text-link" onClick={onPeople}>
+              {a.joint_people?.length ? 'Change who you share it with' : 'Add who you share it with'}
+            </button>
+            <button type="button" className="pf-text-link" onClick={onShare}>Change your share</button>
+          </>
         )}
       </section>
       <form className="pf-form" onSubmit={(e) => { e.preventDefault(); saveNickname(); }}>
@@ -464,6 +493,39 @@ export function parseShare(text) {
 }
 
 /** AM-04: her share of a joint account. */
+/** Who a joint account is shared with. */
+export function PeopleDialog({ a, onClose, onSave }) {
+  const [text, setText] = useState((a.joint_people ?? []).join(', '));
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const submit = (e) => {
+    e.preventDefault();
+    const people = parsePeople(text);
+    if (!people.length) { setError('Name at least one person.'); return; }
+    setBusy(true);
+    setError(null);
+    onSave(people).catch((err) => { setError(err.message); setBusy(false); });
+  };
+  return (
+    <DetailPanel label={`Who you share ${a.name} with`} overline="" onClose={onClose}
+                 className="pf-dialog" sheet>
+      <form className="pf-form" onSubmit={submit}>
+        <h1 className="pk-h2">Who do you share it with?</h1>
+        <p className="pk-muted">
+          When money comes into {a.name}, you can say which of them put it in.
+        </p>
+        <Field label="Names" id="ac-people" error={error}>
+          <input id="ac-people" autoComplete="off" value={text} placeholder="Sam, Alex"
+                 onChange={(e) => { setText(e.target.value); setError(null); }} />
+          {!error && <p className="gl-hint">Separate names with commas</p>}
+        </Field>
+        <PButton type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save'}</PButton>
+        <PButton variant="text" onClick={onClose}>Cancel</PButton>
+      </form>
+    </DetailPanel>
+  );
+}
+
 export function ShareDialog({ a, onClose, onSave }) {
   const initial = a.joint_share ?? 50;
   const [half, setHalf] = useState(initial === 50);
@@ -704,6 +766,7 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
       <AccountDetail a={current} onTab={onTab} onBack={back} busy={busy}
                      onSave={(fields) => save(current, fields).catch(() => {})}
                      onShare={() => setDialog({ kind: 'share' })}
+                     onPeople={() => setDialog({ kind: 'people' })}
                      onRemove={(start = 'keep') => setDialog({ kind: 'remove', start })}
                      onReconnect={onReconnect}
                      onUpdateBalance={() => setDialog({ kind: 'balance' })}
@@ -755,6 +818,13 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
         {current && dialog?.kind === 'share' && (
           <ShareDialog a={current} onClose={() => setDialog(null)}
                        onSave={async (share) => { await save(current, { joint_share: share }); setDialog(null); }} />
+        )}
+        {current && dialog?.kind === 'people' && (
+          <PeopleDialog a={current} onClose={() => setDialog(null)}
+                        onSave={async (people) => {
+                          await save(current, { joint_people: people });
+                          setDialog(null);
+                        }} />
         )}
         {current && dialog?.kind === 'balance' && (
           <BalanceDialog a={current} onClose={() => setDialog(null)}

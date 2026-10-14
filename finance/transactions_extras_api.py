@@ -39,8 +39,9 @@ from .categorize import CATEGORIES, CATEGORY_GROUPS, group_of
 
 MAX_BATCH = 500
 SHORTCUTS_KEY = "single_key_shortcuts"
-# Names that read better as an answer than as a ledger heading (as R-02 says).
-LABEL = {"Transfers": "Between my accounts"}
+# Names that read better as an answer than as a ledger heading (as R-02
+# says). Transfers is just Transfers (2026-10-14).
+LABEL: dict[str, str] = {}
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
           "September", "October", "November", "December"]
 

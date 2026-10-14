@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import {
   Alert, Avatar, CategoryChip, Choice, DetailPanel, PButton, StatusPill, amountTone, txAmount,
 } from '../pearl/kit.jsx';
+import { depositChoices } from './joint.js';
 import PIcon from '../pearl/icons.jsx';
 import CategoryPicker, { categoryLabel } from './CategoryPicker.jsx';
 import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
@@ -187,7 +188,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
     party: <Party tx={tx} busy={busy} onBack={back}
                   onSave={(name) => save(() => setParty(tx.id, name))} />,
     from: <JointFrom tx={tx} busy={busy} onBack={back}
-                     onSave={(who, remember) => save(() => setJointFrom(tx.id, who, remember))} />,
+                     onSave={(who, remember, person) => save(() => setJointFrom(tx.id, who, remember, person))} />,
   }[step];
 
   return (
@@ -568,23 +569,27 @@ function Whose({ tx, busy, onBack, onSave }) {
 
 /** Money into a joint account from outside: hers, or the other person's. */
 function JointFrom({ tx, busy, onBack, onSave }) {
-  const [who, setWho] = useState(tx.joint_from || '');
+  const choices = depositChoices(tx.joint_people, tx.joint);
+  const start = tx.joint_from === 'me' ? 'me'
+    : tx.joint_from === 'them' ? (tx.joint_person ? `p:${tx.joint_person}` : 'them') : '';
+  const [pick, setPick] = useState(choices.some((c) => c.value === start) ? start : '');
   const [remember, setRemember] = useState(true);
+  const chosen = choices.find((c) => c.value === pick);
   return (
     <Step title="Who put this in?" onBack={onBack}>
       <p className="pk-muted">It came into your account with {tx.joint} from outside Pearl.</p>
       <div className="pk-choices" role="radiogroup" aria-label="Who put this in?">
-        <Choice name="joint-from" checked={who === 'me'} onChange={() => setWho('me')}
-                label="Me" description="From an account of mine that isn’t in Pearl. It isn’t income." />
-        <Choice name="joint-from" checked={who === 'them'} onChange={() => setWho('them')}
-                label={tx.joint}
-                description={`It pays for that much of this month’s joint spending, so less of it is yours.`} />
+        {choices.map((c) => (
+          <Choice key={c.value} name="joint-from" checked={pick === c.value}
+                  onChange={() => setPick(c.value)} label={c.label} description={c.description} />
+        ))}
       </div>
       <label className="txd-check">
         <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
         The same for every deposit from {tx.merchant}
       </label>
-      <PButton disabled={busy || !who} onClick={() => onSave(who, remember)}>Save</PButton>
+      <PButton disabled={busy || !chosen}
+               onClick={() => onSave(chosen.who, remember, chosen.person)}>Save</PButton>
     </Step>
   );
 }

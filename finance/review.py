@@ -200,6 +200,7 @@ def build(transactions: list[Transaction], today: str | None = None,
         if key in dismissed:
             continue
         joint_in.append({"key": key, "txn": _brief(t), "label": t.joint,
+                         "people": list(t.joint_people or []),
                          "reason": f"It came into your account with {t.joint} from "
                                    "outside Pearl, so it could be yours or theirs."})
 

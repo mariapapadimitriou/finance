@@ -325,8 +325,8 @@ export const setShare      = (id, myShare) =>
 // Who an e-Transfer was from or to; '' goes back to the bank's name.
 export const setParty      = (id, name) =>
   json('PUT', `/api/transactions/${id}/party`, { name });
-export const setJointFrom  = (id, who, remember = false) =>
-  json('PUT', `/api/transactions/${id}/joint-from`, { who, remember });
+export const setJointFrom  = (id, who, remember = false, person = null) =>
+  json('PUT', `/api/transactions/${id}/joint-from`, { who, remember, person });
 // Say where a group of transfers went; `remember` makes it the rule for
 // those names.
 export const sortTransfers = (ids, category, remember) =>

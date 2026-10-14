@@ -131,6 +131,7 @@ def _linked_rows(st) -> list[dict]:
             "syncs": row.get("syncs"),
             "joint": joint,
             "joint_share": row.get("joint_share"),
+            "joint_people": row.get("joint_people") or [],
             "anchor": aid in anchor,
             "can_anchor": kind == "savings" and aid in anchorable,
             "balance": balance.get("current"),
@@ -155,7 +156,8 @@ def _hand_rows(st) -> list[dict]:
         "mask": "", "institution": "", "logo": "",
         "kind": "card" if m["kind"] == "credit" else m["kind"],
         "source": "hand", "status": "manual", "counted": m["counted"], "syncs": None,
-        "joint": False, "joint_share": None, "anchor": m["account_id"] in anchor,
+        "joint": False, "joint_share": None, "joint_people": [],
+        "anchor": m["account_id"] in anchor,
         "can_anchor": m["kind"] == "savings", "balance": m["balance"],
         "owing": m["kind"] == "credit", "updated_at": m["updated_on"],
         "disconnected_on": None, "history_from": None, "transactions": 0, "item_id": "",
@@ -230,6 +232,22 @@ def account_settings(account_id: str):
                 return jsonify({"error": "Enter a share between 1% and 99%."}), 400
             share = round(share, 2)
         st.set_joint_share(account_id, share)
+        reclassify = True
+
+    if "joint_people" in body:
+        if hand:
+            return jsonify({"error": "Only a linked account can be joint."}), 400
+        raw = body.get("joint_people")
+        if not isinstance(raw, list):
+            return jsonify({"error": "Name the people you share it with."}), 400
+        people = []
+        for p in raw:
+            name = " ".join(str(p or "").split())[:40]
+            if name and name.lower() not in {x.lower() for x in people}:
+                people.append(name)
+        if not people:
+            return jsonify({"error": "Name at least one person you share it with."}), 400
+        st.set_joint_people(account_id, people[:6])
         reclassify = True
 
     if "anchor" in body:
