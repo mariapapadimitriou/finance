@@ -101,30 +101,20 @@ CREATE TABLE IF NOT EXISTS imports (
     created_at   TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
--- Trips were removed (C1). The table stays so an existing database keeps
--- what was typed into it; nothing reads or writes it but a reset.
-CREATE TABLE IF NOT EXISTS trips (
+-- Sort a date range (2026-10-14): one category for every purchase in a
+-- range she chose, and the rows it moved with what each was before. See
+-- finance/bulk_edits.py.
+CREATE TABLE IF NOT EXISTS bulk_edits (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT NOT NULL,
+    category   TEXT NOT NULL,
     start_date TEXT NOT NULL,
     end_date   TEXT NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_trip_dates ON trips(start_date, end_date);
-
--- Trips she marked (THL-174, 2026-10-13): a date range whose spending she
--- sorted as Travel, and the rows it moved. Separate from `trips` above,
--- which holds what the removed Trips tab kept (C1). See finance/trips.py.
-CREATE TABLE IF NOT EXISTS marked_trips (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT NOT NULL,
-    start_date TEXT NOT NULL,
-    end_date   TEXT NOT NULL,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS trip_rows (
-    txn_id      TEXT PRIMARY KEY,
-    trip_id     INTEGER NOT NULL,
+CREATE TABLE IF NOT EXISTS bulk_edit_rows (
+    txn_id        TEXT PRIMARY KEY,
+    edit_id       INTEGER NOT NULL,
     prev_category TEXT,
     prev_source   TEXT
 );
@@ -540,7 +530,7 @@ _CHARGES = """(
 _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts",
                "txn_exclusions", "txn_income_type", "txn_confirmed", "txn_notes",
                "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
-               "joint_deposits", "txn_party", "trip_rows")
+               "joint_deposits", "txn_party", "bulk_edit_rows")
 
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
@@ -618,12 +608,11 @@ class Store:
         self._migrate_plaid_logo()
         self._migrate_joint_share()
         self._migrate_joint_people()
-        self._migrate_trip_rows()
         self._migrate_travel_ownership()
         self._drop_bank_funded_budgets()
         self._migrate_saved()
         self._forget_mortgage_terms()
-        self._forget_trips()
+        self._retire_trips()
         self._drop_self_twins()
 
     def _drop_self_twins(self) -> None:
@@ -714,25 +703,23 @@ class Store:
         with self.conn() as c:
             c.execute("DELETE FROM settings WHERE key = 'mortgage'")
 
-    def _forget_trips(self) -> None:
-        """Trips are gone (C1): nothing recategorizes spending as Travel by
-        its dates any more. A charge a trip moved to Travel goes back to what
-        its merchant says it is — a category set by hand is never touched.
-        The `trips` table stays, unused, rather than a migration dropping what
-        someone typed in; a no-op on every open after the first."""
-        with self.conn() as c:
-            if not c.execute("SELECT 1 FROM transactions t WHERE t.category_source = 'trip' "
-                             "AND NOT EXISTS (SELECT 1 FROM trip_rows r WHERE r.txn_id = t.id) "
-                             "LIMIT 1").fetchone():
-                return
-            # Rows a trip she marked moved (THL-174) stay where it put them.
-            kept = {r["txn_id"] for r in c.execute("SELECT txn_id FROM trip_rows").fetchall()}
-        from .categorize import apply_categories
-        moved = [t for t in self.all_transactions()
-                 if t.category_source == "trip" and t.fingerprint not in kept]
-        apply_categories(moved, self.overrides())
-        self.set_categories({t.fingerprint: (t.category, t.category_source)
-                             for t in moved})
+    def _retire_trips(self) -> None:
+        """Trips are gone (2026-10-14; Sort a date range replaces them). The
+        three tables are dropped, and a row a trip moved keeps its category
+        as her own choice, so nothing changes on screen. Each statement on
+        its own: a table already gone fails, and on Postgres a failed
+        statement spoils its transaction."""
+        for sql in ("UPDATE transactions SET category_source = 'user' "
+                    "WHERE category_source = 'trip'",
+                    "DROP TABLE IF EXISTS trip_rows",
+                    "DROP TABLE IF EXISTS marked_trips",
+                    "DROP INDEX IF EXISTS idx_trip_dates",
+                    "DROP TABLE IF EXISTS trips"):
+            try:
+                with self.conn() as c:
+                    c.execute(sql)
+            except Exception:                                    # noqa: BLE001
+                continue
 
     def _migrate_saved(self) -> None:
         """Investments became Saved: one bucket for money put away, wherever
@@ -800,17 +787,6 @@ class Store:
                 c.execute("ALTER TABLE plaid_items ADD COLUMN logo TEXT")
         except Exception:                                        # noqa: BLE001
             return
-
-    def _migrate_trip_rows(self) -> None:
-        """`trip_rows` from an early build of trips has no columns for what
-        each row was before; without them saving a trip fails."""
-        for sql in ("ALTER TABLE trip_rows ADD COLUMN prev_category TEXT",
-                    "ALTER TABLE trip_rows ADD COLUMN prev_source TEXT"):
-            try:
-                with self.conn() as c:
-                    c.execute(sql)
-            except Exception:                                    # noqa: BLE001
-                continue
 
     def _migrate_joint_share(self) -> None:
         """Add `joint_accounts.share`: the percent of a joint account that is
@@ -1543,10 +1519,8 @@ class Store:
             ("imports", "import history"),
             ("merchant_overrides", "merchant overrides"),
             ("budgets", "budgets"),
-            # Unused since Trips went (C1), but a reset still empties it.
-            ("trips", "trips"),
-            ("marked_trips", "trips you marked"),
-            ("trip_rows", "transactions in trips"),
+            ("bulk_edits", "date ranges you sorted"),
+            ("bulk_edit_rows", "transactions in them"),
             ("piggy_allocations", "piggy-bank allocations"),
             ("piggy_optouts", "charges kept out of piggy banks"),
             ("piggy_draws", "piggy-bank draws"),
@@ -1613,8 +1587,7 @@ class Store:
         *((tbl, "answers about transactions") for tbl in _ROW_TABLES),
         ("txn_paybacks", "money friends paid back"),
         ("txn_payback_person", "who paid you back"),
-        ("marked_trips", "trips you marked"),
-        ("trips", "trips you marked"),
+        ("bulk_edits", "date ranges you sorted"),
         ("dismissed_insights", "dismissed findings"),
         ("review_dismissed", "settled review items"),
         ("review_skipped", "skipped review items"),
@@ -2400,70 +2373,66 @@ class Store:
                 c.execute("INSERT INTO joint_deposits (txn_id, who, person) VALUES (?, ?, ?)",
                           (txn_id, who, person or None))
 
-    # ── Trips she marked (THL-174) ───────────────────────────────────────
-    def marked_trips(self) -> list[dict]:
+    # ── Sort a date range (finance/bulk_edits.py) ────────────────────────
+    def bulk_edits(self) -> list[dict]:
         with self.conn() as c:
-            rows = c.execute("SELECT id, name, start_date, end_date FROM marked_trips "
-                             "ORDER BY start_date DESC").fetchall()
+            rows = c.execute("SELECT id, name, category, start_date, end_date FROM bulk_edits "
+                             "ORDER BY start_date DESC, id DESC").fetchall()
         return [dict(r) for r in rows]
 
-    def add_marked_trip(self, name: str, start: str, end: str) -> int:
-        sql = "INSERT INTO marked_trips (name, start_date, end_date) VALUES (?, ?, ?)"
+    def add_bulk_edit(self, name: str, category: str, start: str, end: str) -> int:
+        sql = ("INSERT INTO bulk_edits (name, category, start_date, end_date) "
+               "VALUES (?, ?, ?, ?)")
         with self.conn() as c:
             if self.is_postgres:
-                return int(c.execute(sql + " RETURNING id", (name, start, end)).fetchone()["id"])
-            return int(c.execute(sql, (name, start, end)).lastrowid)
+                return int(c.execute(sql + " RETURNING id",
+                                     (name, category, start, end)).fetchone()["id"])
+            return int(c.execute(sql, (name, category, start, end)).lastrowid)
 
-    def update_marked_trip(self, trip_id: int, name: str, start: str, end: str) -> None:
+    def update_bulk_edit(self, edit_id: int, name: str, category: str, start: str,
+                         end: str) -> None:
         with self.conn() as c:
-            c.execute("UPDATE marked_trips SET name = ?, start_date = ?, end_date = ? WHERE id = ?",
-                      (name, start, end, int(trip_id)))
+            c.execute("UPDATE bulk_edits SET name = ?, category = ?, start_date = ?, "
+                      "end_date = ? WHERE id = ?", (name, category, start, end, int(edit_id)))
 
-    def delete_marked_trip(self, trip_id: int) -> None:
+    def delete_bulk_edit(self, edit_id: int) -> None:
         with self.conn() as c:
-            c.execute("DELETE FROM marked_trips WHERE id = ?", (int(trip_id),))
-            c.execute("DELETE FROM trip_rows WHERE trip_id = ?", (int(trip_id),))
+            c.execute("DELETE FROM bulk_edits WHERE id = ?", (int(edit_id),))
+            c.execute("DELETE FROM bulk_edit_rows WHERE edit_id = ?", (int(edit_id),))
 
-    def trip_rows(self) -> dict[str, int]:
-        """{txn_id: trip_id} for every row a trip she still has moved. Rows
-        left behind by a trip that's gone (the first build of trips, or one
-        removed before it could put them back) belong to no trip."""
+    def bulk_edit_rows(self) -> dict[str, int]:
+        """{txn_id: edit_id} for every row an edit she still has moved."""
         with self.conn() as c:
-            rows = c.execute("SELECT r.txn_id, r.trip_id FROM trip_rows r "
-                             "JOIN marked_trips m ON m.id = r.trip_id").fetchall()
-        return {r["txn_id"]: int(r["trip_id"]) for r in rows}
+            rows = c.execute("SELECT r.txn_id, r.edit_id FROM bulk_edit_rows r "
+                             "JOIN bulk_edits e ON e.id = r.edit_id").fetchall()
+        return {r["txn_id"]: int(r["edit_id"]) for r in rows}
 
-    def forget_orphan_trip_rows(self) -> int:
-        """Drop trip rows whose trip is gone, so they can join a new one."""
+    def bulk_edit_rows_before(self) -> dict[str, str | None]:
+        """{txn_id: the category it had before its edit}."""
         with self.conn() as c:
-            cur = c.execute("DELETE FROM trip_rows WHERE trip_id NOT IN "
-                            "(SELECT id FROM marked_trips)")
-            return max(cur.rowcount or 0, 0)
-
-    def trip_rows_before(self) -> dict[str, str | None]:
-        """{txn_id: the category it had before its trip}."""
-        with self.conn() as c:
-            rows = c.execute("SELECT txn_id, prev_category FROM trip_rows").fetchall()
+            rows = c.execute("SELECT txn_id, prev_category FROM bulk_edit_rows").fetchall()
         return {r["txn_id"]: r["prev_category"] for r in rows}
 
-    def add_trip_rows(self, trip_id: int, rows: list[tuple[str, str | None, str | None]]) -> None:
+    def add_bulk_edit_rows(self, edit_id: int,
+                           rows: list[tuple[str, str | None, str | None]]) -> None:
         """(txn_id, its category before, its source before) for each row."""
         with self.conn() as c:
             for txn_id, category, source in rows:
-                c.execute("DELETE FROM trip_rows WHERE txn_id = ?", (txn_id,))
-                c.execute("INSERT INTO trip_rows (txn_id, trip_id, prev_category, prev_source) "
-                          "VALUES (?, ?, ?, ?)", (txn_id, int(trip_id), category, source))
+                c.execute("DELETE FROM bulk_edit_rows WHERE txn_id = ?", (txn_id,))
+                c.execute("INSERT INTO bulk_edit_rows (txn_id, edit_id, prev_category, "
+                          "prev_source) VALUES (?, ?, ?, ?)",
+                          (txn_id, int(edit_id), category, source))
 
-    def remove_trip_rows(self, ids: list[str]) -> dict[str, tuple[str | None, str | None]]:
-        """Take rows out of their trip; returns what each was before."""
+    def remove_bulk_edit_rows(self, ids: list[str]) -> dict[str, tuple[str | None, str | None]]:
+        """Take rows out of their edit; returns what each was before."""
         out = {}
         with self.conn() as c:
             for txn_id in ids:
-                r = c.execute("SELECT prev_category, prev_source FROM trip_rows WHERE txn_id = ?",
-                              (txn_id,)).fetchone()
+                r = c.execute("SELECT prev_category, prev_source FROM bulk_edit_rows "
+                              "WHERE txn_id = ?", (txn_id,)).fetchone()
                 if r:
                     out[txn_id] = (r["prev_category"], r["prev_source"])
-                c.execute("DELETE FROM trip_rows WHERE txn_id = ?", (txn_id,))
+                c.execute("DELETE FROM bulk_edit_rows WHERE txn_id = ?", (txn_id,))
         return out
 
     def set_party(self, txn_id: str, name: str | None) -> None:
