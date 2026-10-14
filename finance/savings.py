@@ -21,6 +21,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from .analytics import counts_as_spending, is_others, spend_amount
+from .safe_to_spend import _counts_as_income
 from .models import Transaction
 
 SINCE = "savings_since"
@@ -60,7 +61,7 @@ def so_far(transactions: list[Transaction], start: str | None) -> dict:
             put_in += t.invested
         if counts_as_spending(t):
             spent += spend_amount(t)
-        elif (t.category or "") == "Income" and t.amount < 0:
+        elif _counts_as_income(t):           # the same income safe to spend counts
             income += -t.amount
     return {
         "since": start,
