@@ -546,7 +546,7 @@ export default function TransactionsList({ summary, categories, accounts, review
                         <label className="tx-check">
                           <input type="checkbox" tabIndex={-1} checked={on} onChange={() => {}}
                                  onClick={(e) => onCheck(e, i)}
-                                 aria-label={`Select ${rowName(r, txAmount(r.amount, { inflow: r.inflow }))}`} />
+                                 aria-label={`Select ${rowName(r, txAmount(r.amount, { inflow: r.inflow, signed: true }))}`} />
                           <span className="tx-check-box" aria-hidden="true">
                             {on && <PIcon name="check" size={14} />}
                           </span>

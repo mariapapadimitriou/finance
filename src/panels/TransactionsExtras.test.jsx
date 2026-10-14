@@ -223,12 +223,29 @@ describe('possible duplicates (THL-165 D-01, D-02)', () => {
     expect(out).toContain('Keep both. Both count as spending.');
     expect(out).toContain('Skip for now');
     expect(primaries(out)).toBe(1);
-    calm(out);
+    // A transaction's own amount is signed and coloured (2026-10-14).
+    expect(out).toContain('-$96.32');
+    expect(out).toMatch(/dp-amt out/);
+    calm(out.replace(/-\$96\.32/g, '$96.32'));
   });
 
   it('says where a copy came from in words', () => {
     expect(copyPhrase('added by hand')).toBe('you added by hand');
     const card = html(<CopyCard side={it2.twin} />);
     expect(card).toContain('Wednesday, October 7 · Visa ··4421');
+  });
+});
+
+describe('transaction amounts are signed and coloured (2026-10-14)', () => {
+  it('money out reads -$ in red, money in +$ in green; totals stay unsigned', async () => {
+    const { TxRow, txAmount } = await import('../pearl/kit.jsx');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const out = renderToStaticMarkup(<TxRow name="Pai" amount={45} />);
+    expect(out).toContain('-$45.00');
+    expect(out).toMatch(/pk-amt out/);
+    const inn = renderToStaticMarkup(<TxRow name="Client B" amount={590} inflow />);
+    expect(inn).toContain('+$590.00');
+    expect(inn).toMatch(/pk-amt in/);
+    expect(txAmount(130)).toBe('$130.00');
   });
 });

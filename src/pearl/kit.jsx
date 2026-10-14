@@ -8,11 +8,17 @@ import './kit.css';
 // signed-in app uses them. Each one takes its colours, spacing and type from
 // the tokens in kit.css; none of them knows about the API.
 
-/** An amount as Pearl shows it: never a minus sign; money in gets a "+". */
-export function txAmount(amount, { inflow = false } = {}) {
+/** An amount as Pearl shows it. Money in gets a "+"; with `signed` — a
+ * transaction's own amount — money out gets a "-" (2026-10-14). Totals and
+ * shares stay unsigned. */
+export function txAmount(amount, { inflow = false, signed = false } = {}) {
   const text = money(Math.abs(Number(amount) || 0), { cents: true });
-  return inflow ? `+${text}` : text;
+  if (inflow) return `+${text}`;
+  return signed ? `-${text}` : text;
 }
+
+/** The colour class for a transaction's amount: "in" green, "out" red. */
+export const amountTone = (inflow) => (inflow ? 'in' : 'out');
 
 export function Avatar({ name, logo, large = false }) {
   return (
@@ -128,7 +134,7 @@ export function DayHeader({ children }) {
  * separately clickable, so it is one button with one name.
  *
  *   muted   — Counts = No: not spending and not income
- *   inflow  — money in, shown with a "+"
+ *   inflow  — money in, "+" in green; otherwise "-" in red
  */
 export function TxRow({ name, logo, meta, note, noteLink = false, chip, amount,
                         inflow = false, muted = false, flash = false, onOpen, ...rest }) {
@@ -144,8 +150,8 @@ export function TxRow({ name, logo, meta, note, noteLink = false, chip, amount,
       <span className="pk-row-cat">
         {chip && <CategoryChip label={chip.label} suggested={chip.suggested} />}
       </span>
-      <span className={`pk-amt${muted ? ' muted' : inflow ? ' in' : ''}`}>
-        {txAmount(amount, { inflow })}
+      <span className={`pk-amt ${amountTone(inflow)}${muted ? ' muted' : ''}`}>
+        {txAmount(amount, { inflow, signed: true })}
       </span>
     </button>
   );

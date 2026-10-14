@@ -19,6 +19,11 @@
   --panel-shadow: -8px 0 32px color-mix(in srgb, var(--ink-base) 14%, transparent),
                   -2px 0 8px color-mix(in srgb, var(--ink-base) 8%, transparent);
 
+  /* A transaction's amount (2026-10-14): money out red with a minus, money
+   * in green with a plus. */
+  --money-out: #c0392b;
+  --money-in: #1e7b4c;
+
   --text: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --display: 'Fraunces', Georgia, 'Times New Roman', serif;
 }
@@ -27,12 +32,16 @@
  * setting when the app has not chosen. */
 :root[data-theme="dark"] .pk {
   --border: var(--ocean-800);
+  --money-out: #ff7b72;
+  --money-in: #56d48f;
   --panel-shadow: -12px 0 40px color-mix(in srgb, black 40%, transparent);
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .pk {
     --border: var(--ocean-800);
+    --money-out: #ff7b72;
+    --money-in: #56d48f;
     --panel-shadow: -12px 0 40px color-mix(in srgb, black 40%, transparent);
     color-scheme: dark;
   }
