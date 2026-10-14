@@ -174,7 +174,12 @@ def data_start_over():
     body = request.get_json(silent=True) or {}
     if " ".join(str(body.get("confirm") or "").lower().split()) != "start over":
         return jsonify({"error": "Type “start over” to confirm."}), 400
-    removed = store().start_over()
+    from datetime import date
+    from . import savings
+    from .api import _today_iso
+    st = store()
+    removed = st.start_over()
+    savings.start_over(st, date.fromisoformat(_today_iso()))
     return jsonify({"ok": True, "removed": removed, "resync": True})
 
 

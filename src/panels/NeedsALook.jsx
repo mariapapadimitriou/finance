@@ -449,6 +449,9 @@ function MoneyInChoices({ it, busy, onSkip, act, sorted }) {
     }
     if (pick === 'own') return act(() => dismissReview(it.key));
     if (pick === 'gift') return act(() => setIncomeType(it.txn.id, 'gifts'));
+    if (pick === 'savings') {
+      return act(() => setCategory(it.txn.id, 'Saved'), sorted('Sorted as taken out of savings.'));
+    }
     return act(() => setCategory(it.txn.id, 'Lent'), sorted('Sorted as money you lent.'));
   };
   return (
@@ -466,6 +469,9 @@ function MoneyInChoices({ it, busy, onSkip, act, sorted }) {
                 label="My own money" description="From an account Pearl can’t see. It won’t count as income." />
         <Choice name={name} checked={pick === 'gift'} onChange={() => setPick('gift')}
                 label="A gift" description="It counts as income." />
+        <Choice name={name} checked={pick === 'savings'} onChange={() => setPick('savings')}
+                label="Taken out of my savings"
+                description="Money I’d put away, coming back. It comes off what you’ve saved; not income." />
         <Choice name={name} checked={pick === 'lent'} onChange={() => setPick('lent')}
                 label="Paying back money I lent" description="Not income: it was yours before." />
       </div>

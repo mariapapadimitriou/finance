@@ -135,6 +135,7 @@ export function DayHeader({ children }) {
  *
  *   muted   — Counts = No: not spending and not income
  *   inflow  — money in, "+" in green; otherwise "-" in red
+ *   muted   — neither: grey, no sign (a transfer changes nothing)
  */
 export function TxRow({ name, logo, meta, note, noteLink = false, chip, amount,
                         inflow = false, muted = false, flash = false, onOpen, ...rest }) {
@@ -150,8 +151,8 @@ export function TxRow({ name, logo, meta, note, noteLink = false, chip, amount,
       <span className="pk-row-cat">
         {chip && <CategoryChip label={chip.label} suggested={chip.suggested} />}
       </span>
-      <span className={`pk-amt ${amountTone(inflow)}${muted ? ' muted' : ''}`}>
-        {txAmount(amount, { inflow, signed: true })}
+      <span className={`pk-amt ${muted ? 'muted' : amountTone(inflow)}`}>
+        {txAmount(amount, { inflow: inflow && !muted, signed: !muted })}
       </span>
     </button>
   );

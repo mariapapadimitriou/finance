@@ -1755,7 +1755,8 @@ def home():
     is current as soon as a sync has written its rows (E05: within 5 minutes).
     """
     from datetime import date as _date
-    from . import carryover, milestones, safe_to_spend, usual_month, weekly
+    from flask import g
+    from . import carryover, milestones, safe_to_spend, savings, usual_month, weekly
 
     st = store()
     today = _date.fromisoformat(_today_iso())
@@ -1787,6 +1788,8 @@ def home():
         "path": _path(st, txns, today, sts, state, types),
         "review_count": review.get("count", 0),
         "carryover": carry_question,
+        # Savings so far: put away, and left over, since she started.
+        "savings": savings.so_far(txns, savings.since(st, g.get("user"), txns)),
         "connections": milestones.connections(st.plaid_items(), st.account_sync_rules()),
         "usual_month": usual,
         # THL-166: the week under the month, and which one she reads first.
