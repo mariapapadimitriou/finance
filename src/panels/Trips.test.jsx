@@ -8,7 +8,7 @@ describe('Trips (THL-174)', () => {
   it('Mark a trip asks for a name and dates and says what happens', () => {
     const out = html(<MarkTrip onClose={() => {}} />);
     for (const t of ['Mark a trip', 'Name', 'From', 'To', 'becomes Travel',
-                     'Bills, pay and transfers stay as they are', 'Save trip']) {
+                     'Pay and transfers stay as they are', 'Save trip']) {
       expect(out).toContain(t);
     }
     expect(out).toMatch(/disabled=""[^>]*>Save trip/);           // nothing to save yet
@@ -26,11 +26,11 @@ describe('Trips (THL-174)', () => {
     const p = { count: 4, total: 456.3, staying_count: 4,
                 categories: [{ category: 'Lodging' }, { category: 'Transport' }, { category: 'Dining' },
                              { category: 'Coffee' }],
-                staying: { bill: 2, transfer: 1, money_in: 1 } };
+                staying: { transfer: 1, money_in: 1 } };
     const out = html(<TripSummary preview={p} />).replace(/<[^>]+>/g, ' ');
     expect(out).toContain('4 purchases · $456.30 becomes Travel');
     expect(out).toContain('Mostly Lodging, Transport and Dining');
-    expect(out).toContain('Staying as they are: 2 bills and subscriptions, 1 transfer or card payment, 1 deposit.');
+    expect(out).toContain('Staying as they are: 1 transfer or card payment, 1 deposit.');
     expect(html(<TripSummary preview={p} />)).not.toContain('checkbox');
   });
 
@@ -42,10 +42,10 @@ describe('Trips (THL-174)', () => {
                                               staying_count: 0, in_dates: 0 }} />);
     expect(none).toContain('No transactions between these dates');
     expect(none).toContain('Profile › Accounts');
-    const kept = html(<TripSummary preview={{ count: 0, total: 0, categories: [], staying: { bill: 2 },
+    const kept = html(<TripSummary preview={{ count: 0, total: 0, categories: [], staying: { money_in: 2 },
                                               staying_count: 2, in_dates: 2 }} />);
     expect(kept).toContain('Nothing here looks like trip spending');
-    expect(kept).toContain('Staying as they are: 2 bills and subscriptions.');
+    expect(kept).toContain('Staying as they are: 2 deposits.');
     expect(none).not.toMatch(/\$0/);
   });
 
