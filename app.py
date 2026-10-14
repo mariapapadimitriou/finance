@@ -25,7 +25,7 @@ from datetime import timedelta
 from flask import Flask, abort, g, jsonify, request, send_from_directory, session
 from flask_cors import CORS
 
-from finance import auth, devices, mailer, passkeys, signin_codes, users
+from finance import auth, devices, mailer, passkeys, security, signin_codes, users
 from finance.api import bp
 # storage_mode is re-exported for convenience; /api/health reads it from db.
 from finance.db import database_url, is_hosted as _is_hosted, storage_mode  # noqa: F401
@@ -140,6 +140,10 @@ def _install_auth(app: Flask) -> None:
         PERMANENT_SESSION_LIFETIME=timedelta(days=30),
     )
     app.secret_key = _session_key(base)
+    # Uploads are statements of a few hundred KB; anything larger is refused
+    # before it is read.
+    app.config["MAX_CONTENT_LENGTH"] = security.MAX_BODY_BYTES
+    security.install(app, hosted=_is_hosted(), dev_origins=tuple(DEV_ORIGINS))
     app.config["STORES"] = {}
 
     has_accounts = {"yes": users.count(base) > 0}
@@ -251,6 +255,18 @@ def _install_auth(app: Flask) -> None:
             if users.now() - float(session.get("seen") or 0) > 86400:
                 devices.touch(base, g.user.id, request.cookies.get(devices.COOKIE))
                 session["seen"] = users.now()
+            # A-14 on the server too: a session nobody has used for a while
+            # is over, whatever the browser's own timer did (SECURITY.md).
+            active = float(session.get("active") or 0)
+            if active and users.now() - active > security.IDLE_SECONDS:
+                # Still this device in use (A-07): it stays trusted, so
+                # signing back in won't ask to confirm it.
+                devices.touch(base, g.user.id, request.cookies.get(devices.COOKIE))
+                session.clear()
+                g.user = None
+                return jsonify({"error": "You were signed out after a while away.",
+                                "unauthorized": True, "timeout": True}), 401
+            session["active"] = users.now()
             if path.startswith("/api/plaid/") and not may_link(g.user):
                 return jsonify({"error": "Agree to the two required choices "
                                          "before linking a bank."}), 403
@@ -534,7 +550,7 @@ def _install_auth(app: Flask) -> None:
                     mailer.send(user.email, subject, text)
                 except Exception:                      # noqa: BLE001
                     pass
-            else:
+            elif not _is_hosted():
                 print(f"[pearl] {subject} → {user.email}", file=sys.stderr)
         return jsonify({"ok": True})
 
@@ -646,7 +662,7 @@ def _install_auth(app: Flask) -> None:
                 except Exception:                      # noqa: BLE001
                     return jsonify({"error": "The email didn't send. Try again "
                                              "in a minute."}), 502
-            else:
+            elif not _is_hosted():
                 print(f"[pearl] {subject} → {email}: {out['code']}", file=sys.stderr)
         return jsonify({"ok": True, "sent_to": email,
                         "resend_in": out.get("resend_in", signin_codes.RESEND_AFTER),
@@ -681,7 +697,7 @@ def _install_auth(app: Flask) -> None:
                     mailer.send(old, subject, text)
                 except Exception:                      # noqa: BLE001
                     pass
-            else:
+            elif not _is_hosted():
                 print(f"[pearl] {subject} → {old}", file=sys.stderr)
         return jsonify({"ok": True, "user": status_user(users.by_id(base, user.id))})
 

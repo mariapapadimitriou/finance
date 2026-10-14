@@ -232,7 +232,7 @@ def delete_code():
                 mailer.send(user.email, subject, text)
             except Exception:                          # noqa: BLE001
                 return jsonify({"error": "The email didn’t send. Try again in a minute."}), 502
-        else:
+        elif not current_app.config.get("HOSTED"):
             print(f"[pearl] {subject} → {user.email}", file=sys.stderr)
     return jsonify({"ok": True, "sent_to": user.email,
                     "resend_in": out.get("resend_in", signin_codes.RESEND_AFTER)})
@@ -301,6 +301,6 @@ def delete_account_now():
                 sent_to = user.email
             except Exception:                          # noqa: BLE001
                 pass
-        else:
+        elif not current_app.config.get("HOSTED"):
             print(f"[pearl] {subject} → {user.email}", file=sys.stderr)
     return jsonify({"ok": True, **done, "confirmation_sent_to": sent_to})

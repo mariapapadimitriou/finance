@@ -112,9 +112,13 @@ class TestWhenItAsks:
         assert code_sign_in(laptop, outbox)["signed_in"]
 
     def test_a_device_in_use_stays_trusted(self, app, phone, outbox, clock):
+        """A day between visits ends the session on the server (A-14), so she
+        signs in again on the phone — without being asked to confirm it, since
+        it's the device in use — and that use keeps it trusted."""
         for _ in range(devices.TRUST_DAYS + 5):
             clock["now"] += 86400
-            phone.get("/api/home")
+            if phone.get("/api/home").status_code == 401:
+                assert code_sign_in(phone, outbox)["signed_in"]
         assert code_sign_in(browser(app), outbox).get("confirm_device")
 
 
