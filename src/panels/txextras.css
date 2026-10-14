@@ -117,3 +117,17 @@
   .dp-compare { flex-direction: column; }
   .dp-copy { padding: 16px; gap: 8px; }
 }
+
+/* ── Trips (THL-174) ─────────────────────────────────────────────────────── */
+.tx-head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.tx-head-actions .pk-btn { width: auto; }
+.trip-dates { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); align-self: stretch; }
+.trip-rows, .trip-list { list-style: none; margin: 0; padding: 0; align-self: stretch;
+  display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.trip-rows li + li, .trip-list li + li { border-top: 1px solid var(--border); }
+.trip-rows .txd-check { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); margin: 0; }
+.trip-row-text { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.trip-row-amount { flex: none; font-variant-numeric: tabular-nums; }
+.trip-list li { display: flex; align-items: center; gap: var(--space-2); padding-right: var(--space-2); }
+.pk .trip-open { flex: 1 1 auto; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3);
+  background: none; border: 0; text-align: left; cursor: pointer; }

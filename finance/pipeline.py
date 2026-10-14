@@ -45,6 +45,13 @@ def ingest(store: Store, result: IngestResult, filename: str = "") -> dict:
         # repeats were skipped above and only counted in the import log.
         from .duplicates import scan
         possible = scan(store)
+        # A row that arrives inside a trip she marked joins it (THL-174).
+        from datetime import date as _date
+        from .trips import join_new
+        if store.marked_trips():
+            fresh = {t.fingerprint for t in new}
+            join_new(store, [t for t in store.all_transactions() if t.fingerprint in fresh],
+                     _date.today())
 
     duplicate_count = len(dupes) + self_dupes
     store.log_import(filename or "upload.csv", result, inserted, duplicate_count)
