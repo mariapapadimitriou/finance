@@ -340,3 +340,14 @@ describe('Accounts: logos and investment accounts', () => {
     calm(t);
   });
 });
+
+describe('nicknames name the account everywhere', () => {
+  it('accountTitle prefers her nickname', async () => {
+    const { accountTitle } = await import('../api.js');
+    const a = { account_id: 'chq', institution: 'TD', kind_label: 'Chequing', mask: '1111' };
+    expect(accountTitle(a)).toBe('TD · Chequing ••1111');
+    expect(accountTitle({ ...a, nickname: 'Bills account' })).toBe('Bills account');
+    expect(accountTitle({ ...a, nickname: 'Bills account', joint: 'Sam' }))
+      .toBe('Bills account · Joint with Sam');
+  });
+});

@@ -462,7 +462,9 @@ def _rules(st) -> list[dict]:
         name = (f"Transfers to {label}" if key.startswith(("to:", "acct:")) else label)
         out.append({"id": f"destination:{key}", "kind": "destination",
                     "name": name, "category": category})
-    accounts = {a["account_id"]: _base_name(a.get("account_name") or a["account_id"])
+    nicknames = st.account_nicknames()
+    accounts = {a["account_id"]: nicknames.get(a["account_id"])
+                or _base_name(a.get("account_name") or a["account_id"])
                 for a in st.accounts()}
     for r in st.exclusion_rules():
         out.append({"id": f"exclusion:{r['id']}", "kind": "exclusion",

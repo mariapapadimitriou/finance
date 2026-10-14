@@ -188,7 +188,7 @@ def brief(t: Transaction) -> dict:
     return {"id": t.fingerprint, "date": t.date[:10], "merchant": t.merchant,
             "description": t.description, "amount": t.amount,
             "account_id": t.account_id,
-            "account": (t.account_name or t.account_id or "").replace("••", "··"),
+            "account": (t.account_label or "").replace("••", "··"),
             "source": t.source, "source_label": source_label(t),
             "source_verb": source_verb(t)}
 

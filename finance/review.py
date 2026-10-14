@@ -57,7 +57,7 @@ def _brief(t: Transaction) -> dict:
     return {"id": t.fingerprint, "date": t.date,
             "merchant": (who or {}).get("name") or t.merchant,
             "description": t.description, "amount": t.amount,
-            "account_id": t.account_id, "account_name": t.account_name or "",
+            "account_id": t.account_id, "account_name": t.account_label or "",
             "category": t.category, "logo": (t.raw or {}).get("logo_url") or ""}
 
 
@@ -78,8 +78,8 @@ def unsorted_groups(transactions: list[Transaction]) -> dict:
         g["count"] += 1
         g["total"] = round(g["total"] + t.amount, 2)
         g["first"], g["last"] = min(g["first"], t.date), max(g["last"], t.date)
-        if (t.account_name or "") not in g["accounts"]:
-            g["accounts"].append(t.account_name or "")
+        if (t.account_label or "") not in g["accounts"]:
+            g["accounts"].append(t.account_label or "")
         g["ids"].append(t.fingerprint)
     return {"count": len(rows),
             "total": round(sum(t.amount for t in rows), 2),

@@ -76,7 +76,7 @@ def overlapping_accounts(transactions) -> list[dict]:
     for acct, rows in by_account.items():
         summaries[acct] = {
             "account_id": acct,
-            "account": rows[0].account_name or acct,
+            "account": rows[0].account_label or acct,
             "source": rows[0].source,
             "first": min(r.date for r in rows),
             "last": max(r.date for r in rows),

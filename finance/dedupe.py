@@ -126,6 +126,6 @@ def find_duplicate_charges(transactions: list[Transaction]) -> list[dict]:
                     "merchant": merchant,
                     "amount": float(amount),
                     "dates": [a.date, b.date],
-                    "account": a.account_name or a.account_id,
+                    "account": a.account_label,
                 })
     return findings

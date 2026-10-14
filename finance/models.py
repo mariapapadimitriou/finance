@@ -299,6 +299,10 @@ class Transaction:
     # or different (both count). See finance/duplicates.py.
     duplicate_of: str | None = None
     duplicate_state: str | None = None
+    # Her name for the account (Profile › Accounts), if she gave one. Shown
+    # wherever the account is named, via `account_label`; never written back
+    # over the bank's own `account_name`.
+    account_nickname: str | None = None
 
     @property
     def one_off(self) -> bool:
@@ -327,6 +331,10 @@ class Transaction:
         return hashlib.sha1(key.encode("utf-8")).hexdigest()[:20]
 
     @property
+    def account_label(self) -> str:
+        """What to call this row's account: her nickname, else the bank's name."""
+        return self.account_nickname or self.account_name or self.account_id
+
     def is_spend(self) -> bool:
         return self.amount > 0
 
@@ -382,6 +390,7 @@ class Transaction:
             duplicate_of=row.get("duplicate_of") or None,
             duplicate_state=row.get("duplicate_state") or None,
             party=row.get("party") or None,
+            account_nickname=row.get("account_nickname") or None,
         )
         if t.joint and t.my_share is None:
             # Hers, less what the other person put in that month; money in

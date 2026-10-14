@@ -375,7 +375,7 @@ def by_account(transactions: list[Transaction], month: str | None = None) -> lis
     for t in scope:
         e = agg.setdefault(t.account_id, {
             "account_id": t.account_id,
-            "account_name": t.account_name or t.account_id,
+            "account_name": t.account_label,
             "amount": 0.0, "transactions": 0,
         })
         e["transactions"] += 1

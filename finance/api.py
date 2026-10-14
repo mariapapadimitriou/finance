@@ -1620,7 +1620,7 @@ def _anchor_accounts(st) -> list[dict]:
         m = re.search(r"••\s*(\d{2,4})\s*$", name)
         out.append({
             "account_id": aid,
-            "name": name,
+            "name": rule.get("label") or name,
             "mask": m.group(1) if m else "",
             "kind": "savings" if subtype in _ANCHOR_SAVINGS else "chequing",
             "balance": round(float(held), 2),
@@ -2448,7 +2448,7 @@ def list_exclusions():
     if any(r.get("account_id") for r in rules):
         names = {}
         for t in st.all_transactions():
-            names.setdefault(t.account_id, t.account_name or t.account_id)
+            names.setdefault(t.account_id, t.account_label)
         for r in rules:
             r["account_name"] = names.get(r.get("account_id") or "", r.get("account_id"))
     return jsonify({"rules": rules})
