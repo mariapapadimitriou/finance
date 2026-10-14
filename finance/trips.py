@@ -147,6 +147,7 @@ def save(store, name: str, start: str, end: str, today: date,
     """Create a trip (or change one): its spending becomes Travel, and rows
     no longer in its dates go back."""
     name = " ".join(name.split())[:MAX_NAME]
+    store.forget_orphan_trip_rows()
     if trip_id is None:
         trip_id = store.add_marked_trip(name, start, end)
     else:

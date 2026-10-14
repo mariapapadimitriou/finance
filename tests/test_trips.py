@@ -217,3 +217,30 @@ def test_places_she_goes_often_are_still_trip_spending(client):
     assert by[("Interest charge", "2026-10-03")] == "Travel"
     assert by[("Netflix", "2026-10-03")] == "Travel"
     assert by[("Northwind Ltd", "2026-10-01")] == "Income"
+
+
+def test_rows_left_behind_by_a_trip_thats_gone_join_the_new_one(client):
+    """Leftovers in trip_rows from a trip that no longer exists (the first
+    build of trips) kept purchases out as "in another trip" (2026-10-14)."""
+    with client.st.conn() as c:
+        for t in client.st.all_transactions():
+            if t.merchant in ("Soda La Casita", "Hotel Belmar"):
+                c.execute("INSERT INTO trip_rows (txn_id, trip_id) VALUES (?, ?)", (t.fingerprint, 99))
+    p = preview(client)
+    assert p["count"] == 6 and "other_trip" not in p["staying"]
+    trip = save(client).get_json()["trip"]
+    assert trip["count"] == 6
+    rows = by_merchant(client)
+    assert rows["Soda La Casita"].category == "Travel" and rows["Hotel Belmar"].category == "Travel"
+
+
+def test_an_old_trip_rows_table_is_brought_up_to_date(tmp_path):
+    """A trip_rows table from an early build had no prev_category column."""
+    import sqlite3
+    from finance.store import Store
+    db = str(tmp_path / "old.db")
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE trip_rows (txn_id TEXT PRIMARY KEY, trip_id INTEGER NOT NULL)")
+    con.commit(); con.close()
+    st = Store(db)
+    assert st.trip_rows_before() == {}
