@@ -195,3 +195,11 @@
 .rc-actions .pk-btn { width: auto; }
 .rc-lines dd { text-align: right; }
 .rc-panel-foot { gap: var(--space-3); }
+
+/* Savings so far: two running totals side by side. */
+.hm-savings { gap: var(--space-4); }
+.hm-savings-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.hm-savings-tile { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-4);
+  border-radius: var(--radius-md); background: var(--surface-page); border: 1px solid var(--border); }
+.hm-savings-tile p { margin: 0; }
+@media (max-width: 480px) { .hm-savings-tiles { grid-template-columns: 1fr; } }

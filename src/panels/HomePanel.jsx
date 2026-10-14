@@ -296,6 +296,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
                 onChest={() => onTab?.('goals')}
                 path={home.path} reviewCount={home.review_count}
                 connections={home.connections} back={back} today={home.today}
+                savings={home.savings}
                 onPath={(action) => onTab?.(PATH_ACTIONS[action] ?? 'path')}
                 onReview={() => onTab?.('review')}
                 onReconnect={(c) => (c.state === 'needs_sign_in' ? setReconnect(c) : onTab?.('accounts'))}
@@ -367,7 +368,8 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
                            onAddIncome, carry = null, onCarry, path, reviewCount = 0,
                            connections = [], back = null, today,
                            onPath, onReview, onReconnect, onChest, debts = null, onDebts,
-                           budgets = null, onBudgets, cards = [], onCard, onWhy, onNotForMe }) {
+                           budgets = null, onBudgets, cards = [], onCard, onWhy, onNotForMe,
+                           savings = null }) {
   const review = reviewCount > 0 && <NeedsALook count={reviewCount} onReview={onReview} />;
   if (ds.kind === 'no_data') {
     return (
@@ -422,6 +424,7 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
       <CarryoverPrompt c={carry} onAnswer={onCarry} onChest={onChest} />
       <SafeToSpendCard s={s} onExplain={onExplain}
                        updated={trouble ? `${trouble.institution} last updated ${whenWords(trouble.last_synced, today)}` : null} />
+      <SavingsCard savings={savings} />
       {ds.asks_questions && <StarterQuestions onSave={onSave} primary />}
       {path && ['normal', 'irregular'].includes(ds.kind) && (
         <PathCard path={path} onPath={onPath} primary={!ds.asks_questions} />
@@ -500,6 +503,49 @@ export function homeAlert(s, ds, snap, connections = [], back = null, today = nu
 }
 
 /** SafeToSpendCard (H-01, H-02). */
+/** "$X" / "nothing yet" / "$X short", for a running total that can dip below zero. */
+export function netWords(net) {
+  if (Math.abs(net) < 0.005) return { figure: 'Nothing yet', short: false };
+  return { figure: money(Math.abs(net)), short: net < 0 };
+}
+
+/** Savings so far (2026-10-14): what she put away, and what was left over,
+ * since the day she started — never a balance Pearl can't see. */
+export function SavingsCard({ savings }) {
+  if (!savings || !savings.since) return null;
+  const put = netWords(savings.put_away.net);
+  const left = netWords(savings.left_over.net);
+  const since = shortDate(savings.since);
+  return (
+    <section className="hm-card hm-savings" aria-labelledby="hm-savings-title">
+      <div className="hm-row-text">
+        <p className="pk-overline accent">Savings so far</p>
+        <h2 className="pk-h3" id="hm-savings-title">{`Since ${since}`}</h2>
+      </div>
+      <div className="hm-savings-tiles">
+        <div className="hm-savings-tile">
+          <p className="pk-label pk-muted">Put away</p>
+          <p className="pk-amount">{put.figure}</p>
+          <p className="pk-label pk-muted">
+            {put.short ? 'More taken out than put in'
+              : savings.put_away.withdrawals > 0
+                ? `${money(savings.put_away.contributions)} in, ${money(savings.put_away.withdrawals)} taken out`
+                : 'Transfers you marked as saved'}
+          </p>
+        </div>
+        <div className="hm-savings-tile">
+          <p className="pk-label pk-muted">Left over</p>
+          <p className="pk-amount">{left.figure}</p>
+          <p className="pk-label pk-muted">
+            {left.short ? 'Spent more than you earned'
+              : `${money(savings.left_over.income)} earned, ${money(savings.left_over.spent)} spent`}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function SafeToSpendCard({ s, onExplain, updated = null }) {
   const c = heroCopy(s);
   const canExplain = s.rows.length > 0;

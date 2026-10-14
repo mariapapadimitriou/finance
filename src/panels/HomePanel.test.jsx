@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   HomeBody, HowWeWorkedItOut, IncomePanel, NeedsALook, PathCard, ReconnectPanel, SafeToSpendCard,
+  SavingsCard, netWords,
   Snapshot, heroCopy, homeAlert, parseAmount, sheetRows, snapshotRows, stepWords, whenWords,
 } from './HomePanel.jsx';
 
@@ -573,5 +574,27 @@ describe('rough estimate (H-03)', () => {
     const { rows, total } = sheetRows(fromDeposits);
     expect(rows[0].detail).toBe('Deposits we’ve seen in the last 30 days');
     expect(total.note).toBe('Shown to the nearest $50, $650.');
+  });
+});
+
+describe('Savings so far (2026-10-14)', () => {
+  const savings = { since: '2026-09-01',
+                    put_away: { contributions: 500, withdrawals: 200, net: 300 },
+                    left_over: { income: 4300, spent: 130, net: 4170 } };
+  it('shows put away and left over since the start, each with what went in', () => {
+    const t = html(<SavingsCard savings={savings} />);
+    for (const s of ['Savings so far', 'Since Sep 1', 'Put away', '$300', '$500 in, $200 taken out',
+      'Left over', '$4,170', '$4,300 earned, $130 spent']) {
+      expect(t).toContain(s);
+    }
+    calm(t);
+  });
+  it('never shows $0, and says when the total dipped below zero', () => {
+    expect(netWords(0)).toEqual({ figure: 'Nothing yet', short: false });
+    expect(netWords(-40)).toEqual({ figure: '$40', short: true });
+    const t = html(<SavingsCard savings={{ ...savings, put_away: { contributions: 0, withdrawals: 40, net: -40 } }} />);
+    expect(t).toContain('More taken out than put in');
+    calm(t);
+    expect(html(<SavingsCard savings={null} />)).toBe('');
   });
 });
