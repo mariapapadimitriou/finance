@@ -618,6 +618,7 @@ class Store:
         self._migrate_plaid_logo()
         self._migrate_joint_share()
         self._migrate_joint_people()
+        self._migrate_trip_rows()
         self._migrate_travel_ownership()
         self._drop_bank_funded_budgets()
         self._migrate_saved()
@@ -799,6 +800,17 @@ class Store:
                 c.execute("ALTER TABLE plaid_items ADD COLUMN logo TEXT")
         except Exception:                                        # noqa: BLE001
             return
+
+    def _migrate_trip_rows(self) -> None:
+        """`trip_rows` from an early build of trips has no columns for what
+        each row was before; without them saving a trip fails."""
+        for sql in ("ALTER TABLE trip_rows ADD COLUMN prev_category TEXT",
+                    "ALTER TABLE trip_rows ADD COLUMN prev_source TEXT"):
+            try:
+                with self.conn() as c:
+                    c.execute(sql)
+            except Exception:                                    # noqa: BLE001
+                continue
 
     def _migrate_joint_share(self) -> None:
         """Add `joint_accounts.share`: the percent of a joint account that is
@@ -2413,10 +2425,20 @@ class Store:
             c.execute("DELETE FROM trip_rows WHERE trip_id = ?", (int(trip_id),))
 
     def trip_rows(self) -> dict[str, int]:
-        """{txn_id: trip_id} for every row a trip moved."""
+        """{txn_id: trip_id} for every row a trip she still has moved. Rows
+        left behind by a trip that's gone (the first build of trips, or one
+        removed before it could put them back) belong to no trip."""
         with self.conn() as c:
-            rows = c.execute("SELECT txn_id, trip_id FROM trip_rows").fetchall()
+            rows = c.execute("SELECT r.txn_id, r.trip_id FROM trip_rows r "
+                             "JOIN marked_trips m ON m.id = r.trip_id").fetchall()
         return {r["txn_id"]: int(r["trip_id"]) for r in rows}
+
+    def forget_orphan_trip_rows(self) -> int:
+        """Drop trip rows whose trip is gone, so they can join a new one."""
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM trip_rows WHERE trip_id NOT IN "
+                            "(SELECT id FROM marked_trips)")
+            return max(cur.rowcount or 0, 0)
 
     def trip_rows_before(self) -> dict[str, str | None]:
         """{txn_id: the category it had before its trip}."""
