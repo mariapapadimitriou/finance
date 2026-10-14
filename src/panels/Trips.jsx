@@ -19,7 +19,7 @@ const STAYING = [
   ['transfer', 'transfer or card payment', 'transfers and card payments'],
   ['money_in', 'deposit', 'deposits'],
   ['repayment', 'repayment', 'repayments'],
-  ['yours', 'you sorted yourself', 'you sorted yourself'],
+  ['yours', 'you re-sorted by hand', 'you re-sorted by hand'],
   ['excluded', 'you left out', 'you left out'],
   ['other_trip', 'in another trip', 'in another trip'],
 ];

@@ -8,11 +8,15 @@ there are dozens to sort. So she marks the trip — a name and its dates —
 and everything she was spending on while away becomes Travel, on its own:
 no list to tick (2026-10-14). The panel says what moves and what stays.
 
-What stays as it is: anything that isn't spending on the trip — income,
-money moving between her accounts, card payments, savings, lending, fees
-and interest, repayments — anything that recurs (rent, bills,
-subscriptions), rows she left out, and rows she already sorted herself
-(her category is never overwritten).
+Only her own rows count: what the Transactions list shows, so not another
+joint member's. What stays as it is: anything that isn't spending on the
+trip — income, money moving between her accounts, card payments, savings,
+lending, fees and interest, repayments — bills (anything that recurs, and
+rent, utilities, phone, insurance, subscriptions… by category), and rows
+she left out. Spending she sorted or confirmed herself moves too (Dining on
+a trip is still the trip, 2026-10-14) and goes back to her category if the
+trip is removed; a trip row she re-sorts by hand afterwards keeps her
+choice.
 
 New rows that arrive inside a trip's dates later (a pending charge posting)
 join it by the same rule. Changing a trip's dates re-applies the rule;
@@ -63,12 +67,10 @@ def _recurring(transactions: list[Transaction], today: date) -> set[tuple[str, s
 
 def why_not(t: Transaction, recurring: set) -> str | None:
     """Why a row stays as it is, or None when it's trip spending:
-    excluded, yours, money_in, repayment, transfer or bill."""
+    excluded, money_in, repayment, transfer or bill."""
     from .txlist import _is_card_payment
     if t.excluded:
         return "excluded"
-    if t.category_source == "user":
-        return "yours"
     if t.amount <= 0 and not t.repays:
         return "money_in"
     if t.repays:
@@ -90,15 +92,19 @@ def sort_out(transactions: list[Transaction], start: str, end: str, today: date,
              ) -> tuple[list[Transaction], dict[str, int]]:
     """The rows in the dates that become Travel, and how many stay as they
     are, by reason (another trip's rows: "other_trip")."""
+    from .txlist import visible
     recurring = _recurring(transactions, today)
     trip_rows = trip_rows or {}
     moving, staying = [], {}
-    for t in in_range(transactions, start, end):
+    for t in in_range(visible(transactions), start, end):
         owner = trip_rows.get(t.fingerprint)
-        if trip_id is not None and owner == trip_id and t.category_source == SOURCE:
+        if owner and t.category_source == "user":
+            reason = "yours"                    # re-sorted by hand after the trip
+        elif owner == trip_id and trip_id is not None:
             moving.append(t)
             continue
-        reason = "other_trip" if owner else why_not(t, recurring)
+        else:
+            reason = "other_trip" if owner else why_not(t, recurring)
         if reason is None:
             moving.append(t)
         else:
@@ -127,7 +133,9 @@ def preview(transactions: list[Transaction], start: str, end: str, today: date,
 
 def _move(store, rows: list[Transaction], trip_id: int) -> None:
     store.add_trip_rows(trip_id, [(t.fingerprint, t.category, t.category_source) for t in rows])
-    store.set_categories({t.fingerprint: (TRAVEL, SOURCE) for t in rows})
+    # Marking the trip is her own choice, so it may move a row she sorted;
+    # what it was is remembered and comes back with the trip.
+    store.write_categories({t.fingerprint: (TRAVEL, SOURCE) for t in rows})
 
 
 def _put_back(store, rows: list[Transaction]) -> None:
@@ -162,8 +170,7 @@ def save(store, name: str, start: str, end: str, today: date,
     wanted = {t.fingerprint for t in moving}
     had = {i for i, tid in owned.items() if tid == trip_id}
     _put_back(store, [by_id[i] for i in had - wanted if i in by_id])
-    _move(store, [by_id[i] for i in wanted - had
-                  if by_id[i].category_source != "user"], trip_id)
+    _move(store, [by_id[i] for i in wanted - had], trip_id)
     return trip_id
 
 
@@ -180,10 +187,11 @@ def join_new(store, new: list[Transaction], today: date) -> int:
     trips = store.marked_trips()
     if not trips or not new:
         return 0
+    from .txlist import visible
     recurring = _recurring(store.all_transactions(), today)
     moved = 0
     for trip in trips:
-        rows = [t for t in new if trip["start_date"] <= t.date[:10] <= trip["end_date"]
+        rows = [t for t in visible(new) if trip["start_date"] <= t.date[:10] <= trip["end_date"]
                 and why_not(t, recurring) is None]
         if rows:
             _move(store, rows, trip["id"])
