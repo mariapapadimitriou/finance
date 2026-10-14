@@ -67,6 +67,11 @@ export function ShortfallSheet({ c, now, was, onClose, onAnswer }) {
           ? `${shown(c.income)} came in, ${shown(c.spent)} went out${c.saved > 0 ? ` and ${shown(c.saved)} went to savings` : ''}. That happens, and it’s easy to make up.`
           : 'That happens, and it’s easy to make up.'}
       </p>
+      {c.unsorted > 0 && (
+        <p className="pk-muted">
+          {`Not counting ${shown(c.unsorted)} of transfers you haven’t sorted yet. Sorting them in Needs a look can change this.`}
+        </p>
+      )}
       <div className="pk-choices" role="radiogroup" aria-label="How to make it up">
         {options.map(([k, label, sub]) => (
           <Choice key={k} name="hm-carry" checked={choice === k} onChange={() => setChoice(k)}

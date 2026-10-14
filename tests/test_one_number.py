@@ -142,15 +142,15 @@ def test_saving_this_month_is_the_same_number_everywhere(full):
                                                          "2026-09"))["saved"] == 500.0 + 100.0
 
 
-def test_savings_so_far_adds_up_from_the_monthly_figures(full):
-    from finance import savings
-    full.st.set_setting(savings.SINCE, "2026-09-01")
-    s = get(full, "/api/home")["savings"]
-    assert s["put_away"]["contributions"] == 1000.0 and s["put_away"]["withdrawals"] == 150.0
-    assert s["put_away"]["chests"] == 100.0 + 100.0 + 200.0
-    assert s["put_away"]["net"] == 1000.0 - 150.0 + 400.0
-    assert s["left_over"]["income"] == 8600.0
-    assert s["left_over"]["spent"] == 2 * (1650.0 + 220.0 + 60.0)
+def test_homes_savings_this_month_is_the_same_saving_figure(full):
+    home = get(full, "/api/home")
+    s = home["savings"]
+    assert s["month"] == MONTH
+    assert s["put_away"]["contributions"] == 500.0 and s["put_away"]["withdrawals"] == 150.0
+    assert s["put_away"]["chests"] == 100.0 + 200.0
+    assert s["put_away"]["net"] == sts_row(home, "set_aside")["saved"]
+    assert s["left_over"]["income"] == sts_row(home, "income")["amount"]
+    assert s["left_over"]["spent"] == sts_row(home, "spent")["amount"]
 
 
 def test_goals_quotes_homes_safe_to_spend(full):

@@ -152,7 +152,7 @@ describe('GR-28 the page', () => {
   });
 
   it('has the four chart cards, each with its figures as a table', () => {
-    for (const text of ['Your spending, last 6 months', 'See the trend', 'Where September went', 'See all',
+    for (const text of ['Your spending, last 6 months', 'See the trend', 'Where October has gone so far', 'See all',
                         'Money in and out', 'See more', 'Your savings', '$1,240',
                         'In your Anchor and treasure chests. Up $300 since September.']) {
       expect(out).toContain(text);

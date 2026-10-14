@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 
-from .analytics import invested_in
+from .analytics import counts_as_spending, spend_amount, invested_in
 from .safe_to_spend import _cents, _counts_as_income, _dollars, already_spent, month_end
 
 SETTING = "carryover"
@@ -62,9 +62,17 @@ def result(transactions, month: str, saved: float | None = None) -> dict | None:
         return None
     end = month_end(date.fromisoformat(f"{month}-01"))
     spent_c = already_spent(transactions, end)["amount_c"]
+    # A transfer she hasn't sorted counts as spending on Home until she does
+    # (an undecided dollar is assumed gone), but it isn't the month's result:
+    # left out here, and said so, rather than reported as a shortfall.
+    unsorted_c = sum(_cents(spend_amount(t)) for t in transactions
+                     if t.month == month and t.category == "Unsorted transfers"
+                     and counts_as_spending(t))
+    spent_c -= unsorted_c
     saved_c = _cents(saved if saved is not None else invested_in(transactions, month))
     return {"month": month, "income": _dollars(income_c), "spent": _dollars(spent_c),
-            "saved": _dollars(saved_c), "amount": _dollars(income_c - spent_c - saved_c)}
+            "saved": _dollars(saved_c), "unsorted": _dollars(unsorted_c),
+            "amount": _dollars(income_c - spent_c - saved_c)}
 
 
 def load(store) -> dict:
@@ -92,7 +100,8 @@ def question(store, transactions, today: date) -> dict | None:
             return None
         found = (entry or {}).get("found_on") or today.isoformat()
         entry = {**(entry or {}), "amount": r["amount"], "found_on": found,
-                 "choice": None, "income": r["income"], "spent": r["spent"], "saved": r["saved"]}
+                 "choice": None, "income": r["income"], "spent": r["spent"], "saved": r["saved"],
+                 "unsorted": r["unsorted"]}
         if data.get(month) != entry:
             data[month] = entry
             save(store, data)
@@ -101,7 +110,7 @@ def question(store, transactions, today: date) -> dict | None:
     auto = kind == "spare" and entry.get("choice") is None and today.isoformat() >= deadline
     return {"month": month, "kind": kind, "amount": abs(entry["amount"]),
             "income": entry.get("income"), "spent": entry.get("spent"),
-            "saved": entry.get("saved"), "choice": entry.get("choice") or ("spend" if auto else None),
+            "saved": entry.get("saved"), "unsorted": entry.get("unsorted") or 0.0, "choice": entry.get("choice") or ("spend" if auto else None),
             "auto": auto, "deadline": deadline if kind == "spare" else None}
 
 
