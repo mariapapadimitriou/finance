@@ -126,8 +126,9 @@ def describe(t: Transaction, ctx: Context) -> dict:
         chip = "Whose?"
         note, note_link = f"Yours or {t.joint}’s? Tell us", True
     elif is_others(t) and t.joint and inflow:
-        chip, structural = f"{t.joint}’s", True
-        note = f"{t.joint} put this in · pays for part of this month’s joint spending"
+        who = t.joint_person or t.joint
+        chip, structural = f"{who}’s", True
+        note = f"{who} put this in · pays for part of this month’s joint spending"
     elif is_others(t):
         chip, structural = "Not yours", True
         note = (f"{t.joint}’s · you said this one was theirs" if t.joint
@@ -143,7 +144,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
     elif cat == "Transfers":
         chip, structural = "Transfer", True
         note = ("Card payment · not counted as spending" if _is_card_payment(t)
-                else "Between your accounts · not counted")
+                else "Transfer · not counted")
     elif cat == "Saved":
         note = ("Taken out of savings · not income" if inflow
                 else "Put away · not counted as spending")
@@ -240,6 +241,8 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "joint": t.joint or "",
         "share_set": bool(t.share_set),
         "joint_from": t.joint_from or "",
+        "joint_person": t.joint_person or "",
+        "joint_people": list(t.joint_people or []),
         "bank_id": t.bank_id,
         "bank_auto": bool(t.bank_auto),
     }

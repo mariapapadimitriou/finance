@@ -40,3 +40,37 @@ describe('Debts sits with the other Growth pages', () => {
     expect(out).toContain('>Growth</h1>');
   });
 });
+
+describe('who a joint account is shared with (2026-10-14)', () => {
+  it('names them, and the account says so', async () => {
+    const { parsePeople, peopleWords, accountMeta, PeopleDialog } = await import('./AccountsPanel.jsx');
+    expect(parsePeople('Sam, alex; Sam and Jo')).toEqual(['Sam', 'alex', 'Jo']);
+    expect(peopleWords(['Sam'])).toBe('Sam');
+    expect(peopleWords(['Sam', 'Alex', 'Jo'])).toBe('Sam, Alex and Jo');
+    const a = { name: 'Family chequing', kind: 'chequing', source: 'plaid', status: 'joint',
+                joint: true, joint_share: 50, joint_people: ['Sam', 'Alex'], balance: 900,
+                updated_at: null };
+    expect(accountMeta(a)).toContain('joint with Sam and Alex, your share is 50%');
+    const dialog = renderToStaticMarkup(<PeopleDialog a={a} onClose={() => {}} onSave={() => {}} />);
+    expect(dialog).toContain('Who do you share it with?');
+    expect(dialog).toContain('value="Sam, Alex"');
+  });
+
+  it('“Who put this in?” offers me and each of them', async () => {
+    const { depositChoices } = await import('./joint.js');
+    expect(depositChoices(['Sam', 'Alex'], 'Sam and Alex').map((c) => [c.label, c.who, c.person]))
+      .toEqual([['Me', 'me', null], ['Sam', 'them', 'Sam'], ['Alex', 'them', 'Alex']]);
+    // Before she names anyone: the account's label, as before.
+    expect(depositChoices([], 'Family').map((c) => c.label)).toEqual(['Me', 'Family']);
+    const { JointIn } = await import('./NeedsALook.jsx');
+    const out = renderToStaticMarkup(
+      <JointIn it={{ txn: { id: 't', merchant: 'Sister', date: '2026-10-02', amount: -60 },
+                     label: 'Sam and Alex', people: ['Sam', 'Alex'] }} act={() => {}} />);
+    for (const s of ['Who put this in?', '>Me<', '>Sam<', '>Alex<']) expect(out).toContain(s);
+  });
+
+  it('Transfers is called Transfers', async () => {
+    const { categoryLabel } = await import('./CategoryPicker.jsx');
+    expect(categoryLabel('Transfers')).toBe('Transfers');
+  });
+});

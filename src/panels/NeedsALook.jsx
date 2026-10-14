@@ -7,6 +7,7 @@ import CategoryPicker, { CategoryChips, categoryLabel, groupCategories } from '.
 import { ErrorNote } from '../components/ui.jsx';
 import { RepaymentMatch } from './Splits.jsx';
 import { DuplicateQuestion } from './Duplicates.jsx';
+import { depositChoices } from './joint.js';
 import {
   INCOME_KINDS, answerDuplicate, confirmTx, dismissReview, getReview, linkPayback, money,
   setCategory, setIncomeType, setJointFrom, skipReview, sortTransfers, undoChange,
@@ -488,27 +489,29 @@ function IncomeKind({ it, busy, onSkip, act }) {
   );
 }
 
-/** Money into a joint account from outside Pearl: hers, or theirs? */
+/** Money into a joint account from outside Pearl: hers, or which of theirs? */
 export function JointIn({ it, busy, onSkip, act }) {
-  const [who, setWho] = useState('');
+  const [pick, setPick] = useState('');
   const [remember, setRemember] = useState(true);
   const name = `joint-${it.txn.id}`;
+  const choices = depositChoices(it.people, it.label);
+  const chosen = choices.find((c) => c.value === pick);
   return (
     <>
       <TxHead txn={it.txn} />
       <h2 className="pk-h2">Who put this in?</h2>
       <div className="pk-choices" role="radiogroup" aria-label="Who put this in?">
-        <Choice name={name} checked={who === 'me'} onChange={() => setWho('me')} label="Me"
-                description="From an account of mine that isn’t in Pearl. It isn’t income." />
-        <Choice name={name} checked={who === 'them'} onChange={() => setWho('them')}
-                label={it.label}
-                description="It pays for that much of this month’s joint spending, so less of it is yours." />
+        {choices.map((c) => (
+          <Choice key={c.value} name={name} checked={pick === c.value}
+                  onChange={() => setPick(c.value)} label={c.label} description={c.description} />
+        ))}
       </div>
       <Choice type="checkbox" checked={remember} onChange={setRemember}
               label={`The same for every deposit from ${it.txn.merchant}`}
               description="We’ll sort the next ones the same way." />
-      <Actions busy={busy} ready={!!who} onSkip={onSkip}
-               onSave={() => act(() => setJointFrom(it.txn.id, who, remember))} />
+      <Actions busy={busy} ready={!!chosen} onSkip={onSkip}
+               onSave={() => act(() => setJointFrom(it.txn.id, chosen.who, remember, chosen.person))} />
     </>
   );
 }
+

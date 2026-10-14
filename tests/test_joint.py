@@ -183,3 +183,54 @@ def test_a_set_share_still_wins(client):
     client.put("/api/accounts/fam/settings", json={"joint_share": 50})
     answer(client, sister_in(client, 60), "them")
     assert month(client)["spend"] == 100            # half of everything, as she set
+
+
+# ── Who it's shared with (2026-10-14) ────────────────────────────────────
+
+def test_she_names_who_she_shares_it_with(client):
+    r = client.put("/api/accounts/fam/settings", json={"joint_people": ["Sam", " alex ", "Sam"]})
+    assert r.status_code == 200
+    a = r.get_json()["account"]
+    assert a["joint_people"] == ["Sam", "alex"]
+    accounts = {x["account_id"]: x for x in client.get("/api/accounts").get_json()["accounts"]}
+    assert accounts["fam"]["joint"] == "Sam and alex"          # the label follows the names
+    assert client.put("/api/accounts/fam/settings",
+                      json={"joint_people": ["  "]}).status_code == 400
+
+
+def test_who_put_it_in_is_one_of_them(client):
+    client.put("/api/accounts/fam/settings", json={"joint_people": ["Sam", "Alex"]})
+    tid = sister_in(client, 60)
+    q = next(q for q in client.get("/api/review").get_json()["joint_in"] if q["txn"]["id"] == tid)
+    assert q["people"] == ["Sam", "Alex"]
+    r = client.put(f"/api/transactions/{tid}/joint-from",
+                   json={"who": "them", "person": "Alex", "remember": True})
+    assert r.status_code == 200 and r.get_json()["person"] == "Alex"
+    listed = next(t for t in client.get("/api/transactions/list",
+                                        query_string={"month": MONTH, "joint": "1"}).get_json()["transactions"]
+                  if t["id"] == tid)
+    assert listed["joint_person"] == "Alex"
+    assert listed["note"].startswith("Alex put this in")
+    # It still pays for that much of the month's joint spending.
+    assert month(client)["spend"] == 84 + 56
+    # The next deposit from that sender is remembered as Alex's too.
+    tid2 = sister_in(client, 10, ref="2")
+    t2 = next(t for t in client.get("/api/transactions/list",
+                                    query_string={"month": MONTH, "joint": "1"}).get_json()["transactions"]
+              if t["id"] == tid2)
+    assert t2["joint_person"] == "Alex"
+
+
+def test_only_someone_she_named(client):
+    client.put("/api/accounts/fam/settings", json={"joint_people": ["Sam"]})
+    tid = sister_in(client, 60)
+    assert client.put(f"/api/transactions/{tid}/joint-from",
+                      json={"who": "them", "person": "Jo"}).status_code == 400
+    assert client.put(f"/api/transactions/{tid}/joint-from",
+                      json={"who": "me", "person": "Sam"}).status_code == 400
+
+
+def test_transfers_is_called_transfers(client):
+    rows = client.get("/api/transactions/list", query_string={"month": MONTH}).get_json()
+    notes = {t["note"] for t in rows["transactions"]}
+    assert not any("Between your accounts" in (n or "") for n in notes)

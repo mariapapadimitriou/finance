@@ -25,8 +25,9 @@ const GROUPS = [
   { key: 'transfer', title: 'Not spending', order: ['Transfers', 'Lent'] },
 ];
 
-// Names that read better as an answer than as a ledger heading.
-export const CATEGORY_LABEL = { Transfers: 'Between my accounts' };
+// Names that read better as an answer than as a ledger heading. Transfers
+// is just Transfers (2026-10-14), no longer "Between my accounts".
+export const CATEGORY_LABEL = {};
 export const categoryLabel = (name) => CATEGORY_LABEL[name] ?? name;
 
 /** The categories laid out by group, as R-02 shows them. */
