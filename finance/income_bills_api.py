@@ -25,15 +25,21 @@ def _payload(st) -> dict:
     state = ib.load(st)
     told = st.float_setting("home_income", 0.0)
     rows = ib.bills(txns, today, state)
+    from .safe_to_spend import usual_income
+    usual = usual_income(txns, today)
+    estimate = usual["average"] if usual else None
     return {
         "today": today.isoformat(),
         "checked": {"income": state["income_on"], "bills": state["bills_on"]},
         "pays": state["pays"],
         "candidates": ib.pay_candidates(txns, today, state),
-        "expected": {"amount": told or None, "varies": bool(state["varies"])},
+        # Her own amount (it overrides the rest), and Pearl's estimate from
+        # her last three months (2026-10-13, THL-45).
+        "expected": {"amount": told or None, "varies": bool(state["varies"]),
+                     "estimate": estimate, "months": usual["months"] if usual else []},
         "bills": [{k: r[k] for k in _ROW_FIELDS if k in r} for r in rows],
         "rent_question": ib.rent_question(rows),
-        "totals": {"income": ib.income_each_month(state, told),
+        "totals": {"income": ib.income_each_month(state, told, estimate),
                    "bills": ib.bills_each_month(rows)},
     }
 
@@ -155,6 +161,15 @@ def income_bills_expected():
     state["income_on"] = state["income_on"] or _today_iso()
     ib.save(st, state)
     _sync_plan_income(st, state)
+    return jsonify(_payload(st))
+
+
+@bp.delete("/income-bills/expected")
+def income_bills_expected_clear():
+    """"Use Pearl's estimate": her own amount goes, and safe to spend uses her
+    pay, or her usual income from the last three months, again."""
+    st = store()
+    st.set_setting("home_income", "")
     return jsonify(_payload(st))
 
 

@@ -144,6 +144,11 @@
 .pt-status.now { border-color: var(--action); border-width: 3px; }
 .pt-bottom { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-4); }
 
+/* ── Last month's surplus (THL-212) ──────────────────────────────────────── */
+.hm-carry { align-items: stretch; }
+.hm-carry-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.hm-carry-actions .pk-btn { width: auto; }
+
 /* ── Can I afford it? (THL-167 AF-01 to AF-03) ───────────────────────────── */
 .hm-afford { align-items: stretch; }
 .hm-afford-row { display: flex; align-items: flex-end; gap: var(--space-3); }

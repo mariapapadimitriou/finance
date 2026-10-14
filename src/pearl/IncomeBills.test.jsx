@@ -214,8 +214,25 @@ describe('Profile › Income and bills', () => {
   it('shows expected income when no pay is confirmed', () => {
     const t = text(<IncomeBillsPage data={{ ...confirmed, pays: [], expected: { amount: 3800, varies: true } }}
                                     onOpen={() => {}} />);
-    expect(t).toContain('Expected income');
+    expect(t).toContain('Your own amount');
     expect(t).toContain('$3,800 a month after tax · varies, so we plan carefully');
+  });
+
+  it('shows Pearl’s estimate from the last 3 months when she gave no amount', () => {
+    const t = text(<IncomeBillsPage data={{ ...confirmed, pays: [],
+                                            expected: { amount: null, varies: false, estimate: 3900 } }}
+                                    onOpen={() => {}} />);
+    expect(t).toContain('Pearl’s estimate');
+    expect(t).toContain('$3,900 a month · the average of your last 3 months');
+    expect(t).toContain('Use my own amount');
+  });
+
+  it('her own amount comes first, over her pay', () => {
+    const t = text(<IncomeBillsPage data={{ ...confirmed,
+                                            expected: { amount: 6000, varies: false, estimate: 3900 } }}
+                                    onOpen={() => {}} />);
+    expect(t.indexOf('Your own amount')).toBeLessThan(t.indexOf(confirmed.pays[0].name));
+    expect(t).toContain('used instead of Pearl’s estimate');
   });
 
   it('says plainly when nothing is confirmed', () => {

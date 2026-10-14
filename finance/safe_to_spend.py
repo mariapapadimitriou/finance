@@ -208,6 +208,26 @@ def cautious_income(transactions: list[Transaction], today: date) -> dict | None
             "months": [{"month": m, "amount": _dollars(totals[m])} for m in months]}
 
 
+def usual_income(transactions: list[Transaction], today: date) -> dict | None:
+    """Her usual monthly income: the average of the last three full months
+    (2026-10-13 decision, THL-45). One-offs she marked are left out. Needs
+    history covering all three months and income in each, as the cautious
+    figure does: pay that stopped in July isn't expected in October."""
+    if not transactions:
+        return None
+    months = _full_months_before(today, 3)
+    first = min(t.date for t in transactions)
+    if first > f"{months[0]}-01":
+        return None
+    totals = {m: 0 for m in months}
+    for t in transactions:
+        if t.month in totals and _counts_as_income(t) and not t.one_off:
+            totals[t.month] += _cents(-t.amount)
+    if min(totals.values()) <= 0:
+        return None
+    return {"average": _dollars(sum(totals.values()) // len(months)), "months": months}
+
+
 def _at_least(amount: float, received_c: int, lines: list, label: str) -> int:
     """An expected monthly figure, never less than what has already arrived;
     the part still to come becomes one line."""
@@ -267,12 +287,13 @@ def income_this_month(transactions: list[Transaction], today: date,
                       skipped: bool = False) -> dict:
     """What comes in this month: what has arrived plus what is still expected.
 
-    In order: the pay she confirmed (THL-127 I-01, I-02); detected regular
-    pay, until she has answered the check (`checked`) — after that only what
-    she confirmed counts; then what she told us (I-03's expected income, the
-    starter questions, or "Use a different amount"); then the cautious
-    figure when pay isn't regular — first, when she said her income varies;
-    then the monthly income from the older plan page; then, once she has
+    In order (2026-10-13, THL-45): the cautious figure, when she said her
+    income varies and there is history for it; what she told us (I-03's
+    expected income, the starter questions, or "Use a different amount") —
+    her amount overrides the rest; the pay she confirmed (THL-127 I-01,
+    I-02); detected regular pay, until she has answered the check
+    (`checked`) — after that only what she confirmed counts; her usual
+    income, the average of the last three months; the monthly income from the older plan page; then, once she has
     skipped I-03 (`skipped`), the deposits of the last 30 days (H-03).
     Never less than what has already arrived. With none, `amount` is None.
     """
@@ -285,6 +306,21 @@ def income_this_month(transactions: list[Transaction], today: date,
               "kind": kind_of(t)} for t in received]
 
     pay = cadence(transactions, today.isoformat())
+    none = {"payer": "", "paycheques": 0, "next_pay": None,
+            "cadence": pay["cadence"] if pay else None, "cautious": None,
+            "overridden": False}
+    careful = cautious_income(transactions, today)
+    # She asked for caution: the lowest of the last three months, once there
+    # is history for it (I-03's "My income varies").
+    if varies and careful:
+        amount_c = _at_least(careful["lowest"], received_c, lines,
+                             "Still expected, being cautious")
+        return {**none, "amount": _dollars(amount_c), "source": "cautious",
+                "lines": lines, "cautious": careful}
+    if told and told > 0:
+        amount_c = _at_least(told, received_c, lines, "Still expected this month")
+        return {**none, "amount": _dollars(amount_c), "source": "told", "lines": lines,
+                "cautious": careful, "overridden": overridden}
     if pays:
         expected_c, next_pay = _confirmed_pay(pays, received, lines, today)
         names = {p.get("payer") for p in pays if p.get("payer")}
@@ -318,24 +354,12 @@ def income_this_month(transactions: list[Transaction], today: date,
                 "paycheques": paycheques, "lines": lines, "next_pay": next_pay,
                 "cadence": pay["cadence"], "cautious": None, "overridden": False}
 
-    none = {"payer": "", "paycheques": 0, "next_pay": None,
-            "cadence": pay["cadence"] if pay else None, "cautious": None,
-            "overridden": False}
-    careful = cautious_income(transactions, today)
-    if varies and careful:
-        amount_c = _at_least(careful["lowest"], received_c, lines,
-                             "Still expected, being cautious")
-        return {**none, "amount": _dollars(amount_c), "source": "cautious",
-                "lines": lines, "cautious": careful}
-    if told and told > 0:
-        amount_c = _at_least(told, received_c, lines, "Still expected this month")
-        return {**none, "amount": _dollars(amount_c), "source": "told", "lines": lines,
-                "cautious": careful, "overridden": overridden}
-    if careful:
-        amount_c = _at_least(careful["lowest"], received_c, lines,
-                             "Still expected, being cautious")
-        return {**none, "amount": _dollars(amount_c), "source": "cautious",
-                "lines": lines, "cautious": careful}
+    usual = usual_income(transactions, today)
+    if usual:
+        amount_c = _at_least(usual["average"], received_c, lines,
+                             "Still expected, from your usual month")
+        return {**none, "amount": _dollars(amount_c), "source": "usual",
+                "lines": lines, "usual": usual}
     if entered_monthly and entered_monthly > 0:
         amount_c = _at_least(entered_monthly, received_c, lines, "Still expected this month")
         return {**none, "amount": _dollars(amount_c), "source": "entered", "lines": lines}
@@ -541,14 +565,17 @@ def compute(transactions: list[Transaction], today: date, *,
             entered_income: float = 0.0, savings_target: float = 0.0,
             anchor_started: bool = False, told_income: float = 0.0,
             told_rent: float = 0.0, overridden: bool = False,
-            debt_bills: dict | None = None, confirm: dict | None = None) -> dict:
+            debt_bills: dict | None = None, confirm: dict | None = None,
+            carry: dict | None = None) -> dict:
     """Safe to spend this month and the four rows behind it.
 
     `debt_bills` (from `debts.bills`) adds this month's debt minimums: the
     ones still to come join the bills, and what's been paid of them joins
     what's already spent (D1, D2). `confirm` is her income and bills check
     (`income_bills.load`, THL-127): confirmed pay drives what comes in, and
-    the bills she ticked or added are the bills."""
+    the bills she ticked or added are the bills. `carry` is last month's
+    surplus or shortfall coming into this one (`carryover.applied`): a row of
+    its own, added or taken off, so the rows still add up (THL-212)."""
     month = today.strftime("%Y-%m")
     left = days_left(today)
     income = income_this_month(transactions, today, entered_income,
@@ -559,10 +586,13 @@ def compute(transactions: list[Transaction], today: date, *,
                                skipped=bool((confirm or {}).get("income_skipped")))
     days = history_days(transactions, today)
     estimate = ("rough" if days < LEARNING_DAYS or income["source"] == "deposits"
-                else "cautious" if income["source"] == "cautious" else None)
+                else income["source"] if income["source"] in ("cautious", "usual") else None)
     base = {"month": month, "today": today.isoformat(), "days_left": left,
             "next_pay": income["next_pay"], "income_source": income["source"],
             "estimate": estimate, "cautious": income["cautious"],
+            # Pearl's own estimate, for "Use Pearl's estimate" when she has
+            # given her own amount.
+            "usual": income.get("usual") or usual_income(transactions, today),
             "overridden": income["overridden"]}
     if income["amount"] is None:
         return {**base, "state": "needs_income", "amount": None, "shown": None,
@@ -599,6 +629,11 @@ def compute(transactions: list[Transaction], today: date, *,
                      "lines": []})
 
     total_c = rows[0]["amount_c"] - sum(r["amount_c"] for r in rows[1:])
+    if carry and carry.get("amount_c"):
+        total_c += carry["amount_c"]
+        rows.append({"key": "carryover", "amount_c": abs(carry["amount_c"]),
+                     "kind": "spare" if carry["amount_c"] > 0 else "short",
+                     "parts": carry.get("parts") or [], "lines": []})
     for r in rows:
         r["amount"] = _dollars(r.pop("amount_c"))
     over = total_c < 0
@@ -631,7 +666,8 @@ def home_state(transactions: list[Transaction], today: date, sts: dict, *,
     * card_only (E-04): every account synced is a credit card, so nothing
       that comes in can be seen and there is no safe-to-spend.
     * learning (E-02): under 30 days of history (or answers but no data).
-    * irregular (E-03): income is the cautious figure.
+    * irregular (E-03): income is an estimate from past months — the cautious
+      figure (she said it varies) or her usual income (the 3-month average).
     * normal.
 
     `account_types` maps each synced account to its Plaid type.
@@ -646,7 +682,7 @@ def home_state(transactions: list[Transaction], today: date, sts: dict, *,
         kind = "card_only"
     elif days < LEARNING_DAYS:
         kind = "learning"
-    elif sts.get("income_source") == "cautious":
+    elif sts.get("income_source") in ("cautious", "usual"):
         kind = "irregular"
     else:
         kind = "normal"

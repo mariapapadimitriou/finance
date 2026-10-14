@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
 import {
-  addBill, addPay, answerRent, confirmBills, editBill, editPay, getIncomeBills, money,
-  removeBill, saveExpected,
+  addBill, addPay, answerRent, clearExpected, confirmBills, editBill, editPay, getIncomeBills,
+  money, removeBill, saveExpected,
 } from '../api.js';
 import { ActionToast, Alert, DetailPanel, PButton, StatTile } from '../pearl/kit.jsx';
 import IncomeBillsFlow, {
@@ -58,9 +58,18 @@ export default function IncomeBillsPanel({ onTab, onChanged, version }) {
       {panel?.kind === 'expected' && (
         <DetailPanel label="Expected income" overline="Income" onClose={() => setPanel(null)}>
           <ExpectedForm expected={data.expected} eyebrow={null} title="What you expect each month"
-                        sub="Tell us roughly what comes in after tax."
+                        sub={data.expected.estimate
+                          ? `Pearl’s estimate is ${whole(data.expected.estimate)} a month, the average of your last 3 months. Your own amount is used instead until you clear it.`
+                          : 'Tell us roughly what comes in after tax.'}
                         onSkip={() => setPanel(null)} skipLabel="Cancel"
                         onSave={(amount, varies) => saveExpected(amount, varies).then(saved)} />
+          {data.expected.amount > 0 && (data.expected.estimate || data.pays.length > 0) && (
+            <button type="button" className="hm-link"
+                    onClick={() => clearExpected().then(saved).catch(setError)}>
+              {data.expected.estimate ? `Use Pearl’s estimate (${whole(data.expected.estimate)})`
+                : 'Use my pay instead'}
+            </button>
+          )}
         </DetailPanel>
       )}
       {panel?.kind === 'bill' && (
@@ -113,18 +122,24 @@ export function IncomeBillsPage({ data, onTab, onOpen, onTick, onRent, onCheck, 
       <section className="pf-section" aria-labelledby="ib-income">
         <h2 className="pk-h3" id="ib-income">Income</h2>
         <ul className="pf-list">
+          {exp.amount > 0 && (
+            <ListRow name="Your own amount"
+                     sub={`${whole(exp.amount)} a month after tax${exp.varies ? ' · varies, so we plan carefully' : ' · used instead of Pearl’s estimate'}`}
+                     end={<span className="pk-label ib-link">Edit</span>}
+                     onOpen={() => onOpen({ kind: 'expected' })} />
+          )}
           {data.pays.map((p) => (
             <ListRow key={p.id} name={p.name} sub={payMeta(p)}
                      end={<span className="pk-label ib-link">Edit</span>}
                      onOpen={() => onOpen({ kind: 'pay', pay: p })} />
           ))}
-          {!data.pays.length && exp.amount > 0 && (
-            <ListRow name="Expected income"
-                     sub={`${whole(exp.amount)} a month after tax${exp.varies ? ' · varies, so we plan carefully' : ''}`}
-                     end={<span className="pk-label ib-link">Edit</span>}
+          {!data.pays.length && !(exp.amount > 0) && exp.estimate > 0 && (
+            <ListRow name="Pearl’s estimate"
+                     sub={`${whole(exp.estimate)} a month · the average of your last 3 months`}
+                     end={<span className="pk-label ib-link">Use my own amount</span>}
                      onOpen={() => onOpen({ kind: 'expected' })} />
           )}
-          {!data.pays.length && !(exp.amount > 0) && (
+          {!data.pays.length && !(exp.amount > 0) && !(exp.estimate > 0) && (
             <ListRow name="No income confirmed yet" sub="Check again, or tell us what you expect"
                      onOpen={() => onOpen({ kind: 'expected' })} />
           )}

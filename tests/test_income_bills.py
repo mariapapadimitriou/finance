@@ -213,7 +213,7 @@ class TestThePathUsesTheAnswers:
         irregular = [tx(d, "Client A", -a, "Income") for d, a in
                      (("2026-07-01", 2400.0), ("2026-08-12", 1800.0), ("2026-09-15", 3100.0))]
         s = sts.compute(irregular, TODAY)
-        assert s["income_source"] == "cautious"
+        assert s["income_source"] == "usual"                 # an estimate from past months
         assert self.path(irregular, s, None)["steps"][0]["done"] is False
 
     def test_bills_are_confirmed_once_she_confirms_i04(self):
@@ -288,7 +288,8 @@ class TestTheEndpoints:
         assert [c["payer"] for c in d["candidates"]] == ["Northwind Ltd"]
         assert d["rent_question"]["recipient"] == "J Smith"
         assert d["checked"] == {"income": None, "bills": None}
-        assert d["totals"]["income"] is None
+        # Before she answers, income is Pearl's estimate from her last 3 months.
+        assert d["totals"]["income"] == d["expected"]["estimate"] == 3583.33
 
     def test_the_whole_flow_persists_and_drives_home(self, client):
         before = home(client)
@@ -348,7 +349,7 @@ class TestTheEndpoints:
                         json={"payer": "Northwind Ltd", "answer": "no"}).get_json()
         assert d["candidates"] == [] and d["pays"] == []
         d = client.put("/api/income-bills/expected", json={"amount": "$3,800", "varies": False}).get_json()
-        assert d["expected"] == {"amount": 3800.0, "varies": False}
+        assert d["expected"]["amount"] == 3800.0 and d["expected"]["varies"] is False
         assert d["totals"]["income"] == 3800.0
         s = home(client)
         assert s["income_source"] == "told" and row(s, "income")["amount"] == 3800.0
@@ -395,3 +396,10 @@ class TestTheEndpoints:
     def test_onboarding_has_the_check_between_linking_and_the_path(self):
         from finance import users
         assert users.STEPS.index("linked") < users.STEPS.index("income") < users.STEPS.index("path")
+
+    def test_use_pearls_estimate_clears_her_amount(self, client):
+        client.put("/api/income-bills/expected", json={"amount": 6000})
+        assert home(client)["income_source"] == "told"
+        d = client.delete("/api/income-bills/expected").get_json()
+        assert d["expected"]["amount"] is None
+        assert home(client)["income_source"] != "told"

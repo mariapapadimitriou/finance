@@ -194,6 +194,10 @@ export const seeMoment    = (phase) => json('POST', `/api/moments/${encodeURICom
 export const getLearn     = () => req('/api/learn');
 export const saveLearn    = (id, body) => json('PUT', `/api/learn/${encodeURIComponent(id)}`, body);
 // The starter questions (E-02) and "Use a different amount" (E-03).
+// Last month's surplus or shortfall (THL-212): "now", "spread2", "spread3",
+// or "save", "chest", "spend".
+export const answerCarryover = (month, choice) =>
+  json('PUT', `/api/carryover/${month}`, { choice });
 export const putHomeAnswers = (answers) => json('PUT', '/api/home/answers', answers);
 // Month or week as Home's main view (THL-166), saved on her account.
 // "Can I afford it?" (THL-167): works it out and records nothing.
@@ -240,6 +244,8 @@ export const addPay           = (pay) => json('POST', `${IB}/pay`, pay);
 export const editPay          = (id, pay) => json('PUT', `${IB}/pay/${encodeURIComponent(id)}`, pay);
 export const saveExpected     = (amount, varies) => json('PUT', `${IB}/expected`, { amount, varies });
 export const skipExpected     = () => json('POST', `${IB}/expected/skip`, {});
+// "Use Pearl's estimate": her own amount goes.
+export const clearExpected    = () => req(`${IB}/expected`, { method: 'DELETE' });
 export const confirmBills     = (ticked) => json('PUT', `${IB}/bills`, { ticked });
 export const addBill          = (bill) => json('POST', `${IB}/bills`, bill);
 export const editBill         = (key, bill) => json('PUT', billPath(key), bill);
