@@ -47,14 +47,18 @@ export function TripSummary({ preview }) {
           <p className="pk-h3">{`${count} purchase${count === 1 ? '' : 's'} · ${txAmount(total)} becomes Travel`}</p>
           <p className="pk-label pk-muted">{mostlyWords(categories)}</p>
         </>
+      ) : preview.in_dates === 0 ? (
+        <p className="pk-h3">No transactions between these dates</p>
       ) : (
-        <p className="pk-h3">No spending in these dates yet</p>
+        <p className="pk-h3">Nothing here looks like trip spending</p>
       )}
       {kept > 0 && (
         <p className="pk-muted">{`Staying as ${kept === 1 ? 'it is' : 'they are'}: ${stayingWords(staying)}.`}</p>
       )}
-      {count === 0 && (
-        <p className="pk-muted">Save it anyway, and charges in these dates join it as they come in.</p>
+      {count === 0 && preview.in_dates === 0 && (
+        <p className="pk-muted">Pearl has nothing from your accounts on these days. If you paid
+          with a card that isn’t connected, add it in Profile › Accounts; charges in these dates
+          join the trip as they come in.</p>
       )}
     </div>
   );
@@ -147,9 +151,9 @@ export function TripsPanel({ onClose, onChanged }) {
             <button type="button" className="trip-open" onClick={() => setOpen(t)}>
               <span className="trip-row-text">
                 <span>{t.name}</span>
-                <span className="pk-label pk-muted">{`${range(t)} · ${t.count} transactions`}</span>
+                <span className="pk-label pk-muted">{t.count ? `${range(t)} · ${t.count} transaction${t.count === 1 ? '' : 's'}` : range(t)}</span>
               </span>
-              <span className="trip-row-amount">{txAmount(t.total)}</span>
+              <span className="trip-row-amount">{t.count ? txAmount(t.total) : 'No spending yet'}</span>
             </button>
             <PButton variant="text" onClick={() => deleteTrip(t.id).then(() => { load(); onChanged?.(); })
               .catch((e) => setError(e.message))}>

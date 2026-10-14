@@ -120,6 +120,24 @@ def test_a_bill_stays_even_the_first_time_it_shows_up(client):
     assert by_merchant(client)["Rogers"].category == "Phone & Internet"
 
 
+def test_what_the_bank_already_called_travel_joins_the_trip(client):
+    ingest(client.st, IngestResult([tx("2026-10-02", "Aegean Airlines", 240.0, "Travel")], "card"))
+    flight = by_merchant(client)["Aegean Airlines"].fingerprint
+    client.st.set_categories({flight: ("Travel", "plaid")})
+    p = preview(client)
+    assert p["count"] == 5 and "transfer" not in p["staying"]
+    trip = save(client).get_json()["trip"]
+    assert trip["count"] == 5
+    client.delete(f"/api/trips/{trip['id']}")
+    assert by_merchant(client)["Aegean Airlines"].category == "Travel"
+
+
+def test_the_preview_says_when_there_is_nothing_in_the_dates(client):
+    p = preview(client, start="2026-06-01", end="2026-06-10")
+    assert p["count"] == 0 and p["in_dates"] == 0
+    assert preview(client)["in_dates"] == 8
+
+
 def test_her_own_category_is_never_overwritten(client):
     soda = by_merchant(client)["Soda La Casita"].fingerprint
     client.st.set_transaction_category(soda, "Gifts")

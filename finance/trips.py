@@ -32,8 +32,7 @@ from .models import Transaction
 TRAVEL = "Travel"
 SOURCE = "trip"
 # Not spending on a trip, wherever it lands.
-NOT_TRIP = {"Income", "Transfers", "Unsorted transfers", "Saved", "Lent", "Fees & Interest",
-            TRAVEL}
+NOT_TRIP = {"Income", "Transfers", "Unsorted transfers", "Saved", "Lent", "Fees & Interest"}
 # Bills by what they are, even before they've recurred enough to be spotted.
 BILL_CATEGORIES = {"Rent & Housing", "Utilities", "Bills & Utilities", "Phone & Internet",
                    "Insurance", "Taxes", "Education", "Streaming", "Software", "News & Media",
@@ -122,7 +121,8 @@ def preview(transactions: list[Transaction], start: str, end: str, today: date,
                          for c, a in by_cat.items()), key=lambda c: -c["total"])
     return {"count": len(moving), "total": round(sum(t.amount for t in moving), 2),
             "categories": categories, "staying": staying,
-            "staying_count": sum(staying.values())}
+            "staying_count": sum(staying.values()),
+            "in_dates": len(moving) + sum(staying.values())}
 
 
 def _move(store, rows: list[Transaction], trip_id: int) -> None:
