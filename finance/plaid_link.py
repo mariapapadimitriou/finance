@@ -615,8 +615,10 @@ def sync_all(store) -> dict:
     hide_quiet_twins(store)
     # A newly listed investment account sorts the transfers into it (Saved).
     import json
-    from .transfers import known_destinations
-    where = json.dumps(sorted(known_destinations(store).items()))
+    from .transfers import known_destinations, linked_accounts
+    linked = linked_accounts(store)
+    where = json.dumps([sorted(known_destinations(store).items()),
+                        sorted(linked["masks"].items()), sorted(linked["names"].items())])
     # Matched already when this sync brought rows in.
     rematch = ((store.setting("transfer_destinations") or "[]") != where
                and not any(o.get("imported") for o in out))

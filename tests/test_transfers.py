@@ -309,3 +309,77 @@ class TestLoansAndTheMortgagePage:
         Store(st.path)                                   # reopened: terms forgotten
         assert st.setting("mortgage") in (None, "")
         assert any(f.id == cost and f.amount == 2400 for f in st.fixed_costs())
+
+
+class TestTransfersOutByAccountNumber:
+    """A transfer out names one of her accounts by its last four digits,
+    however the bank words it, or by the bank's own name for the account —
+    never by her nickname (2026-10-14)."""
+
+    @pytest.fixture()
+    def linked(self, st):
+        st.note_account("chq", name="TD Chequing ••1111", item_id="item-1",
+                        account_type="depository", subtype="checking")
+        st.note_account("sav", name="TD Savings ••2222", item_id="item-1",
+                        account_type="depository", subtype="savings")
+        st.note_account("rrsp", name="Wealthsimple RRSP ••3333", item_id="item-1",
+                        enabled=False, account_type="investment", subtype="rrsp")
+        st.set_account_setting("rrsp", nickname="Retirement")
+        return st
+
+    @pytest.mark.parametrize("words", [
+        "TFR-TO 12343333", "Online transfer to deposit account-3333", "WS RRSP 3333 CONTRIB",
+        "SEND E-TFR ***3333", "Transfer sent - 12 3333",
+    ])
+    def test_into_her_investment_account_is_saved(self, linked, words):
+        rows = load(linked, row(500.0, words, category="Transfers"))
+        assert rows[words].category == "Saved"
+
+    def test_even_when_plaid_names_who_it_went_to(self, linked):
+        t = row(500.0, "TFR-TO 12343333", category="Transfers")
+        t.raw["counterparty"] = "Wealthsimple"
+        assert load(linked, t)["TFR-TO 12343333"].category == "Saved"
+
+    def test_into_her_own_savings_is_a_transfer_before_the_other_side_syncs(self, linked):
+        rows = load(linked, row(300.0, "Online transfer to deposit account-2222"))
+        assert rows["Online transfer to deposit account-2222"].category == "Transfers"
+        assert not counts_as_spending(rows["Online transfer to deposit account-2222"])
+
+    def test_the_rows_own_account_is_not_where_it_went(self, linked):
+        rows = load(linked, row(80.0, "E-TFR SENT FROM 1111 REF 8841"))
+        assert rows["E-TFR SENT FROM 1111 REF 8841"].category == UNSORTED
+
+    def test_a_hidden_copy_or_a_loan_is_never_the_destination(self, linked):
+        linked.note_account("old", name="TD Savings ••4444", item_id="item-1",
+                            account_type="depository", subtype="savings")
+        linked.set_account_setting("old", removed=True)
+        linked.note_account("car", name="Car Loan ••5555", item_id="item-1",
+                            account_type="loan", subtype="auto")
+        rows = load(linked, row(50.0, "TFR-TO 9994444"), row(60.0, "TFR-TO 9995555"))
+        assert rows["TFR-TO 9994444"].category == UNSORTED
+        assert rows["TFR-TO 9995555"].category == UNSORTED
+
+    def test_the_banks_name_counts_and_her_nickname_never_does(self, linked):
+        rows = load(linked, row(200.0, "E-TFR TO RETIREMENT"),
+                    row(250.0, "Transfer to Wealthsimple RRSP"))
+        assert rows["E-TFR TO RETIREMENT"].category == UNSORTED
+        assert rows["Transfer to Wealthsimple RRSP"].category == "Saved"
+
+    def test_a_generic_name_never_matches(self, linked):
+        rows = load(linked, row(40.0, "E-TFR TO CHEQUING"))
+        assert rows["E-TFR TO CHEQUING"].category == UNSORTED
+
+    def test_her_own_rule_wins(self, linked):
+        linked.set_destination("acct:3333", "Lent")
+        rows = load(linked, row(500.0, "TFR-TO 12343333", category="Transfers"))
+        assert rows["TFR-TO 12343333"].category == "Lent"
+
+    def test_a_number_that_isnt_hers_changes_nothing(self, linked):
+        rows = load(linked, row(90.0, "E-TFR SENT 2026 REF 7788"))
+        assert rows["E-TFR SENT 2026 REF 7788"].category == UNSORTED
+
+    def test_a_purchase_with_a_matching_store_number_stays_a_purchase(self, linked):
+        rows = load(linked, row(6.40, "STARBUCKS #3333", category="Coffee"),
+                    row(30.0, "SHELL 3333", account="card", kind="credit"))
+        assert rows["STARBUCKS #3333"].category != "Saved"
+        assert rows["SHELL 3333"].category != "Saved"

@@ -99,6 +99,59 @@ def destination(t: Transaction) -> tuple[str, str] | None:
     return None
 
 
+# Her own accounts, found in a transfer's description by their last four
+# digits however the bank words it ("TFR-TO 12343333", "deposit account-3333",
+# "TFSA 3333", "***3333"), or by the bank's own name for the account. Never by
+# her nickname: the bank writes its own names.
+_FOUR = re.compile(r"(?<!\d)\d{4}(?!\d)")
+_LONG = re.compile(r"\d[\d\s-]{3,}\d")
+_GENERIC_NAMES = {"chequing", "checking", "savings", "credit card", "account", "visa",
+                  "mastercard", "card", "cash", "everyday"}
+
+
+def linked_accounts(store) -> dict:
+    """Her accounts as a transfer's description might name them:
+    {"masks": {last four: (account_id, type)}, "names": {name: (account_id, type)}}.
+    From the bank's names (account_sync), not her nicknames; without the
+    copies she hid, and without loans (paying one stays a bill)."""
+    from .plaid_link import _mask_of
+    removed = {aid for aid, s in store.account_settings().items() if s["removed"]}
+    masks: dict[str, tuple[str, str]] = {}
+    names: dict[str, list[tuple[str, str]]] = {}
+    for aid, r in store.account_sync_rules().items():
+        kind = (r["account_type"] or "").lower()
+        if aid in removed or kind == "loan":
+            continue
+        mask = _mask_of(r["account_name"])
+        if mask:
+            masks[mask] = (aid, kind)
+        name = re.sub(r"\s*(?:••|\*{2,}|x{2,})\s*\d{2,4}\s*$", "", r["account_name"] or "",
+                      flags=re.I).strip().lower()
+        if len(name) >= 6 and name not in _GENERIC_NAMES:
+            names.setdefault(name, []).append((aid, kind))
+    return {"masks": masks,
+            "names": {n: ids[0] for n, ids in names.items() if len({i for i, _ in ids}) == 1}}
+
+
+def own_account(t: Transaction, accounts: dict | None) -> tuple[str, str] | None:
+    """(account_id, type) of one of her accounts that a transfer names, or None."""
+    if not accounts:
+        return None
+    text = f"{t.description or ''} {t.merchant or ''}"
+    found = [m.group(0) for m in _FOUR.finditer(text)]
+    found += [re.sub(r"\D", "", m.group(0))[-4:] for m in _LONG.finditer(text)]
+    found += [m.group(1) for m in _MASKED.finditer(text)]
+    for digits in found:
+        hit = accounts.get("masks", {}).get(digits)
+        if hit and hit[0] != t.account_id:
+            return hit
+    low = text.lower()
+    for name, hit in accounts.get("names", {}).items():
+        if hit[0] != t.account_id and re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", low):
+            return hit
+    return None
+
+
 # Only recent transfers are asked about. Plaid backfills two years, and
 # nobody remembers where an e-transfer from last spring went; an old one that
 # still matches nothing is left neutral rather than counted as spending.
@@ -138,7 +191,8 @@ def _subset_summing(rows: list[Transaction], target: int) -> list[Transaction] |
 
 def match_transfers(transactions: list[Transaction], today: str | None = None,
                     destinations: dict[str, str] | None = None,
-                    used_out: set[str] | None = None) -> dict[str, str]:
+                    used_out: set[str] | None = None,
+                    accounts: dict | None = None) -> dict[str, str]:
     """The category each sortable outflow should have: Transfers when its
     other end is here, Unsorted transfers when it isn't.
 
@@ -155,13 +209,17 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
        that arrived in your other accounts that day.
 
     Only what is still unmatched goes where you said its destination goes
-    (`destinations`, key → category). Whatever is left is Unsorted when it's
-    recent, and neutral when it's older than `ASK_DAYS`.
+    (`destinations`, key → category); then, when it names one of her own
+    accounts (`accounts`, see `own_account`), an investment account makes it
+    Saved and any other of hers makes it a transfer. Whatever is left is
+    Unsorted when it's recent, and neutral when it's older than `ASK_DAYS`.
     """
     candidates = sorted(
         (t for t in transactions
          if t.amount > 0 and _is_bank(t) and not others(t)
-         and (t.category in (NEUTRAL, UNSORTED) or t.category_source == RULED)
+         and (t.category in (NEUTRAL, UNSORTED) or t.category_source == RULED
+              # Nothing placed it, but it names one of her accounts.
+              or (t.category == "Other" and own_account(t, accounts)))
          and t.category_source not in _DECIDED),
         key=lambda t: (t.date, t.fingerprint))
     # A friend paying you back is not the other end of anything you sent, and
@@ -253,6 +311,10 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
             if where and where[0] in rules:
                 out[t.fingerprint] = rules[where[0]]
                 continue
+            mine = own_account(t, accounts)
+            if mine:
+                out[t.fingerprint] = "Saved" if mine[1] == "investment" else NEUTRAL
+                continue
             recent = date.fromisoformat(t.date[:10]) >= cutoff
             out[t.fingerprint] = UNSORTED if recent else NEUTRAL
     if used_out is not None:
@@ -270,21 +332,11 @@ def matched_inflows(transactions: list[Transaction], today: str | None = None) -
 
 
 def known_destinations(store) -> dict[str, str]:
-    """Where transfers go: her own rules, and her linked investment accounts.
-
-    Plaid's Transactions product lists an investment account and its balance
-    but not its transactions, so a transfer into it has no other end to match.
-    Its last four digits do: "TFR-TO 12343333" with a TFSA ••3333 linked is
-    money put away, so Saved. Her own rule for those digits wins.
-    """
-    from .plaid_link import _mask_of
-    removed = {aid for aid, s in store.account_settings().items() if s["removed"]}
-    out = {}
-    for aid, r in store.account_sync_rules().items():
-        mask = _mask_of(r["account_name"])
-        if mask and aid not in removed and (r["account_type"] or "").lower() == "investment":
-            out["acct:" + mask] = "Saved"
-    return {**out, **store.destinations()}
+    """Where her rules say transfers go. Her own accounts are found by
+    `own_account` (an investment account's activity isn't in Plaid's
+    Transactions product, so a transfer into one has no other end to match;
+    its digits or its name in the description do)."""
+    return dict(store.destinations())
 
 
 def apply_transfer_matches(store, transactions: list[Transaction] | None = None) -> int:
@@ -292,7 +344,8 @@ def apply_transfer_matches(store, transactions: list[Transaction] | None = None)
     txns = transactions if transactions is not None else store.all_transactions()
     current = {t.fingerprint: (t.category, t.category_source) for t in txns}
     changes = {}
-    for tid, cat in match_transfers(txns, destinations=known_destinations(store)).items():
+    for tid, cat in match_transfers(txns, destinations=known_destinations(store),
+                                    accounts=linked_accounts(store)).items():
         source = "transfer_match" if cat in (NEUTRAL, UNSORTED) else RULED
         if current.get(tid) != (cat, source):
             changes[tid] = (cat, source)
