@@ -414,7 +414,7 @@ export default function App() {
       {panel === 'consent' && <ConsentPanel onTab={go} version={version} />}
       {panel === 'protect' && <ProtectPanel onTab={go} version={version} />}
       {panel === 'data' && (
-        <DataPanel onTab={go} onDeleted={(info) => {
+        <DataPanel onTab={go} onChanged={load} onDeleted={(info) => {
           // Signed out on the server already; nothing of hers stays on screen.
           setData(null); setUser(null); synced.current = false;
           setDeleted(info); setSignedIn(false); go('home');

@@ -363,3 +363,50 @@ describe('THL-139 N-01 / N-02 Notifications', () => {
     expect(shouldPrime({ ...later, asked: 2 }, ok, moved)).toBe(false);
   });
 });
+
+describe('Your data › Start over', () => {
+  it('sits on Your data between the download and deleting the account', async () => {
+    const { DataPage } = await import('./DataPanel.jsx');
+    const t = text(<DataPage onStartOver={() => {}} onDelete={() => {}} />);
+    expect(t).toContain('Start over');
+    expect(t.indexOf('Download a copy')).toBeLessThan(t.indexOf('Start over'));
+    expect(t.indexOf('Start over')).toBeLessThan(t.indexOf('Delete your account'));
+    calm(t);
+  });
+
+  it('says what goes and what stays, and offers a copy first', async () => {
+    const { BeforeYouStart } = await import('./DataPanel.jsx');
+    const el = <BeforeYouStart onBack={() => {}} onContinue={() => {}} onDownload={() => {}} />;
+    const t = text(el);
+    for (const s of ['Every transaction, and everything you sorted', 'Your rules, your income and bills setup, and your budgets',
+      'Your banks stay connected', 'Your goals and treasure chests', 'Download your data before you start over',
+      'Continue', 'Keep everything']) {
+      expect(t).toContain(s);
+    }
+    expect(primaries(el)).toBe(1);
+    calm(t);
+  });
+
+  it('is confirmed only by typing “start over”', async () => {
+    const { ConfirmStartOver, startOverReady } = await import('./DataPanel.jsx');
+    expect(startOverReady('start over')).toBe(true);
+    expect(startOverReady('  Start   Over ')).toBe(true);
+    expect(startOverReady('start')).toBe(false);
+    expect(startOverReady('')).toBe(false);
+    const off = html(<ConfirmStartOver typed="" onTyped={() => {}} onConfirm={() => {}} onClose={() => {}} />);
+    expect(off).toMatch(/disabled=""[^>]*>Start over</);
+    const on = html(<ConfirmStartOver typed="start over" onTyped={() => {}} onConfirm={() => {}} onClose={() => {}} />);
+    expect(on).not.toMatch(/disabled=""[^>]*>Start over</);
+    expect(primaries(<ConfirmStartOver typed="start over" onTyped={() => {}} />)).toBe(1);
+  });
+
+  it('then says the history is downloading, and what came back', async () => {
+    const { StartedOver } = await import('./DataPanel.jsx');
+    expect(text(<StartedOver syncing />)).toContain('Downloading your history');
+    expect(text(<StartedOver imported={1306} />)).toContain('1,306 transactions are back, ready to sort.');
+    expect(text(<StartedOver imported={1} />)).toContain('1 transaction is back');
+    const none = text(<StartedOver imported={0} />);
+    expect(none).toContain('the next time it checks your banks');
+    calm(none);
+  });
+});

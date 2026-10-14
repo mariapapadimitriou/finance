@@ -166,6 +166,18 @@ def data_export_file():
         "Cache-Control": "no-store"})
 
 
+@bp.post("/data/start-over")
+def data_start_over():
+    """Start over: clear the transactions and her organizing; the banks stay
+    and the page syncs next to bring the history back (Store.start_over).
+    Confirmed by typing "start over"."""
+    body = request.get_json(silent=True) or {}
+    if " ".join(str(body.get("confirm") or "").lower().split()) != "start over":
+        return jsonify({"error": "Type “start over” to confirm."}), 400
+    removed = store().start_over()
+    return jsonify({"ok": True, "removed": removed, "resync": True})
+
+
 # ── D-03 to D-05 ─────────────────────────────────────────────────────────
 
 @bp.get("/account/delete")

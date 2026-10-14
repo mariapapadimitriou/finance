@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   deleteAccountNow, deletePasskeyOptions, exportUrl, getDeleteOptions, getExportSummary,
-  sendDeleteCode,
+  sendDeleteCode, startOver, syncPlaid,
 } from '../api.js';
 import { Alert, DetailPanel, PButton } from '../pearl/kit.jsx';
 import { BEFORE_YOU_GO, Rows } from '../pearl/privacy.jsx';
@@ -28,6 +28,12 @@ import './profile.css';
  * so the copy says that rather than the design's "within 30 days" for
  * everything. Nothing is deleted until a passkey, an email code or, for an
  * account from before Pearl, the password confirms it's her.
+ *
+ * Start over (2026-10-14) clears her transactions and her organizing — every
+ * answer about a transaction, her rules, income and bills, budgets — and
+ * downloads the history again from the banks, which stay connected. Goals,
+ * treasure chests and what she set on each account stay. Typing "start over"
+ * confirms it (finance/store.py Store.start_over).
  */
 
 const TRAIL = [{ label: 'Profile', to: 'profile' }, { label: 'Your data' }];
@@ -52,8 +58,24 @@ export function readyWords(summary) {
   return `Your download is ready: ${what}.`;
 }
 
+// What Start over does, in her words.
+export const START_OVER_ROWS = [
+  { title: 'Cleared', sub: 'Every transaction, and everything you sorted: categories, splits, trips, notes, left-out transactions and Needs a look answers.' },
+  { title: 'Cleared', sub: 'Your rules, your income and bills setup, and your budgets.' },
+  { title: 'Downloaded again', sub: 'Your banks stay connected, and Pearl brings your full history back, ready to sort from scratch.' },
+  { title: 'Kept', sub: 'Your goals and treasure chests, with the money you’ve added to them, and your account nicknames and joint shares.' },
+  { title: 'Good to know', sub: 'A charge a chest paid for counts in its month again, unless its category belongs to the chest.' },
+];
+
+export const START_OVER_WORDS = 'start over';
+/** Whether what she typed confirms it, however it's spaced or capitalised. */
+export function startOverReady(typed) {
+  return String(typed || '').trim().toLowerCase().split(/\s+/).join(' ') === START_OVER_WORDS;
+}
+
 /** D-01, and D-02 once `summary` is in. */
-export function DataPage({ summary, preparing = false, error = null, onTab, onPrepare, onDelete }) {
+export function DataPage({ summary, preparing = false, error = null, onTab, onPrepare, onDelete,
+                           onStartOver }) {
   const size = summary && sizeWords(summary.bytes);
   return (
     <div className="pk hm-page pf-page pv-page">
@@ -84,6 +106,15 @@ export function DataPage({ summary, preparing = false, error = null, onTab, onPr
           </div>
         </section>
       )}
+      {onStartOver && (
+        <section className="pf-section" aria-labelledby="dt-start-over">
+          <h2 className="pk-h3" id="dt-start-over">Start over</h2>
+          <p className="pf-foot">
+            Clear your transactions and everything you’ve sorted, and download your history again.
+          </p>
+          <button type="button" className="pf-text-link" onClick={onStartOver}>Start over</button>
+        </section>
+      )}
       <section className="pf-section" aria-labelledby="dt-delete">
         <h2 className="pk-h3" id="dt-delete">Delete your account</h2>
         <p className="pf-foot">Disconnects your banks and deletes your data straight away.</p>
@@ -111,6 +142,74 @@ export function BeforeYouGo({ onTab, onBack, onDownload, onContinue }) {
       <div className="pf-actions">
         <PButton onClick={onContinue}>Continue</PButton>
         <PButton variant="secondary" onClick={onBack}>Keep my account</PButton>
+      </div>
+    </div>
+  );
+}
+
+/** Before starting over: what goes, what stays, and a copy first. */
+export function BeforeYouStart({ onTab, onBack, onDownload, onContinue }) {
+  const trail = [{ label: 'Profile', to: 'profile' }, { label: 'Your data', onClick: onBack },
+                 { label: 'Start over' }];
+  return (
+    <div className="pk hm-page pf-page pv-page">
+      <PageHead trail={trail} title="Start over" onTab={onTab}>
+        <p className="pf-intro">Here’s exactly what happens if you start over.</p>
+      </PageHead>
+      <div className="pv-wide pf-section">
+        <Rows rows={START_OVER_ROWS} label="What happens" />
+        <Alert tone="info" action="Download" onAction={onDownload}>
+          Want a copy first? Download your data before you start over.
+        </Alert>
+      </div>
+      <div className="pf-actions">
+        <PButton onClick={onContinue}>Continue</PButton>
+        <PButton variant="secondary" onClick={onBack}>Keep everything</PButton>
+      </div>
+    </div>
+  );
+}
+
+/** Typing "start over" confirms it. */
+export function ConfirmStartOver({ typed = '', onTyped, busy = false, error = null, onConfirm,
+                                   onClose }) {
+  const ready = startOverReady(typed);
+  const submit = (e) => { e.preventDefault(); if (ready) onConfirm(); };
+  return (
+    <DetailPanel label="Start over" overline="" onClose={onClose} className="pf-dialog" sheet>
+      <form className="pf-form" onSubmit={submit}>
+        <h1 className="pk-h2">Start over?</h1>
+        <p className="pk-muted">
+          Your transactions and everything you’ve sorted are cleared, and your history downloads
+          again. This can’t be undone.
+        </p>
+        <Field label={`Type “${START_OVER_WORDS}” to confirm`} id="dt-start-over-words">
+          <input id="dt-start-over-words" value={typed} autoComplete="off"
+                 onChange={(e) => onTyped(e.target.value)} />
+        </Field>
+        {error && <Alert tone="caution">{error}</Alert>}
+        <PButton type="submit" disabled={busy || !ready}>{busy ? 'Starting over…' : 'Start over'}</PButton>
+        <PButton variant="text" onClick={onClose}>Cancel</PButton>
+      </form>
+    </DetailPanel>
+  );
+}
+
+/** After: downloading, then what came back. */
+export function StartedOver({ syncing = false, imported = null, onHome }) {
+  let words = 'Pearl will download your history the next time it checks your banks.';
+  if (syncing) words = 'Downloading your history from your banks. It can take a minute.';
+  else if (imported > 0) {
+    words = `${plural(imported, 'transaction')} ${imported === 1 ? 'is' : 'are'} back, ready to sort.`;
+  }
+  return (
+    <div className="pk hm-page pf-page pv-page">
+      <PageHead trail={TRAIL} title={syncing ? 'Starting fresh…' : 'You’re starting fresh'} />
+      <div className="pf-section">
+        <Alert tone={syncing ? 'info' : 'positive'}>{words}</Alert>
+      </div>
+      <div className="pf-actions">
+        <PButton disabled={syncing} onClick={onHome}>Go to Home</PButton>
       </div>
     </div>
   );
@@ -196,7 +295,7 @@ export function AccountDeleted({ sentTo, onClose }) {
   );
 }
 
-export default function DataPanel({ onTab, onDeleted }) {
+export default function DataPanel({ onTab, onDeleted, onChanged }) {
   const [view, setView] = useState(() => { const v = startAt; startAt = null; return v ?? 'page'; });
   const [summary, setSummary] = useState(null);
   const [preparing, setPreparing] = useState(false);
@@ -208,7 +307,27 @@ export default function DataPanel({ onTab, onDeleted }) {
   const [sentTo, setSentTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [typed, setTyped] = useState('');
+  const [fresh, setFresh] = useState(null);
   useEffect(() => { window.scrollTo?.(0, 0); }, [view]);
+
+  async function beginAgain() {
+    setBusy(true);
+    setError(null);
+    try {
+      await startOver();
+      setFresh({ syncing: true, imported: null });
+      setView('fresh');
+      let imported = null;
+      try { imported = (await syncPlaid(true))?.imported ?? null; } catch { /* next sync */ }
+      setFresh({ syncing: false, imported });
+      await onChanged?.();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const prepare = useCallback(async () => {
     setPreparing(true);
@@ -274,6 +393,26 @@ export default function DataPanel({ onTab, onDeleted }) {
     }
   }
 
+  if (view === 'fresh') {
+    return <StartedOver syncing={fresh?.syncing} imported={fresh?.imported}
+                        onHome={() => onTab?.('home')} />;
+  }
+  if (view === 'start' || view === 'start-confirm') {
+    return (
+      <>
+        <BeforeYouStart onTab={onTab} onBack={() => setView('page')}
+                        onContinue={() => { setTyped(''); setError(null); setView('start-confirm'); }}
+                        onDownload={() => { setView('page'); prepare(); }} />
+        {view === 'start-confirm' && (
+          <div className="pk">
+            <ConfirmStartOver typed={typed} onTyped={(v) => { setTyped(v); setError(null); }}
+                              busy={busy} error={error} onConfirm={beginAgain}
+                              onClose={() => { setView('start'); setError(null); }} />
+          </div>
+        )}
+      </>
+    );
+  }
   if (view === 'delete' || view === 'confirm') {
     return (
       <>
@@ -295,6 +434,7 @@ export default function DataPanel({ onTab, onDeleted }) {
   }
   return (
     <DataPage summary={summary} preparing={preparing} error={exportError} onTab={onTab}
-              onPrepare={prepare} onDelete={() => setView('delete')} />
+              onPrepare={prepare} onDelete={() => setView('delete')}
+              onStartOver={() => setView('start')} />
   );
 }
