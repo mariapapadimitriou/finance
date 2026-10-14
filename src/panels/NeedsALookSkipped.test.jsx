@@ -38,3 +38,20 @@ describe('Needs a look chips', () => {
     expect(inView(items, 'skipped').map((i) => i.key)).toEqual(['u:t1', 'c:2']);
   });
 });
+
+describe('What kind of income is this? — or not income at all (2026-10-14)', () => {
+  it('offers the income kinds, then ways to say it isn’t income', async () => {
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const { IncomeKind } = await import('./NeedsALook.jsx');
+    const it_ = { txn: { id: 'd1', merchant: 'Interac', date: '2026-10-02', amount: -300 },
+                  guess: 'other' };
+    const out = renderToStaticMarkup(
+      <IncomeKind it={it_} categories={[{ name: 'Income', group: 'income' },
+                                        { name: 'Shopping', group: 'lifestyle' }]}
+                  act={() => {}} sorted={() => () => null} />);
+    for (const s of ['What kind of income is this?', 'Salary', 'Or it isn’t income', 'My own money',
+      'Paying back money I lent', 'Something else', 'A refund, or anything else']) {
+      expect(out).toContain(s);
+    }
+  });
+});
