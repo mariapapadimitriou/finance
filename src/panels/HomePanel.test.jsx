@@ -578,12 +578,12 @@ describe('rough estimate (H-03)', () => {
 });
 
 describe('Savings so far (2026-10-14)', () => {
-  const savings = { since: '2026-09-01',
+  const savings = { month: '2026-10',
                     put_away: { contributions: 500, withdrawals: 200, net: 300 },
                     left_over: { income: 4300, spent: 130, net: 4170 } };
-  it('shows put away and left over since the start, each with what went in', () => {
+  it('shows put away and left over this month, each with what went in', () => {
     const t = html(<SavingsCard savings={savings} />);
-    for (const s of ['Savings so far', 'Since Sep 1', 'Put away', '$300', '$500 in, $200 taken out',
+    for (const s of ['Savings this month', 'October so far', 'Put away', '$300', '$500 in, $200 taken out',
       'Left over', '$4,170', '$4,300 earned, $130 spent']) {
       expect(t).toContain(s);
     }

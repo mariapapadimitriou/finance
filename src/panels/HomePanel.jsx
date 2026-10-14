@@ -519,18 +519,17 @@ export function putAwayWords(p, short) {
   return parts.length ? parts.join(', ') : 'Transfers you mark as saved, and money in your chests';
 }
 
-/** Savings so far (2026-10-14): what she put away, and what was left over,
- * since the day she started — never a balance Pearl can't see. */
+/** Savings this month (2026-10-14): what she put away, and what was left
+ * over, this month — never a balance Pearl can't see. */
 export function SavingsCard({ savings }) {
-  if (!savings || !savings.since) return null;
+  if (!savings || !savings.month) return null;
   const put = netWords(savings.put_away.net);
   const left = netWords(savings.left_over.net);
-  const since = shortDate(savings.since);
   return (
     <section className="hm-card hm-savings" aria-labelledby="hm-savings-title">
       <div className="hm-row-text">
-        <p className="pk-overline accent">Savings so far</p>
-        <h2 className="pk-h3" id="hm-savings-title">{`Since ${since}`}</h2>
+        <p className="pk-overline accent">Savings this month</p>
+        <h2 className="pk-h3" id="hm-savings-title">{`${monthName(savings.month)} so far`}</h2>
       </div>
       <div className="hm-savings-tiles">
         <div className="hm-savings-tile">

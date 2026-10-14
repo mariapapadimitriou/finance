@@ -131,7 +131,10 @@ function CardHead({ title, link, onLink, label, id }) {
 /** GR-28: the page. */
 export function InsightsPage({ d, show, onTab, cards = [], onCard, onWhy, onNotForMe }) {
   const prev = d.months.length > 1 ? addMonths(d.month, -1) : null;
-  const shownWhere = d.where_last && d.where_last.total > 0 ? d.where_last : d.where;
+  // This month, as everywhere in the app; last month only until this one
+  // has any spending to show.
+  const shownWhere = d.where.total > 0 || !(d.where_last && d.where_last.total > 0)
+    ? d.where : d.where_last;
   const whereRunning = shownWhere.month === d.month && d.running;
   const trend = d.trend.months.slice(-6);
   const money = d.money.slice(-6);

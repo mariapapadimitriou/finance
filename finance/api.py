@@ -1794,7 +1794,7 @@ def home():
         "review_count": review.get("count", 0),
         "carryover": carry_question,
         # Savings so far: put away, and left over, since she started.
-        "savings": savings.so_far(st, txns, savings.since(st, g.get("user"), txns), today),
+        "savings": savings.this_month(st, txns, today),
         "connections": milestones.connections(st.plaid_items(), st.account_sync_rules()),
         "usual_month": usual,
         # THL-166: the week under the month, and which one she reads first.
