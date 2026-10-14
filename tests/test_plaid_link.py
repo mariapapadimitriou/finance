@@ -752,11 +752,11 @@ class TestQuietTwinsAndInvestments:
 
     def test_a_transfer_into_a_linked_investment_account_is_saved(self, store):
         from finance.models import Transaction
-        from finance.transfers import apply_transfer_matches, known_destinations
+        from finance.transfers import apply_transfer_matches, known_destinations, linked_accounts
         store.add_plaid_item("item-1", "tok", "Wealthsimple")
         store.note_account("inv", name="Wealthsimple TFSA ••3333", item_id="item-1",
                            enabled=False, account_type="investment", subtype="tfsa")
-        assert known_destinations(store) == {"acct:3333": "Saved"}
+        assert linked_accounts(store)["masks"] == {"3333": ("inv", "investment")}
         from datetime import date
         day = date.today().isoformat()
         store.add_transactions([Transaction(
@@ -766,7 +766,9 @@ class TestQuietTwinsAndInvestments:
         apply_transfer_matches(store)
         assert store.all_transactions()[0].category == "Saved"
         store.set_destination("acct:3333", "Transfers")
-        assert known_destinations(store)["acct:3333"] == "Transfers"     # her rule wins
+        apply_transfer_matches(store)
+        assert store.all_transactions()[0].category == "Transfers"      # her rule wins
+        assert known_destinations(store) == {"acct:3333": "Transfers"}
 
     def test_the_bank_logo_is_looked_up_once(self, store, fake):
         client = fake([{"next_cursor": "c1"}, {"next_cursor": "c2"}])
