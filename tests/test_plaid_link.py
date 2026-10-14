@@ -63,12 +63,19 @@ class FakePlaid:
         self.calls = []
         self.removed_items = []
         self.link_requests = []
+        # What /accounts/get lists; None stands for Plaid not answering.
+        self.item_accounts = None
 
     def transactions_sync(self, request):
         self.calls.append(_as_dict(request))
         page = self.pages.pop(0)
         return _Resp({"accounts": ACCOUNTS, "added": [], "modified": [],
                       "removed": [], "has_more": False, **page})
+
+    def accounts_get(self, request):
+        if self.item_accounts is None:
+            raise RuntimeError("accounts/get unavailable")
+        return _Resp({"accounts": self.item_accounts})
 
     def item_public_token_exchange(self, request):
         return _Resp({"item_id": "item-1", "access_token": "access-secret-xyz"})
@@ -364,6 +371,40 @@ class TestWhichAccountsSync:
         assert row.raw["account_type"] == "credit"
         assert row.raw["account_subtype"] == "credit card"
 
+
+    def test_accounts_quiet_in_the_first_pull_are_still_listed(self, store, fake):
+        """The feed names only accounts with transactions in it; a card or
+        savings account with none yet comes from /accounts/get, listed and
+        synced like any other, so its rows come in as they arrive."""
+        client = fake([{"accounts": [MIXED_ACCOUNTS[1]],
+                        "added": [txn("t2", "2026-01-06", "COFFEE", 5.0, account="chq")],
+                        "next_cursor": "c1"}])
+        client.item_accounts = MIXED_ACCOUNTS
+        store.add_plaid_item("item-1", "tok", "TD")
+        plaid_link.sync_all(store)
+        rules = store.account_sync_rules()
+        assert set(rules) == {"acc1", "chq", "sav", "inv"}
+        assert rules["acc1"]["enabled"] and rules["sav"]["enabled"]
+        assert not rules["inv"]["enabled"]
+        assert rules["sav"]["account_name"] == "TD Savings ••2222"
+
+    def test_they_show_on_the_accounts_page(self, store, fake, monkeypatch):
+        client = fake([{"accounts": [MIXED_ACCOUNTS[1]], "added": [], "next_cursor": "c1"}])
+        client.item_accounts = MIXED_ACCOUNTS
+        store.add_plaid_item("item-1", "tok", "TD")
+        plaid_link.sync_all(store)
+        from finance import profile_api
+        rows = {r["id"]: r for r in profile_api._linked_rows(store)}
+        assert set(rows) == {"acc1", "chq", "sav", "inv"}
+        assert rows["acc1"]["kind"] == "card"
+        assert rows["inv"]["status"] == "not_counted"
+
+    def test_a_sync_carries_on_when_accounts_get_fails(self, store, fake):
+        fake([{"accounts": [MIXED_ACCOUNTS[1]], "added": [], "next_cursor": "c1"}])
+        store.add_plaid_item("item-1", "tok", "TD")
+        out = plaid_link.sync_all(store)
+        assert "error" not in out["items"][0]
+        assert set(store.account_sync_rules()) == {"chq"}
 
 class TestCashAccountsSwitchedOnOnce:
     """Chequing and savings used to be skipped by default. Accounts that only
