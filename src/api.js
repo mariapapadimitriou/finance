@@ -167,6 +167,8 @@ export const exchangePublicToken = (publicToken, institution) =>
   json('POST', '/api/plaid/exchange',
        { public_token: publicToken, institution });
 // `force`: sync now; without it, at most once an hour (opening the app).
+// Profile › Your data › Start over: clears transactions and organizing.
+export const startOver = () => json('POST', '/api/data/start-over', { confirm: 'start over' });
 export const syncPlaid       = (force = false) => json('POST', '/api/plaid/sync', { force });
 
 // Piggy banks: annual costs collected monthly, and spending charged to them

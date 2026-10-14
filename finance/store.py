@@ -1561,6 +1561,64 @@ class Store:
                    ON CONFLICT(key) DO UPDATE SET value = excluded.value""")
         return removed
 
+    # Start over (Profile › Your data): what it clears besides the rows.
+    START_OVER_TABLES = (
+        ("transactions", "transactions"),
+        ("imports", "import history"),
+        *((tbl, "answers about transactions") for tbl in _ROW_TABLES),
+        ("txn_paybacks", "money friends paid back"),
+        ("txn_payback_person", "who paid you back"),
+        ("marked_trips", "trips you marked"),
+        ("trips", "trips you marked"),
+        ("dismissed_insights", "dismissed findings"),
+        ("review_dismissed", "settled review items"),
+        ("review_skipped", "skipped review items"),
+        # Rules.
+        ("merchant_overrides", "rules"),
+        ("transfer_destinations", "rules"),
+        ("exclusion_rules", "rules"),
+        ("joint_mine", "rules"),
+        ("joint_deposit_rules", "rules"),
+        # Budgets.
+        ("budgets", "budgets"),
+    )
+    START_OVER_SETTINGS = (
+        # Income and bills.
+        "income_bills", "home_income", "home_rent", "monthly_income", "income_overrides",
+        "carryover",
+        # Budgets and plan.
+        "category_budgets", "monthly_amount", "savings_target", "savings_rate",
+        "rec_dismissed", "subscription_choices", "budget_focus",
+        # A cache: the next sync matches transfers afresh.
+        "transfer_destinations",
+    )
+
+    def start_over(self) -> dict:
+        """Clear the transactions and her organizing, and download them again.
+
+        Gone: every row and every answer about one, her rules, her income and
+        bills setup, and her budgets. Kept: the bank connections (rewound, so
+        the next sync brings the whole history back), what she set on each
+        account (nicknames, joint shares, the copies she hid), accounts added
+        by hand, goals and treasure chests with the money added to them, and
+        everything about signing in. Unlike `reset`, which empties the ledger
+        for a demo or a test.
+        """
+        removed: dict[str, int] = {}
+        with self.conn() as c:
+            for table, label in self.START_OVER_TABLES:
+                cur = c.execute(f"DELETE FROM {table}")
+                removed[label] = removed.get(label, 0) + max(cur.rowcount or 0, 0)
+            marks = ",".join("?" * len(self.START_OVER_SETTINGS))
+            c.execute(f"DELETE FROM settings WHERE key IN ({marks})",
+                      self.START_OVER_SETTINGS)
+            c.execute("UPDATE plaid_items SET cursor = NULL, "
+                      "last_synced = NULL, last_error = NULL, error_code = NULL")
+            # Empty on purpose: the seeder must not refill it.
+            c.execute("""INSERT INTO settings (key, value) VALUES ('seeded', 'done')
+                         ON CONFLICT(key) DO UPDATE SET value = excluded.value""")
+        return removed
+
     def seed_suppressed(self) -> bool:
         """Whether an empty ledger is empty on purpose.
 
