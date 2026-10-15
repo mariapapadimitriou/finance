@@ -162,35 +162,11 @@
 .wwt-tag-list { display: flex; flex-wrap: wrap; gap: 6px; min-height: 8px; }
 .pk .nl-other { align-self: flex-start; }
 
-/* A row's quick actions: on a desktop they appear on hover or focus; on a
- * phone a swipe to the left reveals them. */
-.tx-actions {
-  display: none; align-items: center; gap: 6px; flex: none; padding-right: 12px;
-}
-.pk .tx-action {
-  display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px;
-  border: 1px solid var(--border-strong); border-radius: var(--radius-full); background: var(--surface-card);
-  color: var(--ink); font: inherit; font-size: 13px; line-height: 18px; font-weight: 500; cursor: pointer;
-  white-space: nowrap;
-}
-.pk .tx-action:hover { border-color: var(--action); }
-.pk .tx-action.ok { color: var(--on-nacre); background: var(--blush); border-color: transparent; }
-.pk .tx-action:disabled { opacity: .5; cursor: default; }
-@media (min-width: 1024px) {
-  .tx-sel:hover .tx-actions, .tx-sel:focus-within .tx-actions { display: inline-flex; }
-}
+/* Select mode on a phone: the checkbox needs its gutter. */
 @media (max-width: 1023px) {
-  .tx-sel { padding-left: 0; overflow: hidden; }
+  .tx-sel { padding-left: 0; }
   .tx-selectable .tx-sel { padding-left: 16px; }
-  .tx-sel .pk-row { transition: transform .18s ease-out; }
-  .tx-sel.revealed .pk-row { transform: translateX(-176px); }
-  .tx-sel.revealed .tx-actions {
-    display: inline-flex; position: absolute; right: 8px; top: 0; bottom: 0; padding: 0;
-  }
-  .tx-sel.revealed .tx-action { height: 34px; }
-  .pk .tx-toggle { cursor: pointer; font: inherit; }
 }
-@media (prefers-reduced-motion: reduce) { .tx-sel .pk-row { transition: none; } }
 .pk .tx-toggle { cursor: pointer; font: inherit; font-size: 13px; line-height: 18px; font-weight: 500; }
 .pk .tx-toggle svg { margin-left: 2px; }
 

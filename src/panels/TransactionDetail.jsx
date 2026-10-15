@@ -402,7 +402,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             {!match && (
               <PButton variant={canConfirm || left || notYours ? 'secondary' : 'primary'}
                        disabled={busy} onClick={() => setStep('what')}>
-                What was this?
+                Mark as…
               </PButton>
             )}
           </div>
