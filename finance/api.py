@@ -2064,29 +2064,6 @@ def answer_carryover(month: str):
     return jsonify({"ok": True, "month": month, "choice": choice})
 
 
-@bp.post("/home/afford")
-def home_afford():
-    """Can I afford it? (THL-167 AF-01 to AF-03). Works it out and records
-    nothing: no transaction, no setting, no log."""
-    from datetime import date as _date
-    from . import weekly
-
-    body = request.get_json(silent=True) or {}
-    try:
-        amount = round(float(body.get("amount")), 2)
-    except (TypeError, ValueError):
-        amount = 0.0
-    if not 0 < amount <= 1_000_000:
-        return jsonify({"error": "Enter what it costs, like 180."}), 400
-    st = store()
-    today = _date.fromisoformat(_today_iso())
-    txns = st.all_transactions()
-    sts = _home_sts(st, txns, today)
-    if sts["amount"] is None:
-        return jsonify({"error": "Tell us what you expect to earn first, and we can check."}), 409
-    return jsonify(weekly.afford(txns, today, sts, weekly.week(txns, today, sts), amount))
-
-
 def _path(st, txns, today, sts: dict, state: dict, types: dict, **kw) -> dict:
     """THL-129's path for Home's path card (GR-05) and the Path page (GR-01).
     Protect, once done, is remembered and stays done. `kw` goes to

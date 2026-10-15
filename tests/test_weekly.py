@@ -1,4 +1,4 @@
-"""This week's share of the month (THL-166) and "Can I afford it?" (THL-167)."""
+"""This week's share of the month (THL-166)."""
 
 from datetime import date, timedelta
 
@@ -115,48 +115,6 @@ class TestStates:
         assert w["left"] == 1072.66 and w["shown"] == 1070
 
 
-class TestCanIAffordIt:
-    def test_it_fits(self):
-        """AF-02: $642.18 goes to $462.18, about $20 a day for 23 days."""
-        rows, s, w = alex()
-        r = weekly.afford(rows, TODAY, s, w, 180.00)
-        assert r["fits"] and (r["before"], r["after"]) == (642.18, 462.18)
-        assert r["per_day_after"] == 20.09 and r["days_left"] == 23
-        assert r["short_by"] is None and r["next_month"] is None
-
-    def test_not_this_month_but_november(self):
-        """AF-03 as decided (A1): $258 more than what's left, and a usual
-        November ($4,300 in, $2,363.48 of bills, $300 set aside) covers it."""
-        rows, s, w = alex()
-        r = weekly.afford(rows, TODAY, s, w, 900.00)
-        assert not r["fits"] and r["short_by"] == 257.82 and r["after"] is None
-        assert r["next_month"] == {"month": "2026-11", "fits": True, "per_day_after": 24.55}
-
-    def test_more_than_a_usual_month_leaves(self):
-        rows, s, w = alex()
-        r = weekly.afford(rows, TODAY, s, w, 5000.00)
-        assert r["next_month"]["fits"] is False and r["next_month"]["per_day_after"] is None
-
-    def test_one_line_on_the_week(self):
-        s, w = plain(date(2026, 10, 12))
-        r = weekly.afford([], date(2026, 10, 12), s, w, 85.00)
-        assert r["week"] == {"left": 1085.00, "within": True, "left_after": 1000.00}
-        r = weekly.afford([], date(2026, 10, 12), s, w, 1500.00)
-        assert r["week"]["within"] is False and r["week"]["left_after"] is None
-
-    def test_a_month_already_past_its_plan(self):
-        rows = history() + october() + [tx("2026-10-08", "Air Canada", 900.00, "Travel")]
-        rows, s, w = alex(rows=rows)
-        r = weekly.afford(rows, TODAY, s, w, 50.00)
-        assert r["already_over"] and not r["fits"]
-        assert r["short_by"] == round(s["over_by"] + 50, 2)
-
-    def test_a_rough_month_is_checked_against_what_she_sees(self):
-        s, w = plain(date(2026, 10, 12), [("2026-10-12", 12.34)])
-        r = weekly.afford([], date(2026, 10, 12), s, w, 3085.00)
-        assert s["shown"] == 3080 and not r["fits"] and r["short_by"] == 5.00
-
-
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     from app import create_app
@@ -172,31 +130,10 @@ def client(tmp_path, monkeypatch):
 
 class TestTheApi:
     def test_home_reads_by_the_month_only(self, client):
-        """The week is still worked out (Can I afford it? and the weekly
-        check-in use it), but there is no week view to choose."""
+        """The week is still worked out (the weekly check-in uses it), but
+        there is no week view to choose."""
         c, st = client
         st.add_transactions(history() + [t for t in october() if t.my_share is None and not t.repays])
         body = c.get("/api/home").get_json()
         assert body["week"]["start"] == "2026-10-05" and "view" not in body
         assert c.put("/api/home/view", json={"view": "week"}).status_code in (404, 405)
-
-    def test_afford_records_nothing(self, client):
-        c, st = client
-        st.add_transactions(history() + [t for t in october() if t.my_share is None and not t.repays])
-        before = len(st.all_transactions())
-        settings = c.get("/api/home").get_json()["safe_to_spend"]["amount"]
-        r = c.post("/api/home/afford", json={"amount": 180}).get_json()
-        assert r["fits"] and r["before"] == settings
-        assert len(st.all_transactions()) == before
-        assert c.get("/api/home").get_json()["safe_to_spend"]["amount"] == settings
-
-    @pytest.mark.parametrize("amount", [0, -5, "abc", None, 2_000_000])
-    def test_afford_wants_an_amount(self, client, amount):
-        c, _ = client
-        assert c.post("/api/home/afford", json={"amount": amount}).status_code == 400
-
-    def test_afford_waits_for_an_income(self, client):
-        c, st = client
-        st.add_transactions([tx("2026-10-02", "Loblaws", 80.00, "Groceries")])
-        assert c.post("/api/home/afford", json={"amount": 50}).status_code == 409
-        assert c.get("/api/home").get_json()["week"] is None

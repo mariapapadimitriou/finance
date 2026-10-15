@@ -1,4 +1,4 @@
-"""This week's share of the month (THL-166) and "Can I afford it?" (THL-167).
+"""This week's share of the month (THL-166).
 
 The month's safe-to-spend stays the number; the week is a way of reading it.
 
@@ -22,20 +22,17 @@ Decisions this follows (THL-9 comment, 2026-10-12):
 So the weeks always reconcile: left this week + the rest of the month = the
 month's safe-to-spend, to the cent.
 
-"Can I afford it?" records nothing. It checks the month, with one line on the
-week (A2). If it doesn't fit it says by how much, and whether November would
-cover it if November looks like a usual month (A1): this month's income,
-less this month's bills and what she sets aside.
+The afford-it check (THL-167) was removed on 2026-10-14 (THL-235); the week
+still feeds the weekly check-in.
 """
 
 from __future__ import annotations
 
-import calendar
 from datetime import date, timedelta
 
 from .analytics import counts_as_spending, spend_amount
 from .models import Transaction
-from .safe_to_spend import (_cents, _dollars, _next_month, bill_charges, month_end,
+from .safe_to_spend import (_cents, _dollars, bill_charges, month_end,
                             round_down_10)
 
 
@@ -104,57 +101,3 @@ def week(transactions: list[Transaction], today: date, sts: dict) -> dict | None
         "month_amount": sts["amount"],
         "estimate": estimate,
     }
-
-
-def afford(transactions: list[Transaction], today: date, sts: dict, wk: dict | None,
-           amount: float) -> dict:
-    """What a purchase would do to the month and the week. Records nothing."""
-    price_c = _cents(amount)
-    # A rough or cautious month is checked against the number she is shown.
-    base = sts["shown"] if sts["state"] == "ok" else sts["amount"]
-    before_c = _cents(base)
-    after_c = before_c - price_c
-    fits = after_c >= 0
-    left = sts["days_left"]
-    out = {
-        "amount": _dollars(price_c),
-        "fits": fits,
-        "before": _dollars(before_c),
-        "after": _dollars(after_c) if fits else None,
-        "per_day_after": _dollars(after_c // left) if fits else None,
-        "days_left": left,
-        "short_by": None if fits else _dollars(-after_c),
-        "already_over": sts["state"] == "over",
-        "estimate": sts.get("estimate"),
-        "week": None,
-        "next_month": None,
-    }
-    if wk:
-        week_left_c = max(_cents(wk["left"]), 0)
-        out["week"] = {"left": _dollars(week_left_c),
-                       "within": price_c <= week_left_c,
-                       "left_after": _dollars(week_left_c - price_c) if price_c <= week_left_c else None}
-    if not fits:
-        out["next_month"] = next_month(transactions, today, sts, price_c)
-    return out
-
-
-def next_month(transactions: list[Transaction], today: date, sts: dict, price_c: int) -> dict:
-    """If next month looks like a usual month (A1): this month's income, less
-    this month's bills (paid and still to come) and what she sets aside, all
-    before any spending."""
-    first = _next_month(today)
-    month = today.strftime("%Y-%m")
-    rows = {r["key"]: r for r in sts["rows"]}
-    income_c = _cents(rows["income"]["amount"])
-    bills = bill_charges(transactions, today)
-    paid_c = sum(_cents(spend_amount(t)) for t in transactions
-                 if t.month == month and t.date <= today.isoformat()
-                 and counts_as_spending(t) and (t.merchant, t.date) in bills)
-    bills_c = paid_c + _cents(rows["spent"].get("debt_paid") or 0) + _cents(rows["bills"]["amount"])
-    set_aside_c = _cents(rows["set_aside"]["target"]) if "set_aside" in rows else 0
-    room_c = income_c - bills_c - set_aside_c
-    days = calendar.monthrange(first.year, first.month)[1]
-    fits = 0 < price_c <= room_c
-    return {"month": first.strftime("%Y-%m"), "fits": fits,
-            "per_day_after": _dollars((room_c - price_c) // days) if fits else None}
