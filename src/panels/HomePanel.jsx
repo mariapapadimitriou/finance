@@ -12,7 +12,6 @@ import { ProgressBar, SnapshotBar } from '../pearl/viz.jsx';
 import { LensToggle, readLens, writeLens } from './Lens.jsx';
 import { setGoalsIntent, writeTxUrl } from '../router.js';
 import { Field, Mark } from './GoalsParts.jsx';
-import { AffordCard } from './HomeAfford.jsx';
 import { CarryoverPrompt, carryoverRow } from './HomeCarryover.jsx';
 import { DebtsCard } from './DebtsPanel.jsx';
 import { BudgetsCard } from './CategoryBudgetsPanel.jsx';
@@ -24,8 +23,8 @@ import './home.css';
  * Home (Pearl THL-125 H-01/H-02, laid out as THL-129 GR-05; THL-44, THL-46).
  *
  * The landing screen. This step draws its header, the safe-to-spend card and
- * "How we worked this out" (X-01 to X-04). The cards below it (path, Can I
- * afford it?, snapshot, suggestions, needs a look, budgets, debts) arrive in
+ * "How we worked this out" (X-01 to X-04). The cards below it (path,
+ * snapshot, suggestions, needs a look, budgets, debts) arrive in
  * later steps, in that order (THL-9 decision L1). Home reads by the month
  * only: there is no week view.
  *
@@ -56,7 +55,7 @@ import './home.css';
  * her to sign in again, or isn't answering, comes first among the alerts
  * (THL-120 C-02, C-03), and Reconnect signs in again in place (C-04, C-05).
  *
- * Under the path, "Can I afford it?" (THL-167): see HomeAfford.jsx.
+ * The afford-it card (THL-167) was removed (THL-235, 2026-10-14).
  * After the snapshot, "For you": up to two recommendation cards (THL-12,
  * ForYou.jsx), their actions secondary. Then budgets that need a look (THL-168 B-03, CategoryBudgetsPanel.jsx) and
  * debts (THL-49 D-01, DebtsPanel.jsx), each only when there's something.
@@ -412,8 +411,6 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
     );
   }
   const trouble = connections.find((c) => c.state !== 'disconnected');
-  // "Can I afford it?" answers from the month, so only once there's a number.
-  const affordable = s.amount !== null && !noAccounts;
   return (
     <>
       {alert && (
@@ -430,7 +427,6 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
       {path && ['normal', 'irregular'].includes(ds.kind) && (
         <PathCard path={path} onPath={onPath} primary={!ds.asks_questions} />
       )}
-      {affordable && <AffordCard s={s} onChest={onChest} />}
       {ds.kind === 'learning' && !noAccounts && (
         <MonthSoFar month={s.month}
                     lines={[{ label: 'Spent so far', amount: ds.spent_so_far },

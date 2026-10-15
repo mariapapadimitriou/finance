@@ -206,8 +206,6 @@ export const answerCarryover = (month, choice) =>
 
 export const putHomeAnswers = (answers) => json('PUT', '/api/home/answers', answers);
 // Month or week as Home's main view (THL-166), saved on her account.
-// "Can I afford it?" (THL-167): works it out and records nothing.
-export const checkAfford = (amount) => json('POST', '/api/home/afford', { amount });
 // Category budgets (THL-168): each one a percent of her usual month.
 export const getCategoryBudgets = () => req('/api/category-budgets');
 export const putCategoryBudget = (category, pct) => json('PUT', '/api/category-budgets', { category, pct });

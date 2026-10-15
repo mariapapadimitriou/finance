@@ -149,17 +149,6 @@
 .hm-carry-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 .hm-carry-actions .pk-btn { width: auto; }
 
-/* ── Can I afford it? (THL-167 AF-01 to AF-03) ───────────────────────────── */
-.hm-afford { align-items: stretch; }
-.hm-afford-row { display: flex; align-items: flex-end; gap: var(--space-3); }
-.hm-afford-row .gl-field { flex: 1 1 0; min-width: 0; }
-.hm-afford-row .pk-btn { flex: none; width: auto; min-width: 98px; }
-.hm-afford-live:empty { display: none; }
-.hm-afford-result {
-  display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-start;
-  padding: var(--space-4); border-radius: var(--radius-md); background: var(--surface-page);
-}
-
 /* ── Debts (THL-49 D-01, D-02) ───────────────────────────────────────────── */
 .hm-debts { align-items: stretch; }
 .db-page { max-width: 760px; }

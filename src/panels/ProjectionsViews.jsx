@@ -66,15 +66,6 @@ function Parts({ title, rows, note, onClose }) {
 export function ForecastView({ d, nav }) {
   const f = d.forecast;
   const [how, setHow] = useState(false);
-  const afford = () => {
-    // Home's "Can I afford it?" (THL-167).
-    nav.onTab?.('home');
-    setTimeout(() => {
-      const input = document.getElementById('hm-afford-amount');
-      input?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      input?.focus({ preventScroll: true });
-    }, 600);
-  };
   return (
     <div className="pk hm-page in-page pj-page">
       <DetailHead nav={nav} title={`Where ${monthFull(f.month)} is heading`} />
@@ -87,9 +78,6 @@ export function ForecastView({ d, nav }) {
           </button>
         )}
       </section>
-      <div className="in-actions">
-        <PButton variant="secondary" onClick={afford}>Can I afford it?</PButton>
-      </div>
       {how && (
         <Parts title="Where the month is heading" rows={forecastParts(f)} onClose={() => setHow(false)}
                note="The rest of the month runs from your quietest month to your busiest after this day of it, bills left out because they’re counted by name. Months you marked unusual are left out." />

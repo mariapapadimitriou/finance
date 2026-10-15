@@ -626,3 +626,13 @@ describe('the snapshot through either lens (2026-10-14)', () => {
     expect(html(<Snapshot snap={h01} />)).not.toContain('By kind');
   });
 });
+
+describe('Home reads by the month only (THL-206, THL-235)', () => {
+  it('no Month / Week toggle, no week strip, and no afford-it card', () => {
+    const out = body(ok, { ...base, kind: 'normal' });
+    expect(out).toContain('Safe to spend in October');
+    expect(out).not.toMatch(/This week|See week|role="radiogroup"[^>]*Month/);
+    expect(out).not.toContain('Can I afford it?');
+    expect(out).not.toContain('hm-afford');
+  });
+});
