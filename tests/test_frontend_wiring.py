@@ -390,7 +390,7 @@ class TestHomeIsWhereTheAppLands:
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
         # Wins' Path, Cash flow's Insights and Save's Projections and Learn
         # have addresses; anything else lands on Home (THL-234 IA).
-        assert ": isPathUrl() ? 'wins' : isInsightsUrl() ? 'cashflow'" in text
+        assert ": isPathUrl() ? 'wins' : isInsightsUrl() || isCalendarUrl() ? 'cashflow'" in text
         assert ": isProjectionsUrl() || isLearnUrl() || isSaveUrl() ? 'save' : 'home'" in text
         assert "panel === 'home'" in text and "<HomePanel" in text
 
@@ -427,7 +427,7 @@ class TestTheSidebarIsThl104s:
 
     def test_each_group_opens_on_its_first_page(self, groups):
         assert groups["home"] == ["home"]
-        assert groups["cashflow"] == ["transactions", "review", "insights", "budgets", "debts"]
+        assert groups["cashflow"] == ["transactions", "calendar", "review", "insights", "budgets", "debts"]
         assert groups["save"] == ["goals", "projections", "learn"]
         assert groups["wins"] == ["path"]
         assert "overview" not in groups and "growth" not in groups and "transactions" not in groups
@@ -473,7 +473,7 @@ class TestPearlTransactionsList:
 
     def test_the_group_opens_on_the_list(self):
         nav = (SRC / "nav.js").read_text(encoding="utf-8")
-        assert "panels: ['transactions', 'review', 'insights', 'budgets', 'debts']" in nav
+        assert "panels: ['transactions', 'calendar', 'review', 'insights', 'budgets', 'debts']" in nav
         app = (SRC / "App.jsx").read_text(encoding="utf-8")
         assert "<TransactionsList" in app and "<TransactionsPanel" not in app
 
@@ -660,7 +660,7 @@ class TestGrowthInsights:
         for view in ("month", "category", "subscriptions", "trend", "where", "money", "savings"):
             assert f"'{view}'" in router, view
         assert "isInsightsUrl()" in source and "writeInsightsUrl()" in source
-        assert ("OWN_SECTIONS = ['path', 'insights', 'projections', 'learn', 'budgets', 'debts',"
+        assert ("OWN_SECTIONS = ['path', 'insights', 'calendar', 'projections', 'learn', 'budgets', 'debts',"
                 in source)
         assert "!ownSections" in source
         parts = (SRC / "panels" / "InsightsParts.jsx").read_text(encoding="utf-8")
@@ -865,3 +865,32 @@ class TestSaveHoldsWhatItCouldGrowInto:
             text = (SRC / "panels" / name).read_text(encoding="utf-8")
             assert '<h1 className="pk-h1">Cash flow</h1>' in text, name
 
+
+
+class TestCalendarAndQuickSort:
+    """THL-255: the calendar is Cash flow's second tab at /cash-flow/calendar
+    and Home's strip opens it. THL-254: the quick sort prompt is asked once
+    the moments have had their turn."""
+
+    def test_the_calendar_is_a_cash_flow_tab_with_an_address(self, source, nav):
+        router = (SRC / "router.js").read_text(encoding="utf-8")
+        assert "CALENDAR_PATH = '/cash-flow/calendar'" in router
+        assert "[/^\\/cashflow\\/calendar$/, () => CALENDAR_PATH]" in router
+        assert "'day'" in router                                   # the list's day filter
+        assert "calendar:      { label: 'Calendar'" in nav
+        assert "isCalendarUrl()" in source and "writeCalendarUrl()" in source
+        assert "panel === 'calendar'" in source and "<CalendarPanel" in source
+        home = (SRC / "panels" / "HomePanel.jsx").read_text(encoding="utf-8")
+        assert "<CalendarStrip strip={calendar} onOpen={onCalendar} />" in home
+        assert "onCalendar={() => onTab?.('calendar')}" in home
+        panel = (SRC / "panels" / "CalendarPanel.jsx").read_text(encoding="utf-8")
+        assert '<CashFlowTabs current="calendar"' in panel
+        assert "bad" not in panel.lower().replace("badge", "")
+
+    def test_quick_sort_is_offered_after_the_moments(self, source):
+        assert "getQuickSort()" in source and "<QuickSort" in source
+        assert "askQuickSort()" in source
+        qs = (SRC / "panels" / "QuickSort.jsx").read_text(encoding="utf-8")
+        for words in ("✓ Right", "Something else…", "Skip this one", "It wasn’t a purchase…",
+                      "Save and next", "Later", "Welcome back", "All sorted"):
+            assert words in qs, words

@@ -1,0 +1,46 @@
+/* Quick sort when you come back (THL-244 QS-01 to QS-06, THL-254). A modal
+ * on the web; on a phone the same dialog sits at the foot as a sheet. */
+
+.pk-dialog.qs-dialog { width: 560px; gap: var(--space-4); }
+.qs-dialog .pk-h2 { margin: 0; }
+.qs-head { align-self: stretch; display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.qs-head .pk-overline { margin: 0; }
+.qs-progress { align-self: stretch; display: flex; gap: 4px; }
+.qs-progress span { flex: 1 1 0; height: 4px; border-radius: var(--radius-full); background: var(--track); }
+.qs-progress span.on { background: var(--positive); }
+.qs-tx {
+  align-self: stretch; display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  padding: var(--space-4); border-radius: var(--radius-md); background: var(--surface-page);
+}
+.qs-tx-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 14px; line-height: 20px; }
+.qs-amt { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.qs-amt.out { color: var(--money-out); }
+.qs-amt.in { color: var(--money-in); }
+.qs-guess { display: flex; flex-direction: column; gap: var(--space-2); }
+.qs-actions { align-self: stretch; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.qs-actions .pk-btn { width: auto; }
+.qs-search { align-self: stretch; }
+.qs-group { align-self: stretch; display: flex; flex-direction: column; gap: var(--space-2); }
+.qs-not { display: flex; flex-direction: column; gap: var(--space-2); }
+.pk .qs-not .txd-link { display: inline-flex; align-items: center; gap: 2px; }
+.qs-effect {
+  align-self: stretch; display: flex; flex-direction: column; gap: var(--space-1);
+  padding: var(--space-4); border-radius: var(--radius-md); background: var(--surface-page);
+}
+.qs-effect-figure { font-weight: 600; }
+.pk-error { color: var(--money-out); font-size: 13px; }
+
+/* QS-06: the sheet on a phone. */
+@media (max-width: 720px) {
+  .pk-dialog-scrim:has(.qs-dialog) { align-items: flex-end; padding: 0; }
+  .pk-dialog.qs-dialog {
+    width: 100%; max-height: 92vh; border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: var(--space-6) var(--space-5) var(--space-8);
+  }
+  .pk-dialog.qs-dialog::before {
+    content: ""; align-self: center; width: 36px; height: 5px; border-radius: var(--radius-full);
+    background: var(--border-strong); margin: calc(-1 * var(--space-3)) 0 var(--space-1);
+  }
+  .qs-actions { flex-direction: column; align-items: stretch; }
+  .qs-actions .pk-btn { width: 100%; }
+}

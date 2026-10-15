@@ -39,6 +39,10 @@ export const PANELS = {
                    hint: 'Short reads on the basics of investing, at your pace' },
   projections:   { label: 'Projections',
                    hint: 'Where this month, the next 30 days and your savings are heading' },
+  // Cash flow › Calendar (THL-245 CAL-01, THL-255, at /cash-flow/calendar):
+  // the month day by day, what's due, and how past days went.
+  calendar:      { label: 'Calendar',
+                   hint: 'What’s coming up, and how the month has gone day by day' },
   review:        { label: 'Needs a look', short: 'Review',
                    hint: 'Everything Pearl isn’t sure about, with its best guess' },
   transactions:  { label: 'Transactions', short: 'Transactions',
@@ -95,8 +99,8 @@ export const GROUPS = [
   // Insights as its second tab (GR-28), and Budgets and Debts (THL-209,
   // decided 2026-10-15).
   { key: 'cashflow', label: 'Cash flow', short: 'Cash flow',
-    panels: ['transactions', 'review', 'insights', 'budgets', 'debts'],
-    hint: 'Every transaction, what needs a look, your month in pictures, budgets and debts',
+    panels: ['transactions', 'calendar', 'review', 'insights', 'budgets', 'debts'],
+    hint: 'Every transaction, the calendar, what needs a look, your month in pictures, budgets and debts',
     icon: 'M3 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0M3 16c2-2 4-2 6 0s4 2 6 0 4-2 6 0' },
   // Save (THL-240, THL-248): the Anchor and treasure chests, then what the
   // savings could grow into. Projections, the calculator and Learn are its

@@ -5,7 +5,7 @@
 // and Learn (THL-248) have addresses too; everything else lives at "/". The
 // old /growth/… addresses redirect to their new homes (`redirectOldUrl`).
 
-export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'joint', 'recurring', 'q',
+export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'joint', 'recurring', 'q', 'day',
   // What was this? (2026-10-14): a tag, what counts, an amount range, pending
   // only, needs a look only, one merchant, and the view (by day, merchant or
   // category).
@@ -97,6 +97,40 @@ export function onLearnUrl(fn) {
 /** True when the partner sent her back (THL-136 GR-20): ?from=partner. */
 export const fromPartner = (loc = window.location) =>
   new URLSearchParams(loc.search).get('from') === 'partner';
+
+// Cash flow › Calendar (THL-245 CAL-01, THL-255) at /cash-flow/calendar, a
+// month behind it: /cash-flow/calendar?month=2026-09.
+export const CALENDAR_PATH = '/cash-flow/calendar';
+const CALENDAR_EVENT = 'pearl:calendar';
+
+/** {month} at /cash-flow/calendar…, or null anywhere else. */
+export function readCalendarUrl(loc = window.location) {
+  if (!/^\/cash-flow\/calendar\/?$/.test(loc.pathname)) return null;
+  const month = new URLSearchParams(loc.search).get('month') ?? '';
+  return { month: /^\d{4}-\d{2}$/.test(month) ? month : '' };
+}
+
+export const isCalendarUrl = (loc = window.location) => readCalendarUrl(loc) !== null;
+
+export const calendarHref = ({ month = '' } = {}) => `${CALENDAR_PATH}${month ? `?month=${month}` : ''}`;
+
+/** Point the address bar at the calendar, or one of its months. */
+export function writeCalendarUrl(state = {}, { push = true } = {}) {
+  const href = calendarHref(state);
+  if (href === window.location.pathname + window.location.search) return;
+  window.history[push ? 'pushState' : 'replaceState'](null, '', href);
+  window.dispatchEvent(new Event(CALENDAR_EVENT));
+}
+
+/** Call `fn` when the calendar's address changes, from either direction. */
+export function onCalendarUrl(fn) {
+  window.addEventListener('popstate', fn);
+  window.addEventListener(CALENDAR_EVENT, fn);
+  return () => {
+    window.removeEventListener('popstate', fn);
+    window.removeEventListener(CALENDAR_EVENT, fn);
+  };
+}
 
 // Growth › Insights (THL-186, THL-196 GR-28) and its detail views (GR-25 to
 // GR-27, GR-29 to GR-32), so a detail can be linked to and Back works:
@@ -251,6 +285,9 @@ const OLD_GROWTH = [
   [/^\/growth\/unveil$/, () => UNVEIL_PATHS.unveil],
   [/^\/growth$/, () => PATH_PATH],
   [/^\/goals$/, () => SAVE_PATH],
+  // The calendar's address is spelled cash-flow (THL-245); the one-word
+  // spelling Insights uses lands there too.
+  [/^\/cashflow\/calendar$/, () => CALENDAR_PATH],
 ];
 
 /** The new address for an old one, or null when it isn't old. */

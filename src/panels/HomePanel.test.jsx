@@ -646,3 +646,17 @@ describe('Home reads by the month only (THL-206, THL-235)', () => {
     expect(out).not.toContain('hm-afford');
   });
 });
+
+describe('the calendar strip (THL-245 CAL-06)', () => {
+  it('sits under safe to spend and opens the calendar', () => {
+    const strip = { month: '2026-10', label: 'October',
+                    cells: [{ date: '2026-10-01', day: 1, state: 'on', due: false }],
+                    line: 'Next: Netflix on Oct 15, then pay on Oct 16.' };
+    const out = html(<HomeBody s={ok} ds={{ ...base, kind: 'normal' }} calendar={strip}
+                               onSave={() => Promise.resolve()} onLink={() => {}}
+                               onExplain={() => {}} onIncome={() => {}} />);
+    expect(out.indexOf('cal-strip')).toBeGreaterThan(out.indexOf('hm-sts'));
+    expect(out).toContain('Open calendar');
+    expect(out).toContain('Next: Netflix on Oct 15, then pay on Oct 16.');
+  });
+});

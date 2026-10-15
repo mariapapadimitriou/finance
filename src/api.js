@@ -380,6 +380,14 @@ export const setIncomeType = (id, kind) =>
   json('PUT', `/api/transactions/${id}/income-type`, { kind });
 
 // Everything Pearl isn't sure about, each with its best guess.
+// The expense calendar (THL-255): a month, and one day's story.
+export const getCalendar    = (month = '') => req(`/api/calendar${month ? `?month=${month}` : ''}`);
+export const getCalendarDay = (iso) => req(`/api/calendar/day/${iso}`);
+// Quick sort when you come back (THL-254).
+export const getQuickSort   = () => req('/api/quick-sort');
+export const quickSortSeen  = (ids, start) => json('POST', '/api/quick-sort/seen', { ids, start });
+export const quickSortStep  = (id, body) => json('PUT', `/api/quick-sort/${encodeURIComponent(id)}`, body);
+export const quickSortDone  = () => json('POST', '/api/quick-sort/done', {});
 export const getReview     = () => req('/api/review');
 export const dismissReview = (key) => json('POST', '/api/review/dismiss', { key });
 // Needs a look's Skipped (THL-213): into Skipped, or back to the queue.

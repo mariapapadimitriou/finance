@@ -367,7 +367,8 @@ def select(rows: list[tuple[Transaction, dict]], *, month: str | None = None,
            q: str | None = None, tag: str | None = None,
            merchant: str | None = None, amount_min: float | None = None,
            amount_max: float | None = None, pending: bool = False,
-           look: bool = False, ids: set[str] | None = None) -> list[tuple[Transaction, dict]]:
+           look: bool = False, ids: set[str] | None = None,
+           day: str | None = None) -> list[tuple[Transaction, dict]]:
     """The rows the filters keep. `month` of "all" keeps every month and
     "last3" the last three calendar months, this one included."""
     months = None
@@ -379,6 +380,8 @@ def select(rows: list[tuple[Transaction, dict]], *, month: str | None = None,
             if r["date"][:7] not in months:
                 continue
         elif month and month != "all" and r["date"][:7] != month:
+            continue
+        if day and r["date"][:10] != day[:10]:
             continue
         if account and r["account_id"] != account:
             continue
