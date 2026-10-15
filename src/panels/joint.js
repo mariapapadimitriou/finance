@@ -6,11 +6,11 @@ export function depositChoices(people, label) {
   const named = (people ?? []).filter(Boolean);
   return [
     { value: 'me', who: 'me', person: null, label: 'Me',
-      description: 'From an account of mine that isn’t in Pearl. It isn’t income.' },
+      description: 'My own money: a transfer, not income' },
     ...(named.length ? named : [label || 'The other person']).map((name) => ({
       value: named.length ? `p:${name}` : 'them', who: 'them', person: named.length ? name : null,
       label: name,
-      description: 'It pays for that much of this month’s joint spending, so less of it is yours.',
+      description: `Pays for ${name}’s part of this month’s joint spending`,
     })),
   ];
 }

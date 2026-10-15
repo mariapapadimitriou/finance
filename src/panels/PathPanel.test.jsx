@@ -20,7 +20,7 @@ const build = {
 describe('Path page (GR-01)', () => {
   it('shows the phases, this phase’s steps, what also counts, and the next step', () => {
     const out = html(<PathPage path={build} onAction={() => {}} />);
-    for (const text of ['Growth', 'Done', 'Now', 'Ahead', 'Steps in Build', 'Build · step 2 of 2',
+    for (const text of ['Wins', 'Done', 'Now', 'Ahead', 'Steps in Build', 'Build · step 2 of 2',
                         'Reach your Anchor’s first stop', 'One month of Essentials: $2,150',
                         'Also counts toward Build', 'A card balance grew last month',
                         'Your next step', 'add to your Anchor.', 'Ready to invest']) {

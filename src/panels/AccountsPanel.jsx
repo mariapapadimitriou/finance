@@ -7,7 +7,7 @@ import {
 } from '../api.js';
 import { loadPlaidScript } from '../plaid.js';
 import {
-  ActionToast, Alert, Choice, DetailPanel, PButton, StatTile, StatusPill, Toast,
+  ActionToast, Alert, ChipOption, Choice, DetailPanel, PButton, StatTile, StatusPill, Toast,
 } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { Field, parseAmount } from './GoalsParts.jsx';
@@ -244,9 +244,10 @@ const trailFor = (a, onBack) => [
 ];
 
 /** AM-02, AM-03, AM-06 and C-06: one account. */
-export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onRemove, onReconnect,
-                                onKeepManual, onUpdateBalance, onMerge, now = Date.now(),
+export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onJoint, onRemove,
+                                onReconnect, onKeepManual, onUpdateBalance, onMerge, now = Date.now(),
                                 busy = false }) {
+  const joint = onJoint ?? onShare;
   // "Same account as…", for two copies of one card (finance/merge.py).
   const merge = onMerge && (
     <button type="button" className="pf-text-link" onClick={onMerge}>
@@ -365,11 +366,12 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onR
                   description="Its spending, bills and balance count toward safe to spend and your snapshot." />}
           {linked && (
             <Choice type="checkbox" checked={a.joint} disabled={busy}
-                    onChange={(on) => (on ? onShare() : onSave({ joint_share: null }))}
+                    onChange={(on) => (on ? joint() : onSave({ joint_share: null }))}
                     label="This is a joint account"
                     description={a.joint && a.joint_share
                       ? `Only your share counts. Your share is ${Math.round(a.joint_share)}%.`
-                      : 'Only your share counts. You choose the share.'} />
+                      : a.joint ? 'Only your share counts, worked out from what each of you puts in.'
+                        : 'Only your share counts. You choose the share.'} />
           )}
           {a.can_anchor && (
             <Choice type="checkbox" checked={a.anchor} disabled={busy}
@@ -383,10 +385,10 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onR
               {a.joint_people?.length ? `Shared with ${peopleWords(a.joint_people)}.`
                 : 'Say who you share it with, and you can pick them when money comes in.'}
             </p>
-            <button type="button" className="pf-text-link" onClick={onPeople}>
+            <button type="button" className="pf-text-link" onClick={onJoint ?? onPeople}>
               {a.joint_people?.length ? 'Change who you share it with' : 'Add who you share it with'}
             </button>
-            <button type="button" className="pf-text-link" onClick={onShare}>Change your share</button>
+            <button type="button" className="pf-text-link" onClick={onJoint ?? onShare}>Change your share</button>
           </>
         )}
       </section>
@@ -484,25 +486,34 @@ export function MergeDialog({ a, candidates, onClose, onMerge }) {
                  className="pf-dialog" sheet>
       <h1 className="pk-h2">Same account as another one?</h1>
       <p className="pk-muted">
-        {`If ${a.name} is another copy of an account below, merge them. Transactions in both count once, what you’ve said about them carries over, and nothing else is lost.`}
+        If this is a copy of a card or account you already have, Pearl can combine them so every
+        purchase counts once.
       </p>
       {candidates.length === 0 ? (
-        <p className="pk-muted">There’s no other account of the same kind to merge with.</p>
+        <p className="pk-muted">There’s no other account of the same kind to combine with.</p>
       ) : (
-        <div className="pk-choices" role="radiogroup" aria-label="Keep which account">
-          {candidates.map((o) => (
-            <Choice key={o.id} name="ac-merge" checked={into === o.id} onChange={() => setInto(o.id)}
-                    label={o.name}
-                    description={[o.institution, o.mask && `••${o.mask}`,
-                                  o.transactions ? plural(o.transactions, 'transaction') : null,
-                                  o.source === 'plaid' ? 'connected' : 'imported']
-                      .filter(Boolean).join(' · ')} />
-          ))}
+        <>
+          <h2 className="pk-h3">Which one do you keep?</h2>
+          <div className="pk-choices" role="radiogroup" aria-label="Which one do you keep?">
+            {candidates.map((o) => (
+              <Choice key={o.id} name="ac-merge" checked={into === o.id} onChange={() => setInto(o.id)}
+                      label={titleOf(o)}
+                      description={[o.source === 'plaid' ? 'Linked' : 'Imported',
+                                    o.status === 'up_to_date' ? 'up to date' : o.status === 'disconnected' ? 'disconnected' : null,
+                                    o.transactions ? plural(o.transactions, 'transaction') : null]
+                        .filter(Boolean).join(' · ')} />
+            ))}
+          </div>
+        </>
+      )}
+      {kept && (
+        <div className="wwt-effect" role="status">
+          <p className="pk-label">What happens</p>
+          <p>{`${titleOf(kept)} stays. ${a.name} leaves Accounts and stops syncing. Purchases in both count once, keeping your categories, splits and notes. Purchases only the copy had move across, so no history is lost. Its nickname moves over where the kept card has none.`}</p>
         </div>
       )}
-      {kept && <p className="pk-label pk-muted">{`${kept.name} stays; ${a.name} comes off your accounts.`}</p>}
       {error && <Alert tone="caution">{error}</Alert>}
-      <PButton onClick={go} disabled={busy || !into}>{busy ? 'Merging…' : 'Merge them'}</PButton>
+      <PButton onClick={go} disabled={busy || !into}>{busy ? 'Combining…' : 'Combine them'}</PButton>
       <PButton variant="text" onClick={onClose}>Cancel</PButton>
     </DetailPanel>
   );
@@ -620,22 +631,24 @@ export function BalanceDialog({ a, onClose, onSave }) {
 
 const KINDS = [
   { value: 'chequing', label: 'Chequing' },
-  { value: 'savings', label: 'Savings', description: 'Money you move into it is saved' },
-  { value: 'investment', label: 'Investment', description: 'Money you move into it is saved' },
-  { value: 'credit', label: 'Credit card', description: 'Counts as money you owe' },
+  { value: 'savings', label: 'Savings' },
+  { value: 'investment', label: 'Investment' },
+  { value: 'credit', label: 'Credit card' },
 ];
 // Savings and investments can carry their last four digits, so a transfer
-// that names them is Saved without asking (2026-10-14).
+// that names them is Saved without asking (AM-10).
 const DIGITS_KINDS = ['savings', 'investment'];
 
-/** AM-05: add a balance by hand. */
+/** AM-05 / AM-10: add a balance by hand. */
 export function AddByHand({ onTab, onBack, onAdd }) {
   const [name, setName] = useState('');
   const [kind, setKind] = useState('savings');
   const [balance, setBalance] = useState('');
   const [last4, setLast4] = useState('');
+  const [anchor, setAnchor] = useState(true);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const digits = last4.replace(/\D/g, '');
   const submit = (e) => {
     e.preventDefault();
     if (!name.trim()) { setError({ field: 'name', text: 'Give it a name, like the bank and account.' }); return; }
@@ -644,14 +657,14 @@ export function AddByHand({ onTab, onBack, onAdd }) {
       setError({ field: 'balance', text: 'Enter the balance today, like 3,000.' });
       return;
     }
-    const digits = last4.replace(/\D/g, '');
     if (DIGITS_KINDS.includes(kind) && digits && digits.length < 4) {
       setError({ field: 'last4', text: 'The last four digits, like 3333.' });
       return;
     }
     setBusy(true);
     setError(null);
-    onAdd(name.trim(), kind, n, DIGITS_KINDS.includes(kind) ? digits.slice(-4) : '').catch((err) => {
+    onAdd(name.trim(), kind, n, DIGITS_KINDS.includes(kind) ? digits.slice(-4) : '',
+          kind === 'savings' && anchor).catch((err) => {
       setError({ field: 'balance', text: err.message });
       setBusy(false);
     });
@@ -662,36 +675,136 @@ export function AddByHand({ onTab, onBack, onAdd }) {
                         { label: 'Add a balance' }]}
                 title="Add a balance by hand" onTab={onTab} />
       <p className="pf-intro">
-        For a bank Pearl can’t link yet. The balance shows in your snapshot. Transactions won’t
-        come in, so it won’t change your spending.
+        For an account Pearl can’t link. Its balance shows on Home and can be part of your Anchor.
       </p>
       <form className="pf-form" onSubmit={submit} noValidate>
         <Field label="Name" id="ac-name" error={error?.field === 'name' ? error.text : null}>
-          <input id="ac-name" autoComplete="off" maxLength={40} placeholder="Meridian Savings"
+          <input id="ac-name" autoComplete="off" maxLength={40} placeholder="TD TFSA"
                  value={name} onChange={(e) => { setName(e.target.value); setError(null); }} />
         </Field>
-        <h2 className="pk-h3">Type</h2>
-        <div className="pk-choices" role="radiogroup" aria-label="Type">
-          {KINDS.map((k) => (
-            <Choice key={k.value} name="ac-kind" checked={kind === k.value}
-                    onChange={() => setKind(k.value)} label={k.label} description={k.description} />
-          ))}
+        <div className="gl-field">
+          <p className="pk-label">Type</p>
+          <div className="pk-opts" role="radiogroup" aria-label="Type">
+            {KINDS.map((k) => (
+              <ChipOption key={k.value} label={k.label} selected={kind === k.value}
+                          onSelect={() => setKind(k.value)} />
+            ))}
+          </div>
         </div>
+        {DIGITS_KINDS.includes(kind) && (
+          <Field label="Last four digits" id="ac-last4"
+                 error={error?.field === 'last4' ? error.text : null}>
+            <input id="ac-last4" inputMode="numeric" autoComplete="off" placeholder="5521" maxLength={4}
+                   value={last4} onChange={(e) => { setLast4(e.target.value); setError(null); }} />
+            {!error && (
+              <p className="gl-hint">
+                {digits.length === 4
+                  ? `Transfers to an account ending in ${digits} are sorted as Saved automatically`
+                  : 'Transfers naming these digits are sorted as Saved automatically'}
+              </p>
+            )}
+          </Field>
+        )}
         <Field label={kind === 'credit' ? 'Balance owing today' : 'Balance today'} id="ac-balance"
                error={error?.field === 'balance' ? error.text : null}>
           <input id="ac-balance" inputMode="decimal" autoComplete="off" placeholder="$3,000.00"
                  value={balance} onChange={(e) => { setBalance(e.target.value); setError(null); }} />
         </Field>
         {DIGITS_KINDS.includes(kind) && (
-          <Field label="Last four digits (optional) · transfers naming them count as saved" id="ac-last4"
-                 error={error?.field === 'last4' ? error.text : null}>
-            <input id="ac-last4" inputMode="numeric" autoComplete="off" placeholder="3333" maxLength={4}
-                   value={last4} onChange={(e) => { setLast4(e.target.value); setError(null); }} />
-          </Field>
+          <div className="pk-choices">
+            <Choice type="checkbox" checked={kind === 'savings' && anchor} disabled={kind !== 'savings'}
+                    onChange={setAnchor} label="Part of my Anchor"
+                    description="Only cash savings usually belong here" />
+          </div>
         )}
-        <PButton type="submit" disabled={busy}>{busy ? 'Adding…' : 'Add account'}</PButton>
-        <PButton variant="text" onClick={onBack}>Cancel</PButton>
+        <div className="pf-actions">
+          <PButton type="submit" disabled={busy}>{busy ? 'Adding…' : 'Add account'}</PButton>
+          <PButton variant="text" onClick={onBack}>Cancel</PButton>
+        </div>
       </form>
+    </div>
+  );
+}
+
+/** AM-08: a joint account — who you share it with, and your share. */
+export function JointPage({ a, onTab, onBack, onSave, busy = false }) {
+  const people = a.joint_people ?? [];
+  const fixed = a.joint_share != null;
+  const [mode, setMode] = useState(fixed ? 'fixed' : 'auto');
+  const [text, setText] = useState(fixed ? `${a.joint_share}%` : '50%');
+  const [error, setError] = useState(null);
+  useEffect(() => { setMode(a.joint_share != null ? 'fixed' : 'auto'); }, [a.id, a.joint_share]);
+  const title = people.length ? `Joint with ${peopleWords(people)}` : 'A joint account';
+  const trail = [{ label: 'Profile', to: 'profile' }, { label: 'Accounts', onClick: onBack },
+                 { label: a.name, onClick: () => onBack('detail') }, { label: 'Joint' }];
+  const add = () => {
+    const name = window.prompt('Who do you share it with?');
+    const parsed = parsePeople(name || '');
+    if (!parsed.length) return;
+    onSave({ joint_people: [...people, ...parsed.filter((p) => !people.some((x) => x.toLowerCase() === p.toLowerCase()))] });
+  };
+  const remove = (name) => {
+    const rest = people.filter((p) => p !== name);
+    if (rest.length) onSave({ joint_people: rest });
+    else onSave({ joint_share: null });
+  };
+  const saveShare = (next) => {
+    setError(null);
+    if (next === 'auto') { setMode('auto'); onSave({ joint_share: 'auto' }); return; }
+    const share = parseShare(text);
+    if (Number.isNaN(share) || share < 1 || share > 99) { setMode('fixed'); setError('Enter a share between 1% and 99%.'); return; }
+    setMode('fixed');
+    onSave({ joint_share: share });
+  };
+  const words = fixed ? `your share is ${Math.round(a.joint_share)}%` : 'your share is worked out each month';
+  return (
+    <div className="pk hm-page pf-page">
+      <PageHead trail={trail} title={title} onTab={onTab} />
+      <p className="pf-intro">
+        {`${titleOf(a)}${balanceWords(a) ? ` · ${balanceWords(a)}` : ''}`}
+      </p>
+      <section className="hm-card pf-joint" aria-labelledby="ac-people-title">
+        <h2 className="pk-h3" id="ac-people-title">Who you share it with</h2>
+        <p className="pk-muted">Pearl asks “Who put this in?” with these names when money arrives
+          from outside Pearl.</p>
+        <div className="pk-opts">
+          {people.map((p) => (
+            <span key={p} className="pk-tag editable">
+              {p}
+              <button type="button" aria-label={`Remove ${p}`} disabled={busy} onClick={() => remove(p)}>
+                <PIcon name="x" size={12} />
+              </button>
+            </span>
+          ))}
+          <button type="button" className="pk-opt" disabled={busy} onClick={add}>
+            <PIcon name="plus" size={14} /> Add someone
+          </button>
+        </div>
+      </section>
+      <section className="hm-card pf-joint" aria-labelledby="ac-share-title">
+        <h2 className="pk-h3" id="ac-share-title">Your share</h2>
+        <p className="pk-muted">
+          {`Spending is yours by default, less what ${people.length ? peopleWords(people) : 'the other person'} put${people.length === 1 ? 's' : ''} in that month. Set a share to split every charge instead.`}
+        </p>
+        <div className="pk-choices" role="radiogroup" aria-label="Your share">
+          <Choice name="ac-share-mode" checked={mode === 'auto'} disabled={busy}
+                  onChange={() => saveShare('auto')}
+                  label="Work it out from what each of us puts in" description="Recommended" />
+          <Choice name="ac-share-mode" checked={mode === 'fixed'} disabled={busy}
+                  onChange={() => setMode('fixed')} label="A fixed share" description="For example, 50%" />
+        </div>
+        {mode === 'fixed' && (
+          <form className="pf-form" onSubmit={(e) => { e.preventDefault(); saveShare('fixed'); }}>
+            <Field label="Your share" id="ac-share-pc" error={error}>
+              <input id="ac-share-pc" inputMode="decimal" autoComplete="off" value={text}
+                     onChange={(e) => { setText(e.target.value); setError(null); }}
+                     onBlur={() => saveShare('fixed')} />
+              {!error && <p className="gl-hint">Between 1% and 99%</p>}
+            </Field>
+          </form>
+        )}
+      </section>
+      <p className="pf-foot">{`In Accounts this row reads: “${people.length ? `joint with ${peopleWords(people)}` : 'joint'} · ${words}”.`}</p>
     </div>
   );
 }
@@ -773,6 +886,8 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
         setNote('Nickname saved.');
       } else if ('last4' in fields) {
         setNote(fields.last4 ? 'Transfers naming these digits count as saved.' : 'Digits removed.');
+      } else if ('joint_people' in fields || 'joint_share' in fields) {
+        setNote('Saved.');
       }
       await refresh();
       return r;
@@ -788,19 +903,28 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
   if (!data) return <div className="pk hm-page pf-page"><p className="pk-muted" role="status">Loading your accounts…</p></div>;
 
   const all = [...data.linked, ...data.added];
-  const current = view.name === 'detail' ? all.find((a) => a.id === view.id) : null;
+  const current = ['detail', 'joint'].includes(view.name) ? all.find((a) => a.id === view.id) : null;
   const back = () => { setView({ name: 'list' }); setDialog(null); };
 
   let page;
   if (view.name === 'add') {
     page = (
       <AddByHand onTab={onTab} onBack={back}
-                 onAdd={async (name, kind, balance, last4) => {
+                 onAdd={async (name, kind, balance, last4, anchor) => {
                    const r = await addManualAccount(name, kind, balance, last4);
+                   if (anchor && r.account?.id) {
+                     try { await saveAccountSettings(r.account.id, { anchor: true }); } catch { /* not a savings account */ }
+                   }
                    setNote(`${r.account?.name ?? name} is added.`);
                    await refresh();
                    setView({ name: 'list' });
                  }} />
+    );
+  } else if (current && view.name === 'joint') {
+    page = (
+      <JointPage a={current} onTab={onTab} busy={busy}
+                 onBack={(to) => setView(to === 'detail' ? { name: 'detail', id: current.id } : { name: 'list' })}
+                 onSave={(fields) => save(current, fields).catch(() => {})} />
     );
   } else if (current) {
     page = (
@@ -808,6 +932,7 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
                      onSave={(fields) => save(current, fields).catch(() => {})}
                      onShare={() => setDialog({ kind: 'share' })}
                      onPeople={() => setDialog({ kind: 'people' })}
+                     onJoint={() => setView({ name: 'joint', id: current.id })}
                      onRemove={(start = 'keep') => setDialog({ kind: 'remove', start })}
                      onReconnect={onReconnect}
                      onUpdateBalance={() => setDialog({ kind: 'balance' })}

@@ -61,6 +61,8 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
   const [error, setError] = useState(null);
   // main | what | category | split | note | exclude | bank | whose | tags | name
   const [step, setStep] = useState(startStep);
+  // The case the What was this? sheet is on, for the panel's heading.
+  const [whatStep, setWhatStep] = useState(null);
   const [busy, setBusy] = useState(false);
   const [banks, setBanks] = useState([]);
 
@@ -119,11 +121,9 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
   // list and Needs a look. Saving closes with what it did and Undo.
   if (step === 'what') {
     return (
-      <DetailPanel label="What was this?" onClose={onClose}
-                   back={{ label: `${tx.merchant} · ${txAmount(tx.amount, { inflow: tx.inflow, signed: true })}`,
-                           onClick: back }}>
-        <h2 className="pk-h2">What was this?</h2>
-        <WhatWasThis tx={tx} categories={categories} busy={busy}
+      <DetailPanel label="What was this?" overline="What was this?" onClose={onClose}>
+        <h2 className="pk-h2">{whatStep || 'What was this?'}</h2>
+        <WhatWasThis tx={tx} categories={categories} busy={busy} onStep={setWhatStep}
                      onSplit={() => setStep('split')}
                      onDone={(res) => {
                        onSaved?.({ close: true, change: {

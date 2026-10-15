@@ -36,7 +36,7 @@ from datetime import date, timedelta
 from .analytics import is_others
 from .categorize import is_unsure
 from .duplicates import questions as duplicate_questions
-from .etransfers import party
+from .etransfers import is_etransfer, party
 from .income import KINDS, cadence, is_income, kind_of
 from .models import Transaction
 from .splits import suggest as split_suggest
@@ -205,6 +205,22 @@ def build(transactions: list[Transaction], today: str | None = None,
                          "reason": f"It came into your account with {t.joint} from "
                                    "outside Pearl, so it could be yours or theirs."})
 
+    # 3c. Who sent this? (R-09): an e-Transfer in with no name from the bank.
+    who_sent = []
+    for t in live:
+        if (t.amount >= 0 or t.date[:10] < since or not is_etransfer(t) or t.party
+                or t.repays or is_others(t)):
+            continue
+        who = party(t)
+        if who and who.get("name"):
+            continue
+        key = "who:" + t.fingerprint
+        if key in dismissed:
+            continue
+        who_sent.append({"key": key, "txn": _brief(t),
+                         "reason": "Your bank didn’t say who sent it. A name helps Pearl match "
+                                   "paybacks and makes it easy to find."})
+
     # 4. Income whose type is a guess.
     income = []
     for t in live:
@@ -240,16 +256,17 @@ def build(transactions: list[Transaction], today: str | None = None,
 
     # Skipped items stay listed, marked, and leave the badge (THL-213).
     keys = ({"u:" + t["id"] for t in groups["transfers"]}
-            | {it["key"] for part in (unsure, money_in, joint_in, income, three, dupes)
+            | {it["key"] for part in (unsure, money_in, joint_in, who_sent, income, three, dupes)
                for it in part})
     held = keys & (skipped or set())
     for t in groups["transfers"]:
         t["skipped"] = "u:" + t["id"] in held
-    for part in (unsure, money_in, joint_in, income, three, dupes):
+    for part in (unsure, money_in, joint_in, who_sent, income, three, dupes):
         for it in part:
             it["skipped"] = it["key"] in held
-    count = (groups["count"] + len(unsure) + len(money_in) + len(joint_in) + len(income)
-             + len(three) + len(dupes)) - len(held)
+    count = (groups["count"] + len(unsure) + len(money_in) + len(joint_in) + len(who_sent)
+             + len(income) + len(three) + len(dupes)) - len(held)
     return {"count": count, "skipped": len(held), "unsorted": groups, "unsure_category": unsure,
-            "money_in": money_in, "joint_in": joint_in, "income_type": income, "three_pay_month": three,
+            "money_in": money_in, "joint_in": joint_in, "who_sent": who_sent,
+            "income_type": income, "three_pay_month": three,
             "duplicate": dupes, "kinds": KINDS}

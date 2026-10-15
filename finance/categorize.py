@@ -540,7 +540,8 @@ def categorize(merchant: str, description: str = "", issuer_category: str = "",
 def apply_categories(transactions, overrides: dict[str, str] | None = None) -> None:
     """Categorize in place, leaving explicit user choices untouched."""
     for t in transactions:
-        if t.category and t.category_source == "user":
+        # Hers: set by hand, or by a date range she sorted (finance/ranges.py).
+        if t.category and t.category_source in ("user", "range"):
             continue
         # A correction made once applies to the merchant however its name is
         # spelled next time: Plaid gives each merchant a stable id.

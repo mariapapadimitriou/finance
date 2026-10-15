@@ -16,9 +16,10 @@ describe('money into a joint account', () => {
   it('asks who put it in: me, or the other person', () => {
     const out = html(<JointIn it={it_} busy={false} onSkip={() => {}} act={() => {}} />);
     expect(out).toContain('Who put this in?');
-    expect(out).toContain('From an account of mine that isn’t in Pearl. It isn’t income.');
+    expect(out).toContain('My own money: a transfer, not income');
+    expect(out).toContain('Money into your joint account from outside Pearl.');
     expect(out).toContain('>Maya<');
-    expect(out).toContain('It pays for that much of this month’s joint spending');
+    expect(out).toContain('Pays for Maya’s part of this month’s joint spending');
     expect(out).toContain('The same for every deposit from Maya Papas');
   });
 });
@@ -37,7 +38,7 @@ describe('Debts sits with the other Growth pages', () => {
                                         missing_details: 0 }} onEdit={() => {}} />);
     expect(out).toContain('class="in-tabs"');
     expect(out).toMatch(/aria-current="page"[^>]*>Debts</);
-    expect(out).toContain('>Growth</h1>');
+    expect(out).toContain('>Home</h1>');
   });
 });
 

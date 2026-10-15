@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import WhatWasThis, { TagEditor, bodyFor, ready, startCase } from './WhatWasThis.jsx';
+import WhatWasThis, { CaseNeeds, TagEditor, bodyFor, effectWords, groupedCases, ready, startCase } from './WhatWasThis.jsx';
 import { BatchMarkPanel, BATCH_CASES } from './BatchPanels.jsx';
-import { FoldedList, AMOUNTS, COUNTS, VIEWS, accountOptionsFrom, amountRange, monthName } from './TransactionsList.jsx';
+import { COUNTS, VIEWS, accountOptionsFrom, amountRange, groupLabel, monthName, owedWords } from './TransactionsList.jsx';
 import { SelectedBar } from './KeyboardReview.jsx';
-import { HiddenSection, NamesSection, TagsSection } from './RulesPanel.jsx';
+import { CategoriesSection, NamesSection, TagsSection } from './RulesPanel.jsx';
 import { CategoryChip, TxRow } from '../pearl/kit.jsx';
 
 const html = (el) => renderToStaticMarkup(el);
@@ -19,19 +19,24 @@ const CATS = [
 ];
 
 const OUT = {
-  id: 'x', direction: 'out', current: 'spending',
+  id: 'x', direction: 'out', current: 'spending', best: 'spending',
+  groups: [{ key: 'spending', label: 'Spending' }, { key: 'not_spending', label: 'Not spending' },
+           { key: 'not_mine', label: 'Not mine to count' }],
   cases: [
-    { key: 'spending', label: 'A purchase', needs: 'category', effect: 'Counts as spending, in the category you pick.',
+    { key: 'spending', label: 'A purchase', group: 'spending', needs: 'category',
+      effect: 'Counts as spending in a category you pick.',
       remember: 'merchant', remember_label: 'Do this for every Pilot from now on' },
-    { key: 'saved', label: 'Put into savings or investments', needs: 'account',
-      effect: 'Adds to what you put away. Not spending.', remember: 'destination',
+    { key: 'saved', label: 'Put into savings', group: 'not_spending', needs: 'account',
+      effect: 'Moved to one of your savings accounts.', remember: 'destination',
       remember_label: 'Do this for every transfer to ••3333 from now on' },
-    { key: 'shared', label: 'Paid for a group', needs: 'split', effect: 'Only your share counts.', remember: null },
-    { key: 'work', label: 'A work expense I’ll be reimbursed for', needs: null,
-      effect: 'Left out until the reimbursement arrives; then both disappear.', remember: null },
+    { key: 'shared', label: 'Paid for a group', group: 'spending', needs: 'split', effect: 'Only your share counts.', remember: null },
+    { key: 'work', label: 'A work expense, to be reimbursed', group: 'not_mine', needs: null,
+      effect: 'Left out of your spending until the money comes back.', remember: null },
   ],
-  accounts: [{ id: 'inv1', label: 'My RRSP', kind: 'investment', source: 'linked' },
-             { id: 'hand:1', label: 'Wealthsimple TFSA', kind: 'investment', source: 'hand' }],
+  accounts: [{ id: 'inv1', label: 'My RRSP', kind: 'investment', source: 'linked', anchor: false, sub: 'Investment' },
+             { id: 'hand:1', label: 'Wealthsimple TFSA', kind: 'investment', source: 'hand', anchor: false,
+               sub: 'Investment · added by hand' },
+             { id: 'sav', label: 'TD Savings', kind: 'savings', source: 'linked', anchor: true, sub: 'Part of your Anchor' }],
   saved_to: null, income_kinds: { salary: 'Salary' }, income_kind: null, joint: '', joint_people: [],
   tags: [], categories: ['Groceries', 'Dining'],
 };
@@ -69,37 +74,43 @@ describe('What was this? (2026-10-14)', () => {
       .toEqual({ case: 'payback', charge: 'c1', person: 'Priya' });
   });
 
-  it('draws every case with what it does, and the chosen one’s needs', () => {
-    const out = html(<WhatWasThis tx={{ id: 'x', merchant: 'Pilot', amount: 500, inflow: false }}
-                                  categories={CATS} initial={OUT} showHead />);
+  it('step 1 (WW-02): the transaction, Pearl’s best guess on top, then the cases in their groups', () => {
+    const out = html(<WhatWasThis tx={{ id: 'x', merchant: 'Pilot', amount: 500, inflow: false, date: '2026-10-07',
+                                        account: 'TD Chequing ••4417' }}
+                                  categories={CATS} initial={OUT} />);
     calm(out);
-    expect(out).toContain('A purchase · now');
-    expect(out).toContain('Put into savings or investments');
-    expect(out).toContain('Adds to what you put away. Not spending.');
-    expect(out).toContain('What was it for?');                  // the current case opened
-    expect(out).toContain('>Groceries<');
-    expect(out).not.toContain('>Pets<');                         // hidden stays out
-    expect(out).toContain('Do this for every Pilot from now on');
-    expect(out).toContain('A rule you can see and undo in Categories and rules.');
-    expect(out).toContain('Pilot');
-    expect(out).toContain('-$500.00');
+    for (const s of ['Pilot', 'Wednesday, October 7 · TD Chequing ••4417', '-$500.00', 'Pearl’s best guess',
+      'A purchase', 'Counts as spending in a category you pick.', 'Spending', 'Not spending',
+      'Not mine to count', 'Put into savings', 'A work expense, to be reimbursed']) {
+      expect(out).toContain(s);
+    }
+    expect(out).not.toContain('What was it for?');              // that's step 2
+    const groups = groupedCases(OUT);
+    expect(groups.map((g) => g.label)).toEqual(['Pearl’s best guess', 'Spending', 'Not spending', 'Not mine to count']);
+    expect(groups[0].cases.map((c) => c.key)).toEqual(['spending']);
+    expect(groups[1].cases.map((c) => c.key)).toEqual(['shared']);   // the best guess isn't repeated
   });
 
-  it('offers the savings accounts, linked and added by hand, when Saved is chosen', () => {
-    const out = html(<WhatWasThis tx={{ id: 'x', merchant: 'TFR', amount: 500, inflow: false }}
-                                  categories={CATS} initial={{ ...OUT, current: 'saved' }} />);
-    expect(out).toContain('Which account did it go to?');
-    expect(out).toContain('>My RRSP<');
-    expect(out).toContain('>Wealthsimple TFSA<');
-    expect(out).toContain('Added by you');
-    expect(out).toContain('Not sure');
-    expect(out).toContain('Do this for every transfer to ••3333 from now on');
+  it('step 2 (WW-03): which savings account, with what each is, and what this does', () => {
+    const saved = OUT.cases[1];
+    const out = html(<CaseNeeds c={saved} data={OUT} s={{ account: 'sav' }} set={() => {}} spending={[]} />);
+    for (const s of ['Which account did it go to?', '>My RRSP<', '>Wealthsimple TFSA<', '>TD Savings<',
+      'Part of your Anchor', 'Investment · added by hand', 'Somewhere Pearl can’t see', 'Still counts as put away']) {
+      expect(out).toContain(s);
+    }
+    expect(effectWords(saved, { account: 'sav' }, OUT, 'Safe to spend goes up by $200.00.', { amount: 200 }))
+      .toBe('Safe to spend goes up by $200.00. It shows as “Put away to TD Savings” and adds $200.00 to Savings this month and to your Anchor.');
+    expect(effectWords(saved, {}, OUT, '', { amount: 200 }))
+      .toBe('It shows as “Put away” and adds $200.00 to Savings this month.');
+    const refund = { key: 'refund', needs: 'refund', effect: 'Links to the purchase.',
+                     candidates: [{ id: 'c1', merchant: 'Aritzia', date: '2026-09-26', amount: 148, category: 'Shopping', exact: true }] };
+    expect(effectWords(refund, { charge: 'c1' }, OUT, '', { amount: 148 }))
+      .toBe('The refund comes off Shopping in September. It isn’t income.');
   });
 
   it('points to Profile › Accounts when there is no savings account yet', () => {
-    const out = html(<WhatWasThis tx={{ id: 'x', merchant: 'TFR', amount: 500, inflow: false }}
-                                  categories={CATS} initial={{ ...OUT, current: 'saved', accounts: [] }} />);
-    expect(out).toContain('Add one on Profile › Accounts');
+    const out = html(<CaseNeeds c={OUT.cases[1]} data={{ ...OUT, accounts: [] }} s={{}} set={() => {}} spending={[]} />);
+    expect(out).toContain('Add a savings or investment account on Profile › Accounts');
   });
 
   it('a tag editor lists the tags with a way to take each off', () => {
@@ -122,11 +133,11 @@ describe('the selection, answered at once', () => {
     expect(out).toContain('>Mark 3<');
   });
 
-  it('the selected bar has Mark as, Tag and Leave out beside the keys', () => {
-    const out = html(<SelectedBar count={4} onChange={() => {}} onConfirm={() => {}} onClear={() => {}}
+  it('the selected bar (VF-03) has the total, Change category, Mark as…, Tag, Leave out and Confirm', () => {
+    const out = html(<SelectedBar count={3} total="-$148.95" onChange={() => {}} onConfirm={() => {}} onClear={() => {}}
                                   onMark={() => {}} onTag={() => {}} onLeaveOut={() => {}} />);
-    expect(out).toContain('4 selected');
-    for (const w of ['Change category', 'Mark as…', 'Tag', 'Leave out', 'Confirm suggestions', 'Clear']) {
+    expect(out).toContain('3 selected · -$148.95');
+    for (const w of ['Change category', 'Mark as…', 'Tag', 'Leave out', 'Confirm', 'aria-label="Clear selection"']) {
       expect(out).toContain(w);
     }
     // On a phone (no single keys) the key caps go.
@@ -140,10 +151,12 @@ describe('the list’s filters and views', () => {
     expect(amountRange('')).toEqual({});
     expect(amountRange('0-20')).toEqual({ amount_min: '0', amount_max: '20' });
     expect(amountRange('500-')).toEqual({ amount_min: '500' });
-    expect(AMOUNTS.map((a) => a.label)).toContain('Over $500');
     expect(COUNTS.map((c) => c.value)).toEqual(['', 'spending', 'income', 'none']);
     expect(VIEWS.map((v) => v.label)).toEqual(['By day', 'By merchant', 'By category']);
     expect(monthName('all')).toBe('All months');
+    expect(monthName('last3')).toBe('Last 3 months');
+    expect(owedWords({ names: ['Priya'], total: 194.2, count: 2 })).toBe('Priya owes you $194.20 for 2 purchases.');
+    expect(owedWords({ names: ['Priya', 'Sam'], total: 50, count: 1 })).toBe('Priya and Sam owe you $50.00 for 1 purchase.');
   });
 
   it('the account filter lists the accounts as Profile › Accounts does', () => {
@@ -171,18 +184,13 @@ describe('the list’s filters and views', () => {
       .toEqual({ value: 'q', label: 'Card' });
   });
 
-  it('folded by merchant: one line each, biggest first, with what else came in', () => {
-    const rows = [
-      { merchant: 'Loblaws', logo: '', count: 3, spent: 180.5, income: 0, not_counted: 0 },
-      { merchant: 'Northwind', logo: '', count: 1, spent: 0, income: 2000, not_counted: 0 },
-      { merchant: 'TD Visa Payment', logo: '', count: 1, spent: 0, income: 0, not_counted: 300 },
-    ];
-    const out = html(<FoldedList rows={rows} kind="merchant" onPick={() => {}} />);
-    calm(out);
-    expect(out).toContain('3 transactions');
-    expect(out).toContain('-$180.50');
-    expect(out).toContain('+$2,000.00');
-    expect(out).toMatch(/pk-amt muted[^>]*>\$300\.00/);
+  it('by merchant (VF-01): a header per group with its count and total', () => {
+    expect(groupLabel({ name: 'Uber Eats', count: 3, spent: 74.3, income: 0, not_counted: 0 }))
+      .toBe('UBER EATS · 3 PURCHASES · -$74.30');
+    expect(groupLabel({ name: 'Northwind', count: 1, spent: 0, income: 2000, not_counted: 0 }))
+      .toBe('NORTHWIND · 1 · +$2,000.00');
+    expect(groupLabel({ name: 'TD Visa Payment', count: 1, spent: 0, income: 0, not_counted: 612 }))
+      .toBe('TD VISA PAYMENT · 1 · $612.00');
   });
 });
 
@@ -201,17 +209,25 @@ describe('rows and chips', () => {
   });
 });
 
-describe('Categories and rules: names, tags, hidden', () => {
-  it('lists her merchant names, her tags, and which categories she uses', () => {
-    const names = html(<NamesSection names={[{ key: 'roasted nut', merchant: 'Roasted Nut', name: 'The Nut' }]} onForget={() => {}} />);
+describe('Categories and rules (CR-01 to CR-03)', () => {
+  it('lists her merchant names, her tags, and each category with what Pearl decides', () => {
+    const names = html(<NamesSection names={[{ key: 'roasted nut', merchant: 'Roasted Nut', name: 'The Nut' }]}
+                                     onRename={() => {}} onForget={() => {}} />);
     expect(names).toContain('The Nut');
-    expect(names).toContain('Use the bank’s name');
+    expect(names).toContain('From your bank: Roasted Nut');
+    expect(names).toContain('>Rename<');
     const tags = html(<TagsSection tags={[{ tag: 'Ibiza', count: 2, spent: 940 }]} onRename={() => {}} onRemove={() => {}} />);
     expect(tags).toContain('Ibiza');
-    expect(tags).toContain('2 transactions');
-    const hidden = html(<HiddenSection categories={CATS} hidden={['Pets']} onHide={() => {}} />);
-    expect(hidden).toMatch(/<input type="checkbox" checked=""[^>]*\/>Groceries/);
-    expect(hidden).toMatch(/<input type="checkbox"[^>]*\/>Pets/);
-    expect(hidden).not.toMatch(/checked=""[^>]*\/>Pets/);
+    expect(tags).toContain('2 transactions · $940.00');
+    expect(tags).toContain('>Remove<');
+    const cats = html(<CategoriesSection categories={CATS} hidden={['Pets']} kinds={{ Dining: 'variable' }}
+                                         pearl={{ Groceries: 'variable', Dining: 'fixed' }}
+                                         onKind={() => {}} onHide={() => {}} />);
+    expect(cats).toContain('Pearl decides · Variable');
+    expect(cats).toContain('Always Variable');
+    expect(cats).toContain('>Hidden<');
+    expect(cats).toContain('>Show<');
+    expect(cats).toContain('>Hide<');
+    expect(cats).toContain('Essentials');
   });
 });

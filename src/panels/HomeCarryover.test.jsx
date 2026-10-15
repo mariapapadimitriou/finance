@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { CarryoverPrompt, ShortfallSheet, carryoverRow } from './HomeCarryover.jsx';
+import { CarryoverPrompt, ShortfallCard, carryoverRow } from './HomeCarryover.jsx';
 import { heroCopy, homeAlert, sheetRows } from './HomePanel.jsx';
 
 const html = (el) => renderToStaticMarkup(el);
@@ -44,7 +44,7 @@ describe('last month carried in (THL-212)', () => {
     const { rows, total } = sheetRows(usual);
     const carry = rows.find((r) => r.key === 'carryover');
     expect(carry.label).toBe('Catching up from September');
-    expect(carry.detail).toBe('1 of 2 · you chose to spread it');
+    expect(carry.detail).toBe('1 of 2 · $500 short · spread over 2 months');
     expect(carry.display).toBe('$250.00');
     const [income, ...out] = rows.map((r) => Math.round(r.amount * 100));
     expect(income - out.reduce((x, y) => x + y, 0)).toBe(Math.round(usual.amount * 100));
@@ -63,24 +63,29 @@ describe('last month carried in (THL-212)', () => {
 
   it('a shortfall asks how October makes it up', () => {
     const out = html(<CarryoverPrompt c={short} onAnswer={() => Promise.resolve()} />);
-    expect(out).toContain('September ended $500 short of plan. Choose how October makes it up.');
-    const sheet = html(<ShortfallSheet c={short} now="October" was="September"
-                                       onClose={() => {}} onAnswer={() => Promise.resolve()} />);
+    expect(out).toContain('September ended $500 short of plan');
+    expect(out).toContain('How would you like to catch up?');
+    const card = html(<ShortfallCard c={short} now="October" was="September" safe={{ amount: 642.18 }}
+                                     onAnswer={() => Promise.resolve()} onExplain={() => {}} />);
     for (const t of ['Take it from October', 'Spread over 2 months', 'Spread over 3 months',
-                     '$4,500 came in and $5,000 went out', 'easy to make up']) {
-      expect(sheet).toContain(t);
+                     '$4,500 came in and $5,000 went out', 'Safe to spend: $642 → $142',
+                     '$250 a month · October → $392', 'Catch up over 2 months', 'How we worked this out']) {
+      expect(card).toContain(t);
     }
-    calm(sheet);
+    calm(card);
   });
 
   it('money to spare suggests saving it, with the date it’s added by', () => {
     const out = html(<CarryoverPrompt c={spare} onAnswer={() => Promise.resolve()} />);
     expect(out).toContain('September left you $500 more than planned');
-    expect(out).toContain('Add to your Anchor');
+    expect(out).toContain('What would you like to do with it?');
+    expect(out).toContain('Put it in your Anchor');
+    expect(out).toContain('Pearl can’t move money for you.');
     expect(out).toContain('Put it in a treasure chest');
-    expect(out).toContain('Spend it in October');
-    expect(out).toContain('If you don’t choose by Friday, October 9, it’s added to October’s safe to spend.');
-    expect(out).not.toMatch(/pk-btn primary/);
+    expect(out).toContain('Spend it this month');
+    expect(out).toContain('I’ve moved it');
+    expect(out).toContain('>Later<');
+    expect(out).toContain('If you don’t choose in 7 days, it’s added to this month’s safe to spend.');
   });
 
   it('added after 7 days says so once', () => {

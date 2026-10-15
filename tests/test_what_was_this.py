@@ -92,13 +92,14 @@ def test_money_out_offers_the_cases_and_names_what_each_does(client):
     d = cases(client, ids["SEND E-TFR ***Q7K"])
     assert d["direction"] == "out"
     keys = [c["key"] for c in d["cases"]]
-    assert keys == ["spending", "bill", "moved", "saved", "saved_part", "lent", "shared",
-                    "paying_back", "work", "not_mine"]
+    assert keys == ["spending", "bill", "shared", "moved", "saved", "lent", "paying_back",
+                    "work", "not_mine"]
     saved = next(c for c in d["cases"] if c["key"] == "saved")
     assert saved["needs"] == "account" and saved["remember"] == "destination"
     assert saved["remember_label"] == "Do this for every transfer to M. Papas from now on"
-    assert saved["effect"] == "Adds to what you put away. Not spending."
+    assert saved["effect"].startswith("Moved to one of your savings accounts.")
     assert d["current"] is None            # not sorted yet
+    assert d["best"] == "saved"            # Pearl's best guess for a transfer to a person
     assert d["accounts"] == []             # no savings account to pick from yet
 
 
@@ -107,8 +108,8 @@ def test_money_in_offers_its_cases(client):
     d = cases(client, ids["E-TRANSFER FROM SAM"])
     assert d["direction"] == "in"
     assert [c["key"] for c in d["cases"]] == [
-        "pay", "own", "out_of_savings", "payback", "refund", "reimbursement", "borrowed",
-        "lent_back", "not_mine"]
+        "pay", "regular_pay", "payback", "refund", "reimbursement", "own", "out_of_savings",
+        "borrowed", "lent_back", "not_mine"]
     assert d["income_kinds"]["salary"] == "Salary"
 
 
@@ -162,7 +163,7 @@ def test_a_linked_investment_account_is_offered_too(client):
     ids = load(client.st, row(200, "TRANSFER TO 4444"))
     d = cases(client, ids["TRANSFER TO 4444"])
     assert d["accounts"] == [{"id": "inv1", "label": "My RRSP", "kind": "investment",
-                              "source": "linked"}]
+                              "source": "linked", "anchor": False, "sub": "Investment"}]
 
 
 def test_moved_remembers_the_destination(client):
@@ -393,7 +394,7 @@ def test_tags_group_rows_without_moving_them(client):
 
 # ── Views and filters ────────────────────────────────────────────────────
 
-def test_folded_by_merchant_and_by_category(client):
+def test_by_merchant_and_by_category_views(client):
     load(client.st, row(12, "COFFEE A", account="card", kind="credit", category="Coffee",
                         merchant="Pilot", when=in_month(1)),
          row(8, "COFFEE B", account="card", kind="credit", category="Coffee", merchant="Pilot",
@@ -403,11 +404,11 @@ def test_folded_by_merchant_and_by_category(client):
          row(-2000, "PAYROLL", category="Income", when=in_month(1)))
     data = listing(client, by="merchant")
     assert data["transactions"] == [] and data["total"] == 4
-    assert [(m["merchant"], m["count"], m["spent"]) for m in data["merchants"]][:2] == [
+    assert [(m["name"], m["count"], m["spent"]) for m in data["groups_of"]][:2] == [
         ("Loblaws", 1, 60), ("Pilot", 2, 20)]
-    assert data["merchants"][2]["income"] == 2000
-    cats = listing(client, by="category")["categories"]
-    assert [(c["category"], c["spent"]) for c in cats][:2] == [("Groceries", 60), ("Coffee", 20)]
+    assert data["groups_of"][2]["income"] == 2000
+    cats = listing(client, by="category")["groups_of"]
+    assert [(c["name"], c["spent"]) for c in cats][:2] == [("Groceries", 60), ("Coffee", 20)]
     assert listing(client, merchant="pilot")["total"] == 2
     assert listing(client, merchant="Pilot")["focus"]["total"] == 20
     assert client.get("/api/transactions/list?by=x").status_code == 400

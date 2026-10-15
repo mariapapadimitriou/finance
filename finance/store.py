@@ -494,6 +494,24 @@ CREATE TABLE IF NOT EXISTS merchant_names (
     merchant_key TEXT PRIMARY KEY,
     name         TEXT NOT NULL
 );
+-- Sort a date range (DR-01, DR-02; 2026-10-15): every purchase between two
+-- dates given one category, like a trip. The rows it sorted keep what they
+-- were before, so removing the range puts each one back.
+CREATE TABLE IF NOT EXISTS sorted_ranges (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    first      TEXT NOT NULL,
+    last       TEXT NOT NULL,
+    category   TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS sorted_range_rows (
+    range_id INTEGER NOT NULL,
+    txn_id   TEXT NOT NULL,
+    category TEXT,
+    source   TEXT,
+    PRIMARY KEY (range_id, txn_id)
+);
 """
 
 
@@ -542,7 +560,7 @@ _CHARGES = """(
 _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts",
                "txn_exclusions", "txn_income_type", "txn_confirmed", "txn_notes",
                "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
-               "joint_deposits", "txn_party", "txn_tags", "txn_saved_to")
+               "joint_deposits", "txn_party", "txn_tags", "txn_saved_to", "sorted_range_rows")
 
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
@@ -1337,6 +1355,51 @@ class Store:
             cur = c.execute("DELETE FROM txn_tags WHERE tag = ?", (tag,))
             return max(cur.rowcount or 0, 0)
 
+    # ── Sort a date range (2026-10-15) ───────────────────────────────────
+    def ranges(self) -> list[dict]:
+        with self.conn() as c:
+            rows = c.execute("SELECT * FROM sorted_ranges ORDER BY first DESC, id DESC").fetchall()
+        return [{"id": int(r["id"]), "name": r["name"], "first": r["first"], "last": r["last"],
+                 "category": r["category"]} for r in rows]
+
+    def add_range(self, name: str, first: str, last: str, category: str) -> int:
+        with self.conn() as c:
+            c.execute("INSERT INTO sorted_ranges (name, first, last, category) VALUES (?, ?, ?, ?)",
+                      (name, first, last, category))
+            return int(c.execute("SELECT MAX(id) AS id FROM sorted_ranges").fetchone()["id"])
+
+    def update_range(self, rid: int, name: str, first: str, last: str, category: str) -> bool:
+        with self.conn() as c:
+            cur = c.execute("UPDATE sorted_ranges SET name = ?, first = ?, last = ?, category = ? "
+                            "WHERE id = ?", (name, first, last, category, rid))
+            return (cur.rowcount or 0) > 0
+
+    def delete_range(self, rid: int) -> bool:
+        with self.conn() as c:
+            c.execute("DELETE FROM sorted_range_rows WHERE range_id = ?", (rid,))
+            cur = c.execute("DELETE FROM sorted_ranges WHERE id = ?", (rid,))
+            return (cur.rowcount or 0) > 0
+
+    def range_rows(self, rid: int) -> dict[str, tuple[str, str]]:
+        """{txn id: (category, source) before the range sorted it}."""
+        with self.conn() as c:
+            rows = c.execute("SELECT txn_id, category, source FROM sorted_range_rows "
+                             "WHERE range_id = ?", (rid,)).fetchall()
+        return {r["txn_id"]: (r["category"], r["source"]) for r in rows}
+
+    def set_range_rows(self, rid: int, rows: dict[str, tuple[str, str]]) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM sorted_range_rows WHERE range_id = ?", (rid,))
+            for tid, (cat, src) in rows.items():
+                c.execute("INSERT INTO sorted_range_rows (range_id, txn_id, category, source) "
+                          "VALUES (?, ?, ?, ?)", (rid, tid, cat, src))
+
+    def ranged_rows(self) -> dict[str, int]:
+        """{txn id: range id} for every row a range sorted."""
+        with self.conn() as c:
+            rows = c.execute("SELECT txn_id, range_id FROM sorted_range_rows").fetchall()
+        return {r["txn_id"]: int(r["range_id"]) for r in rows}
+
     def merchant_names(self) -> dict[str, str]:
         """merchant key (lower-cased) → her name for it."""
         with self.conn() as c:
@@ -1725,6 +1788,7 @@ class Store:
         ("txn_payback_person", "who paid you back"),
         ("txn_payback_kind", "reimbursements"),
         ("txn_refunds", "refunds"),
+        ("sorted_ranges", "answers about transactions"),
         ("dismissed_insights", "dismissed findings"),
         ("review_dismissed", "settled review items"),
         ("review_skipped", "skipped review items"),
@@ -2379,6 +2443,16 @@ class Store:
             if not cur.rowcount or cur.rowcount <= 0:
                 c.execute("INSERT INTO joint_accounts (account_id, label, share) "
                           "VALUES (?, ?, ?)", (account_id, label, float(share)))
+
+    def clear_joint_share(self, account_id: str, label: str = "Joint") -> None:
+        """Joint, with the share worked out from deposits (AM-08): no fixed
+        share, the account still joint."""
+        with self.conn() as c:
+            cur = c.execute("UPDATE joint_accounts SET share = NULL WHERE account_id = ?",
+                            (account_id,))
+            if not cur.rowcount or cur.rowcount <= 0:
+                c.execute("INSERT INTO joint_accounts (account_id, label) VALUES (?, ?)",
+                          (account_id, label))
 
     # ── How each account counts (AM-02 to AM-07) ─────────────────────────
     def account_settings(self) -> dict[str, dict]:

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   HomeBody, HowWeWorkedItOut, IncomePanel, NeedsALook, PathCard, ReconnectPanel, SafeToSpendCard,
-  SavingsCard, netWords, putAwayWords,
+  SavingsCard, leftOverFigure, netWords, putAwayWords,
   Snapshot, heroCopy, homeAlert, parseAmount, sheetRows, snapshotRows, stepWords, whenWords,
 } from './HomePanel.jsx';
 
@@ -366,7 +366,8 @@ describe('snapshot', () => {
       { key: 'savings', label: 'Savings', saved: 150, planned: null, goal: null },
     ]));
     expect(rows[0].note).toBe('All of this month’s pay is in');
-    expect(rows[3]).toMatchObject({ value: '$150 saved this month', share: null });
+    expect(rows[3]).toMatchObject({ category: 'Put away', value: '$150 this month', share: null,
+                                    note: 'Moved to your savings this month' });
   });
 
   it('cautious income fills against the cautious figure (E4)', () => {
@@ -390,7 +391,7 @@ describe('snapshot', () => {
     expect(out).toContain('Nothing yet · usually $2,900');
     expect(out).toContain('$45 so far');
     expect(out).toContain('We’ll compare with your usual month from Sunday, November 1.');
-    expect(out).toContain('Nothing saved yet this month');
+    expect(out).toContain('Nothing put away yet this month');
     expect((out.match(/viz-track/g) || []).length).toBe(1);       // only Essentials has a bar
     calm(out);
   });
@@ -583,8 +584,8 @@ describe('Savings so far (2026-10-14)', () => {
                     left_over: { income: 4300, spent: 130, net: 4170 } };
   it('shows put away and left over this month, each with what went in', () => {
     const t = html(<SavingsCard savings={savings} />);
-    for (const s of ['Savings this month', 'October so far', 'Put away', '$300', '$500 in, $200 taken out',
-      'Left over', '$4,170', '$4,300 earned, $130 spent']) {
+    for (const s of ['Savings this month', 'Put away', '$300', '$500 in, $200 taken out',
+      'Left over so far', '$4,170', '$4,300 in, $130 spent so far']) {
       expect(t).toContain(s);
     }
     calm(t);
@@ -602,7 +603,12 @@ describe('Savings so far (2026-10-14)', () => {
     expect(putAwayWords({ contributions: 0, chests: 0, withdrawals: 0 }, false))
       .toContain('money in your chests');
     const est = html(<SavingsCard savings={{ ...savings, left_over: { ...savings.left_over, estimate: true } }} />);
-    expect(est).toContain('$4,300 expected, $130 spent');
+    expect(est).toContain('$4,300 in (what you told Pearl), $130 spent so far');
+    // Below zero reads "$X more out", never red (SV-01).
+    const under = html(<SavingsCard savings={{ ...savings, left_over: { income: 2150, spent: 3144, net: -994 } }} nextPay="2026-10-16" />);
+    expect(under).toContain('$994 more out');
+    expect(under).toContain('Spent more than came in so far. Your next pay lands Friday, October 16.');
+    expect(leftOverFigure(0)).toBe('Nothing yet');
   });
 });
 

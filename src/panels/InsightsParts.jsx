@@ -6,12 +6,20 @@ import { monthFull } from './insightsMath.js';
 // GR-28 to GR-32, THL-186 GR-25 to GR-27): the Growth pills, the month
 // switcher, the "See more  ›" link and a category's dot.
 
-/** The Growth pills (GR-01's tabs): Path, Insights, Projections, Learn, Budgets and Debts. */
-export function GrowthTabs({ current = 'insights', onTab }) {
-  const growth = GROUPS.find((g) => g.key === 'growth');
+// Pages that aren't a tab of their group: Needs a look is reached from the
+// list's alert and has its own way back.
+const NOT_A_TAB = new Set(['review']);
+
+/** A group's pages as pills (2026-10-15): Cash flow's Transactions ·
+ * Insights, Save's Save · Projections · Learn, Home's Home · Budgets ·
+ * Debts. A group with one page draws nothing. */
+export function GroupTabs({ group, current, onTab }) {
+  const g = GROUPS.find((x) => x.key === group);
+  const panels = (g?.panels ?? []).filter((k) => !NOT_A_TAB.has(k));
+  if (panels.length < 2) return null;
   return (
-    <nav className="in-tabs" aria-label="Growth">
-      {growth.panels.map((key) => (
+    <nav className="in-tabs" aria-label={g.label}>
+      {panels.map((key) => (
         <button key={key} type="button" className="in-tab" aria-current={key === current ? 'page' : undefined}
                 onClick={() => onTab?.(key)}>
           {PANELS[key].label}
@@ -19,6 +27,17 @@ export function GrowthTabs({ current = 'insights', onTab }) {
       ))}
     </nav>
   );
+}
+
+/** Cash flow's tabs: Transactions · Insights. */
+export function CashFlowTabs({ current = 'transactions', onTab }) {
+  return <GroupTabs group="cashflow" current={current} onTab={onTab} />;
+}
+
+/** The pills of whichever group `current` is in (the old Growth pills). */
+export function GrowthTabs({ current = 'insights', onTab }) {
+  const g = GROUPS.find((x) => x.panels.includes(current));
+  return g ? <GroupTabs group={g.key} current={current} onTab={onTab} /> : null;
 }
 
 /** "‹ October so far ›": the month, and the ones either side of it. */

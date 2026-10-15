@@ -138,7 +138,7 @@ describe('the screens (K-01 to K-04)', () => {
     const bar = html(<SelectedBar count={4} />);
     expect(bar).toContain('4 selected');
     expect(bar).toContain('Change category');
-    expect(bar).toContain('Confirm suggestions');
+    expect(bar).toContain('Confirm');
     expect(bar).toContain('aria-keyshortcuts="C"');
     expect(bar).toContain('aria-keyshortcuts="Escape"');
     const picker = html(<BatchPicker ids={['a', 'b', 'c', 'd']} categories={categories}

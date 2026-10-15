@@ -411,6 +411,12 @@ export const setMerchantName = (merchant, name) =>
   json('PUT', '/api/merchants/name', { merchant, name });
 export const setCategoryHidden = (category, hidden) =>
   json('PUT', '/api/rules/categories', { category, hidden });
+// Sort a date range and Sorted together (DR-01, DR-02; finance/ranges.py).
+export const getRanges = () => req('/api/ranges');
+export const previewRange = (range) => json('POST', '/api/ranges/preview', range);
+export const addRange = (range) => json('POST', '/api/ranges', range);
+export const changeRange = (id, range) => json('PUT', `/api/ranges/${id}`, range);
+export const removeRange = (id) => req(`/api/ranges/${id}`, { method: 'DELETE' });
 // Her preferences: single-key shortcuts on or off (WCAG 2.1.4).
 export const getPreferences = () => req('/api/preferences');
 export const savePreferences = (prefs) => json('PUT', '/api/preferences', prefs);

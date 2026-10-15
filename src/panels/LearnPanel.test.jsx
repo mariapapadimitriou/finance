@@ -22,7 +22,7 @@ const data = state({ 'tfsa-rrsp-fhsa': { screen: 4, done: true, answer: 'fhsa' }
 describe('GR-11 Learn', () => {
   it('lists the five modules with what she’s read, and the two explainers', () => {
     const out = html(<LearnPage data={data} nav={nav} />);
-    for (const text of ['Learn at your pace', 'Growth', 'Before you invest', '1 of 5 read',
+    for (const text of ['Learn at your pace', 'Save', 'Before you invest', '1 of 5 read',
                         'TFSA, RRSP and FHSA', 'Three accounts, three jobs', 'Read',
                         'Index funds and ETFs', 'One fund, many companies', '2 of 4',
                         'Risk and time horizon', 'Why when you need the money matters',

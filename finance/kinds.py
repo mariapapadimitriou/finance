@@ -100,6 +100,36 @@ def kind_map(store, transactions: list[Transaction], today: date) -> dict[str, s
     return out
 
 
+def pearl_decides(store, transactions: list[Transaction], today: date) -> dict[str, str]:
+    """{category: kind} as Pearl would call it on its own, from the charges
+    of the last three months — what "Pearl decides · Fixed" shows in
+    Categories and rules (CR-01). A category with no recent charge is
+    Variable, the default."""
+    from .analytics import counts_as_spending
+    from .income_bills import load
+    confirm = load(store)
+    fixed = fixed_charges(transactions, today, confirm)
+    added = bill_merchants(confirm)
+    since = today.replace(day=1)
+    for _ in range(2):
+        since = (since.replace(day=1) - __import__("datetime").timedelta(days=1)).replace(day=1)
+    votes: dict[str, list[int]] = {}
+    for t in transactions:
+        if t.date[:10] < since.isoformat() or not counts_as_spending(t):
+            continue
+        cat = t.category or "Other"
+        is_fixed = ((t.merchant, t.date) in fixed or cat == RENT
+                    or " ".join((t.merchant or "").lower().split()) in added)
+        votes.setdefault(cat, [0, 0])[0 if is_fixed else 1] += 1
+    out = {}
+    for cat in CATEGORIES:
+        if cat in NON_SPEND or cat == "Unsorted transfers":
+            continue
+        f, v = votes.get(cat, [0, 0])
+        out[cat] = "fixed" if f > v or cat == RENT else "variable"
+    return out
+
+
 def kind_of(t: Transaction, kinds: dict[str, str] | None) -> str | None:
     """A row's kind, or None when it isn't spending (or no map was built)."""
     return (kinds or {}).get(t.fingerprint)

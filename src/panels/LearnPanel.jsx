@@ -85,7 +85,7 @@ export function LearnPage({ data, nav }) {
     <div className="pk hm-page in-page lr-page">
       <header className="hm-head">
         <p className="pk-overline accent">Learn at your pace</p>
-        <h1 className="pk-h1">Growth</h1>
+        <h1 className="pk-h1">Save</h1>
       </header>
       <GrowthTabs current="learn" onTab={nav.onTab} />
       <section className="hm-card in-card" aria-labelledby="lr-title">

@@ -54,7 +54,8 @@ const WORKS_WHEN_EMPTY = ['home', 'path', 'projections', 'learn', 'debts', 'budg
 // Pages that draw their section pills themselves, under their own title
 // (Growth › Path, THL-129 GR-01; Insights, THL-196 GR-28; Projections, THL-197
 // GR-33; Learn, THL-134 GR-11), so the shell's strip would say it twice.
-const OWN_SECTIONS = ['path', 'insights', 'projections', 'learn', 'budgets', 'debts'];
+const OWN_SECTIONS = ['path', 'insights', 'projections', 'learn', 'budgets', 'debts',
+                      'transactions', 'review', 'goals'];
 
 // Back from the partner (THL-136 GR-20) at any address: Ready to invest,
 // where "Welcome back" asks whether she opened an account.
@@ -96,7 +97,8 @@ export default function App() {
   // /transactions… opens the list (a link from anywhere lands there); every
   // other address opens Home, where the app lands (THL-44, THL-125).
   const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() ? 'transactions'
-    : isPathUrl() || isInsightsUrl() || isProjectionsUrl() || isLearnUrl() ? 'growth' : 'home'));
+    : isPathUrl() ? 'wins' : isInsightsUrl() ? 'cashflow'
+      : isProjectionsUrl() || isLearnUrl() ? 'save' : 'home'));
   const [panel, setPanel] = useState(() => (isReviewUrl() ? 'review'
     : readTxUrl() ? 'transactions' : isPathUrl() ? 'path' : isInsightsUrl() ? 'insights'
       : isProjectionsUrl() ? 'projections' : isLearnUrl() ? 'learn' : 'home'));
@@ -181,10 +183,10 @@ export default function App() {
   useEffect(() => {
     const onPop = () => {
       if (isReviewUrl()) { setTab('transactions'); setPanel('review'); }
-      else if (isPathUrl()) { setTab('growth'); setPanel('path'); }
-      else if (isInsightsUrl()) { setTab('growth'); setPanel('insights'); }
-      else if (isProjectionsUrl()) { setTab('growth'); setPanel('projections'); }
-      else if (isLearnUrl()) { setTab('growth'); setPanel('learn'); }
+      else if (isPathUrl()) { setTab('wins'); setPanel('path'); }
+      else if (isInsightsUrl()) { setTab('cashflow'); setPanel('insights'); }
+      else if (isProjectionsUrl()) { setTab('save'); setPanel('projections'); }
+      else if (isLearnUrl()) { setTab('save'); setPanel('learn'); }
       else if (readTxUrl()) { setTab('transactions'); setPanel('transactions'); }
       else if (['transactions', 'review', 'path', 'insights', 'projections', 'learn']
         .includes(panelRef.current)) {
@@ -272,7 +274,7 @@ export default function App() {
       if (m.phase) setMoment(m);
       else if (m.partner_welcome && panelRef.current === 'home') {
         writeProjectionsUrl('ready');
-        setTab('growth'); setPanel('projections');
+        setTab('save'); setPanel('projections');
       }
     }).catch(() => {});
   }, [signedIn, data]);

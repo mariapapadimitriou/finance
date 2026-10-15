@@ -8,6 +8,7 @@ import {
 import { HowWorkedOut, ProjectionPage, UnusualMonths, WhatIf } from './GoalsProjection.jsx';
 import { ChestDetail, ChestForm, ChestsSection } from './GoalsChests.jsx';
 import { More, amount, monthYear } from './GoalsParts.jsx';
+import { GroupTabs } from './InsightsParts.jsx';
 
 /**
  * Goals (Pearl Handoff: THL-131 Anchor, THL-132 projection, THL-179 overview
@@ -135,8 +136,9 @@ function Overview({ goals, onTab, onStart, onAnchor, onNewChest, onChest }) {
     <>
       <header className="gl-head">
         <p className="pk-overline accent">{monthYear(goals.month)}</p>
-        <h1 className="pk-h1">Goals</h1>
+        <h1 className="pk-h1">Save</h1>
       </header>
+      <GroupTabs group="save" current="goals" onTab={onTab} />
       <AnchorCard goals={goals} onStart={onStart} onOpen={onAnchor} onTab={onTab} />
       <ChestsSection goals={goals} onNew={onNewChest} onOpen={onChest}
                      onTreasure={onChest} />

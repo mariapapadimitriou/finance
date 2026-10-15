@@ -46,15 +46,19 @@ export function KeyHints({ singleKey = true }) {
   );
 }
 
-/** K-02: the selection, and what can be done to all of it. */
-export function SelectedBar({ count, singleKey = true, onChange, onConfirm, onClear, onMark,
-                              onTag, onLeaveOut }) {
+/** VF-03 / K-02: the selection, and what can be done to all of it — a bar
+ * that floats at the foot of the page: "3 selected · -$148.95", Change
+ * category, Mark as…, Tag, Leave out, ✓ Confirm. The keys still work. */
+export function SelectedBar({ count, total = '', singleKey = true, onChange, onConfirm, onClear,
+                              onMark, onTag, onLeaveOut }) {
   const key = (k) => (singleKey ? k : undefined);
   return (
     <div className="kr-selected" role="region" aria-label="Selected transactions">
-      <p className="kr-selected-count" aria-live="polite">{selectedLabel(count)}</p>
+      <p className="kr-selected-count" aria-live="polite">
+        {selectedLabel(count)}{total ? ` · ${total}` : ''}
+      </p>
       <button type="button" className="kr-action" onClick={onChange} aria-keyshortcuts={key('C')}>
-        Change category {singleKey && <Keys keys={['C']} />}
+        Change category
       </button>
       {onMark && (
         <button type="button" className="kr-action" onClick={onMark}>Mark as…</button>
@@ -65,11 +69,12 @@ export function SelectedBar({ count, singleKey = true, onChange, onConfirm, onCl
       {onLeaveOut && (
         <button type="button" className="kr-action" onClick={onLeaveOut}>Leave out</button>
       )}
-      <button type="button" className="kr-action" onClick={onConfirm} aria-keyshortcuts={key('Y')}>
-        Confirm suggestions {singleKey && <Keys keys={['Y']} />}
+      <button type="button" className="kr-action primary" onClick={onConfirm} aria-keyshortcuts={key('Y')}>
+        <PIcon name="check" size={14} /> Confirm
       </button>
-      <button type="button" className="kr-action" onClick={onClear} aria-keyshortcuts={singleKey ? 'Escape' : undefined}>
-        Clear {singleKey && <Keys keys={['Esc']} />}
+      <button type="button" className="kr-action quiet" onClick={onClear}
+              aria-keyshortcuts={singleKey ? 'Escape' : undefined} aria-label="Clear selection">
+        <PIcon name="x" size={14} />
       </button>
     </div>
   );

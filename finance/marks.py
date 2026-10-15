@@ -36,52 +36,63 @@ REIMBURSEMENT = "reimbursement"
 # How far back a refund or a reimbursement looks for the purchase it is of.
 REFUND_DAYS = 120
 
-# The cases, in the order the sheet shows them. `needs` is what the sheet
-# asks for before Save; `remember` is the rule the answer can write.
+# The cases, in the order the sheet shows them (WW-02, WW-04), each in its
+# group: what it does to her numbers, in one line. `needs` is what step 2
+# asks for; `remember` is the rule the answer can write; `hidden` keeps a
+# case off the sheet (still an answer the detail panel can give).
+OUT_GROUPS = (("spending", "Spending"), ("not_spending", "Not spending"),
+              ("not_mine", "Not mine to count"))
+IN_GROUPS = (("income", "Income"), ("not_income", "Or it isn’t income"))
 OUT_CASES = (
-    {"key": "spending", "label": "A purchase", "needs": "category",
-     "effect": "Counts as spending, in the category you pick.", "remember": "merchant"},
-    {"key": "bill", "label": "A bill or subscription", "needs": "category",
-     "effect": "Counts as spending, and as one of your bills.", "remember": "merchant"},
-    {"key": "moved", "label": "Moved between my accounts", "needs": None,
-     "effect": "Nothing changes in your numbers.", "remember": "destination"},
-    {"key": "saved", "label": "Put into savings or investments", "needs": "account",
-     "effect": "Adds to what you put away. Not spending.", "remember": "destination"},
-    {"key": "saved_part", "label": "Part of it was put away", "needs": "amount",
-     "effect": "The part you name is saved; the rest counts as spending.", "remember": None},
-    {"key": "lent", "label": "Lent to someone", "needs": None,
-     "effect": "Not spending: it comes back later.", "remember": "merchant"},
-    {"key": "shared", "label": "Paid for a group", "needs": "split",
-     "effect": "Only your share counts. Pearl watches for the others paying you back.",
-     "remember": None},
-    {"key": "paying_back", "label": "Paying back money I borrowed", "needs": "borrowed",
-     "effect": "Not spending if what you bought is already in Pearl.", "remember": None},
-    {"key": "work", "label": "A work expense I’ll be reimbursed for", "needs": None,
-     "effect": "Left out until the reimbursement arrives; then both disappear.",
-     "remember": None},
-    {"key": "not_mine", "label": "Not mine", "needs": "reason",
+    {"key": "spending", "label": "A purchase", "group": "spending", "needs": "category",
+     "effect": "Counts as spending in a category you pick.", "remember": "merchant"},
+    {"key": "bill", "label": "A bill", "group": "spending", "needs": "category",
+     "effect": "Counts as spending, in Essentials, and Pearl plans for it next month.",
+     "remember": "merchant"},
+    {"key": "shared", "label": "Paid for a group", "group": "spending", "needs": "split",
+     "effect": "The full amount counts as yours until they pay you back.", "remember": None},
+    {"key": "moved", "label": "Moved between my accounts", "group": "not_spending", "needs": None,
+     "effect": "A transfer. Not spending, not income.", "remember": "destination"},
+    {"key": "saved", "label": "Put into savings", "group": "not_spending", "needs": "account",
+     "effect": "Moved to one of your savings accounts. It isn’t spending, and it counts toward "
+               "Savings this month.", "remember": "destination"},
+    {"key": "lent", "label": "Lent to someone", "group": "not_spending", "needs": None,
+     "effect": "Lent. Not spending; Pearl watches for it coming back.", "remember": "merchant"},
+    {"key": "paying_back", "label": "Paying back money I borrowed", "group": "not_spending",
+     "needs": "borrowed", "effect": "Borrowed. Not spending.", "remember": None},
+    {"key": "work", "label": "A work expense, to be reimbursed", "group": "not_mine", "needs": None,
+     "effect": "Left out of your spending until the money comes back.", "remember": None},
+    {"key": "not_mine", "label": "Not mine", "group": "not_mine", "needs": "reason",
      "effect": "Left out of everything.", "remember": "exclusion"},
+    {"key": "saved_part", "label": "Part of it was put away", "group": "not_spending",
+     "needs": "amount", "effect": "The part you name is saved; the rest counts as spending.",
+     "remember": None, "hidden": True},
 )
 IN_CASES = (
-    {"key": "pay", "label": "My pay or other income", "needs": "income_kind",
-     "effect": "Counts as income.", "remember": None},
-    {"key": "own", "label": "From my own account", "needs": None,
-     "effect": "Nothing changes in your numbers.", "remember": "destination"},
-    {"key": "out_of_savings", "label": "Taken out of savings or investments", "needs": "account",
-     "effect": "Comes off what you put away. Not income.", "remember": "destination"},
-    {"key": "payback", "label": "Someone paying me back", "needs": "candidates",
-     "effect": "Comes off the charge it was for. Not income.", "remember": None},
-    {"key": "refund", "label": "A refund or return", "needs": "refund",
-     "effect": "Comes off what you spent in that category. Not income.", "remember": None},
-    {"key": "reimbursement", "label": "A reimbursement (work, insurance)", "needs": "candidates",
-     "effect": "Cancels the expense it reimburses. Not income.", "remember": None},
-    {"key": "borrowed", "label": "Money I borrowed", "needs": None,
-     "effect": "Not income: you’ll pay it back.", "remember": None},
-    {"key": "lent_back", "label": "Someone paying back money I lent", "needs": None,
-     "effect": "Not income: it was yours before.", "remember": None},
-    {"key": "joint_them", "label": "Someone else put this in", "needs": "person",
-     "effect": "Pays for that much of this month’s joint spending.", "remember": "sender"},
-    {"key": "not_mine", "label": "Not mine", "needs": "reason",
+    {"key": "pay", "label": "Pay", "group": "income", "needs": "income_kind",
+     "effect": "Counts as income. Pick the kind: salary, bonus, benefits, interest or a refund "
+               "of tax.", "remember": None},
+    {"key": "regular_pay", "label": "This is my regular pay", "group": "income", "needs": None,
+     "effect": "Pearl uses it for your monthly income from now on.", "remember": None},
+    {"key": "payback", "label": "Someone paying me back", "group": "not_income",
+     "needs": "candidates", "effect": "Comes off what you spent for them. Never income.",
+     "remember": None},
+    {"key": "refund", "label": "A refund", "group": "not_income", "needs": "refund",
+     "effect": "Links to the purchase and comes off its category.", "remember": None},
+    {"key": "reimbursement", "label": "A reimbursement", "group": "not_income",
+     "needs": "candidates", "effect": "Pays back a work expense you left out.", "remember": None},
+    {"key": "own", "label": "From my own account", "group": "not_income", "needs": None,
+     "effect": "A transfer. Not income.", "remember": "destination"},
+    {"key": "out_of_savings", "label": "Taken out of my savings", "group": "not_income",
+     "needs": "account", "effect": "Counts against Savings this month.", "remember": "destination"},
+    {"key": "borrowed", "label": "Money I borrowed", "group": "not_income", "needs": None,
+     "effect": "Borrowed. Not income.", "remember": None},
+    {"key": "lent_back", "label": "Paying back money I lent", "group": "not_income", "needs": None,
+     "effect": "Moves it to Lent. Not income.", "remember": None},
+    {"key": "joint_them", "label": "Someone else put this in", "group": "not_income",
+     "needs": "person", "effect": "For a joint account: pays for their share.",
+     "remember": "sender"},
+    {"key": "not_mine", "label": "Not mine", "group": "not_income", "needs": "reason",
      "effect": "Left out of everything.", "remember": "exclusion"},
 )
 
@@ -119,8 +130,13 @@ def savings_accounts(store) -> list[dict]:
     """Where money can be put away: every savings or investment account Plaid
     pulled in, and every one she added by hand. If none were pulled in, she
     makes them on the Accounts page (that's the only way in)."""
+    import json
     removed = {aid for aid, s in store.account_settings().items() if s["removed"]}
     labels = account_labels(store)
+    try:
+        anchor = set(json.loads(store.setting("anchor_accounts") or "[]"))
+    except (TypeError, ValueError):
+        anchor = set()
     out = []
     for aid, r in store.account_sync_rules().items():
         if aid in removed:
@@ -128,14 +144,17 @@ def savings_accounts(store) -> list[dict]:
         kind = (r["account_type"] or "").lower()
         sub = (r["account_subtype"] or "").lower()
         if kind in ("investment", "brokerage") or sub in SAVINGS_SUBTYPES:
-            out.append({"id": aid, "label": labels.get(aid, aid),
-                        "kind": "investment" if kind in ("investment", "brokerage") else "savings",
-                        "source": "linked"})
+            k = "investment" if kind in ("investment", "brokerage") else "savings"
+            out.append({"id": aid, "label": labels.get(aid, aid), "kind": k, "source": "linked",
+                        "anchor": aid in anchor,
+                        "sub": "Part of your Anchor" if aid in anchor else k.title()})
     for m in store.manual_accounts():
         if m["kind"] in ("savings", "investment"):
             out.append({"id": m["account_id"], "label": m["name"], "kind": m["kind"],
-                        "source": "hand"})
-    out.sort(key=lambda a: (a["source"] != "linked", a["label"].lower()))
+                        "source": "hand", "anchor": m["account_id"] in anchor,
+                        "sub": ("Part of your Anchor" if m["account_id"] in anchor
+                                else f"{m['kind'].title()} · added by hand")})
+    out.sort(key=lambda a: (not a["anchor"], a["source"] != "linked", a["label"].lower()))
     return out
 
 
@@ -269,6 +288,20 @@ def current_case(t: Transaction, store_refunds: dict[str, str],
     return None
 
 
+def best_guess(t: Transaction) -> str | None:
+    """What an unplaced row most likely was: an unsorted transfer to a
+    person or an account is usually savings; anything else, a purchase or
+    pay."""
+    from .transfers import destination
+    cat = t.category or "Other"
+    if t.amount > 0:
+        if cat == "Unsorted transfers":
+            where = destination(t)
+            return "saved" if where and where[0].startswith(("acct:", "to:")) else "moved"
+        return "spending"
+    return "pay"
+
+
 def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
     """Everything the sheet needs for one row."""
     from .transfers import destination
@@ -280,6 +313,8 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
     items = []
     for c in (OUT_CASES if out_ else IN_CASES):
         item = dict(c)
+        if c.get("hidden"):
+            continue
         if c["key"] == "joint_them" and not t.joint:
             continue
         if c["key"] == "shared" and t.joint:
@@ -309,10 +344,15 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
         elif c["needs"] == "refund":
             item["candidates"] = refund_candidates(t, txns, names)
         items.append(item)
+    current = current_case(t, refunds, kinds)
     return {
         "id": t.fingerprint,
         "direction": "out" if out_ else "in",
-        "current": current_case(t, refunds, kinds),
+        "current": current,
+        # WW-02: Pearl's best guess sits on top — what the row answers now,
+        # or what a transfer nobody has placed most likely was.
+        "best": current or best_guess(t),
+        "groups": [{"key": k, "label": v} for k, v in (OUT_GROUPS if out_ else IN_GROUPS)],
         "cases": items,
         "accounts": savings_accounts(store),
         "saved_to": store.saved_to().get(t.fingerprint),
@@ -368,6 +408,27 @@ def _tick_bill(store, t: Transaction, category: str, today: date) -> None:
             bill["category"] = category
             state["added"].append({"id": ib.next_id(state, "b"), **bill})
     state["bills_on"] = state["bills_on"] or today.isoformat()
+    ib.save(store, state)
+
+
+def _regular_pay(store, t: Transaction, today: date) -> None:
+    """This is my regular pay (THL-198): the payer joins Income and bills'
+    pay, so Pearl plans with it from now on. Only when Pearl can already
+    see it arriving on a rhythm; a single deposit is salary, not a plan."""
+    from . import income_bills as ib
+    state = ib.load(store)
+    payer = ib.clean_name(t.merchant)
+    if any(p.get("payer") == payer for p in state.get("pays") or []):
+        return
+    found = next((c for c in ib.pay_candidates(store.all_transactions(), today, state)
+                  if c["payer"] == payer), None)
+    if found is None:
+        return
+    state["pays"].append({"id": ib.next_id(state, "p"), "payer": payer, "name": found["name"],
+                          "amount": found["amount"], "cadence": found["cadence"],
+                          "next": found["next"]})
+    state["pay_no"] = sorted(set(state.get("pay_no") or []) - {payer})
+    state["income_on"] = state["income_on"] or today.isoformat()
     ib.save(store, state)
 
 
@@ -498,6 +559,15 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             recat("Income")
         store.set_income_type(t.fingerprint, kind, "user")
         title = f"Counted as income: {INCOME_KINDS[kind]}."
+    elif case == "regular_pay":
+        un_exclude()
+        marks.setdefault("income_type", {})[t.fingerprint] = (
+            t.income_type if t.income_type_source == "user" else None)
+        if old_cat != "Income":
+            recat("Income")
+        store.set_income_type(t.fingerprint, "salary", "user")
+        _regular_pay(store, t, today)
+        title = "Counted as your regular pay."
     elif case == "payback":
         charge_id = str(body.get("charge") or "")
         charge = next((x for x in store.all_transactions() if x.fingerprint == charge_id), None)
@@ -580,7 +650,7 @@ def preview(t: Transaction, txns: list[Transaction], body: dict) -> list[Transac
         cat = body.get("category")
         new = replace(t, category=cat, category_source="user", excluded=None) if cat in CATEGORIES \
             else None
-    elif case == "pay":
+    elif case in ("pay", "regular_pay"):
         new = replace(t, category="Income", category_source="user", excluded=None)
     elif case in ("work", "not_mine") and not t.joint:
         new = replace(t, excluded=WORK_REASON if case == "work" else NOT_MINE)
