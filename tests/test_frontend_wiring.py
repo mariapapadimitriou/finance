@@ -388,7 +388,7 @@ class TestHomeIsWhereTheAppLands:
         # Wins' Path, Cash flow's Insights and Save's Projections and Learn
         # have addresses; anything else lands on Home (THL-234 IA).
         assert ": isPathUrl() ? 'wins' : isInsightsUrl() ? 'cashflow'" in text
-        assert ": isProjectionsUrl() || isLearnUrl() ? 'save' : 'home'" in text
+        assert ": isProjectionsUrl() || isLearnUrl() || isSaveUrl() ? 'save' : 'home'" in text
         assert "panel === 'home'" in text and "<HomePanel" in text
 
     def test_old_links_to_the_allowance_land_on_home(self, aliases):
@@ -423,8 +423,8 @@ class TestTheSidebarIsThl104s:
         assert list(groups) == ["home", "cashflow", "save", "wins", "profile"]
 
     def test_each_group_opens_on_its_first_page(self, groups):
-        assert groups["home"][:3] == ["home", "budgets", "debts"]
-        assert groups["cashflow"] == ["transactions", "review", "insights"]
+        assert groups["home"] == ["home"]
+        assert groups["cashflow"] == ["transactions", "review", "insights", "budgets", "debts"]
         assert groups["save"] == ["goals", "projections", "learn"]
         assert groups["wins"] == ["path"]
         assert "overview" not in groups and "growth" not in groups and "transactions" not in groups
@@ -470,7 +470,7 @@ class TestPearlTransactionsList:
 
     def test_the_group_opens_on_the_list(self):
         nav = (SRC / "nav.js").read_text(encoding="utf-8")
-        assert "panels: ['transactions', 'review', 'insights']" in nav
+        assert "panels: ['transactions', 'review', 'insights', 'budgets', 'debts']" in nav
         app = (SRC / "App.jsx").read_text(encoding="utf-8")
         assert "<TransactionsList" in app and "<TransactionsPanel" not in app
 
@@ -653,7 +653,7 @@ class TestGrowthInsights:
 
     def test_insights_has_an_address_and_draws_its_own_pills(self, source):
         router = (SRC / "router.js").read_text(encoding="utf-8")
-        assert "INSIGHTS_PATH = '/growth/insights'" in router
+        assert "INSIGHTS_PATH = '/cashflow/insights'" in router
         for view in ("month", "category", "subscriptions", "trend", "where", "money", "savings"):
             assert f"'{view}'" in router, view
         assert "isInsightsUrl()" in source and "writeInsightsUrl()" in source
@@ -700,14 +700,16 @@ class TestGrowthProjections:
 
     def test_projections_has_an_address_and_draws_its_own_pills(self, source):
         router = (SRC / "router.js").read_text(encoding="utf-8")
-        assert "PROJECTIONS_PATH = '/growth/projections'" in router
+        assert "PROJECTIONS_PATH = '/save/projections'" in router
+        assert "CALCULATOR_PATH = '/save/calculator'" in router
         for view in ("forecast", "next30", "savings", "calculator"):
             assert f"'{view}'" in router, view
-        for path in ("/growth/ready", "/growth/unveil", "/growth/unveil/done"):
+        for path in ("/save/ready", "/save/invested", "/save/invested/done"):
             assert path in router, path
         assert "isProjectionsUrl()" in source and "writeProjectionsUrl()" in source
         page = (SRC / "panels" / "ProjectionsPanel.jsx").read_text(encoding="utf-8")
-        assert '<GrowthTabs current="projections"' in page
+        # A page of Save (THL-248): a way back, no pills.
+        assert "<BackToSave" in page and "GrowthTabs" not in page
 
     def test_the_path_opens_ready_to_invest_and_the_self_report(self):
         path = (SRC / "panels" / "PathPanel.jsx").read_text(encoding="utf-8")
@@ -736,7 +738,7 @@ class TestGrowthRest:
 
     def test_steps_and_learn_have_addresses(self, source):
         router = (SRC / "router.js").read_text(encoding="utf-8")
-        assert "LEARN_PATH = '/growth/learn'" in router
+        assert "LEARN_PATH = '/save/learn'" in router
         assert "`${PATH_PATH}/path/${step}`" in router
         for step in ("income", "bills", "essentials", "setup", "full", "saved_more", "cards",
                      "invest"):
@@ -752,7 +754,6 @@ class TestGrowthRest:
     def test_the_path_opens_each_step(self):
         path = (SRC / "panels" / "PathPanel.jsx").read_text(encoding="utf-8")
         assert "<StepScreen" in path and "onStep={show}" in path
-        assert '<GrowthTabs current="path"' in path
         step = (SRC / "panels" / "PathStep.jsx").read_text(encoding="utf-8")
         assert "getPathStep(step)" in step and "setMonthUnusual" in step
 
@@ -818,3 +819,46 @@ class TestNoPhaseNames:
         for s in [*milestones.PHASE_LABELS.values(), *milestones.PHASE_TEXT.values(),
                   emails.TAGLINE, *[t for pair in emails.WELCOME_STEPS for t in pair]]:
             assert not self.NAMES.search(s), s
+
+
+class TestSaveHoldsWhatItCouldGrowInto:
+    """THL-248 (design THL-240 SV-P01 to SV-P03): projections, the calculator
+    and Learn moved from Growth into Save; the old addresses redirect; no
+    Growth section, header, tab or route is left."""
+
+    def test_the_routes_and_the_redirects(self, source):
+        router = (SRC / "router.js").read_text(encoding="utf-8")
+        for path in ("SAVE_PATH = '/save'", "/save/anchor", "/save/anchor/projection",
+                     "CALCULATOR_PATH = '/save/calculator'", "LEARN_PATH = '/save/learn'",
+                     "PROJECTIONS_PATH = '/save/projections'", "PATH_PATH = '/wins'",
+                     "INSIGHTS_PATH = '/cashflow/insights'", "export function redirectOldUrl",
+                     "export function newUrlFor"):
+            assert path in router, path
+        assert "redirectOldUrl()" in source and "isSaveUrl()" in source and "writeSaveUrl()" in source
+        # No page is served at a Growth address any more.
+        assert not re.search(r"(PATH|_PATH) = '/growth", router)
+
+    def test_save_is_anchor_then_chests_then_what_it_could_grow_into(self):
+        save = (SRC / "panels" / "Goals.jsx").read_text(encoding="utf-8")
+        order = [save.index(s) for s in ("<AnchorCard", "<ChestsSection", "<GrowInto")]
+        assert order == sorted(order)
+        for s in ("What this could grow into", "When your Anchor reaches 3 months",
+                  "What regular investing could grow to", "Learn at your pace",
+                  "Illustrative, to help you plan. Pearl never recommends a product.",
+                  "writeProjectionsUrl('calculator')", "onTab?.('learn')"):
+            assert s in save, s
+        assert "GroupTabs" not in save and "SavingGoal" not in save
+
+    def test_no_growth_header_tab_or_route_is_left(self, groups):
+        assert "growth" not in groups
+        nav = (SRC / "nav.js").read_text(encoding="utf-8")
+        assert "tabs: false" in nav                      # Save's pages aren't pills
+        for name in ("ProjectionsPanel.jsx", "LearnPanel.jsx", "PathPanel.jsx", "Goals.jsx"):
+            text = (SRC / "panels" / name).read_text(encoding="utf-8")
+            assert "<GrowthTabs" not in text, name
+            code = re.sub(r"//.*|/\*.*?\*/", "", text, flags=re.S)
+            assert not re.search(r"['\"`]/growth", code), name
+        for name in ("CategoryBudgetsPanel.jsx", "DebtsPanel.jsx"):
+            text = (SRC / "panels" / name).read_text(encoding="utf-8")
+            assert '<h1 className="pk-h1">Cash flow</h1>' in text, name
+

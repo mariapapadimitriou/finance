@@ -16,25 +16,25 @@ export const PANELS = {
   // worked out. Where the app lands.
   home:          { label: 'Home',
                    hint: 'What’s safe to spend this month, and how we worked it out' },
-  // Growth › Budgets (THL-168 B-01): every category, from her usual month.
+  // Cash flow › Budgets (THL-168 B-01): every category, from her usual month.
   budgets:       { label: 'Budgets',
                    hint: 'A budget for every category, starting at your usual month' },
-  // Growth › Path (THL-129 GR-01): Protect, Build, Unveil and the next step.
+  // Wins › Path (THL-129 GR-01): the milestone path and the next step.
   path:          { label: 'Path',
                    hint: 'Where you are on your path, and the one next step' },
-  // Growth › Insights (THL-186, THL-196 GR-28, at /growth/insights): the
+  // Cash flow › Insights (THL-186, THL-196 GR-28, at /cashflow/insights): the
   // month against her usual, in pictures, with a detail view behind each.
   insights:      { label: 'Insights',
                    hint: 'Your month against your usual, and where the money went' },
-  // Growth › Debts (THL-49 D-02): every balance owed, from before Pearl too.
+  // Cash flow › Debts (THL-49 D-02): every balance owed, from before Pearl too.
   debts:         { label: 'Debts',
                    hint: 'Everything you owe, and the minimums counted as bills' },
-  // Growth › Projections (THL-197 GR-33, at /growth/projections): this
-  // month, the next 30 days and savings in a year, each as a range, and the
-  // growth calculator (THL-135). Unveil's screens (GR-16, GR-37, GR-10) live
-  // under it too.
-  // Growth › Learn (THL-134 GR-11, at /growth/learn): five short modules
-  // before investing, and two explainers. Open to everyone from day one.
+  // Save › Projections (THL-197 GR-33, at /save/projections): this month,
+  // the next 30 days and savings in a year, each as a range, and the growth
+  // calculator (THL-135, at /save/calculator). The investing screens (GR-16,
+  // GR-37, GR-10) live under it too.
+  // Save › Learn (THL-134 GR-11, at /save/learn): five short modules before
+  // investing, and two explainers. Open to everyone from day one.
   learn:         { label: 'Learn',
                    hint: 'Short reads on the basics of investing, at your pace' },
   projections:   { label: 'Projections',
@@ -88,18 +88,20 @@ export const GROUPS = [
   // Home (THL-9, THL-44, THL-125): the page people open the app for, so it
   // is first and where the app lands. Budgets and Debts live with it
   // (THL-236).
-  { key: 'home', label: 'Home', panels: ['home', 'budgets', 'debts'],
+  { key: 'home', label: 'Home', panels: ['home'],
     hint: 'What’s safe to spend this month',
     icon: 'M3 10.5 12 3l9 7.5M5 9v11h5v-6h4v6h5V9' },
-  // Cash flow: the list (Pearl TX-01), what needs a look one tap away, and
-  // Insights as its second tab (GR-28).
+  // Cash flow: the list (Pearl TX-01), what needs a look one tap away,
+  // Insights as its second tab (GR-28), and Budgets and Debts (THL-209,
+  // decided 2026-10-15).
   { key: 'cashflow', label: 'Cash flow', short: 'Cash flow',
-    panels: ['transactions', 'review', 'insights'],
-    hint: 'Every transaction, what needs a look, and your month in pictures',
+    panels: ['transactions', 'review', 'insights', 'budgets', 'debts'],
+    hint: 'Every transaction, what needs a look, your month in pictures, budgets and debts',
     icon: 'M3 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0M3 16c2-2 4-2 6 0s4 2 6 0 4-2 6 0' },
-  // Save (THL-240): the Anchor and treasure chests, then what the savings
-  // could grow into — projections and the learning modules.
-  { key: 'save', label: 'Save', panels: ['goals', 'projections', 'learn'],
+  // Save (THL-240, THL-248): the Anchor and treasure chests, then what the
+  // savings could grow into. Projections, the calculator and Learn are its
+  // own pages, reached from it, not pills (`tabs: false`).
+  { key: 'save', label: 'Save', panels: ['goals', 'projections', 'learn'], tabs: false,
     hint: 'Your Anchor, your treasure chests, and what they could grow into',
     // A lifebuoy, as NAV-01/NAV-02 draw it: a ring, the hole, four spokes.
     icon: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5.6 5.6l3.6 3.6M14.8 14.8l3.6 3.6M14.8 9.2l3.6-3.6M5.6 18.4l3.6-3.6' },

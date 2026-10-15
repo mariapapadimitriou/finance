@@ -2,8 +2,8 @@ import { GROUPS, PANELS } from '../nav.js';
 import PIcon from '../pearl/icons.jsx';
 import { monthFull } from './insightsMath.js';
 
-// Small parts shared by Growth › Insights and its detail views (THL-196
-// GR-28 to GR-32, THL-186 GR-25 to GR-27): the Growth pills, the month
+// Small parts shared by Cash flow › Insights and its detail views (THL-196
+// GR-28 to GR-32, THL-186 GR-25 to GR-27): a group's pills, the month
 // switcher, the "See more  ›" link and a category's dot.
 
 // Pages that aren't a tab of their group: Needs a look is reached from the
@@ -11,12 +11,12 @@ import { monthFull } from './insightsMath.js';
 const NOT_A_TAB = new Set(['review']);
 
 /** A group's pages as pills (2026-10-15): Cash flow's Transactions ·
- * Insights, Save's Save · Projections · Learn, Home's Home · Budgets ·
- * Debts. A group with one page draws nothing. */
+ * Insights · Budgets · Debts. A group with one page, or one whose pages are
+ * reached from the page itself (Save, THL-248), draws nothing. */
 export function GroupTabs({ group, current, onTab }) {
   const g = GROUPS.find((x) => x.key === group);
   const panels = (g?.panels ?? []).filter((k) => !NOT_A_TAB.has(k));
-  if (panels.length < 2) return null;
+  if (panels.length < 2 || g?.tabs === false) return null;
   return (
     <nav className="in-tabs" aria-label={g.label}>
       {panels.map((key) => (

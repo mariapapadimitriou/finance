@@ -35,11 +35,11 @@ export function monthsBetween(from, to) {
 /** The Anchor line: what it says and where its link goes. */
 export function anchorLine(a) {
   if (!a || a.state === 'not_started') {
-    return { text: 'Not started yet', link: 'Start your Anchor', view: 'start' };
+    return { text: 'Not set up yet', link: 'Set up your Anchor', view: 'start' };
   }
-  if (a.state === 'full') return { text: 'Full', link: 'See your Anchor', view: 'anchor' };
+  if (a.state === 'full') return { text: 'Covers 3 months', link: 'See your Anchor', view: 'anchor' };
   if (a.state === 'range') {
-    return { text: `Likely full between ${monthsBetween(a.from, a.to)}`, link: 'See the projection',
+    return { text: `Likely 3 months between ${monthsBetween(a.from, a.to)}`, link: 'See the projection',
              view: 'projection' };
   }
   return { text: 'No date yet: nothing put aside lately', link: 'See the projection',

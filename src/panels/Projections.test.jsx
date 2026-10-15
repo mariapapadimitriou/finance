@@ -81,10 +81,10 @@ describe('the words (projectionsMath)', () => {
   });
 
   it('the Anchor line names the months, or says why there are none', () => {
-    expect(anchorLine(d.anchor).text).toBe('Likely full between March and June 2027');
+    expect(anchorLine(d.anchor).text).toBe('Likely 3 months between March and June 2027');
     expect(anchorLine({ state: 'range', from: '2026-12', to: '2027-03' }).text)
-      .toBe('Likely full between December 2026 and March 2027');
-    expect(anchorLine({ state: 'not_started' })).toMatchObject({ link: 'Start your Anchor', view: 'start' });
+      .toBe('Likely 3 months between December 2026 and March 2027');
+    expect(anchorLine({ state: 'not_started' })).toMatchObject({ link: 'Set up your Anchor', view: 'start' });
     expect(anchorLine({ state: 'none' }).view).toBe('projection');
   });
 
@@ -152,8 +152,8 @@ describe('the growth calculator (GR-17, GR-18)', () => {
 describe('GR-33 the page', () => {
   it('Anchor line, three look-ahead cards and the calculator, with the pills', () => {
     const out = html(<ProjectionsPage d={d} nav={nav} />);
-    for (const text of ['What could happen', 'Save', 'Projections', 'Learn', 'Your Anchor',
-                        'Likely full between March and June 2027', 'See the projection', 'This month',
+    for (const text of ['What could happen', 'Projections', '> Save', 'Your Anchor',
+                        'Likely 3 months between March and June 2027', 'See the projection', 'This month',
                         'See the forecast', 'Likely $180 to $420 of safe-to-spend left on October 31.',
                         'The next 30 days', 'See all', 'Lowest point about $1,060 on October 31',
                         'Your savings in a year', 'See more', '$5,000 to $5,600',
@@ -165,10 +165,12 @@ describe('GR-33 the page', () => {
     expect(out).not.toMatch(BAD);
   });
 
-  it('GR-17 is the same page without the look-ahead cards', () => {
+  it('GR-17 is the calculator on its own, a page of Save', () => {
     const out = html(<ProjectionsPage d={d} nav={nav} cards={false} />);
-    expect(out).toContain('Your Anchor');
+    expect(out).toContain('Growth calculator');
+    expect(out).toContain('What regular investing could grow to');
     expect(out).not.toContain('The next 30 days');
+    expect(out).not.toContain('class="in-tabs"');
   });
 
   it('an empty ledger says so in words, with no empty charts and no $0', () => {
@@ -182,7 +184,7 @@ describe('GR-33 the page', () => {
     const out = html(<ProjectionsPage d={empty} nav={nav} />);
     expect(out).toContain('Nothing spent yet this month.');
     expect(out).toContain('Nothing coming up that we know of yet.');
-    expect(out).toContain('Not started yet');
+    expect(out).toContain('Not set up yet');
     expect((out.match(/<table class="pk-sr">/g) || []).length).toBe(1);     // the calculator's
     expect(out).not.toMatch(BAD);
   });
