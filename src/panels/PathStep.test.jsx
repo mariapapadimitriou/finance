@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { PathPage } from './PathPanel.jsx';
+import { WinsPage } from './WinsPanel.jsx';
 import { KeepItGoing, StepPage, lapseLine, nextSentence, stepCopy } from './PathStep.jsx';
 
 // THL-129 GR-02 Step not done yet, GR-03 Step done, GR-04 Keep it going, and
@@ -151,26 +151,29 @@ describe('GR-04 Keep it going', () => {
   });
 });
 
-describe('the Path page opens each step (GR-01 → GR-02 to GR-04)', () => {
-  const path = {
-    phase: 'build', step: 2, of: 2, protect_done: true,
-    lapse: { step: 'essentials', month: '2026-10', income: 4200, essentials: 4480 },
-    phases: [{ key: 'protect', label: 'The basics', state: 'done' },
-             { key: 'build', label: 'Your Anchor', state: 'now' },
-             { key: 'unveil', label: 'Grow your money', state: 'ahead' }],
-    steps: [{ key: 'setup', label: 'Set up your Anchor', done: true, started_on: '2026-09-14' },
-            { key: 'full', label: 'Grow your Anchor to 3 months', done: false, target: 8700 }],
-    also: [],
-    next: base.next,
+describe('Wins opens each milestone’s step (W-01 → GR-02 to GR-04)', () => {
+  const data = {
+    month: '2026-10', heading: '4 of 6 milestones on your path', first_month_away: false,
+    done: 4, of: 6, earned: 6, total: 9,
+    path: [{ key: 'assessed', label: 'Your money, assessed', state: 'earned', when: 'Sep 30' },
+           { key: 'anchor_setup', label: 'Anchor set up', state: 'earned', when: 'Oct 2' },
+           { key: 'anchor_quarter', label: 'Anchor a quarter there', state: 'earned', when: 'Oct 2' },
+           { key: 'anchor_half', label: 'Anchor half there', state: 'earned', when: 'Oct 9' },
+           { key: 'anchor_full', label: 'Anchor covers 3 months', state: 'next', when: 'Next · 63%' },
+           { key: 'invest', label: 'Investing account opened', state: 'todo', when: 'Any time after' }],
+    next: { key: 'anchor_full', title: 'Next: grow your Anchor to 3 months',
+            line: '$5,470 of $8,700 · $3,230 to go · likely July 2027 to June 2028', label: 'See your Anchor', action: 'goals:anchor' },
+    pearls: [], streaks: [{ key: 'within', label: 'Months within safe to spend', started: false, starts: 'Starts after your first full month', this_words: '', best_words: '' }],
+    recap: null, next_recap: 'November', challenges: { active: [], suggested: [], ready: false }, suggestion: null,
   };
 
-  it('steps are buttons, the page is Wins, and a lapse says Keep it going', () => {
-    const out = html(<PathPage path={path} onAction={() => {}} onStep={() => {}} onTab={() => {}} />);
-    expect((out.match(/class="pt-step"/g) || []).length).toBe(2);
+  it('each milestone is a button to its step, and the page is Wins', () => {
+    const out = html(<WinsPage data={data} onStep={() => {}} onAct={() => {}} />);
+    expect((out.match(/class="wn-path-btn"/g) || []).length).toBe(6);
     expect(out).toContain('>Wins</h1>');
-    expect(out).not.toContain('aria-label="Growth"');      // Wins is one page: no pills
-    expect(out).toContain('Keep it going');
-    expect(out).toContain('What happened in October');
+    expect(out).toContain('aria-current="step"');
+    expect(out).toContain('$3,230 to go');
     expect(primaries(out)).toBe(1);
+    expect(out).not.toMatch(/Protect|Build|Unveil|Shine|Growth/);
   });
 });

@@ -364,9 +364,12 @@ class TestIncomeAndBillsReplacedThePlan:
         assert not stale, stale
 
     def test_path_and_home_open_income_and_bills(self):
-        for name in ("HomePanel.jsx", "PathPanel.jsx"):
-            text = (SRC / "panels" / name).read_text(encoding="utf-8")
-            assert "bills: 'income', income: 'income'" in text, name
+        text = (SRC / "panels" / "HomePanel.jsx").read_text(encoding="utf-8")
+        assert "bills: 'income', income: 'income'" in text
+        # Wins' next step opens Needs a look, Save or the investing question (THL-246).
+        wins = (SRC / "panels" / "WinsPanel.jsx").read_text(encoding="utf-8")
+        for action in ("action === 'review'", "action === 'invested'", "action.startsWith('goals:')"):
+            assert action in wins, action
 
     def test_onboarding_runs_the_check_before_the_path(self):
         """Linked → how Pearl uses your transactions (THL-117 CN-02) → the
@@ -712,7 +715,7 @@ class TestGrowthProjections:
         assert "<BackToSave" in page and "GrowthTabs" not in page
 
     def test_the_path_opens_ready_to_invest_and_the_self_report(self):
-        path = (SRC / "panels" / "PathPanel.jsx").read_text(encoding="utf-8")
+        path = (SRC / "panels" / "WinsPanel.jsx").read_text(encoding="utf-8")
         assert "open('ready')" in path and "open('unveil')" in path
         unveil = (SRC / "panels" / "Unveil.jsx").read_text(encoding="utf-8")
         partner = (SRC / "panels" / "Partner.jsx").read_text(encoding="utf-8")
@@ -752,7 +755,7 @@ class TestGrowthRest:
         assert "learn" in _string_list(source, "WORKS_WHEN_EMPTY")
 
     def test_the_path_opens_each_step(self):
-        path = (SRC / "panels" / "PathPanel.jsx").read_text(encoding="utf-8")
+        path = (SRC / "panels" / "WinsPanel.jsx").read_text(encoding="utf-8")
         assert "<StepScreen" in path and "onStep={show}" in path
         step = (SRC / "panels" / "PathStep.jsx").read_text(encoding="utf-8")
         assert "getPathStep(step)" in step and "setMonthUnusual" in step
@@ -853,7 +856,7 @@ class TestSaveHoldsWhatItCouldGrowInto:
         assert "growth" not in groups
         nav = (SRC / "nav.js").read_text(encoding="utf-8")
         assert "tabs: false" in nav                      # Save's pages aren't pills
-        for name in ("ProjectionsPanel.jsx", "LearnPanel.jsx", "PathPanel.jsx", "Goals.jsx"):
+        for name in ("ProjectionsPanel.jsx", "LearnPanel.jsx", "WinsPanel.jsx", "Goals.jsx"):
             text = (SRC / "panels" / name).read_text(encoding="utf-8")
             assert "<GrowthTabs" not in text, name
             code = re.sub(r"//.*|/\*.*?\*/", "", text, flags=re.S)
