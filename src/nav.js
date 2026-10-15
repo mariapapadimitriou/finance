@@ -112,7 +112,9 @@ export const GROUPS = [
   // Wins (THL-239): the milestone path and what's next.
   { key: 'wins', label: 'Wins', panels: ['path'],
     hint: 'Your path, and the one next step',
-    icon: 'M12 3l2.7 5.6 6.2.9-4.5 4.3 1.1 6.1L12 17l-5.5 2.9 1.1-6.1L3.1 9.5l6.2-.9z' },
+    // A starfish, as the design system's Icon/starfish draws it (THL-209):
+    // five soft rounded arms with a dot on each, not a pointed star.
+    icon: 'M10 4.5A2 2 0 0 1 14 4.5C14 6.9 13.67 7.65 14.88 8.54C16.09 9.42 16.71 8.87 18.99 8.13A2 2 0 0 1 20.23 11.93C17.94 12.67 17.12 12.59 16.66 14.01C16.2 15.44 16.91 15.85 18.32 17.8A2 2 0 0 1 15.08 20.15C13.67 18.21 13.5 17.4 12 17.4C10.5 17.4 10.33 18.21 8.92 20.15A2 2 0 0 1 5.68 17.8C7.09 15.85 7.8 15.44 7.34 14.01C6.88 12.59 6.06 12.67 3.77 11.93A2 2 0 0 1 5.01 8.13C7.29 8.87 7.91 9.42 9.12 8.54C10.33 7.65 10 6.9 10 4.5ZM12 6h.01M18.18 10.49h.01M15.82 17.76h.01M8.18 17.76h.01M5.82 10.49h.01' },
   // At the foot (THL-104, Pearl S-01): the Profile hub, and the pages it
   // opens — Accounts, Categories and rules, Sign-in and security, Income and
   // bills, Notifications and the three Privacy pages — each with
