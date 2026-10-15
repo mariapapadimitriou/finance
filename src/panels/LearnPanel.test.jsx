@@ -31,7 +31,9 @@ describe('GR-11 Learn', () => {
                         'Explainer', 'How safe-to-spend works', 'How we protect you', DISCLAIMER]) {
       expect(out).toContain(text);
     }
-    expect(out).toMatch(/aria-current="page"[^>]*>Learn</);
+    expect(out).toContain('>Learn</h1>');
+    expect(out).toContain('> Save');                       // the way back to Save
+    expect(out).not.toContain('class="in-tabs"');
     expect(out).not.toContain('disabled');
     expect(out).not.toMatch(BAD);
   });

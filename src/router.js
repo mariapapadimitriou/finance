@@ -1,8 +1,9 @@
 // The transactions screen keeps its place in the address bar, so a filtered
 // list (/transactions?month=2026-10&group=lifestyle) can be linked to from
 // anywhere — Home, an alert, an explanation sheet — and back/forward work.
-// Growth's Path, Insights, Projections and Learn have addresses too;
-// everything else lives at "/".
+// Wins' Path, Cash flow's Insights, and Save with its projection, calculator
+// and Learn (THL-248) have addresses too; everything else lives at "/". The
+// old /growth/… addresses redirect to their new homes (`redirectOldUrl`).
 
 export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'joint', 'recurring', 'q',
   // What was this? (2026-10-14): a tag, what counts, an amount range, pending
@@ -13,23 +14,23 @@ export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'jo
 // Needs a look (R-01, THL-123) has an address under the list's.
 export const REVIEW_PATH = '/transactions/review';
 
-// The Path page (THL-129 GR-01) has an address too, so Home can link to it,
-// and each step's own screen (GR-02 to GR-04) one beneath it:
-// /growth/path/<step>.
-export const PATH_PATH = '/growth';
+// The Path page (THL-129 GR-01, on Wins) has an address too, so Home can
+// link to it, and each step's own screen (GR-02 to GR-04) one beneath it:
+// /wins/path/<step>.
+export const PATH_PATH = '/wins';
 export const PATH_STEPS = ['income', 'bills', 'essentials', 'setup', 'full', 'saved_more',
                            'cards', 'invest'];
 const PATH_EVENT = 'pearl:path';
 
-/** {step} at /growth or /growth/path/<step>, or null anywhere else. */
+/** {step} at /wins or /wins/path/<step>, or null anywhere else. */
 export function readPathUrl(loc = window.location) {
   const path = loc.pathname.replace(/\/+$/, '') || '/';
   if (path === PATH_PATH) return { step: '' };
-  const m = path.match(/^\/growth\/path\/([a-z_]+)$/);
+  const m = path.match(/^\/wins\/path\/([a-z_]+)$/);
   return m && PATH_STEPS.includes(m[1]) ? { step: m[1] } : null;
 }
 
-/** True at /growth and at a step's own screen. */
+/** True at /wins and at a step's own screen. */
 export const isPathUrl = (loc = window.location) => readPathUrl(loc) !== null;
 
 export const pathHref = (step = '') => (step ? `${PATH_PATH}/path/${step}` : PATH_PATH);
@@ -53,16 +54,16 @@ export function onPathUrl(fn) {
   };
 }
 
-// Growth › Learn (THL-134 GR-11, at /growth/learn) and a module (GR-12 to
-// GR-14) at /growth/learn/<module>. ?from=ready means she came from the
+// Save › Learn (THL-134 GR-11, at /save/learn) and a module (GR-12 to
+// GR-14) at /save/learn/<module>. ?from=ready means she came from the
 // readiness checklist (GR-16), so the done state offers the way back. The
 // safe-to-spend explainer is a page of its own there too.
-export const LEARN_PATH = '/growth/learn';
+export const LEARN_PATH = '/save/learn';
 const LEARN_EVENT = 'pearl:learn';
 
-/** {module, from} at /growth/learn…, or null anywhere else. */
+/** {module, from} at /save/learn…, or null anywhere else. */
 export function readLearnUrl(loc = window.location) {
-  const m = loc.pathname.match(/^\/growth\/learn(?:\/([a-z-]+))?\/?$/);
+  const m = loc.pathname.match(/^\/save\/learn(?:\/([a-z-]+))?\/?$/);
   if (!m) return null;
   const from = new URLSearchParams(loc.search).get('from') === 'ready' ? 'ready' : '';
   return { module: m[1] ?? '', from };
@@ -100,14 +101,14 @@ export const fromPartner = (loc = window.location) =>
 // Growth › Insights (THL-186, THL-196 GR-28) and its detail views (GR-25 to
 // GR-27, GR-29 to GR-32), so a detail can be linked to and Back works:
 // /growth/insights/<view>?month=2026-09&category=Dining.
-export const INSIGHTS_PATH = '/growth/insights';
+export const INSIGHTS_PATH = '/cashflow/insights';
 export const INSIGHTS_VIEWS = ['month', 'category', 'subscriptions', 'trend', 'where', 'money',
                                'savings'];
 const INSIGHTS_EVENT = 'pearl:insights';
 
 /** {view, month, category} at /growth/insights…, or null anywhere else. */
 export function readInsightsUrl(loc = window.location) {
-  const m = loc.pathname.match(/^\/growth\/insights(?:\/([a-z]+))?\/?$/);
+  const m = loc.pathname.match(/^\/cashflow\/insights(?:\/([a-z]+))?\/?$/);
   if (!m) return null;
   const params = new URLSearchParams(loc.search);
   const view = INSIGHTS_VIEWS.includes(m[1]) ? m[1] : '';
@@ -154,30 +155,33 @@ export function onInsightsUrl(fn) {
   };
 }
 
-// Growth › Projections (THL-197 GR-33) and its detail views — GR-34 this
-// month, GR-35 the next 30 days, GR-36 savings in a year, GR-17 and GR-18
-// the growth calculator on its own — at /growth/projections/<view>. Unveil's
-// screens live beside them, reached from the Path: GR-16 Ready to invest at
-// /growth/ready, GR-37 "Opened an investing account?" at /growth/unveil and
-// GR-10, Unveil done, at /growth/unveil/done.
-export const PROJECTIONS_PATH = '/growth/projections';
+// Save › Projections (THL-197 GR-33, THL-248) and its detail views — GR-34
+// this month, GR-35 the next 30 days, GR-36 savings in a year — at
+// /save/projections/<view>; the growth calculator on its own (GR-17, GR-18)
+// at /save/calculator. The investing screens live beside them, reached from
+// Wins: GR-16 Ready to invest at /save/ready, GR-37 "Opened an investing
+// account?" at /save/invested and GR-10, done, at /save/invested/done.
+export const PROJECTIONS_PATH = '/save/projections';
+export const CALCULATOR_PATH = '/save/calculator';
 export const PROJECTIONS_VIEWS = ['forecast', 'next30', 'savings', 'calculator'];
-const UNVEIL_PATHS = { ready: '/growth/ready', unveil: '/growth/unveil', done: '/growth/unveil/done' };
+const UNVEIL_PATHS = { ready: '/save/ready', unveil: '/save/invested', done: '/save/invested/done' };
 const PROJECTIONS_EVENT = 'pearl:projections';
 
-/** {view} at /growth/projections…, /growth/ready or /growth/unveil…, or null. */
+/** {view} at /save/projections…, /save/calculator, /save/ready or /save/invested…, or null. */
 export function readProjectionsUrl(loc = window.location) {
   const path = loc.pathname.replace(/\/+$/, '');
   const unveil = Object.entries(UNVEIL_PATHS).find(([, p]) => p === path);
   if (unveil) return { view: unveil[0] };
-  const m = path.match(/^\/growth\/projections(?:\/([a-z0-9]+))?$/);
+  if (path === CALCULATOR_PATH) return { view: 'calculator' };
+  const m = path.match(/^\/save\/projections(?:\/([a-z0-9]+))?$/);
   if (!m) return null;
-  return { view: PROJECTIONS_VIEWS.includes(m[1]) ? m[1] : '' };
+  return { view: PROJECTIONS_VIEWS.includes(m[1]) && m[1] !== 'calculator' ? m[1] : '' };
 }
 
 export const isProjectionsUrl = (loc = window.location) => readProjectionsUrl(loc) !== null;
 
 export function projectionsHref(view = '') {
+  if (view === 'calculator') return CALCULATOR_PATH;
   return UNVEIL_PATHS[view] ?? `${PROJECTIONS_PATH}${view ? `/${view}` : ''}`;
 }
 
@@ -198,6 +202,72 @@ export function onProjectionsUrl(fn) {
     window.removeEventListener('popstate', fn);
     window.removeEventListener(PROJECTIONS_EVENT, fn);
   };
+}
+
+// Save itself (THL-248): the page at /save, the Anchor's page at /save/anchor
+// and its projection (P-01 to P-05) at /save/anchor/projection.
+export const SAVE_PATH = '/save';
+export const SAVE_VIEWS = { '': SAVE_PATH, anchor: `${SAVE_PATH}/anchor`,
+                            projection: `${SAVE_PATH}/anchor/projection` };
+const SAVE_EVENT = 'pearl:save';
+
+/** {view} at /save, /save/anchor or /save/anchor/projection, or null. */
+export function readSaveUrl(loc = window.location) {
+  const path = loc.pathname.replace(/\/+$/, '');
+  const hit = Object.entries(SAVE_VIEWS).find(([, p]) => p === path);
+  return hit ? { view: hit[0] } : null;
+}
+
+export const isSaveUrl = (loc = window.location) => readSaveUrl(loc) !== null;
+
+/** Point the address bar at Save or one of its own pages, and tell the page. */
+export function writeSaveUrl(view = '', { push = true } = {}) {
+  const href = SAVE_VIEWS[view] ?? SAVE_PATH;
+  if (href !== window.location.pathname) {
+    window.history[push ? 'pushState' : 'replaceState'](null, '', href);
+  }
+  window.dispatchEvent(new Event(SAVE_EVENT));
+}
+
+export function onSaveUrl(fn) {
+  window.addEventListener('popstate', fn);
+  window.addEventListener(SAVE_EVENT, fn);
+  return () => {
+    window.removeEventListener('popstate', fn);
+    window.removeEventListener(SAVE_EVENT, fn);
+  };
+}
+
+// The old Growth addresses (before THL-248 and THL-210) land where their
+// pages went, so a saved link or bookmark never 404s.
+const OLD_GROWTH = [
+  [/^\/growth\/path\/([a-z_]+)$/, (m) => `/wins/path/${m[1]}`],
+  [/^\/growth\/insights(\/[a-z]+)?$/, (m) => `/cashflow/insights${m[1] ?? ''}`],
+  [/^\/growth\/projections\/calculator$/, () => CALCULATOR_PATH],
+  [/^\/growth\/projections(\/[a-z0-9]+)?$/, (m) => `${PROJECTIONS_PATH}${m[1] ?? ''}`],
+  [/^\/growth\/learn(\/[a-z-]+)?$/, (m) => `${LEARN_PATH}${m[1] ?? ''}`],
+  [/^\/growth\/ready$/, () => UNVEIL_PATHS.ready],
+  [/^\/growth\/unveil\/done$/, () => UNVEIL_PATHS.done],
+  [/^\/growth\/unveil$/, () => UNVEIL_PATHS.unveil],
+  [/^\/growth$/, () => PATH_PATH],
+  [/^\/goals$/, () => SAVE_PATH],
+];
+
+/** The new address for an old one, or null when it isn't old. */
+export function newUrlFor(pathname) {
+  const path = pathname.replace(/\/+$/, '') || '/';
+  for (const [re, to] of OLD_GROWTH) {
+    const m = path.match(re);
+    if (m) return to(m);
+  }
+  return null;
+}
+
+/** Replace an old Growth address with its new one before the app reads it. */
+export function redirectOldUrl(loc = window.location) {
+  const to = newUrlFor(loc.pathname);
+  if (to) window.history.replaceState(null, '', `${to}${loc.search}`);
+  return to;
 }
 
 /** True at /transactions/review. */

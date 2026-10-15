@@ -117,7 +117,7 @@ export function BudgetsPage({ data, onChange, onTab, children = null }) {
     <div className="pk hm-page bd-page">
       <header className="hm-head">
         <p className="pk-overline accent">Budgets</p>
-        <h1 className="pk-h1">Home</h1>
+        <h1 className="pk-h1">Cash flow</h1>
       </header>
       <GrowthTabs current="budgets" onTab={onTab} />
       <div className="hm-row-between">

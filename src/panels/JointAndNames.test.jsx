@@ -32,13 +32,14 @@ describe('who an e-Transfer was from or to', () => {
   });
 });
 
-describe('Debts sits with the other Growth pages', () => {
-  it('draws the same Growth tabs, with Debts current', () => {
+describe('Debts sits in Cash flow (THL-209, 2026-10-15)', () => {
+  it('draws Cash flow’s pills, with Debts current', () => {
     const out = html(<DebtsPage data={{ debts: [], count: 0, total: 0, minimums: 0,
                                         missing_details: 0 }} onEdit={() => {}} />);
     expect(out).toContain('class="in-tabs"');
     expect(out).toMatch(/aria-current="page"[^>]*>Debts</);
-    expect(out).toContain('>Home</h1>');
+    expect(out).toContain('>Cash flow</h1>');
+    expect(out).toMatch(/class="in-tab">Transactions</);
   });
 });
 

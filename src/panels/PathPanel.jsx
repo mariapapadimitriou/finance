@@ -8,7 +8,6 @@ import {
 } from '../router.js';
 import { Mark, More } from './GoalsParts.jsx';
 import { monthName, stepWords } from './HomePanel.jsx';
-import { GrowthTabs } from './InsightsParts.jsx';
 import StepScreen from './PathStep.jsx';
 import './home.css';
 import './insights.css';
@@ -102,7 +101,6 @@ export function PathPage({ path, onAction, onReady, onUnveil, onStep, onTab }) {
         <p className="pk-overline accent">Your path</p>
         <h1 className="pk-h1">Wins</h1>
       </header>
-      <GrowthTabs current="path" onTab={onTab} />
 
       <ol className="pt-phases" aria-label="Phases">
         {path.phases.map((p) => (

@@ -4,19 +4,20 @@ import { getLearn, saveLearn } from '../api.js';
 import { Choice, PButton, StatusPill } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { onLearnUrl, readLearnUrl, writeLearnUrl, writeProjectionsUrl } from '../router.js';
-import { GrowthTabs, More } from './InsightsParts.jsx';
+import { More } from './InsightsParts.jsx';
 import { DISCLAIMER, MODULES, SAFE_TO_SPEND, moduleById } from './learnModules.js';
 import './home.css';
 import './insights.css';
 import './growth.css';
 
 /**
- * Growth › Learn (Pearl THL-134, at /growth/learn). Open to everyone from
- * day one; nothing here is locked by phase.
+ * Save › Learn (Pearl THL-134, at /save/learn; moved from Growth by
+ * THL-248). Open to everyone from day one; nothing here is locked behind a
+ * milestone.
  *
- * GR-11 /growth/learn            Before you invest: five modules with how far
+ * GR-11 /save/learn              Before you invest: five modules with how far
  *                                she's read, and two explainers.
- * GR-12 /growth/learn/<module>   A module: back to Learn, four-segment
+ * GR-12 /save/learn/<module>     A module: back to Learn, four-segment
  *                                progress, one idea per screen, Back / Next.
  * GR-13                          Its last screen, a quick check: one question,
  *                                no score, no timer. Any answer shows the
@@ -83,11 +84,11 @@ export function moduleStatus(m) {
 export function LearnPage({ data, nav }) {
   return (
     <div className="pk hm-page in-page lr-page">
+      <div className="in-back-row"><BackLink onClick={() => nav.onTab?.('goals')}>Save</BackLink></div>
       <header className="hm-head">
         <p className="pk-overline accent">Learn at your pace</p>
-        <h1 className="pk-h1">Save</h1>
+        <h1 className="pk-h1">Learn</h1>
       </header>
-      <GrowthTabs current="learn" onTab={nav.onTab} />
       <section className="hm-card in-card" aria-labelledby="lr-title">
         <div className="in-card-head">
           <h2 className="pk-h2" id="lr-title">Before you invest</h2>

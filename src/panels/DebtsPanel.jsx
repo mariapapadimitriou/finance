@@ -116,7 +116,7 @@ export function DebtsPage({ data, onEdit, onTab, children = null }) {
     <div className="pk hm-page db-page">
       <header className="hm-head">
         <p className="pk-overline accent">Debts</p>
-        <h1 className="pk-h1">Home</h1>
+        <h1 className="pk-h1">Cash flow</h1>
       </header>
       <GrowthTabs current="debts" onTab={onTab} />
       <p className="pk-muted">

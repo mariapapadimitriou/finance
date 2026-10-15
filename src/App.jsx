@@ -27,7 +27,8 @@ import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
   clearUrl, fromPartner, isInsightsUrl, isLearnUrl, isPathUrl, isProjectionsUrl, isReviewUrl,
-  readTxUrl, setGoalsIntent, writeInsightsUrl, writeLearnUrl, writePathUrl, writeProjectionsUrl,
+  isSaveUrl, readTxUrl, redirectOldUrl, setGoalsIntent, writeInsightsUrl, writeLearnUrl,
+  writePathUrl, writeProjectionsUrl, writeSaveUrl,
   writeReviewUrl,
 } from './router.js';
 import {
@@ -57,10 +58,14 @@ const WORKS_WHEN_EMPTY = ['home', 'path', 'projections', 'learn', 'debts', 'budg
 const OWN_SECTIONS = ['path', 'insights', 'projections', 'learn', 'budgets', 'debts',
                       'transactions', 'review', 'goals'];
 
+// An old Growth address (before THL-248) becomes its new one before anything
+// reads it, so a saved link lands where the page went.
+if (typeof window !== 'undefined') redirectOldUrl();
+
 // Back from the partner (THL-136 GR-20) at any address: Ready to invest,
 // where "Welcome back" asks whether she opened an account.
 if (typeof window !== 'undefined' && fromPartner() && !isProjectionsUrl()) {
-  window.history.replaceState(null, '', '/growth/ready?from=partner');
+  window.history.replaceState(null, '', '/save/ready?from=partner');
 }
 
 /**
@@ -98,10 +103,10 @@ export default function App() {
   // other address opens Home, where the app lands (THL-44, THL-125).
   const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() ? 'transactions'
     : isPathUrl() ? 'wins' : isInsightsUrl() ? 'cashflow'
-      : isProjectionsUrl() || isLearnUrl() ? 'save' : 'home'));
+      : isProjectionsUrl() || isLearnUrl() || isSaveUrl() ? 'save' : 'home'));
   const [panel, setPanel] = useState(() => (isReviewUrl() ? 'review'
     : readTxUrl() ? 'transactions' : isPathUrl() ? 'path' : isInsightsUrl() ? 'insights'
-      : isProjectionsUrl() ? 'projections' : isLearnUrl() ? 'learn' : 'home'));
+      : isProjectionsUrl() ? 'projections' : isLearnUrl() ? 'learn' : isSaveUrl() ? 'goals' : 'home'));
 
   /**
    * Go to a destination named either way.
@@ -123,6 +128,7 @@ export default function App() {
     else if (target === 'insights') { if (!isInsightsUrl()) writeInsightsUrl(); }
     else if (target === 'projections') { if (!isProjectionsUrl()) writeProjectionsUrl(); }
     else if (target === 'learn') { if (!isLearnUrl()) writeLearnUrl(); }
+    else if (target === 'goals') { if (!isSaveUrl()) writeSaveUrl(); }
     else if (target !== 'transactions') clearUrl();
     const anchor = ANCHORS[key];
     if (anchor) {
@@ -187,8 +193,9 @@ export default function App() {
       else if (isInsightsUrl()) { setTab('cashflow'); setPanel('insights'); }
       else if (isProjectionsUrl()) { setTab('save'); setPanel('projections'); }
       else if (isLearnUrl()) { setTab('save'); setPanel('learn'); }
+      else if (isSaveUrl()) { setTab('save'); setPanel('goals'); }
       else if (readTxUrl()) { setTab('transactions'); setPanel('transactions'); }
-      else if (['transactions', 'review', 'path', 'insights', 'projections', 'learn']
+      else if (['transactions', 'review', 'path', 'insights', 'projections', 'learn', 'goals']
         .includes(panelRef.current)) {
         setTab('home'); setPanel('home');
       }

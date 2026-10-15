@@ -5,7 +5,8 @@ import { PButton, StatusPill } from '../pearl/kit.jsx';
 import {
   onProjectionsUrl, readProjectionsUrl, setGoalsIntent, writeLearnUrl, writePathUrl, writeProjectionsUrl,
 } from '../router.js';
-import { GrowthTabs, More } from './InsightsParts.jsx';
+import { More } from './InsightsParts.jsx';
+import PIcon from '../pearl/icons.jsx';
 import { ForecastChart, Next30Chart, SavingsChart } from './ProjectionsCharts.jsx';
 import { ForecastView, Next30View, SavingsView } from './ProjectionsViews.jsx';
 import UnveilScreens from './Unveil.jsx';
@@ -18,21 +19,22 @@ import './insights.css';
 import './projections.css';
 
 /**
- * Growth › Projections (Pearl THL-197 GR-33, at /growth/projections). It
- * replaced the prototype Projections page and the "leave a transaction out"
- * manager it held (leave-out rules live in Profile › Categories and rules).
+ * Save › Projections (Pearl THL-197 GR-33, at /save/projections; moved from
+ * Growth by THL-248). It replaced the prototype Projections page and the
+ * "leave a transaction out" manager it held (leave-out rules live in
+ * Profile › Categories and rules).
  *
- * GR-33 is the GR-17 layout — the Growth pills, YOUR ANCHOR and the growth
+ * GR-33 is the GR-17 layout — a way back to Save, YOUR ANCHOR and the growth
  * calculator (THL-135 GR-17, GR-18) — with three look-ahead cards between the
  * Anchor line and the calculator, each opening its detail view at its own
  * address: GR-34 this month (/forecast, THL-191), GR-35 the next 30 days
  * (/next30, THL-192) and GR-36 savings in a year (/savings, THL-194). GR-17
- * itself, the calculator without the cards, is /calculator, which GR-16's
- * "Try the growth calculator" opens.
+ * itself, the calculator without the cards, is /save/calculator, which Save's
+ * "Open the calculator" and GR-16's "Try the growth calculator" open.
  *
- * Unveil's screens are here too, reached from the Path: GR-16 Ready to
- * invest (/growth/ready), GR-37 "Opened an investing account?"
- * (/growth/unveil) and GR-10 Unveil done (/growth/unveil/done) — Unveil.jsx.
+ * The investing screens are here too, reached from Wins: GR-16 Ready to
+ * invest (/save/ready), GR-37 "Opened an investing account?"
+ * (/save/invested) and GR-10, done (/save/invested/done) — Unveil.jsx.
  *
  * Every projection is a range, every chart has a table for a screen reader,
  * nothing is red and nothing is signed. "Learn how fees change this" opens
@@ -103,7 +105,18 @@ function CardHead({ title, id, link, onLink, label }) {
   );
 }
 
-/** GR-33 (and GR-17 without the look-ahead cards). */
+/** "‹ Save": back to the Save page. */
+export function BackToSave({ onTab }) {
+  return (
+    <div className="in-back-row">
+      <button type="button" className="in-back" onClick={() => onTab?.('goals')}>
+        <PIcon name="chevronRight" size={12} className="in-flip" /> Save
+      </button>
+    </div>
+  );
+}
+
+/** GR-33 (and GR-17, the calculator on its own, without the look-ahead cards). */
 export function ProjectionsPage({ d, nav, cards = true }) {
   const f = d.forecast;
   const n = d.next30;
@@ -111,12 +124,12 @@ export function ProjectionsPage({ d, nav, cards = true }) {
   const words = savingsWords(s);
   return (
     <div className="pk hm-page in-page pj-page">
+      <BackToSave onTab={nav.onTab} />
       <header className="hm-head">
-        <p className="pk-overline accent">What could happen</p>
-        <h1 className="pk-h1">Save</h1>
+        <p className="pk-overline accent">{cards ? 'What could happen' : 'Illustrative, to help you plan'}</p>
+        <h1 className="pk-h1">{cards ? 'Projections' : 'Growth calculator'}</h1>
       </header>
-      <GrowthTabs current="projections" onTab={nav.onTab} />
-      <AnchorLine anchor={d.anchor} nav={nav} />
+      {cards && <AnchorLine anchor={d.anchor} nav={nav} />}
 
       {cards && (
         <div className="pj-cards">

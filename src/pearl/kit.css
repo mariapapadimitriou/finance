@@ -705,3 +705,11 @@
   background: var(--blush); color: var(--action);
 }
 .pk-countdown { font-variant-numeric: tabular-nums; font-size: 36px; line-height: 42px; }
+
+/* ── Save › What this could grow into (THL-248 SV-P01) ──────────────────── */
+.gl-grow-cards.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.gl-grow-card { gap: var(--space-2); }
+.gl-grow-card .gl-more { margin-top: var(--space-2); }
+@media (max-width: 760px) {
+  .gl-grow-cards, .gl-grow-cards.two { grid-template-columns: 1fr; }
+}
