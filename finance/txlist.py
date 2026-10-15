@@ -29,7 +29,7 @@ from datetime import date
 
 from . import duplicates as dup
 from .analytics import counts_as_spending, is_others, share_amount, spend_amount
-from .categorize import CATEGORY_GROUPS, group_of
+from .categorize import CATEGORY_GROUPS, group_of, is_unsure
 from .etransfers import party
 from .income import is_income
 from .models import Transaction
@@ -239,8 +239,14 @@ def describe(t: Transaction, ctx: Context) -> dict:
 
     confirmed = (t.category_source in _CHOSEN
                  or ctx.confirmed.get(t.fingerprint) == cat)
+    # A question, not an answer (2026-10-14): only when Pearl really isn't
+    # sure — the same rows Needs a look asks about. A merchant one of
+    # Pearl's own rules recognised, or a category Plaid was confident of,
+    # is just the category; it doesn't need confirming, and a list where
+    # every row wears a question mark says nothing.
+    unsure = is_unsure(t) or cat == "Other"
     suggested = (chip in ("Not sorted yet", "Possible duplicate", "Whose?")
-                 or (not structural and not confirmed))
+                 or (not structural and not confirmed and unsure))
 
     raw = t.raw or {}
     # An e-Transfer reads as the person it was from or to (finance/etransfers.py).

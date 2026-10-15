@@ -707,7 +707,7 @@ export default function TransactionsList({ summary, categories, accounts, review
               {anySuggested && (
                 <>
                   <CategoryChip label="Groceries" suggested />
-                  <span>Pearl suggested this. Tap ✓ Right, or open it to change.</span>
+                  <span>Pearl isn’t sure of this one. Tap ✓ Right, or open it to change.</span>
                 </>
               )}
               {anyRuled && (
