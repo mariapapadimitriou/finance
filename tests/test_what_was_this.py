@@ -414,7 +414,7 @@ def test_folded_by_merchant_and_by_category(client):
 
 
 def test_counts_amount_pending_and_needs_a_look_filters(client):
-    ids = load(client.st, row(12, "COFFEE", account="card", kind="credit", merchant="Pilot",
+    ids = load(client.st, row(12, "ZXQ WIDGETS", account="card", kind="credit", merchant="Zxq",
                               when=in_month(1)),
                row(250, "IKEA", account="card", kind="credit", category="Home", when=in_month(2)),
                row(-2000, "PAYROLL", category="Income", when=in_month(1)),
@@ -423,7 +423,7 @@ def test_counts_amount_pending_and_needs_a_look_filters(client):
     assert listing(client, counts="none")["total"] == 1
     assert listing(client, amount_min=100, amount_max=500)["total"] == 2
     assert listing(client, amount_max=20)["total"] == 1
-    assert listing(client, look=1)["total"] == 1            # only the guessed coffee
+    assert listing(client, look=1)["total"] == 1            # only the row filed as Other
     assert listing(client, pending=1)["total"] == 0
     assert client.get("/api/transactions/list?counts=x").status_code == 400
     assert listing(client, month="all")["total"] == 4

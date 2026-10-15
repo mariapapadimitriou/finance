@@ -23,8 +23,10 @@ def in_month(d=1):
 
 
 def row(amount, description, account="chq", when=None, kind="depository",
-        category=None, who=None, issuer="", pending=False, merchant=None):
+        category=None, who=None, issuer="", pending=False, merchant=None, confidence=""):
     raw = {"account_type": kind, "issuer_category": issuer}
+    if confidence:
+        raw["category_confidence"] = confidence
     if who:
         raw["counterparty"] = who
     if pending:
@@ -121,11 +123,23 @@ def test_a_typed_share_is_what_counts(client):
 
 
 def test_suggested_until_confirmed_or_edited(client):
+    """Only a guess Pearl isn't sure of wears the question mark (2026-10-14):
+    Plaid's label at low confidence, or Other. A merchant Pearl's own rules
+    know is just its category."""
     ids = load(client.st,
-               row(24.8, "UBER EATS", account="card", kind="credit", merchant="Uber Eats"),
-               row(40, "LOBLAWS", account="card", kind="credit", merchant="Loblaws"))
+               row(24.8, "UBER EATS", account="card", kind="credit", merchant="Uber Eats",
+                   issuer="FOOD_AND_DRINK_FAST_FOOD", confidence="LOW"),
+               row(40, "LOBLAWS", account="card", kind="credit", merchant="Loblaws"),
+               row(9, "ZXQ WIDGETS", account="card", kind="credit", merchant="Zxq Widgets"))
     rows = by_desc(listing(client))
-    assert rows["UBER EATS"]["suggested"] and rows["LOBLAWS"]["suggested"]
+    assert not rows["LOBLAWS"]["suggested"]                  # a rule knows Loblaws
+    assert rows["ZXQ WIDGETS"]["suggested"]                  # Other: a question
+    # Uber Eats: Pearl's rule wins over Plaid's low-confidence label, so it
+    # isn't a question either — until Pearl's rule is taken away.
+    assert not rows["UBER EATS"]["suggested"]
+    client.st.set_categories({ids["UBER EATS"]: ("Food Delivery", "issuer")})
+    rows = by_desc(listing(client))
+    assert rows["UBER EATS"]["suggested"]
     assert client.put(f"/api/transactions/{ids['UBER EATS']}/confirm").status_code == 200
     client.patch(f"/api/transactions/{ids['LOBLAWS']}", json={"category": "Groceries"})
     rows = by_desc(listing(client))

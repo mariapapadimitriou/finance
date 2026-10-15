@@ -399,6 +399,13 @@ class TestBatchCategory:
 
     def test_confirm_suggestions_with_one_undo(self, client):
         picked, _ = self.load(client)
+        # Only a guess Pearl isn't sure of is a suggestion (2026-10-14): these
+        # four are Plaid's label at low confidence.
+        client.st.set_categories({i: ("Food Delivery", "issuer") for i in picked})
+        with client.st.conn() as c:
+            for i in picked:
+                c.execute("UPDATE transactions SET raw = ? WHERE id = ?",
+                          ('{"category_confidence": "LOW"}', i))
         body = client.post("/api/transactions/batch/confirm", json={"ids": picked}).get_json()
         assert body["title"] == "Confirmed 4 suggestions."
         assert set(client.st.confirmed_categories()) == set(picked)
