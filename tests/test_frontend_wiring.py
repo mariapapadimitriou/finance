@@ -894,3 +894,22 @@ class TestCalendarAndQuickSort:
         for words in ("✓ Right", "Something else…", "Skip this one", "It wasn’t a purchase…",
                       "Save and next", "Later", "Welcome back", "All sorted"):
             assert words in qs, words
+
+
+def test_no_merge_conflict_markers_are_left_in_the_source():
+    """A conflict resolved in GitHub's editor left `<<<<<<< HEAD` in nav.js
+    (2026-10-15) and the deployment's build failed. Nothing ships with one."""
+    root = SRC.parent
+    marker = re.compile(r"^(<{7} |={7}$|>{7} )", re.M)
+    found = []
+    for folder in ("src", "finance", "tests"):
+        for path in (root / folder).rglob("*"):
+            if path.suffix not in (".js", ".jsx", ".css", ".py", ".json") or "node_modules" in path.parts:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if marker.search(text):
+                found.append(str(path.relative_to(root)))
+    for name in ("app.py", "vercel.json", "package.json"):
+        if marker.search((root / name).read_text(encoding="utf-8")):
+            found.append(name)
+    assert not found, f"merge conflict markers left in: {found}"
