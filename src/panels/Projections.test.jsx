@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Calculator, ProjectionsPage } from './ProjectionsPanel.jsx';
 import { ForecastView, Next30View, SavingsView } from './ProjectionsViews.jsx';
 import { ReadyPage, ReportPage, UnveilDone, checklistRows } from './Unveil.jsx';
-import { PathPage } from './PathPanel.jsx';
+import { WinsPage } from './WinsPanel.jsx';
 import {
   anchorLine, calculator, comingUp, extraBounds, forecastLine, forecastSentence, futureValue,
   next30Line, parseAmount, parseYears, rangeWords, savingsAt, savingsWords,
@@ -300,18 +300,18 @@ describe('Unveil (GR-16, GR-37, GR-10)', () => {
     expect((out.match(/pk-btn primary/g) || []).length).toBe(1);
   });
 
-  it('the Path opens Ready to invest and asks about Unveil', () => {
-    const path = {
-      phase: 'build', step: 2, of: 2, protect_done: true,
-      phases: unveil.path.phases.map((p, i) => ({ ...p, state: ['done', 'now', 'ahead'][i] })),
-      steps: [{ key: 'setup', label: 'Set up your Anchor', done: true },
-              { key: 'full', label: 'Grow your Anchor to 3 months', done: false, target: 8700 }],
-      also: [],
-      next: { text: 'Next: grow your Anchor to 3 months of Essentials.', label: 'See your Anchor', action: 'goals' },
+  it('Wins asks about the investing account when it is the next milestone', () => {
+    const data = {
+      month: '2026-10', heading: '5 of 6 milestones on your path', first_month_away: false, done: 5, of: 6,
+      earned: 7, total: 9, pearls: [], streaks: [], recap: null, next_recap: 'November',
+      challenges: { active: [], suggested: [], ready: false }, suggestion: null,
+      path: [{ key: 'invest', label: 'Investing account opened', state: 'next', when: 'Next' }],
+      next: { key: 'invest', title: 'Next: open an investing account, any time',
+              line: 'Open one wherever you like, then tell Pearl. Guidance, not a gate.', label: 'Tell Pearl', action: 'invested' },
     };
-    const out = html(<PathPage path={path} onAction={() => {}} onReady={() => {}} onUnveil={() => {}} />);
-    expect(out).toContain('See the checklist');
-    expect(out).toContain('Opened one? Tell Pearl');
+    const out = html(<WinsPage data={data} onAct={() => {}} onStep={() => {}} />);
+    expect(out).toContain('Tell Pearl');
+    expect(out).toContain('Guidance, not a gate');
     expect((out.match(/pk-btn primary/g) || []).length).toBe(1);
   });
 });

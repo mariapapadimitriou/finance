@@ -194,6 +194,16 @@ export const getPlacement = () => req('/api/path/placement');
 export const placeOnPath  = () => json('POST', '/api/path/placement', {});
 // A phase done, once (GR-08 to GR-10), and GR-20's "Welcome back".
 export const getMoments   = () => req('/api/moments');
+
+// Wins (THL-246 to THL-251): the path and pearls, streaks, challenges, recaps.
+export const getWins           = () => req('/api/wins');
+export const getWinsStreak     = (key) => req(`/api/wins/streaks/${encodeURIComponent(key)}`);
+export const getWinsChallenges = () => req('/api/wins/challenges');
+export const startChallenge    = (body) => json('POST', '/api/wins/challenges', body);
+export const getChallenge      = (id) => req(`/api/wins/challenges/${id}`);
+export const stopChallenge     = (id) => json('POST', `/api/wins/challenges/${id}/stop`, {});
+export const challengeToChest  = (id, bankId) => json('POST', `/api/wins/challenges/${id}/chest`, { bank_id: bankId });
+export const getRecap          = (month) => req(`/api/wins/recaps/${encodeURIComponent(month)}`);
 export const seeMoment    = (phase) => json('POST', `/api/moments/${encodeURIComponent(phase)}`, {});
 // Learn (THL-134 GR-11 to GR-14): her place in each module, saved per screen.
 export const getLearn     = () => req('/api/learn');

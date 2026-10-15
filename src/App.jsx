@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import HomePanel from './panels/HomePanel.jsx';
 import InsightsPanel from './panels/InsightsPanel.jsx';
-import PathPanel from './panels/PathPanel.jsx';
+import WinsPanel from './panels/WinsPanel.jsx';
 import LearnPanel from './panels/LearnPanel.jsx';
 import { MomentScreen } from './panels/Moments.jsx';
 import DebtsPanel from './panels/DebtsPanel.jsx';
@@ -393,7 +393,7 @@ export default function App() {
     >
       {panel === 'income' && <IncomeBillsPanel onTab={go} onChanged={load} version={version} />}
       {panel === 'home' && <HomePanel onTab={go} onChanged={load} version={version} />}
-      {panel === 'path' && <PathPanel onTab={go} version={version} />}
+      {panel === 'path' && <WinsPanel onTab={go} version={version} />}
       {panel === 'learn' && <LearnPanel onTab={go} version={version} />}
       {panel === 'debts' && <DebtsPanel onTab={go} onChanged={load} version={version} />}
       {panel === 'insights' && <InsightsPanel onTab={go} version={version} />}

@@ -505,6 +505,24 @@ CREATE TABLE IF NOT EXISTS sorted_ranges (
     category   TEXT NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- Opt-in challenges (THL-250): short, from her own spending, stoppable.
+-- Progress is worked out live from the transactions in the window; the
+-- row keeps what she agreed to and how it ended.
+CREATE TABLE IF NOT EXISTS challenges (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT NOT NULL,
+    title      TEXT NOT NULL,
+    category   TEXT,
+    merchant   TEXT,
+    target     REAL NOT NULL,
+    baseline   REAL,
+    start      TEXT NOT NULL,
+    end        TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'active',
+    ended_on   TEXT,
+    result     TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS sorted_range_rows (
     range_id INTEGER NOT NULL,
     txn_id   TEXT NOT NULL,
@@ -1356,6 +1374,51 @@ class Store:
             return max(cur.rowcount or 0, 0)
 
     # ── Sort a date range (2026-10-15) ───────────────────────────────────
+    # ── Challenges (THL-250) ───────────────────────────────────────────────
+
+    def challenges(self) -> list[dict]:
+        import json as _json
+        with self.conn() as c:
+            rows = c.execute("SELECT * FROM challenges ORDER BY id DESC").fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["id"] = int(d["id"])
+            d["target"] = round(float(d["target"]), 2)
+            d["baseline"] = round(float(d["baseline"]), 2) if d.get("baseline") is not None else None
+            try:
+                d["result"] = _json.loads(d["result"]) if d.get("result") else None
+            except (TypeError, ValueError):
+                d["result"] = None
+            out.append(d)
+        return out
+
+    def challenge(self, cid: int) -> dict | None:
+        return next((c for c in self.challenges() if c["id"] == cid), None)
+
+    def add_challenge(self, kind: str, title: str, target: float, start: str, end: str,
+                      category: str | None = None, merchant: str | None = None,
+                      baseline: float | None = None) -> int:
+        with self.conn() as c:
+            cur = c.execute(
+                "INSERT INTO challenges (kind, title, category, merchant, target, baseline, start, end)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (kind, title, category, merchant, round(float(target), 2),
+                 round(float(baseline), 2) if baseline is not None else None, start, end))
+            return int(cur.lastrowid)
+
+    def end_challenge(self, cid: int, status: str, ended_on: str, result: dict | None = None) -> bool:
+        import json as _json
+        with self.conn() as c:
+            cur = c.execute("UPDATE challenges SET status = ?, ended_on = ?, result = ? WHERE id = ?",
+                            (status, ended_on, _json.dumps(result) if result is not None else None, cid))
+            return cur.rowcount > 0
+
+    def set_challenge_result(self, cid: int, result: dict) -> None:
+        import json as _json
+        with self.conn() as c:
+            c.execute("UPDATE challenges SET result = ? WHERE id = ?", (_json.dumps(result), cid))
+
     def ranges(self) -> list[dict]:
         with self.conn() as c:
             rows = c.execute("SELECT * FROM sorted_ranges ORDER BY first DESC, id DESC").fetchall()

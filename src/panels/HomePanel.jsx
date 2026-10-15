@@ -294,7 +294,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
                 budgets={home.budgets} onBudgets={() => onTab?.('budgets')}
                 cards={home.recommendations} onCard={act} onWhy={setWhy} onNotForMe={notForMe}
                 onChest={() => onTab?.('goals')}
-                path={home.path} reviewCount={home.review_count}
+                path={home.path} wins={home.wins} reviewCount={home.review_count}
                 connections={home.connections} back={back} today={home.today}
                 savings={home.savings}
                 onPath={(action) => onTab?.(PATH_ACTIONS[action] ?? 'path')}
@@ -365,7 +365,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
 const PATH_ACTIONS = { goals: 'goals', path: 'path', bills: 'income', income: 'income' };
 
 export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onSeeWhere,
-                           onAddIncome, carry = null, onCarry, path, reviewCount = 0,
+                           onAddIncome, carry = null, onCarry, path, wins = null, reviewCount = 0,
                            connections = [], back = null, today,
                            onPath, onReview, onReconnect, onChest, debts = null, onDebts,
                            budgets = null, onBudgets, cards = [], onCard, onWhy, onNotForMe,
@@ -425,7 +425,7 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
       <SavingsCard savings={savings} nextPay={s.next_pay} onExplain={onExplain} />
       {ds.asks_questions && <StarterQuestions onSave={onSave} primary />}
       {path && ['normal', 'irregular'].includes(ds.kind) && (
-        <PathCard path={path} onPath={onPath} primary={!ds.asks_questions} />
+        <PathCard path={path} wins={wins} onPath={onPath} primary={!ds.asks_questions} />
       )}
       {ds.kind === 'learning' && !noAccounts && (
         <MonthSoFar month={s.month}
@@ -941,32 +941,35 @@ export function stepsDone(path) {
   return `${done} of ${path.of} step${path.of === 1 ? '' : 's'} done`;
 }
 
-/** The path card (THL-129 GR-05, as H-01 draws it): where she is, how many
- * steps are done, and the one next step, which is Home's primary action. */
-export function PathCard({ path, onPath, primary = true }) {
-  const done = path.step ? path.step - 1 : path.of;
+/** Home's small "Your next step" card (THL-239, W-01 decision): the next
+ * milestone on the path in her numbers, how far along she is, and a way to
+ * Wins. `wins` is Home's summary from /api/wins; without it the old path's
+ * next step stands in. The button is Home's primary action. */
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+export function PathCard({ path, wins = null, onPath, primary = true }) {
+  const next = wins?.next ?? { title: path?.next?.text, line: '', label: path?.next?.label, action: path?.next?.action };
+  const action = next.action;
+  const go = () => {
+    if (!action) return;
+    if (action === 'review') onPath?.('review');
+    else if (action === 'invested') onPath?.('projections');
+    else if (String(action).startsWith('goals:')) onPath?.('goals');
+    else onPath?.(action);
+  };
   return (
     <section className="hm-card hm-pathcard" aria-labelledby="hm-pathcard-title">
       <div className="hm-row-between">
-        <p className="pk-overline accent" id="hm-pathcard-title">Your path</p>
+        <p className="pk-overline accent" id="hm-pathcard-title">Your next step</p>
         <button type="button" className="hm-link" onClick={() => onPath?.('path')}>
           See your path
         </button>
       </div>
-      <div className="hm-pathcard-now">
-        <Mark phase={path.phase} width={48} />
-        <h2 className="pk-h3">{phaseLabel(path)}</h2>
-      </div>
-      <ProgressBar label={phaseLabel(path)} value={stepsDone(path)} share={path.of ? done / path.of : 0}
-                   showLabel={false} tone={done >= path.of ? 'positive' : 'brand'} />
-      <p className="pk-label pk-muted">{stepsDone(path)}</p>
+      <h2 className="pk-h3">{cap((next.title ?? '').replace(/^Next: /, ''))}</h2>
+      {next.line && <p className="pk-label pk-muted">{next.line}</p>}
+      {wins && <p className="pk-label pk-muted">{`${wins.done} of ${wins.of} milestones on your path`}</p>}
       <div className="hm-pathcard-next">
-        <div className="hm-row-text">
-          <span className="pk-h3">{path.next.text}</span>
-        </div>
-        {primary && (
-          <PButton onClick={() => onPath?.(path.next.action)}>{path.next.label}</PButton>
-        )}
+        {primary && next.label && <PButton onClick={go}>{next.label}</PButton>}
       </div>
     </section>
   );

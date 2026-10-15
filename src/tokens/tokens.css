@@ -61,6 +61,7 @@
   --money-in: #1e7b4c;
   --caution: var(--gold-700);
   --action: var(--rose-700);
+  --action-hover: color-mix(in srgb, var(--rose-700) 88%, black);
   --rose: var(--rose-500);
   --lagoon: var(--lagoon-400);
   --lilac: var(--lilac-200);
@@ -92,6 +93,7 @@
     --money-in: #56d48f;
     --caution: var(--gold-300);
     --action: var(--rose-300);
+    --action-hover: color-mix(in srgb, var(--rose-300) 88%, white);
     --rose: var(--rose-500);
     --lagoon: var(--lagoon-400);
     --lilac: var(--lilac-200);
@@ -123,6 +125,7 @@
   --money-in: #56d48f;
   --caution: var(--gold-300);
   --action: var(--rose-300);
+  --action-hover: color-mix(in srgb, var(--rose-300) 88%, white);
   --rose: var(--rose-500);
   --lagoon: var(--lagoon-400);
   --lilac: var(--lilac-200);

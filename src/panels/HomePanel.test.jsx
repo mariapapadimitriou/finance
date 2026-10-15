@@ -434,24 +434,29 @@ const full = (extra = {}) => html(
   <HomeBody s={ok} ds={{ ...base, kind: 'normal' }} snap={h01} path={buildPath} reviewCount={3}
             today="2026-10-09" onSave={() => Promise.resolve()} onLink={() => {}} {...extra} />);
 
-describe('path card (GR-05, as H-01 draws it)', () => {
-  it('says where she is, the steps done and the next step, and holds the one primary', () => {
-    const out = full();
-    expect(out).toContain('Your path');
+const wins = { done: 1, of: 6, earned: 1, total: 9, heading: '1 of 6 milestones on your path',
+  next: { key: 'anchor_setup', title: 'Next: set up your Anchor',
+          line: 'Pick the savings that make up your Anchor. The milestone is 3 months of Essentials.',
+          label: 'Set up your Anchor', action: 'goals:start' } };
+
+describe('the next-step card (THL-239 W-01: a small card that links to Wins)', () => {
+  it('says the next milestone in her numbers, how far along she is, and holds the one primary', () => {
+    const out = full({ wins });
+    expect(out).toContain('Your next step');
     expect(out).toContain('See your path');
-    expect(out).toContain('>Your Anchor</h2>');
-    expect(out).toContain('0 of 2 steps done');
-    expect(out).toContain('Next: set up your Anchor');
+    expect(out).toContain('>Set up your Anchor</h2>');
+    expect(out).toContain('Pick the savings that make up your Anchor.');
+    expect(out).toContain('1 of 6 milestones on your path');
     expect(primaries(out)).toBe(1);
     expect(out).toMatch(/pk-btn primary[^>]*>Set up your Anchor/);
     expect(out).not.toMatch(/Protect|Build|Unveil|Shine/);
     calm(out);
   });
 
-  it('a step done fills the bar', () => {
-    const out = html(<PathCard path={{ ...buildPath, step: 2 }} />);
-    expect(out).toContain('1 of 2 steps done');
-    expect(out).toContain('viz-fill');
+  it('stands in with the old path’s next step when Home has no wins summary', () => {
+    const out = html(<PathCard path={buildPath} />);
+    expect(out).toContain('Set up your Anchor, so a big surprise');
+    expect(out).not.toContain('milestones on your path');
   });
 
   it('every step done', () => {

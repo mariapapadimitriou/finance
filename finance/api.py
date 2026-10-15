@@ -1880,6 +1880,10 @@ def home():
         "safe_to_spend": sts,
         "data_state": state,
         "path": _path(st, txns, today, sts, state, types),
+        # THL-246: Home's small "Your next step" card, from the milestone path.
+        "wins": __import__("finance.wins_api", fromlist=["summary"]).summary(st, txns, today, anchor=_anchor(st, txns, today.isoformat()),
+                                 path=_path(st, txns, today, sts, state, types),
+                                 review_count=review.get("count", 0), usual=usual),
         "review_count": review.get("count", 0),
         "carryover": carry_question,
         # Savings so far: put away, and left over, since she started.
@@ -2608,4 +2612,4 @@ def skip_review():
 # The Profile pages, Growth › Insights and Growth › Projections register on this
 # blueprint too; imported last so they can use the helpers above.
 from . import income_bills_api, insights_api, privacy_api, profile_api, projections_api  # noqa: E402,F401,I001
-from . import growth_api, marks_api, ranges_api, transactions_extras_api  # noqa: E402,F401
+from . import growth_api, marks_api, ranges_api, transactions_extras_api, wins_api  # noqa: E402,F401
