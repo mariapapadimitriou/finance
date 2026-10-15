@@ -1,10 +1,15 @@
 """Assign a spending category to each transaction.
 
-Three layers, in priority order:
+Four layers, in priority order (2026-10-14):
 
 1. A user override for that exact merchant  (you told us once, we remember)
-2. Pattern rules below                       (merchant name / raw descriptor)
-3. The issuer's own category, loosely mapped (Chase and Amex both ship one)
+2. The bank's own category                   (Plaid's label, or the one a
+                                              statement carries — the bank
+                                              knows the merchant; see
+                                              `categorize` for the two
+                                              exceptions)
+3. Pattern rules below                       (merchant name / raw descriptor)
+4. The bank's label after all, when it only said "transfer" or wasn't sure
 
 Anything still unmatched lands in "Other", which the UI surfaces so you can
 teach it — a correction there becomes a layer-1 override for every future row.
@@ -409,7 +414,7 @@ def is_unsure(t) -> bool:
 
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
-RULES_VERSION = 7
+RULES_VERSION = 8
 
 
 def plaid_category(code: str) -> str | None:
@@ -475,9 +480,38 @@ ISSUER_CATEGORY_MAP = {
 }
 
 
+def bank_category(issuer_category: str) -> str | None:
+    """The bank's own label as one of Pearl's categories, or None: Plaid's
+    code (longest prefix wins), the loose issuer labels a statement carries,
+    then the leading word of a SCREAMING_SNAKE code."""
+    if not issuer_category:
+        return None
+    mapped = plaid_category(issuer_category)
+    if mapped:
+        return mapped
+    mapped = ISSUER_CATEGORY_MAP.get(issuer_category.strip().lower())
+    if mapped:
+        return mapped
+    head = issuer_category.split("_")[0].replace("-", " ").strip().lower()
+    return ISSUER_CATEGORY_MAP.get(head)
+
+
+# A bank label that says only "money moved" or "something else" isn't an
+# answer: Pearl's own rules know where a transfer went (Questrade is Saved)
+# and what a generic service was.
+_BANK_NOT_AN_ANSWER = {"Other", "Transfers"}
+
+
 def categorize(merchant: str, description: str = "", issuer_category: str = "",
-               overrides: dict[str, str] | None = None) -> tuple[str, str]:
-    """Return (category, source) for one transaction."""
+               overrides: dict[str, str] | None = None, confidence: str = "") -> tuple[str, str]:
+    """Return (category, source) for one transaction.
+
+    In order (2026-10-14): her own rule for the merchant; the bank's label
+    — what the bank itself says a purchase was is the most accurate thing
+    Pearl has, so it comes before Pearl's pattern rules — unless Plaid says
+    its own confidence is low or the label only says "transfer" or "other";
+    then Pearl's rules; then whatever the bank said after all; then Other.
+    """
     key = (merchant or "").strip().lower()
 
     if overrides and key in overrides:
@@ -487,23 +521,18 @@ def categorize(merchant: str, description: str = "", issuer_category: str = "",
     if code in AUTHORITATIVE_ISSUER_CATEGORIES:
         return AUTHORITATIVE_ISSUER_CATEGORIES[code], "issuer"
 
+    bank = bank_category(issuer_category)
+    sure = (confidence or "").strip().upper() not in UNSURE_CONFIDENCE
+    if bank and sure and bank not in _BANK_NOT_AN_ANSWER:
+        return bank, "issuer"
+
     haystack = f"{merchant} || {description}"
     for pattern, category in _COMPILED:
         if pattern.search(haystack):
             return category, "rule"
 
-    if issuer_category:
-        mapped = plaid_category(issuer_category)
-        if mapped:
-            return mapped, "issuer"
-        mapped = ISSUER_CATEGORY_MAP.get(issuer_category.strip().lower())
-        if mapped:
-            return mapped, "issuer"
-        # Plaid ships SCREAMING_SNAKE detail codes; try the leading segment.
-        head = issuer_category.split("_")[0].replace("-", " ").strip().lower()
-        mapped = ISSUER_CATEGORY_MAP.get(head)
-        if mapped:
-            return mapped, "issuer"
+    if bank:
+        return bank, "issuer"
 
     return "Other", "rule"
 
@@ -521,7 +550,8 @@ def apply_categories(transactions, overrides: dict[str, str] | None = None) -> N
             continue
         issuer_cat = (t.raw or {}).get("issuer_category", "")
         t.category, t.category_source = categorize(
-            t.merchant, t.description, issuer_cat, overrides
+            t.merchant, t.description, issuer_cat, overrides,
+            confidence=str((t.raw or {}).get("category_confidence", "") or ""),
         )
         if _is_unrecognized_card_inflow(t):
             t.category, t.category_source = "Transfers", "card_inflow"

@@ -63,9 +63,21 @@ def test_a_plaid_code_maps_to_its_category(code, expected):
     assert categorize("", "", code)[0] == expected
 
 
-def test_a_merchant_rule_still_beats_plaids_guess():
-    # Plaid calls Netflix entertainment; our rule knows it is streaming.
-    assert categorize("NETFLIX.COM", "", "ENTERTAINMENT_TV_AND_MOVIES")[0] == "Streaming"
+def test_the_banks_label_beats_pearls_rule_when_the_bank_is_sure():
+    """What the bank says a purchase was is the most accurate thing Pearl
+    has (2026-10-14), so it comes before Pearl's pattern rules."""
+    # Plaid calls Netflix entertainment; Pearl's rule would say Streaming.
+    assert categorize("NETFLIX.COM", "", "ENTERTAINMENT_TV_AND_MOVIES") == ("Entertainment", "issuer")
+    # …unless Plaid says it wasn't sure: then Pearl's rule, then the label.
+    assert categorize("NETFLIX.COM", "", "ENTERTAINMENT_TV_AND_MOVIES",
+                      confidence="LOW") == ("Streaming", "rule")
+    assert categorize("ZXQ WIDGETS", "", "GENERAL_MERCHANDISE",
+                      confidence="LOW") == ("Shopping", "issuer")
+    # A label that only says "transfer" or "other" isn't an answer: Pearl
+    # knows Questrade is money put away.
+    assert categorize("QUESTRADE", "QUESTRADE TFR", "TRANSFER_OUT")[0] == "Saved"
+    assert categorize("ROGERS", "ROGERS WIRELESS", "GENERAL_SERVICES")[0] == "Phone & Internet"
+    assert categorize("ZXQ WIDGETS", "", "TRANSFER_OUT") == ("Transfers", "issuer")
 
 
 def test_your_own_rule_beats_everything():

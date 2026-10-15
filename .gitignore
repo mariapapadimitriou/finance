@@ -12,3 +12,4 @@ ledger.db
 
 # Generated sample statements (recreate with: python -m sample_data.generate)
 sample_data/*.csv
+classifiers.csv
