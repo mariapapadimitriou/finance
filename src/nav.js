@@ -101,7 +101,8 @@ export const GROUPS = [
   // could grow into — projections and the learning modules.
   { key: 'save', label: 'Save', panels: ['goals', 'projections', 'learn'],
     hint: 'Your Anchor, your treasure chests, and what they could grow into',
-    icon: 'M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21ZM12 17C14.7614 17 17 14.7614 17 12C17 9.23858 14.7614 7 12 7C9.23858 7 7 9.23858 7 12C7 14.7614 9.23858 17 12 17ZM12 13C12.5523 13 13 12.5523 13 12C13 11.4477 12.5523 11 12 11C11.4477 11 11 11.4477 11 12C11 12.5523 11.4477 13 12 13Z' },
+    // A lifebuoy, as NAV-01/NAV-02 draw it: a ring, the hole, four spokes.
+    icon: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5.6 5.6l3.6 3.6M14.8 14.8l3.6 3.6M14.8 9.2l3.6-3.6M5.6 18.4l3.6-3.6' },
   // Wins (THL-239): the milestone path and what's next.
   { key: 'wins', label: 'Wins', panels: ['path'],
     hint: 'Your path, and the one next step',
