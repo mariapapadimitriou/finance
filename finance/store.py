@@ -516,8 +516,8 @@ CREATE TABLE IF NOT EXISTS challenges (
     merchant   TEXT,
     target     REAL NOT NULL,
     baseline   REAL,
-    start      TEXT NOT NULL,
-    end        TEXT NOT NULL,
+    starts_on  TEXT NOT NULL,
+    ends_on    TEXT NOT NULL,
     status     TEXT NOT NULL DEFAULT 'active',
     ended_on   TEXT,
     result     TEXT,
@@ -664,6 +664,19 @@ class Store:
         self._retire_bulk_edits()
         self._migrate_manual_digits()
         self._drop_self_twins()
+        self._migrate_challenge_dates()
+
+    def _migrate_challenge_dates(self) -> None:
+        """`challenges.start`/`end` became `starts_on`/`ends_on` (2026-10-15):
+        `end` is a reserved word in Postgres, so the old schema could not be
+        created there at all. A SQLite ledger made before keeps its rows."""
+        if self.is_postgres:
+            return
+        with self.conn() as c:
+            cols = {r[1] for r in c.execute("PRAGMA table_info(challenges)").fetchall()}
+            if "end" in cols:
+                c.execute('ALTER TABLE challenges RENAME COLUMN "start" TO starts_on')
+                c.execute('ALTER TABLE challenges RENAME COLUMN "end" TO ends_on')
 
     def _migrate_manual_digits(self) -> None:
         """`manual_accounts.last4`: the last four digits of a savings or
@@ -1384,6 +1397,9 @@ class Store:
         for r in rows:
             d = dict(r)
             d["id"] = int(d["id"])
+            # Stored as starts_on/ends_on: `end` is reserved in Postgres.
+            d["start"] = d.pop("starts_on", None)
+            d["end"] = d.pop("ends_on", None)
             d["target"] = round(float(d["target"]), 2)
             d["baseline"] = round(float(d["baseline"]), 2) if d.get("baseline") is not None else None
             try:
@@ -1401,7 +1417,7 @@ class Store:
                       baseline: float | None = None) -> int:
         with self.conn() as c:
             cur = c.execute(
-                "INSERT INTO challenges (kind, title, category, merchant, target, baseline, start, end)"
+                "INSERT INTO challenges (kind, title, category, merchant, target, baseline, starts_on, ends_on)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (kind, title, category, merchant, round(float(target), 2),
                  round(float(baseline), 2) if baseline is not None else None, start, end))
