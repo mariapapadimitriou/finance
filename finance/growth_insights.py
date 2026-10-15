@@ -182,14 +182,14 @@ def chest_monthly(banks: list[piggy.Bank], charges: dict[int, dict], month: str)
     return total
 
 
-def set_aside(transactions, banks, charges, month: str,
+def set_aside(transactions, banks=None, charges=None, month: str = "",
               adds: dict[str, float] | None = None) -> int:
-    """What a month put away, in cents: Saved transfers less withdrawals,
-    the chests' monthly amounts, and anything added to a chest by hand
-    (`adds`, {month: dollars}). The one saving figure; finance/savings.py
-    wraps it as `put_away_month`."""
-    return (cents(invested_in(transactions, month)) + chest_monthly(banks, charges, month)
-            + cents((adds or {}).get(month, 0.0)))
+    """What a month moved to savings, in cents: Saved transfers less
+    withdrawals. The chests aren't in it (THL-230): they fill from the
+    Anchor, not from the month. The one saving figure; finance/savings.py
+    wraps it as `put_away_month`. `banks`, `charges` and `adds` are kept so
+    older callers still work; they no longer change the figure."""
+    return cents(invested_in(transactions, month))
 
 
 def chest_held(bank: piggy.Bank, charges: dict, month: str) -> int:
@@ -393,7 +393,13 @@ def anchor_held(accounts: list[dict], transactions: list[Transaction], day: str)
 
 def savings(transactions, months: list[str], today: date, *, anchor: dict,
             accounts: list[dict], banks: list[piggy.Bank], charges: dict) -> dict:
-    """GR-32: the Anchor and each chest at the end of every month."""
+    """GR-32: the Anchor and each chest at the end of every month.
+
+    The chests fill from the Anchor (THL-230), so what the picked savings
+    accounts held is the whole of it: the Anchor is that less what the
+    chests held, and the total is what the accounts held (plus any chest
+    money before the Anchor is set up, since Pearl can't see where that is).
+    """
     now = today.strftime("%Y-%m")
     started = bool(anchor.get("started"))
     paid: dict[int, set[str]] = defaultdict(set)
@@ -403,9 +409,12 @@ def savings(transactions, months: list[str], today: date, *, anchor: dict,
     series = []
     for m in months:
         day = today.isoformat() if m == now else month_end(m).isoformat()
-        point = {"month": m, "anchor": anchor_held(accounts, transactions, day) if started else 0,
-                 "chests": {str(b.id): chest_held(b, charges.get(b.id, {}), m) for b in banks}}
-        point["total"] = point["anchor"] + sum(point["chests"].values())
+        held = anchor_held(accounts, transactions, day) if started else 0
+        chests = {str(b.id): chest_held(b, charges.get(b.id, {}), m) for b in banks}
+        in_chests = sum(chests.values())
+        point = {"month": m, "anchor": max(held - in_chests, 0) if started else 0,
+                 "chests": chests,
+                 "total": held if started else in_chests}
         series.append(point)
     events = [{"month": m, "chest": str(b.id), "label": f"{b.name} opened"}
               for b in banks for m in sorted(paid.get(b.id, ())) if m in months]

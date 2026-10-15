@@ -89,7 +89,7 @@ export function checklistRows(checklist, nav) {
   const protect = checklist.find((c) => c.key === 'protect');
   return checklist.map((c) => {
     if (c.key === 'protect') {
-      return { ...c, title: 'Protect is done',
+      return { ...c, title: 'The basics are done',
                detail: c.done ? 'Your income covers your Essentials' : protectLeft(c),
                link: c.done ? null : c.next
                  ? { text: 'See the step', go: () => nav.toStep?.(c.next) }
@@ -99,13 +99,14 @@ export function checklistRows(checklist, nav) {
       const of = `${money(c.counted / 100)} of ${money(c.target / 100)}`;
       if (!c.started && protect && !protect.done) {
         // GR-23: the Anchor is Build's, and Build hasn't started.
-        return { ...c, todo: true, title: 'Your Anchor is under way', detail: 'Starts in Build', link: null };
+        return { ...c, todo: true, title: 'Your Anchor is under way', detail: 'Comes after the basics', link: null };
       }
-      return { ...c, title: c.done ? 'Your Anchor is full' : 'Your Anchor is under way',
-               detail: !c.started ? 'Not started yet' : c.counted > 0 ? of : `Nothing in it yet, of ${money(c.target / 100)}`,
+      const months = c.months != null ? `${money(c.counted / 100)} · ${c.months} of 3 months` : of;
+      return { ...c, title: c.done ? 'Your Anchor covers 3 months' : 'Your Anchor is under way',
+               detail: !c.started ? 'Not set up yet' : c.counted > 0 ? months : 'Nothing in it yet',
                link: c.done ? null : c.started
                  ? { text: 'See Anchor', go: () => nav.toGoals('anchor') }
-                 : { text: 'Start your Anchor', go: () => nav.toGoals('start') } };
+                 : { text: 'Set up your Anchor', go: () => nav.toGoals('start') } };
     }
     if (c.key === 'cards') {
       const months = c.months === 1 ? 'last month' : `the last ${c.months} months`;
@@ -159,7 +160,7 @@ export function ReadyPage({ data, nav, partner = {}, returned = false }) {
         <div className="in-back-row"><BackLink onClick={() => nav.onTab?.('path')}>Path</BackLink></div>
         <div className="pj-title-row">
           <div className="hm-head">
-            <p className="pk-overline accent">Unveil</p>
+            <p className="pk-overline accent">Grow your money</p>
             <h1 className="pk-h1">Ready to invest</h1>
           </div>
           <span className={protectDone ? undefined : 'gr-faded'}><Mark phase="unveil" width={58} /></span>
@@ -195,7 +196,7 @@ export function ReadyPage({ data, nav, partner = {}, returned = false }) {
             <section className="hm-card in-card" aria-labelledby="pj-opened-title">
               <p className="pk-overline accent">When you’re ready</p>
               <h2 className="pk-h2" id="pj-opened-title">Opened an investing account?</h2>
-              <p className="pk-label pk-muted">{`You told Pearl you opened ${article(report.label)}, so Unveil is done.`}</p>
+              <p className="pk-label pk-muted">{`You told Pearl you opened ${article(report.label)}, so that milestone is done.`}</p>
               <Link onClick={() => nav.show('unveil')}>Change the kind of account</Link>
             </section>
           ) : (
@@ -243,12 +244,12 @@ export function ReportPage({ data, onBack, onDone }) {
       <header className="in-detail-head">
         <div className="in-back-row"><BackLink onClick={onBack}>Ready to invest</BackLink></div>
         <div className="hm-head">
-          <p className="pk-overline accent">Unveil</p>
+          <p className="pk-overline accent">Grow your money</p>
           <h1 className="pk-h1">Opened an investing account?</h1>
         </div>
       </header>
       <section className="hm-card in-card">
-        <p className="pj-body">Wherever you opened it, tell Pearl and Unveil is done. We don’t ask
+        <p className="pj-body">Wherever you opened it, tell Pearl and the milestone is done. We don’t ask
           where, and we never ask for a login or a balance.</p>
         <fieldset className="pj-fieldset">
           <legend className="pk-overline accent">What kind of account?</legend>
@@ -263,7 +264,7 @@ export function ReportPage({ data, onBack, onDone }) {
         <p className="pk-label pk-muted">You can undo this in Profile.</p>
       </section>
       <div className="in-actions">
-        <PButton type="submit" disabled={busy}>{busy ? 'Saving…' : 'Mark Unveil done'}</PButton>
+        <PButton type="submit" disabled={busy}>{busy ? 'Saving…' : 'Mark it done'}</PButton>
         <button type="button" className="in-text-btn" onClick={onBack}>Not yet</button>
       </div>
     </form>
@@ -282,9 +283,9 @@ export function UnveilDone({ data, onPath }) {
   const isDone = (p) => p.state === 'done' || (p.key === 'unveil' && unveiled);
   const everything = phases.length > 0 && phases.every(isDone);
   return (
-    <MomentLayout phase="unveil" overline="Unveil · Done" title="You opened your first investment account"
-                  sub={everything ? 'Protect, Build and Unveil: all three done. What you’ve built stays yours.'
-                    : 'Unveil is done. What you’ve built stays yours, and the rest of your path is still there.'}>
+    <MomentLayout phase="unveil" overline="Grow your money · Done" title="You opened your first investment account"
+                  sub={everything ? 'Every milestone on your path is done. What you’ve built stays yours.'
+                    : 'That milestone is done. What you’ve built stays yours, and the rest of your path is still there.'}>
       <ol className="pj-done-phases" aria-label="Your path">
         {phases.map((p) => (
           <li key={p.key}>

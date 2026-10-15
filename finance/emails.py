@@ -15,9 +15,9 @@ from html import escape
 WELCOME_STEPS = (
     ("1. Link your accounts", "So Pearl sees your whole picture. Read-only, always."),
     ("2. See your safe to spend", "What you can spend this month without second-guessing."),
-    ("3. Follow your path", "Protect, Build, Unveil. One small step at a time."),
+    ("3. Follow your path", "Know your money, keep a cushion, grow it. One milestone at a time."),
 )
-TAGLINE = "Protect what’s yours. Build your buffer. Unveil your potential."
+TAGLINE = "Know what’s yours. Keep a cushion. Grow what you’ve got."
 # The design leaves the company's legal name as a placeholder until it is
 # incorporated; Pearl is what she knows it by.
 FOOTER = "You’re getting this because you created a Pearl account. Pearl, Toronto, Ontario"

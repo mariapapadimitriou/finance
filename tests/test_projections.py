@@ -57,12 +57,12 @@ class TestTheRestOfTheMonth:
         assert rest["low"] < 40000 < rest["high"]
 
 
-def sts_for(income=4000.0, spent=1760.0, set_aside=0.0, bills=()):
+def sts_for(income=4000.0, spent=1760.0, saved=0.0, bills=()):
     rows = [{"key": "income", "amount": income, "lines": []},
             {"key": "bills", "amount": sum(b["amount"] for b in bills), "lines": list(bills)},
             {"key": "spent", "amount": spent, "lines": []}]
-    if set_aside:
-        rows.append({"key": "set_aside", "amount": set_aside, "lines": []})
+    if saved:
+        rows.append({"key": "saved", "amount": saved, "lines": []})
     return {"rows": rows}
 
 
@@ -83,8 +83,8 @@ class TestMonthEnd:
         assert f["bills_ahead"] == [{"date": "2026-10-18", "label": "Phone", "amount": 6500,
                                      "confirmed": True}]
 
-    def test_what_you_can_spend_is_income_less_what_she_sets_aside(self):
-        f = la.month_end(self.rows(), TODAY, sts_for(set_aside=300.0), self.MONTHS, BILLS)
+    def test_what_you_can_spend_is_income_less_what_she_moved_to_savings(self):
+        f = la.month_end(self.rows(), TODAY, sts_for(saved=300.0), self.MONTHS, BILLS)
         assert f["can_spend"] == 370000
 
     def test_running_over_is_a_state_not_a_negative_figure_to_show(self):
@@ -206,14 +206,13 @@ class TestSavingsInAYear:
 
 # ── Unveil: the self-report and the checklist (GR-37, GR-16) ──────────────
 
-ANCHOR_FULL = {"started": True, "first_stop_done": True, "earned": True,
-               "first_stop": 500, "target": 2335}
+ANCHOR_FULL = {"started": True, "earned": True, "target": 8700, "counted": 9100, "months": 3.1}
 
 
 class TestUnveilOnThePath:
     def path(self, **kw):
         rows = history() + october()
-        s = sts.compute(rows, TODAY, savings_target=300.0)
+        s = sts.compute(rows, TODAY)
         return milestones.path(rows, TODAY, s, anchor=ANCHOR_FULL, bills_found=5, **kw)
 
     def test_her_word_makes_the_step_done(self):
@@ -304,12 +303,14 @@ class TestTheEndpoint:
     def test_a_nonsense_what_if_is_refused(self, client, extra):
         assert client.get(f"/api/projections?extra={extra}").status_code == 400
 
-    def test_use_this_pace_sets_what_is_set_aside(self, client):
+    def test_use_this_pace_sets_the_saving_goal_but_never_the_month(self, client):
+        """THL-230: a goal never comes off safe to spend; only money moved does."""
         ledger(client)
         r = client.put("/api/projections/pace", json={"monthly": 250})
         assert r.status_code == 200 and r.get_json()["saving_goal"] == 25000
         rows = client.get("/api/home").get_json()["safe_to_spend"]["rows"]
-        assert next(x for x in rows if x["key"] == "set_aside")["target"] == 250
+        assert all(x["key"] != "set_aside" for x in rows)
+        assert next(x for x in rows if x["key"] == "saved")["amount"] >= 0
         assert client.put("/api/projections/pace", json={"monthly": 0}).status_code == 400
 
 

@@ -37,7 +37,7 @@ const SHARE_ROWS = [
   { label: 'Plaid', text: 'Connects to your bank, read-only', tag: 'Needed', needed: true },
   { label: 'Our cloud host', text: 'Runs Pearl and stores your data (Vercel and Neon)', tag: 'Needed', needed: true },
   { label: 'Our email service', text: 'Delivers your sign-in codes', tag: 'Needed', needed: true },
-  { label: 'An investing partner', text: 'Only if you choose to go there in the Unveil phase. We always ask first.', tag: 'Your choice' },
+  { label: 'An investing partner', text: 'Only if you choose to go there when you’re ready to grow your money. We always ask first.', tag: 'Your choice' },
 ];
 
 export const DOCS = {

@@ -15,7 +15,7 @@ def cents(x):
 
 def alex(today=TODAY, rows=None):
     rows = history() + october() if rows is None else rows
-    s = sts.compute(rows, today, savings_target=300.0)
+    s = sts.compute(rows, today)
     return rows, s, weekly.week(rows, today, s)
 
 

@@ -192,16 +192,16 @@ def pace(anchor: dict, paycheques: int) -> dict | None:
     every = "each paycheque" if pays > 1 else "each month"
     return {
         "type": "pace", "label": LABELS["pace"], "impact": float(extra * 12),
-        "title": f"Moving {_money(each)} more {every} gets your Anchor full about {weeks} weeks sooner",
+        "title": f"Putting away {_money(each)} more {every} gets your Anchor to 3 months about {weeks} weeks sooner",
         "body": f"Based on your usual pace of {_money(usual)} a month.",
         "numbers": {"each": each, "monthly_extra": extra, "usual": round(usual, 2),
                     "weeks_sooner": weeks, "to_go": round(to_go, 2)},
-        "why": {"title": "Your Anchor could fill sooner",
+        "why": {"title": "Your Anchor could reach 3 months sooner",
                 "text": (f"You have {_money(to_go)} to go. At your usual {_money(usual)} a month "
                          f"that’s about {_months_words(now_months)}; with {_money(extra)} more a "
                          f"month, about {_months_words(new_months)}."),
-                "rule": "We show this once your Anchor is started, when a little more would "
-                        "make it full at least 2 weeks sooner.",
+                "rule": "We show this once your Anchor is set up, when a little more would "
+                        "get it to 3 months at least 2 weeks sooner.",
                 "lines": []},
         "action": {"label": "Try it", "to": "goals",
                    "goals": {"view": "whatif", "monthly": round(usual + extra, 2)}},
@@ -242,31 +242,25 @@ def idle(anchor: dict, low: float | None, essentials: float | None) -> dict | No
         return None
     started = bool(anchor.get("started"))
     counted = anchor.get("counted") or 0
-    first_stop = anchor.get("first_stop") or 500
-    if not started:
-        need, outcome = first_stop, "start your Anchor"
-    elif not anchor.get("first_stop_done"):
-        need, outcome = first_stop - counted, "cover your Anchor’s first stop"
-    else:
-        need, outcome = anchor.get("to_go") or 0, None
+    need = (anchor.get("to_go") or 0) if started else (anchor.get("target") or 0)
     room = low - essentials
     amount = int(min(need, room) // 50 * 50)
     if amount < MIN_MOVE:
         return None
-    if outcome is None:
-        outcome = "fill your Anchor" if amount >= need else f"bring your Anchor {_money(amount)} closer"
+    outcome = (f"take your Anchor from {_money(counted)} to {_money(counted + amount)}" if started
+               else f"start your Anchor at {_money(amount)}")
     floor = int(low // 100 * 100)
     return {
         "type": "idle", "label": LABELS["idle"], "impact": float(amount),
         "title": f"Your chequing has stayed above {_money(floor)} for 3 months",
-        "body": f"Moving {_money(amount)} to savings would {outcome} and still leave a month of Essentials.",
+        "body": f"Moving {_money(amount)} to savings would {outcome} and still leave a month of Essentials in chequing.",
         "numbers": {"lowest": low, "essentials": round(essentials, 2), "amount": amount},
         "why": {"title": "Money sitting in chequing",
                 "text": (f"Over the last 3 months your chequing never went below {_money(low)}. "
                          f"A month of Essentials is about {_money(essentials)}, so {_money(amount)} "
                          "can move and still leave that."),
                 "rule": "We show this when chequing stays above a month of Essentials for 3 "
-                        "months while your Anchor isn’t full. We don’t suggest any product.",
+                        "months while your Anchor is under 3 months. We don’t suggest any product.",
                 "lines": []},
         "action": {"label": "Move to savings", "to": "goals",
                    "goals": {"view": "anchor" if started else "start", "amount": amount}},

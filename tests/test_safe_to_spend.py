@@ -60,7 +60,6 @@ def october():
 
 
 def alex(**kw):
-    kw.setdefault("savings_target", 300.0)
     return sts.compute(history() + october(), TODAY, **kw)
 
 
@@ -75,24 +74,24 @@ class TestTheNumber:
         assert row(r, "income")["amount"] == 4300.00
         assert row(r, "bills")["amount"] == 363.48
         assert row(r, "spent")["amount"] == 3144.34
-        assert row(r, "set_aside")["amount"] == 150.00
+        assert row(r, "saved")["amount"] == 150.00          # moved to savings (THL-230)
         assert r["amount"] == 642.18
 
     def test_the_sheet_adds_up_to_the_number_shown(self):
         r = alex()
         rows = {x["key"]: x["amount"] for x in r["rows"]}
-        total = rows["income"] - rows["bills"] - rows["spent"] - rows.get("set_aside", 0)
+        total = rows["income"] - rows["bills"] - rows["spent"] - rows.get("saved", 0)
         assert round(total, 2) == r["amount"]
 
-    @pytest.mark.parametrize("target", [0.0, 300.0, 1234.57])
-    def test_it_adds_up_to_the_cent_whatever_the_inputs(self, target):
+    @pytest.mark.parametrize("moved", [0.0, 150.0, 1234.57])
+    def test_it_adds_up_to_the_cent_whatever_the_inputs(self, moved):
         rows = history() + october() + [
             tx("2026-10-02", "Shop", 0.01, "Shopping"),
             tx("2026-10-02", "Shop", 33.333, "Shopping"),
         ]
-        r = sts.compute(rows, TODAY, savings_target=target)
+        r = sts.compute(rows, TODAY, moved_to_savings=moved)
         cents = {x["key"]: round(x["amount"] * 100) for x in r["rows"]}
-        expected = cents["income"] - cents["bills"] - cents["spent"] - cents.get("set_aside", 0)
+        expected = cents["income"] - cents["bills"] - cents["spent"] - cents.get("saved", 0)
         assert round(r["amount"] * 100) == expected
 
     def test_days_left_include_today(self):
@@ -171,7 +170,7 @@ class TestBillsStillToCome:
         assert hydro["estimate"] is True and hydro["amount"] == 60.00
 
     def test_a_late_bill_stays_until_month_end(self):
-        r = sts.compute(history() + october(), date(2026, 10, 14), savings_target=300.0)
+        r = sts.compute(history() + october(), date(2026, 10, 14))
         rogers = next(b for b in row(r, "bills")["lines"] if b["label"] == "Rogers")
         assert rogers["late"] is True
 
@@ -198,29 +197,35 @@ class TestAlreadySpent:
     def test_an_unsorted_transfer_counts_until_sorted(self):
         rows = history() + october() + [tx("2026-10-08", "E-transfer", 816.00,
                                            "Unsorted transfers")]
-        r = sts.compute(rows, TODAY, savings_target=300.0)
+        r = sts.compute(rows, TODAY)
         assert row(r, "spent")["amount"] == 3960.34
 
 
-class TestSetAside:
-    def test_what_the_goal_still_needs(self):
-        aside = row(alex(), "set_aside")
-        assert (aside["target"], aside["saved"], aside["amount"]) == (300.00, 150.00, 150.00)
-        assert aside["goal"] == "saving_goal"
-        assert row(alex(anchor_started=True), "set_aside")["goal"] == "anchor"
+class TestMovedToSavings:
+    """THL-230: only money she actually moved to savings comes off the month.
+    Chests fill from her Anchor, so they never do; no plan or target does."""
+
+    def test_the_saved_transfer_is_the_row(self):
+        saved = row(alex(), "saved")
+        assert saved["amount"] == 150.00 and saved["lines"] == []
+        assert all(x["key"] != "set_aside" for x in alex()["rows"])
+
+    def test_the_caller_can_hand_in_the_one_figure(self):
+        assert row(alex(moved_to_savings=80.0), "saved")["amount"] == 80.00
+        assert alex(moved_to_savings=80.0)["amount"] == round(642.18 + 150 - 80, 2)
 
     def test_never_below_nothing(self):
-        assert row(alex(savings_target=100.0), "set_aside")["amount"] == 0.00
-
-    def test_no_goal_no_row(self):
-        assert all(x["key"] != "set_aside" for x in alex(savings_target=0.0)["rows"])
+        """More taken out of savings than put in: nothing comes off the month."""
+        rows = history() + october() + [tx("2026-10-09", "From savings", -400.00, "Saved")]
+        assert row(sts.compute(rows, TODAY), "saved")["amount"] == 0.00
+        assert row(alex(moved_to_savings=-50.0), "saved")["amount"] == 0.00
 
 
 class TestPastThePlan:
     def test_over_plan_says_by_how_much_never_zero(self):
         rows = history() + october() + [tx("2026-10-08", "Air Canada", 726.18, "Travel",
                                            account="visa")]
-        r = sts.compute(rows, TODAY, savings_target=300.0)
+        r = sts.compute(rows, TODAY)
         assert r["state"] == "over"
         assert r["over_by"] == 84.00
         assert r["amount"] == -84.00 and r["per_day"] is None

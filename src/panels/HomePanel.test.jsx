@@ -27,7 +27,7 @@ const ok = {
       ] },
     { key: 'spent', amount: 3144.34, pending: 40,
       lines: [{ label: 'Essentials', amount: 2732 }, { label: 'Lifestyle', amount: 412.34 }] },
-    { key: 'set_aside', amount: 150, goal: 'saving_goal', target: 300, saved: 150, lines: [] },
+    { key: 'saved', amount: 150, lines: [] },
   ],
 };
 
@@ -111,7 +111,7 @@ describe('How we worked this out', () => {
       ['Money coming in this month', '2 paycheques from Northwind Ltd', '$4,300.00'],
       ['Bills still to come', '5 bills between Oct 12 and Oct 25', '$363.48'],
       ['Already spent', 'Includes pending · transfers and card payments don’t count', '$3,144.34'],
-      ['Set aside for your saving goal', 'Your monthly goal is $300 · $150 saved so far', '$150.00'],
+      ['Moved to savings this month', 'What you actually put away. Chests fill from your Anchor, not your month.', '$150.00'],
     ]);
     expect(total.detail).toBe('About $28 a day for 23 days');
     expect(rows[1].lines[2].label).toBe('Hydro One · Oct 21 (estimate)');
@@ -122,12 +122,12 @@ describe('How we worked this out', () => {
     const quiet = {
       ...ok,
       rows: ok.rows.map((r) => (r.key === 'bills' ? { ...r, amount: 0, count: 0, lines: [] }
-        : r.key === 'set_aside' ? { ...r, amount: 0 } : r)),
+        : r.key === 'saved' ? { ...r, amount: 0 } : r)),
     };
     const { rows } = sheetRows(quiet);
     expect(rows.find((r) => r.key === 'bills')).toMatchObject({
       display: 'None', detail: 'Nothing else due this month' });
-    expect(rows.find((r) => r.key === 'set_aside').display).toBe('Done');
+    expect(rows.find((r) => r.key === 'saved').display).toBe('Nothing yet');
   });
 
   it('renders with the sheet’s button secondary (S4) and nothing uncalm', () => {
@@ -418,13 +418,13 @@ describe('snapshot', () => {
 
 const buildPath = {
   phase: 'build', step: 1, of: 2, protect_done: true, also: [],
-  phases: [{ key: 'protect', label: 'Protect', state: 'done' },
-           { key: 'build', label: 'Build', state: 'now' },
-           { key: 'unveil', label: 'Unveil', state: 'ahead' }],
-  steps: [{ key: 'first_stop', label: 'Reach your Anchor’s first stop', done: false, first_stop: 500 },
-          { key: 'full', label: 'Fill your Anchor', done: false, target: null }],
-  next: { text: 'Next: start your Anchor, so a surprise bill doesn’t become a problem.',
-          label: 'Start your Anchor', action: 'goals' },
+  phases: [{ key: 'protect', label: 'The basics', state: 'done' },
+           { key: 'build', label: 'Your Anchor', state: 'now' },
+           { key: 'unveil', label: 'Grow your money', state: 'ahead' }],
+  steps: [{ key: 'setup', label: 'Set up your Anchor', done: false },
+          { key: 'full', label: 'Grow your Anchor to 3 months', done: false, target: null }],
+  next: { text: 'Next: set up your Anchor, so a big surprise doesn’t land on your credit card.',
+          label: 'Set up your Anchor', action: 'goals' },
 };
 const tdSignIn = { item_id: 'td', institution: 'TD', state: 'needs_sign_in',
                    last_synced: '2026-10-06T08:00:00', cards_only: true };
@@ -434,24 +434,29 @@ const full = (extra = {}) => html(
   <HomeBody s={ok} ds={{ ...base, kind: 'normal' }} snap={h01} path={buildPath} reviewCount={3}
             today="2026-10-09" onSave={() => Promise.resolve()} onLink={() => {}} {...extra} />);
 
-describe('path card (GR-05)', () => {
-  it('says the phase, the step and the next step, and holds the one primary', () => {
+describe('path card (GR-05, as H-01 draws it)', () => {
+  it('says where she is, the steps done and the next step, and holds the one primary', () => {
     const out = full();
     expect(out).toContain('Your path');
     expect(out).toContain('See your path');
-    expect(out).toContain('Build · step 1 of 2');
-    expect(out).toContain('Next: start your Anchor');
+    expect(out).toContain('>Your Anchor</h2>');
+    expect(out).toContain('0 of 2 steps done');
+    expect(out).toContain('Next: set up your Anchor');
     expect(primaries(out)).toBe(1);
-    expect(out).toMatch(/pk-btn primary[^>]*>Start your Anchor/);
+    expect(out).toMatch(/pk-btn primary[^>]*>Set up your Anchor/);
+    expect(out).not.toMatch(/Protect|Build|Unveil|Shine/);
     calm(out);
   });
 
-  it('the phase she is in is marked as the current step', () => {
-    expect(html(<PathCard path={buildPath} />)).toMatch(/hm-phase now" aria-current="step"/);
+  it('a step done fills the bar', () => {
+    const out = html(<PathCard path={{ ...buildPath, step: 2 }} />);
+    expect(out).toContain('1 of 2 steps done');
+    expect(out).toContain('viz-fill');
   });
 
   it('every step done', () => {
-    expect(stepWords({ ...buildPath, phase: 'unveil', step: null })).toBe('Unveil · every step done');
+    expect(stepWords({ ...buildPath, phase: 'unveil', step: null })).toBe('Grow your money · every step done');
+    expect(stepWords(buildPath)).toBe('Your Anchor · step 1 of 2');
   });
 
   it('gives way to the starter questions, which stay the one primary', () => {
@@ -562,7 +567,7 @@ describe('rough estimate (H-03)', () => {
   it('makes "Add your income" the one primary, on the path card', () => {
     expect(primaries(out)).toBe(1);
     expect(out).toMatch(/pk-btn primary[^>]*>Add your income/);
-    expect(out).toContain('Your path · Build');
+    expect(out).toContain('Your path');
     expect(out).toContain('First, add your income');
     expect(out).toContain('Needed for an accurate safe-to-spend');
     expect(out).toContain('It takes about 30 seconds.');

@@ -594,11 +594,10 @@ def round_50(amount: float) -> int:
 
 
 def compute(transactions: list[Transaction], today: date, *,
-            entered_income: float = 0.0, savings_target: float = 0.0,
-            anchor_started: bool = False, told_income: float = 0.0,
+            entered_income: float = 0.0, told_income: float = 0.0,
             told_rent: float = 0.0, overridden: bool = False,
             debt_bills: dict | None = None, confirm: dict | None = None,
-            carry: dict | None = None, saved_this_month: float | None = None) -> dict:
+            carry: dict | None = None, moved_to_savings: float | None = None) -> dict:
     """Safe to spend this month and the four rows behind it.
 
     `debt_bills` (from `debts.bills`) adds this month's debt minimums: the
@@ -607,7 +606,11 @@ def compute(transactions: list[Transaction], today: date, *,
     (`income_bills.load`, THL-127): confirmed pay drives what comes in, and
     the bills she ticked or added are the bills. `carry` is last month's
     surplus or shortfall coming into this one (`carryover.applied`): a row of
-    its own, added or taken off, so the rows still add up (THL-212)."""
+    its own, added or taken off, so the rows still add up (THL-212).
+    `moved_to_savings` is what she actually moved to savings this month
+    (THL-230: transfers marked Saved, less any taken back out; chests fill
+    from her Anchor, not from the month), worked out here from the ledger
+    when the caller doesn't have it."""
     month = today.strftime("%Y-%m")
     left = days_left(today)
     income = income_this_month(transactions, today, entered_income,
@@ -652,15 +655,11 @@ def compute(transactions: list[Transaction], today: date, *,
         {"key": "spent", "amount_c": spent["amount_c"], "pending": spent["pending"],
          "debt_paid": _dollars(debt_paid_c), "lines": spent["lines"]},
     ]
-    if savings_target > 0:
-        target_c = _cents(savings_target)
-        # The one saving figure (finance/savings.py), when the caller has it.
-        saved_c = _cents(saved_this_month if saved_this_month is not None
-                         else invested_in(transactions, month))
-        rows.append({"key": "set_aside", "amount_c": max(target_c - saved_c, 0),
-                     "goal": "anchor" if anchor_started else "saving_goal",
-                     "target": _dollars(target_c), "saved": _dollars(saved_c),
-                     "lines": []})
+    # Moved to savings this month (THL-230): only money she actually put
+    # away comes off the month. The one saving figure (finance/savings.py).
+    saved_c = max(_cents(moved_to_savings if moved_to_savings is not None
+                         else invested_in(transactions, month)), 0)
+    rows.append({"key": "saved", "amount_c": saved_c, "lines": []})
 
     total_c = rows[0]["amount_c"] - sum(r["amount_c"] for r in rows[1:])
     if carry and carry.get("amount_c"):

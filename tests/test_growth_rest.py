@@ -53,16 +53,14 @@ def new_ledger(c):
     store(c).add_transactions(october())
 
 
-def fill_anchor(c, target=2000):
-    """An Anchor started on a savings account that already holds its target."""
-    r = c.post("/api/accounts/manual", json={"name": "Savings", "kind": "savings", "balance": 3000})
+def fill_anchor(c, balance=12000):
+    """An Anchor set up on a savings account that already covers three months."""
+    r = c.post("/api/accounts/manual", json={"name": "Savings", "kind": "savings", "balance": balance})
     assert r.status_code in (200, 201), r.get_json()
     st = store(c)
     aid = st.manual_accounts()[0]["account_id"]
     st.set_setting("anchor_started", "2026-08-01")
     st.set_setting("anchor_accounts", json.dumps([aid]))
-    st.set_setting("anchor_target", target)
-    st.set_setting("anchor_size", 1)
 
 
 def partner(monkeypatch, name="Example Invest", url="https://example.com/open?campaign=pearl"):
@@ -77,7 +75,7 @@ class TestStepDetail:
         full_ledger(client)
         for key, phase, index, of, also in [
                 ("income", "protect", 1, 3, False), ("bills", "protect", 2, 3, False),
-                ("essentials", "protect", 3, 3, False), ("first_stop", "build", 1, 2, False),
+                ("essentials", "protect", 3, 3, False), ("setup", "build", 1, 2, False),
                 ("full", "build", 2, 2, False), ("saved_more", "build", 1, 2, True),
                 ("cards", "build", 2, 2, True), ("invest", "unveil", 1, 1, False)]:
             d = client.get(f"/api/path/step/{key}").get_json()
@@ -101,7 +99,7 @@ class TestStepDetail:
         assert d["state"] == "todo"
         assert d["facts"]["started"] is False and d["facts"]["target"] > 0
         assert d["facts"]["to_go"] == d["facts"]["target"]
-        assert client.get("/api/path/step/first_stop").get_json()["state"] == "now"
+        assert client.get("/api/path/step/setup").get_json()["state"] == "now"
 
     def test_build_also_counts_carry_each_month(self, client):
         full_ledger(client)
@@ -145,7 +143,7 @@ class TestKeepItGoing:
     def test_no_lapse_in_an_ordinary_month_or_before_protect(self):
         assert path_of()["lapse"] is None
         rows = history() + october() + [repair()]
-        s = sts.compute(rows, TODAY, savings_target=300.0)
+        s = sts.compute(rows, TODAY)
         p = milestones.path(rows, TODAY, s, anchor=ANCHOR_NONE, bills_found=5)
         assert p["protect_done"] is False and p["lapse"] is None
 
@@ -181,14 +179,27 @@ class TestPlacement:
         assert [r["key"] for r in p["rows"]] == ["protect", "anchor", "saved_more"]
         assert p["rows"][0]["done"] is True and p["rows"][1]["target"] > 0
 
-    def test_savings_above_a_month_of_essentials_are_credited_as_the_anchor(self, client):
+    def test_savings_she_already_has_give_the_anchor_a_head_start(self, client):
         full_ledger(client)
         r = client.post("/api/accounts/manual", json={"name": "Savings", "kind": "savings",
-                                                      "balance": 9000})
+                                                      "balance": 3000})
+        assert r.status_code in (200, 201), r.get_json()
+        p = client.get("/api/path/placement").get_json()
+        assert p["phase"] == "build"
+        assert p["credit"]["amount"] == 3000.0 and p["credit"]["target"] > 3000
+        assert p["rows"][1]["counted"] == 3000.0 and p["rows"][1]["months"] > 0
+        assert store(client).setting("anchor_started") in (None, "")
+        path = client.post("/api/path/placement").get_json()
+        assert path["phase"] == "build" and path["steps"][0]["done"] is True
+
+    def test_savings_past_three_months_are_credited_as_the_anchor(self, client):
+        full_ledger(client)
+        r = client.post("/api/accounts/manual", json={"name": "Savings", "kind": "savings",
+                                                      "balance": 12000})
         assert r.status_code in (200, 201), r.get_json()
         p = client.get("/api/path/placement").get_json()
         assert p["phase"] == "unveil"
-        assert p["credit"]["amount"] == 9000.0 and p["credit"]["target"] < 9000
+        assert p["credit"]["amount"] == 12000.0 and p["credit"]["target"] < 12000
         assert [r["key"] for r in p["rows"]] == ["protect", "build", "invest"]
         # Looking credits nothing; "See my path" does.
         assert store(client).setting("anchor_started") in (None, "")
@@ -231,7 +242,7 @@ class TestMomentsPlayOnce:
         fill_anchor(client)
         st = store(client)
         m = client.get("/api/moments").get_json()
-        assert m["phase"] == "build" and m["anchor"]["target"] == 2000
+        assert m["phase"] == "build" and m["anchor"]["counted"] == 12000 and m["anchor"]["target"] > 0
         client.post("/api/moments/build")
         assert json.loads(st.setting("moments_seen")) == ["build", "protect"]
         assert client.get("/api/moments").get_json()["phase"] is None

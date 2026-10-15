@@ -2,31 +2,38 @@ import { money, seeMoment } from '../api.js';
 import { PButton } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { Mark, monthName } from './GoalsParts.jsx';
-import { More } from './InsightsParts.jsx';
 import { UnveilDone } from './Unveil.jsx';
+import { monthsWords } from './GoalsAnchor.jsx';
 import './home.css';
 import './insights.css';
 import './projections.css';
 import './growth.css';
 
 /**
- * Placement and the moments a phase is done (Pearl THL-130).
+ * Placement and the moments a milestone is reached (Pearl THL-130; reworded
+ * without phase names, THL-238; the Anchor as THL-230 has it).
  *
  * GR-06 Where you start        The last screen of onboarding (O-12, "First
- *                              look at your path"): the phase she starts in,
- *                              with the steps already true credited and named.
- * GR-07 Starting further along The same, past Protect. Savings that already
- *                              hold a month of Essentials are counted as her
- *                              Anchor; an investment account already linked
- *                              goes straight to GR-10.
- * GR-08 Protect done           Full screen, once, on the next app open after
- * GR-09 Build done             the rule passes (`/api/moments`). No confetti,
- * GR-10 Unveil done            points or streaks. GR-10 is Unveil.jsx's, on
+ *                              look at your path"): where she starts, with
+ *                              the steps already true credited and named.
+ * GR-07 Starting further along The same, past the basics. Savings she
+ *                              already has give her Anchor a head start; an
+ *                              investment account already linked goes
+ *                              straight to GR-10.
+ * GR-08 The basics done        Full screen, once, on the next app open after
+ * GR-09 The Anchor at 3 months the rule passes (`/api/moments`). No confetti,
+ * GR-10 Investing started      points or streaks. GR-10 is Unveil.jsx's, on
  *                              the same layout.
  *
  * Each is the hero mark in its pearl glow, an overline, a title, one line, and
- * one primary action.
+ * one primary action. The internal keys (`protect`, `build`, `unveil`) name
+ * the artwork and settings; she never sees them.
  */
+
+/** What each stretch of the path is called. */
+export const PHASE_TITLES = { protect: 'The basics', build: 'Your Anchor', unveil: 'Grow your money' };
+const START_TITLES = { protect: 'You start with the basics', build: 'You start at your Anchor',
+                       unveil: 'You start at growing your money' };
 
 /** The shared layout: GR-06 to GR-10. */
 export function MomentLayout({ phase, overline, title, sub, children, labelledBy = 'gr-moment-title' }) {
@@ -42,6 +49,9 @@ export function MomentLayout({ phase, overline, title, sub, children, labelledBy
 }
 
 const COUNT_WORDS = ['None', 'One', 'Two', 'All three'];
+
+/** "$5,470 · 1.9 of 3 months". */
+const ofThree = (counted, months) => `${money(counted)} · ${monthsWords(months).replace(' months', '').replace(' month', '')} of 3 months`;
 
 /** Each credited row's words: a title and one line, in her numbers. */
 export function placementRows(rows) {
@@ -59,24 +69,24 @@ export function placementRows(rows) {
                  detail: r.count > 0 ? `${r.count} regular bill${r.count === 1 ? '' : 's'} found`
                    : r.done ? 'Confirmed' : 'None found yet' };
       case 'essentials':
-        return { ...r, title: 'Your income covers your Essentials',
-                 detail: !r.month ? 'We’ll know after your first full month'
+        return { ...r, title: 'Sort your first month',
+                 detail: !r.month ? 'After your first full month in Pearl'
                    : r.done ? `In ${monthName(r.month)}: ${money(r.income)} came in, ${money(r.essentials)} went on Essentials`
                      : `In ${monthName(r.month)}, Essentials came to more than your income` };
       case 'protect':
-        return { ...r, title: 'Protect', detail: 'Income, bills and Essentials covered' };
+        return { ...r, title: 'The basics', detail: 'Income, bills and Essentials covered' };
       case 'anchor':
-        return { ...r, title: 'Fill your Anchor',
-                 detail: r.started && r.counted > 0 && r.target > 0 ? `${money(r.counted)} of ${money(r.target)}`
-                   : r.target > 0 ? `One month of Essentials: ${money(r.target)}` : 'Start it when you’re ready' };
+        return { ...r, title: 'Grow your Anchor to 3 months',
+                 detail: r.started && r.counted > 0 && r.months != null ? ofThree(r.counted, r.months)
+                   : r.target > 0 ? `Three months of Essentials: ${money(r.target)}` : 'Set it up when you’re ready' };
       case 'saved_more':
         return { ...r, title: 'Save more than you spend in 2 of 3 months',
                  detail: r.known_by ? `We’ll know by ${monthName(r.known_by)}`
                    : `${r.count} of the last ${r.of || 3} months so far` };
       case 'build':
-        return { ...r, title: 'Fill your Anchor',
-                 detail: r.counted > 0 && r.target > 0 ? `${money(r.counted)} of ${money(r.target)}`
-                   : 'One month of Essentials set aside' };
+        return { ...r, title: 'Your Anchor covers 3 months',
+                 detail: r.counted > 0 ? `${money(r.counted)} · 3 months of Essentials`
+                   : 'Three months of Essentials put away' };
       case 'invest':
         return { ...r, title: 'Open your first investment account',
                  detail: 'Whenever you’re ready. Guidance, not a gate.' };
@@ -89,26 +99,24 @@ export function placementRows(rows) {
 /** GR-06 and GR-07's line under the title. */
 export function placementSub(p) {
   if (p.phase === 'protect') {
-    if (p.done === 0) return 'We’ve looked at your accounts. Here are the three Protect steps.';
-    return `We’ve looked at your accounts. ${COUNT_WORDS[p.done]} of the three Protect steps ${p.done === 1 ? 'is' : 'are'} already done.`;
+    if (p.done === 0) return 'We’ve looked at your accounts. Here are the three basic steps.';
+    return `We’ve looked at your accounts. ${COUNT_WORDS[p.done]} of the three basic steps ${p.done === 1 ? 'is' : 'are'} already done.`;
   }
   if (p.credit) {
-    return `You already have ${money(p.credit.amount)} in savings, more than a month of Essentials. We’ve counted it as your Anchor.`;
+    return `You already have ${money(p.credit.amount)} in savings outside your chests, so your Anchor has a head start. Your income and bills are confirmed too.`;
   }
   if (p.phase === 'build') {
-    return 'Your income covers your Essentials and your bills are known, so Protect is already done.';
+    return 'Your income covers your Essentials and your bills are known, so the basics are already done.';
   }
-  return 'Protect and Build are already done: your Anchor holds a month of Essentials.';
+  return 'The basics are done, and your Anchor already covers 3 months of Essentials.';
 }
-
-const PHASE_TITLES = { protect: 'Protect', build: 'Build', unveil: 'Unveil' };
 
 /** GR-06 Where you start, and GR-07 Starting further along. */
 export function Placement({ data, onContinue, busy = false, error = '' }) {
   const rows = placementRows(data.rows);
   return (
     <MomentLayout phase={data.phase} overline="Here’s where you start"
-                  title={`You start in ${PHASE_TITLES[data.phase]}`} sub={placementSub(data)}>
+                  title={START_TITLES[data.phase]} sub={placementSub(data)}>
       <ul className="hm-card gr-credited" aria-label="Your steps">
         {rows.map((r) => (
           <li key={r.key}>
@@ -128,39 +136,41 @@ export function Placement({ data, onContinue, busy = false, error = '' }) {
   );
 }
 
-/** GR-08 Protect done: Ready to invest is open, the Anchor is next. */
-export function ProtectDone({ anchorStarted = false, onAnchor, onReady, onLater }) {
+/** GR-08 The basics done: her money, assessed, and the Anchor is next. */
+export function ProtectDone({ anchorStarted = false, target = 0, onAnchor, onLater }) {
+  const milestone = target > 0 ? ` (${money(target)})` : '';
   return (
-    <MomentLayout phase="build" overline="Protect · Done" title="Protect is done"
-                  sub="Your income covers your Essentials and your bills are known. That’s the base everything else sits on.">
+    <MomentLayout phase="build" overline="The basics · Done" title="Here’s your money, assessed"
+                  sub="Your income, bills and first month are sorted. Here’s your real picture.">
       <section className="gr-unlocked" aria-labelledby="gr-unlocked-title">
         <p className="pk-overline accent">Now open</p>
-        <h2 className="pk-h2" id="gr-unlocked-title">Ready to invest</h2>
-        <p className="pk-label pk-muted">A checklist to help you decide when you’re ready. Guidance, not a gate.</p>
-        <More onClick={onReady}>See the checklist</More>
+        <h2 className="pk-h2" id="gr-unlocked-title">Your Anchor</h2>
+        <p className="pk-label pk-muted">
+          {anchorStarted
+            ? `Next: grow your Anchor to 3 months of Essentials${milestone}, so a big surprise doesn’t land on your credit card.`
+            : `Next: set up your Anchor by picking your savings accounts. The milestone is 3 months of Essentials${milestone}.`}
+        </p>
       </section>
-      <PButton onClick={onAnchor}>{anchorStarted ? 'See your Anchor' : 'Start your Anchor'}</PButton>
+      <PButton onClick={onAnchor}>{anchorStarted ? 'See your Anchor' : 'Set up your Anchor'}</PButton>
       <button type="button" className="in-text-btn gr-later" onClick={onLater}>Not now</button>
     </MomentLayout>
   );
 }
 
-const SIZE_WORDS = { 1: 'one month of Essentials', 2: 'two months of Essentials', 3: 'three months of Essentials' };
-
-/** GR-09's line: "$2,150 set aside: one month of Essentials. …" */
+/** GR-09's line: "$8,700 ready for big surprises, 3 months of Essentials. …" */
 export function buildDoneLine(anchor = {}) {
-  const tail = 'You’ve built your buffer. Unveil is next.';
+  const tail = 'You’ve built your buffer. Growing your money is next.';
   if (!(anchor.target > 0)) return tail;
-  const what = SIZE_WORDS[anchor.size ?? 1] ?? 'the target you set';
-  return `${money(anchor.target)} set aside: ${what}. ${tail}`;
+  return `${money(anchor.target)} ready for big surprises, 3 months of Essentials. ${tail}`;
 }
 
-/** GR-09 Build done: the Anchor is full. */
+/** GR-09 The Anchor covers 3 months. */
 export function BuildDone({ anchor, onUnveil, onGoals }) {
   return (
-    <MomentLayout phase="unveil" overline="Build · Done" title="Your Anchor is full" sub={buildDoneLine(anchor)}>
-      <PButton onClick={onUnveil}>See what Unveil means</PButton>
-      <button type="button" className="in-text-btn gr-later" onClick={onGoals}>Back to Goals</button>
+    <MomentLayout phase="unveil" overline="Your Anchor · Done" title="Your Anchor covers 3 months"
+                  sub={buildDoneLine(anchor)}>
+      <PButton onClick={onUnveil}>See what’s next</PButton>
+      <button type="button" className="in-text-btn gr-later" onClick={onGoals}>Back to Save</button>
     </MomentLayout>
   );
 }
@@ -177,8 +187,8 @@ export function MomentScreen({ moment, onClose, go, toReady, toAnchor }) {
     then?.();
   };
   if (moment.phase === 'protect') {
-    return <ProtectDone anchorStarted={!!moment.anchor?.started} onLater={leave()}
-                        onReady={leave(toReady)}
+    return <ProtectDone anchorStarted={!!moment.anchor?.started} target={moment.anchor?.target ?? 0}
+                        onLater={leave()}
                         onAnchor={leave(() => toAnchor(moment.anchor?.started ? 'anchor' : 'start'))} />;
   }
   if (moment.phase === 'build') {

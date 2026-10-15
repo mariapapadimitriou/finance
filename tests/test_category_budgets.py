@@ -38,7 +38,7 @@ def october(groceries=100.00, dining=100.00, extra=()):
 
 
 def build(rows, today=TODAY, pcts=None):
-    s = sts.compute(rows, today, savings_target=300.0)
+    s = sts.compute(rows, today)
     bills = next((r["lines"] for r in s["rows"] if r["key"] == "bills"), [])
     return cb.build(rows, today, usual_month.usual(rows, today), pcts or {}, bills)
 

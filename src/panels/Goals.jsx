@@ -14,10 +14,10 @@ import { GroupTabs } from './InsightsParts.jsx';
  * Goals (Pearl Handoff: THL-131 Anchor, THL-132 projection, THL-179 overview
  * and treasure chests).
  *
- * The Anchor is pinned at the top and is the only goal with the phase's
- * shell; treasure chests and the saving goal sit below in a neutral style and
- * never move the phase. The Anchor's page, its projection and each chest open
- * inside this one, and the overline on each leads back.
+ * The Anchor is pinned at the top and is the only goal with a shell;
+ * treasure chests and the saving goal sit below in a neutral style and never
+ * move her along the path. The Anchor's page, its projection and each chest
+ * open inside this one, and the overline on each leads back.
  */
 export default function Goals({ onTab, onChanged, version }) {
   const [goals, setGoals] = useState(null);
@@ -103,12 +103,9 @@ export default function Goals({ onTab, onChanged, version }) {
         <StartAnchor goals={goals} onClose={close} onDone={took}
                      onSeeAnchor={() => { close(); go({ name: 'anchor' }); }} />
       )}
-      {panel?.name === 'change' && (
-        <StartAnchor goals={goals} editing onClose={close} onDone={took} onSeeAnchor={close} />
-      )}
       {panel?.name === 'explain' && (
         <TargetExplained goals={goals} onClose={close}
-                         onChange={() => setPanel({ name: 'change' })} />
+                         onWhatIf={() => { go({ name: 'projection' }); setPanel({ name: 'whatif' }); }} />
       )}
       {panel?.name === 'accounts' && (
         <AnchorAccounts goals={goals} onClose={close} onDone={took} />

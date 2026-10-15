@@ -112,6 +112,7 @@
 .hm-phase + .hm-phase::before { content: "—"; margin-right: var(--space-1); }
 .hm-phase.now { color: var(--ink); font-weight: 600; }
 .hm-phase.ahead img { opacity: .55; }
+.hm-pathcard-now { display: flex; align-items: center; gap: var(--space-3); }
 .hm-pathcard-next {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
   gap: var(--space-4);

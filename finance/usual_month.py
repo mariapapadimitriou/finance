@@ -170,7 +170,6 @@ def one_off_effect(transactions: list[Transaction], txn: Transaction, today: dat
 
 
 def snapshot(transactions: list[Transaction], today: date, sts: dict, u: dict, *,
-             savings_target: float = 0.0, anchor_started: bool = False,
              comparisons_from: str | None = None, saved: float | None = None,
              kinds: dict[str, str] | None = None) -> dict:
     """The Home snapshot (H-01): Income, Essentials, Lifestyle and Savings.
@@ -209,9 +208,10 @@ def snapshot(transactions: list[Transaction], today: date, sts: dict, u: dict, *
 
     if saved is None:
         saved = invested_in(transactions, month)
-    rows.append({"key": "savings", "label": "Savings", "saved": saved,
-                 "planned": savings_target or None,
-                 "goal": ("anchor" if anchor_started else "saving_goal") if savings_target else None})
+    # Put away (THL-230): what she moved to savings, with no plan to measure
+    # it against; chests fill from her Anchor, not from the month.
+    rows.append({"key": "savings", "label": "Put away", "saved": saved, "planned": None,
+                 "goal": None})
     if kinds is not None:
         # The same month through the other lens (finance/kinds.py).
         from .kinds import KIND_LABELS, KINDS

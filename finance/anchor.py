@@ -1,37 +1,41 @@
-"""The Anchor: a cushion for surprises, and when it is likely to be full.
+"""The Anchor: the cash savings she already has, and when it will cover three
+months of Essentials (THL-229, THL-230, 2026-10-14).
 
-The Anchor is the emergency fund, and the whole of the Build phase: starting
-it is the first Build step, filling it the second. It is money already in
-savings accounts you choose, so nothing here moves money or stores a balance:
-what counts is what those accounts hold, as the bank last reported it.
+The Anchor is not a goal she sets. It is the cash savings accounts she picks,
+added up, less what her treasure chests hold: money for big surprises, like
+a car repair or a vet bill. Nothing here moves money or stores a balance;
+what counts is what those accounts hold, as the bank last reported it, and
+what the chests have taken from it.
 
-  * **The suggested amount** is one month of Essentials, from your last three
-    full months (fewer when that is all there is), rounded to a figure you can
-    recognise. Two or three months, or any amount, is your call.
-  * **The first stop** is $500. A small cushion first, because it is the one
-    that stops a flat tyre going on a card, and it is reachable.
-  * **Full is earned once.** Reaching the target moves you on to Unveil, and a
-    later month that dips into the Anchor does not move you back: dipping into
-    it is what it is for.
+  * **The milestone** is three months of her usual Essentials: the average
+    of her last three full months (unusual months left out, fewer months when
+    that is all there is), rounded to a figure she can recognise, times
+    three. A benchmark, not a goal; she can't change it.
+  * **Reached stays reached.** Once the Anchor covers three months, a later
+    month that dips into it does not undo that: dipping into it is what it
+    is for. Pearl says so, and nudges her to top it up.
+  * **Chests fill from the Anchor.** Each chest's monthly amount moves out of
+    the Anchor's value on the 1st (an earmark; Pearl never moves money), so
+    the Anchor grows by what she puts away less what the chests take.
 
-When it will be full is a range, never one date. The pace is what you
-actually put away in your last three full months (transfers marked Saved),
-and the range runs from your best of those months to your quietest. A month
-you mark as unusual — a car repair, a move — is left out, and the next older
-month is pulled in, so the pace always rests on three. With nothing put away
-lately there is no date at all, because any date would be a promise.
+When it will get there is a range, never one date. The pace is what the
+Anchor actually grew by in her last three full months — transfers marked
+Saved, less what the chests took — and the range runs from her best of
+those months to her quietest. A month she marks as unusual is left out and
+the next older month pulled in, so the pace always rests on three. With
+nothing put away lately there is no date at all, because any date would be
+a promise.
 """
 
 from __future__ import annotations
 
 import math
 
-FIRST_STOP = 500.0
+# How many months of Essentials the Anchor should cover.
+MONTHS_OF_ESSENTIALS = 3
 # Months the pace is taken over, and how far back to look for them.
 PACE_MONTHS = 3
 LOOKBACK = 12
-# The cushion sizes offered, in months of Essentials. 0 is "any amount".
-SIZES = (1, 2, 3)
 
 
 def _month_index(month: str) -> int:
@@ -54,16 +58,19 @@ def round_to(amount: float, step: float = 50.0) -> float:
     return float(round(amount / step) * step)
 
 
-def essentials(transactions, today: str, months: int = PACE_MONTHS) -> dict | None:
-    """One month of Essentials, from the last few full months.
+def essentials(transactions, today: str, months: int = PACE_MONTHS,
+               unusual: set[str] | None = None) -> dict | None:
+    """A usual month of Essentials, from the last few full months.
 
     Essentials are what you need rather than choose: the categories the
     transactions list groups as Essentials. Your share only, refunds netted.
+    Months marked unusual are left out and the next older one is pulled in.
     """
     from .analytics import share_amount
     from .categorize import group_of, is_spend_category
 
-    chosen = full_months(transactions, today, lookback=months)
+    unusual = unusual or set()
+    chosen = [m for m in full_months(transactions, today) if m not in unusual][:months]
     if not chosen:
         return None
     totals = {m: 0.0 for m in chosen}
@@ -77,21 +84,28 @@ def essentials(transactions, today: str, months: int = PACE_MONTHS) -> dict | No
     average = sum(r["essentials"] for r in rows) / len(rows)
     if average <= 0:
         return None
-    return {"months": rows, "average": round(average, 2),
-            "amount": max(round_to(average), 50.0)}
+    usual = max(round_to(average), 50.0)
+    return {"months": rows, "average": round(average, 2), "amount": usual,
+            "target": round(usual * MONTHS_OF_ESSENTIALS, 2)}
 
 
-def saved_by_month(transactions, today: str, lookback: int = LOOKBACK) -> list[dict]:
-    """What you put away in each recent full month, newest first.
+def saved_by_month(transactions, today: str, lookback: int = LOOKBACK,
+                   chests_by_month=None) -> list[dict]:
+    """What the Anchor grew by in each recent full month, newest first.
 
     Money moved to savings (transfers marked Saved, and the saved part of
-    anything else), less money taken back out — the same figure the plan
-    checks the saving goal against.
+    anything else), less money taken back out, less what the chests took
+    from the Anchor that month (`chests_by_month(month)`, in dollars).
     """
     from .analytics import invested_in
 
-    return [{"month": m, "saved": invested_in(transactions, m)}
-            for m in full_months(transactions, today, lookback)]
+    out = []
+    for m in full_months(transactions, today, lookback):
+        put_away = invested_in(transactions, m)
+        chests = round(float(chests_by_month(m)), 2) if chests_by_month else 0.0
+        out.append({"month": m, "put_away": round(put_away, 2), "chests": chests,
+                    "saved": round(put_away - chests, 2)})
+    return out
 
 
 def pace(months: list[dict], unusual: set[str] | None = None,
@@ -129,7 +143,8 @@ def months_to(to_go: float, monthly: float) -> int | None:
 
 
 def projection(to_go: float, p: dict | None, today: str, extra: float = 0.0) -> dict:
-    """When the Anchor is likely to be full: a range, or honestly no date.
+    """When the Anchor is likely to cover three months: a range, or honestly
+    no date.
 
     The range runs from the best month's pace to the quietest's. `extra` is a
     what-if: that much more put aside every month, on top of each.
@@ -159,26 +174,34 @@ def projection(to_go: float, p: dict | None, today: str, extra: float = 0.0) -> 
     }
 
 
-def status(counted: float, target: float, earned: bool) -> dict:
-    """Where the Anchor stands: the first stop, the full target, and the phase.
+def status(savings: float, chests: float, usual: float | None, earned: bool) -> dict:
+    """Where the Anchor stands: what it is, how many months of Essentials it
+    covers, and whether it has reached three.
 
-    `earned` is whether it has ever been full. Once it has, you are in Unveil
-    whatever it holds now.
+    `savings` is what the picked accounts hold, `chests` what the treasure
+    chests hold, `usual` a usual month of Essentials (None before there is
+    one). `earned` is whether it has ever covered three months; once it
+    has, that stays true whatever it holds now.
     """
-    counted = round(max(counted, 0.0), 2)
-    full = target > 0 and counted >= target
-    first_stop = min(FIRST_STOP, target) if target > 0 else FIRST_STOP
+    savings = round(max(savings, 0.0), 2)
+    chests = round(max(chests, 0.0), 2)
+    counted = round(max(savings - chests, 0.0), 2)
+    target = round((usual or 0.0) * MONTHS_OF_ESSENTIALS, 2)
+    months = round(counted / usual, 1) if usual else None
+    full = target > 0 and counted >= target - 0.005
     return {
+        "savings": savings,
+        "chests": chests,
         "counted": counted,
-        "target": round(target, 2),
+        "usual": round(usual, 2) if usual else None,
+        "months_of_essentials": MONTHS_OF_ESSENTIALS,
+        "months": months,
+        "target": target,
         "to_go": round(max(target - counted, 0.0), 2),
-        "first_stop": first_stop,
-        "first_stop_done": counted >= first_stop,
         "full": full,
         "earned": bool(earned or full),
         "dipped": bool(earned and not full),
         "share": round(min(counted / target, 1.0), 4) if target > 0 else 0.0,
-        "first_stop_share": round(min(counted / first_stop, 1.0), 4) if first_stop else 0.0,
     }
 
 

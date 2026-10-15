@@ -48,10 +48,11 @@ export function ProgressBar({ label, value, share, tone = 'brand', name, showLab
  * V-01 PearlProgress, for the Anchor hero only: the nacre fill and a pearl
  * that grows from 16px to 40px with progress.
  */
-export function PearlProgress({ title, saved, target, share, delta }) {
+export function PearlProgress({ title, saved, target, share, delta, sub }) {
   const pct = fillPercent(share);
   const d = deltaWords(delta);
   const value = `${dollars(saved)} of ${dollars(target)}`;
+  const line = sub ?? `${value} · ${percentWords(pct)}% there`;
   return (
     <div className="viz-pearl-progress">
       <span className="viz-pearl-slot" aria-hidden="true">
@@ -66,7 +67,7 @@ export function PearlProgress({ title, saved, target, share, delta }) {
              aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentWords(pct)}>
           <Fill percent={pct} className="viz-fill nacre" />
         </div>
-        <p className="text-label viz-muted">{value} · {percentWords(pct)}% there</p>
+        <p className="text-label viz-muted">{line}</p>
       </div>
     </div>
   );

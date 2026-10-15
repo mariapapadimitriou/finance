@@ -124,7 +124,7 @@ def month_end(transactions: list[Transaction], today: date, sts: dict, months: l
     can_spend_c = None
     if "income" in rows:
         can_spend_c = cents(rows["income"]["amount"]) - cents(
-            (rows.get("set_aside") or {}).get("amount") or 0)
+            (rows.get("saved") or {}).get("amount") or 0)
 
     # Spending to date, a day at a time, for the line that ends at today.
     by_day = [0] * (today.day + 1)

@@ -44,7 +44,7 @@ describe('GR-19 Before you go', () => {
     for (const text of ['Before you go', 'Open an account with Example Invest',
                         'You’ll leave Pearl for Example Invest’s site', 'A registered investment provider in Canada.',
                         'Example Invest does the rest', 'Pearl doesn’t recommend investments.',
-                        'Come back and tell us', 'We’ll mark Unveil done.',
+                        'Come back and tell us', 'We’ll mark the milestone done.',
                         'Pearl may be paid if you open an account.',
                         'We never share your transactions or balances with Example Invest.',
                         'Not now', 'Continue to Example Invest']) {
@@ -88,8 +88,8 @@ describe('GR-21 I opened an account', () => {
   it('confirms without asking what or how much', () => {
     const out = html(<OpenedOne onConfirm={() => {}} onClose={() => {}} />);
     for (const text of ['You opened your first investment account',
-                        'We’ll mark Unveil done. We don’t see what you invest in or how much, and we won’t ask.',
-                        'Go back', 'Mark Unveil done']) {
+                        'We’ll mark the milestone done. We don’t see what you invest in or how much, and we won’t ask.',
+                        'Go back', 'Mark it done']) {
       expect(out).toContain(text);
     }
     expect(out).not.toMatch(/<input|password|login/i);
@@ -126,9 +126,9 @@ describe('GR-23 Before Protect is done', () => {
 
   it('the checklist stays visible; the partner step says what opens it, with no lock', () => {
     const out = html(<ReadyPage data={ready(PARTNER, { checklist: early })} nav={nav} />);
-    for (const text of ['Protect is done', '1 step left: your income covers your Essentials', 'See the step',
-                        'Your Anchor is under way', 'Starts in Build', 'Read the basics', '0 of 5 modules',
-                        'Start', 'Opens after Protect', 'Open your first account',
+    for (const text of ['The basics are done', '1 step left: your income covers your Essentials', 'See the step',
+                        'Your Anchor is under way', 'Comes after the basics', 'Read the basics', '0 of 5 modules',
+                        'Start', 'Opens once the basics are done', 'Open your first account',
                         'Once your income covers your Essentials for a month, this opens. Learning is open now.',
                         'Start learning']) {
       expect(out).toContain(text);
@@ -140,7 +140,7 @@ describe('GR-23 Before Protect is done', () => {
   it('the rows', () => {
     const rows = checklistRows(early, nav);
     expect(rows[0].link.text).toBe('See the step');
-    expect(rows[1]).toMatchObject({ todo: true, detail: 'Starts in Build', link: null });
+    expect(rows[1]).toMatchObject({ todo: true, detail: 'Comes after the basics', link: null });
     expect(rows[3]).toMatchObject({ detail: '0 of 5 modules' });
     expect(rows[3].link.text).toBe('Start');
     const more = checklistRows([{ key: 'protect', done: false, left: 3, next: 'income' }], nav);

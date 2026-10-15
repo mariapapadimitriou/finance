@@ -46,17 +46,17 @@ def client(tmp_path, monkeypatch):
 def test_both_totals_for_this_month(client):
     s = client.get("/api/home").get_json()["savings"]
     assert s["month"] == "2026-10"
-    assert s["put_away"] == {"contributions": 400.0, "chests": 0.0, "withdrawals": 150.0,
-                             "net": 250.0}
+    assert s["put_away"] == {"contributions": 400.0, "withdrawals": 150.0, "net": 250.0}
     assert s["left_over"] == {"income": 2150.0, "spent": 130.0, "net": 2020.0, "estimate": False}
 
 
-def test_money_added_to_a_chest_counts_as_put_away(client):
+def test_a_chest_never_changes_what_was_put_away(client):
+    """THL-230: chests fill from her Anchor, so neither the monthly amount nor
+    money added by hand counts as put away this month."""
     chest = client.st.add_piggy_bank("Holidays", 1200, "annual", None, "2026-07")
     client.st.add_draw(chest, "2026-10", -200.0, "Added")
     s = client.get("/api/home").get_json()["savings"]
-    assert s["put_away"]["chests"] == 100.0 + 200.0           # the monthly amount, and the add
-    assert s["put_away"]["net"] == 250.0 + 300.0
+    assert s["put_away"]["net"] == 250.0
 
 
 def test_marking_money_in_as_taken_out_of_savings(client):

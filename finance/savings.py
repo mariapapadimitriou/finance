@@ -5,10 +5,11 @@ Plaid, and an investment account's activity never is — so savings is what
 she nets, not what an account holds. Every screen shows the current month:
 
 * **Put away** — the transfers she marked as saving (category Saved: into a
-  savings or investment account, or the part of a charge marked as saved)
-  and the money going into her treasure chests, less the transfers she
-  marked as coming back out (Saved, money in). The same figure every other
-  screen calls saving (`put_away_month`); spending and income never move it.
+  savings or investment account, or the part of a charge marked as saved),
+  less the transfers she marked as coming back out (Saved, money in). The
+  treasure chests aren't in it: they fill from her Anchor, not from the
+  month (THL-230). The same figure every other screen calls saving
+  (`put_away_month`); spending and income never move it.
 * **Left over** — what came in less what went out this month, by the one
   income rule (`safe_to_spend.income_for_month`) and the one spending gate.
 """
@@ -31,19 +32,16 @@ def chest_adds(store) -> dict[str, float]:
 
 
 def put_away_month(store, transactions: list[Transaction], month: str) -> float:
-    """What was put away in a month — the one saving figure (2026-10-14):
-    transfers marked Saved (less those marked as taken back out) and the
-    saved part of split charges (`invested_in`), plus the treasure chests'
-    monthly amounts and anything added to a chest by hand. Safe to spend,
-    the carryover, the usual month, Growth and Home all use it."""
-    from .growth_insights import set_aside
-    return round(set_aside(transactions, store.piggy_banks(), store.bank_charges_by_month(),
-                           month, adds=chest_adds(store)) / 100.0, 2)
+    """What was moved to savings in a month — the one saving figure
+    (THL-230): transfers marked Saved (less those marked as taken back out)
+    and the saved part of split charges (`invested_in`). Safe to spend, the
+    carryover, the usual month, Insights and Home all use it."""
+    from .analytics import invested_in
+    return round(invested_in(transactions, month), 2)
 
 
 def this_month(store, transactions: list[Transaction], today: date) -> dict:
     """Both totals for the current month, each with what went into it."""
-    from .growth_insights import chest_monthly
     from .safe_to_spend import income_for_month
     month = today.strftime("%Y-%m")
     put_in = taken_out = spent = 0.0
@@ -60,14 +58,11 @@ def this_month(store, transactions: list[Transaction], today: date) -> dict:
             put_in += t.invested
         if counts_as_spending(t):
             spent += spend_amount(t)
-    chests = (chest_monthly(store.piggy_banks(), store.bank_charges_by_month(), month) / 100.0
-              + chest_adds(store).get(month, 0.0))
     income, estimate = income_for_month(store, transactions, month, today)
     return {
         "month": month,
-        "put_away": {"contributions": round(put_in, 2), "chests": round(chests, 2),
-                     "withdrawals": round(taken_out, 2),
-                     "net": round(put_in + chests - taken_out, 2)},
+        "put_away": {"contributions": round(put_in, 2), "withdrawals": round(taken_out, 2),
+                     "net": round(put_in - taken_out, 2)},
         "left_over": {"income": round(income, 2), "spent": round(spent, 2),
                       "net": round(income - spent, 2), "estimate": estimate},
     }

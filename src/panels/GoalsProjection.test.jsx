@@ -1,71 +1,51 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { HowWorkedOut, anchorSheet } from './GoalsProjection.jsx';
+import { HowWorkedOut, ProjectionPage, rangeSheet } from './GoalsProjection.jsx';
 import { projection } from '../pearl/vizMath.js';
 
-// P-01's Anchor in October: $620 of $2,150, August left out as unusual.
+// P-01's Anchor in October: $5,470 of $8,700, August left out as unusual.
+// Each month is what the Anchor grew by: put away, less what the chests took.
 const pace = {
-  used: [{ month: '2026-09', saved: 180 }, { month: '2026-07', saved: 340 },
-         { month: '2026-06', saved: 260 }],
-  best: { month: '2026-07', saved: 340 },
-  quietest: { month: '2026-09', saved: 180 },
-  usual: 260,
+  used: [{ month: '2026-06', saved: 230 }, { month: '2026-07', saved: 360 },
+         { month: '2026-09', saved: 160 }],
+  best: { month: '2026-07', saved: 360 },
+  quietest: { month: '2026-09', saved: 160 },
+  usual: 250,
   left_out: [{ month: '2026-08', saved: -120 }],
 };
 const goals = {
   month: '2026-10',
   anchor: {
-    target: 2150, counted: 620, to_go: 1530, pace,
-    projection: projection(1530, pace, '2026-10'),
-    counting: [{ account_id: 'eq', name: 'EQ Bank Savings', balance: 520 },
-               { account_id: 'ws', name: 'Wealthsimple Cash', balance: 100 }],
+    started: true, earned: false, target: 8700, counted: 5470, to_go: 3230, pace, chests_monthly: 400,
+    projection: projection(3230, pace, '2026-10'),
+    counting: [{ account_id: 'td', name: 'TD Savings', mask: '8820', balance: 1320 },
+               { account_id: 'tg', name: 'Tangerine Savings', mask: '0932', balance: 6100 }],
   },
 };
 
-describe('How we worked this out, for the Anchor (X-03, P-02)', () => {
-  const sheet = anchorSheet(goals);
+describe('How we worked this out, for the range (P-02)', () => {
+  const sheet = rangeSheet(goals);
 
-  it('answers with the range, as P-02 does', () => {
-    expect(sheet.title).toBe('Likely full between March and July 2027');
-    expect(sheet.sub).toBe('If you keep saving like you do now.');
-    expect(sheet.note).toContain('Your best month (July) and your quietest (September) give the range');
-  });
-
-  it('lays the rows out as X-03: goal, saved, left, each month', () => {
+  it('lays the rows out as P-02: still to go, the months, best, quietest, usual, left out', () => {
+    expect(sheet.title).toBe('Your Anchor date');
     expect(sheet.rows.map((r) => [r.label, r.display])).toEqual([
-      ['Your goal', '$2,150.00'],
-      ['Already saved', '$620.00'],
-      ['Left to save', '$1,530.00'],
-      ['You add each month', '$260.00'],
+      ['Still to go', '$3,230'],
+      ['Months used', 'June, July, September'],
+      ['Best month · July', '+$360 to your Anchor'],
+      ['Quietest month · September', '+$160 to your Anchor'],
+      ['Your usual pace', '$250 a month'],
+      ['Left out', 'August, marked unusual'],
     ]);
-    expect(sheet.rows[1].detail).toBe('In EQ Bank Savings and Wealthsimple Cash');
-    expect(sheet.rows[3].detail).toBe('Your usual amount over September, July and June');
+    expect(sheet.rows[5].lines[0]).toEqual({ label: 'August', display: '$120 out of it' });
+    expect(sheet.total.label).toBe('Likely there');
+    expect(sheet.total.display).toBe('July 2027 to July 2028');
+    expect(sheet.note).toContain('We use your best and quietest months for the range');
   });
 
-  it('adds up: the goal less what’s saved is what’s left', () => {
-    const [goal, saved, left] = sheet.rows;
-    expect(goals.anchor.target - goals.anchor.counted).toBe(goals.anchor.to_go);
-    expect([goal, saved, left].every((r) => r.display.startsWith('$'))).toBe(true);
-  });
-
-  it('counts the months to go at her usual pace, from next month', () => {
-    expect(sheet.total).toEqual({
-      label: 'Months to go', detail: 'Starting from November', display: '6 → April 2027' });
-  });
-
-  it('opens each month, the left-out one marked', () => {
-    expect(sheet.rows[3].lines.map((l) => `${l.label}: ${l.display}`)).toEqual([
-      'September · quietest month: $180 saved',
-      'July · best month: $340 saved',
-      'June: $260 saved',
-      'August · left out, marked unusual: $120 taken out',
-    ]);
-  });
-
-  it('one month for the whole range says so', () => {
-    const one = { ...goals, anchor: { ...goals.anchor,
-                                       projection: { state: 'range', from: '2027-04', to: '2027-04' } } };
-    expect(anchorSheet(one).title).toBe('Likely full in April 2027');
+  it('the range runs from the best month to the quietest', () => {
+    const p = goals.anchor.projection;
+    expect(p.state).toBe('range');
+    expect(p.from < p.to).toBe(true);
   });
 
   it('draws the sheet with the what-if and months links, and Got it', () => {
@@ -74,6 +54,31 @@ describe('How we worked this out, for the Anchor (X-03, P-02)', () => {
     expect(out).toContain('Want it sooner? Try a different monthly amount');
     expect(out).toContain('Change which months count');
     expect(out).toMatch(/pk-btn primary[^>]*>Got it/);
-    expect(out).toContain('6 → April 2027');
+    expect(out).not.toMatch(/Protect|Build|Unveil|Shine/);
+  });
+});
+
+describe('When you’ll reach 3 months (P-01, P-05)', () => {
+  it('says how the Anchor grows, less what the chests take', () => {
+    const out = renderToStaticMarkup(<ProjectionPage goals={goals} onBack={() => {}} onHow={() => {}}
+                                                     onWhatIf={() => {}} onMonths={() => {}} onTab={() => {}} />);
+    for (const text of ['When you’ll reach 3 months', 'Likely there',
+                        'Your Anchor grows by what you put away, less the $400 a month your chests take.',
+                        'From June, July and September: $160 to $360 a month. Interest isn’t included.',
+                        '1 month left out: you marked', 'August', '$5,470 of $8,700 · $3,230 to go',
+                        'Back to your Anchor']) {
+      expect(out).toContain(text);
+    }
+  });
+
+  it('no date when more has gone out than come in', () => {
+    const none = { ...goals, anchor: { ...goals.anchor, projection: { state: 'none', reason: 'no_pace', subscriptions_monthly: 64 } } };
+    const out = renderToStaticMarkup(<ProjectionPage goals={none} onBack={() => {}} onHow={() => {}}
+                                                     onWhatIf={() => {}} onMonths={() => {}} onTab={() => {}} />);
+    for (const text of ['No date yet', 'Lately, more has gone out than come in',
+                        'A date wouldn’t be honest right now. As soon as you save a little, we’ll show a range again.',
+                        'One thing that could help', 'Your subscriptions cost $64 a month', 'See the suggestion']) {
+      expect(out).toContain(text);
+    }
   });
 });

@@ -82,15 +82,15 @@ class TestSubscriptions:
         assert not {"Rogers", "Hydro One", "Belair Insurance", "Parkside Properties"} & {x["label"] for x in lines}
 
 
-ANCHOR = {"started": True, "full": False, "to_go": 2000.0, "counted": 600.0,
-          "first_stop": 500.0, "first_stop_done": True, "pace": {"usual": 260.0}}
+ANCHOR = {"started": True, "full": False, "to_go": 2000.0, "counted": 600.0, "target": 2600.0,
+          "pace": {"usual": 260.0}}
 
 
 class TestAnchorPace:
     def test_a_little_more_each_paycheque(self):
         """$40 more a month on $260: 2,000 ÷ 260 = 7.7 months, ÷ 300 = 6.7."""
         c = rec.pace(ANCHOR, 2)
-        assert c["title"] == "Moving $20 more each paycheque gets your Anchor full about 4 weeks sooner"
+        assert c["title"] == "Putting away $20 more each paycheque gets your Anchor to 3 months about 4 weeks sooner"
         assert c["body"] == "Based on your usual pace of $260 a month."
         assert c["action"]["goals"] == {"view": "whatif", "monthly": 300.0}
         assert c["impact"] == 480.0
@@ -111,20 +111,15 @@ class TestAnchorPace:
 class TestIdleCash:
     def test_start_the_anchor_without_one(self):
         """R2: idle cash shows without an Anchor."""
-        c = rec.idle({"started": False, "full": False}, 3850.00, 2300.00)
+        c = rec.idle({"started": False, "full": False, "target": 6900.0}, 3850.00, 2300.00)
         assert c["title"] == "Your chequing has stayed above $3,800 for 3 months"
-        assert c["body"] == "Moving $500 to savings would start your Anchor and still leave a month of Essentials."
-        assert c["action"]["goals"] == {"view": "start", "amount": 500}
+        assert c["body"] == "Moving $1,550 to savings would start your Anchor at $1,550 and still leave a month of Essentials in chequing."
+        assert c["action"]["goals"] == {"view": "start", "amount": 1550}
 
-    def test_the_first_stop(self):
-        c = rec.idle({**ANCHOR, "counted": 200.0, "first_stop_done": False}, 3850.00, 2300.00)
-        assert c["numbers"]["amount"] == 300
-        assert "cover your Anchor’s first stop" in c["body"]
-
-    def test_closer_but_never_below_a_month_of_essentials(self):
+    def test_from_here_to_there_but_never_below_a_month_of_essentials(self):
         c = rec.idle(ANCHOR, 3850.00, 2300.00)
         assert c["numbers"]["amount"] == 1550                     # 3,850 − 2,300, in $50s
-        assert "bring your Anchor $1,550 closer" in c["body"]
+        assert "take your Anchor from $600 to $2,150" in c["body"]
 
     @pytest.mark.parametrize("low,essentials,anchor", [
         (2350.00, 2300.00, ANCHOR),                               # under $100 to spare

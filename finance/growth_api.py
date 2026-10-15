@@ -4,7 +4,7 @@ THL-136).
 
 * GET /api/path/step/<key>: one step of the path with her numbers (THL-129
   GR-02 not done yet, GR-03 done, GR-04 "Keep it going"): income, bills,
-  essentials, first_stop, full, saved_more, cards or invest.
+  essentials, setup, full, saved_more, cards or invest.
 * GET /api/path/placement: where she starts (THL-130 GR-06, GR-07), the
   last screen of onboarding. Steps already true are credited and named;
   savings that already hold a month of Essentials are offered as her Anchor.
@@ -56,7 +56,7 @@ WELCOME_DAYS = 14
 # Which phase each step belongs to, and whether it's one of Build's "also
 # counts" checks rather than a step.
 STEPS = {"income": ("protect", False), "bills": ("protect", False),
-         "essentials": ("protect", False), "first_stop": ("build", False),
+         "essentials": ("protect", False), "setup": ("build", False),
          "full": ("build", False), "saved_more": ("build", True),
          "cards": ("build", True), "invest": ("unveil", False)}
 
@@ -148,20 +148,18 @@ def _facts(st, c, key: str, step: dict) -> dict:
                 out["biggest"] = _biggest_essential(c.txns, month)
                 out["unusual"] = month in core._unusual_months(st)
         return out
-    if key == "first_stop":
-        first = anchor.get("first_stop") or 500
-        counted = anchor.get("counted") or 0
-        return {"started": anchor["started"], "first_stop": first, "counted": counted,
-                "to_go": round(max(first - counted, 0), 2)}
+    if key == "setup":
+        return {"started": anchor["started"], "started_on": anchor.get("started_on"),
+                "counted": anchor.get("counted") or 0, "accounts": len(anchor.get("counting") or [])}
     if key == "full":
-        suggestion = anchor.get("suggestion") or {}
-        target = anchor.get("target") or suggestion.get("amount") or None
+        target = anchor.get("target") or None
         counted = anchor.get("counted") or 0
         pace = anchor.get("pace") or {}
         projection = anchor.get("projection") or {}
         return {"started": anchor["started"], "target": target, "counted": counted,
+                "usual": anchor.get("usual"), "months": anchor.get("months"),
                 "to_go": round(max((target or 0) - counted, 0), 2) if target else None,
-                "size": anchor.get("size"), "pace": pace.get("usual"),
+                "pace": pace.get("usual"), "chests_monthly": anchor.get("chests_monthly") or 0,
                 "projection": projection if projection.get("state") == "range" else None}
     if key == "saved_more":
         months = covered_months(c.txns, c.today)[-3:]
@@ -234,17 +232,18 @@ def path_step(key):
 # ── Where you start (GR-06, GR-07) ────────────────────────────────────────
 
 def _anchor_credit(st, c) -> dict | None:
-    """Savings that already hold a month of Essentials (GR-07's "We've
-    counted it as your Anchor"), when Protect is done and no Anchor is set."""
+    """Savings she already has (GR-07's "your Anchor has a head start"),
+    when the basics are done and no Anchor is set up yet: the savings
+    accounts, less what the chests hold, become her Anchor on "See my
+    path"."""
     if not c.path["protect_done"] or c.anchor["started"]:
         return None
-    suggestion = c.anchor.get("suggestion") or {}
-    need = suggestion.get("amount") or 0
     savings = [a for a in core._anchor_accounts(st) if a["kind"] == "savings" and a["balance"] > 0]
-    held = round(sum(a["balance"] for a in savings), 2)
-    if need <= 0 or held < need:
+    held = round(sum(a["balance"] for a in savings) - (c.anchor.get("chests") or 0), 2)
+    if held <= 0:
         return None
-    return {"amount": held, "target": need, "accounts": [a["account_id"] for a in savings]}
+    return {"amount": held, "target": c.anchor.get("target") or 0,
+            "accounts": [a["account_id"] for a in savings]}
 
 
 def placement(st) -> dict:
@@ -253,7 +252,7 @@ def placement(st) -> dict:
     p, every = c.path, c.path["all"]
     credit = _anchor_credit(st, c)
     phase = p["phase"]
-    if credit and phase == "build":
+    if credit and phase == "build" and credit["target"] and credit["amount"] >= credit["target"]:
         phase = "unveil"
     invested = phase == "unveil" and all(s["done"] for s in every["unveil"])
     month = c.today.strftime("%Y-%m")
@@ -268,10 +267,12 @@ def placement(st) -> dict:
                  "known_by": None if ess.get("month") else _add_months(month, 1)}]
     elif phase == "build":
         saved = _facts(st, c, "saved_more", next(s for s in every["also"] if s["key"] == "saved_more"))
+        counted = credit["amount"] if credit else c.anchor.get("counted") or 0
         rows = [{"key": "protect", "done": True},
-                {"key": "anchor", "done": False, "started": c.anchor["started"],
-                 "counted": c.anchor.get("counted") or 0,
-                 "target": c.anchor.get("target") or (c.anchor.get("suggestion") or {}).get("amount")},
+                {"key": "anchor", "done": False, "started": c.anchor["started"] or bool(credit),
+                 "counted": counted, "target": c.anchor.get("target") or 0,
+                 "usual": c.anchor.get("usual"),
+                 "months": round(counted / c.anchor["usual"], 1) if c.anchor.get("usual") else None},
                 {"key": "saved_more", "done": len(saved["months"]) >= 3
                  and sum(1 for m in saved["months"] if m["saved"]) >= 2, **saved}]
     else:
@@ -301,9 +302,7 @@ def place():
     if credit:
         st.set_setting("anchor_started", today)
         st.set_setting("anchor_accounts", json.dumps(sorted(credit["accounts"])))
-        st.set_setting("anchor_target", credit["target"])
-        st.set_setting("anchor_size", 1)
-        c = _context(st)          # Full now: `_anchor` remembers it's earned.
+        c = _context(st)          # Past three months already? `_anchor` remembers it.
     for ph in _done_phases(c):
         _mark_seen(st, ph)
     st.set_setting(PLACED_KEY, today)
@@ -369,7 +368,8 @@ def moments(st) -> dict:
     a = c.anchor
     out = {"phase": phase, "path": c.path, "partner_welcome": False,
            "anchor": {"started": a["started"], "counted": a.get("counted"),
-                      "target": a.get("target"), "size": a.get("size")}}
+                      "target": a.get("target"), "usual": a.get("usual"),
+                      "months": a.get("months")}}
     out["partner_welcome"] = partner_state(st, c.path, _report(st))["welcome"]
     return out
 
@@ -382,7 +382,7 @@ def get_moments():
 @bp.post("/moments/<phase>")
 def see_moment(phase):
     if phase not in milestones.PHASES:
-        return jsonify({"error": "There’s no phase by that name."}), 404
+        return jsonify({"error": "There’s no milestone by that name."}), 404
     st = store()
     _mark_seen(st, phase)
     return jsonify({"seen": sorted(_seen(st))})

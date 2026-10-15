@@ -1495,9 +1495,18 @@ def add_bank():
     if error:
         return jsonify({"error": error}), 400
 
+    from . import anchor as anchor_math
+    today = _d.fromisoformat(_today_iso())
+    # A treasure chest fills from the Anchor on the 1st (THL-230): one
+    # started today (`from: next_first`, the Save page) takes its first
+    # amount on the next 1st, unless today is the 1st. A piggy bank opened
+    # the older way still starts this month.
+    start = today.strftime("%Y-%m")
+    if body.get("from") == "next_first" and today.day != 1:
+        start = anchor_math.add_months(start, 1)
     bank_id = st.add_piggy_bank(
         name, target, cadence, target_date if cadence == piggy.ONCE else None,
-        _d.today().isoformat()[:7], opening, str(body.get("note") or ""))
+        start, opening, str(body.get("note") or ""))
     if categories is not None:
         st.set_bank_categories(bank_id, categories)
     return jsonify({"ok": True, "id": bank_id})
@@ -1627,10 +1636,11 @@ def undo_draw(draw_id: int):
 
 
 # ── Goals: the Anchor, treasure chests and the saving goal ──────────────────
-# The Goals page (Pearl Handoff, THL-131, THL-132, THL-179). The Anchor is the
-# emergency fund, counted from savings accounts you choose; treasure chests are
-# the piggy banks above under the name the page gives them, with the same
-# arithmetic; the saving goal is the plan's. See finance/anchor.py.
+# The Save page (Pearl Handoff, THL-131, THL-132, THL-179; THL-229/THL-230).
+# The Anchor is the cash savings she picks, less what her treasure chests
+# hold; chests are the piggy banks above under the name the page gives them,
+# filling from the Anchor each month; the saving goal is the plan's. See
+# finance/anchor.py.
 
 # Plaid subtypes the Anchor can count. Chequing is offered but unticked: it is
 # everyday spending, usually best left out. Investment accounts aren't offered.
@@ -1662,9 +1672,12 @@ def _unusual_months(st) -> set[str]:
 
 
 def _anchor_accounts(st) -> list[dict]:
-    """Bank accounts the Anchor could count, with what each holds now."""
+    """Accounts the Anchor could count, with what each holds now: linked
+    savings and chequing accounts, and savings accounts added by hand
+    (AM-10's "Part of my Anchor")."""
     import re
     balances = _counted_balances(st)
+    hand = {m["account_id"]: m for m in st.manual_accounts()}
     out = []
     for aid, rule in _counted_rules(st).items():
         ptype = (rule["account_type"] or "").lower()
@@ -1676,37 +1689,57 @@ def _anchor_accounts(st) -> list[dict]:
             continue
         name = rule["account_name"]
         m = re.search(r"••\s*(\d{2,4})\s*$", name)
+        by_hand = hand.get(aid)
         out.append({
             "account_id": aid,
             "name": rule.get("label") or name,
-            "mask": m.group(1) if m else "",
+            "mask": (by_hand.get("last4") or "") if by_hand else (m.group(1) if m else ""),
             "kind": "savings" if subtype in _ANCHOR_SAVINGS else "chequing",
             "balance": round(float(held), 2),
             "suggested": subtype in _ANCHOR_SAVINGS,
+            "source": "hand" if by_hand else "linked",
         })
     out.sort(key=lambda a: (a["kind"] != "savings", a["name"].lower()))
     return out
 
 
+def _chests_held(st, rows: list[dict] | None = None) -> float:
+    """What the treasure chests hold now, together (never below nothing)."""
+    rows = _bank_status(st) if rows is None else rows
+    return round(sum(max(r["held"], 0.0) for r in rows), 2)
+
+
 def _anchor(st, txns, today: str) -> dict:
-    """Everything the Anchor card, its detail and its projection need."""
+    """Everything the Anchor card, its detail and its projection need
+    (THL-230): the picked savings less what the chests hold, how many months
+    of Essentials that covers, and when it is likely to cover three."""
     from . import anchor as anchor_math
     from .analytics import invested_in
+    from .growth_insights import chest_monthly
 
     available = _anchor_accounts(st)
-    started = st.setting("anchor_started") not in (None, "")
     chosen = set(_json_setting(st, "anchor_accounts", []))
+    started = st.setting("anchor_started") not in (None, "") or bool(chosen)
     counting = [a for a in available if a["account_id"] in chosen]
-    counted = sum(a["balance"] for a in counting)
-    target = st.float_setting("anchor_target", 0.0) if started else 0.0
+    savings = sum(a["balance"] for a in counting)
+    banks = _bank_status(st)
+    chests = _chests_held(st, banks)
+    unusual = _unusual_months(st)
+    suggestion = anchor_math.essentials(txns, today, unusual=unusual)
+    usual = suggestion["amount"] if suggestion else None
     earned = st.setting("anchor_earned_on") not in (None, "")
-    status = anchor_math.status(counted, target, earned)
-    # Full is earned once: the first time it is, say so for good.
+    status = anchor_math.status(savings, chests, usual, earned)
+    # Three months is reached once: the first time it is, say so for good.
     if started and status["full"] and not earned:
         st.set_setting("anchor_earned_on", today)
 
-    unusual = _unusual_months(st)
-    months = anchor_math.saved_by_month(txns, today)
+    charges = st.bank_charges_by_month()
+    piggy_banks = st.piggy_banks()
+
+    def chests_took(month: str) -> float:
+        return chest_monthly(piggy_banks, charges, month) / 100.0
+
+    months = anchor_math.saved_by_month(txns, today, chests_by_month=chests_took)
     pace = anchor_math.pace(months, unusual)
     projection = anchor_math.projection(status["to_go"], pace, today) if started else None
     if projection and projection["state"] == "none":
@@ -1717,20 +1750,22 @@ def _anchor(st, txns, today: str) -> dict:
     return {
         "started": started,
         "started_on": st.setting("anchor_started") or None,
-        "size": int(st.float_setting("anchor_size", 1)) if started else None,
+        "earned_on": st.setting("anchor_earned_on") or None,
         "accounts": sorted(chosen),
         **status,
         "counting": counting,
         "available_accounts": available,
-        "suggestion": anchor_math.essentials(txns, today),
-        "months": [{**m, "unusual": m["month"] in unusual} for m in months[:6]],
+        "suggestion": suggestion,
+        "pace_months": [{**m, "unusual": m["month"] in unusual} for m in months[:6]],
         "unusual": sorted(unusual),
         "pace": pace,
         "projection": projection,
         "recent": anchor_math.recent_saves(txns),
-        # This month so far, for the hero's "+$300 this month": the same
-        # measure as each month in `months`, less any taken back out.
+        # This month so far, for the hero's "+$300 this month": transfers
+        # marked Saved, less any taken back out.
         "saved_this_month": invested_in(txns, today[:7]) if started else 0.0,
+        # What the chests take from the Anchor each month now.
+        "chests_monthly": round(chests_took(today[:7]), 2),
     }
 
 
@@ -1744,6 +1779,9 @@ def _chest(row: dict) -> dict:
     """
     held = max(row["held"], 0.0)
     target = row["target"]
+    # Before its first 1st a chest takes nothing yet; the card still says what
+    # it will take, never "$0 a month".
+    monthly = row["monthly"] if row["monthly"] > 0.005 else row["base_monthly"]
     ready_by = (row["target_date"][:7] if row["cadence"] == "once" and row["target_date"]
                 else row["year_end"])
     return {
@@ -1754,7 +1792,7 @@ def _chest(row: dict) -> dict:
         "target_date": row["target_date"],
         "start_month": row["start_month"],
         "opening": row["opening"],
-        "monthly": row["monthly"],
+        "monthly": round(monthly, 2),
         "base_monthly": row["base_monthly"],
         "catch_up": row["catch_up"],
         "catching_up": row["catch_up"] > 0.005,
@@ -1858,8 +1896,6 @@ def home():
         "budgets": _budgets_summary(_category_budgets(st, txns, today, sts, usual)),
         "snapshot": usual_month.snapshot(
             txns, today, sts, usual,
-            savings_target=st.float_setting("savings_target", 0.0),
-            anchor_started=st.setting("anchor_started") not in (None, ""),
             comparisons_from=state["comparisons_from"],
             saved=savings.put_away_month(st, txns, today.strftime("%Y-%m")), kinds=kinds),
     })
@@ -1873,8 +1909,6 @@ def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
     return safe_to_spend.compute(
         txns, today,
         entered_income=st.float_setting("monthly_income", 0.0),
-        savings_target=st.float_setting("savings_target", 0.0),
-        anchor_started=st.setting("anchor_started") not in (None, ""),
         told_income=st.float_setting("home_income", 0.0),
         told_rent=st.float_setting("home_rent", 0.0),
         overridden=bool(_json_setting(st, "income_overrides", [])),
@@ -1882,7 +1916,7 @@ def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
                                    safe_to_spend.recurring_bills(txns, today)),
         confirm=income_bills.load(st),
         carry=carryover.applied(st, today),
-        saved_this_month=savings.put_away_month(st, txns, today.strftime("%Y-%m")),
+        moved_to_savings=savings.put_away_month(st, txns, today.strftime("%Y-%m")),
     )
 
 
@@ -2095,10 +2129,9 @@ def path_page():
     told_rent = st.float_setting("home_rent", 0.0)
     sts = safe_to_spend.compute(
         txns, today, entered_income=st.float_setting("monthly_income", 0.0),
-        savings_target=st.float_setting("savings_target", 0.0),
         told_income=told_income, told_rent=told_rent, confirm=income_bills.load(st),
         carry=carryover.applied(st, today),
-        saved_this_month=savings.put_away_month(st, txns, today.strftime("%Y-%m")))
+        moved_to_savings=savings.put_away_month(st, txns, today.strftime("%Y-%m")))
     types = {aid: r.get("account_type") or ""
              for aid, r in st.account_sync_rules().items() if r.get("enabled")}
     state = safe_to_spend.home_state(txns, today, sts, account_types=types,
@@ -2145,11 +2178,13 @@ def home_answers():
 
 @bp.get("/goals")
 def goals():
-    """The Goals page: the Anchor pinned on top, chests, the saving goal.
+    """The Save page: the Anchor pinned on top, chests, the saving goal.
 
-    The phase is Unveil once the Anchor has ever been full, Build once it is
-    started or the basics are covered (the plan has an income), and Protect
-    before that. Only the Anchor moves it; chests and the saving goal never do.
+    `phase` is where she is on the path (internal keys; the app never shows
+    the old phase names, THL-238): past the Anchor once it has ever covered
+    three months of Essentials, at the Anchor once it is set up or the
+    basics are covered (the plan has an income), and before that otherwise.
+    Only the Anchor moves it; chests and the saving goal never do.
     """
     st = store()
     txns = st.all_transactions()
@@ -2176,39 +2211,21 @@ def goals():
 
 @bp.put("/goals/anchor")
 def set_anchor():
-    """Start the Anchor, or change its amount or the accounts it counts."""
+    """Set up the Anchor, or change the accounts it counts. There is no
+    amount to give it (THL-230): the Anchor is what those accounts hold,
+    less what the chests hold."""
+    import json
     body = request.get_json(silent=True) or {}
     st = store()
-    started = st.setting("anchor_started") not in (None, "")
-
-    if "target" in body or not started:
-        try:
-            target = round(float(body.get("target")), 2)
-        except (TypeError, ValueError):
-            return jsonify({"error": "Give the Anchor an amount."}), 400
-        if target <= 0:
-            return jsonify({"error": "The Anchor needs an amount above zero."}), 400
-        if target > 1_000_000:
-            return jsonify({"error": "That amount is implausibly large."}), 400
-        try:
-            size = int(body.get("size", 0) or 0)
-        except (TypeError, ValueError):
-            size = 0
-        st.set_setting("anchor_target", target)
-        st.set_setting("anchor_size", size if size in (1, 2, 3) else 0)
-
-    if "accounts" in body:
-        wanted = body.get("accounts") or []
-        if not isinstance(wanted, list):
-            return jsonify({"error": "Accounts must be a list."}), 400
-        known = {a["account_id"] for a in _anchor_accounts(st)}
-        unknown = [a for a in wanted if a not in known]
-        if unknown:
-            return jsonify({"error": "That account can't count toward the Anchor."}), 400
-        import json
-        st.set_setting("anchor_accounts", json.dumps(sorted(set(wanted))))
-
-    if not started:
+    wanted = body.get("accounts")
+    if not isinstance(wanted, list):
+        return jsonify({"error": "Pick the savings accounts that make up your Anchor."}), 400
+    known = {a["account_id"] for a in _anchor_accounts(st)}
+    unknown = [a for a in wanted if a not in known]
+    if unknown:
+        return jsonify({"error": "That account can’t count toward the Anchor."}), 400
+    st.set_setting("anchor_accounts", json.dumps(sorted(set(wanted))))
+    if st.setting("anchor_started") in (None, ""):
         st.set_setting("anchor_started", _today_iso())
     return goals()
 
@@ -2241,6 +2258,8 @@ def anchor_whatif():
     txns = st.all_transactions()
     today = _today_iso()
     a = _anchor(st, txns, today)
+    if not a["started"]:
+        return jsonify({"error": "Set up your Anchor first."}), 409
     pace = a["pace"]
     usual = pace["usual"] if pace else 0.0
     extra = monthly - usual
@@ -2411,8 +2430,9 @@ def seen_catch_up(bank_id: int):
 
 @bp.post("/goals/chests/<int:bank_id>/add")
 def add_to_chest(bank_id: int):
-    """Put more into a chest now. It comes out of this month's safe to spend,
-    the same place the monthly amount comes from."""
+    """Put more into a chest now. It moves from the Anchor into the chest
+    (THL-230), the same place the monthly amount comes from; safe to spend
+    doesn't change."""
     body = request.get_json(silent=True) or {}
     try:
         amount = round(float(body.get("amount")), 2)
