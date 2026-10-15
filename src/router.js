@@ -17,7 +17,7 @@ export const REVIEW_PATH = '/transactions/review';
 // and each step's own screen (GR-02 to GR-04) one beneath it:
 // /growth/path/<step>.
 export const PATH_PATH = '/growth';
-export const PATH_STEPS = ['income', 'bills', 'essentials', 'first_stop', 'full', 'saved_more',
+export const PATH_STEPS = ['income', 'bills', 'essentials', 'setup', 'full', 'saved_more',
                            'cards', 'invest'];
 const PATH_EVENT = 'pearl:path';
 

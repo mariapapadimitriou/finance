@@ -13,10 +13,11 @@ import { Ledger } from './HomePanel.jsx';
 import './home.css';
 
 /**
- * When the Anchor is likely to be full (THL-132). Always a range — the best
- * and the quietest of the last three full months — and never a promise: with
- * nothing put away lately there is no date at all. A month marked unusual is
- * left out, and the explanation says which.
+ * When the Anchor is likely to cover three months of Essentials (THL-132,
+ * THL-230). Always a range — the best and the quietest of the last three
+ * full months, each what the Anchor grew by: put away, less what the chests
+ * took — and never a promise: with nothing put away lately there is no date
+ * at all. A month marked unusual is left out, and the explanation says which.
  */
 
 function leftOutWords(pace) {
@@ -32,15 +33,18 @@ export function ProjectionPage({ goals, onBack, onHow, onWhatIf, onMonths, onTab
   const leftOut = pace?.left_out ?? [];
   return (
     <>
-      <PageHead overline="Goals · Your Anchor" title="When you’ll get there" onBack={onBack}
+      <PageHead overline="Save · Your Anchor" title="When you’ll reach 3 months" onBack={onBack}
                 backLabel="Back to your Anchor" />
 
       {p.state === 'range' && (
-        <section className="gl-card" aria-label="Likely full">
-          <p className="pk-overline">Likely full</p>
+        <section className="gl-card" aria-label="Likely there">
+          <p className="pk-overline">Likely there</p>
           <h2 className="pk-h1">Between {rangeWords(p.from, p.to)}</h2>
           <p className="gl-body">
-            Based on what you saved in {listWords(pace.used.map((m) => monthName(m.month)))}:
+            {a.chests_monthly > 0
+              ? `Your Anchor grows by what you put away, less the ${amount(a.chests_monthly)} a month your chests take.`
+              : 'Your Anchor grows by what you put away.'}
+            {' '}From {listWords(pace.used.map((m) => monthName(m.month)))}:
             {' '}{amount(p.low)} to {amount(p.high)} a month. Interest isn’t included.
           </p>
           <RangeBand now={goals.month} from={p.from} to={p.to} />
@@ -53,9 +57,9 @@ export function ProjectionPage({ goals, onBack, onHow, onWhatIf, onMonths, onTab
       )}
 
       {p.state === 'full' && (
-        <section className="gl-card" aria-label="Full">
-          <p className="pk-overline">Full</p>
-          <h2 className="pk-h2">Your Anchor is full</h2>
+        <section className="gl-card" aria-label="Milestone reached">
+          <p className="pk-overline">Milestone reached</p>
+          <h2 className="pk-h2">Your Anchor covers 3 months</h2>
           <p className="gl-body">There’s nothing left to project. Keep it topped up and it’ll
             keep you steady.</p>
         </section>
@@ -105,7 +109,8 @@ export function ProjectionPage({ goals, onBack, onHow, onWhatIf, onMonths, onTab
       <section className="gl-card gl-row-card gl-mini" aria-label="Your Anchor">
         <Mark phase={a.earned ? 'unveil' : 'build'} width={40} />
         <p className="gl-text gl-grow">
-          {amount(a.counted)} of {amount(a.target)}{a.to_go > 0 ? ` · ${amount(a.to_go)} to go` : ''}
+          {a.target > 0 ? `${amount(a.counted)} of ${amount(a.target)}` : amount(a.counted)}
+          {a.to_go > 0 ? ` · ${amount(a.to_go)} to go` : ''}
         </p>
         <More onClick={onBack}>Back to your Anchor</More>
       </section>
@@ -115,60 +120,56 @@ export function ProjectionPage({ goals, onBack, onHow, onWhatIf, onMonths, onTab
 
 const cents = (n) => money(n, { cents: true });
 
-/** "Likely full between March and June 2027", or one month when that's all. */
+/** "July 2027 to June 2028", or one month when that's all. */
 function likelyWords(p) {
   if (p?.state !== 'range') return 'No date yet';
-  return p.from === p.to ? `Likely full in ${monthYear(p.from)}`
-    : `Likely full between ${rangeWords(p.from, p.to)}`;
+  return p.from === p.to ? monthYear(p.from) : rangeWords(p.from, p.to, 'to');
 }
 
+/** "+$360 to your Anchor", or "$120 out of it". */
+const grew = (m) => (m.saved >= 0 ? `+${amount(m.saved)} to your Anchor` : `${amount(-m.saved)} out of it`);
+
 /**
- * X-03's sheet for the Anchor: the goal, what's saved, what's left and her
- * usual monthly amount, adding up to the months to go at that pace. The
- * answer stays P-02's range, from her best and quietest months.
+ * P-02's sheet: still to go, the months used, the best and quietest of
+ * them (what the Anchor grew by: put away, less what the chests took), her
+ * usual pace, what was left out, and the range.
  */
-export function anchorSheet(goals) {
+export function rangeSheet(goals) {
   const a = goals.anchor;
   const p = a.projection;
   const pace = a.pace;
-  const tag = (m) => (m.month === pace.best.month ? ' · best month'
-    : m.month === pace.quietest.month ? ' · quietest month' : '');
-  const saved = (m) => (m.saved >= 0 ? `${amount(m.saved)} saved` : `${amount(-m.saved)} taken out`);
+  const used = pace.used.map((m) => monthName(m.month));
   const rows = [
-    { key: 'goal', label: 'Your goal', display: cents(a.target), lines: [] },
-    { key: 'saved', label: 'Already saved', display: cents(a.counted),
-      detail: a.counting.length ? `In ${listWords(a.counting.map((acct) => acct.name))}` : null,
-      lines: a.counting.map((acct) => ({ label: acct.name, amount: acct.balance })) },
-    { key: 'left', label: 'Left to save', display: cents(a.to_go), lines: [] },
-    { key: 'monthly', label: 'You add each month', display: cents(pace.usual),
-      detail: `Your usual amount over ${listWords(pace.used.map((m) => monthName(m.month)))}`,
-      lines: [
-        ...pace.used.map((m) => ({ label: `${monthName(m.month)}${tag(m)}`, display: saved(m) })),
-        ...pace.left_out.map((m) => ({ label: `${monthName(m.month)} · left out, marked unusual`,
-                                       display: saved(m) })),
-      ] },
+    { key: 'to_go', label: 'Still to go', display: amount(a.to_go), lines: [] },
+    { key: 'months', label: 'Months used', display: used.join(', '), lines: [] },
+    { key: 'best', label: `Best month · ${monthName(pace.best.month)}`, display: grew(pace.best),
+      lines: [] },
+    { key: 'quietest', label: `Quietest month · ${monthName(pace.quietest.month)}`,
+      display: grew(pace.quietest), lines: [] },
+    { key: 'usual', label: 'Your usual pace', display: `${amount(pace.usual)} a month`,
+      lines: pace.used.map((m) => ({ label: monthName(m.month), display: grew(m) })) },
   ];
-  const n = monthsTo(a.to_go, pace.usual);
-  const total = {
-    label: 'Months to go',
-    detail: `Starting from ${monthName(addMonths(goals.month, 1))}`,
-    display: n == null ? 'No date yet' : `${n} → ${monthYear(addMonths(goals.month, n))}`,
-  };
-  const note = `Your best month (${monthName(pace.best.month)}) and your quietest `
-    + `(${monthName(pace.quietest.month)}) give the range, so it’s honest about ups and downs. `
-    + 'Interest isn’t included, so you may get there a little sooner.';
-  return { title: likelyWords(p), sub: 'If you keep saving like you do now.', rows, total, note };
+  if (pace.left_out.length) {
+    rows.push({ key: 'left_out', label: 'Left out',
+                display: `${listWords(pace.left_out.map((m) => monthName(m.month)))}, marked unusual`,
+                lines: pace.left_out.map((m) => ({ label: monthName(m.month), display: grew(m) })) });
+  }
+  const total = { label: 'Likely there', display: likelyWords(p),
+                  detail: monthsTo(a.to_go, pace.usual) == null ? null
+                    : `About ${monthsTo(a.to_go, pace.usual)} months at your usual pace, from ${monthName(addMonths(goals.month, 1))}` };
+  const note = 'We use your best and quietest months for the range, so it’s honest about ups and '
+    + 'downs. Interest isn’t included, so you may get there a little sooner.';
+  return { title: 'Your Anchor date', rows, total, note };
 }
 
 /** P-02, laid out as X-03: how the range was worked out. */
 export function HowWorkedOut({ goals, onClose, onWhatIf, onMonths }) {
   if (!goals.anchor.pace) return null;
-  const { title, sub, rows, total, note } = anchorSheet(goals);
+  const { title, rows, total, note } = rangeSheet(goals);
   return (
     <DetailPanel label="How we worked this out" overline="How we worked this out"
                  onClose={onClose} sheet className="hm-sheet">
       <h1 className="pk-h2">{title}</h1>
-      <p className="pk-muted">{sub}</p>
       <Ledger rows={rows} total={total} />
       <p className="pk-muted hm-note">{note}</p>
       <button type="button" className="hm-link" onClick={onWhatIf}>
@@ -217,7 +218,7 @@ export function WhatIf({ goals, onClose, initial = null }) {
           <div className="gl-note-card" role="status" aria-live="polite">
             {p?.state === 'range' ? (
               <>
-                <h2 className="pk-h3">{soonerWords(result.sooner) || 'Likely full'}</h2>
+                <h2 className="pk-h3">{soonerWords(result.sooner) || 'Likely there'}</h2>
                 <p className="gl-text">Between {rangeWords(p.from, p.to)}</p>
               </>
             ) : <h2 className="pk-h3">Still no date at that amount</h2>}
@@ -243,7 +244,7 @@ export function WhatIf({ goals, onClose, initial = null }) {
 
 /** P-04: leave out an unusual month. */
 export function UnusualMonths({ goals, onClose, onDone }) {
-  const months = goals.anchor.months;
+  const months = goals.anchor.pace_months ?? [];
   const [picked, setPicked] = useState(() => new Set(goals.anchor.unusual));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -263,7 +264,7 @@ export function UnusualMonths({ goals, onClose, onDone }) {
       <div className="pk-choices">
         {shown.map((m) => {
           const on = picked.has(m.month);
-          const said = m.saved >= 0 ? `Saved ${amount(m.saved)}` : 'More went out than came in';
+          const said = m.saved >= 0 ? `Put away ${amount(m.saved)}` : 'More went out than came in';
           return (
             <Choice key={m.month} type="checkbox" checked={on} label={monthName(m.month)}
                     description={on ? `${said} · left out` : said}

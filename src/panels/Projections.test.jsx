@@ -237,9 +237,9 @@ const unveil = {
   ],
   partner: { configured: false, name: null, welcome: false, notify: false },
   report: null,
-  path: { phases: [{ key: 'protect', label: 'Protect', state: 'done' },
-                   { key: 'build', label: 'Build', state: 'done' },
-                   { key: 'unveil', label: 'Unveil', state: 'now' }] },
+  path: { phases: [{ key: 'protect', label: 'The basics', state: 'done' },
+                   { key: 'build', label: 'Your Anchor', state: 'done' },
+                   { key: 'unveil', label: 'Grow your money', state: 'now' }] },
   types: [{ key: 'tfsa', label: 'TFSA' }, { key: 'rrsp', label: 'RRSP' }, { key: 'fhsa', label: 'FHSA' },
           { key: 'non_registered', label: 'Non-registered' }, { key: 'not_sure', label: 'Not sure' }],
 };
@@ -247,8 +247,8 @@ const unveil = {
 describe('Unveil (GR-16, GR-37, GR-10)', () => {
   it('GR-16 the checklist is guidance; with no partner, GR-22 is its one primary', () => {
     const out = html(<ReadyPage data={unveil} nav={nav} />);
-    for (const text of ['Path', 'Unveil', 'Ready to invest', 'guidance, not a gate', 'Your checklist',
-                        'Protect is done', 'Your income covers your Essentials', 'Your Anchor is under way',
+    for (const text of ['Path', 'Grow your money', 'Ready to invest', 'guidance, not a gate', 'Your checklist',
+                        'The basics are done', 'Your income covers your Essentials', 'Your Anchor is under way',
                         '$620 of $2,150', 'See Anchor', 'No card balance growing', 'Checked over the last 3 months',
                         'Read the basics', '2 of 5 modules', 'Continue', 'Why both matter',
                         'Coming soon', 'We’re choosing a partner', 'registered in Canada',
@@ -266,7 +266,7 @@ describe('Unveil (GR-16, GR-37, GR-10)', () => {
   it('GR-16 once she has told Pearl', () => {
     const out = html(<ReadyPage data={{ ...unveil, report: { type: 'tfsa', label: 'TFSA', on: '2026-10-13' } }}
                                 nav={nav} />);
-    expect(out).toContain('You told Pearl you opened a TFSA, so Unveil is done.');
+    expect(out).toContain('You told Pearl you opened a TFSA, so that milestone is done.');
     expect(out).not.toContain('pk-btn primary');
   });
 
@@ -279,7 +279,7 @@ describe('Unveil (GR-16, GR-37, GR-10)', () => {
     const out = html(<ReportPage data={unveil} onBack={() => {}} onDone={() => {}} />);
     for (const text of ['Ready to invest', 'Opened an investing account?', 'never ask for a login or a balance',
                         'What kind of account?', 'TFSA', 'RRSP', 'FHSA', 'Non-registered', 'Not sure',
-                        'You can undo this in Profile.', 'Mark Unveil done', 'Not yet']) {
+                        'You can undo this in Profile.', 'Mark it done', 'Not yet']) {
       expect(out).toContain(text);
     }
     expect((out.match(/type="radio"/g) || []).length).toBe(5);
@@ -289,9 +289,9 @@ describe('Unveil (GR-16, GR-37, GR-10)', () => {
 
   it('GR-10 Unveil done', () => {
     const out = html(<UnveilDone data={{ ...unveil, report: { type: 'tfsa', label: 'TFSA' } }} onPath={() => {}} />);
-    for (const text of ['Unveil · Done', 'You opened your first investment account',
-                        'Protect, Build and Unveil: all three done. What you’ve built stays yours.',
-                        'Protect', 'Build', 'Done ✓', 'See your path']) {
+    for (const text of ['Grow your money · Done', 'You opened your first investment account',
+                        'Every milestone on your path is done. What you’ve built stays yours.',
+                        'The basics', 'Your Anchor', 'Done ✓', 'See your path']) {
       expect(out).toContain(text);
     }
     expect((out.match(/Done ✓/g) || []).length).toBe(3);
@@ -302,10 +302,10 @@ describe('Unveil (GR-16, GR-37, GR-10)', () => {
     const path = {
       phase: 'build', step: 2, of: 2, protect_done: true,
       phases: unveil.path.phases.map((p, i) => ({ ...p, state: ['done', 'now', 'ahead'][i] })),
-      steps: [{ key: 'first_stop', label: 'Reach your Anchor’s first stop', done: true, first_stop: 500 },
-              { key: 'full', label: 'Fill your Anchor', done: false, target: 2150 }],
+      steps: [{ key: 'setup', label: 'Set up your Anchor', done: true },
+              { key: 'full', label: 'Grow your Anchor to 3 months', done: false, target: 8700 }],
       also: [],
-      next: { text: 'Next: add to your Anchor.', label: 'Add to your Anchor', action: 'goals' },
+      next: { text: 'Next: grow your Anchor to 3 months of Essentials.', label: 'See your Anchor', action: 'goals' },
     };
     const out = html(<PathPage path={path} onAction={() => {}} onReady={() => {}} onUnveil={() => {}} />);
     expect(out).toContain('See the checklist');

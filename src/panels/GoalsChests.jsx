@@ -11,22 +11,30 @@ import {
 } from './GoalsParts.jsx';
 
 /**
- * Treasure chests (THL-169, THL-179): money set aside for something planned.
- * They are the piggy banks under another name, with the same arithmetic: a
- * monthly amount out of safe to spend, and purchases paid from the chest
- * instead of the month. A chest that paid out early catches up by raising its
- * own monthly amount. Chests never move the phase, so they carry no shell.
+ * Treasure chests (THL-169, THL-179; THL-230): money set aside for something
+ * planned. They are the piggy banks under another name, with the same
+ * arithmetic: a monthly amount that moves from her Anchor into the chest on
+ * the 1st, and purchases paid from the chest instead of the month. Safe to
+ * spend never changes. A chest that paid out early catches up by raising its
+ * own monthly amount, from the Anchor. Chests never move her along the path,
+ * so they carry no shell.
  */
 
 const ym = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 const idx = (m) => Number(m.slice(0, 4)) * 12 + Number(m.slice(5, 7)) - 1;
 
-/** What a chest would ask a month, as the engine works it out at the start. */
-function monthlyFor(target, cadence, month) {
+/** The 1st a new chest first fills on: next month's, unless today is the 1st. */
+export function firstFill(today = new Date()) {
+  const d = new Date(today.getFullYear(), today.getMonth() + (today.getDate() === 1 ? 0 : 1), 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+/** What a chest would take a month, as the engine works it out at the start. */
+function monthlyFor(target, cadence, month, start = firstFill().slice(0, 7)) {
   if (!(target > 0)) return null;
   if (cadence === 'annual') return target / 12;
   if (!month) return null;
-  return target / Math.max(idx(month) - idx(ym()) + 1, 1);
+  return target / Math.max(idx(month) - idx(start) + 1, 1);
 }
 
 /** The category a chest most likely pays for, from its name. */
@@ -59,7 +67,7 @@ export function ChestCard({ chest, onOpen, onTreasure }) {
         {chest.catching_up && <Pill>Catching up</Pill>}
       </div>
       <p className="gl-amount sm">
-        <span className="pk-h2">{amount(chest.held)}</span>
+        <span className="pk-h2">{chest.held > 0 ? amount(chest.held) : 'Nothing yet'}</span>
         <span className="pk-label pk-muted">of {amount(chest.target)}</span>
       </p>
       {chest.ready ? (
@@ -81,9 +89,9 @@ export function ChestsSection({ goals, onNew, onOpen, onTreasure }) {
       <div className="gl-section-head">
         <div className="gl-stack tight">
           <h2 className="pk-h3" id="chests-title">Treasure chests</h2>
-          <p className="pk-label pk-muted">Money set aside for things you’ve planned</p>
+          <p className="pk-label pk-muted">Little goals that fill from your Anchor each month</p>
         </div>
-        <PButton variant="secondary" className="gl-hug" onClick={() => onNew()}>Open a chest</PButton>
+        <PButton variant="secondary" className="gl-hug" onClick={() => onNew()}>Start a chest</PButton>
       </div>
       {goals.chests.length > 0 ? (
         <div className="gl-chests">
@@ -96,7 +104,8 @@ export function ChestsSection({ goals, onNew, onOpen, onTreasure }) {
         <div className="gl-card">
           <h3 className="pk-h2">No treasure chests yet</h3>
           <p className="gl-body">Set money aside for something you’ve planned, like a trip, gifts
-            or car insurance. A little comes out of your safe-to-spend each month.</p>
+            or a new laptop. A little moves from your Anchor into the chest each month. Your safe
+            to spend doesn’t change.</p>
           {suggestion?.annual_spend >= 240 && (
             <Alert action="Start" onAction={() => onNew({
               name: 'Travel', target: suggestion.target, cadence: 'annual',
@@ -113,9 +122,10 @@ export function ChestsSection({ goals, onNew, onOpen, onTreasure }) {
 }
 
 /**
- * G-03 and G-04: open a chest (or change its plan), and then, when there is
- * no Anchor yet, a gentle note that never blocks. It shows every time a chest
- * is opened until there is one; "Not now" only closes it for that time.
+ * G-03 and G-04: start a chest (or change its plan), and then, when there is
+ * no Anchor yet, a gentle note that never blocks: chests fill from the
+ * Anchor, so Pearl needs to know which savings make it up. It shows every
+ * time a chest is started until there is one; "Not now" only closes it.
  */
 export function ChestForm({ goals, chest, preset, onClose, onSaved, onStartAnchor }) {
   const categories = goals.spend_categories ?? [];
@@ -137,7 +147,8 @@ export function ChestForm({ goals, chest, preset, onClose, onSaved, onStartAncho
 
   const value = parseAmount(target);
   const monthly = monthlyFor(value, cadence, month);
-  const safe = goals.safe_to_spend;
+  const anchor = goals.anchor;
+  const first = firstFill();
   // Another chest may already pay for the guessed category.
   const takenBy = guess && (goals.bank_funded ?? []).includes(guess) && !owned.includes(guess);
 
@@ -149,6 +160,8 @@ export function ChestForm({ goals, chest, preset, onClose, onSaved, onStartAncho
     const body = {
       name: name.trim(), target: value, cadence,
       target_date: cadence === 'once' ? `${month}-01` : null,
+      // Chests fill from the Anchor on the 1st (THL-230): the first on the next one.
+      from: 'next_first',
     };
     if (guess && !takenBy) {
       body.categories = payFrom ? [...new Set([...owned, guess])] : owned.filter((c) => c !== guess);
@@ -173,24 +186,25 @@ export function ChestForm({ goals, chest, preset, onClose, onSaved, onStartAncho
 
   if (opened) {
     return (
-      <DetailPanel label={`Your ${opened.name} chest is open`} overline="Treasure chest"
+      <DetailPanel label={`You’ve started a ${opened.name} chest`} overline="Treasure chest"
                    onClose={onClose} className="on-card">
-        <h1 className="pk-h1" tabIndex={-1} ref={heading}>Your {opened.name} chest is open</h1>
+        <h1 className="pk-h1" tabIndex={-1} ref={heading}>You’ve started a {opened.name} chest</h1>
         <p className="gl-body">
-          {opened.monthly ? `${amount(Math.round(opened.monthly * 100) / 100)} a month, starting this month.` : ''}
+          {opened.monthly ? `${amount(Math.round(opened.monthly * 100) / 100)} a month, starting ${dayLong(first)}.` : ''}
           {opened.category ? ` ${opened.category} purchases will come out of it.` : ''}
         </p>
         {!goals.anchor.started && nudge && (
           <div className="gl-nudge">
             <div className="gl-nudge-head">
               <Mark phase="build" width={48} />
-              <h2 className="pk-h3">Want to start your Anchor alongside it?</h2>
+              <h2 className="pk-h3">Chests fill from your Anchor</h2>
             </div>
-            <p className="gl-text pk-muted">A small cushion for surprises keeps plans like this
-              one safe.</p>
+            <p className="gl-text pk-muted">Pick which savings make up your Anchor, so Pearl knows
+              where this chest’s{opened.monthly ? ` ${amount(Math.round(opened.monthly * 100) / 100)}` : ''} a
+              month comes from.</p>
             <div className="gl-actions">
               <PButton variant="secondary" className="gl-hug" onClick={onStartAnchor}>
-                Start my Anchor
+                Set up my Anchor
               </PButton>
               <PButton variant="text" className="gl-text-btn" onClick={() => setNudge(false)}>
                 Not now
@@ -206,9 +220,9 @@ export function ChestForm({ goals, chest, preset, onClose, onSaved, onStartAncho
   }
 
   return (
-    <DetailPanel label={editing ? 'Change plan' : 'Open a chest'} overline="Treasure chest"
+    <DetailPanel label={editing ? 'Change plan' : 'Start a chest'} overline="Treasure chest"
                  onClose={onClose} className="on-card gl-form">
-      <h1 className="pk-h1" tabIndex={-1} ref={heading}>{editing ? 'Change plan' : 'Open a chest'}</h1>
+      <h1 className="pk-h1" tabIndex={-1} ref={heading}>{editing ? 'Change plan' : 'Start a chest'}</h1>
       <Field label="Name" id="chest-name">
         <input id="chest-name" value={name} maxLength={40} placeholder="Japan trip"
                onChange={(e) => setName(e.target.value)} />
@@ -229,10 +243,11 @@ export function ChestForm({ goals, chest, preset, onClose, onSaved, onStartAncho
         <div className="gl-note-card tight" role="status" aria-live="polite">
           <h2 className="pk-h3">{amount(Math.round(monthly * 100) / 100)} a month</h2>
           <p className="pk-label pk-muted">
-            Set aside from your safe-to-spend
-            {safe != null && !editing
-              ? `. This month: ${amount(safe)} → ${amount(Math.round((safe - monthly) * 100) / 100)}.`
+            {`Comes out of your Anchor: ${amount(Math.round(monthly * 100) / 100)} on the 1st of each month`}
+            {anchor?.started && !editing
+              ? `. Your Anchor: ${amount(anchor.counted)} → ${amount(Math.round((anchor.counted - monthly) * 100) / 100)} on ${dayLong(first)}.`
               : cadence === 'annual' ? ', every month of the year.' : ' until the date.'}
+            {' '}Your safe to spend doesn’t change.
           </p>
         </div>
       )}
@@ -244,7 +259,7 @@ export function ChestForm({ goals, chest, preset, onClose, onSaved, onStartAncho
       {error && <p className="txd-hint" role="alert">{error}</p>}
       <div className="gl-panel-foot">
         <PButton disabled={busy} onClick={submit}>
-          {busy ? 'Saving…' : editing ? 'Save' : 'Open chest'}
+          {busy ? 'Saving…' : editing ? 'Save' : 'Start chest'}
         </PButton>
         {editing && !closing && (
           <PButton variant="text" className="gl-text-btn center" onClick={() => setClosing(true)}>
@@ -290,7 +305,7 @@ export function Treasure({ detail, onClose, onDone }) {
                  onClose={onClose} className="on-card gl-form">
       <h1 className="pk-h1">Open your treasure</h1>
       <p className="gl-body">Pick what to pay from this chest. It comes out of the chest, not
-        your month.</p>
+        your month. Move the money from savings to chequing when you’re ready.</p>
       <div className="pk-choices">
         {offerCategory && (
           <Choice type="checkbox" checked={category} onChange={setCategory}
@@ -336,9 +351,9 @@ export function Treasure({ detail, onClose, onDone }) {
   );
 }
 
-/** Add money to a chest now, out of this month's safe to spend. */
+/** Add money to a chest now, from the Anchor; safe to spend doesn't change. */
 export function AddMoney({ detail, onClose, onDone }) {
-  const { chest, safe_to_spend: safe } = detail;
+  const { chest, anchor } = detail;
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -346,15 +361,16 @@ export function AddMoney({ detail, onClose, onDone }) {
   return (
     <DetailPanel label="Add money" overline={chest.name} onClose={onClose} className="on-card">
       <h1 className="pk-h1">Add money</h1>
-      <p className="gl-body">Put more in now and it’s ready sooner.</p>
+      <p className="gl-body">Put more in now and it’s ready sooner. It moves from your Anchor into
+        the chest; your safe to spend doesn’t change.</p>
       <Field label="How much?" id="chest-add">
         <input id="chest-add" inputMode="decimal" value={text} placeholder="$100"
                onChange={(e) => setText(e.target.value)} />
       </Field>
       {value > 0 && (
         <Alert>
-          It comes out of this month’s safe to spend
-          {safe != null ? `: ${amount(safe)} → ${amount(Math.round((safe - value) * 100) / 100)}.` : '.'}
+          It comes out of your Anchor
+          {anchor?.started ? `: ${amount(anchor.counted)} → ${amount(Math.round((anchor.counted - value) * 100) / 100)}.` : '.'}
         </Alert>
       )}
       {error && <p className="txd-hint" role="alert">{error}</p>}
@@ -369,7 +385,7 @@ export function AddMoney({ detail, onClose, onDone }) {
   );
 }
 
-const RECENT_WORDS = { set_aside: 'Set aside', paid: 'Paid from the chest', added: 'Added' };
+const RECENT_WORDS = { set_aside: 'From your Anchor', paid: 'Paid from the chest', added: 'Added from your Anchor' };
 
 /** "Ready by Sep 2027", or, catching up, "Until February, then $100". */
 function detailRight(chest) {
@@ -405,12 +421,12 @@ export function ChestDetail({ goals, id, onBack, onChanged, version }) {
   const extra = Math.round((chest.monthly - chest.base_monthly) * 100) / 100;
   return (
     <>
-      <PageHead overline="Goals · Treasure chest" title={chest.name} onBack={onBack}
-                backLabel="Back to Goals" />
+      <PageHead overline="Save · Treasure chest" title={chest.name} onBack={onBack}
+                backLabel="Back to Save" />
 
       <section className="gl-card" aria-label="Progress">
         <p className="gl-amount">
-          <span className="pk-amount">{amount(chest.held)}</span>
+          <span className="pk-amount">{chest.held > 0 ? amount(chest.held) : 'Nothing yet'}</span>
           <span className="pk-muted">
             of {amount(chest.target)}
             {chest.ready ? ' · ready' : chest.cadence === 'once' && chest.target_date
@@ -438,7 +454,7 @@ export function ChestDetail({ goals, id, onBack, onChanged, version }) {
           </h2>
           <p className="gl-body">
             {detail.last_paid ? `A purchase in ${monthName(detail.last_paid)} came out of this chest early. ` : ''}
-            To catch up, {amount(extra)} more a month comes out of your safe-to-spend
+            To catch up, {amount(extra)} more a month comes out of your Anchor
             {chest.caught_up_by ? ` until ${monthName(chest.caught_up_by)}` : ''}.
           </p>
           <div className="gl-actions">
@@ -488,7 +504,7 @@ export function ChestDetail({ goals, id, onBack, onChanged, version }) {
         <Treasure detail={detail} onClose={() => setPanel(null)} onDone={changed} />
       )}
       {panel === 'add' && (
-        <AddMoney detail={detail} onClose={() => setPanel(null)} onDone={changed} />
+        <AddMoney detail={{ ...detail, anchor: goals.anchor }} onClose={() => setPanel(null)} onDone={changed} />
       )}
       {panel === 'plan' && (
         <ChestForm goals={{ ...goals, spend_categories: detail.spend_categories,

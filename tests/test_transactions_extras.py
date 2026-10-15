@@ -78,9 +78,9 @@ class TestOneOffMaths:
     def test_still_counts_in_its_month_and_in_safe_to_spend(self):
         ikea = tx("2026-10-03", "IKEA Etobicoke", 1480.00, "Shopping", account="visa")
         rows = history() + october() + [ikea]
-        before = sts.compute(rows, TODAY, savings_target=300.0)
+        before = sts.compute(rows, TODAY)
         flagged(ikea)
-        after = sts.compute(rows, TODAY, savings_target=300.0)
+        after = sts.compute(rows, TODAY)
         assert counts_as_spending(ikea)
         assert after["amount"] == before["amount"]
         spent = lambda s: next(r for r in s["rows"] if r["key"] == "spent")["amount"]  # noqa: E731

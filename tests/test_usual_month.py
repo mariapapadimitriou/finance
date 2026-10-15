@@ -69,17 +69,15 @@ class TestUsualMonth:
 class TestSnapshot:
     def build(self, rows=None, **kw):
         rows = rows or history() + october()
-        s = sts.compute(rows, TODAY, savings_target=kw.get("savings_target", 300.0))
-        return um.snapshot(rows, TODAY, s, um.usual(rows, TODAY),
-                           savings_target=kw.get("savings_target", 300.0),
-                           anchor_started=kw.get("anchor_started", False))
+        s = sts.compute(rows, TODAY)
+        return um.snapshot(rows, TODAY, s, um.usual(rows, TODAY))
 
     def row(self, snap, key):
         return next(r for r in snap["rows"] if r["key"] == key)
 
     def test_four_rows_in_order(self):
         snap = self.build()
-        assert [r["label"] for r in snap["rows"]] == ["Income", "Essentials", "Lifestyle", "Savings"]
+        assert [r["label"] for r in snap["rows"]] == ["Income", "Essentials", "Lifestyle", "Put away"]
         assert (snap["day"], snap["days_in_month"], snap["months_of_history"]) == (9, 31, 3)
 
     def test_income_arrived_against_expected(self):
@@ -93,12 +91,11 @@ class TestSnapshot:
         assert (ess["spent"], ess["usual"], ess["usual_by_today"]) == (2732.00, ESSENTIALS, 2000.00)
         assert (life["spent"], life["usual"], life["usual_by_today"]) == (412.34, LIFESTYLE, 0.00)
 
-    def test_savings_against_the_plan_or_just_saved(self):
+    def test_put_away_is_what_she_moved_with_no_plan_behind_it(self):
+        """THL-230: Put away is what she moved to savings; nothing is planned
+        against it, and chests fill from her Anchor."""
         assert self.row(self.build(), "savings") == {
-            "key": "savings", "label": "Savings", "saved": 150.00, "planned": 300.00,
-            "goal": "saving_goal"}
-        bare = self.row(self.build(savings_target=0.0), "savings")
-        assert bare["planned"] is None and bare["goal"] is None and bare["saved"] == 150.00
+            "key": "savings", "label": "Put away", "saved": 150.00, "planned": None, "goal": None}
 
     def test_where_the_extra_went(self):
         assert self.build()["extra_went_to"] == "Essentials"   # $732 past its usual by the 9th

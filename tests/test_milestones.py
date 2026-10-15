@@ -9,13 +9,12 @@ from finance.store import Store
 from test_plaid_link import KEY, FakePlaid
 from test_safe_to_spend import TODAY, history, october, tx
 
-ANCHOR_NONE = {"started": False, "first_stop_done": False, "earned": False,
-               "first_stop": 500, "target": 0}
+ANCHOR_NONE = {"started": False, "earned": False, "target": 0, "counted": 0, "months": None}
 
 
 def path(rows=None, anchor=ANCHOR_NONE, **kw):
     rows = history() + october() if rows is None else rows
-    s = kw.pop("sts", None) or sts.compute(rows, TODAY, savings_target=300.0)
+    s = kw.pop("sts", None) or sts.compute(rows, TODAY)
     kw.setdefault("bills_found", 5)
     return milestones.path(rows, TODAY, s, anchor=anchor, **kw)
 
@@ -28,8 +27,10 @@ class TestThePath:
         assert p["phase"] == "build" and p["protect_done"] is True
         assert [ph["state"] for ph in p["phases"]] == ["done", "now", "ahead"]
         assert (p["step"], p["of"]) == (1, 2)
-        assert p["next"] == {"text": "Next: start your Anchor, so a surprise bill doesn’t become a problem.",
-                             "label": "Start your Anchor", "action": "goals"}
+        assert p["next"] == {"text": "Next: set up your Anchor, so a big surprise doesn’t land on your credit card.",
+                             "label": "Set up your Anchor", "action": "goals"}
+        assert [ph["label"] for ph in p["phases"]] == ["The basics", "Your Anchor", "Grow your money"]
+        assert [s["key"] for s in p["steps"]] == ["setup", "full"]
 
     def test_essentials_not_covered_last_month(self):
         """September: $1,500 in, $2,000 rent. Protect waits on that step, and
@@ -44,11 +45,15 @@ class TestThePath:
         assert (step["month"], step["income"], step["essentials"]) == ("2026-09", 1500.00, 2000.00)
         assert p["next"]["action"] == "path"
 
-    def test_first_stop_reached_then_fill_it(self):
-        anchor = {**ANCHOR_NONE, "started": True, "first_stop_done": True, "target": 2335}
+    def test_set_up_then_grow_it_to_three_months(self):
+        anchor = {**ANCHOR_NONE, "started": True, "started_on": "2026-09-14", "target": 8700,
+                  "counted": 5470, "months": 1.9}
         p = path(anchor=anchor)
-        assert (p["step"], p["of"]) == (2, 2)                     # GR-05: "Build · step 2 of 2"
-        assert p["next"]["label"] == "Add to your Anchor"
+        assert (p["step"], p["of"]) == (2, 2)                     # GR-05: "step 2 of 2"
+        assert p["steps"][0]["started_on"] == "2026-09-14"
+        assert p["steps"][1] == {"key": "full", "label": "Grow your Anchor to 3 months", "done": False,
+                                 "target": 8700, "counted": 5470, "months": 1.9, "usual": None}
+        assert p["next"]["label"] == "See your Anchor"
 
     def test_also_counts_toward_build(self):
         p = path(account_types={"chq": "depository", "visa": "credit"})
@@ -59,7 +64,7 @@ class TestThePath:
         assert also["cards"]["done"] is False
 
     def test_a_full_anchor_is_unveil(self):
-        p = path(anchor={**ANCHOR_NONE, "started": True, "first_stop_done": True, "earned": True})
+        p = path(anchor={**ANCHOR_NONE, "started": True, "earned": True})
         assert p["phase"] == "unveil" and p["next"]["action"] == "path"
         p2 = path(anchor={**ANCHOR_NONE, "started": True, "earned": True},
                   account_types={"tfsa": "investment"})

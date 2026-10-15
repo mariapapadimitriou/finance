@@ -135,7 +135,7 @@ class TestHomeShowsIt:
         client.put(f"/api/transactions/{both}/invested", json={"amount": 50})
         rows = client.get("/api/home").get_json()["snapshot"]["rows"]
         savings = next(r for r in rows if r["key"] == "savings")
-        assert (savings["saved"], savings["planned"]) == (1000.0, 900.0)
+        assert (savings["saved"], savings["planned"]) == (1000.0, None)   # no plan behind it (THL-230)
 
     def test_the_sum_itself(self):
         rows = [

@@ -147,7 +147,7 @@ class TestSafeToSpend:
         return history() + october()
 
     def compute(self, debt_bills=None):
-        return sts.compute(self.rows(), TODAY, savings_target=300.0, debt_bills=debt_bills)
+        return sts.compute(self.rows(), TODAY, debt_bills=debt_bills)
 
     def test_carried_balances_are_never_subtracted(self):
         """$4,860 owed, no minimums added: the number doesn't move."""
@@ -161,7 +161,7 @@ class TestSafeToSpend:
         assert bills["amount"] == round(363.48 + 175, 2) and bills["count"] == 7
         assert r["amount"] == round(642.18 - 175, 2)
         cents = {x["key"]: round(x["amount"] * 100) for x in r["rows"]}
-        assert cents["income"] - cents["bills"] - cents["spent"] - cents["set_aside"] == round(r["amount"] * 100)
+        assert cents["income"] - cents["bills"] - cents["spent"] - cents["saved"] == round(r["amount"] * 100)
 
     def test_paying_a_minimum_does_not_change_the_number(self):
         unpaid = debts.bills(build()["debts"], card_rows(), TODAY, [])

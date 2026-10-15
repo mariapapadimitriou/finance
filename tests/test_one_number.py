@@ -127,10 +127,10 @@ def test_card_only_uses_the_income_she_told_pearl_everywhere(cards):
 
 def test_saving_this_month_is_the_same_number_everywhere(full):
     home = get(full, "/api/home")
-    saved = sts_row(home, "set_aside")["saved"]
-    # Saved in (500) less taken out (150), the chest's monthly amount (100)
-    # and the $200 added to it by hand.
-    assert saved == 500.0 - 150.0 + 100.0 + 200.0
+    saved = sts_row(home, "saved")["amount"]
+    # Saved in (500) less taken out (150). The chest's monthly amount and the
+    # $200 added to it by hand come from her Anchor, not the month (THL-230).
+    assert saved == 500.0 - 150.0
     snapshot = next(r for r in home["snapshot"]["rows"] if r["key"] == "savings")
     assert snapshot["saved"] == saved
     insights = get(full, f"/api/insights/month?month={MONTH}")
@@ -139,7 +139,7 @@ def test_saving_this_month_is_the_same_number_everywhere(full):
     from finance import carryover, savings
     assert carryover.result(full.st.all_transactions(), "2026-09",
                             saved=savings.put_away_month(full.st, full.st.all_transactions(),
-                                                         "2026-09"))["saved"] == 500.0 + 100.0
+                                                         "2026-09"))["saved"] == 500.0
 
 
 def test_homes_savings_this_month_is_the_same_saving_figure(full):
@@ -147,8 +147,8 @@ def test_homes_savings_this_month_is_the_same_saving_figure(full):
     s = home["savings"]
     assert s["month"] == MONTH
     assert s["put_away"]["contributions"] == 500.0 and s["put_away"]["withdrawals"] == 150.0
-    assert s["put_away"]["chests"] == 100.0 + 200.0
-    assert s["put_away"]["net"] == sts_row(home, "set_aside")["saved"]
+    assert "chests" not in s["put_away"]
+    assert s["put_away"]["net"] == sts_row(home, "saved")["amount"]
     assert s["left_over"]["income"] == sts_row(home, "income")["amount"]
     assert s["left_over"]["spent"] == sts_row(home, "spent")["amount"]
 

@@ -533,7 +533,7 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
     }
   };
   const phases = ['protect', 'build', 'unveil'].map((key) => ({
-    key, label: { protect: 'Protect', build: 'Build', unveil: 'Unveil' }[key], state: 'done' }));
+    key, label: { protect: 'The basics', build: 'Your Anchor', unveil: 'Grow your money' }[key], state: 'done' }));
   return (
     <div className="pearl p-placement">
       <main className="pk">

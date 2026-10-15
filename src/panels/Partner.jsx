@@ -33,7 +33,7 @@ export function BeforeYouGo({ name, busy = false, error = '', onGo, onClose }) {
     { title: `You’ll leave Pearl for ${name}’s site`, text: 'A registered investment provider in Canada.' },
     { title: `${name} does the rest`,
       text: 'They check your ID, ask about your goals and suggest what fits. Pearl doesn’t recommend investments.' },
-    { title: 'Come back and tell us', text: 'We’ll mark Unveil done.' },
+    { title: 'Come back and tell us', text: 'We’ll mark the milestone done.' },
   ];
   return (
     <Dialog labelledBy="gr-go-title" onClose={onClose}>
@@ -85,11 +85,11 @@ export function OpenedOne({ busy = false, error = '', onConfirm, onClose }) {
     <Dialog labelledBy="gr-opened-title" onClose={onClose}>
       <Mark phase="unveil" width={77} />
       <h2 className="pk-h1 gr-dialog-title" id="gr-opened-title">You opened your first investment account</h2>
-      <p className="pk-muted">We’ll mark Unveil done. We don’t see what you invest in or how much, and we won’t ask.</p>
+      <p className="pk-muted">We’ll mark the milestone done. We don’t see what you invest in or how much, and we won’t ask.</p>
       {error && <p className="pj-field-note" role="alert">{error}</p>}
       <div className="gr-dialog-actions">
         <button type="button" className="in-text-btn" onClick={onClose}>Go back</button>
-        <PButton onClick={onConfirm} disabled={busy}>{busy ? 'Saving…' : 'Mark Unveil done'}</PButton>
+        <PButton onClick={onConfirm} disabled={busy}>{busy ? 'Saving…' : 'Mark it done'}</PButton>
       </div>
     </Dialog>
   );
@@ -105,7 +105,7 @@ export function PartnerCard({ partner, protectDone, primary = true, busy = false
   if (!protectDone) {
     return (
       <section className="hm-card in-card" aria-labelledby="gr-partner-title">
-        <p className="pk-overline">Opens after Protect</p>
+        <p className="pk-overline">Opens once the basics are done</p>
         <h2 className="pk-h2" id="gr-partner-title">Open your first account</h2>
         <p className="pk-label pk-muted">Once your income covers your Essentials for a month, this opens.
           Learning is open now.</p>

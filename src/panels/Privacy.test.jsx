@@ -85,7 +85,7 @@ describe('THL-115 T-01 to T-04 How we protect you', () => {
       expect(store).toContain(s);
     expect(store).not.toContain('Start fresh');
     const share = text(DOCS.share.render());
-    for (const s of ['Who sees your data', 'Plaid', 'Needed', 'Your choice', 'Unveil phase',
+    for (const s of ['Who sees your data', 'Plaid', 'Needed', 'Your choice', 'ready to grow your money',
       'We don’t sell your data, and we don’t show you ads.']) expect(share).toContain(s);
     const legal = text(DOCS.legal.render());
     expect(legal).toContain('Privacy');

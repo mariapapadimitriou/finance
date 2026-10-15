@@ -715,7 +715,7 @@ class TestGrowthProjections:
         unveil = (SRC / "panels" / "Unveil.jsx").read_text(encoding="utf-8")
         partner = (SRC / "panels" / "Partner.jsx").read_text(encoding="utf-8")
         assert "I’ve opened one elsewhere" in partner and "I opened an account elsewhere" in partner
-        assert "onReport={() => nav.show('unveil')}" in unveil and "Mark Unveil done" in unveil
+        assert "onReport={() => nav.show('unveil')}" in unveil and "Mark it done" in unveil
         assert "nav.show('done')" in unveil
 
     def test_every_chart_has_a_table_for_a_screen_reader(self):
@@ -738,7 +738,7 @@ class TestGrowthRest:
         router = (SRC / "router.js").read_text(encoding="utf-8")
         assert "LEARN_PATH = '/growth/learn'" in router
         assert "`${PATH_PATH}/path/${step}`" in router
-        for step in ("income", "bills", "essentials", "first_stop", "full", "saved_more", "cards",
+        for step in ("income", "bills", "essentials", "setup", "full", "saved_more", "cards",
                      "invest"):
             assert f"'{step}'" in router, step
         assert "from=partner" in router or "'partner'" in router
@@ -784,3 +784,37 @@ class TestGrowthRest:
         assert "Pearl may be paid if you open an account." in partner
         # No partner's name is written into the app.
         assert not re.search(r"Wealthsimple|Questrade|Example Invest", partner + unveil)
+
+
+class TestNoPhaseNames:
+    """THL-238 (2026-10-15): Pearl no longer uses named phases. Nothing she
+    reads says Protect, Build, Unveil or Shine; the keys live on inside."""
+
+    NAMES = re.compile(r"\b(Protect|Build|Unveil|Shine)\b")
+
+    def _copy(self, text: str) -> list[str]:
+        """Every string literal and JSX text node, comments stripped."""
+        text = re.sub(r"\{/\*.*?\*/\}", "", text, flags=re.S)
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+        text = re.sub(r"^\s*//.*$", "", text, flags=re.M)
+        out = re.findall(r"'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"|`((?:[^`\\]|\\.)*)`", text)
+        strings = [a or b or c for a, b, c in out]
+        strings += re.findall(r">([^<>{}]+)<", text)
+        # Import paths and file names aren't copy.
+        return [s for s in strings if not re.match(r"^\.{0,2}/|\.jsx?$", s.strip())]
+
+    def test_nothing_she_reads_names_a_phase(self):
+        hits = []
+        for path in sorted(SRC.rglob("*.js*")):
+            if ".test." in path.name:
+                continue
+            for s in self._copy(path.read_text(encoding="utf-8")):
+                if self.NAMES.search(s):
+                    hits.append(f"{path.relative_to(SRC)}: {s.strip()[:80]}")
+        assert hits == [], "\n".join(hits)
+
+    def test_the_path_and_the_welcome_email_are_milestones(self):
+        from finance import emails, milestones
+        for s in [*milestones.PHASE_LABELS.values(), *milestones.PHASE_TEXT.values(),
+                  emails.TAGLINE, *[t for pair in emails.WELCOME_STEPS for t in pair]]:
+            assert not self.NAMES.search(s), s

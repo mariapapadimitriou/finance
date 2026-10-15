@@ -154,7 +154,7 @@ export function usualMonths(s) {
 const LINE_NOTES = { estimate: 'estimate', late: 'usually here by now' };
 
 // What a row says instead of "$0.00" (S1: never $0 on Home).
-const NOTHING = { income: 'None yet', bills: 'None', spent: 'Nothing yet', set_aside: 'Done' };
+const NOTHING = { income: 'None yet', bills: 'None', spent: 'Nothing yet', saved: 'Nothing yet' };
 
 /** The sheet's rows and total (X-01, X-02), in the order they're subtracted. */
 export function sheetRows(s) {
@@ -206,10 +206,10 @@ export function sheetRows(s) {
         lines: r.lines,
       };
     }
+    // THL-230: only money she actually moved to savings comes off the month.
     return {
-      key: r.key,
-      label: r.goal === 'anchor' ? 'Set aside for your Anchor' : 'Set aside for your saving goal',
-      detail: `Your monthly goal is ${shown(r.target)}${r.saved > 0 ? ` · ${shown(r.saved)} saved so far` : ''}`,
+      key: r.key, label: 'Moved to savings this month',
+      detail: 'What you actually put away. Chests fill from your Anchor, not your month.',
       amount: r.amount, lines: [],
     };
   });
@@ -737,9 +737,9 @@ export function ConnectCard({ failed, onLink, primary = true }) {
 }
 
 const PATH = [
-  { phase: 'protect', name: 'Protect', text: 'Know what’s coming in and going out' },
-  { phase: 'build', name: 'Build', text: 'Build your Anchor' },
-  { phase: 'unveil', name: 'Unveil', text: 'Start growing your money' },
+  { phase: 'protect', name: 'The basics', text: 'Know what’s coming in and going out' },
+  { phase: 'build', name: 'Your Anchor', text: 'Three months of Essentials, for big surprises' },
+  { phase: 'unveil', name: 'Grow your money', text: 'Start growing what you’ve built' },
 ];
 
 /** E-01: the milestone path, as a preview. */
@@ -922,37 +922,46 @@ export function Snapshot({ snap }) {
   );
 }
 
-const PHASE_WORDS = { protect: 'Protect', build: 'Build', unveil: 'Unveil' };
+// What each stretch of the path is called, when the server hasn't said
+// (THL-238: no phase names).
+const PHASE_WORDS = { protect: 'The basics', build: 'Your Anchor', unveil: 'Grow your money' };
 
-/** "Build · step 2 of 2" (GR-05). */
-export function stepWords(path) {
-  const phase = PHASE_WORDS[path.phase];
-  return path.step ? `${phase} · step ${path.step} of ${path.of}` : `${phase} · every step done`;
+/** The label of the stretch she's in. */
+export function phaseLabel(path) {
+  return path.phases?.find((p) => p.key === path.phase)?.label ?? PHASE_WORDS[path.phase] ?? '';
 }
 
-/** The path card (THL-129 GR-05): the phases, where she is, and the one next
- * step, which is Home's primary action. */
+/** "Your Anchor · step 2 of 2" (GR-05); "1 of 2 steps done" (H-01). */
+export function stepWords(path) {
+  const phase = phaseLabel(path);
+  return path.step ? `${phase} · step ${path.step} of ${path.of}` : `${phase} · every step done`;
+}
+export function stepsDone(path) {
+  const done = path.step ? path.step - 1 : path.of;
+  return `${done} of ${path.of} step${path.of === 1 ? '' : 's'} done`;
+}
+
+/** The path card (THL-129 GR-05, as H-01 draws it): where she is, how many
+ * steps are done, and the one next step, which is Home's primary action. */
 export function PathCard({ path, onPath, primary = true }) {
+  const done = path.step ? path.step - 1 : path.of;
   return (
     <section className="hm-card hm-pathcard" aria-labelledby="hm-pathcard-title">
       <div className="hm-row-between">
-        <p className="pk-overline" id="hm-pathcard-title">Your path</p>
+        <p className="pk-overline accent" id="hm-pathcard-title">Your path</p>
         <button type="button" className="hm-link" onClick={() => onPath?.('path')}>
           See your path
         </button>
       </div>
-      <ol className="hm-phases" aria-label="Phases">
-        {path.phases.map((ph) => (
-          <li key={ph.key} className={`hm-phase ${ph.state}`}
-              aria-current={ph.state === 'now' ? 'step' : undefined}>
-            <Mark phase={ph.key} width={38} />
-            <span>{ph.label}</span>
-          </li>
-        ))}
-      </ol>
+      <div className="hm-pathcard-now">
+        <Mark phase={path.phase} width={48} />
+        <h2 className="pk-h3">{phaseLabel(path)}</h2>
+      </div>
+      <ProgressBar label={phaseLabel(path)} value={stepsDone(path)} share={path.of ? done / path.of : 0}
+                   showLabel={false} tone={done >= path.of ? 'positive' : 'brand'} />
+      <p className="pk-label pk-muted">{stepsDone(path)}</p>
       <div className="hm-pathcard-next">
         <div className="hm-row-text">
-          <span className="pk-label pk-muted">{stepWords(path)}</span>
           <span className="pk-h3">{path.next.text}</span>
         </div>
         {primary && (
@@ -970,7 +979,7 @@ export function IncomeFirstCard({ phase, onAdd }) {
       <div className="hm-income-first-head">
         <Mark phase={phase} width={52} />
         <div className="hm-row-text">
-          <p className="pk-overline accent">{`Your path · ${PHASE_WORDS[phase]}`}</p>
+          <p className="pk-overline accent">Your path</p>
           <h2 className="pk-h3" id="hm-income-first-title">First, add your income</h2>
         </div>
       </div>

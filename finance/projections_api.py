@@ -254,7 +254,8 @@ def unveil(st) -> dict:
     checklist = [
         {"key": "protect", "done": path["protect_done"], **_protect_left(path)},
         {"key": "anchor", "done": bool(anchor["earned"]), "started": anchor["started"],
-         "counted": _c(anchor["counted"]), "target": _c(anchor["target"])},
+         "counted": _c(anchor["counted"]), "target": _c(anchor["target"]),
+         "months": anchor.get("months"), "usual": anchor.get("usual")},
         {"key": "cards", **steady},
         # "Read the basics": the five Learn modules (THL-134 GR-14).
         learn.basics(st),

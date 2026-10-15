@@ -17,10 +17,10 @@ import './growth.css';
  *                          what would help, with the one action that does.
  * GR-03 Step done          Why it's done, the figures, and that earned steps
  *                          stay earned.
- * GR-04 Keep it going      Protect is done and stays done (THL-53), but the
- *                          last full month's Essentials came to more than its
- *                          income. No red, nothing to fix; "Mark October as
- *                          unusual" (THL-59) and the month in Insights.
+ * GR-04 Keep it going      The basics are done and stay done (THL-53), but
+ *                          the last full month's Essentials came to more than
+ *                          its income. No red, nothing to fix; "Mark October
+ *                          as unusual" (THL-59) and the month in Insights.
  *
  * The figures come from `/api/path/step/<key>`; the words are made here.
  */
@@ -42,13 +42,13 @@ const DONE_TITLES = {
   income: 'Your income is confirmed',
   bills: 'Your bills are confirmed',
   essentials: 'Your income covered your Essentials',
-  first_stop: 'You reached your Anchor’s first stop',
-  full: 'Your Anchor is full',
+  setup: 'You set up your Anchor',
+  full: 'Your Anchor covers 3 months',
   saved_more: 'You saved more than you spent',
   cards: 'Your card balances held steady',
   invest: 'You opened your first investment account',
 };
-const MONTHLY = ['essentials', 'first_stop', 'full', 'saved_more', 'cards'];
+const MONTHLY = ['essentials', 'full', 'saved_more', 'cards'];
 
 const article = (label) => (label === 'Not sure' ? 'an investing account'
   : label === 'Non-registered' ? 'a non-registered account'
@@ -59,12 +59,12 @@ const held = (n) => (n > 0.004 ? money(n) : 'Nothing yet');
 
 const lowerFirst = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 
-/** "Your next step in Build stays the same: add to your Anchor." */
+/** "Your next step stays the same: grow your Anchor to 3 months of Essentials." */
 export function nextSentence(d) {
   const text = d.next?.text ?? '';
   if (!text.startsWith('Next: ')) return '';
-  const phase = { protect: 'Protect', build: 'Build', unveil: 'Unveil' }[d.current_phase];
-  return `Your next step in ${phase} stays the same: ${lowerFirst(text.slice(6))}`;
+  const [first] = text.slice(6).split(', so ');
+  return `Your next step stays the same: ${lowerFirst(first).replace(/\.$/, '')}.`;
 }
 
 /**
@@ -122,49 +122,36 @@ export function stepCopy(d, nav = {}) {
         out.help = { text: `We check on ${dayLong(d.next_check)}.`, actions: [] };
       }
       break;
-    case 'first_stop':
-      out.why.rows = [{ label: 'First stop', value: money(f.first_stop) }];
-      if (f.started) out.why.rows.push({ label: 'In your Anchor now', value: held(f.counted) });
-      out.how = 'Your Anchor counts what’s in the accounts you chose for it.';
+    case 'setup':
       if (done) {
-        out.why.text = `Your Anchor passed its first stop of ${money(f.first_stop)}.`;
-      } else if (f.started) {
-        out.why.text = `Your Anchor’s first stop is ${money(f.first_stop)}: a cushion for a small surprise.`;
-        out.why.total = { label: 'Still to go', value: money(f.to_go) };
-        out.help = { text: 'Anything you add moves it along.',
-                     actions: [{ label: 'Add to your Anchor', go: goals('anchor') }] };
+        out.why.text = `You picked the savings accounts that make up your Anchor${f.accounts > 0 ? ` (${f.accounts})` : ''}.`;
+        if (f.counted > 0) out.why.rows.push({ label: 'Your Anchor now', value: money(f.counted) });
+        out.how = 'Your Anchor is what those accounts hold, less what your treasure chests hold.';
       } else {
-        out.why.text = `Start your Anchor, and its first stop is ${money(f.first_stop)}.`;
-        out.how = null;
-        out.help = { text: 'Your Anchor is a cushion for surprises, in an account you choose.',
-                     actions: [{ label: 'Start your Anchor', go: goals('start') }] };
+        out.why.text = 'Pick the savings accounts that make up your Anchor. Pearl adds them up and takes out what your chests hold.';
+        out.help = { text: 'It takes a minute. Nothing moves; Pearl only reads the balances.',
+                     actions: [{ label: 'Set up your Anchor', go: goals('start') }] };
       }
       break;
     case 'full': {
-      const month1 = !f.size || f.size === 1;
-      const targetLabel = month1 ? 'Your usual month of Essentials' : 'Your target';
-      if (f.target > 0) out.why.rows.push({ label: targetLabel, value: money(f.target) });
-      if (f.started) out.why.rows.push({ label: 'In your Anchor now', value: held(f.counted) });
-      out.how = month1
-        ? 'Your usual month of Essentials is the average of your last full months, rounded. Your Anchor counts what’s in the accounts you chose for it.'
-        : 'Your target is the one you set. Your Anchor counts what’s in the accounts you chose for it.';
+      if (f.target > 0) out.why.rows.push({ label: '3 months of your usual Essentials', value: money(f.target) });
+      if (f.started) out.why.rows.push({ label: 'Your Anchor now', value: held(f.counted) });
+      out.how = 'A usual month of Essentials is the average of your last 3 full months, rounded; unusual months are left out. Your Anchor is what the accounts you picked hold, less what your treasure chests hold.';
       if (done) {
-        out.why.text = month1 ? 'Your Anchor holds one month of your usual Essentials.'
-          : 'Your Anchor reached the target you set.';
+        out.why.text = 'Your Anchor covers 3 months of your usual Essentials.';
       } else {
-        out.why.text = month1 ? 'Your Anchor is done when it holds one month of your usual Essentials.'
-          : 'Your Anchor is done when it reaches the target you set.';
+        out.why.text = 'This is done when your Anchor, the cash savings you choose less what your chests hold, covers 3 months of your usual Essentials.';
         if (f.started && f.to_go > 0) out.why.total = { label: 'Still to go', value: money(f.to_go) };
         if (f.started) {
-          const pace = f.pace > 0.004 ? `You’re adding about ${money(f.pace)} a month.` : '';
+          const chests = f.chests_monthly > 0.004 ? `: what you put away, less the ${money(f.chests_monthly)} your chests take` : '';
+          const pace = f.pace > 0.004 ? `Your Anchor grows about ${money(f.pace)} a month${chests}.` : '';
           const when = f.projection
-            ? ` At this pace your Anchor is likely full between ${rangeWords(f.projection.from, f.projection.to)}.` : '';
-          out.help = { text: pace ? `${pace}${when}` : 'Anything you add moves it along.',
-                       actions: [{ label: 'Add to your Anchor', go: goals('anchor') },
-                                 { label: 'Change the target', go: goals('anchor'), variant: 'secondary' }] };
+            ? ` At this pace you’ll likely reach 3 months between ${rangeWords(f.projection.from, f.projection.to)}.` : '';
+          out.help = { text: pace ? `${pace}${when}` : 'Anything you put away moves it along.',
+                       actions: [{ label: 'See your Anchor', go: goals('anchor') }] };
         } else {
-          out.help = { text: 'Start your Anchor, and we’ll show how it fills.',
-                       actions: [{ label: 'Start your Anchor', go: goals('start') }] };
+          out.help = { text: 'Set up your Anchor, and we’ll show how it grows.',
+                       actions: [{ label: 'Set up your Anchor', go: goals('start') }] };
         }
       }
       break;
@@ -203,7 +190,7 @@ export function stepCopy(d, nav = {}) {
         if (f.report) out.extra = { label: 'Change the kind of account', go: () => nav.toUnveil?.() };
       } else {
         out.why.text = 'This is done when you open your first investment account, wherever you choose.';
-        out.help = { text: 'When you’re ready, tell Pearl and Unveil is done. Guidance, not a gate.',
+        out.help = { text: 'When you’re ready, tell Pearl and that milestone is done. Guidance, not a gate.',
                      actions: [{ label: 'I’ve opened one', go: () => nav.toUnveil?.() },
                                { label: 'See the checklist', go: () => nav.toReady?.(), variant: 'link' }] };
       }
@@ -346,7 +333,7 @@ export function KeepItGoing({ d, nav }) {
         <p className="pj-body">{lapseLine(f)}</p>
         <Rows rows={[{ label: 'Income', value: money(f.income) },
                      { label: 'Essentials', value: money(f.essentials) }]} />
-        <p className="pj-body gr-rule">Protect stays done. Nothing to fix; this is just so you know.</p>
+        <p className="pj-body gr-rule">The basics stay done. Nothing to fix; this is just so you know.</p>
         <div className="gr-actions">
           {unusual ? (
             <p className="pk-label pk-muted" role="status">

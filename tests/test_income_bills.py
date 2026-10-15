@@ -13,8 +13,7 @@ import pytest
 from finance import income_bills as ib, milestones, safe_to_spend as sts
 from test_safe_to_spend import TODAY, history, october, row, tx
 
-ANCHOR = {"started": False, "first_stop_done": False, "earned": False,
-          "first_stop": 500, "target": 0}
+ANCHOR = {"started": False, "earned": False, "target": 0, "counted": 0, "months": None}
 
 
 def rows():
@@ -224,7 +223,7 @@ class TestThePathUsesTheAnswers:
         assert p["steps"][1]["done"] is True
 
     def test_before_the_check_the_earlier_reading_holds(self):
-        p = self.path(rows(), sts.compute(rows(), TODAY, savings_target=300.0), None)
+        p = self.path(rows(), sts.compute(rows(), TODAY), None)
         assert p["phase"] == "build"
 
 

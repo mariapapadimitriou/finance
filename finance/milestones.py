@@ -1,15 +1,19 @@
-"""The path: Protect → Build → Unveil, and the one next step (THL-129).
+"""The path: one milestone path in three stretches, and the one next step
+(THL-129; reworded without phase names, THL-238, 2026-10-15).
 
-Steps, as THL-129 (2026-10-12) lists them:
+The stretches keep their internal keys (`protect`, `build`, `unveil`) so
+settings, CSS and the shell artwork stay put; what she sees is
+`PHASE_LABELS`. Steps, as THL-129 lists them and THL-230 changes them:
 
-* Protect: income confirmed; bills confirmed; last full month's income
-  covered Essentials.
-* Build: the Anchor's first stop ($500); the Anchor full (one month of
-  Essentials). Also counts: saved more than spent in 2 of the last 3 months;
-  no card balance growing.
-* Unveil: first investment account opened — an investment account linked,
-  or her own word for it (THL-195 GR-37: "Opened an investing account?"
-  asks only the kind of account, never where, a login or a balance).
+* The basics (`protect`): income confirmed; bills confirmed; last full
+  month's income covered Essentials.
+* Your Anchor (`build`): the Anchor set up (the savings accounts picked);
+  the Anchor covering three months of usual Essentials. Also counts: saved
+  more than spent in 2 of the last 3 months; no card balance growing.
+* Grow your money (`unveil`): first investment account opened — an
+  investment account linked, or her own word for it (THL-195 GR-37:
+  "Opened an investing account?" asks only the kind of account, never
+  where, a login or a balance).
 
 Income and bills are confirmed in the income and bills check (THL-45,
 THL-127, `income_bills`). Income is confirmed once she has said yes to her
@@ -18,7 +22,8 @@ confirmed them (I-04). Someone who hasn't run the check yet keeps the
 earlier reading: income counts once Pearl can see regular pay or she has
 told us what she earns (a cautious guess from irregular deposits is not a
 confirmation), and bills once at least one is found or she has told us her
-rent. Protect, once done, stays done (THL-53): a rough month doesn't undo it.
+rent. The basics, once done, stay done (THL-53): a rough month doesn't undo
+them.
 
 Also here: what each linked bank's connection needs (THL-120), from Plaid's
 error code.
@@ -33,7 +38,11 @@ from .categorize import group_of
 from .usual_month import covered_months
 
 PHASES = ("protect", "build", "unveil")
-PHASE_LABELS = {"protect": "Protect", "build": "Build", "unveil": "Unveil"}
+# What each stretch of the path is called. No phase names (THL-238).
+PHASE_LABELS = {"protect": "The basics", "build": "Your Anchor", "unveil": "Grow your money"}
+PHASE_TEXT = {"protect": "Income, bills and Essentials covered",
+              "build": "Three months of Essentials, for big surprises",
+              "unveil": "Your first investment account"}
 
 
 def _month_income_and_spending(transactions, month: str,
@@ -102,10 +111,10 @@ def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int
     `confirm` is her income and bills check (`income_bills.load`);
     `invest_reported` is her saying she opened an investing account (GR-37).
 
-    `lapse` is GR-04's "Keep it going": Protect is done and stays done, but
-    the last full month's Essentials came to more than its income. With
-    `every_step`, `all` holds every phase's steps, for a step's own screen
-    (GR-02, GR-03), whichever phase she's in."""
+    `lapse` is GR-04's "Keep it going": the basics are done and stay done,
+    but the last full month's Essentials came to more than its income. With
+    `every_step`, `all` holds every stretch's steps, for a step's own screen
+    (GR-02, GR-03), wherever she is."""
     types = account_types or {}
     months = covered_months(transactions, today)
     last = months[-1] if months else None
@@ -133,11 +142,12 @@ def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int
 
     started = bool(anchor.get("started"))
     build = [
-        {"key": "first_stop", "label": "Reach your Anchor’s first stop",
-         "done": started and bool(anchor.get("first_stop_done")),
-         "first_stop": anchor.get("first_stop")},
-        {"key": "full", "label": "Fill your Anchor",
-         "done": bool(anchor.get("earned")), "target": anchor.get("target") or None},
+        {"key": "setup", "label": "Set up your Anchor", "done": started,
+         "started_on": anchor.get("started_on")},
+        {"key": "full", "label": "Grow your Anchor to 3 months",
+         "done": bool(anchor.get("earned")), "target": anchor.get("target") or None,
+         "counted": anchor.get("counted"), "months": anchor.get("months"),
+         "usual": anchor.get("usual")},
     ]
     saving_months = sum(1 for m in months
                         if _month_income_and_spending(transactions, m, income_of)[0]
@@ -169,7 +179,7 @@ def path(transactions, today: date, sts: dict, *, anchor: dict, bills_found: int
     return {
         **extra,
         "phase": phase,
-        "phases": [{"key": p, "label": PHASE_LABELS[p],
+        "phases": [{"key": p, "label": PHASE_LABELS[p], "text": PHASE_TEXT[p],
                     "state": "done" if i < order else "now" if i == order else "ahead"}
                    for i, p in enumerate(PHASES)],
         "steps": steps,
@@ -195,10 +205,11 @@ def _next(phase: str, step: str | None, started: bool) -> dict:
         }[step]
     if phase == "build":
         if not started:
-            return {"text": "Next: start your Anchor, so a surprise bill doesn’t become a problem.",
-                    "label": "Start your Anchor", "action": "goals"}
-        return {"text": "Next: add to your Anchor.", "label": "Add to your Anchor",
-                "action": "goals"}
+            return {"text": "Next: set up your Anchor, so a big surprise doesn’t land on your credit card.",
+                    "label": "Set up your Anchor", "action": "goals"}
+        return {"text": "Next: grow your Anchor to 3 months of Essentials, so a big surprise "
+                        "like a car repair doesn’t land on your credit card.",
+                "label": "See your Anchor", "action": "goals"}
     if step:
         return {"text": "Next: see whether you’re ready to invest.", "label": "See your path",
                 "action": "path"}
