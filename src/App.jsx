@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import HomePanel from './panels/HomePanel.jsx';
 import InsightsPanel from './panels/InsightsPanel.jsx';
+import CalendarPanel from './panels/CalendarPanel.jsx';
+import QuickSort from './panels/QuickSort.jsx';
 import WinsPanel from './panels/WinsPanel.jsx';
 import LearnPanel from './panels/LearnPanel.jsx';
 import { MomentScreen } from './panels/Moments.jsx';
@@ -26,13 +28,13 @@ import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
-  clearUrl, fromPartner, isInsightsUrl, isLearnUrl, isPathUrl, isProjectionsUrl, isReviewUrl,
-  isSaveUrl, readTxUrl, redirectOldUrl, setGoalsIntent, writeInsightsUrl, writeLearnUrl,
+  clearUrl, fromPartner, isCalendarUrl, isInsightsUrl, isLearnUrl, isPathUrl, isProjectionsUrl, isReviewUrl,
+  isSaveUrl, readTxUrl, redirectOldUrl, setGoalsIntent, writeCalendarUrl, writeInsightsUrl, writeLearnUrl,
   writePathUrl, writeProjectionsUrl, writeSaveUrl,
   writeReviewUrl,
 } from './router.js';
 import {
-  getAccounts, getAuthStatus, getCategories, getMoments, getReview, getSummary, logout,
+  getAccounts, getAuthStatus, getCategories, getMoments, getQuickSort, getReview, getSummary, logout,
   setLedgerCurrency, setUnauthorizedHandler, syncPlaid,
 } from './api.js';
 
@@ -55,7 +57,20 @@ const WORKS_WHEN_EMPTY = ['home', 'path', 'projections', 'learn', 'debts', 'budg
 // Pages that draw their section pills themselves, under their own title
 // (Growth › Path, THL-129 GR-01; Insights, THL-196 GR-28; Projections, THL-197
 // GR-33; Learn, THL-134 GR-11), so the shell's strip would say it twice.
-const OWN_SECTIONS = ['path', 'insights', 'projections', 'learn', 'budgets', 'debts',
+// Run `fn` once no sheet or dialog is open (the notifications prime, a
+// carry-over question), so the quick sort never stacks on another one.
+function whenNoDialog(fn) {
+  const open = () => !!document.querySelector('.pk-scrim, .pk-dialog-scrim');
+  // The page's own sheets arrive a moment after it loads, so the first look
+  // waits, and the prompt needs a short quiet spell with nothing open.
+  let clear = 0;
+  const tick = setInterval(() => {
+    clear = open() ? 0 : clear + 1;
+    if (clear >= 3) { clearInterval(tick); fn(); }
+  }, 250);
+}
+
+const OWN_SECTIONS = ['path', 'insights', 'calendar', 'projections', 'learn', 'budgets', 'debts',
                       'transactions', 'review', 'goals'];
 
 // An old Growth address (before THL-248) becomes its new one before anything
@@ -102,11 +117,12 @@ export default function App() {
   // /transactions… opens the list (a link from anywhere lands there); every
   // other address opens Home, where the app lands (THL-44, THL-125).
   const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() ? 'transactions'
-    : isPathUrl() ? 'wins' : isInsightsUrl() ? 'cashflow'
+    : isPathUrl() ? 'wins' : isInsightsUrl() || isCalendarUrl() ? 'cashflow'
       : isProjectionsUrl() || isLearnUrl() || isSaveUrl() ? 'save' : 'home'));
   const [panel, setPanel] = useState(() => (isReviewUrl() ? 'review'
     : readTxUrl() ? 'transactions' : isPathUrl() ? 'path' : isInsightsUrl() ? 'insights'
-      : isProjectionsUrl() ? 'projections' : isLearnUrl() ? 'learn' : isSaveUrl() ? 'goals' : 'home'));
+      : isCalendarUrl() ? 'calendar'
+        : isProjectionsUrl() ? 'projections' : isLearnUrl() ? 'learn' : isSaveUrl() ? 'goals' : 'home'));
 
   /**
    * Go to a destination named either way.
@@ -126,6 +142,7 @@ export default function App() {
     if (target === 'review') writeReviewUrl();
     else if (target === 'path') writePathUrl();
     else if (target === 'insights') { if (!isInsightsUrl()) writeInsightsUrl(); }
+    else if (target === 'calendar') { if (!isCalendarUrl()) writeCalendarUrl(); }
     else if (target === 'projections') { if (!isProjectionsUrl()) writeProjectionsUrl(); }
     else if (target === 'learn') { if (!isLearnUrl()) writeLearnUrl(); }
     else if (target === 'goals') { if (!isSaveUrl()) writeSaveUrl(); }
@@ -159,6 +176,14 @@ export default function App() {
   // A phase done that she hasn't seen the moment for (THL-130 GR-08 to
   // GR-10), asked once per app open.
   const [moment, setMoment] = useState(null);
+  // THL-254: quick sort of new transactions Pearl isn't sure of, offered
+  // once a day on open, after any moment has played.
+  const [quickSort, setQuickSort] = useState(null);
+  const askQuickSort = useCallback(() => {
+    getQuickSort().then((q) => {
+      if (q?.show) whenNoDialog(() => setQuickSort(q));
+    }).catch(() => {});
+  }, []);
   const askedMoment = useRef(false);
   // A-14: signed out for being idle in this page's life, so signing back in
   // only needs the address put back; after a reload it needs a fresh load.
@@ -191,11 +216,12 @@ export default function App() {
       if (isReviewUrl()) { setTab('transactions'); setPanel('review'); }
       else if (isPathUrl()) { setTab('wins'); setPanel('path'); }
       else if (isInsightsUrl()) { setTab('cashflow'); setPanel('insights'); }
+      else if (isCalendarUrl()) { setTab('cashflow'); setPanel('calendar'); }
       else if (isProjectionsUrl()) { setTab('save'); setPanel('projections'); }
       else if (isLearnUrl()) { setTab('save'); setPanel('learn'); }
       else if (isSaveUrl()) { setTab('save'); setPanel('goals'); }
       else if (readTxUrl()) { setTab('transactions'); setPanel('transactions'); }
-      else if (['transactions', 'review', 'path', 'insights', 'projections', 'learn', 'goals']
+      else if (['transactions', 'review', 'path', 'insights', 'calendar', 'projections', 'learn', 'goals']
         .includes(panelRef.current)) {
         setTab('home'); setPanel('home');
       }
@@ -282,8 +308,10 @@ export default function App() {
       else if (m.partner_welcome && panelRef.current === 'home') {
         writeProjectionsUrl('ready');
         setTab('save'); setPanel('projections');
+      } else {
+        askQuickSort();
       }
-    }).catch(() => {});
+    }).catch(() => askQuickSort());
   }, [signedIn, data]);
 
   if (signedIn === null) {
@@ -350,7 +378,7 @@ export default function App() {
   if (moment) {
     return (
       <div className="gr-moment-page">
-        <MomentScreen moment={moment} onClose={() => setMoment(null)} go={go}
+        <MomentScreen moment={moment} onClose={() => { setMoment(null); askQuickSort(); }} go={go}
                       toReady={() => { writeProjectionsUrl('ready'); go('projections'); }}
                       toAnchor={(view) => { setGoalsIntent({ view }); go('goals'); }} />
       </div>
@@ -385,18 +413,23 @@ export default function App() {
       counts={{ transactions: data.review }}
       // The Pearl pages draw their own header (overline + title). Insights
       // has its own month switcher too (GR-28), so the shell picks no month.
-      ownTitle={['home', 'path', 'insights', 'projections', 'learn', 'debts', 'budgets',
+      ownTitle={['home', 'path', 'insights', 'calendar', 'projections', 'learn', 'debts', 'budgets',
                  'transactions', 'review', 'goals', 'profile', 'accounts', 'rules', 'security',
                  'income', 'notifications', 'consent', 'data', 'protect'].includes(panel)}
       ownSections={OWN_SECTIONS.includes(panel)}
       onSignOut={signOut}
     >
       {panel === 'income' && <IncomeBillsPanel onTab={go} onChanged={load} version={version} />}
+      {quickSort && (
+        <QuickSort data={quickSort} categories={categories} onClose={() => setQuickSort(null)}
+                   onChanged={load} />
+      )}
       {panel === 'home' && <HomePanel onTab={go} onChanged={load} version={version} />}
       {panel === 'path' && <WinsPanel onTab={go} version={version} />}
       {panel === 'learn' && <LearnPanel onTab={go} version={version} />}
       {panel === 'debts' && <DebtsPanel onTab={go} onChanged={load} version={version} />}
       {panel === 'insights' && <InsightsPanel onTab={go} version={version} />}
+      {panel === 'calendar' && <CalendarPanel onTab={go} version={version} />}
       {panel === 'projections' && (
         <ProjectionsPanel onTab={go} onChanged={load} version={version} />
       )}

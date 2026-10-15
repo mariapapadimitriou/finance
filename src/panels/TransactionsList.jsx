@@ -10,6 +10,7 @@ import { BatchMarkPanel, BatchTagPanel } from './BatchPanels.jsx';
 import { SortRangePanel, SortedTogetherPanel } from './RangePanels.jsx';
 import { TxFiltersPanel, requestFor } from './TxFilters.jsx';
 import { CashFlowTabs } from './InsightsParts.jsx';
+import { shortDate } from './HomePanel.jsx';
 import { duplicateAlert } from './Duplicates.jsx';
 import {
   initialState, isTextTarget, keyAction, reduce, rowName, selectRange, targets,
@@ -155,7 +156,7 @@ function fromUrl() {
 const DEFAULTS = () => ({ month: thisMonth(), account: '', group: '', category: '',
                           excluded: '', joint: '', recurring: '', from: '',
                           tag: '', counts: '', amount: '', pending: '', look: '', merchant: '',
-                          by: '', owed: '' });
+                          by: '', owed: '', day: '' });
 
 /**
  * The Account filter's options: the same accounts, names and order as
@@ -272,7 +273,7 @@ export default function TransactionsList({ summary, categories, accounts, review
   const filtered = filters.month !== thisMonth() || !!filters.account
     || !!filters.group || !!filters.category || !!filters.excluded || !!filters.joint
     || !!filters.recurring || !!filters.tag || !!filters.counts || !!filters.amount
-    || !!filters.pending || !!filters.look || !!filters.merchant || !!filters.owed;
+    || !!filters.pending || !!filters.look || !!filters.merchant || !!filters.owed || !!filters.day;
   // Back to TX-01's defaults; the search, if any, is its own control.
   const clearFilters = () => choose(DEFAULTS());
   const clearSearch = () => { setQuery(''); choose({ q: '' }); };
@@ -656,7 +657,7 @@ export default function TransactionsList({ summary, categories, accounts, review
         <div className="tx-chips">
           <FilterChip label="Month" value={filters.month} options={monthOptions}
                       active={filters.month !== thisMonth()}
-                      onChange={(v) => choose({ month: v })} />
+                      onChange={(v) => choose({ month: v, day: '' })} />
           <FilterChip label="Account" value={filters.account} options={accountOptions}
                       active={!!filters.account} onChange={(v) => choose({ account: v })} />
           <FilterChip label="Category" value={categoryValue} options={categoryOptions}
@@ -673,6 +674,12 @@ export default function TransactionsList({ summary, categories, accounts, review
             <button type="button" className="pk-filter active tx-toggle" aria-pressed="true"
                     onClick={() => choose({ merchant: '' })}>
               {filters.merchant} <PIcon name="x" size={14} />
+            </button>
+          )}
+          {filters.day && (
+            <button type="button" className="pk-filter active tx-toggle" aria-pressed="true"
+                    onClick={() => choose({ day: '' })}>
+              {shortDate(filters.day)} <PIcon name="x" size={14} />
             </button>
           )}
           {filters.owed && (

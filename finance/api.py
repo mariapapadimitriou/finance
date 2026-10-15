@@ -192,7 +192,8 @@ def transactions_list():
                "merchant": a.get("merchant") or None,
                "amount_min": _amount("amount_min"), "amount_max": _amount("amount_max"),
                "pending": a.get("pending") in ("1", "true"),
-               "look": a.get("look") in ("1", "true")}
+               "look": a.get("look") in ("1", "true"),
+               "day": a.get("day") or None}
     st = store()
     rows = _txlist_rows(st, excluded=a.get("excluded") in ("1", "true"),
                         joint=a.get("joint") in ("1", "true"))
@@ -1885,6 +1886,8 @@ def home():
                                  path=_path(st, txns, today, sts, state, types),
                                  review_count=review.get("count", 0), usual=usual),
         "review_count": review.get("count", 0),
+        # THL-255 CAL-06: the month strip under safe to spend.
+        "calendar": __import__("finance.calendar_view", fromlist=["strip"]).strip(st, txns, today, sts),
         "carryover": carry_question,
         # Savings so far: put away, and left over, since she started.
         "savings": savings.this_month(st, txns, today),
@@ -2613,3 +2616,4 @@ def skip_review():
 # blueprint too; imported last so they can use the helpers above.
 from . import income_bills_api, insights_api, privacy_api, profile_api, projections_api  # noqa: E402,F401,I001
 from . import growth_api, marks_api, ranges_api, transactions_extras_api, wins_api  # noqa: E402,F401
+from . import calendar_api, quick_sort_api  # noqa: E402,F401

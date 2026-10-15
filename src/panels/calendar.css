@@ -1,0 +1,115 @@
+/* Cash flow › Calendar (THL-245 CAL-01 to CAL-06, THL-255). Built on
+ * home.css and insights.css; colours from the Pearl tokens. The shading is
+ * a faint lagoon (on pace) or a faint rose (ahead), mixed with the card so
+ * it reads in both themes, and always paired with a ✓ or a ▲. */
+
+.cal-page { display: flex; flex-direction: column; gap: var(--space-5); }
+.cal-page p { margin: 0; }
+.cal-totals { width: 100%; }
+.pk .cal-card { gap: var(--space-4); align-items: stretch; }
+.cal-head { align-items: center; }
+.cal-nav { display: flex; gap: var(--space-4); }
+.cal-weekdays, .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-2); }
+.cal-weekdays .pk-overline { text-align: left; padding-left: var(--space-2); }
+
+/* ── A day ──────────────────────────────────────────────────────────────── */
+:root {
+  --cal-on: color-mix(in srgb, var(--lagoon) 26%, var(--surface-card));
+  --cal-ahead: color-mix(in srgb, var(--rose) 18%, var(--surface-card));
+}
+.pk .cal-cell {
+  position: relative; display: flex; flex-direction: column; align-items: stretch; gap: var(--space-1);
+  min-height: 104px; padding: var(--space-2); border-radius: var(--radius-sm);
+  border: 1.5px solid transparent; background: none; cursor: pointer; font: inherit; color: var(--ink);
+  text-align: left;
+}
+.pk .cal-cell:hover { border-color: var(--border-strong); }
+.pk .cal-cell.on { background: var(--cal-on); }
+.pk .cal-cell.ahead { background: var(--cal-ahead); }
+.pk .cal-cell.today { border-color: var(--action); }
+.pk .cal-cell.outside .cal-num, .pk .cal-cell.outside .cal-due { color: var(--ink-muted); opacity: .7; }
+.cal-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-1); }
+.cal-num { font-size: 13px; line-height: 18px; }
+.cal-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.cal-mark.on { color: var(--positive); }
+.cal-mark.ahead { color: var(--action); }
+.cal-mark.ahead svg polygon { fill: currentColor; }
+.cal-due { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cal-due-item { display: flex; flex-direction: column; min-width: 0; font-size: 13px; line-height: 18px; }
+.cal-due-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-due-amt { font-variant-numeric: tabular-nums; }
+.cal-due-item.bill .cal-due-amt { color: var(--money-out); }
+.cal-due-item.pay .cal-due-amt { color: var(--money-in); }
+.cal-due-item.chest .cal-due-amt, .cal-due-item.chest .cal-due-label { color: var(--ink-muted); }
+.cal-due-more { font-size: 12px; color: var(--ink-muted); }
+.cal-dot { display: none; width: 5px; height: 5px; border-radius: 50%; background: var(--ink-muted); }
+.cal-amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cal-amt.bill { color: var(--money-out); }
+.cal-amt.pay { color: var(--money-in); }
+.cal-amt.chest { color: var(--ink-muted); }
+
+/* ── Legend ─────────────────────────────────────────────────────────────── */
+.cal-legend {
+  list-style: none; margin: 0; padding: var(--space-2) 0 0; display: flex; flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5); font-size: 13px; line-height: 18px; color: var(--ink-muted);
+}
+.cal-legend li { display: inline-flex; align-items: center; gap: var(--space-2); }
+.cal-swatch {
+  display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+  border-radius: 5px; border: 1.5px solid var(--border);
+}
+.cal-swatch.on { background: var(--cal-on); border-color: transparent; }
+.cal-swatch.ahead { background: var(--cal-ahead); border-color: transparent; }
+.cal-swatch.today { border-color: var(--action); }
+
+/* ── Coming up, and the day panel ───────────────────────────────────────── */
+.cal-hint { display: none; }
+.cal-coming { display: none; }
+.cal-list, .cal-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; width: 100%; }
+.cal-list li { display: flex; align-items: baseline; gap: var(--space-3); padding: var(--space-2) 0; font-size: 14px; line-height: 20px; }
+.cal-list li + li, .cal-rows li + li { border-top: 1px solid var(--border); }
+.cal-when { flex: none; min-width: 48px; }
+.cal-what { flex: 1 1 auto; min-width: 0; }
+.cal-rows li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) 0; font-size: 14px; line-height: 20px; }
+.cal-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cal-reason {
+  display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4);
+  border-radius: var(--radius-md); background: var(--surface-page); color: var(--ink);
+}
+.cal-reason.ahead { background: var(--cal-ahead); }
+.cal-reason.on { background: var(--cal-on); }
+.cal-reason .cal-mark { margin-top: 3px; }
+
+/* ── The strip on Home (CAL-06) ─────────────────────────────────────────── */
+.pk .cal-strip { gap: var(--space-3); align-items: stretch; }
+.pk .cal-strip-days {
+  display: grid; grid-template-columns: repeat(31, minmax(0, 1fr)); gap: 3px;
+  border: 0; background: none; padding: 0; cursor: pointer;
+}
+.cal-mini {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  height: 28px; border-radius: 4px; background: var(--track); border: 1.5px solid transparent;
+}
+.cal-mini.on { background: var(--cal-on); }
+.cal-mini.ahead { background: var(--cal-ahead); }
+.cal-mini.today { background: none; border-color: var(--action); }
+.cal-mini .cal-dot { display: block; }
+.cal-mini .cal-mark.ahead svg { width: 7px; height: 7px; }
+
+/* ── On a phone (CAL-05) ────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .cal-hint, .cal-coming { display: flex; }
+  .cal-nav { gap: var(--space-3); }
+  .cal-weekdays .pk-overline { text-align: center; padding: 0; }
+  .cal-weekdays, .cal-grid { gap: 4px; }
+  .pk .cal-cell { min-height: 48px; padding: var(--space-1); align-items: center; }
+  .cal-top { flex-direction: column; justify-content: flex-start; }
+  .cal-due { display: none; }
+  .pk .cal-cell.has-due .cal-dot { display: block; }
+  .pk .cal-cell.outside { visibility: hidden; }
+  .pk .cal-cell.spare { display: none; }
+  .cal-nav-word { display: none; }
+  .cal-head .pk-h2 { font-size: 20px; line-height: 26px; }
+  .cal-legend { display: none; }
+  .cal-strip-days { gap: 2px; }
+}

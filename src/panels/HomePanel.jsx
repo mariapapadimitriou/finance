@@ -17,6 +17,7 @@ import { DebtsCard } from './DebtsPanel.jsx';
 import { BudgetsCard } from './CategoryBudgetsPanel.jsx';
 import { ForYou, WhyPanel, dismissedWords } from './ForYou.jsx';
 import NotifyPrime from './NotifyPrime.jsx';
+import { CalendarStrip } from './CalendarPanel.jsx';
 import './home.css';
 
 /**
@@ -297,6 +298,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
                 path={home.path} wins={home.wins} reviewCount={home.review_count}
                 connections={home.connections} back={back} today={home.today}
                 savings={home.savings}
+                calendar={home.calendar} onCalendar={() => onTab?.('calendar')}
                 onPath={(action) => onTab?.(PATH_ACTIONS[action] ?? 'path')}
                 onReview={() => onTab?.('review')}
                 onReconnect={(c) => (c.state === 'needs_sign_in' ? setReconnect(c) : onTab?.('accounts'))}
@@ -369,7 +371,7 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
                            connections = [], back = null, today,
                            onPath, onReview, onReconnect, onChest, debts = null, onDebts,
                            budgets = null, onBudgets, cards = [], onCard, onWhy, onNotForMe,
-                           savings = null }) {
+                           savings = null, calendar = null, onCalendar }) {
   const review = reviewCount > 0 && <NeedsALook count={reviewCount} onReview={onReview} />;
   if (ds.kind === 'no_data') {
     return (
@@ -421,6 +423,9 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
       )}
       <SafeToSpendCard s={s} onExplain={onExplain}
                        updated={trouble ? `${trouble.institution} last updated ${whenWords(trouble.last_synced, today)}` : null} />
+      {calendar && ['normal', 'irregular', 'learning'].includes(ds.kind) && !noAccounts && (
+        <CalendarStrip strip={calendar} onOpen={onCalendar} />
+      )}
       <CarryoverPrompt c={carry} safe={s} onAnswer={onCarry} onChest={onChest} onExplain={onExplain} />
       <SavingsCard savings={savings} nextPay={s.next_pay} onExplain={onExplain} />
       {ds.asks_questions && <StarterQuestions onSave={onSave} primary />}
