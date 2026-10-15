@@ -27,16 +27,17 @@ describe('Same account as another one?', () => {
   it('says what merging does and which one stays', () => {
     const out = html(<MergeDialog a={statement} candidates={[feed]} onClose={() => {}}
                                   onMerge={() => Promise.resolve()} />);
-    expect(out).toContain('Transactions in both count once');
-    expect(out).toContain('Scotiabank · ••4876 · 120 transactions · connected');
-    expect(out).toContain('Scotia Gold Amex stays; Everyday Amex comes off your accounts.');
-    expect(out).toMatch(/pk-btn primary[^>]*>Merge them/);
+    expect(out).toContain('Pearl can combine them so every purchase counts once');
+    expect(out).toContain('Which one do you keep?');
+    expect(out).toContain('Linked · up to date · 120 transactions');
+    expect(out).toContain('Scotia Gold Amex ••4876 stays. Everyday Amex leaves Accounts and stops syncing.');
+    expect(out).toMatch(/pk-btn primary[^>]*>Combine them/);
   });
 
   it('with nothing to merge with, says so', () => {
     const out = html(<MergeDialog a={statement} candidates={[]} onClose={() => {}}
                                   onMerge={() => Promise.resolve()} />);
-    expect(out).toContain('There’s no other account of the same kind to merge with.');
-    expect(out).toMatch(/disabled=""[^>]*>Merge them/);
+    expect(out).toContain('There’s no other account of the same kind to combine with.');
+    expect(out).toMatch(/disabled=""[^>]*>Combine them/);
   });
 });

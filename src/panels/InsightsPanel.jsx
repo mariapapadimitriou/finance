@@ -8,7 +8,7 @@ import { onInsightsUrl, readInsightsUrl, setGoalsIntent, writeInsightsUrl, write
 import { ActionToast } from '../pearl/kit.jsx';
 import { SnapshotBar } from '../pearl/viz.jsx';
 import { ForYou, WhyPanel, dismissedWords } from './ForYou.jsx';
-import { CatDot, GrowthTabs, MonthSwitcher, More } from './InsightsParts.jsx';
+import { CashFlowTabs, CatDot, MonthSwitcher, More } from './InsightsParts.jsx';
 import { InsightsFilters } from './InsightsFilters.jsx';
 import { LENSES, lensLegend, readLens, trendForLens, whereForLens, writeLens } from './Lens.jsx';
 import { Donut, InOutBars, Legend, SavingsArea, TrendBars } from './InsightsCharts.jsx';
@@ -138,6 +138,22 @@ function CardHead({ title, link, onLink, label, id }) {
   );
 }
 
+/** FV-02: what the filters show, in a line — "Showing Lifestyle on TD Visa
+ * ••1203 over 3 months, with one-offs left out. Income and money put away
+ * aren't filtered." Nothing when nothing is filtered. */
+export function filtersWords(d, filters = {}) {
+  const parts = [];
+  const names = { essentials: 'Essentials', lifestyle: 'Lifestyle', fixed: 'Fixed', variable: 'Variable' };
+  if (filters.show && names[filters.show]) parts.push(names[filters.show]);
+  const account = (d.accounts ?? []).find((a) => a.id === filters.account);
+  if (account) parts.push(`on ${account.name}`);
+  if (filters.span) parts.push(`over ${filters.span} months`);
+  if (!parts.length && !filters.one_offs) return '';
+  let out = parts.length ? `Showing ${parts.join(' ')}` : 'Showing everything';
+  if (filters.one_offs === 'out') out += ', with one-offs left out';
+  return `${out}. Income and money put away aren’t filtered.`;
+}
+
 /** GR-28: the page. */
 export function InsightsPage({ d, show, onTab, cards = [], onCard, onWhy, onNotForMe,
                                lens = 'need', onLens, filters = {}, onFilter }) {
@@ -158,13 +174,19 @@ export function InsightsPage({ d, show, onTab, cards = [], onCard, onWhy, onNotF
       <header className="in-top">
         <div className="hm-head">
           <p className="pk-overline accent">Insights</p>
-          <h1 className="pk-h1">Growth</h1>
+          <h1 className="pk-h1">Cash flow</h1>
         </div>
         <MonthSwitcher label={`${monthFull(d.month)} so far`} prev={prev}
                        onPrev={() => show('month', { month: prev })} />
       </header>
-      <GrowthTabs current="insights" onTab={onTab} />
+      <CashFlowTabs current="insights" onTab={onTab} />
       <InsightsFilters d={d} lens={lens} onLens={onLens} filters={filters} onFilter={onFilter} />
+      {filtersWords(d, filters) && (
+        <Alert action="Clear filters"
+               onAction={() => onFilter({ account: '', span: '', show: '', one_offs: '' })}>
+          {filtersWords(d, filters)}
+        </Alert>
+      )}
 
       <ul className="in-tiles" aria-label={`${monthFull(d.month)} so far`}>
         {tileRows(d, lens).map((t) => (
@@ -204,9 +226,9 @@ export function InsightsPage({ d, show, onTab, cards = [], onCard, onWhy, onNotF
                     label="See more of money in and out" />
           {anyMoney ? (
             <>
-              <InOutBars rows={money} caption="Money in, spent and set aside each month" />
+              <InOutBars rows={money} caption="Money in, spent and put away each month" />
               <Legend items={[{ label: 'Money in', tone: 'in-in' }, { label: 'Spent', tone: 'in-spent' },
-                              { label: 'Set aside', tone: 'in-set-aside' }]} />
+                              { label: 'Put away', tone: 'in-set-aside' }]} />
             </>
           ) : <p className="pk-muted">Nothing has come in or gone out yet.</p>}
         </section>

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Choice, DetailPanel, PButton } from '../pearl/kit.jsx';
 import { CategoryChips, groupCategories } from './CategoryPicker.jsx';
-import { TagEditor } from './WhatWasThis.jsx';
-import { batchMark, batchTags, getTags } from '../api.js';
+import { batchMark, batchTags, getTags, money } from '../api.js';
 
 /**
  * A selection, answered at once (2026-10-14): "Mark as…" with the cases
@@ -78,16 +77,20 @@ export function BatchMarkPanel({ ids, categories = [], onDone, onClose }) {
 }
 
 export function BatchTagPanel({ ids, onDone, onClose }) {
-  const [tags, setTags] = useState([]);
+  const [picked, setPicked] = useState([]);
+  const [text, setText] = useState('');
   const [known, setKnown] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   useEffect(() => {
     let live = true;
-    getTags().then((d) => { if (live) setKnown((d.tags ?? []).map((t) => t.tag)); }).catch(() => {});
+    getTags().then((d) => { if (live) setKnown(d.tags ?? []); }).catch(() => {});
     return () => { live = false; };
   }, []);
   const n = ids.length;
+  const fresh = text.trim().replace(/\s+/g, ' ').slice(0, 30);
+  const tags = [...picked, ...(fresh && !picked.some((p) => p.toLowerCase() === fresh.toLowerCase()) ? [fresh] : [])];
+  const toggle = (tag, on) => setPicked((p) => (on ? [...p, tag] : p.filter((x) => x !== tag)));
   const save = async () => {
     setBusy(true);
     setError(null);
@@ -99,14 +102,31 @@ export function BatchTagPanel({ ids, onDone, onClose }) {
     }
   };
   return (
-    <DetailPanel label={`Tag ${n} transaction${n === 1 ? '' : 's'}`} overline="Selection" onClose={onClose}>
-      <h2 className="pk-h2">Tag these</h2>
-      <p className="pk-muted">A tag groups transactions without changing their category: a trip,
-        a renovation, a wedding. Filter by it to see the total.</p>
+    <DetailPanel label={`Tag ${n} transaction${n === 1 ? '' : 's'}`} overline="Tag" onClose={onClose}>
+      <h2 className="pk-h2">{`Tag ${n} transaction${n === 1 ? '' : 's'}`}</h2>
+      <p className="pk-muted">Tags group anything you like, across categories and months. Filter by
+        a tag to see its total.</p>
       {error && <p className="txd-error" role="alert">{error.message}</p>}
-      <TagEditor tags={tags} known={known} onChange={setTags} />
+      {known.length > 0 && (
+        <div className="txd-field">
+          <p className="pk-label">Your tags</p>
+          <div className="pk-choices">
+            {known.map((t) => (
+              <Choice key={t.tag} type="checkbox" checked={picked.includes(t.tag)}
+                      onChange={(on) => toggle(t.tag, on)} label={t.tag}
+                      description={`${t.count} transaction${t.count === 1 ? '' : 's'} · ${money(t.spent, { cents: true })}`} />
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="txd-field">
+        <label className="pk-label" htmlFor="bt-new">New tag</label>
+        <input id="bt-new" className="wwt-input" type="text" maxLength={30} value={text}
+               autoComplete="off" onChange={(e) => setText(e.target.value)} />
+      </div>
       <div className="txd-actions">
-        <PButton disabled={busy || !tags.length} onClick={save}>{busy ? 'Saving…' : `Tag ${n}`}</PButton>
+        <PButton disabled={busy || !tags.length} onClick={save}>{busy ? 'Saving…' : 'Tag them'}</PButton>
+        <PButton variant="secondary" onClick={onClose}>Cancel</PButton>
       </div>
     </DetailPanel>
   );

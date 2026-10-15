@@ -152,7 +152,7 @@ describe('the growth calculator (GR-17, GR-18)', () => {
 describe('GR-33 the page', () => {
   it('Anchor line, three look-ahead cards and the calculator, with the pills', () => {
     const out = html(<ProjectionsPage d={d} nav={nav} />);
-    for (const text of ['What could happen', 'Growth', 'Projections', 'Learn', 'Your Anchor',
+    for (const text of ['What could happen', 'Save', 'Projections', 'Learn', 'Your Anchor',
                         'Likely full between March and June 2027', 'See the projection', 'This month',
                         'See the forecast', 'Likely $180 to $420 of safe-to-spend left on October 31.',
                         'The next 30 days', 'See all', 'Lowest point about $1,060 on October 31',

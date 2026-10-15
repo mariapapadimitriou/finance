@@ -23,7 +23,7 @@ describe('Needs a look chips', () => {
   it('shows All, each type with open questions, then Skipped', () => {
     expect(chips(items).map((c) => `${c.label} (${c.count})`)).toEqual(
       ['All (3)', 'Where it went (1)', 'Categories (1)', 'Duplicates (1)', 'Skipped (2)']);
-    expect(Object.keys(KIND_LABELS)).toHaveLength(7);
+    expect(Object.keys(KIND_LABELS)).toHaveLength(8);
   });
 
   it('leaves Skipped out when nothing is skipped', () => {
@@ -50,7 +50,7 @@ describe('What kind of income is this? — or not income at all (2026-10-14)', (
                                         { name: 'Shopping', group: 'lifestyle' }]}
                   act={() => {}} sorted={() => () => null} />);
     for (const s of ['What kind of income is this?', 'Salary', 'Or it isn’t income', 'My own money',
-      'Paying back money I lent', 'Something else', 'A refund, or anything else']) {
+      'Paying back money I lent', 'Taken out of my savings', 'Something else', 'Pick any category, like a refund']) {
       expect(out).toContain(s);
     }
   });

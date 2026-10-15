@@ -192,8 +192,9 @@ describe('AM-02 to AM-07, C-06 one account', () => {
   it('AM-05: add a balance by hand', () => {
     const el = <AddByHand />;
     const t = text(el);
-    for (const s of ['Add a balance by hand', 'For a bank Pearl can’t link yet.', 'Chequing', 'Savings',
-      'Credit card', 'Counts as money you owe', 'Balance today', 'Add account', 'Cancel']) {
+    for (const s of ['Add a balance by hand', 'For an account Pearl can’t link.', 'Chequing', 'Savings',
+      'Investment', 'Credit card', 'Last four digits', 'Balance today', 'Part of my Anchor',
+      'Only cash savings usually belong here', 'Add account', 'Cancel']) {
       expect(t).toContain(s);
     }
     expect(primaries(el)).toBe(1);

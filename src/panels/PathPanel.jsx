@@ -93,7 +93,7 @@ export function PathPage({ path, onAction, onReady, onUnveil, onStep, onTab }) {
     <div className="pk hm-page in-page">
       <header className="hm-head">
         <p className="pk-overline accent">Your path</p>
-        <h1 className="pk-h1">Growth</h1>
+        <h1 className="pk-h1">Wins</h1>
       </header>
       <GrowthTabs current="path" onTab={onTab} />
 

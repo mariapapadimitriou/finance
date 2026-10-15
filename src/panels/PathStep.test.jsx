@@ -160,11 +160,11 @@ describe('the Path page opens each step (GR-01 → GR-02 to GR-04)', () => {
     next: base.next,
   };
 
-  it('steps are buttons, the Growth pills are drawn, and a lapse says Keep it going', () => {
+  it('steps are buttons, the page is Wins, and a lapse says Keep it going', () => {
     const out = html(<PathPage path={path} onAction={() => {}} onStep={() => {}} onTab={() => {}} />);
     expect((out.match(/class="pt-step"/g) || []).length).toBe(2);
-    expect(out).toContain('aria-label="Growth"');
-    expect(out).toMatch(/aria-current="page"[^>]*>Path</);
+    expect(out).toContain('>Wins</h1>');
+    expect(out).not.toContain('aria-label="Growth"');      // Wins is one page: no pills
     expect(out).toContain('Keep it going');
     expect(out).toContain('What happened in October');
     expect(primaries(out)).toBe(1);

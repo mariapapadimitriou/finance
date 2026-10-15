@@ -146,19 +146,19 @@ describe('GR-28 the page', () => {
   const out = html(<InsightsPage d={october} show={() => {}} onTab={() => {}} />);
 
   it('has the header, the Growth pills with Learn, and the month switcher', () => {
-    for (const text of ['Insights', 'Growth', 'October so far', 'Path', 'Projections', 'Budgets', 'Debts']) {
+    for (const text of ['Insights', 'Cash flow', 'October so far', 'Transactions']) {
       expect(out).toContain(text);
     }
     expect(out).toMatch(/aria-current="page"[^>]*>Insights</);
-    // Learn is built (THL-134): its pill opens it.
-    expect(out).toMatch(/class="in-tab">Learn</);
-    expect(out).not.toMatch(/disabled=""[^>]*>Learn</);
+    // Cash flow's other tab (GR-28): Transactions.
+    expect(out).toMatch(/class="in-tab">Transactions</);
+    expect(out).not.toContain('Growth');
     expect(out).toContain('aria-label="Review September"');
   });
 
   it('shows the four tiles in her words', () => {
     for (const text of ['Income', '$4,200', 'Arrived Oct 1', 'Essentials', '$1,240', 'So far',
-                        'Lifestyle', '$520', 'Set aside', '$350', 'Anchor and chests']) {
+                        'Lifestyle', '$520', 'Put away', '$350', 'Moved to savings']) {
       expect(out).toContain(text);
     }
   });
@@ -377,7 +377,7 @@ describe('the Fixed / Variable lens and the filters (2026-10-14)', () => {
   it('the page has the lens switch and the four filters', () => {
     const out = html(<InsightsPage d={october} show={() => {}} onTab={() => {}} filters={{}} onFilter={() => {}} />);
     for (const s of ['By need', 'By kind', 'aria-label="Account"', 'aria-label="Months"', 'aria-label="Show"',
-      'aria-label="One-offs"', 'Everyday', 'Fixed only', 'One-offs left out']) {
+      'aria-label="One-offs"', 'Everyday', 'Show: Fixed', 'One-offs: left out']) {
       expect(out).toContain(s);
     }
   });

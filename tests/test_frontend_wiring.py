@@ -385,10 +385,10 @@ class TestHomeIsWhereTheAppLands:
 
     def test_the_app_opens_on_home(self):
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
-        # Growth's Path, Insights, Projections and Learn have addresses;
-        # anything else lands on Home.
-        assert (": isPathUrl() || isInsightsUrl() || isProjectionsUrl() || isLearnUrl() ? 'growth'"
-                " : 'home'") in text
+        # Wins' Path, Cash flow's Insights and Save's Projections and Learn
+        # have addresses; anything else lands on Home (THL-234 IA).
+        assert ": isPathUrl() ? 'wins' : isInsightsUrl() ? 'cashflow'" in text
+        assert ": isProjectionsUrl() || isLearnUrl() ? 'save' : 'home'" in text
         assert "panel === 'home'" in text and "<HomePanel" in text
 
     def test_old_links_to_the_allowance_land_on_home(self, aliases):
@@ -418,13 +418,16 @@ class TestAccountsInTheApp:
 
 
 class TestTheSidebarIsThl104s:
-    def test_home_transactions_goals_growth_and_profile(self, groups):
-        assert list(groups) == ["home", "transactions", "goals", "growth", "profile"]
+    def test_home_cash_flow_save_wins_and_profile(self, groups):
+        """THL-234: Home · Cash flow · Save · Wins · Profile."""
+        assert list(groups) == ["home", "cashflow", "save", "wins", "profile"]
 
-    def test_growth_opens_on_the_path(self, groups):
-        """THL-129 GR-01: Path, then Insights, Projections and Budgets."""
-        assert groups["growth"][:3] == ["path", "insights", "projections"]
-        assert "overview" not in groups
+    def test_each_group_opens_on_its_first_page(self, groups):
+        assert groups["home"][:3] == ["home", "budgets", "debts"]
+        assert groups["cashflow"] == ["transactions", "review", "insights"]
+        assert groups["save"] == ["goals", "projections", "learn"]
+        assert groups["wins"] == ["path"]
+        assert "overview" not in groups and "growth" not in groups and "transactions" not in groups
 
     def test_the_path_page_has_an_address(self):
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
@@ -467,7 +470,7 @@ class TestPearlTransactionsList:
 
     def test_the_group_opens_on_the_list(self):
         nav = (SRC / "nav.js").read_text(encoding="utf-8")
-        assert "panels: ['transactions', 'review']" in nav
+        assert "panels: ['transactions', 'review', 'insights']" in nav
         app = (SRC / "App.jsx").read_text(encoding="utf-8")
         assert "<TransactionsList" in app and "<TransactionsPanel" not in app
 
@@ -654,14 +657,14 @@ class TestGrowthInsights:
         for view in ("month", "category", "subscriptions", "trend", "where", "money", "savings"):
             assert f"'{view}'" in router, view
         assert "isInsightsUrl()" in source and "writeInsightsUrl()" in source
-        assert ("OWN_SECTIONS = ['path', 'insights', 'projections', 'learn', 'budgets', 'debts']"
+        assert ("OWN_SECTIONS = ['path', 'insights', 'projections', 'learn', 'budgets', 'debts',"
                 in source)
         assert "!ownSections" in source
         parts = (SRC / "panels" / "InsightsParts.jsx").read_text(encoding="utf-8")
-        # Learn is built (THL-134): every Growth pill is a page now.
-        tabs = parts[parts.index("export function GrowthTabs"):]
-        tabs = tabs[:tabs.index("\n}\n")]
-        assert "disabled" not in tabs and "growth.panels.map" in tabs
+        # Every page in a group is built: a group's pills are never disabled.
+        tabs = parts[parts.index("export function GroupTabs"):]
+        tabs = tabs[:tabs.index("</nav>")]
+        assert "disabled" not in tabs and "g?.panels" in tabs
 
     def test_every_chart_has_a_table_for_a_screen_reader(self):
         charts = (SRC / "panels" / "InsightsCharts.jsx").read_text(encoding="utf-8")
@@ -742,8 +745,8 @@ class TestGrowthRest:
         assert "isLearnUrl()" in source and "writeLearnUrl()" in source
         assert "panel === 'learn' && <LearnPanel" in source
 
-    def test_learn_is_a_growth_page_open_when_empty(self, groups, source):
-        assert groups["growth"][:4] == ["path", "insights", "projections", "learn"]
+    def test_learn_is_a_save_page_open_when_empty(self, groups, source):
+        assert groups["save"] == ["goals", "projections", "learn"]
         assert "learn" in _string_list(source, "WORKS_WHEN_EMPTY")
 
     def test_the_path_opens_each_step(self):

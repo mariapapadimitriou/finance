@@ -402,7 +402,7 @@ export function MoneyView({ d, nav }) {
             <p>{keptSentence(rows)}</p>
             <InOutBars rows={rows} height={300} caption="Money in, spent and set aside each month" />
             <Legend items={[{ label: 'Money in', tone: 'in-in' }, { label: 'Spent', tone: 'in-spent' },
-                            { label: 'Set aside', tone: 'in-set-aside' }]} />
+                            { label: 'Put away', tone: 'in-set-aside' }]} />
           </>
         ) : <p className="pk-muted">Nothing has come in or gone out yet.</p>}
       </section>

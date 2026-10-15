@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   deleteAccountNow, deletePasskeyOptions, exportUrl, getDeleteOptions, getExportSummary,
-  sendDeleteCode, startOver, syncPlaid,
+  getReview, sendDeleteCode, startOver, syncPlaid,
 } from '../api.js';
 import { Alert, DetailPanel, PButton } from '../pearl/kit.jsx';
 import { BEFORE_YOU_GO, Rows } from '../pearl/privacy.jsx';
@@ -58,13 +58,22 @@ export function readyWords(summary) {
   return `Your download is ready: ${what}.`;
 }
 
-// What Start over does, in her words.
+// What Start over does, in her words (SO-02): what goes, and what stays.
+export const START_OVER_GOES = [
+  'Every transaction and what you told Pearl about it: categories, splits, notes, left-out rows, Needs a look answers, duplicates',
+  'Your rules: merchant, transfer, leave-out and joint rules',
+  'Income and bills setup, and how last month carried over',
+  'Category budgets and dismissed suggestions',
+];
+export const START_OVER_STAYS = [
+  'Your bank connections (Pearl downloads your full history again)',
+  'Account setup: nicknames, joint shares and names, hidden copies, accounts added by hand, debt details',
+  'Your Anchor accounts, treasure chests and the money in them',
+  'Sign-in, passkeys and privacy choices',
+];
 export const START_OVER_ROWS = [
-  { title: 'Cleared', sub: 'Every transaction, and everything you sorted: categories, splits, notes, left-out transactions and Needs a look answers.' },
-  { title: 'Cleared', sub: 'Your rules, your income and bills setup, and your budgets.' },
-  { title: 'Downloaded again', sub: 'Your banks stay connected, and Pearl brings your full history back, ready to sort from scratch.' },
-  { title: 'Kept', sub: 'Your goals and treasure chests, with the money you’ve added to them, and your account nicknames and joint shares.' },
-  { title: 'Good to know', sub: 'A charge a chest paid for counts in its month again, unless its category belongs to the chest.' },
+  ...START_OVER_GOES.map((sub) => ({ title: 'Goes', sub })),
+  ...START_OVER_STAYS.map((sub) => ({ title: 'Stays', sub })),
 ];
 
 export const START_OVER_WORDS = 'start over';
@@ -80,7 +89,10 @@ export function DataPage({ summary, preparing = false, error = null, onTab, onPr
   return (
     <div className="pk hm-page pf-page pv-page">
       <PageHead trail={TRAIL} title="Your data" onTab={onTab}>
-        {!summary && <p className="pf-intro">It’s yours. Take a copy any time, or close your account.</p>}
+        {!summary && (
+          <p className="pf-intro">It’s yours. Take a copy any time, start your organizing over, or
+            close your account.</p>
+        )}
       </PageHead>
       {summary ? (
         <section className="pf-section pv-wide" aria-label="Download a copy">
@@ -101,7 +113,7 @@ export function DataPage({ summary, preparing = false, error = null, onTab, onPr
           {error && <Alert tone="caution">{error}</Alert>}
           <div className="pf-stack">
             <PButton variant="secondary" onClick={onPrepare} disabled={preparing}>
-              {preparing ? 'Getting it ready…' : 'Download my data'}
+              {preparing ? 'Getting it ready…' : 'Download a copy'}
             </PButton>
           </div>
         </section>
@@ -110,14 +122,17 @@ export function DataPage({ summary, preparing = false, error = null, onTab, onPr
         <section className="pf-section" aria-labelledby="dt-start-over">
           <h2 className="pk-h3" id="dt-start-over">Start over</h2>
           <p className="pf-foot">
-            Clear your transactions and everything you’ve sorted, and download your history again.
+            Clear your transactions and how you sorted them, then bring them back fresh from your
+            banks. Your banks, goals and treasure chests stay.
           </p>
-          <button type="button" className="pf-text-link" onClick={onStartOver}>Start over</button>
+          <div className="pf-stack">
+            <PButton variant="secondary" onClick={onStartOver}>Start over</PButton>
+          </div>
         </section>
       )}
       <section className="pf-section" aria-labelledby="dt-delete">
         <h2 className="pk-h3" id="dt-delete">Delete your account</h2>
-        <p className="pf-foot">Disconnects your banks and deletes your data straight away.</p>
+        <p className="pf-foot">Disconnects your banks straight away and deletes your data within 30 days.</p>
         <button type="button" className="pf-text-link" onClick={onDelete}>Delete my account</button>
       </section>
     </div>
@@ -147,69 +162,89 @@ export function BeforeYouGo({ onTab, onBack, onDownload, onContinue }) {
   );
 }
 
-/** Before starting over: what goes, what stays, and a copy first. */
+/** SO-02: here's exactly what happens — what goes, what stays, a copy first. */
 export function BeforeYouStart({ onTab, onBack, onDownload, onContinue }) {
   const trail = [{ label: 'Profile', to: 'profile' }, { label: 'Your data', onClick: onBack },
                  { label: 'Start over' }];
   return (
     <div className="pk hm-page pf-page pv-page">
       <PageHead trail={trail} title="Start over" onTab={onTab}>
-        <p className="pf-intro">Here’s exactly what happens if you start over.</p>
+        <p className="pf-intro">Here’s exactly what happens. Download a copy first if you’d like to
+          keep how things are now.</p>
       </PageHead>
-      <div className="pv-wide pf-section">
-        <Rows rows={START_OVER_ROWS} label="What happens" />
-        <Alert tone="info" action="Download" onAction={onDownload}>
-          Want a copy first? Download your data before you start over.
-        </Alert>
+      <div className="pv-wide pf-section dt-lists">
+        <section className="dt-list" aria-labelledby="dt-goes">
+          <p className="pk-overline" id="dt-goes">What goes</p>
+          <ul>{START_OVER_GOES.map((t) => <li key={t}>{t}</li>)}</ul>
+        </section>
+        <section className="dt-list stays" aria-labelledby="dt-stays">
+          <p className="pk-overline" id="dt-stays">What stays</p>
+          <ul>{START_OVER_STAYS.map((t) => <li key={t}>{t}</li>)}</ul>
+        </section>
       </div>
       <div className="pf-actions">
         <PButton onClick={onContinue}>Continue</PButton>
-        <PButton variant="secondary" onClick={onBack}>Keep everything</PButton>
+        <PButton variant="secondary" onClick={onDownload}>Download a copy first</PButton>
+        <PButton variant="text" onClick={onBack}>Cancel</PButton>
       </div>
     </div>
   );
 }
 
-/** Typing "start over" confirms it. */
+/** SO-03: type "start over" to make sure. A page, under the same crumbs. */
 export function ConfirmStartOver({ typed = '', onTyped, busy = false, error = null, onConfirm,
-                                   onClose }) {
+                                   onClose, onTab }) {
   const ready = startOverReady(typed);
   const submit = (e) => { e.preventDefault(); if (ready) onConfirm(); };
+  const trail = [{ label: 'Profile', to: 'profile' }, { label: 'Your data', onClick: onClose },
+                 { label: 'Start over' }];
   return (
-    <DetailPanel label="Start over" overline="" onClose={onClose} className="pf-dialog" sheet>
+    <div className="pk hm-page pf-page pv-page">
+      <PageHead trail={trail} title="Start over" onTab={onTab}>
+        <p className="pf-intro">To make sure, type “{START_OVER_WORDS}” below. Nothing changes
+          until you do.</p>
+      </PageHead>
       <form className="pf-form" onSubmit={submit}>
-        <h1 className="pk-h2">Start over?</h1>
-        <p className="pk-muted">
-          Your transactions and everything you’ve sorted are cleared, and your history downloads
-          again. This can’t be undone.
-        </p>
-        <Field label={`Type “${START_OVER_WORDS}” to confirm`} id="dt-start-over-words">
+        <Field label={`Type “${START_OVER_WORDS}”`} id="dt-start-over-words">
           <input id="dt-start-over-words" value={typed} autoComplete="off"
                  onChange={(e) => onTyped(e.target.value)} />
         </Field>
         {error && <Alert tone="caution">{error}</Alert>}
-        <PButton type="submit" disabled={busy || !ready}>{busy ? 'Starting over…' : 'Start over'}</PButton>
-        <PButton variant="text" onClick={onClose}>Cancel</PButton>
+        <div className="pf-actions">
+          <PButton type="submit" disabled={busy || !ready}>{busy ? 'Starting over…' : 'Start over'}</PButton>
+          <PButton variant="text" onClick={onClose}>Cancel</PButton>
+        </div>
       </form>
-    </DetailPanel>
+    </div>
   );
 }
 
-/** After: downloading, then what came back. */
-export function StartedOver({ syncing = false, imported = null, onHome }) {
-  let words = 'Pearl will download your history the next time it checks your banks.';
-  if (syncing) words = 'Downloading your history from your banks. It can take a minute.';
-  else if (imported > 0) {
-    words = `${plural(imported, 'transaction')} ${imported === 1 ? 'is' : 'are'} back, ready to sort.`;
-  }
+/** SO-04: your transactions are back. */
+export function StartedOver({ syncing = false, imported = null, needsLook = null, onHome, onSort,
+                              onTab }) {
+  const back = imported > 0
+    ? `${plural(imported, 'transaction')} ${imported === 1 ? 'is' : 'are'} back, ready to sort`
+    : 'Your history is on its way back';
+  const sorted = needsLook > 0
+    ? `Pearl has sorted what it’s sure of. ${plural(needsLook, 'transaction')} need${needsLook === 1 ? 's' : ''} a look. Savings this month counts from today.`
+    : 'Pearl has sorted what it’s sure of. Savings this month counts from today.';
   return (
     <div className="pk hm-page pf-page pv-page">
-      <PageHead trail={TRAIL} title={syncing ? 'Starting fresh…' : 'You’re starting fresh'} />
-      <div className="pf-section">
-        <Alert tone={syncing ? 'info' : 'positive'}>{words}</Alert>
-      </div>
+      <PageHead trail={TRAIL} title={syncing ? 'Starting fresh…' : 'You’re starting fresh'} onTab={onTab}>
+        <p className="pf-intro">
+          {syncing ? 'Downloading your history from your banks. It can take a minute.'
+            : 'Pearl downloaded your history again from your banks.'}
+        </p>
+      </PageHead>
+      {!syncing && (
+        <section className="dt-result" aria-label="What came back">
+          <h2 className="pk-h2">{back}</h2>
+          <p>{sorted}</p>
+        </section>
+      )}
       <div className="pf-actions">
-        <PButton disabled={syncing} onClick={onHome}>Go to Home</PButton>
+        <PButton disabled={syncing} onClick={onSort}>Start sorting</PButton>
+        <PButton variant="text" disabled={syncing} onClick={onHome}>Go to Home</PButton>
       </div>
     </div>
   );
@@ -316,11 +351,13 @@ export default function DataPanel({ onTab, onDeleted, onChanged }) {
     setError(null);
     try {
       await startOver();
-      setFresh({ syncing: true, imported: null });
+      setFresh({ syncing: true, imported: null, needsLook: null });
       setView('fresh');
       let imported = null;
       try { imported = (await syncPlaid(true))?.imported ?? null; } catch { /* next sync */ }
-      setFresh({ syncing: false, imported });
+      let needsLook = null;
+      try { needsLook = (await getReview())?.count ?? null; } catch { /* the badge says */ }
+      setFresh({ syncing: false, imported, needsLook });
       await onChanged?.();
     } catch (e) {
       setError(e.message);
@@ -394,23 +431,21 @@ export default function DataPanel({ onTab, onDeleted, onChanged }) {
   }
 
   if (view === 'fresh') {
-    return <StartedOver syncing={fresh?.syncing} imported={fresh?.imported}
-                        onHome={() => onTab?.('home')} />;
+    return <StartedOver syncing={fresh?.syncing} imported={fresh?.imported} needsLook={fresh?.needsLook}
+                        onHome={() => onTab?.('home')} onSort={() => onTab?.('review')} onTab={onTab} />;
   }
-  if (view === 'start' || view === 'start-confirm') {
+  if (view === 'start-confirm') {
     return (
-      <>
-        <BeforeYouStart onTab={onTab} onBack={() => setView('page')}
-                        onContinue={() => { setTyped(''); setError(null); setView('start-confirm'); }}
-                        onDownload={() => { setView('page'); prepare(); }} />
-        {view === 'start-confirm' && (
-          <div className="pk">
-            <ConfirmStartOver typed={typed} onTyped={(v) => { setTyped(v); setError(null); }}
-                              busy={busy} error={error} onConfirm={beginAgain}
-                              onClose={() => { setView('start'); setError(null); }} />
-          </div>
-        )}
-      </>
+      <ConfirmStartOver typed={typed} onTyped={(v) => { setTyped(v); setError(null); }}
+                        busy={busy} error={error} onConfirm={beginAgain} onTab={onTab}
+                        onClose={() => { setView('start'); setError(null); }} />
+    );
+  }
+  if (view === 'start') {
+    return (
+      <BeforeYouStart onTab={onTab} onBack={() => setView('page')}
+                      onContinue={() => { setTyped(''); setError(null); setView('start-confirm'); }}
+                      onDownload={() => { setView('page'); prepare(); }} />
     );
   }
   if (view === 'delete' || view === 'confirm') {

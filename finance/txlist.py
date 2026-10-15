@@ -172,14 +172,14 @@ def describe(t: Transaction, ctx: Context) -> dict:
     elif t.repays:
         charge = ctx.by_id.get(t.repays)
         chip, structural, group = "Repayment", True, "transfer"
-        note = (f"Paid you back for {_name(charge, ctx)} · not income" if charge
-                else "Paid you back · not income")
+        note = (f"Paid back to me · for {_name(charge, ctx)} · comes off your spending" if charge
+                else "Paid back to me · comes off your spending")
     elif cat == "Unsorted transfers":
         chip, counts = "Not sorted yet", "spending"
         note, note_link = "Saved or spent? Tell us", True
     elif cat == "Transfers":
         chip, structural = "Transfer", True
-        note = ("Card payment · not counted as spending" if _is_card_payment(t)
+        note = ("Transfer · card payment · the purchases already counted" if _is_card_payment(t)
                 else "Transfer · not counted")
     elif cat == "Saved":
         where = ctx.accounts.get(ctx.saved_to.get(t.fingerprint, ""), "")
@@ -219,8 +219,10 @@ def describe(t: Transaction, ctx: Context) -> dict:
              and cat not in ("Transfers", "Unsorted transfers", "Income")
              and abs(abs(share_amount(t)) - abs(t.amount)) >= 0.005)
     if split and counts == "spending" and abs(amount - abs(t.amount)) >= 0.005:
-        names = ctx.split_with.get(t.fingerprint) or ctx.paid_by.get(t.fingerprint) or []
-        with_whom = (" · split with " + ", ".join(names) if names
+        paid = ctx.paid_by.get(t.fingerprint) or []
+        names = ctx.split_with.get(t.fingerprint) or paid
+        with_whom = (f" · {', '.join(paid)} paid you back" if paid
+                     else " · split with " + ", ".join(names) if names
                      else f" · {t.joint} paid the rest" if t.joint else "")
         note = f"Your share of {money(t.amount)}{with_whom}"
 
@@ -365,11 +367,18 @@ def select(rows: list[tuple[Transaction, dict]], *, month: str | None = None,
            q: str | None = None, tag: str | None = None,
            merchant: str | None = None, amount_min: float | None = None,
            amount_max: float | None = None, pending: bool = False,
-           look: bool = False) -> list[tuple[Transaction, dict]]:
-    """The rows the filters keep. `month` of "all" keeps every month."""
+           look: bool = False, ids: set[str] | None = None) -> list[tuple[Transaction, dict]]:
+    """The rows the filters keep. `month` of "all" keeps every month and
+    "last3" the last three calendar months, this one included."""
+    months = None
+    if month == "last3":
+        months = set(_last_months(3))
     out = []
     for t, r in rows:
-        if month and month != "all" and r["date"][:7] != month:
+        if months is not None:
+            if r["date"][:7] not in months:
+                continue
+        elif month and month != "all" and r["date"][:7] != month:
             continue
         if account and r["account_id"] != account:
             continue
@@ -394,11 +403,72 @@ def select(rows: list[tuple[Transaction, dict]], *, month: str | None = None,
             continue
         if look and not r["suggested"]:
             continue
+        if ids is not None and r["id"] not in ids:
+            continue
         if q and not matches(r, q):
             continue
         out.append((t, r))
     out.sort(key=lambda p: (p[1]["date"], p[1]["id"]), reverse=True)
     return out
+
+
+def _last_months(n: int) -> list[str]:
+    """This month and the n-1 before it."""
+    today = date.today()
+    y, m = today.year, today.month
+    out = []
+    for _ in range(n):
+        out.append(f"{y:04d}-{m:02d}")
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+    return out
+
+
+def grouped(rows: list[tuple[Transaction, dict]], by: str) -> list[dict]:
+    """The rows under headers by merchant or by category (VF-01): each
+    group its name, how many, what they came to, and its rows in date
+    order. Biggest spending first; money in and money that doesn't count
+    after, so the page reads top down."""
+    out: dict[str, dict] = {}
+    for t, r in rows:
+        name = r["merchant"] if by == "merchant" else r["category"]
+        key = name.strip().lower()
+        g = out.setdefault(key, {"name": name, "logo": r["logo"] if by == "merchant" else "",
+                                 "count": 0, "spent": 0.0, "income": 0.0, "not_counted": 0.0,
+                                 "rows": []})
+        g["count"] += 1
+        g["rows"].append(r)
+        if r["counts"] == "spending":
+            g["spent"] += spend_amount(t)
+        elif r["counts"] == "income":
+            g["income"] += -t.amount
+        else:
+            g["not_counted"] += r["amount"]
+    groups = list(out.values())
+    for g in groups:
+        for k in ("spent", "income", "not_counted"):
+            g[k] = round(g[k], 2)
+    groups.sort(key=lambda g: (-g["spent"], -g["income"], -g["not_counted"], g["name"].lower()))
+    return groups
+
+
+def owed(transactions: list[Transaction], splits: dict, payer: dict) -> dict | None:
+    """Who still owes her on the splits she's watching: one line over the
+    list ("Priya owes you $194.20 for 2 purchases")."""
+    from .splits import open_repayments
+    rows = open_repayments(transactions, splits, payer)
+    if not rows:
+        return None
+    names: list[str] = []
+    ids: list[str] = []
+    for r in rows:
+        if r["name"] not in names:
+            names.append(r["name"])
+        if r["charge"].fingerprint not in ids:
+            ids.append(r["charge"].fingerprint)
+    return {"names": names, "total": round(sum(r["owes"] for r in rows), 2),
+            "count": len(ids), "ids": ids}
 
 
 def by_merchant(rows: list[tuple[Transaction, dict]]) -> list[dict]:

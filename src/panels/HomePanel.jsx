@@ -422,10 +422,10 @@ export function HomeBody({ s, ds, snap, onSave, onLink, onExplain, onIncome, onS
           {alert.text}
         </Alert>
       )}
-      <CarryoverPrompt c={carry} onAnswer={onCarry} onChest={onChest} />
       <SafeToSpendCard s={s} onExplain={onExplain}
                        updated={trouble ? `${trouble.institution} last updated ${whenWords(trouble.last_synced, today)}` : null} />
-      <SavingsCard savings={savings} />
+      <CarryoverPrompt c={carry} safe={s} onAnswer={onCarry} onChest={onChest} onExplain={onExplain} />
+      <SavingsCard savings={savings} nextPay={s.next_pay} onExplain={onExplain} />
       {ds.asks_questions && <StarterQuestions onSave={onSave} primary />}
       {path && ['normal', 'irregular'].includes(ds.kind) && (
         <PathCard path={path} onPath={onPath} primary={!ds.asks_questions} />
@@ -510,41 +510,53 @@ export function netWords(net) {
   return { figure: money(Math.abs(net)), short: net < 0 };
 }
 
-/** "$500 in, $200 to chests, $100 taken out", or what counts when nothing has. */
+/** "$150 in, nothing taken out", "$500 in, $200 to chests, $100 taken out",
+ * or what counts when nothing has (SV-01). */
 export function putAwayWords(p, short) {
   if (short) return 'More taken out than put in';
   const parts = [];
   if (p.contributions > 0) parts.push(`${money(p.contributions)} in`);
   if ((p.chests ?? 0) > 0) parts.push(`${money(p.chests)} to chests`);
   if (p.withdrawals > 0) parts.push(`${money(p.withdrawals)} taken out`);
+  else if (parts.length) parts.push('nothing taken out');
   return parts.length ? parts.join(', ') : 'Transfers you mark as saved, and money in your chests';
 }
 
-/** Savings this month (2026-10-14): what she put away, and what was left
- * over, this month — never a balance Pearl can't see. */
-export function SavingsCard({ savings }) {
+/** "$994 more out" when more went out than came in; otherwise the figure. */
+export function leftOverFigure(net) {
+  if (Math.abs(net) < 0.005) return 'Nothing yet';
+  return net < 0 ? `${money(Math.abs(net))} more out` : money(net);
+}
+
+/** Savings this month (SV-01, THL-233): Put away and Left over so far,
+ * each with what went into it. Never "$0"; below zero reads "$X more out",
+ * never in red. */
+export function SavingsCard({ savings, nextPay = null, onExplain }) {
   if (!savings || !savings.month) return null;
   const put = netWords(savings.put_away.net);
-  const left = netWords(savings.left_over.net);
+  const left = savings.left_over.net;
+  const short = left < -0.005;
+  const leftWords = short
+    ? `Spent more than came in so far.${nextPay ? ` Your next pay lands ${longDate(nextPay)}.` : ''}`
+    : `${money(savings.left_over.income)} in${savings.left_over.estimate ? ' (what you told Pearl)' : ''}, ${money(savings.left_over.spent)} spent so far`;
   return (
     <section className="hm-card hm-savings" aria-labelledby="hm-savings-title">
-      <div className="hm-row-text">
-        <p className="pk-overline accent">Savings this month</p>
-        <h2 className="pk-h3" id="hm-savings-title">{`${monthName(savings.month)} so far`}</h2>
+      <div className="hm-row-between">
+        <h2 className="pk-h3" id="hm-savings-title">Savings this month</h2>
+        {onExplain && (
+          <button type="button" className="hm-link" onClick={onExplain}>How we worked this out ›</button>
+        )}
       </div>
       <div className="hm-savings-tiles">
         <div className="hm-savings-tile">
-          <p className="pk-label pk-muted">Put away</p>
+          <p className="pk-overline">Put away</p>
           <p className="pk-amount">{put.figure}</p>
           <p className="pk-label pk-muted">{putAwayWords(savings.put_away, put.short)}</p>
         </div>
         <div className="hm-savings-tile">
-          <p className="pk-label pk-muted">Left over</p>
-          <p className="pk-amount">{left.figure}</p>
-          <p className="pk-label pk-muted">
-            {left.short ? 'Spent more than you earned'
-              : `${money(savings.left_over.income)} ${savings.left_over.estimate ? 'expected' : 'earned'}, ${money(savings.left_over.spent)} spent`}
-          </p>
+          <p className="pk-overline">Left over so far</p>
+          <p className="pk-amount">{leftOverFigure(left)}</p>
+          <p className="pk-label pk-muted">{leftWords}</p>
         </div>
       </div>
     </section>
@@ -869,13 +881,14 @@ export function snapshotRows(snap, lens = 'need') {
     }
     if (r.key === 'savings') {
       if (r.planned) {
-        return { key: r.key, category: r.label, share: r.saved / r.planned,
+        return { key: r.key, category: 'Put away', share: r.saved / r.planned,
                  value: r.saved > 0 ? `${shown(r.saved)} of ${shown(r.planned)} planned`
                    : `None of ${shown(r.planned)} planned yet`,
                  note: r.goal === 'anchor' ? 'Your Anchor' : 'Your saving goal' };
       }
-      return { key: r.key, category: r.label, share: null, note: null,
-               value: r.saved > 0 ? `${shown(r.saved)} saved this month` : 'Nothing saved yet this month' };
+      return { key: r.key, category: 'Put away', share: null,
+               note: r.saved > 0 ? 'Moved to your savings this month' : null,
+               value: r.saved > 0 ? `${shown(r.saved)} this month` : 'Nothing put away yet this month' };
     }
     // Essentials and Lifestyle: against her usual month (THL-184).
     if (r.usual > 0 && r.spent > 0) {

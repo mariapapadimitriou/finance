@@ -200,13 +200,13 @@ describe('THL-116 D-01 to D-05 Your data', () => {
   it('D-01: a copy, or close the account', () => {
     const el = <DataPage />;
     const t = text(el);
-    for (const s of ['Profile', 'Your data', 'It’s yours. Take a copy any time, or close your account.',
+    for (const s of ['Profile', 'Your data',
+      'It’s yours. Take a copy any time, start your organizing over, or close your account.',
       'Download a copy',
       'A spreadsheet of your accounts and every transaction in Pearl, with the categories you chose.',
-      'Download my data', 'Delete your account',
-      'Disconnects your banks and deletes your data straight away.', 'Delete my account'])
+      'Delete your account',
+      'Disconnects your banks straight away and deletes your data within 30 days.', 'Delete my account'])
       expect(t).toContain(s);
-    expect(t).not.toContain('within 30 days');
     expect(primaries(el)).toBe(0);
     calm(t);
   });
@@ -378,9 +378,10 @@ describe('Your data › Start over', () => {
     const { BeforeYouStart } = await import('./DataPanel.jsx');
     const el = <BeforeYouStart onBack={() => {}} onContinue={() => {}} onDownload={() => {}} />;
     const t = text(el);
-    for (const s of ['Every transaction, and everything you sorted', 'Your rules, your income and bills setup, and your budgets',
-      'Your banks stay connected', 'Your goals and treasure chests', 'Download your data before you start over',
-      'Continue', 'Keep everything']) {
+    for (const s of ['Here’s exactly what happens. Download a copy first', 'What goes', 'What stays',
+      'Every transaction and what you told Pearl about it', 'Your rules: merchant, transfer, leave-out and joint rules',
+      'Your bank connections', 'Your Anchor accounts, treasure chests and the money in them',
+      'Continue', 'Download a copy first', 'Cancel']) {
       expect(t).toContain(s);
     }
     expect(primaries(el)).toBe(1);
@@ -403,10 +404,12 @@ describe('Your data › Start over', () => {
   it('then says the history is downloading, and what came back', async () => {
     const { StartedOver } = await import('./DataPanel.jsx');
     expect(text(<StartedOver syncing />)).toContain('Downloading your history');
-    expect(text(<StartedOver imported={1306} />)).toContain('1,306 transactions are back, ready to sort.');
+    expect(text(<StartedOver imported={1306} needsLook={18} />)).toContain('1,306 transactions are back, ready to sort');
+    expect(text(<StartedOver imported={1306} needsLook={18} />)).toContain('18 transactions need a look. Savings this month counts from today.');
+    expect(text(<StartedOver imported={1306} />)).toContain('Start sorting');
     expect(text(<StartedOver imported={1} />)).toContain('1 transaction is back');
     const none = text(<StartedOver imported={0} />);
-    expect(none).toContain('the next time it checks your banks');
+    expect(none).toContain('Your history is on its way back');
     calm(none);
   });
 });

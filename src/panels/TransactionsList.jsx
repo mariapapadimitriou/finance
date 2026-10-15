@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActionToast, Alert, Avatar, CategoryChip, DayHeader, EmptyState, FilterChip, PButton, SearchField,
-  StatTile, Toast, TxRow, txAmount,
+  ActionToast, Alert, CategoryChip, DayHeader, EmptyState, FilterChip, PButton, SearchField,
+  Segmented, StatTile, Toast, TxRow, txAmount,
 } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import TransactionDetail, { AddTransaction } from './TransactionDetail.jsx';
 import { BatchPicker, KeyHints, SelectedBar, ShortcutsPanel } from './KeyboardReview.jsx';
 import { BatchMarkPanel, BatchTagPanel } from './BatchPanels.jsx';
+import { SortRangePanel, SortedTogetherPanel } from './RangePanels.jsx';
+import { TxFiltersPanel, requestFor } from './TxFilters.jsx';
+import { CashFlowTabs } from './InsightsParts.jsx';
 import { duplicateAlert } from './Duplicates.jsx';
 import {
   initialState, isTextTarget, keyAction, reduce, rowName, selectRange, targets,
@@ -19,41 +22,40 @@ import {
 import { readTxUrl, writeTxUrl } from '../router.js';
 
 /**
- * Transactions (Pearl TX-01 to TX-03, THL-122).
+ * Cash flow › Transactions (Pearl TX-01 to TX-03, THL-122; VF-01 to VF-04,
+ * DR-01, DR-02 and WW-01, THL-231).
  *
  * Opens on this calendar month, every account and every category, newest
- * first, grouped by day. Search and the filters combine, and live in the
- * address bar so a filtered list can be linked to and survives back and
- * forward. What each row says — its amount, whether it counts, its chip and
- * its note — comes from the server, so the list and the month never disagree.
+ * first, grouped by day — or by merchant or by category (VF-01), each group
+ * under a header with its count and total. Search and the toolbar's three
+ * filters sit in the toolbar; everything else (months, kind, tags, an
+ * amount range, show only) is in the Filters panel (VF-02). Filters live
+ * in the address bar so a filtered list can be linked to and survives back
+ * and forward. What each row says — its amount, whether it counts, its chip
+ * and its note — comes from the server, so the list and the month never
+ * disagree.
  *
- * Opened on a group, a category, a tag or a merchant (TX-02), the title
- * names it and the tiles compare it with a usual month. With nothing to show
- * (TX-03) the filters stay in view so she can see why, and nothing is drawn
- * in an error colour.
+ * A row's actions appear on hover (WW-01): ✓ Right on a row Pearl isn't
+ * sure of, Category, and Mark as…, the What was this? sheet. Clicking the
+ * row opens it. Selecting several swaps in a floating bar (VF-03): Change
+ * category, Mark as…, Tag, Leave out, ✓ Confirm, with one Undo. Sort a date
+ * range (DR-01) gives every purchase between two dates one category, and
+ * Sorted together (DR-02) lists the ranges.
  *
- * What was this? (2026-10-14): clicking a row opens the transaction, whose
- * Mark as… is the same sheet Needs a look uses; nothing appears on hover. A
- * chip a rule decided wears a lock. Select mode works on a phone as well as
- * a desktop, and the selected bar can change the category, mark the
- * selection as something, tag it, leave it out or confirm it, with one Undo.
- * More filters: what counts, an amount range, a tag, pending only, needs a
- * look only; a month or every month; and the list folded by merchant or by
- * category.
+ * With nothing to show (TX-03) the filters stay in view so she can see why,
+ * and nothing is drawn in an error colour. A one-off (THL-71 U-02) says so
+ * on its row. The second copy of a likely duplicate (THL-165 D-01) is
+ * listed as not counted, with an alert that leads to the question.
  *
- * A one-off (THL-71 U-02) says so on its row. The second copy of a likely
- * duplicate (THL-165 D-01) is listed as not counted, with an alert that
- * leads to the question; each copy says where it came from.
- *
- * On a desktop (≥1,024px) the list is also a keyboard review (THL-83 K-01
- * to K-04): rows are one tab stop with a roving focus, each has a checkbox,
- * and the keys in `keyboardKeys.js` move, select, confirm, change, mark
- * one-offs, open and undo — only while the list has focus.
+ * On a desktop (≥1,024px) the list is also a keyboard review (THL-83): rows
+ * are one tab stop with a roving focus, each has a checkbox, and the keys in
+ * `keyboardKeys.js` move, select, confirm, change, mark one-offs, open and
+ * undo — only while the list has focus.
  */
 
 const DESKTOP = '(min-width: 1024px)';
 
-/** Keyboard review is for a desktop-sized window. */
+/** Keyboard review and hover actions are for a desktop-sized window. */
 function useDesktop() {
   const [on, setOn] = useState(() => typeof window !== 'undefined'
     && !!window.matchMedia?.(DESKTOP).matches);
@@ -77,6 +79,7 @@ const thisMonth = () => isoDay(new Date()).slice(0, 7);
 
 export function monthName(month, withYear = false) {
   if (month === 'all') return 'All months';
+  if (month === 'last3') return 'Last 3 months';
   const [y, m] = month.split('-').map(Number);
   const name = MONTHS[m - 1] ?? month;
   return withYear || y !== new Date().getFullYear() ? `${name} ${y}` : name;
@@ -95,14 +98,16 @@ function dayLabel(iso) {
   return label;
 }
 
-// The amount ranges on offer, as "min-max" in the address bar.
-export const AMOUNTS = [
-  { value: '', label: 'Any amount' },
-  { value: '0-20', label: 'Under $20' },
-  { value: '20-100', label: '$20 to $100' },
-  { value: '100-500', label: '$100 to $500' },
-  { value: '500-', label: 'Over $500' },
-];
+/** "UBER EATS · 3 PURCHASES · -$74.30" (VF-01): a group's header. */
+export function groupLabel(g) {
+  const n = g.count;
+  const what = g.spent >= 0.005 || (g.income < 0.005 && g.not_counted < 0.005)
+    ? `${n} purchase${n === 1 ? '' : 's'} · ${txAmount(g.spent, { signed: g.spent >= 0.005 })}`
+    : g.income >= 0.005 ? `${n} · ${txAmount(g.income, { inflow: true })}`
+      : `${n} · ${txAmount(g.not_counted)}`;
+  return `${g.name} · ${what}`.toUpperCase();
+}
+
 export const COUNTS = [
   { value: '', label: 'Everything' },
   { value: 'spending', label: 'Spending' },
@@ -125,6 +130,15 @@ export function amountRange(value) {
   return out;
 }
 
+/** "Priya owes you $194.20 for 2 purchases." (WW-01's second alert). */
+export function owedWords(owed) {
+  if (!owed || !owed.names?.length) return '';
+  const names = owed.names.length === 1 ? owed.names[0]
+    : `${owed.names.slice(0, -1).join(', ')} and ${owed.names[owed.names.length - 1]}`;
+  const verb = owed.names.length === 1 ? 'owes' : 'owe';
+  return `${names} ${verb} you ${txAmount(owed.total)} for ${owed.count} purchase${owed.count === 1 ? '' : 's'}.`;
+}
+
 /** The filters, from the address bar, with the defaults filled in. */
 function fromUrl() {
   const url = readTxUrl();
@@ -134,14 +148,14 @@ function fromUrl() {
            recurring: f.recurring || '', q: f.q || '',
            tag: f.tag || '', counts: f.counts || '', amount: f.amount || '',
            pending: f.pending || '', look: f.look || '', merchant: f.merchant || '',
-           by: f.by || '',
+           by: f.by || '', owed: f.owed || '',
            from: url?.from || '' };
 }
 
 const DEFAULTS = () => ({ month: thisMonth(), account: '', group: '', category: '',
                           excluded: '', joint: '', recurring: '', from: '',
                           tag: '', counts: '', amount: '', pending: '', look: '', merchant: '',
-                          by: '' });
+                          by: '', owed: '' });
 
 /**
  * The Account filter's options: the same accounts, names and order as
@@ -177,14 +191,19 @@ export function accountOptionsFrom(overview, accounts) {
 export default function TransactionsList({ summary, categories, accounts, reviewCount = 0,
                                            onTab, onChanged, version }) {
   const [filters, setFilters] = useState(fromUrl);
-  // The transaction open in the side panel (TX-04), from /transactions/<id>.
+  // The transaction open in the side panel (TX-04), from /transactions/<id>,
+  // and the step it opens on (a row's Category or Mark as…).
   const [openId, setOpenId] = useState(() => readTxUrl()?.id ?? null);
+  const [openStep, setOpenStep] = useState('main');
   const [toast, setToast] = useState('');
   // A change that moved a number (R-03): what it did, with Undo.
   const [change, setChange] = useState(null);
   // Rows that just changed, highlighted for a moment.
   const [flash, setFlash] = useState(() => new Set());
   const [adding, setAdding] = useState(false);
+  const [filtering, setFiltering] = useState(false);
+  const [sorting, setSorting] = useState(null);       // false | null | a range to change
+  const [together, setTogether] = useState(false);
   const [query, setQuery] = useState(filters.q);
   const [data, setData] = useState(null);
   const [rows, setRows] = useState([]);
@@ -194,7 +213,7 @@ export default function TransactionsList({ summary, categories, accounts, review
   const request = useRef(0);
   // Keyboard review (THL-83): focus and selection, the batch picker, the
   // shortcuts panel, and her single-key preference. Select mode on a phone
-  // uses the same selection (2026-10-14).
+  // uses the same selection.
   const desktop = useDesktop();
   const [selecting, setSelecting] = useState(false);
   const [kb, setKb] = useState(initialState);
@@ -253,17 +272,19 @@ export default function TransactionsList({ summary, categories, accounts, review
   const filtered = filters.month !== thisMonth() || !!filters.account
     || !!filters.group || !!filters.category || !!filters.excluded || !!filters.joint
     || !!filters.recurring || !!filters.tag || !!filters.counts || !!filters.amount
-    || !!filters.pending || !!filters.look || !!filters.merchant;
+    || !!filters.pending || !!filters.look || !!filters.merchant || !!filters.owed;
   // Back to TX-01's defaults; the search, if any, is its own control.
   const clearFilters = () => choose(DEFAULTS());
   const clearSearch = () => { setQuery(''); choose({ q: '' }); };
+  // What the Filters panel holds, beyond the toolbar's three chips.
+  const extra = [filters.month !== thisMonth() && !/^\d{4}-\d{2}$/.test(filters.month),
+                 !!filters.tag, !!filters.counts, !!filters.amount, !!filters.pending, !!filters.look,
+                 ['fixed', 'variable'].includes(filters.group)].filter(Boolean).length;
 
   const fetchPage = useCallback(async (offset) => {
     const id = ++request.current;
     try {
-      const { from, amount, by, ...params } = filters;
-      const res = await getTxList({ ...params, ...amountRange(amount), by: by || '',
-                                    limit: PAGE, offset });
+      const res = await getTxList({ ...requestFor(filters, thisMonth()), limit: PAGE, offset });
       if (id !== request.current) return;
       setError(null);
       setData(res);
@@ -286,9 +307,9 @@ export default function TransactionsList({ summary, categories, accounts, review
   // ── Filter options ────────────────────────────────────────────────────
   const monthOptions = useMemo(() => {
     const months = new Set([thisMonth(), ...(summary?.months ?? [])]);
-    if (filters.month && filters.month !== 'all') months.add(filters.month);
+    if (/^\d{4}-\d{2}$/.test(filters.month)) months.add(filters.month);
     return [...[...months].sort().reverse().map((m) => ({ value: m, label: monthName(m) })),
-            { value: 'all', label: 'All months' }];
+            { value: 'last3', label: 'Last 3 months' }, { value: 'all', label: 'All months' }];
   }, [summary, filters.month]);
 
   const accountOptions = useMemo(() => accountOptionsFrom(overview, accounts), [overview, accounts]);
@@ -298,15 +319,12 @@ export default function TransactionsList({ summary, categories, accounts, review
   const categoryOptions = useMemo(() => [
     { value: '', label: 'All categories' },
     { group: 'Groups', options: Object.entries(groups).map(([k, v]) => ({ value: `g:${k}`, label: v })) },
-    { group: 'Kind', options: Object.entries(data?.kinds ?? { fixed: 'Fixed', variable: 'Variable' })
-        .map(([k, v]) => ({ value: `g:${k}`, label: v })) },
     { group: 'Categories', options: categories
         .filter((c) => !c.hidden || c.name === filters.category)
         .map((c) => ({ value: `c:${c.name}`, label: c.name })) },
     // Rows you excluded are not in the list; this is where they can be found
-    // and put back.
-    // So are a joint account's rows that are someone else's, until she says
-    // one was hers.
+    // and put back. So are a joint account's rows that are someone else's,
+    // until she says one was hers.
     { group: 'Other', options: [
       { value: 'x:excluded', label: 'Left out' },
       { value: 'x:recurring', label: 'Subscriptions' },
@@ -316,11 +334,12 @@ export default function TransactionsList({ summary, categories, accounts, review
   // "Review subscriptions" (THL-63) opens the list on their charges.
   const special = filters.excluded ? 'Left out' : filters.joint ? 'Joint: not yours'
     : filters.recurring ? 'Subscriptions' : '';
-  const categoryValue = filters.group ? `g:${filters.group}`
+  const kindGroup = ['fixed', 'variable'].includes(filters.group);
+  const categoryValue = filters.group && !kindGroup ? `g:${filters.group}`
     : filters.category ? `c:${filters.category}`
       : filters.excluded ? 'x:excluded' : filters.joint ? 'x:joint'
         : filters.recurring ? 'x:recurring' : '';
-  const categoryLabel = filters.group ? groups[filters.group]
+  const categoryLabel = filters.group ? (groups[filters.group] ?? (data?.kinds ?? {})[filters.group] ?? filters.group)
     : filters.category || special || 'All categories';
   const pickCategory = (v) => choose({
     group: v.startsWith('g:') ? v.slice(2) : '',
@@ -329,11 +348,6 @@ export default function TransactionsList({ summary, categories, accounts, review
     joint: v === 'x:joint' ? '1' : '',
     recurring: v === 'x:recurring' ? '1' : '',
   });
-  const tagOptions = useMemo(() => [
-    { value: '', label: 'Any tag' },
-    ...(data?.tags ?? []).map((t) => ({ value: t, label: t })),
-  ], [data?.tags]);
-  const showTags = (data?.tags?.length ?? 0) > 0 || !!filters.tag;
 
   // ── Rows by day ───────────────────────────────────────────────────────
   const days = useMemo(() => {
@@ -349,14 +363,19 @@ export default function TransactionsList({ summary, categories, accounts, review
   const totals = data?.totals;
   const focus = data?.focus;           // set when a group, category, tag or merchant is chosen
   const view = filters.by || '';
+  const groupsOf = view ? (data?.groups_of ?? []) : null;
+  // In a grouped view every row is on the page; the keys and selection work
+  // over them in the order shown.
+  const shownRows = useMemo(() => (groupsOf ? groupsOf.flatMap((g) => g.rows) : rows), [groupsOf, rows]);
   const more = view ? 0 : (data?.total ?? 0) - rows.length;
   const empty = !!data && (data.total ?? 0) === 0;
-  const anySuggested = rows.some((r) => r.suggested);
-  const anyRuled = rows.some((r) => r.ruled);
+  const anySuggested = shownRows.some((r) => r.suggested);
+  const anyRuled = shownRows.some((r) => r.ruled);
   const dupes = data?.duplicates ?? 0;
-  const index = new Map(rows.map((r, i) => [r.id, i]));
-  const open = (id) => { setOpenId(id); toUrl(filters, true, id); };
-  const close = () => { setOpenId(null); toUrl(filters, true, null); };
+  const owed = data?.owed;
+  const index = new Map(shownRows.map((r, i) => [r.id, i]));
+  const open = (id, step = 'main') => { setOpenStep(step); setOpenId(id); toUrl(filters, true, id); };
+  const close = () => { setOpenId(null); setOpenStep('main'); toUrl(filters, true, null); };
   // After a change in the panel: say so, and refresh everything that counts
   // it (the list, the totals, the review badge).
   const saved = ({ close: closing, change: what } = {}) => {
@@ -392,10 +411,19 @@ export default function TransactionsList({ summary, categories, accounts, review
   };
 
   // ── Selection (THL-83, and select mode on a phone) ────────────────────
-  const ids = useMemo(() => rows.map((r) => r.id), [rows]);
-  const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
+  const ids = useMemo(() => shownRows.map((r) => r.id), [shownRows]);
+  const byId = useMemo(() => new Map(shownRows.map((r) => [r.id, r])), [shownRows]);
   const selected = kb.selected.filter((id) => byId.has(id));
   const clearSelection = () => setKb((k) => reduce(k, 'clear', ids));
+  // "3 selected · -$148.95": what the selection comes to, money out less money in.
+  const selectedTotal = useMemo(() => {
+    const net = selected.reduce((sum, id) => {
+      const r = byId.get(id);
+      if (!r || r.counts === 'none') return sum;
+      return sum + (r.inflow ? r.amount : -r.amount);
+    }, 0);
+    return Math.abs(net) < 0.005 ? '' : txAmount(Math.abs(net), { inflow: net > 0, signed: true });
+  }, [selected, byId]);
 
   useEffect(() => {
     if (!desktop) return undefined;
@@ -485,6 +513,13 @@ export default function TransactionsList({ summary, categories, accounts, review
     });
   };
 
+  // Sort a date range (DR-01) and Sorted together (DR-02).
+  const rangeDone = (res) => {
+    setSorting(null);
+    saved({ change: { ids: res.ids ?? [], title: res.title, detail: res.mostly || '', undo: null } });
+  };
+  const rangeRemoved = (res) => { setToast(res.title); onChanged?.(); };
+
   const onListKey = (e) => {
     if (!desktop || picking || marking || tagging || help) return;
     const action = keyAction(e, { singleKey, inText: isTextTarget(e.target) });
@@ -527,44 +562,93 @@ export default function TransactionsList({ summary, categories, accounts, review
     else setKb((k) => reduce({ ...k, focus: i }, 'select', ids));
   };
 
-  // The title says what the list is: "Lifestyle in October" when it is one
-  // group or category, otherwise just Transactions.
-  const focusLabel = filters.group ? groups[filters.group]
-    : filters.category || filters.tag || filters.merchant || special;
-  const title = focusLabel ? (filters.month === 'all' ? `${focusLabel}, all months`
-    : `${focusLabel} in ${monthName(filters.month)}`) : 'Transactions';
+  // The title: "Cash flow", with the month over it (VF-01); a focus names
+  // itself in the tiles.
   const overline = filters.from === 'home' ? 'From Home' : monthName(filters.month, true);
   const anySelected = selected.length > 0 && selectable;
+
+  // WW-01: a row's actions on hover — ✓ Right only on a row Pearl isn't
+  // sure of, Category, and Mark as…
+  const rowActions = (r) => (
+    <span className="tx-actions" role="group" aria-label={`Actions for ${r.merchant}`}>
+      {r.suggested && r.chip.label !== 'Possible duplicate' && r.chip.label !== 'Whose?' && (
+        <button type="button" className="tx-action ok" onClick={() => confirmRows([r.id])}
+                disabled={busy}>
+          <PIcon name="check" size={14} /> Right
+        </button>
+      )}
+      <button type="button" className="tx-action" onClick={() => open(r.id, 'category')}>
+        Category
+      </button>
+      <button type="button" className="tx-action mark" onClick={() => open(r.id, 'what')}>
+        Mark as…
+      </button>
+    </span>
+  );
+
+  const rowFor = (r) => {
+    const row = (
+      <TxRow key={r.id} name={r.merchant} logo={r.logo}
+             meta={r.account + (r.pending ? ' · Pending' : '')
+               + (r.source_label ? ` · ${r.source_label}` : '')}
+             note={r.note || r.my_note} noteLink={r.note_link}
+             chip={r.chip} amount={r.amount} inflow={r.inflow}
+             tags={r.tags ?? []} ruled={r.ruled}
+             muted={r.counts === 'none'} flash={flash.has(r.id)}
+             onOpen={() => openRow(r)}
+             {...(desktop ? {
+               tabIndex: index.get(r.id) === Math.min(kb.focus, ids.length - 1) ? 0 : -1,
+               'data-row-index': index.get(r.id),
+               onFocus: () => setKb((k) => ({ ...k, focus: index.get(r.id) })),
+             } : {})} />
+    );
+    const on = selected.includes(r.id);
+    const i = index.get(r.id);
+    return (
+      <div key={r.id} className={`tx-sel${on ? ' on' : ''}${flash.has(r.id) ? ' flash' : ''}`}>
+        {selectable && (
+          <label className="tx-check">
+            <input type="checkbox" tabIndex={-1} checked={on} onChange={() => {}}
+                   onClick={(e) => onCheck(e, i)}
+                   aria-label={`Select ${rowName(r, txAmount(r.amount, { inflow: r.inflow, signed: true }))}`} />
+            <span className="tx-check-box" aria-hidden="true">
+              {on && <PIcon name="check" size={14} />}
+            </span>
+          </label>
+        )}
+        {row}
+        {desktop && !selecting && r.duplicate?.state !== 'pending' && rowActions(r)}
+      </div>
+    );
+  };
+
+  const sections = groupsOf
+    ? groupsOf.map((g) => ({ key: g.name, label: groupLabel(g), rows: g.rows }))
+    : days.map((d) => ({ key: d.date, label: dayLabel(d.date), rows: d.rows }));
 
   return (
     <div className="pk tx-page">
       <header className="tx-head">
         <div>
           <p className="pk-overline accent">{overline}</p>
-          <h1 className="pk-h1">{title}</h1>
+          <h1 className="pk-h1">Cash flow</h1>
         </div>
         <div className="tx-head-actions">
-          {!desktop && rows.length > 0 && (
+          {!desktop && shownRows.length > 0 && (
             <PButton variant="secondary" aria-pressed={selecting}
                      onClick={() => { setSelecting((s) => !s); clearSelection(); }}>
               {selecting ? 'Done' : 'Select'}
             </PButton>
           )}
+          <PButton variant="text" onClick={() => setTogether(true)}>Sorted together</PButton>
+          <PButton variant="secondary" onClick={() => setSorting(false)}>Sort a date range</PButton>
           <PButton onClick={() => setAdding(true)}>
             <PIcon name="plus" size={16} /> Add a transaction
           </PButton>
         </div>
       </header>
+      <CashFlowTabs current="transactions" onTab={onTab} />
 
-      {anySelected ? (
-        <SelectedBar count={selected.length} singleKey={desktop && singleKey}
-                     onChange={() => setPicking(selected)}
-                     onMark={() => setMarking(selected)}
-                     onTag={() => setTagging(selected)}
-                     onLeaveOut={() => leaveOut(selected)}
-                     onConfirm={() => confirmRows(selected)}
-                     onClear={clearSelection} />
-      ) : (
       <div className="tx-toolbar">
         <SearchField value={query} onChange={setQuery} label="Search transactions"
                      placeholder="Search merchants or amounts" inputRef={searchRef}
@@ -577,30 +661,24 @@ export default function TransactionsList({ summary, categories, accounts, review
                       active={!!filters.account} onChange={(v) => choose({ account: v })} />
           <FilterChip label="Category" value={categoryValue} options={categoryOptions}
                       shown={categoryLabel} active={!!categoryValue} onChange={pickCategory} />
-          <FilterChip label="Counts" value={filters.counts} options={COUNTS}
-                      active={!!filters.counts} onChange={(v) => choose({ counts: v })} />
-          <FilterChip label="Amount" value={filters.amount} options={AMOUNTS}
-                      active={!!filters.amount} onChange={(v) => choose({ amount: v })} />
-          {showTags && (
-            <FilterChip label="Tag" value={filters.tag} options={tagOptions}
-                        active={!!filters.tag} onChange={(v) => choose({ tag: v })} />
-          )}
-          <button type="button" className={`pk-filter tx-toggle${filters.pending ? ' active' : ''}`}
-                  aria-pressed={!!filters.pending}
-                  onClick={() => choose({ pending: filters.pending ? '' : '1' })}>
-            Pending
+          <div className="tx-view">
+            <Segmented label="View" value={filters.by} options={VIEWS}
+                       onChange={(v) => choose({ by: v })} />
+          </div>
+          <button type="button" className={`pk-filter tx-toggle${extra ? ' active' : ''}`}
+                  aria-pressed={!!extra} onClick={() => setFiltering(true)}>
+            <PIcon name="list" size={14} /> Filters{extra ? ` · ${extra}` : ''}
           </button>
-          <button type="button" className={`pk-filter tx-toggle${filters.look ? ' active' : ''}`}
-                  aria-pressed={!!filters.look}
-                  onClick={() => choose({ look: filters.look ? '' : '1' })}>
-            Needs a look
-          </button>
-          <FilterChip label="View" value={filters.by} options={VIEWS}
-                      active={!!filters.by} onChange={(v) => choose({ by: v })} />
           {filters.merchant && (
             <button type="button" className="pk-filter active tx-toggle" aria-pressed="true"
                     onClick={() => choose({ merchant: '' })}>
               {filters.merchant} <PIcon name="x" size={14} />
+            </button>
+          )}
+          {filters.owed && (
+            <button type="button" className="pk-filter active tx-toggle" aria-pressed="true"
+                    onClick={() => choose({ owed: '' })}>
+              Owed to you <PIcon name="x" size={14} />
             </button>
           )}
           {filtered && !empty && (
@@ -610,7 +688,6 @@ export default function TransactionsList({ summary, categories, accounts, review
           )}
         </div>
       </div>
-      )}
 
       {picking && (
         <BatchPicker ids={picking} categories={categories.filter((c) => !c.hidden)} busy={busy}
@@ -627,7 +704,7 @@ export default function TransactionsList({ summary, categories, accounts, review
         <>
           {totals && (focus ? (
             <div className="pk-tiles">
-              <StatTile label={filters.month === 'all' ? `${focus.label} in all` : `${focus.label} so far`}
+              <StatTile label={['all', 'last3'].includes(filters.month) ? `${focus.label} in all` : `${focus.label} so far`}
                         value={txAmount(focus.total)} />
               <StatTile label="In a usual month"
                         value={focus.usual == null ? '—' : txAmount(focus.usual)} />
@@ -635,9 +712,9 @@ export default function TransactionsList({ summary, categories, accounts, review
             </div>
           ) : (
             <div className="pk-tiles">
-              <StatTile label={filters.month === 'all' ? 'Spent' : 'Spent so far'} value={txAmount(totals.spent)} />
-              <StatTile label={filters.month === 'all' ? 'Income' : 'Income so far'} value={txAmount(totals.income)} />
-              <StatTile label="Not counted" value={txAmount(totals.not_counted)} />
+              <StatTile label={['all', 'last3'].includes(filters.month) ? 'Spent' : 'Spent so far'} value={txAmount(totals.spent)} />
+              <StatTile label={['all', 'last3'].includes(filters.month) ? 'Income' : 'Income so far'} value={txAmount(totals.income)} />
+              <StatTile label="Moving money" value={txAmount(totals.not_counted)} />
             </div>
           ))}
 
@@ -652,22 +729,18 @@ export default function TransactionsList({ summary, categories, accounts, review
               )}
             </Alert>
           )}
-
-          {view === 'merchant' && data?.merchants && (
-            <FoldedList rows={data.merchants} kind="merchant"
-                        onPick={(m) => choose({ merchant: m.merchant, by: '' })} />
-          )}
-          {view === 'category' && data?.categories && (
-            <FoldedList rows={data.categories} kind="category"
-                        onPick={(c) => choose({ category: c.category, group: '', by: '' })} />
+          {owed && !filters.owed && (
+            <Alert action="See them" onAction={() => choose({ owed: '1', month: 'all' })}>
+              {owedWords(owed)}
+            </Alert>
           )}
 
-          {!view && (anySuggested || anyRuled) && (
+          {(anySuggested || anyRuled) && (
             <div className="tx-legend">
               {anySuggested && (
                 <>
-                  <CategoryChip label="Groceries" suggested />
-                  <span>Pearl isn’t sure of this one. Open it to confirm or change.</span>
+                  <CategoryChip label="Other" suggested />
+                  <span>Pearl isn’t sure of this one. Open it to tell us what it was.</span>
                 </>
               )}
               {anyRuled && (
@@ -679,13 +752,13 @@ export default function TransactionsList({ summary, categories, accounts, review
             </div>
           )}
 
-          {desktop && !view && rows.length > 0 && !anySelected && (
+          {desktop && shownRows.length > 0 && !anySelected && (
             <KeyHints singleKey={singleKey} />
           )}
 
-          {!view && rows.length > 0 && (
+          {shownRows.length > 0 && (
             <section className={`pk-list${desktop ? ' tx-keys' : ''}${selectable ? ' tx-selectable' : ''}`}
-                     aria-label={title}
+                     aria-label="Transactions"
                      ref={listRef} onKeyDown={onListKey}
                      aria-describedby={desktop ? 'tx-keys-help' : undefined}>
               {desktop && (
@@ -695,44 +768,10 @@ export default function TransactionsList({ summary, categories, accounts, review
                     : 'Use the arrow keys to move and Shift with the arrow keys to select.'}
                 </p>
               )}
-              {days.map((d) => (
-                <div key={d.date} role="group" aria-label={dayLabel(d.date)}>
-                  <DayHeader>{dayLabel(d.date)}</DayHeader>
-                  {d.rows.map((r) => {
-                    const row = (
-                      <TxRow key={r.id} name={r.merchant} logo={r.logo}
-                             meta={r.account + (r.pending ? ' · Pending' : '')
-                               + (r.source_label ? ` · ${r.source_label}` : '')}
-                             note={r.note || r.my_note} noteLink={r.note_link}
-                             chip={r.chip} amount={r.amount} inflow={r.inflow}
-                             tags={r.tags ?? []} ruled={r.ruled}
-                             muted={r.counts === 'none'} flash={flash.has(r.id)}
-                             onOpen={() => openRow(r)}
-                             {...(desktop ? {
-                               tabIndex: index.get(r.id) === Math.min(kb.focus, ids.length - 1) ? 0 : -1,
-                               'data-row-index': index.get(r.id),
-                               onFocus: () => setKb((k) => ({ ...k, focus: index.get(r.id) })),
-                             } : {})} />
-                    );
-                    const on = selected.includes(r.id);
-                    const i = index.get(r.id);
-                    return (
-                      <div key={r.id}
-                           className={`tx-sel${on ? ' on' : ''}${flash.has(r.id) ? ' flash' : ''}`}>
-                        {selectable && (
-                          <label className="tx-check">
-                            <input type="checkbox" tabIndex={-1} checked={on} onChange={() => {}}
-                                   onClick={(e) => onCheck(e, i)}
-                                   aria-label={`Select ${rowName(r, txAmount(r.amount, { inflow: r.inflow, signed: true }))}`} />
-                            <span className="tx-check-box" aria-hidden="true">
-                              {on && <PIcon name="check" size={14} />}
-                            </span>
-                          </label>
-                        )}
-                        {row}
-                      </div>
-                    );
-                  })}
+              {sections.map((d) => (
+                <div key={d.key} role="group" aria-label={d.label}>
+                  <DayHeader>{d.label}</DayHeader>
+                  {d.rows.map(rowFor)}
                 </div>
               ))}
               {more > 0 && (
@@ -745,7 +784,7 @@ export default function TransactionsList({ summary, categories, accounts, review
             </section>
           )}
 
-          {desktop && !view && rows.length > 0 && (
+          {desktop && shownRows.length > 0 && (
             <PButton variant="text" className="tx-keys-link" onClick={() => setHelp(true)}
                      aria-keyshortcuts={singleKey ? '?' : undefined}>
               Keyboard shortcuts
@@ -754,13 +793,41 @@ export default function TransactionsList({ summary, categories, accounts, review
         </>
       )}
 
+      {anySelected && (
+        <SelectedBar count={selected.length} total={selectedTotal} singleKey={desktop && singleKey}
+                     onChange={() => setPicking(selected)}
+                     onMark={() => setMarking(selected)}
+                     onTag={() => setTagging(selected)}
+                     onLeaveOut={() => leaveOut(selected)}
+                     onConfirm={() => confirmRows(selected)}
+                     onClear={clearSelection} />
+      )}
+
       {openId && (
-        <TransactionDetail id={openId} initial={rows.find((r) => r.id === openId)}
-                           categories={categories} onClose={close} onSaved={saved} />
+        <TransactionDetail id={openId} initial={shownRows.find((r) => r.id === openId)}
+                           categories={categories} onClose={close} onSaved={saved}
+                           startStep={openStep} />
       )}
       {adding && (
         <AddTransaction categories={categories.filter((c) => !c.hidden)} onClose={() => setAdding(false)}
                         onSaved={() => { setAdding(false); saved(); }} />
+      )}
+      {filtering && (
+        <TxFiltersPanel filters={filters} thisMonth={thisMonth()}
+                        accounts={accountOptions.flatMap((o) => o.options ?? [o]).filter((o) => o.value)}
+                        tags={data?.tag_totals ?? (data?.tags ?? [])}
+                        onApply={(f) => { setFiltering(false); choose(f); }}
+                        onClose={() => setFiltering(false)} />
+      )}
+      {sorting !== null && (
+        <SortRangePanel categories={categories} range={sorting || null} onDone={rangeDone}
+                        onClose={() => setSorting(null)} />
+      )}
+      {together && (
+        <SortedTogetherPanel onClose={() => setTogether(false)}
+                             onAnother={() => { setTogether(false); setSorting(false); }}
+                             onChange={(r) => { setTogether(false); setSorting(r); }}
+                             onRemoved={rangeRemoved} />
       )}
       {marking && (
         <BatchMarkPanel ids={marking} categories={categories} onDone={batchDone(marking)}
@@ -780,40 +847,6 @@ export default function TransactionsList({ summary, categories, accounts, review
                         onClose={() => setHelp(false)} />
       )}
     </div>
-  );
-}
-
-/** The list folded by merchant or by category (2026-10-14): one line each,
- * biggest spending first; picking one opens its rows. */
-export function FoldedList({ rows, kind, onPick }) {
-  return (
-    <section className="pk-list tx-folded" aria-label={kind === 'merchant' ? 'By merchant' : 'By category'}>
-      {rows.map((g) => {
-        const name = kind === 'merchant' ? g.merchant : g.category;
-        const main = g.spent >= 0.005 || (g.income < 0.005 && g.not_counted < 0.005)
-          ? { amount: g.spent, inflow: false, muted: false }
-          : g.income >= 0.005 ? { amount: g.income, inflow: true, muted: false }
-            : { amount: g.not_counted, inflow: false, muted: true };
-        const bits = [`${g.count} transaction${g.count === 1 ? '' : 's'}`];
-        if (g.spent >= 0.005 && g.income >= 0.005) bits.push(`${txAmount(g.income)} in`);
-        if (g.not_counted >= 0.005 && !main.muted) bits.push(`${txAmount(g.not_counted)} not counted`);
-        return (
-          <button type="button" key={name} className={`pk-row${main.muted ? ' muted' : ''}`}
-                  onClick={() => onPick(g)}>
-            {kind === 'merchant' ? <Avatar name={name} logo={g.logo} />
-              : <span className="pk-avatar" aria-hidden="true"><PIcon name="list" size={16} /></span>}
-            <span className="pk-row-text">
-              <span className="pk-row-name">{name}</span>
-              <span className="pk-row-meta">{bits.join(' · ')}</span>
-            </span>
-            <span className={`pk-amt ${main.muted ? 'muted' : main.inflow ? 'in' : 'out'}`}>
-              {txAmount(main.amount, { inflow: main.inflow && !main.muted, signed: !main.muted && !main.inflow })}
-            </span>
-            <PIcon name="chevronRight" size={16} />
-          </button>
-        );
-      })}
-    </section>
   );
 }
 

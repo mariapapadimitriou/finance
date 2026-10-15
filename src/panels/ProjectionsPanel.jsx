@@ -113,7 +113,7 @@ export function ProjectionsPage({ d, nav, cards = true }) {
     <div className="pk hm-page in-page pj-page">
       <header className="hm-head">
         <p className="pk-overline accent">What could happen</p>
-        <h1 className="pk-h1">Growth</h1>
+        <h1 className="pk-h1">Save</h1>
       </header>
       <GrowthTabs current="projections" onTab={nav.onTab} />
       <AnchorLine anchor={d.anchor} nav={nav} />

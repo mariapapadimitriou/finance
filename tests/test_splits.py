@@ -79,7 +79,7 @@ def test_even_split_counts_only_her_share(client):
                                          "owes": 42.5, "paid_on": None}]
     data = listing(client)
     assert data["totals"]["spent"] == 42.5
-    assert data["transactions"][0]["note"] == "Your share of $85.00 · split with Priya"
+    assert data["transactions"][0]["note"] == "Your share of $85.00 · split with Priya"  # nobody paid yet
 
 
 def test_an_odd_cent_stays_with_her(client):

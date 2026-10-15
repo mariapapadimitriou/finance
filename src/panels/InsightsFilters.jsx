@@ -9,14 +9,14 @@ import { LensToggle } from './Lens.jsx';
 export function InsightsFilters({ d, lens, onLens, filters, onFilter }) {
   const accounts = [{ value: '', label: 'All accounts' },
                     ...(d.accounts ?? []).map((a) => ({ value: a.id, label: a.name }))];
-  const spans = [{ value: '', label: 'Last 12 months' }, { value: '6', label: 'Last 6 months' },
-                 { value: '3', label: 'Last 3 months' }];
-  const shows = [{ value: '', label: 'All spending' },
-                 { group: 'By need', options: [{ value: 'essentials', label: 'Essentials only' },
-                                               { value: 'lifestyle', label: 'Lifestyle only' }] },
-                 { group: 'By kind', options: [{ value: 'fixed', label: 'Fixed only' },
-                                               { value: 'variable', label: 'Variable only' }] }];
-  const oneOffs = [{ value: '', label: 'One-offs in' }, { value: 'out', label: 'One-offs left out' }];
+  const spans = [{ value: '', label: '12 months' }, { value: '6', label: '6 months' },
+                 { value: '3', label: '3 months' }];
+  const shows = [{ value: '', label: 'Show: everything' },
+                 { group: 'By need', options: [{ value: 'essentials', label: 'Show: Essentials' },
+                                               { value: 'lifestyle', label: 'Show: Lifestyle' }] },
+                 { group: 'By kind', options: [{ value: 'fixed', label: 'Show: Fixed' },
+                                               { value: 'variable', label: 'Show: Variable' }] }];
+  const oneOffs = [{ value: '', label: 'One-offs: in' }, { value: 'out', label: 'One-offs: left out' }];
   return (
     <div className="in-filters" aria-label="Filters">
       <LensToggle lens={lens} onChange={onLens} />

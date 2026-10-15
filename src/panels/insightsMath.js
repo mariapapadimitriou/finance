@@ -61,8 +61,8 @@ export function tileRows(d, lens = 'need') {
     { key: 'income', label: 'Income', value: t.income > 0 ? cash(t.income) : 'None yet', note: income },
     { key: a[0], label: a[1], value: a[2] > 0 ? cash(a[2]) : 'Nothing yet', note: so },
     { key: b[0], label: b[1], value: b[2] > 0 ? cash(b[2]) : 'Nothing yet', note: so },
-    { key: 'set_aside', label: 'Set aside', value: t.set_aside > 0 ? cash(t.set_aside) : 'Nothing yet',
-      note: 'Anchor and chests' },
+    { key: 'set_aside', label: 'Put away', value: t.set_aside > 0 ? cash(t.set_aside) : 'Nothing yet',
+      note: 'Moved to savings' },
   ];
 }
 

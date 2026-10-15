@@ -177,3 +177,102 @@
 .pf-kind-actions { display: inline-flex; gap: var(--space-3); }
 .pf-hidden-list { flex-direction: row; flex-wrap: wrap; gap: var(--space-2) var(--space-5); }
 .pf-hidden-list li { width: auto; }
+
+/* ── Parity with the Pearl Handoff File (2026-10-15) ─────────────────── */
+/* VF-01: the view switch sits with the chips. */
+.tx-view { display: inline-flex; }
+.tx-view .pk-seg { width: auto; }
+.tx-view .pk-seg button { flex: none; padding: 7px 14px; }
+
+/* WW-01: a row's actions on hover or focus, as pills at the right. */
+.tx-actions { display: none; align-items: center; gap: 6px; flex: none; padding-right: 12px; }
+.pk .tx-action {
+  display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 14px;
+  border: 1px solid transparent; border-radius: var(--radius-full); background: var(--surface-card);
+  color: var(--link); font: inherit; font-size: 14px; line-height: 18px; font-weight: 500; cursor: pointer;
+  white-space: nowrap;
+}
+.pk .tx-action:hover { text-decoration: underline; text-underline-offset: 3px; }
+.pk .tx-action.ok { color: var(--on-nacre); }
+.pk .tx-action.mark { border-color: var(--border-strong); color: var(--ink); font-weight: 600; }
+.pk .tx-action:disabled { opacity: .5; cursor: default; }
+@media (min-width: 1024px) {
+  .tx-sel { position: relative; }
+  .tx-sel:hover .tx-actions, .tx-sel:focus-within .tx-actions {
+    display: inline-flex; position: absolute; right: 136px; top: 50%; transform: translateY(-50%);
+    padding: 6px 8px; border-radius: var(--radius-full); background: var(--surface-page);
+    box-shadow: var(--shadow-raised);
+  }
+}
+@media (max-width: 1023px) {
+  .tx-sel { padding-left: 0; }
+  .tx-selectable .tx-sel { padding-left: 16px; }
+}
+
+/* VF-03: the selection bar floats at the foot of the page. */
+.kr-selected {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 50;
+  width: max-content; max-width: calc(100% - 32px); flex-wrap: wrap; justify-content: center;
+  padding: 10px 14px 10px 22px; border-radius: var(--radius-full);
+  background: var(--surface-page); box-shadow: var(--shadow-raised); border: 1px solid var(--border);
+  color: var(--ink);
+}
+.pk .kr-selected .kr-action {
+  height: 44px; padding: 0 18px; border: 1px solid var(--border-strong); border-radius: var(--radius-full);
+  background: var(--surface-card); color: var(--ink); font-size: 14px; font-weight: 600;
+}
+.pk .kr-selected .kr-action:hover { text-decoration: none; border-color: var(--action); }
+.pk .kr-selected .kr-action.primary { background: var(--action); border-color: var(--action); color: var(--on-action); }
+.pk .kr-selected .kr-action.quiet { border-color: transparent; background: transparent; padding: 0 8px; }
+.kr-selected .kr-selected-count { flex: none; }
+
+/* VF-02: the Filters panel. */
+.txf { display: flex; flex-direction: column; gap: var(--space-5); }
+.txf-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.txf-group > .pk-label { margin: 0; }
+.txf-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+/* DR-01, DR-02 and the sheet's steps. */
+.rg-dates { display: flex; gap: var(--space-3); }
+.rg-dates > .txd-field { flex: 1 1 0; min-width: 0; }
+.pk .rg-dates input, .pk .txf input, .pk .wwt-input, .pk .txd-field input[type="date"] {
+  width: 100%; min-height: 48px; padding: 12px 16px; font: inherit; color: var(--ink);
+  background: var(--surface-card); border: 1.5px solid var(--border-strong); border-radius: var(--radius-sm);
+}
+.rg-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.rg-card {
+  display: flex; flex-direction: column; gap: var(--space-2); padding: 16px;
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md);
+}
+.rg-card-top { display: flex; justify-content: space-between; gap: var(--space-3); font-size: 15px; font-weight: 500; }
+.rg-card p { margin: 0; }
+.rg-card-actions { display: flex; gap: var(--space-4); }
+.pk .rg-card-actions .pk-btn.text { width: auto; padding: 4px 0; }
+.rg-summary p { margin: 0; }
+
+/* WW-02: the transaction, and the cases as cards in their groups. */
+.wwt-tx {
+  display: flex; align-items: center; gap: var(--space-3); padding: 14px 16px;
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md);
+}
+.wwt-tx-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.wwt-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.wwt-group > .pk-overline { margin: 0; color: var(--ink-muted); }
+.wwt-cases { display: flex; flex-direction: column; gap: var(--space-2); }
+.pk .wwt-case {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; padding: 14px 17px;
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-card);
+  text-align: left; cursor: pointer; color: var(--ink); font: inherit;
+}
+.pk .wwt-case:hover { border-color: var(--border-strong); }
+.pk .wwt-case.best { border: 2px solid var(--action); padding: 13px 16px; }
+.wwt-case-title { font-size: 15px; line-height: 22px; font-weight: 500; }
+.wwt-case-effect { font-size: 14px; line-height: 22px; color: var(--ink-muted); }
+.wwt-effect {
+  display: flex; flex-direction: column; gap: 4px; padding: 16px;
+  background: var(--lilac); border-radius: var(--radius-md); color: var(--ink);
+}
+.wwt-effect p { margin: 0; }
+.wwt-effect .pk-label { font-weight: 600; }
+.wwt-actions { margin-top: var(--space-2); }
+.pk .wwt-actions .pk-btn.secondary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }

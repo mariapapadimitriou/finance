@@ -82,7 +82,7 @@ def test_counts_no_rows_are_out_of_spent_and_income_and_summed(client):
     assert data["totals"]["not_counted"] == 1224
     pay = rows["VISA PREAUTH PYMT"]
     assert pay["counts"] == "none" and pay["chip"] == {"label": "Transfer", "suggested": False}
-    assert pay["note"] == "Card payment · not counted as spending"
+    assert pay["note"] == "Transfer · card payment · the purchases already counted"
     assert rows["PAYROLL ACME"]["counts"] == "income" and rows["PAYROLL ACME"]["inflow"]
 
 
@@ -107,10 +107,10 @@ def test_a_split_shows_and_counts_only_her_share(client):
     rows = by_desc(data)
     sushi = rows["SUSHI NAMI"]
     assert sushi["amount"] == 42.5 and sushi["full_amount"] == 85
-    assert sushi["note"] == "Your share of $85.00 · split with Priya"
+    assert sushi["note"] == "Your share of $85.00 · Priya paid you back"
     back = rows["E-TRANSFER RECEIVED PRIYA"]
     assert back["chip"]["label"] == "Repayment" and back["counts"] == "none"
-    assert back["note"] == "Paid you back for Sushi Nami · not income"
+    assert back["note"] == "Paid back to me · for Sushi Nami · comes off your spending"
     assert data["totals"] == {"spent": 42.5, "income": 0, "not_counted": 42.5, "count": 2}
 
 

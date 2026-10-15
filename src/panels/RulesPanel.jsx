@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
-import { deleteRule, editRule, getRules, renameTag, setCategoryHidden, setCategoryKind } from '../api.js';
-import { Alert, DetailPanel, PButton, Toast, FilterChip } from '../pearl/kit.jsx';
+import {
+  deleteRule, editRule, getRules, money, renameTag, setCategoryHidden, setCategoryKind, setMerchantName,
+} from '../api.js';
+import { Alert, DetailPanel, FilterChip, PButton, Segmented, Toast } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
 import { PageHead } from './ProfilePanel.jsx';
@@ -28,147 +30,166 @@ export function ruleWords(r) {
   return `Always ${categoryLabel(r.category)}`;
 }
 
-const KIND_CHOICES = [{ value: '', label: 'Pearl decides' }, { value: 'fixed', label: 'Always Fixed' },
-                      { value: 'variable', label: 'Always Variable' }];
-
-/** Fixed or Variable, category by category (finance/kinds.py). */
-export function KindsSection({ categories = [], kinds = {}, onKind }) {
-  const spending = categories.filter((c) => !['income', 'savings', 'transfer'].includes(c.group)
-    && c.name !== 'Unsorted transfers');
-  if (!spending.length) return null;
+/** CR-02: her names for merchants — the bank's spelling, and hers. */
+export function NamesSection({ names = [], onRename, onForget }) {
   return (
-    <section className="hm-card pf-kinds" aria-labelledby="pf-kinds-title">
-      <h2 className="pk-h3" id="pf-kinds-title">Fixed or variable</h2>
-      <p className="pk-muted">
-        Pearl counts the bills it sees recurring as Fixed and everything else as Variable. Say
-        otherwise for any category.
-      </p>
-      <ul className="pf-kind-list">
-        {spending.map((c) => (
-          <li key={c.name}>
-            <span className="pf-row-name">{c.name}</span>
-            <FilterChip label={`${c.name}: fixed or variable`} value={kinds[c.name] ?? ''}
-                        options={KIND_CHOICES} active={!!kinds[c.name]}
-                        onChange={(v) => onKind(c.name, v || null)} />
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/** Her names for merchants (2026-10-14): the bank's spelling, and hers. */
-export function NamesSection({ names = [], onForget }) {
-  if (!names.length) return null;
-  return (
-    <section className="hm-card pf-kinds" aria-labelledby="pf-names-title">
-      <h2 className="pk-h3" id="pf-names-title">Merchant names</h2>
-      <p className="pk-muted">Names you gave merchants, shown wherever they’re named.</p>
-      <ul className="pf-kind-list">
-        {names.map((n) => (
-          <li key={n.key}>
-            <span className="pf-row-name">{n.name} <span className="pk-muted">· {n.merchant}</span></span>
-            <button type="button" className="pf-text-link" onClick={() => onForget(n)}>
-              Use the bank’s name
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/** Her tags: how many rows wear each, rename or remove. */
-export function TagsSection({ tags = [], onRename, onRemove }) {
-  if (!tags.length) return null;
-  return (
-    <section className="hm-card pf-kinds" aria-labelledby="pf-tags-title">
-      <h2 className="pk-h3" id="pf-tags-title">Tags</h2>
-      <p className="pk-muted">Tags group transactions without changing their category.</p>
-      <ul className="pf-kind-list">
-        {tags.map((t) => (
-          <li key={t.tag}>
-            <span className="pf-row-name">
-              {t.tag} <span className="pk-muted">· {t.count} transaction{t.count === 1 ? '' : 's'}</span>
-            </span>
-            <span className="pf-kind-actions">
-              <button type="button" className="pf-text-link" onClick={() => onRename(t)}>Rename</button>
-              <button type="button" className="pf-text-link" onClick={() => onRemove(t)}>Remove</button>
-            </span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/** Categories she never uses: out of the pickers, still a category. */
-export function HiddenSection({ categories = [], hidden = [], onHide }) {
-  const spending = categories.filter((c) => !['income', 'savings', 'transfer'].includes(c.group)
-    && c.name !== 'Unsorted transfers' && c.name !== 'Other');
-  if (!spending.length) return null;
-  return (
-    <section className="hm-card pf-kinds" aria-labelledby="pf-hidden-title">
-      <h2 className="pk-h3" id="pf-hidden-title">Categories you use</h2>
-      <p className="pk-muted">
-        Untick a category you never use and it leaves the pickers. Anything already in it stays.
-      </p>
-      <ul className="pf-kind-list pf-hidden-list">
-        {spending.map((c) => (
-          <li key={c.name}>
-            <label className="txd-check">
-              <input type="checkbox" checked={!hidden.includes(c.name)}
-                     onChange={(e) => onHide(c.name, !e.target.checked)} />
-              {c.name}
-            </label>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-export function RulesPage({ rules, onTab, onEdit, categories = [], kinds = {}, onKind, names = [],
-                            tags = [], hidden = [], onForgetName, onRenameTag, onRemoveTag,
-                            onHide }) {
-  return (
-    <div className="pk hm-page pf-page">
-      <PageHead trail={[{ label: 'Profile', to: 'profile' }, { label: 'Categories and rules' }]}
-                title="Categories and rules" onTab={onTab} />
-      <p className="pf-intro">
-        When you sort something and tick “Remember”, Pearl sorts the next ones the same way. Your
-        rules always win over ours.
-      </p>
-      {rules.length === 0 ? (
-        <section className="hm-card">
-          <h2 className="pk-h3">No saved rules yet</h2>
-          <p className="pk-muted">
-            Change a transaction’s category and tick “Apply to all”, and the rule shows up here.
-          </p>
-        </section>
+    <section className="pf-section" aria-label="Merchants">
+      <p className="pk-muted">Give a merchant a name you’ll recognise. It shows everywhere and in search.</p>
+      {names.length === 0 ? (
+        <p className="pk-muted">No merchants renamed yet. Open a transaction and choose Rename merchant.</p>
       ) : (
         <ul className="pf-list">
-          {rules.map((r) => (
-            <li className="pf-row static" key={r.id}>
+          {names.map((n) => (
+            <li className="pf-row static" key={n.key}>
               <div className="pf-row-main">
                 <span className="pf-row-text">
-                  <span className="pf-row-name">{r.name}</span>
-                  <span className="pf-row-sub">{ruleWords(r)}</span>
+                  <span className="pf-row-name">{n.name}</span>
+                  <span className="pf-row-sub">{`From your bank: ${n.merchant}`}</span>
                 </span>
               </div>
-              <button type="button" className="pf-row-link" onClick={() => onEdit(r)}
-                      aria-label={`Edit the rule for ${r.name}`}>
-                Edit <PIcon name="chevronRight" size={14} />
-              </button>
+              <span className="pf-row-links">
+                <button type="button" className="pf-text-link" onClick={() => onRename(n)}>Rename</button>
+                <button type="button" className="pf-text-link" onClick={() => onForget(n)}>Use the bank’s name</button>
+              </span>
             </li>
           ))}
         </ul>
       )}
-      <p className="pf-foot">Deleting a rule doesn’t change transactions you’ve already sorted.</p>
-      {onForgetName && <NamesSection names={names} onForget={onForgetName} />}
-      {onRenameTag && <TagsSection tags={tags} onRename={onRenameTag} onRemove={onRemoveTag} />}
-      {onKind && <KindsSection categories={categories} kinds={kinds} onKind={onKind} />}
-      {onHide && <HiddenSection categories={categories} hidden={hidden} onHide={onHide} />}
+    </section>
+  );
+}
+
+/** CR-03: her tags, how many rows wear each and what they come to. */
+export function TagsSection({ tags = [], onRename, onRemove }) {
+  return (
+    <section className="pf-section" aria-label="Tags">
+      <p className="pk-muted">Tags group transactions across categories and months. They never change your totals.</p>
+      {tags.length === 0 ? (
+        <p className="pk-muted">No tags yet. Tag a transaction, or several at once, from Cash flow.</p>
+      ) : (
+        <ul className="pf-list">
+          {tags.map((t) => (
+            <li className="pf-row static" key={t.tag}>
+              <div className="pf-row-main">
+                <span className="pf-row-text">
+                  <span className="pf-row-name">{t.tag}</span>
+                  <span className="pf-row-sub">
+                    {`${t.count} transaction${t.count === 1 ? '' : 's'} · ${money(t.spent, { cents: true })}`}
+                  </span>
+                </span>
+              </div>
+              <span className="pf-row-links">
+                <button type="button" className="pf-text-link" onClick={() => onRename(t)}>Rename</button>
+                <button type="button" className="pf-text-link" onClick={() => onRemove(t)}>Remove</button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+const GROUP_NAMES = { essentials: 'Essentials', lifestyle: 'Lifestyle' };
+
+/** CR-01: every spending category — Pearl decides · Fixed, Always Fixed,
+ * Always Variable — and Hide / Show. */
+export function CategoriesSection({ categories = [], kinds = {}, pearl = {}, hidden = [], onKind,
+                                    onHide }) {
+  const spending = categories.filter((c) => !['income', 'savings', 'transfer'].includes(c.group)
+    && c.name !== 'Unsorted transfers' && c.name !== 'Other');
+  return (
+    <section className="pf-section" aria-label="Categories">
+      <p className="pk-muted">
+        Pearl decides whether a category is Fixed (bills that come regularly) or Variable. Change
+        any of them. Hidden categories don’t show in pickers.
+      </p>
+      <ul className="pf-list">
+        {spending.map((c) => {
+          const off = hidden.includes(c.name);
+          const decided = pearl[c.name] === 'fixed' ? 'Fixed' : 'Variable';
+          const choices = [{ value: '', label: `Pearl decides · ${decided}` },
+                           { value: 'fixed', label: 'Always Fixed' },
+                           { value: 'variable', label: 'Always Variable' }];
+          return (
+            <li className="pf-row static" key={c.name}>
+              <div className="pf-row-main">
+                <span className="pf-row-text">
+                  <span className="pf-row-name">{c.name}</span>
+                  <span className="pf-row-sub">{GROUP_NAMES[c.group] ?? c.group}</span>
+                </span>
+              </div>
+              <span className="pf-row-links">
+                {off ? <span className="pk-filter" aria-label={`${c.name} is hidden`}>Hidden</span> : (
+                  <FilterChip label={`${c.name}: fixed or variable`} value={kinds[c.name] ?? ''}
+                              options={choices} active={!!kinds[c.name]}
+                              onChange={(v) => onKind(c.name, v || null)} />
+                )}
+                <button type="button" className="pf-text-link" onClick={() => onHide(c.name, !off)}>
+                  {off ? 'Show' : 'Hide'}
+                </button>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+const TABS = [{ value: 'rules', label: 'Rules' }, { value: 'categories', label: 'Categories' },
+              { value: 'merchants', label: 'Merchants' }, { value: 'tags', label: 'Tags' }];
+
+export function RulesPage({ rules, onTab, onEdit, categories = [], kinds = {}, pearlKinds = {},
+                            onKind, names = [], tags = [], hidden = [], onRenameName, onForgetName,
+                            onRenameTag, onRemoveTag, onHide, tab = 'rules', onTabChange }) {
+  return (
+    <div className="pk hm-page pf-page">
+      <PageHead trail={[{ label: 'Profile', to: 'profile' }, { label: 'Categories and rules' }]}
+                title="Categories and rules" onTab={onTab} />
+      <div className="pf-tabs">
+        <Segmented label="Categories and rules" value={tab} options={TABS} onChange={onTabChange} />
+      </div>
+      {tab === 'rules' && (
+        <>
+          <p className="pf-intro">
+            When you sort something and tick “Remember”, Pearl sorts the next ones the same way.
+            Your rules always win over ours.
+          </p>
+          {rules.length === 0 ? (
+            <section className="hm-card">
+              <h2 className="pk-h3">No saved rules yet</h2>
+              <p className="pk-muted">
+                Change a transaction’s category and tick “Apply to all”, and the rule shows up here.
+              </p>
+            </section>
+          ) : (
+            <ul className="pf-list">
+              {rules.map((r) => (
+                <li className="pf-row static" key={r.id}>
+                  <div className="pf-row-main">
+                    <span className="pf-row-text">
+                      <span className="pf-row-name">{r.name}</span>
+                      <span className="pf-row-sub">{ruleWords(r)}</span>
+                    </span>
+                  </div>
+                  <button type="button" className="pf-row-link" onClick={() => onEdit(r)}
+                          aria-label={`Edit the rule for ${r.name}`}>
+                    Edit <PIcon name="chevronRight" size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="pf-foot">Deleting a rule doesn’t change transactions you’ve already sorted.</p>
+        </>
+      )}
+      {tab === 'categories' && onKind && (
+        <CategoriesSection categories={categories} kinds={kinds} pearl={pearlKinds} hidden={hidden}
+                           onKind={onKind} onHide={onHide} />
+      )}
+      {tab === 'merchants' && <NamesSection names={names} onRename={onRenameName} onForget={onForgetName} />}
+      {tab === 'tags' && <TagsSection tags={tags} onRename={onRenameTag} onRemove={onRemoveTag} />}
     </div>
   );
 }
@@ -228,6 +249,7 @@ export default function RulesPanel({ categories = [], onTab, onChanged, version 
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null);
   const [note, setNote] = useState(null);
+  const [tab, setTab] = useState('rules');
   const load = useCallback(() => getRules().then(setData).catch(setError), []);
   useEffect(() => { load(); }, [load, version]);
 
@@ -242,8 +264,14 @@ export default function RulesPanel({ categories = [], onTab, onChanged, version 
   return (
     <>
       <RulesPage rules={data.rules} onTab={onTab} onEdit={setEditing} categories={categories}
-                 kinds={data.kinds ?? {}} names={data.names ?? []} tags={data.tags ?? []}
-                 hidden={data.hidden ?? []}
+                 kinds={data.kinds ?? {}} pearlKinds={data.pearl_kinds ?? {}} names={data.names ?? []}
+                 tags={data.tags ?? []} hidden={data.hidden ?? []} tab={tab} onTabChange={setTab}
+                 onRenameName={async (n) => {
+                   const name = window.prompt(`Call ${n.merchant}:`, n.name);
+                   if (!name || name.trim() === n.name) return;
+                   await setMerchantName(n.merchant, name.trim());
+                   await done(`${n.merchant} is ${name.trim()} now.`);
+                 }}
                  onKind={async (category, kind) => {
                    await setCategoryKind(category, kind);
                    await done(kind ? `${category} is always ${kind === 'fixed' ? 'Fixed' : 'Variable'} now.`

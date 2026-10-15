@@ -174,3 +174,26 @@ a.pk-btn { text-decoration: none; box-sizing: border-box; }
 /* Fixed or variable, category by category (Categories and rules). */
 .pf-kind-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .pf-kind-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+
+/* ── Parity with the Pearl Handoff File (2026-10-15) ─────────────────── */
+/* CR-01 to CR-03: the tabs, and a row's links at the right. */
+.pf-tabs { display: flex; }
+.pf-tabs .pk-seg { width: auto; }
+.pf-tabs .pk-seg button { flex: none; padding: 8px 16px; }
+.pf-row-links { display: inline-flex; align-items: center; gap: var(--space-4); flex: none; }
+/* SO-02: what goes and what stays, side by side. */
+.dt-lists { display: flex; gap: var(--space-4); }
+.dt-list {
+  flex: 1 1 0; min-width: 0; padding: 20px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-card);
+}
+.dt-list.stays { background: var(--seaglass); border-color: transparent; }
+.dt-list .pk-overline { margin: 0 0 var(--space-2); }
+.dt-list ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: var(--space-2); }
+.dt-result { padding: 24px; border-radius: var(--radius-md); background: var(--lilac); }
+.dt-result p { margin: var(--space-2) 0 0; }
+@media (max-width: 720px) { .dt-lists { flex-direction: column; } }
+/* AM-08: the joint page's cards. */
+.pf-joint { display: flex; flex-direction: column; gap: var(--space-3); }
+.pf-joint p { margin: 0; }
+.pf-joint .pk-opts { align-items: center; }

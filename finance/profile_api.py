@@ -243,16 +243,21 @@ def account_settings(account_id: str):
         if hand:
             return jsonify({"error": "Only a linked account can be joint."}), 400
         share = body.get("joint_share")
-        if share is not None:
-            try:
-                share = float(share)
-            except (TypeError, ValueError):
-                share = -1
-            if not (SHARE_MIN <= share <= SHARE_MAX):
-                return jsonify({"error": "Enter a share between 1% and 99%."}), 400
-            share = round(share, 2)
-        st.set_joint_share(account_id, share)
-        reclassify = True
+        if share == "auto":
+            # AM-08: joint, with the share worked out from what each puts in.
+            st.clear_joint_share(account_id)
+            reclassify = True
+        else:
+            if share is not None:
+                try:
+                    share = float(share)
+                except (TypeError, ValueError):
+                    share = -1
+                if not (SHARE_MIN <= share <= SHARE_MAX):
+                    return jsonify({"error": "Enter a share between 1% and 99%."}), 400
+                share = round(share, 2)
+            st.set_joint_share(account_id, share)
+            reclassify = True
 
     if "joint_people" in body:
         if hand:
@@ -523,7 +528,9 @@ def list_rules():
     st = store()
     rules = _rules(st)
     bank_names = _merchant_names(st)
+    txns = st.all_transactions()
     return jsonify({"rules": rules, "count": len(rules), "kinds": kinds.category_kinds(st),
+                    "pearl_kinds": kinds.pearl_decides(st, txns, date.fromisoformat(_today_iso())),
                     # Her names for merchants, and her tags (2026-10-14).
                     "names": [{"merchant": bank_names.get(key) or key.title(), "key": key,
                                "name": name}

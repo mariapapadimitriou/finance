@@ -39,9 +39,9 @@ export const PANELS = {
                    hint: 'Short reads on the basics of investing, at your pace' },
   projections:   { label: 'Projections',
                    hint: 'Where this month, the next 30 days and your savings are heading' },
-  review:        { label: 'To review', short: 'Review',
+  review:        { label: 'Needs a look', short: 'Review',
                    hint: 'Everything Pearl isn’t sure about, with its best guess' },
-  transactions:  { label: 'All transactions', short: 'All',
+  transactions:  { label: 'Transactions', short: 'Transactions',
                    hint: 'Search, filter and check every transaction' },
   // Profile (Pearl S-01): the hub, and the pages it opens. Each Profile page
   // draws a breadcrumb back to the hub instead of a sub-tab strip.
@@ -76,38 +76,36 @@ export const PANELS = {
   // Profile › How we protect you (THL-115 T-04, with T-02 and T-03).
   protect:       { label: 'How we protect you',
                    hint: 'What Pearl can and can’t do' },
-  goals:         { label: 'Goals',
+  goals:         { label: 'Save',
                    hint: 'Your Anchor, your treasure chests and your saving goal' },
 };
 
-// The sidebar (Pearl THL-104, as every Handoff frame draws it): Home,
-// Transactions, Goals and Growth, with Profile at the foot. A group holding
-// one panel shows no sub-navigation.
+// The sidebar as the Pearl Handoff File draws it (2026-10-15): Home, Cash
+// flow, Save and Wins, with Profile at the foot. A group holding one panel
+// shows no sub-navigation; Cash flow's pages draw their own tabs
+// (Transactions · Insights), as do Save's.
 export const GROUPS = [
-  // Home replaces the old landing tab (THL-9, THL-44, THL-125): the page
-  // people open the app for, so it is first and where the app lands.
-  { key: 'home', label: 'Home', panels: ['home'],
+  // Home (THL-9, THL-44, THL-125): the page people open the app for, so it
+  // is first and where the app lands. Budgets and Debts live with it
+  // (THL-236).
+  { key: 'home', label: 'Home', panels: ['home', 'budgets', 'debts'],
     hint: 'What’s safe to spend this month',
     icon: 'M3 10.5 12 3l9 7.5M5 9v11h5v-6h4v6h5V9' },
-  // Opens on the list (Pearl TX-01); what needs a look is one tap away, and
-  // the list's alert links there too.
-  { key: 'transactions', label: 'Transactions', short: 'Charges',
-    panels: ['transactions', 'review'],
-    hint: 'Every transaction, and what needs a look',
-    icon: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' },
-  // The Anchor (the emergency fund, and the Build phase), treasure chests and
-  // the saving goal (Pearl Handoff, THL-131/132/179). One page: the Anchor's
-  // detail, its projection and each chest open inside it.
-  { key: 'goals', label: 'Goals', panels: ['goals'],
-    hint: 'Your Anchor, your treasure chests and your saving goal',
+  // Cash flow: the list (Pearl TX-01), what needs a look one tap away, and
+  // Insights as its second tab (GR-28).
+  { key: 'cashflow', label: 'Cash flow', short: 'Cash flow',
+    panels: ['transactions', 'review', 'insights'],
+    hint: 'Every transaction, what needs a look, and your month in pictures',
+    icon: 'M3 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0M3 16c2-2 4-2 6 0s4 2 6 0 4-2 6 0' },
+  // Save (THL-240): the Anchor and treasure chests, then what the savings
+  // could grow into — projections and the learning modules.
+  { key: 'save', label: 'Save', panels: ['goals', 'projections', 'learn'],
+    hint: 'Your Anchor, your treasure chests, and what they could grow into',
     icon: 'M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21ZM12 17C14.7614 17 17 14.7614 17 12C17 9.23858 14.7614 7 12 7C9.23858 7 7 9.23858 7 12C7 14.7614 9.23858 17 12 17ZM12 13C12.5523 13 13 12.5523 13 12C13 11.4477 12.5523 11 12 11C11.4477 11 11 11.4477 11 12C11 12.5523 11.4477 13 12 13Z' },
-  // Growth (THL-129 GR-01): Path, Insights, Projections and Learn, with
-  // Budgets and Debts beside them (THL-9 decision N1). Each page draws these
-  // as its own pills (GrowthTabs).
-  { key: 'growth', label: 'Growth',
-    panels: ['path', 'insights', 'projections', 'learn', 'budgets', 'debts'],
-    hint: 'Where your money went, where it could go, and your budgets',
-    icon: 'M3 17l6-6 4 4 8-8M15 7h6v6' },
+  // Wins (THL-239): the milestone path and what's next.
+  { key: 'wins', label: 'Wins', panels: ['path'],
+    hint: 'Your path, and the one next step',
+    icon: 'M12 3l2.7 5.6 6.2.9-4.5 4.3 1.1 6.1L12 17l-5.5 2.9 1.1-6.1L3.1 9.5l6.2-.9z' },
   // At the foot (THL-104, Pearl S-01): the Profile hub, and the pages it
   // opens — Accounts, Categories and rules, Sign-in and security, Income and
   // bills, Notifications and the three Privacy pages — each with
@@ -135,6 +133,9 @@ export const ALIASES = {
   plan: 'income', piggy: 'goals', mortgage: 'income', today: 'home', settings: 'profile',
   banks: 'accounts', import: 'accounts', categories: 'rules',
   account: 'security', signin: 'security', overview: 'insights',
+  // The old Growth group (2026-10-15): its Path is on Wins, the rest on
+  // Save and Cash flow; a link to the group lands on the path.
+  growth: 'path',
 };
 
 // Where on that page the aliased thing actually is, when it isn't the top.
