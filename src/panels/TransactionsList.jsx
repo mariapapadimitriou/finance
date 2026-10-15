@@ -32,11 +32,10 @@ import { readTxUrl, writeTxUrl } from '../router.js';
  * (TX-03) the filters stay in view so she can see why, and nothing is drawn
  * in an error colour.
  *
- * What was this? (2026-10-14): every row can be answered from the list —
- * hover actions on a desktop, a swipe on a phone — with the same sheet the
- * detail panel and Needs a look use; "✓ Right" confirms a suggestion in one
- * tap; a chip a rule decided wears a lock. Select mode works on a phone as
- * well as a desktop, and the selected bar can change the category, mark the
+ * What was this? (2026-10-14): clicking a row opens the transaction, whose
+ * Mark as… is the same sheet Needs a look uses; nothing appears on hover. A
+ * chip a rule decided wears a lock. Select mode works on a phone as well as
+ * a desktop, and the selected bar can change the category, mark the
  * selection as something, tag it, leave it out or confirm it, with one Undo.
  * More filters: what counts, an amount range, a tag, pending only, needs a
  * look only; a month or every month; and the list folded by merchant or by
@@ -178,10 +177,8 @@ export function accountOptionsFrom(overview, accounts) {
 export default function TransactionsList({ summary, categories, accounts, reviewCount = 0,
                                            onTab, onChanged, version }) {
   const [filters, setFilters] = useState(fromUrl);
-  // The transaction open in the side panel (TX-04), from /transactions/<id>,
-  // and which step it opens on (the row's quick actions).
+  // The transaction open in the side panel (TX-04), from /transactions/<id>.
   const [openId, setOpenId] = useState(() => readTxUrl()?.id ?? null);
-  const [openStep, setOpenStep] = useState('main');
   const [toast, setToast] = useState('');
   // A change that moved a number (R-03): what it did, with Undo.
   const [change, setChange] = useState(null);
@@ -207,9 +204,6 @@ export default function TransactionsList({ summary, categories, accounts, review
   const [help, setHelp] = useState(false);
   const [singleKey, setSingleKey] = useState(true);
   const [busy, setBusy] = useState(false);
-  // The row whose actions a swipe revealed (phone).
-  const [revealed, setRevealed] = useState(null);
-  const touch = useRef(null);
   const listRef = useRef(null);
   const searchRef = useRef(null);
   const moved = useRef(false);
@@ -361,8 +355,8 @@ export default function TransactionsList({ summary, categories, accounts, review
   const anyRuled = rows.some((r) => r.ruled);
   const dupes = data?.duplicates ?? 0;
   const index = new Map(rows.map((r, i) => [r.id, i]));
-  const open = (id, step = 'main') => { setOpenStep(step); setOpenId(id); toUrl(filters, true, id); };
-  const close = () => { setOpenId(null); setOpenStep('main'); toUrl(filters, true, null); };
+  const open = (id) => { setOpenId(id); toUrl(filters, true, id); };
+  const close = () => { setOpenId(null); toUrl(filters, true, null); };
   // After a change in the panel: say so, and refresh everything that counts
   // it (the list, the totals, the review badge).
   const saved = ({ close: closing, change: what } = {}) => {
@@ -533,21 +527,6 @@ export default function TransactionsList({ summary, categories, accounts, review
     else setKb((k) => reduce({ ...k, focus: i }, 'select', ids));
   };
 
-  // A swipe to the left on a phone reveals a row's actions; a tap anywhere
-  // else, or a swipe back, hides them.
-  const onTouchStart = (e, id) => {
-    touch.current = { id, x: e.touches[0].clientX, y: e.touches[0].clientY };
-  };
-  const onTouchMove = (e) => {
-    const t = touch.current;
-    if (!t) return;
-    const dx = e.touches[0].clientX - t.x;
-    const dy = e.touches[0].clientY - t.y;
-    if (Math.abs(dy) > 24) { touch.current = null; return; }
-    if (dx < -48) { setRevealed(t.id); touch.current = null; }
-    else if (dx > 48) { setRevealed(null); touch.current = null; }
-  };
-
   // The title says what the list is: "Lifestyle in October" when it is one
   // group or category, otherwise just Transactions.
   const focusLabel = filters.group ? groups[filters.group]
@@ -557,27 +536,8 @@ export default function TransactionsList({ summary, categories, accounts, review
   const overline = filters.from === 'home' ? 'From Home' : monthName(filters.month, true);
   const anySelected = selected.length > 0 && selectable;
 
-  // The row's quick actions (desktop hover, phone swipe): confirm, category,
-  // mark as.
-  const rowActions = (r) => (
-    <span className="tx-actions" role="group" aria-label={`Actions for ${r.merchant}`}>
-      {r.suggested && r.chip.label !== 'Possible duplicate' && r.chip.label !== 'Whose?' && (
-        <button type="button" className="tx-action ok" onClick={() => confirmRows([r.id])}
-                disabled={busy}>
-          <PIcon name="check" size={14} /> Right
-        </button>
-      )}
-      <button type="button" className="tx-action" onClick={() => open(r.id, 'category')}>
-        Category
-      </button>
-      <button type="button" className="tx-action" onClick={() => open(r.id, 'what')}>
-        Mark as…
-      </button>
-    </span>
-  );
-
   return (
-    <div className="pk tx-page" onClick={() => { if (revealed) setRevealed(null); }}>
+    <div className="pk tx-page">
       <header className="tx-head">
         <div>
           <p className="pk-overline accent">{overline}</p>
@@ -586,7 +546,7 @@ export default function TransactionsList({ summary, categories, accounts, review
         <div className="tx-head-actions">
           {!desktop && rows.length > 0 && (
             <PButton variant="secondary" aria-pressed={selecting}
-                     onClick={() => { setSelecting((s) => !s); clearSelection(); setRevealed(null); }}>
+                     onClick={() => { setSelecting((s) => !s); clearSelection(); }}>
               {selecting ? 'Done' : 'Select'}
             </PButton>
           )}
@@ -707,7 +667,7 @@ export default function TransactionsList({ summary, categories, accounts, review
               {anySuggested && (
                 <>
                   <CategoryChip label="Groceries" suggested />
-                  <span>Pearl isn’t sure of this one. Tap ✓ Right, or open it to change.</span>
+                  <span>Pearl isn’t sure of this one. Open it to confirm or change.</span>
                 </>
               )}
               {anyRuled && (
@@ -758,9 +718,7 @@ export default function TransactionsList({ summary, categories, accounts, review
                     const i = index.get(r.id);
                     return (
                       <div key={r.id}
-                           className={`tx-sel${on ? ' on' : ''}${flash.has(r.id) ? ' flash' : ''}${revealed === r.id ? ' revealed' : ''}`}
-                           onTouchStart={!desktop && !selecting ? (e) => onTouchStart(e, r.id) : undefined}
-                           onTouchMove={!desktop && !selecting ? onTouchMove : undefined}>
+                           className={`tx-sel${on ? ' on' : ''}${flash.has(r.id) ? ' flash' : ''}`}>
                         {selectable && (
                           <label className="tx-check">
                             <input type="checkbox" tabIndex={-1} checked={on} onChange={() => {}}
@@ -772,7 +730,6 @@ export default function TransactionsList({ summary, categories, accounts, review
                           </label>
                         )}
                         {row}
-                        {!selecting && r.duplicate?.state !== 'pending' && rowActions(r)}
                       </div>
                     );
                   })}
@@ -799,8 +756,7 @@ export default function TransactionsList({ summary, categories, accounts, review
 
       {openId && (
         <TransactionDetail id={openId} initial={rows.find((r) => r.id === openId)}
-                           categories={categories} onClose={close} onSaved={saved}
-                           startStep={openStep} />
+                           categories={categories} onClose={close} onSaved={saved} />
       )}
       {adding && (
         <AddTransaction categories={categories.filter((c) => !c.hidden)} onClose={() => setAdding(false)}
