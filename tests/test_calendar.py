@@ -162,3 +162,46 @@ class TestWords:
                             "lifestyle": {"usual": 600.0, "by_day": None}}}
         assert calendar_view.usual_by_day(usual, 15, 30) == 1800.0
         assert calendar_view.usual_by_day({"groups": {}}, 3, 31) is None
+
+
+class TestSelectDays:
+    """Select days (CAL-06 to CAL-09): a range of days summed by category,
+    the sorted ranges as bands on the calendar and the list under it, and
+    the transactions list filtered to those days."""
+
+    def test_a_range_is_summed_by_category_with_what_is_not_counted(self, client):
+        client.st.add_transactions(history() + october())
+        body = client.get("/api/calendar/range?first=2026-10-01&last=2026-10-05").get_json()
+        assert body["first"] == "2026-10-01" and body["last"] == "2026-10-05" and body["days"] == 5
+        assert body["label"] == "October 1–5" and body["words"] == "Thursday to Monday"
+        assert body["count"] >= 1 and body["title"].endswith(f"${body['total']:,.2f}")
+        assert sum(c["count"] for c in body["by_category"]) == body["count"]
+        assert abs(sum(c["total"] for c in body["by_category"]) - body["total"]) < 0.01
+        # Rent on the 1st is a bill: listed as staying, not in the purchases.
+        assert any(r["why"] == "Bill" for r in body["not_counted"])
+        assert "Money in, transfers, card payments, savings and lending never change." in body["staying"]
+        assert body["ranges"] == []
+        # Backwards is forgiven; a year and a day is not; a non-day is not.
+        flipped = client.get("/api/calendar/range?first=2026-10-05&last=2026-10-01").get_json()
+        assert flipped["first"] == "2026-10-01"
+        assert client.get("/api/calendar/range?first=2025-01-01&last=2026-10-05").status_code == 400
+        assert client.get("/api/calendar/range?first=nope&last=2026-10-05").status_code == 400
+
+    def test_a_sorted_range_shows_on_the_calendar_and_filters_the_list(self, client):
+        client.st.add_transactions(history() + october())
+        r = client.post("/api/ranges", json={"name": "Long weekend", "first": "2026-10-02",
+                                             "last": "2026-10-04", "category": "Travel"})
+        assert r.status_code == 201, r.get_json()
+        month = client.get("/api/calendar").get_json()
+        assert [b["name"] for b in month["bands"]] == ["Long weekend"]
+        assert month["bands"][0]["days"] == 3 and month["bands"][0]["bank"] is None
+        assert [x["name"] for x in month["ranges"]] == ["Long weekend"]
+        # Another month's grid doesn't carry the band, but still lists the range.
+        august = client.get("/api/calendar?month=2026-08").get_json()
+        assert august["bands"] == [] and len(august["ranges"]) == 1
+        # The transactions list keeps only those days.
+        rows = client.get("/api/transactions/list", query_string={
+            "month": MONTH, "first": "2026-10-02", "last": "2026-10-04"}).get_json()["transactions"]
+        assert rows and all("2026-10-02" <= t["date"][:10] <= "2026-10-04" for t in rows)
+        summary = client.get("/api/calendar/range?first=2026-10-02&last=2026-10-04").get_json()
+        assert summary["ranges"][0]["name"] == "Long weekend"

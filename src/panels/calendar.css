@@ -113,3 +113,31 @@
   .cal-legend { display: none; }
   .cal-strip-days { gap: 2px; }
 }
+
+/* ── Select days (CAL-06 to CAL-09) ─────────────────────────────────────── */
+.cal-head-actions { display: flex; align-items: center; gap: var(--space-4); }
+.pk .cal-select { height: 32px; }
+.pk .cal-cell.in-range { background: var(--blush); }
+.pk .cal-cell.range-start, .pk .cal-cell.range-end, .pk .cal-cell.anchor { border-color: var(--ink); border-width: 2px; }
+.pk .cal-grid.selecting .cal-cell { cursor: cell; }
+/* A sorted range on the calendar: a pill on its first day, a band across the rest. */
+.cal-band {
+  display: block; margin-top: 2px; height: 6px; border-radius: 3px;
+  background: color-mix(in srgb, var(--action) 35%, transparent);
+}
+.cal-band.pill {
+  height: auto; padding: 1px 8px; border-radius: var(--radius-full); background: var(--blush);
+  color: var(--on-nacre); font-size: 12px; line-height: 16px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cal-range-rows .cal-amt { color: var(--money-out); }
+.cal-range-rows .cal-amt.in { color: var(--money-in); }
+.cal-range-rows .cal-amt.flat { color: var(--ink); }
+.pk .rg-ranges { gap: var(--space-4); align-items: stretch; }
+.rg-ranges-head { display: flex; flex-direction: column; gap: var(--space-1); }
+.rg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--space-4); }
+@media (max-width: 720px) {
+  /* The first day's pill is a bar too: no room for a name in a compact cell. */
+  .cal-band, .cal-band.pill { height: 4px; margin-top: 0; width: 100%; padding: 0; font-size: 0; color: transparent; background: color-mix(in srgb, var(--action) 35%, transparent); }
+  .cal-head-actions { gap: var(--space-2); }
+}

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
-import { getCalendar, getCalendarDay, money } from '../api.js';
-import { DetailPanel, PButton, StatTile, txAmount } from '../pearl/kit.jsx';
+import { getBanks, getCalendar, getCalendarDay, getCalendarRange, money, removeRange } from '../api.js';
+import { DetailPanel, PButton, StatTile, Toast, txAmount } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { CashFlowTabs } from './InsightsParts.jsx';
+import { SortRangePanel, SortedRanges } from './RangePanels.jsx';
 import { onCalendarUrl, readCalendarUrl, writeCalendarUrl, writeTxUrl } from '../router.js';
 import './calendar.css';
 
@@ -23,12 +24,28 @@ import './calendar.css';
  * Tap a day (CAL-02, CAL-03): what was spent, what's due, and one calm line
  * on why it's shaded. On a phone (CAL-05) the grid is compact — a dot means
  * something's due — with a "Coming up" list beneath it.
+ *
+ * Select days (CAL-06 to CAL-09, 2026-10-16): turn it on, tap the first and
+ * last day, and the panel sums what was spent in them by category. Sort
+ * these days gives every purchase one category, with an optional name and
+ * — only if she wants — a treasure chest that paid for them. A sorted range
+ * shows on the calendar as a labelled band, and in Days sorted together
+ * under it, where it can be changed or removed.
  */
-export default function CalendarPanel({ onTab, version }) {
+export default function CalendarPanel({ onTab, version, categories = [] }) {
   const [route, setRoute] = useState(() => readCalendarUrl() ?? { month: '' });
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [day, setDay] = useState(null);
+  // Select days: the toggle, the first day tapped, the range being looked
+  // at, the sheet (a new range from the calendar, or one to change), and
+  // her treasure chests for the sheet.
+  const [selecting, setSelecting] = useState(false);
+  const [anchor, setAnchor] = useState(null);
+  const [range, setRange] = useState(null);
+  const [sorting, setSorting] = useState(null);
+  const [banks, setBanks] = useState([]);
+  const [toast, setToast] = useState('');
 
   const load = useCallback((month) => {
     setError(null);
@@ -40,10 +57,45 @@ export default function CalendarPanel({ onTab, version }) {
     if (next) setRoute(next);
   }), []);
 
+  useEffect(() => {
+    let live = true;
+    getBanks().then((d) => { if (live) setBanks(d.banks ?? []); }).catch(() => {});
+    return () => { live = false; };
+  }, [version]);
+
   const go = (month) => { writeCalendarUrl({ month }); setRoute({ month }); };
   const seeTransactions = (iso) => {
     writeTxUrl({ filters: { month: iso.slice(0, 7), day: iso } }, { push: true });
     onTab?.('transactions');
+  };
+  const seeRange = (r) => {
+    writeTxUrl({ filters: { month: r.first.slice(0, 7), first: r.first, last: r.last } }, { push: true });
+    onTab?.('transactions');
+  };
+  // Selecting: the first tap anchors, the second closes the range (either
+  // order); otherwise a tap opens the day.
+  const pick = (iso) => {
+    if (!selecting) { setDay(iso); return; }
+    if (!anchor) { setAnchor(iso); return; }
+    setRange(iso < anchor ? { first: iso, last: anchor } : { first: anchor, last: iso });
+    setAnchor(null);
+  };
+  const toggleSelecting = () => { setSelecting((on) => !on); setAnchor(null); };
+  const sorted = (res) => {
+    setSorting(null);
+    setRange(null);
+    setSelecting(false);
+    setToast(res.title);
+    load(route.month);
+  };
+  const remove = async (r) => {
+    try {
+      const res = await removeRange(r.id);
+      setToast(res.title);
+      load(route.month);
+    } catch (e) {
+      setError(e);
+    }
   };
 
   if (error) return <div className="pk cal-page"><ErrorNote error={error} onRetry={() => load(route.month)} /></div>;
@@ -58,14 +110,29 @@ export default function CalendarPanel({ onTab, version }) {
       <CashFlowTabs current="calendar" onTab={onTab} />
       <Totals totals={data.totals} />
       <MonthGrid data={data} onPrev={() => go(data.prev.month)} onNext={() => go(data.next.month)}
-                 onDay={setDay} />
+                 onDay={pick} selecting={selecting} anchor={anchor} range={range}
+                 onToggleSelect={toggleSelecting} onBand={(r) => setRange({ first: r.first, last: r.last })} />
       <p className="pk-muted cal-hint">
-        Tap a day for what was spent, what’s due, and why it’s shaded. A dot means something’s due.
+        {selecting
+          ? (anchor ? 'Now tap the last day.' : 'Tap the first day of the range.')
+          : 'Tap a day for what was spent, what’s due, and why it’s shaded. A dot means something’s due.'}
       </p>
       <ComingUp items={data.coming_up} />
-      {day && (
+      <SortedRanges ranges={data.ranges ?? []} onChange={(r) => setSorting(r)} onRemove={remove} />
+      {day && !range && (
         <DayPanel iso={day} onClose={() => setDay(null)} onTransactions={() => seeTransactions(day)} />
       )}
+      {range && !sorting && (
+        <RangePanel first={range.first} last={range.last} onClose={() => setRange(null)}
+                    onSort={(d) => setSorting({ first: d.first, last: d.last, label: d.label, words: d.words })}
+                    onChange={(r) => setSorting(r)} onTransactions={() => seeRange(range)} />
+      )}
+      {sorting && (
+        <SortRangePanel categories={categories ?? []} banks={banks}
+                        dates={sorting.id ? null : sorting} range={sorting.id ? sorting : null}
+                        onDone={sorted} onClose={() => setSorting(null)} />
+      )}
+      {toast && <Toast onDone={() => setToast('')}>{toast}</Toast>}
     </div>
   );
 }
@@ -104,12 +171,12 @@ export function Marker({ state, small = false }) {
 }
 
 /** What a cell says to a screen reader. */
-export function cellWords(c) {
+export function cellWords(c, band = null) {
   const when = c.in_month ? `${c.day}` : shortDay(c.date);
   const state = { on: 'on or under your usual pace', ahead: 'spending moved ahead of your usual pace',
                   none: 'no data yet', today: 'today', future: '', outside: '' }[c.state] ?? '';
   const due = (c.due ?? []).map((d) => `${d.label} ${dueAmount(d)}`).join(', ');
-  return [when, state, due].filter(Boolean).join(', ');
+  return [when, state, due, band ? `part of ${band.name}` : ''].filter(Boolean).join(', ');
 }
 
 export function dueAmount(d) {
@@ -119,34 +186,56 @@ export function dueAmount(d) {
 }
 
 /** The month grid, Sunday first, six rows (CAL-01). */
-export function MonthGrid({ data, onPrev, onNext, onDay }) {
+export function MonthGrid({ data, onPrev, onNext, onDay, selecting = false, anchor = null,
+                            range = null, onToggleSelect, onBand }) {
   // A sixth row that is all next month is dropped on a phone.
   const spare = data.cells.slice(35).every((c) => !c.in_month);
+  const bands = data.bands ?? [];
+  const bandOf = (iso) => bands.find((b) => b.first <= iso && iso <= b.last);
+  const inRange = (iso) => (range && range.first <= iso && iso <= range.last) || anchor === iso;
+  const edge = (iso) => (range && iso === range.first ? ' range-start' : '')
+    + (range && iso === range.last ? ' range-end' : '') + (anchor === iso ? ' anchor' : '');
   return (
     <section className="hm-card cal-card" aria-labelledby="cal-title">
       <div className="hm-row-between cal-head">
         <h2 className="pk-h2" id="cal-title">{data.label}</h2>
-        <div className="cal-nav">
-          <button type="button" className="hm-link" onClick={onPrev} aria-label={`Back to ${data.prev.label}`}>
-            <PIcon name="chevronRight" size={14} className="in-flip" /><span className="cal-nav-word"> {data.prev.label}</span>
-          </button>
-          <button type="button" className="hm-link" onClick={onNext} aria-label={`On to ${data.next.label}`}>
-            <span className="cal-nav-word">{data.next.label} </span><PIcon name="chevronRight" size={14} />
-          </button>
+        <div className="cal-head-actions">
+          <div className="cal-nav">
+            <button type="button" className="hm-link" onClick={onPrev} aria-label={`Back to ${data.prev.label}`}>
+              <PIcon name="chevronRight" size={14} className="in-flip" /><span className="cal-nav-word"> {data.prev.label}</span>
+            </button>
+            <button type="button" className="hm-link" onClick={onNext} aria-label={`On to ${data.next.label}`}>
+              <span className="cal-nav-word">{data.next.label} </span><PIcon name="chevronRight" size={14} />
+            </button>
+          </div>
+          {onToggleSelect && (
+            <button type="button" className={`pk-filter cal-select${selecting ? ' active' : ''}`}
+                    aria-pressed={selecting} onClick={onToggleSelect}>
+              Select days
+            </button>
+          )}
         </div>
       </div>
       <div className="cal-weekdays" aria-hidden="true">
         {WEEKDAYS.map((d) => <span key={d} className="pk-overline">{d}</span>)}
       </div>
-      <div className="cal-grid" role="grid" aria-label={data.label}>
+      <div className={`cal-grid${selecting ? ' selecting' : ''}`} role="grid" aria-label={data.label}>
         {data.cells.map((c, k) => (
           <button key={c.date} type="button" role="gridcell"
-                  className={`cal-cell ${c.state}${c.in_month ? '' : ' outside'}${c.due.length ? ' has-due' : ''}${k >= 35 && spare ? ' spare' : ''}`}
-                  aria-label={cellWords(c)} onClick={() => onDay?.(c.date)}>
+                  className={`cal-cell ${c.state}${c.in_month ? '' : ' outside'}${c.due.length ? ' has-due' : ''}${k >= 35 && spare ? ' spare' : ''}${inRange(c.date) ? ' in-range' : ''}${edge(c.date)}`}
+                  aria-label={cellWords(c, bandOf(c.date))} aria-pressed={selecting ? inRange(c.date) : undefined}
+                  onClick={() => onDay?.(c.date)}>
             <span className="cal-top">
               <span className="cal-num">{c.day}</span>
               <Marker state={c.state} />
             </span>
+            {bandOf(c.date) && (
+              <span className={`cal-band${bandOf(c.date).first === c.date ? ' pill' : ''}`}
+                    role={onBand ? 'button' : undefined} aria-hidden={onBand ? undefined : 'true'}
+                    onClick={onBand ? (e) => { e.stopPropagation(); onBand(bandOf(c.date)); } : undefined}>
+                {bandOf(c.date).first === c.date ? bandOf(c.date).name : ''}
+              </span>
+            )}
             {c.due.length > 0 && (
               <span className="cal-due" aria-hidden="true">
                 {c.due.slice(0, 2).map((d) => (
@@ -277,6 +366,91 @@ export function DayBody({ d, onClose, onTransactions }) {
       <div className="gl-panel-foot">
         {(d.past || d.today) && d.spent.length > 0
           ? <PButton onClick={onTransactions}>See these transactions</PButton>
+          : <PButton onClick={onClose}>Done</PButton>}
+      </div>
+    </DetailPanel>
+  );
+}
+
+/** Select days (CAL-06): what was spent between two days, by category. */
+export function RangePanel({ first, last, onClose, onSort, onChange, onTransactions }) {
+  const [d, setD] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    let live = true;
+    setD(null);
+    getCalendarRange(first, last).then((x) => { if (live) setD(x); }).catch((e) => { if (live) setError(e); });
+    return () => { live = false; };
+  }, [first, last]);
+  if (error) {
+    return <DetailPanel label="Days" overline="Days" onClose={onClose} className="on-card"><ErrorNote error={error} /></DetailPanel>;
+  }
+  if (!d) {
+    return <DetailPanel label="Days" overline="Days" onClose={onClose} className="on-card"><p className="pk-muted" role="status">Loading…</p></DetailPanel>;
+  }
+  return <RangeBody d={d} onClose={onClose} onSort={onSort} onChange={onChange} onTransactions={onTransactions} />;
+}
+
+export function RangeBody({ d, onClose, onSort, onChange, onTransactions }) {
+  const n = d.count;
+  const overline = `${d.label} · ${d.days} day${d.days === 1 ? '' : 's'}`;
+  const already = d.ranges?.[0];
+  return (
+    <DetailPanel label={overline} overline={overline} onClose={onClose} className="on-card cal-day cal-range">
+      <h1 className="pk-h1">{d.words}</h1>
+      {n === 0 ? (
+        <p className="pk-muted">Nothing was spent in these days.</p>
+      ) : (
+        <div className="wwt-effect rg-summary" role="note">
+          <p className="pk-label">{d.title}</p>
+          {d.mostly && <p>{d.mostly}</p>}
+          <p className="pk-muted">{d.staying}</p>
+        </div>
+      )}
+      {already && (
+        <p className="pk-muted">
+          {`Already sorted together as “${already.name}” (${already.category}).`}
+          {' '}<button type="button" className="hm-link" onClick={() => onChange?.(already)}>Change it</button>
+        </p>
+      )}
+      {d.by_category.length > 0 && (
+        <>
+          <p className="pk-overline">By category</p>
+          <ul className="cal-rows cal-range-rows">
+            {d.by_category.map((c) => (
+              <li key={c.category}>
+                <span className="cal-row-text">
+                  <span>{c.category}</span>
+                  <span className="pk-label pk-muted">{`${c.count} purchase${c.count === 1 ? '' : 's'}`}</span>
+                </span>
+                <span className="cal-amt">{txAmount(c.total, { signed: true })}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {d.not_counted.length > 0 && (
+        <>
+          <p className="pk-overline">Not counted here</p>
+          <ul className="cal-rows cal-range-rows">
+            {d.not_counted.map((r) => (
+              <li key={r.id}>
+                <span className="cal-row-text">
+                  <span>{r.merchant}</span>
+                  <span className="pk-label pk-muted">{`${r.why} · stays as it is`}</span>
+                </span>
+                <span className={`cal-amt${r.inflow ? ' in' : r.why === 'Bill' ? '' : ' flat'}`}>
+                  {txAmount(r.amount, { inflow: r.inflow, signed: r.inflow || r.why === 'Bill' })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <div className="gl-panel-foot cal-range-foot">
+        {n > 0 && !already && <PButton onClick={() => onSort?.(d)}>{`Sort these ${d.days} day${d.days === 1 ? '' : 's'}`}</PButton>}
+        {n > 0
+          ? <PButton variant={already ? 'primary' : 'text'} onClick={onTransactions}>{`See these ${n} transaction${n === 1 ? '' : 's'}`}</PButton>
           : <PButton onClick={onClose}>Done</PButton>}
       </div>
     </DetailPanel>

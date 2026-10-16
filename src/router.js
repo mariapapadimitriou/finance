@@ -9,7 +9,9 @@ export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'jo
   // What was this? (2026-10-14): a tag, what counts, an amount range, pending
   // only, needs a look only, one merchant, and the view (by day, merchant or
   // category).
-  'tag', 'counts', 'amount', 'pending', 'look', 'merchant', 'by', 'owed'];
+  'tag', 'counts', 'amount', 'pending', 'look', 'merchant', 'by', 'owed',
+  // Select days on the calendar (CAL-06, 2026-10-16): the list for a range of days.
+  'first', 'last'];
 
 // Needs a look (R-01, THL-123) has an address under the list's.
 export const REVIEW_PATH = '/transactions/review';

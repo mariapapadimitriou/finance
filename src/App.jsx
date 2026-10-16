@@ -447,7 +447,7 @@ export default function App() {
       {panel === 'learn' && <LearnPanel onTab={go} version={version} />}
       {panel === 'debts' && <DebtsPanel onTab={go} onChanged={load} version={version} />}
       {panel === 'insights' && <InsightsPanel onTab={go} version={version} />}
-      {panel === 'calendar' && <CalendarPanel onTab={go} version={version} />}
+      {panel === 'calendar' && <CalendarPanel onTab={go} version={version} categories={categories} />}
       {panel === 'projections' && (
         <ProjectionsPanel onTab={go} onChanged={load} version={version} />
       )}

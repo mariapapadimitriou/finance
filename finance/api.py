@@ -193,7 +193,8 @@ def transactions_list():
                "amount_min": _amount("amount_min"), "amount_max": _amount("amount_max"),
                "pending": a.get("pending") in ("1", "true"),
                "look": a.get("look") in ("1", "true"),
-               "day": a.get("day") or None}
+               "day": a.get("day") or None,
+               "first": a.get("first") or None, "last": a.get("last") or None}
     st = store()
     rows = _txlist_rows(st, excluded=a.get("excluded") in ("1", "true"),
                         joint=a.get("joint") in ("1", "true"))

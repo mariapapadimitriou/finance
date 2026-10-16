@@ -2,6 +2,8 @@
 
 * GET /api/calendar?month=YYYY-MM   the month: cells, totals, what's coming up.
 * GET /api/calendar/day/<date>      one day: what was spent, what's due, why it's shaded.
+* GET /api/calendar/range?first&last  Select days (CAL-06): what was spent in
+  those days by category, and what in them isn't counted.
 """
 
 from __future__ import annotations
@@ -45,3 +47,21 @@ def calendar_day(iso):
     st = store()
     txns = st.all_transactions()
     return jsonify(calendar_view.day_view(st, txns, _today(), iso))
+
+
+@bp.get("/calendar/range")
+def calendar_range():
+    first, last = request.args.get("first", ""), request.args.get("last", "")
+    if not (DAY.match(first) and DAY.match(last)):
+        return jsonify({"error": "first and last are YYYY-MM-DD."}), 400
+    try:
+        a, b = date.fromisoformat(first), date.fromisoformat(last)
+    except ValueError:
+        return jsonify({"error": "That isn’t a day."}), 400
+    if b < a:
+        a, b = b, a
+    if (b - a).days > 366:
+        return jsonify({"error": "A range is a year at most."}), 400
+    st = store()
+    txns = st.all_transactions()
+    return jsonify(calendar_view.range_view(st, txns, _today(), a.isoformat(), b.isoformat()))
