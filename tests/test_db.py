@@ -189,3 +189,131 @@ class TestEachAccountIsItsOwnSchema:
         for bad in ("", "u_", "u_1; DROP TABLE x", 'u_1"', "pg_catalog", "U_1"):
             with pytest.raises(ValueError):
                 valid_schema(bad)
+
+
+class TestOneConnectionPerThread:
+    """A kept Postgres connection (2026-10-16): the store's many short
+    transactions share one connection instead of a handshake each."""
+
+    @pytest.fixture
+    def pg(self, monkeypatch):
+        import sys, types
+        from finance import db
+
+        class Cursor:
+            def __init__(self, raw):
+                self.raw = raw
+            def execute(self, sql, params=()):
+                if self.raw.closed:
+                    raise RuntimeError("closed")
+                if self.raw.fail_next:
+                    self.raw.fail_next = False
+                    self.raw.broken = True
+                    raise RuntimeError("gone")
+                self.raw.sql.append(sql)
+                return self
+            def executemany(self, sql, rows):
+                self.raw.sql.append(sql)
+                return self
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        class Raw:
+            def __init__(self):
+                self.closed = False
+                self.broken = False
+                self.fail_next = False
+                self.sql, self.commits, self.rollbacks = [], 0, 0
+            def cursor(self):
+                return Cursor(self)
+            def commit(self):
+                self.commits += 1
+            def rollback(self):
+                self.rollbacks += 1
+            def close(self):
+                self.closed = True
+
+        made = []
+        fake = types.ModuleType("psycopg")
+        fake.connect = lambda url, row_factory=None: made.append(Raw()) or made[-1]
+        rows = types.ModuleType("psycopg.rows")
+        rows.dict_row = object()
+        monkeypatch.setitem(sys.modules, "psycopg", fake)
+        monkeypatch.setitem(sys.modules, "psycopg.rows", rows)
+        db.close_cached()
+        yield db, made
+        db.close_cached()
+
+    def test_sequential_transactions_share_one_connection(self, pg):
+        db, made = pg
+        for _ in range(3):
+            with db.connect("", "postgres://x", "public") as c:
+                c.execute("SELECT 1")
+        assert len(made) == 1
+        raw = made[0]
+        assert raw.commits == 3 and not raw.closed
+        # Each transaction sets the search path afresh.
+        assert sum(1 for s in raw.sql if s.startswith("SET LOCAL search_path")) == 3
+
+    def test_a_nested_with_joins_the_outer_transaction(self, pg):
+        db, made = pg
+        with db.connect("", "postgres://x", "public") as outer:
+            outer.execute("SELECT 1")
+            with db.connect("", "postgres://x", "public") as inner:
+                assert inner is outer
+                inner.execute("SELECT 2")
+            assert made[0].commits == 0
+        assert made[0].commits == 1 and len(made) == 1
+
+    def test_an_exception_rolls_back_and_keeps_the_connection(self, pg):
+        db, made = pg
+        with pytest.raises(ValueError):
+            with db.connect("", "postgres://x", "public") as c:
+                c.execute("SELECT 1")
+                raise ValueError("nope")
+        assert made[0].rollbacks == 1 and made[0].commits == 0 and not made[0].closed
+        with db.connect("", "postgres://x", "public") as c:
+            c.execute("SELECT 1")
+        assert len(made) == 1 and made[0].commits == 1
+
+    def test_a_broken_connection_is_replaced(self, pg):
+        db, made = pg
+        with db.connect("", "postgres://x", "public") as c:
+            c.execute("SELECT 1")
+        made[0].fail_next = True
+        with pytest.raises(RuntimeError):
+            with db.connect("", "postgres://x", "public") as c:
+                c.execute("SELECT 1")
+        assert made[0].closed
+        with db.connect("", "postgres://x", "public") as c:
+            c.execute("SELECT 1")
+        assert len(made) == 2 and made[1].commits == 1
+
+    def test_an_idle_connection_is_pinged_first(self, pg, monkeypatch):
+        db, made = pg
+        with db.connect("", "postgres://x", "public") as c:
+            c.execute("SELECT 1")
+        raw, url, last = db._local.pg
+        db._local.pg = (raw, url, last - db.IDLE_PING_AFTER - 1)
+        with db.connect("", "postgres://x", "public") as c:
+            c.execute("SELECT 2")
+        assert len(made) == 1 and "SELECT 1" in made[0].sql[-3:]      # the ping, then the work
+        # A ping that fails means a new connection.
+        raw, url, last = db._local.pg
+        db._local.pg = (raw, url, last - db.IDLE_PING_AFTER - 1)
+        raw.fail_next = True
+        with db.connect("", "postgres://x", "public") as c:
+            c.execute("SELECT 3")
+        assert len(made) == 2
+
+    def test_another_schema_inside_a_transaction_gets_its_own_connection(self, pg):
+        db, made = pg
+        with db.connect("", "postgres://x", "u_1") as outer:
+            outer.execute("SELECT 1")
+            with db.connect("", "postgres://x", "u_2") as other:
+                assert other is not outer
+                other.execute("SELECT 2")
+            assert made[1].closed and made[1].commits == 1
+        assert made[0].commits == 1 and not made[0].closed
