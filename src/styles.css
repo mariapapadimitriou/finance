@@ -156,7 +156,7 @@ a { color: var(--brand); text-underline-offset: 3px; }
   align-items: center;
   gap: 11px;
   text-align: left;
-  transition: background .15s ease, color .15s ease;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
 .nav button svg { width: 18px; height: 18px; flex: none; opacity: .8; }
 .nav button:hover { background: var(--surface-2); color: var(--ink); }
@@ -243,7 +243,7 @@ a { color: var(--brand); text-underline-offset: 3px; }
   border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background .15s, color .15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
 .sections button:hover { color: var(--ink); background: var(--surface-2); }
 .sections button[aria-selected="true"] {
@@ -395,7 +395,7 @@ input[type="date"], input[type="month"], input[type="email"] {
   border-radius: var(--r-sm);
   padding: 8px 12px;
   color: var(--ink);
-  transition: border-color .15s ease;
+  transition: border-color var(--motion-fast) var(--ease-standard);
 }
 select:hover, input:hover { border-color: var(--ink-2); }
 
@@ -464,7 +464,7 @@ select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-v
   cursor: pointer;
   color: var(--ink);
   font-weight: 550;
-  transition: background .15s ease, border-color .15s ease;
+  transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
 }
 .btn:hover { background: var(--surface-2); }
 .btn.primary {
@@ -509,7 +509,7 @@ th {
 }
 td { padding: 11px 10px; border-top: 1px solid var(--border); vertical-align: middle; }
 tbody tr:first-child td { border-top: none; }
-tbody tr { transition: background .12s ease; }
+tbody tr { transition: background var(--motion-fast) var(--ease-standard); }
 tbody tr:hover { background: var(--surface-2); }
 td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
 

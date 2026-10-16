@@ -331,3 +331,45 @@ class TestRecap:
         # Kept as it was, even as the ledger changes.
         client.st.add_transactions([tx("2026-09-25", "Pai", 900.00, "Dining", account="visa")])
         assert client.get("/api/wins").get_json()["recap"] == r
+
+
+# ── "You earned a pearl" (THL-256) ───────────────────────────────────────
+
+class TestPearlMoment:
+    def test_nothing_earned_shows_nothing(self, client):
+        ledger(client, october())
+        m = client.get("/api/wins/moment").get_json()
+        assert m == {"show": False, "pearls": [], "title": "", "line": "", "overline": ""}
+
+    def test_one_pearl_then_never_again(self, client):
+        ledger(client)
+        m = client.get("/api/wins/moment").get_json()
+        assert m["show"] and [p["key"] for p in m["pearls"]] == ["assessed"]
+        assert m["overline"] == "Pearl earned" and m["title"] == "Your money, assessed"
+        assert m["line"] == "Your income, bills and first month are sorted. It’s in your collection on Wins."
+        assert m["announce"] == "Pearl earned. Your money, assessed."
+        assert client.post("/api/wins/moment/seen", json={"keys": ["assessed"]}).get_json()["ok"]
+        assert not client.get("/api/wins/moment").get_json()["show"]
+        assert client.post("/api/wins/moment/seen", json={"keys": ["nope"]}).status_code == 400
+
+    def test_two_at_once_make_one_sheet(self, client):
+        ledger(client)
+        client.post("/api/wins/moment/seen", json={"keys": ["assessed"]})
+        aid = savings(client)
+        client.st.set_setting("anchor_started", TODAY.isoformat())
+        client.st.set_setting("anchor_accounts", json.dumps([aid]))
+        m = client.get("/api/wins/moment").get_json()
+        assert m["show"] and m["overline"] == "Pearls earned"
+        assert m["title"] == "You earned 2 pearls"
+        assert [p["key"] for p in m["pearls"]] == ["anchor_setup", "anchor_quarter"]
+        assert m["line"] == "Anchor set up and Anchor a quarter there. They’re in your collection on Wins."
+        assert m["pearls"][1]["line"].startswith("$3,000 toward 3 months of Essentials.")
+
+    def test_the_full_anchor_line_is_her_target(self, client):
+        ledger(client)
+        aid = savings(client, balance=20000)
+        client.st.set_setting("anchor_started", TODAY.isoformat())
+        client.st.set_setting("anchor_accounts", json.dumps([aid]))
+        m = client.get("/api/wins/moment").get_json()
+        full = next(p for p in m["pearls"] if p["key"] == "anchor_full")
+        assert full["line"].endswith("ready for a big surprise.") and full["line"].startswith("$")

@@ -68,6 +68,9 @@ DEFAULT_THRESHOLDS = {"quarter": 0.25, "half": 0.5, "full": 1.0, "saved": 1000.0
                       "within_months": 3}
 EARNED_KEY = "wins_earned"
 EVENTS_KEY = "wins_events"
+# The pearls she has been shown the "You earned a pearl" sheet for (THL-256):
+# once per milestone, ever.
+CELEBRATED_KEY = "wins_celebrated"
 BEST_KEY = "wins_streak_best"
 WEEKS_KEY = "wins_review_weeks"
 RECAPS_KEY = "wins_recaps"
@@ -838,3 +841,68 @@ def save_suggestion(earned: dict) -> dict | None:
         return {"text": "Your Anchor is set up. Learn’s TFSA, RRSP and FHSA in Save is a good next read.",
                 "to": "learn", "label": "Open Save"}
     return None
+
+
+# ── "You earned a pearl" (THL-112 EP-01 to EP-05; THL-256) ───────────────
+
+def celebrated(st) -> list[str]:
+    out = _json(st, CELEBRATED_KEY, [])
+    return out if isinstance(out, list) else []
+
+
+def mark_celebrated(st, keys: list[str]) -> list[str]:
+    seen = celebrated(st)
+    for k in keys:
+        if k not in seen:
+            seen.append(k)
+    st.set_setting(CELEBRATED_KEY, json.dumps(seen))
+    return seen
+
+
+def moment_line(key: str, pearl: dict, anchor: dict, th: dict) -> str:
+    """One line under the title, in her numbers (EP-01: "$8,700 ready for
+    a big surprise. It’s in your collection on Wins.")."""
+    target = float(anchor.get("target") or 0)
+    counted = float(anchor.get("counted") or 0)
+    words = _words(th)
+    lines = {
+        "assessed": "Your income, bills and first month are sorted.",
+        "anchor_setup": "Your Anchor is set up and counting.",
+        "anchor_quarter": (f"{_money(counted)} toward 3 months of Essentials." if counted > 0
+                           else "A quarter of the way to 3 months of Essentials."),
+        "anchor_half": (f"{_money(counted)} toward 3 months of Essentials." if counted > 0
+                        else "Halfway to 3 months of Essentials."),
+        "anchor_full": (f"{_money(target)} ready for a big surprise." if target > 0
+                        else "Three months of Essentials, ready for a big surprise."),
+        "chest_opened": (f"{pearl['note']} opened as planned." if pearl.get("note")
+                         else "A treasure chest opened as planned."),
+        "saved_1000": f"{words['saved']} put away in total.",
+        "three_within": f"{words['within_words']} months in a row within safe to spend.",
+        "invest": "An investing account, opened.",
+    }
+    return lines.get(key, "")
+
+
+def moment(st, page: dict, anchor: dict) -> dict:
+    """What the sheet says, or `show: False`. Several earned since the last
+    look make one sheet ("You earned 2 pearls"), played once (EP-03)."""
+    th = thresholds(st)
+    seen = set(celebrated(st))
+    fresh = [p for p in page.get("pearls", []) if p.get("earned") and p["key"] not in seen]
+    # In the order the collection shows them, oldest earned first.
+    fresh.sort(key=lambda p: (p.get("on") or "", MILESTONES.index(next(m for m in MILESTONES if m["key"] == p["key"]))))
+    if not fresh:
+        return {"show": False, "pearls": [], "title": "", "line": "", "overline": ""}
+    pearls = [{"key": p["key"], "label": p["label"], "on": p.get("on"),
+               "line": moment_line(p["key"], p, anchor, th)} for p in fresh]
+    if len(pearls) == 1:
+        title = pearls[0]["label"]
+        line = f"{pearls[0]['line']} It’s in your collection on Wins.".strip()
+        overline = "Pearl earned"
+    else:
+        title = f"You earned {len(pearls)} pearls"
+        names = [p["label"] for p in pearls]
+        line = f"{', '.join(names[:-1])} and {names[-1]}. They’re in your collection on Wins."
+        overline = "Pearls earned"
+    return {"show": True, "pearls": pearls, "title": title, "line": line, "overline": overline,
+            "announce": f"{overline}. {title}."}

@@ -203,6 +203,9 @@ export const startChallenge    = (body) => json('POST', '/api/wins/challenges', 
 export const getChallenge      = (id) => req(`/api/wins/challenges/${id}`);
 export const stopChallenge     = (id) => json('POST', `/api/wins/challenges/${id}/stop`, {});
 export const challengeToChest  = (id, bankId) => json('POST', `/api/wins/challenges/${id}/chest`, { bank_id: bankId });
+// "You earned a pearl" (THL-256): the sheet on open, once per milestone.
+export const getPearlMoment    = () => req('/api/wins/moment');
+export const pearlMomentSeen   = (keys) => json('POST', '/api/wins/moment/seen', { keys });
 export const getRecap          = (month) => req(`/api/wins/recaps/${encodeURIComponent(month)}`);
 export const seeMoment    = (phase) => json('POST', `/api/moments/${encodeURIComponent(phase)}`, {});
 // Learn (THL-134 GR-11 to GR-14): her place in each module, saved per screen.
