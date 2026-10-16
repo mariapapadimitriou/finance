@@ -236,3 +236,52 @@ def test_rules_carry_pearls_own_kind_per_category(client):
     pk = client.get("/api/rules").get_json()["pearl_kinds"]
     assert pk["Phone & Internet"] == "fixed" and pk["Groceries"] == "variable"
     assert pk["Rent & Housing"] == "fixed" and "Income" not in pk
+
+
+def test_a_range_can_be_paid_from_a_treasure_chest(client):
+    """CAL-07/CAL-08: the chest is optional; with one, every purchase the
+    range sorts is paid from it, and Remove or a change puts them back."""
+    ids = load(client.st, *trip_rows())
+    bank = client.post("/api/piggy", json={"name": "Japan trip", "target": 3000, "cadence": "once",
+                                           "target_date": "2027-10-01"}).get_json()
+    bank_id = bank.get("id") or bank.get("bank", {}).get("id")
+    body = {"name": "Montréal trip", "first": in_month(3), "last": in_month(5), "category": "Travel",
+            "bank_id": bank_id}
+    p = client.post("/api/ranges/preview", json=body).get_json()
+    assert p["title"] == "3 purchases · $500.00 become Travel, paid from Japan trip."
+    assert p["bank"] == "Japan trip"
+    assert p["effect"].startswith("Japan trip pays $500.00 and ")
+    assert "safe to spend goes up by $500.00" in p["effect"]
+    assert p["staying"].startswith("The purchases keep Travel and show “Paid from Japan trip”. ")
+    # Without a chest, nothing about one.
+    plain = client.post("/api/ranges/preview", json={**body, "bank_id": None}).get_json()
+    assert plain["bank"] is None and plain["effect"] == "" and "chest" not in plain["title"]
+
+    out = client.post("/api/ranges", json=body)
+    assert out.status_code == 201, out.get_json()
+    assert out.get_json()["title"] == "Sorted 3 purchases as Travel, paid from Japan trip."
+    assert out.get_json()["range"]["bank"] == "Japan trip"
+    for key in ("HOTEL BONAVENTURE", "SCHWARTZ'S", "STM METRO"):
+        assert client.st.get_transaction(ids[key]).bank_id == bank_id
+    assert client.st.get_transaction(ids["ROGERS"]).bank_id is None      # the bill stays
+    rid = out.get_json()["range"]["id"]
+    # Paid for or not, the trip is still 3 purchases · $500: the list says
+    # so, and a change's preview still counts them (not as transfers).
+    assert client.get("/api/ranges").get_json()["ranges"][0]["total"] == 500.0
+    again = client.post("/api/ranges/preview", json={**body, "id": rid}).get_json()
+    assert again["count"] == 3 and again["total"] == 500.0 and "1 transfer" in again["staying"]
+    assert "has $" in again["effect"] or "behind" in again["effect"]
+    # Change: no chest any more, so the chest stops paying.
+    client.put(f"/api/ranges/{rid}", json={**body, "bank_id": None})
+    assert all(client.st.get_transaction(ids[k]).bank_id is None
+               for k in ("HOTEL BONAVENTURE", "SCHWARTZ'S", "STM METRO"))
+    client.put(f"/api/ranges/{rid}", json=body)
+    assert client.st.get_transaction(ids["HOTEL BONAVENTURE"]).bank_id == bank_id
+    # Remove: back to the month, and the categories they were.
+    client.delete(f"/api/ranges/{rid}")
+    assert client.st.get_transaction(ids["HOTEL BONAVENTURE"]).bank_id is None
+    rows = {t["description"]: t for t in listing(client)["transactions"]}
+    assert rows["HOTEL BONAVENTURE"]["category"] == "Lodging"
+    # A chest that doesn't exist, or nonsense, is refused.
+    assert client.post("/api/ranges", json={**body, "bank_id": 999}).status_code == 400
+    assert client.post("/api/ranges", json={**body, "bank_id": "x"}).status_code == 400

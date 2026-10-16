@@ -275,7 +275,14 @@ def month_view(st, transactions: list[Transaction], today: date, month: str,
         cursor += timedelta(days=1)
     upto = today if month == today.strftime("%Y-%m") else date.fromisoformat(f"{month}-{days:02d}")
     this_month = month == today.strftime("%Y-%m")
+    # Days sorted together (CAL-09): the ranges that touch this grid, for the
+    # band on the calendar, and every range for the list under it.
+    from . import ranges as sorted_ranges
+    every = sorted_ranges.listed(st, transactions)
     return {
+        "ranges": every,
+        "bands": [r for r in every
+                  if r["first"] <= grid_end.isoformat() and r["last"] >= grid_start.isoformat()],
         "month": month, "label": f"{month_name(month)} {month[:4]}", "today": today.isoformat(),
         "this_month": this_month,
         "prev": {"month": _month_add(month, -1), "label": month_name(_month_add(month, -1))},
@@ -320,6 +327,46 @@ def day_view(st, transactions: list[Transaction], today: date, iso: str,
         "reason": reason(state, day, st_by_day, rows),
         "spent": rows, "spent_total": round(sum(r["amount"] for r in rows), 2),
         "due": due, "past": iso < today.isoformat(), "today": iso == today.isoformat(),
+    }
+
+
+def range_label(first: str, last: str) -> str:
+    """"October 4–7", "September 28 – October 2", "October 4"."""
+    a, b = date.fromisoformat(first), date.fromisoformat(last)
+    if a == b:
+        return f"{cal.month_name[a.month]} {a.day}"
+    if a.month == b.month and a.year == b.year:
+        return f"{cal.month_name[a.month]} {a.day}–{b.day}"
+    return f"{cal.month_name[a.month]} {a.day} – {cal.month_name[b.month]} {b.day}"
+
+
+def range_words(first: str, last: str) -> str:
+    """"Sunday to Wednesday", or "Sunday" for one day."""
+    a, b = date.fromisoformat(first), date.fromisoformat(last)
+    if a == b:
+        return cal.day_name[a.weekday()]
+    return f"{cal.day_name[a.weekday()]} to {cal.day_name[b.weekday()]}"
+
+
+def range_view(st, transactions: list[Transaction], today: date, first: str, last: str) -> dict:
+    """Select days (CAL-06): what was spent between two days, by category,
+    and what in them isn't counted — before she gives them one category or
+    pays them from a chest."""
+    from . import ranges as sorted_ranges
+    p = sorted_ranges.preview(st, transactions, first, last, None, today)
+    days = (date.fromisoformat(last) - date.fromisoformat(first)).days + 1
+    n = p["count"]
+    return {
+        "first": first, "last": last, "days": days,
+        "label": range_label(first, last), "words": range_words(first, last),
+        "count": n, "total": p["total"],
+        "title": f"{n} purchase{'' if n == 1 else 's'} · ${p['total']:,.2f}",
+        "mostly": sorted_ranges.mostly_words(p["mostly"]),
+        "staying": sorted_ranges.staying_words(p["staying"]),
+        "by_category": p["by_category"],
+        "not_counted": p["staying_rows"],
+        "ranges": [r for r in sorted_ranges.listed(st, transactions)
+                   if r["first"] <= last and r["last"] >= first],
     }
 
 

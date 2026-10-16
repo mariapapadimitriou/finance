@@ -66,6 +66,14 @@
 .pk-cat.suggested {
   background: var(--surface-card); border: 1px dashed var(--ink-muted); padding: 3px 9px;
 }
+/* The dotted chip as a button: click it to confirm the guess in place. Its
+ * outline goes solid on hover; nothing is written (WW-01, 2026-10-16). */
+.pk .pk-cat.confirmable { font: inherit; font-size: 13px; line-height: 18px; font-weight: 500; cursor: pointer; }
+.pk .pk-cat.confirmable:hover, .pk .pk-cat.confirmable:focus-visible {
+  border-style: solid; border-color: var(--action); background: var(--blush); color: var(--on-nacre);
+}
+.pk .pk-cat.confirmable:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.pk .pk-cat.confirmable:disabled { cursor: default; opacity: .6; }
 .pk-cat svg { flex: none; }
 
 /* ── Filter chip ─────────────────────────────────────────────────────────── */

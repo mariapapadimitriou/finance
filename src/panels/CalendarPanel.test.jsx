@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  CalendarStrip, ComingUp, DayBody, MonthGrid, Totals, cellWords, dueAmount,
+  CalendarStrip, ComingUp, DayBody, MonthGrid, RangeBody, Totals, cellWords, dueAmount,
 } from './CalendarPanel.jsx';
+import { SortedRanges, rangeLine, rangeWords } from './RangePanels.jsx';
 
 const html = (el) => renderToStaticMarkup(el);
 const noop = () => {};
@@ -131,5 +132,79 @@ describe('The strip on Home (CAL-06)', () => {
     expect(out).toContain('cal-mini future has-due');
     expect(out).toContain('Spending moved ahead of your usual pace on Oct 6.');
     expect(html(<CalendarStrip strip={null} onOpen={noop} />)).toBe('');
+  });
+});
+
+describe('Select days (CAL-06 to CAL-09)', () => {
+  const trip = { id: 7, name: 'Montréal trip', first: '2026-10-04', last: '2026-10-07', category: 'Travel',
+                 count: 23, total: 1412.6, bank: 'Japan trip', bank_id: 3, days: 4 };
+  const summary = {
+    first: '2026-10-04', last: '2026-10-07', days: 4, label: 'October 4–7', words: 'Sunday to Wednesday',
+    count: 23, total: 1412.6, title: '23 purchases · $1,412.60',
+    mostly: 'Mostly Lodging, Dining out and Transport.',
+    staying: 'Staying as they are: 2 bills and subscriptions, 1 transfer. Money in, transfers, card payments, savings and lending never change.',
+    by_category: [{ category: 'Lodging', count: 6, total: 640 }, { category: 'Dining out', count: 9, total: 412.6 }],
+    not_counted: [{ id: 'r', merchant: 'Rogers', why: 'Bill', amount: 85, inflow: false },
+                  { id: 'v', merchant: 'Payment to Visa', why: 'Transfers', amount: 612, inflow: false }],
+    ranges: [],
+  };
+
+  it('the grid has a Select days toggle, and a chosen range tints with its ends outlined', () => {
+    const out = html(<MonthGrid data={october} onPrev={noop} onNext={noop} onDay={noop} selecting
+                                onToggleSelect={noop} range={{ first: '2026-10-04', last: '2026-10-07' }} />);
+    expect(out).toContain('Select days');
+    expect(out).toContain('aria-pressed="true"');
+    expect(out).toContain('cal-grid selecting');
+    expect(out).toContain('class="cal-cell on in-range range-start"');
+    expect(out).toContain('class="cal-cell ahead in-range range-end"');
+    expect(out).toContain('class="cal-cell on in-range"');
+    const anchored = html(<MonthGrid data={october} onPrev={noop} onNext={noop} onDay={noop} selecting
+                                     onToggleSelect={noop} anchor="2026-10-05" />);
+    expect(anchored).toContain('class="cal-cell on in-range anchor"');
+  });
+
+  it('a sorted range is a labelled band on the calendar: a pill on its first day, a bar after', () => {
+    const out = html(<MonthGrid data={{ ...october, bands: [trip] }} onPrev={noop} onNext={noop} onDay={noop} onBand={noop} />);
+    expect(out).toContain('class="cal-band pill"');
+    expect(out).toContain('Montréal trip');
+    expect((out.match(/class="cal-band"/g) || []).length).toBe(3);
+    expect(cellWords(cell('2026-10-05', 5, 'on'), trip)).toBe('5, on or under your usual pace, part of Montréal trip');
+  });
+
+  it('the range panel sums the days by category, lists what is not counted, and offers to sort', () => {
+    const out = html(<RangeBody d={summary} onClose={noop} onSort={noop} onTransactions={noop} />);
+    expect(out).toContain('October 4–7 · 4 days');
+    expect(out).toContain('Sunday to Wednesday');
+    expect(out).toContain('23 purchases · $1,412.60');
+    expect(out).toContain('Mostly Lodging, Dining out and Transport.');
+    expect(out).toContain('By category');
+    expect(out).toContain('6 purchases');
+    expect(out).toContain('-$640.00');
+    expect(out).toContain('Not counted here');
+    expect(out).toContain('Bill · stays as it is');
+    expect(out).toContain('Sort these 4 days');
+    expect(out).toContain('See these 23 transactions');
+    expect(out).not.toContain('chest');
+    const empty = html(<RangeBody d={{ ...summary, count: 0, by_category: [], not_counted: [], title: '' }} onClose={noop} />);
+    expect(empty).toContain('Nothing was spent in these days.');
+    expect(empty).not.toContain('Sort these');
+    const already = html(<RangeBody d={{ ...summary, ranges: [trip] }} onClose={noop} onSort={noop} onTransactions={noop} />);
+    expect(already).toContain('Already sorted together as “Montréal trip” (Travel).');
+    expect(already).not.toContain('Sort these 4 days');
+  });
+
+  it('Days sorted together lists every range with Change and Remove, and nothing when there are none', () => {
+    const out = html(<SortedRanges ranges={[trip, { ...trip, id: 8, name: 'Cottage weekend', first: '2026-08-08', last: '2026-08-10', count: 9, total: 486.25, bank: null }]}
+                                   onChange={noop} onRemove={noop} />);
+    expect(out).toContain('Days sorted together');
+    expect(out).toContain('Montréal trip');
+    expect(out).toContain('$1,412.60');
+    expect(out).toContain('Oct 4–7 · Travel · 23 purchases · paid from Japan trip');
+    expect(out).toContain('Aug 8–10 · Travel · 9 purchases<');
+    expect((out.match(/>Change</g) || []).length).toBe(2);
+    expect((out.match(/>Remove</g) || []).length).toBe(2);
+    expect(html(<SortedRanges ranges={[]} onChange={noop} onRemove={noop} />)).toBe('');
+    expect(rangeWords('2026-09-28', '2026-10-02')).toBe('Sep 28 – Oct 2');
+    expect(rangeLine({ ...trip, bank: null, count: 1 })).toBe('Oct 4–7 · Travel · 1 purchase');
   });
 });

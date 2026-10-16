@@ -7,7 +7,7 @@ import PIcon from '../pearl/icons.jsx';
 import TransactionDetail, { AddTransaction } from './TransactionDetail.jsx';
 import { BatchPicker, KeyHints, SelectedBar, ShortcutsPanel } from './KeyboardReview.jsx';
 import { BatchMarkPanel, BatchTagPanel } from './BatchPanels.jsx';
-import { SortRangePanel, SortedTogetherPanel } from './RangePanels.jsx';
+import { rangeWords } from './RangePanels.jsx';
 import { TxFiltersPanel, requestFor } from './TxFilters.jsx';
 import { CashFlowTabs } from './InsightsParts.jsx';
 import { shortDate } from './HomePanel.jsx';
@@ -36,12 +36,13 @@ import { readTxUrl, writeTxUrl } from '../router.js';
  * and its note — comes from the server, so the list and the month never
  * disagree.
  *
- * A row's actions appear on hover (WW-01): ✓ Right on a row Pearl isn't
- * sure of, Category, and Mark as…, the What was this? sheet. Clicking the
- * row opens it. Selecting several swaps in a floating bar (VF-03): Change
- * category, Mark as…, Tag, Leave out, ✓ Confirm, with one Undo. Sort a date
- * range (DR-01) gives every purchase between two dates one category, and
- * Sorted together (DR-02) lists the ranges.
+ * Nothing is written on hover (WW-01, 2026-10-16): a row only tints. Where
+ * Pearl isn't sure, the category chip is dotted, and clicking it confirms
+ * the guess in place; clicking anywhere else opens the row, where the
+ * category can be changed and Mark as… (the What was this? sheet) lives.
+ * Selecting several swaps in a floating bar (VF-03): Change category, Mark
+ * as…, Tag, Leave out, ✓ Confirm, with one Undo. Sorting a range of days
+ * moved to the calendar (CAL-06); the list can show one with ?first&last.
  *
  * With nothing to show (TX-03) the filters stay in view so she can see why,
  * and nothing is drawn in an error colour. A one-off (THL-71 U-02) says so
@@ -150,13 +151,14 @@ function fromUrl() {
            tag: f.tag || '', counts: f.counts || '', amount: f.amount || '',
            pending: f.pending || '', look: f.look || '', merchant: f.merchant || '',
            by: f.by || '', owed: f.owed || '',
+           first: f.first || '', last: f.last || '',
            from: url?.from || '' };
 }
 
 const DEFAULTS = () => ({ month: thisMonth(), account: '', group: '', category: '',
                           excluded: '', joint: '', recurring: '', from: '',
                           tag: '', counts: '', amount: '', pending: '', look: '', merchant: '',
-                          by: '', owed: '', day: '' });
+                          by: '', owed: '', day: '', first: '', last: '' });
 
 /**
  * The Account filter's options: the same accounts, names and order as
@@ -203,8 +205,6 @@ export default function TransactionsList({ summary, categories, accounts, review
   const [flash, setFlash] = useState(() => new Set());
   const [adding, setAdding] = useState(false);
   const [filtering, setFiltering] = useState(false);
-  const [sorting, setSorting] = useState(null);       // false | null | a range to change
-  const [together, setTogether] = useState(false);
   const [query, setQuery] = useState(filters.q);
   const [data, setData] = useState(null);
   const [rows, setRows] = useState([]);
@@ -273,7 +273,8 @@ export default function TransactionsList({ summary, categories, accounts, review
   const filtered = filters.month !== thisMonth() || !!filters.account
     || !!filters.group || !!filters.category || !!filters.excluded || !!filters.joint
     || !!filters.recurring || !!filters.tag || !!filters.counts || !!filters.amount
-    || !!filters.pending || !!filters.look || !!filters.merchant || !!filters.owed || !!filters.day;
+    || !!filters.pending || !!filters.look || !!filters.merchant || !!filters.owed || !!filters.day
+    || !!filters.first;
   // Back to TX-01's defaults; the search, if any, is its own control.
   const clearFilters = () => choose(DEFAULTS());
   const clearSearch = () => { setQuery(''); choose({ q: '' }); };
@@ -514,13 +515,6 @@ export default function TransactionsList({ summary, categories, accounts, review
     });
   };
 
-  // Sort a date range (DR-01) and Sorted together (DR-02).
-  const rangeDone = (res) => {
-    setSorting(null);
-    saved({ change: { ids: res.ids ?? [], title: res.title, detail: res.mostly || '', undo: null } });
-  };
-  const rangeRemoved = (res) => { setToast(res.title); onChanged?.(); };
-
   const onListKey = (e) => {
     if (!desktop || picking || marking || tagging || help) return;
     const action = keyAction(e, { singleKey, inText: isTextTarget(e.target) });
@@ -568,28 +562,15 @@ export default function TransactionsList({ summary, categories, accounts, review
   const overline = filters.from === 'home' ? 'From Home' : monthName(filters.month, true);
   const anySelected = selected.length > 0 && selectable;
 
-  // WW-01: a row's actions on hover — ✓ Right only on a row Pearl isn't
-  // sure of, Category, and Mark as…
-  const rowActions = (r) => (
-    <span className="tx-actions" role="group" aria-label={`Actions for ${r.merchant}`}>
-      {r.suggested && r.chip.label !== 'Possible duplicate' && r.chip.label !== 'Whose?' && (
-        <button type="button" className="tx-action ok" onClick={() => confirmRows([r.id])}
-                disabled={busy}>
-          <PIcon name="check" size={14} /> Right
-        </button>
-      )}
-      <button type="button" className="tx-action" onClick={() => open(r.id, 'category')}>
-        Category
-      </button>
-      <button type="button" className="tx-action mark" onClick={() => open(r.id, 'what')}>
-        Mark as…
-      </button>
-    </span>
-  );
+  // WW-01: the dotted chip confirms Pearl's guess in place; the row opens.
+  const confirmable = (r) => r.suggested && r.chip?.suggested
+    && r.chip.label !== 'Possible duplicate' && r.chip.label !== 'Whose?'
+    && r.duplicate?.state !== 'pending';
 
   const rowFor = (r) => {
     const row = (
       <TxRow key={r.id} name={r.merchant} logo={r.logo}
+             onConfirm={confirmable(r) ? () => confirmRows([r.id]) : undefined} busy={busy}
              meta={r.account + (r.pending ? ' · Pending' : '')
                + (r.source_label ? ` · ${r.source_label}` : '')}
              note={r.note || r.my_note} noteLink={r.note_link}
@@ -618,7 +599,6 @@ export default function TransactionsList({ summary, categories, accounts, review
           </label>
         )}
         {row}
-        {desktop && !selecting && r.duplicate?.state !== 'pending' && rowActions(r)}
       </div>
     );
   };
@@ -641,8 +621,6 @@ export default function TransactionsList({ summary, categories, accounts, review
               {selecting ? 'Done' : 'Select'}
             </PButton>
           )}
-          <PButton variant="text" onClick={() => setTogether(true)}>Sorted together</PButton>
-          <PButton variant="secondary" onClick={() => setSorting(false)}>Sort a date range</PButton>
           <PButton onClick={() => setAdding(true)}>
             <PIcon name="plus" size={16} /> Add a transaction
           </PButton>
@@ -680,6 +658,12 @@ export default function TransactionsList({ summary, categories, accounts, review
             <button type="button" className="pk-filter active tx-toggle" aria-pressed="true"
                     onClick={() => choose({ day: '' })}>
               {shortDate(filters.day)} <PIcon name="x" size={14} />
+            </button>
+          )}
+          {filters.first && filters.last && (
+            <button type="button" className="pk-filter active tx-toggle" aria-pressed="true"
+                    onClick={() => choose({ first: '', last: '' })}>
+              {rangeWords(filters.first, filters.last)} <PIcon name="x" size={14} />
             </button>
           )}
           {filters.owed && (
@@ -747,7 +731,7 @@ export default function TransactionsList({ summary, categories, accounts, review
               {anySuggested && (
                 <>
                   <CategoryChip label="Other" suggested />
-                  <span>Pearl isn’t sure of this one. Open it to tell us what it was.</span>
+                  <span>Pearl isn’t sure of this one. Click the dotted chip if it’s right, or open it to change it.</span>
                 </>
               )}
               {anyRuled && (
@@ -825,16 +809,6 @@ export default function TransactionsList({ summary, categories, accounts, review
                         tags={data?.tag_totals ?? (data?.tags ?? [])}
                         onApply={(f) => { setFiltering(false); choose(f); }}
                         onClose={() => setFiltering(false)} />
-      )}
-      {sorting !== null && (
-        <SortRangePanel categories={categories} range={sorting || null} onDone={rangeDone}
-                        onClose={() => setSorting(null)} />
-      )}
-      {together && (
-        <SortedTogetherPanel onClose={() => setTogether(false)}
-                             onAnother={() => { setTogether(false); setSorting(false); }}
-                             onChange={(r) => { setTogether(false); setSorting(r); }}
-                             onRemoved={rangeRemoved} />
       )}
       {marking && (
         <BatchMarkPanel ids={marking} categories={categories} onDone={batchDone(marking)}

@@ -33,13 +33,26 @@ export function Avatar({ name, logo, large = false }) {
  * confirmed) is a dashed outline with a question mark, so it reads without
  * colour; a screen reader hears "Food Delivery, suggested by Pearl".
  */
-export function CategoryChip({ label, suggested = false, ruled = false }) {
+export function CategoryChip({ label, suggested = false, ruled = false, onConfirm, disabled = false }) {
   // Decided by a rule of hers: a small lock, so it's clear why it won't
   // change on its own (2026-10-14).
   const name = suggested ? `${label}, suggested by Pearl` : ruled ? `${label}, from your rule` : label;
+  const cls = `pk-cat${suggested ? ' suggested' : ''}${ruled ? ' ruled' : ''}`;
+  // A guess she can confirm by clicking the dotted chip itself (WW-01,
+  // 2026-10-16): no words on hover, the outline just goes solid. Clicking
+  // anywhere else on the row opens it, where the category can be changed.
+  if (suggested && onConfirm) {
+    return (
+      <button type="button" className={`${cls} confirmable`} disabled={disabled}
+              aria-label={`${label}, suggested by Pearl. Confirm`}
+              onClick={(e) => { e.stopPropagation(); onConfirm(); }}>
+        <PIcon name="help" size={12} />
+        <span aria-hidden="true">{label}</span>
+      </button>
+    );
+  }
   return (
-    <span className={`pk-cat${suggested ? ' suggested' : ''}${ruled ? ' ruled' : ''}`}
-          aria-label={name} role="img">
+    <span className={cls} aria-label={name} role="img">
       {suggested && <PIcon name="help" size={12} />}
       {ruled && !suggested && <PIcon name="lock" size={11} />}
       <span aria-hidden="true">{label}</span>
@@ -148,7 +161,7 @@ export function DayHeader({ children }) {
  */
 export function TxRow({ name, logo, meta, note, noteLink = false, chip, amount,
                         inflow = false, muted = false, flash = false, onOpen, tags = [],
-                        ruled = false, ...rest }) {
+                        ruled = false, onConfirm, busy = false, ...rest }) {
   return (
     <button type="button" className={`pk-row${muted ? ' muted' : ''}${flash ? ' flash' : ''}`}
             onClick={onOpen} {...rest}>
@@ -159,7 +172,10 @@ export function TxRow({ name, logo, meta, note, noteLink = false, chip, amount,
         {note && <span className={`pk-row-note${noteLink ? ' accent' : ''}`}>{note}</span>}
       </span>
       <span className="pk-row-cat">
-        {chip && <CategoryChip label={chip.label} suggested={chip.suggested} ruled={ruled} />}
+        {chip && (
+          <CategoryChip label={chip.label} suggested={chip.suggested} ruled={ruled}
+                        onConfirm={chip.suggested ? onConfirm : undefined} disabled={busy} />
+        )}
         {tags.map((t) => <TagChip key={t} label={t} />)}
       </span>
       <span className={`pk-amt ${muted ? 'muted' : amountTone(inflow)}`}>

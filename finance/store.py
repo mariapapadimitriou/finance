@@ -503,6 +503,7 @@ CREATE TABLE IF NOT EXISTS sorted_ranges (
     first      TEXT NOT NULL,
     last       TEXT NOT NULL,
     category   TEXT NOT NULL,
+    bank_id    INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 -- Opt-in challenges (THL-250): short, from her own spending, stoppable.
@@ -665,6 +666,7 @@ class Store:
         self._migrate_manual_digits()
         self._drop_self_twins()
         self._migrate_challenge_dates()
+        self._migrate_range_banks()
 
     def _migrate_challenge_dates(self) -> None:
         """`challenges.start`/`end` became `starts_on`/`ends_on` (2026-10-15):
@@ -677,6 +679,15 @@ class Store:
             if "end" in cols:
                 c.execute('ALTER TABLE challenges RENAME COLUMN "start" TO starts_on')
                 c.execute('ALTER TABLE challenges RENAME COLUMN "end" TO ends_on')
+
+    def _migrate_range_banks(self) -> None:
+        """`sorted_ranges.bank_id` (2026-10-16): the treasure chest a sorted
+        range is paid from, if she chose one (CAL-07, CAL-08)."""
+        try:
+            with self.conn() as c:
+                c.execute("ALTER TABLE sorted_ranges ADD COLUMN bank_id INTEGER")
+        except Exception:                                        # noqa: BLE001
+            return
 
     def _migrate_manual_digits(self) -> None:
         """`manual_accounts.last4`: the last four digits of a savings or
@@ -1439,18 +1450,21 @@ class Store:
         with self.conn() as c:
             rows = c.execute("SELECT * FROM sorted_ranges ORDER BY first DESC, id DESC").fetchall()
         return [{"id": int(r["id"]), "name": r["name"], "first": r["first"], "last": r["last"],
-                 "category": r["category"]} for r in rows]
+                 "category": r["category"],
+                 "bank_id": int(r["bank_id"]) if r["bank_id"] is not None else None} for r in rows]
 
-    def add_range(self, name: str, first: str, last: str, category: str) -> int:
+    def add_range(self, name: str, first: str, last: str, category: str,
+                  bank_id: int | None = None) -> int:
         with self.conn() as c:
-            c.execute("INSERT INTO sorted_ranges (name, first, last, category) VALUES (?, ?, ?, ?)",
-                      (name, first, last, category))
+            c.execute("INSERT INTO sorted_ranges (name, first, last, category, bank_id) "
+                      "VALUES (?, ?, ?, ?, ?)", (name, first, last, category, bank_id))
             return int(c.execute("SELECT MAX(id) AS id FROM sorted_ranges").fetchone()["id"])
 
-    def update_range(self, rid: int, name: str, first: str, last: str, category: str) -> bool:
+    def update_range(self, rid: int, name: str, first: str, last: str, category: str,
+                     bank_id: int | None = None) -> bool:
         with self.conn() as c:
-            cur = c.execute("UPDATE sorted_ranges SET name = ?, first = ?, last = ?, category = ? "
-                            "WHERE id = ?", (name, first, last, category, rid))
+            cur = c.execute("UPDATE sorted_ranges SET name = ?, first = ?, last = ?, category = ?, "
+                            "bank_id = ? WHERE id = ?", (name, first, last, category, bank_id, rid))
             return (cur.rowcount or 0) > 0
 
     def delete_range(self, rid: int) -> bool:

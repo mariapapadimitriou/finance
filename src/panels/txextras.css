@@ -184,6 +184,30 @@
 .tx-view .pk-seg { width: auto; }
 .tx-view .pk-seg button { flex: none; padding: 7px 14px; }
 
+/* WW-01 (2026-10-16): nothing appears on hover. The row tints (kit.css),
+ * the dotted chip confirms, and the row opens. */
+@media (min-width: 1024px) { .tx-sel { position: relative; } }
+@media (max-width: 1023px) {
+  .tx-sel { padding-left: 0; }
+  .tx-selectable .tx-sel { padding-left: 16px; }
+}
+.pk .tx-toggle { cursor: pointer; font: inherit; font-size: 13px; line-height: 18px; font-weight: 500; }
+.pk .tx-toggle svg { margin-left: 2px; }
+
+/* The list folded by merchant or category. */
+.tx-folded .pk-row > svg:last-child { flex: none; color: var(--ink-muted); }
+
+/* Categories and rules: tags and names. */
+.pf-kind-actions { display: inline-flex; gap: var(--space-3); }
+.pf-hidden-list { flex-direction: row; flex-wrap: wrap; gap: var(--space-2) var(--space-5); }
+.pf-hidden-list li { width: auto; }
+
+/* ── Parity with the Pearl Handoff File (2026-10-15) ─────────────────── */
+/* VF-01: the view switch sits with the chips. */
+.tx-view { display: inline-flex; }
+.tx-view .pk-seg { width: auto; }
+.tx-view .pk-seg button { flex: none; padding: 7px 14px; }
+
 /* WW-01: a row's actions on hover or focus, as pills at the right. */
 .tx-actions { display: none; align-items: center; gap: 6px; flex: none; padding-right: 12px; }
 .pk .tx-action {
@@ -276,3 +300,8 @@
 .wwt-effect .pk-label { font-weight: 600; }
 .wwt-actions { margin-top: var(--space-2); }
 .pk .wwt-actions .pk-btn.secondary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+
+/* The summary card sits on lilac (a nacre colour) in both themes, so its
+ * text is on-nacre ink, like the Wins boxes (2026-10-16). */
+.pk .wwt-effect, .pk .wwt-effect .pk-label, .pk .wwt-effect p { color: var(--on-nacre); }
+.pk .wwt-effect .pk-muted { color: color-mix(in srgb, var(--on-nacre) 72%, transparent); }
