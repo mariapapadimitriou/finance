@@ -8,7 +8,7 @@ import { Alert, Choice, DetailPanel, PButton } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { MARKS } from '../pearl/ui.jsx';
 import {
-  onPathUrl, readPathUrl, setGoalsIntent, writeInsightsUrl, writePathUrl, writeProjectionsUrl,
+  onPathUrl, readPathUrl, takePearlGlow, setGoalsIntent, writeInsightsUrl, writePathUrl, writeProjectionsUrl,
 } from '../router.js';
 import { More } from './InsightsParts.jsx';
 import { dayShort, monthName, monthYear } from './GoalsParts.jsx';
@@ -58,6 +58,16 @@ export default function WinsPanel({ onTab, version }) {
   }, []);
   useEffect(() => { if (!route.step) load(); }, [load, version, route.step]);
 
+  // From "See your pearls" (THL-256): land on the collection, and the new
+  // pearls glow once for 400 ms.
+  const [glow, setGlow] = useState(() => new Set(takePearlGlow()));
+  useEffect(() => {
+    if (!data || !glow.size) return undefined;
+    document.getElementById('wn-pearls-title')?.scrollIntoView({ block: 'start', behavior: 'auto' });
+    const t = setTimeout(() => setGlow(new Set()), 1200);
+    return () => clearTimeout(t);
+  }, [data, glow]);
+
   const open = (view) => { writeProjectionsUrl(view); onTab?.('projections'); };
   const show = (step) => { writePathUrl({ step }); window.scrollTo?.({ top: 0 }); };
   const toGoals = (view) => { setGoalsIntent({ view }); onTab?.('goals'); };
@@ -87,7 +97,7 @@ export default function WinsPanel({ onTab, version }) {
   const reload = async () => { await load(); };
   return (
     <>
-      <WinsPage data={data} onAct={act} onStep={show} onSave={toSave}
+      <WinsPage data={data} glow={glow} onAct={act} onStep={show} onSave={toSave}
                 onStreak={(key) => setPanel({ name: 'streak', key })}
                 onChallenges={() => setPanel({ name: 'challenges' })}
                 onStart={(offer) => setPanel({ name: 'start', offer })}
@@ -119,8 +129,16 @@ export default function WinsPanel({ onTab, version }) {
   );
 }
 
+/** How far along the six-pearl path line the nacre fills: to the last earned pearl. */
+export function pathFill(path) {
+  const n = path.length;
+  const last = path.map((p) => p.state).lastIndexOf('earned');
+  if (n < 2 || last < 0) return 0;
+  return Math.round((last / (n - 1)) * 100);
+}
+
 /** W-01 to W-04. */
-export function WinsPage({ data, onAct, onStep, onSave, onStreak, onChallenges, onStart, onChallenge, onRecap }) {
+export function WinsPage({ data, glow = null, onAct, onStep, onSave, onStreak, onChallenges, onStart, onChallenge, onRecap }) {
   const next = data.next;
   return (
     <div className="pk hm-page in-page wn-page">
@@ -129,9 +147,11 @@ export function WinsPage({ data, onAct, onStep, onSave, onStreak, onChallenges, 
         <h1 className="pk-h1">Wins</h1>
       </header>
 
-      <section className="hm-card" aria-labelledby="wn-path-title">
+      <section className="hm-card wn-path-card" aria-labelledby="wn-path-title">
         <p className="pk-overline">Your path</p>
         <h2 className="pk-h2" id="wn-path-title">{data.heading}</h2>
+        <div className="wn-path-line" aria-hidden="true"
+             style={{ '--wn-fill': `${pathFill(data.path)}%` }} />
         <ol className="wn-path" aria-label="Milestones on your path">
           {data.path.map((p) => (
             <li key={p.key} className={p.state} aria-current={p.state === 'next' ? 'step' : undefined}>
@@ -158,7 +178,7 @@ export function WinsPage({ data, onAct, onStep, onSave, onStreak, onChallenges, 
         </div>
         <ul className="wn-pearls" aria-label="Pearls">
           {data.pearls.map((p) => (
-            <li key={p.key} className={`wn-pearl-card${p.earned ? '' : ' todo'}`}>
+            <li key={p.key} className={`wn-pearl-card${p.earned ? '' : ' todo'}${glow?.has?.(p.key) ? ' glow' : ''}`}>
               <Pearl state={p.earned ? 'earned' : 'todo'} />
               <span className="wn-pearl-text">
                 <span className="wn-title">{p.label}</span>
@@ -655,7 +675,10 @@ async function imageOf(r, lines) {
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#fdf8f6'; ctx.fillRect(0, 0, W, H);
+  // The share image sits on nacre (THL-239 update, 2026-10-16), on-nacre ink on top.
+  const nacre = ctx.createLinearGradient(0, 0, W, H);
+  nacre.addColorStop(0, '#ffd6e0'); nacre.addColorStop(0.5, '#e3d4ff'); nacre.addColorStop(1, '#cff3ee');
+  ctx.fillStyle = nacre; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#1d1b2e'; ctx.textAlign = 'center';
   ctx.font = '600 72px Georgia, serif'; ctx.fillText('pearl', W / 2, 420);
   ctx.strokeStyle = '#b12a5b'; ctx.lineWidth = 6;

@@ -18,8 +18,28 @@
   background: radial-gradient(circle at 38% 32%, #fff 0, #fff 28%, var(--lilac) 70%, var(--action) 100%);
   box-shadow: 0 0 0 2px var(--action);
 }
-.wn-pearl.next { background: var(--surface-card); }
-.wn-pearl.next::after { background: var(--surface-card); box-shadow: 0 0 0 2px var(--action); }
+/* Earned (THL-239 update, 2026-10-16): the Design System's Pearl/Orb fill
+ * with Glow/Pearl. Nacre is only for something she earned. */
+.wn-pearl.earned {
+  border-color: transparent; background: var(--pearl-orb);
+  box-shadow: var(--glow-pearl), inset 0 0 0 1px rgba(226, 85, 127, .25);
+}
+.wn-pearl.earned::after {
+  width: 34%; height: 34%; box-shadow: none;
+  background: radial-gradient(circle at 38% 32%, #fff 0, #fff 40%, rgba(220, 203, 255, .9) 100%);
+}
+/* The next one: a nacre ring with a pearl forming inside. */
+.wn-pearl.next {
+  border-color: transparent;
+  background: linear-gradient(var(--surface-card), var(--surface-card)) padding-box, var(--nacre-horizontal) border-box;
+  box-shadow: none;
+}
+.wn-pearl.next::after {
+  width: 34%; height: 34%; box-shadow: none; opacity: .55;
+  background: radial-gradient(circle at 38% 32%, #fff 0, #fff 40%, rgba(220, 203, 255, .9) 100%);
+}
+/* A new pearl glows once for 400 ms on arrival from the sheet (THL-256). */
+.wn-pearl-card.glow .wn-pearl { animation: pe-glow var(--motion-emphasis) var(--ease-standard) 1; }
 .wn-pearl.todo, .wn-pearl.unknown {
   border: 2px dashed var(--border-strong, var(--border)); background: none; box-shadow: none;
 }
@@ -30,8 +50,26 @@
 .wn-pearl.lg { --wn-size: 56px; }
 
 /* ── Your path (hero) ───────────────────────────────────────────────────── */
+/* A soft Nacre/Diagonal wash on the card: the gradient under a mostly
+ * opaque card surface, so it reads in both themes and the ink stays ink. */
+.pk .wn-path-card {
+  position: relative; overflow: hidden;
+  background: linear-gradient(color-mix(in srgb, var(--surface-card) 78%, transparent), color-mix(in srgb, var(--surface-card) 78%, transparent)), var(--nacre-diagonal);
+}
+[data-theme="dark"] .pk .wn-path-card {
+  background: linear-gradient(color-mix(in srgb, var(--surface-card) 88%, transparent), color-mix(in srgb, var(--surface-card) 88%, transparent)), var(--nacre-diagonal);
+}
+/* The line the six pearls sit on: a track, with nacre filled to the last pearl earned. */
+.wn-path-line {
+  position: relative; align-self: stretch; height: 4px; margin: var(--space-4) calc(100% / 12) 0;
+  border-radius: var(--radius-full); background: var(--track);
+}
+.wn-path-line::after {
+  content: ""; position: absolute; inset: 0; width: var(--wn-fill, 0%); border-radius: var(--radius-full);
+  background: var(--nacre-horizontal); transition: width var(--motion-emphasis) var(--ease-standard);
+}
 .wn-path { list-style: none; margin: 0; padding: var(--space-2) 0 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-3); }
-.wn-path li { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); text-align: center; }
+.wn-path li { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); text-align: center; margin-top: calc(-1 * (var(--space-2) + 24px)); }
 .wn-path .wn-label { font-size: 13px; line-height: 18px; color: var(--ink); }
 .wn-path .wn-when { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
 .wn-path li.todo .wn-label { color: var(--ink-muted); }
@@ -107,11 +145,12 @@
 .wn-share-card {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2);
   aspect-ratio: 4 / 5; padding: var(--space-6); border-radius: var(--radius-md); border: 1px solid var(--border);
-  background: var(--surface-card); text-align: center;
+  background: var(--nacre-diagonal); color: var(--on-nacre); text-align: center;
 }
+.wn-share-card .pk-h2, .wn-share-card .wn-logo { color: var(--on-nacre); }
 .wn-share-card .wn-logo { display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--display); font-weight: 600; font-size: 24px; }
 .wn-share-card .wn-pearl { --wn-size: 88px; margin: var(--space-3) 0; }
-.wn-share-card .wn-line { font-size: 14px; line-height: 22px; color: var(--ink); margin: 0; }
+.wn-share-card .wn-line { font-size: 14px; line-height: 22px; color: var(--on-nacre); margin: 0; }
 
 /* ── Save pointer ───────────────────────────────────────────────────────── */
 .wn-pointer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-4) var(--space-5); border-radius: var(--radius-md); background: var(--blush); }
@@ -123,8 +162,9 @@
   .wn-pearls { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
   .wn-pearl-card, .wn-pearl-card.todo { flex-direction: column; text-align: center; padding: var(--space-3) var(--space-1); background: none; }
   .wn-pearl-card .wn-detail { display: none; }
+  .wn-path-line { display: none; }
   .wn-path { grid-template-columns: 1fr; gap: 0; }
-  .wn-path li { flex-direction: row; text-align: left; padding: var(--space-2) 0; }
+  .wn-path li { flex-direction: row; text-align: left; padding: var(--space-2) 0; margin-top: 0; }
   .wn-path li + li { border-top: 1px solid var(--border); }
   .wn-path .wn-pearl { --wn-size: 28px; }
   .wn-path .wn-label { flex: 1 1 auto; text-align: left; }

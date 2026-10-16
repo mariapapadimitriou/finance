@@ -358,6 +358,22 @@ export function clearUrl() {
 // recommendation's "Try it" or "Move to savings"). Kept for the one visit;
 // Goals takes it on arrival. Storage can be blocked, so it's only a nicety.
 const GOALS_INTENT = 'pearl.goalsIntent';
+// The pearls Wins should glow once on arrival (THL-256 "See your pearls").
+const PEARL_GLOW = 'pearl.glow';
+
+export function setPearlGlow(keys) {
+  try { window.sessionStorage.setItem(PEARL_GLOW, JSON.stringify(keys)); } catch { /* blocked */ }
+}
+
+export function takePearlGlow() {
+  try {
+    const raw = window.sessionStorage.getItem(PEARL_GLOW);
+    if (!raw) return [];
+    window.sessionStorage.removeItem(PEARL_GLOW);
+    const keys = JSON.parse(raw);
+    return Array.isArray(keys) ? keys : [];
+  } catch { return []; }
+}
 
 export function setGoalsIntent(intent) {
   try { window.sessionStorage.setItem(GOALS_INTENT, JSON.stringify(intent)); } catch { /* blocked */ }

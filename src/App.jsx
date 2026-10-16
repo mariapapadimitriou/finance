@@ -6,6 +6,7 @@ import QuickSort from './panels/QuickSort.jsx';
 import WinsPanel from './panels/WinsPanel.jsx';
 import LearnPanel from './panels/LearnPanel.jsx';
 import { MomentScreen } from './panels/Moments.jsx';
+import PearlEarned from './panels/PearlEarned.jsx';
 import DebtsPanel from './panels/DebtsPanel.jsx';
 import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import TransactionsList from './panels/TransactionsList.jsx';
@@ -30,11 +31,12 @@ import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
   clearUrl, fromPartner, isCalendarUrl, isInsightsUrl, isLearnUrl, isPathUrl, isProjectionsUrl, isReviewUrl,
   isSaveUrl, readTxUrl, redirectOldUrl, setGoalsIntent, writeCalendarUrl, writeInsightsUrl, writeLearnUrl,
-  writePathUrl, writeProjectionsUrl, writeSaveUrl,
+  setPearlGlow, writePathUrl, writeProjectionsUrl, writeSaveUrl,
   writeReviewUrl,
 } from './router.js';
 import {
-  getAccounts, getAuthStatus, getCategories, getMoments, getQuickSort, getReview, getSummary, logout,
+  getAccounts, getAuthStatus, getCategories, getMoments, getPearlMoment, getQuickSort, getReview, getSummary, logout,
+  seeMoment,
   setLedgerCurrency, setUnauthorizedHandler, syncPlaid,
 } from './api.js';
 
@@ -184,6 +186,15 @@ export default function App() {
       if (q?.show) whenNoDialog(() => setQuickSort(q));
     }).catch(() => {});
   }, []);
+  // THL-256: "You earned a pearl", over whatever page she lands on, once
+  // per milestone. Asked after the moments, before the quick sort.
+  const [pearl, setPearl] = useState(null);
+  const askPearl = useCallback(() => {
+    getPearlMoment().then((m) => {
+      if (m?.show) whenNoDialog(() => setPearl(m));
+      else askQuickSort();
+    }).catch(() => askQuickSort());
+  }, [askQuickSort]);
   const askedMoment = useRef(false);
   // A-14: signed out for being idle in this page's life, so signing back in
   // only needs the address put back; after a reload it needs a fresh load.
@@ -304,14 +315,16 @@ export default function App() {
     if (!signedIn || !data || askedMoment.current) return;
     askedMoment.current = true;
     getMoments().then((m) => {
-      if (m.phase) setMoment(m);
-      else if (m.partner_welcome && panelRef.current === 'home') {
+      // The full-page phase moments (GR-08 to GR-10) are superseded by the
+      // pearl sheet (THL-112, 2026-10-16): retire one quietly if it's due.
+      if (m.phase) seeMoment(m.phase).catch(() => {});
+      if (m.partner_welcome && panelRef.current === 'home') {
         writeProjectionsUrl('ready');
         setTab('save'); setPanel('projections');
       } else {
-        askQuickSort();
+        askPearl();
       }
-    }).catch(() => askQuickSort());
+    }).catch(() => askPearl());
   }, [signedIn, data]);
 
   if (signedIn === null) {
@@ -420,6 +433,11 @@ export default function App() {
       onSignOut={signOut}
     >
       {panel === 'income' && <IncomeBillsPanel onTab={go} onChanged={load} version={version} />}
+      {pearl && (
+        <PearlEarned moment={pearl}
+                     onClose={() => { setPearl(null); askQuickSort(); }}
+                     onSeePearls={(keys) => { setPearl(null); setPearlGlow(keys); go('path'); }} />
+      )}
       {quickSort && (
         <QuickSort data={quickSort} categories={categories} onClose={() => setQuickSort(null)}
                    onChanged={load} />

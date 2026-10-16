@@ -11,6 +11,8 @@
 * GET  /api/wins/recaps/<month>           a past recap (RC-01); amounts for the share
   image are hers to switch on (RC-02).
 * GET  /api/wins/events                   what was earned, for notifications and analytics.
+* GET  /api/wins/moment                   the "You earned a pearl" sheet to show on open (THL-256).
+* POST /api/wins/moment/seen              {keys}: shown; never again for those pearls.
 """
 
 from __future__ import annotations
@@ -74,6 +76,28 @@ def summary(st, txns, today, *, anchor, path, review_count, usual) -> dict:
 @bp.get("/wins")
 def wins_page():
     return jsonify(page(store()))
+
+
+@bp.get("/wins/moment")
+def wins_moment():
+    """"You earned a pearl" (THL-256): the sheet to show on open, once per
+    milestone, ever. Evaluating the page is what notices a new pearl."""
+    st = store()
+    c = context(st)
+    page_ = wins.evaluate(st, c["txns"], c["today"], anchor=c["anchor"], path=c["path"],
+                          review_count=c["review_count"], invest_done=c["invest_done"],
+                          usual=c["usual"])
+    return jsonify(wins.moment(st, page_, c["anchor"]))
+
+
+@bp.post("/wins/moment/seen")
+def wins_moment_seen():
+    body = request.get_json(silent=True) or {}
+    keys = body.get("keys") or []
+    known = {m["key"] for m in wins.MILESTONES}
+    if not isinstance(keys, list) or not all(isinstance(k, str) and k in known for k in keys):
+        return jsonify({"error": "Which pearls?"}), 400
+    return jsonify({"ok": True, "celebrated": wins.mark_celebrated(store(), keys)})
 
 
 @bp.get("/wins/streaks/<key>")

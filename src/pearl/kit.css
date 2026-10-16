@@ -434,7 +434,7 @@
 
 /* ── A row that just changed ─────────────────────────────────────────────── */
 @keyframes pk-flash { from { background: var(--seaglass); } to { background: transparent; } }
-.pk-row.flash { animation: pk-flash 2.4s ease-out; }
+.pk-row.flash { animation: pk-flash var(--motion-emphasis) var(--ease-standard) 2s both; }
 @media (prefers-reduced-motion: reduce) { .pk-row.flash { animation: none; outline: 2px solid var(--border-focus); } }
 
 /* ── Needs a look (R-01, R-04) ───────────────────────────────────────────── */

@@ -678,7 +678,9 @@ class TestGrowthInsights:
             assert 'aria-hidden="true"' in body, name
         pkg = json.loads((SRC.parent / "package.json").read_text(encoding="utf-8"))
         # Chart.js went with the prototype Projections page, its last user.
-        assert set(pkg["dependencies"]) == {"react", "react-dom"}
+        # lottie-web plays "You earned a pearl" (THL-256), SVG renderer only.
+        assert set(pkg["dependencies"]) == {"react", "react-dom", "lottie-web"}
+        assert pkg["dependencies"]["lottie-web"] == "^5.12.2"
 
 
 class TestGrowthProjections:
