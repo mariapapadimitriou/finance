@@ -29,6 +29,8 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import threading
+import time
 from contextlib import contextmanager
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -195,6 +197,58 @@ class _PgConnection:
 SCHEMA_LOCK = 7_370_517
 
 
+# One Postgres connection per thread, kept open between transactions and
+# between requests (2026-10-16). The store opens a transaction per method,
+# and a page like Home calls it a hundred and more times; opening a fresh
+# TLS connection to the pooled endpoint for each one was most of what made
+# every page take seconds. The pool on the other end still hands out one
+# server connection per transaction, so nothing is held longer than before
+# — this only saves the handshake. A connection that sat idle is pinged
+# before reuse, and one that broke is dropped and replaced.
+_local = threading.local()
+IDLE_PING_AFTER = 30.0          # seconds idle before a SELECT 1 checks it
+
+
+def _drop_pg() -> None:
+    cached = getattr(_local, "pg", None)
+    _local.pg = None
+    if cached is not None:
+        try:
+            cached[0].close()
+        except Exception:                                        # noqa: BLE001
+            pass
+
+
+def _pg_raw(url: str):
+    """The thread's open connection to `url`, checked, or a new one."""
+    import psycopg
+    from psycopg.rows import dict_row
+
+    now = time.monotonic()
+    cached = getattr(_local, "pg", None)
+    if cached is not None:
+        raw, cached_url, last = cached
+        alive = cached_url == url and not raw.closed and not getattr(raw, "broken", False)
+        if alive and now - last > IDLE_PING_AFTER:
+            try:
+                with raw.cursor() as cur:
+                    cur.execute("SELECT 1")
+                raw.rollback()
+            except Exception:                                    # noqa: BLE001
+                alive = False
+        if alive:
+            return raw
+        _drop_pg()
+    raw = psycopg.connect(url, row_factory=dict_row)
+    _local.pg = (raw, url, now)
+    return raw
+
+
+def close_cached() -> None:
+    """Close this thread's kept connection (tests, and a clean shutdown)."""
+    _drop_pg()
+
+
 @contextmanager
 def connect(path: str, url: str | None = None, schema: str = "public"):
     """Open the ledger: Postgres when a URL is configured, SQLite otherwise.
@@ -202,19 +256,54 @@ def connect(path: str, url: str | None = None, schema: str = "public"):
     `schema` picks the account's ledger on Postgres. On SQLite each account
     has its own file instead, so it is the path that differs and this is
     unused.
+
+    Each `with` is one transaction: committed on the way out, rolled back
+    on an exception. A `with` inside another one on the same thread and
+    schema joins the outer transaction instead of starting its own.
     """
     url = url or database_url()
     if url:
-        import psycopg
-        from psycopg.rows import dict_row
-
-        raw = psycopg.connect(url, row_factory=dict_row)
+        outer = getattr(_local, "pgconn", None)
+        if outer is not None and outer._schema == valid_schema(schema):
+            _local.depth += 1
+            try:
+                yield outer
+            finally:
+                _local.depth -= 1
+            return
+        if outer is not None:
+            # A different ledger inside a transaction on another: its own
+            # short-lived connection, as before.
+            import psycopg
+            from psycopg.rows import dict_row
+            raw = psycopg.connect(url, row_factory=dict_row)
+            conn = _PgConnection(raw, schema)
+            try:
+                yield conn
+                conn.commit()
+            finally:
+                conn.close()
+            return
+        raw = _pg_raw(url)
         conn = _PgConnection(raw, schema)
+        _local.pgconn = conn
+        _local.depth = 1
         try:
             yield conn
             conn.commit()
+        except BaseException:
+            try:
+                raw.rollback()
+            except Exception:                                    # noqa: BLE001
+                pass
+            raise
         finally:
-            conn.close()
+            _local.pgconn = None
+            _local.depth = 0
+            if raw.closed or getattr(raw, "broken", False):
+                _drop_pg()
+            else:
+                _local.pg = (raw, url, time.monotonic())
         return
 
     c = sqlite3.connect(path)
