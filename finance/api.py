@@ -221,6 +221,9 @@ def transactions_list():
         "owed": owed,
         "total": len(chosen),
         "totals": txlist.totals(chosen),
+        # ALT-04: the Outflows and Inflows cards, and each day's outflows.
+        "flows": txlist.flows(rows, filters, _date_today()),
+        "day_spent": txlist.day_spent(chosen),
         "focus": txlist.focus(rows, month=month, account=filters["account"],
                               group=group, category=filters["category"],
                               tag=filters["tag"], merchant=filters["merchant"]),
@@ -1648,6 +1651,11 @@ def undo_draw(draw_id: int):
 # everyday spending, usually best left out. Investment accounts aren't offered.
 _ANCHOR_SAVINGS = {"savings", "money market", "hsa", "cash management"}
 _ANCHOR_CHEQUING = {"checking", "chequing", "prepaid", "paypal"}
+
+
+def _date_today():
+    from datetime import date as _d
+    return _d.fromisoformat(_today_iso())
 
 
 def _today_iso() -> str:

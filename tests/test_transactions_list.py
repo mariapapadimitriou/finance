@@ -268,3 +268,43 @@ def test_money_into_a_joint_account_asks_whose(client):
     client.put(f"/api/transactions/{ids['E-TRANSFER FROM ALEX']}/joint-from", json={"who": "them"})
     r = listing(client, joint=1)["transactions"][0]
     assert r["chip"]["label"] == "Alex’s" and r["joint_from"] == "them"
+
+
+def _months_ago(n, d=1):
+    y, m = TODAY.year, TODAY.month - n
+    while m <= 0:
+        y, m = y - 1, m + 12
+    return f"{y:04d}-{m:02d}-{d:02d}"
+
+
+def test_flows_are_counted_outflows_and_inflows_by_day(client):
+    """ALT-04: the two cards. Spending and income only — a transfer or a card
+    payment is neither — as running totals, with a three-month average."""
+    if TODAY.day < 2:
+        pytest.skip("needs two days of this month")
+    load(client.st,
+         row(40.0, "LOBLAWS", account="card", kind="credit", category="Groceries", when=in_month(1)),
+         row(25.0, "UBER EATS", account="card", kind="credit", category="Dining", when=in_month(2)),
+         row(-2000.0, "PAYROLL ACME", category="Income", when=in_month(1)),
+         row(612.0, "VISA PAYMENT", category="Transfers", when=in_month(2)),
+         *[row(90.0, "LOBLAWS", account="card", kind="credit", category="Groceries",
+               when=_months_ago(n, 1)) for n in (1, 2, 3)],
+         *[row(-1800.0, "PAYROLL ACME", category="Income", when=_months_ago(n, 15)) for n in (1, 2, 3)])
+    data = listing(client)
+    f = data["flows"]
+    assert f["month"] == MONTH and f["upto"] == TODAY.day and len(f["out"]) == TODAY.day
+    assert f["out"][0] == 40.0 and f["out"][1] == 65.0           # the card payment isn't an outflow
+    assert f["in"][0] == 2000.0 and f["in"][-1] == 2000.0
+    assert f["usual"]["months"] == 3 and len(f["usual"]["out"]) == f["days"]
+    assert f["usual"]["out"][0] == 90.0 and f["usual"]["in"][13] == 0.0 and f["usual"]["in"][14] == 1800.0
+    # The cards' figures are the totals, which agree with the line's end.
+    assert data["totals"]["spent"] == f["out"][-1] and data["totals"]["income"] == f["in"][-1]
+    # Each day's header: that day's outflows.
+    assert data["day_spent"][in_month(1)] == 40.0 and data["day_spent"][in_month(2)] == 25.0
+    # No single month to draw: no flows.
+    assert listing(client, month="all")["flows"] is None
+
+
+def test_flows_without_history_have_no_usual_line(client):
+    load(client.st, row(40.0, "LOBLAWS", account="card", kind="credit", category="Groceries"))
+    assert listing(client)["flows"]["usual"] is None

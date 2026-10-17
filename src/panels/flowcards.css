@@ -1,0 +1,124 @@
+/* ALT-04 (2026-10-17): the Transactions page as the Handoff File draws it —
+ * Outflows and Inflows cards, one row of tools, the review banner, and a
+ * list by day. Colours and type from the Pearl tokens. */
+
+/* ── The two cards ──────────────────────────────────────────────────────── */
+.fc-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.fc-card {
+  position: relative; display: flex; flex-direction: column; gap: var(--space-1);
+  padding: 20px 24px 16px; background: var(--surface-card); border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.fc-card p { margin: 0; }
+.fc-label {
+  font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.fc-figure { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 30px; line-height: 38px;
+             font-variant-numeric: tabular-nums; }
+.fc-figure.out { color: var(--money-out); }
+.fc-figure.in { color: var(--money-in); }
+.fc-chart { position: relative; height: 96px; margin-top: var(--space-4); cursor: crosshair; }
+.fc-chart.out { color: var(--money-out); }
+.fc-chart.in { color: var(--money-in); }
+.fc-chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.fc-now { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.fc-usual { fill: none; stroke: var(--ink-muted); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .8; }
+.fc-dot {
+  position: absolute; width: 9px; height: 9px; border-radius: 50%; background: currentColor;
+  transform: translate(-50%, -50%); pointer-events: none;
+}
+.fc-dot.hollow { width: 11px; height: 11px; background: var(--surface-card); border: 2.5px solid currentColor; }
+.fc-rule { position: absolute; top: -6px; bottom: -6px; width: 1px; background: var(--ink-muted); opacity: .5;
+           pointer-events: none; }
+.fc-tip {
+  position: absolute; bottom: calc(100% + 8px); transform: translateX(-12%); z-index: 2;
+  display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; min-width: 190px;
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-raised); color: var(--ink); font-size: 13px; line-height: 18px; white-space: nowrap;
+  pointer-events: none;
+}
+.fc-tip.left { transform: translateX(-88%); }
+.fc-tip-day { font-weight: 600; }
+.fc-tip-row { display: flex; align-items: center; gap: 6px; color: var(--ink-muted); }
+.fc-tip-row b { margin-left: auto; padding-left: var(--space-3); color: var(--ink); font-weight: 600;
+                font-variant-numeric: tabular-nums; }
+.fc-key { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.fc-chart.out .fc-key.now { background: var(--money-out); }
+.fc-chart.in .fc-key.now { background: var(--money-in); }
+.fc-key.usual { border: 1.5px solid var(--ink-muted); }
+
+/* ── One row of tools: Search · Month · Filters · Add ──────────────────── */
+.tx-page .tx-toolbar { flex-wrap: nowrap; }
+.tx-page .tx-toolbar .pk-search { flex: 1 1 auto; width: auto; height: 40px; font-size: 14px; }
+.tx-page .tx-toolbar .pk-search input { font-size: 14px; }
+.tx-page .tx-chips { flex: none; flex-wrap: nowrap; align-items: center; gap: var(--space-3); }
+.tx-page .tx-chips .pk-filter { height: 40px; padding: 0 16px; font-size: 14px; }
+.tx-page .tx-filters svg { flex: none; }
+.tx-filters-count { display: none; }
+.pk .tx-add {
+  background: var(--action); border-color: transparent; color: var(--on-action); cursor: pointer;
+  font-weight: 500;
+}
+.pk .tx-add:hover { filter: brightness(1.05); }
+.tx-page .tx-filters { cursor: pointer; }
+
+/* The banner: a long line on a desktop, a short one on a phone. */
+.tx-look-short { display: none; }
+
+/* ── Days ───────────────────────────────────────────────────────────────── */
+.tx-day { display: flex; align-items: baseline; gap: var(--space-2); padding: 20px 16px 8px; }
+.tx-day-name { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 18px; line-height: 24px; color: var(--ink); }
+.tx-day-date { font-size: 13px; line-height: 18px; color: var(--ink-muted); font-weight: 500; }
+.tx-day-total { margin-left: auto; font-size: 13px; line-height: 18px; color: var(--money-out); font-weight: 500;
+                font-variant-numeric: tabular-nums; }
+.pk .tx-earlier {
+  height: 36px; padding: 0 18px; border: 0; border-radius: var(--radius-full); background: var(--blush);
+  color: var(--link); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer;
+}
+.pk .tx-earlier:disabled { opacity: .6; cursor: default; }
+
+/* ── A phone ────────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .fc-cards { gap: var(--space-2); }
+  .fc-card { padding: 14px 14px 12px; }
+  .fc-label { font-size: 11px; line-height: 14px; }
+  .fc-figure { font-size: 22px; line-height: 28px; }
+  .fc-chart { height: 56px; margin-top: var(--space-3); }
+  .fc-tip { display: none; }
+  .fc-rule, .fc-dot.hollow { display: none; }
+
+  .tx-page .tx-toolbar { gap: var(--space-2); }
+  .tx-page .tx-toolbar .pk-search { width: auto; min-width: 0; }
+  .tx-page .tx-chips { width: auto; gap: var(--space-2); }
+  .tx-page .tx-chips .pk-filter { padding: 0 12px; }
+  .tx-page .tx-chips .tx-filters, .tx-page .tx-chips .tx-add { width: 40px; padding: 0; justify-content: center; }
+  .tx-filters-word, .tx-add-word { display: none; }
+  .tx-filters.active .tx-filters-count {
+    display: inline-flex; position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px;
+    align-items: center; justify-content: center; border-radius: 8px; background: var(--action);
+    color: var(--on-action); font-size: 10px; line-height: 16px; font-weight: 600;
+  }
+  /* Active one-off chips (a merchant, a day) go on their own line. */
+  .tx-page .tx-toolbar { flex-wrap: wrap; }
+  .tx-page .tx-toolbar .pk-search { flex: 1 1 0; }
+
+  .tx-look-long { display: none; }
+  .tx-look-short { display: inline; }
+
+  /* The category under the amount. */
+  .tx-page .pk-row {
+    display: grid; grid-template-columns: 40px minmax(0, 1fr) auto;
+    grid-template-areas: "av text amt" "av text cat"; column-gap: 14px; row-gap: 6px; align-items: start;
+  }
+  .tx-page .pk-row > .pk-avatar { grid-area: av; align-self: center; }
+  .tx-page .pk-row-text { grid-area: text; align-self: center; flex-basis: auto; }
+  .tx-page .pk-amt { grid-area: amt; order: 0; min-width: 0; }
+  .tx-page .pk-row-cat { grid-area: cat; padding-left: 0; justify-content: flex-end; flex: none;
+                         flex-wrap: wrap; gap: 4px; }
+}
+
+/* Select (a phone's way into choosing several) is a quiet chip, not a big button. */
+@media (max-width: 720px) {
+  .tx-page .tx-head-actions .pk-btn.secondary { height: 36px; min-height: 0; padding: 0 14px; font-size: 14px; border-width: 1px; }
+}

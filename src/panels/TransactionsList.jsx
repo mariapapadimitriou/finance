@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActionToast, Alert, CategoryChip, DayHeader, EmptyState, FilterChip, PButton, SearchField,
-  Segmented, StatTile, Toast, TxRow, txAmount,
+  ActionToast, Alert, EmptyState, FilterChip, PButton, SearchField, Toast, TxRow, txAmount,
 } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import TransactionDetail, { AddTransaction } from './TransactionDetail.jsx';
-import { BatchPicker, KeyHints, SelectedBar, ShortcutsPanel } from './KeyboardReview.jsx';
+import { BatchPicker, SelectedBar, ShortcutsPanel } from './KeyboardReview.jsx';
 import { BatchMarkPanel, BatchTagPanel } from './BatchPanels.jsx';
 import { rangeWords } from './RangePanels.jsx';
 import { TxFiltersPanel, requestFor } from './TxFilters.jsx';
 import { CashFlowTabs } from './InsightsParts.jsx';
 import { shortDate } from './HomePanel.jsx';
 import { duplicateAlert } from './Duplicates.jsx';
+import FlowCards from './FlowCards.jsx';
 import {
   initialState, isTextTarget, keyAction, reduce, rowName, selectRange, targets,
 } from './keyboardKeys.js';
@@ -26,11 +26,15 @@ import { readTxUrl, writeTxUrl } from '../router.js';
  * Cash flow › Transactions (Pearl TX-01 to TX-03, THL-122; VF-01 to VF-04,
  * DR-01, DR-02 and WW-01, THL-231).
  *
- * Opens on this calendar month, every account and every category, newest
- * first, grouped by day — or by merchant or by category (VF-01), each group
- * under a header with its count and total. Search and the toolbar's three
- * filters sit in the toolbar; everything else (months, kind, tags, an
- * amount range, show only) is in the Filters panel (VF-02). Filters live
+ * ALT-04 (2026-10-17): two cards first — Outflows and Inflows, the month's
+ * counted flows with a line of how each built up against a three-month
+ * average (FlowCards.jsx); transfers are neither. Then one row of tools:
+ * Search, the month, Filters (an icon on a phone) and Add. Needs a look is
+ * a banner that goes to its own page, never mixed into the list. The list
+ * is by day, newest first, each day named ("Today", "Yesterday", the
+ * weekday) with that day's outflows. Everything else (months, account,
+ * category, kind, tags, an amount range, owed to you, show only) is in the
+ * Filters panel (VF-02). Filters live
  * in the address bar so a filtered list can be linked to and survives back
  * and forward. What each row says — its amount, whether it counts, its chip
  * and its note — comes from the server, so the list and the month never
@@ -85,6 +89,27 @@ export function monthName(month, withYear = false) {
   const [y, m] = month.split('-').map(Number);
   const name = MONTHS[m - 1] ?? month;
   return withYear || y !== new Date().getFullYear() ? `${name} ${y}` : name;
+}
+
+const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * A day's header (ALT-04): a name and a quieter date. "Today · Fri, Oct 9",
+ * "Yesterday · Thu, Oct 8", "Wednesday · Oct 7" within the week, and
+ * "October 2 · Friday" before that.
+ */
+export function dayParts(iso, now = new Date()) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const ago = Math.round((today - date) / 86400000);
+  const short = `${SHORT_MONTHS[m - 1]} ${d}`;
+  const year = y !== now.getFullYear() ? `, ${y}` : '';
+  if (ago === 0) return { name: 'Today', date: `${SHORT_DAYS[date.getDay()]}, ${short}` };
+  if (ago === 1) return { name: 'Yesterday', date: `${SHORT_DAYS[date.getDay()]}, ${short}` };
+  if (ago > 1 && ago < 7) return { name: WEEKDAYS[date.getDay()], date: short };
+  return { name: `${MONTHS[m - 1]} ${d}${year}`, date: WEEKDAYS[date.getDay()] };
 }
 
 /** "Today · Friday, October 9", "Yesterday · …", or "Thursday, October 8". */
@@ -280,8 +305,10 @@ export default function TransactionsList({ summary, categories, accounts, review
   const clearSearch = () => { setQuery(''); choose({ q: '' }); };
   // What the Filters panel holds, beyond the toolbar's three chips.
   const extra = [filters.month !== thisMonth() && !/^\d{4}-\d{2}$/.test(filters.month),
+                 !!filters.account, !!(filters.group || filters.category || filters.excluded
+                   || filters.joint || filters.recurring),
                  !!filters.tag, !!filters.counts, !!filters.amount, !!filters.pending, !!filters.look,
-                 ['fixed', 'variable'].includes(filters.group)].filter(Boolean).length;
+                 !!filters.owed].filter(Boolean).length;
 
   const fetchPage = useCallback(async (offset) => {
     const id = ++request.current;
@@ -341,15 +368,6 @@ export default function TransactionsList({ summary, categories, accounts, review
     : filters.category ? `c:${filters.category}`
       : filters.excluded ? 'x:excluded' : filters.joint ? 'x:joint'
         : filters.recurring ? 'x:recurring' : '';
-  const categoryLabel = filters.group ? (groups[filters.group] ?? (data?.kinds ?? {})[filters.group] ?? filters.group)
-    : filters.category || special || 'All categories';
-  const pickCategory = (v) => choose({
-    group: v.startsWith('g:') ? v.slice(2) : '',
-    category: v.startsWith('c:') ? v.slice(2) : '',
-    excluded: v === 'x:excluded' ? '1' : '',
-    joint: v === 'x:joint' ? '1' : '',
-    recurring: v === 'x:recurring' ? '1' : '',
-  });
 
   // ── Rows by day ───────────────────────────────────────────────────────
   const days = useMemo(() => {
@@ -364,15 +382,13 @@ export default function TransactionsList({ summary, categories, accounts, review
 
   const totals = data?.totals;
   const focus = data?.focus;           // set when a group, category, tag or merchant is chosen
-  const view = filters.by || '';
+  const view = '';                      // ALT-04: by day only
   const groupsOf = view ? (data?.groups_of ?? []) : null;
   // In a grouped view every row is on the page; the keys and selection work
   // over them in the order shown.
   const shownRows = useMemo(() => (groupsOf ? groupsOf.flatMap((g) => g.rows) : rows), [groupsOf, rows]);
   const more = view ? 0 : (data?.total ?? 0) - rows.length;
   const empty = !!data && (data.total ?? 0) === 0;
-  const anySuggested = shownRows.some((r) => r.suggested);
-  const anyRuled = shownRows.some((r) => r.ruled);
   const dupes = data?.duplicates ?? 0;
   const owed = data?.owed;
   const index = new Map(shownRows.map((r, i) => [r.id, i]));
@@ -621,32 +637,30 @@ export default function TransactionsList({ summary, categories, accounts, review
               {selecting ? 'Done' : 'Select'}
             </PButton>
           )}
-          <PButton onClick={() => setAdding(true)}>
-            <PIcon name="plus" size={16} /> Add a transaction
-          </PButton>
         </div>
       </header>
       <CashFlowTabs current="transactions" onTab={onTab} />
 
+      {!empty && <FlowCards totals={totals} flows={data?.flows} />}
+
       <div className="tx-toolbar">
         <SearchField value={query} onChange={setQuery} label="Search transactions"
-                     placeholder="Search merchants or amounts" inputRef={searchRef}
+                     placeholder="Search" inputRef={searchRef}
                      aria-keyshortcuts={desktop && singleKey ? '/' : undefined} />
         <div className="tx-chips">
           <FilterChip label="Month" value={filters.month} options={monthOptions}
                       active={filters.month !== thisMonth()}
                       onChange={(v) => choose({ month: v, day: '' })} />
-          <FilterChip label="Account" value={filters.account} options={accountOptions}
-                      active={!!filters.account} onChange={(v) => choose({ account: v })} />
-          <FilterChip label="Category" value={categoryValue} options={categoryOptions}
-                      shown={categoryLabel} active={!!categoryValue} onChange={pickCategory} />
-          <div className="tx-view">
-            <Segmented label="View" value={filters.by} options={VIEWS}
-                       onChange={(v) => choose({ by: v })} />
-          </div>
-          <button type="button" className={`pk-filter tx-toggle${extra ? ' active' : ''}`}
-                  aria-pressed={!!extra} onClick={() => setFiltering(true)}>
-            <PIcon name="list" size={14} /> Filters{extra ? ` · ${extra}` : ''}
+          <button type="button" className={`pk-filter tx-toggle tx-filters${extra ? ' active' : ''}`}
+                  aria-pressed={!!extra} aria-label={extra ? `Filters, ${extra} on` : 'Filters'}
+                  onClick={() => setFiltering(true)}>
+            <PIcon name="sliders" size={16} />
+            <span className="tx-filters-word" aria-hidden="true">Filters{extra ? ` · ${extra}` : ''}</span>
+            {extra > 0 && <span className="tx-filters-count" aria-hidden="true">{extra}</span>}
+          </button>
+          <button type="button" className="pk-filter tx-add" onClick={() => setAdding(true)}
+                  aria-label="Add a transaction">
+            <PIcon name="plus" size={16} /><span className="tx-add-word" aria-hidden="true">Add</span>
           </button>
           {filters.merchant && (
             <button type="button" className="pk-filter active tx-toggle" aria-pressed="true"
@@ -693,58 +707,20 @@ export default function TransactionsList({ summary, categories, accounts, review
                onClearSearch={clearSearch} onClearFilters={clearFilters} />
       ) : (
         <>
-          {totals && (focus ? (
-            <div className="pk-tiles">
-              <StatTile label={['all', 'last3'].includes(filters.month) ? `${focus.label} in all` : `${focus.label} so far`}
-                        value={txAmount(focus.total)} />
-              <StatTile label="In a usual month"
-                        value={focus.usual == null ? '—' : txAmount(focus.usual)} />
-              <StatTile label="Transactions" value={String(totals.count)} />
-            </div>
-          ) : (
-            <div className="pk-tiles">
-              <StatTile label={['all', 'last3'].includes(filters.month) ? 'Spent' : 'Spent so far'} value={txAmount(totals.spent)} />
-              <StatTile label={['all', 'last3'].includes(filters.month) ? 'Income' : 'Income so far'} value={txAmount(totals.income)} />
-              <StatTile label="Moving money" value={txAmount(totals.not_counted)} />
-            </div>
-          ))}
-
-          {reviewCount > 0 && !focus && !filters.look && (
+          {reviewCount > 0 && !filters.look && (
             <Alert action="Review" onAction={() => onTab?.('review')}>
               {dupes > 0 ? duplicateAlert(dupes) : (
                 <>
-                  {reviewCount === 1 ? '1 transaction needs a look.'
-                    : `${reviewCount} transactions need a look.`}
-                  {' '}Sorting them keeps your numbers right.
+                  <span className="tx-look-long">
+                    {reviewCount === 1 ? '1 transaction needs a quick look.'
+                      : `${reviewCount} transactions need a quick look.`} It takes about a minute.
+                  </span>
+                  <span className="tx-look-short">
+                    {reviewCount === 1 ? '1 needs a quick look.' : `${reviewCount} need a quick look.`}
+                  </span>
                 </>
               )}
             </Alert>
-          )}
-          {owed && !filters.owed && (
-            <Alert action="See them" onAction={() => choose({ owed: '1', month: 'all' })}>
-              {owedWords(owed)}
-            </Alert>
-          )}
-
-          {(anySuggested || anyRuled) && (
-            <div className="tx-legend">
-              {anySuggested && (
-                <>
-                  <CategoryChip label="Other" suggested />
-                  <span>Pearl isn’t sure of this one. Click the dotted chip if it’s right, or open it to change it.</span>
-                </>
-              )}
-              {anyRuled && (
-                <>
-                  <CategoryChip label="Coffee" ruled />
-                  <span>From a rule of yours.</span>
-                </>
-              )}
-            </div>
-          )}
-
-          {desktop && shownRows.length > 0 && !anySelected && (
-            <KeyHints singleKey={singleKey} />
           )}
 
           {shownRows.length > 0 && (
@@ -759,17 +735,27 @@ export default function TransactionsList({ summary, categories, accounts, review
                     : 'Use the arrow keys to move and Shift with the arrow keys to select.'}
                 </p>
               )}
-              {sections.map((d) => (
-                <div key={d.key} role="group" aria-label={d.label}>
-                  <DayHeader>{d.label}</DayHeader>
-                  {d.rows.map(rowFor)}
-                </div>
-              ))}
+              {sections.map((d) => {
+                const p = dayParts(d.key);
+                const spent = data?.day_spent?.[d.key] ?? 0;
+                return (
+                  <div key={d.key} role="group" aria-label={d.label}>
+                    <div className="tx-day">
+                      <span className="tx-day-name">{p.name}</span>
+                      <span className="tx-day-date">{p.date}</span>
+                      {spent >= 0.005 && (
+                        <span className="tx-day-total">{txAmount(spent, { signed: true })}</span>
+                      )}
+                    </div>
+                    {d.rows.map(rowFor)}
+                  </div>
+                );
+              })}
               {more > 0 && (
                 <div className="tx-more">
-                  <PButton variant="text" disabled={loadingMore} onClick={showMore}>
-                    Show {more} more
-                  </PButton>
+                  <button type="button" className="tx-earlier" disabled={loadingMore} onClick={showMore}>
+                    Show earlier
+                  </button>
                 </div>
               )}
             </section>
@@ -804,10 +790,11 @@ export default function TransactionsList({ summary, categories, accounts, review
                         onSaved={() => { setAdding(false); saved(); }} />
       )}
       {filtering && (
-        <TxFiltersPanel filters={filters} thisMonth={thisMonth()}
+        <TxFiltersPanel filters={{ ...filters, cat: categoryValue }} thisMonth={thisMonth()}
+                        categoryOptions={categoryOptions}
                         accounts={accountOptions.flatMap((o) => o.options ?? [o]).filter((o) => o.value)}
                         tags={data?.tag_totals ?? (data?.tags ?? [])}
-                        onApply={(f) => { setFiltering(false); choose(f); }}
+                        onApply={({ cat, ...f }) => { setFiltering(false); choose(f); }}
                         onClose={() => setFiltering(false)} />
       )}
       {marking && (

@@ -615,3 +615,81 @@ def focus(all_rows: list[tuple[Transaction, dict]], *, month: str, account: str 
 
 def this_month() -> str:
     return date.today().isoformat()[:7]
+
+
+# ── Outflows and inflows, day by day (ALT-04, 2026-10-17) ─────────────────
+
+def _days_in(month: str) -> int:
+    import calendar
+    return calendar.monthrange(int(month[:4]), int(month[5:7]))[1]
+
+
+def _by_day(chosen, month: str) -> tuple[list[float], list[float]]:
+    """What went out and what came in on each day of `month`, counted flows
+    only: spending (her share, less what a chest paid) and income. Transfers,
+    card payments, savings and anything left out are not flows."""
+    days = _days_in(month)
+    out, inn = [0.0] * days, [0.0] * days
+    for t, r in chosen:
+        if r["date"][:7] != month:
+            continue
+        d = int(r["date"][8:10]) - 1
+        if r["counts"] == "spending":
+            out[d] += spend_amount(t)
+        elif r["counts"] == "income":
+            inn[d] += -t.amount
+    return out, inn
+
+
+def _running(daily: list[float]) -> list[float]:
+    total, out = 0.0, []
+    for v in daily:
+        total += v
+        out.append(round(total, 2))
+    return out
+
+
+def flows(rows, filters: dict, today) -> dict | None:
+    """The two cards over the list: this month's outflows and inflows as a
+    running total by day, and the same for an average of the three months
+    before (the dashed line), with the same filters. None for "all months"
+    or "last 3 months", where there is no one month to draw."""
+    import re
+    month = filters.get("month")
+    if not month or not re.match(r"^\d{4}-\d{2}$", month):
+        return None
+    base = {**filters, "day": None, "first": None, "last": None}
+    days = _days_in(month)
+    this_month = today.strftime("%Y-%m")
+    upto = days if month < this_month else (today.day if month == this_month else 0)
+    out_d, in_d = _by_day(select(rows, **{**base, "month": month}), month)
+    first = min((r["date"][:7] for _, r in rows), default=None)
+    before = [m for m in _months_before(month, 3) if first and m >= first]
+    usual = None
+    if before:
+        sums_out, sums_in = [0.0] * days, [0.0] * days
+        for m in before:
+            o, i = _by_day(select(rows, **{**base, "month": m}), m)
+            ro, ri = _running(o), _running(i)
+            for d in range(days):
+                k = min(d, len(ro) - 1)
+                sums_out[d] += ro[k]
+                sums_in[d] += ri[k]
+        n = len(before)
+        usual = {"out": [round(v / n, 2) for v in sums_out], "in": [round(v / n, 2) for v in sums_in],
+                 "months": n}
+    return {
+        "month": month, "days": days, "upto": upto,
+        "out": _running(out_d)[:upto], "in": _running(in_d)[:upto],
+        "usual": usual,
+    }
+
+
+def day_spent(chosen) -> dict[str, float]:
+    """Each day's outflows, for its header (spending only, like the card)."""
+    out: dict[str, float] = {}
+    for t, r in chosen:
+        if r["counts"] == "spending":
+            k = r["date"][:10]
+            out[k] = round(out.get(k, 0.0) + spend_amount(t), 2)
+    return out
