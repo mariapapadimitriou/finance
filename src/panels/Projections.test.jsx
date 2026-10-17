@@ -65,9 +65,9 @@ describe('the words (projectionsMath)', () => {
     expect(rangeWords({ low: 18000, high: 42000 })).toBe('$180 to $420');
     expect(rangeWords({ low: 30000, high: 30000 })).toBe('about $300');
     expect(rangeWords({ low: 0, high: 42000 })).toBe('up to $420');
-    expect(forecastLine(forecast)).toBe('Likely $180 to $420 of safe-to-spend left on October 31.');
+    expect(forecastLine(forecast)).toBe('Likely $180 to $420 of Allowance left on October 31.');
     expect(forecastSentence(forecast)).toBe('At your usual pace you’ll likely spend $3,150 to $3,390 this '
-      + 'month. That leaves $180 to $420 of safe-to-spend.');
+      + 'month. That leaves $180 to $420 of Allowance.');
   });
 
   it('running over is said calmly, with no minus sign', () => {
@@ -154,7 +154,7 @@ describe('GR-33 the page', () => {
     const out = html(<ProjectionsPage d={d} nav={nav} />);
     for (const text of ['What could happen', 'Projections', '> Save', 'Your Anchor',
                         'Likely 3 months between March and June 2027', 'See the projection', 'This month',
-                        'See the forecast', 'Likely $180 to $420 of safe-to-spend left on October 31.',
+                        'See the forecast', 'Likely $180 to $420 of Allowance left on October 31.',
                         'The next 30 days', 'See all', 'Lowest point about $1,060 on October 31',
                         'Your savings in a year', 'See more', '$5,000 to $5,600',
                         'Likely by October 2027, at your current pace.', 'What regular investing could grow to']) {

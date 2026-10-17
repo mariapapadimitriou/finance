@@ -84,7 +84,7 @@ export function stepCopy(d, nav = {}) {
       out.why.text = done
         ? (found ? `Pearl found your pay${f.payer ? ` from ${f.payer}` : ''}${f.confirmed ? ', and you confirmed it.' : '.'}`
           : 'You told Pearl what you earn.')
-        : 'Pearl hasn’t found regular pay yet. Your income is where safe-to-spend starts.';
+        : 'Pearl hasn’t found regular pay yet. Your income is where Allowance starts.';
       if (f.amount > 0) out.why.rows.push({ label: 'Coming in this month', value: money(f.amount) });
       if (!done) {
         out.help = { text: 'Add what you earn, or confirm the pay we found.',

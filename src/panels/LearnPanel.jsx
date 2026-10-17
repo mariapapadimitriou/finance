@@ -308,7 +308,7 @@ export function ModuleDone({ module, data, from, nav, heading }) {
   );
 }
 
-/** How safe-to-spend works (THL-46), the first explainer under the modules. */
+/** How Allowance works (THL-46), the first explainer under the modules. */
 export function Explainer({ onBack, onHome }) {
   return (
     <div className="pk hm-page in-page lr-page">

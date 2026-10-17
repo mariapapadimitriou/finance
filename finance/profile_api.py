@@ -55,7 +55,7 @@ def _base_name(name: str) -> str:
 
 
 def _safe_to_spend(st) -> float | None:
-    """Safe to spend this month as Home shows it, for the toast (AM-03)."""
+    """Allowance this month as Home shows it, for the toast (AM-03)."""
     try:
         today = date.fromisoformat(_today_iso())
         sts = _home_sts(st, st.all_transactions(), today)
@@ -208,7 +208,7 @@ def account_settings(account_id: str):
     """How one account counts (AM-02 to AM-04, AM-06): `counted`,
     `joint_share` (1–99, or null for not joint), `anchor` and `nickname`.
 
-    Answers with the account as listed and safe to spend afterwards, so the
+    Answers with the account as listed and Allowance afterwards, so the
     page can say what changed (AM-03)."""
     st = store()
     account = _find(st, account_id)

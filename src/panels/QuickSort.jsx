@@ -15,7 +15,7 @@ import './quicksort.css';
  * per transaction — ✓ Right, Something else…, or Skip this one — with
  * "Later" at the top throughout; QS-03 the picker, suggested and recent
  * categories first, then a search, and "It wasn't a purchase…" into What
- * was this?; QS-04 the done screen: safe to spend before → after, one line
+ * was this?; QS-04 the done screen: Allowance before → after, one line
  * on why, and how many rules were saved. Shown at most once a day. Later
  * and anything skipped stay in Needs a look.
  */
@@ -168,7 +168,7 @@ export function Prompt({ count, busy, error, onStart, onLater }) {
         {count === 1 ? 'You’ve got 1 new transaction to sort' : `You’ve got ${count} new transactions to sort`}
       </h2>
       <p className="pk-muted" id="qs-sub">
-        Pearl isn’t sure what {count === 1 ? 'it was' : 'these were'}. Sorting {count === 1 ? 'it' : 'them'} keeps safe to spend right, and takes about a minute.
+        Pearl isn’t sure what {count === 1 ? 'it was' : 'these were'}. Sorting {count === 1 ? 'it' : 'them'} keeps Allowance right, and takes about a minute.
       </p>
       {error && <p className="pk-error" role="alert">{error.message || 'Something went wrong. Try again.'}</p>}
       <div className="qs-actions">
@@ -247,9 +247,9 @@ export function effectWords(r) {
   const a = r.before == null ? '—' : money(r.before, { cents: true });
   const b = r.after == null ? '—' : money(r.after, { cents: true });
   if (r.before != null && r.after != null && Math.abs(r.before - r.after) < 0.005) {
-    return `Safe to spend: ${b}, unchanged`;
+    return `Allowance: ${b}, unchanged`;
   }
-  return `Safe to spend: ${a} → ${b}`;
+  return `Allowance: ${a} → ${b}`;
 }
 
 export function rulesWords(n) {

@@ -12,7 +12,7 @@ import './home.css';
  * Debts (THL-49, designed in THL-128): D-01 the card on Home, D-02 every
  * debt under Growth, D-03 adding a rate and minimum the bank doesn't share.
  *
- * Carried balances sit beside safe-to-spend and are never taken out of it;
+ * Carried balances sit beside Allowance and are never taken out of it;
  * minimum payments are bills (D1, D2). A card's balance is split into what
  * was carried from before Pearl, anything carried from last month, and this
  * month's purchases, which already count as spending (D3). Only carried
@@ -73,7 +73,7 @@ export function DebtsCard({ debts, onSee }) {
           See debts <PIcon name="chevronRight" size={14} />
         </button>
       </div>
-      <p className="pk-muted">{`${total} Balances aren’t taken out of safe-to-spend.`}</p>
+      <p className="pk-muted">{`${total} Balances aren’t taken out of Allowance.`}</p>
       <dl className="hm-facts">
         {debts.debts.slice(0, 3).map((d) => (
           <div key={d.account_id}><dt>{d.name}</dt><dd>{shown(d.balance)}</dd></div>
@@ -121,7 +121,7 @@ export function DebtsPage({ data, onEdit, onTab, children = null }) {
       <GrowthTabs current="debts" onTab={onTab} />
       <p className="pk-muted">
         Everything you owe, including balances from before Pearl. Balances aren’t taken out of
-        safe-to-spend; minimum payments are counted as bills.
+        Allowance; minimum payments are counted as bills.
       </p>
       {data.count === 0 ? (
         <section className="hm-card">

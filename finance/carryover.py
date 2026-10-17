@@ -12,7 +12,7 @@ she overspent, both show up here; so does money left over.
   it over two or three. Until she answers, nothing changes.
 * Money to spare is suggested for saving — her Anchor, or a treasure chest —
   or spending this month. Unanswered for seven days, it's added to this
-  month's safe to spend.
+  month's Allowance.
 
 A month is skipped when Pearl didn't see all of it (her first linked month)
 or no income arrived in it. The result is worked out again each time until

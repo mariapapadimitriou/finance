@@ -286,7 +286,7 @@ CREATE TABLE IF NOT EXISTS txn_confirmed (
 
 -- One-offs (THL-71): a transaction she marked as unusual, with the day she
 -- did. Left out of her usual month, projections and trend suggestions; still
--- counted in its own month and in safe to spend.
+-- counted in its own month and in Allowance.
 CREATE TABLE IF NOT EXISTS txn_oneoff (
     txn_id TEXT PRIMARY KEY,
     since  TEXT NOT NULL

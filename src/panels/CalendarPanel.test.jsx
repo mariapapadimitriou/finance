@@ -103,7 +103,7 @@ describe('A day (CAL-02, CAL-03)', () => {
 
   it('an upcoming day shows only what is due', () => {
     const d = { date: '2026-10-16', label: 'Friday, October 16', state: 'future', past: false, today: false,
-                reason: 'Upcoming days only show what’s due. Safe to spend already counts these.',
+                reason: 'Upcoming days only show what’s due. Allowance already counts these.',
                 spent: [], spent_total: 0,
                 due: [{ kind: 'pay', label: 'Pay', amount: 2150, note: 'Northwind Labs · expected' },
                       { kind: 'bill', label: 'Netflix', amount: 16.49, note: 'Usually the 15th' }] };

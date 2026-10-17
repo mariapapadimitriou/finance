@@ -1,10 +1,10 @@
 """This week's share of the month (THL-166).
 
-The month's safe-to-spend stays the number; the week is a way of reading it.
+The month's Allowance stays the number; the week is a way of reading it.
 
 Decisions this follows (THL-9 comment, 2026-10-12):
 
-* W1: the month is re-split each Monday. This week's share is safe-to-spend
+* W1: the month is re-split each Monday. This week's share is Allowance
   as it stood at the start of the week × days in the week ÷ days left in the
   month then. Left this week = share − spent this week. What earlier weeks
   didn't spend is already in that starting number, so it rolls over on its
@@ -20,7 +20,7 @@ Decisions this follows (THL-9 comment, 2026-10-12):
 * S6: days left include today.
 
 So the weeks always reconcile: left this week + the rest of the month = the
-month's safe-to-spend, to the cent.
+month's Allowance, to the cent.
 
 The afford-it check (THL-167) was removed on 2026-10-14 (THL-235); the week
 still feeds the weekly check-in.
@@ -65,7 +65,7 @@ def week(transactions: list[Transaction], today: date, sts: dict) -> dict | None
             earlier_c += c
 
     now_c = _cents(sts["amount"])
-    at_start_c = now_c + this_week_c            # safe to spend on Monday morning
+    at_start_c = now_c + this_week_c            # Allowance on Monday morning
     week_days = (end - start).days + 1
     left_then = (last - start).days + 1
     share_c = max(at_start_c, 0) * week_days // left_then

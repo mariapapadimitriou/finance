@@ -2,7 +2,7 @@
 and keyboard review's batch changes and shortcut preference (THL-83 K-01 to
 K-04).
 
-The ledger is the safe-to-spend fixture's: pay twice a month from mid-July,
+The ledger is the Allowance fixture's: pay twice a month from mid-July,
 rent, phone, insurance and hydro as Essentials, Netflix and Spotify as
 Lifestyle, July to September, then October to the 9th.
 """
@@ -65,7 +65,7 @@ def ids(st) -> dict[str, str]:
 
 class TestOneOffMaths:
     """Left out of usual averages, projections and trend suggestions; still
-    counted in its month and in safe to spend."""
+    counted in its month and in Allowance."""
 
     def test_left_out_of_the_usual_month(self):
         rows = history() + [tx(*GARAGE)]
@@ -366,7 +366,7 @@ class TestBatchCategory:
                         json={"ids": picked, "category": "Dining"})
         body = r.get_json()
         assert r.status_code == 200, body
-        assert body["line"] == "All 4 are Lifestyle now, so your safe to spend stays the same."
+        assert body["line"] == "All 4 are Lifestyle now, so your Allowance stays the same."
         assert all(t.category == "Food Delivery" for t in client.st.all_transactions()
                    if t.fingerprint in picked)
 
@@ -376,7 +376,7 @@ class TestBatchCategory:
                         json={"ids": picked, "category": "Dining"})
         body = r.get_json()
         assert r.status_code == 200, body
-        assert body["title"] == "Changed 4 to Dining. Your safe to spend stays the same."
+        assert body["title"] == "Changed 4 to Dining. Your Allowance stays the same."
         assert body["detail"] == "All 4 were already Lifestyle."
         by_id = {t.fingerprint: t for t in client.st.all_transactions()}
         assert all(by_id[i].category == "Dining" for i in picked)

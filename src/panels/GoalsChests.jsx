@@ -247,7 +247,7 @@ export function ChestForm({ goals, chest, preset, onClose, onSaved, onStartAncho
             {anchor?.started && !editing
               ? `. Your Anchor: ${amount(anchor.counted)} → ${amount(Math.round((anchor.counted - monthly) * 100) / 100)} on ${dayLong(first)}.`
               : cadence === 'annual' ? ', every month of the year.' : ' until the date.'}
-            {' '}Your safe to spend doesn’t change.
+            {' '}Your Allowance doesn’t change.
           </p>
         </div>
       )}
@@ -332,7 +332,7 @@ export function Treasure({ detail, onClose, onDone }) {
           <Line strong label="Paying from the chest" value={amount(Math.round(paying * 100) / 100)} />
           <Line label="Left in the chest" value={amount(Math.max(Math.round(left * 100) / 100, 0))} />
           <p className="pk-label pk-muted">
-            Safe to spend goes up by {amount(Math.round(paying * 100) / 100)}.
+            Allowance goes up by {amount(Math.round(paying * 100) / 100)}.
             {left < 0 ? ' That’s more than it holds, so it catches up over the coming months.' : ''}
           </p>
         </div>
@@ -351,7 +351,7 @@ export function Treasure({ detail, onClose, onDone }) {
   );
 }
 
-/** Add money to a chest now, from the Anchor; safe to spend doesn't change. */
+/** Add money to a chest now, from the Anchor; Allowance doesn't change. */
 export function AddMoney({ detail, onClose, onDone }) {
   const { chest, anchor } = detail;
   const [text, setText] = useState('');
@@ -362,7 +362,7 @@ export function AddMoney({ detail, onClose, onDone }) {
     <DetailPanel label="Add money" overline={chest.name} onClose={onClose} className="on-card">
       <h1 className="pk-h1">Add money</h1>
       <p className="gl-body">Put more in now and it’s ready sooner. It moves from your Anchor into
-        the chest; your safe to spend doesn’t change.</p>
+        the chest; your Allowance doesn’t change.</p>
       <Field label="How much?" id="chest-add">
         <input id="chest-add" inputMode="decimal" value={text} placeholder="$100"
                onChange={(e) => setText(e.target.value)} />

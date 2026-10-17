@@ -184,7 +184,7 @@ export const unallocate      = (txnId) =>
 
 // Goals (THL-131, THL-132, THL-179): the Anchor, treasure chests (the piggy
 // banks above, by the Goals page's name) and the saving goal.
-// Home (THL-44, THL-46): safe to spend for the month and every row behind it.
+// Home (THL-44, THL-46): Allowance for the month and every row behind it.
 export const getHome = () => req('/api/home');
 // The Path page (THL-129 GR-01), and one step with her numbers (GR-02 to GR-04).
 export const getPath = () => req('/api/path');

@@ -315,7 +315,7 @@ class TestPlaidApi:
 class TestWhichAccountsSync:
     """Linking a bank hands over chequing, savings and investment accounts too.
 
-    Safe to spend (Pearl E05) needs the cards and the everyday accounts: pay
+    Allowance (Pearl E05) needs the cards and the everyday accounts: pay
     and rent move through chequing, and savings is where money set aside goes.
     Card payments and moves between her own accounts are matched as
     transfers, so keeping both ends counts nothing twice. An investment

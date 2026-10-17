@@ -9,7 +9,7 @@ once a day, and only for rows she hasn't been offered before: "Later" and
 Each card is ✓ Right (the guess is confirmed, as Needs a look does), a
 different category (saved, and a rule for the merchant, so the next one
 sorts itself), "It wasn't a purchase…" (What was this?, so the payback and
-transfer rules apply), or Skip. The done screen shows safe to spend before
+transfer rules apply), or Skip. The done screen shows Allowance before
 and after, one line on why, and how many rules were saved.
 """
 

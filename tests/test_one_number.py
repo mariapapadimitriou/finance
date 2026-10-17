@@ -1,5 +1,5 @@
 """One number everywhere (2026-10-14): the screens that name this month's
-spending, income, saving or safe to spend all agree with Home.
+spending, income, saving or Allowance all agree with Home.
 
 Two ledgers: one with a chequing account and deposits Pearl can see, and a
 card-only one where income is what she told Pearl."""

@@ -14,7 +14,7 @@ from html import escape
 # N-04's three steps, in order.
 WELCOME_STEPS = (
     ("1. Link your accounts", "So Pearl sees your whole picture. Read-only, always."),
-    ("2. See your safe to spend", "What you can spend this month without second-guessing."),
+    ("2. See your Allowance", "What you can spend this month without second-guessing."),
     ("3. Follow your path", "Know your money, keep a cushion, grow it. One milestone at a time."),
 )
 TAGLINE = "Know what’s yours. Keep a cushion. Grow what you’ve got."

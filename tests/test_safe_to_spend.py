@@ -1,8 +1,8 @@
-"""Safe to spend for the month and the sheet behind it (THL-44, THL-46).
+"""Allowance for the month and the sheet behind it (THL-44, THL-46).
 
 The main fixture is the person drawn in the Handoff File's X-01 on Friday
 October 9: two $2,150 paycheques, five bills still to come, $3,144.34 spent,
-$150 still to set aside, so $642.18 safe to spend.
+$150 still to set aside, so $642.18 Allowance.
 """
 
 from datetime import date, timedelta

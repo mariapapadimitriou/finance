@@ -98,8 +98,8 @@ describe('What was this? (2026-10-14)', () => {
       'Part of your Anchor', 'Investment · added by hand', 'Somewhere Pearl can’t see', 'Still counts as put away']) {
       expect(out).toContain(s);
     }
-    expect(effectWords(saved, { account: 'sav' }, OUT, 'Safe to spend goes up by $200.00.', { amount: 200 }))
-      .toBe('Safe to spend goes up by $200.00. It shows as “Put away to TD Savings” and adds $200.00 to Savings this month and to your Anchor.');
+    expect(effectWords(saved, { account: 'sav' }, OUT, 'Allowance goes up by $200.00.', { amount: 200 }))
+      .toBe('Allowance goes up by $200.00. It shows as “Put away to TD Savings” and adds $200.00 to Savings this month and to your Anchor.');
     expect(effectWords(saved, {}, OUT, '', { amount: 200 }))
       .toBe('It shows as “Put away” and adds $200.00 to Savings this month.');
     const refund = { key: 'refund', needs: 'refund', effect: 'Links to the purchase.',

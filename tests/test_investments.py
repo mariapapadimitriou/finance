@@ -62,7 +62,7 @@ def add(c, amount, category="Shopping", description="BIG TRANSFER"):
 
 
 def spent(c):
-    """Already spent this month, as Home's safe-to-spend counts it."""
+    """Already spent this month, as Home's Allowance counts it."""
     rows = c.get("/api/home").get_json()["safe_to_spend"]["rows"]
     return next(r["amount"] for r in rows if r["key"] == "spent")
 

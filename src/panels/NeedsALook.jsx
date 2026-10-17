@@ -33,7 +33,7 @@ import {
  * question, why Pearl asks. Answering moves to the next. Skip for now puts
  * it in Skipped (THL-213), kept between visits and out of the badge; chips
  * filter the queue by type, and Skipped has Back to the queue. A change
- * that moves safe to spend says by how much, with Undo (R-03).
+ * that moves Allowance says by how much, with Undo (R-03).
  *
  * At zero, All sorted (R-04): the alert on Transactions and the count in the
  * navigation go too.
@@ -79,7 +79,7 @@ export function queue(data) {
 // Why Pearl asks, beside each kind of question.
 const WHY = {
   unsorted: ['Until it’s sorted, we count it as spending.',
-    'So your safe to spend may be a little low right now. Sorting it keeps your numbers right.'],
+    'So your Allowance may be a little low right now. Sorting it keeps your numbers right.'],
   category: ['A wrong category moves your numbers.',
     'Your budgets and your usual month are worked out by category.'],
   money_in: ['Money in isn’t income until you say so.',
@@ -89,7 +89,7 @@ const WHY = {
   who_sent: ['A name makes paybacks easy to match.',
     'Pearl uses it to link this to a purchase you paid for someone.'],
   income: ['We ask so your income is right.',
-    'Money that isn’t income would make safe to spend look bigger than it is.'],
+    'Money that isn’t income would make Allowance look bigger than it is.'],
   pay3: ['Two months a year hold a third paycheque.',
     'Your plan uses a typical month, so the extra one is yours to put somewhere.'],
   duplicate: ['Until you decide, we count it once.',
@@ -609,7 +609,7 @@ export function IncomeKind({ it, categories = [], busy, onSkip, act, sorted }) {
       )}
       {kind?.startsWith('not:') && (
         <p className="nl-effect" role="status">
-          {`It stops counting as income, so safe to spend goes down by ${txAmount(Math.abs(it.txn.amount))}.`}
+          {`It stops counting as income, so Allowance goes down by ${txAmount(Math.abs(it.txn.amount))}.`}
         </p>
       )}
       <Actions busy={busy} ready={ready} onSkip={onSkip} onSave={save} />

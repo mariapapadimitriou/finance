@@ -125,7 +125,7 @@ class TestDay:
         assert today["reason"] == "Today isn’t finished. It’s shaded once the day ends."
         soon = client.get("/api/calendar/day/2026-10-12").get_json()
         assert soon["state"] == "future" and soon["spent"] == []
-        assert soon["reason"] == "Upcoming days only show what’s due. Safe to spend already counts these."
+        assert soon["reason"] == "Upcoming days only show what’s due. Allowance already counts these."
         assert [d["label"] for d in soon["due"]] == ["Rogers"]
         assert client.get("/api/calendar/day/2026-10-40").status_code == 400
 

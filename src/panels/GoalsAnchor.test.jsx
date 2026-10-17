@@ -145,13 +145,13 @@ describe('setting it up (A-01, A-02) and the sheet (X-03)', () => {
 });
 
 describe('chests fill from the Anchor (G-03)', () => {
-  it('the form says what comes out of the Anchor on the 1st, and that safe to spend doesn’t change', () => {
+  it('the form says what comes out of the Anchor on the 1st, and that Allowance doesn’t change', () => {
     const out = html(<ChestForm goals={{ ...goals, spend_categories: ['Travel'], bank_funded: [] }}
                                 onClose={() => {}} onSaved={() => {}} onStartAnchor={() => {}} />);
     for (const s of ['Start a chest', 'Name', 'How much?', 'By a date', 'Every year', 'Start chest']) {
       expect(out).toContain(s);
     }
-    expect(out).not.toContain('Set aside from your safe-to-spend');
+    expect(out).not.toContain('Set aside from your Allowance');
     expect(out).not.toMatch(NAMES);
     expect(firstFill(new Date(2026, 9, 15))).toBe('2026-11-01');
     expect(firstFill(new Date(2026, 9, 1))).toBe('2026-10-01');

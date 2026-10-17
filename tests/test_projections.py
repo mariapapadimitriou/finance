@@ -304,7 +304,7 @@ class TestTheEndpoint:
         assert client.get(f"/api/projections?extra={extra}").status_code == 400
 
     def test_use_this_pace_sets_the_saving_goal_but_never_the_month(self, client):
-        """THL-230: a goal never comes off safe to spend; only money moved does."""
+        """THL-230: a goal never comes off Allowance; only money moved does."""
         ledger(client)
         r = client.put("/api/projections/pace", json={"monthly": 250})
         assert r.status_code == 200 and r.get_json()["saving_goal"] == 25000

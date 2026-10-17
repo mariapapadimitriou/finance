@@ -3,7 +3,7 @@
 A split is a charge you paid for several people: evenly or by amount, with
 up to eight others named by a first name you typed. Your part is written as
 your share (`txn_shares`), so every total that counts spending — spent,
-category totals, the usual month, safe to spend — already counts only it.
+category totals, the usual month, Allowance — already counts only it.
 
 Each other person's part is a repayment you can watch for. When an
 e-Transfer arrives from the same first name, for about what they owe

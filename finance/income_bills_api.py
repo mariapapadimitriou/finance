@@ -3,7 +3,7 @@ I-06), and Profile › Income and bills, which shows the same answers.
 
 Every write returns the whole check again, so a screen never has to work
 out a total itself. See `income_bills` for what each answer means and how
-safe-to-spend and the path use it.
+Allowance and the path use it.
 """
 
 from __future__ import annotations
@@ -166,7 +166,7 @@ def income_bills_expected():
 
 @bp.delete("/income-bills/expected")
 def income_bills_expected_clear():
-    """"Use Pearl's estimate": her own amount goes, and safe to spend uses her
+    """"Use Pearl's estimate": her own amount goes, and Allowance uses her
     pay, or her usual income from the last three months, again."""
     st = store()
     st.set_setting("home_income", "")

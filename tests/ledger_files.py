@@ -50,7 +50,7 @@ def add_fixed(client, name: str, amount: float, category: str = "Other") -> int:
 def set_plan(client, income: float | None = None, savings: float | None = None) -> None:
     """Take-home pay and the monthly saving goal, as the old plan page saved
     them (PUT /api/plan/setup, removed with the prototype Projections page).
-    Home's safe-to-spend still reads both, so tests put them in the store."""
+    Home's Allowance still reads both, so tests put them in the store."""
     st = _store(client)
     if income is not None:
         st.set_setting("monthly_income", max(float(income), 0.0))

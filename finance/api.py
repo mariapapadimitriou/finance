@@ -355,7 +355,7 @@ def set_transaction_note(txn_id: str):
 # ── Changing a category, and what it did (THL-123) ─────────────────────────
 
 def _safe_left(st, txns) -> float:
-    """Safe to spend: what is left of this week, as Allowance shows it."""
+    """Allowance: what is left of this week, as Allowance shows it."""
     from datetime import date as _date
     month = _date.today().isoformat()[:7]
     amount, _ = _allowance(st, txns)
@@ -603,7 +603,7 @@ def unsorted_transfers():
 def sort_transfers():
     """Say where transfers went: Saved, a spending category, or Transfers
     (moved between your own accounts). `remember` makes it the rule for those
-    names from now on. Says what that did to safe to spend, with an undo."""
+    names from now on. Says what that did to Allowance, with an undo."""
     from .impact import snapshot, undo_payload
     from .transfers import apply_transfer_matches
     body = request.get_json(silent=True) or {}
@@ -1894,7 +1894,7 @@ def home():
                                  path=_path(st, txns, today, sts, state, types),
                                  review_count=review.get("count", 0), usual=usual),
         "review_count": review.get("count", 0),
-        # THL-255 CAL-06: the month strip under safe to spend.
+        # THL-255 CAL-06: the month strip under Allowance.
         "calendar": __import__("finance.calendar_view", fromlist=["strip"]).strip(st, txns, today, sts),
         "carryover": carry_question,
         # Savings so far: put away, and left over, since she started.
@@ -1903,7 +1903,7 @@ def home():
         "usual_month": usual,
         # THL-166: the week under the month, and which one she reads first.
         "week": weekly.week(txns, today, sts),
-        # THL-49 D-01: carried balances, beside safe-to-spend, never in it.
+        # THL-49 D-01: carried balances, beside Allowance, never in it.
         "debts": debts,
         # THL-12 E08 RC-01: "For you", at most two cards.
         "recommendations": _recommendations(st, txns, today, sts, usual),
@@ -1917,7 +1917,7 @@ def home():
 
 
 def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
-    """Safe to spend this month, from the ledger and what she told us, with
+    """Allowance this month, from the ledger and what she told us, with
     debt minimums among the bills (THL-49 D1, D2)."""
     from . import carryover, debts as debt_math, income_bills, safe_to_spend, savings
     debts = debts if debts is not None else _debts(st, txns, today)
@@ -2446,7 +2446,7 @@ def seen_catch_up(bank_id: int):
 @bp.post("/goals/chests/<int:bank_id>/add")
 def add_to_chest(bank_id: int):
     """Put more into a chest now. It moves from the Anchor into the chest
-    (THL-230), the same place the monthly amount comes from; safe to spend
+    (THL-230), the same place the monthly amount comes from; Allowance
     doesn't change."""
     body = request.get_json(silent=True) or {}
     try:

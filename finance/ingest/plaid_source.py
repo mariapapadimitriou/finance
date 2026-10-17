@@ -230,7 +230,7 @@ def map_plaid_transaction(item: dict, accounts: dict | None = None) -> Transacti
 
 
 # Linking a bank hands over every account it holds — chequing, savings, an
-# investment account, a mortgage. Safe to spend (Pearl E05) needs the cards
+# investment account, a mortgage. Allowance (Pearl E05) needs the cards
 # and the everyday accounts: pay and rent arrive and leave through chequing,
 # and savings is where money set aside goes. Card payments and moves between
 # her own accounts are matched as transfers (THL-40), so keeping both ends

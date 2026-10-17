@@ -231,7 +231,7 @@ def test_detail_endpoint(client):
                               merchant="Uber Eats"))
     r = client.get(f"/api/transactions/{ids['UBER* EATS TORONTO ON']}").get_json()
     assert r["merchant"] == "Uber Eats" and r["description"] == "UBER* EATS TORONTO ON"
-    assert r["counts_toward"].endswith("safe to spend")
+    assert r["counts_toward"].endswith("Allowance")
     assert client.get("/api/transactions/nope").status_code == 404
 
 

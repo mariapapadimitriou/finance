@@ -1,7 +1,7 @@
 """Income and recurring bills, confirmed (THL-45, THL-127 I-01 to I-06).
 
 Detection (pay candidates, rent by e-Transfer), the answers persisting, and
-what they do to safe-to-spend and the path. The person is X-01's: Northwind
+what they do to Allowance and the path. The person is X-01's: Northwind
 pay on the 1st and the 16th, five bills, rent to Parkside — see
 test_safe_to_spend — on Friday October 9.
 """
@@ -56,7 +56,7 @@ class TestPayCandidates:
 
     def test_nor_are_they_income(self):
         """A friend's e-Transfer that isn't linked to a split still isn't
-        Income in safe-to-spend (THL-127 I-01)."""
+        Income in Allowance (THL-127 I-01)."""
         before = sts.compute(rows(), TODAY)
         after = sts.compute(rows() + [tx("2026-10-05", "E-Transfer from Sam", -60.00, "Income")], TODAY)
         assert row(after, "income")["amount"] == row(before, "income")["amount"]
@@ -114,7 +114,7 @@ class TestRentByETransfer:
         assert any(b["label"] == "Rent" and b["amount"] == 1450.00 for b in bills["lines"])
 
 
-# ── Answers feed safe to spend ───────────────────────────────────────────
+# ── Answers feed Allowance ───────────────────────────────────────────
 
 class TestConfirmationsFeedSafeToSpend:
     def test_nothing_changes_before_the_check(self):

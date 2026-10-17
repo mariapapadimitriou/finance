@@ -24,7 +24,7 @@ answers behind Profile › Income and bills afterwards:
 * I-06 "All set": income each month and regular bills each month.
 
 Her answers live in one setting (`income_bills`, JSON). Before she has run
-the check nothing changes: safe-to-spend and the path keep their old rules.
+the check nothing changes: Allowance and the path keep their old rules.
 """
 
 from __future__ import annotations

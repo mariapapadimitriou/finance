@@ -28,7 +28,7 @@ describe('GR-11 Learn', () => {
                         'Risk and time horizon', 'Why when you need the money matters',
                         'Fees', 'Small numbers that add up', '3 min',
                         'Robo-advisor or self-directed', 'Two ways to invest, neither wrong', 'Start',
-                        'Explainer', 'How safe-to-spend works', 'How we protect you', DISCLAIMER]) {
+                        'Explainer', 'How Allowance works', 'How we protect you', DISCLAIMER]) {
       expect(out).toContain(text);
     }
     expect(out).toContain('>Learn</h1>');
@@ -149,9 +149,9 @@ describe('the modules (GR-15, a draft for counsel)', () => {
     expect(Math.round(grow(0.03) / 100) * 100).toBe(18100);
   });
 
-  it('the safe-to-spend explainer', () => {
+  it('the Allowance explainer', () => {
     const out = html(<Explainer onBack={() => {}} onHome={() => {}} />);
-    expect(out).toContain('How safe-to-spend works');
+    expect(out).toContain('How Allowance works');
     expect(out).toContain('See yours on Home');
   });
 });

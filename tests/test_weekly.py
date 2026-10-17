@@ -38,7 +38,7 @@ class TestTheWeek:
         assert (a.isoformat(), b.isoformat()) == (start, end)
 
     def test_the_handoff_files_friday(self):
-        """Oct 9: $642.18 safe to spend now and $1,104.34 spent since Monday
+        """Oct 9: $642.18 Allowance now and $1,104.34 spent since Monday
         (rent left out, W3), so $1,746.52 on Monday morning. 7 of its 27
         days: $452.80. The week is $651.54 past its share."""
         _, s, w = alex()

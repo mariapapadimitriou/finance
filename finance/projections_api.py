@@ -6,7 +6,7 @@ THL-135 GR-16, THL-130 GR-10). The maths is in `look_ahead`.
   year (GR-36), with `extra` dollars more a month as the what-if. Integer
   cents; every projection a {low, high} range.
 * PUT /api/projections/pace {monthly}: "Use this pace for my Anchor" (GR-36):
-  the monthly saving goal safe-to-spend sets aside.
+  the monthly saving goal Allowance sets aside.
 * GET /api/unveil: the readiness checklist (GR-16) and her self-report.
 * PUT /api/unveil {type}: "Mark Unveil done" (GR-37). Only the kind of account
   is asked — never where, a login or a balance. It makes the path's Unveil
@@ -83,7 +83,7 @@ def _paydays(txns, today: date, confirm: dict, end: date) -> list[dict]:
 def _bills(txns, today: date, confirm: dict, end: date) -> list[dict]:
     """Bills between tomorrow and `end`, from the income and bills check: the
     ones she confirmed or added, and the ones Pearl found that she hasn't
-    answered yet (counted, as safe-to-spend counts them, but marked)."""
+    answered yet (counted, as Allowance counts them, but marked)."""
     from .income_bills import bills, occurrences
     start = today + timedelta(days=1)
     out = []
@@ -195,7 +195,7 @@ def projections_page():
 @bp.put("/projections/pace")
 def use_pace():
     """GR-36 "Use this pace for my Anchor": the monthly amount she sets aside,
-    which safe-to-spend takes out of the month (its "Set aside" row)."""
+    which Allowance takes out of the month (its "Set aside" row)."""
     body = request.get_json(silent=True) or {}
     try:
         monthly = round(float(body.get("monthly")), 2)

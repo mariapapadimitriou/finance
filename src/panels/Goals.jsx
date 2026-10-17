@@ -74,7 +74,7 @@ export default function Goals({ onTab, onChanged, version }) {
     }
   }, [goals, intent]);                                      // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A change here can move safe to spend, so the rest of the app reloads too.
+  // A change here can move Allowance, so the rest of the app reloads too.
   const changed = useCallback(async () => {
     await load();
     onChanged?.();

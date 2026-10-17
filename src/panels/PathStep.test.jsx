@@ -163,7 +163,7 @@ describe('Wins opens each milestone’s step (W-01 → GR-02 to GR-04)', () => {
            { key: 'invest', label: 'Investing account opened', state: 'todo', when: 'Any time after' }],
     next: { key: 'anchor_full', title: 'Next: grow your Anchor to 3 months',
             line: '$5,470 of $8,700 · $3,230 to go · likely July 2027 to June 2028', label: 'See your Anchor', action: 'goals:anchor' },
-    pearls: [], streaks: [{ key: 'within', label: 'Months within safe to spend', started: false, starts: 'Starts after your first full month', this_words: '', best_words: '' }],
+    pearls: [], streaks: [{ key: 'within', label: 'Months within Allowance', started: false, starts: 'Starts after your first full month', this_words: '', best_words: '' }],
     recap: null, next_recap: 'November', challenges: { active: [], suggested: [], ready: false }, suggestion: null,
   };
 

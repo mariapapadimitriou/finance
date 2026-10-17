@@ -100,7 +100,7 @@ export const DOCS = {
         <div className="p-prose">
           <p>This is a plain-language draft, not yet formal terms of service.</p>
           <h4>What Pearl is</h4>
-          <p>Pearl helps you see what&apos;s safe to spend and plan what&apos;s next. It reads
+          <p>Pearl helps you see what&apos;s Allowance and plan what&apos;s next. It reads
             your accounts; it doesn&apos;t move money, and it isn&apos;t financial advice.</p>
           <h4>Your part</h4>
           <p>Keep your email and devices secure, since a code sent to your email or a

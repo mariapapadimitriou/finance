@@ -68,7 +68,7 @@ describe('last month carried in (THL-212)', () => {
     const card = html(<ShortfallCard c={short} now="October" was="September" safe={{ amount: 642.18 }}
                                      onAnswer={() => Promise.resolve()} onExplain={() => {}} />);
     for (const t of ['Take it from October', 'Spread over 2 months', 'Spread over 3 months',
-                     '$4,500 came in and $5,000 went out', 'Safe to spend: $642 → $142',
+                     '$4,500 came in and $5,000 went out', 'Allowance: $642 → $142',
                      '$250 a month · October → $392', 'Catch up over 2 months', 'How we worked this out']) {
       expect(card).toContain(t);
     }
@@ -85,13 +85,13 @@ describe('last month carried in (THL-212)', () => {
     expect(out).toContain('Spend it this month');
     expect(out).toContain('I’ve moved it');
     expect(out).toContain('>Later<');
-    expect(out).toContain('If you don’t choose in 7 days, it’s added to this month’s safe to spend.');
+    expect(out).toContain('If you don’t choose in 7 days, it’s added to this month’s Allowance.');
   });
 
   it('added after 7 days says so once', () => {
     const out = html(<CarryoverPrompt c={{ ...spare, auto: true, choice: 'spend' }}
                                       onAnswer={() => Promise.resolve()} />);
-    expect(out).toContain('September’s $500 to spare is in October’s safe to spend.');
+    expect(out).toContain('September’s $500 to spare is in October’s Allowance.');
     expect(html(<CarryoverPrompt c={{ ...short, choice: 'now' }} />)).toBe('');
   });
 });

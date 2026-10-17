@@ -147,7 +147,7 @@ def batch_mark():
     delta = round(after_left - before_left, 2)
     title = (f"Marked {done} as {label}." if done != 1 else f"Marked as {label}.")
     detail = ("" if abs(delta) < 0.005 else
-              f"Safe to spend is ${abs(delta):,.2f} {'more' if delta > 0 else 'less'}.")
+              f"Allowance is ${abs(delta):,.2f} {'more' if delta > 0 else 'less'}.")
     return jsonify({"ok": True, "ids": ids[:done] if done == len(ids) else ids, "updated": done,
                     "title": title, "detail": detail, "undo": undo})
 

@@ -113,7 +113,7 @@ describe('THL-117 consent moments in onboarding (CN-01 to CN-03)', () => {
     const el = at('consents');
     const t = text(el);
     for (const s of ['Before you link', 'Linking your bank', 'Step 5 of 6',
-      'To work out what’s safe to spend, Pearl needs to read your balances and transactions.',
+      'To work out what’s Allowance, Pearl needs to read your balances and transactions.',
       'Pearl can', 'See your balances and transactions. Read-only.', 'Pearl can’t',
       'Move money, make payments or see your bank password.', 'Plaid connects us',
       'By continuing, you agree to the Terms and Privacy policy , and that Pearl can read the accounts you link.',
@@ -349,7 +349,7 @@ describe('THL-139 N-01 / N-02 Notifications', () => {
     calm(t);
   });
 
-  it('N-01: after the first safe to spend, and once more after a milestone', () => {
+  it('N-01: after the first Allowance, and once more after a milestone', () => {
     const ok = { state: 'ok' };
     const path = { phase: 'protect', steps: [{ done: true }, { done: false }] };
     expect(milestoneKey(path)).toBe('protect:1');

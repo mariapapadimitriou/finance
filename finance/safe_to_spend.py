@@ -1,8 +1,8 @@
-"""Safe to spend for the calendar month (Pearl E05: THL-44, THL-46).
+"""Allowance for the calendar month (Pearl E05: THL-44, THL-46).
 
 One number, and every input behind it:
 
-    safe to spend = money coming in this month
+    Allowance = money coming in this month
                   − bills still to come
                   − already spent (pending included)
                   − set aside for goals
@@ -598,7 +598,7 @@ def compute(transactions: list[Transaction], today: date, *,
             told_rent: float = 0.0, overridden: bool = False,
             debt_bills: dict | None = None, confirm: dict | None = None,
             carry: dict | None = None, moved_to_savings: float | None = None) -> dict:
-    """Safe to spend this month and the four rows behind it.
+    """Allowance this month and the four rows behind it.
 
     `debt_bills` (from `debts.bills`) adds this month's debt minimums: the
     ones still to come join the bills, and what's been paid of them joins
@@ -697,7 +697,7 @@ def home_state(transactions: list[Transaction], today: date, sts: dict, *,
 
     * no_data (E-01): nothing linked or imported, and no answers yet.
     * card_only (E-04): every account synced is a credit card, so nothing
-      that comes in can be seen and there is no safe-to-spend.
+      that comes in can be seen and there is no Allowance.
     * learning (E-02): under 30 days of history (or answers but no data).
     * irregular (E-03): income is an estimate from past months — the cautious
       figure (she said it varies) or her usual income (the 3-month average).

@@ -229,7 +229,7 @@ class TestTheAnchorEndpoints:
 
     def test_a_chest_comes_out_of_the_anchor_on_the_next_first(self, client, st):
         """THL-230's acceptance: a $250-a-month chest lowers the Anchor by $250
-        on the next 1st, and safe to spend doesn't change."""
+        on the next 1st, and Allowance doesn't change."""
         link_accounts(st)
         ledger(st)
         client.put("/api/goals/anchor", json={"accounts": ["sav", "tng"]})

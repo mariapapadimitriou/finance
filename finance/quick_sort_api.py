@@ -3,7 +3,7 @@
 * GET  /api/quick-sort                 whether to show the prompt, and the cards.
 * POST /api/quick-sort/seen            {ids, start}: Start or Later; once a day.
 * PUT  /api/quick-sort/<id>            {action: right|category|marked|skip, category?, title?}.
-* POST /api/quick-sort/done            the done screen: safe to spend before → after, rules saved.
+* POST /api/quick-sort/done            the done screen: Allowance before → after, rules saved.
 """
 
 from __future__ import annotations

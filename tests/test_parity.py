@@ -251,7 +251,7 @@ def test_a_range_can_be_paid_from_a_treasure_chest(client):
     assert p["title"] == "3 purchases · $500.00 become Travel, paid from Japan trip."
     assert p["bank"] == "Japan trip"
     assert p["effect"].startswith("Japan trip pays $500.00 and ")
-    assert "safe to spend goes up by $500.00" in p["effect"]
+    assert "Allowance goes up by $500.00" in p["effect"]
     assert p["staying"].startswith("The purchases keep Travel and show “Paid from Japan trip”. ")
     # Without a chest, nothing about one.
     plain = client.post("/api/ranges/preview", json={**body, "bank_id": None}).get_json()

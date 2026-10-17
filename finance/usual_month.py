@@ -5,7 +5,7 @@ day by day (THL-184), for the Home snapshot (THL-48) and budgets (THL-168).
   Lifestyle and every spending category. Transfers and card payments never
   count (`counts_as_spending`), and neither does a transaction she marked
   as a one-off (THL-71): a tax refund, moving costs, a big one-time
-  purchase. A one-off still counts in its own month and in safe to spend;
+  purchase. A one-off still counts in its own month and in Allowance;
   it just isn't what a usual month looks like.
 * The usual-by-day curve says how much she has usually spent by each day of
   the month. It drives the snapshot's pace tick and the ±10% pace rule.

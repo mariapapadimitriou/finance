@@ -1,4 +1,4 @@
-"""Safe to spend: a weekly allowance that rolls over, and what to do when it doesn't.
+"""Allowance: a weekly allowance that rolls over, and what to do when it doesn't.
 
 The model is deliberately simple enough to hold in your head:
 
@@ -68,7 +68,7 @@ def counts_toward_plan(t) -> bool:
 
 
 def counts_against_safe(t) -> bool:
-    """What comes out of safe to spend this week: discretionary spending, and
+    """What comes out of Allowance this week: discretionary spending, and
     money that left for somewhere Pearl can't see until you say where it went.
 
     An unsorted transfer counts until it is sorted (Pearl Handoff, THL-123):

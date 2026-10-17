@@ -8,7 +8,7 @@ Three look-ahead questions, each answered as a range and never one figure:
   left out): what each of them spent after today's day of the month, bills
   left out because they are counted by name. The range runs from the
   quietest of those months to the busiest. "What you can spend" is the
-  month's income less what she sets aside (safe-to-spend's rows before
+  month's income less what she sets aside (Allowance's rows before
   spending and bills), so what is left is that less the likely spend.
 * **The next 30 days** (THL-192, GR-35): her chequing balance today, the
   paydays and bills ahead on one timeline, and her usual everyday spending

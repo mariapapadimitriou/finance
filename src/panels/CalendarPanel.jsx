@@ -18,7 +18,7 @@ import './calendar.css';
  * to compare with. Colour is never the only signal. Today is outlined.
  * Upcoming days list what's due: bills (signed, money out), pay (money in)
  * and, on the 1st, the chests' amounts moving from the Anchor (muted, not
- * spending). No cell carries an amount of its own: safe to spend stays
+ * spending). No cell carries an amount of its own: Allowance stays
  * monthly, and no day is ever called anything harsher than "ahead".
  *
  * Tap a day (CAL-02, CAL-03): what was spent, what's due, and one calm line

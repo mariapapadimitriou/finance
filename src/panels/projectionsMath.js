@@ -59,7 +59,7 @@ export function forecastLine(f) {
   if (f.state === 'tight') {
     return `Likely close to what you can spend by ${end}: up to ${cash(f.left.high)} left.`;
   }
-  return `Likely ${rangeWords(f.left)} of safe-to-spend left on ${end}.`;
+  return `Likely ${rangeWords(f.left)} of Allowance left on ${end}.`;
 }
 
 /** GR-34's sentence over the chart. */
@@ -72,7 +72,7 @@ export function forecastSentence(f) {
     return `${spend} That’s ${rangeWords({ low: -f.left.high, high: -f.left.low })} more than you can spend.`;
   }
   if (f.state === 'tight') return `${spend} That’s close to what you can spend: up to ${cash(f.left.high)} left.`;
-  return `${spend} That leaves ${rangeWords(f.left)} of safe-to-spend.`;
+  return `${spend} That leaves ${rangeWords(f.left)} of Allowance.`;
 }
 
 /** "How we worked this out": the parts of the forecast, in order. */

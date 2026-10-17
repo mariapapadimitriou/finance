@@ -13,7 +13,7 @@
 // * Written for the build, for counsel to review with the rest: the answer
 //   options other than the first module's, every other explanation (the
 //   "That's it" and the "Close!" lines), each module's one-line done state
-//   other than the first (GR-14's), and the safe-to-spend explainer.
+//   other than the first (GR-14's), and the Allowance explainer.
 //
 // The rules (THL-134, THL-13): general, not tailored; no fund, security or
 // provider named; no yearly limit hard-coded except the FHSA's $8,000 and
@@ -169,15 +169,15 @@ export const MODULES = [
 
 export const moduleById = (id) => MODULES.find((m) => m.id === id) ?? null;
 
-// The two explainers under the modules (GR-11): how safe-to-spend works
+// The two explainers under the modules (GR-11): how Allowance works
 // (THL-46) is a page here; how we protect you (THL-115) is Profile's page.
 export const SAFE_TO_SPEND = {
   id: 'safe-to-spend',
-  title: 'How safe-to-spend works',
+  title: 'How Allowance works',
   body: [
-    'Safe to spend is what’s left for the rest of the month once the things you can’t skip are covered.',
+    'Allowance is what’s left for the rest of the month once the things you can’t skip are covered.',
     'We start with what comes in this month: the pay we found, or the income you told us.',
     'Then we take away your bills still to come, what you’ve already spent, and anything you’re setting aside for your Anchor or a saving goal.',
-    'What’s left is safe to spend. It changes as money comes in and goes out, and Home shows how we worked it out.',
+    'What’s left is Allowance. It changes as money comes in and goes out, and Home shows how we worked it out.',
   ],
 };

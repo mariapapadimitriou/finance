@@ -23,7 +23,7 @@ import './home.css';
 /**
  * Home (Pearl THL-125 H-01/H-02, laid out as THL-129 GR-05; THL-44, THL-46).
  *
- * The landing screen. This step draws its header, the safe-to-spend card and
+ * The landing screen. This step draws its header, the Allowance card and
  * "How we worked this out" (X-01 to X-04). The cards below it (path,
  * snapshot, suggestions, needs a look, budgets, debts) arrive in
  * later steps, in that order (THL-9 decision L1). Home reads by the month
@@ -84,14 +84,14 @@ export const shown = (n, cents = false) => money(Math.abs(n), { cents });
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** The safe-to-spend card's words, for every state (H-01, H-02, E1). */
+/** The Allowance card's words, for every state (H-01, H-02, E1). */
 export function heroCopy(s) {
   const month = monthName(s.month);
-  const label = `Safe to spend in ${month}`;
+  const label = `Allowance in ${month}`;
   if (s.state === 'needs_income') {
     return {
       label, figure: null, pill: null,
-      context: `Tell us what you expect to earn and we’ll work out what’s safe to spend in ${month}.`,
+      context: `Tell us what you expect to earn and we’ll work out what’s Allowance in ${month}.`,
     };
   }
   const next = s.next_pay ? `Your next pay arrives on ${longDate(s.next_pay)}.` : null;
@@ -217,7 +217,7 @@ export function sheetRows(s) {
   const total = s.state === 'over'
     ? { label: 'Past this month’s plan', amount: s.over_by,
         detail: s.next_pay ? `Your next pay arrives on ${longDate(s.next_pay)}` : null }
-    : { label: 'Safe to spend', amount: s.amount,
+    : { label: 'Allowance', amount: s.amount,
         detail: s.per_day >= 1 ? `About ${shown(s.per_day)} a day for ${plural(s.days_left, 'day')}` : null };
   const withText = rows.map((r) => ({
     ...r, display: r.amount > 0 ? shown(r.amount, true) : NOTHING[r.key],
@@ -328,7 +328,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
       )}
       {why && <WhyPanel card={why} onClose={() => setWhy(null)} onAction={act} onNotForMe={notForMe} />}
       {hidden && <ActionToast title={dismissedWords(hidden)} onUndo={undo} onDone={() => setHidden(null)} />}
-      {/* THL-139 N-01: once safe to spend has a number. */}
+      {/* THL-139 N-01: once Allowance has a number. */}
       <NotifyPrime sts={s} path={home.path} />
       {reconnect && (
         <ReconnectPanel connection={reconnect} onClose={() => setReconnect(null)}
@@ -647,9 +647,9 @@ export function HowWeWorkedItOut({ s, onClose, onEdit }) {
   const { rows, total } = sheetRows(s);
   const title = s.state === 'over'
     ? `Past this month’s plan: ${shown(s.over_by, true)}`
-    : s.amount <= 0 ? 'Safe to spend: nothing left'
-      : s.estimate ? `Safe to spend: about ${shown(s.shown)}`
-        : `Safe to spend: ${shown(s.amount, true)}`;
+    : s.amount <= 0 ? 'Allowance: nothing left'
+      : s.estimate ? `Allowance: about ${shown(s.shown)}`
+        : `Allowance: ${shown(s.amount, true)}`;
   return (
     <DetailPanel label="How we worked this out" overline="How we worked this out"
                  onClose={onClose} sheet className="hm-sheet">
@@ -722,8 +722,8 @@ export function ConnectCard({ failed, onLink, primary = true }) {
       <h2 className="pk-h3" id="hm-connect-title">Let’s connect your bank</h2>
       <p className="pk-muted">
         {failed
-          ? 'Pearl works out what’s safe to spend from your accounts. Linking didn’t finish last time, and nothing was saved.'
-          : 'Pearl works out what’s safe to spend from your accounts.'}
+          ? 'Pearl works out what’s Allowance from your accounts. Linking didn’t finish last time, and nothing was saved.'
+          : 'Pearl works out what’s Allowance from your accounts.'}
       </p>
       <PButton variant={primary ? 'primary' : 'secondary'} onClick={onLink}>
         {failed ? 'Try linking again' : 'Link your bank'}
@@ -809,7 +809,7 @@ export function CardOnlyHero({ ds, month, onLink }) {
       <p className="pk-amount">{amount > 0 ? shown(amount) : 'Nothing yet'}</p>
       <p className="pk-muted">
         With only a credit card linked we can see spending, but not what comes in, so there’s
-        no safe-to-spend yet.
+        no Allowance yet.
       </p>
       <PButton onClick={onLink}>Link your chequing account</PButton>
     </section>
@@ -991,7 +991,7 @@ export function IncomeFirstCard({ phase, onAdd }) {
           <h2 className="pk-h3" id="hm-income-first-title">First, add your income</h2>
         </div>
       </div>
-      <p className="pk-label pk-muted">Needed for an accurate safe-to-spend</p>
+      <p className="pk-label pk-muted">Needed for an accurate Allowance</p>
       <ProgressBar label="Your income" value="not added yet" share={0} showLabel={false} />
       <p>It takes about 30 seconds.</p>
       <PButton onClick={onAdd}>Add your income</PButton>

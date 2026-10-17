@@ -3,7 +3,7 @@
 
 * PUT  /api/transactions/<id>/one-off         {on}: "This was a one-off". Left
   out of her usual month, budgets' pace, Insights' averages, projections and
-  the trend card; still counted in its month and in safe to spend. Only a row
+  the trend card; still counted in its month and in Allowance. Only a row
   that counts (not a transfer, not a repayment you linked). The toast names
   the usual month it moved, before and after (U-02).
 * POST /api/review/duplicates/<copy id>       {answer: same | different}: "Is
@@ -157,12 +157,12 @@ def answer_duplicate(txn_id: str):
     copy = next((t for t in after if t.fingerprint == txn_id), None)
     month = _month(copy.date) if copy else ""
     if abs(delta) >= 0.005:
-        title = (f"Kept both. Safe to spend is now {_dollars(now)}, "
+        title = (f"Kept both. Allowance is now {_dollars(now)}, "
                  f"{_dollars(delta)} {'less' if delta < 0 else 'more'}." if now >= 0
                  else f"Kept both. You’re {_dollars(now)} over for this week.")
         out.update(title=title, detail="Both count as spending.")
     else:
-        out.update(title="Kept both. Your safe to spend stays the same.",
+        out.update(title="Kept both. Your Allowance stays the same.",
                    detail=f"Both count as spending in {month}." if month
                    else "Both count as spending.")
     return jsonify(out)
@@ -180,7 +180,7 @@ def _ids(body) -> list[str] | None:
 
 def _batch_words(n: int, cats_from: list[str], cat_to: str, delta: float, after: float,
                  spent_delta: float, month: str) -> dict:
-    """K-02's helper line and K-03's toast, from safe to spend before and after."""
+    """K-02's helper line and K-03's toast, from Allowance before and after."""
     label = LABEL.get(cat_to, cat_to)
     g_to = group_of(cat_to)
     same_group = all(group_of(c) == g_to for c in cats_from)
@@ -188,23 +188,23 @@ def _batch_words(n: int, cats_from: list[str], cat_to: str, delta: float, after:
     moved = f"Changed {n} to {label}." if n > 1 else f"Moved to {label}."
     if abs(delta) >= 0.005:
         up = delta > 0
-        line = (f"Your safe to spend goes {'up' if up else 'down'} by {_dollars(delta)}.")
-        title = (f"{moved} Safe to spend is now {_dollars(after)}." if after >= 0
+        line = (f"Your Allowance goes {'up' if up else 'down'} by {_dollars(delta)}.")
+        title = (f"{moved} Allowance is now {_dollars(after)}." if after >= 0
                  else f"{moved} You’re {_dollars(after)} over for this week.")
         detail = f"{_dollars(delta)} {'more' if up else 'less'} than before."
         return {"line": line, "title": title, "detail": detail}
     if same_group:
-        line = (f"All {n} are {group} now, so your safe to spend stays the same." if n > 1
-                else f"It’s {group} either way, so your safe to spend stays the same.")
+        line = (f"All {n} are {group} now, so your Allowance stays the same." if n > 1
+                else f"It’s {group} either way, so your Allowance stays the same.")
         detail = f"All {n} were already {group}." if n > 1 else f"It was already {group}."
     else:
-        line = "Your safe to spend stays the same."
+        line = "Your Allowance stays the same."
         detail = ""
         if abs(spent_delta) >= 0.005 and month:
             detail = (f"{_dollars(spent_delta)} {'less' if spent_delta < 0 else 'more'} "
                       f"counted as spending in {month}.")
-            line = f"{detail} Your safe to spend stays the same."
-    return {"line": line, "title": f"{moved} Your safe to spend stays the same.",
+            line = f"{detail} Your Allowance stays the same."
+    return {"line": line, "title": f"{moved} Your Allowance stays the same.",
             "detail": detail}
 
 

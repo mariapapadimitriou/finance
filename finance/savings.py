@@ -34,7 +34,7 @@ def chest_adds(store) -> dict[str, float]:
 def put_away_month(store, transactions: list[Transaction], month: str) -> float:
     """What was moved to savings in a month — the one saving figure
     (THL-230): transfers marked Saved (less those marked as taken back out)
-    and the saved part of split charges (`invested_in`). Safe to spend, the
+    and the saved part of split charges (`invested_in`). Allowance, the
     carryover, the usual month, Insights and Home all use it."""
     from .analytics import invested_in
     return round(invested_in(transactions, month), 2)

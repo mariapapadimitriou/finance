@@ -6,7 +6,7 @@ import { Lockup } from '../pearl/ui.jsx';
 
 /**
  * N-01 Want a heads-up at the right moments? (THL-139): asked on Home once
- * safe to spend first has a number, and once more after a "Not now" when she
+ * Allowance first has a number, and once more after a "Not now" when she
  * reaches a milestone on her path — then only in Profile › Notifications.
  *
  * The design draws it for the iOS app. On the web it is a sheet over Home,

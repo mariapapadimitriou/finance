@@ -21,7 +21,7 @@ def dining(d, amount):
     return txn(d, "NUTBAR TORONTO ON", amount, category="Dining")
 
 
-# ── Safe to spend ────────────────────────────────────────────────────────────
+# ── Allowance ────────────────────────────────────────────────────────────
 
 class TestSafeToSpend:
     def test_unspent_days_roll_forward(self):

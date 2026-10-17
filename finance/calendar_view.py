@@ -4,8 +4,8 @@ A month, day by day. Past days say how the month was going at the end of
 that day: on or under her usual pace (a faint lagoon with a ✓), or ahead of
 it (a faint rose with a ▲). Nothing is shaded when there is no usual month
 to compare with, or before her accounts were linked. No day carries a
-spending figure: safe to spend stays monthly. Upcoming days show what's due
-— bills and pay from the same lines safe to spend counts, and the treasure
+spending figure: Allowance stays monthly. Upcoming days show what's due
+— bills and pay from the same lines Allowance counts, and the treasure
 chests' monthly amounts moving from the Anchor on the 1st (THL-230), which
 is money moving, not spending.
 
@@ -129,7 +129,7 @@ def flips(st_by_day: dict[int, str]) -> list[int]:
 def due_items(st, transactions: list[Transaction], today: date, sts: dict,
               until: date) -> list[dict]:
     """Bills and pay from today to `until`, and the chests' monthly amounts
-    on each 1st in between. Bills and pay this month are safe to spend's own
+    on each 1st in between. Bills and pay this month are Allowance's own
     lines; next month's bills are the recurring ones expected then."""
     from . import api as core, safe_to_spend, income_bills
     out: list[dict] = []
@@ -223,7 +223,7 @@ def spent_rows(transactions: list[Transaction], iso: str, names: dict | None = N
 def reason(state: str, day: int, st_by_day: dict[int, str], rows: list[dict]) -> str:
     """One calm line on why a day is shaded (CAL-02, CAL-03)."""
     if state == "future":
-        return "Upcoming days only show what’s due. Safe to spend already counts these."
+        return "Upcoming days only show what’s due. Allowance already counts these."
     if state == "today":
         return "Today isn’t finished. It’s shaded once the day ends."
     if state == "none":

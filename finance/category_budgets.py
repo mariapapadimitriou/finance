@@ -3,7 +3,7 @@
 Every spending category starts with a budget equal to her usual month for it
 (THL-184's three-month average), so there's nothing to fill in. She changes
 one as a share of usual, and the dollars always go with the percent. Budgets
-sit under the monthly safe-to-spend; they don't replace it.
+sit under the monthly Allowance; they don't replace it.
 
 Decisions this follows (THL-9 comment, 2026-10-12):
 

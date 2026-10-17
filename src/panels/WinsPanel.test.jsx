@@ -34,8 +34,8 @@ const alex = {
            pearl('chest_opened', 'First treasure chest opened as planned', true, { on: '2026-10-06', note: 'Holiday gifts', path: false }),
            pearl('anchor_full', 'Anchor covers 3 months', false, { how: 'Your Anchor reaches 3 months of Essentials' }),
            pearl('invest', 'Investing account opened', false, { how: 'Open one wherever you like, then tell Pearl' })],
-  streaks: [{ key: 'within', label: 'Months within safe to spend', unit: 'month', started: true, this: 1, best: 4,
-              new_best: false, this_words: '1 month', best_words: 'Best 4', starts: '', rule: 'A month counts when your spending stayed within safe to spend.',
+  streaks: [{ key: 'within', label: 'Months within Allowance', unit: 'month', started: true, this: 1, best: 4,
+              new_best: false, this_words: '1 month', best_words: 'Best 4', starts: '', rule: 'A month counts when your spending stayed within Allowance.',
               note: 'August went over. A new run started in September, and your best run of 4 months is kept.',
               periods: [{ period: '2026-08', counted: false }, { period: '2026-09', counted: true }, { period: '2026-10', counted: null }] },
             { key: 'anchor', label: 'Months you added to your Anchor', unit: 'month', started: true, this: 5, best: 5,
@@ -44,7 +44,7 @@ const alex = {
             { key: 'review', label: 'Weeks you cleared Needs a look', unit: 'week', started: true, this: 2, best: 6,
               new_best: false, this_words: '2 weeks', best_words: 'Best 6', starts: '', rule: '', note: null, periods: [] }],
   recap: { month: '2026-09', title: 'A good month for your Anchor',
-           went_well: [{ key: 'within', text: 'You stayed within safe to spend.', share: 'Stayed within my plan' },
+           went_well: [{ key: 'within', text: 'You stayed within Allowance.', share: 'Stayed within my plan' },
                        { key: 'put_away', text: 'You put away $650.', share: 'Kept building my Anchor', amount: 650 }],
            pearls: [{ key: 'anchor_half', label: 'Anchor half there', on: '2026-09-09' }], streaks: '', opportunity: null },
   next_recap: 'November',
@@ -116,10 +116,10 @@ describe('Wins (W-01)', () => {
 describe('a streak (ST-01, ST-02)', () => {
   it('the missed-month state: this run beside the best, the months as pearls, and no rose', () => {
     const out = html(<StreakPanel streak={alex.streaks[0]} onClose={noop} />);
-    for (const s of ['Months within safe to spend', 'This run', '1 month', 'Best run', '4 months',
+    for (const s of ['Months within Allowance', 'This run', '1 month', 'Best run', '4 months',
                      'August went over. A new run started in September, and your best run of 4 months is kept.',
                      'wn-pearl todo sm', 'wn-pearl earned sm', 'wn-pearl unknown sm',
-                     'A month counts when your spending stayed within safe to spend.']) {
+                     'A month counts when your spending stayed within Allowance.']) {
       expect(out).toContain(s);
     }
     expect(out).not.toMatch(/broke|rose|caution/i);
@@ -143,7 +143,7 @@ describe('challenges and the recap on the page', () => {
 
   it('the recap card leads with what went well', () => {
     const out = html(<RecapCard recap={alex.recap} nextRecap="November" onOpen={noop} />);
-    expect(out).toContain('You stayed within safe to spend, you put away $650 and earned a pearl: Anchor half there.');
+    expect(out).toContain('You stayed within Allowance, you put away $650 and earned a pearl: Anchor half there.');
   });
 
   it('the share image shows wins as words; amounts only when asked', () => {

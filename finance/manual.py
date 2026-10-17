@@ -1,6 +1,6 @@
 """Manually entered transactions, and keeping them out of the way of imports.
 
-Typing a purchase in before the statement arrives is useful — the safe-to-spend
+Typing a purchase in before the statement arrives is useful — the Allowance
 number is wrong all week otherwise. It also creates the obvious hazard: the
 statement shows up later carrying the same purchase, and now it is in twice.
 

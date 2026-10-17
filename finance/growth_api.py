@@ -76,7 +76,7 @@ def _add_months(ym: str, n: int) -> str:
 
 
 def _context(st, every_step: bool = False):
-    """The ledger, safe to spend, the path and the Anchor, read once."""
+    """The ledger, Allowance, the path and the Anchor, read once."""
     from . import safe_to_spend
     today = _today()
     txns = st.all_transactions()

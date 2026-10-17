@@ -79,7 +79,7 @@ class TestSomeoneNew:
         assert hows["anchor_quarter"] == "Your Anchor reaches 3 weeks of Essentials"
         assert hows["anchor_half"] == "Your Anchor reaches 1½ months of Essentials"
         assert hows["saved_1000"] == "Put away $1,000 in total"
-        assert hows["three_within"] == "Three months in a row within safe to spend"
+        assert hows["three_within"] == "Three months in a row within Allowance"
         assert not any(w2 in json.dumps(w) for w2 in ("Protect", "Build", "Unveil", "Shine"))
 
 
@@ -312,10 +312,10 @@ class TestRecap:
         assert r["month"] == "2026-09" and r["made_on"] == TODAY.isoformat()
         assert r["title"] == "A good month for your Anchor"               # within, and $340 put away
         assert [x["text"] for x in r["went_well"]] == [
-            "You stayed within safe to spend.", "You put away $340."]
+            "You stayed within Allowance.", "You put away $340."]
         assert [x["share"] for x in r["went_well"]] == ["Stayed within my plan", "Put money away"]
         assert r["pearls"] == [] and r["within"] is True and r["put_away"] == 340.0
-        assert r["streaks"] == "Within safe to spend: 2 months in a row."
+        assert r["streaks"] == "Within Allowance: 2 months in a row."
         assert w["recaps"] == ["2026-09"]
         assert client.get("/api/wins/recaps/2026-09").get_json()["title"] == r["title"]
         assert client.get("/api/wins/recaps/2026-08").status_code == 404

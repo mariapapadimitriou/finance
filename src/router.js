@@ -59,7 +59,7 @@ export function onPathUrl(fn) {
 // Save › Learn (THL-134 GR-11, at /save/learn) and a module (GR-12 to
 // GR-14) at /save/learn/<module>. ?from=ready means she came from the
 // readiness checklist (GR-16), so the done state offers the way back. The
-// safe-to-spend explainer is a page of its own there too.
+// Allowance explainer is a page of its own there too.
 export const LEARN_PATH = '/save/learn';
 const LEARN_EVENT = 'pearl:learn';
 

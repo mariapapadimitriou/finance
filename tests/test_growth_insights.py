@@ -2,7 +2,7 @@
 the one payload behind the page and its detail views, and the usual month
 with unusual months left out (THL-59).
 
-The ledger is the safe-to-spend fixture's: pay of $2,150 twice a month from
+The ledger is the Allowance fixture's: pay of $2,150 twice a month from
 mid-July, rent, phone, insurance and hydro as Essentials, Netflix and
 Spotify as Lifestyle, July to September, then October to the 9th.
 """

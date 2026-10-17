@@ -296,7 +296,7 @@ class Transaction:
     income_type_source: str | None = None
     # A one-off (THL-71): the day she marked it. Left out of her usual month,
     # projections and trend suggestions, but still counted in its own month
-    # and in safe to spend. Beside the row, like a share.
+    # and in Allowance. Beside the row, like a share.
     one_off_since: str | None = None
     # A likely duplicate (THL-165): the row this one repeats, and whether she
     # has answered — pending (counted once until she does), same (soft-hidden)

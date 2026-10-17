@@ -58,7 +58,7 @@ describe('D-02 every debt', () => {
     expect(out).toContain('$4,860');
     expect(out).toContain('Minimum payments this month');
     expect(out).toContain('$175');
-    expect(out).toContain('Balances aren’t taken out of safe-to-spend; minimum payments are counted as bills.');
+    expect(out).toContain('Balances aren’t taken out of Allowance; minimum payments are counted as bills.');
     expect(out).not.toMatch(/pk-btn primary/);
     calm(out);
   });
@@ -74,7 +74,7 @@ describe('D-02 every debt', () => {
 describe('D-01 on Home', () => {
   it('shows the total, says it isn’t taken out, and lists the debts', () => {
     const out = html(<DebtsCard debts={data} onSee={() => {}} />);
-    expect(out).toContain('$4,860 across 2. Balances aren’t taken out of safe-to-spend.');
+    expect(out).toContain('$4,860 across 2. Balances aren’t taken out of Allowance.');
     expect(out).toContain('See debts');
     expect(out).toContain('TD Visa ••1102');
     calm(out);

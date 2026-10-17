@@ -19,7 +19,7 @@ import './home.css';
  * snapshot's bar against the budget, so the ±10% pace rule and the champagne
  * for over are the same (B1): on track, on pace to go over, or over, always
  * in words. A category that's all bills has no tick and says "All paid" once
- * they're in (B2). Budgets sit under safe-to-spend; they don't replace it.
+ * they're in (B2). Budgets sit under Allowance; they don't replace it.
  */
 
 export const PRESETS = [70, 80, 90, 100, 110];

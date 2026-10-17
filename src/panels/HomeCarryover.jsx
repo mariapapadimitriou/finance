@@ -7,10 +7,10 @@ import { monthName, shown } from './HomePanel.jsx';
  * to CO-03, THL-233).
  *
  * A shortfall is a card on Home (CO-01): take it from this month, or spread
- * it over two or three, each with what safe to spend becomes. Money to
+ * it over two or three, each with what Allowance becomes. Money to
  * spare (CO-02) asks what to do with it — her Anchor (she moves it), a
  * treasure chest, or this month — and unanswered for seven days it's added
- * to this month's safe to spend, and Home says so once. Copy follows the
+ * to this month's Allowance, and Home says so once. Copy follows the
  * calm-copy rules: no red, no blame, whole dollars.
  */
 
@@ -30,7 +30,7 @@ export function CarryoverPrompt({ c, safe = null, onAnswer, onChest, onExplain }
   if (c.kind === 'spare' && c.auto) {
     return (
       <Alert tone="positive" action="Got it" onAction={() => onAnswer('spend')}>
-        {`${was}’s ${shown(c.amount)} to spare is in ${now}’s safe to spend.`}
+        {`${was}’s ${shown(c.amount)} to spare is in ${now}’s Allowance.`}
       </Alert>
     );
   }
@@ -40,9 +40,9 @@ export function CarryoverPrompt({ c, safe = null, onAnswer, onChest, onExplain }
   return null;
 }
 
-/** "$642 → $142": safe to spend before and after a choice. */
+/** "$642 → $142": Allowance before and after a choice. */
 const arrow = (safe, delta) => (safe && safe.amount != null
-  ? `Safe to spend: ${shown(safe.amount)} → ${shown(safe.amount + delta)}` : '');
+  ? `Allowance: ${shown(safe.amount)} → ${shown(safe.amount + delta)}` : '');
 
 /** CO-01: last month ended short — take it from this month, or spread it. */
 export function ShortfallCard({ c, now, was, safe = null, onAnswer, onExplain }) {
@@ -51,7 +51,7 @@ export function ShortfallCard({ c, now, was, safe = null, onAnswer, onExplain })
   const [error, setError] = useState(null);
   const per = (n) => c.amount / n;
   const options = [
-    ['now', `Take it from ${now}`, arrow(safe, -c.amount) || `${shown(c.amount)} comes off ${now}’s safe to spend`],
+    ['now', `Take it from ${now}`, arrow(safe, -c.amount) || `${shown(c.amount)} comes off ${now}’s Allowance`],
     ['spread2', 'Spread over 2 months', `${shown(per(2))} a month${safe && safe.amount != null ? ` · ${now} → ${shown(safe.amount - per(2))}` : ''}`],
     ['spread3', 'Spread over 3 months', `${shown(per(3))} a month${safe && safe.amount != null ? ` · ${now} → ${shown(safe.amount - per(3))}` : ''}`],
   ];
@@ -99,7 +99,7 @@ export function SpareCard({ c, was, now, safe = null, onAnswer, onChest }) {
   const options = [
     ['save', 'Put it in your Anchor', `Move ${shown(c.amount)} to your savings. Pearl can’t move money for you.`],
     ['chest', 'Put it in a treasure chest', 'Choose a chest on Save'],
-    ['spend', 'Spend it this month', arrow(safe, c.amount) || `${shown(c.amount)} is added to ${now}’s safe to spend`],
+    ['spend', 'Spend it this month', arrow(safe, c.amount) || `${shown(c.amount)} is added to ${now}’s Allowance`],
   ];
   const go = () => {
     setBusy(true);
@@ -128,7 +128,7 @@ export function SpareCard({ c, was, now, safe = null, onAnswer, onChest }) {
         <PButton variant="text" onClick={() => setLater(true)}>Later</PButton>
       </div>
       <p className="pk-label pk-muted">
-        If you don’t choose in 7 days, it’s added to this month’s safe to spend. We’ll tell you when.
+        If you don’t choose in 7 days, it’s added to this month’s Allowance. We’ll tell you when.
       </p>
     </section>
   );

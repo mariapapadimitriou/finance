@@ -6,14 +6,14 @@ opt-in challenges and the monthly recap.
 the path — your money, assessed; Anchor set up; a quarter there; half
 there; covers 3 months; investing account opened — and three more earn a
 pearl beside it: first treasure chest opened as planned, first $1,000
-saved, 3 months within safe to spend. "A quarter" and "half" are measured
+saved, 3 months within Allowance. "A quarter" and "half" are measured
 toward the 3-month Anchor (THL-230). A pearl, once earned, is never taken
 away (THL-53): what's earned is written down with its date, and a later
 rough month changes nothing. Someone joining with history is placed from
 what's already true (THL-50). Thresholds can be changed without an app
 release (THL-54): an env var or a setting overrides the defaults.
 
-**Streaks** are monthly (within safe to spend; added to your Anchor) or
+**Streaks** are monthly (within Allowance; added to your Anchor) or
 weekly (cleared Needs a look). A missed period starts a new run; the best
 run is kept and never lowered. No "broke" copy, nothing in rose.
 
@@ -55,8 +55,8 @@ MILESTONES = [
      "how": "Put away {saved} in total"},
     {"key": "anchor_full", "label": "Anchor covers 3 months", "path": True,
      "how": "Your Anchor reaches 3 months of Essentials"},
-    {"key": "three_within", "label": "{within} months within safe to spend", "path": False,
-     "how": "{within_words} months in a row within safe to spend"},
+    {"key": "three_within", "label": "{within} months within Allowance", "path": False,
+     "how": "{within_words} months in a row within Allowance"},
     {"key": "invest", "label": "Investing account opened", "path": True,
      "how": "Open one wherever you like, then tell Pearl"},
 ]
@@ -186,7 +186,7 @@ def chest_opened_on(st) -> tuple[str | None, str | None]:
 
 def within_months(transactions, today: date, n: int = 12) -> list[dict]:
     """Each full month Pearl saw, oldest first: did spending stay within
-    safe to spend? `counted` is None for a month it couldn't tell."""
+    Allowance? `counted` is None for a month it couldn't tell."""
     from . import carryover
     from .usual_month import covered_months
     out = []
@@ -236,9 +236,9 @@ def review_weeks(st, today: date, review_count: int, n: int = 12) -> list[dict]:
 # ── Streaks ─────────────────────────────────────────────────────────────
 
 STREAKS = [
-    {"key": "within", "label": "Months within safe to spend", "unit": "month",
+    {"key": "within", "label": "Months within Allowance", "unit": "month",
      "starts": "Starts after your first full month",
-     "rule": "A month counts when your spending stayed within safe to spend. Months Pearl "
+     "rule": "A month counts when your spending stayed within Allowance. Months Pearl "
              "couldn’t see fully, like your first one, don’t count either way."},
     {"key": "anchor", "label": "Months you added to your Anchor", "unit": "month",
      "starts": "Starts once your Anchor is set up",
@@ -303,7 +303,7 @@ def streak(st, key: str, periods: list[dict], today: date, events: list, starts:
     elif new_best and r["this"] > 1:
         first = next((p["period"] for p in periods[-r["this"]:] if p["counted"]), None)
         since = month_name(first) if unit == "month" and first else (f"the week of {day_words(first)}" if first else "")
-        what = {"within": "stayed within safe to spend",
+        what = {"within": "stayed within Allowance",
                 "anchor": "put something toward your Anchor",
                 "review": "cleared Needs a look"}[key]
         note = f"Every {unit} since {since}, you’ve {what}." if since else None
@@ -593,7 +593,7 @@ def _recap_for(st, transactions, month: str, earned: dict, streaks: list[dict], 
                 if c["status"] == "finished" and (c.get("ended_on") or c["end"])[:7] == month]
     well = []
     if within:
-        well.append({"key": "within", "text": "You stayed within safe to spend.", "share": "Stayed within my plan"})
+        well.append({"key": "within", "text": "You stayed within Allowance.", "share": "Stayed within my plan"})
     if put_away > 0:
         well.append({"key": "put_away", "text": f"You put away {_money(put_away)}.",
                      "share": "Kept building my Anchor" if anchor.get("started") else "Put money away",
@@ -620,7 +620,7 @@ def _recap_for(st, transactions, month: str, earned: dict, streaks: list[dict], 
     for s in streaks:
         if not s["started"]:
             continue
-        name = {"within": "Within safe to spend", "anchor": "Added to your Anchor",
+        name = {"within": "Within Allowance", "anchor": "Added to your Anchor",
                 "review": "Cleared Needs a look"}[s["key"]]
         if s["this"] >= 2:
             lines.append(f"{name}: {period_words(s['this'], s['unit'])} in a row.")
@@ -877,7 +877,7 @@ def moment_line(key: str, pearl: dict, anchor: dict, th: dict) -> str:
         "chest_opened": (f"{pearl['note']} opened as planned." if pearl.get("note")
                          else "A treasure chest opened as planned."),
         "saved_1000": f"{words['saved']} put away in total.",
-        "three_within": f"{words['within_words']} months in a row within safe to spend.",
+        "three_within": f"{words['within_words']} months in a row within Allowance.",
         "invest": "An investing account, opened.",
     }
     return lines.get(key, "")

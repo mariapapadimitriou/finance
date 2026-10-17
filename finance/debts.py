@@ -10,7 +10,7 @@ bought this month:
 
 Decisions this follows (THL-9 comment, 2026-10-12):
 
-* Carried balances are shown beside safe-to-spend and never taken out of it.
+* Carried balances are shown beside Allowance and never taken out of it.
 * D1: minimum payments due this month are bills, and appear in "Bills still
   to come" until they're paid.
 * D2: a card's minimum counts as a bill only up to the before-Pearl balance

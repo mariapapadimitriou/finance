@@ -48,10 +48,10 @@ const calm = (text) => {
   expect(text).not.toMatch(/NaN|undefined|null/);
 };
 
-describe('safe-to-spend card', () => {
+describe('Allowance card', () => {
   it('shows the month’s number in cents and the days left, today included', () => {
     const c = heroCopy(ok);
-    expect(c.label).toBe('Safe to spend in October');
+    expect(c.label).toBe('Allowance in October');
     expect(c.figure).toBe('$642.18');
     expect(c.pill).toBe('On track');
     expect(c.context).toBe('23 days left · about $28 a day');
@@ -272,7 +272,7 @@ describe('every data state', () => {
     expect(primaries(out)).toBe(1);
     expect(out).toContain('Link your chequing account');
     expect(out).toContain('$740');
-    expect(out).not.toContain('Safe to spend in');
+    expect(out).not.toContain('Allowance in');
     expect(body(...STATES['E-04 nothing spent yet'])).toContain('Nothing yet');
   });
 
@@ -286,7 +286,7 @@ describe('every data state', () => {
     expect(careful.rows[0].detail).toBe('Your lowest month of the last 3 was July, $3,100');
     expect(careful.rows[1].display).toBe('None');
     const out = html(<HowWeWorkedItOut s={rough} onClose={() => {}} onEdit={() => {}} />);
-    expect(out).toContain('Safe to spend: about $2,600');
+    expect(out).toContain('Allowance: about $2,600');
     calm(out);
   });
 
@@ -556,7 +556,7 @@ describe('rough estimate (H-03)', () => {
 
   it('says it is rough, from deposits, to the nearest $50', () => {
     const c = heroCopy(fromDeposits);
-    expect(c.label).toBe('Safe to spend in October · rough estimate');
+    expect(c.label).toBe('Allowance in October · rough estimate');
     expect(c.pill).toBe('Estimate');
     expect(c.figure).toBe('About $650');
     expect(c.context).toBe('Based on deposits we’ve seen. Add your income for a real number.');
@@ -574,7 +574,7 @@ describe('rough estimate (H-03)', () => {
     expect(out).toMatch(/pk-btn primary[^>]*>Add your income/);
     expect(out).toContain('Your path');
     expect(out).toContain('First, add your income');
-    expect(out).toContain('Needed for an accurate safe-to-spend');
+    expect(out).toContain('Needed for an accurate Allowance');
     expect(out).toContain('It takes about 30 seconds.');
     expect(out).not.toContain('Monthly take-home pay');              // no starter questions
     expect(out).toContain('3 transactions need a look');
@@ -640,7 +640,7 @@ describe('the snapshot through either lens (2026-10-14)', () => {
 describe('Home reads by the month only (THL-206, THL-235)', () => {
   it('no Month / Week toggle, no week strip, and no afford-it card', () => {
     const out = body(ok, { ...base, kind: 'normal' });
-    expect(out).toContain('Safe to spend in October');
+    expect(out).toContain('Allowance in October');
     expect(out).not.toMatch(/This week|See week|role="radiogroup"[^>]*Month/);
     expect(out).not.toContain('Can I afford it?');
     expect(out).not.toContain('hm-afford');
@@ -648,7 +648,7 @@ describe('Home reads by the month only (THL-206, THL-235)', () => {
 });
 
 describe('the calendar strip (THL-245 CAL-06)', () => {
-  it('sits under safe to spend and opens the calendar', () => {
+  it('sits under Allowance and opens the calendar', () => {
     const strip = { month: '2026-10', label: 'October',
                     cells: [{ date: '2026-10-01', day: 1, state: 'on', due: false }],
                     line: 'Next: Netflix on Oct 15, then pay on Oct 16.' };

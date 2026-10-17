@@ -59,7 +59,7 @@ export function Rows({ rows, label }) {
 export const LINKING = {
   eyebrow: 'Before you link',
   title: 'Linking your bank',
-  sub: 'To work out what’s safe to spend, Pearl needs to read your balances and transactions.',
+  sub: 'To work out what’s Allowance, Pearl needs to read your balances and transactions.',
   rows: [
     { title: 'Pearl can', sub: 'See your balances and transactions. Read-only.' },
     { title: 'Pearl can’t', sub: 'Move money, make payments or see your bank password.' },
@@ -74,7 +74,7 @@ export const USES = {
   eyebrow: 'Your accounts are linked',
   title: 'How Pearl uses your transactions',
   needTitle: 'To work out your numbers',
-  need: 'Pearl looks at your income, bills and spending to find what’s safe to spend and '
+  need: 'Pearl looks at your income, bills and spending to find what’s Allowance and '
     + 'your next step. This is what Pearl does, so it’s needed to continue.',
   aiTitle: 'To sort them with AI (your choice)',
   ai: 'For transactions Pearl isn’t sure about, we send only the merchant, amount and date '
@@ -142,7 +142,7 @@ export function milestoneKey(path) {
 }
 
 /**
- * N-01 shows once safe to spend has a number, and again only once after a
+ * N-01 shows once Allowance has a number, and again only once after a
  * "Not now" — when she has reached a milestone since (THL-139). Never twice
  * after that; Settings is where it changes then.
  */

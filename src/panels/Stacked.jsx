@@ -237,8 +237,8 @@ export default function Stacked({ it, categories = [], busy, act, sorted, onSkip
     const how = answered('what_out');
     ready = !!name.trim();
     effect = how === 'lent'
-      ? `Not spending. Safe to spend goes up by ${amt} and ${name.trim() || 'they'} owe${name.trim() ? 's' : ''} you ${amt}.`
-      : `Not spending. Safe to spend goes up by ${amt}.`;
+      ? `Not spending. Allowance goes up by ${amt} and ${name.trim() || 'they'} owe${name.trim() ? 's' : ''} you ${amt}.`
+      : `Not spending. Allowance goes up by ${amt}.`;
     save = () => act(async () => {
       const res = await markTx(it.txn.id, how === 'lent' ? { case: 'lent' } : { case: 'paying_back', counted: true });
       if (name.trim() && name.trim() !== nameIn(it.txn.merchant)) await setParty(it.txn.id, name.trim());
