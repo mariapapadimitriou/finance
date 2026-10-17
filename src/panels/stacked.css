@@ -1,0 +1,66 @@
+/* Needs a look, stacked (R-07 to R-12, 2026-10-17): one 640px card, one
+ * short question at a time. Pearl tokens throughout. */
+
+.pk .nl-stack { width: 100%; max-width: 640px; gap: var(--space-4); padding: 24px; }
+.nl-stack > * { margin: 0; }
+.nl-head > p { margin: 0; }
+
+/* The transaction: an avatar row for money out, a soft panel for money in. */
+.nl-stack .nl-tx { gap: 14px; }
+.nl-stack .nl-tx-text > span:first-child { font-size: 15px; line-height: 22px; }
+.nl-stack .nl-tx-amt { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 26px; line-height: 32px; }
+.nl-stack .nl-tx.in {
+  padding: 16px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--track) 70%, var(--surface-card));
+}
+
+/* The dots: answered filled with a lilac ring, the rest dashed. */
+.nl-steps { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.nl-dot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px dashed var(--border-strong); }
+.nl-dot.on { border: 2px solid var(--lilac); background: color-mix(in srgb, var(--lilac) 55%, var(--surface-card));
+             box-shadow: inset 0 0 0 2px var(--surface-card); }
+.nl-steps-n { margin-left: 2px; }
+
+/* Answers so far: grey lines with Change. */
+.nl-done-list { display: flex; flex-direction: column; gap: 6px; }
+.nl-done {
+  display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 16px;
+  border-radius: var(--radius-sm); background: var(--track); font-size: 15px; line-height: 20px; font-weight: 500;
+}
+.nl-done-ring { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--lilac); flex: none; }
+.nl-done-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk .nl-change { border: 0; background: none; padding: 4px 0; color: var(--link); font: inherit; font-size: 13px;
+                 font-weight: 500; cursor: pointer; }
+.pk .nl-change:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* The question. */
+.nl-stack .nl-q { font-size: 26px; line-height: 32px; margin-top: var(--space-1); }
+.nl-stack .nl-sub { font-size: 15px; line-height: 22px; }
+.nl-stack .pk-choices { gap: var(--space-2); }
+
+/* Who to: a name, and people she has named before. */
+.nl-name { display: flex; flex-direction: column; gap: var(--space-2); }
+.nl-name > p { margin: 0; }
+.pk .nl-name input { height: 50px; font-size: 15px; }
+.nl-people { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.pk .nl-person {
+  height: 32px; padding: 0 12px; border: 0; border-radius: var(--radius-full); background: var(--track);
+  color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.pk .nl-person:hover { background: var(--blush); }
+
+/* What it will do, then Save and next beside Skip for now. */
+.nl-stack .nl-effect {
+  margin: 0; padding: 14px 16px; border-radius: var(--radius-sm); background: var(--lilac); color: var(--on-nacre);
+  font-size: 14px; line-height: 20px;
+}
+.nl-stack .nl-actions { flex-direction: row; align-items: center; gap: var(--space-4); margin-top: var(--space-1); }
+.nl-stack .nl-actions .pk-btn.primary { width: auto; padding: 0 28px; }
+.pk .nl-stack .nl-skip { align-self: auto; height: 44px; padding: 0; font-size: 15px; }
+.nl-stack .nl-other { align-self: flex-start; }
+
+@media (max-width: 720px) {
+  .pk .nl-stack { padding: 18px 16px; }
+  .nl-stack .nl-q { font-size: 22px; line-height: 28px; }
+  .nl-stack .nl-tx-amt { font-size: 22px; line-height: 28px; }
+  .nl-stack .nl-actions { flex-wrap: wrap; }
+}

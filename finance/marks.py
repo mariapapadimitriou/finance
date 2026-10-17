@@ -302,6 +302,27 @@ def best_guess(t: Transaction) -> str | None:
     return "pay"
 
 
+def known_people(store, t: Transaction, limit: int = 6) -> list[str]:
+    """First names she uses, most used first, never this row's own name."""
+    from collections import Counter
+    seen: Counter = Counter()
+    for split in store.splits().values():
+        for p in split.get("people", []):
+            if p.get("name"):
+                seen[p["name"].strip()] += 1
+    for name in store.payback_people().values():
+        if name:
+            seen[name.strip()] += 1
+    with store.conn() as c:
+        for r in c.execute("SELECT name FROM txn_party").fetchall():
+            if r["name"]:
+                seen[r["name"].strip()] += 1
+    for name in t.joint_people or []:
+        seen[name.strip()] += 1
+    own = (t.merchant or "").strip().lower()
+    return [n for n, _ in seen.most_common() if n and n.lower() != own][:limit]
+
+
 def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
     """Everything the sheet needs for one row."""
     from .transfers import destination
@@ -360,6 +381,9 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
         "income_kind": t.income_type,
         "joint": t.joint or "",
         "joint_people": list(t.joint_people or []),
+        # People she has already named — in a split, a payback or an
+        # e-Transfer — for "Who to?" (Needs a look R-12, 2026-10-17).
+        "people": known_people(store, t),
         "tags": store.tags().get(t.fingerprint, []),
         "categories": [c for c in CATEGORIES if c not in NON_SPEND and c != "Unsorted transfers"],
     }

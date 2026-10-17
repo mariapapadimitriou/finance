@@ -9,6 +9,7 @@ import { RepaymentMatch } from './Splits.jsx';
 import { DuplicateQuestion } from './Duplicates.jsx';
 import { depositChoices } from './joint.js';
 import WhatWasThis from './WhatWasThis.jsx';
+import Stacked, { TxHead as StackedHead } from './Stacked.jsx';
 import {
   INCOME_KINDS, answerDuplicate, confirmTx, dismissReview, getReview, getTxCases, linkPayback,
   markTx, money, setCategory, setIncomeType, setJointFrom, setParty, skipReview, sortTransfers,
@@ -16,7 +17,14 @@ import {
 } from '../api.js';
 
 /**
- * Needs a look (Pearl R-01 and R-04, THL-123; THL-163 for transfers).
+ * Needs a look (Pearl R-01 and R-04, THL-123; THL-163 for transfers;
+ * stacked, R-07 to R-12, 2026-10-17).
+ *
+ * One card, one short question at a time (Stacked.jsx): each answer folds
+ * into a grey line with Change, dots count the steps, and the last answer
+ * says what it will do before Save and next. No type chips and no "why we
+ * ask" column: the card is the page. Skipped ones wait until the queue is
+ * done ("Go through skipped").
  *
  * Everything Pearl isn't sure about, one question at a time, oldest first,
  * so the queue takes about a minute: where a transfer went, a category Pearl
@@ -129,6 +137,10 @@ export function inView(items, filter) {
   return items.filter((i) => !i.skipped && (filter === 'all' || i.kind === filter));
 }
 
+// The kinds asked as stacked steps (R-07 to R-12); a duplicate and a
+// month with three paycheques keep their own one-step cards.
+export const STACKED = new Set(['unsorted', 'category', 'money_in', 'income', 'joint_in', 'who_sent']);
+
 const minutes = (n) => (n <= 4 ? 'about a minute' : `about ${Math.ceil((n * 15) / 60)} minutes`);
 
 export default function NeedsALook({ categories, onChanged, onTab, version }) {
@@ -205,7 +217,6 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
   };
   const unskip = (key = current?.key) => act(() => skipReview(key, false), () => 'Back in the queue');
   const pick = (key) => { setFilter(key); setPassed(new Set()); setAnswering(null); };
-  const tabs = chips(items);
 
   if (!data && !error) return <div className="pk nl-page"><p className="pk-muted">Loading…</p></div>;
 
@@ -231,16 +242,6 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
 
       {error && <ErrorNote error={error} onRetry={load} />}
 
-      {tabs.length > 1 && (
-        <nav className="nl-chips" aria-label="Filter by type">
-          {tabs.map((c) => (
-            <button key={c.key} type="button" aria-pressed={filter === c.key}
-                    className={`pk-filter nl-chip${filter === c.key ? ' active' : ''}`} onClick={() => pick(c.key)}>
-              {c.label} ({c.count})
-            </button>
-          ))}
-        </nav>
-      )}
       {filter === 'skipped' && !current && shown.length > 0 && (
         <section className="nl-card nl-skipped" aria-label="Skipped for now">
           <h2 className="pk-h2">Skipped for now</h2>
@@ -292,23 +293,18 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
       )}
 
       {current && (
-        <div className="nl-cols">
-          <section className="nl-card" aria-label="Question" key={current.key}>
-            <Question it={current} categories={categories} busy={busy} onSkip={skip}
-                      act={act} sorted={sorted} onTab={onTab} />
-            {current.skipped && (
-              <PButton variant="text" className="nl-unskip" disabled={busy} onClick={() => unskip()}>
-                Back to the queue
-              </PButton>
-            )}
-          </section>
-          <aside className="nl-why" aria-label="Why we ask">
-            <p className="pk-overline accent">Why we ask</p>
-            <p className="pk-h3">{WHY[current.kind][0]}</p>
-            <p className="pk-muted">{current.reason && current.kind !== 'pay3'
-              ? current.reason : WHY[current.kind][1]}</p>
-          </aside>
-        </div>
+        <section className="nl-card nl-stack" aria-label="Question" key={current.key}>
+          {STACKED.has(current.kind)
+            ? <Stacked it={current} categories={categories} busy={busy} onSkip={skip}
+                       act={act} sorted={sorted} onTab={onTab} />
+            : <Question it={current} categories={categories} busy={busy} onSkip={skip}
+                        act={act} sorted={sorted} onTab={onTab} />}
+          {current.skipped && (
+            <PButton variant="text" className="nl-unskip" disabled={busy} onClick={() => unskip()}>
+              Back to the queue
+            </PButton>
+          )}
+        </section>
       )}
 
       {change && (
@@ -322,6 +318,7 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
 
 /** The transaction a question is about: who, when, from where, how much. */
 function TxHead({ txn, name, compact = false }) {
+  if (!compact) return <StackedHead txn={txn} name={name} />;
   const inflow = txn.amount < 0;
   return (
     <div className={`nl-tx${compact ? ' compact' : ''}`}>
