@@ -684,12 +684,3 @@ def flows(rows, filters: dict, today) -> dict | None:
         "usual": usual,
     }
 
-
-def day_spent(chosen) -> dict[str, float]:
-    """Each day's outflows, for its header (spending only, like the card)."""
-    out: dict[str, float] = {}
-    for t, r in chosen:
-        if r["counts"] == "spending":
-            k = r["date"][:10]
-            out[k] = round(out.get(k, 0.0) + spend_amount(t), 2)
-    return out

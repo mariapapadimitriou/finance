@@ -221,9 +221,8 @@ def transactions_list():
         "owed": owed,
         "total": len(chosen),
         "totals": txlist.totals(chosen),
-        # ALT-04: the Outflows and Inflows cards, and each day's outflows.
+        # ALT-04: the Outflows and Inflows cards.
         "flows": txlist.flows(rows, filters, _date_today()),
-        "day_spent": txlist.day_spent(chosen),
         "focus": txlist.focus(rows, month=month, account=filters["account"],
                               group=group, category=filters["category"],
                               tag=filters["tag"], merchant=filters["merchant"]),

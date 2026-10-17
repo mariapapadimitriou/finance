@@ -70,8 +70,6 @@
 .tx-day { display: flex; align-items: baseline; gap: var(--space-2); padding: 20px 16px 8px; }
 .tx-day-name { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 18px; line-height: 24px; color: var(--ink); }
 .tx-day-date { font-size: 13px; line-height: 18px; color: var(--ink-muted); font-weight: 500; }
-.tx-day-total { margin-left: auto; font-size: 13px; line-height: 18px; color: var(--money-out); font-weight: 500;
-                font-variant-numeric: tabular-nums; }
 .pk .tx-earlier {
   height: 36px; padding: 0 18px; border: 0; border-radius: var(--radius-full); background: var(--blush);
   color: var(--link); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer;

@@ -299,8 +299,8 @@ def test_flows_are_counted_outflows_and_inflows_by_day(client):
     assert f["usual"]["out"][0] == 90.0 and f["usual"]["in"][13] == 0.0 and f["usual"]["in"][14] == 1800.0
     # The cards' figures are the totals, which agree with the line's end.
     assert data["totals"]["spent"] == f["out"][-1] and data["totals"]["income"] == f["in"][-1]
-    # Each day's header: that day's outflows.
-    assert data["day_spent"][in_month(1)] == 40.0 and data["day_spent"][in_month(2)] == 25.0
+    # Day headers carry no totals (ALT-04, 2026-10-17).
+    assert "day_spent" not in data
     # No single month to draw: no flows.
     assert listing(client, month="all")["flows"] is None
 

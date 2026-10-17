@@ -32,7 +32,7 @@ import { readTxUrl, writeTxUrl } from '../router.js';
  * Search, the month, Filters (an icon on a phone) and Add. Needs a look is
  * a banner that goes to its own page, never mixed into the list. The list
  * is by day, newest first, each day named ("Today", "Yesterday", the
- * weekday) with that day's outflows. Everything else (months, account,
+ * weekday), with no daily totals. Everything else (months, account,
  * category, kind, tags, an amount range, owed to you, show only) is in the
  * Filters panel (VF-02). Filters live
  * in the address bar so a filtered list can be linked to and survives back
@@ -737,15 +737,11 @@ export default function TransactionsList({ summary, categories, accounts, review
               )}
               {sections.map((d) => {
                 const p = dayParts(d.key);
-                const spent = data?.day_spent?.[d.key] ?? 0;
                 return (
                   <div key={d.key} role="group" aria-label={d.label}>
                     <div className="tx-day">
                       <span className="tx-day-name">{p.name}</span>
                       <span className="tx-day-date">{p.date}</span>
-                      {spent >= 0.005 && (
-                        <span className="tx-day-total">{txAmount(spent, { signed: true })}</span>
-                      )}
                     </div>
                     {d.rows.map(rowFor)}
                   </div>

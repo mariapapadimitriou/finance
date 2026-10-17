@@ -45,7 +45,7 @@ describe('Outflows and Inflows (ALT-04)', () => {
   });
 });
 
-describe('Day headers (ALT-04)', () => {
+describe('Day headers (ALT-04): a name and a date, no totals', () => {
   const now = new Date(2026, 9, 9);
   it('Today, Yesterday, the weekday within a week, then the date', () => {
     expect(dayParts('2026-10-09', now)).toEqual({ name: 'Today', date: 'Fri, Oct 9' });
