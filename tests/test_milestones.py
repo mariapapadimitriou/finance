@@ -98,7 +98,10 @@ class TestConnections:
         ("INSTITUTION_NOT_RESPONDING", "x", "bank_down"),
         ("USER_PERMISSION_REVOKED", "x", "disconnected"),
         ("", "The bank needs you to sign in again. Reconnect it on this tab.", "needs_sign_in"),
-        ("RATE_LIMIT_EXCEEDED", "x", None),
+        # Any other failure is shown as retrying, never as fine (2026-10-17).
+        ("RATE_LIMIT_EXCEEDED", "x", "bank_down"),
+        ("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION", "x", "bank_down"),
+        (None, "Something went wrong", "bank_down"),
         (None, None, None),
     ])
     def test_state_from_plaids_code(self, code, text, state):

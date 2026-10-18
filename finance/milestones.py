@@ -229,7 +229,9 @@ GONE = {"ITEM_NOT_FOUND", "USER_PERMISSION_REVOKED", "ACCESS_NOT_GRANTED"}
 
 def connection_state(item: dict) -> str | None:
     """needs_sign_in (C-02), bank_down (C-03), disconnected (C-06), or None
-    when it's fine, or when the error isn't one she can see or act on."""
+    when it's fine. An error Pearl doesn't recognise reads as bank_down
+    ("We're retrying") rather than as fine (2026-10-17): hiding it left a
+    connection looking up to date while it hadn't synced for a day."""
     if not item.get("last_error"):
         return None
     code = (item.get("error_code") or "").upper()
@@ -239,7 +241,7 @@ def connection_state(item: dict) -> str | None:
         return "bank_down"
     if code in GONE:
         return "disconnected"
-    return None
+    return "bank_down"
 
 
 def connections(items: list[dict], account_rules: dict[str, dict]) -> list[dict]:

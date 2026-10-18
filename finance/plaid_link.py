@@ -608,7 +608,13 @@ def sync_all(store) -> dict:
             out.append(_sync_one(store, item))
         except Exception as exc:                     # noqa: BLE001
             message = explain(exc)
-            store.set_plaid_error(item["item_id"], message, error_code(exc))
+            code = error_code(exc)
+            store.set_plaid_error(item["item_id"], message, code)
+            # In the function logs, so a failed sync is visible without
+            # her data: the bank, Plaid's code and the reason. Never a token.
+            print(f"plaid sync failed: institution={item.get('institution') or '?'} "
+                  f"item=…{str(item['item_id'])[-6:]} code={code or '-'} "
+                  f"error={type(exc).__name__}: {message[:300]}", flush=True)
             out.append({"item_id": item["item_id"],
                         "institution": item.get("institution") or "",
                         "error": message})

@@ -847,3 +847,27 @@ class TestReadingLessOfTheLedger:
         plaid_link.sync_all(store)
         plaid_link.sync_all(store)
         assert rewinds.count("item-1") == 1
+
+
+def test_a_failed_sync_is_logged_without_the_token(monkeypatch, capsys, tmp_path):
+    """2026-10-17: a sync that fails says so in the function logs — the bank,
+    Plaid's code and the reason — and never the access token."""
+    from finance import plaid_link, secrets_box
+    from finance.store import Store
+    monkeypatch.setenv(secrets_box.KEY_ENV, KEY)
+    st = Store(str(tmp_path / "log.db"))
+    st.add_plaid_item("item-abcdef123456", "access-sandbox-SECRET", "Wealthsimple")
+
+    def boom(store, item):
+        raise RuntimeError("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION")
+    monkeypatch.setattr(plaid_link, "_sync_one", boom)
+    monkeypatch.setattr(plaid_link, "hide_quiet_twins", lambda store: None)
+    out = plaid_link.sync_all(st)
+    assert out["items"][0]["error"]
+    logged = capsys.readouterr().out
+    assert "plaid sync failed: institution=Wealthsimple item=…123456" in logged
+    assert "SECRET" not in logged
+    item = st.plaid_items()[0]
+    assert item["last_error"]
+    from finance import milestones
+    assert milestones.connection_state(item) == "bank_down"
