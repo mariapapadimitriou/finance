@@ -305,3 +305,10 @@
  * text is on-nacre ink, like the Wins boxes (2026-10-16). */
 .pk .wwt-effect, .pk .wwt-effect .pk-label, .pk .wwt-effect p { color: var(--on-nacre); }
 .pk .wwt-effect .pk-muted { color: color-mix(in srgb, var(--on-nacre) 72%, transparent); }
+
+/* The category chip is the way to change the category (2026-10-21). */
+.pk .txd-chip-btn {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: 0; border: 0; background: none; cursor: pointer; color: var(--action); font: inherit;
+}
+.pk .txd-chip-btn:hover .pk-chip { text-decoration: underline; text-underline-offset: 3px; }

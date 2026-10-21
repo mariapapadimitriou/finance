@@ -104,7 +104,6 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
   const left = !!tx.excluded;
   const notYours = tx.chip.label === 'Not yours';
   const canConfirm = tx.suggested && tx.category !== 'Unsorted transfers' && !left;
-  const canSplit = tx.counts === 'spending' && !tx.inflow && !left && !tx.joint;
   // A piggy bank can pay for a charge (not money coming in, not a transfer).
   const canBank = banks.length > 0 && !tx.inflow && !left && !notYours
     && (tx.counts === 'spending' || tx.bank_id != null);
@@ -222,7 +221,6 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
   }
 
   const match = !left && tx.repayment?.suggestion;
-  const otherSplits = !left && !match && (tx.repayment?.splits?.length ?? 0) > 0;
 
   const body = {
     note: <Note tx={tx} busy={busy} onBack={back}
@@ -326,23 +324,25 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                         })} />
           )}
 
+          {/* The category chip opens the category step; everything else about
+              what this was goes through Mark as… (the sort card, 2026-10-21). */}
           <section className="txd-category" aria-labelledby="txd-cat">
             <p className="pk-overline" id="txd-cat">Category</p>
-            <div><CategoryChip label={tx.chip.label} suggested={tx.chip.suggested} /></div>
+            <div>
+              {!left && !notYours ? (
+                <button type="button" className="txd-chip-btn" onClick={() => setStep('category')}
+                        aria-label={tx.category === 'Unsorted transfers' ? 'Tell Pearl where it went' : 'Change category'}>
+                  <CategoryChip label={tx.chip.label} suggested={tx.chip.suggested} />
+                  <PIcon name="chevronRight" size={14} />
+                </button>
+              ) : <CategoryChip label={tx.chip.label} suggested={tx.chip.suggested} />}
+            </div>
             {tx.suggested && <p className="txd-question">{suggestionReason(tx)}</p>}
           </section>
 
+          {/* Only what Mark as… can't do: notes, tags, names, a treasure
+              chest, and undoing a link that already exists. */}
           <div className="txd-more">
-            {canSplit && !tx.splitting && (
-              <button type="button" className="txd-link" onClick={() => setStep('split')}>
-                <PIcon name="users" size={18} /> Split this
-              </button>
-            )}
-            {otherSplits && (
-              <button type="button" className="txd-link" onClick={() => setStep('link')}>
-                <PIcon name="users" size={18} /> Pays back a split?
-              </button>
-            )}
             {tx.repays_charge && (
               <button type="button" className="txd-link"
                       onClick={() => save(() => unlinkPayback(tx.repays_charge.id, tx.id))}>
@@ -357,17 +357,6 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                   : `Unlink ${r.merchant} · ${txAmount(-r.amount)}`}
               </button>
             ))}
-            {tx.etransfer && (
-              <button type="button" className="txd-link" onClick={() => setStep('party')}>
-                <PIcon name="user" size={18} />
-                {partyTitle(tx.etransfer)}
-              </button>
-            )}
-            {tx.joint && !left && tx.inflow && (
-              <button type="button" className="txd-link" onClick={() => setStep('from')}>
-                <PIcon name="users" size={18} /> Who put this in?
-              </button>
-            )}
             {tx.joint && !left && !tx.inflow && (
               <button type="button" className="txd-link" onClick={() => setStep('whose')}>
                 <PIcon name="users" size={18} /> Whose was it?
@@ -388,17 +377,6 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             <button type="button" className="txd-link" onClick={() => setStep('name')}>
               <PIcon name="edit" size={18} /> Rename merchant
             </button>
-            {!left && !notYours && (
-              <button type="button" className="txd-link" onClick={() => setStep('category')}>
-                <PIcon name="list" size={18} />
-                {tx.category === 'Unsorted transfers' ? 'Tell Pearl where it went' : 'Change category'}
-              </button>
-            )}
-            {!left && (
-              <button type="button" className="txd-link" onClick={() => setStep('exclude')}>
-                <PIcon name="ban" size={18} /> Leave it out
-              </button>
-            )}
           </div>
 
           <div className="txd-actions">
