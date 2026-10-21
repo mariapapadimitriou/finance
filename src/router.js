@@ -16,90 +16,6 @@ export const TX_KEYS = ['month', 'account', 'group', 'category', 'excluded', 'jo
 // Needs a look (R-01, THL-123) has an address under the list's.
 export const REVIEW_PATH = '/transactions/review';
 
-// The Path page (THL-129 GR-01, on Wins) has an address too, so Home can
-// link to it, and each step's own screen (GR-02 to GR-04) one beneath it:
-// /wins/path/<step>.
-export const PATH_PATH = '/wins';
-export const PATH_STEPS = ['income', 'bills', 'essentials', 'setup', 'full', 'saved_more',
-                           'cards', 'invest'];
-const PATH_EVENT = 'pearl:path';
-
-/** {step} at /wins or /wins/path/<step>, or null anywhere else. */
-export function readPathUrl(loc = window.location) {
-  const path = loc.pathname.replace(/\/+$/, '') || '/';
-  if (path === PATH_PATH) return { step: '' };
-  const m = path.match(/^\/wins\/path\/([a-z_]+)$/);
-  return m && PATH_STEPS.includes(m[1]) ? { step: m[1] } : null;
-}
-
-/** True at /wins and at a step's own screen. */
-export const isPathUrl = (loc = window.location) => readPathUrl(loc) !== null;
-
-export const pathHref = (step = '') => (step ? `${PATH_PATH}/path/${step}` : PATH_PATH);
-
-/** Point the address bar at the Path page or one of its steps, and tell the page. */
-export function writePathUrl({ step = '', push = true } = {}) {
-  const href = pathHref(step);
-  if (href !== window.location.pathname) {
-    window.history[push ? 'pushState' : 'replaceState'](null, '', href);
-  }
-  window.dispatchEvent(new Event(PATH_EVENT));
-}
-
-/** Calls `fn` whenever the Path address changes, by Back or by a link. */
-export function onPathUrl(fn) {
-  window.addEventListener('popstate', fn);
-  window.addEventListener(PATH_EVENT, fn);
-  return () => {
-    window.removeEventListener('popstate', fn);
-    window.removeEventListener(PATH_EVENT, fn);
-  };
-}
-
-// Save › Learn (THL-134 GR-11, at /save/learn) and a module (GR-12 to
-// GR-14) at /save/learn/<module>. ?from=ready means she came from the
-// readiness checklist (GR-16), so the done state offers the way back. The
-// safe-to-spend explainer is a page of its own there too.
-export const LEARN_PATH = '/save/learn';
-const LEARN_EVENT = 'pearl:learn';
-
-/** {module, from} at /save/learn…, or null anywhere else. */
-export function readLearnUrl(loc = window.location) {
-  const m = loc.pathname.match(/^\/save\/learn(?:\/([a-z-]+))?\/?$/);
-  if (!m) return null;
-  const from = new URLSearchParams(loc.search).get('from') === 'ready' ? 'ready' : '';
-  return { module: m[1] ?? '', from };
-}
-
-export const isLearnUrl = (loc = window.location) => readLearnUrl(loc) !== null;
-
-export function learnHref({ module = '', from = '' } = {}) {
-  return `${LEARN_PATH}${module ? `/${module}` : ''}${module && from ? `?from=${from}` : ''}`;
-}
-
-/** Point the address bar at Learn or one of its modules, and tell the page. */
-export function writeLearnUrl(state = {}, { push = true } = {}) {
-  const href = learnHref(state);
-  if (href !== window.location.pathname + window.location.search) {
-    window.history[push ? 'pushState' : 'replaceState'](null, '', href);
-  }
-  window.dispatchEvent(new Event(LEARN_EVENT));
-}
-
-/** Calls `fn` whenever the Learn address changes, by Back or by a link. */
-export function onLearnUrl(fn) {
-  window.addEventListener('popstate', fn);
-  window.addEventListener(LEARN_EVENT, fn);
-  return () => {
-    window.removeEventListener('popstate', fn);
-    window.removeEventListener(LEARN_EVENT, fn);
-  };
-}
-
-/** True when the partner sent her back (THL-136 GR-20): ?from=partner. */
-export const fromPartner = (loc = window.location) =>
-  new URLSearchParams(loc.search).get('from') === 'partner';
-
 // Cash flow › Calendar (THL-245 CAL-01, THL-255) at /cash-flow/calendar, a
 // month behind it: /cash-flow/calendar?month=2026-09.
 export const CALENDAR_PATH = '/cash-flow/calendar';
@@ -193,100 +109,13 @@ export function onInsightsUrl(fn) {
 
 // Save › Projections (THL-197 GR-33, THL-248) and its detail views — GR-34
 // this month, GR-35 the next 30 days, GR-36 savings in a year — at
-// /save/projections/<view>; the growth calculator on its own (GR-17, GR-18)
-// at /save/calculator. The investing screens live beside them, reached from
-// Wins: GR-16 Ready to invest at /save/ready, GR-37 "Opened an investing
-// account?" at /save/invested and GR-10, done, at /save/invested/done.
-export const PROJECTIONS_PATH = '/save/projections';
-export const CALCULATOR_PATH = '/save/calculator';
-export const PROJECTIONS_VIEWS = ['forecast', 'next30', 'savings', 'calculator'];
-const UNVEIL_PATHS = { ready: '/save/ready', unveil: '/save/invested', done: '/save/invested/done' };
-const PROJECTIONS_EVENT = 'pearl:projections';
-
-/** {view} at /save/projections…, /save/calculator, /save/ready or /save/invested…, or null. */
-export function readProjectionsUrl(loc = window.location) {
-  const path = loc.pathname.replace(/\/+$/, '');
-  const unveil = Object.entries(UNVEIL_PATHS).find(([, p]) => p === path);
-  if (unveil) return { view: unveil[0] };
-  if (path === CALCULATOR_PATH) return { view: 'calculator' };
-  const m = path.match(/^\/save\/projections(?:\/([a-z0-9]+))?$/);
-  if (!m) return null;
-  return { view: PROJECTIONS_VIEWS.includes(m[1]) && m[1] !== 'calculator' ? m[1] : '' };
-}
-
-export const isProjectionsUrl = (loc = window.location) => readProjectionsUrl(loc) !== null;
-
-export function projectionsHref(view = '') {
-  if (view === 'calculator') return CALCULATOR_PATH;
-  return UNVEIL_PATHS[view] ?? `${PROJECTIONS_PATH}${view ? `/${view}` : ''}`;
-}
-
-/** Point the address bar at Projections, one of its views or an Unveil screen. */
-export function writeProjectionsUrl(view = '', { push = true } = {}) {
-  const href = projectionsHref(view);
-  if (href !== window.location.pathname) {
-    window.history[push ? 'pushState' : 'replaceState'](null, '', href);
-  }
-  window.dispatchEvent(new Event(PROJECTIONS_EVENT));
-}
-
-/** Calls `fn` whenever the Projections address changes, by Back or by a link. */
-export function onProjectionsUrl(fn) {
-  window.addEventListener('popstate', fn);
-  window.addEventListener(PROJECTIONS_EVENT, fn);
-  return () => {
-    window.removeEventListener('popstate', fn);
-    window.removeEventListener(PROJECTIONS_EVENT, fn);
-  };
-}
-
-// Save itself (THL-248): the page at /save, the Anchor's page at /save/anchor
-// and its projection (P-01 to P-05) at /save/anchor/projection.
-export const SAVE_PATH = '/save';
-export const SAVE_VIEWS = { '': SAVE_PATH, anchor: `${SAVE_PATH}/anchor`,
-                            projection: `${SAVE_PATH}/anchor/projection` };
-const SAVE_EVENT = 'pearl:save';
-
-/** {view} at /save, /save/anchor or /save/anchor/projection, or null. */
-export function readSaveUrl(loc = window.location) {
-  const path = loc.pathname.replace(/\/+$/, '');
-  const hit = Object.entries(SAVE_VIEWS).find(([, p]) => p === path);
-  return hit ? { view: hit[0] } : null;
-}
-
-export const isSaveUrl = (loc = window.location) => readSaveUrl(loc) !== null;
-
-/** Point the address bar at Save or one of its own pages, and tell the page. */
-export function writeSaveUrl(view = '', { push = true } = {}) {
-  const href = SAVE_VIEWS[view] ?? SAVE_PATH;
-  if (href !== window.location.pathname) {
-    window.history[push ? 'pushState' : 'replaceState'](null, '', href);
-  }
-  window.dispatchEvent(new Event(SAVE_EVENT));
-}
-
-export function onSaveUrl(fn) {
-  window.addEventListener('popstate', fn);
-  window.addEventListener(SAVE_EVENT, fn);
-  return () => {
-    window.removeEventListener('popstate', fn);
-    window.removeEventListener(SAVE_EVENT, fn);
-  };
-}
-
-// The old Growth addresses (before THL-248 and THL-210) land where their
-// pages went, so a saved link or bookmark never 404s.
+// Old addresses land where their pages went, so a saved link or bookmark
+// never 404s. Save, Wins and the old Growth group are gone (2026-10-21):
+// their addresses land on Home, except Growth › Insights, which moved to
+// Cash flow.
 const OLD_GROWTH = [
-  [/^\/growth\/path\/([a-z_]+)$/, (m) => `/wins/path/${m[1]}`],
   [/^\/growth\/insights(\/[a-z]+)?$/, (m) => `/cashflow/insights${m[1] ?? ''}`],
-  [/^\/growth\/projections\/calculator$/, () => CALCULATOR_PATH],
-  [/^\/growth\/projections(\/[a-z0-9]+)?$/, (m) => `${PROJECTIONS_PATH}${m[1] ?? ''}`],
-  [/^\/growth\/learn(\/[a-z-]+)?$/, (m) => `${LEARN_PATH}${m[1] ?? ''}`],
-  [/^\/growth\/ready$/, () => UNVEIL_PATHS.ready],
-  [/^\/growth\/unveil\/done$/, () => UNVEIL_PATHS.done],
-  [/^\/growth\/unveil$/, () => UNVEIL_PATHS.unveil],
-  [/^\/growth$/, () => PATH_PATH],
-  [/^\/goals$/, () => SAVE_PATH],
+  [/^\/(growth|wins|save|goals)(\/.*)?$/, () => '/'],
   // The calendar's address is spelled cash-flow (THL-245); the one-word
   // spelling Insights uses lands there too.
   [/^\/cashflow\/calendar$/, () => CALENDAR_PATH],
@@ -353,40 +182,5 @@ export function writeTxUrl(state, { push = false } = {}) {
 export function clearUrl() {
   if (window.location.pathname !== '/' && !window.location.search.includes('reset=')) {
     window.history.pushState(null, '', '/');
-  }
-}
-
-// Where Goals should open when another page sends her there (THL-12 R3: a
-// recommendation's "Try it" or "Move to savings"). Kept for the one visit;
-// Goals takes it on arrival. Storage can be blocked, so it's only a nicety.
-const GOALS_INTENT = 'pearl.goalsIntent';
-// The pearls Wins should glow once on arrival (THL-256 "See your pearls").
-const PEARL_GLOW = 'pearl.glow';
-
-export function setPearlGlow(keys) {
-  try { window.sessionStorage.setItem(PEARL_GLOW, JSON.stringify(keys)); } catch { /* blocked */ }
-}
-
-export function takePearlGlow() {
-  try {
-    const raw = window.sessionStorage.getItem(PEARL_GLOW);
-    if (!raw) return [];
-    window.sessionStorage.removeItem(PEARL_GLOW);
-    const keys = JSON.parse(raw);
-    return Array.isArray(keys) ? keys : [];
-  } catch { return []; }
-}
-
-export function setGoalsIntent(intent) {
-  try { window.sessionStorage.setItem(GOALS_INTENT, JSON.stringify(intent)); } catch { /* blocked */ }
-}
-
-export function takeGoalsIntent() {
-  try {
-    const raw = window.sessionStorage.getItem(GOALS_INTENT);
-    window.sessionStorage.removeItem(GOALS_INTENT);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
   }
 }

@@ -122,43 +122,48 @@ a { color: var(--brand); text-underline-offset: 3px; }
   min-height: 100dvh;
 }
 
+/* The sidebar as the Pearl Handoff File draws it (NAV-01, 2026-10-21): the
+   lockup, Home and Cash flow, then Help and support and Profile at the foot.
+   264px wide, 24px of padding, 46px rows with a 20px icon and a 16px label,
+   the open one on the brand tint. */
 .sidebar {
   position: sticky;
   top: 0;
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  padding: 22px 14px;
+  gap: 28px;
+  padding: 24px;
   background: var(--surface);
   border-right: 1px solid var(--border);
 }
 
-.brand { display: flex; align-items: center; gap: 11px; padding: 0 8px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 4px; }
 
 .brand .name {
   font-family: var(--display); font-weight: 600; font-size: 1.55rem; line-height: 1;
   letter-spacing: -0.02em; font-variation-settings: "SOFT" 0, "WONK" 1;
 }
 
-.nav { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nav { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .nav button {
   background: transparent;
   border: none;
-  border-radius: var(--r-sm);
-  padding: 9px 10px;
-  color: var(--ink-2);
+  border-radius: 12px;
+  min-height: 46px;
+  padding: 12px 14px;
+  color: var(--ink);
   cursor: pointer;
   white-space: nowrap;
-  font-size: .92rem;
-  font-weight: 520;
+  font-size: 1rem;
+  font-weight: 500;
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 12px;
   text-align: left;
   transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
-.nav button svg { width: 18px; height: 18px; flex: none; opacity: .8; }
+.nav button svg { width: 20px; height: 20px; flex: none; opacity: .85; }
 .nav button:hover { background: var(--surface-2); color: var(--ink); }
 .nav button[aria-selected="true"] {
   background: var(--brand-tint);
@@ -177,11 +182,9 @@ a { color: var(--brand); text-underline-offset: 3px; }
   line-height: 1.6;
 }
 
-/* Profile sits at the foot of the sidebar (THL-104). */
+/* Help and support and Profile sit at the foot of the sidebar (NAV-01). */
 .nav { flex: 1; }
-.nav .nav-foot { margin-top: auto; }
-.sidebar-foot { padding: 0 2px; }
-.sidebar-foot .btn { width: 100%; justify-content: flex-start; }
+.nav .nav-spacer { flex: 1; }
 
 .content { min-width: 0; }
 
@@ -347,7 +350,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 4px 32px 80px; }
     line-height: 1.5;
   }
 
-  .sidebar-foot { display: none; }
+  .nav .nav-spacer { display: none; }
   .topbar-actions { display: flex; }
   /* Let the title shrink so the two buttons sit beside it, top right, rather
      than wrapping onto a row of their own. */
@@ -741,13 +744,8 @@ select:focus-visible, input:focus-visible { outline: none; border-color: var(--i
 th { text-transform: none; letter-spacing: 0; font-size: .82rem; font-weight: 560; }
 td { border-top-color: var(--border); }
 
-.nav button[aria-selected="true"] { background: var(--surface-2); color: var(--ink); }
-.nav button[aria-selected="true"] svg { color: var(--ink); }
-.sidebar { border-right: 0; }
-@media (max-width: 860px) {
-  .sidebar { border-top: 0; box-shadow: 0 -1px 0 var(--border); }
-  .nav button[aria-selected="true"] { color: var(--ink); }
-}
+/* The selected tab's brand tint and the sidebar's hairline are set above,
+   as NAV-01 draws them; a later block used to grey them out (2026-10-21). */
 
 /* ── This month ──────────────────────────────────────────────────────── */
 

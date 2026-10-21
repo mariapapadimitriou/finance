@@ -501,13 +501,9 @@ def keep_as_manual(account_id: str):
 def profile_summary():
     st = store()
     rows = _all_rows(st)
-    from .projections_api import _report
     return jsonify({"accounts": len(rows),
                     "needs_you": sum(1 for a in rows if a["status"] in NEEDS_YOU),
-                    "rules": len(_rules(st)),
-                    # "Opened an investing account?" (GR-37), which says it
-                    # can be undone here.
-                    "investing": _report(st)})
+                    "rules": len(_rules(st))})
 
 
 # ── S-03: Categories and rules ───────────────────────────────────────────

@@ -170,7 +170,7 @@ class TestPlaidErrorsAreKept:
         assert "products" not in sent
 
 
-def test_the_home_payload_carries_path_review_and_connections(tmp_path, monkeypatch):
+def test_the_home_payload_carries_review_and_connections(tmp_path, monkeypatch):
     from app import create_app
     from finance import api
     monkeypatch.setenv(secrets_box.KEY_ENV, KEY)
@@ -183,8 +183,5 @@ def test_the_home_payload_carries_path_review_and_connections(tmp_path, monkeypa
     monkeypatch.setattr(api, "_today_iso", lambda: TODAY.isoformat())
     with app.test_client() as c:
         body = c.get("/api/home").get_json()
-        assert body["path"]["phase"] == "build"
         assert isinstance(body["review_count"], int)
         assert body["connections"][0]["state"] == "needs_sign_in"
-        assert c.get("/api/path").get_json()["phase"] == "build"
-    assert st.setting("protect_done_on") == TODAY.isoformat()

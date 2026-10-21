@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { HomeBody } from './HomePanel.jsx';
 import { ForYou, WhyPanel, dismissedWords } from './ForYou.jsx';
 
 // What finance/recommendations.py sends (its tests use the same numbers).
@@ -49,26 +48,6 @@ describe('RC-01 For you', () => {
     expect(html(<ForYou cards={[]} onAction={noop} onWhy={noop} onNotForMe={noop} />)).toBe('');
   });
 
-  it('sits under the snapshot and keeps Home to one primary (L1, R1)', () => {
-    const s = { month: '2026-10', state: 'ok', amount: 642.18, shown: 642.18, per_day: 27.92,
-      days_left: 23, estimate: null, rows: [{ key: 'income', amount: 4300, lines: [] }] };
-    const ds = { kind: 'normal', history_days: 120, asks_questions: false, answers: {} };
-    const snap = { month: '2026-10', day: 9, days_in_month: 31, months_of_history: 3, rows: [] };
-    const out = html(<HomeBody s={s} ds={ds} snap={snap} cards={[subs, trend]} reviewCount={2}
-                               onSave={() => Promise.resolve()} onLink={noop} />);
-    expect(out.indexOf('compared with a usual month')).toBeLessThan(out.indexOf('For you'));
-    expect(out.indexOf('For you')).toBeLessThan(out.indexOf('need a look'));
-    expect((out.match(/pk-btn primary/g) || []).length).toBe(0);
-  });
-
-  it('not while Pearl is learning', () => {
-    const s = { month: '2026-10', state: 'ok', amount: 2605, shown: 2600, estimate: 'rough',
-      income_source: 'told', per_day: 113, days_left: 23, rows: [{ key: 'income', amount: 4300, lines: [] }] };
-    const ds = { kind: 'learning', history_days: 12, asks_questions: false, answers: {},
-      learning_until: '2026-10-25', comparisons_from: '2026-11-01', spent_so_far: 300, bills_found: 2 };
-    expect(html(<HomeBody s={s} ds={ds} cards={[subs]} onSave={() => Promise.resolve()} onLink={noop} />))
-      .not.toContain('For you');
-  });
 });
 
 describe('RC-03 why you’re seeing this', () => {

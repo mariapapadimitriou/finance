@@ -87,8 +87,6 @@ class TestUsualWithUnusualMonths:
             assert home["usual_month"]["months"] == ["2026-06", "2026-07", "2026-09"]
             budgets = client.get("/api/category-budgets").get_json()
             assert next(r for r in budgets["rows"] if r["category"] == "Groceries")["usual"] == 1000
-            # The Anchor's pace reads the same setting.
-            assert client.get("/api/goals").get_json()["anchor"]["unusual"] == ["2026-08"]
             client.put("/api/insights/unusual", json={"month": "2026-08", "unusual": False})
             assert month(client)["usual"]["months"] == ["2026-07", "2026-08", "2026-09"]
             assert client.get("/api/home").get_json()["usual_month"]["months"] == [

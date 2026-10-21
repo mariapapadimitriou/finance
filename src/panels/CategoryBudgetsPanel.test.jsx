@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { HomeBody } from './HomePanel.jsx';
 import {
   BudgetsCard, BudgetsPage, ChangeBudget, budgetBar, budgetFor, changeWords,
 } from './CategoryBudgetsPanel.jsx';
@@ -107,16 +106,4 @@ describe('B-03 on Home', () => {
     expect(html(<BudgetsCard budgets={{ ready: true, needs_look: 0 }} onSee={() => {}} />)).toBe('');
   });
 
-  it('sits after needs a look and before debts (L1)', () => {
-    const s = { month: '2026-10', state: 'ok', amount: 642.18, shown: 642.18, per_day: 27.92,
-      days_left: 23, estimate: null, rows: [{ key: 'income', amount: 4300, lines: [] }] };
-    const ds = { kind: 'normal', history_days: 120, asks_questions: false, answers: {} };
-    const debts = { count: 1, total: 1860, debts: [{ account_id: 'v', name: 'TD Visa', balance: 1860 }] };
-    const out = html(<HomeBody s={s} ds={ds} reviewCount={2} budgets={{ ready: true, needs_look: 2 }}
-                               debts={debts} onSave={() => Promise.resolve()} onLink={() => {}} />);
-    const look = out.indexOf('need a look');
-    const budgets = out.indexOf('budgets need a look');
-    expect(look).toBeLessThan(budgets);
-    expect(budgets).toBeLessThan(out.indexOf('See debts'));
-  });
 });

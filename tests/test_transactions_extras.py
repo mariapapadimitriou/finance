@@ -14,7 +14,6 @@ import pytest
 from finance import category_budgets as cb
 from finance import duplicates as dup
 from finance import growth_insights as gi
-from finance import look_ahead as la
 from finance import recommendations as rec
 from finance import safe_to_spend as sts
 from finance import usual_month as um
@@ -112,19 +111,6 @@ class TestOneOffMaths:
         cats = {r["category"]: r for r in gi.categories(led, u, "2026-10", 9, True)
                 if r["category"] == "Shopping"}
         assert cats == {} or cats["Shopping"]["by_today"] == 0
-
-    def test_left_out_of_projections(self):
-        months = ["2026-07", "2026-08", "2026-09"]
-        rows = [Transaction(date=d, description="PAI", merchant="Pai", amount=a,
-                            category="Dining", account_id="visa")
-                for d, a in (("2026-07-20", 300), ("2026-08-28", 400), ("2026-09-30", 500))]
-        big = Transaction(date="2026-09-25", description="TRAVEL", merchant="Air Canada",
-                          amount=1200, category="Shopping", account_id="visa")
-        assert la.rest_of_month(rows + [big], TODAY, months, set())["high"] == 170000
-        flagged(big)
-        assert la.rest_of_month(rows + [big], TODAY, months, set())["high"] == 50000
-        per_day = la.everyday_per_day(rows + [big], TODAY, months, set())
-        assert per_day == la.everyday_per_day(rows, TODAY, months, set())
 
     def test_left_out_of_the_trend_suggestion(self):
         rows = trend_rows() + budget_october(dining=100.00)

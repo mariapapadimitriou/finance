@@ -19,9 +19,7 @@ export const PANELS = {
   // Cash flow › Budgets (THL-168 B-01): every category, from her usual month.
   budgets:       { label: 'Budgets',
                    hint: 'A budget for every category, starting at your usual month' },
-  // Wins › Path (THL-129 GR-01): the milestone path and the next step.
-  path:          { label: 'Path',
-                   hint: 'Where you are on your path, and the one next step' },
+
   // Cash flow › Insights (THL-186, THL-196 GR-28, at /cashflow/insights): the
   // month against her usual, in pictures, with a detail view behind each.
   insights:      { label: 'Insights',
@@ -29,16 +27,8 @@ export const PANELS = {
   // Cash flow › Debts (THL-49 D-02): every balance owed, from before Pearl too.
   debts:         { label: 'Debts',
                    hint: 'Everything you owe, and the minimums counted as bills' },
-  // Save › Projections (THL-197 GR-33, at /save/projections): this month,
-  // the next 30 days and savings in a year, each as a range, and the growth
-  // calculator (THL-135, at /save/calculator). The investing screens (GR-16,
-  // GR-37, GR-10) live under it too.
-  // Save › Learn (THL-134 GR-11, at /save/learn): five short modules before
-  // investing, and two explainers. Open to everyone from day one.
-  learn:         { label: 'Learn',
-                   hint: 'Short reads on the basics of investing, at your pace' },
-  projections:   { label: 'Projections',
-                   hint: 'Where this month, the next 30 days and your savings are heading' },
+
+
   // Cash flow › Calendar (THL-245 CAL-01, THL-255, at /cash-flow/calendar):
   // the month day by day, what's due, and how past days went.
   calendar:      { label: 'Calendar',
@@ -80,8 +70,7 @@ export const PANELS = {
   // Profile › How we protect you (THL-115 T-04, with T-02 and T-03).
   protect:       { label: 'How we protect you',
                    hint: 'What Pearl can and can’t do' },
-  goals:         { label: 'Save',
-                   hint: 'Your Anchor, your treasure chests and your saving goal' },
+
 };
 
 // The sidebar as the Pearl Handoff File draws it (2026-10-15): Home, Cash
@@ -89,11 +78,11 @@ export const PANELS = {
 // shows no sub-navigation; Cash flow's pages draw their own tabs
 // (Transactions · Insights), as do Save's.
 export const GROUPS = [
-  // Home (THL-9, THL-44, THL-125): the page people open the app for, so it
-  // is first and where the app lands. Budgets and Debts live with it
-  // (THL-236).
+  // Home (2026-10-21, stripped down): where the app lands — the greeting,
+  // what needs a look, and the way into Transactions. The old Home's
+  // safe-to-spend, path, wins and cards went with Save and Wins.
   { key: 'home', label: 'Home', panels: ['home'],
-    hint: 'What’s safe to spend this month',
+    hint: 'What needs a look, and the way to your transactions',
     icon: 'M3 10.5 12 3l9 7.5M5 9v11h5v-6h4v6h5V9' },
   // Cash flow: the list (Pearl TX-01), what needs a look one tap away,
   // Insights as its second tab (GR-28), and Budgets and Debts (THL-209,
@@ -102,26 +91,18 @@ export const GROUPS = [
     panels: ['transactions', 'calendar', 'review', 'insights', 'budgets', 'debts'],
     hint: 'Every transaction, the calendar, what needs a look, your month in pictures, budgets and debts',
     icon: 'M3 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0M3 16c2-2 4-2 6 0s4 2 6 0 4-2 6 0' },
-  // Save (THL-240, THL-248): the Anchor and treasure chests, then what the
-  // savings could grow into. Projections, the calculator and Learn are its
-  // own pages, reached from it, not pills (`tabs: false`).
-  { key: 'save', label: 'Save', panels: ['goals', 'projections', 'learn'], tabs: false,
-    hint: 'Your Anchor, your treasure chests, and what they could grow into',
-    // A lifebuoy, as NAV-01/NAV-02 draw it: a ring, the hole, four spokes.
-    icon: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5.6 5.6l3.6 3.6M14.8 14.8l3.6 3.6M14.8 9.2l3.6-3.6M5.6 18.4l3.6-3.6' },
-  // Wins (THL-239): the milestone path and what's next.
-  { key: 'wins', label: 'Wins', panels: ['path'],
-    hint: 'Your path, and the one next step',
-    // A starfish (the design system's Icon/starfish, THL-209): five pointed
-    // arms with gently curved sides, and a dot at the root of each arm.
-    icon: 'M12 3.25C13.25 4.55 13.21 7.44 14.96 8.71C16.71 9.98 19.45 9.05 21.07 9.84C20.23 11.43 17.46 12.29 16.8 14.35C16.12 16.4 17.86 18.73 17.61 20.51C15.83 20.2 14.16 17.83 12 17.83C9.84 17.83 8.17 20.2 6.39 20.51C6.14 18.73 7.88 16.4 7.2 14.35C6.54 12.29 3.77 11.43 2.93 9.84C4.55 9.05 7.29 9.98 9.04 8.71C10.79 7.44 10.75 4.55 12 3.25ZM12 8.38h.01M16.19 11.43h.01M14.59 16.35h.01M9.41 16.35h.01M7.81 11.43h.01' },
   // At the foot (THL-104, Pearl S-01): the Profile hub, and the pages it
   // opens — Accounts, Categories and rules, Sign-in and security, Income and
   // bills, Notifications and the three Privacy pages — each with
   // a breadcrumb back to it, so the group shows no sub-tab strip (`crumbs`).
+  // Help and support (the sidebar's foot in the Pearl Handoff File): How we
+  // protect you, with its two detail pages.
+  { key: 'help', label: 'Help and support', panels: ['protect'], foot: true, crumbs: true,
+    hint: 'What Pearl can and can’t do',
+    icon: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01' },
   { key: 'profile', label: 'Profile',
     panels: ['profile', 'accounts', 'rules', 'security', 'income', 'notifications', 'consent',
-             'data', 'protect'], foot: true, crumbs: true,
+             'data'], foot: true, crumbs: true,
     hint: 'Your accounts, rules, sign-in and privacy',
     icon: 'M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z' },
 ];
@@ -139,12 +120,13 @@ export const GROUPS = [
 // The old Sign-in page is Sign-in and security now. The prototype Insights
 // page (`overview`) was replaced by Growth › Insights (THL-196 GR-28).
 export const ALIASES = {
-  plan: 'income', piggy: 'goals', mortgage: 'income', today: 'home', settings: 'profile',
+  plan: 'income', piggy: 'home', mortgage: 'income', today: 'home', settings: 'profile',
   banks: 'accounts', import: 'accounts', categories: 'rules',
   account: 'security', signin: 'security', overview: 'insights',
-  // The old Growth group (2026-10-15): its Path is on Wins, the rest on
-  // Save and Cash flow; a link to the group lands on the path.
-  growth: 'path',
+  // Save, Wins and the old Growth group are gone (2026-10-21); a link to
+  // any of their pages lands on Home.
+  growth: 'home', path: 'home', goals: 'home', projections: 'home', learn: 'home',
+  save: 'home', wins: 'home',
 };
 
 // Where on that page the aliased thing actually is, when it isn't the top.

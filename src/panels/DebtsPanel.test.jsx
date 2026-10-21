@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { HomeBody } from './HomePanel.jsx';
 import { DebtsCard, DebtsPage, DetailsPanel, debtLines, parseNumber } from './DebtsPanel.jsx';
 
 // D-02's person (finance/debts.py's tests use the same numbers).
@@ -82,16 +81,6 @@ describe('D-01 on Home', () => {
       .toContain('$1,860 owed.');
   });
 
-  it('only when she has a debt, and last on Home', () => {
-    const s = { month: '2026-10', state: 'ok', amount: 642.18, shown: 642.18, per_day: 27.92,
-      days_left: 23, estimate: null, rows: [{ key: 'income', amount: 4300, lines: [] }] };
-    const ds = { kind: 'normal', history_days: 120, asks_questions: false, answers: {} };
-    const out = html(<HomeBody s={s} ds={ds} debts={data} reviewCount={2}
-                               onSave={() => Promise.resolve()} onLink={() => {}} />);
-    expect(out.indexOf('Debts')).toBeGreaterThan(out.indexOf('need a look'));
-    expect(html(<HomeBody s={s} ds={ds} debts={{ ...data, count: 0, debts: [] }}
-                          onSave={() => Promise.resolve()} onLink={() => {}} />)).not.toContain('See debts');
-  });
 });
 
 describe('D-03 add the details', () => {

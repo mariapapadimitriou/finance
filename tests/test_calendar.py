@@ -139,8 +139,12 @@ class TestDay:
 class TestStrip:
     def test_home_carries_the_strip(self, client):
         client.st.add_transactions(history() + october())
-        home = client.get("/api/home").get_json()
-        s = home["calendar"]
+        from finance import api as core, calendar_view
+        from datetime import date
+        st = client.st
+        today = date.fromisoformat(core._today_iso())
+        txns = st.all_transactions()
+        s = calendar_view.strip(st, txns, today, core._home_sts(st, txns, today))
         assert s["month"] == MONTH and s["label"] == "October" and len(s["cells"]) == 31
         assert [c["state"] for c in s["cells"][:3]] == ["on", "on", "ahead"]
         assert s["cells"][8]["state"] == "today" and s["cells"][11]["due"]
@@ -149,7 +153,12 @@ class TestStrip:
 
     def test_a_quiet_strip(self, client):
         client.st.add_transactions(october())
-        s = client.get("/api/home").get_json()["calendar"]
+        from finance import api as core, calendar_view
+        from datetime import date
+        st = client.st
+        today = date.fromisoformat(core._today_iso())
+        txns = st.all_transactions()
+        s = calendar_view.strip(st, txns, today, core._home_sts(st, txns, today))
         assert all(c["state"] in ("none", "today", "future") for c in s["cells"])
         assert "usual pace" not in s["line"]
 

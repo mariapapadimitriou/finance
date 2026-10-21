@@ -3,15 +3,9 @@ import HomePanel from './panels/HomePanel.jsx';
 import InsightsPanel from './panels/InsightsPanel.jsx';
 import CalendarPanel from './panels/CalendarPanel.jsx';
 import QuickSort from './panels/QuickSort.jsx';
-import WinsPanel from './panels/WinsPanel.jsx';
-import LearnPanel from './panels/LearnPanel.jsx';
-import { MomentScreen } from './panels/Moments.jsx';
-import PearlEarned from './panels/PearlEarned.jsx';
 import DebtsPanel from './panels/DebtsPanel.jsx';
-import ProjectionsPanel from './panels/ProjectionsPanel.jsx';
 import TransactionsList from './panels/TransactionsList.jsx';
 import NeedsALook from './panels/NeedsALook.jsx';
-import Goals from './panels/Goals.jsx';
 import CategoryBudgetsPanel from './panels/CategoryBudgetsPanel.jsx';
 import IncomeBillsPanel from './panels/IncomeBillsPanel.jsx';
 import AccountsPanel from './panels/AccountsPanel.jsx';
@@ -29,14 +23,11 @@ import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
-  clearUrl, fromPartner, isCalendarUrl, isInsightsUrl, isLearnUrl, isPathUrl, isProjectionsUrl, isReviewUrl,
-  isSaveUrl, readTxUrl, redirectOldUrl, setGoalsIntent, writeCalendarUrl, writeInsightsUrl, writeLearnUrl,
-  setPearlGlow, writePathUrl, writeProjectionsUrl, writeSaveUrl,
-  writeReviewUrl,
+  clearUrl, isCalendarUrl, isInsightsUrl, isReviewUrl, readTxUrl, redirectOldUrl, writeCalendarUrl,
+  writeInsightsUrl, writeReviewUrl,
 } from './router.js';
 import {
-  getAccounts, getAuthStatus, getCategories, getMoments, getPearlMoment, getQuickSort, getReview, getSummary, logout,
-  seeMoment,
+  getAccounts, getAuthStatus, getCategories, getQuickSort, getReview, getSummary, logout,
   setLedgerCurrency, setUnauthorizedHandler, syncPlaid,
 } from './api.js';
 
@@ -44,17 +35,12 @@ import {
 
 // Panels worth opening with nothing in the ledger: Accounts, where a bank is
 // linked and which decides what keeps arriving — and which is also where the
-// ledger gets emptied, so it is reachable immediately afterwards.
-// The Profile hub and Sign-in and security too: a brand-new account has an
-// empty ledger, and must still be able to change its email or sign out — and
-// its notifications, consents and data (download, or delete the account).
-// Goals too: someone new sees what comes next there (G-02). And Home, whose
-// no-data state (E-01, THL-72) is where linking starts. Projections says what
-// it can in words with nothing in, and holds Unveil's screens, which the Path
-// links to. Learn is open to everyone from day one (THL-134).
-const WORKS_WHEN_EMPTY = ['home', 'path', 'projections', 'learn', 'debts', 'budgets', 'accounts',
-                          'income', 'profile', 'security', 'rules', 'goals', 'notifications',
-                          'consent', 'data', 'protect'];
+// ledger gets emptied, so it is reachable immediately afterwards. The Profile
+// hub and its pages too: a brand-new account has an empty ledger, and must
+// still be able to change its email or sign out. And Home, whose no-data
+// state is where linking starts.
+const WORKS_WHEN_EMPTY = ['home', 'debts', 'budgets', 'accounts', 'income', 'profile', 'security',
+                          'rules', 'notifications', 'consent', 'data', 'protect'];
 
 // Pages that draw their section pills themselves, under their own title
 // (Growth › Path, THL-129 GR-01; Insights, THL-196 GR-28; Projections, THL-197
@@ -72,18 +58,11 @@ function whenNoDialog(fn) {
   }, 250);
 }
 
-const OWN_SECTIONS = ['path', 'insights', 'calendar', 'projections', 'learn', 'budgets', 'debts',
-                      'transactions', 'review', 'goals'];
+const OWN_SECTIONS = ['insights', 'calendar', 'budgets', 'debts', 'transactions', 'review'];
 
 // An old Growth address (before THL-248) becomes its new one before anything
 // reads it, so a saved link lands where the page went.
 if (typeof window !== 'undefined') redirectOldUrl();
-
-// Back from the partner (THL-136 GR-20) at any address: Ready to invest,
-// where "Welcome back" asks whether she opened an account.
-if (typeof window !== 'undefined' && fromPartner() && !isProjectionsUrl()) {
-  window.history.replaceState(null, '', '/save/ready?from=partner');
-}
 
 /**
  * A navigation label with an optional phone-width form.
@@ -118,13 +97,10 @@ export default function App() {
   );
   // /transactions… opens the list (a link from anywhere lands there); every
   // other address opens Home, where the app lands (THL-44, THL-125).
-  const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() ? 'transactions'
-    : isPathUrl() ? 'wins' : isInsightsUrl() || isCalendarUrl() ? 'cashflow'
-      : isProjectionsUrl() || isLearnUrl() || isSaveUrl() ? 'save' : 'home'));
+  const [tab, setTab] = useState(() => (readTxUrl() || isReviewUrl() || isInsightsUrl() || isCalendarUrl()
+    ? 'cashflow' : 'home'));
   const [panel, setPanel] = useState(() => (isReviewUrl() ? 'review'
-    : readTxUrl() ? 'transactions' : isPathUrl() ? 'path' : isInsightsUrl() ? 'insights'
-      : isCalendarUrl() ? 'calendar'
-        : isProjectionsUrl() ? 'projections' : isLearnUrl() ? 'learn' : isSaveUrl() ? 'goals' : 'home'));
+    : readTxUrl() ? 'transactions' : isInsightsUrl() ? 'insights' : isCalendarUrl() ? 'calendar' : 'home'));
 
   /**
    * Go to a destination named either way.
@@ -137,17 +113,12 @@ export default function App() {
     const [group, target] = resolve(key);
     setTab(group);
     setPanel(target);
-    // The list writes its own address when it mounts; Needs a look, Path,
-    // Insights, Projections and Learn have one too. Everything else lives at "/". A
-    // link straight to one of Insights' or Projections' views has already
-    // written its address.
+    // The list writes its own address when it mounts; Needs a look, Insights
+    // and the Calendar have one too. Everything else lives at "/". A link
+    // straight to one of Insights' views has already written its address.
     if (target === 'review') writeReviewUrl();
-    else if (target === 'path') writePathUrl();
     else if (target === 'insights') { if (!isInsightsUrl()) writeInsightsUrl(); }
     else if (target === 'calendar') { if (!isCalendarUrl()) writeCalendarUrl(); }
-    else if (target === 'projections') { if (!isProjectionsUrl()) writeProjectionsUrl(); }
-    else if (target === 'learn') { if (!isLearnUrl()) writeLearnUrl(); }
-    else if (target === 'goals') { if (!isSaveUrl()) writeSaveUrl(); }
     else if (target !== 'transactions') clearUrl();
     const anchor = ANCHORS[key];
     if (anchor) {
@@ -172,14 +143,11 @@ export default function App() {
   // THL-116 D-05: set once her account is deleted, shown until she closes it.
   const [deleted, setDeleted] = useState(null);
   // Bumped on every reload so panels that fetch their own data — Home,
-  // Projections, Income and bills — refetch after an import instead of showing what
+  // Income and bills — refetch after an import instead of showing what
   // they loaded when they mounted.
   const [version, setVersion] = useState(0);
-  // A phase done that she hasn't seen the moment for (THL-130 GR-08 to
-  // GR-10), asked once per app open.
-  const [moment, setMoment] = useState(null);
   // THL-254: quick sort of new transactions Pearl isn't sure of, offered
-  // once a day on open, after any moment has played.
+  // once a day on open.
   const [quickSort, setQuickSort] = useState(null);
   const askQuickSort = useCallback(() => {
     getQuickSort().then((q) => {
@@ -192,16 +160,6 @@ export default function App() {
       if (q?.items?.length) setQuickSort({ ...q, show: true });
     }).catch(() => {});
   }, []);
-  // THL-256: "You earned a pearl", over whatever page she lands on, once
-  // per milestone. Asked after the moments, before the quick sort.
-  const [pearl, setPearl] = useState(null);
-  const askPearl = useCallback(() => {
-    getPearlMoment().then((m) => {
-      if (m?.show) whenNoDialog(() => setPearl(m));
-      else askQuickSort();
-    }).catch(() => askQuickSort());
-  }, [askQuickSort]);
-  const askedMoment = useRef(false);
   // A-14: signed out for being idle in this page's life, so signing back in
   // only needs the address put back; after a reload it needs a fresh load.
   const timedOut = useRef(false);
@@ -230,16 +188,11 @@ export default function App() {
   panelRef.current = panel;
   useEffect(() => {
     const onPop = () => {
-      if (isReviewUrl()) { setTab('transactions'); setPanel('review'); }
-      else if (isPathUrl()) { setTab('wins'); setPanel('path'); }
+      if (isReviewUrl()) { setTab('cashflow'); setPanel('review'); }
       else if (isInsightsUrl()) { setTab('cashflow'); setPanel('insights'); }
       else if (isCalendarUrl()) { setTab('cashflow'); setPanel('calendar'); }
-      else if (isProjectionsUrl()) { setTab('save'); setPanel('projections'); }
-      else if (isLearnUrl()) { setTab('save'); setPanel('learn'); }
-      else if (isSaveUrl()) { setTab('save'); setPanel('goals'); }
-      else if (readTxUrl()) { setTab('transactions'); setPanel('transactions'); }
-      else if (['transactions', 'review', 'path', 'insights', 'calendar', 'projections', 'learn', 'goals']
-        .includes(panelRef.current)) {
+      else if (readTxUrl()) { setTab('cashflow'); setPanel('transactions'); }
+      else if (['transactions', 'review', 'insights', 'calendar'].includes(panelRef.current)) {
         setTab('home'); setPanel('home');
       }
     };
@@ -314,24 +267,13 @@ export default function App() {
       .catch(() => {});
   }, [signedIn, data, load]);
 
-  // Once the app has opened: a phase's moment plays once, full screen, on the
-  // next open after it passes. Otherwise, if she went to the partner in the
-  // last 14 days and hasn't said, Ready to invest asks (THL-136 GR-20).
+  // Once the app has opened: the quick sort, if new transactions need it.
+  const askedQuickSort = useRef(false);
   useEffect(() => {
-    if (!signedIn || !data || askedMoment.current) return;
-    askedMoment.current = true;
-    getMoments().then((m) => {
-      // The full-page phase moments (GR-08 to GR-10) are superseded by the
-      // pearl sheet (THL-112, 2026-10-16): retire one quietly if it's due.
-      if (m.phase) seeMoment(m.phase).catch(() => {});
-      if (m.partner_welcome && panelRef.current === 'home') {
-        writeProjectionsUrl('ready');
-        setTab('save'); setPanel('projections');
-      } else {
-        askPearl();
-      }
-    }).catch(() => askPearl());
-  }, [signedIn, data]);
+    if (!signedIn || !data || askedQuickSort.current) return;
+    askedQuickSort.current = true;
+    askQuickSort();
+  }, [signedIn, data, askQuickSort]);
 
   if (signedIn === null) {
     return <Shell theme={theme} setTheme={setTheme}><Loading what="Pearl" /></Shell>;
@@ -394,16 +336,6 @@ export default function App() {
 
   const { summary, accounts, categories } = data;
 
-  if (moment) {
-    return (
-      <div className="gr-moment-page">
-        <MomentScreen moment={moment} onClose={() => { setMoment(null); askQuickSort(); }} go={go}
-                      toReady={() => { writeProjectionsUrl('ready'); go('projections'); }}
-                      toAnchor={(view) => { setGoalsIntent({ view }); go('goals'); }} />
-      </div>
-    );
-  }
-
   // An empty ledger hides the panels that have nothing to show — but not the
   // ones that exist to fix that, or this is a dead end: the Connect button
   // would set the tab and the same empty state would render over it, which
@@ -429,34 +361,24 @@ export default function App() {
     <DeviceApprovals />
     <Shell
       theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
-      counts={{ transactions: data.review }}
+      counts={{ cashflow: data.review }}
       // The Pearl pages draw their own header (overline + title). Insights
       // has its own month switcher too (GR-28), so the shell picks no month.
-      ownTitle={['home', 'path', 'insights', 'calendar', 'projections', 'learn', 'debts', 'budgets',
-                 'transactions', 'review', 'goals', 'profile', 'accounts', 'rules', 'security',
-                 'income', 'notifications', 'consent', 'data', 'protect'].includes(panel)}
+      ownTitle={['home', 'insights', 'calendar', 'debts', 'budgets', 'transactions', 'review', 'profile',
+                 'accounts', 'rules', 'security', 'income', 'notifications', 'consent', 'data',
+                 'protect'].includes(panel)}
       ownSections={OWN_SECTIONS.includes(panel)}
       onSignOut={signOut}
     >
       {panel === 'income' && <IncomeBillsPanel onTab={go} onChanged={load} version={version} />}
-      {pearl && (
-        <PearlEarned moment={pearl}
-                     onClose={() => { setPearl(null); askQuickSort(); }}
-                     onSeePearls={(keys) => { setPearl(null); setPearlGlow(keys); go('path'); }} />
-      )}
       {quickSort && (
         <QuickSort data={quickSort} categories={categories} onClose={() => setQuickSort(null)}
                    onChanged={load} />
       )}
       {panel === 'home' && <HomePanel onTab={go} onChanged={load} version={version} />}
-      {panel === 'path' && <WinsPanel onTab={go} version={version} />}
-      {panel === 'learn' && <LearnPanel onTab={go} version={version} />}
       {panel === 'debts' && <DebtsPanel onTab={go} onChanged={load} version={version} />}
       {panel === 'insights' && <InsightsPanel onTab={go} version={version} />}
       {panel === 'calendar' && <CalendarPanel onTab={go} version={version} categories={categories} />}
-      {panel === 'projections' && (
-        <ProjectionsPanel onTab={go} onChanged={load} version={version} />
-      )}
       {panel === 'review' && (
         <NeedsALook categories={categories} onChanged={load} onTab={go} version={version}
                     onQuickSort={openQuickSort} />
@@ -466,13 +388,12 @@ export default function App() {
                           reviewCount={data.review} onTab={go} onChanged={load}
                           version={version} />
       )}
-      {panel === 'goals' && (
-        <Goals onTab={go} onChanged={load} version={version} />
-      )}
       {panel === 'budgets' && (
         <CategoryBudgetsPanel onTab={go} onChanged={load} version={version} />
       )}
-      {panel === 'profile' && <ProfilePanel onTab={go} version={version} />}
+      {panel === 'profile' && (
+        <ProfilePanel onTab={go} version={version} theme={theme} setTheme={setTheme} onSignOut={signOut} />
+      )}
       {panel === 'accounts' && <AccountsPanel onChanged={load} onTab={go} version={version} />}
       {panel === 'rules' && (
         <RulesPanel categories={categories} onTab={go} onChanged={load} version={version} />
@@ -526,27 +447,37 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {}, onSignOut,
     selected?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
   }, [panel]);
 
-  // Theme and sign-out, drawn twice: in the sidebar on a desktop and in the
-  // top bar on a phone. On a phone they used to share the bottom bar with the
-  // six destinations, which left no room for two of them.
-  const accountActions = (
-    <>
-      {onSignOut && (
-        <button className="btn quiet" onClick={onSignOut}
-                aria-label="Sign out">
-          <span aria-hidden="true">⎋</span>
-          <span className="label">Sign out</span>
-        </button>
+  // Theme and sign-out live on the Profile hub now (the Pearl Handoff File's
+  // sidebar has neither); the phone's top bar keeps the theme switch.
+  const themeButton = (
+    <button
+      className="btn quiet"
+      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+      aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+    >
+      <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
+      <span className="label">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+    </button>
+  );
+  const main = GROUPS.filter((g) => !g.foot);
+  const foot = GROUPS.filter((g) => g.foot);
+  const navButton = (g) => (
+    <button
+      key={g.key}
+      className={g.foot ? 'nav-foot' : undefined}
+      role="tab"
+      aria-selected={tab === g.key}
+      // The group's first page.
+      onClick={() => onTab(g.panels[0])}
+    >
+      <Icon d={g.icon} />
+      <Label full={g.label} short={g.short} />
+      {counts[g.key] > 0 && (
+        <span className="count" aria-label={`${counts[g.key]} to sort`}>
+          {counts[g.key]}
+        </span>
       )}
-      <button
-        className="btn quiet"
-        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-      >
-        <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
-        <span className="label">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
-      </button>
-    </>
+    </button>
   );
 
   return (
@@ -558,30 +489,12 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {}, onSignOut,
         </div>
 
         {onTab && (
-          <nav className="nav" role="tablist" aria-orientation="vertical"
-               ref={navRef}>
-            {GROUPS.map((g) => (
-              <button
-                key={g.key}
-                className={g.foot ? 'nav-foot' : undefined}
-                role="tab"
-                aria-selected={tab === g.key}
-                // The group's first page: Transactions opens on To review.
-                onClick={() => onTab(g.panels[0])}
-              >
-                <Icon d={g.icon} />
-                <Label full={g.label} short={g.short} />
-                {counts[g.key] > 0 && (
-                  <span className="count" aria-label={`${counts[g.key]} to sort`}>
-                    {counts[g.key]}
-                  </span>
-                )}
-              </button>
-            ))}
+          <nav className="nav" role="tablist" aria-orientation="vertical" ref={navRef}>
+            {main.map(navButton)}
+            <div className="nav-spacer" aria-hidden="true" />
+            {foot.map(navButton)}
           </nav>
         )}
-
-        <div className="sidebar-foot">{accountActions}</div>
       </aside>
 
       <div className="content">
@@ -591,7 +504,7 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {}, onSignOut,
               {!ownTitle && <h1>{current?.label ?? 'Pearl'}</h1>}
             </div>
 
-            <div className="topbar-actions">{accountActions}</div>
+            <div className="topbar-actions">{themeButton}</div>
           </div>
 
           {group && group.panels.length > 1 && !group.crumbs && !ownSections && (
