@@ -252,7 +252,13 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
       <div className="txd-hero">
         <Avatar name={tx.merchant} logo={tx.logo} large />
         <div className="txd-name">
-          <h2 className="pk-h2">{tx.merchant}</h2>
+          <h2 className="pk-h2">
+            {tx.merchant}
+            <button type="button" className="txd-rename" aria-label="Rename merchant" title="Rename merchant"
+                    onClick={() => setStep('name')}>
+              <PIcon name="edit" size={16} />
+            </button>
+          </h2>
           <span className="pk-label pk-muted">{longDate(tx.date)}</span>
         </div>
         <span className={`txd-amount ${muted ? 'muted' : amountTone(tx.inflow)}`}>
@@ -373,9 +379,6 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             </button>
             <button type="button" className="txd-link" onClick={() => setStep('note')}>
               <PIcon name="info" size={18} /> {tx.my_note ? 'Edit note' : 'Add a note'}
-            </button>
-            <button type="button" className="txd-link" onClick={() => setStep('name')}>
-              <PIcon name="edit" size={18} /> Rename merchant
             </button>
           </div>
 
