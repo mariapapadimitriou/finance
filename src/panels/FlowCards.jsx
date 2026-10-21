@@ -45,7 +45,21 @@ export function cardWords(totals) {
 }
 
 export default function FlowCards({ totals }) {
-  if (!totals) return null;
+  // Not loaded yet: the same card at the same height, so nothing below it
+  // jumps when the numbers arrive (2026-10-21).
+  if (!totals) {
+    return (
+      <section className="tm-card tm-skeleton" aria-label="This month" aria-busy="true">
+        {['My income', 'What I spent'].map((label) => (
+          <div className="tm-row" key={label} aria-hidden="true">
+            <span className="tm-label">{label}</span>
+            <span className="tm-track"><span className="tm-bar tm-ghost" /></span>
+            <span className="tm-amt tm-ghost-text" />
+          </div>
+        ))}
+      </section>
+    );
+  }
   const spent = Math.max(0, totals.spent ?? 0);
   const income = Math.max(0, totals.income ?? 0);
   const m = barMath(spent, income);

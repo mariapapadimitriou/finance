@@ -116,3 +116,25 @@
 @media (max-width: 720px) {
   .tx-page .tx-head-actions .pk-btn.secondary { height: 36px; min-height: 0; padding: 0 14px; font-size: 14px; border-width: 1px; }
 }
+
+/* While the month loads: ghost bars, pulsing, at the card's final height. */
+.tm-skeleton .tm-ghost { display: block; height: 100%; width: 62%; border-radius: 999px; background: var(--track); }
+.tm-skeleton .tm-row:last-child .tm-ghost { width: 38%; }
+.tm-skeleton .tm-ghost-text { display: inline-block; height: 18px; width: 90px; border-radius: 6px; background: var(--track); justify-self: end; }
+.tm-skeleton .tm-ghost, .tm-skeleton .tm-ghost-text { animation: tm-pulse 1.2s ease-in-out infinite; }
+@keyframes tm-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .tm-skeleton .tm-ghost, .tm-skeleton .tm-ghost-text { animation: none; } }
+
+/* The list's skeleton (2026-10-21): the day header and rows at their real
+   sizes, pulsing until the first page arrives. */
+.tx-skeleton .tx-ghost { display: inline-block; border-radius: 6px; background: var(--track); animation: tm-pulse 1.2s ease-in-out infinite; }
+.tx-skeleton .tx-ghost-day { width: 120px; height: 20px; }
+.tx-skeleton .tx-ghost-row { cursor: default; min-height: 71px; }
+.tx-skeleton .tx-ghost-row:hover { background: transparent; }
+.tx-skeleton .tx-ghost-avatar { width: 40px; height: 40px; border-radius: 50%; flex: none; }
+.tx-skeleton .tx-ghost-text { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.tx-skeleton .tx-ghost-name { width: 38%; max-width: 220px; height: 14px; }
+.tx-skeleton .tx-ghost-meta { width: 24%; max-width: 150px; height: 12px; }
+.tx-skeleton .tx-ghost-chip { width: 76px; height: 22px; border-radius: 999px; }
+.tx-skeleton .tx-ghost-amount { width: 64px; height: 16px; }
+@media (prefers-reduced-motion: reduce) { .tx-skeleton .tx-ghost { animation: none; } }
