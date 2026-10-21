@@ -5,7 +5,7 @@ import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.
 import { RepaymentMatch } from './Splits.jsx';
 import { depositChoices } from './joint.js';
 import {
-  INCOME_KINDS, confirmTx, dismissReview, getTxCases, linkPayback, markTx, setCategory,
+  INCOME_KINDS, confirmTx, dismissReview, getTxCases, linkPayback, markTx, searchCharges, setCategory,
   setIncomeType, setJointFrom, setParty, sortTransfers,
 } from '../api.js';
 import './stacked.css';
@@ -311,6 +311,9 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   const [name, setName] = useState(() => initialName || nameIn(it.txn?.merchant) || it.to || '');
   const [cat, setCat] = useState('');
   const [amount, setAmount] = useState('');
+  // "Which purchase?": what she typed, and what the server found for it.
+  const [find, setFind] = useState('');
+  const [found, setFound] = useState(null);
   const [remember, setRemember] = useState(it.kind === 'joint_in' || !!it.learnable);
   useEffect(() => {
     let live = true;
@@ -319,6 +322,16 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   }, [it.txn.id]);
 
   const flow = useMemo(() => steps(it, cases, mode), [it, cases, mode]);
+  const stepIdNow = path.length ? nextOf(flow, path[path.length - 1]) : flow.start;
+  const picking = flow.S[stepIdNow]?.ask === 'pick' && flow.S[stepIdNow]?.key !== 'reimbursement';
+  useEffect(() => {
+    if (!picking) { setFound(null); return undefined; }
+    let live = true;
+    const t = setTimeout(() => {
+      searchCharges(it.txn.id, find).then((d) => { if (live) setFound(d.charges ?? []); }).catch(() => { if (live) setFound([]); });
+    }, find ? 200 : 0);
+    return () => { live = false; clearTimeout(t); };
+  }, [it.txn.id, find, picking]);
   const stepId = path.length ? nextOf(flow, path[path.length - 1]) : flow.start;
   const step = flow.S[stepId];
   const total = path.length + (step?.left ?? 1);
@@ -392,13 +405,14 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       return finish(answers, effect, () => plain(() => setJointFrom(it.txn.id, ch.who, remember, ch.person), 'Sorted.'));
     }
     if (s.ask === 'pick') {
-      const cand = s.candidates.find((x) => x.id === v);
+      const cand = s.candidates.find((x) => x.id === v) ?? (found ?? []).find((x) => x.id === v);
       if (s.key === 'payback' && !v) return finish(answers, 'Moves it to Lent. Not income.', () => via({ case: 'lent_back' }, 'Sorted as money you lent, paid back.'));
       if (s.key === 'refund' && v === '') return undefined;                 // a category comes next
       const effect = s.key === 'payback' ? `Comes off what you spent at ${cand?.merchant}. Not income.`
         : s.key === 'refund' ? `Comes off ${cand?.category || ''}. Not income.`
           : 'Pays back a work expense you left out. Not income.';
-      return finish(answers, effect, () => via({ case: s.key, charge: v, ...(cand?.person ? { person: cand.person } : {}) }, 'Sorted.'));
+      const who = cand?.person || (s.key === 'payback' ? nameIn(it.txn.merchant) : '');
+      return finish(answers, effect, () => via({ case: s.key, charge: v, ...(who ? { person: who } : {}) }, 'Sorted.'));
     }
     if (s.ask === 'name') {
       const how = c?.key || answered('what_out');
@@ -623,30 +637,48 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
               )}
             </>
           )}
-          {step.ask === 'pick' && (
-            <>
-              <div className="pk-choices" role="radiogroup" aria-label={step.title}>
-                {step.candidates.map((c) => (
-                  <Choice key={`${c.id}|${c.person || ''}`} name={group} checked={false} disabled={busy}
-                          onChange={() => saveAsk(step, c.id, `${c.merchant} · ${shortDate(c.date)}`)}
-                          label={`${c.merchant} · ${shortDate(c.date)}`}
-                          description={[txAmount(c.amount, { signed: true }), c.category, c.person ? `${c.person}’s share` : null].filter(Boolean).join(' · ')} />
-                ))}
-                {step.none && (
-                  <Choice name={group} checked={false} disabled={busy}
-                          onChange={() => saveAsk(step, '', step.none)} label={step.none} />
+          {step.ask === 'pick' && (() => {
+            const seen = new Set(step.candidates.map((c) => c.id));
+            const more = (found ?? []).filter((c) => !seen.has(c.id) || find);
+            const shown = find ? (found ?? []) : step.candidates;
+            const rowFor = (c, extra) => (
+              <Choice key={`${c.id}|${c.person || ''}`} name={group} checked={false} disabled={busy}
+                      onChange={() => saveAsk(step, c.id, `${c.merchant} · ${shortDate(c.date)}`)}
+                      label={`${c.merchant} · ${shortDate(c.date)}`}
+                      description={[txAmount(c.amount, { signed: true }), c.category,
+                        c.person ? `${c.person}’s share` : null,
+                        c.paid_back ? `${txAmount(c.paid_back)} paid back so far` : null, extra].filter(Boolean).join(' · ')} />
+            );
+            return (
+              <>
+                {step.key !== 'reimbursement' && (
+                  <div className="txd-field nl-find">
+                    <input type="search" value={find} aria-label="Find the purchase" placeholder="Find by name or amount"
+                           autoComplete="off" disabled={busy} onChange={(e) => setFind(e.target.value)} />
+                  </div>
                 )}
-                {step.key === 'refund' && (
-                  <Choice name={group} checked={false} disabled={busy}
-                          onChange={() => setPath([...path, { step: stepId, v: '', label: 'None of these' }])}
-                          label="None of these" description="Pick the category it comes off" />
-                )}
-                {step.key !== 'refund' && !step.candidates.length && !step.none && (
-                  <p className="pk-muted">Pearl can’t see a charge this pays back yet. Mark the expense first, from its own page.</p>
-                )}
-              </div>
-            </>
-          )}
+                <div className="pk-choices" role="radiogroup" aria-label={step.title}>
+                  {shown.map((c) => rowFor(c))}
+                  {!find && more.slice(0, 6).map((c) => rowFor(c))}
+                  {step.none && !find && (
+                    <Choice name={group} checked={false} disabled={busy}
+                            onChange={() => saveAsk(step, '', step.none)} label={step.none} />
+                  )}
+                  {step.key === 'refund' && !find && (
+                    <Choice name={group} checked={false} disabled={busy}
+                            onChange={() => setPath([...path, { step: stepId, v: '', label: 'None of these' }])}
+                            label="None of these" description="Pick the category it comes off" />
+                  )}
+                  {find && found && !found.length && (
+                    <p className="pk-muted">Nothing called “{find}” in the last six months of spending.</p>
+                  )}
+                  {step.key === 'reimbursement' && !step.candidates.length && (
+                    <p className="pk-muted">Pearl can’t see a work expense this pays back yet. Mark the expense first, from its own page.</p>
+                  )}
+                </div>
+              </>
+            );
+          })()}
           {step.ask === 'split' && (
             <PButton variant="secondary" disabled={busy} onClick={() => onSplit?.()}>Say who it was with</PButton>
           )}

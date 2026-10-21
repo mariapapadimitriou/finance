@@ -240,6 +240,45 @@ def payback_candidates(inflow: Transaction, txns: list[Transaction], splits: dic
     return out[:8]
 
 
+def search_charges(inflow: Transaction, txns: list[Transaction], q: str = "",
+                   names: dict[str, str] | None = None, days: int = 180, limit: int = 20) -> list[dict]:
+    """Any purchase this money might pay back (2026-10-21): the friends'
+    e-Transfers for a dinner she ordered can be linked from the e-Transfer
+    itself, whether or not she ever said she split the order. Spending in
+    the months before the money came, newest first, matched on the name
+    she'd type or the amount; each with what is still unpaid on it."""
+    when = date.fromisoformat(inflow.date[:10])
+    needle = " ".join((q or "").lower().split())
+    amount_q = None
+    try:
+        amount_q = round(float(needle.replace("$", "").replace(",", "")), 2) if needle else None
+    except ValueError:
+        amount_q = None
+    out = []
+    for c in txns:
+        if c.amount <= 0 or c.fingerprint == inflow.fingerprint:
+            continue
+        if (c.category or "Other") in NON_SPEND or c.category == "Unsorted transfers":
+            continue
+        gap = (when - date.fromisoformat(c.date[:10])).days
+        if gap < -3 or gap > days:
+            continue
+        shown = (names or {}).get(_key(c.merchant)) or c.merchant
+        hay = " ".join(x for x in (shown, c.merchant, c.description or "", c.category or "")
+                       if x).lower()
+        if needle and needle not in hay \
+                and not (amount_q is not None and abs(round(c.amount, 2) - amount_q) < 0.01):
+            continue
+        paid = round(c.paid_back or 0.0, 2)
+        out.append({"id": c.fingerprint, "date": c.date[:10], "merchant": shown,
+                    "amount": round(c.amount, 2), "category": c.category or "Other",
+                    "paid_back": paid, "left": round(c.amount - paid, 2),
+                    "person": None, "split": bool(c.my_share is not None),
+                    "excluded": c.excluded or ""})
+    out.sort(key=lambda r: r["date"], reverse=True)
+    return out[:limit]
+
+
 # ── Which cases apply ────────────────────────────────────────────────────
 
 def current_case(t: Transaction, store_refunds: dict[str, str],

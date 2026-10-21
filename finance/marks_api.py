@@ -3,6 +3,8 @@
 * GET  /api/transactions/<id>/cases       the cases that apply to this row,
   with what each needs (a category, an account, a candidate purchase), the
   savings accounts money can go to, and the rule each can remember.
+* GET  /api/transactions/<id>/charges     ?q=: any purchase this money coming
+  in could pay back, by name or amount, newest first (for "Which purchase?").
 * POST /api/transactions/<id>/mark        {case, ...}: do one. `?dry=1` says
   what it would do (the line under the choices) without writing. The answer
   carries the impact and an Undo, like a change of category (R-03).
@@ -55,6 +57,21 @@ def transaction_cases(txn_id: str):
     if t is None:
         return jsonify({"error": "No such transaction."}), 404
     return jsonify(marks.cases(st, t, txns))
+
+
+@bp.get("/transactions/<txn_id>/charges")
+def transaction_charges(txn_id: str):
+    """Purchases this money coming in could pay back, searched by name or
+    amount (?q=); for the sort card's "Which purchase?" step."""
+    st = store()
+    txns = st.all_transactions()
+    t = next((x for x in txns if x.fingerprint == txn_id), None)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if t.amount >= 0:
+        return jsonify({"charges": []})
+    return jsonify({"charges": marks.search_charges(t, txns, request.args.get("q", ""),
+                                                    st.merchant_names())})
 
 
 def _impact_for(st, before_txns, after_txns, t, res: dict) -> dict:
