@@ -271,6 +271,35 @@ def test_removing_the_last_account_on_a_login_disconnects_it(client, monkeypatch
     assert gone == ["item-td"]
 
 
+def test_remove_a_bank_entirely(client, monkeypatch):
+    """One call takes every account on a login off the page and revokes the
+    login, so the bank can be linked again from scratch (2026-10-21)."""
+    from finance import plaid_link
+    gone = []
+    monkeypatch.setattr(plaid_link, "unlink", lambda st, item: (gone.append(item),
+                                                                st.delete_plaid_item(item), True)[2])
+    r = client.post("/api/banks/item-td/remove", json={"transactions": "keep"})
+    assert r.status_code == 200
+    assert r.get_json() == {"ok": True, "accounts": 3, "removed": 0, "revoked_at_plaid": True}
+    assert gone == ["item-td"]
+    assert overview(client)["linked"] == []
+    # Past months stay accurate; the login is gone.
+    assert spend(client) == 480
+    st = client.application.config["STORE"]
+    assert st.plaid_items() == []
+    assert client.post("/api/banks/item-td/remove", json={}).status_code == 404
+
+
+def test_remove_a_bank_and_its_history(client, monkeypatch):
+    from finance import plaid_link
+    monkeypatch.setattr(plaid_link, "unlink", lambda st, item: (st.delete_plaid_item(item), False)[1])
+    r = client.post("/api/banks/item-td/remove", json={"transactions": "delete"})
+    assert r.get_json()["removed"] == 3 and r.get_json()["revoked_at_plaid"] is False
+    months = client.get("/api/summary").get_json()["monthly"]
+    assert all(m["month"] != MONTH or m["spend"] == 0 for m in months)
+    assert client.post("/api/banks/item-td/remove", json={"transactions": "maybe"}).status_code == 404
+
+
 def test_remove_needs_keep_or_delete(client):
     r = client.post("/api/accounts/amex/remove", json={"transactions": "maybe"})
     assert r.status_code == 400

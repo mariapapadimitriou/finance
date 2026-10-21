@@ -64,6 +64,10 @@ export const updateManualBalance = (id, balance) =>
 // `transactions` is 'keep' or 'delete'.
 export const removeAccount = (id, transactions) =>
   json('POST', `/api/accounts/${encodeURIComponent(id)}/remove`, { transactions });
+// Remove a bank entirely (2026-10-21): every account on that login, and
+// the login itself, so the bank can be linked again from scratch.
+export const removeBank = (itemId, transactions) =>
+  json('POST', `/api/banks/${encodeURIComponent(itemId)}/remove`, { transactions });
 // "Same account as…": merge this account into `into`, for two copies of a card.
 export const mergeAccount = (id, into) =>
   json('POST', `/api/accounts/${encodeURIComponent(id)}/merge`, { into });
