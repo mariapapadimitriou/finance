@@ -15,6 +15,10 @@
 .pk .nl-pill:hover { background: var(--hover); }
 .pk .nl-pill:disabled { color: var(--ink-disabled); cursor: default; }
 .pk .nl-pill.nl-previous { box-shadow: var(--shadow-card); }
+/* Next / Done on the Sorted card: Undo's pill, filled, so the two match. */
+.pk .nl-pill.nl-pill-go { background: var(--action); border-color: var(--action); color: #fff; padding: 0 12px 0 14px; }
+.pk .nl-pill.nl-pill-go:hover { background: var(--rose-700); border-color: var(--rose-700); }
+.pk .nl-pill.nl-pill-go:disabled { background: var(--track); border-color: var(--track); color: var(--ink-disabled); }
 .nl-corner { position: absolute; top: 24px; right: 24px; z-index: 1; }
 .nl-stack > .nl-corner { margin: 0; }
 /* The pill sits at the end of the dots' line, in whitespace that was there. */

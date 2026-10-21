@@ -57,6 +57,41 @@ const PATHS = {
     'M18.5 2.5C18.8978 2.10217 19.4374 1.87868 20 1.87868C20.5626 1.87868 21.1022 2.10217 21.5 2.5C21.8978 2.89782 22.1213 3.43739 22.1213 4C22.1213 4.56261 21.8978 5.10217 21.5 5.5L12 15L8 16L9 12L18.5 2.5Z'],
   // Undo and chevron up (Current design, 2026-10-20): the Undo and Previous
   // pills in Needs a look, and a reopened answer that folds back.
+  // Category icons (2026-10-21): one per category, drawn on the set's 24px
+  // grid, 1.75 stroke, for the category tiles (CategoryPicker.jsx).
+  cart: ['M3 4H5L7.5 15H18L20.5 7H6', 'M9 20A1 1 0 1 0 9 18A1 1 0 0 0 9 20Z', 'M17 20A1 1 0 1 0 17 18A1 1 0 0 0 17 20Z'],
+  utensils: ['M7 3V21', 'M4.5 3V8C4.5 9.5 5.5 10.5 7 10.5C8.5 10.5 9.5 9.5 9.5 8V3', 'M16.5 3C14.5 3 13.5 6 13.5 9C13.5 11 14.5 12 16.5 12V21', 'M16.5 3C18.5 3 19.5 5.5 19.5 8V12H16.5'],
+  delivery: ['M3 7H13V15H3Z', 'M13 10H17L20 13V15H13', 'M6 18A1.5 1.5 0 1 0 6 15A1.5 1.5 0 0 0 6 18Z', 'M17 18A1.5 1.5 0 1 0 17 15A1.5 1.5 0 0 0 17 18Z'],
+  coffee: ['M5 8H16V14A4 4 0 0 1 12 18H9A4 4 0 0 1 5 14V8Z', 'M16 9H18A2 2 0 0 1 18 13H16', 'M4 21H17', 'M8 4V6', 'M11 3V6'],
+  wine: ['M8 3H16L15.5 9A3.5 3.5 0 0 1 8.5 9L8 3Z', 'M12 12.5V20', 'M8.5 20H15.5'],
+  bus: ['M5 4H19V16A2 2 0 0 1 17 18H7A2 2 0 0 1 5 16V4Z', 'M5 10H19', 'M8 14H8.01', 'M16 14H16.01', 'M7 18V21', 'M17 18V21'],
+  fuel: ['M4 21V5A2 2 0 0 1 6 3H12A2 2 0 0 1 14 5V21', 'M3 21H15', 'M6 7H12V11H6Z', 'M14 9H16.5A1.5 1.5 0 0 1 18 10.5V16A1.5 1.5 0 0 0 21 16V8L18.5 5.5'],
+  plane: ['M3 13L10 11L4 4L6.5 3L14.5 9.5L19 8A2 2 0 0 1 20.5 11.5L16 13L13 21L11 20L11.5 14L7.5 15.5L5 18L4 17L5.5 14Z'],
+  bed: ['M3 18V7', 'M3 12H21V18', 'M3 15H21', 'M7 12V9H13V12'],
+  bag: ['M6 8H18L19 20H5L6 8Z', 'M9 8V6A3 3 0 0 1 15 6V8'],
+  play: ['M4 6A2 2 0 0 1 6 4H18A2 2 0 0 1 20 6V18A2 2 0 0 1 18 20H6A2 2 0 0 1 4 18V6Z', 'M10 9L15 12L10 15V9Z'],
+  news: ['M4 5H17V19H6A2 2 0 0 1 4 17V5Z', 'M17 9H20V17A2 2 0 0 1 18 19', 'M7 9H14', 'M7 12H14', 'M7 15H11'],
+  laptop: ['M5 6A1 1 0 0 1 6 5H18A1 1 0 0 1 19 6V15H5V6Z', 'M3 18H21', 'M10 9L8 11L10 13', 'M14 9L16 11L14 13'],
+  zap: ['M13 3L4 14H11L10 21L20 9H13L13 3Z'],
+  wifi: ['M2.5 9A14 14 0 0 1 21.5 9', 'M5.5 12.5A10 10 0 0 1 18.5 12.5', 'M8.5 16A5 5 0 0 1 15.5 16', 'M12 19.5H12.01'],
+  shieldCheck: ['M12 3L20 6V12C20 17 16.5 20 12 21C7.5 20 4 17 4 12V6L12 3Z', 'M9 12L11 14L15 10'],
+  heart: ['M12 20C12 20 3.5 14.5 3.5 8.5A4.5 4.5 0 0 1 12 6.5A4.5 4.5 0 0 1 20.5 8.5C20.5 14.5 12 20 12 20Z'],
+  dumbbell: ['M3 10V14', 'M6 8V16', 'M6 12H18', 'M18 8V16', 'M21 10V14'],
+  sparkle: ['M12 3L13.8 9.2L20 11L13.8 12.8L12 19L10.2 12.8L4 11L10.2 9.2L12 3Z', 'M19 17L19.6 18.4L21 19L19.6 19.6L19 21L18.4 19.6L17 19L18.4 18.4L19 17Z'],
+  ticket: ['M4 8A2 2 0 0 1 6 6H18A2 2 0 0 1 20 8V10A2 2 0 0 0 20 14V16A2 2 0 0 1 18 18H6A2 2 0 0 1 4 16V14A2 2 0 0 0 4 10V8Z', 'M10 6V18'],
+  book: ['M5 4H10A2 2 0 0 1 12 6V20A2 2 0 0 0 10 18H5V4Z', 'M19 4H14A2 2 0 0 0 12 6V20A2 2 0 0 1 14 18H19V4Z'],
+  paw: ['M12 19C9.5 19 7.5 17.5 7.5 15.5C7.5 13.5 10 11 12 11C14 11 16.5 13.5 16.5 15.5C16.5 17.5 14.5 19 12 19Z', 'M6.5 11A1.5 1.5 0 1 0 6.5 8A1.5 1.5 0 0 0 6.5 11Z', 'M17.5 11A1.5 1.5 0 1 0 17.5 8A1.5 1.5 0 0 0 17.5 11Z', 'M9.5 7.5A1.5 1.5 0 1 0 9.5 4.5A1.5 1.5 0 0 0 9.5 7.5Z', 'M14.5 7.5A1.5 1.5 0 1 0 14.5 4.5A1.5 1.5 0 0 0 14.5 7.5Z'],
+  couch: ['M4 10V7A2 2 0 0 1 6 5H18A2 2 0 0 1 20 7V10', 'M3 12A2 2 0 0 1 5 10V14H19V10A2 2 0 0 1 23 12', 'M4 14V18', 'M20 14V18', 'M4 17H20'],
+  gift: ['M4 11H20V20H4Z', 'M3 7H21V11H3Z', 'M12 7V20', 'M12 7C10 7 8 6 8 4.5A1.5 1.5 0 0 1 11 4C11.5 4.5 12 6 12 7Z', 'M12 7C14 7 16 6 16 4.5A1.5 1.5 0 0 0 13 4C12.5 4.5 12 6 12 7Z'],
+  percent: ['M19 5L5 19', 'M7 9A2 2 0 1 0 7 5A2 2 0 0 0 7 9Z', 'M17 19A2 2 0 1 0 17 15A2 2 0 0 0 17 19Z'],
+  landmark: ['M3 21H21', 'M5 18V10', 'M9.5 18V10', 'M14.5 18V10', 'M19 18V10', 'M3 10L12 4L21 10H3Z'],
+  banknote: ['M3 7A1 1 0 0 1 4 6H20A1 1 0 0 1 21 7V17A1 1 0 0 1 20 18H4A1 1 0 0 1 3 17V7Z', 'M12 15A3 3 0 1 0 12 9A3 3 0 0 0 12 15Z', 'M6 9H6.01', 'M18 15H18.01'],
+  handCoins: ['M4 14H6.5L10 17.5H15A1.5 1.5 0 0 0 15 14.5H11', 'M10 14.5L14.5 14', 'M15 14.5L19 11A1.5 1.5 0 0 1 21 13L16.5 18.5H8L4 15', 'M14 8A3 3 0 1 0 14 2A3 3 0 0 0 14 8Z'],
+  handOpen: ['M8 12V5.5A1.5 1.5 0 0 1 11 5.5V11', 'M11 11V4.5A1.5 1.5 0 0 1 14 4.5V11', 'M14 11V6A1.5 1.5 0 0 1 17 6V13', 'M8 12L6.5 10A1.5 1.5 0 0 0 4 11.5L7 17A6 6 0 0 0 12.5 21H13A5 5 0 0 0 18 16V13'],
+  lifesaver: ['M12 21A9 9 0 1 0 12 3A9 9 0 0 0 12 21Z', 'M12 16A4 4 0 1 0 12 8A4 4 0 0 0 12 16Z', 'M5.6 5.6L9.2 9.2', 'M14.8 14.8L18.4 18.4', 'M14.8 9.2L18.4 5.6', 'M5.6 18.4L9.2 14.8'],
+  arrows: ['M4 8H17L14 5', 'M20 16H7L10 19'],
+  dots: ['M6 12H6.01', 'M12 12H12.01', 'M18 12H18.01'],
+  phone: ['M7 3H17A1 1 0 0 1 18 4V20A1 1 0 0 1 17 21H7A1 1 0 0 1 6 20V4A1 1 0 0 1 7 3Z', 'M11 18H13'],
   undo: ['M9 14L4 9L9 4', 'M4 9H15C17.7614 9 20 11.2386 20 14C20 16.7614 17.7614 19 15 19H11'],
   chevronUp: ['M6 15L12 9L18 15'],
   // Filters (ALT-04, 2026-10-17): three sliders, drawn on the set's grid.
@@ -65,6 +100,19 @@ const PATHS = {
     'M15 14.25C16.2426 14.25 17.25 13.2426 17.25 12C17.25 10.7574 16.2426 9.75 15 9.75C13.7574 9.75 12.75 10.7574 12.75 12C12.75 13.2426 13.7574 14.25 15 14.25Z',
     'M8 19.25C9.24264 19.25 10.25 18.2426 10.25 17C10.25 15.7574 9.24264 14.75 8 14.75C6.75736 14.75 5.75 15.7574 5.75 17C5.75 18.2426 6.75736 19.25 8 19.25Z'],
 };
+
+/** The icon each category is drawn with, in the tiles (CategoryPicker.jsx). */
+export const CATEGORY_ICONS = {
+  'Groceries': 'cart', 'Dining': 'utensils', 'Food Delivery': 'delivery', 'Coffee': 'coffee',
+  'Alcohol & Bars': 'wine', 'Transport': 'bus', 'Gas & Fuel': 'fuel', 'Travel': 'plane', 'Lodging': 'bed',
+  'Shopping': 'bag', 'Streaming': 'play', 'News & Media': 'news', 'Software': 'laptop', 'Utilities': 'zap',
+  'Phone & Internet': 'wifi', 'Rent & Housing': 'home', 'Insurance': 'shieldCheck', 'Health': 'heart',
+  'Fitness': 'dumbbell', 'Personal Care': 'sparkle', 'Entertainment': 'ticket', 'Education': 'book',
+  'Pets': 'paw', 'Home': 'couch', 'Gifts & Charity': 'gift', 'Fees & Interest': 'percent', 'Taxes': 'landmark',
+  'Cash & ATM': 'banknote', 'Saved': 'lifesaver', 'Lent': 'handCoins', 'Borrowed': 'handOpen', 'Income': 'trend',
+  'Transfers': 'arrows', 'Other': 'dots',
+};
+export const categoryIcon = (name) => CATEGORY_ICONS[name] ?? 'dots';
 
 export default function PIcon({ name, size = 24, className, style }) {
   const paths = PATHS[name];
