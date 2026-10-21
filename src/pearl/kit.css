@@ -758,6 +758,6 @@
 .pk .pk-cat-label { max-width: 100%; }
 .pk .pk-cat-check {
   position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; border-radius: var(--radius-full);
-  background: var(--rose-500); color: #fff; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--rose-500); color: var(--on-action); display: inline-flex; align-items: center; justify-content: center;
 }
 @media (max-width: 720px) { .pk-cat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
