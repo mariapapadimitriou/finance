@@ -213,21 +213,6 @@ def test_adding_by_hand_needs_name_type_and_balance(client, body, field):
     assert r.status_code == 400 and r.get_json()["field"] == field
 
 
-def test_hand_balances_count_in_the_anchor(client):
-    aid = add(client).get_json()["account"]["id"]
-    add(client, "Line card", "credit", 250)
-
-    client.put(f"/api/accounts/{aid}/settings", json={"anchor": True})
-    anchor = client.get("/api/goals").get_json()["anchor"]
-    assert aid in anchor["accounts"]
-    assert any(a["account_id"] == aid for a in anchor["available_accounts"])
-
-    # Not counted: no longer an account the Anchor can count.
-    client.put(f"/api/accounts/{aid}/settings", json={"counted": False})
-    anchor = client.get("/api/goals").get_json()["anchor"]
-    assert all(a["account_id"] != aid for a in anchor["available_accounts"])
-
-
 def test_a_hand_added_card_is_money_owed(client):
     add(client, "Store card", "credit", 250)
     debts = client.get("/api/debts").get_json()["debts"]

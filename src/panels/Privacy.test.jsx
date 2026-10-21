@@ -10,7 +10,6 @@ import {
   AccountDeleted, BeforeYouGo, ConfirmDelete, DataPage, firstMethod, readyWords, sizeWords,
 } from './DataPanel.jsx';
 import { NotificationsPage, TIMES, applyChange } from './NotificationsPanel.jsx';
-import { PrimeSheet } from './NotifyPrime.jsx';
 import { ProtectPage, connectionWords } from './ProtectPanel.jsx';
 
 const html = (el) => renderToStaticMarkup(el);
@@ -336,18 +335,6 @@ describe('THL-139 N-01 / N-02 Notifications', () => {
     expect(prefs.types.weekly.email).toBe(false);
   });
 
-  it('N-01: the priming sheet', () => {
-    const el = <PrimeSheet onOn={() => {}} onNotNow={() => {}} />;
-    const t = text(el);
-    for (const s of ['Want a heads-up at the right moments?', 'Payday',
-      'A nudge to set something aside', 'Weekly check-in', 'Your week in one minute, on Sundays',
-      'Progress and milestones', 'When your Anchor grows or a step opens', 'Bank needs you',
-      'When a bank asks you to sign in again',
-      'Never about overspending. No amounts on your lock screen. Quiet from 9 pm to 8 am.',
-      'Turn on notifications', 'Not now']) expect(t).toContain(s);
-    expect(primaries(el)).toBe(1);
-    calm(t);
-  });
 
   it('N-01: after the first safe to spend, and once more after a milestone', () => {
     const ok = { state: 'ok' };

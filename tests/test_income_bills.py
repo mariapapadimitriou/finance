@@ -320,9 +320,6 @@ class TestTheEndpoints:
         assert any(k == "name:j smith" for k in st.destinations())
         # The old plan's take-home follows her confirmed pay.
         assert st.float_setting("monthly_income") == 4300.0
-        # And the path counts both as confirmed.
-        steps = client.get("/api/path").get_json()
-        assert steps["phase"] != "protect" or all(s["done"] for s in steps["steps"][:2])
 
     def test_editing_and_removing_pay(self, client):
         d = client.post("/api/income-bills/pay", json={

@@ -4,7 +4,7 @@ import {
   dismissSuggestion, getInsightsMonth, setMonthUnusual, setSubscriptionChoice,
   undoDismissSuggestion,
 } from '../api.js';
-import { onInsightsUrl, readInsightsUrl, setGoalsIntent, writeInsightsUrl, writeTxUrl } from '../router.js';
+import { onInsightsUrl, readInsightsUrl, writeInsightsUrl, writeTxUrl } from '../router.js';
 import { ActionToast } from '../pearl/kit.jsx';
 import { SnapshotBar } from '../pearl/viz.jsx';
 import { ForYou, WhyPanel, dismissedWords } from './ForYou.jsx';
@@ -104,7 +104,6 @@ export default function InsightsPanel({ onTab, version }) {
     if (card.type === 'trend' && card.numbers?.category) return show('category', { category: card.numbers.category });
     if (card.type === 'subscriptions') return show('subscriptions');
     if (card.action.to === 'transactions') return toTransactions(card.action.filters);
-    if (card.action.goals) setGoalsIntent(card.action.goals);
     return onTab?.(card.action.to);
   };
   const notForMe = (card) => {

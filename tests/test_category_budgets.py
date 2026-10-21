@@ -138,8 +138,7 @@ class TestTheApi:
     def test_the_page_and_the_home_card(self, client):
         page = client.get("/api/category-budgets").get_json()
         assert page["ready"] and by_cat(page)["Groceries"]["status"] == "over"
-        home = client.get("/api/home").get_json()
-        assert home["budgets"] == {"ready": True, "needs_look": 1, "count": len(page["rows"])}
+        assert page["needs_look"] == 1
 
     def test_changing_one_and_back(self, client):
         r = client.put("/api/category-budgets", json={"category": "Groceries", "pct": 90}).get_json()
@@ -164,4 +163,4 @@ class TestTheApi:
         with app.test_client() as c:
             page = c.get("/api/category-budgets").get_json()
             assert page["ready"] is False and page["starts"] == "2026-11-01"
-            assert c.get("/api/home").get_json()["budgets"]["needs_look"] == 0
+            assert c.get("/api/category-budgets").get_json()["needs_look"] == 0

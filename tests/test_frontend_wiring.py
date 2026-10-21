@@ -352,7 +352,7 @@ class TestIncomeAndBillsReplacedThePlan:
         for name in ("PlanPanel.jsx", "PiggyPanel.jsx"):
             assert not (SRC / "panels" / name).exists(), name
         assert "plan" not in panels
-        assert aliases["plan"] == "income" and aliases["piggy"] == "goals"
+        assert aliases["plan"] == "income" and aliases["piggy"] == "home"
         api = (SRC / "api.js").read_text(encoding="utf-8")
         for gone in ("getPlanSetup", "savePlanSetup", "addFixedCost", "deleteFixedCost"):
             assert gone not in api, gone
@@ -363,23 +363,17 @@ class TestIncomeAndBillsReplacedThePlan:
                               p.read_text(encoding="utf-8"))]
         assert not stale, stale
 
-    def test_path_and_home_open_income_and_bills(self):
-        text = (SRC / "panels" / "HomePanel.jsx").read_text(encoding="utf-8")
-        assert "bills: 'income', income: 'income'" in text
-        # Wins' next step opens Needs a look, Save or the investing question (THL-246).
-        wins = (SRC / "panels" / "WinsPanel.jsx").read_text(encoding="utf-8")
-        for action in ("action === 'review'", "action === 'invested'", "action.startsWith('goals:')"):
-            assert action in wins, action
-
     def test_onboarding_runs_the_check_before_the_path(self):
         """Linked → how Pearl uses your transactions (THL-117 CN-02) → the
-        income and bills check → one last thing (CN-03) → the path."""
+        income and bills check → one last thing (CN-03) → Home."""
         text = (SRC / "pearl" / "Onboarding.jsx").read_text(encoding="utf-8")
         assert "<IncomeBillsFlow" in text
         assert "save({ step: 'uses' }, 'uses')" in text
         assert "step: 'income' },\n" in text and "'income');" in text
         assert "save({ step: 'email' }, 'email')" in text
-        assert "step: 'path' }, 'path')" in text
+        # CN-03's Finish ends onboarding on Home: the path went with Wins (2026-10-21).
+        assert "saveOnboarding({ consents: { tips }, done: true })" in text
+        assert "onDone?.('home')" in text and "placeOnPath" not in text
 
 
 class TestHomeIsWhereTheAppLands:
@@ -388,20 +382,19 @@ class TestHomeIsWhereTheAppLands:
 
     def test_the_app_opens_on_home(self):
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
-        # Wins' Path, Cash flow's Insights and Save's Projections and Learn
-        # have addresses; anything else lands on Home (THL-234 IA).
-        assert ": isPathUrl() ? 'wins' : isInsightsUrl() || isCalendarUrl() ? 'cashflow'" in text
-        assert ": isProjectionsUrl() || isLearnUrl() || isSaveUrl() ? 'save' : 'home'" in text
+        # Cash flow's pages have addresses; anything else lands on Home.
+        assert "readTxUrl() || isReviewUrl() || isInsightsUrl() || isCalendarUrl()" in text
+        assert "? 'cashflow' : 'home'" in text
         assert "panel === 'home'" in text and "<HomePanel" in text
+        # Home is bare (2026-10-21): the greeting, what needs a look, Transactions.
+        home = (SRC / "panels" / "HomePanel.jsx").read_text(encoding="utf-8")
+        assert "getHome()" in home and "<NeedsALook" in home and "onTab?.('transactions')" in home
+        for gone in ("SafeToSpendCard", "PathCard", "CalendarStrip", "ForYou", "CarryoverPrompt"):
+            assert gone not in home, gone
 
     def test_old_links_to_the_allowance_land_on_home(self, aliases):
         assert aliases.get("today") == "home"
         assert not (SRC / "panels" / "TodayPanel.jsx").exists()
-
-    def test_home_reads_one_payload(self):
-        text = (SRC / "panels" / "HomePanel.jsx").read_text(encoding="utf-8")
-        assert "getHome()" in text and "How we worked this out" in text
-
 
 class TestAccountsInTheApp:
     def test_plaid_syncs_when_the_app_opens(self):
@@ -421,33 +414,30 @@ class TestAccountsInTheApp:
 
 
 class TestTheSidebarIsThl104s:
-    def test_home_cash_flow_save_wins_and_profile(self, groups):
-        """THL-234: Home · Cash flow · Save · Wins · Profile."""
-        assert list(groups) == ["home", "cashflow", "save", "wins", "profile"]
+    def test_home_cash_flow_help_and_profile(self, groups):
+        """The sidebar as the Pearl Handoff File draws it (2026-10-21): Home ·
+        Cash flow, then Help and support · Profile at the foot. Save and Wins
+        are gone for now."""
+        assert list(groups) == ["home", "cashflow", "help", "profile"]
 
     def test_each_group_opens_on_its_first_page(self, groups):
         assert groups["home"] == ["home"]
         assert groups["cashflow"] == ["transactions", "calendar", "review", "insights", "budgets", "debts"]
-        assert groups["save"] == ["goals", "projections", "learn"]
-        assert groups["wins"] == ["path"]
-        assert "overview" not in groups and "growth" not in groups and "transactions" not in groups
-
-    def test_the_path_page_has_an_address(self):
-        text = (SRC / "App.jsx").read_text(encoding="utf-8")
-        assert "isPathUrl()" in text and "writePathUrl()" in text
-
+        assert groups["help"] == ["protect"]
+        for gone in ("overview", "growth", "transactions", "save", "wins"):
+            assert gone not in groups, gone
 
 class TestOneReviewQueue:
     def test_the_badge_counts_the_review_queue(self):
         text = (SRC / "App.jsx").read_text(encoding="utf-8")
-        assert "getReview()" in text and "counts={{ transactions: data.review }}" in text
+        assert "getReview()" in text and "counts={{ cashflow: data.review }}" in text
 
     def test_review_holds_every_kind_and_the_unsorted_question(self):
         text = (SRC / "panels" / "NeedsALook.jsx").read_text(encoding="utf-8")
         for kind in ("unsorted", "money_in", "unsure_category", "income_type", "three_pay_month"):
             assert f"data.{kind}" in text, kind
-        assert "<WhereDidThisGo" in text
-        assert "Remember where ${kind} to ${it.to} go" in text
+        # Every kind is asked through the one sort card (THL-263).
+        assert "<Stacked" in text and "from './Stacked.jsx'" in text
         app = (SRC / "App.jsx").read_text(encoding="utf-8")
         assert "<NeedsALook" in app and "ReviewPanel" not in app
 
@@ -458,14 +448,6 @@ class TestOneReviewQueue:
         tx = (SRC / "panels" / "TransactionDetail.jsx").read_text(encoding="utf-8")
         assert "excludeTransaction(" in tx and "includeTransaction(" in tx
         assert not (SRC / "panels" / "TransactionsPanel.jsx").exists()
-
-
-class TestWhereDidThisGoIsPerTransfer:
-    def test_one_row_at_a_time(self):
-        review = (SRC / "panels" / "NeedsALook.jsx").read_text(encoding="utf-8")
-        card = review[review.index("function WhereDidThisGo"):]
-        card = card[:card.index("\n}\n")]
-        assert "sortTransfers([it.txn.id], category" in card
 
 
 class TestPearlTransactionsList:
@@ -538,7 +520,8 @@ class TestChangeCategory:
 
     def test_the_detail_panel_uses_it(self):
         src = (SRC / "panels" / "TransactionDetail.jsx").read_text(encoding="utf-8")
-        assert "<CategoryPicker" in src and "function ChangeCategory" not in src
+        # Change category is the sort card opened at "What was it for?" (THL-263).
+        assert "<SortCard" in src and "step === 'category'" in src and "function ChangeCategory" not in src
         assert "back={{" in src, "the step has a back link naming the transaction"
 
     def test_the_list_offers_undo(self):
@@ -578,7 +561,7 @@ class TestTheProfileHub:
     def test_the_group_opens_on_the_hub(self, groups):
         assert groups["profile"][0] == "profile"
         for key in ("accounts", "rules", "security", "income", "notifications", "consent",
-                    "data", "protect"):
+                    "data"):
             assert key in groups["profile"], key
 
     def test_the_privacy_pages_are_wired(self, source):
@@ -660,8 +643,7 @@ class TestGrowthInsights:
         for view in ("month", "category", "subscriptions", "trend", "where", "money", "savings"):
             assert f"'{view}'" in router, view
         assert "isInsightsUrl()" in source and "writeInsightsUrl()" in source
-        assert ("OWN_SECTIONS = ['path', 'insights', 'calendar', 'projections', 'learn', 'budgets', 'debts',"
-                in source)
+        assert "OWN_SECTIONS = ['insights', 'calendar', 'budgets', 'debts', 'transactions', 'review']" in source
         assert "!ownSections" in source
         parts = (SRC / "panels" / "InsightsParts.jsx").read_text(encoding="utf-8")
         # Every page in a group is built: a group's pills are never disabled.
@@ -681,115 +663,6 @@ class TestGrowthInsights:
         # lottie-web plays "You earned a pearl" (THL-256), SVG renderer only.
         assert set(pkg["dependencies"]) == {"react", "react-dom", "lottie-web"}
         assert pkg["dependencies"]["lottie-web"] == "^5.12.2"
-
-
-class TestGrowthProjections:
-    """THL-197 GR-33 to GR-37, THL-135 GR-16 to GR-18: Growth › Projections
-    replaced the prototype Projections page, at an address of its own with
-    one for each detail view, and Unveil's screens beside it."""
-
-    def test_the_old_page_and_what_only_it_used_are_gone(self):
-        for path in ("panels/TransactionsPanel.jsx", "components/Chart.jsx", "charts.js"):
-            assert not (SRC / path).exists(), path
-        api = (SRC / "api.js").read_text(encoding="utf-8")
-        for gone in ("getInsights ", "getPlan", "getWeek", "simulateSpend", "saveSavings",
-                     "setAllocation", "getBudgets", "setBudgets", "/api/plan", "/api/budgets",
-                     "cssVar"):
-            assert gone not in api, gone
-        assert "getProjections" in api and "getUnveil" in api and "reportInvesting" in api
-        app = (SRC / "App.jsx").read_text(encoding="utf-8")
-        assert "insights" not in app.split("const { summary")[1].split("}")[0]
-        css = (SRC / "styles.css").read_text(encoding="utf-8")
-        for gone in (".treemap", ".ring", ".month-hero", "#month-select", ".pace-badge"):
-            assert gone not in css, gone
-
-    def test_projections_has_an_address_and_draws_its_own_pills(self, source):
-        router = (SRC / "router.js").read_text(encoding="utf-8")
-        assert "PROJECTIONS_PATH = '/save/projections'" in router
-        assert "CALCULATOR_PATH = '/save/calculator'" in router
-        for view in ("forecast", "next30", "savings", "calculator"):
-            assert f"'{view}'" in router, view
-        for path in ("/save/ready", "/save/invested", "/save/invested/done"):
-            assert path in router, path
-        assert "isProjectionsUrl()" in source and "writeProjectionsUrl()" in source
-        page = (SRC / "panels" / "ProjectionsPanel.jsx").read_text(encoding="utf-8")
-        # A page of Save (THL-248): a way back, no pills.
-        assert "<BackToSave" in page and "GrowthTabs" not in page
-
-    def test_the_path_opens_ready_to_invest_and_the_self_report(self):
-        path = (SRC / "panels" / "WinsPanel.jsx").read_text(encoding="utf-8")
-        assert "open('ready')" in path and "open('unveil')" in path
-        unveil = (SRC / "panels" / "Unveil.jsx").read_text(encoding="utf-8")
-        partner = (SRC / "panels" / "Partner.jsx").read_text(encoding="utf-8")
-        assert "I’ve opened one elsewhere" in partner and "I opened an account elsewhere" in partner
-        assert "onReport={() => nav.show('unveil')}" in unveil and "Mark it done" in unveil
-        assert "nav.show('done')" in unveil
-
-    def test_every_chart_has_a_table_for_a_screen_reader(self):
-        charts = (SRC / "panels" / "ProjectionsCharts.jsx").read_text(encoding="utf-8")
-        for name in ("ForecastChart", "Next30Chart", "SavingsChart"):
-            body = charts[charts.index(f"export function {name}"):]
-            body = body[:body.index("\n}\n")]
-            assert "<ChartTable" in body, name
-            assert 'aria-hidden="true"' in body, name
-        calc = (SRC / "panels" / "ProjectionsPanel.jsx").read_text(encoding="utf-8")
-        body = calc[calc.index("export function Calculator"):]
-        assert '<table className="pk-sr">' in body and 'aria-hidden="true"' in body
-
-
-class TestGrowthRest:
-    """THL-129 GR-02 to GR-04, THL-130 GR-06 to GR-09, THL-134 GR-11 to
-    GR-14 and THL-136 GR-19 to GR-23: the rest of Growth."""
-
-    def test_steps_and_learn_have_addresses(self, source):
-        router = (SRC / "router.js").read_text(encoding="utf-8")
-        assert "LEARN_PATH = '/save/learn'" in router
-        assert "`${PATH_PATH}/path/${step}`" in router
-        for step in ("income", "bills", "essentials", "setup", "full", "saved_more", "cards",
-                     "invest"):
-            assert f"'{step}'" in router, step
-        assert "from=partner" in router or "'partner'" in router
-        assert "isLearnUrl()" in source and "writeLearnUrl()" in source
-        assert "panel === 'learn' && <LearnPanel" in source
-
-    def test_learn_is_a_save_page_open_when_empty(self, groups, source):
-        assert groups["save"] == ["goals", "projections", "learn"]
-        assert "learn" in _string_list(source, "WORKS_WHEN_EMPTY")
-
-    def test_the_path_opens_each_step(self):
-        path = (SRC / "panels" / "WinsPanel.jsx").read_text(encoding="utf-8")
-        assert "<StepScreen" in path and "onStep={show}" in path
-        step = (SRC / "panels" / "PathStep.jsx").read_text(encoding="utf-8")
-        assert "getPathStep(step)" in step and "setMonthUnusual" in step
-
-    def test_every_learn_link_is_live(self):
-        calc = (SRC / "panels" / "ProjectionsPanel.jsx").read_text(encoding="utf-8")
-        assert "Coming with Learn" not in calc and "nav.toLearn?.('fees')" in calc
-        unveil = (SRC / "panels" / "Unveil.jsx").read_text(encoding="utf-8")
-        assert "Coming soon, with Learn" not in unveil and "nav.toLearn?.(c.next, 'ready')" in unveil
-
-    def test_the_modules_match_the_server(self):
-        from finance import learn
-        content = (SRC / "panels" / "learnModules.js").read_text(encoding="utf-8")
-        ids = re.findall(r"^    id: '([a-z-]+)',", content, re.M)
-        assert ids == [m["id"] for m in learn.MODULES]
-        answers = re.findall(r"^      answer: '([a-z_]+)',", content, re.M)
-        assert answers == [m["answer"] for m in learn.MODULES]
-
-    def test_placement_ends_onboarding_and_moments_open_the_app(self, source):
-        onboarding = (SRC / "pearl" / "Onboarding.jsx").read_text(encoding="utf-8")
-        assert "<Placement" in onboarding and "placeOnPath()" in onboarding
-        assert "Shell" not in onboarding and "Glimmer" not in onboarding
-        assert "getMoments()" in source and "<MomentScreen" in source
-
-    def test_the_partner_is_configured_not_built_in(self):
-        unveil = (SRC / "panels" / "Unveil.jsx").read_text(encoding="utf-8")
-        partner = (SRC / "panels" / "Partner.jsx").read_text(encoding="utf-8")
-        assert "<PartnerCard" in unveil and "goToPartner()" in unveil
-        assert "reportInvesting('not_sure', 'partner')" in unveil
-        assert "Pearl may be paid if you open an account." in partner
-        # No partner's name is written into the app.
-        assert not re.search(r"Wealthsimple|Questrade|Example Invest", partner + unveil)
 
 
 class TestNoPhaseNames:
@@ -826,49 +699,6 @@ class TestNoPhaseNames:
             assert not self.NAMES.search(s), s
 
 
-class TestSaveHoldsWhatItCouldGrowInto:
-    """THL-248 (design THL-240 SV-P01 to SV-P03): projections, the calculator
-    and Learn moved from Growth into Save; the old addresses redirect; no
-    Growth section, header, tab or route is left."""
-
-    def test_the_routes_and_the_redirects(self, source):
-        router = (SRC / "router.js").read_text(encoding="utf-8")
-        for path in ("SAVE_PATH = '/save'", "/save/anchor", "/save/anchor/projection",
-                     "CALCULATOR_PATH = '/save/calculator'", "LEARN_PATH = '/save/learn'",
-                     "PROJECTIONS_PATH = '/save/projections'", "PATH_PATH = '/wins'",
-                     "INSIGHTS_PATH = '/cashflow/insights'", "export function redirectOldUrl",
-                     "export function newUrlFor"):
-            assert path in router, path
-        assert "redirectOldUrl()" in source and "isSaveUrl()" in source and "writeSaveUrl()" in source
-        # No page is served at a Growth address any more.
-        assert not re.search(r"(PATH|_PATH) = '/growth", router)
-
-    def test_save_is_anchor_then_chests_then_what_it_could_grow_into(self):
-        save = (SRC / "panels" / "Goals.jsx").read_text(encoding="utf-8")
-        order = [save.index(s) for s in ("<AnchorCard", "<ChestsSection", "<GrowInto")]
-        assert order == sorted(order)
-        for s in ("What this could grow into", "When your Anchor reaches 3 months",
-                  "What regular investing could grow to", "Learn at your pace",
-                  "Illustrative, to help you plan. Pearl never recommends a product.",
-                  "writeProjectionsUrl('calculator')", "onTab?.('learn')"):
-            assert s in save, s
-        assert "GroupTabs" not in save and "SavingGoal" not in save
-
-    def test_no_growth_header_tab_or_route_is_left(self, groups):
-        assert "growth" not in groups
-        nav = (SRC / "nav.js").read_text(encoding="utf-8")
-        assert "tabs: false" in nav                      # Save's pages aren't pills
-        for name in ("ProjectionsPanel.jsx", "LearnPanel.jsx", "WinsPanel.jsx", "Goals.jsx"):
-            text = (SRC / "panels" / name).read_text(encoding="utf-8")
-            assert "<GrowthTabs" not in text, name
-            code = re.sub(r"//.*|/\*.*?\*/", "", text, flags=re.S)
-            assert not re.search(r"['\"`]/growth", code), name
-        for name in ("CategoryBudgetsPanel.jsx", "DebtsPanel.jsx"):
-            text = (SRC / "panels" / name).read_text(encoding="utf-8")
-            assert '<h1 className="pk-h1">Cash flow</h1>' in text, name
-
-
-
 class TestCalendarAndQuickSort:
     """THL-255: the calendar is Cash flow's second tab at /cash-flow/calendar
     and Home's strip opens it. THL-254: the quick sort prompt is asked once
@@ -882,20 +712,19 @@ class TestCalendarAndQuickSort:
         assert "calendar:      { label: 'Calendar'" in nav
         assert "isCalendarUrl()" in source and "writeCalendarUrl()" in source
         assert "panel === 'calendar'" in source and "<CalendarPanel" in source
-        home = (SRC / "panels" / "HomePanel.jsx").read_text(encoding="utf-8")
-        assert "<CalendarStrip strip={calendar} onOpen={onCalendar} />" in home
-        assert "onCalendar={() => onTab?.('calendar')}" in home
         panel = (SRC / "panels" / "CalendarPanel.jsx").read_text(encoding="utf-8")
         assert '<CashFlowTabs current="calendar"' in panel
         assert "bad" not in panel.lower().replace("badge", "")
 
-    def test_quick_sort_is_offered_after_the_moments(self, source):
+    def test_quick_sort_is_offered_on_open(self, source):
         assert "getQuickSort()" in source and "<QuickSort" in source
         assert "askQuickSort()" in source
+        # Its card is the sort card (THL-263): the same questions as Needs a look.
         qs = (SRC / "panels" / "QuickSort.jsx").read_text(encoding="utf-8")
-        for words in ("✓ Right", "Something else…", "Skip this one", "It wasn’t a purchase…",
-                      "Save and next", "Later", "Welcome back", "All sorted"):
+        assert "<SortCard" in qs and "<SortedCard" in qs
+        for words in ("Later", "Welcome back", "All sorted"):
             assert words in qs, words
+        assert "Save and next" not in qs
 
 
 def test_no_merge_conflict_markers_are_left_in_the_source():

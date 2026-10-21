@@ -10,13 +10,12 @@ import './quicksort.css';
  *
  * On sign-in, when there are new transactions Pearl isn't sure of (the
  * same rows Needs a look asks about, THL-227), a modal on the web and a
- * sheet on a phone: QS-01 the prompt, with Start and Later; QS-02 one card
- * per transaction — ✓ Right, Something else…, or Skip this one — with
- * "Later" at the top throughout; QS-03 the picker, suggested and recent
- * categories first, then a search, and "It wasn't a purchase…" into What
- * was this?; QS-04 the done screen: safe to spend before → after, one line
- * on why, and how many rules were saved. Shown at most once a day. Later
- * and anything skipped stay in Needs a look.
+ * sheet on a phone: QS-01 the prompt, with Start and Later; then one sort
+ * card per transaction (SortCard.jsx, THL-263: the same questions, options,
+ * Remember and Undo as Needs a look), each ending on the Sorted card with
+ * Next, and "Later" at the top throughout; QS-04 the done screen: safe to
+ * spend before → after, one line on why, and how many rules were saved.
+ * Shown at most once a day. Later and anything skipped stay in Needs a look.
  */
 export default function QuickSort({ data, categories = [], onClose, onChanged }) {
   const [step, setStep] = useState('prompt');

@@ -186,43 +186,9 @@ export const allocateToBank  = (id, txnId) =>
 export const unallocate      = (txnId) =>
   req(`/api/piggy/allocations/${txnId}`, { method: 'DELETE' });
 
-// Goals (THL-131, THL-132, THL-179): the Anchor, treasure chests (the piggy
-// banks above, by the Goals page's name) and the saving goal.
-// Home (THL-44, THL-46): safe to spend for the month and every row behind it.
+// Home, stripped down (2026-10-21): the month's numbers, how many
+// transactions need a look, and any bank connection that needs her.
 export const getHome = () => req('/api/home');
-// The Path page (THL-129 GR-01), and one step with her numbers (GR-02 to GR-04).
-export const getPath = () => req('/api/path');
-export const getPathStep = (key) => req(`/api/path/step/${encodeURIComponent(key)}`);
-// Where she starts (THL-130 GR-06, GR-07), at the end of onboarding.
-export const getPlacement = () => req('/api/path/placement');
-export const placeOnPath  = () => json('POST', '/api/path/placement', {});
-// A phase done, once (GR-08 to GR-10), and GR-20's "Welcome back".
-export const getMoments   = () => req('/api/moments');
-
-// Wins (THL-246 to THL-251): the path and pearls, streaks, challenges, recaps.
-export const getWins           = () => req('/api/wins');
-export const getWinsStreak     = (key) => req(`/api/wins/streaks/${encodeURIComponent(key)}`);
-export const getWinsChallenges = () => req('/api/wins/challenges');
-export const startChallenge    = (body) => json('POST', '/api/wins/challenges', body);
-export const getChallenge      = (id) => req(`/api/wins/challenges/${id}`);
-export const stopChallenge     = (id) => json('POST', `/api/wins/challenges/${id}/stop`, {});
-export const challengeToChest  = (id, bankId) => json('POST', `/api/wins/challenges/${id}/chest`, { bank_id: bankId });
-// "You earned a pearl" (THL-256): the sheet on open, once per milestone.
-export const getPearlMoment    = () => req('/api/wins/moment');
-export const pearlMomentSeen   = (keys) => json('POST', '/api/wins/moment/seen', { keys });
-export const getRecap          = (month) => req(`/api/wins/recaps/${encodeURIComponent(month)}`);
-export const seeMoment    = (phase) => json('POST', `/api/moments/${encodeURIComponent(phase)}`, {});
-// Learn (THL-134 GR-11 to GR-14): her place in each module, saved per screen.
-export const getLearn     = () => req('/api/learn');
-export const saveLearn    = (id, body) => json('PUT', `/api/learn/${encodeURIComponent(id)}`, body);
-// The starter questions (E-02) and "Use a different amount" (E-03).
-// Last month's surplus or shortfall (THL-212): "now", "spread2", "spread3",
-// or "save", "chest", "spend".
-export const answerCarryover = (month, choice) =>
-  json('PUT', `/api/carryover/${month}`, { choice });
-
-export const putHomeAnswers = (answers) => json('PUT', '/api/home/answers', answers);
-// Month or week as Home's main view (THL-166), saved on her account.
 // Category budgets (THL-168): each one a percent of her usual month.
 export const getCategoryBudgets = () => req('/api/category-budgets');
 export const putCategoryBudget = (category, pct) => json('PUT', '/api/category-budgets', { category, pct });
@@ -233,9 +199,6 @@ export const undoDismissSuggestion = (type) => req(`/api/recommendations/${type}
 export const getDebts = () => req('/api/debts');
 export const putDebtDetails = (accountId, fields) =>
   json('PUT', `/api/debts/${encodeURIComponent(accountId)}`, fields);
-export const getGoals        = () => req('/api/goals');
-export const setAnchor       = (fields) => json('PUT', '/api/goals/anchor', fields);
-export const setUnusualMonths = (months) => json('PUT', '/api/goals/anchor/unusual', { months });
 // Growth › Insights (THL-186, THL-196): the month, a month left out of the
 // usual (THL-59), and Keep or Review on a subscription (THL-63).
 // `filters`: {month, account, span, one_offs, show} — any left out means all.
@@ -254,16 +217,6 @@ export const setMonthUnusual = (month, unusual) =>
   json('PUT', '/api/insights/unusual', { month, unusual });
 export const setSubscriptionChoice = (merchant, choice) =>
   json('PUT', '/api/insights/subscriptions', { merchant, choice });
-export const anchorWhatIf    = (monthly) =>
-  req(`/api/goals/anchor/whatif?monthly=${encodeURIComponent(monthly)}`);
-export const getChest        = (id) => req(`/api/goals/chests/${id}`);
-export const openTreasure    = (id, txnIds, categories) =>
-  json('POST', `/api/goals/chests/${id}/open`, { txn_ids: txnIds, categories });
-export const seenCatchUp     = (id, monthly) =>
-  json('PUT', `/api/goals/chests/${id}/seen`, { monthly });
-export const addToChest      = (id, amount) =>
-  json('POST', `/api/goals/chests/${id}/add`, { amount });
-
 
 // Income and bills (THL-45, THL-127 I-01 to I-06): the check after linking,
 // and Profile › Income and bills. Every call returns the whole check.
@@ -283,23 +236,6 @@ export const editBill         = (key, bill) => json('PUT', billPath(key), bill);
 export const removeBill       = (key) => req(billPath(key), { method: 'DELETE' });
 export const answerRent       = (key) => json('POST', `${IB}/rent`, { key, answer: 'yes' });
 
-
-// Growth › Projections (THL-197 GR-33 to GR-36): this month, the next 30
-// days and savings in a year, with `extra` dollars more a month as the
-// what-if; "Use this pace for my Anchor" sets the monthly saving goal.
-export const getProjections  = (extra = 0) =>
-  req(`/api/projections${extra > 0 ? `?extra=${encodeURIComponent(extra)}` : ''}`);
-export const setSavingPace   = (monthly) => json('PUT', '/api/projections/pace', { monthly });
-// Unveil (THL-135 GR-16, THL-195 GR-37): the readiness checklist, and
-// "Opened an investing account?" — the kind of account only.
-export const getUnveil       = () => req('/api/unveil');
-export const reportInvesting = (type, via) => json('PUT', '/api/unveil', via ? { type, via } : { type });
-export const undoInvesting   = () => req('/api/unveil', { method: 'DELETE' });
-// The partner handoff (THL-136 GR-19 to GR-23, post-MVP, only when one is
-// configured): the link out, GR-20's "Not yet", GR-22's "Tell me when".
-export const goToPartner     = () => json('POST', '/api/unveil/partner', {});
-export const partnerNotYet   = () => json('PUT', '/api/unveil/partner/welcome', { answer: 'not_yet' });
-export const partnerNotify   = () => json('PUT', '/api/unveil/partner/notify', {});
 
 /**
  * Add a transaction by hand.

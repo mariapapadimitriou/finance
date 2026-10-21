@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
-import { getAuthStatus, getProfileSummary, undoInvesting } from '../api.js';
+import { getAuthStatus, getProfileSummary } from '../api.js';
 import { DocSheet } from '../pearl/docs.jsx';
 import { StatusPill } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
@@ -89,9 +89,6 @@ export function hubRows(summary, user) {
         sub: s.rules ? plural(s.rules, 'saved rule') : 'No saved rules yet' },
       { key: 'income', name: 'Income and bills',
         sub: 'Your pay, and the regular bills set aside' },
-      // Unveil's self-report (THL-195 GR-37), undone here.
-      ...(s.investing ? [{ key: 'investing', name: 'Investing account', undo: true,
-                           sub: `You told Pearl you opened one: ${s.investing.label}` }] : []),
     ] },
     { title: 'You', rows: [
       { key: 'security', name: 'Sign-in and security',
@@ -99,6 +96,10 @@ export function hubRows(summary, user) {
           .filter(Boolean).join(' · ') },
       { key: 'notifications', name: 'Notifications',
         sub: 'Payday, weekly check-in, progress, milestones' },
+      // The sidebar's theme and sign-out moved here (2026-10-21): the Pearl
+      // Handoff File's sidebar has neither.
+      { key: 'theme', name: 'Appearance', theme: true, sub: 'Light or dark' },
+      { key: 'signout', name: 'Sign out', signout: true, sub: 'On this device' },
     ] },
     { title: 'Privacy', rows: [
       { key: 'consent', name: 'Privacy and consent',
@@ -115,7 +116,7 @@ export function hubRows(summary, user) {
   ];
 }
 
-export function ProfileHub({ summary, user, onTab, onUndoInvesting, onDoc }) {
+export function ProfileHub({ summary, user, onTab, onDoc, theme, setTheme, onSignOut }) {
   const who = [user?.first_name || user?.username, user?.email].filter(Boolean).join(' · ');
   return (
     <div className="pk hm-page pf-page">
@@ -130,9 +131,12 @@ export function ProfileHub({ summary, user, onTab, onUndoInvesting, onDoc }) {
           <ul className="pf-list">
             {group.rows.map((r) => (
               <ListRow key={r.key} name={r.name} sub={r.sub} soon={r.soon}
-                       onOpen={r.undo ? null : r.doc ? () => onDoc?.(r.doc) : () => onTab?.(r.key)}
-                       end={r.undo ? (
-                         <button type="button" className="gl-more" onClick={onUndoInvesting}>Undo</button>
+                       onOpen={r.theme ? () => setTheme?.(theme === 'dark' ? 'light' : 'dark')
+                         : r.signout ? () => onSignOut?.()
+                           : r.doc ? () => onDoc?.(r.doc) : () => onTab?.(r.key)}
+                       chevron={!r.theme && !r.signout}
+                       end={r.theme ? (
+                         <span className="pf-row-sub">{theme === 'dark' ? 'Dark' : 'Light'}</span>
                        ) : r.needs > 0 && (
                          <StatusPill icon="alert" tone="caution">
                            <span className="pf-needs">{`${r.needs} needs you`}</span>
@@ -146,7 +150,7 @@ export function ProfileHub({ summary, user, onTab, onUndoInvesting, onDoc }) {
   );
 }
 
-export default function ProfilePanel({ onTab, version }) {
+export default function ProfilePanel({ onTab, version, theme, setTheme, onSignOut }) {
   const [summary, setSummary] = useState(null);
   const [user, setUser] = useState(null);
   const [error, setError] = useState(null);
@@ -162,7 +166,7 @@ export default function ProfilePanel({ onTab, version }) {
   return (
     <>
       <ProfileHub summary={summary} user={user} onTab={onTab} onDoc={setDoc}
-                  onUndoInvesting={() => undoInvesting().then(load).catch(setError)} />
+                  theme={theme} setTheme={setTheme} onSignOut={onSignOut} />
       {doc && <DocSheet name={doc} onClose={() => setDoc(null)} />}
     </>
   );

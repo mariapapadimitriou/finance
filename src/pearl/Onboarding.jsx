@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  createLinkToken, exchangePublicToken, getAccounts, getOnboarding, getPlacement, money,
-  passkeyRegister, passkeyRegisterOptions, placeOnPath, saveOnboarding,
+  createLinkToken, exchangePublicToken, getAccounts, getOnboarding, money,
+  passkeyRegister, passkeyRegisterOptions, saveOnboarding,
 } from '../api.js';
-import { Placement } from '../panels/Moments.jsx';
-import { UnveilDone } from '../panels/Unveil.jsx';
 import { loadPlaidScript } from '../plaid.js';
 import { DocSheet } from './docs.jsx';
 import IncomeBillsFlow from './IncomeBills.jsx';
@@ -53,7 +51,7 @@ function screenFor(user, startAt) {
   if (startAt === 'passkey' && passkeysSupported() && !(user?.passkeys > 0)) return 'passkey';
   if (ob.province === 'QC') return 'quebec';
   return { protect: 'protect', consents: 'consents', bank: 'bank', linked: 'linked',
-           uses: 'uses', income: 'income', email: 'email', path: 'path' }[ob.step] ?? 'province';
+           uses: 'uses', income: 'income', email: 'email', path: 'email' }[ob.step] ?? 'province';
 }
 
 /**
@@ -88,17 +86,10 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
   const [phase, setPhase] = useState(0);
   const [itemId, setItemId] = useState(null);
   const [accounts, setAccounts] = useState(null);
-  const [placement, setPlacement] = useState(null);
 
   useEffect(() => {
     getOnboarding().then((r) => setProvinces(r.provinces)).catch(() => {});
   }, []);
-
-  // O-12: where she starts, once the check before it is done.
-  useEffect(() => {
-    if (screen !== 'path' || placement) return;
-    getPlacement().then(setPlacement).catch((e) => setError(e.message));
-  }, [screen, placement]);
 
   useEffect(() => {
     if (screen !== 'linked') return;
@@ -107,6 +98,20 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
       setAccounts(linked);
     }).catch((e) => setError(e.message));
   }, [screen, itemId]);
+
+  // CN-03's Finish (2026-10-21): the path's "First look" (O-12) went with
+  // Wins, so the last answer saves and the app opens on Home.
+  const finish = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await saveOnboarding({ consents: { tips }, done: true });
+      onDone?.('home');
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
 
   async function save(fields, next) {
     setBusy(true);
@@ -497,7 +502,7 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
         {error && <Banner tone="caution">{error}</Banner>}
         <div className="p-actions">
           <button type="button" className="p-btn primary" disabled={busy}
-                  onClick={() => save({ consents: { tips }, step: 'path' }, 'path')}>
+                  onClick={finish}>
             Finish
           </button>
         </div>
@@ -515,40 +520,7 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
     );
   }
 
-  // ── O-12 First look at your path: where you start (THL-130 GR-06, GR-07) ──
-  // Steps already true are credited and named; "See my path" credits savings
-  // that already hold a month of Essentials as her Anchor, and leaves no
-  // phase's moment to play again. An investment account already linked goes
-  // straight to Unveil done (GR-10).
-  const finish = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await placeOnPath();
-      await saveOnboarding({ done: true });
-      onDone?.('path');
-    } catch (e) {
-      setError(e.message);
-      setBusy(false);
-    }
-  };
-  const phases = ['protect', 'build', 'unveil'].map((key) => ({
-    key, label: { protect: 'The basics', build: 'Your Anchor', unveil: 'Grow your money' }[key], state: 'done' }));
-  return (
-    <div className="pearl p-placement">
-      <main className="pk">
-        {!placement && !error && <p className="pk-muted" role="status">Looking at your accounts…</p>}
-        {!placement && error && <Banner tone="caution">{error}</Banner>}
-        {placement && placement.invested && (
-          <UnveilDone data={{ path: { phases }, report: null }} onPath={finish} />
-        )}
-        {placement && !placement.invested && (
-          <Placement data={placement} onContinue={finish} busy={busy} error={error ?? ''} />
-        )}
-      </main>
-      {doc && <DocSheet name={doc} onClose={() => setDoc(null)} />}
-    </div>
-  );
+  return null;
 }
 
 function AccountRow({ a }) {

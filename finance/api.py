@@ -1815,49 +1815,16 @@ def _chest(row: dict) -> dict:
     }
 
 
-def _saving_goal(st, txns, today: str) -> dict:
-    """The plan's saving goal (THL-170) against what last month put away."""
-    from . import anchor as anchor_math
-    from .analytics import invested_in
-
-    income = st.float_setting("monthly_income", 0.0)
-    target = st.float_setting("savings_target", 0.0)
-    stored = st.setting("savings_rate")
-    rate = (float(stored) if stored not in (None, "")
-            else target / income if income > 0 and target else None)
-    last = (anchor_math.full_months(txns, today, lookback=1) or [None])[0]
-    return {
-        "set": target > 0,
-        "rate": round(rate, 4) if rate else None,
-        "target": round(target, 2),
-        "last_month": last,
-        "saved": invested_in(txns, last) if last else 0.0,
-    }
-
-
-def _goals_safe_to_spend(st) -> float | None:
-    """What is left to spend this month, for "this month: $842 → $592" —
-    Home's own number (2026-10-14), never a second model of it."""
-    from datetime import date as _date
-    try:
-        sts = _home_sts(st, st.all_transactions(), _date.fromisoformat(_today_iso()))
-    except Exception:              # nothing to quote yet
-        return None
-    if sts.get("amount") is None:
-        return None
-    return round(sts.get("shown", sts["amount"]), 2)
-
-
 @bp.get("/home")
 def home():
-    """Everything Home draws, in one call (THL-44, THL-46).
-
-    Worked out on every request from the ledger as it stands, so the number
-    is current as soon as a sync has written its rows (E05: within 5 minutes).
+    """What the bare Home draws (2026-10-21), and the month's numbers behind
+    the rest of the app: safe to spend, the usual month, savings so far,
+    how many transactions need a look, and any bank connection that needs
+    her. The path, wins, calendar strip, carry-over question, cards, budgets
+    and snapshot that the old Home drew are gone with it.
     """
     from datetime import date as _date
-    from flask import g
-    from . import carryover, milestones, safe_to_spend, savings, usual_month, weekly
+    from . import milestones, safe_to_spend, savings, usual_month, weekly
 
     st = store()
     today = _date.fromisoformat(_today_iso())
@@ -1865,9 +1832,6 @@ def home():
     told_income = st.float_setting("home_income", 0.0)
     told_rent = st.float_setting("home_rent", 0.0)
     debts = _debts(st, txns, today)
-    # Last month's result, asked about once a month (THL-212). Worked out
-    # before the number so a fresh answer-free surplus starts its 7 days.
-    carry_question = carryover.question(st, txns, today)
     sts = _home_sts(st, txns, today, debts)
     types = {aid: r.get("account_type") or ""
              for aid, r in st.account_sync_rules().items() if r.get("enabled")}
@@ -1875,8 +1839,6 @@ def home():
     state = safe_to_spend.home_state(
         txns, today, sts, account_types=types, linking_failed=failed,
         told_income=told_income, told_rent=told_rent)
-    # THL-184: the usual month comes with the Home payload, so Home needs no
-    # other call.
     from . import kinds as kinds_mod
     kinds = kinds_mod.kind_map(st, txns, today)
     usual = usual_month.usual(txns, today, unusual=_unusual_months(st), kinds=kinds)
@@ -1888,27 +1850,14 @@ def home():
         "today": today.isoformat(),
         "safe_to_spend": sts,
         "data_state": state,
-        "path": _path(st, txns, today, sts, state, types),
-        # THL-246: Home's small "Your next step" card, from the milestone path.
-        "wins": __import__("finance.wins_api", fromlist=["summary"]).summary(st, txns, today, anchor=_anchor(st, txns, today.isoformat()),
-                                 path=_path(st, txns, today, sts, state, types),
-                                 review_count=review.get("count", 0), usual=usual),
         "review_count": review.get("count", 0),
-        # THL-255 CAL-06: the month strip under safe to spend.
-        "calendar": __import__("finance.calendar_view", fromlist=["strip"]).strip(st, txns, today, sts),
-        "carryover": carry_question,
-        # Savings so far: put away, and left over, since she started.
         "savings": savings.this_month(st, txns, today),
         "connections": milestones.connections(st.plaid_items(), st.account_sync_rules()),
         "usual_month": usual,
-        # THL-166: the week under the month, and which one she reads first.
         "week": weekly.week(txns, today, sts),
-        # THL-49 D-01: carried balances, beside safe-to-spend, never in it.
         "debts": debts,
-        # THL-12 E08 RC-01: "For you", at most two cards.
+        # Insights' "For you" cards and the usual-month snapshot read here too.
         "recommendations": _recommendations(st, txns, today, sts, usual),
-        # THL-168 B-03: how many budgets need a look.
-        "budgets": _budgets_summary(_category_budgets(st, txns, today, sts, usual)),
         "snapshot": usual_month.snapshot(
             txns, today, sts, usual,
             comparisons_from=state["comparisons_from"],
@@ -1985,10 +1934,6 @@ def _hidden_until(on: str) -> str:
     from datetime import date as _date, timedelta
     from . import recommendations as rec
     return (_date.fromisoformat(on) + timedelta(days=rec.DISMISS_DAYS)).isoformat()
-
-
-def _budgets_summary(b: dict) -> dict:
-    return {"ready": b["ready"], "needs_look": b["needs_look"], "count": len(b["rows"])}
 
 
 def _debts(st, txns, today) -> dict:
@@ -2099,374 +2044,6 @@ def debt_details(account_id):
     return debts_page()
 
 
-@bp.put("/carryover/<month>")
-def answer_carryover(month: str):
-    """Her answer for last month's result (THL-212): for a shortfall "now",
-    "spread2" or "spread3"; for money to spare "save", "chest" or "spend"."""
-    from datetime import date as _date
-    from . import carryover
-    st = store()
-    choice = str((request.get_json(silent=True) or {}).get("choice") or "")
-    entry = carryover.answer(st, month, choice, _date.fromisoformat(_today_iso()))
-    if entry is None:
-        return jsonify({"error": "That isn’t one of the choices for that month."}), 400
-    return jsonify({"ok": True, "month": month, "choice": choice})
-
-
-def _path(st, txns, today, sts: dict, state: dict, types: dict, **kw) -> dict:
-    """THL-129's path for Home's path card (GR-05) and the Path page (GR-01).
-    Protect, once done, is remembered and stays done. `kw` goes to
-    `milestones.path` (`every_step` for a step's own screen, GR-02 to GR-04)."""
-    from . import income_bills, milestones, safe_to_spend
-    p = milestones.path(
-        txns, today, sts, anchor=_anchor(st, txns, today.isoformat()),
-        income_of=lambda m: safe_to_spend.income_for_month(st, txns, m, today),
-        bills_found=state.get("bills_found", 0),
-        told_rent=st.float_setting("home_rent", 0.0), account_types=types,
-        protect_done_before=st.setting("protect_done_on") not in (None, ""),
-        confirm=income_bills.load(st), told_income=st.float_setting("home_income", 0.0),
-        invest_reported=bool(_json_setting(st, "unveil_reported", None)), **kw)
-    if p["protect_done"] and st.setting("protect_done_on") in (None, ""):
-        st.set_setting("protect_done_on", today.isoformat())
-    return p
-
-
-@bp.get("/path")
-def path_page():
-    """The Path page (THL-129 GR-01): the same path Home shows."""
-    from datetime import date as _date
-    from . import carryover, income_bills, safe_to_spend, savings
-
-    st = store()
-    today = _date.fromisoformat(_today_iso())
-    txns = st.all_transactions()
-    told_income = st.float_setting("home_income", 0.0)
-    told_rent = st.float_setting("home_rent", 0.0)
-    sts = safe_to_spend.compute(
-        txns, today, entered_income=st.float_setting("monthly_income", 0.0),
-        told_income=told_income, told_rent=told_rent, confirm=income_bills.load(st),
-        carry=carryover.applied(st, today),
-        moved_to_savings=savings.put_away_month(st, txns, today.strftime("%Y-%m")))
-    types = {aid: r.get("account_type") or ""
-             for aid, r in st.account_sync_rules().items() if r.get("enabled")}
-    state = safe_to_spend.home_state(txns, today, sts, account_types=types,
-                                     told_income=told_income, told_rent=told_rent)
-    return jsonify(_path(st, txns, today, sts, state, types))
-
-
-@bp.put("/home/answers")
-def home_answers():
-    """The starter questions (E-02) and "Use a different amount" (E-03).
-
-    Income and rent she tells us on Home. Either can be cleared with 0. When
-    `override` is set the amount replaces the cautious figure; each override
-    is recorded with the figure it replaced (E10: "let users override it,
-    and record that they did").
-    """
-    import json
-    from datetime import date as _date
-    from . import safe_to_spend
-
-    body = request.get_json(silent=True) or {}
-    st = store()
-    saved = {}
-    for key, setting in (("income", "home_income"), ("rent", "home_rent")):
-        if key not in body:
-            continue
-        try:
-            value = round(float(body[key] or 0), 2)
-        except (TypeError, ValueError):
-            return jsonify({"error": f"Enter your {key} as an amount, like 3200."}), 400
-        if value < 0 or value > 1_000_000:
-            return jsonify({"error": f"Enter your {key} as an amount, like 3200."}), 400
-        st.set_setting(setting, str(value) if value else "")
-        saved[key] = value
-    if body.get("override") and saved.get("income"):
-        today = _date.fromisoformat(_today_iso())
-        careful = safe_to_spend.cautious_income(st.all_transactions(), today)
-        log = _json_setting(st, "income_overrides", [])
-        log.append({"on": today.isoformat(), "amount": saved["income"],
-                    "cautious": careful["lowest"] if careful else None})
-        st.set_setting("income_overrides", json.dumps(log))
-    return home()
-
-
-@bp.get("/goals")
-def goals():
-    """The Save page: the Anchor pinned on top, chests, the saving goal.
-
-    `phase` is where she is on the path (internal keys; the app never shows
-    the old phase names, THL-238): past the Anchor once it has ever covered
-    three months of Essentials, at the Anchor once it is set up or the
-    basics are covered (the plan has an income), and before that otherwise.
-    Only the Anchor moves it; chests and the saving goal never do.
-    """
-    st = store()
-    txns = st.all_transactions()
-    today = _today_iso()
-    anchor = _anchor(st, txns, today)
-    plan_ready = st.float_setting("monthly_income", 0.0) > 0
-    phase = ("unveil" if anchor["earned"]
-             else "build" if anchor["started"] or plan_ready else "protect")
-    banks = _bank_status(st)
-    chests = sorted((_chest(r) for r in banks), key=lambda c: c["id"])
-    return jsonify({
-        "month": today[:7],
-        "phase": phase,
-        "plan_ready": plan_ready,
-        "anchor": anchor,
-        "chests": chests,
-        "chest_suggestion": _suggested_bank(txns, banks),
-        "spend_categories": _spend_categories(),
-        "bank_funded": sorted(st.bank_funded_categories()),
-        "saving_goal": _saving_goal(st, txns, today),
-        "safe_to_spend": _goals_safe_to_spend(st),
-    })
-
-
-@bp.put("/goals/anchor")
-def set_anchor():
-    """Set up the Anchor, or change the accounts it counts. There is no
-    amount to give it (THL-230): the Anchor is what those accounts hold,
-    less what the chests hold."""
-    import json
-    body = request.get_json(silent=True) or {}
-    st = store()
-    wanted = body.get("accounts")
-    if not isinstance(wanted, list):
-        return jsonify({"error": "Pick the savings accounts that make up your Anchor."}), 400
-    known = {a["account_id"] for a in _anchor_accounts(st)}
-    unknown = [a for a in wanted if a not in known]
-    if unknown:
-        return jsonify({"error": "That account can’t count toward the Anchor."}), 400
-    st.set_setting("anchor_accounts", json.dumps(sorted(set(wanted))))
-    if st.setting("anchor_started") in (None, ""):
-        st.set_setting("anchor_started", _today_iso())
-    return goals()
-
-
-@bp.put("/goals/anchor/unusual")
-def set_unusual_months():
-    """Months to leave out of the pace: a car repair, a move."""
-    import json
-    import re
-    body = request.get_json(silent=True) or {}
-    months = body.get("months") or []
-    if not isinstance(months, list) or not all(
-            isinstance(m, str) and re.fullmatch(r"\d{4}-\d{2}", m) for m in months):
-        return jsonify({"error": "Months must be a list like 2026-08."}), 400
-    st = store()
-    st.set_setting("anchor_unusual", json.dumps(sorted(set(months))))
-    return goals()
-
-
-@bp.get("/goals/anchor/whatif")
-def anchor_whatif():
-    """What putting aside a different amount each month would do. Saves nothing."""
-    from . import anchor as anchor_math
-
-    try:
-        monthly = float(request.args.get("monthly", ""))
-    except ValueError:
-        return jsonify({"error": "Ask for a monthly amount."}), 400
-    st = store()
-    txns = st.all_transactions()
-    today = _today_iso()
-    a = _anchor(st, txns, today)
-    if not a["started"]:
-        return jsonify({"error": "Set up your Anchor first."}), 409
-    pace = a["pace"]
-    usual = pace["usual"] if pace else 0.0
-    extra = monthly - usual
-    if pace:
-        result = anchor_math.projection(a["to_go"], pace, today, extra=extra)
-    else:
-        soon = anchor_math.months_to(a["to_go"], monthly)
-        result = ({"state": "range", "from": anchor_math.add_months(today[:7], soon),
-                   "to": anchor_math.add_months(today[:7], soon)}
-                  if soon is not None else {"state": "none", "reason": "no_pace"})
-
-    # How much sooner, measured between the middles of the two ranges.
-    sooner = None
-    now = a["projection"]
-    if now and now.get("state") == "range" and result.get("state") == "range":
-        def middle(p):
-            return (anchor_math._month_index(p["from"]) + anchor_math._month_index(p["to"])) / 2
-        sooner = round(middle(now) - middle(result))
-    return jsonify({"monthly": round(monthly, 2), "usual": usual,
-                    "extra": round(extra, 2), "projection": result,
-                    "sooner_months": sooner})
-
-
-def _chest_recent(st, bank, charges: dict, txns, today: str, limit: int = 3) -> list[dict]:
-    """What went into a chest and what it paid for, newest first."""
-    from . import anchor as anchor_math
-    from . import piggy
-
-    now = today[:7]
-    entries = []
-    month = bank.start_month or now
-    while month <= now:
-        upto = {m: v for m, v in charges.items() if m <= month}
-        put = piggy.status(bank, upto, today=f"{month}-01")["monthly"]
-        if put > 0:
-            entries.append({"date": f"{month}-01", "kind": "set_aside", "amount": round(put, 2)})
-        month = anchor_math.add_months(month, 1)
-    for d in st.draws():
-        if d["bank_id"] == bank.id and d["amount"] < 0:
-            entries.append({"date": (d["created_at"] or f"{d['month']}-01")[:10],
-                            "kind": "added", "amount": round(-d["amount"], 2)})
-    for t in txns:
-        if t.bank_id == bank.id and t.amount > 0:
-            entries.append({"date": t.date, "kind": "paid", "merchant": t.merchant,
-                            "amount": round(t.bank_amount or t.amount, 2)})
-    entries.sort(key=lambda e: e["date"], reverse=True)
-    return entries[:limit]
-
-
-def _chest_category(name: str, categories: list[str], allowed: list[str]) -> str | None:
-    """The category a chest most likely pays for, from what it pays for already
-    or from its name: "Holiday gifts" pays for Gifts, "Japan trip" for Travel."""
-    if categories:
-        return categories[0]
-    words = name.lower()
-    for keyword in ("trip", "travel", "flight", "vacation", "holiday trip"):
-        if keyword in words and "Travel" in allowed:
-            return "Travel"
-    import re
-    for category in allowed:
-        for word in re.findall(r"[a-z]+", category.lower()):
-            stem = word.rstrip("s")
-            if len(stem) >= 4 and stem in words:
-                return category
-    return None
-
-
-@bp.get("/goals/chests/<int:bank_id>")
-def chest_detail(bank_id: int):
-    """One chest: progress, what it pays for, recent, and what it could pay."""
-    from datetime import date as _d, timedelta as _td
-
-    from . import piggy
-
-    st = store()
-    bank = st.piggy_bank(bank_id)
-    if bank is None:
-        return jsonify({"error": "No such treasure chest."}), 404
-    txns = st.all_transactions()
-    today = _today_iso()
-    charges = st.bank_charges_by_month().get(bank_id, {})
-    row = {**bank.to_dict(piggy.status(bank, charges)),
-           "categories": st.bank_categories().get(bank_id, [])}
-    chest = _chest(row)
-
-    allowed = _spend_categories()
-    suggested = _chest_category(bank.name, chest["categories"], allowed)
-    since = (_d.today() - _td(days=45)).isoformat()
-    open_charges = [t for t in txns if t.date >= since and t.amount > 0
-                    and t.bank_id is None and not t.excluded
-                    and is_spend_category(t.category or "Other")]
-    open_charges.sort(key=lambda t: t.date, reverse=True)
-    matching = [t for t in open_charges if suggested and t.category == suggested]
-    # A few recent others too, in case one of them was for this; not so many
-    # that the ones Pearl picked get lost among them.
-    others = [t for t in open_charges if t not in matching][:max(1, 4 - len(matching))]
-    candidates = [{"id": t.fingerprint, "date": t.date, "merchant": t.merchant,
-                   "amount": round(share_amount(t), 2), "category": t.category,
-                   "suggested": t in matching}
-                  for t in (matching + others)[:8]]
-
-    paid = [t for t in txns if t.bank_id == bank_id and t.amount > 0]
-    last_paid = max((t.date for t in paid), default=None)
-    seen = st.float_setting(f"chest_seen_monthly_{bank_id}", 0.0)
-    return jsonify({
-        "chest": chest,
-        "recent": _chest_recent(st, bank, charges, txns, today),
-        "suggested_category": suggested,
-        "candidates": candidates,
-        "last_paid": last_paid,
-        "catch_up_seen": chest["catching_up"] and abs(seen - chest["monthly"]) < 0.005,
-        "spend_categories": allowed,
-        "bank_funded": sorted(st.bank_funded_categories()),
-        "safe_to_spend": _goals_safe_to_spend(st),
-    })
-
-
-@bp.post("/goals/chests/<int:bank_id>/open")
-def open_treasure(bank_id: int):
-    """Open your treasure: pay these purchases, and these categories from now
-    on, from the chest instead of the month."""
-    body = request.get_json(silent=True) or {}
-    st = store()
-    bank = st.piggy_bank(bank_id)
-    if bank is None:
-        return jsonify({"error": "No such treasure chest."}), 404
-    txn_ids = body.get("txn_ids") or []
-    if not isinstance(txn_ids, list):
-        return jsonify({"error": "Purchases must be a list."}), 400
-
-    rows = []
-    for txn_id in txn_ids:
-        t = st.get_transaction(str(txn_id))
-        if t is None:
-            return jsonify({"error": "No such transaction."}), 404
-        if t.amount <= 0:
-            return jsonify({"error": "Only a purchase can come out of a chest."}), 400
-        rows.append(t)
-
-    if body.get("categories"):
-        merged = sorted(set(st.bank_categories().get(bank_id, []))
-                        | {str(c) for c in body["categories"]})
-        categories, error = _bank_categories(st, {"categories": merged}, bank_id)
-        if error:
-            return jsonify({"error": error}), 400
-        st.set_bank_categories(bank_id, categories)
-
-    for t in rows:
-        st.allocate(t.fingerprint, bank_id, t.amount)
-    paid = round(sum(t.amount for t in rows), 2)
-    return jsonify({"ok": True, "paid": paid})
-
-
-@bp.put("/goals/chests/<int:bank_id>/seen")
-def seen_catch_up(bank_id: int):
-    """"Got it" on a chest that is catching up: quiet until the amount changes."""
-    st = store()
-    if st.piggy_bank(bank_id) is None:
-        return jsonify({"error": "No such treasure chest."}), 404
-    body = request.get_json(silent=True) or {}
-    try:
-        monthly = float(body.get("monthly"))
-    except (TypeError, ValueError):
-        return jsonify({"error": "Say which monthly amount you saw."}), 400
-    st.set_setting(f"chest_seen_monthly_{bank_id}", round(monthly, 2))
-    return jsonify({"ok": True})
-
-
-@bp.post("/goals/chests/<int:bank_id>/add")
-def add_to_chest(bank_id: int):
-    """Put more into a chest now. It moves from the Anchor into the chest
-    (THL-230), the same place the monthly amount comes from; safe to spend
-    doesn't change."""
-    body = request.get_json(silent=True) or {}
-    try:
-        amount = round(float(body.get("amount")), 2)
-    except (TypeError, ValueError):
-        return jsonify({"error": "Enter an amount."}), 400
-    if amount <= 0:
-        return jsonify({"error": "Enter an amount above zero."}), 400
-    if amount > 1_000_000:
-        return jsonify({"error": "That amount is implausibly large."}), 400
-    st = store()
-    if st.piggy_bank(bank_id) is None:
-        return jsonify({"error": "No such treasure chest."}), 404
-    st.add_draw(bank_id, _today_iso()[:7], -amount, "Added")
-    return jsonify({"ok": True, "added": amount})
-
-
-# Your own split of the monthly total, saved by the old Budgets page's
-# allocation (removed with the prototype Projections page). A ledger that saved
-# one still has its weekly allowance worked out from it.
 FOCUS_KEY = "budget_focus"
 
 
@@ -2622,6 +2199,6 @@ def skip_review():
 
 # The Profile pages, Growth › Insights and Growth › Projections register on this
 # blueprint too; imported last so they can use the helpers above.
-from . import income_bills_api, insights_api, privacy_api, profile_api, projections_api  # noqa: E402,F401,I001
-from . import growth_api, marks_api, ranges_api, transactions_extras_api, wins_api  # noqa: E402,F401
+from . import income_bills_api, insights_api, privacy_api, profile_api  # noqa: E402,F401,I001
+from . import marks_api, ranges_api, transactions_extras_api  # noqa: E402,F401
 from . import calendar_api, quick_sort_api  # noqa: E402,F401
