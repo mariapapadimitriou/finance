@@ -222,7 +222,9 @@ describe('possible duplicates (THL-165 D-01, D-02)', () => {
     expect(out).toContain('Two different purchases');
     expect(out).toContain('Keep both. Both count as spending.');
     expect(out).toContain('Skip for now');
-    expect(primaries(out)).toBe(1);
+    // Tapping an answer is the commit (Current design, 2026-10-20): no Save.
+    expect(primaries(out)).toBe(0);
+    expect(out).not.toContain('>Save<');
     // A transaction's own amount is signed and coloured (2026-10-14).
     expect(out).toContain('-$96.32');
     expect(out).toMatch(/dp-amt out/);

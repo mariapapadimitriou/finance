@@ -3,7 +3,7 @@ import { ErrorNote } from '../components/ui.jsx';
 import {
   addManualAccount, createLinkToken, exchangePublicToken, getAccountsOverview, keepAsManual,
   mergeAccount,
-  removeAccount, saveAccountSettings, syncPlaid, updateManualBalance,
+  removeAccount, removeBank, saveAccountSettings, syncPlaid, updateManualBalance,
 } from '../api.js';
 import { loadPlaidScript } from '../plaid.js';
 import {
@@ -245,8 +245,16 @@ const trailFor = (a, onBack) => [
 
 /** AM-02, AM-03, AM-06 and C-06: one account. */
 export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onJoint, onRemove,
-                                onReconnect, onKeepManual, onUpdateBalance, onMerge, now = Date.now(),
-                                busy = false }) {
+                                onRemoveBank, onReconnect, onKeepManual, onUpdateBalance, onMerge,
+                                now = Date.now(), busy = false }) {
+  // Remove the whole bank (2026-10-21): for a connection that has gone wrong,
+  // the clean alternative to Reconnect — every account on this login comes
+  // off, the login is revoked, and the bank can be linked again fresh.
+  const removeBankLink = a.item_id && onRemoveBank && (
+    <button type="button" className="pf-text-link" onClick={onRemoveBank}>
+      {`Remove ${a.institution || 'this bank'} entirely and link it again`}
+    </button>
+  );
   const joint = onJoint ?? onShare;
   // "Same account as…", for two copies of one card (finance/merge.py).
   const merge = onMerge && (
@@ -319,6 +327,7 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onJ
           <button type="button" className="pf-text-link" onClick={() => onRemove('delete')}>
             Or remove this account and its history from Pearl.
           </button>
+          {removeBankLink}
           {merge}
         </div>
       </div>
@@ -403,7 +412,55 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onJ
       <button type="button" className="pf-text-link" onClick={() => onRemove()}>
         Remove this account
       </button>
+      {removeBankLink}
     </div>
+  );
+}
+
+/** Remove a bank entirely (2026-10-21): every account on its login, keeping
+ * or deleting their transactions, and the login itself. */
+export function RemoveBankDialog({ a, siblings, onClose, onRemove }) {
+  const [what, setWhat] = useState('keep');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const bank = a.institution || 'this bank';
+  const n = Math.max(siblings.length, 1);
+  const rows = siblings.reduce((sum, s) => sum + (s.transactions || 0), 0);
+  const go = () => {
+    setBusy(true);
+    setError(null);
+    onRemove(what).catch((e) => { setError(e.message); setBusy(false); });
+  };
+  return (
+    <DetailPanel label={`Remove ${bank}?`} overline="" onClose={onClose} className="pf-dialog" sheet>
+      <h1 className="pk-h2">{`Remove ${bank} entirely?`}</h1>
+      <p className="pk-muted">
+        {`Pearl disconnects ${bank} and takes ${n === 1 ? 'its account' : `all ${n} of its accounts`} off this page straight away. `}
+        You can link {bank} again afterwards from Accounts, as if for the first time — the usual fix when a
+        connection keeps misbehaving and Reconnect isn’t enough.
+      </p>
+      {siblings.length > 0 && (
+        <ul className="pf-bank-list">
+          {siblings.map((s) => (
+            <li key={s.id}>{s.name}{s.mask ? ` ••${s.mask}` : ''}</li>
+          ))}
+        </ul>
+      )}
+      {rows > 0 && (
+        <>
+          <h2 className="pk-h3">{`${plural(rows, 'transaction')} across ${n === 1 ? 'it' : 'them'}`}</h2>
+          <div className="pk-choices" role="radiogroup" aria-label="Their transactions">
+            <Choice name="bank-keep" checked={what === 'keep'} onChange={() => setWhat('keep')}
+                    label="Keep them" description="Past months stay accurate. Linking the bank again brings new ones in." />
+            <Choice name="bank-keep" checked={what === 'delete'} onChange={() => setWhat('delete')}
+                    label="Delete them too" description="Linking again starts the history over. This can’t be undone." />
+          </div>
+        </>
+      )}
+      {error && <Alert tone="caution">{error}</Alert>}
+      <PButton onClick={go} disabled={busy}>{busy ? 'Removing…' : `Remove ${bank}`}</PButton>
+      <PButton variant="text" onClick={onClose}>Keep it</PButton>
+    </DetailPanel>
   );
 }
 
@@ -934,6 +991,7 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
                      onPeople={() => setDialog({ kind: 'people' })}
                      onJoint={() => setView({ name: 'joint', id: current.id })}
                      onRemove={(start = 'keep') => setDialog({ kind: 'remove', start })}
+                     onRemoveBank={() => setDialog({ kind: 'removeBank' })}
                      onReconnect={onReconnect}
                      onUpdateBalance={() => setDialog({ kind: 'balance' })}
                      onMerge={() => setDialog({ kind: 'merge' })}
@@ -969,6 +1027,17 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
                           back();
                           await refresh();
                         }} />
+        )}
+        {current && dialog?.kind === 'removeBank' && (
+          <RemoveBankDialog a={current} siblings={all.filter((o) => o.item_id && o.item_id === current.item_id)}
+                            onClose={() => setDialog(null)}
+                            onRemove={async (what) => {
+                              const r = await removeBank(current.item_id, what);
+                              setNote(`${current.institution || 'The bank'} is removed — ${plural(r.accounts, 'account')} off. Link it again from here when you’re ready.`);
+                              setDialog(null);
+                              setView({ name: 'list' });
+                              await refresh();
+                            }} />
         )}
         {current && dialog?.kind === 'merge' && (
           <MergeDialog a={current} candidates={mergeCandidates(current, all)}

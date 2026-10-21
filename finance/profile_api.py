@@ -355,6 +355,22 @@ def update_manual_balance(account_id: str):
     return jsonify({"ok": True, "account": _find(st, account_id)})
 
 
+def _remove_linked(st, account: dict, what: str) -> int:
+    """The steps that take one bank-linked account off the Accounts page:
+    stop syncing it, mark it removed, drop its joint share, and delete its
+    rows when asked. Returns how many rows were deleted. The bank login
+    itself is left to the caller."""
+    _set_anchor(st, account["id"], False)
+    deleted = st.clear_transactions(account["id"]) if what == "delete" else 0
+    rule = st.account_sync_rules().get(account["id"])
+    if rule:
+        st.set_account_sync(account["id"], False, name=rule["account_name"],
+                            item_id=rule["item_id"])
+    st.set_account_setting(account["id"], removed=True)
+    st.set_joint_share(account["id"], None)
+    return deleted
+
+
 @bp.post("/accounts/<path:account_id>/remove")
 def remove_account(account_id: str):
     """AM-07: stop syncing an account and disconnect it, keeping its past
@@ -370,19 +386,12 @@ def remove_account(account_id: str):
     what = (request.get_json(silent=True) or {}).get("transactions", "keep")
     if what not in ("keep", "delete"):
         return jsonify({"error": "Say whether to keep its transactions or delete them."}), 400
-    _set_anchor(st, account_id, False)
     if account["source"] == "hand":
+        _set_anchor(st, account_id, False)
         st.delete_manual_account(account_id)
         return jsonify({"ok": True, "removed": 0, "disconnected": False})
 
-    deleted = st.clear_transactions(account_id) if what == "delete" else 0
-    rules = st.account_sync_rules()
-    rule = rules.get(account_id)
-    if rule:
-        st.set_account_sync(account_id, False, name=rule["account_name"],
-                            item_id=rule["item_id"])
-    st.set_account_setting(account_id, removed=True)
-    st.set_joint_share(account_id, None)
+    deleted = _remove_linked(st, account, what)
     disconnected = False
     item_id = account["item_id"]
     if item_id:
@@ -392,6 +401,31 @@ def remove_account(account_id: str):
             disconnected = True
     _reclassify(st)
     return jsonify({"ok": True, "removed": deleted, "disconnected": disconnected})
+
+
+@bp.post("/banks/<item_id>/remove")
+def remove_linked_bank(item_id: str):
+    """Remove a bank entirely (2026-10-21): every account on that bank login
+    comes off the Accounts page at once — keeping their past transactions
+    (`transactions: "keep"`) or deleting them too ("delete") — and the login
+    is disconnected and revoked at Plaid, so the bank can be linked again
+    from scratch. For a connection that has gone wrong, this is the clean
+    alternative to Reconnect."""
+    from . import plaid_link
+    st = store()
+    if not any(i["item_id"] == item_id for i in st.plaid_items()):
+        return jsonify({"error": "No such linked bank."}), 404
+    what = (request.get_json(silent=True) or {}).get("transactions", "keep")
+    if what not in ("keep", "delete"):
+        return jsonify({"error": "Say whether to keep its transactions or delete them."}), 400
+    accounts = [a for a in _linked_rows(st) if a.get("item_id") == item_id]
+    deleted = 0
+    for a in accounts:
+        deleted += _remove_linked(st, a, what)
+    revoked = plaid_link.unlink(st, item_id)
+    _reclassify(st)
+    return jsonify({"ok": True, "accounts": len(accounts), "removed": deleted,
+                    "revoked_at_plaid": revoked})
 
 
 @bp.post("/accounts/<path:account_id>/merge")
