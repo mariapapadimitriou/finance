@@ -4,7 +4,9 @@ import PIcon from '../pearl/icons.jsx';
 import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
 import { ErrorNote } from '../components/ui.jsx';
 import { DuplicateQuestion } from './Duplicates.jsx';
-import Stacked, { Pill, Progress, TxHead as StackedHead } from './Stacked.jsx';
+import Stacked, { Pill, Progress, SortedCard, TxHead as StackedHead } from './Stacked.jsx';
+
+export { SortedCard };
 import { depositChoices } from './joint.js';
 import {
   INCOME_KINDS, answerDuplicate, dismissReview, getReview, money, setCategory, setIncomeType,
@@ -429,41 +431,6 @@ function ReviewRow({ it, onOpen }) {
            meta={[it.txn.account_name, shortDate(it.txn.date)].filter(Boolean).join(' · ')}
            chip={{ label: questionLabel(it), suggested: true }}
            amount={Math.abs(it.txn.amount)} inflow={inflow} />
-  );
-}
-
-/**
- * The Sorted card (R-13): every dot filled with "✓ Sorted", the answers as
- * rows (tap one to reopen that step), what the change did, and Next.
- */
-export function SortedCard({ entry, busy = false, isPast = false, onNext, onUndo, onReopen }) {
-  const { it, answers } = entry;
-  const name = it.to;
-  return (
-    <>
-      {it.txn ? <StackedHead txn={it.txn} name={name} /> : (
-        <p className="pk-h3">{monthName(it.month)} had three paycheques</p>
-      )}
-      <Progress done={answers.length} total={Math.max(answers.length, 1)} sorted
-                trailing={<Pill className="nl-undo" disabled={busy} onClick={onUndo} aria-label="Undo this change">Undo</Pill>} />
-      {answers.length > 0 && (
-        <div className="nl-done-list">
-          {answers.map((a, i) => (
-            <button key={`${a.step ?? i}-${i}`} type="button" className="nl-done" disabled={busy}
-                    aria-label={`Change: ${a.label ?? a.v}`} onClick={() => onReopen?.(i)}>
-              <span className="nl-done-ring" aria-hidden="true" />
-              <span className="nl-done-label">{a.label ?? a.v}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      {(entry.detail || entry.title) && (
-        <p className="nl-effect" role="status">{entry.detail || entry.title}</p>
-      )}
-      <div className="nl-actions nl-next">
-        <PButton disabled={busy} onClick={onNext}>{isPast ? 'Back to where I was' : 'Next'} <PIcon name="chevronRight" size={16} /></PButton>
-      </div>
-    </>
   );
 }
 

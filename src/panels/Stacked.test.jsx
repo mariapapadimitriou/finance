@@ -40,7 +40,7 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
     const elseOpt = S.q1.options.find((o) => o.v === 'else');
     expect(elseOpt.to).toBe('what_out');
     expect(S.what_out.options.map((o) => o.label)).toEqual([
-      'Moved between my own accounts', 'Lent to someone', 'Paying someone back',
+      'A bill', 'Paid for a group', 'Moved between my accounts', 'Lent to someone', 'Paying back money I borrowed',
       'A work expense, to be reimbursed', 'Not mine']);
     expect(S.what_out.options.find((o) => o.v === 'lent').to).toBe('who_to');
     expect(S.who_to.title).toBe('Who to?');

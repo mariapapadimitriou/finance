@@ -109,3 +109,7 @@
   .nl-stack .nl-tx-amt { font-size: 22px; line-height: 28px; }
   .nl-stack .nl-actions { flex-wrap: wrap; }
 }
+
+/* The sort card inside a dialog or a panel: the surround is the card. */
+.qs-dialog .qs-sort, .txd-sort { padding: 0; border: 0; box-shadow: none; background: none; }
+.qs-dialog .qs-sort { margin-top: var(--space-4); }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Card, Done, Picker, Progress, Prompt, effectWords, rulesWords } from './QuickSort.jsx';
+import { Done, Progress, Prompt, asItem, effectWords, rulesWords } from './QuickSort.jsx';
+import SortCard from './SortCard.jsx';
 
 const html = (el) => renderToStaticMarkup(el);
 const noop = () => {};
@@ -25,26 +26,25 @@ describe('Quick sort (QS-01 to QS-04)', () => {
     expect(html(<Prompt count={1} onStart={noop} onLater={noop} />)).toContain('You’ve got 1 new transaction to sort');
   });
 
-  it('the card shows the transaction, signed and coloured, and the progress', () => {
-    const out = html(<Card item={item} />);
+  it('the card is the sort card: the transaction, "Is this Personal Care?" and the progress', () => {
+    const out = html(<SortCard it={asItem(item)} categories={categories} commit={noop} onSkip={noop} />);
     expect(out).toContain('Shoppers Drug Mart');
-    expect(out).toContain('Friday, October 9 · Visa ··1203');
+    expect(out).toContain('Friday, October 9 · from Visa ··1203');
     expect(out).toContain('-$18.47');
-    expect(out).toContain('qs-amt out');
+    expect(out).toContain('Is this Personal Care?');
+    for (const a of ['Yes, Personal Care', 'No, a different category', 'It wasn’t a purchase']) expect(out).toContain(a);
+    expect(out).toContain('Skip for now');
+    expect(out).not.toContain('Save and next');
     const bar = html(<Progress n={6} at={1} />);
     expect(bar.match(/class="on"/g)).toHaveLength(2);
     expect(bar).toContain('aria-valuenow="2"');
   });
 
-  it('the picker puts suggested and recent first, with the guess marked', () => {
-    const out = html(<Picker item={item} categories={categories} onSave={noop} onNotPurchase={noop} />);
-    expect(out.indexOf('Suggested')).toBeLessThan(out.indexOf('Recent'));
-    expect(out).toContain('pk-opt guess');
-    expect(out).toContain('Search categories');
-    expect(out).toContain('It wasn’t a purchase…');
-    expect(out).toContain('Opens “What was this?” for transfers, paybacks and refunds.');
-    expect(out).toContain('Save and next');
-    expect(out).toContain('disabled=""');
+  it('"It wasn’t a purchase" leads to the same list Needs a look and the panel use', () => {
+    const out = html(<SortCard it={asItem(item)} categories={categories} commit={noop}
+                               initialPath={[{ step: 'q1', v: 'else' }]} />);
+    expect(out).toContain('aria-label="Change: Not a purchase"');
+    for (const a of ['A bill', 'Moved between my accounts', 'Lent to someone', 'Not mine']) expect(out).toContain(a);
   });
 
   it('the done screen shows safe to spend before and after, the reason and the rules', () => {
