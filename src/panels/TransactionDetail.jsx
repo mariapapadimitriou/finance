@@ -4,15 +4,16 @@ import {
 } from '../pearl/kit.jsx';
 import { depositChoices } from './joint.js';
 import PIcon from '../pearl/icons.jsx';
-import CategoryPicker, { categoryLabel } from './CategoryPicker.jsx';
+import { categoryLabel } from './CategoryPicker.jsx';
 import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
-import WhatWasThis, { TagEditor } from './WhatWasThis.jsx';
+import { TagEditor } from './WhatWasThis.jsx';
+import SortCard, { SortedCard } from './SortCard.jsx';
 import {
   addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTags, getTx,
   includeTransaction, money, setCategory, setJointFrom, setMerchantName, setMineAlways, setParty,
   setShare, setTxNote, setTxTags,
   sortTransfers,
-  unallocate, setSplit, clearSplit, unlinkPayback, linkPayback, setOneOff,
+  unallocate, setSplit, clearSplit, unlinkPayback, linkPayback, setOneOff, undoChange,
 } from '../api.js';
 import './txextras.css';
 
@@ -61,8 +62,9 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
   const [error, setError] = useState(null);
   // main | what | category | split | note | exclude | bank | whose | tags | name
   const [step, setStep] = useState(startStep);
-  // The case the What was this? sheet is on, for the panel's heading.
-  const [whatStep, setWhatStep] = useState(null);
+  // The sort card's result (the Sorted card), and where to pick up after Undo.
+  const [sorted, setSorted] = useState(null);
+  const [resume, setResume] = useState(null);
   const [busy, setBusy] = useState(false);
   const [banks, setBanks] = useState([]);
 
@@ -117,38 +119,66 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
     undo: res?.undo,
   });
 
-  // What was this? (2026-10-14): the one list of answers, from here, the
-  // list and Needs a look. Saving closes with what it did and Undo.
-  if (step === 'what') {
-    return (
-      <DetailPanel label="What was this?" overline="What was this?" onClose={onClose}>
-        <h2 className="pk-h2">{whatStep || 'What was this?'}</h2>
-        <WhatWasThis tx={tx} categories={categories} busy={busy} onStep={setWhatStep}
-                     onSplit={() => setStep('split')}
-                     onDone={(res) => {
-                       onSaved?.({ close: true, change: {
-                         id: tx.id,
-                         title: [res.title, res.impact?.title].filter(Boolean).join(' '),
-                         detail: res.impact?.detail ?? '', undo: res.undo,
-                       } });
-                     }} />
-      </DetailPanel>
-    );
-  }
-
-  if (step === 'category') {
+  // What was this? (2026-10-21): the sort card, the same one Needs a look
+  // and Quick sort use, with the whole list laid out at once and Pearl's
+  // best guess first. Tapping the last answer saves it; the Sorted card
+  // shows what it did, with Undo and the answers to reopen in place.
+  const asItem = {
+    key: `tx:${tx.id}`, kind: 'panel', to: tx.party || '',
+    txn: { ...tx, amount: tx.inflow ? -Math.abs(tx.amount) : Math.abs(tx.amount) },
+  };
+  const sortCommit = async (fn, { answers, effect }) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fn();
+      setSorted({ key: asItem.key, it: asItem, answers, effect, title: r.title, detail: r.detail || effect || '', undo: r.undo });
+      setResume(null);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const sortReopen = async (i = sorted.answers.length - 1) => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (sorted.undo) await undoChange(sorted.undo);
+      const last = sorted.answers[sorted.answers.length - 1];
+      setResume({ path: sorted.answers.slice(0, -1), edit: i < sorted.answers.length - 1 ? i : null,
+                  name: last?.step === 'who_to' || last?.step === 'name' ? last.label : '' });
+      setSorted(null);
+      setTx(await getTx(id));
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const sortDone = () => {
+    onSaved?.({ close: true, change: { id: tx.id, title: sorted.title, detail: sorted.detail, undo: sorted.undo } });
+  };
+  if (step === 'what' || step === 'category') {
     const unsorted = tx.category === 'Unsorted transfers';
+    const label = step === 'category' ? (unsorted ? 'Where did this go?' : 'Change category') : 'What was this?';
     return (
-      <DetailPanel label="Change category" onClose={onClose}
+      <DetailPanel label={label} onClose={onClose}
                    back={{ label: `${tx.merchant} · ${txAmount(tx.amount, { inflow: tx.inflow, signed: true })}`,
                            onClick: back }}>
-        <h2 className="pk-h2">{unsorted ? 'Where did this go?' : 'Change category'}</h2>
         {error && <p className="txd-error" role="alert">{error.message}</p>}
-        <CategoryPicker tx={tx} categories={categories} busy={busy}
-                        onSave={(cat, always) => save(() => (
-                          unsorted ? sortTransfers([tx.id], cat, false)
-                            : setCategory(tx.id, cat, always)),
-                        { close: true, change: changed(unsorted ? 'Sorted as' : 'Moved to', cat) })} />
+        <section className="nl-card nl-stack txd-sort" aria-label={sorted ? 'Sorted' : label}>
+          {sorted ? (
+            <SortedCard entry={sorted} busy={busy} nextLabel="Done" showHead={false}
+                        onNext={sortDone} onUndo={() => sortReopen()} onReopen={sortReopen} />
+          ) : (
+            <SortCard key={resume ? 'r' : 'q'} it={asItem} categories={categories} busy={busy}
+                      mode={step === 'category' && !resume ? 'stacked' : 'all'} showHead={false}
+                      commit={sortCommit} onSplit={() => setStep('split')} onBack={back}
+                      initialPath={resume?.path ?? (step === 'category' && !tx.inflow ? [{ step: 'q1', v: 'spent' }] : null)}
+                      initialEdit={resume?.edit ?? null} initialName={resume?.name ?? ''} />
+          )}
+        </section>
       </DetailPanel>
     );
   }

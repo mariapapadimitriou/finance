@@ -123,14 +123,15 @@ describe('What was this? (2026-10-14)', () => {
 });
 
 describe('the selection, answered at once', () => {
-  it('offers the cases that need nothing per row', () => {
-    expect(BATCH_CASES.map((c) => c.key)).toEqual(['spending', 'moved', 'saved', 'lent', 'work', 'not_mine']);
+  it('offers the same list as the sort card, less the cases that need something per row', () => {
+    expect(BATCH_CASES.map((c) => c.key)).toEqual(['spending', 'bill', 'moved', 'saved', 'lent', 'paying_back', 'work', 'not_mine']);
     const out = html(<BatchMarkPanel ids={['a', 'b', 'c']} categories={CATS} onDone={() => {}} onClose={() => {}} />);
     calm(out);
     expect(out).toContain('What were these?');
     expect(out).toContain('The same answer for all 3. Nothing becomes a rule.');
-    expect(out).toContain('Work expenses I’ll be reimbursed for');
-    expect(out).toContain('>Mark 3<');
+    expect(out).toContain('A work expense, to be reimbursed');   // the server's words, as everywhere
+    expect(out).toContain('nl-pill nl-undo');
+    expect(out).not.toContain('>Mark 3<');                         // tapping the last answer saves
   });
 
   it('the selected bar (VF-03) has the total, Change category, Mark as…, Tag, Leave out and Confirm', () => {

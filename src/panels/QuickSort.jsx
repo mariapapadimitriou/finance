@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react';
-import { money, quickSortDone, quickSortSeen, quickSortStep } from '../api.js';
-import { CategoryChip, ChipOption, Dialog, PButton, txAmount } from '../pearl/kit.jsx';
+import { useState } from 'react';
+import { money, quickSortDone, quickSortSeen, quickSortStep, undoChange } from '../api.js';
+import { Dialog, PButton } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
-import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
-import WhatWasThis from './WhatWasThis.jsx';
+import SortCard, { SortedCard } from './SortCard.jsx';
 import './quicksort.css';
 
 /**
@@ -25,10 +24,11 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(null);
-  // A rule saved for a merchant sorts its other cards too, so they're dropped.
-  const [dropped, setDropped] = useState(() => new Set());
-  const items = useMemo(() => (data.items ?? []).filter((x) => !dropped.has(x.id)), [data.items, dropped]);
-  const ids = (data.items ?? []).map((x) => x.id);
+  // The card just sorted (the Sorted card), and where to pick up after Undo.
+  const [sorted, setSorted] = useState(null);
+  const [resume, setResume] = useState(null);
+  const items = data.items ?? [];
+  const ids = items.map((x) => x.id);
   const item = items[i];
 
   const run = async (fn, then) => {
@@ -46,75 +46,58 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
   const later = () => run(() => quickSortSeen(ids, false), () => onClose?.());
   const start = () => run(() => quickSortSeen(ids, true), () => setStep('card'));
   const next = () => {
+    setSorted(null);
+    setResume(null);
     if (i + 1 < items.length) { setI(i + 1); setStep('card'); return; }
     run(() => quickSortDone(), (r) => { setDone(r); setStep('done'); onChanged?.(); });
   };
-  const answer = (body) => run(() => quickSortStep(item.id, body), (r) => {
-    if (r?.rule_saved) {
-      const same = items.filter((x, k) => k > i && x.merchant === item.merchant).map((x) => x.id);
-      if (same.length) {
-        setDropped((d) => new Set([...d, ...same]));
-      }
-    }
-    next();
+  const skip = () => run(() => quickSortStep(item.id, { action: 'skip' }), next);
+  // The sort card did the work; the batch notes what it said (QS-04).
+  const commit = (fn, { answers, effect }) => run(async () => {
+    const r = await fn();
+    await quickSortStep(item.id, { action: 'marked', title: r.title || '' });
+    return r;
+  }, (r) => setSorted({ key: item.id, it: asItem(item), answers, effect, title: r.title,
+                        detail: r.detail || effect || '', undo: r.undo }));
+  const reopen = (k = sorted.answers.length - 1) => run(async () => {
+    if (sorted.undo) await undoChange(sorted.undo);
+  }, () => {
+    const last = sorted.answers[sorted.answers.length - 1];
+    setResume({ path: sorted.answers.slice(0, -1), edit: k < sorted.answers.length - 1 ? k : null,
+                name: last?.step === 'who_to' || last?.step === 'name' ? last.label : '' });
+    setSorted(null);
   });
   const finish = () => { onClose?.(); };
 
   if (step === 'prompt') return <Prompt count={items.length} busy={busy} error={error} onStart={start} onLater={later} />;
   if (step === 'done') return <Done r={done} onDone={finish} />;
   if (!item) return null;
-  const head = (
-    <Head label={`Quick sort · ${i + 1} of ${items.length}`}
-          action={step === 'card' ? { label: 'Later', onClick: finish } : { label: 'Back', onClick: () => setStep('card') }} />
-  );
-  if (step === 'pick') {
-    return (
-      <Dialog labelledBy="qs-title" onClose={finish} className="qs-dialog">
-        {head}
-        <h2 className="pk-h2" id="qs-title">What was it?</h2>
-        <Picker item={item} categories={categories} busy={busy}
-                onSave={(cat) => answer({ action: 'category', category: cat })}
-                onNotPurchase={() => setStep('what')} />
-        {error && <p className="pk-error" role="alert">{error.message || 'That didn’t save. Try again.'}</p>}
-      </Dialog>
-    );
-  }
-  if (step === 'what') {
-    return (
-      <Dialog labelledBy="qs-title" onClose={finish} className="qs-dialog">
-        {head}
-        <h2 className="pk-h2" id="qs-title">What was this?</h2>
-        <WhatWasThis tx={{ id: item.id, merchant: item.merchant, amount: item.amount, inflow: item.inflow, logo: item.logo }}
-                     categories={categories} busy={busy} saveLabel="Save and next" showHead={false}
-                     onDone={(res) => answer({ action: 'marked', title: res?.title || '' })} />
-      </Dialog>
-    );
-  }
   return (
     <Dialog labelledBy="qs-title" onClose={finish} className="qs-dialog">
-      {head}
+      <Head label={`Quick sort · ${i + 1} of ${items.length}`} action={{ label: 'Later', onClick: finish }} />
       <Progress n={items.length} at={i} />
-      <Card item={item} />
-      <div className="qs-guess">
-        <p className="pk-label">Pearl’s guess</p>
-        {item.guess === 'Other'
-          ? <p className="pk-muted">Pearl couldn’t tell what this was.</p>
-          : <CategoryChip label={categoryLabel(item.guess)} suggested />}
-      </div>
+      <h2 className="pk-sr" id="qs-title">Quick sort</h2>
       {error && <p className="pk-error" role="alert">{error.message || 'That didn’t save. Try again.'}</p>}
-      <div className="qs-actions">
-        {item.guess === 'Other' ? (
-          <PButton disabled={busy} onClick={() => setStep('pick')}>Pick a category</PButton>
+      <section className="nl-card nl-stack qs-sort" aria-label={sorted ? 'Sorted' : 'Question'}>
+        {sorted ? (
+          <SortedCard entry={sorted} busy={busy} onNext={next} onUndo={() => reopen()} onReopen={reopen} />
         ) : (
-          <>
-            <PButton className="qs-right" disabled={busy} onClick={() => answer({ action: 'right' })}>✓ Right</PButton>
-            <PButton variant="secondary" disabled={busy} onClick={() => setStep('pick')}>Something else…</PButton>
-          </>
+          <SortCard key={`${item.id}-${resume ? 'r' : 'q'}`} it={asItem(item)} categories={categories} busy={busy}
+                    commit={commit} onSkip={skip}
+                    initialPath={resume?.path ?? null} initialEdit={resume?.edit ?? null} initialName={resume?.name ?? ''} />
         )}
-        <PButton variant="text" disabled={busy} onClick={() => answer({ action: 'skip' })}>Skip this one</PButton>
-      </div>
+      </section>
     </Dialog>
   );
+}
+
+/** A quick-sort row as the sort card's item: Pearl's guess is the first question. */
+export function asItem(item) {
+  return {
+    key: `cat:${item.id}`, kind: 'category', guess: item.guess, learnable: true,
+    txn: { id: item.id, merchant: item.merchant, date: item.date, logo: item.logo, account_name: item.account,
+           amount: item.inflow ? -Math.abs(item.amount) : Math.abs(item.amount) },
+  };
 }
 
 function Head({ label, action }) {
@@ -144,21 +127,6 @@ export function longDate(iso) {
   return `${WEEKDAYS[new Date(y, m - 1, d).getDay()]}, ${MONTHS[m - 1]} ${d}`;
 }
 
-/** The transaction on the card: its name, when and where, and the amount. */
-export function Card({ item }) {
-  return (
-    <div className="qs-tx">
-      <div className="qs-tx-text">
-        <span>{item.merchant}</span>
-        <span className="pk-muted">{longDate(item.date)}{item.account ? ` · ${item.account}` : ''}</span>
-      </div>
-      <span className={`pk-h2 qs-amt ${item.inflow ? 'in' : 'out'}`}>
-        {txAmount(item.amount, { inflow: item.inflow, signed: true })}
-      </span>
-    </div>
-  );
-}
-
 /** QS-01. */
 export function Prompt({ count, busy, error, onStart, onLater }) {
   return (
@@ -179,69 +147,6 @@ export function Prompt({ count, busy, error, onStart, onLater }) {
   );
 }
 
-/** QS-03: suggested and recent first, then a search over every category. */
-export function Picker({ item, categories, busy, onSave, onNotPurchase }) {
-  const [pick, setPick] = useState('');
-  const [q, setQ] = useState('');
-  const groups = useMemo(() => groupCategories(categories, {
-    only: (c) => ['essentials', 'lifestyle'].includes(c.group) && !c.hidden,
-  }), [categories]);
-  const all = useMemo(() => groups.flatMap((g) => g.names), [groups]);
-  const needle = q.trim().toLowerCase();
-  const found = needle ? all.filter((n) => categoryLabel(n).toLowerCase().includes(needle)) : [];
-  const suggested = item.suggested ?? [];
-  const recent = (item.recent ?? []).filter((n) => !suggested.includes(n));
-  return (
-    <>
-      <div className="gl-field qs-search">
-        <label htmlFor="qs-q" className="pk-sr">Search categories</label>
-        <input id="qs-q" type="search" placeholder="Search categories" value={q} onChange={(e) => setQ(e.target.value)} />
-      </div>
-      {needle ? (
-        <div className="qs-group">
-          <p className="pk-overline">{found.length ? 'Matches' : 'No match'}</p>
-          <div className="pk-opts" role="radiogroup" aria-label="Matches">
-            {found.map((n) => <ChipOption key={n} label={categoryLabel(n)} selected={pick === n} onSelect={() => setPick(n)} />)}
-          </div>
-        </div>
-      ) : (
-        <>
-          {suggested.length > 0 && (
-            <div className="qs-group">
-              <p className="pk-overline">Suggested</p>
-              <div className="pk-opts" role="radiogroup" aria-label="Suggested">
-                {suggested.map((n) => (
-                  <ChipOption key={n} label={categoryLabel(n)} selected={pick === n} suggested={n === item.guess}
-                              onSelect={() => setPick(n)} />
-                ))}
-              </div>
-            </div>
-          )}
-          {recent.length > 0 && (
-            <div className="qs-group">
-              <p className="pk-overline">Recent</p>
-              <div className="pk-opts" role="radiogroup" aria-label="Recent">
-                {recent.map((n) => <ChipOption key={n} label={categoryLabel(n)} selected={pick === n} onSelect={() => setPick(n)} />)}
-              </div>
-            </div>
-          )}
-          <CategoryChips groups={groups} value={pick} onChange={setPick} label="Every category" />
-        </>
-      )}
-      <div className="qs-not">
-        <button type="button" className="txd-link" onClick={onNotPurchase}>
-          It wasn’t a purchase… <PIcon name="chevronRight" size={14} />
-        </button>
-        <p className="pk-muted">Opens “What was this?” for transfers, paybacks and refunds.</p>
-      </div>
-      <div className="qs-actions">
-        <PButton disabled={busy || !pick} onClick={() => onSave(pick)}>Save and next</PButton>
-      </div>
-    </>
-  );
-}
-
-/** "$642.18 → $598.40", or what can be said when a figure is missing. */
 export function effectWords(r) {
   if (!r) return '';
   const a = r.before == null ? '—' : money(r.before, { cents: true });

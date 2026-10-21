@@ -1,77 +1,120 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Choice, DetailPanel, PButton } from '../pearl/kit.jsx';
-import { CategoryChips, groupCategories } from './CategoryPicker.jsx';
+import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
+import { DEFAULT_CASES, DONE, Done, Pill, Progress, nextOf } from './SortCard.jsx';
 import { batchMark, batchTags, getTags, money } from '../api.js';
 
 /**
- * A selection, answered at once (2026-10-14): "Mark as…" with the cases
- * that need nothing per row, and "Tag" with her tags. Both answer like a
- * batch change of category: one toast, one Undo, never a merchant rule.
+ * A selection, answered at once (2026-10-21): the same list and the same
+ * card as sorting one transaction (SortCard.jsx), minus the cases that need
+ * something per row (who it was with, which purchase, how much). Tapping
+ * the last answer saves it for all of them: one toast, one Undo, never a
+ * merchant rule. "Tag" tags them with her tags.
  */
 
-export const BATCH_CASES = [
-  { key: 'spending', label: 'A purchase', needs: 'category', effect: 'Counts as spending, in the category you pick.' },
-  { key: 'moved', label: 'Moved between my accounts', effect: 'Nothing changes in your numbers.' },
-  { key: 'saved', label: 'Put into savings or investments', effect: 'Adds to what you put away. Not spending.' },
-  { key: 'lent', label: 'Lent to someone', effect: 'Not spending: it comes back later.' },
-  { key: 'work', label: 'Work expenses I’ll be reimbursed for', effect: 'Left out until the reimbursement arrives.' },
-  { key: 'not_mine', label: 'Not mine', needs: 'reason', effect: 'Left out of everything.' },
-];
+/** The cases a selection can take: the server's list, less the per-row ones. */
+export const BATCH_CASES = DEFAULT_CASES.out.filter((c) => [null, 'category', 'reason', 'borrowed', 'account'].includes(c.needs));
 
 export function BatchMarkPanel({ ids, categories = [], onDone, onClose }) {
-  const [key, setKey] = useState('');
-  const [category, setCategory] = useState('');
-  const [reason, setReason] = useState('');
+  // The answers so far: [{ step, v, label }], the open question after them.
+  const [path, setPath] = useState([]);
+  const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const groups = useMemo(() => groupCategories(categories, {
     only: (c) => ['essentials', 'lifestyle'].includes(c.group) && !c.hidden,
   }), [categories]);
-  const current = BATCH_CASES.find((c) => c.key === key);
-  const ok = current && (current.needs !== 'category' || !!category);
   const n = ids.length;
-  const save = async () => {
+  const flow = useMemo(() => {
+    const S = {
+      all: {
+        title: 'What were these?', left: 2,
+        options: BATCH_CASES.map((c) => ({ v: c.key, label: c.label, done: DONE[c.key] ?? c.label, effect: c.effect,
+                                           to: c.needs === 'category' ? 'cat' : c.needs === 'borrowed' ? 'borrowed' : undefined })),
+      },
+      cat: { title: 'What were they for?', left: 1, ask: 'category' },
+      borrowed: { title: 'What you bought with it', left: 1, options: [
+        { v: 'counted', label: 'What I bought with it is already in Pearl', done: 'Already in Pearl' },
+        { v: 'not_counted', label: 'What I bought with it isn’t in Pearl', done: 'Not in Pearl yet', to: 'cat' },
+      ] },
+    };
+    return { start: 'all', S };
+  }, []);
+  const stepId = path.length ? nextOf(flow, path[path.length - 1]) : flow.start;
+  const step = flow.S[stepId];
+  const total = path.length + (step?.left ?? 1);
+
+  const save = async (answers) => {
     setBusy(true);
     setError(null);
     try {
-      const body = { case: key };
-      if (current.needs === 'category') body.category = category;
-      if (current.needs === 'reason') body.reason = reason;
+      const body = { case: answers[0].v };
+      const cat = answers.find((p) => p.step === 'cat');
+      if (cat) body.category = cat.v;
+      const counted = answers.find((p) => p.step === 'borrowed');
+      if (counted) body.counted = counted.v === 'counted';
+      if (body.case === 'not_mine') body.reason = '';
+      if (body.case === 'saved') body.account = '';          // no one account for a selection
       onDone(await batchMark(ids, body));
     } catch (e) {
       setError(e);
       setBusy(false);
     }
   };
+  const choose = (sId, v, before) => {
+    const opt = flow.S[sId].options.find((o) => o.v === v);
+    const answers = [...before, { step: sId, v }];
+    if (opt?.to) setPath(answers); else save(answers);
+  };
+  const rechoose = (i, v) => {
+    const sId = path[i].step;
+    const s = flow.S[sId];
+    const was = s.options.find((o) => o.v === path[i].v);
+    const now = s.options.find((o) => o.v === v);
+    setEditing(null);
+    if (!now.to) { choose(sId, v, path.slice(0, i)); return; }
+    if (now.to === was?.to) setPath(path.map((p, k) => (k === i ? { step: p.step, v } : p)));
+    else setPath([...path.slice(0, i), { step: sId, v }]);
+  };
+  const undoLast = () => {
+    if (editing !== null) { setEditing(null); return; }
+    if (path.length) { setPath(path.slice(0, -1)); return; }
+    onClose?.();
+  };
+
   return (
     <DetailPanel label={`Mark ${n} transaction${n === 1 ? '' : 's'} as`} overline="Selection"
                  onClose={onClose}>
-      <h2 className="pk-h2">What were these?</h2>
       <p className="pk-muted">The same answer for all {n}. Nothing becomes a rule.</p>
       {error && <p className="txd-error" role="alert">{error.message}</p>}
-      <div className="pk-choices" role="radiogroup" aria-label="What were these?">
-        {BATCH_CASES.map((c) => (
-          <div key={c.key} className={`wwt-case${key === c.key ? ' on' : ''}`}>
-            <Choice name="batch-case" checked={key === c.key} onChange={() => setKey(c.key)}
-                    label={c.label} description={c.effect} />
-            {key === c.key && c.needs === 'category' && (
-              <div className="wwt-sub">
-                <CategoryChips groups={groups} value={category} onChange={setCategory}
-                               label="What were they for?" />
+      <section className="nl-card nl-stack txd-sort" aria-label="What were these?">
+        <Progress done={path.length} total={total}
+                  trailing={(
+                    <Pill className="nl-undo" onClick={undoLast} disabled={busy}
+                          aria-label={path.length || editing !== null ? 'Undo the last answer' : 'Back to the list'}>
+                      Undo
+                    </Pill>
+                  )} />
+        <Done path={path} flow={flow} editing={editing} busy={busy}
+              onOpen={(i) => setEditing(editing === i ? null : i)} onPick={rechoose} />
+        {step && (
+          <>
+            <h2 className="pk-h2 nl-q">{step.title}</h2>
+            {step.options && (
+              <div className="pk-choices" role="radiogroup" aria-label={step.title}>
+                {step.options.map((o) => (
+                  <Choice key={o.v} name={`batch-${stepId}`} checked={false} disabled={busy}
+                          onChange={() => choose(stepId, o.v, path)} label={o.label} description={o.effect} />
+                ))}
               </div>
             )}
-            {key === c.key && c.needs === 'reason' && (
-              <div className="wwt-sub">
-                <input className="wwt-input" type="text" maxLength={80} placeholder="Why? (optional)"
-                       aria-label="Why?" value={reason} onChange={(e) => setReason(e.target.value)} />
-              </div>
+            {step.ask === 'category' && (
+              <CategoryChips groups={groups} value="" label={step.title}
+                             onChange={(v) => save([...path, { step: stepId, v, label: categoryLabel(v) }])} />
             )}
-          </div>
-        ))}
-      </div>
-      <div className="txd-actions">
-        <PButton disabled={busy || !ok} onClick={save}>{busy ? 'Saving…' : `Mark ${n}`}</PButton>
-      </div>
+          </>
+        )}
+      </section>
     </DetailPanel>
   );
 }
