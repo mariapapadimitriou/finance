@@ -760,9 +760,10 @@ export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'N
         <p className="nl-effect" role="status">{entry.detail || entry.title}</p>
       )}
       <div className="nl-actions nl-next">
-        <PButton disabled={busy} onClick={onNext}>
-          {isPast ? 'Back to where I was' : nextLabel} <PIcon name="chevronRight" size={16} />
-        </PButton>
+        {/* The same pill as Undo (2026-10-21), so the card's two ways out match. */}
+        <button type="button" className="nl-pill nl-pill-go" disabled={busy} onClick={onNext}>
+          {isPast ? 'Back to where I was' : nextLabel} <PIcon name="chevronRight" size={14} />
+        </button>
       </div>
     </>
   );

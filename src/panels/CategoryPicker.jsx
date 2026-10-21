@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChipOption, Choice, ImpactNote, PButton } from '../pearl/kit.jsx';
+import { Choice, ImpactNote, PButton } from '../pearl/kit.jsx';
+import PIcon, { categoryIcon } from '../pearl/icons.jsx';
 import { previewCategory } from '../api.js';
 
 /**
@@ -11,13 +12,15 @@ import { previewCategory } from '../api.js';
  * says exactly what Allowance will show afterwards.
  */
 
-// The groups in the Handoff file's order, and how many chips each shows
-// before "More…".
+// The groups in the Handoff file's order. Every category shows, every
+// time, in the same place (2026-10-21): the tiles are a grid she learns, not
+// a cloud of chips behind "More…". The order within a group puts the ones
+// she reaches for most first, then the rest alphabetically.
 const GROUPS = [
-  { key: 'essentials', title: 'Essentials', shown: 8,
+  { key: 'essentials', title: 'Essentials',
     order: ['Groceries', 'Rent & Housing', 'Utilities', 'Phone & Internet', 'Insurance',
       'Transport', 'Gas & Fuel', 'Health'] },
-  { key: 'lifestyle', title: 'Lifestyle', shown: 11,
+  { key: 'lifestyle', title: 'Lifestyle',
     order: ['Dining', 'Food Delivery', 'Coffee', 'Alcohol & Bars', 'Shopping', 'Personal Care',
       'Fitness', 'Entertainment', 'Streaming', 'Travel', 'Gifts & Charity'] },
   { key: 'savings', title: 'Savings', order: ['Saved'] },
@@ -41,36 +44,67 @@ export function groupCategories(categories, { only, keep } = {}) {
     const mine = names.filter((c) => c.group === g.key).map((c) => c.name);
     const ordered = [
       ...g.order.filter((n) => mine.includes(n)),
-      ...mine.filter((n) => !g.order.includes(n)),
+      ...mine.filter((n) => !g.order.includes(n)).sort((a, b) => a.localeCompare(b)),
     ];
     return { ...g, names: ordered };
   }).filter((g) => g.names.length > 0);
 }
 
-export function CategoryChips({ groups, value, suggested, onChange, label = 'Category' }) {
-  const [open, setOpen] = useState({});
+/** One category as a tile: its icon in rose on a blush disc, and its name. */
+export function CategoryTile({ name, selected = false, suggested = false, onSelect, disabled = false }) {
   return (
-    <div className="pk-opt-groups" role="radiogroup" aria-label={label}>
-      {groups.map((g) => {
-        const cut = g.shown ?? g.names.length;
-        const hidden = g.names.slice(cut);
-        const all = open[g.key] || hidden.includes(value) || hidden.includes(suggested);
-        const names = all ? g.names : g.names.slice(0, cut);
-        return (
-          <div className="pk-opt-group" key={g.key}>
+    <button type="button" role="radio" aria-checked={selected} disabled={disabled}
+            className={`pk-cat${selected ? ' on' : ''}${suggested && !selected ? ' guess' : ''}`}
+            onClick={onSelect}>
+      <span className="pk-cat-icon" aria-hidden="true"><PIcon name={categoryIcon(name)} size={20} /></span>
+      <span className="pk-cat-label">{categoryLabel(name)}</span>
+      {selected && <span className="pk-cat-check" aria-hidden="true"><PIcon name="check" size={12} /></span>}
+    </button>
+  );
+}
+
+/**
+ * The categories as a grid of tiles (2026-10-21), grouped, every one shown in
+ * the same place every time, with a search box above for the days she knows
+ * the word. Kept under its old name: every picker in the app renders this.
+ */
+export function CategoryChips({ groups, value, suggested, onChange, label = 'Category', search = true }) {
+  const [q, setQ] = useState('');
+  const needle = q.trim().toLowerCase();
+  const total = groups.reduce((n, g) => n + g.names.length, 0);
+  const shown = needle
+    ? groups.map((g) => ({ ...g, names: g.names.filter((n) => categoryLabel(n).toLowerCase().includes(needle)) }))
+      .filter((g) => g.names.length)
+    : groups;
+  return (
+    <div className="pk-cat-picker">
+      {search && total > 8 && (
+        <div className="pk-cat-search">
+          <PIcon name="search" size={16} />
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a category"
+                 aria-label="Find a category" autoComplete="off"
+                 onKeyDown={(e) => {
+                   // Enter picks the one match, so a typed name is one keystroke away.
+                   if (e.key !== 'Enter') return;
+                   const hits = shown.flatMap((g) => g.names);
+                   if (hits.length === 1) { e.preventDefault(); onChange(hits[0]); }
+                 }} />
+        </div>
+      )}
+      <div className="pk-cat-groups" role="radiogroup" aria-label={label}>
+        {shown.map((g) => (
+          <div className="pk-cat-group" key={g.key}>
             <p className="pk-overline">{g.title}</p>
-            <div className="pk-opts">
-              {names.map((n) => (
-                <ChipOption key={n} label={categoryLabel(n)} selected={value === n}
-                            suggested={suggested === n} onSelect={() => onChange(n)} />
+            <div className="pk-cat-grid">
+              {g.names.map((n) => (
+                <CategoryTile key={n} name={n} selected={value === n} suggested={suggested === n}
+                              onSelect={() => onChange(n)} />
               ))}
-              {!all && hidden.length > 0 && (
-                <ChipOption link label="More…" onSelect={() => setOpen({ ...open, [g.key]: true })} />
-              )}
             </div>
           </div>
-        );
-      })}
+        ))}
+        {needle && !shown.length && <p className="pk-muted">Nothing called “{q.trim()}”.</p>}
+      </div>
     </div>
   );
 }
