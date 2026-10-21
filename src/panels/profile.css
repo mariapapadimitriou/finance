@@ -197,3 +197,7 @@ a.pk-btn { text-decoration: none; box-sizing: border-box; }
 .pf-joint { display: flex; flex-direction: column; gap: var(--space-3); }
 .pf-joint p { margin: 0; }
 .pf-joint .pk-opts { align-items: center; }
+
+/* Remove a bank entirely (2026-10-21): the accounts that go with it. */
+.pf-bank-list { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 4px;
+                font-size: 14px; line-height: 20px; color: var(--ink-muted); }
