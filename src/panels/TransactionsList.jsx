@@ -277,12 +277,17 @@ export default function TransactionsList({ summary, categories, accounts, review
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  // The accounts as Profile › Accounts lists them, for the filter.
+  // The accounts as Profile › Accounts lists them, for the filter — fetched
+  // once Filters opens, not on every visit to the list (the ledger's own
+  // account list stands in until then), so the page has one call fewer to
+  // wait on (2026-10-21).
+  const wantOverview = filtering || !!filters.account;
   useEffect(() => {
+    if (!wantOverview) return undefined;
     let live = true;
     getAccountsOverview().then((d) => { if (live) setOverview(d); }).catch(() => {});
     return () => { live = false; };
-  }, [version]);
+  }, [version, wantOverview]);
 
   // Search waits for a pause in typing, and doesn't add a history entry per key.
   useEffect(() => {
@@ -311,10 +316,10 @@ export default function TransactionsList({ summary, categories, accounts, review
                  !!filters.tag, !!filters.counts, !!filters.amount, !!filters.pending, !!filters.look,
                  !!filters.owed].filter(Boolean).length;
 
-  const fetchPage = useCallback(async (offset) => {
+  const fetchPage = useCallback(async (offset, limit = PAGE) => {
     const id = ++request.current;
     try {
-      const res = await getTxList({ ...requestFor(filters, thisMonth()), limit: PAGE, offset });
+      const res = await getTxList({ ...requestFor(filters, thisMonth()), limit, offset });
       if (id !== request.current) return;
       setError(null);
       setData(res);
@@ -325,8 +330,17 @@ export default function TransactionsList({ summary, categories, accounts, review
   }, [filters]);
 
   // A new filter starts from the first page; the old rows stay until the new
-  // ones arrive, so the list doesn't flash empty.
-  useEffect(() => { fetchPage(0); }, [fetchPage, version]);
+  // ones arrive, so the list doesn't flash empty. A refresh after a change
+  // (`version`) re-reads every page she had opened, so the row she just
+  // edited — and her scroll position — stay where they were (2026-10-21).
+  const lastFetch = useRef(null);
+  const rowCount = useRef(0);
+  rowCount.current = rows.length;
+  useEffect(() => {
+    const sameFilters = lastFetch.current === fetchPage;
+    lastFetch.current = fetchPage;
+    fetchPage(0, sameFilters ? Math.max(PAGE, Math.ceil(rowCount.current / PAGE) * PAGE) : PAGE);
+  }, [fetchPage, version]);
 
   const showMore = async () => {
     setLoadingMore(true);
@@ -724,6 +738,7 @@ export default function TransactionsList({ summary, categories, accounts, review
             </Alert>
           )}
 
+          {!data && !error && <ListSkeleton />}
           {shownRows.length > 0 && (
             <section className={`pk-list${desktop ? ' tx-keys' : ''}${selectable ? ' tx-selectable' : ''}`}
                      aria-label="Transactions"
@@ -820,6 +835,27 @@ export default function TransactionsList({ summary, categories, accounts, review
  * search and keep the filters; filters that found nothing offer to clear them.
  * Never in an error colour: an empty list is an answer, not a failure.
  */
+/** The list's shape while the first page loads: a day and five rows, so
+ * the page doesn't jump when they arrive (2026-10-21). */
+function ListSkeleton() {
+  return (
+    <section className="pk-list tx-skeleton" aria-label="Transactions" aria-busy="true">
+      <div className="tx-day"><span className="tx-ghost tx-ghost-day" /></div>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <div className="pk-row tx-ghost-row" key={i} aria-hidden="true">
+          <span className="tx-ghost tx-ghost-avatar" />
+          <span className="tx-ghost-text">
+            <span className="tx-ghost tx-ghost-name" />
+            <span className="tx-ghost tx-ghost-meta" />
+          </span>
+          <span className="tx-ghost tx-ghost-chip" />
+          <span className="tx-ghost tx-ghost-amount" />
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function Empty({ filters, q, filtered, onClearSearch, onClearFilters }) {
   if (q) {
     return (

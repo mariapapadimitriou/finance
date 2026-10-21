@@ -57,13 +57,14 @@ def mark_offered(st, ids: list[str]) -> None:
     _save(st, OFFERED_KEY, seen[-OFFERED_CAP:])
 
 
-def unsure_rows(st, transactions: list[Transaction], today: date) -> list[dict]:
+def unsure_rows(st, transactions: list[Transaction], today: date, everything: bool = False) -> list[dict]:
     """Needs a look's unsure categories, newest first, not yet offered and
-    not in Skipped."""
+    not in Skipped — or, for "Quick sort all" on To review (2026-10-21),
+    every one still there whether or not it was offered before."""
     from .review import build
     review = build(transactions, today=today.isoformat(), dismissed=st.dismissed_reviews(),
                    splits=st.splits(), payer=st.payback_people(), skipped=st.skipped_reviews())
-    seen = set(offered(st))
+    seen = set() if everything else set(offered(st))
     rows = [u for u in review.get("unsure_category", [])
             if not u.get("skipped") and u["txn"]["id"] not in seen]
     rows.sort(key=lambda u: u["txn"]["date"], reverse=True)
@@ -99,11 +100,13 @@ def suggested_categories(t: Transaction, transactions: list[Transaction], guess:
     return out[:n]
 
 
-def items(st, transactions: list[Transaction], today: date) -> list[dict]:
-    """The cards: one per unsure row, at most MAX_ITEMS, described as the
-    transactions list describes them."""
+def items(st, transactions: list[Transaction], today: date, everything: bool = False) -> list[dict]:
+    """The cards: one per unsure row, at most MAX_ITEMS (every one, for
+    "Quick sort all"), described as the transactions list describes them."""
     from . import kinds, marks, txlist
-    rows = unsure_rows(st, transactions, today)[:MAX_ITEMS]
+    rows = unsure_rows(st, transactions, today, everything)
+    if not everything:
+        rows = rows[:MAX_ITEMS]
     if not rows:
         return []
     ctx = txlist.Context(transactions, st.confirmed_categories(), st.notes(),
@@ -137,9 +140,11 @@ def safe_to_spend(st, transactions: list[Transaction], today: date) -> float | N
     return sts.get("shown") if sts.get("shown") is not None else sts.get("amount")
 
 
-def prompt(st, transactions: list[Transaction], today: date) -> dict:
-    """What the app asks on open: whether to show the prompt, and the cards."""
-    cards = items(st, transactions, today)
+def prompt(st, transactions: list[Transaction], today: date, everything: bool = False) -> dict:
+    """What the app asks on open: whether to show the prompt, and the cards.
+    With `everything`, the cards for every unsure row still in Needs a look,
+    for "Quick sort all" on To review."""
+    cards = items(st, transactions, today, everything)
     shown_today = st.setting(SHOWN_KEY) == today.isoformat()
     return {"show": bool(cards) and not shown_today, "count": len(cards), "items": cards,
             "shown_today": shown_today,

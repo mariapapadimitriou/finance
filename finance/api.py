@@ -168,7 +168,7 @@ def transactions_list():
     if group and group not in CATEGORY_GROUPS and group not in ("fixed", "variable"):
         return jsonify({"error": "Unknown group."}), 400
     try:
-        limit = max(1, min(int(a.get("limit", txlist.PAGE)), 200))
+        limit = max(1, min(int(a.get("limit", txlist.PAGE)), 1000))
         offset = max(0, int(a.get("offset", 0)))
     except ValueError:
         return jsonify({"error": "limit and offset are numbers."}), 400

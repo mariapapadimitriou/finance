@@ -329,7 +329,7 @@ export const getCalendarDay = (iso) => req(`/api/calendar/day/${iso}`);
 // Select days (CAL-06): what was spent between two days, by category.
 export const getCalendarRange = (first, last) => req(`/api/calendar/range?first=${first}&last=${last}`);
 // Quick sort when you come back (THL-254).
-export const getQuickSort   = () => req('/api/quick-sort');
+export const getQuickSort   = ({ all = false } = {}) => req(`/api/quick-sort${all ? '?all=1' : ''}`);
 export const quickSortSeen  = (ids, start) => json('POST', '/api/quick-sort/seen', { ids, start });
 export const quickSortStep  = (id, body) => json('PUT', `/api/quick-sort/${encodeURIComponent(id)}`, body);
 export const quickSortDone  = () => json('POST', '/api/quick-sort/done', {});

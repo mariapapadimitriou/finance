@@ -154,9 +154,11 @@ export default function App() {
       if (q?.show) whenNoDialog(() => setQuickSort(q));
     }).catch(() => {});
   }, []);
-  // "Quick sort all" on To review (TR-01): the same cards, asked for.
+  // "Quick sort all" on To review (TR-01): the same cards, asked for — for
+  // every unsure row still there, whether or not the prompt offered it
+  // before (2026-10-21).
   const openQuickSort = useCallback(() => {
-    getQuickSort().then((q) => {
+    getQuickSort({ all: true }).then((q) => {
       if (q?.items?.length) setQuickSort({ ...q, show: true });
     }).catch(() => {});
   }, []);
