@@ -418,6 +418,8 @@ export const batchConfirm = (ids) => json('POST', '/api/transactions/batch/confi
 // What was this? (2026-10-14, finance/marks.py): the cases that apply to a
 // row, doing one (with `dry` for the line underneath), and a selection at once.
 export const getTxCases = (id) => req(`/api/transactions/${encodeURIComponent(id)}/cases`);
+// Any purchase this money coming in could pay back, by name or amount.
+export const searchCharges = (id, q = '') => req(`/api/transactions/${encodeURIComponent(id)}/charges?q=${encodeURIComponent(q)}`);
 export const markTx = (id, body, dry = false) =>
   json('POST', `/api/transactions/${encodeURIComponent(id)}/mark${dry ? '?dry=1' : ''}`, body);
 export const batchMark = (ids, body) =>
