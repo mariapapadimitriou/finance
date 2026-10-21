@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Choice, PButton, amountTone, txAmount } from '../pearl/kit.jsx';
 import './txextras.css';
 
@@ -9,9 +8,9 @@ import './txextras.css';
  *         is listed as not counted, "Possible duplicate · counted once until
  *         you check", with a suggested chip.
  *   D-02  `DuplicateQuestion`: in Needs a look, both copies side by side with
- *         where each came from and the bank's own description. Same purchase
- *         hides the copy (kept, so Undo works); Two different purchases
- *         counts both. Skip for now leaves it counted once.
+ *         where each came from and the bank's own description. Tapping Same
+ *         purchase hides the copy (kept, so Undo works); Two different
+ *         purchases counts both. Skip for now leaves it counted once.
  *   D-03  the toast after: what it did to her numbers, with Undo.
  */
 
@@ -63,9 +62,9 @@ export function CopyCard({ side, found }) {
   );
 }
 
-/** D-02: "Is this the same purchase?" */
-export function DuplicateQuestion({ it, busy = false, onAnswer, onSkip, initial = 'same' }) {
-  const [answer, setAnswer] = useState(initial);
+/** D-02: "Is this the same purchase?" Tapping an answer is the commit
+ * (Current design, 2026-10-20): no Save. */
+export function DuplicateQuestion({ it, busy = false, onAnswer, onSkip }) {
   const name = `dup-${it.txn.id}`;
   const hide = copyPhrase(it.txn.source_label);
   return (
@@ -76,14 +75,13 @@ export function DuplicateQuestion({ it, busy = false, onAnswer, onSkip, initial 
         <CopyCard side={it.txn} found={it.txn.found_on} />
       </div>
       <div className="pk-choices" role="radiogroup" aria-label="Is this the same purchase?">
-        <Choice name={name} checked={answer === 'same'} onChange={() => setAnswer('same')}
+        <Choice name={name} checked={false} disabled={busy} onChange={() => onAnswer('same')}
                 label="Same purchase"
                 description={hide ? `Keep one. We’ll hide the copy ${hide}.` : 'Keep one. We’ll hide the copy.'} />
-        <Choice name={name} checked={answer === 'different'} onChange={() => setAnswer('different')}
+        <Choice name={name} checked={false} disabled={busy} onChange={() => onAnswer('different')}
                 label="Two different purchases" description="Keep both. Both count as spending." />
       </div>
       <div className="nl-actions">
-        <PButton disabled={busy || !answer} onClick={() => onAnswer(answer)}>Save</PButton>
         <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>
           Skip for now
         </PButton>

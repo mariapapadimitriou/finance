@@ -1,7 +1,25 @@
-/* Needs a look, stacked (R-07 to R-12, 2026-10-17): one 640px card, one
- * short question at a time. Pearl tokens throughout. */
+/* Needs a look, stacked (R-07 to R-13 and TR-01 on the Current design page,
+ * 2026-10-20): one 640px card, one short question at a time, tapped
+ * answers, Undo in the corner, Previous above. Pearl tokens throughout. */
 
-.pk .nl-stack { width: 100%; max-width: 640px; gap: var(--space-4); padding: 24px; }
+.pk .nl-stack { position: relative; width: 100%; max-width: 640px; gap: var(--space-4); padding: 24px; }
+.nl-stage { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 640px; }
+.nl-above { display: flex; justify-content: flex-end; }
+
+/* The small pills: Undo in the card's top-right, Previous above the card. */
+.pk .nl-pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px 0 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--surface-card);
+  color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.pk .nl-pill:hover { background: var(--hover); }
+.pk .nl-pill:disabled { color: var(--ink-disabled); cursor: default; }
+.pk .nl-pill.nl-previous { box-shadow: var(--shadow-card); }
+.nl-corner { position: absolute; top: 24px; right: 24px; z-index: 1; }
+.nl-stack > .nl-corner { margin: 0; }
+/* The pill sits at the end of the dots' line, in whitespace that was there. */
+.nl-steps-trailing { margin-left: auto; }
+.nl-stack .nl-steps { min-height: 32px; }
 .nl-stack > * { margin: 0; }
 .nl-head > p { margin: 0; }
 
@@ -13,24 +31,37 @@
   padding: 16px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--track) 70%, var(--surface-card));
 }
 
-/* The dots: answered filled with a lilac ring, the rest dashed. */
+/* The dots: answered filled with a lilac ring, the rest dashed; once all
+ * are answered, a pink check and "Sorted". */
 .nl-steps { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 16px; color: var(--ink-muted); }
 .nl-dot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px dashed var(--border-strong); }
 .nl-dot.on { border: 2px solid var(--lilac); background: color-mix(in srgb, var(--lilac) 55%, var(--surface-card));
              box-shadow: inset 0 0 0 2px var(--surface-card); }
 .nl-steps-n { margin-left: 2px; }
+.nl-steps-sorted { display: inline-flex; align-items: center; gap: 4px; margin-left: 2px; color: var(--action);
+                   font-weight: 600; }
 
-/* Answers so far: grey lines with Change. */
+/* Answers so far: grey rows that reopen their step in place. */
 .nl-done-list { display: flex; flex-direction: column; gap: 6px; }
-.nl-done {
-  display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 16px;
-  border-radius: var(--radius-sm); background: var(--track); font-size: 15px; line-height: 20px; font-weight: 500;
+.nl-done-wrap { display: flex; flex-direction: column; gap: 10px; }
+.pk .nl-done {
+  display: flex; align-items: center; gap: 10px; width: 100%; height: 40px; padding: 0 16px; border: 0;
+  border-radius: var(--radius-sm); background: var(--track); color: var(--ink);
+  font: inherit; font-size: 15px; line-height: 20px; font-weight: 500; text-align: left; cursor: pointer;
 }
+.pk .nl-done:hover:not(:disabled) { background: var(--blush); }
+.pk .nl-done:disabled { cursor: default; }
+.nl-done-wrap.open > .nl-done { background: var(--blush); font-family: 'Fraunces', Georgia, serif; font-size: 18px;
+                                 font-weight: 600; }
+.nl-reopen { padding: 0 0 4px; }
 .nl-done-ring { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--lilac); flex: none; }
 .nl-done-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pk .nl-change { border: 0; background: none; padding: 4px 0; color: var(--link); font: inherit; font-size: 13px;
                  font-weight: 500; cursor: pointer; }
 .pk .nl-change:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* "What kind of income?": short answers, two columns. */
+.nl-stack .pk-choices.nl-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) 12px; }
 
 /* The question. */
 .nl-stack .nl-q { font-size: 26px; line-height: 32px; margin-top: var(--space-1); }
@@ -48,7 +79,9 @@
 }
 .pk .nl-person:hover { background: var(--blush); }
 
-/* What it will do, then Save and next beside Skip for now. */
+/* What it did, then Next on its own line; only Skip for now while asking. */
+.nl-stack .nl-next { justify-content: flex-end; }
+.nl-stack .nl-next .pk-btn.primary { display: inline-flex; align-items: center; gap: 4px; }
 .nl-stack .nl-effect {
   margin: 0; padding: 14px 16px; border-radius: var(--radius-sm); background: var(--lilac); color: var(--on-nacre);
   font-size: 14px; line-height: 20px;
@@ -58,8 +91,20 @@
 .pk .nl-stack .nl-skip { align-self: auto; height: 44px; padding: 0; font-size: 15px; }
 .nl-stack .nl-other { align-self: flex-start; }
 
+/* To review (TR-01): the list, a question chip on each row. */
+.nl-list-head { gap: var(--space-2); }
+.nl-list-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); width: 100%; }
+.nl-list-title p { margin: 0; }
+.pk .nl-quick { width: auto; height: 40px; padding: 0 18px; font-size: 14px; }
+.nl-list { width: 100%; }
+.nl-hint { margin: 0; padding: 4px 24px; font-size: 14px; }
+.pk .nl-row { width: 100%; }
+
 @media (max-width: 720px) {
   .pk .nl-stack { padding: 18px 16px; }
+  .nl-corner { top: 18px; right: 16px; }
+  .nl-stack .pk-choices.nl-grid { grid-template-columns: 1fr; }
+  .nl-list-title { flex-direction: column; align-items: flex-start; }
   .nl-stack .nl-q { font-size: 22px; line-height: 28px; }
   .nl-stack .nl-tx-amt { font-size: 22px; line-height: 28px; }
   .nl-stack .nl-actions { flex-wrap: wrap; }

@@ -186,6 +186,12 @@ export default function App() {
       if (q?.show) whenNoDialog(() => setQuickSort(q));
     }).catch(() => {});
   }, []);
+  // "Quick sort all" on To review (TR-01): the same cards, asked for.
+  const openQuickSort = useCallback(() => {
+    getQuickSort().then((q) => {
+      if (q?.items?.length) setQuickSort({ ...q, show: true });
+    }).catch(() => {});
+  }, []);
   // THL-256: "You earned a pearl", over whatever page she lands on, once
   // per milestone. Asked after the moments, before the quick sort.
   const [pearl, setPearl] = useState(null);
@@ -452,7 +458,8 @@ export default function App() {
         <ProjectionsPanel onTab={go} onChanged={load} version={version} />
       )}
       {panel === 'review' && (
-        <NeedsALook categories={categories} onChanged={load} onTab={go} version={version} />
+        <NeedsALook categories={categories} onChanged={load} onTab={go} version={version}
+                    onQuickSort={openQuickSort} />
       )}
       {panel === 'transactions' && (
         <TransactionsList summary={summary} categories={categories} accounts={accounts}

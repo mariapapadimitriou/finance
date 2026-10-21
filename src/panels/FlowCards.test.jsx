@@ -1,57 +1,56 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import FlowCards, { chartWords, linePath, scaleTop } from './FlowCards.jsx';
+import FlowCards, { barMath, cardWords } from './FlowCards.jsx';
 import { dayParts } from './TransactionsList.jsx';
 
 const html = (el) => renderToStaticMarkup(el);
-const flows = {
-  month: '2026-10', days: 31, upto: 9,
-  out: [40, 65, 65, 120, 180, 220, 316, 316, 359],
-  in: [2150, 2150, 2150, 2150, 2150, 2150, 2150, 2150, 2150],
-  usual: { months: 3, out: Array.from({ length: 31 }, (_, i) => 60 * (i + 1)),
-           in: Array.from({ length: 31 }, (_, i) => (i < 14 ? 2150 : 4300)) },
-};
 
-describe('Outflows and Inflows (ALT-04)', () => {
-  it('two cards: outflows signed in red, inflows signed in green, each with its line', () => {
-    const out = html(<FlowCards totals={{ spent: 3144.34, income: 2150 }} flows={flows} />);
-    expect(out).toContain('Outflows');
-    expect(out).toContain('Inflows');
-    expect(out).toContain('fc-figure out">-$3,144.34');
-    expect(out).toContain('fc-figure in">+$2,150.00');
-    expect(out).toContain('class="fc-now"');
-    expect(out).toContain('class="fc-usual"');
-    expect(out).toContain('fc-dot');
-    expect(out).not.toContain('Moving');
-    expect(out).not.toContain('Transfer');
+describe('This month (Current design, 2026-10-20)', () => {
+  it('one card: My income in lagoon, What I spent in rose, amounts on the right, nothing else', () => {
+    const out = html(<FlowCards totals={{ spent: 3144.34, income: 2150 }} />);
+    expect(out).toContain('aria-label="This month"');
+    expect(out).toContain('My income');
+    expect(out).toContain('What I spent');
+    expect(out).toContain('tm-amt in">+$2,150.00');
+    expect(out).toContain('tm-amt out">-$3,144.34');
+    expect(out).toContain('class="tm-bar in"');
+    expect(out).toContain('class="tm-bar out"');
+    for (const gone of ['Outflows', 'Inflows', 'Net', 'Moving', 'Transfer', 'THIS MONTH', 'days left']) {
+      expect(out).not.toContain(gone);
+    }
   });
 
-  it('with no single month there are figures and no lines', () => {
-    const out = html(<FlowCards totals={{ spent: 10, income: 0 }} flows={null} />);
-    expect(out).toContain('-$10.00');
-    expect(out).toContain('$0.00');
-    expect(out).not.toContain('fc-chart');
+  it('spending past income is a hollow segment labelled "$x over", with the income line', () => {
+    const out = html(<FlowCards totals={{ spent: 3144.34, income: 2150 }} />);
+    expect(out).toContain('$994.34 over');
+    expect(out).toContain('tm-income-line');
+    const m = barMath(3144.34, 2150);
+    expect(m.spent).toBe(1);
+    expect(m.income).toBeCloseTo(2150 / 3144.34, 6);
+    expect(m.over).toBeCloseTo(994.34, 2);
+    expect(m.overFrac).toBeCloseTo(994.34 / 3144.34, 6);
   });
 
-  it('a screen reader hears where the month stands', () => {
-    expect(chartWords('out', flows)).toBe('$359.00 so far; usually $540.00 by now.');
-    expect(chartWords('in', { ...flows, usual: null })).toBe('$2,150.00 so far.');
+  it('with income ahead there is no overshoot and no line', () => {
+    const out = html(<FlowCards totals={{ spent: 800, income: 2150 }} />);
+    expect(out).not.toContain(' over');
+    expect(out).not.toContain('tm-income-line');
+    expect(barMath(800, 2150)).toEqual({ income: 1, spent: 800 / 2150, over: 0, overFrac: 0 });
+    expect(barMath(0, 0)).toEqual({ income: 0, spent: 0, over: 0, overFrac: 0 });
   });
 
-  it('inflows step, outflows slope, and the scale fits both lines', () => {
-    expect(linePath([0, 10], 2, 10, true)).toContain(' H300.0 V');
-    expect(linePath([0, 10], 2, 10)).toContain(' L300.0 ');
-    expect(scaleTop([1, 2], [5])).toBeCloseTo(5.4);
+  it('a screen reader hears both figures and the difference', () => {
+    expect(cardWords({ spent: 3144.34, income: 2150 })).toBe(
+      'Income $2,150.00, spent $3,144.34. $994.34 more out than in.');
+    expect(cardWords({ spent: 800, income: 2150 })).toBe(
+      'Income $2,150.00, spent $800.00. $1,350.00 more in than out.');
   });
-});
 
-describe('Day headers (ALT-04): a name and a date, no totals', () => {
-  const now = new Date(2026, 9, 9);
-  it('Today, Yesterday, the weekday within a week, then the date', () => {
+  it('days are named: Today, Yesterday, the weekday, then the date', () => {
+    const now = new Date(2026, 9, 9);
     expect(dayParts('2026-10-09', now)).toEqual({ name: 'Today', date: 'Fri, Oct 9' });
     expect(dayParts('2026-10-08', now)).toEqual({ name: 'Yesterday', date: 'Thu, Oct 8' });
     expect(dayParts('2026-10-07', now)).toEqual({ name: 'Wednesday', date: 'Oct 7' });
-    expect(dayParts('2026-10-01', now)).toEqual({ name: 'October 1', date: 'Thursday' });
-    expect(dayParts('2025-12-24', now)).toEqual({ name: 'December 24, 2025', date: 'Wednesday' });
+    expect(dayParts('2026-10-02', now)).toEqual({ name: 'October 2', date: 'Friday' });
   });
 });

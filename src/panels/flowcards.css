@@ -1,52 +1,48 @@
-/* ALT-04 (2026-10-17): the Transactions page as the Handoff File draws it —
- * Outflows and Inflows cards, one row of tools, the review banner, and a
- * list by day. Colours and type from the Pearl tokens. */
+/* The Transactions page as the Current design page draws it (2026-10-20):
+ * one "This month" card with two bars, one row of tools, the review banner,
+ * and a list by day. Colours and type from the Pearl tokens. */
 
-/* ── The two cards ──────────────────────────────────────────────────────── */
-.fc-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
-.fc-card {
-  position: relative; display: flex; flex-direction: column; gap: var(--space-1);
-  padding: 20px 24px 16px; background: var(--surface-card); border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+/* ── This month: two bars from one edge (Current design, 2026-10-20) ──── */
+.tm-card {
+  display: flex; flex-direction: column; gap: 14px; padding: 24px;
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md);
 }
-.fc-card p { margin: 0; }
-.fc-label {
-  font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--ink-muted);
+.tm-card p { margin: 0; }
+.tm-row { display: grid; grid-template-columns: 130px minmax(0, 1fr) 140px; align-items: center; gap: var(--space-4); }
+.tm-label { font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink); }
+.tm-track { position: relative; display: block; height: 28px; }
+.tm-bar { position: absolute; top: 0; left: 0; height: 28px; border-radius: 7px; min-width: 7px; }
+.tm-bar.in { background: var(--lagoon); }
+.tm-bar.out { background: var(--rose); border-top-right-radius: 0; border-bottom-right-radius: 0; }
+/* Spending past income: hollow and dashed, with the amount over. */
+.tm-over {
+  position: absolute; top: 0; height: 28px; box-sizing: border-box;
+  border: 1.5px dashed var(--rose); border-left: 0; border-radius: 0 7px 7px 0;
+  background: color-mix(in srgb, var(--rose) 18%, var(--surface-card));
+  display: flex; align-items: center; padding-left: 10px; overflow: hidden;
 }
-.fc-figure { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 30px; line-height: 38px;
-             font-variant-numeric: tabular-nums; }
-.fc-figure.out { color: var(--money-out); }
-.fc-figure.in { color: var(--money-in); }
-.fc-chart { position: relative; height: 96px; margin-top: var(--space-4); cursor: crosshair; }
-.fc-chart.out { color: var(--money-out); }
-.fc-chart.in { color: var(--money-in); }
-.fc-chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.fc-now { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-.fc-usual { fill: none; stroke: var(--ink-muted); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .8; }
-.fc-dot {
-  position: absolute; width: 9px; height: 9px; border-radius: 50%; background: currentColor;
-  transform: translate(-50%, -50%); pointer-events: none;
+.tm-over-label { font-size: 12px; line-height: 14px; font-weight: 600; color: var(--rose-700); white-space: nowrap; }
+.tm-income-line {
+  position: absolute; top: -4px; width: 0; height: calc(28px + 14px + 36px);
+  border-left: 1.25px dashed var(--lagoon-700); opacity: .9; pointer-events: none;
 }
-.fc-dot.hollow { width: 11px; height: 11px; background: var(--surface-card); border: 2.5px solid currentColor; }
-.fc-rule { position: absolute; top: -6px; bottom: -6px; width: 1px; background: var(--ink-muted); opacity: .5;
-           pointer-events: none; }
-.fc-tip {
-  position: absolute; bottom: calc(100% + 8px); transform: translateX(-12%); z-index: 2;
-  display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; min-width: 190px;
-  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-raised); color: var(--ink); font-size: 13px; line-height: 18px; white-space: nowrap;
-  pointer-events: none;
+.tm-amt {
+  font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 22px; line-height: 28px;
+  text-align: right; font-variant-numeric: tabular-nums;
 }
-.fc-tip.left { transform: translateX(-88%); }
-.fc-tip-day { font-weight: 600; }
-.fc-tip-row { display: flex; align-items: center; gap: 6px; color: var(--ink-muted); }
-.fc-tip-row b { margin-left: auto; padding-left: var(--space-3); color: var(--ink); font-weight: 600;
-                font-variant-numeric: tabular-nums; }
-.fc-key { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.fc-chart.out .fc-key.now { background: var(--money-out); }
-.fc-chart.in .fc-key.now { background: var(--money-in); }
-.fc-key.usual { border: 1.5px solid var(--ink-muted); }
+.tm-amt.in { color: var(--lagoon-700); }
+.tm-amt.out { color: var(--rose-700); }
+:root[data-theme="dark"] .tm-amt.in, :root[data-theme="dark"] .tm-amt.out { color: var(--ink); }
+
+@media (max-width: 720px) {
+  .tm-card { padding: 18px 16px; gap: 12px; }
+  .tm-row { grid-template-columns: 96px minmax(0, 1fr) auto; gap: var(--space-3); }
+  .tm-label { font-size: 14px; }
+  .tm-track, .tm-bar, .tm-over { height: 22px; }
+  .tm-amt { font-size: 18px; line-height: 24px; }
+  .tm-over-label { display: none; }
+  .tm-income-line { height: calc(22px + 12px + 30px); }
+}
 
 /* ── One row of tools: Search · Month · Filters · Add ──────────────────── */
 .tx-page .tx-toolbar { flex-wrap: nowrap; }
