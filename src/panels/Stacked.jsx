@@ -4,7 +4,6 @@ import PIcon from '../pearl/icons.jsx';
 import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
 import { RepaymentMatch } from './Splits.jsx';
 import { depositChoices } from './joint.js';
-import WhatWasThis from './WhatWasThis.jsx';
 import {
   INCOME_KINDS, confirmTx, dismissReview, getTxCases, linkPayback, markTx, setCategory,
   setIncomeType, setJointFrom, setParty, sortTransfers,
@@ -12,11 +11,25 @@ import {
 import './stacked.css';
 
 /**
- * Needs a look, stacked (R-07 to R-12, 2026-10-17): one transaction, one
- * short question at a time. Each answer folds into a grey line with Change
- * above the next question, and dots count the steps. A choice that leads
- * somewhere moves on at once; the last one shows what it will do and Save
- * and next.
+ * Needs a look, stacked (R-07 to R-13 on the Current design page,
+ * 2026-10-20): one transaction, one short question at a time, and as few
+ * taps as possible.
+ *
+ *   - Tapping an answer is the commit. There is no Save and next: an answer
+ *     that leads to another question slides that question in under it; the
+ *     last answer saves at once and the card becomes the Sorted card
+ *     (NeedsALook.jsx). A name is committed with Enter or by picking a
+ *     person she has named before.
+ *   - Each answer folds into a row above the next question. Tapping a row
+ *     reopens that step in place — its options expand where the row was,
+ *     with the other answers still visible — and tapping the same row again
+ *     collapses it. A different answer that leads the same way keeps the
+ *     later answers; one that leads elsewhere drops them.
+ *   - Undo sits in the card's top-right and takes back the last answer (or
+ *     leaves the question when nothing is answered yet). Previous, above
+ *     the card, is NeedsALook's: it returns to the transaction sorted before.
+ *   - Dots count the steps; "What kind of income?" lays its options out in
+ *     two columns; a Remember checkbox sits above the choices it applies to.
  *
  * Money out starts at "Was this spending?" (Yes, I bought something → what
  * for; No, I saved it → which account; No, something else → moved, lent,
@@ -82,11 +95,9 @@ export function steps(it, cases) {
         { v: 'paying_back', label: 'Paying someone back', done: 'Paying someone back', to: 'who_to' },
         { v: 'work', label: 'A work expense, to be reimbursed', done: 'A work expense' },
         { v: 'not_mine', label: 'Not mine', done: 'Not mine' },
-        { v: 'more', label: 'Something else…', done: 'Something else', to: 'sheet' },
       ],
     };
     S.who_to = { title: 'Who to?', left: 1, ask: 'name' };
-    S.sheet = { title: 'What was this?', left: 1, ask: 'sheet' };
     return { start: 'q1', S };
   }
   const joint = it.kind === 'joint_in';
@@ -142,14 +153,21 @@ export function steps(it, cases) {
   return { start: match ? 'match' : 'q1', S };
 }
 
-/** The dots: answered steps filled, the rest dashed, and "2 of 3". */
-export function Progress({ done, total }) {
+/** The dots: answered steps filled, the rest dashed, and "2 of 3" — or,
+ * once everything is answered, a pink check and "Sorted". */
+export function Progress({ done, total, sorted = false, trailing = null }) {
+  const n = sorted ? total : Math.min(done + 1, total);
   return (
-    <p className="nl-steps" aria-label={`Step ${Math.min(done + 1, total)} of ${total}`}>
+    <p className="nl-steps" aria-label={sorted ? 'Sorted' : `Step ${n} of ${total}`}>
       {Array.from({ length: total }, (_, i) => (
-        <span key={i} className={`nl-dot${i < done ? ' on' : ''}`} aria-hidden="true" />
+        <span key={i} className={`nl-dot${i < done || sorted ? ' on' : ''}`} aria-hidden="true" />
       ))}
-      <span className="nl-steps-n" aria-hidden="true">{`${done} of ${total}`}</span>
+      {sorted ? (
+        <span className="nl-steps-sorted" aria-hidden="true"><PIcon name="check" size={14} /> Sorted</span>
+      ) : (
+        <span className="nl-steps-n" aria-hidden="true">{`${done} of ${total}`}</span>
+      )}
+      {trailing && <span className="nl-steps-trailing">{trailing}</span>}
     </p>
   );
 }
@@ -171,11 +189,37 @@ export function TxHead({ txn, name }) {
   );
 }
 
-export default function Stacked({ it, categories = [], busy, act, sorted, onSkip, onTab }) {
+/** The small pill in a card's corner: "↶ Undo", "↶ Previous". */
+export function Pill({ children, className = '', ...rest }) {
+  return (
+    <button type="button" className={`nl-pill ${className}`} {...rest}>
+      <PIcon name="undo" size={14} /> {children}
+    </button>
+  );
+}
+
+/** Where an answer leads. */
+export function nextOf(flow, last) {
+  const s = flow.S[last.step];
+  if (s?.options) return s.options.find((o) => o.v === last.v)?.to;
+  return s?.to;
+}
+
+/** The words for an answer, for the stacked rows and the Sorted card. */
+export function answerLabel(flow, p) {
+  const s = flow.S[p.step];
+  if (s?.options) return s.options.find((o) => o.v === p.v)?.done ?? p.v;
+  return p.label ?? p.v;
+}
+
+export default function Stacked({ it, categories = [], busy, act, commit, onSkip, onBack, onTab,
+                                  initialPath = null, initialEdit = null, initialName = '' }) {
   const [cases, setCases] = useState(null);
-  const [path, setPath] = useState([]);            // [{ step, v }]
-  const [pick, setPick] = useState(null);          // the last answer, before Save
-  const [name, setName] = useState(() => nameIn(it.txn?.merchant) || it.to || '');
+  // [{ step, v, label? }]: the answers so far, the last one still open.
+  const [path, setPath] = useState(() => initialPath ?? []);
+  // The row being changed in place (an index into `path`), if any.
+  const [editing, setEditing] = useState(initialEdit);
+  const [name, setName] = useState(() => initialName || nameIn(it.txn?.merchant) || it.to || '');
   const [cat, setCat] = useState('');
   const [remember, setRemember] = useState(it.kind === 'joint_in' || !!it.learnable);
   useEffect(() => {
@@ -186,26 +230,19 @@ export default function Stacked({ it, categories = [], busy, act, sorted, onSkip
 
   const flow = useMemo(() => steps(it, cases), [it, cases]);
   const stepId = path.length ? nextOf(flow, path[path.length - 1]) : flow.start;
-  // Pearl's guess at the kind of income is already chosen.
-  useEffect(() => {
-    if (stepId === 'kind' && it.kind === 'income' && it.guess) setPick(it.guess);
-  }, [stepId]);                                             // eslint-disable-line react-hooks/exhaustive-deps
   const step = flow.S[stepId];
-  // A last answer chosen means one step left, whatever the longest path was.
-  const lastChosen = step?.options && pick !== null && !step.options.find((o) => o.v === pick)?.to;
-  const total = path.length + (lastChosen ? 1 : (step?.left ?? 1));
+  const total = path.length + (step?.left ?? 1);
   const amt = txAmount(Math.abs(it.txn.amount));
   const answered = (k) => path.find((p) => p.step === k)?.v;
-  const go = (v) => {
-    const opt = step.options?.find((o) => o.v === v);
-    if (opt?.to) { setPath([...path, { step: stepId, v }]); setPick(null); } else setPick(v);
-  };
-  const rewind = (i) => { setPath(path.slice(0, i)); setPick(null); };
-
-  // ── What the last answer does, and saving it ─────────────────────────
   const out = isOut(it);
-  const via = (body, title) => act(() => markTx(it.txn.id, body), (res) => ({
-    title: res?.title || title, detail: res?.detail || '', undo: res?.undo,
+
+  // ── What an answer does, and saving it ───────────────────────────────
+  const via = (body, title) => markTx(it.txn.id, body).then((res) => ({
+    res, title: res?.title || title, detail: res?.detail || '', undo: res?.undo,
+  }));
+  const plain = (fn, title) => fn().then((res) => ({
+    res, title: [title, res?.impact?.title].filter(Boolean).join(' ') || title,
+    detail: res?.impact?.detail ?? res?.detail ?? '', undo: res?.undo,
   }));
   const spendingCats = useMemo(() => groupCategories(categories, {
     only: (c) => ['essentials', 'lifestyle'].includes(c.group),
@@ -214,244 +251,321 @@ export default function Stacked({ it, categories = [], busy, act, sorted, onSkip
   const people = (cases?.people ?? []).filter((p) => p.toLowerCase() !== name.trim().toLowerCase());
   const choices = depositChoices(it.people, it.label);
 
-  let ready = false; let effect = ''; let save = () => {};
-  const lastQ = stepId;
-  if (step?.ask === 'category') {
-    ready = !!cat;
-    effect = cat ? `Counts as ${categoryLabel(cat)} spending.` : '';
-    save = () => (it.kind === 'unsorted'
-      ? act(() => sortTransfers([it.txn.id], cat, it.learnable && remember), sorted(`Sorted as ${categoryLabel(cat)}.`))
-      : act(() => setCategory(it.txn.id, cat, remember), sorted(`Moved to ${categoryLabel(cat)}.`)));
-  } else if (step?.ask === 'account') {
-    ready = pick !== null;
-    const a = accounts.find((x) => x.id === pick);
-    if (lastQ === 'account_in') {
-      effect = ready ? `Not income. It comes off Savings this month${a ? `, from ${a.label}` : ''}.` : '';
-      save = () => via({ case: 'out_of_savings', account: pick || '' }, 'Sorted as taken out of savings.');
-    } else {
-      effect = ready ? `Not spending. It adds ${amt} to Savings this month${a?.anchor ? ' and to your Anchor' : ''}.` : '';
-      save = () => via({ case: 'saved', account: pick || '', remember: !!(it.learnable && remember) },
-        a ? `Put away to ${a.label}.` : 'Sorted as savings.');
-    }
-  } else if (step?.ask === 'name') {
-    const how = answered('what_out');
-    ready = !!name.trim();
-    effect = how === 'lent'
-      ? `Not spending. Safe to spend goes up by ${amt} and ${name.trim() || 'they'} owe${name.trim() ? 's' : ''} you ${amt}.`
-      : `Not spending. Safe to spend goes up by ${amt}.`;
-    save = () => act(async () => {
-      const res = await markTx(it.txn.id, how === 'lent' ? { case: 'lent' } : { case: 'paying_back', counted: true });
-      if (name.trim() && name.trim() !== nameIn(it.txn.merchant)) await setParty(it.txn.id, name.trim());
-      return res;
-    }, (res) => ({ title: res?.title || (how === 'lent' ? `Lent to ${name.trim()}.` : `Paying back ${name.trim()}.`),
-                   detail: res?.detail || '', undo: res?.undo }));
-  } else if (step?.ask === 'sender') {
-    ready = !!name.trim();
-    save = () => act(async () => {
-      await setParty(it.txn.id, name.trim());
-      return markTx(it.txn.id, { case: 'lent_back' });
-    }, (res) => ({ title: `${name.trim()} paid you back.`, detail: res?.detail || '', undo: res?.undo }));
-  } else if (step?.ask === 'kind') {
-    ready = !!pick;
-    effect = ready ? `Counts as ${INCOME_KINDS[pick] ?? 'income'}.` : '';
-    save = () => (it.kind === 'income'
-      ? act(() => setIncomeType(it.txn.id, pick))
-      : via({ case: 'pay', income_kind: pick }, 'Sorted as income.'));
-  } else if (step?.ask === 'joint') {
-    const chosen = choices.find((c) => c.value === pick);
-    ready = !!chosen;
-    effect = !chosen ? '' : chosen.who === 'me' ? 'A transfer, not income.'
-      : `Covers ${chosen.label}’s share of joint spending. Your spending goes down by ${amt}.`;
-    save = () => act(() => setJointFrom(it.txn.id, chosen.who, remember, chosen.person));
-  } else if (step?.ask === 'pick') {
-    ready = pick !== null && (pick !== '' || !!step.none || (step.key === 'refund' && !!cat));
-    const c = step.candidates.find((x) => x.id === pick);
-    effect = !ready ? '' : step.key === 'payback' ? (c ? `Comes off what you spent at ${c.merchant}. Not income.` : 'Moves it to Lent. Not income.')
-      : step.key === 'refund' ? `Comes off ${c?.category || categoryLabel(cat)}. Not income.`
-        : 'Pays back a work expense you left out. Not income.';
-    save = () => {
-      if (step.key === 'payback' && !pick) return via({ case: 'lent_back' }, 'Sorted as money you lent, paid back.');
-      if (step.key === 'refund' && !pick) return via({ case: 'refund', category: cat }, 'Sorted as a refund.');
-      return via({ case: step.key, charge: pick }, 'Sorted.');
-    };
-  } else if (step?.options && pick) {
-    ready = true;
-    const v = pick;
-    if (lastQ === 'match') {
-      effect = 'Not income. The split shows as paid back.';
-      save = () => act(() => linkPayback(step.match.charge_id, it.txn.id, step.match.name));
-    } else if (lastQ === 'q1' && out) {               // "Yes, Groceries"
-      effect = `Stays in ${categoryLabel(it.guess)}.`;
-      save = () => act(() => confirmTx(it.txn.id), () => 'Confirmed');
-    } else if (lastQ === 'q1') {                       // my own money
-      effect = 'A transfer. Not income.';
-      save = () => (it.kind === 'joint_in' ? act(() => setJointFrom(it.txn.id, 'me', false))
-        : it.kind === 'income' ? act(() => setCategory(it.txn.id, 'Transfers'), sorted('Sorted as your own money, not income.'))
-          : via({ case: 'own' }, 'Sorted as your own money.'));
-    } else if (lastQ === 'what_out') {
-      const words = { moved: 'A transfer. Not spending, not income.', work: 'Left out of your spending until the money comes back.',
-                      not_mine: 'Left out of everything.' };
-      effect = words[v] ?? '';
-      save = () => (v === 'moved' && it.kind === 'unsorted'
-        ? act(() => sortTransfers([it.txn.id], 'Transfers', it.learnable && remember), sorted('Sorted as moved between your accounts.'))
-        : via(v === 'not_mine' ? { case: v, reason: '' } : { case: v }, 'Sorted.'));
-    } else if (lastQ === 'what_in') {
-      const opt = step.options.find((o) => o.v === v);
-      const words = { borrowed: 'Borrowed. Not income.', not_mine: 'Left out of everything.', payback: 'Moves it to Lent. Not income.' };
-      effect = words[v] ?? '';
-      save = () => via(v === 'not_mine' ? { case: v, reason: '' } : { case: opt?.as || v }, 'Sorted.');
-    }
-  }
+  /** Commit the last answer: run the call, then hand the card to NeedsALook. */
+  const finish = (answers, effect, run) => commit(() => run(), {
+    answers: answers.map((p) => ({ ...p, label: p.label ?? answerLabel(flow, p) })), effect,
+  });
 
-  if (step?.ask === 'sheet') {
-    return (
-      <>
-        <TxHead txn={it.txn} name={it.to} />
-        <Progress done={path.length} total={total} />
-        <Done path={path} flow={flow} onChange={rewind} />
-        <WhatWasThis tx={{ id: it.txn.id, merchant: it.txn.merchant, amount: Math.abs(it.txn.amount),
-                           inflow: !out, logo: it.txn.logo }}
-                     categories={categories} busy={busy} saveLabel="Save and next" showHead={false}
-                     onDone={(res) => act(() => Promise.resolve(res), sorted(res.title))} />
-        <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>Skip for now</PButton>
-      </>
-    );
-  }
+  // The last answer of a step that asks (chips, an account, a kind…).
+  const lastOf = (s, v, label) => [...path, { step: s, v, label }];
+  const saveAsk = (s, v, label) => {
+    const answers = lastOf(s, v, label);
+    if (s.ask === 'category') {
+      const effect = `Counts as ${categoryLabel(v)} spending.`;
+      return finish(answers, effect, () => (it.kind === 'unsorted'
+        ? plain(() => sortTransfers([it.txn.id], v, it.learnable && remember), `Sorted as ${categoryLabel(v)}.`)
+        : plain(() => setCategory(it.txn.id, v, remember), `Moved to ${categoryLabel(v)}.`)));
+    }
+    if (s.ask === 'account') {
+      const a = accounts.find((x) => x.id === v);
+      if (stepId === 'account_in') {
+        return finish(answers, `Not income. It comes off Savings this month${a ? `, from ${a.label}` : ''}.`,
+          () => via({ case: 'out_of_savings', account: v || '' }, 'Sorted as taken out of savings.'));
+      }
+      return finish(answers, `Not spending. It adds ${amt} to Savings this month${a?.anchor ? ' and to your Anchor' : ''}.`,
+        () => via({ case: 'saved', account: v || '', remember: !!(it.learnable && remember) },
+          a ? `Put away to ${a.label}.` : 'Sorted as savings.'));
+    }
+    if (s.ask === 'kind') {
+      return finish(answers, `Counts as ${INCOME_KINDS[v] ?? 'income'}.`, () => (it.kind === 'income'
+        ? plain(() => setIncomeType(it.txn.id, v), `Counts as ${INCOME_KINDS[v] ?? 'income'}.`)
+        : via({ case: 'pay', income_kind: v }, 'Sorted as income.')));
+    }
+    if (s.ask === 'joint') {
+      const chosen = choices.find((c) => c.value === v);
+      const effect = chosen?.who === 'me' ? 'A transfer, not income.'
+        : `Covers ${chosen?.label}’s share of joint spending. Your spending goes down by ${amt}.`;
+      return finish(answers, effect, () => plain(() => setJointFrom(it.txn.id, chosen.who, remember, chosen.person), 'Sorted.'));
+    }
+    if (s.ask === 'pick') {
+      const c = s.candidates.find((x) => x.id === v);
+      if (s.key === 'payback' && !v) {
+        return finish(answers, 'Moves it to Lent. Not income.', () => via({ case: 'lent_back' }, 'Sorted as money you lent, paid back.'));
+      }
+      if (s.key === 'refund' && !v) {
+        return finish(answers, `Comes off ${categoryLabel(cat)}. Not income.`, () => via({ case: 'refund', category: cat }, 'Sorted as a refund.'));
+      }
+      const effect = s.key === 'payback' ? `Comes off what you spent at ${c?.merchant}. Not income.`
+        : s.key === 'refund' ? `Comes off ${c?.category || ''}. Not income.`
+          : 'Pays back a work expense you left out. Not income.';
+      return finish(answers, effect, () => via({ case: s.key, charge: v }, 'Sorted.'));
+    }
+    if (s.ask === 'name') {
+      const how = answered('what_out');
+      const who = v.trim();
+      const effect = how === 'lent'
+        ? `Not spending. Allowance goes up by ${amt} and ${who} owes you ${amt}.`
+        : `Not spending. Allowance goes up by ${amt}.`;
+      return finish(answers, effect, async () => {
+        const res = await markTx(it.txn.id, how === 'lent' ? { case: 'lent' } : { case: 'paying_back', counted: true });
+        // Only an e-Transfer carries a name at the bank; for anything else
+        // the name is for the Sorted card alone.
+        if (who && who !== nameIn(it.txn.merchant)) await setParty(it.txn.id, who).catch(() => {});
+        return { res, title: res?.title || (how === 'lent' ? `Lent to ${who}.` : `Paying back ${who}.`),
+                 detail: res?.detail || '', undo: res?.undo };
+      });
+    }
+    if (s.ask === 'sender') {
+      const who = v.trim();
+      return finish(answers, `${who} paid you back. Not income.`, async () => {
+        await setParty(it.txn.id, who);
+        const res = await markTx(it.txn.id, { case: 'lent_back' });
+        return { res, title: `${who} paid you back.`, detail: res?.detail || '', undo: res?.undo };
+      });
+    }
+    return undefined;
+  };
+
+  // The last answer of a step with choices.
+  const saveChoice = (sId, v, pathBefore) => {
+    const s = flow.S[sId];
+    const answers = [...pathBefore, { step: sId, v }];
+    if (sId === 'match') {
+      return finish(answers, 'Not income. The split shows as paid back.',
+        () => plain(() => linkPayback(s.match.charge_id, it.txn.id, s.match.name), 'Linked.'));
+    }
+    if (sId === 'q1' && out) {                                   // "Yes, Groceries"
+      return finish(answers, `Stays in ${categoryLabel(it.guess)}.`, () => plain(() => confirmTx(it.txn.id), 'Confirmed.'));
+    }
+    if (sId === 'q1') {                                          // my own money
+      return finish(answers, 'A transfer. Not income.', () => (it.kind === 'joint_in'
+        ? plain(() => setJointFrom(it.txn.id, 'me', false), 'Sorted as your own money.')
+        : it.kind === 'income'
+          ? plain(() => setCategory(it.txn.id, 'Transfers'), 'Sorted as your own money, not income.')
+          : via({ case: 'own' }, 'Sorted as your own money.')));
+    }
+    if (sId === 'what_out') {
+      const words = { moved: 'A transfer. Not spending, not income.',
+                      work: 'Left out of your spending until the money comes back.',
+                      not_mine: 'Left out of everything.' };
+      return finish(answers, words[v] ?? '', () => (v === 'moved' && it.kind === 'unsorted'
+        ? plain(() => sortTransfers([it.txn.id], 'Transfers', it.learnable && remember), 'Sorted as moved between your accounts.')
+        : via(v === 'not_mine' ? { case: v, reason: '' } : { case: v }, 'Sorted.')));
+    }
+    if (sId === 'what_in') {
+      const opt = s.options.find((o) => o.v === v);
+      const words = { borrowed: 'Borrowed. Not income.', not_mine: 'Left out of everything.',
+                      payback: 'Moves it to Lent. Not income.' };
+      return finish(answers, words[v] ?? '', () => via(v === 'not_mine' ? { case: v, reason: '' } : { case: opt?.as || v }, 'Sorted.'));
+    }
+    return undefined;
+  };
+
+  /** A choice tapped on the open question: lead on, or commit. */
+  const choose = (v) => {
+    const opt = step.options?.find((o) => o.v === v);
+    if (opt?.to) { setPath([...path, { step: stepId, v }]); return; }
+    saveChoice(stepId, v, path);
+  };
+
+  /** A choice tapped on a reopened step `i`. */
+  const rechoose = (i, v) => {
+    const sId = path[i].step;
+    const s = flow.S[sId];
+    const was = s.options?.find((o) => o.v === path[i].v);
+    const now = s.options?.find((o) => o.v === v);
+    if (!now) return;
+    setEditing(null);
+    if (!now.to) { saveChoice(sId, v, path.slice(0, i)); return; }
+    if (now.to === was?.to) {
+      setPath(path.map((p, k) => (k === i ? { step: p.step, v } : p)));
+    } else {
+      setPath([...path.slice(0, i), { step: sId, v }]);
+    }
+  };
+
+  // Undo in the card: the last answer comes back (or the question is left).
+  const undoLast = () => {
+    if (editing !== null) { setEditing(null); return; }
+    if (path.length) { setPath(path.slice(0, -1)); return; }
+    onBack?.();
+  };
 
   const group = `q-${it.txn.id}-${stepId}`;
+  const inputDone = (v) => {
+    const who = v.trim();
+    if (!who) return;
+    if (step.ask === 'sender' && step.to) {
+      setPath([...path, { step: stepId, v: who, label: who }]);
+      return;
+    }
+    saveAsk(step, who, who);
+  };
+
   return (
     <>
       <TxHead txn={it.txn} name={it.to} />
-      <Progress done={path.length} total={total} />
-      <Done path={path} flow={flow} onChange={rewind} />
-      <h2 className="pk-h2 nl-q">{step.title}</h2>
-      {step.sub && <p className="pk-muted nl-sub">{step.sub}</p>}
-      {step.match && <RepaymentMatch match={step.match} />}
+      <Progress done={path.length} total={total}
+                trailing={(
+                  <Pill className="nl-undo" onClick={undoLast} disabled={busy}
+                        aria-label={path.length || editing !== null ? 'Undo the last answer' : 'Back to the list'}>
+                    Undo
+                  </Pill>
+                )} />
+      <Done path={path} flow={flow} editing={editing} busy={busy}
+            onOpen={(i) => setEditing(editing === i ? null : i)}
+            onPick={rechoose} />
 
-      {step.options && (
-        <div className="pk-choices" role="radiogroup" aria-label={step.title}>
-          {step.options.map((o) => (
-            <Choice key={o.v} name={group} checked={pick === o.v} onChange={() => go(o.v)} label={o.label} />
-          ))}
-        </div>
-      )}
-      {step.ask === 'category' && (
+      {step && (
         <>
-          <CategoryChips groups={spendingCats} value={cat} onChange={setCat} label={step.title} />
-          <Choice type="checkbox" checked={remember} onChange={setRemember}
-                  label={it.kind === 'unsorted' ? `Remember for ${it.to || it.txn.merchant}` : `Always for ${it.txn.merchant}`} />
-        </>
-      )}
-      {step.ask === 'account' && (
-        <div className="pk-choices" role="radiogroup" aria-label={step.title}>
-          {accounts.map((a) => (
-            <Choice key={a.id} name={group} checked={pick === a.id} onChange={() => setPick(a.id)} label={a.label} />
-          ))}
-          <Choice name={group} checked={pick === ''} onChange={() => setPick('')} label="Not sure" />
-        </div>
-      )}
-      {step.ask === 'kind' && (
-        <div className="pk-choices" role="radiogroup" aria-label={step.title}>
-          {Object.entries(INCOME_KINDS).map(([k, label]) => (
-            <Choice key={k} name={group} checked={pick === k} onChange={() => setPick(k)} label={label} />
-          ))}
-        </div>
-      )}
-      {(step.ask === 'name' || step.ask === 'sender') && (
-        <div className="txd-field nl-name">
-          {step.ask === 'sender' && <label className="pk-label" htmlFor={group}>Their name</label>}
-          <input id={group} type="text" value={name} maxLength={60} autoComplete="off"
-                 aria-label={step.title} placeholder="First and last name"
-                 onChange={(e) => setName(e.target.value)} />
-          {step.ask === 'sender' && <p className="pk-label pk-muted">Shown in your list from now on</p>}
-          {step.ask === 'name' && people.length > 0 && (
-            <div className="nl-people">
-              {people.map((p) => (
-                <button key={p} type="button" className="nl-person" onClick={() => setName(p)}>{p}</button>
+          <h2 className="pk-h2 nl-q">{step.title}</h2>
+          {step.sub && <p className="pk-muted nl-sub">{step.sub}</p>}
+          {step.match && <RepaymentMatch match={step.match} />}
+
+          {step.ask === 'category' && (
+            <Choice type="checkbox" checked={remember} onChange={setRemember}
+                    label={it.kind === 'unsorted' ? `Remember for ${it.to || it.txn.merchant}` : `Always for ${it.txn.merchant}`} />
+          )}
+          {step.options && (
+            <div className="pk-choices" role="radiogroup" aria-label={step.title}>
+              {step.options.map((o) => (
+                <Choice key={o.v} name={group} checked={false} disabled={busy}
+                        onChange={() => choose(o.v)} label={o.label} />
               ))}
             </div>
           )}
-          {step.ask === 'sender' && (
-            <button type="button" className="txd-link nl-other" disabled={busy}
-                    onClick={() => act(() => dismissReview(it.key), () => 'Kept your bank’s name')}>
-              Use your bank’s name instead
-            </button>
+          {step.ask === 'category' && (
+            <CategoryChips groups={spendingCats} value={cat} label={step.title}
+                           onChange={(v) => { setCat(v); saveAsk(step, v, categoryLabel(v)); }} />
           )}
-        </div>
-      )}
-      {step.ask === 'joint' && (
-        <>
-          <div className="pk-choices" role="radiogroup" aria-label={step.title}>
-            {choices.map((c) => (
-              <Choice key={c.value} name={group} checked={pick === c.value} onChange={() => setPick(c.value)}
-                      label={c.label} description={c.description} />
-            ))}
-          </div>
-          <Choice type="checkbox" checked={remember} onChange={setRemember}
-                  label={`Remember for deposits from ${(choices.find((c) => c.value === pick)?.who === 'them'
-                    && choices.find((c) => c.value === pick)?.label) || it.txn.merchant}`} />
-        </>
-      )}
-      {step.ask === 'pick' && (
-        <>
-          <div className="pk-choices" role="radiogroup" aria-label={step.title}>
-            {step.candidates.map((c) => (
-              <Choice key={c.id} name={group} checked={pick === c.id} onChange={() => setPick(c.id)}
-                      label={`${c.merchant} · ${shortDate(c.date)}`}
-                      description={[txAmount(c.amount, { signed: true }), c.category].filter(Boolean).join(' · ')} />
-            ))}
-            {(step.none || step.key === 'refund') && (
-              <Choice name={group} checked={pick === ''} onChange={() => setPick('')}
-                      label={step.none || 'None of these'} />
-            )}
-          </div>
-          {step.key === 'refund' && pick === '' && (
-            <CategoryChips groups={spendingCats} value={cat} onChange={setCat} label="What was it a refund of?" />
+          {step.ask === 'account' && (
+            <div className="pk-choices" role="radiogroup" aria-label={step.title}>
+              {accounts.map((a) => (
+                <Choice key={a.id} name={group} checked={false} disabled={busy}
+                        onChange={() => saveAsk(step, a.id, a.label)} label={a.label} />
+              ))}
+              <Choice name={group} checked={false} disabled={busy}
+                      onChange={() => saveAsk(step, '', 'Not sure')} label="Not sure" />
+            </div>
+          )}
+          {step.ask === 'kind' && (
+            <div className="pk-choices nl-grid" role="radiogroup" aria-label={step.title}>
+              {Object.entries(INCOME_KINDS).map(([k, label]) => (
+                <Choice key={k} name={group} checked={it.kind === 'income' && it.guess === k} disabled={busy}
+                        onChange={() => saveAsk(step, k, label)} label={label} />
+              ))}
+            </div>
+          )}
+          {(step.ask === 'name' || step.ask === 'sender') && (
+            <div className="txd-field nl-name">
+              {step.ask === 'sender' && <label className="pk-label" htmlFor={group}>Their name</label>}
+              <input id={group} type="text" value={name} maxLength={60} autoComplete="off"
+                     aria-label={step.title} placeholder="First and last name" disabled={busy}
+                     onChange={(e) => setName(e.target.value)}
+                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); inputDone(name); } }} />
+              <p className="pk-label pk-muted">
+                {step.ask === 'sender' ? 'Shown in your list from now on · press Enter to continue'
+                  : 'Press Enter, or pick a name'}
+              </p>
+              {people.length > 0 && (
+                <div className="nl-people">
+                  {people.map((p) => (
+                    <button key={p} type="button" className="nl-person" disabled={busy}
+                            onClick={() => { setName(p); inputDone(p); }}>{p}</button>
+                  ))}
+                </div>
+              )}
+              {step.ask === 'sender' && (
+                <button type="button" className="txd-link nl-other" disabled={busy}
+                        onClick={() => act(() => dismissReview(it.key), () => 'Kept your bank’s name')}>
+                  Use your bank’s name instead
+                </button>
+              )}
+            </div>
+          )}
+          {step.ask === 'joint' && (
+            <>
+              <Choice type="checkbox" checked={remember} onChange={setRemember}
+                      label={`Remember for deposits from ${it.txn.merchant}`} />
+              <div className="pk-choices" role="radiogroup" aria-label={step.title}>
+                {choices.map((c) => (
+                  <Choice key={c.value} name={group} checked={false} disabled={busy}
+                          onChange={() => saveAsk(step, c.value, c.label)}
+                          label={c.label} description={c.description} />
+                ))}
+              </div>
+              {onTab && (
+                <button type="button" className="txd-link nl-other" onClick={() => onTab('accounts')}>
+                  Who shares this account <PIcon name="chevronRight" size={14} />
+                </button>
+              )}
+            </>
+          )}
+          {step.ask === 'pick' && (
+            <>
+              <div className="pk-choices" role="radiogroup" aria-label={step.title}>
+                {step.candidates.map((c) => (
+                  <Choice key={c.id} name={group} checked={false} disabled={busy}
+                          onChange={() => saveAsk(step, c.id, `${c.merchant} · ${shortDate(c.date)}`)}
+                          label={`${c.merchant} · ${shortDate(c.date)}`}
+                          description={[txAmount(c.amount, { signed: true }), c.category].filter(Boolean).join(' · ')} />
+                ))}
+                {step.none && (
+                  <Choice name={group} checked={false} disabled={busy}
+                          onChange={() => saveAsk(step, '', step.none)} label={step.none} />
+                )}
+                {step.key === 'refund' && (
+                  <Choice name={group} checked={cat !== '' && false} disabled={busy}
+                          onChange={() => setCat(cat || ' ')} label="None of these" />
+                )}
+              </div>
+              {step.key === 'refund' && cat !== '' && (
+                <CategoryChips groups={spendingCats} value={cat.trim()} label="What was it a refund of?"
+                               onChange={(v) => { setCat(v); saveAsk(step, '', `A refund of ${categoryLabel(v)}`); }} />
+              )}
+            </>
           )}
         </>
-      )}
-
-      {ready && effect && <p className="nl-effect" role="status">{effect}</p>}
-      {step.ask === 'joint' && onTab && (
-        <button type="button" className="txd-link nl-other" onClick={() => onTab('accounts')}>
-          Who shares this account <PIcon name="chevronRight" size={14} />
-        </button>
       )}
       <div className="nl-actions">
-        {ready && (
-          <PButton disabled={busy} onClick={() => (step.to && step.ask === 'sender'
-            ? (setPath([...path, { step: stepId, v: name.trim() }]), setPick(null))
-            : save())}>
-            {step.to && step.ask === 'sender' ? 'Next' : 'Save and next'}
-          </PButton>
-        )}
         <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>Skip for now</PButton>
       </div>
     </>
   );
 }
 
-/** Where the last answer leads. */
-function nextOf(flow, last) {
-  const s = flow.S[last.step];
-  if (s?.options) return s.options.find((o) => o.v === last.v)?.to;
-  return s?.to;
-}
-
-/** The answers so far, each a grey line with Change (R-11, R-12). */
-function Done({ path, flow, onChange }) {
+/**
+ * The answers so far, each a row that reopens its step in place (R-11,
+ * R-12 and the edit states on the Current design page): the open step's
+ * options expand where the row was, the other rows stay, and tapping the
+ * row again folds it back.
+ */
+export function Done({ path, flow, editing = null, busy = false, onOpen, onPick }) {
   if (!path.length) return null;
   return (
     <div className="nl-done-list">
       {path.map((p, i) => {
         const s = flow.S[p.step];
-        const label = s?.options?.find((o) => o.v === p.v)?.done ?? p.v;
+        const label = answerLabel(flow, p);
+        const open = editing === i && !!s?.options;
         return (
-          <div key={`${p.step}-${i}`} className="nl-done">
-            <span className="nl-done-ring" aria-hidden="true" />
-            <span className="nl-done-label">{label}</span>
-            <button type="button" className="nl-change" onClick={() => onChange(i)}
-                    aria-label={`Change: ${label}`}>Change</button>
+          <div key={`${p.step}-${i}`} className={`nl-done-wrap${open ? ' open' : ''}`}>
+            <button type="button" className="nl-done" disabled={!onOpen || !s?.options}
+                    aria-expanded={s?.options ? open : undefined}
+                    aria-label={open ? `Close: ${s.title}` : `Change: ${label}`}
+                    onClick={() => onOpen?.(i)}>
+              <span className="nl-done-ring" aria-hidden="true" />
+              <span className="nl-done-label">{open ? s.title : label}</span>
+              {s?.options && <PIcon name={open ? 'chevronUp' : 'chevronDown'} size={14} />}
+            </button>
+            {open && (
+              <div className="pk-choices nl-reopen" role="radiogroup" aria-label={s.title}>
+                {s.options.map((o) => (
+                  <Choice key={o.v} name={`re-${p.step}-${i}`} checked={o.v === p.v} disabled={busy}
+                          onChange={() => onPick?.(i, o.v)} label={o.label} />
+                ))}
+              </div>
+            )}
           </div>
         );
       })}

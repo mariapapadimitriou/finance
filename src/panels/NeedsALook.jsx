@@ -1,55 +1,44 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActionToast, Avatar, Choice, PButton, Toast, amountTone, txAmount,
-} from '../pearl/kit.jsx';
+import { ActionToast, Choice, PButton, Toast, TxRow, amountTone, txAmount } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
-import CategoryPicker, { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
+import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
 import { ErrorNote } from '../components/ui.jsx';
-import { RepaymentMatch } from './Splits.jsx';
 import { DuplicateQuestion } from './Duplicates.jsx';
+import Stacked, { Pill, Progress, TxHead as StackedHead } from './Stacked.jsx';
 import { depositChoices } from './joint.js';
-import WhatWasThis from './WhatWasThis.jsx';
-import Stacked, { TxHead as StackedHead } from './Stacked.jsx';
 import {
-  INCOME_KINDS, answerDuplicate, confirmTx, dismissReview, getReview, getTxCases, linkPayback,
-  markTx, money, setCategory, setIncomeType, setJointFrom, setParty, skipReview, sortTransfers,
-  undoChange,
+  INCOME_KINDS, answerDuplicate, dismissReview, getReview, money, setCategory, setIncomeType,
+  setJointFrom, skipReview, undoChange,
 } from '../api.js';
 
 /**
- * Needs a look (Pearl R-01 and R-04, THL-123; THL-163 for transfers;
- * stacked, R-07 to R-12, 2026-10-17).
+ * Needs a look (Pearl R-01 to R-13 and TR-01 on the Current design page,
+ * 2026-10-20; THL-123, THL-163, THL-213, THL-165).
  *
- * One card, one short question at a time (Stacked.jsx): each answer folds
- * into a grey line with Change, dots count the steps, and the last answer
- * says what it will do before Save and next. No type chips and no "why we
- * ask" column: the card is the page. Skipped ones wait until the queue is
- * done ("Go through skipped").
+ * To review (TR-01) lists every transaction Pearl couldn't sort, oldest
+ * first, each with the question it will ask. Tapping a row opens that
+ * transaction's card (Stacked.jsx): one short question at a time, where
+ * tapping an answer is the commit — there is no Save and next. Once the
+ * last answer is saved the card becomes the Sorted card: the dots all
+ * filled with a pink check and "Sorted", the answers as rows, what it did
+ * to her numbers, and a Next button that opens the next transaction in the
+ * list. Nothing moves on by itself.
  *
- * Everything Pearl isn't sure about, one question at a time, oldest first,
- * so the queue takes about a minute: where a transfer went, a category Pearl
- * guessed, money that came in, a kind of income, a month with a third
- * paycheque, the same purchase from two places (THL-165 D-02). Beside each
- * question, why Pearl asks. Answering moves to the next. Skip for now puts
- * it in Skipped (THL-213), kept between visits and out of the badge; chips
- * filter the queue by type, and Skipped has Back to the queue. A change
- * that moves safe to spend says by how much, with Undo (R-03).
+ * Going back: Undo in the card's top-right takes back the last answer (on
+ * a Sorted card it undoes the change and reopens the last step). Previous,
+ * floating above the card, returns to the transaction sorted before, whose
+ * answers can be reopened too. Tapping an answer row on a Sorted card
+ * undoes the change and reopens that step in place, with the other answers
+ * still visible.
  *
- * At zero, All sorted (R-04): the alert on Transactions and the count in the
- * navigation go too.
+ * Skip for now puts a question in Skipped (THL-213), kept between visits
+ * and out of the badge; Skipped sits at the end of the list. At zero, All
+ * sorted (R-04): the alert on Transactions and the count in the navigation
+ * go too.
  */
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December'];
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-function longDate(iso) {
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  return `${WEEKDAYS[date.getDay()]}, ${MONTHS[m - 1]} ${d}`
-    + (y !== new Date().getFullYear() ? `, ${y}` : '');
-}
-
 const monthName = (month) => MONTHS[Number(month.slice(5, 7)) - 1] ?? month;
 const shortDate = (iso) => `${(MONTHS[Number(iso.slice(5, 7)) - 1] ?? '').slice(0, 3)} ${Number(iso.slice(8, 10))}`;
 
@@ -76,26 +65,6 @@ export function queue(data) {
   return items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
-// Why Pearl asks, beside each kind of question.
-const WHY = {
-  unsorted: ['Until it’s sorted, we count it as spending.',
-    'So your safe to spend may be a little low right now. Sorting it keeps your numbers right.'],
-  category: ['A wrong category moves your numbers.',
-    'Your budgets and your usual month are worked out by category.'],
-  money_in: ['Money in isn’t income until you say so.',
-    'If a friend paid you back, it comes off what you spent instead. Nothing counts twice.'],
-  joint_in: ['Until you answer, it counts as nothing.',
-    'So your spending on the joint account isn’t over- or under-counted.'],
-  who_sent: ['A name makes paybacks easy to match.',
-    'Pearl uses it to link this to a purchase you paid for someone.'],
-  income: ['We ask so your income is right.',
-    'Money that isn’t income would make safe to spend look bigger than it is.'],
-  pay3: ['Two months a year hold a third paycheque.',
-    'Your plan uses a typical month, so the extra one is yours to put somewhere.'],
-  duplicate: ['Until you decide, we count it once.',
-    'The same amount came in from two places on the same day. We’d rather check than count it twice.'],
-};
-
 // The chips over the queue, in this order; a type with nothing shows none.
 export const KIND_LABELS = {
   unsorted: 'Where it went', category: 'Categories', money_in: 'Money in',
@@ -115,6 +84,21 @@ export function skippedLine(it) {
     case 'pay3': return 'A month with a third paycheque';
     case 'duplicate': return 'Is this the same purchase? Counted once until you answer';
     default: return '';
+  }
+}
+
+/** The question a row will ask, for the chip on To review (TR-01). */
+export function questionLabel(it) {
+  switch (it.kind) {
+    case 'unsorted': return 'Where did this go?';
+    case 'category': return it.guess && it.guess !== 'Other' ? `Is this ${categoryLabel(it.guess)}?` : 'What was this?';
+    case 'money_in': return it.guess?.action === 'split' ? 'Paid back to you?' : 'Is this income?';
+    case 'joint_in': return 'Who put this in?';
+    case 'who_sent': return 'Who sent this?';
+    case 'income': return 'What kind of income?';
+    case 'pay3': return 'A third paycheque';
+    case 'duplicate': return 'Same purchase?';
+    default: return 'Needs a look';
   }
 }
 
@@ -141,17 +125,23 @@ export function inView(items, filter) {
 // month with three paycheques keep their own one-step cards.
 export const STACKED = new Set(['unsorted', 'category', 'money_in', 'income', 'joint_in', 'who_sent']);
 
-const minutes = (n) => (n <= 4 ? 'about a minute' : `about ${Math.ceil((n * 15) / 60)} minutes`);
+export const minutes = (n) => (n <= 4 ? 'about a minute' : `about ${Math.ceil((n * 15) / 60)} minutes`);
 
-export default function NeedsALook({ categories, onChanged, onTab, version }) {
+export default function NeedsALook({ categories, onChanged, onTab, onQuickSort, version }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [filter, setFilter] = useState('all');
-  // Passed over in this visit, within Skipped (Skip for now there moves on).
-  const [passed, setPassed] = useState(() => new Set());
-  // R-06: the skipped question she chose to answer, from the list.
-  const [answering, setAnswering] = useState(null);
+  // The transaction open in its card, by key; null is the list (TR-01).
+  const [currentKey, setCurrentKey] = useState(null);
+  // The Sorted card for the current transaction, once its last answer is saved.
+  const [sorted, setSorted] = useState(null);
+  // Transactions sorted this visit, oldest first, for Previous.
+  const [log, setLog] = useState([]);
+  // Looking back at an earlier Sorted card (an index into `log`), if any.
+  const [back, setBack] = useState(null);
+  // A step being reopened after its change was undone: the answers to
+  // restore and which one is open.
+  const [resume, setResume] = useState(null);
   const [change, setChange] = useState(null);
   const [toast, setToast] = useState('');
 
@@ -166,15 +156,17 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
   useEffect(() => { load(); }, [load, version]);
 
   const items = useMemo(() => queue(data), [data]);
-  const shown = useMemo(() => inView(items, filter), [items, filter]);
-  const current = filter === 'skipped'
-    ? shown.find((i) => i.key === answering) ?? null
-    : shown.find((i) => !passed.has(i.key));
-  const position = current ? shown.indexOf(current) + 1 : 0;
-  // A chip whose questions are all answered falls back to All.
+  const open = useMemo(() => items.filter((i) => !i.skipped), [items]);
+  const skipped = useMemo(() => items.filter((i) => i.skipped), [items]);
+  const current = currentKey ? items.find((i) => i.key === currentKey) ?? null : null;
+  const position = current ? Math.max(1, open.indexOf(current) + 1) : 0;
+  const count = data?.count ?? 0;
+
+  // A transaction that is no longer in the queue (sorted elsewhere, or gone)
+  // sends her back to the list, unless its Sorted card is up.
   useEffect(() => {
-    if (filter !== 'all' && data && !chips(items).some((c) => c.key === filter)) setFilter('all');
-  }, [items, filter, data]);
+    if (currentKey && data && !current && !sorted && !resume) setCurrentKey(null);
+  }, [currentKey, data, current, sorted, resume]);
 
   async function act(fn, makeChange) {
     setBusy(true);
@@ -184,7 +176,6 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
       const what = makeChange?.(res);
       if (what && typeof what === 'object') { setToast(''); setChange(what); }
       else { setChange(null); setToast(what || 'Saved'); }
-      setAnswering(null);
       await load();
       onChanged?.();
     } catch (e) {
@@ -193,11 +184,62 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
       setBusy(false);
     }
   }
-  const sorted = (title) => (res) => ({
-    title: [title, res?.impact?.title].filter(Boolean).join(' '),
-    detail: res?.impact?.detail ?? '',
-    undo: res?.undo,
-  });
+
+  /** The last answer's call, then the Sorted card (R-13). */
+  async function commit(fn, { answers = [], effect = '' } = {}) {
+    setBusy(true);
+    setError(null);
+    try {
+      const out = await fn();
+      const entry = {
+        key: current.key, it: current, answers,
+        title: out?.title || 'Sorted.', detail: out?.detail || effect || '', undo: out?.undo,
+        // Where Next goes: the transaction after this one in the list.
+        nextKey: open[open.indexOf(current) + 1]?.key ?? null,
+      };
+      setSorted(entry);
+      setResume(null);
+      setLog((l) => [...l.filter((e) => e.key !== entry.key), entry]);
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Next on a Sorted card: the next transaction, or the end. */
+  const next = () => {
+    const to = sorted?.nextKey && open.find((i) => i.key === sorted.nextKey) ? sorted.nextKey
+      : open.find((i) => i.key !== sorted?.key)?.key ?? null;
+    setSorted(null);
+    setBack(null);
+    setCurrentKey(to);
+  };
+
+  /** Undo a Sorted card's change and reopen its step `i` (or the last one). */
+  const reopen = async (entry, i = entry.answers.length - 1) => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (entry.undo) await undoChange(entry.undo);
+      setLog((l) => l.filter((e) => e.key !== entry.key));
+      setSorted(null);
+      setBack(null);
+      const last = entry.answers[entry.answers.length - 1];
+      setResume({ key: entry.key, path: entry.answers.slice(0, -1), edit: i < entry.answers.length - 1 ? i : null,
+                  name: last?.step === 'who_to' || last?.step === 'name' ? last.label : '' });
+      setCurrentKey(entry.key);
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const undo = async () => {
     const what = change;
     setChange(null);
@@ -210,101 +252,154 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
       setError(e);
     }
   };
-  // In the queue, Skip for now puts it in Skipped; in Skipped, it moves on.
+  // In the queue, Skip for now puts it in Skipped and opens the next one.
   const skip = () => {
-    if (current.skipped) { setAnswering(null); return; }
-    act(() => skipReview(current.key), () => 'Moved to Skipped');
+    const to = open[open.indexOf(current) + 1]?.key ?? null;
+    act(() => skipReview(current.key), () => 'Moved to Skipped').then(() => setCurrentKey(to));
   };
-  const unskip = (key = current?.key) => act(() => skipReview(key, false), () => 'Back in the queue');
-  const pick = (key) => { setFilter(key); setPassed(new Set()); setAnswering(null); };
+  const unskip = (key) => act(() => skipReview(key, false), () => 'Back in the queue');
+  const openItem = (key) => { setSorted(null); setBack(null); setResume(null); setCurrentKey(key); };
+  const toList = () => { setSorted(null); setBack(null); setResume(null); setCurrentKey(null); };
 
   if (!data && !error) return <div className="pk nl-page"><p className="pk-muted">Loading…</p></div>;
 
-  const back = (
-    <button type="button" className="pk-back" onClick={() => onTab?.('transactions')}>
-      <PIcon name="arrowLeft" size={16} /> Transactions
+  const backLink = (label, onClick) => (
+    <button type="button" className="pk-back" onClick={onClick}>
+      <PIcon name="arrowLeft" size={16} /> {label}
     </button>
   );
-  const count = data?.count ?? 0;
+
+  // ── To review (TR-01) ────────────────────────────────────────────────
+  if (!current && !sorted && back === null) {
+    return (
+      <div className="pk nl-page">
+        <header className="nl-head nl-list-head">
+          {backLink('Transactions', () => onTab?.('transactions'))}
+          <div className="nl-list-title">
+            <div>
+              <p className="pk-overline accent">
+                {count === 0 ? 'Nothing needs a look' : `${count} need${count === 1 ? 's' : ''} a look · ${minutes(count)}`}
+              </p>
+              <h1 className="pk-h1">To review</h1>
+            </div>
+            {open.length > 1 && onQuickSort && (
+              <PButton className="nl-quick" onClick={onQuickSort}>{`Quick sort all ${open.length}`}</PButton>
+            )}
+          </div>
+        </header>
+
+        {error && <ErrorNote error={error} onRetry={load} />}
+
+        {data && count === 0 && !skipped.length && (
+          <section className="nl-card nl-empty" aria-label="All sorted">
+            <span className="nl-empty-icon" aria-hidden="true"><PIcon name="check" size={28} /></span>
+            <h2 className="pk-h2">All sorted</h2>
+            <p className="pk-muted">Your numbers are up to date. We’ll let you know when something
+              new needs a look.</p>
+            <PButton className="nl-empty-btn" onClick={() => onTab?.('transactions')}>Back to transactions</PButton>
+          </section>
+        )}
+
+        {open.length > 0 && (
+          <section className="pk-list nl-list" aria-label="To review">
+            <p className="pk-muted nl-hint">Tap one to sort it. Pearl asks a question or two, then moves to the next.</p>
+            {open.map((it) => <ReviewRow key={it.key} it={it} onOpen={() => openItem(it.key)} />)}
+          </section>
+        )}
+
+        {skipped.length > 0 && (
+          <section className="nl-card nl-skipped" aria-label="Skipped for now">
+            <h2 className="pk-h2">Skipped for now</h2>
+            <p className="pk-muted">These stay here between visits and count the way Pearl guessed
+              until you answer.</p>
+            {skipped.map((it) => (
+              <div key={it.key} className="nl-skip-card">
+                {it.txn ? <TxHead txn={it.txn} compact /> : (
+                  <p className="pk-h3">{monthName(it.month)} had three paycheques</p>
+                )}
+                <p>{skippedLine(it)}</p>
+                <div className="nl-skip-actions">
+                  <PButton variant="secondary" disabled={busy} onClick={() => openItem(it.key)}>
+                    Answer
+                  </PButton>
+                  <PButton variant="text" disabled={busy} onClick={() => unskip(it.key)}>
+                    Back to the queue
+                  </PButton>
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+        {toast && !change && <Toast onDone={() => setToast('')}>{toast}</Toast>}
+      </div>
+    );
+  }
+
+  // ── One transaction: its question, or its Sorted card ────────────────
+  const entry = back !== null ? log[back] : sorted;
+  const showing = entry ?? current;
+  const n = entry ? Math.max(1, open.findIndex((i) => i.key === entry.key) + 1) || position : position;
+  const total = open.length + (entry && !open.some((i) => i.key === entry.key) ? 1 : 0);
+  const prevIndex = back !== null ? back - 1 : log.length - 1 - (sorted ? 1 : 0);
+  const hasPrevious = prevIndex >= 0 && !!log[prevIndex];
 
   return (
     <div className="pk nl-page">
       <header className="nl-head">
-        {back}
+        {backLink('To review', toList)}
         <h1 className="pk-h1">
-          {count === 0 ? 'Nothing needs a look'
-            : `${count} transaction${count === 1 ? '' : 's'} need${count === 1 ? 's' : ''} a look`}
+          {total === 0 ? 'Nothing needs a look'
+            : `${total} transaction${total === 1 ? '' : 's'} need${total === 1 ? 's' : ''} a look`}
         </h1>
-        {current && (
-          <p className="pk-label pk-muted">{position} of {shown.length} · {minutes(shown.length)}</p>
-        )}
+        {showing && <p className="pk-label pk-muted">{Math.min(n, Math.max(total, 1))} of {Math.max(total, 1)} · {minutes(Math.max(total, 1))}</p>}
       </header>
 
       {error && <ErrorNote error={error} onRetry={load} />}
 
-      {filter === 'skipped' && !current && shown.length > 0 && (
-        <section className="nl-card nl-skipped" aria-label="Skipped for now">
-          <h2 className="pk-h2">Skipped for now</h2>
-          <p className="pk-muted">These stay here between visits and count the way Pearl guessed
-            until you answer.</p>
-          {shown.map((it) => (
-            <div key={it.key} className="nl-skip-card">
-              {it.txn ? <TxHead txn={it.txn} compact /> : (
-                <p className="pk-h3">{monthName(it.month)} had three paycheques</p>
-              )}
-              <p>{skippedLine(it)}</p>
-              <div className="nl-skip-actions">
-                <PButton variant="secondary" disabled={busy} onClick={() => setAnswering(it.key)}>
-                  Answer
-                </PButton>
-                <PButton variant="text" disabled={busy} onClick={() => unskip(it.key)}>
-                  Back to the queue
-                </PButton>
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
-
-      {data && count === 0 && !data.skipped && (
+      {!current && !entry && (
         <section className="nl-card nl-empty" aria-label="All sorted">
           <span className="nl-empty-icon" aria-hidden="true"><PIcon name="check" size={28} /></span>
           <h2 className="pk-h2">All sorted</h2>
           <p className="pk-muted">Your numbers are up to date. We’ll let you know when something
             new needs a look.</p>
-          <PButton className="nl-empty-btn" onClick={() => onTab?.('today')}>Back to Home</PButton>
+          <PButton className="nl-empty-btn" onClick={() => onTab?.('transactions')}>Back to transactions</PButton>
         </section>
       )}
 
-      {data && (count > 0 || data.skipped > 0) && !current && filter !== 'skipped' && (
-        <section className="nl-card nl-empty" aria-label="Skipped">
-          <h2 className="pk-h2">That’s everything for now</h2>
-          {data.skipped > 0 && (
-            <p className="pk-muted">{data.skipped} skipped. {data.skipped === 1 ? 'It counts' : 'They count'} the
-              way Pearl guessed until you answer.</p>
+      {showing && (
+        <div className="nl-stage">
+          {hasPrevious && (
+            <div className="nl-above">
+              <Pill className="nl-previous" disabled={busy} onClick={() => { setBack(prevIndex); }}
+                    aria-label="Previous transaction">
+                Previous
+              </Pill>
+            </div>
           )}
-          {data.skipped > 0 && (
-            <PButton className="nl-empty-btn" onClick={() => pick('skipped')}>
-              Go through skipped
-            </PButton>
-          )}
-          <PButton variant="text" onClick={() => onTab?.('transactions')}>Back to transactions</PButton>
-        </section>
-      )}
-
-      {current && (
-        <section className="nl-card nl-stack" aria-label="Question" key={current.key}>
-          {STACKED.has(current.kind)
-            ? <Stacked it={current} categories={categories} busy={busy} onSkip={skip}
-                       act={act} sorted={sorted} onTab={onTab} />
-            : <Question it={current} categories={categories} busy={busy} onSkip={skip}
-                        act={act} sorted={sorted} onTab={onTab} />}
-          {current.skipped && (
-            <PButton variant="text" className="nl-unskip" disabled={busy} onClick={() => unskip()}>
-              Back to the queue
-            </PButton>
-          )}
-        </section>
+          <section className="nl-card nl-stack" aria-label={entry ? 'Sorted' : 'Question'}
+                   key={entry ? `s-${entry.key}-${back}` : `q-${current.key}-${resume?.key === current.key ? 'r' : 'q'}`}>
+            {entry ? (
+              <SortedCard entry={entry} busy={busy} isPast={back !== null}
+                          onNext={back !== null ? () => setBack(null) : next}
+                          onUndo={() => reopen(entry)}
+                          onReopen={(i) => reopen(entry, i)} />
+            ) : STACKED.has(current.kind) ? (
+              <Stacked it={current} categories={categories} busy={busy} onSkip={skip}
+                       act={act} commit={commit} onBack={toList} onTab={onTab}
+                       initialPath={resume?.key === current.key ? resume.path : null}
+                       initialEdit={resume?.key === current.key ? resume.edit : null}
+                       initialName={resume?.key === current.key ? resume.name : ''} />
+            ) : (
+              <Question it={current} categories={categories} busy={busy} onSkip={skip}
+                        act={act} commit={commit} onBack={toList} />
+            )}
+            {current && !entry && current.skipped && (
+              <PButton variant="text" className="nl-unskip" disabled={busy} onClick={() => unskip(current.key)}>
+                Back to the queue
+              </PButton>
+            )}
+          </section>
+        </div>
       )}
 
       {change && (
@@ -316,18 +411,71 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
   );
 }
 
-/** The transaction a question is about: who, when, from where, how much. */
-function TxHead({ txn, name, compact = false }) {
-  if (!compact) return <StackedHead txn={txn} name={name} />;
+/** A row on To review: the transaction and the question it will ask. */
+function ReviewRow({ it, onOpen }) {
+  if (!it.txn) {
+    return (
+      <button type="button" className="pk-row nl-row" onClick={onOpen}>
+        <span className="pk-row-text">
+          <span className="pk-row-name">{monthName(it.month)} had three paycheques</span>
+          <span className="pk-row-meta">{questionLabel(it)}</span>
+        </span>
+      </button>
+    );
+  }
+  const inflow = it.txn.amount < 0;
+  return (
+    <TxRow name={it.txn.merchant} logo={it.txn.logo} onOpen={onOpen}
+           meta={[it.txn.account_name, shortDate(it.txn.date)].filter(Boolean).join(' · ')}
+           chip={{ label: questionLabel(it), suggested: true }}
+           amount={Math.abs(it.txn.amount)} inflow={inflow} />
+  );
+}
+
+/**
+ * The Sorted card (R-13): every dot filled with "✓ Sorted", the answers as
+ * rows (tap one to reopen that step), what the change did, and Next.
+ */
+export function SortedCard({ entry, busy = false, isPast = false, onNext, onUndo, onReopen }) {
+  const { it, answers } = entry;
+  const name = it.to;
+  return (
+    <>
+      {it.txn ? <StackedHead txn={it.txn} name={name} /> : (
+        <p className="pk-h3">{monthName(it.month)} had three paycheques</p>
+      )}
+      <Progress done={answers.length} total={Math.max(answers.length, 1)} sorted
+                trailing={<Pill className="nl-undo" disabled={busy} onClick={onUndo} aria-label="Undo this change">Undo</Pill>} />
+      {answers.length > 0 && (
+        <div className="nl-done-list">
+          {answers.map((a, i) => (
+            <button key={`${a.step ?? i}-${i}`} type="button" className="nl-done" disabled={busy}
+                    aria-label={`Change: ${a.label ?? a.v}`} onClick={() => onReopen?.(i)}>
+              <span className="nl-done-ring" aria-hidden="true" />
+              <span className="nl-done-label">{a.label ?? a.v}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {(entry.detail || entry.title) && (
+        <p className="nl-effect" role="status">{entry.detail || entry.title}</p>
+      )}
+      <div className="nl-actions nl-next">
+        <PButton disabled={busy} onClick={onNext}>{isPast ? 'Back to where I was' : 'Next'} <PIcon name="chevronRight" size={16} /></PButton>
+      </div>
+    </>
+  );
+}
+
+/** The transaction a question is about, compact, for Skipped. */
+function TxHead({ txn, name }) {
   const inflow = txn.amount < 0;
   return (
-    <div className={`nl-tx${compact ? ' compact' : ''}`}>
-      {!compact && <Avatar name={name || txn.merchant} logo={txn.logo} />}
+    <div className="nl-tx compact">
       <div className="nl-tx-text">
         <span>{txn.merchant}</span>
         <span className="pk-label pk-muted">
-          {compact ? shortDate(txn.date) : longDate(txn.date)}
-          {txn.account_name ? ` · ${compact ? '' : inflow ? 'to ' : 'from '}${txn.account_name}` : ''}
+          {shortDate(txn.date)}{txn.account_name ? ` · ${txn.account_name}` : ''}
         </span>
       </div>
       <span className={`pk-h2 nl-tx-amt ${amountTone(inflow)}`}>
@@ -337,227 +485,41 @@ function TxHead({ txn, name, compact = false }) {
   );
 }
 
-function Actions({ busy, ready, onSave, onSkip, label = 'Save and next' }) {
-  return (
-    <div className="nl-actions">
-      <PButton disabled={busy || !ready} onClick={onSave}>{label}</PButton>
-      <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>Skip for now</PButton>
-    </div>
-  );
-}
-
-function Question({ it, categories, busy, onSkip, act, sorted, onTab }) {
-  switch (it.kind) {
-    case 'unsorted':
-      return <WhereDidThisGo it={it} categories={categories} busy={busy} onSkip={onSkip}
-                             act={act} sorted={sorted} />;
-    case 'category':
-      return <CategoryQuestion it={it} categories={categories} busy={busy} onSkip={onSkip}
-                               act={act} sorted={sorted} />;
-    case 'money_in':
-      return <MoneyIn it={it} categories={categories} busy={busy} onSkip={onSkip} act={act}
-                      sorted={sorted} />;
-    case 'duplicate':
-      // D-02 → D-03: the toast says what it did to her numbers, with Undo.
-      return (
+/** The one-step questions: a duplicate (D-02) and a third paycheque. */
+function Question({ it, busy, onSkip, act, commit, onBack }) {
+  if (it.kind === 'duplicate') {
+    return (
+      <>
+        <StackedHead txn={it.txn} />
+        <Progress done={0} total={1}
+                  trailing={<Pill className="nl-undo" disabled={busy} onClick={onBack} aria-label="Back to the list">Undo</Pill>} />
         <DuplicateQuestion it={it} busy={busy} onSkip={onSkip}
-                           onAnswer={(answer) => act(() => answerDuplicate(it.txn.id, answer),
-                                                     (res) => ({ title: res.title,
-                                                                 detail: res.detail,
-                                                                 undo: res.undo }))} />
-      );
-    case 'income':
-      return <IncomeKind it={it} categories={categories} busy={busy} onSkip={onSkip} act={act}
-                         sorted={sorted} />;
-    case 'joint_in':
-      return <JointIn it={it} busy={busy} onSkip={onSkip} act={act} onTab={onTab} />;
-    case 'who_sent':
-      return <WhoSent it={it} busy={busy} onSkip={onSkip} act={act} />;
-    default:
-      return (
-        <>
-          <h2 className="pk-h2">{monthName(it.month)} had three paycheques</h2>
-          <p className="pk-muted">{it.reason}
-            {it.monthly ? ` That’s ${money(it.monthly)} a month from ${money(it.paycheque)} paycheques.` : ''}</p>
-          <Actions busy={busy} ready label="Got it" onSkip={onSkip}
-                   onSave={() => act(() => dismissReview(it.key))} />
-        </>
-      );
-  }
-}
-
-/**
- * Is this Groceries? (R-02) — or, when it wasn't a purchase at all, the one
- * "What was this?" sheet (2026-10-14), with every case.
- */
-function CategoryQuestion({ it, categories, busy, onSkip, act, sorted }) {
-  const [sheet, setSheet] = useState(false);
-  if (sheet) {
-    return (
-      <>
-        <TxHead txn={it.txn} />
-        <h2 className="pk-h2">What was this?</h2>
-        <WhatWasThis tx={{ id: it.txn.id, merchant: it.txn.merchant, amount: Math.abs(it.txn.amount),
-                           inflow: it.txn.amount < 0, logo: it.txn.logo }}
-                     categories={categories} busy={busy} saveLabel="Save and next" showHead={false}
-                     onDone={(res) => act(() => Promise.resolve(res), sorted(res.title))} />
-        <PButton variant="text" className="nl-skip" disabled={busy} onClick={() => setSheet(false)}>
-          Back to the category
-        </PButton>
+                           onAnswer={(answer) => commit(() => answerDuplicate(it.txn.id, answer)
+                             .then((res) => ({ title: res?.title, detail: res?.detail, undo: res?.undo })),
+                           { answers: [{ step: 'dup', v: answer,
+                                         label: answer === 'same' ? 'Same purchase · kept one' : 'Two different purchases' }] })} />
       </>
     );
   }
   return (
     <>
-      <TxHead txn={it.txn} />
-      <h2 className="pk-h2">{it.guess === 'Other' ? 'What was this?' : `Is this ${it.guess}?`}</h2>
-      <CategoryPicker tx={{ id: it.txn.id, category: it.guess, merchant: it.txn.merchant,
-                            suggested: true }}
-                      categories={categories} busy={busy} confirmable saveLabel="Save and next"
-                      onSave={(cat, always) => act(
-                        () => (cat === it.guess && !always ? confirmTx(it.txn.id)
-                          : setCategory(it.txn.id, cat, always)),
-                        cat === it.guess && !always ? undefined
-                          : sorted(`Moved to ${categoryLabel(cat)}.`),
-                      )} />
-      <button type="button" className="txd-link nl-other" onClick={() => setSheet(true)}>
-        It wasn’t a purchase…
-      </button>
-      <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>
-        Skip for now
-      </PButton>
-    </>
-  );
-}
-
-/**
- * Where did this go? (R-01, THL-163): Saved, Spent (and on what), or moved
- * between her own accounts, and "Remember where these go" — a rule for that
- * destination, on by default when Pearl can recognise it next time.
- */
-function WhereDidThisGo({ it, categories, busy, onSkip, act, sorted }) {
-  const [where, setWhere] = useState('');
-  const [cat, setCat] = useState('');
-  const [account, setAccount] = useState('');
-  const [accounts, setAccounts] = useState(null);
-  const [remember, setRemember] = useState(it.learnable);
-  const spending = useMemo(() => groupCategories(categories, {
-    only: (c) => ['essentials', 'lifestyle'].includes(c.group),
-  }), [categories]);
-  // Saved: which savings or investment account it went to (2026-10-14),
-  // from the same list the What was this? sheet offers.
-  useEffect(() => {
-    if (where !== 'saved' || accounts !== null) return undefined;
-    let live = true;
-    getTxCases(it.txn.id).then((d) => { if (live) setAccounts(d.accounts ?? []); })
-      .catch(() => { if (live) setAccounts([]); });
-    return () => { live = false; };
-  }, [where, accounts, it.txn.id]);
-  const kind = /e-?\s?t(ransfe)?r|interac/i.test(`${it.txn.description} ${it.txn.merchant}`)
-    ? 'e-Transfers' : 'transfers';
-  const category = where === 'saved' ? 'Saved' : where === 'moved' ? 'Transfers' : cat;
-  const label = (accounts ?? []).find((a) => a.id === account)?.label;
-  const title = where === 'saved' ? (label ? `Put away to ${label}.` : 'Sorted as savings.')
-    : where === 'moved' ? 'Sorted as moved between your accounts.'
-      : `Sorted as ${category}.`;
-  const name = `where-${it.txn.id}`;
-  const save = () => {
-    const keep = it.learnable && remember;
-    if (where === 'saved') {
-      return act(() => markTx(it.txn.id, { case: 'saved', account, remember: keep }), sorted(title));
-    }
-    return act(() => sortTransfers([it.txn.id], category, keep), sorted(title));
-  };
-  return (
-    <>
-      <TxHead txn={it.txn} name={it.to} />
-      <h2 className="pk-h2">Where did this go?</h2>
-      <div className="pk-choices" role="radiogroup" aria-label="Where did this go?">
-        <Choice name={name} checked={where === 'saved'} onChange={() => setWhere('saved')}
-                label="Saved"
-                description="I moved it to savings or an investment account. It won’t count as spending." />
-        <Choice name={name} checked={where === 'spent'} onChange={() => setWhere('spent')}
-                label="Spent" description="I paid someone for something. It counts as spending." />
-        <Choice name={name} checked={where === 'moved'} onChange={() => setWhere('moved')}
-                label="Moved between my own accounts"
-                description="It won’t count as spending or saving." />
+      <div className="nl-corner">
+        <Pill className="nl-undo" disabled={busy} onClick={onBack} aria-label="Back to the list">Undo</Pill>
       </div>
-      {where === 'saved' && accounts?.length > 0 && (
-        <div className="nl-spent">
-          <p className="pk-label">Which account did it go to?</p>
-          <div className="pk-choices" role="radiogroup" aria-label="Which account?">
-            <Choice name={`${name}-acct`} checked={!account} onChange={() => setAccount('')}
-                    label="Not sure" />
-            {accounts.map((a) => (
-              <Choice key={a.id} name={`${name}-acct`} checked={account === a.id}
-                      onChange={() => setAccount(a.id)} label={a.label} />
-            ))}
-          </div>
-        </div>
-      )}
-      {where === 'spent' && (
-        <div className="nl-spent">
-          <p className="pk-label">What was it for?</p>
-          <CategoryChips groups={spending} value={cat} onChange={setCat} label="What was it for?" />
-        </div>
-      )}
-      {it.learnable && (
-        <Choice type="checkbox" checked={remember} onChange={setRemember}
-                label={`Remember where ${kind} to ${it.to} go`}
-                description="We’ll sort the next ones the same way. Change it any time in Profile › Categories and rules." />
-      )}
-      <Actions busy={busy} ready={!!category} onSkip={onSkip} onSave={save} />
-    </>
-  );
-}
-
-/**
- * Money that came in from somewhere Pearl can't see. When it matches a
- * split someone still owes on, the question is that one (S-02).
- */
-function MoneyIn({ it, categories = [], busy, onSkip, act, sorted }) {
-  const [other, setOther] = useState(false);
-  const match = it.guess?.action === 'split' ? it.guess.split : null;
-  if (match && !other) {
-    return (
-      <>
-        <TxHead txn={it.txn} />
-        <h2 className="pk-h2">Is {match.name} paying you back for this?</h2>
-        <RepaymentMatch match={match} />
-        <p className="pk-muted">If you link them, this e-Transfer won’t count as income, and the
-          split shows as paid back.</p>
-        <div className="nl-actions">
-          <PButton disabled={busy}
-                   onClick={() => act(() => linkPayback(match.charge_id, it.txn.id, match.name))}>
-            Yes, link them
-          </PButton>
-          <PButton variant="secondary" disabled={busy} onClick={() => setOther(true)}>
-            No, it’s something else
-          </PButton>
-          <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>
-            Skip for now
-          </PButton>
-        </div>
-      </>
-    );
-  }
-  return (
-    <>
-      <TxHead txn={it.txn} />
-      <h2 className="pk-h2">What was this money?</h2>
-      <WhatWasThis tx={{ id: it.txn.id, merchant: it.txn.merchant, amount: Math.abs(it.txn.amount),
-                         inflow: true, logo: it.txn.logo }}
-                   categories={categories} busy={busy} saveLabel="Save and next" showHead={false}
-                   onDone={(res) => act(() => Promise.resolve(res), sorted(res.title))} />
-      <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>
-        Skip for now
-      </PButton>
+      <h2 className="pk-h2">{monthName(it.month)} had three paycheques</h2>
+      <p className="pk-muted">{it.reason}
+        {it.monthly ? ` That’s ${money(it.monthly)} a month from ${money(it.paycheque)} paycheques.` : ''}</p>
+      <div className="nl-actions">
+        <PButton disabled={busy} onClick={() => act(() => dismissReview(it.key)).then(onBack)}>Got it</PButton>
+        <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>Skip for now</PButton>
+      </div>
     </>
   );
 }
 
 /** What kind of income — or, when it isn't income at all, what it is
- * (2026-10-14): her own money, money she lent coming back, or any category. */
+ * (2026-10-14): her own money, money she lent coming back, or any category.
+ * Kept for the transaction panel; Needs a look asks it as stacked steps. */
 export function IncomeKind({ it, categories = [], busy, onSkip, act, sorted }) {
   const [kind, setKind] = useState(it.guess);
   const [cat, setCat] = useState('');
@@ -583,9 +545,9 @@ export function IncomeKind({ it, categories = [], busy, onSkip, act, sorted }) {
   };
   return (
     <>
-      <TxHead txn={it.txn} />
+      <StackedHead txn={it.txn} />
       <h2 className="pk-h2">What kind of income is this?</h2>
-      <div className="pk-choices" role="radiogroup" aria-label="What kind of income is this?">
+      <div className="pk-choices nl-grid" role="radiogroup" aria-label="What kind of income is this?">
         {Object.entries(INCOME_KINDS).map(([k, label]) => (
           <Choice key={k} name={name} checked={kind === k} onChange={() => setKind(k)} label={label} />
         ))}
@@ -609,15 +571,19 @@ export function IncomeKind({ it, categories = [], busy, onSkip, act, sorted }) {
       )}
       {kind?.startsWith('not:') && (
         <p className="nl-effect" role="status">
-          {`It stops counting as income, so safe to spend goes down by ${txAmount(Math.abs(it.txn.amount))}.`}
+          {`It stops counting as income, so Allowance goes down by ${txAmount(Math.abs(it.txn.amount))}.`}
         </p>
       )}
-      <Actions busy={busy} ready={ready} onSkip={onSkip} onSave={save} />
+      <div className="nl-actions">
+        <PButton disabled={busy || !ready} onClick={save}>Save</PButton>
+        {onSkip && <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>Skip for now</PButton>}
+      </div>
     </>
   );
 }
 
-/** Money into a joint account from outside Pearl: hers, or which of theirs? */
+/** Money into a joint account from outside Pearl: hers, or which of theirs?
+ * Kept for the transaction panel; Needs a look asks it as a stacked step. */
 export function JointIn({ it, busy, onSkip, act, onTab }) {
   const [pick, setPick] = useState('');
   const [remember, setRemember] = useState(true);
@@ -626,51 +592,30 @@ export function JointIn({ it, busy, onSkip, act, onTab }) {
   const chosen = choices.find((c) => c.value === pick);
   return (
     <>
-      <TxHead txn={it.txn} />
+      <StackedHead txn={it.txn} />
       <h2 className="pk-h2">Who put this in?</h2>
       <p className="pk-muted">Money into your joint account from outside Pearl. Until you answer, it
         counts as nothing.</p>
+      <Choice type="checkbox" checked={remember} onChange={setRemember}
+              label={`The same for every deposit from ${it.txn.merchant} on this account`} />
       <div className="pk-choices" role="radiogroup" aria-label="Who put this in?">
         {choices.map((c) => (
           <Choice key={c.value} name={name} checked={pick === c.value}
                   onChange={() => setPick(c.value)} label={c.label} description={c.description} />
         ))}
       </div>
-      <Choice type="checkbox" checked={remember} onChange={setRemember}
-              label={`The same for every deposit from ${it.txn.merchant} on this account`} />
       {onTab && (
         <button type="button" className="txd-link nl-other" onClick={() => onTab('accounts')}>
           Add or change who you share it with <PIcon name="chevronRight" size={14} />
         </button>
       )}
-      <Actions busy={busy} ready={!!chosen} onSkip={onSkip}
-               onSave={() => act(() => setJointFrom(it.txn.id, chosen.who, remember, chosen.person))} />
-    </>
-  );
-}
-
-/** Who sent this? (R-09): an e-Transfer the bank didn't name. */
-export function WhoSent({ it, busy, onSkip, act }) {
-  const [name, setName] = useState('');
-  const id = `who-${it.txn.id}`;
-  return (
-    <>
-      <TxHead txn={it.txn} />
-      <h2 className="pk-h2">Who sent this?</h2>
-      <p className="pk-muted">Your bank didn’t say. Adding a name helps Pearl match paybacks and
-        makes it easy to find.</p>
-      <div className="txd-field">
-        <label className="pk-label" htmlFor={id}>Their name</label>
-        <input id={id} type="text" value={name} maxLength={60} autoComplete="off"
-               placeholder="First and last name" onChange={(e) => setName(e.target.value)} />
-        <p className="pk-label pk-muted">Shown in your list and search from now on</p>
+      <div className="nl-actions">
+        <PButton disabled={busy || !chosen}
+                 onClick={() => act(() => setJointFrom(it.txn.id, chosen.who, remember, chosen.person))}>
+          Save
+        </PButton>
+        {onSkip && <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>Skip for now</PButton>}
       </div>
-      <button type="button" className="txd-link nl-other" disabled={busy}
-              onClick={() => act(() => dismissReview(it.key), () => 'Kept your bank’s name')}>
-        Use your bank’s name instead
-      </button>
-      <Actions busy={busy} ready={!!name.trim()} onSkip={onSkip} label="Save"
-               onSave={() => act(() => setParty(it.txn.id, name.trim()), () => 'Saved')} />
     </>
   );
 }

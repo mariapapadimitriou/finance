@@ -26,9 +26,10 @@ import { readTxUrl, writeTxUrl } from '../router.js';
  * Cash flow › Transactions (Pearl TX-01 to TX-03, THL-122; VF-01 to VF-04,
  * DR-01, DR-02 and WW-01, THL-231).
  *
- * ALT-04 (2026-10-17): two cards first — Outflows and Inflows, the month's
- * counted flows with a line of how each built up against a three-month
- * average (FlowCards.jsx); transfers are neither. Then one row of tools:
+ * Current design (2026-10-20): one card first — "This month", the month's
+ * counted income and spending as two bars from one edge, with how far
+ * spending runs past income (FlowCards.jsx); transfers are neither. Then
+ * one row of tools:
  * Search, the month, Filters (an icon on a phone) and Add. Needs a look is
  * a banner that goes to its own page, never mixed into the list. The list
  * is by day, newest first, each day named ("Today", "Yesterday", the
@@ -641,7 +642,7 @@ export default function TransactionsList({ summary, categories, accounts, review
       </header>
       <CashFlowTabs current="transactions" onTab={onTab} />
 
-      {!empty && <FlowCards totals={totals} flows={data?.flows} />}
+      {!empty && <FlowCards totals={totals} />}
 
       <div className="tx-toolbar">
         <SearchField value={query} onChange={setQuery} label="Search transactions"
