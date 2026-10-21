@@ -42,7 +42,9 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
     }
   };
 
-  const later = () => run(() => quickSortSeen(ids, false), () => onClose?.());
+  // Later closes whatever the server says: a failed "seen" must never leave
+  // the sheet up with no way off it (2026-10-21).
+  const later = () => { quickSortSeen(ids, false).catch(() => {}); onClose?.(); };
   const start = () => run(() => quickSortSeen(ids, true), () => setStep('card'));
   const next = () => {
     setSorted(null);

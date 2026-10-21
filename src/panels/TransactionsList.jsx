@@ -316,10 +316,10 @@ export default function TransactionsList({ summary, categories, accounts, review
                  !!filters.tag, !!filters.counts, !!filters.amount, !!filters.pending, !!filters.look,
                  !!filters.owed].filter(Boolean).length;
 
-  const fetchPage = useCallback(async (offset) => {
+  const fetchPage = useCallback(async (offset, limit = PAGE) => {
     const id = ++request.current;
     try {
-      const res = await getTxList({ ...requestFor(filters, thisMonth()), limit: PAGE, offset });
+      const res = await getTxList({ ...requestFor(filters, thisMonth()), limit, offset });
       if (id !== request.current) return;
       setError(null);
       setData(res);
@@ -330,8 +330,17 @@ export default function TransactionsList({ summary, categories, accounts, review
   }, [filters]);
 
   // A new filter starts from the first page; the old rows stay until the new
-  // ones arrive, so the list doesn't flash empty.
-  useEffect(() => { fetchPage(0); }, [fetchPage, version]);
+  // ones arrive, so the list doesn't flash empty. A refresh after a change
+  // (`version`) re-reads every page she had opened, so the row she just
+  // edited — and her scroll position — stay where they were (2026-10-21).
+  const lastFetch = useRef(null);
+  const rowCount = useRef(0);
+  rowCount.current = rows.length;
+  useEffect(() => {
+    const sameFilters = lastFetch.current === fetchPage;
+    lastFetch.current = fetchPage;
+    fetchPage(0, sameFilters ? Math.max(PAGE, Math.ceil(rowCount.current / PAGE) * PAGE) : PAGE);
+  }, [fetchPage, version]);
 
   const showMore = async () => {
     setLoadingMore(true);

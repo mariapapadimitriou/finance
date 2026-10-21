@@ -24,7 +24,8 @@ def _today() -> date:
 @bp.get("/quick-sort")
 def quick_sort_prompt():
     st = store()
-    return jsonify(quick_sort.prompt(st, st.all_transactions(), _today()))
+    everything = request.args.get("all") in ("1", "true")
+    return jsonify(quick_sort.prompt(st, st.all_transactions(), _today(), everything))
 
 
 @bp.post("/quick-sort/seen")

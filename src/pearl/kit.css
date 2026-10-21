@@ -250,7 +250,7 @@
   /* X-04: the iOS bottom sheet, the page still showing above it. */
   .pk-scrim.as-sheet { background: var(--surface-scrim); align-items: flex-end; }
   .pk-scrim.as-sheet .pk-panel {
-    height: auto; max-height: 88%; border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    height: auto; max-height: 88dvh; border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     padding: 12px 24px calc(24px + env(safe-area-inset-bottom, 0px));
     gap: var(--space-4);
   }
@@ -695,7 +695,9 @@
   display: flex; align-items: center; justify-content: center; padding: var(--space-4);
 }
 .pk-dialog {
-  width: 560px; max-width: 100%; max-height: calc(100vh - 2 * var(--space-4)); overflow: auto;
+  width: 560px; max-width: 100%; max-height: calc(100dvh - 2 * var(--space-4)); overflow: auto;
+  /* The sheet scrolls inside itself; the page behind is locked. */
+  overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
   display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-4);
   padding: var(--space-8); border-radius: var(--radius-lg); background: var(--surface-card);
   box-shadow: var(--shadow-sheet);

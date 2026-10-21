@@ -280,21 +280,46 @@ export function Dialog({ labelledBy, describedBy, onClose, children, className =
   const box = useRef(null);
   const close = useRef(onClose);
   close.current = onClose;
+  // A swipe down on the sheet (a phone) closes it, like the drag handle
+  // promises (2026-10-21): from where the touch started, 80px down and more
+  // down than across, while the sheet itself is scrolled to the top.
+  const touch = useRef(null);
   useEffect(() => {
     const before = document.activeElement;
     box.current?.querySelector('button')?.focus();
     const onKey = (e) => { if (e.key === 'Escape') close.current?.(); };
     document.addEventListener('keydown', onKey);
+    // The page behind stays put while the dialog is up, so a long sheet
+    // scrolls inside itself instead of dragging the page.
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = overflow;
       before?.focus?.();
     };
   }, []);
+  const onTouchStart = (e) => {
+    const t = e.touches[0];
+    touch.current = { x: t.clientX, y: t.clientY, top: (box.current?.scrollTop ?? 0) <= 0 };
+  };
+  const onTouchEnd = (e) => {
+    const start = touch.current;
+    touch.current = null;
+    if (!start || !start.top) return;
+    const t = e.changedTouches[0];
+    const dy = t.clientY - start.y;
+    const dx = Math.abs(t.clientX - start.x);
+    if (dy > 80 && dy > dx * 1.5) close.current?.();
+  };
   return (
     <div className="pk pk-dialog-scrim"
-         onMouseDown={(e) => { if (e.target === e.currentTarget) close.current?.(); }}>
+         // pointerdown, not mousedown: a tap on a plain div fires no mouse
+         // events on iOS, which left the sheet with no way off it.
+         onPointerDown={(e) => { if (e.target === e.currentTarget) close.current?.(); }}>
       <div className={`pk-dialog ${className}`} role={role} aria-modal="true"
-           aria-labelledby={labelledBy} aria-describedby={describedBy} ref={box}>
+           aria-labelledby={labelledBy} aria-describedby={describedBy} ref={box}
+           onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {children}
       </div>
     </div>
