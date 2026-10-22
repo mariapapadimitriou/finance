@@ -559,6 +559,71 @@ def synced_recently(store, now=None) -> bool:
     return True
 
 
+# Fields a row stored before Pearl read them (2026-10-21/22) can be missing:
+# who sent an e-Transfer, its message, the bank's own wording. Filled in once
+# per bank, from Plaid's /transactions/get over the last DETAIL_DAYS.
+DETAIL_DAYS = 180
+DETAILS_KEY = "plaid_details_refreshed"
+
+
+def detail_fields(item: dict) -> dict:
+    """The Plaid fields the refresh fills in, from one Plaid transaction."""
+    from .ingest.plaid_source import _counterparty, _meta
+    return {"payer": _meta(item, "payer"), "payee": _meta(item, "payee"),
+            "reason": _meta(item, "reason"),
+            "original_description": str(item.get("original_description") or "").strip(),
+            "plaid_name": str(item.get("name") or "").strip(),
+            "counterparty": _counterparty(item)}
+
+
+def refresh_details(store, item: dict, today=None) -> int:
+    """Fill in the sender, message and bank's wording on one bank's stored
+    rows. Reads only; changes no category, amount or answer of hers."""
+    from datetime import date, timedelta
+    from plaid.model.transactions_get_request import TransactionsGetRequest
+    from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
+    access_token = store.plaid_token(item["item_id"])
+    if not access_token:
+        return 0
+    client = _client()
+    end = today or date.today()
+    start = end - timedelta(days=DETAIL_DAYS)
+    details: dict[str, dict] = {}
+    offset = 0
+    for _ in range(40):                       # 40 × 500 rows: a safety bound
+        resp = client.transactions_get(TransactionsGetRequest(
+            access_token=access_token, start_date=start, end_date=end,
+            options=TransactionsGetRequestOptions(count=500, offset=offset,
+                                                  include_original_description=True),
+        )).to_dict()
+        txns = resp.get("transactions") or []
+        for t in txns:
+            if t.get("transaction_id"):
+                details[t["transaction_id"]] = detail_fields(t)
+        offset += len(txns)
+        if not txns or offset >= int(resp.get("total_transactions") or 0):
+            break
+    return store.merge_plaid_details(details)
+
+
+def refresh_details_once(store, items: list[dict]) -> int:
+    """Run `refresh_details` once for each bank that hasn't had it."""
+    import json as _json
+    done = set(_json.loads(store.setting(DETAILS_KEY) or "[]"))
+    filled = 0
+    for item in items:
+        if item["item_id"] in done:
+            continue
+        try:
+            filled += refresh_details(store, item)
+            done.add(item["item_id"])
+        except Exception as exc:              # noqa: BLE001 — tried again next sync
+            print(f"plaid details refresh failed: item=…{str(item['item_id'])[-6:]} "
+                  f"error={type(exc).__name__}: {explain(exc)[:200]}", flush=True)
+    store.set_setting(DETAILS_KEY, _json.dumps(sorted(done)))
+    return filled
+
+
 def sync_all(store) -> dict:
     """Sync every linked item, reporting each one's outcome separately.
 
@@ -625,6 +690,9 @@ def sync_all(store) -> dict:
                         "institution": item.get("institution") or "",
                         "error": message})
     hide_quiet_twins(store)
+    # Once per bank: the sender, message and bank's wording on rows stored
+    # before Pearl read them (2026-10-22). Only banks that just synced.
+    refreshed = refresh_details_once(store, [i for i, o in zip(items, out) if not o.get("error")])
     # A newly listed investment account sorts the transfers into it (Saved).
     import json
     from .transfers import known_destinations, linked_accounts
@@ -650,6 +718,7 @@ def sync_all(store) -> dict:
 
     return {
         "items": out,
+        "details_refreshed": refreshed,
         "imported": sum(o.get("imported", 0) for o in out),
         "errors": [o for o in out if o.get("error")],
     }

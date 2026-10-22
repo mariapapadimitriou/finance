@@ -102,3 +102,99 @@ def test_etransfer_names_are_clean_for_rules():
     assert destination(t) == ("name:denise rao", "Denise Rao")
     bare = Transaction(date="2026-10-18", description="SEND E-TFR ***Ab9", amount=250, account_id="a")
     assert destination(bare) is None
+
+
+def test_details_refresh_fills_in_sender_message_and_wording_only(tmp_path):
+    """2026-10-22: rows stored before Pearl read payment_meta get the sender,
+    message and bank's wording from Plaid once; nothing she decided moves."""
+    from app import create_app
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    from finance.plaid_link import detail_fields
+    from finance.etransfers import memo, party
+    st = create_app(str(tmp_path / "d.db")).config["STORE"]
+    t = Transaction(date="2026-10-19", description="E-TRANSFER ***Q7k", amount=-31.2,
+                    account_id="chq", account_name="TD", source="plaid",
+                    raw={"plaid_id": "p1", "account_type": "depository"})
+    ingest(st, IngestResult(transactions=[t], account_id="chq"))
+    fp = st.all_transactions()[0].fingerprint
+    st.set_transaction_category(fp, "Lent")
+    plaid_item = {"transaction_id": "p1", "name": "E-TRANSFER ***Q7k",
+                  "original_description": "E-TRANSFER ***Q7k DENISE RAO uber eats",
+                  "payment_meta": {"payer": "DENISE RAO", "reason": "uber eats"}}
+    assert st.merge_plaid_details({"p1": detail_fields(plaid_item), "nope": {"payer": "X"}}) == 1
+    row = st.all_transactions()[0]
+    assert row.raw["payer"] == "DENISE RAO" and row.raw["reason"] == "uber eats"
+    assert row.raw["plaid_id"] == "p1" and row.category == "Lent"     # hers, kept
+    assert party(row)["name"] == "Denise Rao" and memo(row) == "uber eats"
+    assert st.merge_plaid_details({"p1": detail_fields(plaid_item)}) == 0   # once is enough
+
+
+def test_the_panel_shows_what_the_bank_sent(client=None):
+    from finance.models import Transaction
+    from finance.txlist import _bank_text
+    t = Transaction(date="2026-10-19", description="E-TRANSFER ***Q7k", amount=-31.2, account_id="a",
+                    raw={"original_description": "E-TRANSFER ***Q7k   DENISE RAO"})
+    assert _bank_text(t) == "E-TRANSFER ***Q7k DENISE RAO"
+    same = Transaction(date="2026-10-19", description="UBER EATS", amount=12, account_id="a",
+                       raw={"original_description": "uber  eats"})
+    assert _bank_text(same) == ""
+
+
+def test_refresh_runs_once_per_bank_and_pages_through(tmp_path, monkeypatch):
+    from app import create_app
+    from finance import plaid_link
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    st = create_app(str(tmp_path / "r.db")).config["STORE"]
+    rows = [Transaction(date="2026-10-1%d" % i, description=f"E-TRANSFER ***{i}", amount=-10 - i,
+                        account_id="chq", account_name="TD", source="plaid",
+                        raw={"plaid_id": f"p{i}", "account_type": "depository"}) for i in range(3)]
+    ingest(st, IngestResult(transactions=rows, account_id="chq"))
+    calls = []
+
+    class Resp:
+        def __init__(self, d): self.d = d
+        def to_dict(self): return self.d
+
+    class Client:
+        def transactions_get(self, req):
+            off = req.options.offset
+            calls.append(off)
+            page = [{"transaction_id": f"p{i}", "payment_meta": {"payer": f"Friend {i}"}}
+                    for i in range(3)][off:off + 2]
+            return Resp({"transactions": page, "total_transactions": 3})
+
+    monkeypatch.setattr(plaid_link, "_client", lambda: Client())
+    monkeypatch.setattr(st, "plaid_token", lambda item_id: "tok")
+    items = [{"item_id": "item-td"}]
+    assert plaid_link.refresh_details_once(st, items) == 3
+    assert calls == [0, 2]                                        # paged
+    assert {t.raw.get("payer") for t in st.all_transactions()} == {"Friend 0", "Friend 1", "Friend 2"}
+    assert plaid_link.refresh_details_once(st, items) == 0 and calls == [0, 2]   # once per bank
+
+    def boom(*a, **k): raise RuntimeError("down")
+    monkeypatch.setattr(plaid_link, "refresh_details", boom)
+    assert plaid_link.refresh_details_once(st, [{"item_id": "item-rbc"}]) == 0
+    assert "item-rbc" not in st.setting(plaid_link.DETAILS_KEY)     # tried again next sync
+
+
+def test_row_says_when_the_bank_sent_no_name(tmp_path):
+    from app import create_app
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    app = create_app(str(tmp_path / "n.db")); st = app.config["STORE"]
+    ingest(st, IngestResult(transactions=[Transaction(
+        date="2026-10-21", description="E-TRANSFER ***Q7k", amount=-31.2, account_id="td",
+        account_name="TD", source="plaid", raw={"plaid_id": "a1", "account_type": "depository"})],
+        account_id="td"))
+    with app.test_client() as c:
+        tid = st.all_transactions()[0].fingerprint
+        r = c.get(f"/api/transactions/{tid}").get_json()
+        assert r["bank_sender_missing"] is True and r["bank_sender"] == ""
+        st.merge_plaid_details({"a1": {"payer": "DENISE RAO"}})
+        r = c.get(f"/api/transactions/{tid}").get_json()
+        assert r["bank_sender"] == "DENISE RAO" and r["bank_sender_missing"] is False

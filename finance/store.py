@@ -2723,6 +2723,28 @@ class Store:
                              list(account_ids)).fetchall()
         return {r["id"] for r in rows}
 
+    def merge_plaid_details(self, details: dict[str, dict]) -> int:
+        """Fill in Plaid fields on rows already stored (2026-10-22), keyed by
+        Plaid's transaction id: only the keys given, only when Plaid has a
+        value, and nothing else on the row — not its category, amount or
+        anything she decided. Returns how many rows gained something."""
+        if not details:
+            return 0
+        changed = 0
+        with self.conn() as c:
+            rows = c.execute("SELECT id, raw FROM transactions WHERE source = 'plaid'").fetchall()
+            for r in rows:
+                raw = json.loads(r["raw"] or "{}") or {}
+                extra = details.get(raw.get("plaid_id") or "")
+                if not extra:
+                    continue
+                merged = {**raw, **{k: v for k, v in extra.items() if v}}
+                if merged != raw:
+                    c.execute("UPDATE transactions SET raw = ? WHERE id = ?",
+                              (json.dumps(merged), r["id"]))
+                    changed += 1
+        return changed
+
     def has_plaid_rows(self) -> bool:
         with self.conn() as c:
             return c.execute("SELECT 1 FROM transactions WHERE source = 'plaid' "
