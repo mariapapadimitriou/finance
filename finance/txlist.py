@@ -233,7 +233,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
     if counts == "spending" and cat == "Unsorted transfers":
         toward = "Spending until it’s sorted"
     elif counts == "spending":
-        toward = f"{CATEGORY_GROUPS[group]} · safe to spend"
+        toward = f"{CATEGORY_GROUPS[group]} · Allowance"
     elif counts == "income":
         toward = "Income"
     else:

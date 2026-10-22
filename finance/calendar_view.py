@@ -223,7 +223,7 @@ def spent_rows(transactions: list[Transaction], iso: str, names: dict | None = N
 def reason(state: str, day: int, st_by_day: dict[int, str], rows: list[dict]) -> str:
     """One calm line on why a day is shaded (CAL-02, CAL-03)."""
     if state == "future":
-        return "Upcoming days only show what’s due. Safe to spend already counts these."
+        return "Upcoming days only show what’s due. Allowance already counts these."
     if state == "today":
         return "Today isn’t finished. It’s shaded once the day ends."
     if state == "none":

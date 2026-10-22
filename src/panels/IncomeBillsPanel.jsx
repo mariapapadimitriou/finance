@@ -111,7 +111,7 @@ export function IncomeBillsPage({ data, onTab, onOpen, onTick, onRent, onCheck, 
     <div className="pk hm-page pf-page ib-page">
       <PageHead trail={[{ label: 'Profile', to: 'profile' }, { label: 'Income and bills' }]}
                 title="Income and bills" onTab={onTab}>
-        <p className="pk-muted">What comes in and the regular bills set aside before anything is safe to spend.</p>
+        <p className="pk-muted">What comes in and the regular bills set aside before Allowance is worked out.</p>
       </PageHead>
 
       <div className="pk-tiles">

@@ -346,13 +346,13 @@ export default function SignedOut({ onSignedIn }) {
   if (screen === 'welcome') {
     return layout({
       mark: 'pearl', headline: 'Wealth grows in layers.',
-      body: 'The shell opens as you do. Pearl starts with what’s safe to spend, then shows you the next step.',
+      body: 'The shell opens as you do. Pearl starts with your Allowance, then shows you the next step.',
     }, (
       <>
-        <Heading title={<>Know what’s safe to spend.<br />Then grow from there.</>}
+        <Heading title={<>Know your Allowance.<br />Then grow from there.</>}
                  sub="Link your bank and Pearl does the sorting. Setup takes about 5 minutes." />
         <div className="p-points">
-          <TrustPoint icon="eye" title="See what’s safe to spend">
+          <TrustPoint icon="eye" title="See your Allowance">
             One number for what you can spend until payday.
           </TrustPoint>
           <TrustPoint icon="list" title="Spending, sorted for you">

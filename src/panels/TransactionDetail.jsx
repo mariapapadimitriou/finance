@@ -582,7 +582,7 @@ function Exclude({ tx, busy, onBack, onSave }) {
   return (
     <Step title="Leave it out" onBack={onBack}>
       <p className="pk-muted">It won’t count anywhere: not in spending, income or your
-        safe-to-spend. To put it back, choose Left out in the category filter.</p>
+        Allowance. To put it back, choose Left out in the category filter.</p>
       <Field label="Why? (e.g. a work expense)">
         {(id) => (
           <input id={id} type="text" value={reason} maxLength={80}
@@ -611,8 +611,8 @@ function PiggyBank({ tx, banks, busy, onBack, onSave }) {
   if (pick !== current) {
     effect = chosen
       ? (was ? `It’ll come out of ${chosen.name} instead of ${was.name}.`
-        : `It’ll come out of ${chosen.name}, so safe to spend goes up by ${charge}.`)
-      : `It’ll go back into your month, so safe to spend goes down by ${charge}.`;
+        : `It’ll come out of ${chosen.name}, so Allowance goes up by ${charge}.`)
+      : `It’ll go back into your month, so Allowance goes down by ${charge}.`;
   }
   return (
     <Step title="Pay from a treasure chest" onBack={onBack}>

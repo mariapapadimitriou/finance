@@ -73,7 +73,7 @@ export function DebtsCard({ debts, onSee }) {
           See debts <PIcon name="chevronRight" size={14} />
         </button>
       </div>
-      <p className="pk-muted">{`${total} Balances aren’t taken out of safe-to-spend.`}</p>
+      <p className="pk-muted">{`${total} Balances aren’t taken out of Allowance.`}</p>
       <dl className="hm-facts">
         {debts.debts.slice(0, 3).map((d) => (
           <div key={d.account_id}><dt>{d.name}</dt><dd>{shown(d.balance)}</dd></div>
@@ -121,7 +121,7 @@ export function DebtsPage({ data, onEdit, onTab, children = null }) {
       <GrowthTabs current="debts" onTab={onTab} />
       <p className="pk-muted">
         Everything you owe, including balances from before Pearl. Balances aren’t taken out of
-        safe-to-spend; minimum payments are counted as bills.
+        Allowance; minimum payments are counted as bills.
       </p>
       {data.count === 0 ? (
         <section className="hm-card">

@@ -57,7 +57,7 @@ def _words(p: dict, dry: bool = False, bank: dict | None = None, applied: bool =
         has = (f"has ${left:,.2f} left" if left >= -0.005
                else f"is ${-left:,.2f} behind, and catches up over the months ahead")
         effect = (f"{bank['name']} pays ${total:,.2f} and {has}. {month}’s spending drops by the "
-                  f"same, so safe to spend goes up by ${total:,.2f}.")
+                  f"same, so Allowance goes up by ${total:,.2f}.")
         staying = f"The purchases keep {cat} and show “Paid from {bank['name']}”. " + staying
     return {"title": title, "mostly": ranges.mostly_words(p["mostly"]), "staying": staying,
             "effect": effect, "bank": bank["name"] if bank else None}

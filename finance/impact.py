@@ -88,31 +88,31 @@ def describe(before: float, after: float, cat_from: str, cat_to: str,
            "line": "", "title": "", "detail": ""}
     if cat_from == cat_to:
         return out
-    because_up = _BECAUSE.get(g_to, f"{cat_to} doesn’t come out of your safe to spend")
+    because_up = _BECAUSE.get(g_to, f"{cat_to} doesn’t come out of your Allowance")
     if abs(delta) >= 0.005:
         if delta > 0:
-            out.update(line=f"Your safe to spend goes up by {money(delta)}, because {because_up}.",
+            out.update(line=f"Your Allowance goes up by {money(delta)}, because {because_up}.",
                        detail=f"{money(delta)} more, because {because_up}.")
         else:
-            because = f"{cat_to} comes out of your safe to spend"
-            out.update(line=f"Your safe to spend goes down by {money(delta)}, because {because}.",
+            because = f"{cat_to} comes out of your Allowance"
+            out.update(line=f"Your Allowance goes down by {money(delta)}, because {because}.",
                        detail=f"{money(delta)} less, because {because}.")
-        out["title"] = (f"Safe to spend is now {money(after)}." if after >= 0
+        out["title"] = (f"Allowance is now {money(after)}." if after >= 0
                         else f"You’re {money(after)} over for this week.")
         return out
     if abs(spent_delta) >= 0.005 and month:
         if spent_delta < 0:
             because = _BECAUSE.get(g_to, f"{cat_to} isn’t spending")
             out.update(line=f"{money(spent_delta)} less counted as spending in {month}, "
-                            f"because {because}. Your safe to spend stays the same.",
+                            f"because {because}. Your Allowance stays the same.",
                        detail=f"{money(spent_delta)} less, because {because}.")
         else:
             out.update(line=f"{money(spent_delta)} more counted as spending in {month}. "
-                            "Your safe to spend stays the same.",
+                            "Your Allowance stays the same.",
                        detail=f"{money(spent_delta)} more, because {cat_to} is spending.")
         out["title"] = f"Spent in {month} is now {money(spent_after)}."
         return out
-    out.update(line=(f"Both are {CATEGORY_GROUPS[g_to]}, so your safe to spend stays the same."
-                     if g_from == g_to else "Your safe to spend stays the same."),
-               title="Your safe to spend stays the same.")
+    out.update(line=(f"Both are {CATEGORY_GROUPS[g_to]}, so your Allowance stays the same."
+                     if g_from == g_to else "Your Allowance stays the same."),
+               title="Your Allowance stays the same.")
     return out

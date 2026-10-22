@@ -156,13 +156,13 @@ describe('AM-02 to AM-07, C-06 one account', () => {
 
   it('AM-03: not in the budget says what that means', () => {
     const t = text(<AccountDetail a={amex} now={NOW} />);
-    expect(t).toContain('This account isn’t in your budget. Its transactions stay here, but they don’t count toward safe to spend, spending or your snapshot.');
+    expect(t).toContain('This account isn’t in your budget. Its transactions stay here, but they don’t count toward Allowance, spending or your snapshot.');
     calm(t);
   });
 
-  it('AM-03: the toast says what safe to spend is now', () => {
+  it('AM-03: the toast says what Allowance is now', () => {
     expect(countedToast(amex, false, 738.58))
-      .toBe('Amex Business no longer counts. Safe to spend is now $738.58.');
+      .toBe('Amex Business no longer counts. Allowance is now $738.58.');
     expect(countedToast(amex, true, null)).toBe('Amex Business counts again.');
     expect(countedToast(amex, false, 0)).toBe('Amex Business no longer counts.');
   });

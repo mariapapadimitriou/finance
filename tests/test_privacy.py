@@ -117,7 +117,7 @@ class TestWelcome:
         text = welcome[0]["text"]
         for line in ("You’ve taken the first step. Here’s what happens next.",
                      "1. Link your accounts", "So Pearl sees your whole picture. Read-only, always.",
-                     "2. See your safe to spend",
+                     "2. See your Allowance",
                      "What you can spend this month without second-guessing.",
                      "3. Follow your path", "Know your money, keep a cushion, grow it. One milestone at a time.",
                      "Open Pearl: https://pearl.example",
