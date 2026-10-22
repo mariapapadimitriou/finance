@@ -219,6 +219,9 @@ def map_plaid_transaction(item: dict, accounts: dict | None = None) -> Transacti
              # stable name an e-transfer has, since its description carries a
              # new reference every time.
              "counterparty": _counterparty(item),
+             # The bank's own description, before Plaid tidied it: where an
+             # e-Transfer's message lives, when the bank passes it on.
+             "original_description": str(item.get("original_description") or "").strip(),
              # Free with every transaction: the merchant's logo and a stable id
              # (one merchant however its name is spelled), and how sure Plaid
              # is of its own category.

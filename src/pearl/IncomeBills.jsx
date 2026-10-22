@@ -317,7 +317,8 @@ export default function IncomeBillsFlow({ onDone, onDoc, initial = null, start =
   const [history, setHistory] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [choice, setChoice] = useState('yes');
+  // Unchosen until she picks one (2026-10-21): no answer is ticked for her.
+  const [choice, setChoice] = useState(null);
   const [also, setAlso] = useState({});
   const [editingPay, setEditingPay] = useState(null);
   const [ticked, setTicked] = useState(
@@ -410,7 +411,7 @@ export default function IncomeBillsFlow({ onDone, onDoc, initial = null, start =
         </button>
         {error && <Banner tone="caution">{error}</Banner>}
         <div className="p-actions">
-          <button type="button" className="p-btn primary" disabled={busy} onClick={next}>Continue</button>
+          <button type="button" className="p-btn primary" disabled={busy || !choice} onClick={next}>Continue</button>
         </div>
       </>
     ), { onBack: back });

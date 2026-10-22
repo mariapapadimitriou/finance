@@ -64,3 +64,56 @@ def party(t: Transaction) -> dict | None:
             else None) or _name_in(t.description)
     return {"direction": direction, "name": name, "named_by": "bank" if name else None}
 
+
+
+# ── The sender's message (2026-10-21) ─────────────────────────────────────
+
+# What a bank writes before an e-Transfer's message, when it labels it.
+_MEMO_MARK = re.compile(r"(?:\bmemo|\bmsg|\bmessage|\bnote|\bcomment)s?\s*[:\-=]\s*(.+)$", re.I)
+
+
+def memo(t: Transaction) -> str | None:
+    """The message a friend wrote on an e-Transfer ("uber eats", "for rent"),
+    when the bank passed it on, else None.
+
+    From the bank's original description: what follows "MEMO:" or "MSG:"
+    when a bank labels it, otherwise whatever is left once the bank's own
+    words, reference codes and the person's name are taken out.
+    """
+    if not is_etransfer(t):
+        return None
+    raw = t.raw or {}
+    text = str(raw.get("original_description") or "").strip()
+    if not text:
+        return None
+    m = _MEMO_MARK.search(text)
+    if m:
+        out = " ".join(m.group(1).split()).strip(" .;:-")
+        return out[:80] or None
+    who = party(t) or {}
+    name_words = {w.lower() for w in re.split(r"\s+", who.get("name") or "") if w}
+    for extra in (t.description, t.merchant, raw.get("counterparty")):
+        for w in re.split(r"[\s*#:/,.()\-]+", str(extra or "")):
+            if w and w.lower() not in _BANK_WORDS:
+                name_words.add(w.lower())
+    words = []
+    for w in re.split(r"[\s*#:/,.()\-]+", text):
+        if not w or any(ch.isdigit() for ch in w):
+            continue
+        lw = w.lower()
+        if lw in _BANK_WORDS or lw in name_words or not re.fullmatch(r"[A-Za-zÀ-ÿ'&]+", w):
+            continue
+        words.append(w)
+    if not words or all(len(w) < 3 for w in words):
+        return None
+    return " ".join(w.lower() if w.isupper() else w for w in words)[:80]
+
+
+_STOP = {"the", "for", "and", "my", "your", "our", "dinner", "lunch", "share", "thanks", "thank",
+         "you", "half", "split", "back", "owe", "owed", "last", "night", "today", "yesterday"}
+
+
+def memo_words(text: str | None) -> set[str]:
+    """The words in a message worth matching against a merchant's name."""
+    return {w for w in re.split(r"[^a-zà-ÿ0-9&']+", (text or "").lower())
+            if len(w) >= 3 and w not in _STOP}

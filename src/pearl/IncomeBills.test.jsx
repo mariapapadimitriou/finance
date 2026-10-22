@@ -62,7 +62,7 @@ describe('words', () => {
 });
 
 describe('I-01 Is this your paycheque?', () => {
-  it('shows the deposit and three answers, yes chosen', () => {
+  it('shows the deposit and three answers, none chosen until she picks', () => {
     const t = text(flow('pay'));
     for (const s of ['Your money coming in', 'Is this your paycheque?',
       'We found a deposit that looks like your pay.', 'Northwind Ltd payroll',
@@ -71,7 +71,8 @@ describe('I-01 Is this your paycheque?', () => {
       'Income first.', 'Knowing when you’re paid lets Pearl work out what’s safe to spend.']) {
       expect(t).toContain(s);
     }
-    expect(html(flow('pay'))).toMatch(/pk-choice radio on[^]*Yes, that’s my pay/);
+    expect(html(flow('pay'))).not.toContain('pk-choice radio on');
+    expect(html(flow('pay'))).toMatch(/disabled=""[^>]*>Continue/);
     expect(primaries(flow('pay'))).toBe(1);
     calm(t);
   });

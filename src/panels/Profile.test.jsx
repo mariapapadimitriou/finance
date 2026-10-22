@@ -87,7 +87,7 @@ describe('AM-01 / C-01 the accounts', () => {
   it('says each account’s state the way the handoff does', () => {
     expect(accountMeta(base, NOW)).toBe('$2,340.18 · updated 5 minutes ago');
     expect(accountMeta(visa, NOW)).toBe('$412.55 owing · updated 5 minutes ago');
-    expect(accountMeta(tang, NOW)).toBe('$6,100.00 · counts toward your Anchor');
+    expect(accountMeta(tang, NOW)).not.toContain('Anchor');
     expect(accountMeta(simplii, NOW)).toBe('$1,880.00 · joint, your share is 50%');
     expect(accountMeta(amex, NOW)).toBe('$96.40 owing · not in your budget');
     expect(accountMeta(eq, NOW)).toBe('$900.00 · last updated 6 hours ago');
@@ -184,8 +184,7 @@ describe('AM-02 to AM-07, C-06 one account', () => {
     const el = <AddByHand />;
     const t = text(el);
     for (const s of ['Add a balance by hand', 'For an account Pearl can’t link.', 'Chequing', 'Savings',
-      'Investment', 'Credit card', 'Last four digits', 'Balance today', 'Part of my Anchor',
-      'Only cash savings usually belong here', 'Add account', 'Cancel']) {
+      'Investment', 'Credit card', 'Last four digits', 'Balance today', 'Add account', 'Cancel']) {
       expect(t).toContain(s);
     }
     expect(primaries(el)).toBe(1);
@@ -197,8 +196,8 @@ describe('AM-02 to AM-07, C-06 one account', () => {
     const t = text(el);
     for (const s of ['Meridian Savings', 'Balance', '$3,000.00', 'You updated it', 'October 1',
       'Added by you. Pearl can’t see its transactions, so it only counts in your snapshot.',
-      'Update balance', 'Count in my snapshot', 'Counts toward my Anchor', 'Savings accounts only',
-      'Remove this account']) expect(t).toContain(s);
+      'Update balance', 'Count in my snapshot', 'Remove this account']) expect(t).toContain(s);
+    expect(t).not.toContain('Anchor');
     expect(primaries(el)).toBe(0);
     calm(t);
   });

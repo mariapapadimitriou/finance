@@ -55,6 +55,23 @@ export function nameIn(text = '') {
 
 const isOut = (it) => (it.txn?.amount ?? 0) > 0;
 
+// What the server says about each transaction's answers, kept for the visit
+// so opening Mark as… again — or straight after the panel opened — draws
+// at once (2026-10-21). A saved answer drops its entry.
+const CASES = new Map();
+const READY = new Map();
+export function loadCases(id) {
+  if (!CASES.has(id)) {
+    CASES.set(id, getTxCases(id)
+      .then((d) => { READY.set(id, d); return d; })
+      .catch((e) => { CASES.delete(id); throw e; }));
+  }
+  return CASES.get(id);
+}
+/** Start fetching a transaction's answers before Mark as… is pressed. */
+export const prefetchCases = (id) => { loadCases(id).catch(() => {}); };
+export const forgetCases = (id) => { CASES.delete(id); READY.delete(id); };
+
 /**
  * The same list the server keeps (finance/marks.py OUT_CASES / IN_CASES),
  * used until getTxCases answers so the card never shows an empty list. The
@@ -220,6 +237,23 @@ export function steps(it, cases, mode = 'stacked') {
       ],
     };
   }
+  // A friend's message that names a purchase ("uber eats"), 2026-10-21:
+  // asked first, one tap to link it.
+  const said = !match && (it.guess?.action === 'memo' ? it.guess.charge : cases.memo_match);
+  if (said) {
+    const who = nameIn(it.txn.merchant) || it.txn.merchant;
+    S.memo = {
+      title: `Is ${who} paying you back for ${said.merchant}?`, left: 3, said,
+      sub: `Their message says “${cases.memo || it.txn.memo || it.guess?.memo || ''}”.`,
+      options: [
+        { v: 'yes', label: `Yes, for ${said.merchant} · ${shortDate(said.date)}`,
+          done: `Paying me back for ${said.merchant}`,
+          effect: `${txAmount(said.amount, { signed: true })}${said.paid_back ? ` · ${txAmount(said.paid_back)} paid back so far` : ''}` },
+        { v: 'other', label: 'Yes, for something else', done: 'Paying me back', to: 'pick_payback' },
+        { v: 'no', label: 'No, it’s not a payback', done: 'Not a payback', to: 'q1' },
+      ],
+    };
+  }
   S.q1 = {
     title: 'Is this income?', left: nameless ? 3 : 2,
     options: [
@@ -229,7 +263,7 @@ export function steps(it, cases, mode = 'stacked') {
     ],
   };
   S.what_in = { title: 'What was it?', left: 2, options: rest(['pay', 'regular_pay', 'own', 'joint_them']) };
-  return { start: match ? 'match' : 'q1', S };
+  return { start: match ? 'match' : said ? 'memo' : 'q1', S };
 }
 
 /** The dots: answered steps filled, the rest dashed, and "2 of 3" — or,
@@ -262,6 +296,8 @@ export function TxHead({ txn, name }) {
       <div className="nl-tx-text">
         <span>{txn.merchant}</span>
         <span className="pk-label pk-muted">{`${txn.date ? longDate(txn.date) : ''}${where}`}</span>
+        {/* An e-Transfer's message, when the bank passed it on. */}
+        {txn.memo && <span className="nl-memo">“{txn.memo}”</span>}
       </div>
       <span className={`nl-tx-amt ${amountTone(inflow)}`}>{amount}</span>
     </div>
@@ -303,7 +339,7 @@ function caseOn(flow, path) {
 export default function SortCard({ it, categories = [], busy, act, commit, onSkip, onBack, onTab, onSplit,
                                    mode = 'stacked', initialPath = null, initialEdit = null,
                                    initialName = '', showHead = true }) {
-  const [cases, setCases] = useState(null);
+  const [cases, setCases] = useState(() => READY.get(it.txn.id) ?? null);
   // [{ step, v, label? }]: the answers so far, the last one still open.
   const [path, setPath] = useState(() => initialPath ?? []);
   // The row being changed in place (an index into `path`), if any.
@@ -314,10 +350,11 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   // "Which purchase?": what she typed, and what the server found for it.
   const [find, setFind] = useState('');
   const [found, setFound] = useState(null);
-  const [remember, setRemember] = useState(it.kind === 'joint_in' || !!it.learnable);
+  // Remember starts unticked (2026-10-21): a rule is hers to choose, never a default.
+  const [remember, setRemember] = useState(false);
   useEffect(() => {
     let live = true;
-    getTxCases(it.txn.id).then((d) => { if (live) setCases(d); }).catch(() => { if (live) setCases({ cases: [], groups: [] }); });
+    loadCases(it.txn.id).then((d) => { if (live) setCases(d); }).catch(() => { if (live) setCases({ cases: [], groups: [] }); });
     return () => { live = false; };
   }, [it.txn.id]);
 
@@ -360,7 +397,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   const canRemember = (c) => !!(c?.remember || it.learnable || it.kind === 'category' || it.kind === 'panel');
 
   /** Commit the last answer: run the call, then hand the card to its door. */
-  const finish = (answers, effect, run) => commit(() => run(), {
+  const finish = (answers, effect, run) => commit(() => { forgetCases(it.txn.id); return run(); }, {
     answers: answers.map((p) => ({ ...p, label: p.label ?? answerLabel(flow, p) })), effect,
   });
   const markCase = (c, extra = {}, answers, effect) => finish(answers, effect ?? c.effect,
@@ -454,6 +491,12 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       if (c.key === 'not_mine') return markCase(c, { reason: '' }, answers);
       return markCase(c, {}, answers);
     }
+    if (sId === 'memo') {
+      const who = nameIn(it.txn.merchant);
+      return finish(answers, `Comes off what you spent at ${s.said.merchant}. Not income.`,
+        () => via({ case: 'payback', charge: s.said.id, ...(who ? { person: who } : {}) },
+          `Linked to ${s.said.merchant}. Not income.`));
+    }
     if (sId === 'match') {
       return finish(answers, 'Not income. The split shows as paid back.',
         () => plain(() => linkPayback(s.match.charge_id, it.txn.id, s.match.name), 'Linked.'));
@@ -537,7 +580,10 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       <Done path={path} flow={flow} editing={editing} busy={busy}
             onOpen={(i) => setEditing(editing === i ? null : i)} onPick={rechoose} />
 
-      {step && (
+      {/* The whole list (Mark as…) waits for the server's answers, whose best
+          guess goes on top; one question at a time doesn't need to. */}
+      {!cases && mode === 'all' && <CardSkeleton rows={6} />}
+      {(cases || mode !== 'all') && step && (
         <>
           <h2 className="pk-h2 nl-q">{step.title}</h2>
           {step.sub && <p className="pk-muted nl-sub">{step.sub}</p>}
@@ -579,8 +625,9 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           {step.ask === 'kind' && (
             <div className="pk-choices nl-grid" role="radiogroup" aria-label={step.title}>
               {Object.entries(cases?.income_kinds ?? INCOME_KINDS).map(([k, label]) => (
-                <Choice key={k} name={group} checked={it.kind === 'income' && it.guess === k} disabled={busy}
-                        onChange={() => saveAsk(step, k, label)} label={label} />
+                <Choice key={k} name={group} checked={false} disabled={busy}
+                        onChange={() => saveAsk(step, k, label)} label={label}
+                        description={it.kind === 'income' && it.guess === k ? 'Pearl’s guess' : undefined} />
               ))}
               <Choice name={group} checked={false} disabled={busy}
                       onChange={() => saveAsk(step, 'regular_pay', 'My regular pay')} label="This is my regular pay" />
@@ -647,7 +694,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
                       label={`${c.merchant} · ${shortDate(c.date)}`}
                       description={[txAmount(c.amount, { signed: true }), c.category,
                         c.person ? `${c.person}’s share` : null,
-                        c.paid_back ? `${txAmount(c.paid_back)} paid back so far` : null, extra].filter(Boolean).join(' · ')} />
+                        c.paid_back ? `${txAmount(c.paid_back)} paid back so far` : null,
+                        c.memo ? 'what their message names' : null, extra].filter(Boolean).join(' · ')} />
             );
             return (
               <>
@@ -690,6 +738,17 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
         </div>
       )}
     </>
+  );
+}
+
+/** The question's shape while its answers load: a title and ghost rows, so
+ * the list doesn't arrive in two goes and jump (2026-10-21). */
+function CardSkeleton({ rows = 3 }) {
+  return (
+    <div className="nl-skeleton" aria-busy="true" aria-label="Loading the choices">
+      <span className="nl-ghost nl-ghost-title" />
+      {Array.from({ length: rows }, (_, i) => <span key={i} className="nl-ghost nl-ghost-row" />)}
+    </div>
   );
 }
 

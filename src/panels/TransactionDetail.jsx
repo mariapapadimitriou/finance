@@ -7,7 +7,7 @@ import PIcon from '../pearl/icons.jsx';
 import { categoryLabel } from './CategoryPicker.jsx';
 import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
 import { TagEditor } from './WhatWasThis.jsx';
-import SortCard, { SortedCard } from './SortCard.jsx';
+import SortCard, { SortedCard, prefetchCases } from './SortCard.jsx';
 import {
   addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTags, getTx,
   includeTransaction, money, setCategory, setJointFrom, setMerchantName, setMineAlways, setParty,
@@ -70,6 +70,9 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
 
   useEffect(() => {
     let live = true;
+    // Mark as…'s answers start loading with the panel, so pressing it draws
+    // the list at once instead of in two goes (2026-10-21).
+    prefetchCases(id);
     getTx(id).then((r) => { if (live) setTx(r); }).catch((e) => { if (live) setError(e); });
     getBanks().then((d) => { if (live) setBanks(d.banks ?? []); }).catch(() => {});
     return () => { live = false; };
@@ -294,6 +297,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
           <dl className="txd-details">
             <Detail label="Account" value={tx.account} />
             <Detail label="From your bank" value={tx.description} />
+            {tx.memo && <Detail label="Their message" value={`“${tx.memo}”`} />}
             <Detail label="Counts toward" value={tx.counts_toward} />
             {tx.note && !tx.note_link && !(tx.one_off && tx.note === ONE_OFF_NOTE)
               && <Detail label="Why" value={tx.note} />}
@@ -678,7 +682,7 @@ function JointFrom({ tx, busy, onBack, onSave }) {
   const start = tx.joint_from === 'me' ? 'me'
     : tx.joint_from === 'them' ? (tx.joint_person ? `p:${tx.joint_person}` : 'them') : '';
   const [pick, setPick] = useState(choices.some((c) => c.value === start) ? start : '');
-  const [remember, setRemember] = useState(true);
+  const [remember, setRemember] = useState(false);
   const chosen = choices.find((c) => c.value === pick);
   return (
     <Step title="Who put this in?" onBack={onBack}>
