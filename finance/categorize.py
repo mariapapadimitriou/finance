@@ -414,7 +414,7 @@ def is_unsure(t) -> bool:
 
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
-RULES_VERSION = 8
+RULES_VERSION = 9
 
 
 def plaid_category(code: str) -> str | None:
@@ -506,11 +506,12 @@ def categorize(merchant: str, description: str = "", issuer_category: str = "",
                overrides: dict[str, str] | None = None, confidence: str = "") -> tuple[str, str]:
     """Return (category, source) for one transaction.
 
-    In order (2026-10-14): her own rule for the merchant; the bank's label
-    — what the bank itself says a purchase was is the most accurate thing
-    Pearl has, so it comes before Pearl's pattern rules — unless Plaid says
-    its own confidence is low or the label only says "transfer" or "other";
-    then Pearl's rules; then whatever the bank said after all; then Other.
+    In order (2026-10-21): her own rule for the merchant; then the card
+    provider's category, whenever it names one — even when Plaid says it
+    isn't sure, in which case the row stays marked as a guess (`is_unsure`:
+    a dashed chip, and a question in Needs a look) rather than being
+    overruled by Pearl's patterns; Pearl's own rules only when the label
+    says nothing more than "transfer" or "other"; then Other.
     """
     key = (merchant or "").strip().lower()
 
@@ -522,8 +523,7 @@ def categorize(merchant: str, description: str = "", issuer_category: str = "",
         return AUTHORITATIVE_ISSUER_CATEGORIES[code], "issuer"
 
     bank = bank_category(issuer_category)
-    sure = (confidence or "").strip().upper() not in UNSURE_CONFIDENCE
-    if bank and sure and bank not in _BANK_NOT_AN_ANSWER:
+    if bank and bank not in _BANK_NOT_AN_ANSWER:
         return bank, "issuer"
 
     haystack = f"{merchant} || {description}"
