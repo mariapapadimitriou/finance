@@ -97,7 +97,6 @@ export function accountMeta(a, now = Date.now()) {
     const withWho = a.joint_people?.length ? `joint with ${peopleWords(a.joint_people)}` : 'joint';
     rest = a.joint_share ? `${withWho}, your share is ${Math.round(a.joint_share)}%` : withWho;
   }
-  else if (a.anchor) rest = 'counts toward your Anchor';
   else rest = updated ? `updated ${updated}` : 'waiting for its first update';
   const out = [bal, rest].filter(Boolean).join(' · ');
   return out.charAt(0).toUpperCase() + out.slice(1);
@@ -290,9 +289,6 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onJ
         <div className="pk-choices">
           <Choice type="checkbox" checked={a.counted} disabled={busy}
                   onChange={(on) => onSave({ counted: on })} label="Count in my snapshot" />
-          <Choice type="checkbox" checked={a.anchor} disabled={busy || !a.can_anchor}
-                  onChange={(on) => onSave({ anchor: on })} label="Counts toward my Anchor"
-                  description="Savings accounts only" />
         </div>
         {['savings', 'investment'].includes(a.kind) && (
           <HandDigits a={a} onSave={onSave} />
@@ -381,11 +377,6 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onJ
                       ? `Only your share counts. Your share is ${Math.round(a.joint_share)}%.`
                       : a.joint ? 'Only your share counts, worked out from what each of you puts in.'
                         : 'Only your share counts. You choose the share.'} />
-          )}
-          {a.can_anchor && (
-            <Choice type="checkbox" checked={a.anchor} disabled={busy}
-                    onChange={(on) => onSave({ anchor: on })} label="Counts toward my Anchor"
-                    description="Savings accounts only" />
           )}
         </div>
         {a.joint && (
@@ -702,7 +693,7 @@ export function AddByHand({ onTab, onBack, onAdd }) {
   const [kind, setKind] = useState('savings');
   const [balance, setBalance] = useState('');
   const [last4, setLast4] = useState('');
-  const [anchor, setAnchor] = useState(true);
+  const [anchor, setAnchor] = useState(false);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const digits = last4.replace(/\D/g, '');
@@ -732,7 +723,7 @@ export function AddByHand({ onTab, onBack, onAdd }) {
                         { label: 'Add a balance' }]}
                 title="Add a balance by hand" onTab={onTab} />
       <p className="pf-intro">
-        For an account Pearl can’t link. Its balance shows on Home and can be part of your Anchor.
+        For an account Pearl can’t link. Its balance shows on Accounts.
       </p>
       <form className="pf-form" onSubmit={submit} noValidate>
         <Field label="Name" id="ac-name" error={error?.field === 'name' ? error.text : null}>
@@ -767,13 +758,6 @@ export function AddByHand({ onTab, onBack, onAdd }) {
           <input id="ac-balance" inputMode="decimal" autoComplete="off" placeholder="$3,000.00"
                  value={balance} onChange={(e) => { setBalance(e.target.value); setError(null); }} />
         </Field>
-        {DIGITS_KINDS.includes(kind) && (
-          <div className="pk-choices">
-            <Choice type="checkbox" checked={kind === 'savings' && anchor} disabled={kind !== 'savings'}
-                    onChange={setAnchor} label="Part of my Anchor"
-                    description="Only cash savings usually belong here" />
-          </div>
-        )}
         <div className="pf-actions">
           <PButton type="submit" disabled={busy}>{busy ? 'Adding…' : 'Add account'}</PButton>
           <PButton variant="text" onClick={onBack}>Cancel</PButton>

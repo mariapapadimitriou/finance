@@ -682,7 +682,7 @@ function JointFrom({ tx, busy, onBack, onSave }) {
   const start = tx.joint_from === 'me' ? 'me'
     : tx.joint_from === 'them' ? (tx.joint_person ? `p:${tx.joint_person}` : 'them') : '';
   const [pick, setPick] = useState(choices.some((c) => c.value === start) ? start : '');
-  const [remember, setRemember] = useState(true);
+  const [remember, setRemember] = useState(false);
   const chosen = choices.find((c) => c.value === pick);
   return (
     <Step title="Who put this in?" onBack={onBack}>

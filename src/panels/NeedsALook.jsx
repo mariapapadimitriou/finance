@@ -553,7 +553,7 @@ export function IncomeKind({ it, categories = [], busy, onSkip, act, sorted }) {
  * Kept for the transaction panel; Needs a look asks it as a stacked step. */
 export function JointIn({ it, busy, onSkip, act, onTab }) {
   const [pick, setPick] = useState('');
-  const [remember, setRemember] = useState(true);
+  const [remember, setRemember] = useState(false);
   const name = `joint-${it.txn.id}`;
   const choices = depositChoices(it.people, it.label);
   const chosen = choices.find((c) => c.value === pick);

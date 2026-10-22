@@ -350,7 +350,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   // "Which purchase?": what she typed, and what the server found for it.
   const [find, setFind] = useState('');
   const [found, setFound] = useState(null);
-  const [remember, setRemember] = useState(it.kind === 'joint_in' || !!it.learnable);
+  // Remember starts unticked (2026-10-21): a rule is hers to choose, never a default.
+  const [remember, setRemember] = useState(false);
   useEffect(() => {
     let live = true;
     loadCases(it.txn.id).then((d) => { if (live) setCases(d); }).catch(() => { if (live) setCases({ cases: [], groups: [] }); });
@@ -624,8 +625,9 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           {step.ask === 'kind' && (
             <div className="pk-choices nl-grid" role="radiogroup" aria-label={step.title}>
               {Object.entries(cases?.income_kinds ?? INCOME_KINDS).map(([k, label]) => (
-                <Choice key={k} name={group} checked={it.kind === 'income' && it.guess === k} disabled={busy}
-                        onChange={() => saveAsk(step, k, label)} label={label} />
+                <Choice key={k} name={group} checked={false} disabled={busy}
+                        onChange={() => saveAsk(step, k, label)} label={label}
+                        description={it.kind === 'income' && it.guess === k ? 'Pearl’s guess' : undefined} />
               ))}
               <Choice name={group} checked={false} disabled={busy}
                       onChange={() => saveAsk(step, 'regular_pay', 'My regular pay')} label="This is my regular pay" />

@@ -75,13 +75,15 @@ describe('One question at a time, tapped (R-10 to R-12)', () => {
     expect(dots).toContain('>Spending<');
   });
 
-  it('"What kind of income?" lays its options out in two columns, with Pearl’s guess chosen', () => {
+  it('"What kind of income?" lays its options out in two columns, nothing chosen for her', () => {
     const it_ = { ...inn, kind: 'income', guess: 'salary' };
     const page = html(<Stacked it={it_} act={noop} commit={noop} onSkip={noop} onBack={noop}
                                initialPath={[{ step: 'q1', v: 'income' }]} />);
     expect(page).toContain('What kind of income?');
     expect(page).toContain('pk-choices nl-grid');
-    expect(page).toContain('pk-choice radio on');
+    // Pearl's guess is named, not ticked (2026-10-21).
+    expect(page).not.toContain('pk-choice radio on');
+    expect(page).toContain('Pearl’s guess');
   });
 });
 
