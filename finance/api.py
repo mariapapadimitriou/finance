@@ -1280,7 +1280,10 @@ def plaid_sync():
     # Opening the app asks without `force`; linking, reconnecting and
     # switching an account on ask with it.
     if not (request.get_json(silent=True) or {}).get("force") and plaid_link.synced_recently(st):
-        return jsonify({"items": [], "imported": 0, "recent": True})
+        # Synced a moment ago, but a bank may still be owed its one-time
+        # details refresh (2026-10-22): run just that, not a whole sync.
+        refreshed = plaid_link.refresh_details_once(st, st.plaid_items())
+        return jsonify({"items": [], "imported": 0, "recent": True, "details_refreshed": refreshed})
     return jsonify(plaid_link.sync_all(st))
 
 

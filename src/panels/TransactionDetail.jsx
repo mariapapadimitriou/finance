@@ -299,12 +299,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
               <Detail label="Moved" value={`${tx.transfer.from} → ${tx.transfer.to}`} />
             ) : <Detail label="Account" value={tx.account} />}
             <Detail label="From your bank" value={tx.description} />
-            {/* Exactly what the bank sent (2026-10-22). */}
-            {tx.bank_text && <Detail label="Bank’s own wording" value={tx.bank_text} />}
-            {(tx.bank_sender || tx.bank_sender_missing) && (
-              <Detail label={tx.inflow ? 'Sender, from your bank' : 'Sent to, from your bank'}
-                      value={tx.bank_sender || 'Not included by your bank'} />
-            )}
+
             {tx.memo && <Detail label="Their message" value={`“${tx.memo}”`} />}
             <Detail label="Counts toward" value={tx.counts_toward} />
             {tx.note && !tx.note_link && !(tx.one_off && tx.note === ONE_OFF_NOTE)
@@ -332,6 +327,16 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             )}
             {tx.my_note && <Detail label="Your note" value={tx.my_note} />}
           </dl>
+          {/* Everything the bank sent through Plaid (2026-10-22): whether a
+              sender's name or a message came is plain to see. */}
+          {tx.bank_fields?.length > 0 && (
+            <details className="txd-bank">
+              <summary>What your bank sent</summary>
+              <dl className="txd-details">
+                {tx.bank_fields.map((f) => <Detail key={f.label} label={f.label} value={f.value} />)}
+              </dl>
+            </details>
+          )}
 
           {tx.can_one_off && !left && (
             <OneOffCard tx={tx} busy={busy}
