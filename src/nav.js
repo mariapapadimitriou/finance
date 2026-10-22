@@ -15,7 +15,7 @@ export const PANELS = {
   // Home (Pearl THL-125, GR-05): safe to spend for the month and how it was
   // worked out. Where the app lands.
   home:          { label: 'Home',
-                   hint: 'What’s safe to spend this month, and how we worked it out' },
+                   hint: 'Your Allowance this month, and how we worked it out' },
   // Cash flow › Budgets (THL-168 B-01): every category, from her usual month.
   budgets:       { label: 'Budgets',
                    hint: 'A budget for every category, starting at your usual month' },

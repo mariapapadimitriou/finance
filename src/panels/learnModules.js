@@ -173,11 +173,11 @@ export const moduleById = (id) => MODULES.find((m) => m.id === id) ?? null;
 // (THL-46) is a page here; how we protect you (THL-115) is Profile's page.
 export const SAFE_TO_SPEND = {
   id: 'safe-to-spend',
-  title: 'How safe-to-spend works',
+  title: 'How Allowance works',
   body: [
-    'Safe to spend is what’s left for the rest of the month once the things you can’t skip are covered.',
+    'Allowance is what’s left for the rest of the month once the things you can’t skip are covered.',
     'We start with what comes in this month: the pay we found, or the income you told us.',
     'Then we take away your bills still to come, what you’ve already spent, and anything you’re setting aside for your Anchor or a saving goal.',
-    'What’s left is safe to spend. It changes as money comes in and goes out, and Home shows how we worked it out.',
+    'What’s left is your Allowance. It changes as money comes in and goes out, and Home shows how we worked it out.',
   ],
 };

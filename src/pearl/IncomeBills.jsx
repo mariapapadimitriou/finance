@@ -297,11 +297,11 @@ export function undoRemove(removed) {
 
 const PANELS = {
   income: { mark: 'closed', headline: 'Income first.',
-            body: 'Knowing when you’re paid lets Pearl work out what’s safe to spend.' },
+            body: 'Knowing when you’re paid lets Pearl work out your Allowance.' },
   bills: { mark: 'closed', headline: 'Then what goes out.',
-           body: 'Regular bills are set aside before anything counts as safe to spend.' },
+           body: 'Regular bills are set aside before anything counts toward your Allowance.' },
   done: { mark: 'opening', headline: 'Ready.',
-          body: 'Pearl can now work out what’s safe to spend each month.' },
+          body: 'Pearl can now work out your Allowance each month.' },
 };
 
 /** Where the check starts: the paycheque if Pearl found one, else I-03. */
@@ -469,7 +469,7 @@ export default function IncomeBillsFlow({ onDone, onDoc, initial = null, start =
       <>
         <img src={MARKS.closed} alt="" width="96" height="80" />
         <Heading title="That’s everything we need"
-                 sub="Pearl can now work out what’s safe to spend each month." />
+                 sub="Pearl can now work out your Allowance each month." />
         <div className="pk-tiles ib-tiles">
           <StatTile label="Income each month" value={tile(data.totals.income, 'Not set yet')} />
           <StatTile label="Regular bills" value={tile(data.totals.bills, 'None yet')} />

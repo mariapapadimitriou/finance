@@ -196,7 +196,7 @@ def _next(phase: str, step: str | None, started: bool) -> dict:
     """The one next step and the action that takes it (GR-05)."""
     if phase == "protect":
         return {
-            "income": {"text": "Next: add your income, so we can work out what’s safe to spend.",
+            "income": {"text": "Next: add your income, so we can work out your Allowance.",
                        "label": "Add your income", "action": "income"},
             "bills": {"text": "Next: check the bills we found, so none of them is a surprise.",
                       "label": "Check your bills", "action": "bills"},

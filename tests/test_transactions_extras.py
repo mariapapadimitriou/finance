@@ -352,7 +352,7 @@ class TestBatchCategory:
                         json={"ids": picked, "category": "Dining"})
         body = r.get_json()
         assert r.status_code == 200, body
-        assert body["line"] == "All 4 are Lifestyle now, so your safe to spend stays the same."
+        assert body["line"] == "All 4 are Lifestyle now, so your Allowance stays the same."
         assert all(t.category == "Food Delivery" for t in client.st.all_transactions()
                    if t.fingerprint in picked)
 
@@ -362,7 +362,7 @@ class TestBatchCategory:
                         json={"ids": picked, "category": "Dining"})
         body = r.get_json()
         assert r.status_code == 200, body
-        assert body["title"] == "Changed 4 to Dining. Your safe to spend stays the same."
+        assert body["title"] == "Changed 4 to Dining. Your Allowance stays the same."
         assert body["detail"] == "All 4 were already Lifestyle."
         by_id = {t.fingerprint: t for t in client.st.all_transactions()}
         assert all(by_id[i].category == "Dining" for i in picked)

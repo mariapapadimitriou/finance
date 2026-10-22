@@ -354,7 +354,7 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onJ
       {!a.counted && a.kind !== 'investment' && (
         <Alert tone="info">
           This account isn’t in your budget. Its transactions stay here, but they don’t count toward
-          safe to spend, spending or your snapshot.
+          Allowance, spending or your snapshot.
         </Alert>
       )}
       <div className="pf-tiles">
@@ -368,7 +368,7 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onJ
         <div className="pk-choices">
           {a.kind !== 'investment' && <Choice type="checkbox" checked={a.counted} disabled={busy}
                   onChange={(on) => onSave({ counted: on })} label="Count in my budget"
-                  description="Its spending, bills and balance count toward safe to spend and your snapshot." />}
+                  description="Its spending, bills and balance count toward Allowance and your snapshot." />}
           {linked && (
             <Choice type="checkbox" checked={a.joint} disabled={busy}
                     onChange={(on) => (on ? joint() : onSave({ joint_share: null }))}
@@ -853,7 +853,7 @@ export function JointPage({ a, onTab, onBack, onSave, busy = false }) {
 /** The toast after Count in my budget changes (AM-03). */
 export function countedToast(a, counted, safeToSpend) {
   const what = counted ? `${a.name} counts again.` : `${a.name} no longer counts.`;
-  const sts = safeToSpend > 0 ? ` Safe to spend is now ${shown(safeToSpend, true)}.` : '';
+  const sts = safeToSpend > 0 ? ` Allowance is now ${shown(safeToSpend, true)}.` : '';
   return `${what}${sts}`;
 }
 

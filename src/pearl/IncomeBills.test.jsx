@@ -68,7 +68,7 @@ describe('I-01 Is this your paycheque?', () => {
       'We found a deposit that looks like your pay.', 'Northwind Ltd payroll',
       'Looks like pay', 'Yes, that’s my pay', 'The amount or timing is off',
       'No, it’s something else', '+ Add another source of income', 'Continue', '1 of 2',
-      'Income first.', 'Knowing when you’re paid lets Pearl work out what’s safe to spend.']) {
+      'Income first.', 'Knowing when you’re paid lets Pearl work out your Allowance.']) {
       expect(t).toContain(s);
     }
     expect(html(flow('pay'))).not.toContain('pk-choice radio on');
@@ -168,7 +168,7 @@ describe('I-05 Add or edit a bill', () => {
 describe('I-06 All set', () => {
   it('says income and bills each month in whole dollars', () => {
     const t = text(flow('done'));
-    for (const s of ['That’s everything we need', 'Pearl can now work out what’s safe to spend each month.',
+    for (const s of ['That’s everything we need', 'Pearl can now work out your Allowance each month.',
       'Income each month', '$4,300', 'Regular bills', '$1,783', 'Continue',
       'You can change these any time in Profile › Income and bills.', 'Ready.']) {
       expect(t).toContain(s);

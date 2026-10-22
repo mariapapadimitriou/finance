@@ -47,16 +47,16 @@ describe('Quick sort (QS-01 to QS-04)', () => {
     for (const a of ['A bill', 'Moved between my accounts', 'Lent to someone', 'Not mine']) expect(out).toContain(a);
   });
 
-  it('the done screen shows safe to spend before and after, the reason and the rules', () => {
+  it('the done screen shows Allowance before and after, the reason and the rules', () => {
     const r = { sorted: 6, skipped: 0, before: 642.18, after: 598.4,
                 reason: 'Two were Groceries Pearl had counted as Shopping, and one transfer was Saved.', rules: 2 };
     const out = html(<Done r={r} onDone={noop} />);
     expect(out).toContain('All sorted');
     expect(out).toContain('6 sorted. Thanks!');
-    expect(out).toContain('Safe to spend: $642.18 → $598.40');
+    expect(out).toContain('Allowance: $642.18 → $598.40');
     expect(out).toContain('2 rules saved, so these sort themselves next time.');
-    expect(effectWords({ before: 10, after: 10 })).toBe('Safe to spend: $10.00, unchanged');
-    expect(effectWords({ before: null, after: 20 })).toBe('Safe to spend: — → $20.00');
+    expect(effectWords({ before: 10, after: 10 })).toBe('Allowance: $10.00, unchanged');
+    expect(effectWords({ before: null, after: 20 })).toBe('Allowance: — → $20.00');
     expect(rulesWords(1)).toBe('1 rule saved, so it sorts itself next time.');
     expect(rulesWords(0)).toBe('');
     const none = html(<Done r={{ sorted: 0, skipped: 2, rules: 0 }} onDone={noop} />);

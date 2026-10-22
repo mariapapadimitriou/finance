@@ -65,12 +65,12 @@ def test_preview_matches_what_saving_does(client):
     # The week's number is the app's own arithmetic, so only its direction is
     # asserted here; what matters is that the preview and the save agree.
     assert pre["delta"] > 0 and pre["group_to"] == "savings"
-    assert pre["line"] == (f"Your safe to spend goes up by ${pre['delta']:,.2f}, because "
+    assert pre["line"] == (f"Your Allowance goes up by ${pre['delta']:,.2f}, because "
                            "it went to savings, not spending.")
     done = client.patch(f"/api/transactions/{tid}", json={"category": "Saved"}).get_json()
     assert done["impact"]["after"] == pre["after"]
     assert done["impact"]["delta"] == pre["delta"]
-    assert done["impact"]["title"] == f"Safe to spend is now ${pre['after']:,.2f}."
+    assert done["impact"]["title"] == f"Allowance is now ${pre['after']:,.2f}."
     assert cat(client.st, tid) == "Saved"
 
 
@@ -79,7 +79,7 @@ def test_same_group_says_it_stays_the_same(client):
     pre = client.post(f"/api/transactions/{ids['CAFE']}/category/preview",
                       json={"category": "Coffee"}).get_json()
     assert pre["delta"] == 0
-    assert pre["line"] == "Both are Lifestyle, so your safe to spend stays the same."
+    assert pre["line"] == "Both are Lifestyle, so your Allowance stays the same."
     same = client.post(f"/api/transactions/{ids['CAFE']}/category/preview",
                        json={"category": "Dining"}).get_json()
     assert same["line"] == "", "nothing to say about the category it already has"
