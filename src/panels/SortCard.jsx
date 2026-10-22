@@ -220,6 +220,23 @@ export function steps(it, cases, mode = 'stacked') {
       ],
     };
   }
+  // A friend's message that names a purchase ("uber eats"), 2026-10-21:
+  // asked first, one tap to link it.
+  const said = !match && (it.guess?.action === 'memo' ? it.guess.charge : cases.memo_match);
+  if (said) {
+    const who = nameIn(it.txn.merchant) || it.txn.merchant;
+    S.memo = {
+      title: `Is ${who} paying you back for ${said.merchant}?`, left: 3, said,
+      sub: `Their message says “${cases.memo || it.txn.memo || it.guess?.memo || ''}”.`,
+      options: [
+        { v: 'yes', label: `Yes, for ${said.merchant} · ${shortDate(said.date)}`,
+          done: `Paying me back for ${said.merchant}`,
+          effect: `${txAmount(said.amount, { signed: true })}${said.paid_back ? ` · ${txAmount(said.paid_back)} paid back so far` : ''}` },
+        { v: 'other', label: 'Yes, for something else', done: 'Paying me back', to: 'pick_payback' },
+        { v: 'no', label: 'No, it’s not a payback', done: 'Not a payback', to: 'q1' },
+      ],
+    };
+  }
   S.q1 = {
     title: 'Is this income?', left: nameless ? 3 : 2,
     options: [
@@ -229,7 +246,7 @@ export function steps(it, cases, mode = 'stacked') {
     ],
   };
   S.what_in = { title: 'What was it?', left: 2, options: rest(['pay', 'regular_pay', 'own', 'joint_them']) };
-  return { start: match ? 'match' : 'q1', S };
+  return { start: match ? 'match' : said ? 'memo' : 'q1', S };
 }
 
 /** The dots: answered steps filled, the rest dashed, and "2 of 3" — or,
@@ -262,6 +279,8 @@ export function TxHead({ txn, name }) {
       <div className="nl-tx-text">
         <span>{txn.merchant}</span>
         <span className="pk-label pk-muted">{`${txn.date ? longDate(txn.date) : ''}${where}`}</span>
+        {/* An e-Transfer's message, when the bank passed it on. */}
+        {txn.memo && <span className="nl-memo">“{txn.memo}”</span>}
       </div>
       <span className={`nl-tx-amt ${amountTone(inflow)}`}>{amount}</span>
     </div>
@@ -453,6 +472,12 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       }
       if (c.key === 'not_mine') return markCase(c, { reason: '' }, answers);
       return markCase(c, {}, answers);
+    }
+    if (sId === 'memo') {
+      const who = nameIn(it.txn.merchant);
+      return finish(answers, `Comes off what you spent at ${s.said.merchant}. Not income.`,
+        () => via({ case: 'payback', charge: s.said.id, ...(who ? { person: who } : {}) },
+          `Linked to ${s.said.merchant}. Not income.`));
     }
     if (sId === 'match') {
       return finish(answers, 'Not income. The split shows as paid back.',
@@ -647,7 +672,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
                       label={`${c.merchant} · ${shortDate(c.date)}`}
                       description={[txAmount(c.amount, { signed: true }), c.category,
                         c.person ? `${c.person}’s share` : null,
-                        c.paid_back ? `${txAmount(c.paid_back)} paid back so far` : null, extra].filter(Boolean).join(' · ')} />
+                        c.paid_back ? `${txAmount(c.paid_back)} paid back so far` : null,
+                        c.memo ? 'what their message names' : null, extra].filter(Boolean).join(' · ')} />
             );
             return (
               <>

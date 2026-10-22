@@ -120,3 +120,6 @@
 
 /* "Which purchase?": find any purchase by name or amount (2026-10-21). */
 .nl-find input { width: 100%; }
+
+/* An e-Transfer's message under its name (2026-10-21). */
+.nl-tx .nl-memo { font-size: 13px; line-height: 18px; color: var(--ink); font-style: italic; }

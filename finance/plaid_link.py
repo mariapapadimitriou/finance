@@ -185,6 +185,7 @@ def exchange_public_token(store, public_token: str, institution: str = "") -> di
 def _sync_one(store, item: dict) -> dict:
     """Pull one item's changes and apply them. Returns what happened."""
     from plaid.model.transactions_sync_request import TransactionsSyncRequest
+    from plaid.model.transactions_sync_request_options import TransactionsSyncRequestOptions
 
     item_id = item["item_id"]
     access_token = store.plaid_token(item_id)
@@ -203,7 +204,12 @@ def _sync_one(store, item: dict) -> dict:
     # The bound is a safety net against a feed that never reports has_more
     # false, which would otherwise spin until the function times out.
     for _ in range(50):
-        kwargs = {"access_token": access_token}
+        # The bank's own wording as well as Plaid's cleaned-up name: an
+        # e-Transfer's message ("uber eats", "for rent") is only ever in the
+        # original (2026-10-21). An option on the request, so nothing about
+        # the connection changes and nobody signs in again.
+        kwargs = {"access_token": access_token,
+                  "options": TransactionsSyncRequestOptions(include_original_description=True)}
         if cursor:
             kwargs["cursor"] = cursor
         resp = client.transactions_sync(TransactionsSyncRequest(**kwargs)).to_dict()

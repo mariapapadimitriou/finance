@@ -36,7 +36,7 @@ from datetime import date, timedelta
 from .analytics import is_others
 from .categorize import is_unsure
 from .duplicates import questions as duplicate_questions
-from .etransfers import is_etransfer, party
+from .etransfers import is_etransfer, memo, party
 from .income import KINDS, cadence, is_income, kind_of
 from .models import Transaction
 from .splits import suggest as split_suggest
@@ -58,7 +58,9 @@ def _brief(t: Transaction) -> dict:
             "merchant": (who or {}).get("name") or t.merchant,
             "description": t.description, "amount": t.amount,
             "account_id": t.account_id, "account_name": t.account_label or "",
-            "category": t.category, "logo": (t.raw or {}).get("logo_url") or ""}
+            "category": t.category, "logo": (t.raw or {}).get("logo_url") or "",
+            # An e-Transfer's message, when the bank passed it on (2026-10-21).
+            "memo": memo(t)}
 
 
 def _is_bank(t: Transaction) -> bool:
@@ -173,7 +175,16 @@ def build(transactions: list[Transaction], today: str | None = None,
         candidates = charge_candidates(t, transactions)
         # A split waiting for this person's share beats any guess (S-02).
         match = split_suggest(t, transactions, splits or {}, payer or {}) if splits else None
-        if match:
+        # Then a purchase her friend's message names ("uber eats"), 2026-10-21.
+        from .marks import memo_match
+        said = None if match else memo_match(t, transactions)
+        if said:
+            who = (party(t) or {}).get("name") or "They"
+            guess = {"action": "memo", "charge": said, "memo": memo(t)}
+            on = date.fromisoformat(said["date"]).strftime("%b %-d")
+            reason = (f"{who}’s message says “{memo(t)}”: {said['merchant']} on "
+                      f"{on}, ${said['amount']:,.2f}.")
+        elif match:
             guess = {"action": "split", "split": match}
             reason = (f"{match['name']} owes you {_money(match['owes'])} for "
                       f"{match['merchant']}.")

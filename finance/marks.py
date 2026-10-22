@@ -240,6 +240,47 @@ def payback_candidates(inflow: Transaction, txns: list[Transaction], splits: dic
     return out[:8]
 
 
+def memo_match(inflow: Transaction, txns: list[Transaction],
+               names: dict[str, str] | None = None) -> dict | None:
+    """The purchase an e-Transfer's message names (2026-10-21): "uber eats"
+    on a friend's e-Transfer, and an Uber Eats order in the four months
+    before it, still not fully paid back. The closest one before the money
+    came wins when several share the name; None when the message names no
+    purchase she made."""
+    from .etransfers import memo, memo_words
+    words = memo_words(memo(inflow))
+    if not words or inflow.amount >= 0:
+        return None
+    when = date.fromisoformat(inflow.date[:10])
+    best = None
+    for c in txns:
+        if c.amount <= 0 or c.fingerprint == inflow.fingerprint:
+            continue
+        if (c.category or "Other") in NON_SPEND or c.category == "Unsorted transfers":
+            continue
+        gap = (when - date.fromisoformat(c.date[:10])).days
+        if gap < -3 or gap > REFUND_DAYS:
+            continue
+        shown = (names or {}).get(_key(c.merchant)) or c.merchant
+        hay = memo_words(" ".join(x for x in (shown, c.merchant, c.description or "") if x))
+        hits = len(words & hay)
+        if not hits:
+            continue
+        left = round(c.amount - (c.paid_back or 0.0), 2)
+        if left < -inflow.amount - 0.005:
+            continue
+        rank = (-hits, abs(gap))
+        if best is None or rank < best[0]:
+            best = (rank, c, shown, left)
+    if best is None:
+        return None
+    _, c, shown, left = best
+    return {"id": c.fingerprint, "date": c.date[:10], "merchant": shown,
+            "amount": round(c.amount, 2), "category": c.category or "Other",
+            "paid_back": round(c.paid_back or 0.0, 2), "left": left,
+            "person": None, "split": c.my_share is not None, "memo": True}
+
+
 def search_charges(inflow: Transaction, txns: list[Transaction], q: str = "",
                    names: dict[str, str] | None = None, days: int = 180, limit: int = 20) -> list[dict]:
     """Any purchase this money might pay back (2026-10-21): the friends'
@@ -399,14 +440,22 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
         if c["needs"] == "candidates" and c["key"] == "payback":
             item["candidates"] = payback_candidates(t, txns, store.splits(),
                                                     store.payback_people(), names)
+            # The purchase her friend's message names comes first.
+            hit = memo_match(t, txns, names)
+            if hit:
+                item["candidates"] = [hit] + [x for x in item["candidates"] if x["id"] != hit["id"]]
         elif c["needs"] == "candidates" and c["key"] == "reimbursement":
             item["candidates"] = reimbursement_candidates(t, txns, names)
         elif c["needs"] == "refund":
             item["candidates"] = refund_candidates(t, txns, names)
         items.append(item)
     current = current_case(t, refunds, kinds)
+    from .etransfers import memo as etransfer_memo
     return {
         "id": t.fingerprint,
+        # An e-Transfer's message, and the purchase it names (2026-10-21).
+        "memo": etransfer_memo(t),
+        "memo_match": memo_match(t, txns, names) if out_ is False else None,
         "direction": "out" if out_ else "in",
         "current": current,
         # WW-02: Pearl's best guess sits on top — what the row answers now,

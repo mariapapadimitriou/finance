@@ -30,7 +30,7 @@ from datetime import date
 from . import duplicates as dup
 from .analytics import counts_as_spending, is_others, share_amount, spend_amount
 from .categorize import CATEGORY_GROUPS, group_of, is_unsure
-from .etransfers import party
+from .etransfers import memo as etransfer_memo, party
 from .income import is_income
 from .models import Transaction
 from .transfers import RULED
@@ -264,6 +264,8 @@ def describe(t: Transaction, ctx: Context) -> dict:
         else ((who or {}).get("name") or t.merchant or t.description),
         "bank_merchant": t.merchant,
         "etransfer": who,
+        # The sender's message on an e-Transfer, when the bank passed it on.
+        "memo": etransfer_memo(t),
         "description": t.description,
         "logo": raw.get("logo_url") or "",
         "account_id": t.account_id,

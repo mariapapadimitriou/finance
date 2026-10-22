@@ -82,3 +82,24 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
     expect(dots).toContain('2 of 3');
   });
 });
+
+describe('an e-Transfer whose message names a purchase (2026-10-21)', () => {
+  const said = { id: 'u', merchant: 'Uber Eats', date: '2026-10-14', amount: 54.6, paid_back: 18.2, memo: true };
+  const inn = { key: 'in:d', kind: 'money_in', guess: { action: 'memo', charge: said, memo: 'uber eats' },
+    txn: { id: 'd', date: '2026-10-16', merchant: 'e-Transfer from Denise Rao', amount: -18.2, memo: 'uber eats' } };
+
+  it('asks about that purchase first, with the message', () => {
+    const { start, S } = steps(inn, { cases: [], memo: 'uber eats', memo_match: said });
+    expect(start).toBe('memo');
+    expect(S.memo.title).toBe('Is Denise Rao paying you back for Uber Eats?');
+    expect(S.memo.sub).toBe('Their message says “uber eats”.');
+    expect(S.memo.options.map((o) => o.v)).toEqual(['yes', 'other', 'no']);
+    expect(S.memo.options[1].to).toBe('pick_payback');
+    expect(S.memo.options[2].to).toBe('q1');
+  });
+
+  it('shows the message under the name', () => {
+    const page = html(<Stacked it={inn} act={noop} commit={noop} onSkip={noop} onBack={noop} />);
+    expect(page).toContain('“uber eats”');
+  });
+});

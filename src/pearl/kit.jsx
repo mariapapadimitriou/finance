@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import PIcon from './icons.jsx';
+import PIcon, { categoryIcon } from './icons.jsx';
 import { initialsOf } from './ui.jsx';
 import { money } from '../api.js';
 import './kit.css';
@@ -46,14 +46,14 @@ export function CategoryChip({ label, suggested = false, ruled = false, onConfir
       <button type="button" className={`${cls} confirmable`} disabled={disabled}
               aria-label={`${label}, suggested by Pearl. Confirm`}
               onClick={(e) => { e.stopPropagation(); onConfirm(); }}>
-        <PIcon name="help" size={12} />
+        <span className="pk-cat-ic"><PIcon name={categoryIcon(label)} size={13} /></span>
         <span aria-hidden="true">{label}</span>
       </button>
     );
   }
   return (
     <span className={cls} aria-label={name} role="img">
-      {suggested && <PIcon name="help" size={12} />}
+      <span className="pk-cat-ic"><PIcon name={categoryIcon(label)} size={13} /></span>
       {ruled && !suggested && <PIcon name="lock" size={11} />}
       <span aria-hidden="true">{label}</span>
     </span>

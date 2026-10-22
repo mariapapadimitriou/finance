@@ -294,6 +294,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
           <dl className="txd-details">
             <Detail label="Account" value={tx.account} />
             <Detail label="From your bank" value={tx.description} />
+            {tx.memo && <Detail label="Their message" value={`“${tx.memo}”`} />}
             <Detail label="Counts toward" value={tx.counts_toward} />
             {tx.note && !tx.note_link && !(tx.one_off && tx.note === ONE_OFF_NOTE)
               && <Detail label="Why" value={tx.note} />}
