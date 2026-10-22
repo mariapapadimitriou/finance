@@ -73,7 +73,7 @@ export function homeAlert(connections = [], back = null, today = null) {
   return null;
 }
 
-export default function HomePanel({ onTab, onChanged, version }) {
+export default function HomePanel({ onTab, onChanged, onQuickSort, version }) {
   const [home, setHome] = useState(null);
   const [user, setUser] = useState(null);
   const [error, setError] = useState(null);
@@ -112,7 +112,7 @@ export default function HomePanel({ onTab, onChanged, version }) {
       )}
 
       {home.review_count > 0 && (
-        <NeedsALook count={home.review_count} onReview={() => onTab?.('review')} />
+        <NeedsALook count={home.review_count} onReview={() => onTab?.('review')} onQuickSort={onQuickSort} />
       )}
 
       <section className="hm-card" aria-labelledby="hm-tx-title">
@@ -132,16 +132,23 @@ export default function HomePanel({ onTab, onChanged, version }) {
 }
 
 /** "N transactions need a look" (THL-123), opening To review. Hidden at 0. */
-export function NeedsALook({ count, onReview }) {
+export function NeedsALook({ count, onReview, onQuickSort }) {
   return (
     <section className="hm-card" aria-labelledby="hm-look-title">
       <h2 className="pk-h3" id="hm-look-title">
         {count === 1 ? '1 transaction needs a look' : `${count} transactions need a look`}
       </h2>
       <p className="pk-muted">We weren’t sure how to sort these. Sorting them keeps your numbers right.</p>
-      <button type="button" className="hm-link" onClick={onReview}>
-        Review <PIcon name="chevronRight" size={14} />
-      </button>
+      {/* Quick sort lives here, on Home (2026-10-22): a fast pass over what's
+          new. To review is where she sorts one by one. */}
+      <div className="hm-actions">
+        {onQuickSort && (
+          <PButton className="hm-quick" onClick={onQuickSort}>Quick sort</PButton>
+        )}
+        <button type="button" className="hm-link" onClick={onReview}>
+          Review one by one <PIcon name="chevronRight" size={14} />
+        </button>
+      </div>
     </section>
   );
 }

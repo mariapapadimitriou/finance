@@ -41,7 +41,9 @@ _PROCESSOR_PREFIXES = [
     r"^PURCHASE\s+(?:AUTHORIZED\s+ON\s+)?",
     r"^DEBIT\s+CARD\s+PURCHASE\s+",
     r"^VISA\s+DEBIT\s+",
-    r"^INTERAC\s+(?:E-TRANSFER\s+)?",
+    # Interac e-Transfers, however the bank spells them (2026-10-22): "INTERAC
+    # E-TRF FROM DENISE RAO" is Denise Rao, not "Trf Denise Rao".
+    r"^INTERAC\s+(?:E-?\s?(?:TRANSFER|TRF|TFR)\s+)?(?:(?:FROM|TO|RECEIVED|SENT)\s+)?",
 ]
 
 _NOISE_PATTERNS = [

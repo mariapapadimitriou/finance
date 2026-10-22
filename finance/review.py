@@ -217,6 +217,9 @@ def build(transactions: list[Transaction], today: str | None = None,
                                    "outside Pearl, so it could be yours or theirs."})
 
     # 3c. Who sent this? (R-09): an e-Transfer in with no name from the bank.
+    # One transaction, one question (2026-10-22): an e-Transfer already asked
+    # about as money in isn't listed again here; its card asks who sent it.
+    asked_in = {it["txn"]["id"]: it for it in money_in}
     who_sent = []
     for t in live:
         if (t.amount >= 0 or t.date[:10] < since or not is_etransfer(t) or t.party
@@ -224,6 +227,9 @@ def build(transactions: list[Transaction], today: str | None = None,
             continue
         who = party(t)
         if who and who.get("name"):
+            continue
+        if t.fingerprint in asked_in:
+            asked_in[t.fingerprint]["nameless"] = True
             continue
         key = "who:" + t.fingerprint
         if key in dismissed:

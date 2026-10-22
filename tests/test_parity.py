@@ -221,10 +221,20 @@ def test_who_sent_this_is_asked_for_a_nameless_etransfer(client):
     ids = load(client.st, row(-42.5, "E-TRANSFER RECEIVED ***Q7K"),
                row(-60, "E-TRANSFER FROM SAM LEE", who="Sam Lee"))
     r = client.get("/api/review").get_json()
-    assert [it["txn"]["id"] for it in r["who_sent"]] == [ids["E-TRANSFER RECEIVED ***Q7K"]]
-    assert r["who_sent"][0]["key"] == "who:" + ids["E-TRANSFER RECEIVED ***Q7K"]
-    client.put(f"/api/transactions/{ids['E-TRANSFER RECEIVED ***Q7K']}/party", json={"name": "Priya"})
-    assert client.get("/api/review").get_json()["who_sent"] == []
+    q7k = ids["E-TRANSFER RECEIVED ***Q7K"]
+    # One transaction, one question (2026-10-22): when it is already asked
+    # about as money in, that card asks who sent it, and it isn't listed twice.
+    asked = [it for it in r["money_in"] if it["txn"]["id"] == q7k]
+    listed = [it for it in r["who_sent"] if it["txn"]["id"] == q7k]
+    assert len(asked) + len(listed) == 1
+    if asked:
+        assert asked[0]["nameless"] is True
+    else:
+        assert listed[0]["key"] == "who:" + q7k
+    client.put(f"/api/transactions/{q7k}/party", json={"name": "Priya"})
+    r = client.get("/api/review").get_json()
+    assert r["who_sent"] == []
+    assert not any(it.get("nameless") for it in r["money_in"])
 
 
 # ── What Pearl decides per category ──────────────────────────────────────

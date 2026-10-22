@@ -592,8 +592,10 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         title = f"Counted as a bill, in {cat}."
     elif case in ("moved", "own"):
         un_exclude()
+        # No destination to remember: her Remember becomes a rule for this
+        # merchant instead of doing nothing (2026-10-22).
         if not _remember_destination(store, t, "Transfers", body):
-            recat("Transfers")
+            recat("Transfers", bool(body.get("remember")))
         else:
             cat_to, remember = "Transfers", True
         title = "Sorted as moved between your accounts."
@@ -601,7 +603,7 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         un_exclude()
         set_saved_to()
         if not _remember_destination(store, t, "Saved", body):
-            recat("Saved")
+            recat("Saved", bool(body.get("remember")))
         else:
             cat_to, remember = "Saved", True
         label = account_labels(store).get(str(body.get("account") or ""), "")

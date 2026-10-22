@@ -99,7 +99,20 @@
 .nl-list-head { gap: var(--space-2); }
 .nl-list-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); width: 100%; }
 .nl-list-title p { margin: 0; }
-.pk .nl-quick { width: auto; height: 40px; padding: 0 18px; font-size: 14px; }
+.pk .nl-start { width: auto; height: 40px; padding: 0 20px; font-size: 14px; }
+/* To review, grouped by question (2026-10-22). */
+.nl-tabs { margin-top: 0; }
+.nl-group-list { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.nl-group-head { margin: 8px 0 0; }
+.nl-skip-row { display: flex; align-items: center; gap: var(--space-2); border-bottom: 1px solid var(--border); }
+.nl-skip-row:last-child { border-bottom: 0; }
+.nl-skip-row .pk-row { flex: 1 1 auto; min-width: 0; border-bottom: 0; }
+.pk .nl-putback {
+  flex: none; margin-right: 12px; height: 32px; padding: 0 14px; border-radius: var(--radius-full);
+  border: 1px solid var(--border); background: var(--surface-card); color: var(--link);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.pk .nl-putback:disabled { opacity: .6; cursor: default; }
 .nl-list { width: 100%; }
 .nl-hint { margin: 0; padding: 4px 24px; font-size: 14px; }
 .pk .nl-row { width: 100%; }

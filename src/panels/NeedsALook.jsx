@@ -33,8 +33,11 @@ import {
  * undoes the change and reopens that step in place, with the other answers
  * still visible.
  *
+ * Undo shows only once there is an answer to take back (2026-10-22).
+ *
  * Skip for now puts a question in Skipped (THL-213), kept between visits
- * and out of the badge; Skipped sits at the end of the list. At zero, All
+ * and out of the badge; Skipped is its own tab beside To review, and the
+ * list is grouped by question (2026-10-22). Quick sort is on Home. At zero, All
  * sorted (R-04): the alert on Transactions and the count in the navigation
  * go too.
  */
@@ -129,7 +132,7 @@ export const STACKED = new Set(['unsorted', 'category', 'money_in', 'income', 'j
 
 export const minutes = (n) => (n <= 4 ? 'about a minute' : `about ${Math.ceil((n * 15) / 60)} minutes`);
 
-export default function NeedsALook({ categories, onChanged, onTab, onQuickSort, version }) {
+export default function NeedsALook({ categories, onChanged, onTab, version }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -158,7 +161,10 @@ export default function NeedsALook({ categories, onChanged, onTab, onQuickSort, 
   useEffect(() => { load(); }, [load, version]);
 
   const items = useMemo(() => queue(data), [data]);
-  const open = useMemo(() => items.filter((i) => !i.skipped), [items]);
+  // The list is grouped by question (2026-10-22), and Next walks it in the
+  // same order she sees it.
+  const open = useMemo(() => byKind(items.filter((i) => !i.skipped)).flatMap((g) => g.items), [items]);
+  const [tab, setTab] = useState('open');
   const skipped = useMemo(() => items.filter((i) => i.skipped), [items]);
   const current = currentKey ? items.find((i) => i.key === currentKey) ?? null : null;
   const position = current ? Math.max(1, open.indexOf(current) + 1) : 0;
@@ -271,8 +277,13 @@ export default function NeedsALook({ categories, onChanged, onTab, onQuickSort, 
     </button>
   );
 
-  // ── To review (TR-01) ────────────────────────────────────────────────
+  // ── To review (TR-01, reorganised 2026-10-22) ───────────────────────
+  // One header with one way in (Start), two tabs (To review, Skipped), and
+  // the questions grouped by what they ask. Quick sort lives on Home: here
+  // she is already sorting.
   if (!current && !sorted && back === null) {
+    const showing = tab === 'skipped' && skipped.length ? 'skipped' : 'open';
+    const groups = byKind(showing === 'skipped' ? skipped : open);
     return (
       <div className="pk nl-page">
         <header className="nl-head nl-list-head">
@@ -284,54 +295,61 @@ export default function NeedsALook({ categories, onChanged, onTab, onQuickSort, 
               </p>
               <h1 className="pk-h1">To review</h1>
             </div>
-            {open.length > 1 && onQuickSort && (
-              <PButton className="nl-quick" onClick={onQuickSort}>{`Quick sort all ${open.length}`}</PButton>
+            {open.length > 0 && showing === 'open' && (
+              <PButton className="nl-start" onClick={() => openItem(open[0].key)}>
+                {open.length === 1 ? 'Start' : `Start with ${open.length}`}
+              </PButton>
             )}
           </div>
         </header>
 
+        {skipped.length > 0 && (
+          <nav className="in-tabs nl-tabs" aria-label="To review or skipped">
+            <button type="button" className="in-tab" aria-current={showing === 'open' ? 'page' : undefined}
+                    onClick={() => setTab('open')}>{`To review · ${open.length}`}</button>
+            <button type="button" className="in-tab" aria-current={showing === 'skipped' ? 'page' : undefined}
+                    onClick={() => setTab('skipped')}>{`Skipped · ${skipped.length}`}</button>
+          </nav>
+        )}
+
         {error && <ErrorNote error={error} onRetry={load} />}
 
-        {data && count === 0 && !skipped.length && (
+        {data && open.length === 0 && showing === 'open' && (
           <section className="nl-card nl-empty" aria-label="All sorted">
             <span className="nl-empty-icon" aria-hidden="true"><PIcon name="check" size={28} /></span>
-            <h2 className="pk-h2">All sorted</h2>
-            <p className="pk-muted">Your numbers are up to date. We’ll let you know when something
-              new needs a look.</p>
-            <PButton className="nl-empty-btn" onClick={() => onTab?.('transactions')}>Back to transactions</PButton>
+            <h2 className="pk-h2">{skipped.length ? 'Nothing left to sort' : 'All sorted'}</h2>
+            <p className="pk-muted">
+              {skipped.length
+                ? `${skipped.length === 1 ? 'One you skipped is' : `${skipped.length} you skipped are`} under Skipped, counted the way Pearl guessed until you answer.`
+                : 'Your numbers are up to date. We’ll let you know when something new needs a look.'}
+            </p>
+            <PButton className="nl-empty-btn" onClick={() => (skipped.length ? setTab('skipped') : onTab?.('transactions'))}>
+              {skipped.length ? 'See skipped' : 'Back to transactions'}
+            </PButton>
           </section>
         )}
 
-        {open.length > 0 && (
-          <section className="pk-list nl-list" aria-label="To review">
-            <p className="pk-muted nl-hint">Tap one to sort it. Pearl asks a question or two, then moves to the next.</p>
-            {open.map((it) => <ReviewRow key={it.key} it={it} onOpen={() => openItem(it.key)} />)}
-          </section>
+        {showing === 'skipped' && (
+          <p className="pk-muted nl-hint">These stay here between visits and count the way Pearl guessed until you answer.</p>
         )}
 
-        {skipped.length > 0 && (
-          <section className="nl-card nl-skipped" aria-label="Skipped for now">
-            <h2 className="pk-h2">Skipped for now</h2>
-            <p className="pk-muted">These stay here between visits and count the way Pearl guessed
-              until you answer.</p>
-            {skipped.map((it) => (
-              <div key={it.key} className="nl-skip-card">
-                {it.txn ? <TxHead txn={it.txn} compact /> : (
-                  <p className="pk-h3">{monthName(it.month)} had three paycheques</p>
-                )}
-                <p>{skippedLine(it)}</p>
-                <div className="nl-skip-actions">
-                  <PButton variant="secondary" disabled={busy} onClick={() => openItem(it.key)}>
-                    Answer
-                  </PButton>
-                  <PButton variant="text" disabled={busy} onClick={() => unskip(it.key)}>
-                    Back to the queue
-                  </PButton>
+        {groups.map((g) => (
+          <section key={g.kind} className="nl-group-list" aria-labelledby={`nl-g-${g.kind}`}>
+            <p className="pk-overline nl-group-head" id={`nl-g-${g.kind}`}>
+              {`${KIND_LABELS[g.kind] ?? 'Other'} · ${g.items.length}`}
+            </p>
+            <div className="pk-list nl-list">
+              {g.items.map((it) => (showing === 'skipped' ? (
+                <div key={it.key} className="nl-skip-row">
+                  <ReviewRow it={it} onOpen={() => openItem(it.key)} line={skippedLine(it)} />
+                  <button type="button" className="nl-putback" disabled={busy} onClick={() => unskip(it.key)}>
+                    Put back
+                  </button>
                 </div>
-              </div>
-            ))}
+              ) : <ReviewRow key={it.key} it={it} onOpen={() => openItem(it.key)} />))}
+            </div>
           </section>
-        )}
+        ))}
         {toast && !change && <Toast onDone={() => setToast('')}>{toast}</Toast>}
       </div>
     );
@@ -414,13 +432,13 @@ export default function NeedsALook({ categories, onChanged, onTab, onQuickSort, 
 }
 
 /** A row on To review: the transaction and the question it will ask. */
-function ReviewRow({ it, onOpen }) {
+function ReviewRow({ it, onOpen, line }) {
   if (!it.txn) {
     return (
       <button type="button" className="pk-row nl-row" onClick={onOpen}>
         <span className="pk-row-text">
           <span className="pk-row-name">{monthName(it.month)} had three paycheques</span>
-          <span className="pk-row-meta">{questionLabel(it)}</span>
+          <span className="pk-row-meta">{line || questionLabel(it)}</span>
         </span>
       </button>
     );
@@ -429,9 +447,24 @@ function ReviewRow({ it, onOpen }) {
   return (
     <TxRow name={it.txn.merchant} logo={it.txn.logo} onOpen={onOpen}
            meta={[it.txn.account_name, shortDate(it.txn.date)].filter(Boolean).join(' · ')}
+           note={line}
            chip={{ label: questionLabel(it), suggested: true }}
            amount={Math.abs(it.txn.amount)} inflow={inflow} />
   );
+}
+
+/** The questions grouped by what they ask, in KIND_LABELS order, oldest
+ * first in each (2026-10-22). */
+export function byKind(items) {
+  const order = Object.keys(KIND_LABELS);
+  const out = [];
+  for (const kind of order) {
+    const these = items.filter((i) => i.kind === kind);
+    if (these.length) out.push({ kind, items: these });
+  }
+  const rest = items.filter((i) => !order.includes(i.kind));
+  if (rest.length) out.push({ kind: 'other', items: rest });
+  return out;
 }
 
 /** The transaction a question is about, compact, for Skipped. */
@@ -458,8 +491,7 @@ function Question({ it, busy, onSkip, act, commit, onBack }) {
     return (
       <>
         <StackedHead txn={it.txn} />
-        <Progress done={0} total={1}
-                  trailing={<Pill className="nl-undo" disabled={busy} onClick={onBack} aria-label="Back to the list">Undo</Pill>} />
+        <Progress done={0} total={1} />
         <DuplicateQuestion it={it} busy={busy} onSkip={onSkip}
                            onAnswer={(answer) => commit(() => answerDuplicate(it.txn.id, answer)
                              .then((res) => ({ title: res?.title, detail: res?.detail, undo: res?.undo })),
@@ -470,9 +502,6 @@ function Question({ it, busy, onSkip, act, commit, onBack }) {
   }
   return (
     <>
-      <div className="nl-corner">
-        <Pill className="nl-undo" disabled={busy} onClick={onBack} aria-label="Back to the list">Undo</Pill>
-      </div>
       <h2 className="pk-h2">{monthName(it.month)} had three paycheques</h2>
       <p className="pk-muted">{it.reason}
         {it.monthly ? ` That’s ${money(it.monthly)} a month from ${money(it.paycheque)} paycheques.` : ''}</p>

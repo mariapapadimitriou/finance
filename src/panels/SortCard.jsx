@@ -156,7 +156,7 @@ export function steps(it, cases, mode = 'stacked') {
   const guess = it.guess && typeof it.guess === 'string' ? it.guess : '';
   cases = withDefaults(it, cases);
   const list = cases.cases;
-  const nameless = it.kind === 'who_sent';
+  const nameless = it.kind === 'who_sent' || !!it.nameless;
   const joint = it.kind === 'joint_in' || !!cases?.joint;
   const S = {};
 
@@ -395,6 +395,17 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   // The Remember rule a case offers, worded one way everywhere.
   const rememberFor = (c) => (c?.remember ? `Remember for ${it.to || it.txn.merchant}` : null);
   const canRemember = (c) => !!(c?.remember || it.learnable || it.kind === 'category' || it.kind === 'panel');
+  // A choice that is the last answer and can become her rule for every
+  // transaction like it (2026-10-22): a case that remembers, "Yes, <guess>",
+  // or "my own money". A step with one shows "Remember for <merchant>".
+  const remembers = (sId, o) => !o.to && !!(o.case?.remember
+    || (sId === 'q1' && ((out && o.v === 'yes') || (!out && o.v === 'own'))));
+  // Not for an e-Transfer with no name: its reference changes every time, so
+  // a rule would never match again.
+  const stepRemembers = (sId, st) => !!st && it.kind !== 'who_sent' && !it.nameless
+    && !(it.kind === 'unsorted' && !it.learnable)
+    && ((st.options ?? []).some((o) => remembers(sId, o))
+    || (st.groups ?? []).some((g) => g.options.some((o) => remembers(sId, o))));
 
   /** Commit the last answer: run the call, then hand the card to its door. */
   const finish = (answers, effect, run) => commit(() => { forgetCases(it.txn.id); return run(); }, {
@@ -486,7 +497,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     if (opt?.case) {
       const c = opt.case;
       if (c.key === 'moved' && (it.kind === 'unsorted' || it.txn.category === 'Unsorted transfers')) {
-        return finish(answers, c.effect, () => plain(() => sortTransfers([it.txn.id], 'Transfers', it.learnable && remember), 'Sorted as moved between your accounts.'));
+        return finish(answers, c.effect, () => plain(() => sortTransfers([it.txn.id], 'Transfers', !!remember), 'Sorted as moved between your accounts.'));
       }
       if (c.key === 'not_mine') return markCase(c, { reason: '' }, answers);
       return markCase(c, {}, answers);
@@ -502,14 +513,16 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
         () => plain(() => linkPayback(s.match.charge_id, it.txn.id, s.match.name), 'Linked.'));
     }
     if (sId === 'q1' && out) {                                              // "Yes, Groceries"
-      return finish(answers, `Stays in ${categoryLabel(it.guess)}.`, () => plain(() => confirmTx(it.txn.id), 'Confirmed.'));
+      return finish(answers, `Stays in ${categoryLabel(it.guess)}.`, () => (remember
+        ? plain(() => setCategory(it.txn.id, it.guess, true), `${categoryLabel(it.guess)} for every ${it.to || it.txn.merchant}.`)
+        : plain(() => confirmTx(it.txn.id), 'Confirmed.')));
     }
     if (sId === 'q1') {                                                     // my own money
       return finish(answers, 'A transfer. Not income.', () => (it.kind === 'joint_in'
-        ? plain(() => setJointFrom(it.txn.id, 'me', false), 'Sorted as your own money.')
+        ? plain(() => setJointFrom(it.txn.id, 'me', remember), 'Sorted as your own money.')
         : it.kind === 'income'
-          ? plain(() => setCategory(it.txn.id, 'Transfers'), 'Sorted as your own money, not income.')
-          : via({ case: 'own' }, 'Sorted as your own money.')));
+          ? plain(() => setCategory(it.txn.id, 'Transfers', remember), 'Sorted as your own money, not income.')
+          : via({ case: 'own', remember: !!remember }, 'Sorted as your own money.')));
     }
     if (sId === 'borrowed') {
       return markCase(chosen ?? byKey('paying_back'), { counted: true }, answers, 'Borrowed. Not spending.');
@@ -570,13 +583,14 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   return (
     <>
       {showHead && <TxHead txn={it.txn} name={it.to} />}
+      {/* Undo only once there is an answer to take back (2026-10-22); before
+          that, the back link above the card is the way out. */}
       <Progress done={path.length} total={total}
-                trailing={(
-                  <Pill className="nl-undo" onClick={undoLast} disabled={busy}
-                        aria-label={path.length || editing !== null ? 'Undo the last answer' : 'Back to the list'}>
+                trailing={(path.length > 0 || editing !== null) ? (
+                  <Pill className="nl-undo" onClick={undoLast} disabled={busy} aria-label="Undo the last answer">
                     Undo
                   </Pill>
-                )} />
+                ) : null} />
       <Done path={path} flow={flow} editing={editing} busy={busy}
             onOpen={(i) => setEditing(editing === i ? null : i)} onPick={rechoose} />
 
@@ -588,6 +602,11 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           <h2 className="pk-h2 nl-q">{step.title}</h2>
           {step.sub && <p className="pk-muted nl-sub">{step.sub}</p>}
           {step.match && <RepaymentMatch match={step.match} />}
+          {stepRemembers(stepId, step) && (
+            <Choice type="checkbox" checked={remember} onChange={setRemember}
+                    label={`Remember for ${it.to || it.txn.merchant}`}
+                    description="Sorts every transaction from them the same way from now on" />
+          )}
 
           {step.groups ? step.groups.map((g) => (
             <div key={g.key} className="nl-group">
