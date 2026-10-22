@@ -306,3 +306,13 @@ def test_flows_are_counted_outflows_and_inflows_by_day(client):
 def test_flows_without_history_have_no_usual_line(client):
     load(client.st, row(40.0, "LOBLAWS", account="card", kind="credit", category="Groceries"))
     assert listing(client)["flows"]["usual"] is None
+
+
+def test_a_row_says_whether_she_added_it_by_hand(client):
+    from finance import manual
+    hand = manual.build(in_month(), "CORNER BAKERY", 12.40)
+    ingest(client.st, IngestResult(transactions=[hand], account_id="manual"))
+    load(client.st, row(7.29, "BLUE BOTTLE", account="card", kind="credit", category="Dining"))
+    rows = by_desc(listing(client))
+    assert rows["CORNER BAKERY"]["manual"] is True
+    assert rows["BLUE BOTTLE"]["manual"] is False

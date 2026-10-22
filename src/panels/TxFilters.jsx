@@ -52,7 +52,7 @@ export function requestFor(f, thisMonth) {
 }
 
 export function TxFiltersPanel({ filters, thisMonth, accounts = [], tags = [], categoryOptions = [],
-                                onApply, onClose }) {
+                                onApply, onClose, onSelect }) {
   const [f, setF] = useState(filters);
   const [count, setCount] = useState(null);
   const [lo, setLo] = useState((filters.amount || '').split('-')[0] || '');
@@ -171,6 +171,12 @@ export function TxFiltersPanel({ filters, thisMonth, accounts = [], tags = [], c
         <PButton variant="secondary" onClick={clear}>
           <PIcon name="x" size={14} /> Clear filters
         </PButton>
+        {/* A phone's way into choosing several, folded in here (2026-10-21). */}
+        {onSelect && (
+          <PButton variant="text" onClick={onSelect}>
+            <PIcon name="check" size={14} /> Select several transactions
+          </PButton>
+        )}
       </div>
     </DetailPanel>
   );

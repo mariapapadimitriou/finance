@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import FlowCards, { barMath, cardWords } from './FlowCards.jsx';
+import FlowCards, { barMath, cardWords, leftWords } from './FlowCards.jsx';
+import { Avatar, CategoryChip, TxRow } from '../pearl/kit.jsx';
 import { dayParts } from './TransactionsList.jsx';
 
 const html = (el) => renderToStaticMarkup(el);
@@ -52,5 +53,38 @@ describe('This month (Current design, 2026-10-20)', () => {
     expect(dayParts('2026-10-08', now)).toEqual({ name: 'Yesterday', date: 'Thu, Oct 8' });
     expect(dayParts('2026-10-07', now)).toEqual({ name: 'Wednesday', date: 'Oct 7' });
     expect(dayParts('2026-10-02', now)).toEqual({ name: 'October 2', date: 'Friday' });
+  });
+});
+
+describe('Transactions polish (2026-10-21)', () => {
+  it('one quiet line under the bars says what is left, or how far spending ran past', () => {
+    expect(leftWords(2000, 5121.24)).toBe('$3,121.24 left this month');
+    expect(leftWords(3144.34, 2150)).toBe('$994.34 more out than in this month');
+    expect(leftWords(10, 10)).toBe('');
+    expect(html(<FlowCards totals={{ spent: 2000, income: 5121.24 }} />))
+      .toContain('class="tm-left" aria-hidden="true">$3,121.24 left this month');
+  });
+
+  it('without a logo, the avatar is the category icon rather than initials', () => {
+    expect(html(<Avatar name="Zyx Hardware" icon="home" />)).toContain('pk-avatar ic');
+    expect(html(<Avatar name="Zyx Hardware" icon="home" />)).not.toContain('ZH');
+    expect(html(<Avatar name="Zyx Hardware" logo="/l.png" icon="home" />)).toContain('<img');
+    expect(html(<Avatar name="Zyx Hardware" />)).toContain('ZH');
+  });
+
+  it('a settled chip on a row is a button that changes the category; a guess still confirms', () => {
+    const settled = html(<CategoryChip label="Dining" onChange={() => {}} />);
+    expect(settled).toContain('pk-cat changeable');
+    expect(settled).toContain('aria-label="Dining. Change category"');
+    const guess = html(<CategoryChip label="Dining" suggested onConfirm={() => {}} onChange={() => {}} />);
+    expect(guess).toContain('confirmable');
+    expect(html(<CategoryChip label="Dining" />)).toContain('role="img"');
+  });
+
+  it('a row added by hand has a pen by its name', () => {
+    const out = html(<TxRow name="Corner Bakery" manual amount={12.4}
+                            chip={{ label: 'Dining', suggested: false }} />);
+    expect(out).toContain('aria-label="Added by hand"');
+    expect(out).toContain('pk-avatar ic');
   });
 });

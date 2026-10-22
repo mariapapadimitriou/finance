@@ -52,6 +52,8 @@
 }
 .pk-avatar.lg { width: 56px; height: 56px; font-size: 16px; line-height: 20px; }
 .pk-avatar img { width: 100%; height: 100%; object-fit: cover; }
+/* No logo: the category's icon in rose on blush (2026-10-21). */
+.pk-avatar.ic { background: var(--blush); color: var(--rose-500); }
 
 /* ── Category chip ───────────────────────────────────────────────────────── */
 /* Suggested is told apart by its dashed outline and the question mark, not by
@@ -59,11 +61,17 @@
 .pk-cat {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
   /* A solid outline once it's settled; Pearl's guess is the dashed one below. */
-  padding: 3px 10px 3px 8px; border-radius: var(--radius-full); border: 1px solid var(--cat-line);
-  background: var(--surface-card); color: var(--ink);
+  /* Settled: a soft blush fill and no outline (2026-10-21). Pearl's guess
+   * keeps the dashed outline below, so the two still differ by shape. */
+  padding: 3px 10px 3px 8px; border-radius: var(--radius-full); border: 1px solid transparent;
+  background: var(--blush); color: var(--on-nacre);
   font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap;
 }
 .pk-cat > span { overflow: hidden; text-overflow: ellipsis; }
+/* A chip that is a button would take the row's colour from `.pk button`;
+ * pin it: dark ink on the blush fill, the page's ink on a dashed guess. */
+.pk .pk-cat { color: var(--on-nacre); }
+.pk .pk-cat.suggested { color: var(--ink); }
 .pk-cat.suggested {
   background: var(--surface-card); border: 1px dashed var(--rose-300);
 }
@@ -75,6 +83,10 @@
 }
 .pk .pk-cat.confirmable:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 .pk .pk-cat.confirmable:disabled { cursor: default; opacity: .6; }
+/* A settled chip on a row opens the category tiles. */
+.pk .pk-cat.changeable { font: inherit; font-size: 13px; line-height: 18px; font-weight: 500; cursor: pointer; }
+.pk .pk-cat.changeable:hover { border-color: var(--cat-line); }
+.pk .pk-cat.changeable:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 .pk-cat svg { flex: none; }
 /* The category's own icon beside its name (2026-10-21), in rose. */
 .pk-cat .pk-cat-ic { display: inline-flex; color: var(--rose-500); }
@@ -97,7 +109,7 @@
 .pk-search {
   display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px;
   width: 400px; max-width: 100%; min-width: 0;
-  background: var(--surface-card); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-sm);
   color: var(--ink-muted);
 }
 .pk-search:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 4px var(--focus-ring); }
@@ -126,7 +138,8 @@
 /* ── Alert ───────────────────────────────────────────────────────────────── */
 .pk-alert {
   display: flex; align-items: center; gap: var(--space-3); padding: 12px 16px;
-  border-radius: var(--radius-md); background: var(--lilac); color: var(--on-nacre);
+  /* Pink is the one interactive accent (2026-10-21): the info banner is blush, not lilac. */
+  border-radius: var(--radius-md); background: var(--blush); color: var(--on-nacre);
 }
 .pk-alert.caution { background: var(--champagne); }
 .pk-alert.positive { background: var(--seaglass); }
@@ -189,6 +202,8 @@
 .pk-row:hover { background: var(--hover); }
 .pk-row-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .pk-row-name { font-size: 15px; line-height: 22px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Added by hand: a small pen by the name instead of a line of words. */
+.pk-row-hand { display: inline-flex; vertical-align: -1px; margin-left: 6px; color: var(--ink-muted); }
 .pk-row-meta, .pk-row-note {
   font-size: 13px; line-height: 18px; color: var(--ink-muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

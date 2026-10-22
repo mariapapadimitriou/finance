@@ -20,10 +20,14 @@ export function txAmount(amount, { inflow = false, signed = false } = {}) {
 /** The colour class for a transaction's amount: "in" green, "out" red. */
 export const amountTone = (inflow) => (inflow ? 'in' : 'out');
 
-export function Avatar({ name, logo, large = false }) {
+export function Avatar({ name, logo, icon, large = false }) {
+  // No logo from the bank: the category's icon in rose on blush, when there
+  // is one, rather than initials (2026-10-21).
+  const ic = !logo && icon;
   return (
-    <span className={`pk-avatar${large ? ' lg' : ''}`} aria-hidden="true">
-      {logo ? <img src={logo} alt="" /> : initialsOf(name).slice(0, 2)}
+    <span className={`pk-avatar${large ? ' lg' : ''}${ic ? ' ic' : ''}`} aria-hidden="true">
+      {logo ? <img src={logo} alt="" />
+        : ic ? <PIcon name={icon} size={large ? 24 : 18} /> : initialsOf(name).slice(0, 2)}
     </span>
   );
 }
@@ -33,7 +37,8 @@ export function Avatar({ name, logo, large = false }) {
  * confirmed) is a dashed outline with a question mark, so it reads without
  * colour; a screen reader hears "Food Delivery, suggested by Pearl".
  */
-export function CategoryChip({ label, suggested = false, ruled = false, onConfirm, disabled = false }) {
+export function CategoryChip({ label, suggested = false, ruled = false, onConfirm, onChange,
+                              disabled = false }) {
   // Decided by a rule of hers: a small lock, so it's clear why it won't
   // change on its own (2026-10-14).
   const name = suggested ? `${label}, suggested by Pearl` : ruled ? `${label}, from your rule` : label;
@@ -47,6 +52,18 @@ export function CategoryChip({ label, suggested = false, ruled = false, onConfir
               aria-label={`${label}, suggested by Pearl. Confirm`}
               onClick={(e) => { e.stopPropagation(); onConfirm(); }}>
         <span className="pk-cat-ic"><PIcon name={categoryIcon(label)} size={13} /></span>
+        <span aria-hidden="true">{label}</span>
+      </button>
+    );
+  }
+  // A settled chip on a row opens the category tiles straight away (2026-10-21).
+  if (onChange) {
+    return (
+      <button type="button" className={`${cls} changeable`} disabled={disabled}
+              aria-label={`${name}. Change category`}
+              onClick={(e) => { e.stopPropagation(); onChange(); }}>
+        <span className="pk-cat-ic"><PIcon name={categoryIcon(label)} size={13} /></span>
+        {ruled && !suggested && <PIcon name="lock" size={11} />}
         <span aria-hidden="true">{label}</span>
       </button>
     );
@@ -161,20 +178,31 @@ export function DayHeader({ children }) {
  */
 export function TxRow({ name, logo, meta, note, noteLink = false, chip, amount,
                         inflow = false, muted = false, flash = false, onOpen, tags = [],
-                        ruled = false, onConfirm, busy = false, ...rest }) {
+                        ruled = false, onConfirm, onChangeCategory, manual = false,
+                        busy = false, ...rest }) {
+  const icon = chip && !['Possible duplicate', 'Whose?'].includes(chip.label)
+    ? categoryIcon(chip.label) : null;
   return (
     <button type="button" className={`pk-row${muted ? ' muted' : ''}${flash ? ' flash' : ''}`}
             onClick={onOpen} {...rest}>
-      <Avatar name={name} logo={logo} />
+      <Avatar name={name} logo={logo} icon={icon} />
       <span className="pk-row-text">
-        <span className="pk-row-name">{name}</span>
+        <span className="pk-row-name">
+          {name}
+          {manual && (
+            <span className="pk-row-hand" role="img" aria-label="Added by hand" title="Added by hand">
+              <PIcon name="edit" size={12} />
+            </span>
+          )}
+        </span>
         {meta && <span className="pk-row-meta">{meta}</span>}
         {note && <span className={`pk-row-note${noteLink ? ' accent' : ''}`}>{note}</span>}
       </span>
       <span className="pk-row-cat">
         {chip && (
           <CategoryChip label={chip.label} suggested={chip.suggested} ruled={ruled}
-                        onConfirm={chip.suggested ? onConfirm : undefined} disabled={busy} />
+                        onConfirm={chip.suggested ? onConfirm : undefined}
+                        onChange={chip.suggested ? undefined : onChangeCategory} disabled={busy} />
         )}
         {tags.map((t) => <TagChip key={t} label={t} />)}
       </span>

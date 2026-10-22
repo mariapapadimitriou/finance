@@ -449,18 +449,8 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {}, onSignOut,
     selected?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
   }, [panel]);
 
-  // Theme and sign-out live on the Profile hub now (the Pearl Handoff File's
-  // sidebar has neither); the phone's top bar keeps the theme switch.
-  const themeButton = (
-    <button
-      className="btn quiet"
-      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-      aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-    >
-      <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span>
-      <span className="label">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
-    </button>
-  );
+  // Theme and sign-out live on the Profile hub (Profile › Appearance); the
+  // phone's top bar no longer carries a theme switch (2026-10-21).
   const main = GROUPS.filter((g) => !g.foot);
   const foot = GROUPS.filter((g) => g.foot);
   const navButton = (g) => (
@@ -506,7 +496,6 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {}, onSignOut,
               {!ownTitle && <h1>{current?.label ?? 'Pearl'}</h1>}
             </div>
 
-            <div className="topbar-actions">{themeButton}</div>
           </div>
 
           {group && group.panels.length > 1 && !group.crumbs && !ownSections && (
