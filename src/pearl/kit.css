@@ -59,13 +59,13 @@
 .pk-cat {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
   /* A solid outline once it's settled; Pearl's guess is the dashed one below. */
-  padding: 3px 10px 3px 8px; border-radius: var(--radius-full); border: 1px solid var(--border-strong);
+  padding: 3px 10px 3px 8px; border-radius: var(--radius-full); border: 1px solid var(--cat-line);
   background: var(--surface-card); color: var(--ink);
   font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap;
 }
 .pk-cat > span { overflow: hidden; text-overflow: ellipsis; }
 .pk-cat.suggested {
-  background: var(--surface-card); border: 1px dashed var(--ink-muted);
+  background: var(--surface-card); border: 1px dashed var(--rose-300);
 }
 /* The dotted chip as a button: click it to confirm the guess in place. Its
  * outline goes solid on hover; nothing is written (WW-01, 2026-10-16). */
@@ -727,40 +727,45 @@
   .gl-grow-cards, .gl-grow-cards.two { grid-template-columns: 1fr; }
 }
 
+/* Categories are outlined in a soft pink (2026-10-21): rose/300 at about
+   half strength over the card — a solid line once settled, dashed for a
+   guess. */
+.pk { --cat-line: color-mix(in srgb, var(--rose-300) 55%, var(--surface-card)); }
+
 /* ── Category tiles (2026-10-21) ──────────────────────────────────────────
  * Every category, every time, in the same place: a grid of tiles grouped
  * Essentials · Lifestyle · …, each with its icon in rose on a blush disc.
  * A search box above finds one by name; Enter picks a lone match. */
-.pk-tile-picker { display: flex; flex-direction: column; gap: var(--space-4); align-self: stretch; }
-.pk-tile-search {
+.pk-ctile-picker { display: flex; flex-direction: column; gap: var(--space-4); align-self: stretch; }
+.pk-ctile-search {
   display: flex; align-items: center; gap: var(--space-2); height: 40px; padding: 0 var(--space-3);
-  border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--surface-card); color: var(--ink-muted);
+  border: 1px solid var(--cat-line); border-radius: var(--radius-full); background: var(--surface-card); color: var(--ink-muted);
 }
-.pk-tile-search:focus-within { border-color: var(--action); }
-.pk .pk-tile-search input { flex: 1; min-width: 0; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; font: inherit; font-size: 14px; color: var(--ink); outline: none; }
-.pk-tile-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
-.pk-tile-groups { display: flex; flex-direction: column; gap: var(--space-4); }
-.pk-tile-group { display: flex; flex-direction: column; gap: var(--space-2); }
-.pk-tile-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); }
-.pk .pk-tile {
+.pk-ctile-search:focus-within { border-color: var(--action); }
+.pk .pk-ctile-search input { flex: 1; min-width: 0; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; font: inherit; font-size: 14px; color: var(--ink); outline: none; }
+.pk-ctile-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.pk-ctile-groups { display: flex; flex-direction: column; gap: var(--space-4); }
+.pk-ctile-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.pk-ctile-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); }
+.pk .pk-ctile {
   position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-  min-height: 78px; padding: 10px 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  min-height: 78px; padding: 10px 6px 8px; border: 1px solid var(--cat-line); border-radius: var(--radius-md);
   background: var(--surface-card); color: var(--ink); font: inherit; font-size: 12px; line-height: 16px; font-weight: 500;
   text-align: center; cursor: pointer; overflow-wrap: anywhere;
   transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
-.pk .pk-tile:hover { border-color: var(--border-strong); background: var(--hover); }
-.pk .pk-tile:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
-.pk .pk-tile.guess { border-style: dashed; border-color: var(--ink-muted); }
-.pk .pk-tile.on { background: var(--blush); border-color: var(--rose-500); }
-.pk .pk-tile-icon {
+.pk .pk-ctile:hover { border-color: var(--rose-300); background: var(--hover); }
+.pk .pk-ctile:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+.pk .pk-ctile.guess { border-style: dashed; border-color: var(--rose-300); }
+.pk .pk-ctile.on { background: var(--blush); border-color: var(--rose-500); }
+.pk .pk-ctile-icon {
   display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px;
   border-radius: var(--radius-full); background: var(--blush); color: var(--rose-500);
 }
-.pk .pk-tile.on .pk-tile-icon { background: var(--surface-card); }
-.pk .pk-tile-label { max-width: 100%; }
-.pk .pk-tile-check {
+.pk .pk-ctile.on .pk-ctile-icon { background: var(--surface-card); }
+.pk .pk-ctile-label { max-width: 100%; }
+.pk .pk-ctile-check {
   position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; border-radius: var(--radius-full);
   background: var(--rose-500); color: var(--on-action); display: inline-flex; align-items: center; justify-content: center;
 }
-@media (max-width: 720px) { .pk-tile-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .pk-ctile-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

@@ -123,3 +123,11 @@
 
 /* An e-Transfer's message under its name (2026-10-21). */
 .nl-tx .nl-memo { font-size: 13px; line-height: 18px; color: var(--ink); font-style: italic; }
+
+/* The card's choices while they load (2026-10-21). */
+.nl-skeleton { display: flex; flex-direction: column; gap: var(--space-2); }
+.nl-ghost { display: block; border-radius: var(--radius-md); background: var(--track); animation: nl-pulse 1.2s ease-in-out infinite; }
+.nl-ghost-title { width: 55%; height: 28px; margin-bottom: var(--space-2); border-radius: 8px; }
+.nl-ghost-row { height: 64px; }
+@keyframes nl-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .nl-ghost { animation: none; } }

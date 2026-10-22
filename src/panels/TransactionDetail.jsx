@@ -7,7 +7,7 @@ import PIcon from '../pearl/icons.jsx';
 import { categoryLabel } from './CategoryPicker.jsx';
 import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
 import { TagEditor } from './WhatWasThis.jsx';
-import SortCard, { SortedCard } from './SortCard.jsx';
+import SortCard, { SortedCard, prefetchCases } from './SortCard.jsx';
 import {
   addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTags, getTx,
   includeTransaction, money, setCategory, setJointFrom, setMerchantName, setMineAlways, setParty,
@@ -70,6 +70,9 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
 
   useEffect(() => {
     let live = true;
+    // Mark as…'s answers start loading with the panel, so pressing it draws
+    // the list at once instead of in two goes (2026-10-21).
+    prefetchCases(id);
     getTx(id).then((r) => { if (live) setTx(r); }).catch((e) => { if (live) setError(e); });
     getBanks().then((d) => { if (live) setBanks(d.banks ?? []); }).catch(() => {});
     return () => { live = false; };

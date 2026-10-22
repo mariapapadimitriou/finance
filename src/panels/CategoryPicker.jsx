@@ -54,11 +54,11 @@ export function groupCategories(categories, { only, keep } = {}) {
 export function CategoryTile({ name, selected = false, suggested = false, onSelect, disabled = false }) {
   return (
     <button type="button" role="radio" aria-checked={selected} disabled={disabled}
-            className={`pk-tile${selected ? ' on' : ''}${suggested && !selected ? ' guess' : ''}`}
+            className={`pk-ctile${selected ? ' on' : ''}${suggested && !selected ? ' guess' : ''}`}
             onClick={onSelect}>
-      <span className="pk-tile-icon" aria-hidden="true"><PIcon name={categoryIcon(name)} size={20} /></span>
-      <span className="pk-tile-label">{categoryLabel(name)}</span>
-      {selected && <span className="pk-tile-check" aria-hidden="true"><PIcon name="check" size={12} /></span>}
+      <span className="pk-ctile-icon" aria-hidden="true"><PIcon name={categoryIcon(name)} size={20} /></span>
+      <span className="pk-ctile-label">{categoryLabel(name)}</span>
+      {selected && <span className="pk-ctile-check" aria-hidden="true"><PIcon name="check" size={12} /></span>}
     </button>
   );
 }
@@ -77,9 +77,9 @@ export function CategoryChips({ groups, value, suggested, onChange, label = 'Cat
       .filter((g) => g.names.length)
     : groups;
   return (
-    <div className="pk-tile-picker">
+    <div className="pk-ctile-picker">
       {search && total > 8 && (
-        <div className="pk-tile-search">
+        <div className="pk-ctile-search">
           <PIcon name="search" size={16} />
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a category"
                  aria-label="Find a category" autoComplete="off"
@@ -91,11 +91,11 @@ export function CategoryChips({ groups, value, suggested, onChange, label = 'Cat
                  }} />
         </div>
       )}
-      <div className="pk-tile-groups" role="radiogroup" aria-label={label}>
+      <div className="pk-ctile-groups" role="radiogroup" aria-label={label}>
         {shown.map((g) => (
-          <div className="pk-tile-group" key={g.key}>
+          <div className="pk-ctile-group" key={g.key}>
             <p className="pk-overline">{g.title}</p>
-            <div className="pk-tile-grid">
+            <div className="pk-ctile-grid">
               {g.names.map((n) => (
                 <CategoryTile key={n} name={n} selected={value === n} suggested={suggested === n}
                               onSelect={() => onChange(n)} />

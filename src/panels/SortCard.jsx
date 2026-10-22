@@ -55,6 +55,23 @@ export function nameIn(text = '') {
 
 const isOut = (it) => (it.txn?.amount ?? 0) > 0;
 
+// What the server says about each transaction's answers, kept for the visit
+// so opening Mark as… again — or straight after the panel opened — draws
+// at once (2026-10-21). A saved answer drops its entry.
+const CASES = new Map();
+const READY = new Map();
+export function loadCases(id) {
+  if (!CASES.has(id)) {
+    CASES.set(id, getTxCases(id)
+      .then((d) => { READY.set(id, d); return d; })
+      .catch((e) => { CASES.delete(id); throw e; }));
+  }
+  return CASES.get(id);
+}
+/** Start fetching a transaction's answers before Mark as… is pressed. */
+export const prefetchCases = (id) => { loadCases(id).catch(() => {}); };
+export const forgetCases = (id) => { CASES.delete(id); READY.delete(id); };
+
 /**
  * The same list the server keeps (finance/marks.py OUT_CASES / IN_CASES),
  * used until getTxCases answers so the card never shows an empty list. The
@@ -322,7 +339,7 @@ function caseOn(flow, path) {
 export default function SortCard({ it, categories = [], busy, act, commit, onSkip, onBack, onTab, onSplit,
                                    mode = 'stacked', initialPath = null, initialEdit = null,
                                    initialName = '', showHead = true }) {
-  const [cases, setCases] = useState(null);
+  const [cases, setCases] = useState(() => READY.get(it.txn.id) ?? null);
   // [{ step, v, label? }]: the answers so far, the last one still open.
   const [path, setPath] = useState(() => initialPath ?? []);
   // The row being changed in place (an index into `path`), if any.
@@ -336,7 +353,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   const [remember, setRemember] = useState(it.kind === 'joint_in' || !!it.learnable);
   useEffect(() => {
     let live = true;
-    getTxCases(it.txn.id).then((d) => { if (live) setCases(d); }).catch(() => { if (live) setCases({ cases: [], groups: [] }); });
+    loadCases(it.txn.id).then((d) => { if (live) setCases(d); }).catch(() => { if (live) setCases({ cases: [], groups: [] }); });
     return () => { live = false; };
   }, [it.txn.id]);
 
@@ -379,7 +396,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   const canRemember = (c) => !!(c?.remember || it.learnable || it.kind === 'category' || it.kind === 'panel');
 
   /** Commit the last answer: run the call, then hand the card to its door. */
-  const finish = (answers, effect, run) => commit(() => run(), {
+  const finish = (answers, effect, run) => commit(() => { forgetCases(it.txn.id); return run(); }, {
     answers: answers.map((p) => ({ ...p, label: p.label ?? answerLabel(flow, p) })), effect,
   });
   const markCase = (c, extra = {}, answers, effect) => finish(answers, effect ?? c.effect,
@@ -562,7 +579,10 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       <Done path={path} flow={flow} editing={editing} busy={busy}
             onOpen={(i) => setEditing(editing === i ? null : i)} onPick={rechoose} />
 
-      {step && (
+      {/* The whole list (Mark as…) waits for the server's answers, whose best
+          guess goes on top; one question at a time doesn't need to. */}
+      {!cases && mode === 'all' && <CardSkeleton rows={6} />}
+      {(cases || mode !== 'all') && step && (
         <>
           <h2 className="pk-h2 nl-q">{step.title}</h2>
           {step.sub && <p className="pk-muted nl-sub">{step.sub}</p>}
@@ -716,6 +736,17 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
         </div>
       )}
     </>
+  );
+}
+
+/** The question's shape while its answers load: a title and ghost rows, so
+ * the list doesn't arrive in two goes and jump (2026-10-21). */
+function CardSkeleton({ rows = 3 }) {
+  return (
+    <div className="nl-skeleton" aria-busy="true" aria-label="Loading the choices">
+      <span className="nl-ghost nl-ghost-title" />
+      {Array.from({ length: rows }, (_, i) => <span key={i} className="nl-ghost nl-ghost-row" />)}
+    </div>
   );
 }
 
