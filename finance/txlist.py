@@ -130,6 +130,12 @@ def _waiting(t: Transaction) -> bool:
             and t.excluded == dup.REASON)
 
 
+def _bank_text(t: Transaction) -> str:
+    """The bank's own wording, when it says more than the description."""
+    text = " ".join(str((t.raw or {}).get("original_description") or "").split())
+    return text if text and text.lower() != " ".join((t.description or "").split()).lower() else ""
+
+
 def describe(t: Transaction, ctx: Context) -> dict:
     """Everything the list and the detail panel show for one row."""
     cat = t.category or "Other"
@@ -266,6 +272,15 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "etransfer": who,
         # The sender's message on an e-Transfer, when the bank passed it on.
         "memo": etransfer_memo(t),
+        # Exactly what the bank sent (2026-10-22), for the panel: its own
+        # wording when Plaid tidied it, and the sender or payee when the bank
+        # named them. Settles whether a name ever came through.
+        "bank_text": _bank_text(t),
+        "bank_sender": str((t.raw or {}).get("payer" if t.amount < 0 else "payee") or "").strip(),
+        # A bank e-Transfer with no name in anything the bank sent.
+        "bank_sender_missing": (t.source == "plaid" and bool(who)
+                                and not str((t.raw or {}).get("payer" if t.amount < 0 else "payee") or "").strip()
+                                and (who or {}).get("named_by") != "bank"),
         "description": t.description,
         "logo": raw.get("logo_url") or "",
         "account_id": t.account_id,

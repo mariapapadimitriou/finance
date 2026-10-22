@@ -299,6 +299,12 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
               <Detail label="Moved" value={`${tx.transfer.from} → ${tx.transfer.to}`} />
             ) : <Detail label="Account" value={tx.account} />}
             <Detail label="From your bank" value={tx.description} />
+            {/* Exactly what the bank sent (2026-10-22). */}
+            {tx.bank_text && <Detail label="Bank’s own wording" value={tx.bank_text} />}
+            {(tx.bank_sender || tx.bank_sender_missing) && (
+              <Detail label={tx.inflow ? 'Sender, from your bank' : 'Sent to, from your bank'}
+                      value={tx.bank_sender || 'Not included by your bank'} />
+            )}
             {tx.memo && <Detail label="Their message" value={`“${tx.memo}”`} />}
             <Detail label="Counts toward" value={tx.counts_toward} />
             {tx.note && !tx.note_link && !(tx.one_off && tx.note === ONE_OFF_NOTE)
