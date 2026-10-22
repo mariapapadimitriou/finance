@@ -101,6 +101,9 @@
   .tx-page .tx-toolbar .pk-search { flex: 1 1 0; }
 
   .tx-look-long { display: none; }
+  /* A transfer's route ("TD Chequing ··4417 → TD Savings ··8820") wraps
+     rather than being cut off (2026-10-22). */
+  .tx-page .pk-row-meta { white-space: normal; }
   .tx-look-short { display: inline; }
 
   /* The category under the amount. */

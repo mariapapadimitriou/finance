@@ -196,9 +196,10 @@ describe('the list’s filters and views', () => {
 });
 
 describe('rows and chips', () => {
-  it('a chip a rule decided wears a lock and says so', () => {
+  it('a chip a rule decided says so to a screen reader, with no lock and no icon (2026-10-22)', () => {
     const out = html(<CategoryChip label="Coffee" ruled />);
     expect(out).toContain('pk-cat ruled');
+    expect(out).not.toContain('<svg');
     expect(out).toContain('aria-label="Coffee, from your rule"');
     expect(html(<CategoryChip label="Coffee" suggested ruled />)).toContain('suggested by Pearl');
   });

@@ -63,7 +63,7 @@
   /* A solid outline once it's settled; Pearl's guess is the dashed one below. */
   /* Settled: a soft blush fill and no outline (2026-10-21). Pearl's guess
    * keeps the dashed outline below, so the two still differ by shape. */
-  padding: 3px 10px 3px 8px; border-radius: var(--radius-full); border: 1px solid transparent;
+  padding: 3px 10px; border-radius: var(--radius-full); border: 1px solid transparent;
   background: var(--blush); color: var(--on-nacre);
   font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap;
 }
@@ -88,8 +88,6 @@
 .pk .pk-cat.changeable:hover { border-color: var(--cat-line); }
 .pk .pk-cat.changeable:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 .pk-cat svg { flex: none; }
-/* The category's own icon beside its name (2026-10-21), in rose. */
-.pk-cat .pk-cat-ic { display: inline-flex; color: var(--rose-500); }
 
 /* ── Filter chip ─────────────────────────────────────────────────────────── */
 .pk-filter {

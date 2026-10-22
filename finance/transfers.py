@@ -198,7 +198,8 @@ def _subset_summing(rows: list[Transaction], target: int) -> list[Transaction] |
 def match_transfers(transactions: list[Transaction], today: str | None = None,
                     destinations: dict[str, str] | None = None,
                     used_out: set[str] | None = None,
-                    accounts: dict | None = None) -> dict[str, str]:
+                    accounts: dict | None = None,
+                    pairs_out: dict[str, str] | None = None) -> dict[str, str]:
     """The category each sortable outflow should have: Transfers when its
     other end is here, Unsorted transfers when it isn't.
 
@@ -263,6 +264,10 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
             if best:
                 used.add(best[1].fingerprint)
                 out[t.fingerprint] = NEUTRAL
+                # One departure, one arrival on another of her accounts: the
+                # list shows them as one line (2026-10-22).
+                if pairs_out is not None and not same_account:
+                    pairs_out[t.fingerprint] = best[1].fingerprint
 
     # 3: several outflows from one account adding up to one arrival elsewhere.
     for other in sorted(inflows, key=lambda t: t.amount):
@@ -335,6 +340,15 @@ def matched_inflows(transactions: list[Transaction], today: str | None = None) -
     used: set[str] = set()
     match_transfers(transactions, today=today, used_out=used)
     return used
+
+
+def transfer_pairs(transactions: list[Transaction], today: str | None = None) -> dict[str, str]:
+    """{departure id: arrival id} for each one-to-one transfer between two of
+    her own accounts (pass 1 of `match_transfers`): the same money leaving
+    one account and arriving on another within a few days."""
+    pairs: dict[str, str] = {}
+    match_transfers(transactions, today=today, pairs_out=pairs)
+    return pairs
 
 
 def known_destinations(store) -> dict[str, str]:

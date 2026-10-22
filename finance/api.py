@@ -212,6 +212,11 @@ def transactions_list():
                    for d in r["dates"]}
         rows = [(t, r) for t, r in rows if (t.merchant, t.date[:10]) in charges]
     chosen = txlist.select(rows, **filters)
+    # A transfer between two of her accounts is one line, not two (2026-10-22).
+    from .transfers import transfer_pairs
+    pairs = transfer_pairs(st.all_transactions(), today=_today_iso())
+    every = chosen      # the totals keep both ends: money moved, nothing counted
+    chosen = txlist.collapse_transfers(chosen, pairs)
     filters.pop("ids", None)
     by = a.get("by") or "day"
     if by not in ("day", "merchant", "category"):
@@ -220,7 +225,7 @@ def transactions_list():
         "transactions": [r for _, r in chosen[offset:offset + limit]] if by == "day" else [],
         "owed": owed,
         "total": len(chosen),
-        "totals": txlist.totals(chosen),
+        "totals": txlist.totals(every),
         # ALT-04: the Outflows and Inflows cards.
         "flows": txlist.flows(rows, filters, _date_today()),
         "focus": txlist.focus(rows, month=month, account=filters["account"],
@@ -271,6 +276,20 @@ def transaction_detail(txn_id: str):
         if t.amount > 0:
             r["repaid_by"] = [dict(_txn_brief(x), person=payer.get(x.fingerprint))
                               for x in txns if x.repays == txn_id]
+        # The other end of a transfer between her accounts (2026-10-22).
+        from .transfers import transfer_pairs
+        from .txlist import _is_card_payment as txlist_card_payment
+        pairs = transfer_pairs(st.all_transactions(), today=_today_iso())
+        back = {arr: out for out, arr in pairs.items()}
+        other_id = pairs.get(txn_id) or back.get(txn_id)
+        other = next((x for x, xr in rows if x.fingerprint == other_id), None) if other_id else None
+        if other is not None:
+            orow = next(xr for x, xr in rows if x.fingerprint == other_id)
+            r["transfer"] = {"from": r.get("account", "") if txn_id in pairs else orow.get("account", ""),
+                             "to": orow.get("account", "") if txn_id in pairs else r.get("account", ""),
+                             "other_id": other_id, "other_date": other.date[:10]}
+            if (r.get("chip") or {}).get("label") == "Transfer" and not txlist_card_payment(t):
+                r["note"] = "Transfer between your accounts · not counted"
         if t.repays:
             charge = next((x for x in txns if x.fingerprint == t.repays), None)
             if charge is not None:

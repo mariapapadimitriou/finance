@@ -552,6 +552,37 @@ def tag_totals(rows: list[tuple[Transaction, dict]]) -> list[dict]:
 
 # ── Totals ───────────────────────────────────────────────────────────────
 
+def collapse_transfers(rows: list[tuple[Transaction, dict]],
+                       pairs: dict[str, str]) -> list[tuple[Transaction, dict]]:
+    """One line per transfer between her own accounts (2026-10-22).
+
+    `pairs` is {departure: arrival} (finance/transfers.transfer_pairs). When
+    both ends are among `rows` and both read as a Transfer, the arrival is
+    dropped and the departure says where the money went: "TD Chequing ··4417
+    → Visa ··1203". When only one end is in view — a filter on one account —
+    that end stays as it is. Neither end counts, so no total changes."""
+    by_id = {t.fingerprint: (t, r) for t, r in rows}
+    is_transfer = lambda r: (r.get("chip") or {}).get("label") == "Transfer"
+    joined = {out: arr for out, arr in pairs.items()
+              if out in by_id and arr in by_id and out != arr
+              and is_transfer(by_id[out][1]) and is_transfer(by_id[arr][1])}
+    hidden = set(joined.values())
+    kept = []
+    for t, r in rows:
+        if t.fingerprint in hidden:
+            continue
+        arr = joined.get(t.fingerprint)
+        if arr:
+            other_t, other = by_id[arr]
+            r = dict(r)
+            r["transfer"] = {"from": r.get("account", ""), "to": other.get("account", ""),
+                             "other_id": arr, "other_date": other_t.date[:10]}
+            if not _is_card_payment(t):
+                r["note"] = "Transfer between your accounts · not counted"
+        kept.append((t, r))
+    return kept
+
+
 def totals(rows: list[tuple[Transaction, dict]]) -> dict:
     """Spent so far, Income so far and Not counted, for the rows shown.
 

@@ -295,7 +295,9 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
           )}
 
           <dl className="txd-details">
-            <Detail label="Account" value={tx.account} />
+            {tx.transfer ? (
+              <Detail label="Moved" value={`${tx.transfer.from} → ${tx.transfer.to}`} />
+            ) : <Detail label="Account" value={tx.account} />}
             <Detail label="From your bank" value={tx.description} />
             {tx.memo && <Detail label="Their message" value={`“${tx.memo}”`} />}
             <Detail label="Counts toward" value={tx.counts_toward} />
