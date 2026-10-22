@@ -437,8 +437,15 @@
   display: flex; align-items: center; gap: var(--space-3); width: max-content;
   max-width: min(560px, calc(100vw - 32px)); padding: 16px 20px;
   background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md);
-  box-shadow: var(--shadow-raised); color: var(--ink);
+  box-shadow: var(--shadow-raised); color: var(--ink); touch-action: none;
 }
+.pk .pk-toast-close {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; margin: -6px -8px -6px 0; border: 0; border-radius: var(--radius-full);
+  background: none; color: var(--ink-muted); cursor: pointer;
+}
+.pk .pk-toast-close:hover { background: var(--hover); color: var(--ink); }
+.pk-toast { cursor: pointer; touch-action: none; }
 .pk-toast-icon {
   flex: none; width: 32px; height: 32px; border-radius: var(--radius-full);
   background: var(--seaglass); color: var(--on-nacre);

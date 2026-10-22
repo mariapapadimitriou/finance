@@ -166,3 +166,12 @@ describe('Edit and Previous on the card (2026-10-22)', () => {
     expect(html(<SortedCard entry={{ it: out, answers: [], title: 'Sorted.' }} onNext={noop} />)).not.toContain('Previous');
   });
 });
+
+describe('Toasts can always be dismissed (2026-10-22)', () => {
+  it('the Undo toast has a Dismiss button', async () => {
+    const { ActionToast } = await import('../pearl/kit.jsx');
+    const out = html(<ActionToast title="Left out." detail="Left out of all your numbers." onUndo={noop} onDone={noop} />);
+    expect(out).toContain('aria-label="Dismiss"');
+    expect(out).toContain('>Undo<');
+  });
+});

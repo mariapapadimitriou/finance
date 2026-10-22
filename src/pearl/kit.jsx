@@ -288,8 +288,11 @@ export function Toast({ children, onDone, ms = 2400 }) {
     const t = setTimeout(() => done.current?.(), ms);
     return () => clearTimeout(t);
   }, [ms]);
+  // A tap or a swipe sends it away (2026-10-22).
+  const swipe = useSwipeAway(() => done.current?.());
   return (
-    <div className="pk-toast" role="status" aria-live="polite">
+    <div className="pk-toast" role="status" aria-live="polite" {...swipe}
+         onClick={() => done.current?.()}>
       <PIcon name="check" size={18} /> {children}
     </div>
   );
@@ -416,15 +419,37 @@ export function ImpactNote({ children }) {
  * The toast after a change that moved a number (R-03): what happened, what it
  * did, and Undo. Stays up longer than a plain toast so Undo can be reached.
  */
-export function ActionToast({ title, detail, onUndo, onDone, ms = 8000 }) {
+/** A swipe of the toast (down or sideways) dismisses it (2026-10-22). */
+function useSwipeAway(onAway) {
+  const start = useRef(null);
+  return {
+    onPointerDown: (e) => {
+      // Not on its buttons: Undo and × are taps of their own.
+      if (e.target.closest?.('button')) return;
+      start.current = { x: e.clientX, y: e.clientY };
+      // Keep the gesture even when the finger leaves the toast.
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    },
+    onPointerUp: (e) => {
+      const s0 = start.current; start.current = null;
+      if (!s0) return;
+      if (e.clientY - s0.y > 24 || Math.abs(e.clientX - s0.x) > 48) onAway?.();
+    },
+    onPointerCancel: () => { start.current = null; },
+  };
+}
+
+export function ActionToast({ title, detail, onUndo, onDone, ms = 6000 }) {
   const done = useRef(onDone);
   done.current = onDone;
   useEffect(() => {
     const t = setTimeout(() => done.current?.(), ms);
     return () => clearTimeout(t);
   }, [ms, title]);
+  // Never stuck (2026-10-22): an ×, a swipe, or it goes by itself.
+  const swipe = useSwipeAway(() => done.current?.());
   return (
-    <div className="pk-toast-card" role="status" aria-live="polite">
+    <div className="pk-toast-card" role="status" aria-live="polite" {...swipe}>
       <span className="pk-toast-icon" aria-hidden="true"><PIcon name="check" size={16} /></span>
       <span className="pk-toast-text">
         <span>{title}</span>
@@ -433,6 +458,9 @@ export function ActionToast({ title, detail, onUndo, onDone, ms = 8000 }) {
       {onUndo && (
         <button type="button" className="pk-toast-undo" onClick={onUndo}>Undo</button>
       )}
+      <button type="button" className="pk-toast-close" aria-label="Dismiss" onClick={() => done.current?.()}>
+        <PIcon name="x" size={16} />
+      </button>
     </div>
   );
 }
