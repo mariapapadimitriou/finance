@@ -5,6 +5,7 @@ import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.
 import { ErrorNote } from '../components/ui.jsx';
 import { DuplicateQuestion } from './Duplicates.jsx';
 import Stacked, { Pill, Progress, SortedCard, TxHead as StackedHead } from './Stacked.jsx';
+import TransactionDetail from './TransactionDetail.jsx';
 
 export { SortedCard };
 import { depositChoices } from './joint.js';
@@ -149,6 +150,9 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
   const [resume, setResume] = useState(null);
   const [change, setChange] = useState(null);
   const [toast, setToast] = useState('');
+  // The transaction open in its full panel from the card's Edit (2026-10-22):
+  // a note, a tag, a new name, without leaving Needs a look.
+  const [editing, setEditing] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -398,23 +402,28 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
 
       {showing && (
         <div className="nl-stage">
-          {hasPrevious && (
-            <div className="nl-above">
-              <Pill className="nl-previous" disabled={busy} onClick={() => { setBack(prevIndex); }}
-                    aria-label="Previous transaction">
-                Previous
-              </Pill>
-            </div>
-          )}
           <section className="nl-card nl-stack" aria-label={entry ? 'Sorted' : 'Question'}
                    key={entry ? `s-${entry.key}-${back}` : `q-${current.key}-${resume?.key === current.key ? 'r' : 'q'}`}>
+            {/* Edit, top left (2026-10-22): the transaction's own panel for a
+                note, tags, its name — before or after it's sorted. */}
+            {(entry ? entry.it?.txn : current?.txn) && (
+              <div className="nl-card-top">
+                <Pill icon="edit" className="nl-edit" disabled={busy}
+                      aria-label={`Edit ${(entry ? entry.it.txn : current.txn).merchant}: note, tags and more`}
+                      onClick={() => setEditing((entry ? entry.it.txn : current.txn).id)}>
+                  Edit
+                </Pill>
+              </div>
+            )}
             {entry ? (
               <SortedCard entry={entry} busy={busy} isPast={back !== null}
                           onNext={back !== null ? () => setBack(null) : next}
                           onUndo={() => reopen(entry)}
-                          onReopen={(i) => reopen(entry, i)} />
+                          onReopen={(i) => reopen(entry, i)}
+                          onPrevious={hasPrevious ? () => setBack(prevIndex) : undefined} />
             ) : STACKED.has(current.kind) ? (
               <Stacked it={current} categories={categories} busy={busy} onSkip={skip}
+                       onPrevious={hasPrevious ? () => setBack(prevIndex) : undefined}
                        act={act} commit={commit} onBack={toList} onTab={onTab}
                        initialPath={resume?.key === current.key ? resume.path : null}
                        initialEdit={resume?.key === current.key ? resume.edit : null}
@@ -432,6 +441,11 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
         </div>
       )}
 
+      {editing && (
+        <TransactionDetail id={editing} categories={categories}
+                           onClose={() => setEditing(null)}
+                           onSaved={({ close } = {}) => { if (close) setEditing(null); load(); onChanged?.(); }} />
+      )}
       {change && (
         <ActionToast title={change.title} detail={change.detail}
                      onUndo={change.undo ? undo : undefined} onDone={() => setChange(null)} />
