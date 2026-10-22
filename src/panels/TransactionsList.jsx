@@ -598,12 +598,20 @@ export default function TransactionsList({ summary, categories, accounts, review
     && r.chip.label !== 'Possible duplicate' && r.chip.label !== 'Whose?'
     && r.duplicate?.state !== 'pending';
 
+  // The account only when there's more than one to tell apart; a row she
+  // added by hand has a pen by its name instead of "Added by hand" (2026-10-21).
+  const manyAccounts = useMemo(() => new Set(rows.filter((r) => !r.manual).map((r) => r.account))
+    .size > 1 || accounts.filter((a) => a.account_id !== 'manual').length > 1, [rows, accounts]);
+  const metaFor = (r) => [!r.manual && manyAccounts ? r.account : '', r.pending ? 'Pending' : '',
+                          r.source_label || ''].filter(Boolean).join(' · ');
+
   const rowFor = (r) => {
     const row = (
       <TxRow key={r.id} name={r.merchant} logo={r.logo}
              onConfirm={confirmable(r) ? () => confirmRows([r.id]) : undefined} busy={busy}
-             meta={r.account + (r.pending ? ' · Pending' : '')
-               + (r.source_label ? ` · ${r.source_label}` : '')}
+             meta={metaFor(r)} manual={r.manual}
+             onChangeCategory={r.chip && !r.chip.suggested && r.duplicate?.state !== 'pending'
+               ? () => open(r.id, 'category') : undefined}
              note={r.note || r.my_note} noteLink={r.note_link}
              chip={r.chip} amount={r.amount} inflow={r.inflow}
              tags={r.tags ?? []} ruled={r.ruled}
@@ -645,14 +653,16 @@ export default function TransactionsList({ summary, categories, accounts, review
           <p className="pk-overline accent">{overline}</p>
           <h1 className="pk-h1">Cash flow</h1>
         </div>
-        <div className="tx-head-actions">
-          {!desktop && shownRows.length > 0 && (
-            <PButton variant="secondary" aria-pressed={selecting}
-                     onClick={() => { setSelecting((s) => !s); clearSelection(); }}>
-              {selecting ? 'Done' : 'Select'}
+        {/* Select lives in Filters on a phone (2026-10-21); while choosing,
+            Done here ends it. */}
+        {!desktop && selecting && (
+          <div className="tx-head-actions">
+            <PButton variant="secondary" aria-pressed="true"
+                     onClick={() => { setSelecting(false); clearSelection(); }}>
+              Done
             </PButton>
-          )}
-        </div>
+          </div>
+        )}
       </header>
       <CashFlowTabs current="transactions" onTab={onTab} />
 
@@ -663,6 +673,7 @@ export default function TransactionsList({ summary, categories, accounts, review
                      placeholder="Search" inputRef={searchRef}
                      aria-keyshortcuts={desktop && singleKey ? '/' : undefined} />
         <div className="tx-chips">
+          <div className="tx-seg">
           <FilterChip label="Month" value={filters.month} options={monthOptions}
                       active={filters.month !== thisMonth()}
                       onChange={(v) => choose({ month: v, day: '' })} />
@@ -673,6 +684,7 @@ export default function TransactionsList({ summary, categories, accounts, review
             <span className="tx-filters-word" aria-hidden="true">Filters{extra ? ` · ${extra}` : ''}</span>
             {extra > 0 && <span className="tx-filters-count" aria-hidden="true">{extra}</span>}
           </button>
+          </div>
           <button type="button" className="pk-filter tx-add" onClick={() => setAdding(true)}
                   aria-label="Add a transaction">
             <PIcon name="plus" size={16} /><span className="tx-add-word" aria-hidden="true">Add</span>
@@ -740,7 +752,7 @@ export default function TransactionsList({ summary, categories, accounts, review
 
           {!data && !error && <ListSkeleton />}
           {shownRows.length > 0 && (
-            <section className={`pk-list${desktop ? ' tx-keys' : ''}${selectable ? ' tx-selectable' : ''}`}
+            <section className={`pk-list${desktop ? ' tx-keys' : ''}${selectable ? ' tx-selectable' : ''}${selected.length ? ' tx-choosing' : ''}`}
                      aria-label="Transactions"
                      ref={listRef} onKeyDown={onListKey}
                      aria-describedby={desktop ? 'tx-keys-help' : undefined}>
@@ -755,10 +767,10 @@ export default function TransactionsList({ summary, categories, accounts, review
                 const p = dayParts(d.key);
                 return (
                   <div key={d.key} role="group" aria-label={d.label}>
-                    <div className="tx-day">
+                    <p className="tx-day pk-overline">
                       <span className="tx-day-name">{p.name}</span>
-                      <span className="tx-day-date">{p.date}</span>
-                    </div>
+                      <span className="tx-day-date">{` · ${p.date}`}</span>
+                    </p>
                     {d.rows.map(rowFor)}
                   </div>
                 );
@@ -807,6 +819,8 @@ export default function TransactionsList({ summary, categories, accounts, review
                         accounts={accountOptions.flatMap((o) => o.options ?? [o]).filter((o) => o.value)}
                         tags={data?.tag_totals ?? (data?.tags ?? [])}
                         onApply={({ cat, ...f }) => { setFiltering(false); choose(f); }}
+                        onSelect={!desktop && shownRows.length > 0
+                          ? () => { setFiltering(false); clearSelection(); setSelecting(true); } : undefined}
                         onClose={() => setFiltering(false)} />
       )}
       {marking && (

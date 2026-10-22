@@ -44,6 +44,16 @@ export function cardWords(totals) {
   return base;
 }
 
+/** One quiet line under the bars (2026-10-21): "$3,121.24 left this month",
+ * or how far spending has run past income. Nothing when they're even. */
+export function leftWords(spent = 0, income = 0) {
+  const s = Math.max(0, spent);
+  const i = Math.max(0, income);
+  if (i > s + EPS) return `${txAmount(i - s)} left this month`;
+  if (s > i + EPS) return `${txAmount(s - i)} more out than in this month`;
+  return '';
+}
+
 export default function FlowCards({ totals }) {
   // Not loaded yet: the same card at the same height, so nothing below it
   // jumps when the numbers arrive (2026-10-21).
@@ -87,6 +97,7 @@ export default function FlowCards({ totals }) {
         </span>
         <span className="tm-amt out">{txAmount(spent, { signed: spent > EPS })}</span>
       </div>
+      {leftWords(spent, income) && <p className="tm-left" aria-hidden="true">{leftWords(spent, income)}</p>}
     </section>
   );
 }

@@ -270,6 +270,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "logo": raw.get("logo_url") or "",
         "account_id": t.account_id,
         "account": _account_label(t),
+        "manual": t.source == "manual",
         "pending": bool(raw.get("pending")),
         "category": cat,
         "category_source": t.category_source,

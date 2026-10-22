@@ -173,8 +173,9 @@ a { color: var(--brand); text-underline-offset: 3px; }
 .nav button[aria-selected="true"] svg { color: var(--brand); opacity: 1; }
 .nav .count {
   margin-left: auto;
-  background: var(--surface-3);
-  color: var(--ink-2);
+  /* Rose with a white number, like the open tab (2026-10-21). */
+  background: var(--rose-500);
+  color: var(--on-action);
   border-radius: 6px;
   padding: 0 7px;
   font-size: .74rem;

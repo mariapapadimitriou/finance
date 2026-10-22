@@ -4,8 +4,8 @@
 
 /* ── This month: two bars from one edge (Current design, 2026-10-20) ──── */
 .tm-card {
-  display: flex; flex-direction: column; gap: 14px; padding: 24px;
-  background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md);
+  /* No card around it (2026-10-21): the bars sit on the page. */
+  display: flex; flex-direction: column; gap: 14px; padding: 8px 0;
 }
 .tm-card p { margin: 0; }
 .tm-row { display: grid; grid-template-columns: 130px minmax(0, 1fr) 140px; align-items: center; gap: var(--space-4); }
@@ -27,15 +27,16 @@
   border-left: 1.25px dashed var(--lagoon-700); opacity: .9; pointer-events: none;
 }
 .tm-amt {
-  font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 22px; line-height: 28px;
-  text-align: right; font-variant-numeric: tabular-nums;
+  /* Figtree with tabular digits; Fraunces is for page titles only. */
+  font-family: var(--text); font-weight: 600; font-size: 20px; line-height: 28px;
+  text-align: right; font-variant-numeric: tabular-nums; letter-spacing: -.01em;
 }
 .tm-amt.in { color: var(--lagoon-700); }
 .tm-amt.out { color: var(--rose-700); }
 :root[data-theme="dark"] .tm-amt.in, :root[data-theme="dark"] .tm-amt.out { color: var(--ink); }
 
 @media (max-width: 720px) {
-  .tm-card { padding: 18px 16px; gap: 12px; }
+  .tm-card { padding: 4px 0; gap: 12px; }
   .tm-row { grid-template-columns: 96px minmax(0, 1fr) auto; gap: var(--space-3); }
   .tm-label { font-size: 14px; }
   .tm-track, .tm-bar, .tm-over { height: 22px; }
@@ -63,9 +64,11 @@
 .tx-look-short { display: none; }
 
 /* ── Days ───────────────────────────────────────────────────────────────── */
-.tx-day { display: flex; align-items: baseline; gap: var(--space-2); padding: 20px 16px 8px; }
-.tx-day-name { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 18px; line-height: 24px; color: var(--ink); }
-.tx-day-date { font-size: 13px; line-height: 18px; color: var(--ink-muted); font-weight: 500; }
+.tx-day { display: flex; align-items: baseline; padding: 24px 12px 6px; }
+/* The day as an overline: "TODAY · WED, OCT 21" (2026-10-21). */
+.pk .tx-day.pk-overline { margin: 0; }
+.tx-day-name { color: var(--ink); }
+.tx-day-date { white-space: pre; }
 .pk .tx-earlier {
   height: 36px; padding: 0 18px; border: 0; border-radius: var(--radius-full); background: var(--blush);
   color: var(--link); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer;
@@ -138,3 +141,57 @@
 .tx-skeleton .tx-ghost-chip { width: 76px; height: 22px; border-radius: 999px; }
 .tx-skeleton .tx-ghost-amount { width: 64px; height: 16px; }
 @media (prefers-reduced-motion: reduce) { .tx-skeleton .tx-ghost { animation: none; } }
+
+/* The line under the bars: what's left, or how far spending ran past. */
+.pk .tm-left { margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted); }
+
+/* No outer border on the list: just the dividers between rows (2026-10-21).
+   The rows reach 12px past the page edge so their text lines up with the
+   title. */
+.tx-page .pk-list:not(.tx-skeleton), .tx-page .pk-list.tx-skeleton {
+  background: transparent; border: 0; border-radius: 0; overflow: visible; margin: 0 -12px;
+}
+.tx-page .pk-list .pk-row { padding-left: 12px; padding-right: 12px; border-radius: 10px; }
+.tx-page .pk-list .tx-day { padding-left: 12px; }
+.tx-page .tx-more { padding-top: var(--space-4); }
+
+/* Month and Filters share one quiet outline. */
+.tx-seg {
+  display: inline-flex; align-items: center; height: 40px; border: 1px solid var(--border);
+  border-radius: var(--radius-full); background: var(--surface-card); padding: 0 2px;
+}
+.tx-page .tx-chips .tx-seg .pk-filter { border: 0; background: transparent; height: 34px; }
+.tx-page .tx-chips .tx-seg .pk-filter.active { background: var(--blush); }
+.tx-seg .pk-filter + .pk-filter::before {
+  content: ""; position: absolute; left: -1px; top: 8px; bottom: 8px; border-left: 1px solid var(--border);
+}
+
+/* Desktop: the checkboxes sit in the margin and show on hover, on focus,
+   or once one is ticked (2026-10-21). */
+.tx-page .tx-keys .tx-sel { padding-left: 0; gap: 0; }
+.tx-page .tx-keys .tx-check {
+  position: absolute; left: -26px; top: 50%; transform: translateY(-50%);
+  opacity: 0; transition: opacity var(--motion-fast, 120ms) ease;
+}
+.tx-page .tx-keys .tx-sel:hover .tx-check, .tx-page .tx-keys .tx-sel.on .tx-check,
+.tx-page .tx-keys .tx-sel:has(:focus-visible) .tx-check { opacity: 1; }
+
+/* A selected row (2026-10-21): a lighter tint drawn 2px inside the row, so
+   two selected rows read as two, not one slab; the avatar and chip go white
+   so they don't melt into it; hovering a selected row adds nothing. Only the
+   ticked rows and the one under the pointer show a checkbox. */
+.tx-page .tx-sel.on { background: transparent; }
+.tx-page .tx-sel.on::before {
+  content: ""; position: absolute; inset: 2px 0; border-radius: 12px; pointer-events: none;
+  background: color-mix(in srgb, var(--blush) 70%, transparent);
+}
+.tx-page .tx-sel.on .pk-row { position: relative; border-bottom-color: transparent; }
+.tx-page .tx-sel.on .pk-row:hover { background: transparent; }
+.tx-page .tx-sel.on .pk-avatar.ic, .tx-page .tx-sel.on .pk-cat { background: var(--surface-card); }
+.tx-page .tx-sel:has(+ .tx-sel.on) .pk-row { border-bottom-color: transparent; }
+
+@media (max-width: 720px) {
+  .tx-page .pk-list:not(.tx-skeleton), .tx-page .pk-list.tx-skeleton { margin: 0 -8px; }
+  .tx-page .tx-chips .tx-seg .tx-filters { width: 36px; }
+  .tx-seg { height: 40px; }
+}
