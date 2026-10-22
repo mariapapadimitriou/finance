@@ -198,3 +198,38 @@ def test_row_says_when_the_bank_sent_no_name(tmp_path):
         st.merge_plaid_details({"a1": {"payer": "DENISE RAO"}})
         r = c.get(f"/api/transactions/{tid}").get_json()
         assert r["bank_sender"] == "DENISE RAO" and r["bank_sender_missing"] is False
+
+
+def test_what_your_bank_sent_lists_every_field(tmp_path):
+    from app import create_app
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    app = create_app(str(tmp_path / "w.db")); st = app.config["STORE"]
+    ingest(st, IngestResult(transactions=[
+        Transaction(date="2026-10-21", description="E-TRANSFER ***Q7k", amount=-31.2, account_id="td",
+                    account_name="TD", source="plaid", raw={"plaid_id": "a1", "account_type": "depository",
+                                                            "issuer_category": "TRANSFER_IN_ACCOUNT_TRANSFER"}),
+        Transaction(date="2026-10-20", description="CORNER BAKERY", amount=12, account_id="manual",
+                    account_name="Added by hand", source="manual")], account_id="td"))
+    with app.test_client() as c:
+        by = {t.description: t.fingerprint for t in st.all_transactions()}
+        fields = c.get(f"/api/transactions/{by['E-TRANSFER ***Q7k']}").get_json()["bank_fields"]
+        got = {f["label"]: f["value"] for f in fields}
+        assert got["Sender"] == "Not sent" and got["Message"] == "Not sent"
+        assert got["Plaid’s name"] == "E-TRANSFER ***Q7k"
+        assert got["Plaid’s category"] == "TRANSFER_IN_ACCOUNT_TRANSFER"
+        assert c.get(f"/api/transactions/{by['CORNER BAKERY']}").get_json()["bank_fields"] == []
+
+
+def test_a_recent_sync_still_runs_the_one_time_refresh(tmp_path, monkeypatch):
+    from app import create_app
+    from finance import plaid_link
+    app = create_app(str(tmp_path / "s.db")); st = app.config["STORE"]
+    ran = []
+    monkeypatch.setattr(plaid_link, "configured", lambda: True)
+    monkeypatch.setattr(plaid_link, "synced_recently", lambda store: True)
+    monkeypatch.setattr(plaid_link, "refresh_details_once", lambda store, items: ran.append(1) or 7)
+    with app.test_client() as c:
+        r = c.post("/api/plaid/sync", json={}).get_json()
+    assert r["recent"] is True and r["details_refreshed"] == 7 and ran == [1]
