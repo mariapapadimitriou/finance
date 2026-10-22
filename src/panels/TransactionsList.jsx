@@ -740,12 +740,13 @@ export default function TransactionsList({ summary, categories, accounts, review
             <Alert action="Review" onAction={() => onTab?.('review')}>
               {dupes > 0 ? duplicateAlert(dupes) : (
                 <>
+                  {/* The same number as the badge, Home and To review (2026-10-22). */}
                   <span className="tx-look-long">
-                    {reviewCount === 1 ? '1 transaction needs a quick look.'
-                      : `${reviewCount} transactions need a quick look.`} It takes about a minute.
+                    {reviewCount === 1 ? '1 transaction needs a look.'
+                      : `${reviewCount} transactions need a look.`}
                   </span>
                   <span className="tx-look-short">
-                    {reviewCount === 1 ? '1 needs a quick look.' : `${reviewCount} need a quick look.`}
+                    {reviewCount === 1 ? '1 needs a look.' : `${reviewCount} need a look.`}
                   </span>
                 </>
               )}

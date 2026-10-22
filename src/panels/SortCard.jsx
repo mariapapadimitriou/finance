@@ -87,12 +87,12 @@ export const DEFAULT_CASES = {
     { key: 'spending', label: 'A purchase', group: 'spending', needs: 'category', effect: 'Counts as spending in a category you pick.', remember: 'merchant' },
     { key: 'bill', label: 'A bill', group: 'spending', needs: 'category', effect: 'Counts as spending, in Essentials, and Pearl plans for it next month.', remember: 'merchant' },
     { key: 'shared', label: 'Paid for a group', group: 'spending', needs: 'split', effect: 'The full amount counts as yours until they pay you back.', remember: null },
-    { key: 'moved', label: 'Moved between my accounts', group: 'not_spending', needs: null, effect: 'A transfer. Not spending, not income.', remember: 'destination' },
+    { key: 'moved', label: 'Moved between my accounts', group: 'not_spending', needs: null, effect: 'Your own money moving, so it isn’t counted as spending or income.', remember: 'destination' },
     { key: 'saved', label: 'Put into savings', group: 'not_spending', needs: 'account', effect: 'Moved to one of your savings accounts. It isn’t spending, and it counts toward Savings this month.', remember: 'destination' },
-    { key: 'lent', label: 'Lent to someone', group: 'not_spending', needs: null, effect: 'Lent. Not spending; Pearl watches for it coming back.', remember: 'merchant' },
-    { key: 'paying_back', label: 'Paying back money I borrowed', group: 'not_spending', needs: 'borrowed', effect: 'Borrowed. Not spending.', remember: null },
+    { key: 'lent', label: 'Lent to someone', group: 'not_spending', needs: null, effect: 'Not counted as spending. Pearl watches for it coming back.', remember: 'merchant' },
+    { key: 'paying_back', label: 'Paying back money I borrowed', group: 'not_spending', needs: 'borrowed', effect: 'Paying back a loan, so it isn’t counted as spending.', remember: null },
     { key: 'work', label: 'A work expense, to be reimbursed', group: 'not_mine', needs: null, effect: 'Left out of your spending until the money comes back.', remember: null },
-    { key: 'not_mine', label: 'Not mine', group: 'not_mine', needs: 'reason', effect: 'Left out of everything.', remember: 'exclusion' },
+    { key: 'not_mine', label: 'Not mine', group: 'not_mine', needs: 'reason', effect: 'Left out of all your numbers.', remember: 'exclusion' },
   ],
   in: [
     { key: 'pay', label: 'Pay', group: 'income', needs: 'income_kind', effect: 'Counts as income. Pick the kind: salary, bonus, benefits, interest or a refund of tax.', remember: null },
@@ -100,11 +100,11 @@ export const DEFAULT_CASES = {
     { key: 'payback', label: 'Someone paying me back', group: 'not_income', needs: 'candidates', effect: 'Comes off what you spent for them. Never income.', remember: null },
     { key: 'refund', label: 'A refund', group: 'not_income', needs: 'refund', effect: 'Links to the purchase and comes off its category.', remember: null },
     { key: 'reimbursement', label: 'A reimbursement', group: 'not_income', needs: 'candidates', effect: 'Pays back a work expense you left out.', remember: null },
-    { key: 'own', label: 'From my own account', group: 'not_income', needs: null, effect: 'A transfer. Not income.', remember: 'destination' },
-    { key: 'out_of_savings', label: 'Taken out of my savings', group: 'not_income', needs: 'account', effect: 'Counts against Savings this month.', remember: 'destination' },
-    { key: 'borrowed', label: 'Money I borrowed', group: 'not_income', needs: null, effect: 'Borrowed. Not income.', remember: null },
-    { key: 'lent_back', label: 'Paying back money I lent', group: 'not_income', needs: null, effect: 'Moves it to Lent. Not income.', remember: null },
-    { key: 'not_mine', label: 'Not mine', group: 'not_income', needs: 'reason', effect: 'Left out of everything.', remember: 'exclusion' },
+    { key: 'own', label: 'From my own account', group: 'not_income', needs: null, effect: 'Your own money moving, so it isn’t counted as income.', remember: 'destination' },
+    { key: 'out_of_savings', label: 'Taken out of my savings', group: 'not_income', needs: 'account', effect: 'Not counted as income. It comes off what you saved this month.', remember: 'destination' },
+    { key: 'borrowed', label: 'Money I borrowed', group: 'not_income', needs: null, effect: 'A loan, so it isn’t counted as income.', remember: null },
+    { key: 'lent_back', label: 'Paying back money I lent', group: 'not_income', needs: null, effect: 'A friend paying back what you lent, so it isn’t counted as income.', remember: null },
+    { key: 'not_mine', label: 'Not mine', group: 'not_income', needs: 'reason', effect: 'Left out of all your numbers.', remember: 'exclusion' },
   ],
 };
 /** The server's answer, or the default list until it comes. */
@@ -408,7 +408,13 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     || (st.groups ?? []).some((g) => g.options.some((o) => remembers(sId, o))));
 
   /** Commit the last answer: run the call, then hand the card to its door. */
-  const finish = (answers, effect, run) => commit(() => { forgetCases(it.txn.id); return run(); }, {
+  // What the Sorted card says about her rule (2026-10-22): only when one was
+  // saved — the server says so for a mark; a category call trusts the box.
+  const ruleText = `Pearl will do the same for every ${it.to || it.txn.merchant} from now on.`;
+  const finish = (answers, effect, run) => commit(() => {
+    forgetCases(it.txn.id);
+    return run().then((r) => ({ ...r, rule: (r?.res?.remember ?? remember) ? ruleText : '' }));
+  }, {
     answers: answers.map((p) => ({ ...p, label: p.label ?? answerLabel(flow, p) })), effect,
   });
   const markCase = (c, extra = {}, answers, effect) => finish(answers, effect ?? c.effect,
@@ -454,7 +460,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     }
     if (s.ask === 'pick') {
       const cand = s.candidates.find((x) => x.id === v) ?? (found ?? []).find((x) => x.id === v);
-      if (s.key === 'payback' && !v) return finish(answers, 'Moves it to Lent. Not income.', () => via({ case: 'lent_back' }, 'Sorted as money you lent, paid back.'));
+      if (s.key === 'payback' && !v) return finish(answers, 'A friend paying back what you lent, so it isn’t counted as income.', () => via({ case: 'lent_back' }, 'Sorted as money you lent, paid back.'));
       if (s.key === 'refund' && v === '') return undefined;                 // a category comes next
       const effect = s.key === 'payback' ? `Comes off what you spent at ${cand?.merchant}. Not income.`
         : s.key === 'refund' ? `Comes off ${cand?.category || ''}. Not income.`
@@ -518,14 +524,14 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
         : plain(() => confirmTx(it.txn.id), 'Confirmed.')));
     }
     if (sId === 'q1') {                                                     // my own money
-      return finish(answers, 'A transfer. Not income.', () => (it.kind === 'joint_in'
+      return finish(answers, 'Your own money moving, so it isn’t counted as income.', () => (it.kind === 'joint_in'
         ? plain(() => setJointFrom(it.txn.id, 'me', remember), 'Sorted as your own money.')
         : it.kind === 'income'
           ? plain(() => setCategory(it.txn.id, 'Transfers', remember), 'Sorted as your own money, not income.')
           : via({ case: 'own', remember: !!remember }, 'Sorted as your own money.')));
     }
     if (sId === 'borrowed') {
-      return markCase(chosen ?? byKey('paying_back'), { counted: true }, answers, 'Borrowed. Not spending.');
+      return markCase(chosen ?? byKey('paying_back'), { counted: true }, answers, 'Paying back a loan, so it isn’t counted as spending.');
     }
     return undefined;
   };
@@ -834,8 +840,18 @@ export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'N
           ))}
         </div>
       )}
+      {/* What changed (2026-10-22): what it is now, what that does to her
+          numbers, and her rule if she saved one. A neutral box with a label,
+          not an unexplained lilac one. */}
       {(entry.detail || entry.title) && (
-        <p className="nl-effect" role="status">{entry.detail || entry.title}</p>
+        <div className="nl-effect" role="status">
+          <p className="pk-overline">What changed</p>
+          {entry.title && <p className="nl-effect-title">{entry.title}</p>}
+          {entry.detail && entry.detail !== entry.title && <p className="nl-effect-detail">{entry.detail}</p>}
+          {entry.rule && (
+            <p className="nl-effect-rule"><PIcon name="check" size={14} /> {entry.rule}</p>
+          )}
+        </div>
       )}
       <div className="nl-actions nl-next">
         {/* The same pill as Undo (2026-10-21), so the card's two ways out match. */}

@@ -134,7 +134,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
     setError(null);
     try {
       const r = await fn();
-      setSorted({ key: asItem.key, it: asItem, answers, effect, title: r.title, detail: r.detail || effect || '', undo: r.undo });
+      setSorted({ key: asItem.key, it: asItem, answers, effect, title: r.title, detail: r.detail || effect || '', undo: r.undo, rule: r.rule || '' });
       setResume(null);
     } catch (e) {
       setError(e);

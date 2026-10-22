@@ -202,6 +202,9 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
       const entry = {
         key: current.key, it: current, answers,
         title: out?.title || 'Sorted.', detail: out?.detail || effect || '', undo: out?.undo,
+        rule: out?.rule || '',
+        // Where it was in the list when answered, for the header.
+        pos: position, of: open.length,
         // Where Next goes: the transaction after this one in the list.
         nextKey: open[open.indexOf(current) + 1]?.key ?? null,
       };
@@ -358,8 +361,8 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
   // ── One transaction: its question, or its Sorted card ────────────────
   const entry = back !== null ? log[back] : sorted;
   const showing = entry ?? current;
-  const n = entry ? Math.max(1, open.findIndex((i) => i.key === entry.key) + 1) || position : position;
-  const total = open.length + (entry && !open.some((i) => i.key === entry.key) ? 1 : 0);
+  const n = entry?.pos ?? (entry ? Math.max(1, open.findIndex((i) => i.key === entry.key) + 1) || position : position);
+  const total = entry?.of ?? (open.length + (entry && !open.some((i) => i.key === entry.key) ? 1 : 0));
   const prevIndex = back !== null ? back - 1 : log.length - 1 - (sorted ? 1 : 0);
   const hasPrevious = prevIndex >= 0 && !!log[prevIndex];
 
@@ -367,11 +370,18 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
     <div className="pk nl-page">
       <header className="nl-head">
         {backLink('To review', toList)}
+        {/* The app's one number up top (2026-10-22); where she is in the
+            To review list underneath, and what she has skipped. */}
         <h1 className="pk-h1">
-          {total === 0 ? 'Nothing needs a look'
-            : `${total} transaction${total === 1 ? '' : 's'} need${total === 1 ? 's' : ''} a look`}
+          {count === 0 ? 'Nothing needs a look'
+            : `${count} transaction${count === 1 ? '' : 's'} need${count === 1 ? 's' : ''} a look`}
         </h1>
-        {showing && <p className="pk-label pk-muted">{Math.min(n, Math.max(total, 1))} of {Math.max(total, 1)} · {minutes(Math.max(total, 1))}</p>}
+        {showing && (
+          <p className="pk-label pk-muted">
+            {`${Math.min(n, Math.max(total, 1))} of ${Math.max(total, 1)} to review`}
+            {skipped.length ? ` · ${skipped.length} skipped` : ''}
+          </p>
+        )}
       </header>
 
       {error && <ErrorNote error={error} onRetry={load} />}

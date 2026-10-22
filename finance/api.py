@@ -211,6 +211,19 @@ def transactions_list():
                                                  _date.fromisoformat(_today_iso()))
                    for d in r["dates"]}
         rows = [(t, r) for t, r in rows if (t.merchant, t.date[:10]) in charges]
+    # Needs a look is the review's own set (2026-10-22), whatever the month,
+    # so the filter shows the same number as the badge; and a dashed chip
+    # only ever marks one of them.
+    from .review import for_store, ids_in
+    looking = ids_in(for_store(st))
+    rows = [(t, r if not r.get("suggested") or r["id"] in looking else {**r, "suggested": False,
+                                                                       "chip": {**(r.get("chip") or {}), "suggested": False}})
+            for t, r in rows]
+    if filters["look"]:
+        filters["ids"] = looking if "ids" not in filters else (filters["ids"] & looking)
+        filters["look"] = False
+        for k in ("month", "day", "first", "last"):
+            filters[k] = None
     chosen = txlist.select(rows, **filters)
     # A transfer between two of her accounts is one line, not two (2026-10-22).
     from .transfers import transfer_pairs
@@ -1861,9 +1874,8 @@ def home():
     from . import kinds as kinds_mod
     kinds = kinds_mod.kind_map(st, txns, today)
     usual = usual_month.usual(txns, today, unusual=_unusual_months(st), kinds=kinds)
-    from .review import build as review_build
-    review = review_build(txns, dismissed=st.dismissed_reviews(), splits=st.splits(),
-                          payer=st.payback_people(), skipped=st.skipped_reviews())
+    from .review import for_store
+    review = for_store(st)
     return jsonify({
         "month": today.strftime("%Y-%m"),
         "today": today.isoformat(),
@@ -2187,12 +2199,8 @@ def set_income_type(txn_id: str):
 
 @bp.get("/review")
 def review_queue():
-    from .review import build
-    st = store()
-    found_on = {k: v["found_on"] for k, v in st.duplicates().items()}
-    return jsonify(build(st.all_transactions(), dismissed=st.dismissed_reviews(),
-                         splits=st.splits(), payer=st.payback_people(),
-                         found_on=found_on, skipped=st.skipped_reviews()))
+    from .review import for_store
+    return jsonify(for_store(store()))
 
 
 @bp.post("/review/dismiss")

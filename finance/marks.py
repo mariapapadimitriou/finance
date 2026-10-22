@@ -52,18 +52,18 @@ OUT_CASES = (
     {"key": "shared", "label": "Paid for a group", "group": "spending", "needs": "split",
      "effect": "The full amount counts as yours until they pay you back.", "remember": None},
     {"key": "moved", "label": "Moved between my accounts", "group": "not_spending", "needs": None,
-     "effect": "A transfer. Not spending, not income.", "remember": "destination"},
+     "effect": "Your own money moving, so it isn’t counted as spending or income.", "remember": "destination"},
     {"key": "saved", "label": "Put into savings", "group": "not_spending", "needs": "account",
      "effect": "Moved to one of your savings accounts. It isn’t spending, and it counts toward "
                "Savings this month.", "remember": "destination"},
     {"key": "lent", "label": "Lent to someone", "group": "not_spending", "needs": None,
-     "effect": "Lent. Not spending; Pearl watches for it coming back.", "remember": "merchant"},
+     "effect": "Not counted as spending. Pearl watches for it coming back.", "remember": "merchant"},
     {"key": "paying_back", "label": "Paying back money I borrowed", "group": "not_spending",
-     "needs": "borrowed", "effect": "Borrowed. Not spending.", "remember": None},
+     "needs": "borrowed", "effect": "Paying back a loan, so it isn’t counted as spending.", "remember": None},
     {"key": "work", "label": "A work expense, to be reimbursed", "group": "not_mine", "needs": None,
      "effect": "Left out of your spending until the money comes back.", "remember": None},
     {"key": "not_mine", "label": "Not mine", "group": "not_mine", "needs": "reason",
-     "effect": "Left out of everything.", "remember": "exclusion"},
+     "effect": "Left out of all your numbers.", "remember": "exclusion"},
     {"key": "saved_part", "label": "Part of it was put away", "group": "not_spending",
      "needs": "amount", "effect": "The part you name is saved; the rest counts as spending.",
      "remember": None, "hidden": True},
@@ -82,18 +82,18 @@ IN_CASES = (
     {"key": "reimbursement", "label": "A reimbursement", "group": "not_income",
      "needs": "candidates", "effect": "Pays back a work expense you left out.", "remember": None},
     {"key": "own", "label": "From my own account", "group": "not_income", "needs": None,
-     "effect": "A transfer. Not income.", "remember": "destination"},
+     "effect": "Your own money moving, so it isn’t counted as income.", "remember": "destination"},
     {"key": "out_of_savings", "label": "Taken out of my savings", "group": "not_income",
-     "needs": "account", "effect": "Counts against Savings this month.", "remember": "destination"},
+     "needs": "account", "effect": "Not counted as income. It comes off what you saved this month.", "remember": "destination"},
     {"key": "borrowed", "label": "Money I borrowed", "group": "not_income", "needs": None,
-     "effect": "Borrowed. Not income.", "remember": None},
+     "effect": "A loan, so it isn’t counted as income.", "remember": None},
     {"key": "lent_back", "label": "Paying back money I lent", "group": "not_income", "needs": None,
-     "effect": "Moves it to Lent. Not income.", "remember": None},
+     "effect": "A friend paying back what you lent, so it isn’t counted as income.", "remember": None},
     {"key": "joint_them", "label": "Someone else put this in", "group": "not_income",
      "needs": "person", "effect": "For a joint account: pays for their share.",
      "remember": "sender"},
     {"key": "not_mine", "label": "Not mine", "group": "not_income", "needs": "reason",
-     "effect": "Left out of everything.", "remember": "exclusion"},
+     "effect": "Left out of all your numbers.", "remember": "exclusion"},
 )
 
 SAVINGS_SUBTYPES = {"savings", "money market", "hsa", "cash management", "hisa", "tfsa savings",
@@ -491,10 +491,15 @@ def _category(body: dict) -> str:
 
 
 def _remember_destination(store, t: Transaction, category: str, body: dict) -> bool:
+    """Her rule for where transfers like this go. Only for money going out:
+    destination rules sort outflows, so money coming in is remembered by its
+    sender (a merchant rule) instead. This transaction is sorted too, not
+    only the ones to come (2026-10-22)."""
     from .transfers import destination
-    where = destination(t) if body.get("remember") else None
+    where = destination(t) if body.get("remember") and t.amount > 0 else None
     if where:
         store.set_destination(where[0], category, where[1])
+        store.set_transaction_category(t.fingerprint, category)
         return True
     return False
 

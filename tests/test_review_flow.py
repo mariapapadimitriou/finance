@@ -165,7 +165,9 @@ def test_undo_refuses_what_it_did_not_make(client):
 
 # ── Skipped (THL-213) ────────────────────────────────────────────────────
 
-def test_skipped_stays_skipped_and_leaves_the_badge(client):
+def test_skipped_stays_skipped_and_still_counts(client):
+    """2026-10-22: one number across the app — everything that needs a look,
+    skipped or not; `open` is what isn't skipped, for To review's tabs."""
     load(client.st, row(40, "SEND E-TFR ***Ab1", account="chq", kind="depository"),
          row(25, "MYSTERY SHOP", merchant="Mystery Shop"))
     before = client.get("/api/review").get_json()
@@ -173,9 +175,9 @@ def test_skipped_stays_skipped_and_leaves_the_badge(client):
     key = "u:" + before["unsorted"]["transfers"][0]["id"]
     assert client.post("/api/review/skip", json={"key": key}).status_code == 200
     after = client.get("/api/review").get_json()
-    assert after["count"] == 1 and after["skipped"] == 1
+    assert after["count"] == 2 and after["open"] == 1 and after["skipped"] == 1
     assert after["unsorted"]["transfers"][0]["skipped"] is True        # still listed
-    assert client.get("/api/home").get_json()["review_count"] == 1
+    assert client.get("/api/home").get_json()["review_count"] == 2
     # Back to the queue.
     client.post("/api/review/skip", json={"key": key, "skip": False})
     again = client.get("/api/review").get_json()
@@ -184,3 +186,36 @@ def test_skipped_stays_skipped_and_leaves_the_badge(client):
 
 def test_skipping_needs_an_item(client):
     assert client.post("/api/review/skip", json={}).status_code == 400
+
+
+def test_one_needs_a_look_number_everywhere(client):
+    """2026-10-22: the badge (/api/review), Home and the list's Needs a look
+    filter count the same transactions, whatever month the list is on."""
+    load(client.st, row(40, "SEND E-TFR ***Ab1", account="chq", kind="depository"),
+         row(25, "MYSTERY SHOP", merchant="Mystery Shop"))
+    n = client.get("/api/review").get_json()["count"]
+    assert client.get("/api/home").get_json()["review_count"] == n
+    listed = client.get("/api/transactions/list", query_string={"look": "1", "month": "2001-01"}).get_json()
+    assert listed["total"] == n
+    # Every dashed chip in the list is one of them.
+    rows = client.get("/api/transactions/list", query_string={"month": "all", "limit": 1000}).get_json()["transactions"]
+    looked = {r["id"] for r in listed["transactions"]}
+    assert {r["id"] for r in rows if r["chip"]["suggested"]} <= looked
+
+
+def test_remembering_my_own_money_answers_it_and_the_next_one(client):
+    """2026-10-22: "No, I moved my own money" with Remember on an e-Transfer
+    in takes it off the list and sorts the next one from the same sender."""
+    ids = load(client.st, row(-45, "INTERAC E-TRF FROM DENISE RAO", account="chq", kind="depository"))
+    tid = ids["INTERAC E-TRF FROM DENISE RAO"]
+    asked = client.get("/api/review").get_json()
+    assert any(it["txn"]["id"] == tid for it in asked["money_in"])
+    res = client.post(f"/api/transactions/{tid}/mark", json={"case": "own", "remember": True}).get_json()
+    assert res["remember"] is True
+    after = client.get("/api/review").get_json()
+    assert not any(it["txn"]["id"] == tid for it in after["money_in"])
+    from datetime import timedelta
+    load(client.st, row(-60, "INTERAC E-TRF FROM DENISE RAO", account="chq", kind="depository",
+                        when=(TODAY - timedelta(days=1)).isoformat()))
+    again = client.get("/api/review").get_json()
+    assert again["money_in"] == []

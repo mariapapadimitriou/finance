@@ -87,9 +87,14 @@
 .nl-stack .nl-next { justify-content: flex-end; }
 .nl-stack .nl-next .pk-btn.primary { display: inline-flex; align-items: center; gap: 4px; }
 .nl-stack .nl-effect {
-  margin: 0; padding: 14px 16px; border-radius: var(--radius-sm); background: var(--lilac); color: var(--on-nacre);
-  font-size: 14px; line-height: 20px;
+  margin: 0; padding: 14px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--surface-card); color: var(--ink); display: flex; flex-direction: column; gap: 4px;
 }
+.nl-stack .nl-effect p { margin: 0; }
+.nl-stack .nl-effect .pk-overline { margin-bottom: 2px; }
+.nl-effect-title { font-size: 15px; line-height: 22px; font-weight: 600; }
+.nl-effect-detail { font-size: 14px; line-height: 20px; color: var(--ink-muted); }
+.nl-effect-rule { display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; color: var(--link); }
 .nl-stack .nl-actions { flex-direction: row; align-items: center; gap: var(--space-4); margin-top: var(--space-1); }
 .nl-stack .nl-actions .pk-btn.primary { width: auto; padding: 0 28px; }
 .pk .nl-stack .nl-skip { align-self: auto; height: 44px; padding: 0; font-size: 15px; }
