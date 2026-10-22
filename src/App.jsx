@@ -377,13 +377,12 @@ export default function App() {
         <QuickSort data={quickSort} categories={categories} onClose={() => setQuickSort(null)}
                    onChanged={load} />
       )}
-      {panel === 'home' && <HomePanel onTab={go} onChanged={load} version={version} />}
+      {panel === 'home' && <HomePanel onTab={go} onChanged={load} onQuickSort={openQuickSort} version={version} />}
       {panel === 'debts' && <DebtsPanel onTab={go} onChanged={load} version={version} />}
       {panel === 'insights' && <InsightsPanel onTab={go} version={version} />}
       {panel === 'calendar' && <CalendarPanel onTab={go} version={version} categories={categories} />}
       {panel === 'review' && (
-        <NeedsALook categories={categories} onChanged={load} onTab={go} version={version}
-                    onQuickSort={openQuickSort} />
+        <NeedsALook categories={categories} onChanged={load} onTab={go} version={version} />
       )}
       {panel === 'transactions' && (
         <TransactionsList summary={summary} categories={categories} accounts={accounts}

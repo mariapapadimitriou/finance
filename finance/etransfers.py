@@ -34,7 +34,8 @@ _BANK_WORDS = {
 def is_etransfer(t: Transaction) -> bool:
     raw = t.raw or {}
     return bool(_ETRANSFER.search(" ".join(str(x or "") for x in (
-        t.description, t.merchant, raw.get("counterparty")))))
+        t.description, t.merchant, raw.get("counterparty"), raw.get("plaid_name"),
+        raw.get("original_description")))))
 
 
 def _name_in(text: str) -> str | None:
@@ -59,9 +60,16 @@ def party(t: Transaction) -> dict | None:
     direction = "from" if t.amount < 0 else "to"
     if t.party:
         return {"direction": direction, "name": t.party, "named_by": "you"}
-    counterparty = str((t.raw or {}).get("counterparty") or "").strip()
-    name = (_name_in(counterparty) if counterparty and not _ETRANSFER.fullmatch(counterparty)
-            else None) or _name_in(t.description)
+    raw = t.raw or {}
+    # Plaid's payment_meta names the payer of money in and the payee of
+    # money out, when the bank sends it (2026-10-22); then the counterparty,
+    # then the bank's wording.
+    named = str(raw.get("payer" if direction == "from" else "payee") or "").strip()
+    counterparty = str(raw.get("counterparty") or "").strip()
+    name = (_name_in(named) if named else None) \
+        or (_name_in(counterparty) if counterparty and not _ETRANSFER.fullmatch(counterparty)
+            else None) \
+        or _name_in(t.description)
     return {"direction": direction, "name": name, "named_by": "bank" if name else None}
 
 
@@ -83,6 +91,10 @@ def memo(t: Transaction) -> str | None:
     if not is_etransfer(t):
         return None
     raw = t.raw or {}
+    # Plaid's payment_meta.reason is "the payer-supplied description" itself.
+    reason = " ".join(str(raw.get("reason") or "").split())
+    if reason:
+        return reason[:80]
     text = str(raw.get("original_description") or "").strip()
     if not text:
         return None

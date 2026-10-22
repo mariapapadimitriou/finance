@@ -166,7 +166,9 @@ def build(transactions: list[Transaction], today: str | None = None,
     money_in = []
     for t in live:
         if (t.amount >= 0 or t.date[:10] < since or not _is_bank(t) or t.repays
-                or t.category not in ("Transfers",) or t.category_source == "user"
+                or t.category not in ("Transfers",)
+                # Answered: by her, or by a rule of hers (2026-10-22).
+                or t.category_source in ("user", "merchant_override")
                 or t.fingerprint in paired or is_others(t)):
             continue
         key = "in:" + t.fingerprint
@@ -217,6 +219,9 @@ def build(transactions: list[Transaction], today: str | None = None,
                                    "outside Pearl, so it could be yours or theirs."})
 
     # 3c. Who sent this? (R-09): an e-Transfer in with no name from the bank.
+    # One transaction, one question (2026-10-22): an e-Transfer already asked
+    # about as money in isn't listed again here; its card asks who sent it.
+    asked_in = {it["txn"]["id"]: it for it in money_in}
     who_sent = []
     for t in live:
         if (t.amount >= 0 or t.date[:10] < since or not is_etransfer(t) or t.party
@@ -224,6 +229,9 @@ def build(transactions: list[Transaction], today: str | None = None,
             continue
         who = party(t)
         if who and who.get("name"):
+            continue
+        if t.fingerprint in asked_in:
+            asked_in[t.fingerprint]["nameless"] = True
             continue
         key = "who:" + t.fingerprint
         if key in dismissed:
@@ -275,9 +283,31 @@ def build(transactions: list[Transaction], today: str | None = None,
     for part in (unsure, money_in, joint_in, who_sent, income, three, dupes):
         for it in part:
             it["skipped"] = it["key"] in held
-    count = (groups["count"] + len(unsure) + len(money_in) + len(joint_in) + len(who_sent)
-             + len(income) + len(three) + len(dupes)) - len(held)
-    return {"count": count, "skipped": len(held), "unsorted": groups, "unsure_category": unsure,
+    # One number for the whole app (2026-10-22): everything that needs a
+    # look, skipped or not — the badge, Home, the Transactions banner, To
+    # review and the Needs a look filter all show this. `open` is the part
+    # not skipped, for To review's tabs.
+    total = (groups["count"] + len(unsure) + len(money_in) + len(joint_in) + len(who_sent)
+             + len(income) + len(three) + len(dupes))
+    return {"count": total, "open": total - len(held), "skipped": len(held), "unsorted": groups, "unsure_category": unsure,
             "money_in": money_in, "joint_in": joint_in, "who_sent": who_sent,
             "income_type": income, "three_pay_month": three,
             "duplicate": dupes, "kinds": KINDS}
+
+
+def for_store(st, today: str | None = None) -> dict:
+    """The review as every screen sees it: one call, so one number."""
+    found_on = {k: v["found_on"] for k, v in st.duplicates().items()}
+    return build(st.all_transactions(), today=today, dismissed=st.dismissed_reviews(),
+                 splits=st.splits(), payer=st.payback_people(), found_on=found_on,
+                 skipped=st.skipped_reviews())
+
+
+def ids_in(review: dict) -> set[str]:
+    """Every transaction the review asks about, for the list's Needs a look."""
+    out = {t["id"] for t in (review.get("unsorted") or {}).get("transfers", [])}
+    for part in ("unsure_category", "money_in", "joint_in", "who_sent", "income_type", "duplicate"):
+        for it in review.get(part) or []:
+            if it.get("txn"):
+                out.add(it["txn"]["id"])
+    return out

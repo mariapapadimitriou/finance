@@ -58,7 +58,8 @@ def _is_bank(t: Transaction) -> bool:
 
 
 # Words that say "a transfer" without saying where to.
-_GENERIC = {"send", "sent", "e", "tfr", "etfr", "e-tfr", "transfer", "e-transfer",
+_GENERIC = {"send", "sent", "e", "tfr", "etfr", "e-tfr", "trf", "e-trf", "received", "recv",
+            "rcvd", "transfer", "e-transfer",
             "etransfer", "interac", "to", "fr", "from", "online", "banking",
             "payment", "pmt", "bill", "mobile", "internet", "debit", "withdrawal",
             "deposit", "the", "ref", "conf", "autodeposit", "request", "money"}
@@ -77,7 +78,10 @@ def destination(t: Transaction) -> tuple[str, str] | None:
     is left of the name once references are taken out. A transfer that says
     nothing but "SEND E-TFR" has no destination: nothing safe to learn.
     """
-    who = str((t.raw or {}).get("counterparty") or "").strip()
+    raw = t.raw or {}
+    # Plaid's payment_meta payee (money out) or payer (money in), when the
+    # bank names them (2026-10-22), before the counterparty.
+    who = str(raw.get("payee" if t.amount > 0 else "payer") or raw.get("counterparty") or "").strip()
     if who:
         return "to:" + " ".join(who.lower().split()), who
     text = t.description or ""
@@ -94,7 +98,9 @@ def destination(t: Transaction) -> tuple[str, str] | None:
     if words and sum(len(w) for w in words) >= 3:
         return "name:" + " ".join(words), " ".join(words).title()
     merchant = " ".join((t.merchant or "").lower().split())
-    if merchant and any(w not in _GENERIC for w in re.split(r"[^a-z0-9]+", merchant) if w):
+    # A reference code ("ab9") isn't a name: it changes every time.
+    if merchant and any(w not in _GENERIC and not any(ch.isdigit() for ch in w)
+                        for w in re.split(r"[^a-z0-9]+", merchant) if w):
         return "m:" + merchant, t.merchant
     return None
 

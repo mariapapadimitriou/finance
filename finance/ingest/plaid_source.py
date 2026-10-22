@@ -152,6 +152,11 @@ def _counterparty(item: dict) -> str:
     return str(item.get("merchant_name") or "").strip()
 
 
+def _meta(item: dict, key: str) -> str:
+    """One of Plaid's payment_meta fields, when the bank filled it in."""
+    return str(((item.get("payment_meta") or {}).get(key)) or "").strip()
+
+
 def _logo(item: dict) -> str:
     if item.get("logo_url"):
         return str(item["logo_url"])
@@ -222,6 +227,15 @@ def map_plaid_transaction(item: dict, accounts: dict | None = None) -> Transacti
              # The bank's own description, before Plaid tidied it: where an
              # e-Transfer's message lives, when the bank passes it on.
              "original_description": str(item.get("original_description") or "").strip(),
+             # payment_meta (2026-10-22): for a transfer, who paid and who
+             # was paid, and "the payer-supplied description" — an
+             # e-Transfer's sender and message, when the bank passes them.
+             # Plaid's own name for the row is kept too, since the merchant
+             # name wins the description.
+             "payer": _meta(item, "payer"),
+             "payee": _meta(item, "payee"),
+             "reason": _meta(item, "reason"),
+             "plaid_name": str(item.get("name") or "").strip(),
              # Free with every transaction: the merchant's logo and a stable id
              # (one merchant however its name is spelled), and how sure Plaid
              # is of its own category.

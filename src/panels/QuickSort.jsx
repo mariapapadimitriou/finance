@@ -59,7 +59,7 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
     await quickSortStep(item.id, { action: 'marked', title: r.title || '' });
     return r;
   }, (r) => setSorted({ key: item.id, it: asItem(item), answers, effect, title: r.title,
-                        detail: r.detail || effect || '', undo: r.undo }));
+                        detail: r.detail || effect || '', undo: r.undo, rule: r.rule || '' }));
   const reopen = (k = sorted.answers.length - 1) => run(async () => {
     if (sorted.undo) await undoChange(sorted.undo);
   }, () => {

@@ -70,3 +70,35 @@ def test_needs_a_look_asks_about_the_purchase_the_message_names():
     assert item["guess"]["action"] == "memo" and item["guess"]["charge"]["id"] == uber.fingerprint
     assert item["txn"]["memo"] == "uber eats"
     assert "uber eats" in item["reason"]
+
+
+def test_plaid_payment_meta_names_the_sender_and_carries_the_message():
+    """2026-10-22: payment_meta.payer is who sent money in, payee who was
+    paid, and reason "the payer-supplied description" — the message."""
+    from finance.ingest.plaid_source import map_plaid_transaction
+    from finance.etransfers import memo, party
+    item = {"date": "2026-10-19", "amount": -31.2, "account_id": "chq",
+            "name": "E-TRANSFER ***Q7k", "merchant_name": None,
+            "original_description": "E-TRANSFER ***Q7k",
+            "payment_meta": {"payer": "DENISE RAO", "reason": "uber eats", "payee": None}}
+    t = map_plaid_transaction(item, {"chq": {"name": "Chequing", "type": "depository"}})
+    assert t.raw["payer"] == "DENISE RAO" and t.raw["reason"] == "uber eats"
+    assert party(t) == {"direction": "from", "name": "Denise Rao", "named_by": "bank"}
+    assert memo(t) == "uber eats"
+    out = map_plaid_transaction({**item, "amount": 40.0,
+                                 "payment_meta": {"payee": "Sam Lee"}},
+                                {"chq": {"name": "Chequing", "type": "depository"}})
+    assert party(out)["name"] == "Sam Lee" and party(out)["direction"] == "to"
+
+
+def test_etransfer_names_are_clean_for_rules():
+    """2026-10-22: "INTERAC E-TRF FROM DENISE RAO" is Denise Rao, as a
+    merchant and as a remembered destination; a bare reference is nothing."""
+    from finance.models import Transaction, normalize_merchant
+    from finance.transfers import destination
+    assert normalize_merchant("INTERAC E-TRF FROM DENISE RAO") == "Denise Rao"
+    assert normalize_merchant("INTERAC E-TRANSFER RECEIVED PRIYA SHAH") == "Priya Shah"
+    t = Transaction(date="2026-10-19", description="INTERAC E-TRF FROM DENISE RAO", amount=45, account_id="a")
+    assert destination(t) == ("name:denise rao", "Denise Rao")
+    bare = Transaction(date="2026-10-18", description="SEND E-TFR ***Ab9", amount=250, account_id="a")
+    assert destination(bare) is None

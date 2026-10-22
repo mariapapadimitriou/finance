@@ -196,3 +196,7 @@
 
 .bd-section + .bd-section { margin-top: var(--space-4); }
 .bd-section > .pk-overline { margin: 0 0 var(--space-2); }
+
+/* Needs a look on Home: Quick sort, then the way to To review (2026-10-22). */
+.hm-actions { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.pk .hm-quick { width: auto; height: 40px; padding: 0 20px; font-size: 14px; }

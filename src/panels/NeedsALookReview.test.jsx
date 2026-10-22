@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SortedCard, minutes, questionLabel } from './NeedsALook.jsx';
+import { SortedCard, byKind, minutes, questionLabel } from './NeedsALook.jsx';
+import { NeedsALook as HomeLook } from './HomePanel.jsx';
 import Stacked, { Done, Progress, steps } from './Stacked.jsx';
 
 // Needs a look as the Current design page draws it (2026-10-20): To review,
@@ -37,10 +38,9 @@ describe('To review (TR-01)', () => {
 });
 
 describe('One question at a time, tapped (R-10 to R-12)', () => {
-  it('shows Undo in the card, the choices, Skip for now, and nothing to save', () => {
+  it('before any answer there is no Undo (2026-10-22); the choices, Skip for now, nothing to save', () => {
     const page = html(<Stacked it={out} act={noop} commit={noop} onSkip={noop} onBack={noop} />);
-    expect(page).toContain('nl-pill nl-undo');
-    expect(page).toContain('aria-label="Back to the list"');
+    expect(page).not.toContain('nl-undo');
     expect(page).toContain('Was this spending?');
     expect(page).toContain('Skip for now');
     expect(page).not.toContain('Save and next');
@@ -118,5 +118,40 @@ describe('The Sorted card (R-13)', () => {
   it('the dots can say Sorted on their own', () => {
     expect(html(<Progress done={2} total={2} sorted />)).toContain('Sorted');
     expect(html(<Progress done={1} total={2} />)).toContain('1 of 2');
+  });
+});
+
+describe('Needs a look, reorganised (2026-10-22)', () => {
+  it('a choice that can become a rule offers Remember for the merchant', () => {
+    // "It wasn't a purchase" → Lent (remembers by merchant) and the rest.
+    const page = html(<Stacked it={out} act={noop} commit={noop} onSkip={noop} onBack={noop}
+                               initialPath={[{ step: 'q1', v: 'else' }]} />);
+    expect(page).toContain('Remember for M. Papas');
+    expect(page).toContain('Sorts every transaction from them the same way');
+  });
+
+  it('“Is this Groceries? Yes” can be remembered; a first step that only leads on cannot', () => {
+    const cat = { key: 'c:z', kind: 'category', guess: 'Groceries',
+                  txn: { id: 'z', date: '2026-10-07', merchant: 'Qwx Market', amount: 23.5 } };
+    expect(html(<Stacked it={cat} act={noop} commit={noop} onSkip={noop} onBack={noop} />))
+      .toContain('Remember for Qwx Market');
+    expect(html(<Stacked it={out} act={noop} commit={noop} onSkip={noop} onBack={noop} />))
+      .not.toContain('Remember for');
+  });
+
+  it('the list is grouped by question, in a fixed order, oldest first in each', () => {
+    const g = byKind([
+      { key: 'w', kind: 'who_sent', date: '2026-10-02' },
+      { key: 'c1', kind: 'category', date: '2026-10-05' },
+      { key: 'c0', kind: 'category', date: '2026-10-01' },
+    ].sort((a, b) => (a.date < b.date ? -1 : 1)));
+    expect(g.map((x) => x.kind)).toEqual(['category', 'who_sent']);
+    expect(g[0].items.map((x) => x.key)).toEqual(['c0', 'c1']);
+  });
+
+  it('Quick sort is on Home, beside the way to To review', () => {
+    const home = html(<HomeLook count={3} onReview={noop} onQuickSort={noop} />);
+    expect(home).toContain('Quick sort');
+    expect(home).toContain('Review one by one');
   });
 });

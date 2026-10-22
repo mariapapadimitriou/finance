@@ -87,9 +87,14 @@
 .nl-stack .nl-next { justify-content: flex-end; }
 .nl-stack .nl-next .pk-btn.primary { display: inline-flex; align-items: center; gap: 4px; }
 .nl-stack .nl-effect {
-  margin: 0; padding: 14px 16px; border-radius: var(--radius-sm); background: var(--lilac); color: var(--on-nacre);
-  font-size: 14px; line-height: 20px;
+  margin: 0; padding: 14px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--surface-card); color: var(--ink); display: flex; flex-direction: column; gap: 4px;
 }
+.nl-stack .nl-effect p { margin: 0; }
+.nl-stack .nl-effect .pk-overline { margin-bottom: 2px; }
+.nl-effect-title { font-size: 15px; line-height: 22px; font-weight: 600; }
+.nl-effect-detail { font-size: 14px; line-height: 20px; color: var(--ink-muted); }
+.nl-effect-rule { display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; color: var(--link); }
 .nl-stack .nl-actions { flex-direction: row; align-items: center; gap: var(--space-4); margin-top: var(--space-1); }
 .nl-stack .nl-actions .pk-btn.primary { width: auto; padding: 0 28px; }
 .pk .nl-stack .nl-skip { align-self: auto; height: 44px; padding: 0; font-size: 15px; }
@@ -99,7 +104,20 @@
 .nl-list-head { gap: var(--space-2); }
 .nl-list-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); width: 100%; }
 .nl-list-title p { margin: 0; }
-.pk .nl-quick { width: auto; height: 40px; padding: 0 18px; font-size: 14px; }
+.pk .nl-start { width: auto; height: 40px; padding: 0 20px; font-size: 14px; }
+/* To review, grouped by question (2026-10-22). */
+.nl-tabs { margin-top: 0; }
+.nl-group-list { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.nl-group-head { margin: 8px 0 0; }
+.nl-skip-row { display: flex; align-items: center; gap: var(--space-2); border-bottom: 1px solid var(--border); }
+.nl-skip-row:last-child { border-bottom: 0; }
+.nl-skip-row .pk-row { flex: 1 1 auto; min-width: 0; border-bottom: 0; }
+.pk .nl-putback {
+  flex: none; margin-right: 12px; height: 32px; padding: 0 14px; border-radius: var(--radius-full);
+  border: 1px solid var(--border); background: var(--surface-card); color: var(--link);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.pk .nl-putback:disabled { opacity: .6; cursor: default; }
 .nl-list { width: 100%; }
 .nl-hint { margin: 0; padding: 4px 24px; font-size: 14px; }
 .pk .nl-row { width: 100%; }

@@ -144,9 +144,11 @@ def test_suggested_until_confirmed_or_edited(client):
     assert not rows["UBER EATS"]["suggested"] and not rows["LOBLAWS"]["suggested"]
     # Confirming takes it out of the review queue too.
     assert "cat:" + ids["UBER EATS"] in client.st.dismissed_reviews()
-    # A later re-filing makes the new category a suggestion again.
+    # A dashed chip is only ever one Needs a look asks about (2026-10-22):
+    # once she has answered it, a later re-filing isn't asked again, so it
+    # isn't dashed either; the list and the count agree.
     client.st.confirm_category(ids["UBER EATS"], "Something else")
-    assert by_desc(listing(client))["UBER EATS"]["suggested"]
+    assert not by_desc(listing(client))["UBER EATS"]["suggested"]
 
 
 def test_unsorted_transfer_is_suggested_and_counts(client):
