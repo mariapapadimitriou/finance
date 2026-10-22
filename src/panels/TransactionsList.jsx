@@ -602,7 +602,9 @@ export default function TransactionsList({ summary, categories, accounts, review
   // added by hand has a pen by its name instead of "Added by hand" (2026-10-21).
   const manyAccounts = useMemo(() => new Set(rows.filter((r) => !r.manual).map((r) => r.account))
     .size > 1 || accounts.filter((a) => a.account_id !== 'manual').length > 1, [rows, accounts]);
-  const metaFor = (r) => [!r.manual && manyAccounts ? r.account : '', r.pending ? 'Pending' : '',
+  // A transfer between her accounts is one line saying where it went (2026-10-22).
+  const metaFor = (r) => [r.transfer ? `${r.transfer.from} → ${r.transfer.to}`
+                            : !r.manual && manyAccounts ? r.account : '', r.pending ? 'Pending' : '',
                           r.source_label || ''].filter(Boolean).join(' · ');
 
   const rowFor = (r) => {

@@ -316,3 +316,33 @@ def test_a_row_says_whether_she_added_it_by_hand(client):
     rows = by_desc(listing(client))
     assert rows["CORNER BAKERY"]["manual"] is True
     assert rows["BLUE BOTTLE"]["manual"] is False
+
+
+def test_a_transfer_between_her_accounts_is_one_line(client):
+    """2026-10-22: the payment leaving chequing and arriving on the card are
+    one row, which says where the money went; the totals don't change."""
+    ids = load(client.st,
+               row(612, "VISA PREAUTH PYMT", account="chq"),
+               row(-612, "PAYMENT THANK YOU", account="card", kind="credit"),
+               row(50, "GROCER", account="card", kind="credit", category="Groceries"))
+    data = listing(client)
+    rows = by_desc(data)
+    assert "PAYMENT THANK YOU" not in rows
+    pay = rows["VISA PREAUTH PYMT"]
+    assert pay["transfer"]["from"] == "chq" and pay["transfer"]["to"] == "card"
+    assert pay["transfer"]["other_id"] == ids["PAYMENT THANK YOU"]
+    assert data["total"] == 2
+    assert data["totals"]["not_counted"] == 1224 and data["totals"]["spent"] == 50
+    # Filtered to the card alone, its end shows on its own.
+    card = by_desc(listing(client, account="card"))
+    assert "PAYMENT THANK YOU" in card and "transfer" not in card["PAYMENT THANK YOU"]
+    # The detail panel names the other end, from either side.
+    d = client.get(f"/api/transactions/{ids['PAYMENT THANK YOU']}").get_json()
+    assert d["transfer"]["from"] == "chq" and d["transfer"]["to"] == "card"
+    assert d["transfer"]["other_id"] == ids["VISA PREAUTH PYMT"]
+
+
+def test_money_to_somewhere_unseen_is_not_collapsed(client):
+    load(client.st, row(300, "E-TRANSFER SENT", account="chq"))
+    rows = by_desc(listing(client))
+    assert "transfer" not in rows["E-TRANSFER SENT"]

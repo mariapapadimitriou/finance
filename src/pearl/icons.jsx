@@ -110,7 +110,7 @@ export const CATEGORY_ICONS = {
   'Fitness': 'dumbbell', 'Personal Care': 'sparkle', 'Entertainment': 'ticket', 'Education': 'book',
   'Pets': 'paw', 'Home': 'couch', 'Gifts & Charity': 'gift', 'Fees & Interest': 'percent', 'Taxes': 'landmark',
   'Cash & ATM': 'banknote', 'Saved': 'lifesaver', 'Lent': 'handCoins', 'Borrowed': 'handOpen', 'Income': 'trend',
-  'Transfers': 'arrows', 'Other': 'dots',
+  'Transfers': 'arrows', 'Transfer': 'arrows', 'Other': 'dots',
 };
 export const categoryIcon = (name) => CATEGORY_ICONS[name] ?? 'dots';
 

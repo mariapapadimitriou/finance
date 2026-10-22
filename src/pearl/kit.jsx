@@ -39,8 +39,9 @@ export function Avatar({ name, logo, icon, large = false }) {
  */
 export function CategoryChip({ label, suggested = false, ruled = false, onConfirm, onChange,
                               disabled = false }) {
-  // Decided by a rule of hers: a small lock, so it's clear why it won't
-  // change on its own (2026-10-14).
+  // Decided by a rule of hers: said to a screen reader, not drawn — no lock
+  // on the chip (2026-10-22). The category's icon is on the row's avatar, so
+  // the chip is just the word (2026-10-22).
   const name = suggested ? `${label}, suggested by Pearl` : ruled ? `${label}, from your rule` : label;
   const cls = `pk-cat${suggested ? ' suggested' : ''}${ruled ? ' ruled' : ''}`;
   // A guess she can confirm by clicking the dotted chip itself (WW-01,
@@ -51,7 +52,6 @@ export function CategoryChip({ label, suggested = false, ruled = false, onConfir
       <button type="button" className={`${cls} confirmable`} disabled={disabled}
               aria-label={`${label}, suggested by Pearl. Confirm`}
               onClick={(e) => { e.stopPropagation(); onConfirm(); }}>
-        <span className="pk-cat-ic"><PIcon name={categoryIcon(label)} size={13} /></span>
         <span aria-hidden="true">{label}</span>
       </button>
     );
@@ -62,16 +62,12 @@ export function CategoryChip({ label, suggested = false, ruled = false, onConfir
       <button type="button" className={`${cls} changeable`} disabled={disabled}
               aria-label={`${name}. Change category`}
               onClick={(e) => { e.stopPropagation(); onChange(); }}>
-        <span className="pk-cat-ic"><PIcon name={categoryIcon(label)} size={13} /></span>
-        {ruled && !suggested && <PIcon name="lock" size={11} />}
         <span aria-hidden="true">{label}</span>
       </button>
     );
   }
   return (
     <span className={cls} aria-label={name} role="img">
-      <span className="pk-cat-ic"><PIcon name={categoryIcon(label)} size={13} /></span>
-      {ruled && !suggested && <PIcon name="lock" size={11} />}
       <span aria-hidden="true">{label}</span>
     </span>
   );

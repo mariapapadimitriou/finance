@@ -474,8 +474,10 @@ class TestPearlTransactionsList:
     def test_suggested_chip_is_told_apart_without_colour(self):
         kit = (SRC / "pearl" / "kit.jsx").read_text(encoding="utf-8")
         # A guess reads "suggested by Pearl" and is dashed; a settled category
-        # is solid (2026-10-21). Each chip shows its category's icon.
-        assert "suggested by Pearl" in kit and "categoryIcon(label)" in kit
+        # is filled (2026-10-21). The chip is just the word: the category's
+        # icon is on the row's avatar, and a rule adds no lock (2026-10-22).
+        assert "suggested by Pearl" in kit and "categoryIcon(label)" not in kit
+        assert 'name="lock"' not in kit
         css = (SRC / "pearl" / "kit.css").read_text(encoding="utf-8")
         assert re.search(r"\.pk-cat\.suggested\s*\{[^}]*dashed", css)
         assert re.search(r"\.pk-cat\s*\{[^}]*border: 1px solid", css)
