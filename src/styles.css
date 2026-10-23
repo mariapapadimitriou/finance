@@ -764,3 +764,11 @@ td { border-top-color: var(--border); }
   .sections button { padding: 8px 6px; font-size: .84rem; flex: 1 1 auto; }
 }
 
+
+/* "← Back to …" on a page another page sent her to (2026-10-23). */
+.back-to {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0 0 12px; padding: 6px 0;
+  border: 0; background: none; color: var(--link, #b3245c); font: inherit; font-size: 14px; font-weight: 500;
+  cursor: pointer;
+}
+.back-to:hover { text-decoration: underline; text-underline-offset: 3px; }

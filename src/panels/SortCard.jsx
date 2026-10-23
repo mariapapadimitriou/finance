@@ -760,7 +760,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
                 ))}
               </div>
               {onTab && (
-                <button type="button" className="txd-link nl-other" onClick={() => onTab('accounts')}>
+                <button type="button" className="txd-link nl-other" onClick={() => onTab('accounts', { path })}>
                   Who shares this account <PIcon name="chevronRight" size={14} />
                 </button>
               )}
