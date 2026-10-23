@@ -143,10 +143,11 @@ export function isReviewUrl(loc = window.location) {
   return /^\/transactions\/review\/?$/.test(loc.pathname);
 }
 
-/** Point the address bar at Needs a look. */
-export function writeReviewUrl({ push = true } = {}) {
+/** Point the address bar at Needs a look, remembering where it was opened
+ * from, so its back link can go back there rather than forward (2026-10-22). */
+export function writeReviewUrl({ push = true, from = '' } = {}) {
   if (isReviewUrl()) return;
-  window.history[push ? 'pushState' : 'replaceState'](null, '', REVIEW_PATH);
+  window.history[push ? 'pushState' : 'replaceState']({ from }, '', REVIEW_PATH);
 }
 
 /** {path, id, filters} for the current address, or null when it is not the list. */
@@ -171,11 +172,13 @@ export function txHref({ id = null, filters = {}, from = '' } = {}) {
   return `/transactions${id ? `/${encodeURIComponent(id)}` : ''}${qs ? `?${qs}` : ''}`;
 }
 
-/** Point the address bar at the list; push adds a history entry, replace doesn't. */
-export function writeTxUrl(state, { push = false } = {}) {
+/** Point the address bar at the list; push adds a history entry, replace
+ * doesn't. `entry` is kept on the history entry (an open transaction marks
+ * itself, so closing it can go back instead of piling up entries). */
+export function writeTxUrl(state, { push = false, entry = null } = {}) {
   const href = txHref(state);
-  if (href === window.location.pathname + window.location.search) return;
-  window.history[push ? 'pushState' : 'replaceState'](null, '', href);
+  if (href === window.location.pathname + window.location.search && !entry) return;
+  window.history[push ? 'pushState' : 'replaceState'](entry, '', href);
 }
 
 /** Leave the list's address when the app goes elsewhere. */
@@ -184,3 +187,18 @@ export function clearUrl() {
     window.history.pushState(null, '', '/');
   }
 }
+
+/**
+ * Home, Profile, Accounts, Budgets… all live at "/". Each move between them
+ * is still its own history entry, with the page on it, so the phone's Back
+ * goes to the page before instead of out of the app (2026-10-22).
+ */
+export function writeAppUrl(panel, { push = true } = {}) {
+  if (window.location.search.includes('reset=')) return;
+  if (window.location.pathname === '/' && window.history.state?.panel === panel) return;
+  window.history[push ? 'pushState' : 'replaceState']({ panel }, '', '/');
+}
+
+/** The page a "/" history entry was for, or null. */
+export const appPanelFromHistory = () => (window.location.pathname === '/'
+  ? window.history.state?.panel ?? null : null);

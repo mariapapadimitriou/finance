@@ -260,8 +260,8 @@ export default function TransactionsList({ summary, categories, accounts, review
   // The address bar follows the filters. Defaults stay out of it, so the
   // plain list is just /transactions.
   const urlFilters = (f) => ({ ...f, month: f.month === thisMonth() ? '' : f.month });
-  const toUrl = (f, push = false, id = openId) =>
-    writeTxUrl({ id, filters: urlFilters(f), from: f.from }, { push });
+  const toUrl = (f, push = false, id = openId, entry = null) =>
+    writeTxUrl({ id, filters: urlFilters(f), from: f.from }, { push, entry });
   useEffect(() => { toUrl(filters); }, [filters]);
 
   // Back and forward move between filter states.
@@ -407,8 +407,18 @@ export default function TransactionsList({ summary, categories, accounts, review
   const dupes = data?.duplicates ?? 0;
   const owed = data?.owed;
   const index = new Map(shownRows.map((r, i) => [r.id, i]));
-  const open = (id, step = 'main') => { setOpenStep(step); setOpenId(id); toUrl(filters, true, id); };
-  const close = () => { setOpenId(null); setOpenStep('main'); toUrl(filters, true, null); };
+  // An open transaction is a history entry of its own (2026-10-22), so
+  // closing it goes back to the list's entry rather than adding another —
+  // Back after closing never reopens it — and a step inside it is one more.
+  const open = (id, step = 'main') => {
+    setOpenStep(step); setOpenId(id); toUrl(filters, true, id, { txPanel: id });
+  };
+  const close = () => {
+    setOpenId(null); setOpenStep('main');
+    const st = window.history.state;
+    if (st?.txPanel) window.history.go(st.txStep ? -2 : -1);
+    else toUrl(filters, false, null);
+  };
   // After a change in the panel: say so, and refresh everything that counts
   // it (the list, the totals, the review badge).
   const saved = ({ close: closing, change: what } = {}) => {

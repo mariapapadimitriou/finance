@@ -273,8 +273,30 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
     act(() => skipReview(current.key), () => 'Moved to Skipped').then(() => setCurrentKey(to));
   };
   const unskip = (key) => act(() => skipReview(key, false), () => 'Back in the queue');
-  const openItem = (key) => { setSorted(null); setBack(null); setResume(null); setCurrentKey(key); };
-  const toList = () => { setSorted(null); setBack(null); setResume(null); setCurrentKey(null); };
+  // A card is a history entry over the list (2026-10-22): the phone's Back
+  // and "To review" both return to the list. Moving card to card (Next,
+  // Skip, Previous) stays on the one entry, so Back is always the list.
+  const showList = () => { setSorted(null); setBack(null); setResume(null); setCurrentKey(null); };
+  const openItem = (key) => {
+    const st = window.history.state || {};
+    if (!st.card) window.history.pushState({ ...st, card: key }, '', window.location.href);
+    setSorted(null); setBack(null); setResume(null); setCurrentKey(key);
+  };
+  const toList = () => {
+    if (window.history.state?.card) window.history.back();     // the pop shows the list
+    else showList();
+  };
+  // Closing Edit's panel from one of its steps takes that step's history
+  // entry with it, so Back afterwards isn't a dead press.
+  const closeEditing = () => {
+    if (window.history.state?.txStep) window.history.back();
+    setEditing(null);
+  };
+  useEffect(() => {
+    const onPop = () => { if (!window.history.state?.card) showList(); };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   if (!data && !error) return <div className="pk nl-page"><p className="pk-muted">Loading…</p></div>;
 
@@ -294,7 +316,13 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
     return (
       <div className="pk nl-page">
         <header className="nl-head nl-list-head">
-          {backLink('Transactions', () => onTab?.('transactions'))}
+          {(() => {
+            // Back to where To review was opened from (2026-10-22), as a
+            // step back, not a new page; from a link, to Transactions.
+            const from = window.history.state?.from;
+            const label = from === 'home' ? 'Home' : 'Transactions';
+            return backLink(label, () => (from ? window.history.back() : onTab?.('transactions')));
+          })()}
           <div className="nl-list-title">
             <div>
               <p className="pk-overline accent">
@@ -443,8 +471,8 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
 
       {editing && (
         <TransactionDetail id={editing} categories={categories}
-                           onClose={() => setEditing(null)}
-                           onSaved={({ close } = {}) => { if (close) setEditing(null); load(); onChanged?.(); }} />
+                           onClose={closeEditing}
+                           onSaved={({ close } = {}) => { if (close) closeEditing(); load(); onChanged?.(); }} />
       )}
       {change && (
         <ActionToast title={change.title} detail={change.detail}

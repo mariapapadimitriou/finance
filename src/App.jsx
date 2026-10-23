@@ -23,7 +23,7 @@ import { Empty, ErrorNote, Loading } from './components/ui.jsx';
 import Logo from './components/Logo.jsx';
 import { ANCHORS, GROUPS, PANELS, resolve } from './nav.js';
 import {
-  clearUrl, isCalendarUrl, isInsightsUrl, isReviewUrl, readTxUrl, redirectOldUrl, writeCalendarUrl,
+  appPanelFromHistory, clearUrl, isCalendarUrl, writeAppUrl, isInsightsUrl, isReviewUrl, readTxUrl, redirectOldUrl, writeCalendarUrl,
   writeInsightsUrl, writeReviewUrl,
 } from './router.js';
 import {
@@ -116,10 +116,13 @@ export default function App() {
     // The list writes its own address when it mounts; Needs a look, Insights
     // and the Calendar have one too. Everything else lives at "/". A link
     // straight to one of Insights' views has already written its address.
-    if (target === 'review') writeReviewUrl();
+    if (target === 'review') writeReviewUrl({ from: panelRef.current });
     else if (target === 'insights') { if (!isInsightsUrl()) writeInsightsUrl(); }
     else if (target === 'calendar') { if (!isCalendarUrl()) writeCalendarUrl(); }
-    else if (target !== 'transactions') clearUrl();
+    else if (target !== 'transactions') writeAppUrl(target);
+    // Coming to the list from elsewhere is a step of its own (2026-10-22);
+    // the list then only ever replaces its own entry as filters change.
+    else if (!readTxUrl()) window.history.pushState(null, '', '/transactions');
     const anchor = ANCHORS[key];
     if (anchor) {
       // After the panel has rendered and its data has had a moment to land,
@@ -189,13 +192,16 @@ export default function App() {
   const panelRef = useRef(panel);
   panelRef.current = panel;
   useEffect(() => {
+    if (window.location.pathname === '/' && !window.history.state?.panel) writeAppUrl(panelRef.current, { push: false });
     const onPop = () => {
       if (isReviewUrl()) { setTab('cashflow'); setPanel('review'); }
       else if (isInsightsUrl()) { setTab('cashflow'); setPanel('insights'); }
       else if (isCalendarUrl()) { setTab('cashflow'); setPanel('calendar'); }
       else if (readTxUrl()) { setTab('cashflow'); setPanel('transactions'); }
-      else if (['transactions', 'review', 'insights', 'calendar'].includes(panelRef.current)) {
-        setTab('home'); setPanel('home');
+      else {
+        // "/" — the page this entry was for (2026-10-22), else Home.
+        const [g, t] = resolve(appPanelFromHistory() || 'home');
+        setTab(g); setPanel(t);
       }
     };
     window.addEventListener('popstate', onPop);
