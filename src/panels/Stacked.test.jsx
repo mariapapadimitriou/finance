@@ -135,3 +135,17 @@ describe('What was this? as tiles (2026-10-23)', () => {
     expect(page).toContain('nl-skeleton');
   });
 });
+
+describe('Answered steps fold and slide (2026-10-23)', () => {
+  it('an open row draws its options in a fold, the question in a step that slides in', async () => {
+    const { Done: DoneRows, default: SortCard } = await import('./SortCard.jsx');
+    const flow = steps(out, null);
+    const open = html(<DoneRows path={[{ step: 'q1', v: 'spent' }]} flow={flow} editing={0} onOpen={noop} onPick={noop} />);
+    expect(open).toContain('class="nl-fold in"');
+    expect(open).toContain('Yes, I bought something');
+    const shut = html(<DoneRows path={[{ step: 'q1', v: 'spent' }]} flow={flow} editing={null} onOpen={noop} onPick={noop} />);
+    expect(shut).not.toContain('nl-fold');
+    const card = html(<SortCard it={out} commit={noop} />);
+    expect(card).toContain('class="nl-step"');
+  });
+});

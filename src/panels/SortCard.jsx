@@ -481,6 +481,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
 
   // The last answer of a step that asks (chips, an account, a kind…).
   const saveAsk = (s, v, label) => {
+    setEditing(null);
     const answers = [...path, { step: stepId, v, label }];
     const c = chosen;
     if (s.ask === 'category') {
@@ -597,6 +598,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
 
   /** A choice tapped on the open question: lead on, or commit. */
   const choose = (v) => {
+    setEditing(null);                       // a reopened row folds when the open question is answered
     const opt = step.options?.find((o) => o.v === v);
     if (opt?.to === 'split') { onSplit?.(); return; }
     if (opt?.to) { setPath([...path, { step: stepId, v }]); return; }
@@ -659,7 +661,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           guess goes on top; one question at a time doesn't need to. */}
       {!cases && mode === 'all' && <CardSkeleton rows={6} />}
       {(cases || mode !== 'all') && step && (
-        <>
+        // Keyed by the step (2026-10-23): each new question slides in.
+        <div className="nl-step" key={`${stepId}-${path.length}`}>
           <h2 className="pk-h2 nl-q">{step.title}</h2>
           {step.sub && <p className="pk-muted nl-sub">{step.sub}</p>}
           {step.match && <RepaymentMatch match={step.match} />}
@@ -809,7 +812,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           {step.ask === 'split' && (
             <PButton variant="secondary" disabled={busy} onClick={() => onSplit?.()}>Say who it was with</PButton>
           )}
-        </>
+        </div>
       )}
       {/* Back on the left, forward on the right (2026-10-22). */}
       {(onSkip || onPrevious) && (
@@ -825,6 +828,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     </>
   );
 }
+
+const FOLD_MS = 220;
 
 /** The question's shape while its answers load: a title and ghost rows, so
  * the list doesn't arrive in two goes and jump (2026-10-21). */
@@ -843,6 +848,14 @@ function CardSkeleton({ rows = 3 }) {
  * tapping the row again folds it back.
  */
 export function Done({ path, flow, editing = null, busy = false, onOpen, onPick }) {
+  // The row whose options are drawn: the open one, or the one folding shut
+  // (kept for the slide, 2026-10-23).
+  const [shown, setShown] = useState(editing);
+  useEffect(() => {
+    if (editing !== null) { setShown(editing); return undefined; }
+    const t = setTimeout(() => setShown(null), FOLD_MS);
+    return () => clearTimeout(t);
+  }, [editing]);
   if (!path.length) return null;
   return (
     <div className="nl-done-list">
@@ -850,6 +863,7 @@ export function Done({ path, flow, editing = null, busy = false, onOpen, onPick 
         const s = flow.S[p.step];
         const label = answerLabel(flow, p);
         const open = editing === i && !!s?.options;
+        const drawn = (open || shown === i) && !!s?.options;
         return (
           <div key={`${p.step}-${i}`} className={`nl-done-wrap${open ? ' open' : ''}`}>
             <button type="button" className="nl-done" disabled={!onOpen || !s?.options}
@@ -860,12 +874,17 @@ export function Done({ path, flow, editing = null, busy = false, onOpen, onPick 
               <span className="nl-done-label">{open ? s.title : label}</span>
               {s?.options && <PIcon name={open ? 'chevronUp' : 'chevronDown'} size={14} />}
             </button>
-            {open && (
-              <div className="pk-choices nl-reopen" role="radiogroup" aria-label={s.title}>
-                {s.options.map((o) => (
-                  <Choice key={o.v} name={`re-${p.step}-${i}`} checked={o.v === p.v} disabled={busy}
-                          onChange={() => onPick?.(i, o.v)} label={o.label} />
-                ))}
+            {drawn && (
+              <div className={`nl-fold${open ? ' in' : ' out'}`}>
+                <div className="pk-choices nl-reopen" role="radiogroup" aria-label={s.title}>
+                  {s.options.map((o) => (
+                    <Choice key={o.v} name={`re-${p.step}-${i}`} checked={o.v === p.v} disabled={busy || !open}
+                            // The answer already chosen folds the row; a radio
+                            // that is already on sends no change of its own.
+                            onClick={o.v === p.v ? () => onOpen?.(i) : undefined}
+                            onChange={() => onPick?.(i, o.v)} label={o.label} />
+                  ))}
+                </div>
               </div>
             )}
           </div>
