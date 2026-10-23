@@ -225,7 +225,12 @@ def build(transactions: list[Transaction], today: str | None = None,
     who_sent = []
     for t in live:
         if (t.amount >= 0 or t.date[:10] < since or not is_etransfer(t) or t.party
-                or t.repays or is_others(t)):
+                or t.repays or is_others(t)
+                # Already answered (2026-10-23): sorted by her or a rule of
+                # hers, or matched to her own account. Asking who sent it
+                # then reads as asking her to sort it again.
+                or t.category_source in ("user", "merchant_override", "transfer_match", "destination")
+                or t.fingerprint in paired):
             continue
         who = party(t)
         if who and who.get("name"):
