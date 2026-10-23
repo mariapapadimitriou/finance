@@ -1979,7 +1979,18 @@ class Store:
                    WHERE LOWER(merchant) = ?""",
                 (category, key),
             )
-            return cur.rowcount
+            count = cur.rowcount
+        # The same merchant under the bank's other spellings (2026-10-23), so
+        # the rows still waiting in Needs a look are sorted by it too.
+        from .categorize import apply_categories, family_rows
+        family = family_rows(key, self.all_transactions())
+        before = {t.fingerprint: (t.category, t.category_source) for t in family}
+        apply_categories(family, self.overrides())
+        changed = {t.fingerprint: (t.category, t.category_source) for t in family
+                   if (t.category, t.category_source) != before[t.fingerprint]}
+        if changed:
+            self.write_categories(changed)
+        return count + len(changed)
 
     def restore_override(self, key: str, category: str | None) -> None:
         """Put one rule back as it was — by its stored key, rows untouched.
