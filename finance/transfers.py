@@ -49,6 +49,16 @@ _DECIDED = {"user", "merchant_override"}
 RULED = "destination"
 
 
+def _guessed_income(t: Transaction) -> bool:
+    """Money in that Pearl (or the bank's label) only guessed was income —
+    not hers to call, and not a paycheque: it can still be the other end of
+    one of her transfers (2026-10-22)."""
+    if t.category != "Income" or t.category_source in _DECIDED or t.income_type_source == "user":
+        return False
+    from .income import guess
+    return guess(t) != "salary"
+
+
 def others(t: Transaction) -> bool:
     """A row that is nothing of yours: one you excluded, or another member's
     money on a joint account."""
@@ -248,9 +258,13 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
     # mortgage is a bill, not money moving between your own pockets, so it
     # must not vanish as neutral when the mortgage account is connected.
     inflows = [t for t in transactions
-               if t.amount < 0 and not t.repays and t.category != "Income"
+               if t.amount < 0 and not t.repays
+               and (t.category != "Income" or _guessed_income(t))
                and not getattr(t, "excluded", None)
                and str((t.raw or {}).get("account_type", "")).lower() != "loan"]
+    # Guessed income is only ever a one-to-one end (pass 1), never part of a
+    # sum or a day that nets out: the loose passes need the surer arrivals.
+    sure_in = [t for t in inflows if t.category != "Income"]
 
     used: set[str] = set()          # inflows already the other end of something
     out: dict[str, str] = {}
@@ -272,19 +286,24 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
                     continue
                 if (other.account_id == t.account_id) != same_account:
                     continue
+                if same_account and other.category == "Income":
+                    continue
                 gap = _days(t.date, other.date)
                 if best is None or gap < best[0]:
                     best = (gap, other)
             if best:
                 used.add(best[1].fingerprint)
                 out[t.fingerprint] = NEUTRAL
+                # Its arrival was guessed as income: it was this transfer.
+                if best[1].category == "Income":
+                    out[best[1].fingerprint] = NEUTRAL
                 # One departure, one arrival on another of her accounts: the
                 # list shows them as one line (2026-10-22).
                 if pairs_out is not None and not same_account:
                     pairs_out[t.fingerprint] = best[1].fingerprint
 
     # 3: several outflows from one account adding up to one arrival elsewhere.
-    for other in sorted(inflows, key=lambda t: t.amount):
+    for other in sorted(sure_in, key=lambda t: t.amount):
         if other.fingerprint in used:
             continue
         pool: dict[str, list[Transaction]] = {}
@@ -307,7 +326,7 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
     for t in candidates:
         if t.fingerprint not in out:
             days.setdefault(t.date[:10], ([], []))[0].append(t)
-    for other in inflows:
+    for other in sure_in:
         if other.fingerprint not in used and other.date[:10] in days:
             days[other.date[:10]][1].append(other)
     for day, (gone, arrived) in days.items():
@@ -379,7 +398,7 @@ def transfer_pairs(transactions: list[Transaction], today: str | None = None) ->
     arrivals: dict[int, list[Transaction]] = {}
     for t in transactions:
         if (t.amount < 0 and not others(t) and not t.repays
-                and (t.category or "") in _MOVED - {UNSORTED}):
+                and ((t.category or "") in _MOVED - {UNSORTED} or _guessed_income(t))):
             arrivals.setdefault(_cents(-t.amount), []).append(t)
     used: set[str] = set()
     pairs: dict[str, str] = {}

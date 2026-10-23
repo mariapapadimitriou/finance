@@ -414,7 +414,7 @@ def is_unsure(t) -> bool:
 
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
-RULES_VERSION = 9
+RULES_VERSION = 10
 
 
 def plaid_category(code: str) -> str | None:
