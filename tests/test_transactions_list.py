@@ -255,8 +255,9 @@ def test_joint_rows_are_hers_until_she_says_one_was_theirs(client):
     client.put(f"/api/transactions/{ids['COSTCO']}/share", json={"my_share": 0})
     assert listing(client)["transactions"] == []
     r = listing(client, joint=1)["transactions"][0]
-    assert r["chip"]["label"] == "Not yours" and r["joint"] == "Alex" and r["counts"] == "none"
-    assert r["note"] == "Alex’s · you said this one was theirs"
+    # Joint activity that isn't hers is named for what it is (2026-10-23).
+    assert r["chip"]["label"] == "Joint spent" and r["joint"] == "Alex" and r["counts"] == "none"
+    assert r["note"] == "Alex’s · not your spending"
 
 
 def test_money_into_a_joint_account_asks_whose(client):
@@ -267,7 +268,7 @@ def test_money_into_a_joint_account_asks_whose(client):
     assert r["note"] == "Yours or Alex’s? Tell us"
     client.put(f"/api/transactions/{ids['E-TRANSFER FROM ALEX']}/joint-from", json={"who": "them"})
     r = listing(client, joint=1)["transactions"][0]
-    assert r["chip"]["label"] == "Alex’s" and r["joint_from"] == "them"
+    assert r["chip"]["label"] == "Joint added" and r["joint_from"] == "them"
 
 
 def _months_ago(n, d=1):

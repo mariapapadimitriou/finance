@@ -1,5 +1,6 @@
-"""Joint accounts: spending on one is hers by default, less what the other
-person put in that month; money in counts once she says whose it was."""
+"""Joint accounts: spending on one is hers by default, or her set share of
+every purchase; money in counts once she says whose it was, and what the
+others put in doesn't shrink her share by itself (2026-10-23)."""
 
 from __future__ import annotations
 
@@ -86,9 +87,9 @@ def test_always_mine_at_a_name(client):
                              row(-75, "E-TRANSFER FROM SISTER", "fam")], "fam"))
     sister = ids(client)["E-TRANSFER FROM SISTER"]
     client.put(f"/api/transactions/{sister}/joint-from", json={"who": "them"})
-    # Names always hers aren't paid for by what the other person puts in:
-    # her $75 goes to the $80 e-transfer out, the rest of the joint spending.
-    assert month(client)["spend"] == 120 + 30 + 5
+    # Every purchase is hers until she marks it (2026-10-23): her sister's
+    # $75 is "Joint added" and changes nothing of hers.
+    assert month(client)["spend"] == 120 + 30 + 80
 
 
 def test_your_transfer_into_it_is_matched(client):
@@ -114,7 +115,7 @@ def test_bad_shares_are_refused(client, share):
                       json={"my_share": share}).status_code == 400
 
 
-# ── Who put money in (option b: theirs pays for joint spending) ──────────
+# ── Who put money in: hers, or theirs ("Joint added", 2026-10-23) ──────
 
 def sister_in(client, amount, ref="1"):
     st = client.application.config["STORE"]
@@ -129,18 +130,17 @@ def answer(client, tid, who, remember=False):
                       json={"who": who, "remember": remember})
 
 
-def test_her_sisters_deposit_pays_for_part_of_the_months_spending(client):
+def test_her_sisters_deposit_is_joint_added_and_changes_nothing_of_hers(client):
     tid = sister_in(client, 60)
     assert answer(client, tid, "them").status_code == 200
-    # $60 of $200 joint spending (Loblaws, and the e-transfer out until it's
-    # sorted) was her sister's, so 70% of each is hers.
-    assert month(client)["spend"] == 84 + 56
+    # Her purchases are hers until she marks them; the $60 isn't hers.
+    assert month(client)["spend"] == 200
     assert month(client)["income"] == 0
 
 
-def test_more_put_in_than_spent_leaves_nothing_never_less(client):
+def test_a_big_deposit_from_them_still_leaves_her_spending_as_it_was(client):
     answer(client, sister_in(client, 500), "them")
-    assert month(client)["spend"] == 0
+    assert month(client)["spend"] == 200
 
 
 def test_her_own_money_in_is_a_transfer_not_income(client):
@@ -156,9 +156,11 @@ def test_her_own_money_in_is_a_transfer_not_income(client):
 
 def test_remembered_for_that_sender(client):
     answer(client, sister_in(client, 30), "them", remember=True)
-    sister_in(client, 30, ref="2")
-    # Same sender, so both are hers: $60 of $200.
-    assert month(client)["spend"] == 84 + 56
+    second = sister_in(client, 30, ref="2")
+    # Same sender, so both are theirs, and the second isn't asked about.
+    asked = {q["txn"]["id"] for q in client.get("/api/review").get_json()["joint_in"]}
+    assert second not in asked
+    assert month(client)["spend"] == 200
 
 
 def test_asking_again_and_bad_answers(client):
@@ -211,8 +213,9 @@ def test_who_put_it_in_is_one_of_them(client):
                   if t["id"] == tid)
     assert listed["joint_person"] == "Alex"
     assert listed["note"].startswith("Alex put this in")
-    # It still pays for that much of the month's joint spending.
-    assert month(client)["spend"] == 84 + 56
+    assert listed["chip"]["label"] == "Joint added"
+    # Theirs, and her spending is as it was (2026-10-23).
+    assert month(client)["spend"] == 200
     # The next deposit from that sender is remembered as Alex's too.
     tid2 = sister_in(client, 10, ref="2")
     t2 = next(t for t in client.get("/api/transactions/list",
@@ -234,3 +237,35 @@ def test_transfers_is_called_transfers(client):
     rows = client.get("/api/transactions/list", query_string={"month": MONTH}).get_json()
     notes = {t["note"] for t in rows["transactions"]}
     assert not any("Between your accounts" in (n or "") for n in notes)
+
+
+def test_split_account_splits_purchases_but_never_a_deposit(client):
+    """2026-10-23: with her sister every purchase is 50/50, but they each put
+    money in separately, so a deposit is hers only when she says so."""
+    client.put("/api/accounts/fam/settings", json={"joint_share": 50})
+    i = ids(client)
+    assert month(client)["spend"] == 100                      # half of Loblaws and the e-transfer out
+    sis = sister_in(client, 60)
+    st = client.application.config["STORE"]
+    assert st.get_transaction(sis).my_share == 0              # not half hers: asked
+    asked = {q["txn"]["id"] for q in client.get("/api/review").get_json()["joint_in"]}
+    assert sis in asked
+    answer(client, sis, "them")
+    rows = {r["id"]: r for r in client.get("/api/transactions/list",
+                                           query_string={"month": MONTH, "joint": "1"}).get_json()["transactions"]}
+    assert rows[sis]["chip"]["label"] == "Joint added"
+    # Her own money in is a transfer, never Saved, and all hers.
+    st.set_transaction_category(i["PAYROLL DEPOSIT DAD"], "Saved")
+    answer(client, i["PAYROLL DEPOSIT DAD"], "me")
+    mine = st.get_transaction(i["PAYROLL DEPOSIT DAD"])
+    assert mine.category == "Transfers" and mine.my_share == mine.amount
+    assert month(client)["spend"] == 100
+
+
+def test_a_purchase_marked_theirs_is_joint_spent(client):
+    i = ids(client)
+    client.put(f"/api/transactions/{i['LOBLAWS']}/share", json={"my_share": 0})
+    rows = {r["id"]: r for r in client.get("/api/transactions/list",
+                                           query_string={"month": MONTH, "joint": "1"}).get_json()["transactions"]}
+    assert rows[i["LOBLAWS"]]["chip"]["label"] == "Joint spent"
+    assert rows[i["LOBLAWS"]]["note"] == "Family’s · not your spending"

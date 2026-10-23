@@ -375,7 +375,7 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onJ
                     label="This is a joint account"
                     description={a.joint && a.joint_share
                       ? `Only your share counts. Your share is ${Math.round(a.joint_share)}%.`
-                      : a.joint ? 'Only your share counts, worked out from what each of you puts in.'
+                      : a.joint ? 'Every purchase counts as yours unless you mark it.'
                         : 'Only your share counts. You choose the share.'} />
           )}
         </div>
@@ -388,7 +388,7 @@ export function AccountDetail({ a, onTab, onBack, onSave, onShare, onPeople, onJ
             <button type="button" className="pf-text-link" onClick={onJoint ?? onPeople}>
               {a.joint_people?.length ? 'Change who you share it with' : 'Add who you share it with'}
             </button>
-            <button type="button" className="pf-text-link" onClick={onJoint ?? onShare}>Change your share</button>
+            <button type="button" className="pf-text-link" onClick={onJoint ?? onShare}>Change how purchases count</button>
           </>
         )}
       </section>
@@ -797,7 +797,7 @@ export function JointPage({ a, onTab, onBack, onSave, busy = false }) {
     setMode('fixed');
     onSave({ joint_share: share });
   };
-  const words = fixed ? `your share is ${Math.round(a.joint_share)}%` : 'your share is worked out each month';
+  const words = fixed ? `your share is ${Math.round(a.joint_share)}%` : 'all yours unless you mark it';
   return (
     <div className="pk hm-page pf-page">
       <PageHead trail={trail} title={title} onTab={onTab} />
@@ -823,16 +823,17 @@ export function JointPage({ a, onTab, onBack, onSave, busy = false }) {
         </div>
       </section>
       <section className="hm-card pf-joint" aria-labelledby="ac-share-title">
-        <h2 className="pk-h3" id="ac-share-title">Your share</h2>
+        <h2 className="pk-h3" id="ac-share-title">How purchases count</h2>
         <p className="pk-muted">
-          {`Spending is yours by default, less what ${people.length ? peopleWords(people) : 'the other person'} put${people.length === 1 ? 's' : ''} in that month. Set a share to split every charge instead.`}
+          {`Either way, Pearl asks who put each deposit in. ${people.length ? peopleWords(people) : 'The other person'}’s show as Joint added and don’t count as yours.`}
         </p>
-        <div className="pk-choices" role="radiogroup" aria-label="Your share">
-          <Choice name="ac-share-mode" checked={mode === 'auto'} disabled={busy}
-                  onChange={() => saveShare('auto')}
-                  label="Work it out from what each of us puts in" description="Recommended" />
+        <div className="pk-choices" role="radiogroup" aria-label="How purchases count">
           <Choice name="ac-share-mode" checked={mode === 'fixed'} disabled={busy}
-                  onChange={() => setMode('fixed')} label="A fixed share" description="For example, 50%" />
+                  onChange={() => setMode('fixed')} label="Split every purchase"
+                  description="Each purchase counts as your share, for example 50%." />
+          <Choice name="ac-share-mode" checked={mode === 'auto'} disabled={busy}
+                  onChange={() => saveShare('auto')} label="All mine unless I mark it"
+                  description="Every purchase counts as yours. Mark the ones someone else paid for." />
         </div>
         {mode === 'fixed' && (
           <form className="pf-form" onSubmit={(e) => { e.preventDefault(); saveShare('fixed'); }}>
