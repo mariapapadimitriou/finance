@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { money, quickSortDone, quickSortSeen, quickSortStep, undoChange } from '../api.js';
 import { Dialog, PButton } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
-import SortCard, { SortedCard, rememberEntry } from './SortCard.jsx';
+import SortCard, { SortedCard, loadCases, rememberEntry } from './SortCard.jsx';
 import './quicksort.css';
 
 /**
@@ -65,6 +65,7 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
   const rememberIt = (on) => run(() => rememberEntry(sorted, on), setSorted);
   const reopen = (k = sorted.answers.length - 1) => run(async () => {
     if (sorted.undo) await undoChange(sorted.undo);
+    await loadCases(item.id).catch(() => null);      // drawn at once when the card swaps back
   }, () => {
     const last = sorted.answers[sorted.answers.length - 1];
     setResume({ path: sorted.answers.slice(0, -1), edit: k < sorted.answers.length - 1 ? k : null,
