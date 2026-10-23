@@ -27,7 +27,7 @@ import './stacked.css';
  *     answer saves at once. A name commits with Enter or a person chip. The
  *     only button is Skip for now, where there is a queue to skip in.
  *   - One Remember. "Remember for <merchant>" is a checkbox on the Sorted
- *     card, right above Next (2026-10-23): she answers first, then decides
+ *     card, above What changed (2026-10-23): she answers first, then decides
  *     whether every one like it goes the same way.
  *   - One way back. Undo sits at the right end of the dots' line and takes
  *     back the last answer; an answered row reopens its step in place, with
@@ -913,6 +913,13 @@ export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'N
           ))}
         </div>
       )}
+      {/* Remember, after the answers and above What changed (2026-10-23):
+          whether every one like it goes the same way. */}
+      {entry.remember && onRemember && !isPast && (
+        <Choice type="checkbox" checked={!!entry.remembered} disabled={busy}
+                onChange={(on) => onRemember(on)} label={entry.remember.label}
+                description="Sorts every transaction from them the same way from now on" />
+      )}
       {/* What changed (2026-10-22): what it is now, what that does to her
           numbers, and her rule if she saved one. A neutral box with a label,
           not an unexplained lilac one. */}
@@ -925,13 +932,6 @@ export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'N
             <p className="nl-effect-rule"><PIcon name="check" size={14} /> {entry.rule}</p>
           )}
         </div>
-      )}
-      {/* Remember, last, right above Next (2026-10-23): after the answer,
-          whether every one like it goes the same way. */}
-      {entry.remember && onRemember && !isPast && (
-        <Choice type="checkbox" checked={!!entry.remembered} disabled={busy}
-                onChange={(on) => onRemember(on)} label={entry.remember.label}
-                description="Sorts every transaction from them the same way from now on" />
       )}
       <div className="nl-actions nl-next nl-bottom">
         {/* Previous bottom left, in line with Next (2026-10-22). */}

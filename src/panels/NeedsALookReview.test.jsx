@@ -125,7 +125,7 @@ describe('The Sorted card (R-13)', () => {
 });
 
 describe('Needs a look, reorganised (2026-10-22)', () => {
-  it('Remember is on the Sorted card, right above Next, never on a question (2026-10-23)', () => {
+  it('Remember is on the Sorted card, above What changed, never on a question (2026-10-23)', () => {
     const asked = html(<Stacked it={out} act={noop} commit={noop} onSkip={noop} onBack={noop}
                                 initialPath={[{ step: 'q1', v: 'else' }, { step: 'what_out', v: 'g:not' }]} />);
     expect(asked).not.toContain('Remember for');
@@ -136,8 +136,9 @@ describe('Needs a look, reorganised (2026-10-22)', () => {
                     remember: { label: 'Remember for Qwx Market', redo: noop }, remembered: false };
     const card = html(<SortedCard entry={entry} onNext={noop} onRemember={noop} />);
     expect(card).toContain('Remember for Qwx Market');
-    expect(card.indexOf('Remember for')).toBeLessThan(card.indexOf('nl-pill-go'));
-    expect(card.indexOf('Remember for')).toBeGreaterThan(card.indexOf('What changed'));
+    // Above What changed (2026-10-23), after the answers.
+    expect(card.indexOf('Remember for')).toBeLessThan(card.indexOf('What changed'));
+    expect(card.indexOf('Remember for')).toBeGreaterThan(card.indexOf('nl-done-list'));
     // Nothing to remember, or looking back at an earlier card: no box.
     expect(html(<SortedCard entry={{ ...entry, remember: null }} onNext={noop} onRemember={noop} />)).not.toContain('Remember for');
     expect(html(<SortedCard entry={entry} isPast onNext={noop} onRemember={noop} />)).not.toContain('Remember for');
