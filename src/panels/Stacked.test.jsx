@@ -149,3 +149,18 @@ describe('Answered steps fold and slide (2026-10-23)', () => {
     expect(card).toContain('class="nl-step"');
   });
 });
+
+describe('One savings bucket (2026-10-23)', () => {
+  it('saved and taken out of savings save at once, with no account to pick', () => {
+    const { S } = steps(out, null);
+    expect(S.q1.options.find((o) => o.v === 'saved').to).toBeUndefined();
+    expect(S.account).toBeUndefined();
+    const all = steps({ key: 'tx:a', kind: 'panel', txn: out.txn }, null, 'all').S;
+    expect(all.all_own.options.find((o) => o.v === 'saved')).toMatchObject({ label: 'Into savings', to: undefined });
+    const inAll = steps({ key: 'tx:b', kind: 'panel', txn: inn.txn }, null, 'all').S;
+    expect(inAll.all_own.options.find((o) => o.v === 'out_of_savings')).toMatchObject({ label: 'Out of savings', to: undefined });
+    // Even if the server still says it needs an account.
+    const old = steps(out, { cases: [{ key: 'saved', label: 'Put into savings', needs: 'account', group: 'not_spending' }] });
+    expect(old.S.what_out).toBeTruthy();
+  });
+});

@@ -95,9 +95,10 @@ def test_money_out_offers_the_cases_and_names_what_each_does(client):
     assert keys == ["spending", "bill", "shared", "moved", "saved", "lent", "paying_back",
                     "work", "not_mine"]
     saved = next(c for c in d["cases"] if c["key"] == "saved")
-    assert saved["needs"] == "account" and saved["remember"] == "destination"
+    # One savings bucket (2026-10-23): no account to pick.
+    assert saved["needs"] is None and saved["remember"] == "destination"
     assert saved["remember_label"] == "Do this for every transfer to M. Papas from now on"
-    assert saved["effect"].startswith("Moved to one of your savings accounts.")
+    assert saved["effect"] == "Adds to your total saved. It isn’t spending."
     assert d["current"] is None            # not sorted yet
     assert d["best"] == "saved"            # Pearl's best guess for a transfer to a person
     assert d["accounts"] == []             # no savings account to pick from yet
@@ -129,31 +130,30 @@ def test_a_purchase_with_a_rule_for_the_merchant(client):
     assert client.st.overrides() == {}
 
 
-def test_saved_to_an_account_she_added_by_hand(client):
-    ids = load(client.st, row(500, "TFR-TO 12343333"))
-    tid = ids["TFR-TO 12343333"]
+def test_savings_is_one_bucket_with_no_account_to_pick(client):
+    """2026-10-23: put into savings adds to her total saved, taken out comes
+    off it; which account is never asked, and none is named."""
+    ids = load(client.st, row(500, "TFR-TO 12343333"), row(-120, "TFR-FR 12343333", when=in_month(6)))
+    tid, back = ids["TFR-TO 12343333"], ids["TFR-FR 12343333"]
     r = client.post("/api/accounts/manual", json={"name": "Wealthsimple TFSA", "kind": "investment",
                                                   "balance": 1000, "last4": "3333"})
-    assert r.status_code == 201, r.get_json()
     aid = r.get_json()["account"]["id"]
-    assert r.get_json()["account"]["mask"] == "3333"
-    # The digits alone make the transfer Saved (finance/transfers.py).
-    assert by_desc(listing(client))["TFR-TO 12343333"]["category"] == "Saved"
-    d = cases(client, tid)
-    assert d["current"] == "saved"
-    assert [a["id"] for a in d["accounts"]] == [aid]
+    client.st.set_saved_to(tid, aid)           # an answer from before: no longer named
     res = mark(client, tid, case="saved", account=aid)
-    assert res["title"] == "Put away to Wealthsimple TFSA."
+    assert res["title"] == "Put into savings."
     listed = by_desc(listing(client))["TFR-TO 12343333"]
-    assert listed["saved_to"] == aid and listed["saved_to_label"] == "Wealthsimple TFSA"
-    assert listed["note"] == "Put away to Wealthsimple TFSA · not counted as spending"
-    assert client.get("/api/home").get_json()["savings"]["put_away"]["contributions"] == 500.0
-    assert client.get(f"/api/transactions/{tid}").get_json()["saved_to_label"] == "Wealthsimple TFSA"
-    undo(client, res)
+    assert listed["category"] == "Saved" and listed["saved_to"] is None and listed["saved_to_label"] == ""
+    assert listed["note"] == "Saved · adds to your total saved"
     assert client.st.saved_to() == {}
-    # Not one of her savings accounts: refused.
-    assert client.post(f"/api/transactions/{tid}/mark",
-                       json={"case": "saved", "account": "nope"}).status_code == 400
+    assert client.get("/api/home").get_json()["savings"]["put_away"]["contributions"] == 500.0
+    out = mark(client, back, case="out_of_savings")
+    assert out["title"] == "Taken out of savings."
+    assert by_desc(listing(client))["TFR-FR 12343333"]["note"] == "Taken out of savings · comes off your total saved"
+    d = cases(client, back)
+    assert next(c for c in d["cases"] if c["key"] == "out_of_savings")["needs"] is None
+    # Undo puts the old answer back as it was.
+    undo(client, res)
+    assert client.st.saved_to() == {tid: aid}
 
 
 def test_a_linked_investment_account_is_offered_too(client):

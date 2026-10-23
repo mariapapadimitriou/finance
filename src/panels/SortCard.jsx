@@ -89,7 +89,7 @@ export const DEFAULT_CASES = {
     { key: 'bill', label: 'A bill', group: 'spending', needs: 'category', effect: 'Counts as spending, in Essentials, and Pearl plans for it next month.', remember: 'merchant' },
     { key: 'shared', label: 'Paid for a group', group: 'spending', needs: 'split', effect: 'The full amount counts as yours until they pay you back.', remember: null },
     { key: 'moved', label: 'Moved between my accounts', group: 'not_spending', needs: null, effect: 'Your own money moving, so it isn’t counted as spending or income.', remember: 'destination' },
-    { key: 'saved', label: 'Put into savings', group: 'not_spending', needs: 'account', effect: 'Moved to one of your savings accounts. It isn’t spending, and it counts toward Savings this month.', remember: 'destination' },
+    { key: 'saved', label: 'Put into savings', group: 'not_spending', needs: null, effect: 'Adds to your total saved. It isn’t spending.', remember: 'destination' },
     { key: 'lent', label: 'Lent to someone', group: 'not_spending', needs: null, effect: 'Not counted as spending. Pearl watches for it coming back.', remember: 'merchant' },
     { key: 'paying_back', label: 'Paying back money I borrowed', group: 'not_spending', needs: 'borrowed', effect: 'Paying back a loan, so it isn’t counted as spending.', remember: null },
     { key: 'work', label: 'A work expense, to be reimbursed', group: 'not_mine', needs: null, effect: 'Left out of your spending until the money comes back.', remember: null },
@@ -102,7 +102,7 @@ export const DEFAULT_CASES = {
     { key: 'refund', label: 'A refund', group: 'not_income', needs: 'refund', effect: 'Links to the purchase and comes off its category.', remember: null },
     { key: 'reimbursement', label: 'A reimbursement', group: 'not_income', needs: 'candidates', effect: 'Pays back a work expense you left out.', remember: null },
     { key: 'own', label: 'From my own account', group: 'not_income', needs: null, effect: 'Your own money moving, so it isn’t counted as income.', remember: 'destination' },
-    { key: 'out_of_savings', label: 'Taken out of my savings', group: 'not_income', needs: 'account', effect: 'Not counted as income. It comes off what you saved this month.', remember: 'destination' },
+    { key: 'out_of_savings', label: 'Taken out of my savings', group: 'not_income', needs: null, effect: 'Comes off your total saved. It isn’t income.', remember: 'destination' },
     { key: 'borrowed', label: 'Money I borrowed', group: 'not_income', needs: null, effect: 'A loan, so it isn’t counted as income.', remember: null },
     { key: 'lent_back', label: 'Paying back money I lent', group: 'not_income', needs: null, effect: 'A friend paying back what you lent, so it isn’t counted as income.', remember: null },
     { key: 'not_mine', label: 'Not mine', group: 'not_income', needs: 'reason', effect: 'Left out of all your numbers.', remember: 'exclusion' },
@@ -137,7 +137,9 @@ function optionFor(c, { nameless = false } = {}) {
   // Lent and paying someone back ask who (R-12); a payback with no name from
   // the bank asks who sent it first (R-09).
   const lead = c.key === 'lent' || c.key === 'paying_back' ? 'who_to'
-    : c.key === 'payback' && nameless ? 'name' : to;
+    : c.key === 'payback' && nameless ? 'name'
+      // One savings bucket (2026-10-23): no account to pick.
+      : c.key === 'saved' || c.key === 'out_of_savings' ? null : to;
   return { v: c.key, label: c.label, done: DONE[c.key] ?? c.label, to: lead || undefined,
            effect: c.effect, case: c };
 }
@@ -158,7 +160,7 @@ const FOLDS = {
   out: [
     { id: 'own', label: 'My own money', icon: 'arrows', title: 'Where did it go?', keys: {
       moved: ['Another of my accounts', 'Not spending or income.'],
-      saved: ['Into my savings', 'Counts toward Savings this month.'] } },
+      saved: ['Into savings', 'Adds to your total saved.'] } },
     { id: 'loan', label: 'A loan', icon: 'landmark', title: 'Which way did it go?', keys: {
       lent: ['I lent it to someone', 'Pearl watches for it coming back.'],
       paying_back: ['I’m paying back a loan', 'Not spending.'] } },
@@ -169,7 +171,7 @@ const FOLDS = {
   in: [
     { id: 'own', label: 'My own money', icon: 'arrows', title: 'Where did it come from?', keys: {
       own: ['Another of my accounts', 'Not income.'],
-      out_of_savings: ['My savings', 'Comes off what you saved this month.'] } },
+      out_of_savings: ['Out of savings', 'Comes off your total saved.'] } },
     { id: 'loan', label: 'A loan', icon: 'landmark', title: 'Which way did it go?', keys: {
       borrowed: ['I borrowed it', 'Not income.'],
       lent_back: ['Paying back money I lent', 'Not income.'] } },
@@ -195,9 +197,11 @@ export function tilesFor(list, S, { out, parent, nameless = false }) {
         continue;
       }
       const id = `${parent}_${fold.id}`;
-      S[id] = { title: fold.title, left: 2, options: members.map((m) => ({
+      const options = members.map((m) => ({
         ...optionFor(m, { nameless }), label: fold.keys[m.key][0], done: fold.keys[m.key][0],
-        effect: fold.keys[m.key][1] })) };
+        effect: fold.keys[m.key][1] }));
+      // The dots count what is left: one more step only if an answer leads on.
+      S[id] = { title: fold.title, left: options.some((o) => o.to) ? 2 : 1, options };
       tiles.push({ v: `g:${fold.id}`, label: fold.label, icon: fold.icon, done: fold.label, to: id });
       continue;
     }
@@ -228,7 +232,6 @@ export function steps(it, cases, mode = 'stacked') {
 
   // ── Follow-ups, the same whichever door asked ───────────────────────
   S.cat = { title: 'What was it for?', left: 1, ask: 'category' };
-  S.account = { title: out ? 'Which account did it go to?' : 'Which account did it come from?', left: 1, ask: 'account' };
   S.kind = { title: 'What kind of income?', left: 1, ask: 'kind' };
   S.who_to = { title: 'Who to?', left: 1, ask: 'name' };
   S.who_in = { title: 'Who put this in?', left: 1, ask: 'joint',
@@ -277,7 +280,7 @@ export function steps(it, cases, mode = 'stacked') {
       title: 'Was this spending?', left: 3,
       options: [
         { v: 'spent', label: 'Yes, I bought something', done: 'Spending', to: 'cat' },
-        { v: 'saved', label: 'No, I saved it', done: 'Saved', to: 'account' },
+        { v: 'saved', label: 'No, I saved it', done: 'Saved' },
         { v: 'else', label: 'No, something else', done: 'Something else', to: 'what_out' },
       ],
     };
@@ -450,7 +453,6 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   const spendingCats = useMemo(() => groupCategories(categories, {
     only: (c) => ['essentials', 'lifestyle'].includes(c.group) && !c.hidden,
   }), [categories]);
-  const accounts = cases?.accounts ?? [];
   const people = (cases?.people ?? []).filter((p) => p.toLowerCase() !== name.trim().toLowerCase());
   const jointChoices = depositChoices(it.people ?? cases?.joint_people ?? [], it.label ?? cases?.joint ?? '');
   // The Remember rule a case offers, worded one way everywhere.
@@ -479,7 +481,13 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     () => via({ case: c.key, ...(c.remember ? { remember: !!rem() } : {}), ...extra }, `Sorted as ${c.label.toLowerCase()}.`),
     !!c.remember);
 
-  // The last answer of a step that asks (chips, an account, a kind…).
+  // One savings bucket (2026-10-23): saved, or taken out, with no account.
+  const saveSavings = (answers, into) => finish(answers,
+    into ? `Adds ${amt} to your total saved. It isn’t spending.` : `Takes ${amt} off your total saved. It isn’t income.`,
+    () => via({ case: into ? 'saved' : 'out_of_savings', remember: !!rem() },
+      into ? 'Put into savings.' : 'Taken out of savings.'), true);
+
+  // The last answer of a step that asks (chips, a kind…).
   const saveAsk = (s, v, label) => {
     setEditing(null);
     const answers = [...path, { step: stepId, v, label }];
@@ -495,16 +503,6 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       return finish(answers, effect, () => (unsorted
         ? plain(() => sortTransfers([it.txn.id], v, !!(it.learnable || it.kind === 'panel') && rem()), `Sorted as ${categoryLabel(v)}.`)
         : plain(() => setCategory(it.txn.id, v, rem()), `Moved to ${categoryLabel(v)}.`)), canRemember(c));
-    }
-    if (s.ask === 'account') {
-      const a = accounts.find((x) => x.id === v);
-      if (!out || c?.key === 'out_of_savings') {
-        return finish(answers, `Not income. It comes off Savings this month${a ? `, from ${a.label}` : ''}.`,
-          () => via({ case: 'out_of_savings', account: v || '' }, 'Sorted as taken out of savings.'));
-      }
-      return finish(answers, `Not spending. It adds ${amt} to Savings this month${a?.anchor ? ' and to your Anchor' : ''}.`,
-        () => via({ case: 'saved', account: v || '', remember: !!((it.learnable || c?.remember) && rem()) },
-          a ? `Put away to ${a.label}.` : 'Sorted as savings.'), !!(it.learnable || c?.remember));
     }
     if (s.ask === 'kind') {
       if (v === 'regular_pay') return markCase(byKey('regular_pay') ?? { key: 'regular_pay', label: 'My regular pay' }, {}, answers, 'Pearl uses it for your monthly income from now on.');
@@ -562,6 +560,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     const answers = [...pathBefore, { step: sId, v }];
     if (opt?.case) {
       const c = opt.case;
+      if (c.key === 'saved' || c.key === 'out_of_savings') return saveSavings(answers, c.key === 'saved');
       if (c.key === 'moved' && (it.kind === 'unsorted' || it.txn.category === 'Unsorted transfers')) {
         return finish(answers, c.effect, () => plain(() => sortTransfers([it.txn.id], 'Transfers', !!rem()), 'Sorted as moved between your accounts.'), true);
       }
@@ -577,6 +576,9 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     if (sId === 'match') {
       return finish(answers, 'Not income. The split shows as paid back.',
         () => plain(() => linkPayback(s.match.charge_id, it.txn.id, s.match.name), 'Linked.'));
+    }
+    if (sId === 'q1' && out && v === 'saved') {                             // "No, I saved it"
+      return saveSavings(answers, true);
     }
     if (sId === 'q1' && out) {                                              // "Yes, Groceries"
       return finish(answers, `Stays in ${categoryLabel(it.guess)}.`, () => (rem()
@@ -691,19 +693,6 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           {step.ask === 'category' && (
             <CategoryChips groups={spendingCats} value={cat} label={step.title}
                            onChange={(v) => { setCat(v); saveAsk(step, v, categoryLabel(v)); }} />
-          )}
-          {step.ask === 'account' && (
-            <>
-              <div className="pk-choices" role="radiogroup" aria-label={step.title}>
-                {accounts.map((a) => (
-                  <Choice key={a.id} name={group} checked={false} disabled={busy} description={a.sub}
-                          onChange={() => saveAsk(step, a.id, a.label)} label={a.label} />
-                ))}
-                <Choice name={group} checked={false} disabled={busy}
-                        onChange={() => saveAsk(step, '', 'Somewhere Pearl can’t see')} label="Somewhere Pearl can’t see"
-                        description={out ? 'Still counts as put away' : 'Still comes off what you put away'} />
-              </div>
-            </>
           )}
           {step.ask === 'kind' && (
             <div className="pk-choices nl-grid" role="radiogroup" aria-label={step.title}>

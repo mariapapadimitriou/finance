@@ -53,9 +53,10 @@ OUT_CASES = (
      "effect": "The full amount counts as yours until they pay you back.", "remember": None},
     {"key": "moved", "label": "Moved between my accounts", "group": "not_spending", "needs": None,
      "effect": "Your own money moving, so it isn’t counted as spending or income.", "remember": "destination"},
-    {"key": "saved", "label": "Put into savings", "group": "not_spending", "needs": "account",
-     "effect": "Moved to one of your savings accounts. It isn’t spending, and it counts toward "
-               "Savings this month.", "remember": "destination"},
+    # One savings bucket (2026-10-23): no account to pick. It adds to her
+    # total saved; the balances of her savings accounts are only a reference.
+    {"key": "saved", "label": "Put into savings", "group": "not_spending", "needs": None,
+     "effect": "Adds to your total saved. It isn’t spending.", "remember": "destination"},
     {"key": "lent", "label": "Lent to someone", "group": "not_spending", "needs": None,
      "effect": "Not counted as spending. Pearl watches for it coming back.", "remember": "merchant"},
     {"key": "paying_back", "label": "Paying back money I borrowed", "group": "not_spending",
@@ -84,7 +85,7 @@ IN_CASES = (
     {"key": "own", "label": "From my own account", "group": "not_income", "needs": None,
      "effect": "Your own money moving, so it isn’t counted as income.", "remember": "destination"},
     {"key": "out_of_savings", "label": "Taken out of my savings", "group": "not_income",
-     "needs": "account", "effect": "Not counted as income. It comes off what you saved this month.", "remember": "destination"},
+     "needs": None, "effect": "Comes off your total saved. It isn’t income.", "remember": "destination"},
     {"key": "borrowed", "label": "Money I borrowed", "group": "not_income", "needs": None,
      "effect": "A loan, so it isn’t counted as income.", "remember": None},
     {"key": "lent_back", "label": "Paying back money I lent", "group": "not_income", "needs": None,
@@ -578,11 +579,10 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             store.include(t.fingerprint)
 
     def set_saved_to() -> None:
-        aid = str(body.get("account") or "") or None
-        if aid and aid not in {a["id"] for a in savings_accounts(store)}:
-            raise Problem("Choose one of your savings or investment accounts.")
+        # One savings bucket (2026-10-23): which account is no longer asked,
+        # and an old answer is cleared so nothing names one.
         marks.setdefault("saved_to", {})[t.fingerprint] = store.saved_to().get(t.fingerprint)
-        store.set_saved_to(t.fingerprint, aid)
+        store.set_saved_to(t.fingerprint, None)
 
     if case == "spending":
         cat = _category(body)
@@ -611,9 +611,7 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             recat("Saved", bool(body.get("remember")))
         else:
             cat_to, remember = "Saved", True
-        label = account_labels(store).get(str(body.get("account") or ""), "")
-        title = (f"Put away to {label}." if label and out_ else "Put away."
-                 if out_ else f"Taken out of {label}." if label else "Taken out of savings.")
+        title = "Put into savings." if out_ else "Taken out of savings."
     elif case == "saved_part":
         try:
             amount = round(float(body.get("amount")), 2)
