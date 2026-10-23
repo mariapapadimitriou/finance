@@ -205,11 +205,9 @@ def describe(t: Transaction, ctx: Context) -> dict:
         note = ("Transfer · card payment · the purchases already counted" if _is_card_payment(t)
                 else "Transfer · not counted")
     elif cat == "Saved":
-        where = ctx.accounts.get(ctx.saved_to.get(t.fingerprint, ""), "")
-        note = ((f"Taken out of {where} · not income" if where
-                 else "Taken out of savings · not income") if inflow
-                else (f"Put away to {where} · not counted as spending" if where
-                      else "Put away · not counted as spending"))
+        # One savings bucket (2026-10-23): no account named.
+        note = ("Taken out of savings · comes off your total saved" if inflow
+                else "Saved · adds to your total saved")
     elif cat == "Lent":
         note = ("Paid back a loan · not income" if inflow
                 else "Lent · not counted as spending")
@@ -320,8 +318,8 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "group": group,
         "kind": ctx.kinds.get(t.fingerprint),
         "tags": list(ctx.tags.get(t.fingerprint, [])),
-        "saved_to": ctx.saved_to.get(t.fingerprint),
-        "saved_to_label": ctx.accounts.get(ctx.saved_to.get(t.fingerprint, ""), ""),
+        "saved_to": None,
+        "saved_to_label": "",
         "refund_of": ({"id": refund_of.fingerprint, "merchant": _name(refund_of, ctx),
                        "date": refund_of.date[:10], "amount": abs(refund_of.amount)}
                       if refund_of else None),
