@@ -169,6 +169,9 @@ def build(transactions: list[Transaction], today: str | None = None,
                 or t.category not in ("Transfers",)
                 # Answered: by her, or by a rule of hers (2026-10-22).
                 or t.category_source in ("user", "merchant_override")
+                # Who put a joint deposit in is answered (2026-10-23): asking
+                # about it again as money in read as not sorted.
+                or t.joint_from
                 or t.fingerprint in paired or is_others(t)):
             continue
         key = "in:" + t.fingerprint

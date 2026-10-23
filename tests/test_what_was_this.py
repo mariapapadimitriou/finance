@@ -542,3 +542,42 @@ def test_a_new_row_under_another_spelling_follows_the_rule(client):
     load(client.st, _guess(25, "LYFT *RIDE THU 9PM", "Lyft Ride Thu 9PM", in_month(9)))
     t = next(t for t in client.st.all_transactions() if t.description == "LYFT *RIDE THU 9PM")
     assert (t.category, t.category_source) == ("Transport", "merchant_override")
+
+
+def test_undo_puts_every_quick_answer_back_in_needs_a_look(client):
+    """2026-10-23: "Yes, Groceries", an income type, who put a joint deposit
+    in, and a payback link all came back with no Undo, so Undo on the
+    Sorted card left the card instead of asking again."""
+    from finance.review import for_store, ids_in
+
+    def asked(tid):
+        return tid in ids_in(for_store(client.st))
+
+    t = row(23.5, "QWX MARKET", account="card", kind="credit", merchant="Qwx Market")
+    t.raw["category_confidence"] = "LOW"
+    t.raw["issuer_category"] = "FOOD_AND_DRINK_GROCERIES"
+    ids = load(client.st, t, row(-412.5, "DEPOSIT NORTHWIND"),
+               row(80, "SUSHI NAMI", account="card", kind="credit", merchant="Sushi Nami", category="Dining"),
+               row(-20, "E-TRANSFER FROM PRIYA", who="Priya", when=in_month(4)),
+               row(-500, "E-TRANSFER FROM ALEX KIM", account="joint", who="Alex Kim", when=in_month(6)))
+    client.st.set_joint("joint", "Alex")
+    client.st.set_joint_people("joint", ["Alex"])
+    cat, pay, dinner, back, joint = (ids["QWX MARKET"], ids["DEPOSIT NORTHWIND"], ids["SUSHI NAMI"],
+                                     ids["E-TRANSFER FROM PRIYA"], ids["E-TRANSFER FROM ALEX KIM"])
+    client.st.set_transaction_category(pay, "Income")
+    client.st.set_income_type(pay, "other", "rule")
+
+    for tid, call in [
+        (cat, lambda: client.put(f"/api/transactions/{cat}/confirm")),
+        (pay, lambda: client.put(f"/api/transactions/{pay}/income-type", json={"kind": "salary"})),
+        (joint, lambda: client.put(f"/api/transactions/{joint}/joint-from", json={"who": "me"})),
+        (back, lambda: client.post(f"/api/transactions/{dinner}/paybacks/{back}", json={})),
+    ]:
+        assert asked(tid), tid
+        res = call()
+        assert res.status_code == 200, res.get_json()
+        assert not asked(tid), tid
+        u = res.get_json()["undo"]
+        assert u, tid
+        assert client.post("/api/transactions/undo", json=u).status_code == 200
+        assert asked(tid), tid
