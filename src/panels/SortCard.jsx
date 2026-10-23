@@ -465,7 +465,9 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   // Whether an answer can become a rule at all: not an e-Transfer with no
   // name (its reference changes every time), not an unsorted transfer Pearl
   // can't learn from.
-  const ruleOk = it.kind !== 'who_sent' && !it.nameless && !(it.kind === 'unsorted' && !it.learnable);
+  const ruleOk = it.kind !== 'who_sent' && !it.nameless && !(it.kind === 'unsorted' && !it.learnable)
+    // Not for a name every transfer shares, like "Interac e-Transfer" (2026-10-23).
+    && cases?.learnable !== false;
   const finish = (answers, effect, run, ruleable = false) => {
     const go = (on) => {
       rememberRef.current = on;
@@ -489,7 +491,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   const saveSavings = (answers, into) => finish(answers,
     into ? `Adds ${amt} to your total saved. It isn’t spending.` : `Takes ${amt} off your total saved. It isn’t income.`,
     () => via({ case: into ? 'saved' : 'out_of_savings', remember: !!rem() },
-      into ? 'Put into savings.' : 'Taken out of savings.'), true);
+      into ? 'Put into savings.' : 'Taken out of savings.'), !!byKey(into ? 'saved' : 'out_of_savings')?.remember);
 
   // The last answer of a step that asks (chips, a kind…).
   const saveAsk = (s, v, label) => {

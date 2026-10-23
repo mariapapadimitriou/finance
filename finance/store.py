@@ -1947,6 +1947,9 @@ class Store:
         return {r["merchant_key"]: r["category"] for r in rows}
 
     def set_override(self, merchant: str, category: str) -> int:
+        from .categorize import is_generic_transfer_name
+        if is_generic_transfer_name(merchant):
+            return 0                    # a name every transfer shares is no rule (2026-10-23)
         key = merchant.strip().lower()
         with self.conn() as c:
             c.execute(
@@ -1982,8 +1985,13 @@ class Store:
             count = cur.rowcount
         # The same merchant under the bank's other spellings (2026-10-23), so
         # the rows still waiting in Needs a look are sorted by it too.
-        from .categorize import apply_categories, family_rows
-        family = family_rows(key, self.all_transactions())
+        from .categorize import apply_categories, family_rows, merchant_key
+        txns = self.all_transactions()
+        family = family_rows(key, txns)
+        # Money into a joint account from outside is hers to answer, not a
+        # rule's (2026-10-23): the update above is put right for those.
+        family += [t for t in txns if merchant_key(t.merchant) == key and t.joint and t.amount < 0
+                   and not t.joint_from and t.category_source == "merchant_override" and t not in family]
         before = {t.fingerprint: (t.category, t.category_source) for t in family}
         apply_categories(family, self.overrides())
         changed = {t.fingerprint: (t.category, t.category_source) for t in family

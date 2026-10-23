@@ -414,7 +414,7 @@ def is_unsure(t) -> bool:
 
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
-RULES_VERSION = 11
+RULES_VERSION = 12
 
 
 def plaid_category(code: str) -> str | None:
@@ -515,7 +515,8 @@ def categorize(merchant: str, description: str = "", issuer_category: str = "",
     """
     key = (merchant or "").strip().lower()
 
-    if overrides and key in overrides:
+    # Never a rule for a name every transfer shares (2026-10-23).
+    if overrides and key in overrides and not is_generic_transfer_name(merchant):
         return overrides[key], "merchant_override"
 
     code = (issuer_category or "").strip().lower()
@@ -535,6 +536,26 @@ def categorize(merchant: str, description: str = "", issuer_category: str = "",
         return bank, "issuer"
 
     return "Other", "rule"
+
+
+# Words a bank puts on any transfer (2026-10-23). A name made only of these
+# (and reference codes) names no one: "Interac e-Transfer" is every
+# e-Transfer, in or out, so a rule for it would sort them all the same way.
+_TRANSFER_WORDS = {
+    "interac", "e-transfer", "etransfer", "e-transfers", "e-tfr", "etfr", "e", "tfr", "tfr-to", "tfr-fr",
+    "transfer", "transfers", "send", "sent", "received", "receive", "from", "to", "deposit", "mobile",
+    "online", "internet", "banking", "withdrawal", "payment", "autodeposit", "auto", "request",
+    "money", "fulfilled", "cancelled", "reclaim", "the", "a", "-", "",
+}
+
+
+def is_generic_transfer_name(merchant: str) -> bool:
+    """A transfer's name with nothing in it but transfer words and codes."""
+    words = re.split(r"[\s*#/]+", (merchant or "").lower())
+    left = [w for w in words if w not in _TRANSFER_WORDS
+            and not (len(w) <= 6 and any(ch.isdigit() for ch in w))]
+    named = bool(left)
+    return not named and any(w in _TRANSFER_WORDS - {"", "-", "a", "the", "from", "to"} for w in words)
 
 
 def merchant_key(merchant: str) -> str:
@@ -579,22 +600,27 @@ def apply_categories(transactions, overrides: dict[str, str] | None = None) -> N
         # Hers: set by hand, or by a date range she sorted (finance/ranges.py).
         if t.category and t.category_source in ("user", "range"):
             continue
+        # Money into a joint account from outside is "Whose?" until she says
+        # (2026-10-23): no merchant rule answers that for her.
+        rules = overrides
+        if getattr(t, "joint", None) and t.amount < 0 and not getattr(t, "joint_from", None):
+            rules = None
         # A correction made once applies to the merchant however its name is
         # spelled next time: Plaid gives each merchant a stable id.
         entity = (t.raw or {}).get("merchant_entity_id")
-        if overrides and entity and f"entity:{entity}" in overrides:
-            t.category, t.category_source = overrides[f"entity:{entity}"], "merchant_override"
+        if rules and entity and f"entity:{entity}" in rules and not is_generic_transfer_name(t.merchant):
+            t.category, t.category_source = rules[f"entity:{entity}"], "merchant_override"
             continue
         issuer_cat = (t.raw or {}).get("issuer_category", "")
         t.category, t.category_source = categorize(
-            t.merchant, t.description, issuer_cat, overrides,
+            t.merchant, t.description, issuer_cat, rules,
             confidence=str((t.raw or {}).get("category_confidence", "") or ""),
         )
         if _is_unrecognized_card_inflow(t):
             t.category, t.category_source = "Transfers", "card_inflow"
         # Still a guess: her rule for another spelling of the merchant decides.
         elif t.category_source != "merchant_override" and is_guess(t):
-            ruled = family_rule(t.merchant, overrides)
+            ruled = None if is_generic_transfer_name(t.merchant) else family_rule(t.merchant, rules)
             if ruled:
                 t.category, t.category_source = ruled, "merchant_override"
 
