@@ -254,3 +254,15 @@ describe('closing a transaction keeps her place (2026-10-23)', () => {
     expect(sameFilters({ q: 'lyft' }, { q: 'lyft', tag: undefined })).toBe(true);
   });
 });
+
+describe('This month on a phone (2026-10-23)', () => {
+  it('three numbers: spent, came in, and left or over', async () => {
+    const { monthStats, default: FlowCards } = await import('./FlowCards.jsx');
+    expect(monthStats(1200, 3000).map((s) => [s.label, s.value])).toEqual(
+      [['Spent', '$1,200.00'], ['Came in', '$3,000.00'], ['Left', '$1,800.00']]);
+    expect(monthStats(3200, 3000)[2]).toMatchObject({ label: 'Over', value: '$200.00', tone: 'over' });
+    const page = renderToStaticMarkup(<FlowCards totals={{ spent: 1200, income: 3000 }} />);
+    expect(page).toContain('class="tm-stats"');
+    expect(page).toContain('tm-row');            // the bars stay for wider screens
+  });
+});

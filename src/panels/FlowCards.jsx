@@ -54,6 +54,33 @@ export function leftWords(spent = 0, income = 0) {
   return '';
 }
 
+/** On a phone (2026-10-23): the month as three numbers, no chart. */
+export function monthStats(spent = 0, income = 0) {
+  const s = Math.max(0, spent);
+  const i = Math.max(0, income);
+  const left = i - s;
+  return [
+    { key: 'spent', label: 'Spent', value: txAmount(s), tone: 'out' },
+    { key: 'in', label: 'Came in', value: txAmount(i), tone: 'in' },
+    left < -EPS
+      ? { key: 'left', label: 'Over', value: txAmount(-left), tone: 'over' }
+      : { key: 'left', label: 'Left', value: txAmount(left), tone: 'left' },
+  ];
+}
+
+function Stats({ spent, income, ghost = false }) {
+  return (
+    <div className="tm-stats" aria-hidden={ghost ? 'true' : undefined}>
+      {monthStats(spent, income).map((s) => (
+        <div key={s.key} className={`tm-stat ${s.tone}`}>
+          <span className="tm-stat-label">{s.label}</span>
+          {ghost ? <span className="tm-stat-value tm-ghost-text" /> : <span className="tm-stat-value">{s.value}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function FlowCards({ totals }) {
   // Not loaded yet: the same card at the same height, so nothing below it
   // jumps when the numbers arrive (2026-10-21).
@@ -67,6 +94,7 @@ export default function FlowCards({ totals }) {
             <span className="tm-amt tm-ghost-text" />
           </div>
         ))}
+        <Stats spent={0} income={0} ghost />
       </section>
     );
   }
@@ -98,6 +126,7 @@ export default function FlowCards({ totals }) {
         <span className="tm-amt out">{txAmount(spent, { signed: spent > EPS })}</span>
       </div>
       {leftWords(spent, income) && <p className="tm-left" aria-hidden="true">{leftWords(spent, income)}</p>}
+      <Stats spent={spent} income={income} />
     </section>
   );
 }
