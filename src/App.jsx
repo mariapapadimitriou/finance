@@ -133,6 +133,23 @@ export default function App() {
       }, 350);
     }
   }, []);
+  // "← Back to …" on the page a jump inside another page landed on
+  // (2026-10-23): every action has a way back to what she was doing. The
+  // nav, the section tabs and the phone's Back clear it.
+  const [backTo, setBackTo] = useState(null);
+  const goFrom = useCallback((key, opts = {}) => {
+    const origin = panelRef.current;
+    const [g, target] = resolve(key);
+    const [og] = resolve(origin);
+    // Pages with their own way back (the list, Needs a look) and the hubs
+    // don't need one; a jump within the same group has its tabs.
+    const auto = g !== og && !['home', 'profile', 'transactions', 'review'].includes(target);
+    go(key);
+    setBackTo(opts.back || auto
+      ? { to: target, label: opts.back?.label || `Back to ${PANELS[origin]?.label ?? 'where you were'}` }
+      : null);
+  }, [go]);
+  const navGo = useCallback((key) => { setBackTo(null); go(key); }, [go]);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   // null while we're still asking; the app renders nothing rather than
@@ -194,6 +211,7 @@ export default function App() {
   useEffect(() => {
     if (window.location.pathname === '/' && !window.history.state?.panel) writeAppUrl(panelRef.current, { push: false });
     const onPop = () => {
+      setBackTo(null);
       if (isReviewUrl()) { setTab('cashflow'); setPanel('review'); }
       else if (isInsightsUrl()) { setTab('cashflow'); setPanel('insights'); }
       else if (isCalendarUrl()) { setTab('cashflow'); setPanel('calendar'); }
@@ -350,7 +368,7 @@ export default function App() {
   // looks exactly like a button that does nothing.
   if (summary.empty && !WORKS_WHEN_EMPTY.includes(panel)) {
     return (
-      <Shell theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}>
+      <Shell theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={navGo}>
         <Empty title="No spending yet">
           <div className="row" style={{ justifyContent: 'center', marginTop: 14 }}>
             <button className="btn primary" onClick={() => go('accounts')}>
@@ -368,7 +386,8 @@ export default function App() {
     <SessionTimeout onTimeout={signOutIdle} onSignOut={signOut} />
     <DeviceApprovals />
     <Shell
-      theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={go}
+      theme={theme} setTheme={setTheme} tab={tab} panel={panel} onTab={navGo}
+      backTo={backTo?.to === panel ? backTo : null}
       counts={{ cashflow: data.review }}
       // The Pearl pages draw their own header (overline + title). Insights
       // has its own month switcher too (GR-28), so the shell picks no month.
@@ -378,52 +397,52 @@ export default function App() {
       ownSections={OWN_SECTIONS.includes(panel)}
       onSignOut={signOut}
     >
-      {panel === 'income' && <IncomeBillsPanel onTab={go} onChanged={load} version={version} />}
+      {panel === 'income' && <IncomeBillsPanel onTab={goFrom} onChanged={load} version={version} />}
       {quickSort && (
         <QuickSort data={quickSort} categories={categories} onClose={() => setQuickSort(null)}
                    onChanged={load} />
       )}
-      {panel === 'home' && <HomePanel onTab={go} onChanged={load} onQuickSort={openQuickSort} version={version} />}
-      {panel === 'debts' && <DebtsPanel onTab={go} onChanged={load} version={version} />}
-      {panel === 'insights' && <InsightsPanel onTab={go} version={version} />}
-      {panel === 'calendar' && <CalendarPanel onTab={go} version={version} categories={categories} />}
+      {panel === 'home' && <HomePanel onTab={goFrom} onChanged={load} onQuickSort={openQuickSort} version={version} />}
+      {panel === 'debts' && <DebtsPanel onTab={goFrom} onChanged={load} version={version} />}
+      {panel === 'insights' && <InsightsPanel onTab={goFrom} version={version} />}
+      {panel === 'calendar' && <CalendarPanel onTab={goFrom} version={version} categories={categories} />}
       {panel === 'review' && (
-        <NeedsALook categories={categories} onChanged={load} onTab={go} version={version} />
+        <NeedsALook categories={categories} onChanged={load} onTab={goFrom} version={version} />
       )}
       {panel === 'transactions' && (
         <TransactionsList summary={summary} categories={categories} accounts={accounts}
-                          reviewCount={data.review} onTab={go} onChanged={load}
+                          reviewCount={data.review} onTab={goFrom} onChanged={load}
                           version={version} />
       )}
       {panel === 'budgets' && (
-        <CategoryBudgetsPanel onTab={go} onChanged={load} version={version} />
+        <CategoryBudgetsPanel onTab={goFrom} onChanged={load} version={version} />
       )}
       {panel === 'profile' && (
-        <ProfilePanel onTab={go} version={version} theme={theme} setTheme={setTheme} onSignOut={signOut} />
+        <ProfilePanel onTab={goFrom} version={version} theme={theme} setTheme={setTheme} onSignOut={signOut} />
       )}
-      {panel === 'accounts' && <AccountsPanel onChanged={load} onTab={go} version={version} />}
+      {panel === 'accounts' && <AccountsPanel onChanged={load} onTab={goFrom} version={version} />}
       {panel === 'rules' && (
-        <RulesPanel categories={categories} onTab={go} onChanged={load} version={version} />
+        <RulesPanel categories={categories} onTab={goFrom} onChanged={load} version={version} />
       )}
-      {panel === 'notifications' && <NotificationsPanel onTab={go} version={version} />}
-      {panel === 'consent' && <ConsentPanel onTab={go} version={version} />}
-      {panel === 'protect' && <ProtectPanel onTab={go} version={version} />}
+      {panel === 'notifications' && <NotificationsPanel onTab={goFrom} version={version} />}
+      {panel === 'consent' && <ConsentPanel onTab={goFrom} version={version} />}
+      {panel === 'protect' && <ProtectPanel onTab={goFrom} version={version} />}
       {panel === 'data' && (
-        <DataPanel onTab={go} onChanged={load} onDeleted={(info) => {
+        <DataPanel onTab={goFrom} onChanged={load} onDeleted={(info) => {
           // Signed out on the server already; nothing of hers stays on screen.
           setData(null); setUser(null); synced.current = false;
           setDeleted(info); setSignedIn(false); go('home');
         }} />
       )}
       {panel === 'security' && (
-        <SecurityPanel onTab={go} onSignOut={signOut} />
+        <SecurityPanel onTab={goFrom} onSignOut={signOut} />
       )}
     </Shell>
     </>
   );
 }
 
-function Shell({ theme, setTheme, tab, panel, onTab, counts = {}, onSignOut,
+function Shell({ theme, setTheme, tab, panel, onTab, backTo = null, counts = {}, onSignOut,
                  ownTitle = false, ownSections = false, children }) {
   const group = GROUPS.find((g) => g.key === tab);
   // The heading names the panel you are actually looking at; the group label is
@@ -521,7 +540,14 @@ function Shell({ theme, setTheme, tab, panel, onTab, counts = {}, onSignOut,
             </div>
           )}
         </div>
-        <main>{children}</main>
+        <main>
+          {backTo && (
+            <button type="button" className="back-to" onClick={() => window.history.back()}>
+              <span aria-hidden="true">←</span> {backTo.label}
+            </button>
+          )}
+          {children}
+        </main>
       </div>
     </div>
   );

@@ -134,12 +134,20 @@ export const STACKED = new Set(['unsorted', 'category', 'money_in', 'income', 'j
 
 export const minutes = (n) => (n <= 4 ? 'about a minute' : `about ${Math.ceil((n * 15) / 60)} minutes`);
 
+// The card and step she left from when a link took her to another page
+// (2026-10-23), to open again when she comes back with Back.
+let RETURN = null;
+function returning() {
+  const r = RETURN;
+  return r && window.history.state?.card === r.key ? r : null;
+}
+
 export default function NeedsALook({ categories, onChanged, onTab, version }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   // The transaction open in its card, by key; null is the list (TR-01).
-  const [currentKey, setCurrentKey] = useState(null);
+  const [currentKey, setCurrentKey] = useState(() => returning()?.key ?? null);
   // The Sorted card for the current transaction, once its last answer is saved.
   const [sorted, setSorted] = useState(null);
   // Transactions sorted this visit, oldest first, for Previous.
@@ -148,7 +156,17 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
   const [back, setBack] = useState(null);
   // A step being reopened after its change was undone: the answers to
   // restore and which one is open.
-  const [resume, setResume] = useState(null);
+  const [resume, setResume] = useState(() => {
+    const r = returning();
+    return r ? { key: r.key, path: r.path ?? [], edit: null, name: '' } : null;
+  });
+  useEffect(() => { RETURN = null; }, []);
+  // A link out of a card ("Who shares this account"): note where she was,
+  // and give the page she lands on a way back to it.
+  const away = (key, opts = {}) => {
+    RETURN = current ? { key: current.key, path: opts.path ?? null } : null;
+    onTab?.(key, { back: { label: 'Back to Needs a look' } });
+  };
   const [change, setChange] = useState(null);
   const [toast, setToast] = useState('');
   // The transaction open in its full panel from the card's Edit (2026-10-22):
@@ -477,7 +495,7 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
             ) : STACKED.has(current.kind) ? (
               <Stacked it={current} categories={categories} busy={busy} onSkip={skip}
                        onPrevious={hasPrevious ? () => setBack(prevIndex) : undefined}
-                       act={act} commit={commit} onBack={toList} onTab={onTab}
+                       act={act} commit={commit} onBack={toList} onTab={away}
                        initialPath={resume?.key === current.key ? resume.path : null}
                        initialEdit={resume?.key === current.key ? resume.edit : null}
                        initialName={resume?.key === current.key ? resume.name : ''} />
