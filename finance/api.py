@@ -359,9 +359,13 @@ def confirm_transaction(txn_id: str):
     t = st.get_transaction(txn_id)
     if t is None:
         return jsonify({"error": "No such transaction."}), 404
+    already = st.confirmed_categories().get(txn_id) == (t.category or "Other")
     st.confirm_category(txn_id, t.category or "Other")
     st.dismiss_review("cat:" + txn_id)
-    return jsonify({"ok": True, "category": t.category or "Other"})
+    # Undo takes it back to a question (2026-10-23): without this, Undo on
+    # "Yes, Groceries" did nothing and the card left Needs a look.
+    return jsonify({"ok": True, "category": t.category or "Other",
+                    "undo": None if already else {"rows": [], "unconfirm": [txn_id]}})
 
 
 @bp.delete("/transactions/<txn_id>/confirm")
@@ -822,12 +826,22 @@ def add_payback(txn_id: str, inflow_id: str):
         names = [p["name"] for p in (st.splits().get(txn_id) or {}).get("people", [])]
         if person not in names:
             return jsonify({"error": "That person isn't in this split."}), 400
+    from .impact import snapshot, undo_payload
+    before = snapshot(st, st.all_transactions())
+    was = {"charge": inflow.repays, "kind": st.payback_kinds().get(inflow_id)}
     st.link_payback(txn_id, inflow_id, person)
     # Never income: Plaid sometimes calls an e-transfer in "income".
     if inflow.category != "Transfers":
         st.set_transaction_category(inflow_id, "Transfers")
     apply_transfer_matches(st)
-    return list_paybacks(txn_id)
+    out = list_paybacks(txn_id)
+    # An Undo for the link (2026-10-23), as every other answer has.
+    data = out.get_json() if hasattr(out, "get_json") else None
+    if isinstance(data, dict):
+        undo = undo_payload(before, snapshot(st, st.all_transactions()))
+        undo["marks"] = {"paybacks": {inflow_id: was}}
+        return jsonify(dict(data, undo=undo))
+    return out
 
 
 @bp.delete("/transactions/<txn_id>/paybacks/<inflow_id>")
@@ -962,13 +976,18 @@ def set_joint_from(txn_id: str):
     person = " ".join(str(body.get("person") or "").split()) or None
     if person and (who != THEM or person not in t.joint_people):
         return jsonify({"error": "Choose one of the people you share this account with."}), 400
+    from .impact import snapshot, undo_payload
+    before = snapshot(st, st.all_transactions())
+    was = {"who": t.joint_from, "person": t.joint_person}
     st.set_joint_deposit(txn_id, who, person)
     if body.get("remember"):
         st.set_joint_deposit_rule(t.account_id, t.merchant, who, person)
     # Her own money moving between her pockets is never income.
     if who == ME and t.category == "Income":
         st.set_transaction_category(txn_id, "Transfers")
-    return jsonify({"ok": True, "who": who, "person": person})
+    undo = undo_payload(before, snapshot(st, st.all_transactions()))
+    undo["marks"] = {"joint_from": {txn_id: was}}
+    return jsonify({"ok": True, "who": who, "person": person, "undo": undo})
 
 
 @bp.get("/accounts")
@@ -2199,12 +2218,17 @@ def set_income_type(txn_id: str):
     kind = (request.get_json(silent=True) or {}).get("kind")
     if kind not in KINDS:
         return jsonify({"error": "Choose a kind of income."}), 400
+    from .impact import snapshot, undo_payload
+    before = snapshot(st, st.all_transactions())
+    was = t.income_type if t.income_type_source == "user" else None
     if t.category != "Income":
         # Calling something a gift or a paycheque makes it income.
         st.set_transaction_category(txn_id, "Income")
     st.set_income_type(txn_id, kind, "user")
     _reclassify(st)
-    return jsonify({"ok": True, "transaction": st.get_transaction(txn_id).to_dict()})
+    undo = undo_payload(before, snapshot(st, st.all_transactions()))
+    undo["marks"] = {"income_type": {txn_id: was}}
+    return jsonify({"ok": True, "transaction": st.get_transaction(txn_id).to_dict(), "undo": undo})
 
 
 # ── Review ───────────────────────────────────────────────────────────────────
