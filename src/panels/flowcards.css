@@ -45,6 +45,28 @@
   .tm-income-line { height: calc(22px + 12px + 30px); }
 }
 
+/* On a phone (2026-10-23): no chart, the month as three numbers. */
+.tm-stats { display: none; }
+@media (max-width: 720px) {
+  .tm-card .tm-row, .tm-card .tm-left { display: none; }
+  .tm-card { padding: 0; }
+  .tm-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+  .tm-stat {
+    display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; min-width: 0;
+    border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-card);
+  }
+  .tm-stat-label { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--ink-muted); }
+  .tm-stat-value {
+    font-family: var(--text); font-weight: 600; font-size: 17px; line-height: 24px; color: var(--ink);
+    font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tm-stat.out .tm-stat-value { color: var(--rose-700); }
+  .tm-stat.in .tm-stat-value { color: var(--lagoon-700); }
+  .tm-stat.over .tm-stat-value { color: var(--rose-700); }
+  :root[data-theme="dark"] .tm-stat .tm-stat-value { color: var(--ink); }
+  .tm-stat .tm-ghost-text { display: block; width: 70%; height: 18px; margin-top: 3px; }
+}
+
 /* ── One row of tools: Search · Month · Filters · Add ──────────────────── */
 .tx-page .tx-toolbar { flex-wrap: nowrap; }
 .tx-page .tx-toolbar .pk-search { flex: 1 1 auto; width: auto; height: 40px; font-size: 14px; }
