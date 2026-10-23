@@ -149,3 +149,11 @@
 .nl-ghost-row { height: 64px; }
 @keyframes nl-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .nl-ghost { animation: none; } }
+
+/* Edit, at the card's top left (2026-10-22). */
+.nl-card-top { display: flex; justify-content: flex-start; margin-bottom: -4px; }
+
+/* Previous on the left, Next or Skip for now on the right (2026-10-22). */
+.nl-stack .nl-actions.nl-bottom { justify-content: space-between; }
+.nl-stack .nl-actions.nl-bottom > :only-child { margin-left: auto; }
+.pk .nl-stack .nl-pill.nl-previous { box-shadow: none; }

@@ -278,7 +278,9 @@
 
 /* ── Toast ───────────────────────────────────────────────────────────────── */
 .pk-toast {
-  position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%); z-index: 70;
+  position: fixed; left: 50%; bottom: 32px; z-index: 70;
+  transform: translate(calc(-50% + var(--drag-x, 0px)), var(--drag-y, 0px));
+  transition: transform 160ms ease, opacity 160ms ease;
   display: inline-flex; align-items: center; gap: var(--space-2);
   padding: 10px 18px; border-radius: var(--radius-full);
   background: var(--ink); color: var(--surface-page); font-size: 15px; line-height: 22px;
@@ -433,12 +435,21 @@
 
 /* ── Toast with an action (R-03) ─────────────────────────────────────────── */
 .pk-toast-card {
-  position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%); z-index: 70;
+  position: fixed; left: 50%; bottom: 32px; z-index: 70;
+  transform: translate(calc(-50% + var(--drag-x, 0px)), var(--drag-y, 0px));
+  transition: transform 160ms ease, opacity 160ms ease;
   display: flex; align-items: center; gap: var(--space-3); width: max-content;
   max-width: min(560px, calc(100vw - 32px)); padding: 16px 20px;
   background: var(--surface-card); border: 1px solid var(--border); border-radius: var(--radius-md);
-  box-shadow: var(--shadow-raised); color: var(--ink);
+  box-shadow: var(--shadow-raised); color: var(--ink); touch-action: none;
 }
+.pk .pk-toast-close {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; margin: -6px -8px -6px 0; border: 0; border-radius: var(--radius-full);
+  background: none; color: var(--ink-muted); cursor: pointer;
+}
+.pk .pk-toast-close:hover { background: var(--hover); color: var(--ink); }
+.pk-toast { cursor: pointer; touch-action: none; }
 .pk-toast-icon {
   flex: none; width: 32px; height: 32px; border-radius: var(--radius-full);
   background: var(--seaglass); color: var(--on-nacre);
@@ -793,3 +804,9 @@
 .txd-bank > summary::after { content: " ›"; }
 .txd-bank[open] > summary::after { content: " ⌄"; }
 .txd-bank[open] > summary { margin-bottom: var(--space-2); }
+
+/* Its words can't be selected or dragged (2026-10-22): a selection would
+   start the browser's own drag and cancel the swipe halfway. */
+.pk-toast, .pk-toast-card { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/* While a finger drags a toast, it follows without lag. */
+.pk-toast.dragging, .pk-toast-card.dragging { transition: none; }

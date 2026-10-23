@@ -305,10 +305,10 @@ export function TxHead({ txn, name }) {
 }
 
 /** The small pill at the end of the dots' line or above the card: "↶ Undo", "↶ Previous". */
-export function Pill({ children, className = '', ...rest }) {
+export function Pill({ children, className = '', icon = 'undo', ...rest }) {
   return (
     <button type="button" className={`nl-pill ${className}`} {...rest}>
-      <PIcon name="undo" size={14} /> {children}
+      <PIcon name={icon} size={14} /> {children}
     </button>
   );
 }
@@ -336,7 +336,7 @@ function caseOn(flow, path) {
   return null;
 }
 
-export default function SortCard({ it, categories = [], busy, act, commit, onSkip, onBack, onTab, onSplit,
+export default function SortCard({ it, categories = [], busy, act, commit, onSkip, onBack, onTab, onSplit, onPrevious,
                                    mode = 'stacked', initialPath = null, initialEdit = null,
                                    initialName = '', showHead = true }) {
   const [cases, setCases] = useState(() => READY.get(it.txn.id) ?? null);
@@ -757,9 +757,15 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           )}
         </>
       )}
-      {onSkip && (
-        <div className="nl-actions">
-          <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>Skip for now</PButton>
+      {/* Back on the left, forward on the right (2026-10-22). */}
+      {(onSkip || onPrevious) && (
+        <div className="nl-actions nl-bottom">
+          {onPrevious && (
+            <Pill icon="arrowLeft" className="nl-previous" disabled={busy} onClick={onPrevious} aria-label="Previous transaction">
+              Previous
+            </Pill>
+          )}
+          {onSkip && <PButton variant="text" className="nl-skip" disabled={busy} onClick={onSkip}>Skip for now</PButton>}
         </div>
       )}
     </>
@@ -819,7 +825,7 @@ export function Done({ path, flow, editing = null, busy = false, onOpen, onPick 
  * The Sorted card: every dot filled with "✓ Sorted", the answers as rows
  * (tap one to reopen that step), what the change did, and Next or Done.
  */
-export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'Next', onNext, onUndo, onReopen,
+export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'Next', onNext, onUndo, onReopen, onPrevious,
                              showHead = true }) {
   const { it, answers } = entry;
   return (
@@ -853,7 +859,13 @@ export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'N
           )}
         </div>
       )}
-      <div className="nl-actions nl-next">
+      <div className="nl-actions nl-next nl-bottom">
+        {/* Previous bottom left, in line with Next (2026-10-22). */}
+        {onPrevious && (
+          <Pill icon="arrowLeft" className="nl-previous" disabled={busy} onClick={onPrevious} aria-label="Previous transaction">
+            Previous
+          </Pill>
+        )}
         {/* The same pill as Undo (2026-10-21), so the card's two ways out match. */}
         <button type="button" className="nl-pill nl-pill-go" disabled={busy} onClick={onNext}>
           {isPast ? 'Back to where I was' : nextLabel} <PIcon name="chevronRight" size={14} />

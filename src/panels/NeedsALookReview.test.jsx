@@ -155,3 +155,23 @@ describe('Needs a look, reorganised (2026-10-22)', () => {
     expect(home).toContain('Review one by one');
   });
 });
+
+describe('Edit and Previous on the card (2026-10-22)', () => {
+  it('Previous sits in the bottom row with Skip for now, and with Next on a Sorted card', () => {
+    const q = html(<Stacked it={out} act={noop} commit={noop} onSkip={noop} onBack={noop} onPrevious={noop} />);
+    expect(q).toMatch(/nl-actions nl-bottom[\s\S]*Previous[\s\S]*Skip for now/);
+    const sorted = html(<SortedCard entry={{ it: out, answers: [{ step: 'q1', v: 'else', label: 'Something else' }], title: 'Sorted.' }}
+                                    onNext={noop} onPrevious={noop} />);
+    expect(sorted).toMatch(/nl-bottom[\s\S]*Previous[\s\S]*Next/);
+    expect(html(<SortedCard entry={{ it: out, answers: [], title: 'Sorted.' }} onNext={noop} />)).not.toContain('Previous');
+  });
+});
+
+describe('Toasts can always be dismissed (2026-10-22)', () => {
+  it('the Undo toast has a Dismiss button', async () => {
+    const { ActionToast } = await import('../pearl/kit.jsx');
+    const out = html(<ActionToast title="Left out." detail="Left out of all your numbers." onUndo={noop} onDone={noop} />);
+    expect(out).toContain('aria-label="Dismiss"');
+    expect(out).toContain('>Undo<');
+  });
+});

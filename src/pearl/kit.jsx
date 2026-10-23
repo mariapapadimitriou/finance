@@ -288,8 +288,11 @@ export function Toast({ children, onDone, ms = 2400 }) {
     const t = setTimeout(() => done.current?.(), ms);
     return () => clearTimeout(t);
   }, [ms]);
+  // A tap or a swipe sends it away (2026-10-22).
+  const swipe = useSwipeAway(() => done.current?.());
   return (
-    <div className="pk-toast" role="status" aria-live="polite">
+    <div className="pk-toast" role="status" aria-live="polite" {...swipe}
+         onClick={() => done.current?.()}>
       <PIcon name="check" size={18} /> {children}
     </div>
   );
@@ -416,15 +419,68 @@ export function ImpactNote({ children }) {
  * The toast after a change that moved a number (R-03): what happened, what it
  * did, and Undo. Stays up longer than a plain toast so Undo can be reached.
  */
-export function ActionToast({ title, detail, onUndo, onDone, ms = 8000 }) {
+/** A swipe of the toast (down or sideways) dismisses it (2026-10-22): it
+ * follows the finger and fades, goes past a short distance, and springs
+ * back if let go before. */
+function useSwipeAway(onAway) {
+  const start = useRef(null);
+  const set = (el, x, y) => {
+    const d = Math.max(Math.abs(x), y);
+    el.style.setProperty('--drag-x', `${x}px`);
+    el.style.setProperty('--drag-y', `${Math.max(0, y)}px`);
+    el.style.opacity = String(Math.max(0.2, 1 - d / 160));
+  };
+  return {
+    onPointerDown: (e) => {
+      // Not on its buttons: Undo and × are taps of their own.
+      if (e.target.closest?.('button')) return;
+      if (e.pointerType === 'mouse') e.preventDefault();      // no text selection
+      start.current = { x: e.clientX, y: e.clientY };
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      e.currentTarget.classList.add('dragging');
+    },
+    onPointerMove: (e) => {
+      const s0 = start.current;
+      if (!s0) return;
+      const dx = e.clientX - s0.x;
+      const dy = e.clientY - s0.y;
+      // Down, or sideways; never up off the screen.
+      set(e.currentTarget, Math.abs(dx) > Math.max(0, dy) ? dx : 0, Math.abs(dx) > Math.max(0, dy) ? 0 : dy);
+    },
+    onPointerUp: (e) => {
+      const s0 = start.current; start.current = null;
+      const el = e.currentTarget;
+      el.classList.remove('dragging');
+      if (!s0) return;
+      const dx = e.clientX - s0.x;
+      const dy = e.clientY - s0.y;
+      if (dy > 36 || Math.abs(dx) > 64) {
+        set(el, Math.abs(dx) > dy ? Math.sign(dx) * 400 : 0, Math.abs(dx) > dy ? 0 : 160);
+        el.style.opacity = '0';
+        setTimeout(() => onAway?.(), 160);
+      } else {
+        set(el, 0, 0); el.style.opacity = '';
+      }
+    },
+    onPointerCancel: (e) => {
+      start.current = null;
+      e.currentTarget.classList.remove('dragging');
+      set(e.currentTarget, 0, 0); e.currentTarget.style.opacity = '';
+    },
+  };
+}
+
+export function ActionToast({ title, detail, onUndo, onDone, ms = 6000 }) {
   const done = useRef(onDone);
   done.current = onDone;
   useEffect(() => {
     const t = setTimeout(() => done.current?.(), ms);
     return () => clearTimeout(t);
   }, [ms, title]);
+  // Never stuck (2026-10-22): an ×, a swipe, or it goes by itself.
+  const swipe = useSwipeAway(() => done.current?.());
   return (
-    <div className="pk-toast-card" role="status" aria-live="polite">
+    <div className="pk-toast-card" role="status" aria-live="polite" {...swipe}>
       <span className="pk-toast-icon" aria-hidden="true"><PIcon name="check" size={16} /></span>
       <span className="pk-toast-text">
         <span>{title}</span>
@@ -433,6 +489,9 @@ export function ActionToast({ title, detail, onUndo, onDone, ms = 8000 }) {
       {onUndo && (
         <button type="button" className="pk-toast-undo" onClick={onUndo}>Undo</button>
       )}
+      <button type="button" className="pk-toast-close" aria-label="Dismiss" onClick={() => done.current?.()}>
+        <PIcon name="x" size={16} />
+      </button>
     </div>
   );
 }
