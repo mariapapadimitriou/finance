@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   Alert, Avatar, CategoryChip, Choice, DetailPanel, PButton, StatusPill, amountTone, txAmount,
 } from '../pearl/kit.jsx';
@@ -62,6 +62,35 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
   const [error, setError] = useState(null);
   // main | what | category | split | note | exclude | bank | whose | tags | name
   const [step, setStep] = useState(startStep);
+  // A step past the one the panel opened on is a history entry (2026-10-22):
+  // the phone's Back, and the step's own back link, return to the panel
+  // rather than out of it.
+  const fromPop = useRef(false);
+  useEffect(() => {
+    const st = window.history.state || {};
+    if (fromPop.current) { fromPop.current = false; return; }
+    if (step !== startStep && !st.txStep) {
+      window.history.pushState({ ...st, txStep: step }, '', window.location.href);
+    } else if (step !== startStep && st.txStep !== step) {
+      window.history.replaceState({ ...st, txStep: step }, '', window.location.href);
+    } else if (step === startStep && st.txStep) {
+      fromPop.current = true;              // the pop below is ours
+      window.history.back();
+    }
+  }, [step, startStep]);
+  const stepNow = useRef(step);
+  stepNow.current = step;
+  useEffect(() => {
+    const onPop = () => {
+      if (fromPop.current) { fromPop.current = false; return; }
+      const want = window.history.state?.txStep || startStep;
+      if (want === stepNow.current) return;
+      fromPop.current = true;              // the step effect mustn't push it again
+      setStep(want);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [startStep]);
   // The sort card's result (the Sorted card), and where to pick up after Undo.
   const [sorted, setSorted] = useState(null);
   const [resume, setResume] = useState(null);
