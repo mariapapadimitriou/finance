@@ -245,3 +245,12 @@ describe('Mark as… in the transaction panel (2026-10-23)', () => {
     expect(out).toMatch(/aria-label="Edit Pilot: note, tags and more"/);
   });
 });
+
+describe('closing a transaction keeps her place (2026-10-23)', () => {
+  it('a Back to the same filters is the same filters', async () => {
+    const { sameFilters } = await import('./TransactionsList.jsx');
+    expect(sameFilters({ month: '', q: '', account: '' }, { month: '', q: '' })).toBe(true);
+    expect(sameFilters({ month: '2026-09', q: '' }, { month: '', q: '' })).toBe(false);
+    expect(sameFilters({ q: 'lyft' }, { q: 'lyft', tag: undefined })).toBe(true);
+  });
+});

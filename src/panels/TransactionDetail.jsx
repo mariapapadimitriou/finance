@@ -351,6 +351,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             {tx.memo && <Detail label="Their message" value={`“${tx.memo}”`} />}
             <Detail label="Counts toward" value={tx.counts_toward} />
             {tx.note && !tx.note_link && !(tx.one_off && tx.note === ONE_OFF_NOTE)
+              && !(tx.refunded_by?.length && /^(Refunded|\$[\d,.]+ refunded)/.test(tx.note))
               && <Detail label="Why" value={tx.note} />}
             {tx.split && <Detail label="Whole charge" value={txAmount(tx.full_amount)} />}
             {tx.repays_charge && (
@@ -369,6 +370,10 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
               <Detail label="Refund of"
                       value={`${tx.refund_of.merchant} · ${longDate(tx.refund_of.date)} · ${txAmount(tx.refund_of.amount)}`} />
             )}
+            {(tx.refunded_by ?? []).map((r) => (
+              <Detail key={r.id} label="Refunded"
+                      value={`${r.merchant} · ${longDate(r.date)} · ${txAmount(r.amount, { inflow: true })}`} />
+            ))}
             {tx.tags?.length > 0 && <Detail label="Tags" value={tx.tags.join(', ')} />}
             {tx.bank_merchant && tx.bank_merchant !== tx.merchant && (
               <Detail label="Bank calls it" value={tx.bank_merchant} />
