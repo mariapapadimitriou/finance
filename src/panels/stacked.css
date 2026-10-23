@@ -180,3 +180,8 @@
 @media (prefers-reduced-motion: reduce) {
   .nl-stack .nl-step, .nl-fold, .nl-fold.in, .nl-done-list .nl-done-wrap:last-child > .nl-done { animation: none; transition: none; }
 }
+
+/* An answer seen on the Sorted card (2026-10-23): what was picked, and Change. */
+.nl-seen { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 4px 4px; }
+.nl-seen-value { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; line-height: 22px; color: var(--ink); }
+.nl-seen-value svg { color: var(--action); }

@@ -7,7 +7,7 @@ import PIcon from '../pearl/icons.jsx';
 import { categoryLabel } from './CategoryPicker.jsx';
 import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
 import { TagEditor } from './WhatWasThis.jsx';
-import SortCard, { SortedCard, loadCases, prefetchCases, rememberEntry } from './SortCard.jsx';
+import SortCard, { SortedCard, loadCases, prefetchCases, rememberEntry, resumeFor } from './SortCard.jsx';
 import { Pill } from './Stacked.jsx';
 import {
   addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTags, getTx,
@@ -173,7 +173,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
       setBusy(false);
     }
   };
-  const sortReopen = async (i = sorted.answers.length - 1) => {
+  const sortReopen = async (i = sorted.answers.length - 1, pick) => {
     setBusy(true);
     setError(null);
     try {
@@ -181,10 +181,8 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
       // The transaction and its answers first, then one swap (2026-10-23):
       // no skeleton flashing between the Sorted card and the reopened step.
       const [fresh] = await Promise.all([getTx(id), loadCases(id).catch(() => null)]);
-      const last = sorted.answers[sorted.answers.length - 1];
       setTx(fresh);
-      setResume({ path: sorted.answers.slice(0, -1), edit: i < sorted.answers.length - 1 ? i : null,
-                  name: last?.step === 'who_to' || last?.step === 'name' ? last.label : '' });
+      setResume(resumeFor(sorted.answers, i, pick));
       setSorted(null);
     } catch (e) {
       setError(e);
@@ -241,7 +239,8 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                       mode={step === 'category' && !resume ? 'stacked' : 'all'} showHead={false}
                       commit={sortCommit} onSplit={() => setStep('split')} onBack={back}
                       initialPath={resume?.path ?? (step === 'category' && !tx.inflow ? [{ step: 'q1', v: 'spent' }] : null)}
-                      initialEdit={resume?.edit ?? null} initialName={resume?.name ?? ''} />
+                      initialEdit={resume?.edit ?? null} initialName={resume?.name ?? ''}
+                      initialPick={resume?.pick ?? null} />
           )}
         </section>
       </DetailPanel>
