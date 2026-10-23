@@ -7,7 +7,7 @@ import PIcon from '../pearl/icons.jsx';
 import { categoryLabel } from './CategoryPicker.jsx';
 import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
 import { TagEditor } from './WhatWasThis.jsx';
-import SortCard, { SortedCard, prefetchCases, rememberEntry } from './SortCard.jsx';
+import SortCard, { SortedCard, loadCases, prefetchCases, rememberEntry } from './SortCard.jsx';
 import { Pill } from './Stacked.jsx';
 import {
   addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTags, getTx,
@@ -178,11 +178,14 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
     setError(null);
     try {
       if (sorted.undo) await undoChange(sorted.undo);
+      // The transaction and its answers first, then one swap (2026-10-23):
+      // no skeleton flashing between the Sorted card and the reopened step.
+      const [fresh] = await Promise.all([getTx(id), loadCases(id).catch(() => null)]);
       const last = sorted.answers[sorted.answers.length - 1];
+      setTx(fresh);
       setResume({ path: sorted.answers.slice(0, -1), edit: i < sorted.answers.length - 1 ? i : null,
                   name: last?.step === 'who_to' || last?.step === 'name' ? last.label : '' });
       setSorted(null);
-      setTx(await getTx(id));
     } catch (e) {
       setError(e);
     } finally {

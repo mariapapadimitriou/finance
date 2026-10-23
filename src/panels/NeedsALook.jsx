@@ -5,6 +5,7 @@ import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.
 import { ErrorNote } from '../components/ui.jsx';
 import { DuplicateQuestion } from './Duplicates.jsx';
 import Stacked, { Pill, Progress, SortedCard, TxHead as StackedHead, rememberEntry } from './Stacked.jsx';
+import { loadCases } from './SortCard.jsx';
 import TransactionDetail from './TransactionDetail.jsx';
 
 export { SortedCard };
@@ -258,6 +259,12 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
     setError(null);
     try {
       if (entry.undo) await undoChange(entry.undo);
+      // Everything the reopened card needs comes first, then one swap
+      // (2026-10-23): clearing the Sorted card before the list came back
+      // left nothing to show for a moment, and the screen behind flashed.
+      const [fresh] = await Promise.all([getReview(), entry.it?.txn?.id
+        ? loadCases(entry.it.txn.id).catch(() => null) : null]);
+      setData(fresh);
       setLog((l) => l.filter((e) => e.key !== entry.key));
       setSorted(null);
       setBack(null);
@@ -265,7 +272,6 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
       setResume({ key: entry.key, path: entry.answers.slice(0, -1), edit: i < entry.answers.length - 1 ? i : null,
                   name: last?.step === 'who_to' || last?.step === 'name' ? last.label : '' });
       setCurrentKey(entry.key);
-      await load();
       onChanged?.();
     } catch (e) {
       setError(e);
