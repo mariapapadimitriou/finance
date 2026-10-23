@@ -39,10 +39,16 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
     expect(start).toBe('q1');
     const elseOpt = S.q1.options.find((o) => o.v === 'else');
     expect(elseOpt.to).toBe('what_out');
+    // Tiles (2026-10-23): one idea two ways is one tile that asks which.
+    expect(S.what_out.tiles).toBe(true);
     expect(S.what_out.options.map((o) => o.label)).toEqual([
-      'A bill', 'Paid for a group', 'Moved between my accounts', 'Lent to someone', 'Paying back money I borrowed',
-      'A work expense, to be reimbursed', 'Not mine']);
-    expect(S.what_out.options.find((o) => o.v === 'lent').to).toBe('who_to');
+      'A bill', 'Split with others', 'My own money', 'A loan', 'Not mine']);
+    expect(S.what_out.options.find((o) => o.v === 'g:loan').to).toBe('what_out_loan');
+    expect(S.what_out_loan.options.map((o) => o.label)).toEqual(['I lent it to someone', 'I’m paying back a loan']);
+    expect(S.what_out_loan.options.find((o) => o.v === 'lent').to).toBe('who_to');
+    expect(S.what_out_not.options.map((o) => o.v)).toEqual(['work', 'not_mine']);
+    // "My own money" holds only Moved here (Saved was the first question), so it goes straight there.
+    expect(S.what_out.options.find((o) => o.label === 'My own money').v).toBe('moved');
     expect(S.who_to.title).toBe('Who to?');
   });
 
@@ -101,5 +107,34 @@ describe('an e-Transfer whose message names a purchase (2026-10-21)', () => {
   it('shows the message under the name', () => {
     const page = html(<Stacked it={inn} act={noop} commit={noop} onSkip={noop} onBack={noop} />);
     expect(page).toContain('“uber eats”');
+  });
+});
+
+describe('What was this? as tiles (2026-10-23)', () => {
+  const panelOut = { key: 'tx:a', kind: 'panel', txn: { ...out.txn } };
+  const panelIn = { key: 'tx:b', kind: 'panel', txn: { ...inn.txn } };
+  it('money out: Pearl’s guess is one tap, the rest are six tiles, folded where one idea has two ways', () => {
+    const { S } = steps(panelOut, { best: 'moved', cases: [] }, 'all');
+    expect(S.all.guess.v).toBe('moved');
+    const tiles = S.all.options.filter((o) => !o.hidden);
+    expect(tiles.map((o) => o.label)).toEqual(['A purchase', 'A bill', 'Split with others', 'My own money', 'A loan', 'Not mine']);
+    expect(tiles.every((o) => o.icon)).toBe(true);
+    expect(S.all_own.options.map((o) => o.v)).toEqual(['moved', 'saved']);
+    // The guess is a choice the card can commit, without a tile of its own.
+    expect(S.all.options.find((o) => o.v === 'moved').hidden).toBe(true);
+  });
+  it('money in: seven tiles, and Pay leads to the kind, where regular pay is', () => {
+    const { S } = steps(panelIn, null, 'all');
+    expect(S.all.guess).toBe(null);
+    expect(S.all.options.map((o) => o.label)).toEqual(
+      ['Pay', 'Paid back', 'A refund', 'Reimbursed', 'My own money', 'A loan', 'Not mine']);
+    expect(S.all.options[0].to).toBe('kind');
+    expect(S.all_loan.options.map((o) => o.v)).toEqual(['borrowed', 'lent_back']);
+  });
+  it('the card shows the guess and Something else first, the tiles with no guess', async () => {
+    const { default: SortCard } = await import('./SortCard.jsx');
+    const page = html(<SortCard it={panelIn} commit={noop} mode="all" showHead={false} />);
+    // No answers from the server yet: a skeleton, then tiles with no guess.
+    expect(page).toContain('nl-skeleton');
   });
 });
