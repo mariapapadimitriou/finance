@@ -30,10 +30,18 @@ from .models import Transaction
 UNSORTED = "Unsorted transfers"
 NEUTRAL = "Transfers"
 
-# How far apart the two ends of one transfer may post. Interac and bill
-# payments land in a day or two; a card payment can take three business days
-# to show on the card.
-WINDOW_DAYS = 4
+# How far apart the two ends of one transfer may post: two days (her call,
+# 2026-10-22). Interac and transfers between her accounts land in a day or
+# two. A payment arriving on a credit card can take three business days to
+# show there, so that one case keeps CARD_DAYS — otherwise a late card
+# payment would count as spending and be asked about.
+WINDOW_DAYS = 2
+CARD_DAYS = 4
+
+
+def _window(arrival: Transaction) -> int:
+    kind = str((arrival.raw or {}).get("account_type", "")).lower()
+    return CARD_DAYS if kind == "credit" else WINDOW_DAYS
 
 _DECIDED = {"user", "merchant_override"}
 # Sorted by a destination rule: re-decided on every run, so a transfer whose
@@ -247,8 +255,8 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
     used: set[str] = set()          # inflows already the other end of something
     out: dict[str, str] = {}
 
-    def near(t, other, days=WINDOW_DAYS):
-        return _days(t.date, other.date) <= days
+    def near(t, other, days=None):
+        return _days(t.date, other.date) <= (days if days is not None else _window(other))
 
     # 1 and 2: the same amount, on another account first, then on the same one.
     by_amount: dict[int, list[Transaction]] = {}
@@ -356,7 +364,7 @@ _MOVED = {NEUTRAL, "Saved", UNSORTED}
 
 def transfer_pairs(transactions: list[Transaction], today: str | None = None) -> dict[str, str]:
     """{departure id: arrival id} for money that left one of her accounts and
-    arrived, the same amount, in another of hers within WINDOW_DAYS — for the
+    arrived, the same amount, in another of hers within WINDOW_DAYS (two days) — for the
     list to show as one line.
 
     Its own pairing, not `match_transfers`: that one decides categories and
@@ -381,7 +389,7 @@ def transfer_pairs(transactions: list[Transaction], today: str | None = None) ->
             if other.fingerprint in used or other.account_id == t.account_id:
                 continue
             gap = _days(t.date, other.date)
-            if gap > WINDOW_DAYS:
+            if gap > _window(other):
                 continue
             if best is None or gap < best[0]:
                 best = (gap, other)
