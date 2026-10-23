@@ -348,12 +348,46 @@ def matched_inflows(transactions: list[Transaction], today: str | None = None) -
     return used
 
 
+# What a transfer between her own accounts can be sorted as, at either end
+# (2026-10-22): moved between accounts, put into or taken out of savings,
+# and still waiting to be sorted.
+_MOVED = {NEUTRAL, "Saved", UNSORTED}
+
+
 def transfer_pairs(transactions: list[Transaction], today: str | None = None) -> dict[str, str]:
-    """{departure id: arrival id} for each one-to-one transfer between two of
-    her own accounts (pass 1 of `match_transfers`): the same money leaving
-    one account and arriving on another within a few days."""
+    """{departure id: arrival id} for money that left one of her accounts and
+    arrived, the same amount, in another of hers within WINDOW_DAYS — for the
+    list to show as one line.
+
+    Its own pairing, not `match_transfers`: that one decides categories and
+    so leaves out a transfer she sorted herself, one into savings, and any
+    departure that isn't from a bank account. Here only the facts matter:
+    the amount, the two accounts, the days between, and that neither end was
+    sorted as spending or income. Each arrival pairs once, nearest first.
+    """
+    outs = sorted((t for t in transactions
+                   if t.amount > 0 and not others(t) and (t.category or "") in _MOVED),
+                  key=lambda t: (t.date, t.fingerprint))
+    arrivals: dict[int, list[Transaction]] = {}
+    for t in transactions:
+        if (t.amount < 0 and not others(t) and not t.repays
+                and (t.category or "") in _MOVED - {UNSORTED}):
+            arrivals.setdefault(_cents(-t.amount), []).append(t)
+    used: set[str] = set()
     pairs: dict[str, str] = {}
-    match_transfers(transactions, today=today, pairs_out=pairs)
+    for t in outs:
+        best = None
+        for other in arrivals.get(_cents(t.amount), []):
+            if other.fingerprint in used or other.account_id == t.account_id:
+                continue
+            gap = _days(t.date, other.date)
+            if gap > WINDOW_DAYS:
+                continue
+            if best is None or gap < best[0]:
+                best = (gap, other)
+        if best:
+            used.add(best[1].fingerprint)
+            pairs[t.fingerprint] = best[1].fingerprint
     return pairs
 
 
