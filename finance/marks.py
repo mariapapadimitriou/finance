@@ -890,6 +890,16 @@ def undo_marks(store, marks: dict) -> int:
         if tid in known and isinstance(was, dict):
             store.set_joint_deposit(tid, was.get("who"), was.get("person"))
             n += 1
+    for tid, was in (marks.get("splits") or {}).items():
+        if tid in known and isinstance(was, dict):
+            split = was.get("split")
+            if split:
+                store.set_split(tid, split["mode"], split["people"], bool(split.get("watch", True)))
+            else:
+                store.clear_split(tid)
+            share = was.get("share")
+            store.set_share(tid, None if share is None else float(share))
+            n += 1
     for tid, tags in (marks.get("tags") or {}).items():
         if tid in known and isinstance(tags, list):
             store.set_tags(tid, clean_tags(tags))
