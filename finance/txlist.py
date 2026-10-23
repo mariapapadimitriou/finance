@@ -596,7 +596,10 @@ def collapse_transfers(rows: list[tuple[Transaction, dict]],
     → Visa ··1203". When only one end is in view — a filter on one account —
     that end stays as it is. Neither end counts, so no total changes."""
     by_id = {t.fingerprint: (t, r) for t, r in rows}
-    is_transfer = lambda r: (r.get("chip") or {}).get("label") == "Transfer"
+    # Either end counts as nothing (moved between accounts, or put into or
+    # taken out of savings), and neither was left out (2026-10-22).
+    is_transfer = lambda r: r.get("counts") == "none" and not r.get("excluded") \
+        and (r.get("chip") or {}).get("label") in ("Transfer", "Saved")
     joined = {out: arr for out, arr in pairs.items()
               if out in by_id and arr in by_id and out != arr
               and is_transfer(by_id[out][1]) and is_transfer(by_id[arr][1])}
@@ -611,7 +614,7 @@ def collapse_transfers(rows: list[tuple[Transaction, dict]],
             r = dict(r)
             r["transfer"] = {"from": r.get("account", ""), "to": other.get("account", ""),
                              "other_id": arr, "other_date": other_t.date[:10]}
-            if not _is_card_payment(t):
+            if r.get("chip", {}).get("label") == "Transfer" and not _is_card_payment(t):
                 r["note"] = "Transfer between your accounts · not counted"
         kept.append((t, r))
     return kept

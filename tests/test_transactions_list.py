@@ -348,3 +348,31 @@ def test_money_to_somewhere_unseen_is_not_collapsed(client):
     load(client.st, row(300, "E-TRANSFER SENT", account="chq"))
     rows = by_desc(listing(client))
     assert "transfer" not in rows["E-TRANSFER SENT"]
+
+
+def test_transfers_net_however_they_were_sorted(client):
+    """2026-10-22: one line for a transfer between her accounts even when she
+    sorted it herself, when it went into savings, and for a card payment;
+    never for a purchase that happens to match an arrival's amount."""
+    from datetime import timedelta
+    d = lambda n: (date.fromisoformat(in_month(10)) + timedelta(days=n)).isoformat()
+    ids = load(client.st,
+               # She answered "Moved between my accounts" herself.
+               row(500, "TFR-TO SAVINGS", account="chq", when=d(0), category="Transfers"),
+               row(-500, "TFR-FROM CHEQUING", account="sav", when=d(1), category="Transfers"),
+               # Into savings, counted toward Savings.
+               row(300, "WEALTHSIMPLE DEPOSIT", account="chq", when=d(2), category="Saved"),
+               row(-300, "DEPOSIT FROM TD", account="ws", when=d(3), category="Transfers"),
+               # A card payment.
+               row(612, "VISA PREAUTH PYMT", account="chq", when=d(4)),
+               row(-612, "PAYMENT THANK YOU", account="card", kind="credit", when=d(5)),
+               # A purchase of the same amount as nothing — and a refund-sized arrival.
+               row(42, "GROCER", account="card", kind="credit", when=d(6), category="Groceries"),
+               row(-42, "E-TRANSFER RECEIVED", account="chq", when=d(6), category="Income"))
+    rows = by_desc(listing(client))
+    for gone in ("TFR-FROM CHEQUING", "DEPOSIT FROM TD", "PAYMENT THANK YOU"):
+        assert gone not in rows, gone
+    assert rows["TFR-TO SAVINGS"]["transfer"]["to"] == "sav"
+    assert rows["WEALTHSIMPLE DEPOSIT"]["transfer"]["to"] == "ws"
+    assert rows["VISA PREAUTH PYMT"]["transfer"]["to"] == "card"
+    assert "transfer" not in rows["GROCER"] and "E-TRANSFER RECEIVED" in rows
