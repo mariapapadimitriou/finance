@@ -164,3 +164,13 @@ describe('One savings bucket (2026-10-23)', () => {
     expect(old.S.what_out).toBeTruthy();
   });
 });
+
+describe('Sorted card rows are for a look (2026-10-23)', () => {
+  it('reopening an answer with a different pick starts at that step with the new answer', async () => {
+    const { resumeFor } = await import('./SortCard.jsx');
+    const answers = [{ step: 'q1', v: 'spent', label: 'Spending' }, { step: 'cat', v: 'Home', label: 'Home' }];
+    expect(resumeFor(answers, 1)).toEqual({ path: [answers[0]], edit: null, name: '', pick: null });
+    expect(resumeFor(answers, 0)).toEqual({ path: [answers[0]], edit: 0, name: '', pick: null });
+    expect(resumeFor(answers, 0, 'else')).toEqual({ path: [], edit: null, name: '', pick: { step: 'q1', v: 'else' } });
+  });
+});

@@ -105,7 +105,8 @@ describe('The Sorted card (R-13)', () => {
     expect((page.match(/nl-dot on/g) || []).length).toBe(3);
     expect(page).toContain('nl-steps-sorted');
     expect(page).toContain('</svg> Sorted</span>');
-    for (const a of ['Something else', 'Lent', 'M. Papas']) expect(page).toContain(`aria-label="Change: ${a}"`);
+    // Rows open for a look, not a change (2026-10-23).
+    for (const a of ['Something else', 'Lent', 'M. Papas']) expect(page).toContain(`aria-label="See: ${a}"`);
     expect(page).toContain('Not spending. Allowance goes up by $200.00');
     expect(page).toContain('nl-actions nl-next');
     expect(page).toContain('>Next <svg');

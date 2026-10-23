@@ -5,7 +5,7 @@ import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.
 import { ErrorNote } from '../components/ui.jsx';
 import { DuplicateQuestion } from './Duplicates.jsx';
 import Stacked, { Pill, Progress, SortedCard, TxHead as StackedHead, rememberEntry } from './Stacked.jsx';
-import { loadCases } from './SortCard.jsx';
+import { loadCases, resumeFor } from './SortCard.jsx';
 import TransactionDetail from './TransactionDetail.jsx';
 
 export { SortedCard };
@@ -272,7 +272,7 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
   };
 
   /** Undo a Sorted card's change and reopen its step `i` (or the last one). */
-  const reopen = async (entry, i = entry.answers.length - 1) => {
+  const reopen = async (entry, i = entry.answers.length - 1, pick) => {
     setBusy(true);
     setError(null);
     try {
@@ -286,9 +286,7 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
       setLog((l) => l.filter((e) => e.key !== entry.key));
       setSorted(null);
       setBack(null);
-      const last = entry.answers[entry.answers.length - 1];
-      setResume({ key: entry.key, path: entry.answers.slice(0, -1), edit: i < entry.answers.length - 1 ? i : null,
-                  name: last?.step === 'who_to' || last?.step === 'name' ? last.label : '' });
+      setResume({ key: entry.key, ...resumeFor(entry.answers, i, pick) });
       setCurrentKey(entry.key);
       onChanged?.();
     } catch (e) {
@@ -490,7 +488,7 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
               <SortedCard entry={entry} busy={busy} isPast={back !== null} onRemember={rememberIt}
                           onNext={back !== null ? () => setBack(null) : next}
                           onUndo={() => reopen(entry)}
-                          onReopen={(i) => reopen(entry, i)}
+                          onReopen={(i, pick) => reopen(entry, i, pick)}
                           onPrevious={hasPrevious ? () => setBack(prevIndex) : undefined} />
             ) : STACKED.has(current.kind) ? (
               <Stacked it={current} categories={categories} busy={busy} onSkip={skip}
@@ -498,7 +496,8 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
                        act={act} commit={commit} onBack={toList} onTab={away}
                        initialPath={resume?.key === current.key ? resume.path : null}
                        initialEdit={resume?.key === current.key ? resume.edit : null}
-                       initialName={resume?.key === current.key ? resume.name : ''} />
+                       initialName={resume?.key === current.key ? resume.name : ''}
+                       initialPick={resume?.key === current.key ? resume.pick : null} />
             ) : (
               <Question it={current} categories={categories} busy={busy} onSkip={skip}
                         act={act} commit={commit} onBack={toList} />

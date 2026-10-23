@@ -399,7 +399,7 @@ function caseOn(flow, path) {
 
 export default function SortCard({ it, categories = [], busy, act, commit, onSkip, onBack, onTab, onSplit, onPrevious,
                                    mode = 'stacked', initialPath = null, initialEdit = null,
-                                   initialName = '', showHead = true }) {
+                                   initialName = '', initialPick = null, showHead = true }) {
   const [cases, setCases] = useState(() => READY.get(it.txn.id) ?? null);
   // [{ step, v, label? }]: the answers so far, the last one still open.
   const [path, setPath] = useState(() => initialPath ?? []);
@@ -473,7 +473,11 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       return run().then((r) => ({ ...r, rule: (r?.res?.remember ?? on) ? ruleText : '' }));
     };
     return commit(() => go(false), {
-      answers: answers.map((p) => ({ ...p, label: p.label ?? answerLabel(flow, p) })), effect,
+      answers: answers.map((p) => {
+        const st = flow.S[p.step];
+        return { ...p, label: p.label ?? answerLabel(flow, p), title: st?.title,
+                 options: st?.options?.filter((o) => !o.hidden).map((o) => ({ v: o.v, label: o.label })) };
+      }), effect,
       remember: ruleable && ruleOk ? { label: `Remember for ${it.to || it.txn.merchant}`, redo: go } : null,
     });
   };
@@ -628,6 +632,14 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     onBack?.();
   };
 
+  // A different answer picked on the Sorted card (2026-10-23): the change
+  // was undone and the card reopened at that step; the new answer goes in.
+  const picked = useRef(false);
+  useEffect(() => {
+    if (picked.current || !initialPick || stepId !== initialPick.step) return;
+    picked.current = true;
+    choose(initialPick.v);
+  });
   const group = `q-${it.txn.id}-${stepId}`;
   const inputDone = (v) => {
     const who = v.trim();
@@ -884,6 +896,20 @@ export function Done({ path, flow, editing = null, busy = false, onOpen, onPick 
 }
 
 /**
+ * Where a Sorted card's change reopens (its change undone): answer `i` open
+ * in place, or — when another answer `pick` was chosen there (2026-10-23) —
+ * at that step with the new answer going in.
+ */
+export function resumeFor(answers, i = answers.length - 1, pick) {
+  const last = answers[answers.length - 1];
+  const name = last?.step === 'who_to' || last?.step === 'name' ? last.label : '';
+  if (pick !== undefined && answers[i]) {
+    return { path: answers.slice(0, i), edit: null, name, pick: { step: answers[i].step, v: pick } };
+  }
+  return { path: answers.slice(0, -1), edit: i < answers.length - 1 ? i : null, name, pick: null };
+}
+
+/**
  * Remember ticked or unticked on the Sorted card (2026-10-23): the change is
  * put back and saved again with the rule on or off, so Undo still undoes
  * all of it. Resolves to the entry as it now is.
@@ -903,6 +929,14 @@ export async function rememberEntry(entry, on) {
 export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'Next', onNext, onUndo, onReopen, onPrevious,
                              onRemember, showHead = true }) {
   const { it, answers } = entry;
+  // The answer open for a look, and the one folding shut.
+  const [viewing, setViewing] = useState(null);
+  const [shown, setShown] = useState(null);
+  useEffect(() => {
+    if (viewing !== null) { setShown(viewing); return undefined; }
+    const t = setTimeout(() => setShown(null), FOLD_MS);
+    return () => clearTimeout(t);
+  }, [viewing]);
   return (
     <>
       {showHead && (it.txn ? <TxHead txn={it.txn} name={it.to} /> : (
@@ -910,15 +944,48 @@ export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'N
       ))}
       <Progress done={answers.length} total={Math.max(answers.length, 1)} sorted
                 trailing={onUndo && <Pill className="nl-undo" disabled={busy} onClick={onUndo} aria-label="Undo this change">Undo</Pill>} />
+      {/* Tapping an answer shows its question, the answer marked, and
+          changes nothing (2026-10-23): Next is still there. Only another
+          answer, Change, or Undo changes it. */}
       {answers.length > 0 && (
         <div className="nl-done-list">
-          {answers.map((a, i) => (
-            <button key={`${a.step ?? i}-${i}`} type="button" className="nl-done" disabled={busy || !onReopen}
-                    aria-label={`Change: ${a.label ?? a.v}`} onClick={() => onReopen?.(i)}>
-              <span className="nl-done-ring" aria-hidden="true" />
-              <span className="nl-done-label">{a.label ?? a.v}</span>
-            </button>
-          ))}
+          {answers.map((a, i) => {
+            const open = viewing === i;
+            const drawn = open || shown === i;
+            return (
+              <div key={`${a.step ?? i}-${i}`} className={`nl-done-wrap${open ? ' open' : ''}`}>
+                <button type="button" className="nl-done" disabled={busy}
+                        aria-expanded={open} aria-label={open ? `Close: ${a.title || a.label}` : `See: ${a.label ?? a.v}`}
+                        onClick={() => setViewing(open ? null : i)}>
+                  <span className="nl-done-ring" aria-hidden="true" />
+                  <span className="nl-done-label">{open && a.title ? a.title : (a.label ?? a.v)}</span>
+                  <PIcon name={open ? 'chevronUp' : 'chevronDown'} size={14} />
+                </button>
+                {drawn && (
+                  <div className={`nl-fold${open ? ' in' : ' out'}`}>
+                    {a.options?.length ? (
+                      <div className="pk-choices nl-reopen" role="radiogroup" aria-label={a.title || 'Your answer'}>
+                        {a.options.map((o) => (
+                          <Choice key={o.v} name={`seen-${entry.key}-${i}`} checked={o.v === a.v}
+                                  disabled={busy || !open || isPast}
+                                  onClick={o.v === a.v ? () => setViewing(null) : undefined}
+                                  onChange={() => { if (o.v !== a.v) onReopen?.(i, o.v); }} label={o.label} />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="nl-reopen nl-seen">
+                        <span className="nl-seen-value"><PIcon name="check" size={14} /> {a.label ?? a.v}</span>
+                        {onReopen && !isPast && (
+                          <button type="button" className="nl-change" disabled={busy || !open}
+                                  onClick={() => onReopen(i)}>Change</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
       {/* Remember, after the answers and above What changed (2026-10-23):

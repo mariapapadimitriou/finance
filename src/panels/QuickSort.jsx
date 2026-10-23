@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { money, quickSortDone, quickSortSeen, quickSortStep, undoChange } from '../api.js';
 import { Dialog, PButton } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
-import SortCard, { SortedCard, loadCases, rememberEntry } from './SortCard.jsx';
+import SortCard, { SortedCard, loadCases, rememberEntry, resumeFor } from './SortCard.jsx';
 import './quicksort.css';
 
 /**
@@ -63,13 +63,11 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
                         remember, remembered: false }));
   // Remember on the Sorted card (2026-10-23).
   const rememberIt = (on) => run(() => rememberEntry(sorted, on), setSorted);
-  const reopen = (k = sorted.answers.length - 1) => run(async () => {
+  const reopen = (k = sorted.answers.length - 1, pick) => run(async () => {
     if (sorted.undo) await undoChange(sorted.undo);
     await loadCases(item.id).catch(() => null);      // drawn at once when the card swaps back
   }, () => {
-    const last = sorted.answers[sorted.answers.length - 1];
-    setResume({ path: sorted.answers.slice(0, -1), edit: k < sorted.answers.length - 1 ? k : null,
-                name: last?.step === 'who_to' || last?.step === 'name' ? last.label : '' });
+    setResume(resumeFor(sorted.answers, k, pick));
     setSorted(null);
   });
   const finish = () => { onClose?.(); };
@@ -90,7 +88,8 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
         ) : (
           <SortCard key={`${item.id}-${resume ? 'r' : 'q'}`} it={asItem(item)} categories={categories} busy={busy}
                     commit={commit} onSkip={skip}
-                    initialPath={resume?.path ?? null} initialEdit={resume?.edit ?? null} initialName={resume?.name ?? ''} />
+                    initialPath={resume?.path ?? null} initialEdit={resume?.edit ?? null} initialName={resume?.name ?? ''}
+                    initialPick={resume?.pick ?? null} />
         )}
       </section>
     </Dialog>

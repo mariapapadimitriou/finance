@@ -3,4 +3,4 @@
  * door a transaction is sorted through. This module keeps the old name for
  * Needs a look and its tests.
  */
-export { default, Done, Pill, Progress, SortedCard, TxHead, answerLabel, nameIn, nextOf, rememberEntry, steps } from './SortCard.jsx';
+export { default, Done, Pill, Progress, SortedCard, TxHead, answerLabel, nameIn, nextOf, rememberEntry, resumeFor, steps } from './SortCard.jsx';
