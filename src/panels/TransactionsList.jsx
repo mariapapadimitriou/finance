@@ -77,6 +77,12 @@ function useDesktop() {
 }
 
 const PAGE = 25;
+
+/** Two filter states that ask for the same list. */
+export function sameFilters(a = {}, b = {}) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...keys].every((k) => (a[k] ?? '') === (b[k] ?? ''));
+}
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December'];
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -269,7 +275,10 @@ export default function TransactionsList({ summary, categories, accounts, review
     const onPop = () => {
       if (!readTxUrl()) return;
       const next = fromUrl();
-      setFilters(next);
+      // Closing a transaction is a Back to the same filters: keep the
+      // filters object, so the pages she opened with Show earlier — and
+      // her place in the list — stay put (2026-10-23).
+      setFilters((f) => (sameFilters(f, next) ? f : next));
       setQuery(next.q);
       setOpenId(readTxUrl()?.id ?? null);
     };

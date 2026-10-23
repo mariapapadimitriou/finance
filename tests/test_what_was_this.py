@@ -250,10 +250,31 @@ def test_a_refund_nets_in_the_purchases_category(client):
     assert r["note"] == "Refund of Lululemon · comes off Shopping"
     assert r["refund_of"]["id"] == buy
     assert data["totals"]["spent"] == 0 and data["totals"]["income"] == 0
+    # The purchase says so too (2026-10-23), in its row and its panel.
+    p = next(x for x in data["transactions"] if x["id"] == buy)
+    day = int(in_month(8)[8:10])
+    assert p["note"].startswith("Refunded in full on ") and p["note"].endswith(f" {day} · comes off Shopping")
+    assert [r["id"] for r in p["refunded_by"]] == [back] and p["refunded_by"][0]["amount"] == 89
+    assert r["refunded_by"] == []
+    detail = client.get(f"/api/transactions/{buy}").get_json()
+    assert [x["id"] for x in detail["refunded_by"]] == [back]
     assert cases(client, back)["current"] == "refund"
     # Without a purchase to point at, a category is enough.
     res = mark(client, back, case="refund", category="Groceries")
     assert res["title"] == "Refund. Comes off Groceries."
+    p = next(x for x in listing(client)["transactions"] if x["id"] == buy)
+    assert p["refunded_by"] == [] and "efund" not in p["note"]
+
+
+def test_a_partial_refund_says_how_much_came_back(client):
+    ids = load(client.st, row(120, "ZARA", account="card", kind="credit", merchant="Zara",
+                              category="Shopping", when=in_month(3)),
+               row(-40, "ZARA RETURN", account="card", kind="credit", merchant="Zara",
+                   when=in_month(9)))
+    mark(client, ids["ZARA RETURN"], case="refund", charge=ids["ZARA"])
+    p = next(x for x in listing(client)["transactions"] if x["id"] == ids["ZARA"])
+    assert p["note"].startswith("$40.00 refunded on ")
+    assert p["refunded_by"][0]["amount"] == 40
 
 
 def test_someone_paying_me_back_links_to_the_charge(client):

@@ -46,6 +46,17 @@ _CARD_PAYMENT = re.compile(
     r"payment\W*thank you|pmt thank you|autopay)\b", re.I)
 
 
+_MON = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _short_date(d: str) -> str:
+    """'2026-10-07' → 'Oct 7'."""
+    try:
+        return f"{_MON[int(d[5:7]) - 1]} {int(d[8:10])}"
+    except (ValueError, IndexError):
+        return d[:10]
+
+
 def money(x: float) -> str:
     return f"${abs(x):,.2f}"
 
@@ -104,6 +115,12 @@ class Context:
         self.tags = tags or {}
         self.saved_to = saved_to or {}
         self.refunds = refunds or {}
+        # The other way round (2026-10-23): a purchase, and the refunds she
+        # linked to it, so the purchase's row says it was refunded too.
+        self.refunded_by: dict[str, list[Transaction]] = defaultdict(list)
+        for inflow_id, charge_id in self.refunds.items():
+            if inflow_id in self.by_id:
+                self.refunded_by[charge_id].append(self.by_id[inflow_id])
         self.payback_kinds = payback_kinds or {}
         self.names = names or {}
         self.accounts = accounts or {}
@@ -248,6 +265,16 @@ def describe(t: Transaction, ctx: Context) -> dict:
                      else f" · {t.joint} paid the rest" if t.joint else "")
         note = f"Your share of {money(t.amount)}{with_whom}"
 
+    # A purchase she linked a refund to says so, the way the refund names it.
+    refunds_in = sorted(ctx.refunded_by.get(t.fingerprint, []), key=lambda r: r.date)
+    if refunds_in and not inflow:
+        back = sum(abs(r.amount) for r in refunds_in)
+        what = ("Refunded in full" if back >= abs(t.amount) - 0.005
+                else f"{money(back)} refunded")
+        when = (f" on {_short_date(refunds_in[-1].date)}" if len(refunds_in) == 1 else "")
+        words = f"{what}{when} · comes off {cat}" if counts == "spending" else f"{what}{when}"
+        note = f"{note} · {what.lower()}" if note else words
+
     one_off = t.one_off and counts in ("spending", "income")
     if one_off and not note:
         note = "Unusual · left out of your usual month"
@@ -317,6 +344,8 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "refund_of": ({"id": refund_of.fingerprint, "merchant": _name(refund_of, ctx),
                        "date": refund_of.date[:10], "amount": abs(refund_of.amount)}
                       if refund_of else None),
+        "refunded_by": [{"id": r.fingerprint, "merchant": _name(r, ctx), "date": r.date[:10],
+                         "amount": abs(r.amount)} for r in refunds_in] if not inflow else [],
         "reimbursement": ctx.payback_kinds.get(t.fingerprint) == "reimbursement",
         "chip": {"label": chip, "suggested": suggested},
         "suggested": suggested,
