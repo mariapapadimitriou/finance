@@ -634,3 +634,31 @@ def test_a_named_merchant_rule_still_works_and_skips_joint_deposits(client):
     recategorize_all(client.st)
     joint = next(t for t in client.st.all_transactions() if t.account_id == "joint")
     assert joint.category_source != "merchant_override"
+
+
+def test_a_split_from_the_sort_card_settles_it_and_undoes(client):
+    """2026-10-23: Split with others, from Needs a look or Quick sort, is an
+    answer: the category is settled, it leaves Needs a look, and Undo puts
+    the split, the share and the category back."""
+    from finance.review import for_store, ids_in
+    t = row(80, "SUSHI NAMI", account="card", kind="credit", merchant="Sushi Nami")
+    t.raw["category_confidence"] = "LOW"
+    t.raw["issuer_category"] = "FOOD_AND_DRINK_RESTAURANT"
+    ids = load(client.st, t, row(120, "INTERNET TRANSFER 000123 TO 4444", when=in_month(5)))
+    sushi, tfr = ids["SUSHI NAMI"], ids["INTERNET TRANSFER 000123 TO 4444"]
+    assert {sushi, tfr} <= ids_in(for_store(client.st))
+    body = {"mode": "even", "people": [{"name": "Priya", "amount": 40}], "watch": True, "settle": True}
+    res = client.put(f"/api/transactions/{sushi}/split", json=body)
+    assert res.status_code == 200, res.get_json()
+    got = client.st.get_transaction(sushi)
+    assert got.category_source == "user" and got.my_share == 40
+    assert sushi not in ids_in(for_store(client.st))
+    assert client.post("/api/transactions/undo", json=res.get_json()["undo"]).status_code == 200
+    back = client.st.get_transaction(sushi)
+    assert back.category_source != "user" and not client.st.splits().get(sushi) and not back.share_set
+    assert sushi in ids_in(for_store(client.st))
+    # An unsorted transfer gets the category she picked.
+    res = client.put(f"/api/transactions/{tfr}/split", json={**body, "people": [{"name": "Sam", "amount": 60}],
+                                                            "category": "Dining"})
+    assert client.st.get_transaction(tfr).category == "Dining"
+    assert tfr not in ids_in(for_store(client.st))

@@ -101,6 +101,7 @@ export function asItem(item) {
   return {
     key: `cat:${item.id}`, kind: 'category', guess: item.guess, learnable: true,
     txn: { id: item.id, merchant: item.merchant, date: item.date, logo: item.logo, account_name: item.account,
+           category: item.guess,
            amount: item.inflow ? -Math.abs(item.amount) : Math.abs(item.amount) },
   };
 }

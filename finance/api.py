@@ -335,9 +335,27 @@ def set_transaction_split(txn_id: str):
     people, problem = sp.validate(t, mode, body.get("people"))
     if problem:
         return jsonify({"error": problem}), 400
+    from .categorize import CATEGORIES, is_unsure
+    from .impact import snapshot, undo_payload
+    category = body.get("category")
+    if category is not None and category not in CATEGORIES:
+        return jsonify({"error": "Choose a category."}), 400
+    before = snapshot(st, st.all_transactions())
+    was = {"split": st.splits().get(txn_id), "share": t.my_share if t.share_set else None}
     st.set_split(txn_id, mode, people, bool(body.get("watch", True)))
     st.set_share(txn_id, sp.your_part(t, people))
-    return transaction_detail(txn_id)
+    # Split from the sort card (2026-10-23): a split is an answer, so the
+    # category it counts toward is settled too — the one she picked, or the
+    # guess it already had — and it stops being asked about.
+    if category or (body.get("settle") and (is_unsure(t) or (t.category or "Other") in ("Other", "Unsorted transfers"))):
+        st.set_transaction_category(txn_id, category or t.category or "Other")
+    out = transaction_detail(txn_id)
+    data = out.get_json() if hasattr(out, "get_json") else None
+    if isinstance(data, dict):
+        undo = undo_payload(before, snapshot(st, st.all_transactions()))
+        undo["marks"] = {"splits": {txn_id: was}}
+        return jsonify(dict(data, undo=undo))
+    return out
 
 
 @bp.delete("/transactions/<txn_id>/split")
