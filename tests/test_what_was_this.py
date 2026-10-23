@@ -335,7 +335,7 @@ def test_someone_else_put_this_into_a_joint_account(client):
     res = mark(client, ids["E-TRANSFER FROM ALEX"], case="joint_them", person="Jo", remember=True)
     assert res["title"] == "Jo put this in."
     r = listing(client, joint=1)["transactions"][0]
-    assert r["chip"]["label"] == "Jo’s"
+    assert r["chip"]["label"] == "Joint added"
 
 
 def test_part_of_it_was_put_away(client):

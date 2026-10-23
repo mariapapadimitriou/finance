@@ -984,7 +984,9 @@ def set_joint_from(txn_id: str):
     if body.get("remember"):
         st.set_joint_deposit_rule(t.account_id, t.merchant, who, person)
     # Her own money moving between her pockets is never income.
-    if who == ME and t.category == "Income":
+    # Her own money into the joint account is her money moving: a transfer,
+    # never income or savings (2026-10-23).
+    if who == ME and t.category in ("Income", "Saved", "Other", "Unsorted transfers"):
         st.set_transaction_category(txn_id, "Transfers")
     undo = undo_payload(before, snapshot(st, st.all_transactions()))
     undo["marks"] = {"joint_from": {txn_id: was}}

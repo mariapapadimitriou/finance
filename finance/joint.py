@@ -1,5 +1,12 @@
 """Joint accounts: whose money is whose.
 
+2026-10-23, as she uses them: an account either splits every purchase by
+her share (her sister's, 50/50), or every purchase is hers until she marks
+one as someone else's (her family's, where it isn't even). Either way each
+deposit is asked about: hers, or theirs ("Joint added"). What the others
+put in no longer lowers her share of the month by itself; the ratio below
+is kept for reference but not applied.
+
 A joint account's spending is hers by default — the account is in Pearl
 because she uses it. Setting her share on the account (AM-04) splits every
 row by that percent instead, and a charge she marks as the other person's
@@ -73,10 +80,14 @@ def my_share(amount: float, *, category: str | None, mine: bool, share: float | 
     percent (AM-04); `who` who put money in; `ratio` the month's (above)."""
     if mine:
         return amount
-    if share is not None:
-        return round(amount * float(share) / 100.0, 2)
+    # Money in is hers only once she says so (2026-10-23), split or not:
+    # with her sister every purchase is 50/50 but they each put money in
+    # separately, so a deposit is never half hers.
     if amount < 0:
         return amount if who == ME else 0.0
-    if ratio is not None and is_spend_category(category or "Other"):
-        return round(amount * ratio, 2)
+    # "Split every purchase": her share of each one.
+    if share is not None:
+        return round(amount * float(share) / 100.0, 2)
+    # Otherwise every purchase is hers until she marks it someone else's
+    # (2026-10-23). What others put in no longer shrinks her share by itself.
     return amount

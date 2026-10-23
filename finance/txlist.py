@@ -179,14 +179,18 @@ def describe(t: Transaction, ctx: Context) -> dict:
         # Into a joint account from outside: hers or theirs? (finance/joint.py)
         chip = "Whose?"
         note, note_link = f"Yours or {t.joint}’s? Tell us", True
+    # Joint activity that isn't hers (2026-10-23): named for what it is, not
+    # Saved or a transfer.
     elif is_others(t) and t.joint and inflow:
         who = t.joint_person or t.joint
-        chip, structural = f"{who}’s", True
-        note = f"{who} put this in · pays for part of this month’s joint spending"
+        chip, structural = "Joint added", True
+        note = f"{who} put this in · not yours, not counted"
+    elif is_others(t) and t.joint:
+        chip, structural = "Joint spent", True
+        note = f"{t.joint}’s · not your spending"
     elif is_others(t):
         chip, structural = "Not yours", True
-        note = (f"{t.joint}’s · you said this one was theirs" if t.joint
-                else "Not yours")
+        note = "Not yours"
     elif t.repays and ctx.payback_kinds.get(t.fingerprint) == "reimbursement":
         charge = ctx.by_id.get(t.repays)
         chip, structural, group = "Reimbursement", True, "transfer"

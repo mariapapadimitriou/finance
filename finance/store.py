@@ -1060,13 +1060,9 @@ class Store:
     def _loaded(self, rows) -> list[Transaction]:
         """Rows as transactions, with each joint charge carrying the part of
         it the other person's deposits that month didn't pay for."""
-        from .joint import ratios
+        # Joint charges are hers, or her set share, until she marks them
+        # (2026-10-23): no month ratio from the others' deposits any more.
         dicts = [dict(r) for r in rows]
-        if any(d.get("joint") for d in dicts):
-            got = ratios(self)
-            for d in dicts:
-                if d.get("joint"):
-                    d["joint_ratio"] = got.get((d["account_id"], str(d["date"])[:7]))
         return [Transaction.from_row(d) for d in dicts]
     def delete_transaction(self, txn_id: str) -> bool:
         with self.conn() as c:
