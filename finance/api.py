@@ -420,8 +420,11 @@ def _merchant_rows(t, txns) -> list:
     key = (t.merchant or "").strip().lower()
     names = [x for x in txns if (x.merchant or "").strip().lower() == key]
     entities = {(x.raw or {}).get("merchant_entity_id") for x in names} - {None, ""}
-    return names + [x for x in txns if x not in names and x.category_source != "user"
+    from .categorize import family_rows
+    same = names + [x for x in txns if x not in names and x.category_source != "user"
                     and (x.raw or {}).get("merchant_entity_id") in entities]
+    # And its other spellings still waiting as a guess (2026-10-23).
+    return same + [x for x in family_rows(t.merchant, txns) if x not in same]
 
 
 @bp.post("/transactions/<txn_id>/category/preview")

@@ -482,3 +482,63 @@ def test_start_over_clears_the_answers_too(client):
     client.put(f"/api/transactions/{ids['TFR-TO 3333']}/tags", json={"tags": ["x"]})
     client.post("/api/data/start-over", json={"confirm": "start over"})
     assert client.st.tags() == {} and client.st.saved_to() == {}
+
+
+def _guess(amount, description, merchant, when):
+    t = row(amount, description, account="card", kind="credit", merchant=merchant, when=when)
+    t.raw["category_confidence"] = "LOW"
+    t.raw["issuer_category"] = "GENERAL_MERCHANDISE_OTHER"
+    return t
+
+
+def test_a_rule_sorts_the_merchants_other_spellings_still_waiting(client):
+    """2026-10-23: "Lyft" and "Lyft Ride Tue 6PM" are one merchant to her. A
+    rule for one sorts the others that are still a guess, so they leave
+    Needs a look — but never one she sorted, and never a different merchant."""
+    from finance.review import for_store, ids_in
+    ids = load(client.st,
+               _guess(18, "LYFT", "Lyft", in_month(2)),
+               _guess(21, "LYFT *RIDE TUE 6PM", "Lyft Ride Tue 6PM", in_month(4)),
+               _guess(9, "LYFT *RIDE SAN FRANCISCO CA", "Lyft Ride", in_month(5)),
+               row(30, "LYFT *RIDE WED", account="card", kind="credit", merchant="Lyft Ride Wed",
+                   category="Shopping", when=in_month(6)),
+               _guess(12, "LYFTOPIA", "Lyftopia", in_month(7)))
+    assert len(ids_in(for_store(client.st))) == 4
+    lyft = ids["LYFT"]
+    res = mark(client, lyft, case="spending", category="Transport", remember=True)
+    by = {t.description: t for t in client.st.all_transactions()}
+    for d in ("LYFT", "LYFT *RIDE TUE 6PM", "LYFT *RIDE SAN FRANCISCO CA"):
+        assert by[d].category == "Transport" and by[d].category_source == "merchant_override"
+    assert by["LYFT *RIDE WED"].category == "Shopping"          # hers stays hers
+    assert by["LYFTOPIA"].category != "Transport"                # another merchant
+    assert ids_in(for_store(client.st)) == {ids["LYFTOPIA"]}
+    # Undo puts every row back, the other spellings included.
+    undo(client, res)
+    by = {t.description: t for t in client.st.all_transactions()}
+    assert by["LYFT *RIDE TUE 6PM"].category != "Transport"
+    assert len(ids_in(for_store(client.st))) == 4
+
+
+def test_apply_to_all_and_editing_the_rule_reach_other_spellings(client):
+    ids = load(client.st,
+               _guess(18, "UBER EATS", "Uber Eats", in_month(2)),
+               _guess(21, "UBER* EATS PENDING", "Uber Eats Pending", in_month(4)))
+    eats = ids["UBER EATS"]
+    pre = client.post(f"/api/transactions/{eats}/category/preview",
+                      json={"category": "Dining", "apply_to_merchant": True}).get_json()
+    assert pre["merchant_count"] == 2
+    client.patch(f"/api/transactions/{eats}", json={"category": "Dining", "apply_to_merchant": True})
+    by = {t.description: t.category for t in client.st.all_transactions()}
+    assert by["UBER* EATS PENDING"] == "Dining"
+    # Changing the rule in Profile › Rules moves both.
+    assert client.put("/api/rules/merchant:uber eats", json={"category": "Groceries"}).status_code == 200
+    by = {t.description: t.category for t in client.st.all_transactions()}
+    assert by == {"UBER EATS": "Groceries", "UBER* EATS PENDING": "Groceries"}
+
+
+def test_a_new_row_under_another_spelling_follows_the_rule(client):
+    ids = load(client.st, _guess(18, "LYFT", "Lyft", in_month(2)))
+    mark(client, ids["LYFT"], case="spending", category="Transport", remember=True)
+    load(client.st, _guess(25, "LYFT *RIDE THU 9PM", "Lyft Ride Thu 9PM", in_month(9)))
+    t = next(t for t in client.st.all_transactions() if t.description == "LYFT *RIDE THU 9PM")
+    assert (t.category, t.category_source) == ("Transport", "merchant_override")
