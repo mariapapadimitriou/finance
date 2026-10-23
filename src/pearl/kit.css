@@ -794,17 +794,6 @@
 }
 @media (max-width: 720px) { .pk-ctile-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
-/* "What your bank sent" (2026-10-22): folded away under the details. */
-.txd-bank { display: flex; flex-direction: column; gap: var(--space-2); }
-.txd-bank > summary {
-  cursor: pointer; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--link);
-  list-style: none; padding: 4px 0;
-}
-.txd-bank > summary::-webkit-details-marker { display: none; }
-.txd-bank > summary::after { content: " ›"; }
-.txd-bank[open] > summary::after { content: " ⌄"; }
-.txd-bank[open] > summary { margin-bottom: var(--space-2); }
-
 /* Its words can't be selected or dragged (2026-10-22): a selection would
    start the browser's own drag and cancel the swipe halfway. */
 .pk-toast, .pk-toast-card { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
