@@ -233,3 +233,15 @@ describe('Categories and rules (CR-01 to CR-03)', () => {
     expect(cats).toContain('Essentials');
   });
 });
+
+describe('Mark as… in the transaction panel (2026-10-23)', () => {
+  it('has Edit at the top left of the card, as on Needs a look', async () => {
+    const { default: TransactionDetail } = await import('./TransactionDetail.jsx');
+    const tx = { id: 't1', merchant: 'Pilot', amount: 12.5, full_amount: 12.5, inflow: false,
+                 date: '2026-10-07', account: 'TD Chequing ••4417', category: 'Dining',
+                 counts: 'spending', chip: { label: 'Dining' }, tags: [] };
+    const out = html(<TransactionDetail id="t1" initial={tx} categories={CATS} startStep="what" />);
+    expect(out).toMatch(/class="nl-card-top"/);
+    expect(out).toMatch(/aria-label="Edit Pilot: note, tags and more"/);
+  });
+});
