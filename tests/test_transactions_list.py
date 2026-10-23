@@ -376,3 +376,21 @@ def test_transfers_net_however_they_were_sorted(client):
     assert rows["WEALTHSIMPLE DEPOSIT"]["transfer"]["to"] == "ws"
     assert rows["VISA PREAUTH PYMT"]["transfer"]["to"] == "card"
     assert "transfer" not in rows["GROCER"] and "E-TRANSFER RECEIVED" in rows
+
+
+def test_two_days_between_accounts_but_a_card_payment_may_take_longer(client):
+    """2026-10-22: between her own accounts, two days at most; a payment
+    arriving on a credit card may take up to four, as cards post slowly."""
+    from datetime import timedelta
+    d = lambda n: (date.fromisoformat(in_month(5)) + timedelta(days=n)).isoformat()
+    load(client.st,
+         row(400, "TFR-TO SAVINGS", account="chq", when=d(0), category="Transfers"),
+         row(-400, "TFR-FROM CHEQUING", account="sav", when=d(3), category="Transfers"),   # 3 days: no
+         row(150, "TFR-TO TFSA", account="chq", when=d(0), category="Transfers"),
+         row(-150, "TFR-FROM CHQ", account="tfsa", when=d(2), category="Transfers"),       # 2 days: yes
+         row(612, "VISA PREAUTH PYMT", account="chq", when=d(0)),
+         row(-612, "PAYMENT THANK YOU", account="card", kind="credit", when=d(3)))          # card: yes
+    rows = by_desc(listing(client))
+    assert "TFR-FROM CHEQUING" in rows and "transfer" not in rows["TFR-TO SAVINGS"]
+    assert "TFR-FROM CHQ" not in rows and rows["TFR-TO TFSA"]["transfer"]["to"] == "tfsa"
+    assert "PAYMENT THANK YOU" not in rows and rows["VISA PREAUTH PYMT"]["transfer"]["to"] == "card"
