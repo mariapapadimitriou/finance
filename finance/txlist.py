@@ -147,22 +147,6 @@ def _waiting(t: Transaction) -> bool:
             and t.excluded == dup.REASON)
 
 
-def _bank_fields(t: Transaction) -> list[dict]:
-    """What the bank sent for a linked row, field by field, "Not sent" when
-    empty. Nothing for a row added by hand or from a statement."""
-    if t.source != "plaid":
-        return []
-    raw = t.raw or {}
-    inflow = t.amount < 0
-    rows = [("Plaid’s name", raw.get("plaid_name") or t.description),
-            ("Bank’s own wording", raw.get("original_description")),
-            ("Sender" if inflow else "Recipient", raw.get("payer" if inflow else "payee")),
-            ("Message", raw.get("reason")),
-            ("Counterparty", raw.get("counterparty")),
-            ("Plaid’s category", raw.get("issuer_category"))]
-    return [{"label": k, "value": " ".join(str(v or "").split()) or "Not sent"} for k, v in rows]
-
-
 def _bank_text(t: Transaction) -> str:
     """The bank's own wording, when it says more than the description."""
     text = " ".join(str((t.raw or {}).get("original_description") or "").split())
@@ -319,9 +303,6 @@ def describe(t: Transaction, ctx: Context) -> dict:
         # wording when Plaid tidied it, and the sender or payee when the bank
         # named them. Settles whether a name ever came through.
         "bank_text": _bank_text(t),
-        # Everything the bank sent through Plaid, for "What your bank sent"
-        # in the panel (2026-10-22) — so it's plain whether a name came.
-        "bank_fields": _bank_fields(t),
         "bank_sender": str((t.raw or {}).get("payer" if t.amount < 0 else "payee") or "").strip(),
         # A bank e-Transfer with no name in anything the bank sent.
         "bank_sender_missing": (t.source == "plaid" and bool(who)

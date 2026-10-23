@@ -380,16 +380,6 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             )}
             {tx.my_note && <Detail label="Your note" value={tx.my_note} />}
           </dl>
-          {/* Everything the bank sent through Plaid (2026-10-22): whether a
-              sender's name or a message came is plain to see. */}
-          {tx.bank_fields?.length > 0 && (
-            <details className="txd-bank">
-              <summary>What your bank sent</summary>
-              <dl className="txd-details">
-                {tx.bank_fields.map((f) => <Detail key={f.label} label={f.label} value={f.value} />)}
-              </dl>
-            </details>
-          )}
 
           {tx.can_one_off && !left && (
             <OneOffCard tx={tx} busy={busy}
