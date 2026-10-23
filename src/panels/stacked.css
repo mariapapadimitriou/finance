@@ -164,3 +164,19 @@
 .pk .nl-tile:disabled { cursor: default; opacity: .6; }
 .nl-stack .nl-group { display: flex; flex-direction: column; gap: var(--space-2); }
 .pk .nl-stack .nl-else { display: inline-flex; align-items: center; gap: 4px; margin-top: var(--space-1); }
+
+/* Steps slide (2026-10-23): a new question slides in; an answered row's
+   options fold open and shut rather than jumping. */
+.nl-stack .nl-step { display: flex; flex-direction: column; gap: var(--space-4); animation: nl-step-in 240ms var(--ease-standard, ease-out) both; }
+.nl-stack .nl-step > :not(.nl-q) { margin: 0; }
+@keyframes nl-step-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+.nl-fold { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 220ms var(--ease-standard, ease-out), opacity 220ms; }
+.nl-fold > * { min-height: 0; overflow: hidden; }
+.nl-fold.in { animation: nl-fold-in 220ms var(--ease-standard, ease-out); }
+.nl-fold.out { grid-template-rows: 0fr; opacity: 0; }
+@keyframes nl-fold-in { from { grid-template-rows: 0fr; opacity: 0; } to { grid-template-rows: 1fr; opacity: 1; } }
+.nl-done-list .nl-done-wrap:last-child > .nl-done { animation: nl-row-in 200ms var(--ease-standard, ease-out); }
+@keyframes nl-row-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .nl-stack .nl-step, .nl-fold, .nl-fold.in, .nl-done-list .nl-done-wrap:last-child > .nl-done { animation: none; transition: none; }
+}

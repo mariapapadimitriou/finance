@@ -358,11 +358,11 @@ export function Dialog({ labelledBy, describedBy, onClose, children, className =
  * the native input inside is what a keyboard and a screen reader use. A
  * chosen radio row is blush with a rose edge; a checkbox row stays plain.
  */
-export function Choice({ type = 'radio', name, checked, onChange, label, description,
+export function Choice({ type = 'radio', name, checked, onChange, onClick, label, description,
                          disabled = false }) {
   return (
     <label className={`pk-choice ${type}${checked ? ' on' : ''}${disabled ? ' off' : ''}`}>
-      <input type={type} name={name} checked={!!checked} disabled={disabled}
+      <input type={type} name={name} checked={!!checked} disabled={disabled} onClick={onClick}
              onChange={(e) => onChange?.(type === 'checkbox' ? e.target.checked : true)} />
       <span className="pk-choice-box" aria-hidden="true">
         {type === 'checkbox' && checked && <PIcon name="check" size={16} />}
