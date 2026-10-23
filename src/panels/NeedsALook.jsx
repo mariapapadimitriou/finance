@@ -4,7 +4,7 @@ import PIcon from '../pearl/icons.jsx';
 import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
 import { ErrorNote } from '../components/ui.jsx';
 import { DuplicateQuestion } from './Duplicates.jsx';
-import Stacked, { Pill, Progress, SortedCard, TxHead as StackedHead } from './Stacked.jsx';
+import Stacked, { Pill, Progress, SortedCard, TxHead as StackedHead, rememberEntry } from './Stacked.jsx';
 import TransactionDetail from './TransactionDetail.jsx';
 
 export { SortedCard };
@@ -198,7 +198,7 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
   }
 
   /** The last answer's call, then the Sorted card (R-13). */
-  async function commit(fn, { answers = [], effect = '' } = {}) {
+  async function commit(fn, { answers = [], effect = '', remember = null } = {}) {
     setBusy(true);
     setError(null);
     try {
@@ -207,6 +207,8 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
         key: current.key, it: current, answers,
         title: out?.title || 'Sorted.', detail: out?.detail || effect || '', undo: out?.undo,
         rule: out?.rule || '',
+        // Remember, asked on the Sorted card (2026-10-23).
+        remember, remembered: false,
         // Where it was in the list when answered, for the header.
         pos: position, of: open.length,
         // Where Next goes: the transaction after this one in the list.
@@ -223,6 +225,23 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
       setBusy(false);
     }
   }
+
+  /** Remember ticked on the Sorted card: saved again with the rule. */
+  const rememberIt = async (on) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const entry = await rememberEntry(sorted, on);
+      setSorted(entry);
+      setLog((l) => l.map((e) => (e.key === entry.key ? entry : e)));
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   /** Next on a Sorted card: the next transaction, or the end. */
   const next = () => {
@@ -444,7 +463,7 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
               </div>
             )}
             {entry ? (
-              <SortedCard entry={entry} busy={busy} isPast={back !== null}
+              <SortedCard entry={entry} busy={busy} isPast={back !== null} onRemember={rememberIt}
                           onNext={back !== null ? () => setBack(null) : next}
                           onUndo={() => reopen(entry)}
                           onReopen={(i) => reopen(entry, i)}

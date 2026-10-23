@@ -7,7 +7,7 @@ import PIcon from '../pearl/icons.jsx';
 import { categoryLabel } from './CategoryPicker.jsx';
 import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
 import { TagEditor } from './WhatWasThis.jsx';
-import SortCard, { SortedCard, prefetchCases } from './SortCard.jsx';
+import SortCard, { SortedCard, prefetchCases, rememberEntry } from './SortCard.jsx';
 import { Pill } from './Stacked.jsx';
 import {
   addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTags, getTx,
@@ -159,12 +159,13 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
     key: `tx:${tx.id}`, kind: 'panel', to: tx.party || '',
     txn: { ...tx, amount: tx.inflow ? -Math.abs(tx.amount) : Math.abs(tx.amount) },
   };
-  const sortCommit = async (fn, { answers, effect }) => {
+  const sortCommit = async (fn, { answers, effect, remember = null }) => {
     setBusy(true);
     setError(null);
     try {
       const r = await fn();
-      setSorted({ key: asItem.key, it: asItem, answers, effect, title: r.title, detail: r.detail || effect || '', undo: r.undo, rule: r.rule || '' });
+      setSorted({ key: asItem.key, it: asItem, answers, effect, title: r.title, detail: r.detail || effect || '', undo: r.undo, rule: r.rule || '',
+                  remember, remembered: false });
       setResume(null);
     } catch (e) {
       setError(e);
@@ -182,6 +183,17 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                   name: last?.step === 'who_to' || last?.step === 'name' ? last.label : '' });
       setSorted(null);
       setTx(await getTx(id));
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const sortRemember = async (on) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setSorted(await rememberEntry(sorted, on));
     } catch (e) {
       setError(e);
     } finally {
@@ -219,7 +231,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             </Pill>
           </div>
           {sorted ? (
-            <SortedCard entry={sorted} busy={busy} nextLabel="Done" showHead={false}
+            <SortedCard entry={sorted} busy={busy} nextLabel="Done" showHead={false} onRemember={sortRemember}
                         onNext={sortDone} onUndo={() => sortReopen()} onReopen={sortReopen} />
           ) : (
             <SortCard key={resume ? 'r' : 'q'} it={asItem} categories={categories} busy={busy}

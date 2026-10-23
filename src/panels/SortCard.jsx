@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, Choice, PButton, amountTone, txAmount } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
@@ -6,7 +6,7 @@ import { RepaymentMatch } from './Splits.jsx';
 import { depositChoices } from './joint.js';
 import {
   INCOME_KINDS, confirmTx, dismissReview, getTxCases, linkPayback, markTx, searchCharges, setCategory,
-  setIncomeType, setJointFrom, setParty, sortTransfers,
+  setIncomeType, setJointFrom, setParty, sortTransfers, undoChange,
 } from '../api.js';
 import './stacked.css';
 
@@ -20,14 +20,15 @@ import './stacked.css';
  *     (finance/marks.py: 10 cases for money out, 11 for money in), with the
  *     same words and the same groups in every door. The card asks them one
  *     short step at a time (`mode: 'stacked'`, the default) or lays the whole
- *     list out at once, grouped, Pearl's best guess first (`mode: 'all'`).
+ *     list out at once, as tiles (`mode: 'all'`).
  *   - One control, one commit. Every option is a radio row, and tapping it
  *     is the commit: an answer that needs more (a category, an account, a
  *     name, which purchase) slides that question in underneath; the last
  *     answer saves at once. A name commits with Enter or a person chip. The
  *     only button is Skip for now, where there is a queue to skip in.
- *   - One Remember. "Remember for <merchant>" is a checkbox above the choices
- *     it applies to, worded the same everywhere.
+ *   - One Remember. "Remember for <merchant>" is a checkbox on the Sorted
+ *     card, right above Next (2026-10-23): she answers first, then decides
+ *     whether every one like it goes the same way.
  *   - One way back. Undo sits at the right end of the dots' line and takes
  *     back the last answer; an answered row reopens its step in place, with
  *     the other answers still visible, and folds again on a second tap.
@@ -253,20 +254,12 @@ export function steps(it, cases, mode = 'stacked') {
              sub: 'Your bank left the name off. Pearl uses it to match paybacks.',
              to: S.pick_payback?.candidates.length ? 'pick_payback' : undefined };
 
-  const best = list.find((c) => c.key === cases?.best);
 
   // ── Everything at once (a transaction's panel, "It wasn’t a purchase"):
-  // Pearl's best guess as one tap, and the rest as tiles behind "Something
-  // else" (2026-10-23).
+  // ── Everything at once (a transaction's panel, "It wasn’t a purchase") ──
   const rest = (skip, parent) => tilesFor(list.filter((c) => !skip.includes(c.key)), S, { out, parent, nameless });
-  const allTiles = rest([], 'all');
-  const guessOpt = best ? optionFor(best, { nameless }) : null;
-  S.all = {
-    title: 'What was this?', left: 2, tiles: true,
-    guess: guessOpt,
-    options: guessOpt && !allTiles.some((o) => o.v === guessOpt.v)
-      ? [...allTiles, { ...guessOpt, hidden: true }] : allTiles,
-  };
+  // Every option laid out at once (2026-10-23), no guess card first.
+  S.all = { title: 'What was this?', left: 2, tiles: true, options: rest([], 'all') };
 
   if (mode === 'all') return { start: 'all', S };
 
@@ -415,10 +408,11 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   // "Which purchase?": what she typed, and what the server found for it.
   const [find, setFind] = useState('');
   const [found, setFound] = useState(null);
-  // Remember starts unticked (2026-10-21): a rule is hers to choose, never a default.
-  const [remember, setRemember] = useState(false);
-  // "Something else" opened on this step: the tiles under Pearl's guess.
-  const [moreAt, setMoreAt] = useState(null);
+  // Remember is asked on the last card, after the answer (2026-10-23),
+  // unticked: a rule is hers to choose, never a default. The saving call
+  // reads it here, so it can be run again with Remember on or off.
+  const rememberRef = useRef(false);
+  const rem = () => rememberRef.current;
   useEffect(() => {
     let live = true;
     loadCases(it.txn.id).then((d) => { if (live) setCases(d); }).catch(() => { if (live) setCases({ cases: [], groups: [] }); });
@@ -460,32 +454,30 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   const people = (cases?.people ?? []).filter((p) => p.toLowerCase() !== name.trim().toLowerCase());
   const jointChoices = depositChoices(it.people ?? cases?.joint_people ?? [], it.label ?? cases?.joint ?? '');
   // The Remember rule a case offers, worded one way everywhere.
-  const rememberFor = (c) => (c?.remember ? `Remember for ${it.to || it.txn.merchant}` : null);
   const canRemember = (c) => !!(c?.remember || it.learnable || it.kind === 'category' || it.kind === 'panel');
-  // A choice that is the last answer and can become her rule for every
-  // transaction like it (2026-10-22): a case that remembers, "Yes, <guess>",
-  // or "my own money". A step with one shows "Remember for <merchant>".
-  const remembers = (sId, o) => !o.to && !!(o.case?.remember
-    || (sId === 'q1' && ((out && o.v === 'yes') || (!out && o.v === 'own'))));
-  // Not for an e-Transfer with no name: its reference changes every time, so
-  // a rule would never match again.
-  const stepRemembers = (sId, st) => !!st && it.kind !== 'who_sent' && !it.nameless
-    && !(it.kind === 'unsorted' && !it.learnable)
-    && ((st.options ?? []).some((o) => remembers(sId, o))
-    || (st.groups ?? []).some((g) => g.options.some((o) => remembers(sId, o))));
 
   /** Commit the last answer: run the call, then hand the card to its door. */
   // What the Sorted card says about her rule (2026-10-22): only when one was
   // saved — the server says so for a mark; a category call trusts the box.
   const ruleText = `Pearl will do the same for every ${it.to || it.txn.merchant} from now on.`;
-  const finish = (answers, effect, run) => commit(() => {
-    forgetCases(it.txn.id);
-    return run().then((r) => ({ ...r, rule: (r?.res?.remember ?? remember) ? ruleText : '' }));
-  }, {
-    answers: answers.map((p) => ({ ...p, label: p.label ?? answerLabel(flow, p) })), effect,
-  });
+  // Whether an answer can become a rule at all: not an e-Transfer with no
+  // name (its reference changes every time), not an unsorted transfer Pearl
+  // can't learn from.
+  const ruleOk = it.kind !== 'who_sent' && !it.nameless && !(it.kind === 'unsorted' && !it.learnable);
+  const finish = (answers, effect, run, ruleable = false) => {
+    const go = (on) => {
+      rememberRef.current = on;
+      forgetCases(it.txn.id);
+      return run().then((r) => ({ ...r, rule: (r?.res?.remember ?? on) ? ruleText : '' }));
+    };
+    return commit(() => go(false), {
+      answers: answers.map((p) => ({ ...p, label: p.label ?? answerLabel(flow, p) })), effect,
+      remember: ruleable && ruleOk ? { label: `Remember for ${it.to || it.txn.merchant}`, redo: go } : null,
+    });
+  };
   const markCase = (c, extra = {}, answers, effect) => finish(answers, effect ?? c.effect,
-    () => via({ case: c.key, ...(c.remember ? { remember: !!remember } : {}), ...extra }, `Sorted as ${c.label.toLowerCase()}.`));
+    () => via({ case: c.key, ...(c.remember ? { remember: !!rem() } : {}), ...extra }, `Sorted as ${c.label.toLowerCase()}.`),
+    !!c.remember);
 
   // The last answer of a step that asks (chips, an account, a kind…).
   const saveAsk = (s, v, label) => {
@@ -500,8 +492,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       const effect = `Counts as ${categoryLabel(v)} spending.`;
       const unsorted = it.kind === 'unsorted' || it.txn.category === 'Unsorted transfers';
       return finish(answers, effect, () => (unsorted
-        ? plain(() => sortTransfers([it.txn.id], v, !!(it.learnable || it.kind === 'panel') && remember), `Sorted as ${categoryLabel(v)}.`)
-        : plain(() => setCategory(it.txn.id, v, remember), `Moved to ${categoryLabel(v)}.`)));
+        ? plain(() => sortTransfers([it.txn.id], v, !!(it.learnable || it.kind === 'panel') && rem()), `Sorted as ${categoryLabel(v)}.`)
+        : plain(() => setCategory(it.txn.id, v, rem()), `Moved to ${categoryLabel(v)}.`)), canRemember(c));
     }
     if (s.ask === 'account') {
       const a = accounts.find((x) => x.id === v);
@@ -510,8 +502,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           () => via({ case: 'out_of_savings', account: v || '' }, 'Sorted as taken out of savings.'));
       }
       return finish(answers, `Not spending. It adds ${amt} to Savings this month${a?.anchor ? ' and to your Anchor' : ''}.`,
-        () => via({ case: 'saved', account: v || '', remember: !!((it.learnable || c?.remember) && remember) },
-          a ? `Put away to ${a.label}.` : 'Sorted as savings.'));
+        () => via({ case: 'saved', account: v || '', remember: !!((it.learnable || c?.remember) && rem()) },
+          a ? `Put away to ${a.label}.` : 'Sorted as savings.'), !!(it.learnable || c?.remember));
     }
     if (s.ask === 'kind') {
       if (v === 'regular_pay') return markCase(byKey('regular_pay') ?? { key: 'regular_pay', label: 'My regular pay' }, {}, answers, 'Pearl uses it for your monthly income from now on.');
@@ -523,7 +515,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       const ch = jointChoices.find((x) => x.value === v);
       const effect = ch?.who === 'me' ? 'A transfer, not income.'
         : `Covers ${ch?.label}’s share of joint spending. Your spending goes down by ${amt}.`;
-      return finish(answers, effect, () => plain(() => setJointFrom(it.txn.id, ch.who, remember, ch.person), 'Sorted.'));
+      return finish(answers, effect, () => plain(() => setJointFrom(it.txn.id, ch.who, rem(), ch.person), 'Sorted.'), true);
     }
     if (s.ask === 'pick') {
       const cand = s.candidates.find((x) => x.id === v) ?? (found ?? []).find((x) => x.id === v);
@@ -542,11 +534,11 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
         ? `Not spending. Allowance goes up by ${amt} and ${who} owes you ${amt}.`
         : `Not spending. Allowance goes up by ${amt}.`;
       return finish(answers, effect, async () => {
-        const res = await markTx(it.txn.id, how === 'lent' ? { case: 'lent', remember: !!remember } : { case: 'paying_back', counted: true });
+        const res = await markTx(it.txn.id, how === 'lent' ? { case: 'lent', remember: !!rem() } : { case: 'paying_back', counted: true });
         if (who && who !== nameIn(it.txn.merchant)) await setParty(it.txn.id, who).catch(() => {});
         return { res, title: res?.title || (how === 'lent' ? `Lent to ${who}.` : `Paying back ${who}.`),
                  detail: res?.detail || '', undo: res?.undo };
-      });
+      }, how === 'lent');
     }
     if (s.ask === 'sender') {
       const who = v.trim();
@@ -570,7 +562,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     if (opt?.case) {
       const c = opt.case;
       if (c.key === 'moved' && (it.kind === 'unsorted' || it.txn.category === 'Unsorted transfers')) {
-        return finish(answers, c.effect, () => plain(() => sortTransfers([it.txn.id], 'Transfers', !!remember), 'Sorted as moved between your accounts.'));
+        return finish(answers, c.effect, () => plain(() => sortTransfers([it.txn.id], 'Transfers', !!rem()), 'Sorted as moved between your accounts.'), true);
       }
       if (c.key === 'not_mine') return markCase(c, { reason: '' }, answers);
       return markCase(c, {}, answers);
@@ -586,16 +578,16 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
         () => plain(() => linkPayback(s.match.charge_id, it.txn.id, s.match.name), 'Linked.'));
     }
     if (sId === 'q1' && out) {                                              // "Yes, Groceries"
-      return finish(answers, `Stays in ${categoryLabel(it.guess)}.`, () => (remember
+      return finish(answers, `Stays in ${categoryLabel(it.guess)}.`, () => (rem()
         ? plain(() => setCategory(it.txn.id, it.guess, true), `${categoryLabel(it.guess)} for every ${it.to || it.txn.merchant}.`)
-        : plain(() => confirmTx(it.txn.id), 'Confirmed.')));
+        : plain(() => confirmTx(it.txn.id), 'Confirmed.')), true);
     }
     if (sId === 'q1') {                                                     // my own money
       return finish(answers, 'Your own money moving, so it isn’t counted as income.', () => (it.kind === 'joint_in'
-        ? plain(() => setJointFrom(it.txn.id, 'me', remember), 'Sorted as your own money.')
+        ? plain(() => setJointFrom(it.txn.id, 'me', rem()), 'Sorted as your own money.')
         : it.kind === 'income'
-          ? plain(() => setCategory(it.txn.id, 'Transfers', remember), 'Sorted as your own money, not income.')
-          : via({ case: 'own', remember: !!remember }, 'Sorted as your own money.')));
+          ? plain(() => setCategory(it.txn.id, 'Transfers', rem()), 'Sorted as your own money, not income.')
+          : via({ case: 'own', remember: !!rem() }, 'Sorted as your own money.')), true);
     }
     if (sId === 'borrowed') {
       return markCase(chosen ?? byKey('paying_back'), { counted: true }, answers, 'Paying back a loan, so it isn’t counted as spending.');
@@ -644,15 +636,6 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     setPath([...path, { step: stepId, v: amount, label: `${txAmount(Number(amount))} put away` }]);
     setAmount(amount);
   };
-  const rememberBox = (c) => (canRemember(c) ? (
-    <Choice type="checkbox" checked={remember} onChange={setRemember}
-            label={rememberFor(c) || `Remember for ${it.to || it.txn.merchant}`} />
-  ) : null);
-  const rememberLine = (
-    <Choice type="checkbox" checked={remember} onChange={setRemember}
-            label={`Remember for ${it.to || it.txn.merchant}`}
-            description="Sorts every transaction from them the same way from now on" />
-  );
   const optionRows = (options, nameAttr, onPick) => options.map((o) => (
     <Choice key={o.v} name={nameAttr} checked={false} disabled={busy}
             onChange={() => onPick(o.v)} label={o.label} description={o.effect} />
@@ -672,7 +655,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       <Done path={path} flow={flow} editing={editing} busy={busy}
             onOpen={(i) => setEditing(editing === i ? null : i)} onPick={rechoose} />
 
-      {/* The whole list (Mark as…) waits for the server's answers, whose best
+      {/* The whole list (Mark as…) waits for the server's answers, whose
           guess goes on top; one question at a time doesn't need to. */}
       {!cases && mode === 'all' && <CardSkeleton rows={6} />}
       {(cases || mode !== 'all') && step && (
@@ -681,32 +664,15 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           {step.sub && <p className="pk-muted nl-sub">{step.sub}</p>}
           {step.match && <RepaymentMatch match={step.match} />}
           {step.tiles ? (
-            <>
-              {step.guess && moreAt !== stepId && (
-                <div className="nl-group">
-                  <p className="pk-overline">Pearl’s best guess</p>
-                  <div className="pk-choices" role="radiogroup" aria-label="Pearl’s best guess">
-                    {optionRows([step.guess], `${group}-guess`, choose)}
-                  </div>
-                  {remembers(stepId, step.guess) && stepRemembers(stepId, step) && rememberLine}
-                  <button type="button" className="txd-link nl-other nl-else" disabled={busy}
-                          onClick={() => setMoreAt(stepId)}>
-                    Something else <PIcon name="chevronDown" size={14} />
-                  </button>
-                </div>
-              )}
-              {(!step.guess || moreAt === stepId) && (
-                <div className="nl-tiles" role="radiogroup" aria-label={step.title}>
-                  {step.options.filter((o) => !o.hidden).map((o) => (
-                    <button key={o.v} type="button" role="radio" aria-checked="false" className="pk-ctile nl-tile"
-                            disabled={busy} onClick={() => choose(o.v)}>
-                      <span className="pk-ctile-icon" aria-hidden="true"><PIcon name={o.icon || 'dots'} size={20} /></span>
-                      <span className="pk-ctile-label">{o.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
+            <div className="nl-tiles" role="radiogroup" aria-label={step.title}>
+              {step.options.map((o) => (
+                <button key={o.v} type="button" role="radio" aria-checked="false" className="pk-ctile nl-tile"
+                        disabled={busy} onClick={() => choose(o.v)}>
+                  <span className="pk-ctile-icon" aria-hidden="true"><PIcon name={o.icon || 'dots'} size={20} /></span>
+                  <span className="pk-ctile-label">{o.label}</span>
+                </button>
+              ))}
+            </div>
           ) : step.groups ? step.groups.map((g) => (
             <div key={g.key} className="nl-group">
               <p className="pk-overline">{g.label}</p>
@@ -719,19 +685,12 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
               {optionRows(step.options, group, choose)}
             </div>
           )}
-          {/* Remember under the answers it applies to (2026-10-23), not above
-              the question before anything is chosen. */}
-          {!step.tiles && stepRemembers(stepId, step) && rememberLine}
           {step.ask === 'category' && (
-            <>
-              {rememberBox(chosen)}
-              <CategoryChips groups={spendingCats} value={cat} label={step.title}
-                             onChange={(v) => { setCat(v); saveAsk(step, v, categoryLabel(v)); }} />
-            </>
+            <CategoryChips groups={spendingCats} value={cat} label={step.title}
+                           onChange={(v) => { setCat(v); saveAsk(step, v, categoryLabel(v)); }} />
           )}
           {step.ask === 'account' && (
             <>
-              {rememberBox(chosen)}
               <div className="pk-choices" role="radiogroup" aria-label={step.title}>
                 {accounts.map((a) => (
                   <Choice key={a.id} name={group} checked={false} disabled={busy} description={a.sub}
@@ -791,7 +750,6 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           )}
           {step.ask === 'joint' && (
             <>
-              <Choice type="checkbox" checked={remember} onChange={setRemember} label={`Remember for ${it.txn.merchant}`} />
               <div className="pk-choices" role="radiogroup" aria-label={step.title}>
                 {jointChoices.map((c) => (
                   <Choice key={c.value} name={group} checked={false} disabled={busy}
@@ -918,11 +876,24 @@ export function Done({ path, flow, editing = null, busy = false, onOpen, onPick 
 }
 
 /**
+ * Remember ticked or unticked on the Sorted card (2026-10-23): the change is
+ * put back and saved again with the rule on or off, so Undo still undoes
+ * all of it. Resolves to the entry as it now is.
+ */
+export async function rememberEntry(entry, on) {
+  if (!entry?.remember) return entry;
+  if (entry.undo) await undoChange(entry.undo);
+  const r = await entry.remember.redo(on);
+  return { ...entry, title: r?.title || entry.title, detail: r?.detail || entry.detail,
+           undo: r?.undo, rule: r?.rule || '', remembered: on };
+}
+
+/**
  * The Sorted card: every dot filled with "✓ Sorted", the answers as rows
  * (tap one to reopen that step), what the change did, and Next or Done.
  */
 export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'Next', onNext, onUndo, onReopen, onPrevious,
-                             showHead = true }) {
+                             onRemember, showHead = true }) {
   const { it, answers } = entry;
   return (
     <>
@@ -954,6 +925,13 @@ export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'N
             <p className="nl-effect-rule"><PIcon name="check" size={14} /> {entry.rule}</p>
           )}
         </div>
+      )}
+      {/* Remember, last, right above Next (2026-10-23): after the answer,
+          whether every one like it goes the same way. */}
+      {entry.remember && onRemember && !isPast && (
+        <Choice type="checkbox" checked={!!entry.remembered} disabled={busy}
+                onChange={(on) => onRemember(on)} label={entry.remember.label}
+                description="Sorts every transaction from them the same way from now on" />
       )}
       <div className="nl-actions nl-next nl-bottom">
         {/* Previous bottom left, in line with Next (2026-10-22). */}
