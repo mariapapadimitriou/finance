@@ -394,3 +394,31 @@ def test_two_days_between_accounts_but_a_card_payment_may_take_longer(client):
     assert "TFR-FROM CHEQUING" in rows and "transfer" not in rows["TFR-TO SAVINGS"]
     assert "TFR-FROM CHQ" not in rows and rows["TFR-TO TFSA"]["transfer"]["to"] == "tfsa"
     assert "PAYMENT THANK YOU" not in rows and rows["VISA PREAUTH PYMT"]["transfer"]["to"] == "card"
+
+
+def test_a_transfer_whose_arrival_was_guessed_as_income_links(client):
+    """2026-10-22: the same amount out of one of her accounts (not sorted
+    yet) and into another the same day, which Pearl had guessed was income:
+    a transfer — both ends, one line, and no longer counted as income. Her
+    own "income" and a paycheque are never taken for one."""
+    from finance.transfers import apply_transfer_matches
+    ids = load(client.st,
+               row(800, "TFR-TO 9876543", account="chq", when=in_month(12)),
+               row(-800, "MOBILE DEPOSIT", account="sav", when=in_month(12)),
+               row(2000, "TFR-TO 5551234", account="chq", when=in_month(14)),
+               row(-2000, "PAYROLL ACME CORP", account="sav", when=in_month(14)),
+               row(50, "TFR-TO 1112223", account="chq", when=in_month(16)),
+               row(-50, "BRANCH DEPOSIT", account="sav", when=in_month(16)))
+    # Pearl's guesses (rule), and one she chose herself.
+    client.st.set_categories({ids["MOBILE DEPOSIT"]: ("Income", "rule"),
+                              ids["PAYROLL ACME CORP"]: ("Income", "rule")})
+    client.st.set_transaction_category(ids["BRANCH DEPOSIT"], "Income")
+    apply_transfer_matches(client.st)
+    by = {t.fingerprint: t for t in client.st.all_transactions()}
+    assert by[ids["TFR-TO 9876543"]].category == "Transfers"
+    assert by[ids["MOBILE DEPOSIT"]].category == "Transfers"            # the guess was this transfer
+    assert by[ids["PAYROLL ACME CORP"]].category == "Income"            # a paycheque stays pay
+    assert by[ids["BRANCH DEPOSIT"]].category == "Income"               # hers stays hers
+    rows = by_desc(listing(client))
+    assert "MOBILE DEPOSIT" not in rows and rows["TFR-TO 9876543"]["transfer"]["to"] == "sav"
+    assert rows["PAYROLL ACME CORP"]["counts"] == "income" and rows["BRANCH DEPOSIT"]["counts"] == "income"

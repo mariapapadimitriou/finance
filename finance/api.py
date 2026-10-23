@@ -1283,6 +1283,12 @@ def plaid_sync():
         # Synced a moment ago, but a bank may still be owed its one-time
         # details refresh (2026-10-22): run just that, not a whole sync.
         refreshed = plaid_link.refresh_details_once(st, st.plaid_items())
+        # New sorting rules apply at once, not only after the next full sync.
+        from .categorize import RULES_VERSION
+        from .pipeline import recategorize_all
+        if st.setting("categories_version") != str(RULES_VERSION):
+            recategorize_all(st)
+            st.set_setting("categories_version", RULES_VERSION)
         return jsonify({"items": [], "imported": 0, "recent": True, "details_refreshed": refreshed})
     return jsonify(plaid_link.sync_all(st))
 
