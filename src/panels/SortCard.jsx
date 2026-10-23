@@ -142,6 +142,71 @@ function optionFor(c, { nameless = false } = {}) {
 }
 
 /**
+ * What was this? as tiles (2026-10-23): a word or two and an icon each, the
+ * way categories are picked, with the choices that are one idea two ways
+ * folded into one tile that asks which (own money: another account or
+ * savings; a loan: which way; not mine: a work expense or not at all).
+ */
+const TILE = {
+  spending: ['A purchase', 'cart'], bill: ['A bill', 'zap'], shared: ['Split with others', 'users'],
+  saved_part: ['Part put away', 'target'],
+  pay: ['Pay', 'banknote'], payback: ['Paid back', 'handOpen'], refund: ['A refund', 'refresh'],
+  reimbursement: ['Reimbursed', 'laptop'], joint_them: ['Someone else’s', 'user'], not_mine: ['Not mine', 'ban'],
+};
+const FOLDS = {
+  out: [
+    { id: 'own', label: 'My own money', icon: 'arrows', title: 'Where did it go?', keys: {
+      moved: ['Another of my accounts', 'Not spending or income.'],
+      saved: ['Into my savings', 'Counts toward Savings this month.'] } },
+    { id: 'loan', label: 'A loan', icon: 'landmark', title: 'Which way did it go?', keys: {
+      lent: ['I lent it to someone', 'Pearl watches for it coming back.'],
+      paying_back: ['I’m paying back a loan', 'Not spending.'] } },
+    { id: 'not', label: 'Not mine', icon: 'ban', title: 'Whose was it?', keys: {
+      work: ['A work expense', 'Left out until it’s reimbursed.'],
+      not_mine: ['Not mine at all', 'Left out of all your numbers.'] } },
+  ],
+  in: [
+    { id: 'own', label: 'My own money', icon: 'arrows', title: 'Where did it come from?', keys: {
+      own: ['Another of my accounts', 'Not income.'],
+      out_of_savings: ['My savings', 'Comes off what you saved this month.'] } },
+    { id: 'loan', label: 'A loan', icon: 'landmark', title: 'Which way did it go?', keys: {
+      borrowed: ['I borrowed it', 'Not income.'],
+      lent_back: ['Paying back money I lent', 'Not income.'] } },
+  ],
+};
+
+/** The tiles for a list of cases, adding a step for each folded tile that
+ * holds two. `parent` names those steps (`all_own`, `what_out_loan`). */
+export function tilesFor(list, S, { out, parent, nameless = false }) {
+  const folds = FOLDS[out ? 'out' : 'in'];
+  const tiles = [];
+  const seen = new Set();
+  const hasPay = list.some((c) => c.key === 'pay');
+  for (const c of list) {
+    if (c.key === 'regular_pay' && hasPay) continue;          // "What kind of income?" offers it
+    const fold = folds.find((f) => c.key in f.keys);
+    if (fold) {
+      if (seen.has(fold.id)) continue;
+      seen.add(fold.id);
+      const members = list.filter((m) => m.key in fold.keys);
+      if (members.length === 1) {
+        tiles.push({ ...optionFor(members[0], { nameless }), label: fold.label, icon: fold.icon });
+        continue;
+      }
+      const id = `${parent}_${fold.id}`;
+      S[id] = { title: fold.title, left: 2, options: members.map((m) => ({
+        ...optionFor(m, { nameless }), label: fold.keys[m.key][0], done: fold.keys[m.key][0],
+        effect: fold.keys[m.key][1] })) };
+      tiles.push({ v: `g:${fold.id}`, label: fold.label, icon: fold.icon, done: fold.label, to: id });
+      continue;
+    }
+    const [label, icon] = TILE[c.key] ?? [c.label, 'dots'];
+    tiles.push({ ...optionFor(c, { nameless }), label, icon });
+  }
+  return tiles;
+}
+
+/**
  * The questions for one transaction, as steps. Each step has a title, what
  * it asks (choices, chips, a name…), and for each choice where it leads
  * (`to`) or nothing, when it's the last answer. `left` is how many steps
@@ -188,20 +253,20 @@ export function steps(it, cases, mode = 'stacked') {
              sub: 'Your bank left the name off. Pearl uses it to match paybacks.',
              to: S.pick_payback?.candidates.length ? 'pick_payback' : undefined };
 
-  const groups = cases.groups;
   const best = list.find((c) => c.key === cases?.best);
 
-  // ── The whole list at once (a transaction's panel, "It wasn’t a purchase") ──
-  const rest = (skip) => list.filter((c) => !skip.includes(c.key)).map((c) => optionFor(c, { nameless }));
+  // ── Everything at once (a transaction's panel, "It wasn’t a purchase"):
+  // Pearl's best guess as one tap, and the rest as tiles behind "Something
+  // else" (2026-10-23).
+  const rest = (skip, parent) => tilesFor(list.filter((c) => !skip.includes(c.key)), S, { out, parent, nameless });
+  const allTiles = rest([], 'all');
+  const guessOpt = best ? optionFor(best, { nameless }) : null;
   S.all = {
-    title: 'What was this?', left: 2,
-    groups: [
-      ...(best ? [{ key: 'best', label: 'Pearl’s best guess', options: [optionFor(best, { nameless })] }] : []),
-      ...groups.map((g) => ({ key: g.key, label: g.label,
-        options: list.filter((c) => c.group === g.key && c.key !== best?.key).map((c) => optionFor(c, { nameless })) })),
-    ].filter((g) => g.options.length),
+    title: 'What was this?', left: 2, tiles: true,
+    guess: guessOpt,
+    options: guessOpt && !allTiles.some((o) => o.v === guessOpt.v)
+      ? [...allTiles, { ...guessOpt, hidden: true }] : allTiles,
   };
-  S.all.options = S.all.groups.flatMap((g) => g.options);
 
   if (mode === 'all') return { start: 'all', S };
 
@@ -224,7 +289,7 @@ export function steps(it, cases, mode = 'stacked') {
       ],
     };
     // Everything else the server knows, minus what the first question covered.
-    S.what_out = { title: 'What was it?', left: 2, options: rest(['spending', 'saved']) };
+    S.what_out = { title: 'What was it?', left: 2, tiles: true, options: rest(['spending', 'saved'], 'what_out') };
     return { start: 'q1', S };
   }
   const match = it.kind === 'money_in' && it.guess?.action === 'split' ? it.guess.split : null;
@@ -262,7 +327,7 @@ export function steps(it, cases, mode = 'stacked') {
       { v: 'else', label: 'No, something else', done: 'Something else', to: joint ? 'who_in' : 'what_in' },
     ],
   };
-  S.what_in = { title: 'What was it?', left: 2, options: rest(['pay', 'regular_pay', 'own', 'joint_them']) };
+  S.what_in = { title: 'What was it?', left: 2, tiles: true, options: rest(['pay', 'regular_pay', 'own', 'joint_them'], 'what_in') };
   return { start: match ? 'match' : said ? 'memo' : 'q1', S };
 }
 
@@ -352,6 +417,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   const [found, setFound] = useState(null);
   // Remember starts unticked (2026-10-21): a rule is hers to choose, never a default.
   const [remember, setRemember] = useState(false);
+  // "Something else" opened on this step: the tiles under Pearl's guess.
+  const [moreAt, setMoreAt] = useState(null);
   useEffect(() => {
     let live = true;
     loadCases(it.txn.id).then((d) => { if (live) setCases(d); }).catch(() => { if (live) setCases({ cases: [], groups: [] }); });
@@ -581,6 +648,11 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     <Choice type="checkbox" checked={remember} onChange={setRemember}
             label={rememberFor(c) || `Remember for ${it.to || it.txn.merchant}`} />
   ) : null);
+  const rememberLine = (
+    <Choice type="checkbox" checked={remember} onChange={setRemember}
+            label={`Remember for ${it.to || it.txn.merchant}`}
+            description="Sorts every transaction from them the same way from now on" />
+  );
   const optionRows = (options, nameAttr, onPick) => options.map((o) => (
     <Choice key={o.v} name={nameAttr} checked={false} disabled={busy}
             onChange={() => onPick(o.v)} label={o.label} description={o.effect} />
@@ -608,13 +680,34 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           <h2 className="pk-h2 nl-q">{step.title}</h2>
           {step.sub && <p className="pk-muted nl-sub">{step.sub}</p>}
           {step.match && <RepaymentMatch match={step.match} />}
-          {stepRemembers(stepId, step) && (
-            <Choice type="checkbox" checked={remember} onChange={setRemember}
-                    label={`Remember for ${it.to || it.txn.merchant}`}
-                    description="Sorts every transaction from them the same way from now on" />
-          )}
-
-          {step.groups ? step.groups.map((g) => (
+          {step.tiles ? (
+            <>
+              {step.guess && moreAt !== stepId && (
+                <div className="nl-group">
+                  <p className="pk-overline">Pearl’s best guess</p>
+                  <div className="pk-choices" role="radiogroup" aria-label="Pearl’s best guess">
+                    {optionRows([step.guess], `${group}-guess`, choose)}
+                  </div>
+                  {remembers(stepId, step.guess) && stepRemembers(stepId, step) && rememberLine}
+                  <button type="button" className="txd-link nl-other nl-else" disabled={busy}
+                          onClick={() => setMoreAt(stepId)}>
+                    Something else <PIcon name="chevronDown" size={14} />
+                  </button>
+                </div>
+              )}
+              {(!step.guess || moreAt === stepId) && (
+                <div className="nl-tiles" role="radiogroup" aria-label={step.title}>
+                  {step.options.filter((o) => !o.hidden).map((o) => (
+                    <button key={o.v} type="button" role="radio" aria-checked="false" className="pk-ctile nl-tile"
+                            disabled={busy} onClick={() => choose(o.v)}>
+                      <span className="pk-ctile-icon" aria-hidden="true"><PIcon name={o.icon || 'dots'} size={20} /></span>
+                      <span className="pk-ctile-label">{o.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : step.groups ? step.groups.map((g) => (
             <div key={g.key} className="nl-group">
               <p className="pk-overline">{g.label}</p>
               <div className="pk-choices" role="radiogroup" aria-label={g.label}>
@@ -626,6 +719,9 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
               {optionRows(step.options, group, choose)}
             </div>
           )}
+          {/* Remember under the answers it applies to (2026-10-23), not above
+              the question before anything is chosen. */}
+          {!step.tiles && stepRemembers(stepId, step) && rememberLine}
           {step.ask === 'category' && (
             <>
               {rememberBox(chosen)}

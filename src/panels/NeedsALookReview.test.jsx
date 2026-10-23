@@ -50,25 +50,28 @@ describe('One question at a time, tapped (R-10 to R-12)', () => {
 
   it('answers so far are rows; Undo now takes back the last answer', () => {
     const page = html(<Stacked it={out} act={noop} commit={noop} onSkip={noop} onBack={noop}
-                               initialPath={[{ step: 'q1', v: 'else' }, { step: 'what_out', v: 'lent' }]} />);
+                               initialPath={[{ step: 'q1', v: 'else' }, { step: 'what_out', v: 'g:loan' },
+                                             { step: 'what_out_loan', v: 'lent' }]} />);
     expect(page).toContain('aria-label="Undo the last answer"');
     expect(page).toContain('aria-label="Change: Something else"');
-    expect(page).toContain('aria-label="Change: Lent"');
+    expect(page).toContain('aria-label="Change: A loan"');
+    expect(page).toContain('aria-label="Change: I lent it to someone"');
     expect(page).toContain('Who to?');
-    expect(page).toContain('2 of 3');
+    expect(page).toContain('3 of 4');
     expect(page).toContain('Press Enter, or pick a name');
   });
 
   it('a reopened answer expands in place, with the other answers still there', () => {
     const page = html(<Stacked it={out} act={noop} commit={noop} onSkip={noop} onBack={noop}
-                               initialPath={[{ step: 'q1', v: 'else' }, { step: 'what_out', v: 'lent' }]}
+                               initialPath={[{ step: 'q1', v: 'else' }, { step: 'what_out', v: 'g:loan' },
+                                             { step: 'what_out_loan', v: 'lent' }]}
                                initialEdit={0} />);
     // The first row shows its question and its options, the second stays folded.
     expect(page).toContain('nl-done-wrap open');
     expect(page).toContain('aria-label="Close: Was this spending?"');
     expect(page).toContain('aria-expanded="true"');
     expect(page).toContain('No, something else');
-    expect(page).toContain('aria-label="Change: Lent"');
+    expect(page).toContain('aria-label="Change: I lent it to someone"');
     expect(page).toContain('Who to?');
     const dots = html(<Done path={[{ step: 'q1', v: 'spent' }]} flow={steps(out, null)} editing={null} onOpen={noop} />);
     expect(dots).toContain('aria-expanded="false"');
@@ -123,9 +126,11 @@ describe('The Sorted card (R-13)', () => {
 
 describe('Needs a look, reorganised (2026-10-22)', () => {
   it('a choice that can become a rule offers Remember for the merchant', () => {
-    // "It wasn't a purchase" → Lent (remembers by merchant) and the rest.
+    // "It wasn't a purchase" → Not mine → not mine at all (a leave-out rule),
+    // with Remember under the answers (2026-10-23).
     const page = html(<Stacked it={out} act={noop} commit={noop} onSkip={noop} onBack={noop}
-                               initialPath={[{ step: 'q1', v: 'else' }]} />);
+                               initialPath={[{ step: 'q1', v: 'else' }, { step: 'what_out', v: 'g:not' }]} />);
+    expect(page.indexOf('Remember for')).toBeGreaterThan(page.indexOf('Not mine at all'));
     expect(page).toContain('Remember for M. Papas');
     expect(page).toContain('Sorts every transaction from them the same way');
   });

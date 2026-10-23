@@ -109,7 +109,11 @@ def describe(before: float, after: float, cat_from: str, cat_to: str,
         else:
             out.update(line=f"{money(spent_delta)} more counted as spending in {month}. "
                             "Your Allowance stays the same.",
-                       detail=f"{money(spent_delta)} more, because {cat_to} is spending.")
+                       # Money in that came off spending, and now doesn't
+                       # (2026-10-23): not "because Transfers is spending".
+                       detail=(f"{money(spent_delta)} more, because {cat_to} is spending."
+                               if g_to in ("essentials", "lifestyle")
+                               else f"{money(spent_delta)} more, because it no longer comes off your spending."))
         out["title"] = f"Spent in {month} is now {money(spent_after)}."
         return out
     out.update(line=(f"Both are {CATEGORY_GROUPS[g_to]}, so your Allowance stays the same."

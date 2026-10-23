@@ -44,7 +44,8 @@ describe('Quick sort (QS-01 to QS-04)', () => {
     const out = html(<SortCard it={asItem(item)} categories={categories} commit={noop}
                                initialPath={[{ step: 'q1', v: 'else' }]} />);
     expect(out).toContain('aria-label="Change: Not a purchase"');
-    for (const a of ['A bill', 'Moved between my accounts', 'Lent to someone', 'Not mine']) expect(out).toContain(a);
+    for (const a of ['A bill', 'My own money', 'A loan', 'Not mine']) expect(out).toContain(a);
+    expect(out).toContain('nl-tiles');
   });
 
   it('the done screen shows Allowance before and after, the reason and the rules', () => {
