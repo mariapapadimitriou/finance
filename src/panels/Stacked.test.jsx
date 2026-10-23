@@ -113,19 +113,16 @@ describe('an e-Transfer whose message names a purchase (2026-10-21)', () => {
 describe('What was this? as tiles (2026-10-23)', () => {
   const panelOut = { key: 'tx:a', kind: 'panel', txn: { ...out.txn } };
   const panelIn = { key: 'tx:b', kind: 'panel', txn: { ...inn.txn } };
-  it('money out: Pearl’s guess is one tap, the rest are six tiles, folded where one idea has two ways', () => {
+  it('money out: every option laid out as six tiles, no guess first, folded where one idea has two ways', () => {
     const { S } = steps(panelOut, { best: 'moved', cases: [] }, 'all');
-    expect(S.all.guess.v).toBe('moved');
-    const tiles = S.all.options.filter((o) => !o.hidden);
+    expect(S.all.guess).toBeUndefined();
+    const tiles = S.all.options;
     expect(tiles.map((o) => o.label)).toEqual(['A purchase', 'A bill', 'Split with others', 'My own money', 'A loan', 'Not mine']);
     expect(tiles.every((o) => o.icon)).toBe(true);
     expect(S.all_own.options.map((o) => o.v)).toEqual(['moved', 'saved']);
-    // The guess is a choice the card can commit, without a tile of its own.
-    expect(S.all.options.find((o) => o.v === 'moved').hidden).toBe(true);
   });
   it('money in: seven tiles, and Pay leads to the kind, where regular pay is', () => {
     const { S } = steps(panelIn, null, 'all');
-    expect(S.all.guess).toBe(null);
     expect(S.all.options.map((o) => o.label)).toEqual(
       ['Pay', 'Paid back', 'A refund', 'Reimbursed', 'My own money', 'A loan', 'Not mine']);
     expect(S.all.options[0].to).toBe('kind');

@@ -125,23 +125,22 @@ describe('The Sorted card (R-13)', () => {
 });
 
 describe('Needs a look, reorganised (2026-10-22)', () => {
-  it('a choice that can become a rule offers Remember for the merchant', () => {
-    // "It wasn't a purchase" → Not mine → not mine at all (a leave-out rule),
-    // with Remember under the answers (2026-10-23).
-    const page = html(<Stacked it={out} act={noop} commit={noop} onSkip={noop} onBack={noop}
-                               initialPath={[{ step: 'q1', v: 'else' }, { step: 'what_out', v: 'g:not' }]} />);
-    expect(page.indexOf('Remember for')).toBeGreaterThan(page.indexOf('Not mine at all'));
-    expect(page).toContain('Remember for M. Papas');
-    expect(page).toContain('Sorts every transaction from them the same way');
-  });
-
-  it('“Is this Groceries? Yes” can be remembered; a first step that only leads on cannot', () => {
+  it('Remember is on the Sorted card, right above Next, never on a question (2026-10-23)', () => {
+    const asked = html(<Stacked it={out} act={noop} commit={noop} onSkip={noop} onBack={noop}
+                                initialPath={[{ step: 'q1', v: 'else' }, { step: 'what_out', v: 'g:not' }]} />);
+    expect(asked).not.toContain('Remember for');
     const cat = { key: 'c:z', kind: 'category', guess: 'Groceries',
                   txn: { id: 'z', date: '2026-10-07', merchant: 'Qwx Market', amount: 23.5 } };
-    expect(html(<Stacked it={cat} act={noop} commit={noop} onSkip={noop} onBack={noop} />))
-      .toContain('Remember for Qwx Market');
-    expect(html(<Stacked it={out} act={noop} commit={noop} onSkip={noop} onBack={noop} />))
-      .not.toContain('Remember for');
+    expect(html(<Stacked it={cat} act={noop} commit={noop} onSkip={noop} onBack={noop} />)).not.toContain('Remember for');
+    const entry = { key: 'c:z', it: cat, answers: [{ step: 'q1', v: 'yes', label: 'Groceries' }], title: 'Confirmed.',
+                    remember: { label: 'Remember for Qwx Market', redo: noop }, remembered: false };
+    const card = html(<SortedCard entry={entry} onNext={noop} onRemember={noop} />);
+    expect(card).toContain('Remember for Qwx Market');
+    expect(card.indexOf('Remember for')).toBeLessThan(card.indexOf('nl-pill-go'));
+    expect(card.indexOf('Remember for')).toBeGreaterThan(card.indexOf('What changed'));
+    // Nothing to remember, or looking back at an earlier card: no box.
+    expect(html(<SortedCard entry={{ ...entry, remember: null }} onNext={noop} onRemember={noop} />)).not.toContain('Remember for');
+    expect(html(<SortedCard entry={entry} isPast onNext={noop} onRemember={noop} />)).not.toContain('Remember for');
   });
 
   it('the list is grouped by question, in a fixed order, oldest first in each', () => {

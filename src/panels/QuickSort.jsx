@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { money, quickSortDone, quickSortSeen, quickSortStep, undoChange } from '../api.js';
 import { Dialog, PButton } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
-import SortCard, { SortedCard } from './SortCard.jsx';
+import SortCard, { SortedCard, rememberEntry } from './SortCard.jsx';
 import './quicksort.css';
 
 /**
@@ -54,12 +54,15 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
   };
   const skip = () => run(() => quickSortStep(item.id, { action: 'skip' }), next);
   // The sort card did the work; the batch notes what it said (QS-04).
-  const commit = (fn, { answers, effect }) => run(async () => {
+  const commit = (fn, { answers, effect, remember = null }) => run(async () => {
     const r = await fn();
     await quickSortStep(item.id, { action: 'marked', title: r.title || '' });
     return r;
   }, (r) => setSorted({ key: item.id, it: asItem(item), answers, effect, title: r.title,
-                        detail: r.detail || effect || '', undo: r.undo, rule: r.rule || '' }));
+                        detail: r.detail || effect || '', undo: r.undo, rule: r.rule || '',
+                        remember, remembered: false }));
+  // Remember on the Sorted card (2026-10-23).
+  const rememberIt = (on) => run(() => rememberEntry(sorted, on), setSorted);
   const reopen = (k = sorted.answers.length - 1) => run(async () => {
     if (sorted.undo) await undoChange(sorted.undo);
   }, () => {
@@ -81,7 +84,8 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
       {error && <p className="pk-error" role="alert">{error.message || 'That didn’t save. Try again.'}</p>}
       <section className="nl-card nl-stack qs-sort" aria-label={sorted ? 'Sorted' : 'Question'}>
         {sorted ? (
-          <SortedCard entry={sorted} busy={busy} onNext={next} onUndo={() => reopen()} onReopen={reopen} />
+          <SortedCard entry={sorted} busy={busy} onNext={next} onUndo={() => reopen()} onReopen={reopen}
+                      onRemember={rememberIt} />
         ) : (
           <SortCard key={`${item.id}-${resume ? 'r' : 'q'}`} it={asItem(item)} categories={categories} busy={busy}
                     commit={commit} onSkip={skip}
