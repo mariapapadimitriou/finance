@@ -237,6 +237,25 @@ def test_who_sent_this_is_asked_for_a_nameless_etransfer(client):
     assert not any(it.get("nameless") for it in r["money_in"])
 
 
+@pytest.mark.parametrize("case", ["pay", "regular_pay", "own", "out_of_savings", "borrowed",
+                                  "lent_back", "refund", "payback", "not_mine"])
+def test_a_nameless_etransfer_sorted_elsewhere_is_not_asked_again(client, case):
+    """2026-10-23: sorted on the transactions tab, a nameless e-Transfer in
+    used to come back in Needs a look as "Who sent this?", so it read as not
+    sorted. Once she has said what it was, it leaves Needs a look."""
+    ids = load(client.st, row(-80, "E-TRANSFER RECEIVED ***R8M"),
+               row(80, "SUSHI NAMI", account="card", kind="credit", merchant="Sushi Nami",
+                   category="Dining"))
+    tid = ids["E-TRANSFER RECEIVED ***R8M"]
+    from finance.review import for_store, ids_in
+    assert tid in ids_in(for_store(client.st))
+    res = client.post(f"/api/transactions/{tid}/mark", json={
+        "case": case, "income_kind": "salary", "account": "", "reason": "", "category": "Dining",
+        "charge": ids["SUSHI NAMI"]})
+    assert res.status_code == 200, res.get_json()
+    assert tid not in ids_in(for_store(client.st))
+
+
 # ── What Pearl decides per category ──────────────────────────────────────
 
 def test_rules_carry_pearls_own_kind_per_category(client):
