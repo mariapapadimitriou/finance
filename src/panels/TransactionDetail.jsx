@@ -8,6 +8,7 @@ import { categoryLabel } from './CategoryPicker.jsx';
 import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
 import { TagEditor } from './WhatWasThis.jsx';
 import SortCard, { SortedCard, prefetchCases } from './SortCard.jsx';
+import { Pill } from './Stacked.jsx';
 import {
   addTransaction, allocateToBank, confirmTx, excludeTransaction, getBanks, getTags, getTx,
   includeTransaction, money, setCategory, setJointFrom, setMerchantName, setMineAlways, setParty,
@@ -190,6 +191,18 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
   const sortDone = () => {
     onSaved?.({ close: true, change: { id: tx.id, title: sorted.title, detail: sorted.detail, undo: sorted.undo } });
   };
+  // Edit, top left of the card (2026-10-23), as on Needs a look: the panel's
+  // own page for a note, tags or its name. After sorting, the change keeps
+  // its toast and Undo, and the page shows the new category.
+  const sortEdit = async () => {
+    if (sorted) {
+      onSaved?.({ close: false, change: { id: tx.id, title: sorted.title, detail: sorted.detail, undo: sorted.undo } });
+      setSorted(null);
+      setResume(null);
+      try { setTx(await getTx(id)); } catch (e) { setError(e); }
+    }
+    back();
+  };
   if (step === 'what' || step === 'category') {
     const unsorted = tx.category === 'Unsorted transfers';
     const label = step === 'category' ? (unsorted ? 'Where did this go?' : 'Change category') : 'What was this?';
@@ -199,6 +212,12 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                            onClick: back }}>
         {error && <p className="txd-error" role="alert">{error.message}</p>}
         <section className="nl-card nl-stack txd-sort" aria-label={sorted ? 'Sorted' : label}>
+          <div className="nl-card-top">
+            <Pill icon="edit" className="nl-edit" disabled={busy}
+                  aria-label={`Edit ${tx.merchant}: note, tags and more`} onClick={sortEdit}>
+              Edit
+            </Pill>
+          </div>
           {sorted ? (
             <SortedCard entry={sorted} busy={busy} nextLabel="Done" showHead={false}
                         onNext={sortDone} onUndo={() => sortReopen()} onReopen={sortReopen} />
