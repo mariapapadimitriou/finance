@@ -581,3 +581,56 @@ def test_undo_puts_every_quick_answer_back_in_needs_a_look(client):
         assert u, tid
         assert client.post("/api/transactions/undo", json=u).status_code == 200
         assert asked(tid), tid
+
+
+def test_a_rule_for_a_name_every_etransfer_shares_is_never_made_or_used(client):
+    """2026-10-23: TD sends every e-Transfer as "Interac e-Transfer". Remember
+    on one put into savings made a rule for that name, and her sister's
+    deposit into their joint account came up Saved · taken out of savings."""
+    from finance.categorize import is_generic_transfer_name
+    for name in ("Interac e-Transfer", "E-transfer", "Send E-tfr Q7K", "E-transfer K2P",
+                 "Internet Transfer", "Mobile Deposit"):
+        assert is_generic_transfer_name(name), name
+    for name in ("E-transfer From Elena", "Lyft", "Wealthsimple Invest", "Landlord Co", "Transfer Wise"):
+        assert not is_generic_transfer_name(name), name
+
+    client.st.set_joint("joint", "Elena")
+    client.st.set_joint_people("joint", ["Elena"])
+    client.st.set_joint_share("joint", 50)
+    out = row(200, "E-TRANSFER", merchant="Interac e-Transfer", when=in_month(3))
+    dep = row(-250, "E-TRANSFER", account="joint", merchant="Interac e-Transfer", when=in_month(9))
+    load(client.st, out, dep)
+    oid = next(t.fingerprint for t in client.st.all_transactions() if t.amount > 0)
+    did = next(t.fingerprint for t in client.st.all_transactions() if t.amount < 0)
+    d = cases(client, oid)
+    assert d["learnable"] is False
+    assert next(c for c in d["cases"] if c["key"] == "saved")["remember"] is None
+    res = mark(client, oid, case="saved", remember=True)
+    assert res["remember"] is False and client.st.overrides() == {}
+    assert client.st.get_transaction(oid).category == "Saved"            # this one, as she said
+    assert client.st.get_transaction(did).category != "Saved"            # not her sister's deposit
+    # A rule like that from before is ignored, and the deposit is asked about.
+    client.st.set_joint_share("joint", None)
+    client.st.set_joint("joint", "Elena")
+    with client.st.conn() as c:
+        c.execute("INSERT INTO merchant_overrides (merchant_key, category) VALUES (?, ?)",
+                  ("interac e-transfer", "Saved"))
+    from finance.pipeline import recategorize_all
+    recategorize_all(client.st)
+    assert client.st.get_transaction(did).category != "Saved"
+    from finance.review import for_store
+    assert any(i["txn"]["id"] == did for i in for_store(client.st)["joint_in"])
+
+
+def test_a_named_merchant_rule_still_works_and_skips_joint_deposits(client):
+    client.st.set_joint("joint", "Elena")
+    ids = load(client.st, row(14.5, "SQ *ROASTED NUT", account="card", kind="credit", merchant="Roasted Nut"),
+               row(-40, "ROASTED NUT", account="joint", merchant="Roasted Nut", when=in_month(6)))
+    mark(client, ids["SQ *ROASTED NUT"], case="spending", category="Coffee", remember=True)
+    assert client.st.overrides() == {"roasted nut": "Coffee"}
+    joint = next(t for t in client.st.all_transactions() if t.account_id == "joint")
+    assert joint.category_source != "merchant_override"          # straight away, too
+    from finance.pipeline import recategorize_all
+    recategorize_all(client.st)
+    joint = next(t for t in client.st.all_transactions() if t.account_id == "joint")
+    assert joint.category_source != "merchant_override"

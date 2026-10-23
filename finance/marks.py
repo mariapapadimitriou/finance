@@ -101,6 +101,11 @@ SAVINGS_SUBTYPES = {"savings", "money market", "hsa", "cash management", "hisa",
                     "tfsa", "rrsp", "fhsa", "resp", "brokerage", "rrif", "lira"}
 
 
+def _generic(t: Transaction) -> bool:
+    from .categorize import is_generic_transfer_name
+    return is_generic_transfer_name(t.merchant)
+
+
 def _key(merchant: str) -> str:
     return " ".join((merchant or "").lower().split())
 
@@ -432,6 +437,8 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
                                       if where and out_ else
                                       f"Do this for every transfer from {where[1]} from now on"
                                       if where else "")
+        elif c["remember"] == "merchant" and _generic(t):
+            item["remember"] = None
         elif c["remember"] == "merchant":
             item["remember_label"] = f"Do this for every {t.merchant} from now on"
         elif c["remember"] == "exclusion":
@@ -465,6 +472,9 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
         "groups": [{"key": k, "label": v} for k, v in (OUT_GROUPS if out_ else IN_GROUPS)],
         "cases": items,
         "accounts": savings_accounts(store),
+        # Whether a rule for this name could ever match the right rows: not
+        # for a name every transfer shares (2026-10-23).
+        "learnable": not _generic(t),
         "saved_to": store.saved_to().get(t.fingerprint),
         "income_kinds": INCOME_KINDS,
         "income_kind": t.income_type,
@@ -567,6 +577,9 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
     def recat(category: str, always: bool = False) -> None:
         nonlocal cat_to, remember
         cat_to = category
+        from .categorize import is_generic_transfer_name
+        if always and is_generic_transfer_name(t.merchant):
+            always = False              # no rule for a name every transfer shares (2026-10-23)
         if always:
             store.set_override(t.merchant, category)
             remember = True

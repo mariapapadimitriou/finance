@@ -470,7 +470,8 @@ def update_transaction(txn_id: str):
 
     # "Apply to merchant" is what makes correction worth doing once rather than
     # every month: it teaches the categorizer permanently.
-    if body.get("apply_to_merchant"):
+    from .categorize import is_generic_transfer_name
+    if body.get("apply_to_merchant") and not is_generic_transfer_name(txn.merchant):
         updated = st.set_override(txn.merchant, category)
         out = {"ok": True, "updated": updated, "scope": "merchant",
                "merchant": txn.merchant}
