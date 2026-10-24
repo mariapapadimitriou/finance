@@ -81,7 +81,7 @@ IN_CASES = (
     {"key": "refund", "label": "A refund", "group": "not_income", "needs": "refund",
      "effect": "Links to the purchase and comes off its category.", "remember": None},
     {"key": "reimbursement", "label": "A reimbursement", "group": "not_income",
-     "needs": "candidates", "effect": "Pays back a work expense you left out.", "remember": None},
+     "needs": "candidates", "effect": "Pays back a work expense. Both leave your numbers.", "remember": None},
     {"key": "own", "label": "From my own account", "group": "not_income", "needs": None,
      "effect": "Your own money moving, so it isn’t counted as income.", "remember": "destination"},
     {"key": "out_of_savings", "label": "Taken out of my savings", "group": "not_income",

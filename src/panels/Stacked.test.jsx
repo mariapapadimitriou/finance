@@ -186,3 +186,18 @@ describe('What kind of income? order (2026-10-23)', () => {
     expect(labels[labels.length - 1]).toBe('Other income');
   });
 });
+
+describe('Paid back and reimbursed (2026-10-23)', () => {
+  it('Paid back has its own two-people icon, and a reimbursement can be found among any charge', async () => {
+    const { tilesFor } = await import('./SortCard.jsx');
+    const { S } = steps({ key: 'tx:b', kind: 'panel', txn: inn.txn }, null, 'all');
+    expect(S.all.options.find((o) => o.v === 'payback').icon).toBe('paidBack');
+    void tilesFor;
+    const { default: SortCard } = await import('./SortCard.jsx');
+    const page = html(<SortCard it={inn} commit={noop}
+                                initialPath={[{ step: 'q1', v: 'else' }, { step: 'what_in', v: 'reimbursement' }]} />);
+    expect(page).toContain('Which expense does it pay back?');
+    expect(page).toContain('Find by name or amount');
+    expect(page).not.toContain('Mark the expense first');
+  });
+});
