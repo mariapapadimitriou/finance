@@ -100,7 +100,7 @@ export const DEFAULT_CASES = {
     { key: 'regular_pay', label: 'This is my regular pay', group: 'income', needs: null, effect: 'Pearl uses it for your monthly income from now on.', remember: null },
     { key: 'payback', label: 'Someone paying me back', group: 'not_income', needs: 'candidates', effect: 'Comes off what you spent for them. Never income.', remember: null },
     { key: 'refund', label: 'A refund', group: 'not_income', needs: 'refund', effect: 'Links to the purchase and comes off its category.', remember: null },
-    { key: 'reimbursement', label: 'A reimbursement', group: 'not_income', needs: 'candidates', effect: 'Pays back a work expense you left out.', remember: null },
+    { key: 'reimbursement', label: 'A reimbursement', group: 'not_income', needs: 'candidates', effect: 'Pays back a work expense. Both leave your numbers.', remember: null },
     { key: 'own', label: 'From my own account', group: 'not_income', needs: null, effect: 'Your own money moving, so it isn’t counted as income.', remember: 'destination' },
     { key: 'out_of_savings', label: 'Taken out of my savings', group: 'not_income', needs: null, effect: 'Comes off your total saved. It isn’t income.', remember: 'destination' },
     { key: 'borrowed', label: 'Money I borrowed', group: 'not_income', needs: null, effect: 'A loan, so it isn’t counted as income.', remember: null },
@@ -153,7 +153,7 @@ function optionFor(c, { nameless = false } = {}) {
 const TILE = {
   spending: ['A purchase', 'cart'], bill: ['A bill', 'zap'], shared: ['Split with others', 'users'],
   saved_part: ['Part put away', 'target'],
-  pay: ['Pay', 'banknote'], payback: ['Paid back', 'handOpen'], refund: ['A refund', 'refresh'],
+  pay: ['Pay', 'banknote'], payback: ['Paid back', 'paidBack'], refund: ['A refund', 'refresh'],
   reimbursement: ['Reimbursed', 'laptop'], joint_them: ['Someone else’s', 'user'], not_mine: ['Not mine', 'ban'],
 };
 // An icon for each kind of income (2026-10-23).
@@ -432,7 +432,9 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
 
   const flow = useMemo(() => steps(it, cases, mode), [it, cases, mode]);
   const stepIdNow = path.length ? nextOf(flow, path[path.length - 1]) : flow.start;
-  const picking = flow.S[stepIdNow]?.ask === 'pick' && flow.S[stepIdNow]?.key !== 'reimbursement';
+  // Any of her charges can be found (2026-10-23), a reimbursement's too:
+  // no need to mark the expense first.
+  const picking = flow.S[stepIdNow]?.ask === 'pick';
   useEffect(() => {
     if (!picking) { setFound(null); return undefined; }
     let live = true;
@@ -538,7 +540,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       if (s.key === 'refund' && v === '') return undefined;                 // a category comes next
       const effect = s.key === 'payback' ? `Comes off what you spent at ${cand?.merchant}. Not income.`
         : s.key === 'refund' ? `Comes off ${cand?.category || ''}. Not income.`
-          : 'Pays back a work expense you left out. Not income.';
+          : 'Pays back a work expense. Not income.';
       const who = cand?.person || (s.key === 'payback' ? nameIn(it.txn.merchant) : '');
       return finish(answers, effect, () => via({ case: s.key, charge: v, ...(who ? { person: who } : {}) }, 'Sorted.'));
     }
@@ -802,12 +804,10 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
             );
             return (
               <>
-                {step.key !== 'reimbursement' && (
-                  <div className="txd-field nl-find">
-                    <input type="search" value={find} aria-label="Find the purchase" placeholder="Find by name or amount"
-                           autoComplete="off" disabled={busy} onChange={(e) => setFind(e.target.value)} />
-                  </div>
-                )}
+                <div className="txd-field nl-find">
+                  <input type="search" value={find} aria-label="Find the purchase" placeholder="Find by name or amount"
+                         autoComplete="off" disabled={busy} onChange={(e) => setFind(e.target.value)} />
+                </div>
                 <div className="pk-choices" role="radiogroup" aria-label={step.title}>
                   {shown.map((c) => rowFor(c))}
                   {!find && more.slice(0, 6).map((c) => rowFor(c))}
@@ -823,8 +823,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
                   {find && found && !found.length && (
                     <p className="pk-muted">Nothing called “{find}” in the last six months of spending.</p>
                   )}
-                  {step.key === 'reimbursement' && !step.candidates.length && (
-                    <p className="pk-muted">Pearl can’t see a work expense this pays back yet. Mark the expense first, from its own page.</p>
+                  {!find && found && !found.length && !step.candidates.length && (
+                    <p className="pk-muted">No spending in the last six months to link it to.</p>
                   )}
                 </div>
               </>
