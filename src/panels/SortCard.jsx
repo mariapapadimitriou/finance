@@ -156,6 +156,14 @@ const TILE = {
   pay: ['Pay', 'banknote'], payback: ['Paid back', 'handOpen'], refund: ['A refund', 'refresh'],
   reimbursement: ['Reimbursed', 'laptop'], joint_them: ['Someone else’s', 'user'], not_mine: ['Not mine', 'ban'],
 };
+// An icon for each kind of income (2026-10-23).
+const KIND_ICONS = {
+  salary: 'banknote', regular_pay: 'clock', bonus: 'sparkle', interest: 'percent', gifts: 'gift',
+  government: 'landmark', tax_refund: 'refresh', other: 'dots',
+};
+// The usual ones first, Other last.
+const KIND_ORDER = ['salary', 'regular_pay', 'bonus', 'interest', 'gifts', 'government', 'tax_refund', 'other'];
+const kindOrder = (k) => (KIND_ORDER.includes(k) ? KIND_ORDER.indexOf(k) : KIND_ORDER.length - 1);
 const FOLDS = {
   out: [
     { id: 'own', label: 'My own money', icon: 'arrows', title: 'Where did it go?', keys: {
@@ -714,14 +722,19 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
                            onChange={(v) => { setCat(v); saveAsk(step, v, categoryLabel(v)); }} />
           )}
           {step.ask === 'kind' && (
-            <div className="pk-choices nl-grid" role="radiogroup" aria-label={step.title}>
-              {Object.entries(cases?.income_kinds ?? INCOME_KINDS).map(([k, label]) => (
-                <Choice key={k} name={group} checked={false} disabled={busy}
-                        onChange={() => saveAsk(step, k, label)} label={label}
-                        description={it.kind === 'income' && it.guess === k ? 'Pearl’s guess' : undefined} />
+            // Tiles with an icon each (2026-10-23), like What was this?;
+            // Pearl's guess has the dashed outline the category tiles use.
+            <div className="nl-tiles" role="radiogroup" aria-label={step.title}>
+              {[...Object.entries(cases?.income_kinds ?? INCOME_KINDS), ['regular_pay', 'My regular pay']]
+                .sort((a, b) => kindOrder(a[0]) - kindOrder(b[0])).map(([k, label]) => (
+                <button key={k} type="button" role="radio" aria-checked="false" disabled={busy}
+                        className={`pk-ctile nl-tile${it.kind === 'income' && it.guess === k ? ' guess' : ''}`}
+                        aria-label={it.kind === 'income' && it.guess === k ? `${label}, Pearl’s guess` : label}
+                        onClick={() => saveAsk(step, k, label)}>
+                  <span className="pk-ctile-icon" aria-hidden="true"><PIcon name={KIND_ICONS[k] || 'dots'} size={20} /></span>
+                  <span className="pk-ctile-label">{label}</span>
+                </button>
               ))}
-              <Choice name={group} checked={false} disabled={busy}
-                      onChange={() => saveAsk(step, 'regular_pay', 'My regular pay')} label="This is my regular pay" />
             </div>
           )}
           {step.ask === 'amount' && (
