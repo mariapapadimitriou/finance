@@ -208,3 +208,70 @@ def brief(r: dict, exact: bool = False) -> dict:
     return {"charge_id": c.fingerprint, "merchant": c.merchant, "date": c.date[:10],
             "amount": round(c.amount, 2), "name": r["name"], "owes": r["owes"],
             "share": r["amount"], "exact": exact}
+
+
+# ── A payback that makes the split (THL-260, 2026-10-24) ─────────────────
+# Linking money in to a purchase that was never split ("Paid back" → any
+# charge) turns the purchase into a split with whoever sent it, so the split
+# card shows them, paid back. The payback is marked as having made its
+# person's place in the split, so unlinking it takes them out again.
+MADE_SPLIT = "made_split"
+
+
+def add_payer(store, charge: Transaction, inflow: Transaction, person: str | None):
+    """Put the sender into the charge's split for what they sent, if they
+    aren't in it already. Returns what to put back for an Undo
+    ({"split", "share"}), or None when nothing changed: no name, a joint
+    charge, a share she typed without a split, someone already in the split,
+    or more than her part is left."""
+    person = " ".join((person or "").split())[:MAX_NAME]
+    if not person or charge.joint or charge.amount <= 0 or inflow.amount >= 0:
+        return None
+    current = store.splits().get(charge.fingerprint)
+    if current is None and charge.share_set:
+        return None
+    people = list(current["people"]) if current else []
+    if any(first_name(p["name"]) == first_name(person) for p in people):
+        return None
+    got = round(-inflow.amount, 2)
+    if current is None and (charge.paid_back or 0.0) - got > 0.005:
+        # Others already paid some of it back with no split to say who;
+        # a split now would have to guess their names, so it nets as before.
+        return None
+    yours = round(charge.my_share if current and charge.my_share is not None else charge.amount, 2)
+    if got > yours + 0.005:
+        return None
+    was = {"split": current, "share": charge.my_share if charge.share_set else None}
+    people.append({"name": person, "amount": got})
+    store.set_split(charge.fingerprint, "amount", people, current["watch"] if current else True)
+    store.set_share(charge.fingerprint, round(yours - got, 2))
+    store.set_payback_kind(inflow.fingerprint, MADE_SPLIT)
+    return was
+
+
+def drop_payer(store, inflow: Transaction):
+    """Undo `add_payer` when the payback is unlinked or moved: its person
+    leaves the split and their part is hers again; a split left with nobody
+    goes. Returns what to put back for an Undo, or None."""
+    if not inflow.repays or store.payback_kinds().get(inflow.fingerprint) != MADE_SPLIT:
+        return None
+    charge = store.get_transaction(inflow.repays)
+    current = store.splits().get(inflow.repays)
+    store.set_payback_kind(inflow.fingerprint, None)
+    if charge is None or current is None:
+        return None
+    person = store.payback_people().get(inflow.fingerprint)
+    got = round(-inflow.amount, 2)
+    idx = next((i for i, p in enumerate(current["people"])
+                if p["name"] == person and abs(p["amount"] - got) < 0.01), None)
+    if idx is None:
+        return None
+    was = {"split": current, "share": charge.my_share if charge.share_set else None}
+    people = [p for i, p in enumerate(current["people"]) if i != idx]
+    if people:
+        store.set_split(charge.fingerprint, current["mode"], people, current["watch"])
+        store.set_share(charge.fingerprint, round((charge.my_share or 0.0) + got, 2))
+    else:
+        store.clear_split(charge.fingerprint)
+        store.set_share(charge.fingerprint, None)
+    return was

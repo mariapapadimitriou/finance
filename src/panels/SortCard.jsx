@@ -54,6 +54,15 @@ export function nameIn(text = '') {
   return (m ? m[1] : '').replace(/\*+/g, '').trim();
 }
 
+/** What a payback does (THL-260): a purchase nobody split becomes a split
+ * with whoever sent it; one already split just has their part paid. */
+export function paybackEffect(cand, who, amt) {
+  if (who && cand && !cand.split) {
+    return `${cand.merchant} becomes a split with ${who}. Their ${amt} comes off what you spent. Not income.`;
+  }
+  return `Comes off what you spent at ${cand?.merchant}. Not income.`;
+}
+
 const isOut = (it) => (it.txn?.amount ?? 0) > 0;
 
 // What the server says about each transaction's answers, kept for the visit
@@ -538,11 +547,16 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       const cand = s.candidates.find((x) => x.id === v) ?? (found ?? []).find((x) => x.id === v);
       if (s.key === 'payback' && !v) return finish(answers, 'A friend paying back what you lent, so it isn’t counted as income.', () => via({ case: 'lent_back' }, 'Sorted as money you lent, paid back.'));
       if (s.key === 'refund' && v === '') return undefined;                 // a category comes next
-      const effect = s.key === 'payback' ? `Comes off what you spent at ${cand?.merchant}. Not income.`
-        : s.key === 'refund' ? `Comes off ${cand?.category || ''}. Not income.`
-          : 'Pays back a work expense. Not income.';
-      const who = cand?.person || (s.key === 'payback' ? nameIn(it.txn.merchant) : '');
-      return finish(answers, effect, () => via({ case: s.key, charge: v, ...(who ? { person: who } : {}) }, 'Sorted.'));
+      // The name she typed on "Who sent this?", when the bank left it off.
+      const typed = s.key === 'payback' ? (answered('name') || '').trim() : '';
+      const who = cand?.person || (s.key === 'payback' ? typed || nameIn(it.txn.merchant) : '');
+      const effect = s.key === 'payback' ? paybackEffect(cand, who, amt)
+          : s.key === 'refund' ? `Comes off ${cand?.category || ''}. Not income.`
+            : 'Pays back a work expense. Not income.';
+      return finish(answers, effect, async () => {
+        if (typed) await setParty(it.txn.id, typed).catch(() => {});
+        return via({ case: s.key, charge: v, ...(who ? { person: who } : {}) }, 'Sorted.');
+      });
     }
     if (s.ask === 'name') {
       const how = c?.key || answered('what_out');

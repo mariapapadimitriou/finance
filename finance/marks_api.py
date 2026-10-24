@@ -115,7 +115,7 @@ def mark_transaction(txn_id: str):
     if res["marks"]:
         undo["marks"] = res["marks"]
     return jsonify({"ok": True, "id": txn_id, "case": case, "title": res["title"],
-                    "detail": impact.get("detail") or "", "impact": impact,
+                    "detail": res.get("detail") or impact.get("detail") or "", "impact": impact,
                     "remember": res["remember"], "undo": undo})
 
 
