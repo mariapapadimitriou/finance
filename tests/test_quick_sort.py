@@ -37,14 +37,19 @@ def ledger(c, extra=()):
 
 
 class TestThePrompt:
-    def test_shows_only_for_new_unsure_rows(self, client):
+    def test_counts_what_needs_a_look_counts(self, client):
+        """2026-10-24: one number. The prompt counts every question Needs a
+        look asks, not only the unsure categories, and lists them as keys."""
         ledger(client)
-        assert client.get("/api/quick-sort").get_json() == {
-            "show": False, "count": 0, "items": [], "shown_today": False, "safe_to_spend": None}
+        review = client.get("/api/review").get_json()
+        body = client.get("/api/quick-sort").get_json()
+        assert body["count"] == review["count"] == client.get("/api/home").get_json()["review_count"]
+        assert body["show"] == (review["count"] > 0) and len(body["keys"]) == body["count"]
+        assert body["items"] == []                       # no unsure categories yet
         ledger(client, [unsure("2026-10-08", "Shoppers Drug Mart", 18.47, "Personal Care", account="visa"),
                         tx("2026-10-07", "MYSTERY SHOP", 42.00, "Other", category_source="issuer")])
         body = client.get("/api/quick-sort").get_json()
-        assert body["show"] and body["count"] == 2
+        assert body["show"] and body["count"] == client.get("/api/review").get_json()["count"] == review["count"] + 2
         first = body["items"][0]
         assert first["merchant"] == "Shoppers Drug Mart" and first["guess"] == "Personal Care"
         assert first["date"] == "2026-10-08" and first["amount"] == 18.47 and not first["inflow"]
@@ -54,8 +59,9 @@ class TestThePrompt:
 
     def test_once_a_day_and_never_the_same_rows_twice(self, client):
         rows = ledger(client, [unsure("2026-10-08", "Shoppers Drug Mart", 18.47, "Personal Care")])
-        ids = [i["id"] for i in client.get("/api/quick-sort").get_json()["items"]]
-        assert client.post("/api/quick-sort/seen", json={"ids": ids, "start": False}).get_json()["ok"]
+        first = client.get("/api/quick-sort").get_json()
+        ids = [i["id"] for i in first["items"]]
+        assert client.post("/api/quick-sort/seen", json={"ids": first["keys"], "start": False}).get_json()["ok"]
         body = client.get("/api/quick-sort").get_json()
         assert not body["show"] and body["shown_today"] and body["items"] == []
         # The row stays in Needs a look.
@@ -83,7 +89,8 @@ class TestThePrompt:
         ledger(client, [unsure(f"2026-10-{d:02d}", f"Shop {d}", 5.0 + d, "Shopping") for d in range(1, 9)]
                + [unsure("2026-09-30", f"Older {i}", 3.0 + i, "Shopping") for i in range(5)])
         body = client.get("/api/quick-sort").get_json()
-        assert body["count"] == 10 and len(body["items"]) == 10
+        # Every question counts; the category cards older apps use stop at ten.
+        assert body["count"] == client.get("/api/review").get_json()["count"] and len(body["items"]) == 10
 
 
 class TestTheCards:

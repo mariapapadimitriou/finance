@@ -3,6 +3,7 @@ import { money, quickSortDone, quickSortSeen, quickSortStep, undoChange } from '
 import { Dialog, PButton } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import SortCard, { SortedCard, loadCases, rememberEntry, resumeFor } from './SortCard.jsx';
+import { Question, STACKED, minutes, queue } from './NeedsALook.jsx';
 import './quicksort.css';
 
 /**
@@ -16,6 +17,11 @@ import './quicksort.css';
  * Next, and "Later" at the top throughout; QS-04 the done screen: safe to
  * spend before → after, one line on why, and how many rules were saved.
  * Shown at most once a day. Later and anything skipped stay in Needs a look.
+ *
+ * One number (2026-10-24): the cards are Needs a look's own list, in its
+ * order (`queue`), every kind of question, so the prompt's count is the
+ * badge's, Home's and To review's. Older servers send only `items` (the
+ * unsure categories), which still work as before.
  */
 export default function QuickSort({ data, categories = [], onClose, onChanged }) {
   const [step, setStep] = useState('prompt');
@@ -26,9 +32,10 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
   // The card just sorted (the Sorted card), and where to pick up after Undo.
   const [sorted, setSorted] = useState(null);
   const [resume, setResume] = useState(null);
-  const items = data.items ?? [];
-  const ids = items.map((x) => x.id);
+  const items = data.review ? queue(data.review) : (data.items ?? []).map(asItem);
+  const ids = data.keys ?? items.map((x) => x.key);
   const item = items[i];
+  const txnId = item?.txn?.id;
 
   const run = async (fn, then) => {
     setBusy(true); setError(null);
@@ -52,27 +59,32 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
     if (i + 1 < items.length) { setI(i + 1); setStep('card'); return; }
     run(() => quickSortDone(), (r) => { setDone(r); setStep('done'); onChanged?.(); });
   };
-  const skip = () => run(() => quickSortStep(item.id, { action: 'skip' }), next);
+  const skip = () => (txnId ? run(() => quickSortStep(txnId, { action: 'skip' }), next) : next());
   // The sort card did the work; the batch notes what it said (QS-04).
   const commit = (fn, { answers, effect, remember = null }) => run(async () => {
     const r = await fn();
-    await quickSortStep(item.id, { action: 'marked', title: r.title || '' });
+    if (txnId) await quickSortStep(txnId, { action: 'marked', title: r.title || '' }).catch(() => {});
     return r;
-  }, (r) => setSorted({ key: item.id, it: asItem(item), answers, effect, title: r.title,
+  }, (r) => setSorted({ key: item.key, it: item, answers, effect, title: r.title,
                         detail: r.detail || effect || '', undo: r.undo, rule: r.rule || '',
                         remember, remembered: false }));
   // Remember on the Sorted card (2026-10-23).
   const rememberIt = (on) => run(() => rememberEntry(sorted, on), setSorted);
   const reopen = (k = sorted.answers.length - 1, pick) => run(async () => {
     if (sorted.undo) await undoChange(sorted.undo);
-    await loadCases(item.id).catch(() => null);      // drawn at once when the card swaps back
+    if (txnId) await loadCases(txnId).catch(() => null);   // drawn at once when the card swaps back
   }, () => {
     setResume(resumeFor(sorted.answers, k, pick));
     setSorted(null);
   });
   const finish = () => { onClose?.(); };
+  // A one-step question (a third paycheque) answered outright.
+  const act = async (fn) => {
+    setBusy(true); setError(null);
+    try { await fn(); } catch (e) { setError(e); } finally { setBusy(false); }
+  };
 
-  if (step === 'prompt') return <Prompt count={items.length} busy={busy} error={error} onStart={start} onLater={later} />;
+  if (step === 'prompt') return <Prompt count={data.count ?? items.length} busy={busy} error={error} onStart={start} onLater={later} />;
   if (step === 'done') return <Done r={done} onDone={finish} />;
   if (!item) return null;
   return (
@@ -85,11 +97,14 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
         {sorted ? (
           <SortedCard entry={sorted} busy={busy} onNext={next} onUndo={() => reopen()} onReopen={reopen}
                       onRemember={rememberIt} />
-        ) : (
-          <SortCard key={`${item.id}-${resume ? 'r' : 'q'}`} it={asItem(item)} categories={categories} busy={busy}
+        ) : STACKED.has(item.kind) ? (
+          <SortCard key={`${item.key}-${resume ? 'r' : 'q'}`} it={item} categories={categories} busy={busy}
                     commit={commit} onSkip={skip}
                     initialPath={resume?.path ?? null} initialEdit={resume?.edit ?? null} initialName={resume?.name ?? ''}
                     initialPick={resume?.pick ?? null} />
+        ) : (
+          <Question key={item.key} it={item} categories={categories} busy={busy} onSkip={skip}
+                    act={act} commit={commit} onBack={next} />
         )}
       </section>
     </Dialog>
@@ -139,10 +154,10 @@ export function Prompt({ count, busy, error, onStart, onLater }) {
     <Dialog labelledBy="qs-title" describedBy="qs-sub" onClose={onLater} className="qs-dialog">
       <p className="pk-overline accent">Welcome back</p>
       <h2 className="pk-h2" id="qs-title">
-        {count === 1 ? 'You’ve got 1 new transaction to sort' : `You’ve got ${count} new transactions to sort`}
+        {count === 1 ? '1 transaction needs a look' : `${count} transactions need a look`}
       </h2>
       <p className="pk-muted" id="qs-sub">
-        Pearl isn’t sure what {count === 1 ? 'it was' : 'these were'}. Sorting {count === 1 ? 'it' : 'them'} keeps Allowance right, and takes about a minute.
+        Sorting {count === 1 ? 'it' : 'them'} keeps Allowance right, and takes {minutes(count)}.
       </p>
       {error && <p className="pk-error" role="alert">{error.message || 'Something went wrong. Try again.'}</p>}
       <div className="qs-actions">

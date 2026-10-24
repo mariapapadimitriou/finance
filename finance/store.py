@@ -1996,15 +1996,13 @@ class Store:
                 (category, key),
             )
             count = cur.rowcount
-        # The same merchant under the bank's other spellings (2026-10-23), so
-        # the rows still waiting in Needs a look are sorted by it too.
-        from .categorize import apply_categories, family_rows, merchant_key
+        # A rule is for its merchant's name only (2026-10-24), not names that
+        # start the same. Money into a joint account from outside is hers to
+        # answer, not a rule's (2026-10-23): the update above is put right.
+        from .categorize import apply_categories, merchant_key
         txns = self.all_transactions()
-        family = family_rows(key, txns)
-        # Money into a joint account from outside is hers to answer, not a
-        # rule's (2026-10-23): the update above is put right for those.
-        family += [t for t in txns if merchant_key(t.merchant) == key and t.joint and t.amount < 0
-                   and not t.joint_from and t.category_source == "merchant_override" and t not in family]
+        family = [t for t in txns if merchant_key(t.merchant) == key and t.joint and t.amount < 0
+                  and not t.joint_from and t.category_source == "merchant_override"]
         before = {t.fingerprint: (t.category, t.category_source) for t in family}
         apply_categories(family, self.overrides())
         changed = {t.fingerprint: (t.category, t.category_source) for t in family

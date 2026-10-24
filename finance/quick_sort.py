@@ -140,22 +140,49 @@ def safe_to_spend(st, transactions: list[Transaction], today: date) -> float | N
     return sts.get("shown") if sts.get("shown") is not None else sts.get("amount")
 
 
+def questions(review: dict) -> list[tuple[str, str | None]]:
+    """Every question Needs a look asks, as (key, transaction id): the same
+    list, so Quick sort and Needs a look count the same (2026-10-24)."""
+    out = [("u:" + t["id"], t["id"]) for t in (review.get("unsorted") or {}).get("transfers", [])]
+    for part in ("unsure_category", "money_in", "joint_in", "who_sent", "income_type",
+                 "three_pay_month", "duplicate"):
+        for it in review.get(part) or []:
+            out.append((it["key"], (it.get("txn") or {}).get("id")))
+    return out
+
+
 def prompt(st, transactions: list[Transaction], today: date, everything: bool = False) -> dict:
-    """What the app asks on open: whether to show the prompt, and the cards.
-    With `everything`, the cards for every unsure row still in Needs a look,
-    for "Quick sort all" on To review."""
-    cards = items(st, transactions, today, everything)
+    """What the app asks on open: whether to show the prompt, and what is in it.
+
+    One number for the whole app (2026-10-24): the prompt counts everything
+    Needs a look asks about, and Quick sort walks that same list (`review`,
+    which the app turns into cards the way Needs a look does). It shows once
+    a day, only when something is new since it last offered — or always,
+    with `everything`, for the Quick sort button on Home and To review.
+    `items` are the category cards on their own, kept for older apps."""
+    from .review import for_store
+    review = for_store(st, today.isoformat())
+    asked = questions(review)
+    seen = set(offered(st))
+    new = [k for k, tid in asked if k not in seen and (tid is None or tid not in seen)]
     shown_today = st.setting(SHOWN_KEY) == today.isoformat()
-    return {"show": bool(cards) and not shown_today, "count": len(cards), "items": cards,
-            "shown_today": shown_today,
-            "safe_to_spend": safe_to_spend(st, transactions, today) if cards else None}
+    count = review.get("count", 0)
+    show = count > 0 and (everything or (bool(new) and not shown_today))
+    cards = items(st, transactions, today, everything)
+    return {"show": show, "count": count, "keys": [k for k, _ in asked], "review": review,
+            "items": cards, "shown_today": shown_today,
+            "safe_to_spend": safe_to_spend(st, transactions, today) if count else None}
 
 
 def begin(st, transactions: list[Transaction], today: date, ids: list[str], start: bool) -> dict:
     """Start (QS-02) or Later (QS-01): either way the prompt is done for
     today and these rows aren't new any more."""
     st.set_setting(SHOWN_KEY, today.isoformat())
-    mark_offered(st, ids)
+    # The app sends the questions' keys (2026-10-24); the rows they ask
+    # about are offered too, so neither comes back as new.
+    from .review import for_store
+    asked = dict(questions(for_store(st, today.isoformat())))
+    mark_offered(st, list(ids) + [asked[i] for i in ids if asked.get(i)])
     if start:
         by_id = {t.fingerprint: t for t in transactions}
         _save(st, BATCH_KEY, {

@@ -414,7 +414,7 @@ def is_unsure(t) -> bool:
 
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
-RULES_VERSION = 12
+RULES_VERSION = 13
 
 
 def plaid_category(code: str) -> str | None:
@@ -562,36 +562,9 @@ def merchant_key(merchant: str) -> str:
     return " ".join((merchant or "").lower().split())
 
 
-def same_merchant(a: str, b: str) -> bool:
-    """One merchant under two of the bank's spellings (2026-10-23): the same
-    name, or one with words added on the end — "Lyft" and "Lyft Ride Tue
-    6PM", "Uber Eats" and "Uber Eats Pending"."""
-    a, b = merchant_key(a), merchant_key(b)
-    if not a or not b or "unknown" in (a, b) or min(len(a), len(b)) < 3:
-        return False
-    return a == b or b.startswith(a + " ") or a.startswith(b + " ")
-
-
-def family_rule(merchant: str, overrides: dict[str, str] | None) -> str | None:
-    """Her rule for another spelling of this merchant, the most specific one."""
-    keys = [k for k in (overrides or {}) if not k.startswith("entity:") and same_merchant(k, merchant)]
-    return overrides[max(keys, key=len)] if keys else None
-
-
 def is_guess(t) -> bool:
     """A category Pearl isn't sure of: the ones Needs a look asks about."""
     return is_unsure(t) or (t.category or "Other") == "Other"
-
-
-def family_rows(merchant: str, transactions) -> list:
-    """Rows a rule for this merchant also sorts under another spelling of its
-    name: only ones still a guess (or filed by such a rule before), never one
-    she sorted herself."""
-    key = merchant_key(merchant)
-    return [t for t in transactions
-            if merchant_key(t.merchant) != key and same_merchant(key, t.merchant)
-            and t.category_source not in ("user", "range")
-            and (is_guess(t) or t.category_source == "merchant_override")]
 
 
 def apply_categories(transactions, overrides: dict[str, str] | None = None) -> None:
@@ -618,11 +591,8 @@ def apply_categories(transactions, overrides: dict[str, str] | None = None) -> N
         )
         if _is_unrecognized_card_inflow(t):
             t.category, t.category_source = "Transfers", "card_inflow"
-        # Still a guess: her rule for another spelling of the merchant decides.
-        elif t.category_source != "merchant_override" and is_guess(t):
-            ruled = None if is_generic_transfer_name(t.merchant) else family_rule(t.merchant, rules)
-            if ruled:
-                t.category, t.category_source = ruled, "merchant_override"
+        # A rule is for its merchant's name only (2026-10-24): "Lyft" no
+        # longer sorts "Lyft Ride Tue 6PM", which stays Pearl's own guess.
 
 
 def _is_unrecognized_card_inflow(t) -> bool:

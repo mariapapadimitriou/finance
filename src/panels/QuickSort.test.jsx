@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Done, Progress, Prompt, asItem, effectWords, rulesWords } from './QuickSort.jsx';
+import QuickSort, { Done, Progress, Prompt, asItem, effectWords, rulesWords } from './QuickSort.jsx';
 import SortCard from './SortCard.jsx';
 
 const html = (el) => renderToStaticMarkup(el);
@@ -19,11 +19,21 @@ describe('Quick sort (QS-01 to QS-04)', () => {
   it('the prompt says how many and offers Start and Later', () => {
     const out = html(<Prompt count={6} onStart={noop} onLater={noop} />);
     expect(out).toContain('Welcome back');
-    expect(out).toContain('You’ve got 6 new transactions to sort');
-    expect(out).toContain('takes about a minute');
+    expect(out).toContain('6 transactions need a look');
+    expect(out).toContain('takes about 2 minutes');
     expect(out).toContain('>Start<');
     expect(out).toContain('>Later<');
-    expect(html(<Prompt count={1} onStart={noop} onLater={noop} />)).toContain('You’ve got 1 new transaction to sort');
+    expect(html(<Prompt count={1} onStart={noop} onLater={noop} />)).toContain('1 transaction needs a look');
+  });
+
+  it('counts what Needs a look counts: every kind of question (2026-10-24)', () => {
+    const review = {
+      count: 3, unsorted: { transfers: [{ id: 'u1', date: '2026-10-05', merchant: 'Internet Transfer To', amount: 120 }], groups: [] },
+      unsure_category: [{ key: 'cat:m1', txn: { id: 'm1', date: '2026-10-09', merchant: 'Mystery Shop', amount: 40 }, guess: 'Other' }],
+      joint_in: [{ key: 'joint:j1', txn: { id: 'j1', date: '2026-10-04', merchant: 'Tfr-fr', amount: -300 } }],
+    };
+    const out = html(<QuickSort data={{ count: 3, keys: ['u:u1', 'cat:m1', 'joint:j1'], review }} categories={categories} />);
+    expect(out).toContain('3 transactions need a look');
   });
 
   it('the card is the sort card: the transaction, "Is this Personal Care?" and the progress', () => {

@@ -580,7 +580,7 @@ function TxHead({ txn, name }) {
 }
 
 /** The one-step questions: a duplicate (D-02) and a third paycheque. */
-function Question({ it, busy, onSkip, act, commit, onBack }) {
+export function Question({ it, busy, onSkip, act, commit, onBack }) {
   if (it.kind === 'duplicate') {
     return (
       <>
