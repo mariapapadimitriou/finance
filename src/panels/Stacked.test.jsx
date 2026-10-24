@@ -18,7 +18,7 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
     expect(page).toContain('Wednesday, October 7 · from TD Chequing ••4417');
     expect(page).toContain('-$200.00');
     expect(page).toContain('Was this spending?');
-    for (const a of ['Yes, I bought something', 'No, I saved it', 'No, something else']) expect(page).toContain(a);
+    for (const a of ['Yes, I spent something', 'No, I saved it', 'No, something else']) expect(page).toContain(a);
     expect(page).toContain('0 of 3');
     expect(page).toContain('Skip for now');
     expect(page).not.toContain('Save and next');
@@ -142,7 +142,7 @@ describe('Answered steps fold and slide (2026-10-23)', () => {
     const flow = steps(out, null);
     const open = html(<DoneRows path={[{ step: 'q1', v: 'spent' }]} flow={flow} editing={0} onOpen={noop} onPick={noop} />);
     expect(open).toContain('class="nl-fold in"');
-    expect(open).toContain('Yes, I bought something');
+    expect(open).toContain('Yes, I spent something');
     const shut = html(<DoneRows path={[{ step: 'q1', v: 'spent' }]} flow={flow} editing={null} onOpen={noop} onPick={noop} />);
     expect(shut).not.toContain('nl-fold');
     const card = html(<SortCard it={out} commit={noop} />);
