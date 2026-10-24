@@ -179,7 +179,7 @@ export default function App() {
   // before (2026-10-21).
   const openQuickSort = useCallback(() => {
     getQuickSort({ all: true }).then((q) => {
-      if (q?.items?.length) setQuickSort({ ...q, show: true });
+      if (q?.count) setQuickSort({ ...q, show: true });
     }).catch(() => {});
   }, []);
   // A-14: signed out for being idle in this page's life, so signing back in
