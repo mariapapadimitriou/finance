@@ -273,6 +273,11 @@ class Transaction:
     paid_back: float | None = None
     # On money coming in: the charge it paid you back for.
     repays: str | None = None
+    # Refunds linked to a purchase (2026-10-24): on the purchase, what came
+    # back; on the refund, the purchase it is of. The refund comes off the
+    # purchase, like a payback, and doesn't count again on its own.
+    refunded: float = 0.0
+    refund_of: str | None = None
     # The label of the joint account this row is on ("Family"), if it is one.
     # A row on one is hers, less what the other person put in that month,
     # unless she set a share — `share_set` says whether she did on this row.
@@ -386,6 +391,8 @@ class Transaction:
             paid_back=(None if row.get("paid_back") is None
                        else round(float(row["paid_back"]), 2)),
             repays=row.get("repays"),
+            refunded=round(float(row.get("refunded") or 0.0), 2),
+            refund_of=row.get("refund_of") or None,
             joint=row.get("joint") or None,
             share_set=row.get("my_share") is not None,
             excluded=row.get("excluded") or None,

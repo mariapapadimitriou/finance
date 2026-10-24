@@ -1063,6 +1063,23 @@ class Store:
         # Joint charges are hers, or her set share, until she marks them
         # (2026-10-23): no month ratio from the others' deposits any more.
         dicts = [dict(r) for r in rows]
+        # A refund linked to its purchase comes off the purchase (2026-10-24).
+        if dicts:
+            with self.conn() as c:
+                links = c.execute("""SELECT f.inflow_id AS inflow_id, f.charge_id AS charge_id,
+                                            r.amount AS amount
+                                       FROM txn_refunds f
+                                       JOIN transactions r ON r.id = f.inflow_id""").fetchall()
+            back: dict[str, float] = {}
+            of: dict[str, str] = {}
+            for l in links:
+                back[l["charge_id"]] = back.get(l["charge_id"], 0.0) - float(l["amount"] or 0.0)
+                of[l["inflow_id"]] = l["charge_id"]
+            for d in dicts:
+                if d.get("id") in back:
+                    d["refunded"] = back[d["id"]]
+                if d.get("id") in of:
+                    d["refund_of"] = of[d["id"]]
         return [Transaction.from_row(d) for d in dicts]
     def delete_transaction(self, txn_id: str) -> bool:
         with self.conn() as c:

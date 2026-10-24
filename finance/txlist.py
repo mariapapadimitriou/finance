@@ -223,6 +223,12 @@ def describe(t: Transaction, ctx: Context) -> dict:
                 else "Paid back what you borrowed · not counted as spending")
     elif cat == "Income":
         counts = "income" if is_income(t) else "none"
+    elif inflow and t.refund_of:
+        # Linked to its purchase (2026-10-24): it came off the purchase, so
+        # it doesn't count again here.
+        charge = ctx.by_id.get(t.refund_of)
+        chip, structural = "Refund", True
+        note = (f"Refund of {_name(charge, ctx)} · came off it" if charge else "Refund · came off its purchase")
     elif counts_as_spending(t):
         counts = "spending"
         amount = abs(share_amount(t))

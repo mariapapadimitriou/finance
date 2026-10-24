@@ -246,14 +246,17 @@ def test_a_refund_nets_in_the_purchases_category(client):
     assert res["title"] == "Refund of Lululemon. Comes off Shopping."
     data = listing(client)
     r = next(x for x in data["transactions"] if x["id"] == back)
-    assert r["category"] == "Shopping" and r["counts"] == "spending"
-    assert r["note"] == "Refund of Lululemon · comes off Shopping"
+    # Linked, it comes off the purchase and doesn't count again (2026-10-24).
+    assert r["category"] == "Shopping" and r["counts"] == "none" and r["chip"]["label"] == "Refund"
+    assert r["note"] == "Refund of Lululemon · came off it"
+    p_ = next(x for x in data["transactions"] if x["id"] == buy)
+    assert p_["amount"] == 0 and p_["counts"] == "none"
     assert r["refund_of"]["id"] == buy
     assert data["totals"]["spent"] == 0 and data["totals"]["income"] == 0
     # The purchase says so too (2026-10-23), in its row and its panel.
     p = next(x for x in data["transactions"] if x["id"] == buy)
     day = int(in_month(8)[8:10])
-    assert p["note"].startswith("Refunded in full on ") and p["note"].endswith(f" {day} · comes off Shopping")
+    assert p["note"] == f"Refunded in full on {p['note'].split(' on ')[1]}" and p["note"].endswith(f" {day}")
     assert [r["id"] for r in p["refunded_by"]] == [back] and p["refunded_by"][0]["amount"] == 89
     assert r["refunded_by"] == []
     detail = client.get(f"/api/transactions/{buy}").get_json()
@@ -683,3 +686,32 @@ def test_both_people_in_a_split_show_paid_back(client):
     assert people["Priya"]["owes"] == 0 and people["Priya"]["paid_on"]
     row_ = next(r for r in listing(client)["transactions"] if r["id"] == sushi)
     assert row_["note"] == "Your share of $90.00 · Priya, Sam paid you back"
+
+
+def test_link_unlink_and_relink_net_every_time(client):
+    """2026-10-24: a payback, a reimbursement and a refund can each be linked,
+    unlinked and linked again, and the purchase nets every time."""
+    ids = load(client.st,
+               row(80, "SUSHI NAMI", account="card", kind="credit", merchant="Sushi Nami", category="Dining", when=in_month(2)),
+               row(-20, "E-TRANSFER FROM PRIYA", who="Priya", when=in_month(4)),
+               row(400, "AIR CANADA", account="card", kind="credit", merchant="Air Canada", category="Travel", when=in_month(3)),
+               row(-400, "DEPOSIT EMPLOYER EXPENSES", when=in_month(5)),
+               row(120, "ZARA", account="card", kind="credit", merchant="Zara", category="Shopping", when=in_month(3)),
+               row(-40, "ZARA RETURN", account="card", kind="credit", merchant="Zara", when=in_month(7)))
+
+    def amount(key):
+        return next(r for r in listing(client)["transactions"] if r["id"] == ids[key])["amount"]
+
+    spent = listing(client)["totals"]["spent"]
+    for _ in range(3):
+        mark(client, ids["E-TRANSFER FROM PRIYA"], case="payback", charge=ids["SUSHI NAMI"], person="Priya")
+        mark(client, ids["DEPOSIT EMPLOYER EXPENSES"], case="reimbursement", charge=ids["AIR CANADA"])
+        mark(client, ids["ZARA RETURN"], case="refund", charge=ids["ZARA"])
+        assert (amount("SUSHI NAMI"), amount("AIR CANADA"), amount("ZARA")) == (60, 0, 80)
+        assert client.delete(f"/api/transactions/{ids['SUSHI NAMI']}/paybacks/{ids['E-TRANSFER FROM PRIYA']}").status_code == 200
+        assert client.delete(f"/api/transactions/{ids['AIR CANADA']}/paybacks/{ids['DEPOSIT EMPLOYER EXPENSES']}").status_code == 200
+        assert client.delete(f"/api/transactions/{ids['ZARA RETURN']}/refund").status_code == 200
+        assert (amount("SUSHI NAMI"), amount("AIR CANADA"), amount("ZARA")) == (80, 400, 120)
+    assert client.st.refunds() == {} and not any(t.repays for t in client.st.all_transactions())
+    # The month's spending ends where it started.
+    assert listing(client)["totals"]["spent"] == spent

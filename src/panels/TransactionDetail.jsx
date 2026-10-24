@@ -14,7 +14,7 @@ import {
   includeTransaction, money, setCategory, setJointFrom, setMerchantName, setMineAlways, setParty,
   setShare, setTxNote, setTxTags,
   sortTransfers,
-  unallocate, setSplit, clearSplit, unlinkPayback, linkPayback, setOneOff, undoChange,
+  unallocate, setSplit, clearSplit, unlinkPayback, unlinkRefund, linkPayback, setOneOff, undoChange,
 } from '../api.js';
 import './txextras.css';
 
@@ -431,6 +431,18 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                 <PIcon name="x" size={18} /> Unlink repayment
               </button>
             )}
+            {/* A refund's link, from either side (2026-10-24). */}
+            {tx.refund_of && (
+              <button type="button" className="txd-link" onClick={() => save(() => unlinkRefund(tx.id))}>
+                <PIcon name="x" size={18} /> Unlink refund
+              </button>
+            )}
+            {(tx.refunded_by ?? []).map((r) => (
+              <button key={`rf-${r.id}`} type="button" className="txd-link" onClick={() => save(() => unlinkRefund(r.id))}>
+                <PIcon name="x" size={18} />
+                {tx.refunded_by.length === 1 ? 'Unlink refund' : `Unlink refund · ${txAmount(r.amount)}`}
+              </button>
+            ))}
             {(tx.repaid_by ?? []).map((r) => (
               <button key={r.id} type="button" className="txd-link"
                       onClick={() => save(() => unlinkPayback(tx.id, r.id))}>

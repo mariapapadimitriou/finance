@@ -291,6 +291,8 @@ export const linkPayback   = (id, inflowId, person) =>
 export const setSplit      = (id, split) => json('PUT', `/api/transactions/${id}/split`, split);
 export const clearSplit    = (id) =>
   req(`/api/transactions/${id}/split`, { method: 'DELETE' });
+export const unlinkRefund = (inflowId) =>
+  req(`/api/transactions/${inflowId}/refund`, { method: 'DELETE' });
 export const unlinkPayback = (id, inflowId) =>
   req(`/api/transactions/${id}/paybacks/${inflowId}`, { method: 'DELETE' });
 export const setCategory   = (id, category, applyToMerchant = false) =>

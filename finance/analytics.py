@@ -34,6 +34,9 @@ def share_amount(t: Transaction) -> float:
         base = round(max(t.amount - t.paid_back, 0.0), 2)
     else:
         base = t.amount
+    if getattr(t, "refunded", 0.0) and t.amount > 0:
+        # What a refund linked to it gave back (2026-10-24).
+        base = round(max(base - t.refunded, 0.0), 2)
     if t.invested:
         # The part that was put away was saved, not spent.
         return round(max(base - t.invested, 0.0), 2)
@@ -85,10 +88,13 @@ def counts_as_spending(t: Transaction) -> bool:
     """
     if t.excluded or not is_spend_category(t.category or "Other"):
         return False
+    # A refund linked to its purchase already came off it (2026-10-24).
+    if getattr(t, "refund_of", None) and t.amount < 0:
+        return False
     # A partly covered charge still counts, for the part nobody budgeted. A
     # charge friends paid back in full counts for nothing at all.
     if (t.bank_id is None and t.my_share is None and not t.invested
-            and not t.paid_back):
+            and not t.paid_back and not getattr(t, "refunded", 0.0)):
         return True
     return abs(spend_amount(t)) >= 0.005
 
