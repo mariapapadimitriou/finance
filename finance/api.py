@@ -863,6 +863,19 @@ def add_payback(txn_id: str, inflow_id: str):
     return out
 
 
+@bp.delete("/transactions/<inflow_id>/refund")
+def unlink_refund(inflow_id: str):
+    """Forget which purchase a refund is of (2026-10-24). It stays in its
+    category, so it still comes off that category's spending, in its month."""
+    st = store()
+    if st.get_transaction(inflow_id) is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if inflow_id not in st.refunds():
+        return jsonify({"error": "That refund isn't linked to a purchase."}), 404
+    st.link_refund(inflow_id, None)
+    return transaction_detail(inflow_id)
+
+
 @bp.delete("/transactions/<txn_id>/paybacks/<inflow_id>")
 def remove_payback(txn_id: str, inflow_id: str):
     from .transfers import apply_transfer_matches
