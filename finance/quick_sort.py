@@ -114,7 +114,7 @@ def items(st, transactions: list[Transaction], today: date, everything: bool = F
                          kinds=kinds.kind_map(st, transactions, today),
                          tags=st.tags(), saved_to=st.saved_to(), refunds=st.refunds(),
                          payback_kinds=st.payback_kinds(), names=st.merchant_names(),
-                         accounts=marks.account_labels(st))
+                         accounts=marks.account_labels(st), payer=st.payback_people())
     by_id = {t.fingerprint: t for t in transactions}
     recent = recent_categories(transactions)
     out = []

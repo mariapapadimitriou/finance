@@ -116,15 +116,32 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
     people had names counts for whoever it came from by name.
     """
     names = [p["name"] for p in split["people"]]
+    part = {p["name"]: float(p["amount"]) for p in split["people"]}
     paid = {n: 0.0 for n in names}
     when: dict[str, str] = {}
-    for t in _linked(charge.fingerprint, transactions):
+    unnamed: list[Transaction] = []
+    for t in sorted(_linked(charge.fingerprint, transactions), key=lambda x: x.date):
         who = payer.get(t.fingerprint)
+        if who not in paid and who:
+            # "Sam Lee" paying back the Sam in the split.
+            who = next((n for n in names if first_name(n).lower() == first_name(who).lower()), None)
         if who not in paid:
             who = next((n for n in names if from_person(t, n)), None)
         if who is None:
+            unnamed.append(t)
             continue
         paid[who] = round(paid[who] + -t.amount, 2)
+        when[who] = t.date[:10]
+    # A payback nobody's name is on (a bank that leaves the sender off, or
+    # one linked from search) still counts (2026-10-24): to whoever owes
+    # exactly that much, else the first who still owes anything.
+    for t in unnamed:
+        got = -t.amount
+        owing = [n for n in names if part[n] - paid[n] >= 0.005]
+        if not owing:
+            continue
+        who = next((n for n in owing if abs(part[n] - paid[n] - got) < 0.01), owing[0])
+        paid[who] = round(paid[who] + got, 2)
         when[who] = t.date[:10]
     out = []
     for p in split["people"]:

@@ -137,7 +137,7 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
                          kinds=kinds.kind_map(st, txns, _date.fromisoformat(_today_iso())),
                          tags=st.tags(), saved_to=st.saved_to(), refunds=st.refunds(),
                          payback_kinds=st.payback_kinds(), names=st.merchant_names(),
-                         accounts=marks.account_labels(st))
+                         accounts=marks.account_labels(st), payer=st.payback_people())
     if everything:
         rows = txlist.visible(txns) + txlist.left_out(txns) + txlist.theirs(txns)
     elif excluded:
