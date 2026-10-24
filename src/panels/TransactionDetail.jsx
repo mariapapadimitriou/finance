@@ -395,7 +395,9 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
             {tx.my_note && <Detail label="Your note" value={tx.my_note} />}
           </dl>
 
-          {tx.can_one_off && !left && (
+          {/* Leave it out covers a one-time cost (2026-10-23); the box only
+              stays for one already marked, so it can be unticked. */}
+          {tx.can_one_off && tx.one_off && !left && (
             <OneOffCard tx={tx} busy={busy}
                         onToggle={() => save(() => setOneOff(tx.id, !tx.one_off), {
                           close: true,

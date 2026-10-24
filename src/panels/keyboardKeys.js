@@ -5,7 +5,7 @@
  *
  * Keys, only while the list has focus and never in a text field:
  *   ↑/↓ or K/J move · X select · Shift+↑/↓ select a range · Y confirm
- *   Pearl's suggestion · C change category · U one-off · Enter open ·
+ *   Pearl's suggestion · C change category · Enter open ·
  *   / search · Esc close or clear · Ctrl/⌘+Z undo · ? this list.
  *
  * Single-key shortcuts (letters and symbols) can be turned off (WCAG 2.1.4)
@@ -31,7 +31,6 @@ export const SHORTCUTS = [
   { keys: ['Shift', '↑', '↓'], label: 'Select a range' },
   { keys: ['Y'], label: 'Confirm Pearl’s suggestion' },
   { keys: ['C'], label: 'Change category' },
-  { keys: ['U'], label: 'Mark as a one-off' },
   { keys: ['Enter'], label: 'Open details' },
   { keys: ['/'], label: 'Search' },
   { keys: ['Esc'], label: 'Close or clear selection' },
@@ -40,7 +39,7 @@ export const SHORTCUTS = [
 ];
 
 const LETTERS = {
-  j: 'down', k: 'up', x: 'select', y: 'confirm', c: 'change', u: 'oneoff',
+  j: 'down', k: 'up', x: 'select', y: 'confirm', c: 'change',
   '/': 'search', '?': 'help',
 };
 
