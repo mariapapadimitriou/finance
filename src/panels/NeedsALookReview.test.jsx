@@ -78,15 +78,17 @@ describe('One question at a time, tapped (R-10 to R-12)', () => {
     expect(dots).toContain('>Spending<');
   });
 
-  it('"What kind of income?" lays its options out in two columns, nothing chosen for her', () => {
+  it('"What kind of income?" is tiles with an icon each, Pearl’s guess dashed, nothing chosen for her', () => {
     const it_ = { ...inn, kind: 'income', guess: 'salary' };
     const page = html(<Stacked it={it_} act={noop} commit={noop} onSkip={noop} onBack={noop}
                                initialPath={[{ step: 'q1', v: 'income' }]} />);
     expect(page).toContain('What kind of income?');
-    expect(page).toContain('pk-choices nl-grid');
-    // Pearl's guess is named, not ticked (2026-10-21).
-    expect(page).not.toContain('pk-choice radio on');
-    expect(page).toContain('Pearl’s guess');
+    expect(page).toContain('class="nl-tiles"');
+    expect((page.match(/pk-ctile-icon/g) || []).length).toBe(8);   // seven kinds and regular pay
+    expect(page).toContain('pk-ctile nl-tile guess');
+    expect(page).toContain('aria-label="Salary, Pearl’s guess"');
+    expect(page).toContain('My regular pay');
+    expect(page).not.toContain('aria-checked="true"');
   });
 });
 
