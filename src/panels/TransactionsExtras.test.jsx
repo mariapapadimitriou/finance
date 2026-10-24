@@ -29,9 +29,10 @@ describe('keys (THL-83 K-01)', () => {
     expect(keyAction(key('ArrowUp', { shiftKey: true }))).toBe('extendUp');
   });
 
-  it('X select, Y confirm, C change, U one-off, Enter open, / search, Esc clear, ? list', () => {
-    expect(['x', 'y', 'c', 'u', 'Enter', '/', 'Escape', '?'].map((k) => keyAction(key(k))))
-      .toEqual(['select', 'confirm', 'change', 'oneoff', 'open', 'search', 'clear', 'help']);
+  it('X select, Y confirm, C change, Enter open, / search, Esc clear, ? list; U does nothing now (2026-10-23)', () => {
+    expect(['x', 'y', 'c', 'Enter', '/', 'Escape', '?'].map((k) => keyAction(key(k))))
+      .toEqual(['select', 'confirm', 'change', 'open', 'search', 'clear', 'help']);
+    expect(keyAction(key('u'))).toBeFalsy();
   });
 
   it('Ctrl or ⌘ + Z undo, and no other combination is taken', () => {
@@ -170,7 +171,7 @@ describe('the screens (K-01 to K-04)', () => {
   });
 });
 
-describe('one-offs (THL-71 U-01, U-03)', () => {
+describe('one-offs (THL-71 U-01, U-03): the box only for one already marked (2026-10-23)', () => {
   const tx = { id: 'i', date: '2026-10-03', one_off: false, can_one_off: true };
 
   it('U-01: asks, and says what it is for', () => {
@@ -255,5 +256,18 @@ describe('transaction amounts are signed and coloured (2026-10-14)', () => {
     expect(tr).not.toMatch(/pk-amt (in|out)/);
     expect(tr).toContain('>$500.00<');
     expect(tr).not.toContain('-$500.00');
+  });
+});
+
+describe('No one-off box on a transaction (2026-10-23)', () => {
+  it('Leave it out covers it; only one already marked shows the box, to untick', async () => {
+    const { default: TransactionDetail } = await import('./TransactionDetail.jsx');
+    const base = { id: 't1', merchant: 'Ikea', amount: 900, full_amount: 900, inflow: false, date: '2026-10-07',
+                   account: 'Visa', category: 'Home', counts: 'spending', chip: { label: 'Home' }, tags: [],
+                   can_one_off: true };
+    expect(html(<TransactionDetail id="t1" initial={{ ...base, one_off: false }} categories={[]} />))
+      .not.toContain('This was a one-off');
+    expect(html(<TransactionDetail id="t1" initial={{ ...base, one_off: true }} categories={[]} />))
+      .toContain('This was a one-off');
   });
 });

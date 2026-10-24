@@ -555,15 +555,7 @@ export default function TransactionsList({ summary, categories, accounts, review
       : `Left ${n} out. Find them under Left out in the category filter.`);
   });
 
-  const toggleOneOff = (r) => {
-    if (!r.can_one_off) {
-      setToast('Transfers and repayments already stay out of your usual month');
-      return;
-    }
-    run(() => setOneOff(r.id, !r.one_off), (res) => {
-      saved({ change: { id: r.id, title: res.title, detail: res.detail, undo: res.undo } });
-    });
-  };
+
 
   const onListKey = (e) => {
     if (!desktop || picking || marking || tagging || help) return;
@@ -592,8 +584,6 @@ export default function TransactionsList({ summary, categories, accounts, review
       case 'confirm':
         confirmRows(targets(kb, ids));
         return;
-      case 'oneoff':
-        if (focused) toggleOneOff(focused);
         return;
       default:
         moved.current = action !== 'clear' && action !== 'select';
@@ -781,7 +771,7 @@ export default function TransactionsList({ summary, categories, accounts, review
               {desktop && (
                 <p className="pk-sr" id="tx-keys-help">
                   {singleKey ? 'Use the arrow keys or J and K to move, X to select, Y to confirm, '
-                    + 'C to change the category, U for a one-off and question mark for every shortcut.'
+                    + 'C to change the category and question mark for every shortcut.'
                     : 'Use the arrow keys to move and Shift with the arrow keys to select.'}
                 </p>
               )}
