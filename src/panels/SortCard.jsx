@@ -279,7 +279,7 @@ export function steps(it, cases, mode = 'stacked') {
     } : {
       title: 'Was this spending?', left: 3,
       options: [
-        { v: 'spent', label: 'Yes, I bought something', done: 'Spending', to: 'cat' },
+        { v: 'spent', label: 'Yes, I spent something', done: 'Spending', to: 'cat' },
         { v: 'saved', label: 'No, I saved it', done: 'Saved' },
         { v: 'else', label: 'No, something else', done: 'Something else', to: 'what_out' },
       ],
