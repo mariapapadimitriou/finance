@@ -101,7 +101,8 @@ class Context:
                  refunds: dict[str, str] | None = None,
                  payback_kinds: dict[str, str] | None = None,
                  names: dict[str, str] | None = None,
-                 accounts: dict[str, str] | None = None):
+                 accounts: dict[str, str] | None = None,
+                 payer: dict[str, str] | None = None):
         self.by_id = {t.fingerprint: t for t in transactions}
         # Fixed or Variable, per spending row (finance/kinds.py).
         self.kinds = kinds or {}
@@ -130,6 +131,8 @@ class Context:
         # Who a split charge was split with, as you named them (THL-124).
         self.split_with = {cid: [p["name"] for p in sp["people"]]
                            for cid, sp in (splits or {}).items()}
+        self.splits = splits or {}
+        self.payer = payer or {}
         # Rows with a copy still waiting for an answer (D-01), and the copies:
         # both sides say where they came from.
         self.twins = {t.duplicate_of for t in transactions if _waiting(t)}
@@ -246,6 +249,12 @@ def describe(t: Transaction, ctx: Context) -> dict:
     if split and counts == "spending" and abs(amount - abs(t.amount)) >= 0.005:
         paid = ctx.paid_by.get(t.fingerprint) or []
         names = ctx.split_with.get(t.fingerprint) or paid
+        # Who paid back, by the names in her split (2026-10-24), not the
+        # bank's ("E-transfer K2P").
+        if t.fingerprint in ctx.splits:
+            from .splits import people_status
+            status = people_status(t, ctx.splits[t.fingerprint], list(ctx.by_id.values()), ctx.payer)
+            paid = [p["name"] for p in status if p["paid"] >= 0.005]
         with_whom = (f" · {', '.join(paid)} paid you back" if paid
                      else " · split with " + ", ".join(names) if names
                      else f" · {t.joint} paid the rest" if t.joint else "")

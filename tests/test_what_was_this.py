@@ -662,3 +662,24 @@ def test_a_split_from_the_sort_card_settles_it_and_undoes(client):
                                                             "category": "Dining"})
     assert client.st.get_transaction(tfr).category == "Dining"
     assert tfr not in ids_in(for_store(client.st))
+
+
+def test_both_people_in_a_split_show_paid_back(client):
+    """2026-10-24: a split with two people, each paying back by e-Transfer.
+    One bank leaves the sender off, and one name is "Sam Lee" for the Sam in
+    the split: both still show Paid back."""
+    ids = load(client.st, row(90, "SUSHI NAMI", account="card", kind="credit", merchant="Sushi Nami",
+                              category="Dining", when=in_month(2)),
+               row(-30, "E-TRANSFER ***K2P", when=in_month(4)),
+               row(-30, "E-TRANSFER FROM SAM LEE", who="Sam Lee", when=in_month(5)))
+    sushi = ids["SUSHI NAMI"]
+    client.put(f"/api/transactions/{sushi}/split",
+               json={"mode": "even", "people": [{"name": "Priya", "amount": 30}, {"name": "Sam", "amount": 30}],
+                     "watch": True})
+    mark(client, ids["E-TRANSFER ***K2P"], case="payback", charge=sushi)                       # no name at all
+    mark(client, ids["E-TRANSFER FROM SAM LEE"], case="payback", charge=sushi, person="Sam Lee")
+    people = {p["name"]: p for p in client.get(f"/api/transactions/{sushi}").get_json()["splitting"]["people"]}
+    assert people["Sam"]["owes"] == 0 and people["Sam"]["paid_on"]
+    assert people["Priya"]["owes"] == 0 and people["Priya"]["paid_on"]
+    row_ = next(r for r in listing(client)["transactions"] if r["id"] == sushi)
+    assert row_["note"] == "Your share of $90.00 · Priya, Sam paid you back"
