@@ -563,6 +563,7 @@ def _regular_pay(store, t: Transaction, today: date) -> None:
 def apply(store, t: Transaction, body: dict, today: date) -> dict:
     """Do one case. Returns what to say and how to undo the parts a change
     of category doesn't cover (`marks`, for `undo_extras`)."""
+    detail = ""
     case = str(body.get("case") or "")
     out_ = t.amount > 0
     keys = {c["key"] for c in (OUT_CASES if out_ else IN_CASES)}
@@ -705,11 +706,26 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             raise Problem("Pick the charge it pays back.")
         un_exclude()
         marks.setdefault("paybacks", {})[t.fingerprint] = {
-            "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint)}
-        person = " ".join(str(body.get("person") or "").split()) or None
+            "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
+            "person": store.payback_people().get(t.fingerprint)}
+        _drop_made_split(store, t, marks)
+        from .etransfers import party as etransfer_party
+        person = (" ".join(str(body.get("person") or "").split())
+                  or (etransfer_party(t) or {}).get("name") or None)
         store.link_payback(charge_id, t.fingerprint, person)
         store.set_payback_kind(t.fingerprint, None)
         title = f"Linked to {charge.merchant}. Not income."
+        # A purchase that was never split becomes a split with whoever sent
+        # it (THL-260): the split card shows them, paid back.
+        from .splits import add_payer
+        fresh = store.get_transaction(charge_id) or charge
+        was = add_payer(store, fresh, store.get_transaction(t.fingerprint) or t, person)
+        if was is not None:
+            marks.setdefault("splits", {}).setdefault(charge_id, was)
+            share = (store.get_transaction(charge_id) or fresh).my_share or 0.0
+            title = f"{charge.merchant} is now split with {person}."
+            detail = (f"Their ${-t.amount:,.2f} comes off what you spent, so your share "
+                      f"is ${share:,.2f}. Not income.")
     elif case == "reimbursement":
         charge_id = str(body.get("charge") or "")
         charge = next((x for x in store.all_transactions() if x.fingerprint == charge_id), None)
@@ -720,7 +736,9 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             marks.setdefault("exclusions", {})[charge.fingerprint] = charge.excluded
             store.include(charge.fingerprint)
         marks.setdefault("paybacks", {})[t.fingerprint] = {
-            "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint)}
+            "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
+            "person": store.payback_people().get(t.fingerprint)}
+        _drop_made_split(store, t, marks)
         store.link_payback(charge_id, t.fingerprint, None)
         store.set_payback_kind(t.fingerprint, REIMBURSEMENT)
         title = f"Reimbursement for {charge.merchant}. Both are out of your numbers."
@@ -756,7 +774,7 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         marks.setdefault("tags", {})[t.fingerprint] = store.tags().get(t.fingerprint, [])
         store.set_tags(t.fingerprint, tags)
     return {"title": title, "from": old_cat, "to": cat_to, "remember": remember,
-            "marks": marks}
+            "marks": marks, "detail": detail}
 
 
 def preview(t: Transaction, txns: list[Transaction], body: dict) -> list[Transaction] | None:
@@ -842,6 +860,16 @@ def clean_tags(raw) -> list[str]:
 
 # ── Undo, for what a change of category doesn't cover ────────────────────
 
+def _drop_made_split(store, t: Transaction, marks: dict) -> None:
+    """Before an inflow is linked anew: if it had made its sender's place
+    in a split (THL-260), take them out, and remember the split for Undo."""
+    from .splits import drop_payer
+    charge_id = t.repays
+    was = drop_payer(store, t)
+    if was is not None and charge_id:
+        marks.setdefault("splits", {}).setdefault(charge_id, was)
+
+
 def undo_marks(store, marks: dict) -> int:
     """Put back what `apply` recorded in `marks`. Returns how many."""
     if not isinstance(marks, dict):
@@ -868,7 +896,7 @@ def undo_marks(store, marks: dict) -> int:
         if tid not in known or not isinstance(was, dict):
             continue
         if was.get("charge"):
-            store.link_payback(was["charge"], tid)
+            store.link_payback(was["charge"], tid, was.get("person"))
             store.set_payback_kind(tid, was.get("kind"))
         else:
             store.unlink_payback(tid)

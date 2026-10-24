@@ -847,7 +847,14 @@ def add_payback(txn_id: str, inflow_id: str):
             return jsonify({"error": "That person isn't in this split."}), 400
     from .impact import snapshot, undo_payload
     before = snapshot(st, st.all_transactions())
-    was = {"charge": inflow.repays, "kind": st.payback_kinds().get(inflow_id)}
+    was = {"charge": inflow.repays, "kind": st.payback_kinds().get(inflow_id),
+           "person": st.payback_people().get(inflow_id)}
+    split_was = {}
+    if inflow.repays and inflow.repays != txn_id:
+        from .splits import drop_payer
+        moved = drop_payer(st, inflow)
+        if moved is not None:
+            split_was[inflow.repays] = moved
     st.link_payback(txn_id, inflow_id, person)
     # Never income: Plaid sometimes calls an e-transfer in "income".
     if inflow.category != "Transfers":
@@ -858,7 +865,7 @@ def add_payback(txn_id: str, inflow_id: str):
     data = out.get_json() if hasattr(out, "get_json") else None
     if isinstance(data, dict):
         undo = undo_payload(before, snapshot(st, st.all_transactions()))
-        undo["marks"] = {"paybacks": {inflow_id: was}}
+        undo["marks"] = {"paybacks": {inflow_id: was}, **({"splits": split_was} if split_was else {})}
         return jsonify(dict(data, undo=undo))
     return out
 
@@ -883,6 +890,10 @@ def remove_payback(txn_id: str, inflow_id: str):
     inflow = st.get_transaction(inflow_id)
     if inflow is None or inflow.repays != txn_id:
         return jsonify({"error": "That money isn't linked to this charge."}), 404
+    # A payback that made its sender's place in the split takes them out
+    # again (THL-260): the charge costs what it did before.
+    from .splits import drop_payer
+    drop_payer(st, inflow)
     st.unlink_payback(inflow_id)
     apply_transfer_matches(st)
     return list_paybacks(txn_id)

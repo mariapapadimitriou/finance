@@ -288,7 +288,8 @@ def test_someone_paying_me_back_links_to_the_charge(client):
     cand = next(c for c in cases(client, back)["cases"] if c["key"] == "payback")["candidates"]
     assert cand[0]["id"] == dinner and cand[0]["share"] == 4
     res = mark(client, back, case="payback", charge=dinner, person="Priya")
-    assert res["title"] == "Linked to Sushi Nami. Not income."
+    assert res["title"] == "Sushi Nami is now split with Priya."
+    assert res["detail"] == "Their $20.00 comes off what you spent, so your share is $60.00. Not income."
     rows = by_desc(listing(client))
     assert rows["SUSHI NAMI"]["amount"] == 60 and rows["E-TRANSFER FROM PRIYA"]["chip"]["label"] == "Repayment"
     assert cases(client, back)["current"] == "payback"
@@ -713,5 +714,95 @@ def test_link_unlink_and_relink_net_every_time(client):
         assert client.delete(f"/api/transactions/{ids['ZARA RETURN']}/refund").status_code == 200
         assert (amount("SUSHI NAMI"), amount("AIR CANADA"), amount("ZARA")) == (80, 400, 120)
     assert client.st.refunds() == {} and not any(t.repays for t in client.st.all_transactions())
+    # The split Priya's payback made goes with it each time (THL-260).
+    assert client.st.splits() == {} and not client.st.get_transaction(ids["SUSHI NAMI"]).share_set
     # The month's spending ends where it started.
     assert listing(client)["totals"]["spent"] == spent
+
+
+def _split_people(client, tid):
+    data = client.get(f"/api/transactions/{tid}").get_json()
+    return {p["name"]: p for p in (data.get("splitting") or {}).get("people", [])}
+
+
+def test_a_payback_to_an_unsplit_purchase_makes_the_split(client):
+    """THL-260: Paid back → a purchase that was never split. The purchase
+    becomes a split with whoever sent it, paid back, and one Undo takes back
+    both the link and the split."""
+    ids = load(client.st, row(90, "SUSHI NAMI", account="card", kind="credit", merchant="Sushi Nami",
+                              category="Dining", when=in_month(2)),
+               row(-30, "E-TRANSFER FROM PRIYA", who="Priya", when=in_month(4)),
+               row(-30, "E-TRANSFER FROM SAM LEE", who="Sam Lee", when=in_month(5)))
+    sushi = ids["SUSHI NAMI"]
+    res = mark(client, ids["E-TRANSFER FROM PRIYA"], case="payback", charge=sushi, person="Priya")
+    assert res["title"] == "Sushi Nami is now split with Priya."
+    split = client.st.splits()[sushi]
+    assert split["people"] == [{"name": "Priya", "amount": 30.0}]
+    assert client.st.get_transaction(sushi).my_share == 60
+    people = _split_people(client, sushi)
+    assert people["Priya"]["owes"] == 0 and people["Priya"]["paid_on"]
+    # A second friend joins the same split.
+    mark(client, ids["E-TRANSFER FROM SAM LEE"], case="payback", charge=sushi, person="Sam Lee")
+    assert [p["name"] for p in client.st.splits()[sushi]["people"]] == ["Priya", "Sam Lee"]
+    assert next(r for r in listing(client)["transactions"] if r["id"] == sushi)["amount"] == 30
+    # Unlinking Sam takes only Sam out.
+    assert client.delete(f"/api/transactions/{sushi}/paybacks/{ids['E-TRANSFER FROM SAM LEE']}").status_code == 200
+    assert [p["name"] for p in client.st.splits()[sushi]["people"]] == ["Priya"]
+    assert client.st.get_transaction(sushi).my_share == 60
+
+
+def test_one_undo_takes_back_the_link_and_the_split(client):
+    ids = load(client.st, row(90, "SUSHI NAMI", account="card", kind="credit", merchant="Sushi Nami",
+                              category="Dining", when=in_month(2)),
+               row(-30, "E-TRANSFER FROM PRIYA", who="Priya", when=in_month(4)))
+    sushi = ids["SUSHI NAMI"]
+    res = mark(client, ids["E-TRANSFER FROM PRIYA"], case="payback", charge=sushi, person="Priya")
+    undo(client, res)
+    t = client.st.get_transaction(sushi)
+    assert client.st.splits() == {} and not t.share_set and not t.paid_back
+    assert not client.st.get_transaction(ids["E-TRANSFER FROM PRIYA"]).repays
+
+
+def test_a_payback_with_no_name_still_just_nets(client):
+    ids = load(client.st, row(90, "SUSHI NAMI", account="card", kind="credit", merchant="Sushi Nami",
+                              category="Dining", when=in_month(2)),
+               row(-30, "E-TRANSFER ***K2P", when=in_month(4)))
+    sushi = ids["SUSHI NAMI"]
+    res = mark(client, ids["E-TRANSFER ***K2P"], case="payback", charge=sushi)
+    assert res["title"] == "Linked to Sushi Nami. Not income."
+    assert client.st.splits() == {}
+    assert next(r for r in listing(client)["transactions"] if r["id"] == sushi)["amount"] == 60
+
+
+def test_someone_already_in_the_split_is_not_added_again(client):
+    ids = load(client.st, row(90, "SUSHI NAMI", account="card", kind="credit", merchant="Sushi Nami",
+                              category="Dining", when=in_month(2)),
+               row(-30, "E-TRANSFER FROM PRIYA", who="Priya", when=in_month(4)))
+    sushi = ids["SUSHI NAMI"]
+    client.put(f"/api/transactions/{sushi}/split",
+               json={"mode": "even", "people": [{"name": "Priya", "amount": 45}], "watch": True})
+    mark(client, ids["E-TRANSFER FROM PRIYA"], case="payback", charge=sushi, person="Priya")
+    assert client.st.splits()[sushi]["people"] == [{"name": "Priya", "amount": 45.0}]
+    assert client.st.get_transaction(sushi).my_share == 45
+    # Unlinking leaves her split alone: she still owes her part.
+    client.delete(f"/api/transactions/{sushi}/paybacks/{ids['E-TRANSFER FROM PRIYA']}")
+    assert client.st.splits()[sushi]["people"] == [{"name": "Priya", "amount": 45.0}]
+
+
+def test_moving_a_payback_to_another_purchase_moves_its_person(client):
+    ids = load(client.st, row(90, "SUSHI NAMI", account="card", kind="credit", merchant="Sushi Nami",
+                              category="Dining", when=in_month(2)),
+               row(60, "CINEPLEX", account="card", kind="credit", merchant="Cineplex",
+                   category="Entertainment", when=in_month(3)),
+               row(-30, "E-TRANSFER FROM PRIYA", who="Priya", when=in_month(4)))
+    back = ids["E-TRANSFER FROM PRIYA"]
+    mark(client, back, case="payback", charge=ids["SUSHI NAMI"], person="Priya")
+    res = mark(client, back, case="payback", charge=ids["CINEPLEX"], person="Priya")
+    splits = client.st.splits()
+    assert ids["SUSHI NAMI"] not in splits and splits[ids["CINEPLEX"]]["people"] == [{"name": "Priya", "amount": 30.0}]
+    assert not client.st.get_transaction(ids["SUSHI NAMI"]).share_set
+    # Undo puts her back on the first purchase.
+    undo(client, res)
+    splits = client.st.splits()
+    assert ids["CINEPLEX"] not in splits and splits[ids["SUSHI NAMI"]]["people"] == [{"name": "Priya", "amount": 30.0}]
+    assert client.st.get_transaction(back).repays == ids["SUSHI NAMI"]

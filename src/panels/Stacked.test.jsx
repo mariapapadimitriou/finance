@@ -71,6 +71,16 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
     expect(S.name.title).toBe('Who sent this?');
   });
 
+  it('a payback to a purchase nobody split says it becomes a split (THL-260)', async () => {
+    const { paybackEffect } = await import('./SortCard.jsx');
+    expect(paybackEffect({ merchant: 'Sushi Nami', split: false }, 'Priya', '$30.00'))
+      .toBe('Sushi Nami becomes a split with Priya. Their $30.00 comes off what you spent. Not income.');
+    expect(paybackEffect({ merchant: 'Sushi Nami', split: true }, 'Priya', '$30.00'))
+      .toBe('Comes off what you spent at Sushi Nami. Not income.');
+    expect(paybackEffect({ merchant: 'Sushi Nami' }, '', '$30.00'))
+      .toBe('Comes off what you spent at Sushi Nami. Not income.');
+  });
+
   it('a payback offers the purchases it could be for, or money lent', () => {
     const cases = { cases: [{ key: 'payback', candidates: [{ id: 'c', merchant: 'Sushi Nami', date: '2026-10-08', amount: 85 }] }] };
     const { S } = steps(inn, cases);
