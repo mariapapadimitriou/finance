@@ -423,3 +423,21 @@ def test_a_transfer_whose_arrival_was_guessed_as_income_links(client):
     rows = by_desc(listing(client))
     assert "MOBILE DEPOSIT" not in rows and rows["TFR-TO 9876543"]["transfer"]["to"] == "sav"
     assert rows["PAYROLL ACME CORP"]["counts"] == "income" and rows["BRANCH DEPOSIT"]["counts"] == "income"
+
+
+def test_a_transfer_whose_arrival_was_guessed_other_links(client):
+    """2026-10-24 (found in QA): the arrival of a transfer between her
+    accounts that Pearl had guessed as "Other" pairs too, instead of
+    counting as $800 less spending. The same amount back on the same
+    account is still left alone (more likely a refund)."""
+    from finance.transfers import apply_transfer_matches
+    ids = load(client.st,
+               row(800, "TFR-TO 9876543", account="chq", when=in_month(12)),
+               row(-800, "MOBILE DEPOSIT", account="sav", when=in_month(12)))
+    apply_transfer_matches(client.st)
+    by = {t.fingerprint: t for t in client.st.all_transactions()}
+    assert by[ids["MOBILE DEPOSIT"]].category == "Transfers"
+    data = listing(client)
+    rows = by_desc(data)
+    assert "MOBILE DEPOSIT" not in rows and rows["TFR-TO 9876543"]["transfer"]["to"] == "sav"
+    assert data["totals"]["spent"] == 0 and data["totals"]["income"] == 0

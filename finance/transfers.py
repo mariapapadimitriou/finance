@@ -59,6 +59,18 @@ def _guessed_income(t: Transaction) -> bool:
     return guess(t) != "salary"
 
 
+def _guessed_arrival(t: Transaction) -> bool:
+    """Money in whose category is only Pearl's guess — income she didn't
+    set, or "Other" / an unsure guess nobody chose (2026-10-24). It can be
+    the other end of one of her transfers between her accounts."""
+    if _guessed_income(t):
+        return True
+    if t.amount >= 0 or t.category_source in _DECIDED or t.category_source in ("range",):
+        return False
+    from .categorize import is_guess
+    return is_guess(t)
+
+
 def others(t: Transaction) -> bool:
     """A row that is nothing of yours: one you excluded, or another member's
     money on a joint account."""
@@ -297,6 +309,11 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
                 # Its arrival was guessed as income: it was this transfer.
                 if best[1].category == "Income":
                     out[best[1].fingerprint] = NEUTRAL
+                # Or guessed as "Other" on another of her accounts: the
+                # same (2026-10-24). Not on the same account, where the same
+                # amount back is more likely a refund.
+                elif not same_account and _guessed_arrival(best[1]):
+                    out[best[1].fingerprint] = NEUTRAL
                 # One departure, one arrival on another of her accounts: the
                 # list shows them as one line (2026-10-22).
                 if pairs_out is not None and not same_account:
@@ -398,7 +415,7 @@ def transfer_pairs(transactions: list[Transaction], today: str | None = None) ->
     arrivals: dict[int, list[Transaction]] = {}
     for t in transactions:
         if (t.amount < 0 and not others(t) and not t.repays
-                and ((t.category or "") in _MOVED - {UNSORTED} or _guessed_income(t))):
+                and ((t.category or "") in _MOVED - {UNSORTED} or _guessed_arrival(t))):
             arrivals.setdefault(_cents(-t.amount), []).append(t)
     used: set[str] = set()
     pairs: dict[str, str] = {}
