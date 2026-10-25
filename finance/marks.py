@@ -773,6 +773,10 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         tags = clean_tags(body.get("tags"))
         marks.setdefault("tags", {})[t.fingerprint] = store.tags().get(t.fingerprint, [])
         store.set_tags(t.fingerprint, tags)
+    # Sorting a joint deposit any other way says it was hers (2026-10-25).
+    if case not in ("joint_them", "not_mine"):
+        from .joint import claim_deposit
+        claim_deposit(store, t, marks)
     return {"title": title, "from": old_cat, "to": cat_to, "remember": remember,
             "marks": marks, "detail": detail}
 

@@ -494,10 +494,17 @@ def update_transaction(txn_id: str):
     else:
         st.set_transaction_category(txn_id, category)
         out = {"ok": True, "updated": 1, "scope": "transaction"}
+    # A joint deposit she gave a category to is hers (2026-10-25): "Who put
+    # this in?" is answered, and it counts.
+    from .joint import claim_deposit
+    claimed: dict = {}
+    claim_deposit(st, txn, claimed)
     after_txns = st.all_transactions()
     out["impact"] = _impact(st, before_txns, after_txns, txn.category or "Other",
                             category, txn.date[:7])
     out["undo"] = undo_payload(before, snapshot(st, after_txns))
+    if claimed:
+        out["undo"]["marks"] = claimed
     return jsonify(out)
 
 
@@ -631,6 +638,12 @@ def set_transaction_share(txn_id: str):
         return jsonify({"error": "Your share can't be more than the charge."}), 400
     # The whole charge is the same as no split at all.
     st.set_share(txn_id, None if abs(share - txn.amount) < 0.005 else share)
+    # Saying her share answers the row (2026-10-25): its category stops
+    # being a question, as a split from the sort card does.
+    from .categorize import is_unsure
+    if txn.category_source != "user" and (is_unsure(txn) or (txn.category or "Other") == "Other"):
+        st.confirm_category(txn_id, txn.category or "Other")
+        st.dismiss_review("cat:" + txn_id)
     return jsonify({"ok": True, "my_share": st.get_transaction(txn_id).my_share})
 
 
@@ -2268,9 +2281,12 @@ def set_income_type(txn_id: str):
         # Calling something a gift or a paycheque makes it income.
         st.set_transaction_category(txn_id, "Income")
     st.set_income_type(txn_id, kind, "user")
+    from .joint import claim_deposit
+    claimed: dict = {}
+    claim_deposit(st, t, claimed)
     _reclassify(st)
     undo = undo_payload(before, snapshot(st, st.all_transactions()))
-    undo["marks"] = {"income_type": {txn_id: was}}
+    undo["marks"] = {"income_type": {txn_id: was}, **claimed}
     return jsonify({"ok": True, "transaction": st.get_transaction(txn_id).to_dict(), "undo": undo})
 
 

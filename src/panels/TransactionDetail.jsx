@@ -265,7 +265,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
         <h2 className="pk-h2">Split this</h2>
         {error && <p className="txd-error" role="alert">{error.message}</p>}
         <SplitThis tx={tx} busy={busy}
-                   onSave={(split) => save(() => setSplit(tx.id, split))}
+                   onSave={(split) => save(() => setSplit(tx.id, { ...split, settle: true }))}
                    onClear={() => save(() => clearSplit(tx.id))} />
       </DetailPanel>
     );
