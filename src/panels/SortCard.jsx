@@ -958,6 +958,15 @@ export function Done({ path, flow, editing = null, busy = false, onOpen, onPick 
  * in place, or — when another answer `pick` was chosen there (2026-10-23) —
  * at that step with the new answer going in.
  */
+/**
+ * On the Sorted card, the row to show after tapping step `i`'s marked
+ * answer (2026-10-25): the next answer, opened, so the one after it can be
+ * changed; after the last, the row folds shut.
+ */
+export function afterMarked(i, n) {
+  return i < n - 1 ? i + 1 : null;
+}
+
 export function resumeFor(answers, i = answers.length - 1, pick) {
   const last = answers[answers.length - 1];
   const name = last?.step === 'who_to' || last?.step === 'name' ? last.label : '';
@@ -1004,7 +1013,9 @@ export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'N
                 trailing={onUndo && <Pill className="nl-undo" disabled={busy} onClick={onUndo} aria-label="Undo this change">Undo</Pill>} />
       {/* Tapping an answer shows its question, the answer marked, and
           changes nothing (2026-10-23): Next is still there. Only another
-          answer, Change, or Undo changes it. */}
+          answer, Change, or Undo changes it. Tapping the marked answer
+          again goes on to the next answer, opened (2026-10-25), so a wrong
+          category is a tap away from Change instead of a dead end. */}
       {answers.length > 0 && (
         <div className="nl-done-list">
           {answers.map((a, i) => {
@@ -1026,7 +1037,7 @@ export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'N
                         {a.options.map((o) => (
                           <Choice key={o.v} name={`seen-${entry.key}-${i}`} checked={o.v === a.v}
                                   disabled={busy || !open || isPast}
-                                  onClick={o.v === a.v ? () => setViewing(null) : undefined}
+                                  onClick={o.v === a.v ? () => setViewing(afterMarked(i, answers.length)) : undefined}
                                   onChange={() => { if (o.v !== a.v) onReopen?.(i, o.v); }} label={o.label} />
                         ))}
                       </div>
