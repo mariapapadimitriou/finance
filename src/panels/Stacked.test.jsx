@@ -71,6 +71,13 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
     expect(S.name.title).toBe('Who sent this?');
   });
 
+  it('tapping a marked answer on the Sorted card opens the next answer (2026-10-25)', async () => {
+    const { afterMarked } = await import('./SortCard.jsx');
+    expect(afterMarked(0, 2)).toBe(1);        // "A different category" → the Pets row, with Change
+    expect(afterMarked(1, 2)).toBe(null);     // the last answer folds shut
+    expect(afterMarked(0, 1)).toBe(null);
+  });
+
   it('a payback to a purchase nobody split says it becomes a split (THL-260)', async () => {
     const { paybackEffect } = await import('./SortCard.jsx');
     expect(paybackEffect({ merchant: 'Sushi Nami', split: false }, 'Priya', '$30.00'))
