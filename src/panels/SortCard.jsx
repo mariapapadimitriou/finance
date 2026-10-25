@@ -398,6 +398,11 @@ export function nextOf(flow, last) {
   return s?.to;
 }
 
+/** Whether every answer is one of this card's steps (2026-10-25). */
+export function validPath(flow, path) {
+  return path.every((p) => !!flow.S[p.step]);
+}
+
 /** The words for an answer, for the stacked rows and the Sorted card. */
 export function answerLabel(flow, p) {
   const s = flow.S[p.step];
@@ -440,6 +445,11 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   }, [it.txn.id]);
 
   const flow = useMemo(() => steps(it, cases, mode), [it, cases, mode]);
+  // Answers that don't belong to this card's steps (a reopened card built
+  // another way) start it over instead of leaving it blank (2026-10-25).
+  useEffect(() => {
+    if (cases && path.length && !validPath(flow, path)) { setPath([]); setEditing(null); }
+  }, [cases, flow, path]);
   const stepIdNow = path.length ? nextOf(flow, path[path.length - 1]) : flow.start;
   // Any of her charges can be found (2026-10-23), a reimbursement's too:
   // no need to mark the expense first.

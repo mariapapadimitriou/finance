@@ -71,6 +71,21 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
     expect(S.name.title).toBe('Who sent this?');
   });
 
+  it('Change category reopens as the card it was answered in (2026-10-25)', async () => {
+    const { cardMode } = await import('./TransactionDetail.jsx');
+    const { steps, validPath, nextOf } = await import('./SortCard.jsx');
+    expect(cardMode('category')).toBe('stacked');
+    expect(cardMode('what')).toBe('all');
+    // Change category's answers ("Yes, I spent something") lead on in its own card…
+    const it = { key: 'p', kind: 'panel', txn: { id: 'x', merchant: 'Bike Share', amount: 0.45, category: 'Transport' } };
+    const answers = [{ step: 'q1', v: 'spent' }];
+    const stacked = steps(it, { cases: [] }, 'stacked');
+    expect(validPath(stacked, answers)).toBe(true);
+    expect(stacked.S[nextOf(stacked, answers[0])]).toBeTruthy();
+    // …but not in the whole list, where they were left pointing nowhere (the blank card).
+    expect(validPath(steps(it, { cases: [] }, 'all'), answers)).toBe(false);
+  });
+
   it('tapping a marked answer on the Sorted card opens the next answer (2026-10-25)', async () => {
     const { afterMarked } = await import('./SortCard.jsx');
     expect(afterMarked(0, 2)).toBe(1);        // "A different category" → the Pets row, with Change

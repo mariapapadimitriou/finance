@@ -57,6 +57,17 @@ function suggestionReason(tx) {
   return 'Pearl suggested this from the merchant name. Is it right?';
 }
 
+/**
+ * Which card a panel step opens (2026-10-25): Change category asks one
+ * question at a time ("Was this spending?" first), Mark as… shows the whole
+ * list. A reopened card (Undo, Change) keeps the one it was answered in:
+ * reopening Change category as the whole list left its answers pointing at
+ * steps that list doesn't have, and the card came up blank.
+ */
+export function cardMode(step) {
+  return step === 'category' ? 'stacked' : 'all';
+}
+
 export default function TransactionDetail({ id, initial, categories, onClose, onSaved,
                                             startStep = 'main' }) {
   const [tx, setTx] = useState(initial && initial.id === id ? initial : null);
@@ -236,7 +247,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                         onNext={sortDone} onUndo={() => sortReopen()} onReopen={sortReopen} />
           ) : (
             <SortCard key={resume ? 'r' : 'q'} it={asItem} categories={categories} busy={busy}
-                      mode={step === 'category' && !resume ? 'stacked' : 'all'} showHead={false}
+                      mode={cardMode(step)} showHead={false}
                       commit={sortCommit} onSplit={() => setStep('split')} onBack={back}
                       initialPath={resume?.path ?? (step === 'category' && !tx.inflow ? [{ step: 'q1', v: 'spent' }] : null)}
                       initialEdit={resume?.edit ?? null} initialName={resume?.name ?? ''}
