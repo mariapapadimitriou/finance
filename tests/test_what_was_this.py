@@ -798,3 +798,46 @@ def test_moving_a_payback_to_another_purchase_moves_its_person(client):
     splits = client.st.splits()
     assert ids["CINEPLEX"] not in splits and splits[ids["SUSHI NAMI"]]["people"] == [{"name": "Priya", "amount": 30.0}]
     assert client.st.get_transaction(back).repays == ids["SUSHI NAMI"]
+
+
+def test_answers_on_the_transaction_page_leave_needs_a_look(client):
+    """2026-10-25 (Maria): sorting from Transactions still left rows in Needs
+    a look. A split, a share, and any answer about a joint deposit now count
+    as answered; Undo asks again."""
+    from finance.review import for_store, ids_in
+
+    def asked(tid):
+        return tid in ids_in(for_store(client.st))
+
+    ids = load(client.st,
+               row(40, "MYSTERY SHOP", account="card", kind="credit", merchant="Mystery Shop", when=in_month(9)),
+               row(60, "CORNER STORE", account="card", kind="credit", merchant="Corner Store", when=in_month(8)),
+               row(-300, "TFR-FR 7781", account="fam", when=in_month(4)),
+               row(-250, "TFR-FR 9932", account="fam", when=in_month(5)),
+               row(-120, "TFR-FR 4410", account="fam", when=in_month(6)))
+    client.put("/api/accounts/fam/joint", json={"label": "Joint"})
+    shop, corner = ids["MYSTERY SHOP"], ids["CORNER STORE"]
+    assert asked(shop) and asked(corner)
+    # A split from the page settles its category, as the sort card's does.
+    res = client.put(f"/api/transactions/{shop}/split", json={
+        "mode": "even", "people": [{"name": "Priya", "amount": 20}], "watch": True, "settle": True}).get_json()
+    assert not asked(shop)
+    undo(client, res)
+    assert asked(shop)
+    # So does saying her share.
+    client.put(f"/api/transactions/{corner}/share", json={"my_share": 30})
+    assert not asked(corner)
+    # A joint deposit sorted any way but "someone else's" was hers, and counts.
+    dep, dep2, dep3 = ids["TFR-FR 7781"], ids["TFR-FR 9932"], ids["TFR-FR 4410"]
+    assert asked(dep) and asked(dep2) and asked(dep3)
+    res = mark(client, dep, case="pay", income_kind="salary")
+    assert not asked(dep) and client.st.get_transaction(dep).joint_from == "me"
+    assert listing(client)["totals"]["income"] == 300
+    undo(client, res)
+    assert asked(dep) and not client.st.get_transaction(dep).joint_from
+    res = client.patch(f"/api/transactions/{dep2}", json={"category": "Transfers"}).get_json()
+    assert not asked(dep2)
+    undo(client, res)
+    assert asked(dep2)
+    client.put(f"/api/transactions/{dep3}/income-type", json={"kind": "gifts"})
+    assert not asked(dep3) and client.st.get_transaction(dep3).joint_from == "me"

@@ -91,3 +91,15 @@ def my_share(amount: float, *, category: str | None, mine: bool, share: float | 
     # Otherwise every purchase is hers until she marks it someone else's
     # (2026-10-23). What others put in no longer shrinks her share by itself.
     return amount
+
+
+def claim_deposit(store, t, marks: dict) -> bool:
+    """A deposit into a joint account that she sorted herself (2026-10-25):
+    Pay, her own money, a refund, a category, a kind of income. Saying what
+    it was says it was hers, so "Who put this in?" is answered as her, and it
+    counts. Notes the old answer in `marks` for Undo."""
+    if not t.joint or t.amount >= 0 or t.joint_from:
+        return False
+    marks.setdefault("joint_from", {})[t.fingerprint] = {"who": t.joint_from, "person": t.joint_person}
+    store.set_joint_deposit(t.fingerprint, ME, None)
+    return True
