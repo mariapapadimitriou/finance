@@ -524,8 +524,9 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     return commit(() => go(false), {
       answers: answers.map((p) => {
         const st = flow.S[p.step];
-        return { ...p, label: p.label ?? answerLabel(flow, p), title: st?.title,
-                 options: st?.options?.filter((o) => !o.hidden).map((o) => ({ v: o.v, label: o.label })) };
+        const [vis, at] = st?.options ? shownOptions(st.options, p.v) : [null, p.v];
+        return { ...p, label: p.label ?? answerLabel(flow, p), title: st?.title, marked: at,
+                 options: vis?.map((o) => ({ v: o.v, label: o.label })) };
       }), effect,
       remember: ruleable && ruleOk ? { label: `Remember for ${it.to || it.txn.merchant}`, redo: go } : null,
     });
@@ -745,7 +746,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           {step.match && <RepaymentMatch match={step.match} />}
           {step.splittable && (!chosen || chosen.key === 'spending') && (
             <Choice type="checkbox" checked={splitOn} disabled={busy} onChange={(on) => setSplitOn(on)}
-                    label="Split with others" description="Only your share counts. You’ll say who it was with next." />
+                    icon="users" label="Split with others" />
           )}
           {step.tiles ? (
             <div className="nl-tiles" role="radiogroup" aria-label={step.title}>
@@ -973,11 +974,12 @@ export function Done({ path, flow, editing = null, busy = false, onOpen, onPick 
             {drawn && (
               <div className={`nl-fold${open ? ' in' : ' out'}`}>
                 <div className="pk-choices nl-reopen" role="radiogroup" aria-label={s.title}>
-                  {s.options.map((o) => (
-                    <Choice key={o.v} name={`re-${p.step}-${i}`} checked={o.v === p.v} disabled={busy || !open}
+                  {shownOptions(s.options, p.v)[0].map((o) => (
+                    <Choice key={o.v} name={`re-${p.step}-${i}`} checked={o.v === shownOptions(s.options, p.v)[1]}
+                            disabled={busy || !open}
                             // The answer already chosen folds the row; a radio
                             // that is already on sends no change of its own.
-                            onClick={o.v === p.v ? () => onOpen?.(i) : undefined}
+                            onClick={o.v === shownOptions(s.options, p.v)[1] ? () => onOpen?.(i) : undefined}
                             onChange={() => onPick?.(i, o.v)} label={o.label} />
                   ))}
                 </div>
@@ -988,6 +990,17 @@ export function Done({ path, flow, editing = null, busy = false, onOpen, onPick 
       })}
     </div>
   );
+}
+
+/**
+ * The options a reopened step shows (2026-10-26): never a hidden twin (the
+ * "split" copy of "Yes, Groceries"), and the answer marked on the one she
+ * sees. Returns [options, the value to mark].
+ */
+export function shownOptions(options, v) {
+  const vis = options.filter((o) => !o.hidden);
+  const was = options.find((o) => o.v === v);
+  return [vis, was?.hidden ? vis.find((o) => o.label === was.label)?.v ?? v : v];
 }
 
 /**
@@ -1072,10 +1085,10 @@ export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'N
                     {a.options?.length ? (
                       <div className="pk-choices nl-reopen" role="radiogroup" aria-label={a.title || 'Your answer'}>
                         {a.options.map((o) => (
-                          <Choice key={o.v} name={`seen-${entry.key}-${i}`} checked={o.v === a.v}
+                          <Choice key={o.v} name={`seen-${entry.key}-${i}`} checked={o.v === (a.marked ?? a.v)}
                                   disabled={busy || !open || isPast}
-                                  onClick={o.v === a.v ? () => setViewing(afterMarked(i, answers.length)) : undefined}
-                                  onChange={() => { if (o.v !== a.v) onReopen?.(i, o.v); }} label={o.label} />
+                                  onClick={o.v === (a.marked ?? a.v) ? () => setViewing(afterMarked(i, answers.length)) : undefined}
+                                  onChange={() => { if (o.v !== (a.marked ?? a.v)) onReopen?.(i, o.v); }} label={o.label} />
                         ))}
                       </div>
                     ) : (
