@@ -554,6 +554,11 @@ def undo_change():
             st.set_destination(key, d["category"], str(d.get("label") or "")[:200])
     st.write_categories(changes)
     apply_transfer_matches(st)
+    if isinstance(body.get("marks"), dict) and body["marks"].get("income_type"):
+        # A kind Pearl had guessed (a bonus, say) comes back as Pearl's
+        # guess again, so its question does too (2026-10-26).
+        from .income import apply_income_types
+        apply_income_types(st)
     return jsonify({"ok": True, "undone": len(changes) + extra})
 
 

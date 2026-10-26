@@ -110,3 +110,28 @@ def test_types_are_stored_and_yours_win(tmp_path):
     from finance.pipeline import recategorize_all
     recategorize_all(st)
     assert st.get_transaction(mystery.fingerprint).income_type == "gifts"
+
+
+def test_undo_puts_a_guessed_bonus_back(tmp_path):
+    """Undoing "what kind of income?" on a bonus-sized deposit leaves Pearl's
+    guess, and so its question, as they were: the card she reopened to
+    answer again must still have something to ask (2026-10-26)."""
+    from app import create_app
+    from finance.review import for_store, ids_in
+    app = create_app(str(tmp_path / "bonus.db"))
+    st = app.config["STORE"]
+    today = date.today()
+    ingest(st, IngestResult(transactions=biweekly(today - timedelta(days=70), 4)
+                            + [row(-9000, "PAYROLL ACME CORP BONUS", (today - timedelta(days=3)).isoformat(),
+                                   category="Income")],
+                            account_id="chq"))
+    bonus = next(t for t in st.all_transactions() if t.description.endswith("BONUS"))
+    assert bonus.income_type == "bonus"
+    assert bonus.fingerprint in ids_in(for_store(st))
+    c = app.test_client()
+    r = c.put(f"/api/transactions/{bonus.fingerprint}/income-type", json={"kind": "salary"})
+    assert bonus.fingerprint not in ids_in(for_store(st))
+    assert c.post("/api/transactions/undo", json=r.get_json()["undo"]).status_code == 200
+    back = st.get_transaction(bonus.fingerprint)
+    assert (back.income_type, back.income_type_source) == ("bonus", "rule")
+    assert bonus.fingerprint in ids_in(for_store(st))

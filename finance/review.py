@@ -250,8 +250,12 @@ def build(transactions: list[Transaction], today: str | None = None,
 
     # 4. Income whose type is a guess.
     income = []
+    # A joint deposit's card asks what kind of income it is too, so one
+    # deposit is one question, and counted once (2026-10-26).
+    joint_asked = {it["txn"]["id"] for it in joint_in}
     for t in live:
-        if not is_income(t) or t.date[:10] < since or t.income_type_source == "user":
+        if not is_income(t) or t.date[:10] < since or t.income_type_source == "user" \
+                or t.fingerprint in joint_asked:
             continue
         kind = kind_of(t)
         if kind not in ("other", "bonus"):
