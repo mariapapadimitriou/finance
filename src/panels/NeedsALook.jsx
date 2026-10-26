@@ -189,7 +189,12 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
   const open = useMemo(() => byKind(items.filter((i) => !i.skipped)).flatMap((g) => g.items), [items]);
   const [tab, setTab] = useState('open');
   const skipped = useMemo(() => items.filter((i) => i.skipped), [items]);
-  const current = currentKey ? items.find((i) => i.key === currentKey) ?? null : null;
+  // A card reopened from its Sorted card stays up even when Undo leaves the
+  // transaction out of the list (2026-10-26): she asked to answer it again.
+  const [reopened, setReopened] = useState(null);
+  const current = currentKey
+    ? items.find((i) => i.key === currentKey) ?? (reopened?.key === currentKey ? reopened : null)
+    : null;
   const position = current ? Math.max(1, open.indexOf(current) + 1) : 0;
   const count = data?.count ?? 0;
 
@@ -283,6 +288,7 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
       const [fresh] = await Promise.all([getReview(), entry.it?.txn?.id
         ? loadCases(entry.it.txn.id).catch(() => null) : null]);
       setData(fresh);
+      setReopened(queue(fresh).some((x) => x.key === entry.key) ? null : entry.it);
       setLog((l) => l.filter((e) => e.key !== entry.key));
       setSorted(null);
       setBack(null);

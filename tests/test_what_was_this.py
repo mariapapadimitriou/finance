@@ -841,3 +841,17 @@ def test_answers_on_the_transaction_page_leave_needs_a_look(client):
     assert asked(dep2)
     client.put(f"/api/transactions/{dep3}/income-type", json={"kind": "gifts"})
     assert not asked(dep3) and client.st.get_transaction(dep3).joint_from == "me"
+
+
+def test_a_joint_income_deposit_is_one_question(client):
+    """Income into a joint account is asked on its joint card (Is this
+    income? → what kind), not again under Income: one deposit, one
+    question, counted once (2026-10-26)."""
+    from finance.review import for_store
+    ids = load(client.st, row(-500, "DEPOSIT FAM", account="fam", category="Income", when=in_month(4)))
+    client.put("/api/accounts/fam/joint", json={"label": "Joint"})
+    r = for_store(client.st)
+    tid = ids["DEPOSIT FAM"]
+    assert [it["key"] for it in r["joint_in"]] == [f"joint:{tid}"]
+    assert all(it["txn"]["id"] != tid for it in r["income_type"])
+    assert r["count"] == 1
