@@ -42,7 +42,11 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
     // Tiles (2026-10-23): one idea two ways is one tile that asks which.
     expect(S.what_out.tiles).toBe(true);
     expect(S.what_out.options.map((o) => o.label)).toEqual([
-      'A bill', 'Split with others', 'My own money', 'A loan', 'Not mine']);
+      'A bill', 'My own money', 'A loan', 'Not mine']);
+    // Split with others is spending (2026-10-25): a "Yes" on the first question.
+    expect(S.q1.options.map((o) => o.label)).toEqual([
+      'Yes, I spent something', 'Yes, split with others', 'No, I saved it', 'No, something else']);
+    expect(S.q1.options.find((o) => o.v === 'split').to).toBe('split');
     expect(S.what_out.options.find((o) => o.v === 'g:loan').to).toBe('what_out_loan');
     expect(S.what_out_loan.options.map((o) => o.label)).toEqual(['I lent it to someone', 'I’m paying back a loan']);
     expect(S.what_out_loan.options.find((o) => o.v === 'lent').to).toBe('who_to');
@@ -55,7 +59,7 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
   it('a guessed category asks "Is this Dining out?" first', () => {
     const { S } = steps({ ...out, kind: 'category', guess: 'Dining' }, null);
     expect(S.q1.title).toMatch(/^Is this /);
-    expect(S.q1.options.map((o) => o.v)).toEqual(['yes', 'other', 'else']);
+    expect(S.q1.options.map((o) => o.v)).toEqual(['yes', 'split', 'other', 'else']);
   });
 
   it('a joint deposit goes from "something else" to "Who put this in?" (R-08)', () => {

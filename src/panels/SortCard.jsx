@@ -286,10 +286,16 @@ export function steps(it, cases, mode = 'stacked') {
   // ── One short question first (Needs a look, Quick sort) ──────────────
   if (out) {
     const unsure = it.kind === 'category' && guess && guess !== 'Other';
+    // Split with others is spending (2026-10-25): it's a "Yes" on the first
+    // question, not something else. Not on a joint account, where whose it
+    // was is asked instead.
+    const canSplit = list.some((c) => c.key === 'shared');
+    const split = canSplit ? [{ v: 'split', label: 'Yes, split with others', done: 'Split with others', to: 'split' }] : [];
     S.q1 = unsure ? {
       title: `Is this ${categoryLabel(guess)}?`, left: 3,
       options: [
         { v: 'yes', label: `Yes, ${categoryLabel(guess)}`, done: categoryLabel(guess) },
+        ...split,
         { v: 'other', label: 'No, a different category', done: 'A different category', to: 'cat' },
         { v: 'else', label: 'It wasn’t a purchase', done: 'Not a purchase', to: 'what_out' },
       ],
@@ -297,12 +303,13 @@ export function steps(it, cases, mode = 'stacked') {
       title: 'Was this spending?', left: 3,
       options: [
         { v: 'spent', label: 'Yes, I spent something', done: 'Spending', to: 'cat' },
+        ...split,
         { v: 'saved', label: 'No, I saved it', done: 'Saved' },
         { v: 'else', label: 'No, something else', done: 'Something else', to: 'what_out' },
       ],
     };
     // Everything else the server knows, minus what the first question covered.
-    S.what_out = { title: 'What was it?', left: 2, tiles: true, options: rest(['spending', 'saved'], 'what_out') };
+    S.what_out = { title: 'What was it?', left: 2, tiles: true, options: rest(['spending', 'saved', 'shared'], 'what_out') };
     return { start: 'q1', S };
   }
   const match = it.kind === 'money_in' && it.guess?.action === 'split' ? it.guess.split : null;
