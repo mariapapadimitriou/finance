@@ -90,6 +90,22 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
     expect(page).not.toMatch(/type="checkbox"[^>]*checked/);
     // Not on "Was this spending?" itself, where No answers sit too.
     expect(html(<SortCard it={out} commit={() => {}} />)).not.toContain('Split with others');
+    // Its icon, and no line under it (2026-10-26).
+    expect(page).toMatch(/pk-choice-label"><svg[^]*?<\/svg>Split with others/);
+    expect(page).not.toContain('You’ll say who it was with next');
+  });
+
+  it('a reopened guess shows "Yes, Groceries" once, not its split twin too (2026-10-26)', async () => {
+    const { default: SortCard, shownOptions } = await import('./SortCard.jsx');
+    const buy = { key: 'cat:g', kind: 'category', guess: 'Groceries', learnable: true,
+                  txn: { id: 'g', date: '2026-10-09', merchant: 'FreshCo', amount: 64.2, account_name: 'card' } };
+    const page = html(<SortCard it={buy} commit={() => {}} initialPath={[{ step: 'q1', v: 'other' }]}
+                                initialEdit={0} />);
+    expect(page.match(/Yes, Groceries/g)).toHaveLength(1);
+    const opts = [{ v: 'yes', label: 'Yes, Groceries' }, { v: 'split', label: 'Yes, Groceries', hidden: true },
+                  { v: 'other', label: 'No' }];
+    expect(shownOptions(opts, 'split')).toEqual([[opts[0], opts[2]], 'yes']);
+    expect(shownOptions(opts, 'other')[1]).toBe('other');
   });
 
   it('Change category reopens as the card it was answered in (2026-10-25)', async () => {

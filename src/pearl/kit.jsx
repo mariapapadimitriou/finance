@@ -359,7 +359,7 @@ export function Dialog({ labelledBy, describedBy, onClose, children, className =
  * chosen radio row is blush with a rose edge; a checkbox row stays plain.
  */
 export function Choice({ type = 'radio', name, checked, onChange, onClick, label, description,
-                         disabled = false }) {
+                         disabled = false, icon = null }) {
   return (
     <label className={`pk-choice ${type}${checked ? ' on' : ''}${disabled ? ' off' : ''}`}>
       <input type={type} name={name} checked={!!checked} disabled={disabled} onClick={onClick}
@@ -368,7 +368,9 @@ export function Choice({ type = 'radio', name, checked, onChange, onClick, label
         {type === 'checkbox' && checked && <PIcon name="check" size={16} />}
       </span>
       <span className="pk-choice-text">
-        <span>{label}</span>
+        <span className={icon ? 'pk-choice-label' : undefined}>
+          {icon && <PIcon name={icon} size={16} />}{label}
+        </span>
         {description && <span className="pk-choice-desc">{description}</span>}
       </span>
     </label>
