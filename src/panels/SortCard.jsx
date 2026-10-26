@@ -280,30 +280,34 @@ export function steps(it, cases, mode = 'stacked') {
   const rest = (skip, parent) => tilesFor(list.filter((c) => !skip.includes(c.key)), S, { out, parent, nameless });
   // Every option laid out at once (2026-10-23), no guess card first.
   S.all = { title: 'What was this?', left: 2, tiles: true, options: rest([], 'all') };
+  // "Split with others", unticked (2026-10-25): on the category step of a
+  // purchase, ticking it goes on to who it was with, the category kept.
+  // Not on a joint account, where whose it was is asked instead.
+  const canSplit = out && list.some((c) => c.key === 'shared');
+  S.cat.splittable = canSplit;
+  S.cat_split = { title: 'What was it for?', left: 2, ask: 'category', to: 'split' };
 
   if (mode === 'all') return { start: 'all', S };
 
   // ── One short question first (Needs a look, Quick sort) ──────────────
   if (out) {
     const unsure = it.kind === 'category' && guess && guess !== 'Other';
-    // Split with others is spending (2026-10-25): it's a "Yes" on the first
-    // question, not something else. Not on a joint account, where whose it
-    // was is asked instead.
-    const canSplit = list.some((c) => c.key === 'shared');
-    const split = canSplit ? [{ v: 'split', label: 'Yes, split with others', done: 'Split with others', to: 'split' }] : [];
+    // Split with others is spending (2026-10-25), asked as a box on the
+    // purchase answers, unticked: "Yes, Personal Care" with it ticked goes on
+    // to who it was with (a hidden twin of the answer).
     S.q1 = unsure ? {
-      title: `Is this ${categoryLabel(guess)}?`, left: 3,
+      title: `Is this ${categoryLabel(guess)}?`, left: 3, splittable: canSplit, splitFor: { yes: 'split' },
       options: [
         { v: 'yes', label: `Yes, ${categoryLabel(guess)}`, done: categoryLabel(guess) },
-        ...split,
+        { v: 'split', label: `Yes, ${categoryLabel(guess)}`, done: `${categoryLabel(guess)} · split`, to: 'split', hidden: true },
         { v: 'other', label: 'No, a different category', done: 'A different category', to: 'cat' },
         { v: 'else', label: 'It wasn’t a purchase', done: 'Not a purchase', to: 'what_out' },
       ],
     } : {
+      // The box is on "What was it for?" next, where only purchases go.
       title: 'Was this spending?', left: 3,
       options: [
         { v: 'spent', label: 'Yes, I spent something', done: 'Spending', to: 'cat' },
-        ...split,
         { v: 'saved', label: 'No, I saved it', done: 'Saved' },
         { v: 'else', label: 'No, something else', done: 'Something else', to: 'what_out' },
       ],
@@ -436,6 +440,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   const [editing, setEditing] = useState(initialEdit);
   const [name, setName] = useState(() => initialName || nameIn(it.txn?.merchant) || it.to || '');
   const [cat, setCat] = useState('');
+  // Split with others, asked on the purchase answers; no unless ticked.
+  const [splitOn, setSplitOn] = useState(false);
   const [amount, setAmount] = useState('');
   // "Which purchase?": what she typed, and what the server found for it.
   const [find, setFind] = useState('');
@@ -488,6 +494,9 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   }));
   // A split counts toward a category: an unsorted transfer picks one first.
   const needsCat = !it.txn.category || ['Unsorted transfers', 'Other'].includes(it.txn.category);
+  // The category picked before the split (2026-10-25), when Split was ticked.
+  const splitCat = path.find((p) => p.step === 'cat_split')?.v || '';
+  const askCat = needsCat && !splitCat;
   const spendingCats = useMemo(() => groupCategories(categories, {
     only: (c) => ['essentials', 'lifestyle'].includes(c.group) && !c.hidden,
   }), [categories]);
@@ -536,6 +545,11 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     setEditing(null);
     const answers = [...path, { step: stepId, v, label }];
     const c = chosen;
+    // Split ticked on a purchase's category: who it was with comes next.
+    if (s.ask === 'category' && splitOn && s.splittable && (!c || c.key === 'spending')) {
+      setPath([...path, { step: 'cat_split', v, label }]);
+      return undefined;
+    }
     if (s.ask === 'category') {
       if (c?.needs === 'borrowed') return markCase(c, { counted: false, category: v }, answers, `Counts as ${categoryLabel(v)} spending.`);
       if (c?.key === 'bill') return markCase(c, { category: v }, answers, `Counts as ${categoryLabel(v)}, in Essentials. Pearl plans for it next month.`);
@@ -648,8 +662,9 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   };
 
   /** A choice tapped on the open question: lead on, or commit. */
-  const choose = (v) => {
+  const choose = (picked) => {
     setEditing(null);                       // a reopened row folds when the open question is answered
+    const v = splitOn && step.splitFor?.[picked] ? step.splitFor[picked] : picked;
     const opt = step.options?.find((o) => o.v === v);
     // Split with others: its own page where the door has one (a
     // transaction's panel); otherwise the next step in this card
@@ -700,7 +715,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     setPath([...path, { step: stepId, v: amount, label: `${txAmount(Number(amount))} put away` }]);
     setAmount(amount);
   };
-  const optionRows = (options, nameAttr, onPick) => options.map((o) => (
+  const optionRows = (options, nameAttr, onPick) => options.filter((o) => !o.hidden).map((o) => (
     <Choice key={o.v} name={nameAttr} checked={false} disabled={busy}
             onChange={() => onPick(o.v)} label={o.label} description={o.effect} />
   ));
@@ -728,6 +743,10 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           <h2 className="pk-h2 nl-q">{step.title}</h2>
           {step.sub && <p className="pk-muted nl-sub">{step.sub}</p>}
           {step.match && <RepaymentMatch match={step.match} />}
+          {step.splittable && (!chosen || chosen.key === 'spending') && (
+            <Choice type="checkbox" checked={splitOn} disabled={busy} onChange={(on) => setSplitOn(on)}
+                    label="Split with others" description="Only your share counts. You’ll say who it was with next." />
+          )}
           {step.tiles ? (
             <div className="nl-tiles" role="radiogroup" aria-label={step.title}>
               {step.options.map((o) => (
@@ -866,22 +885,23 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
           ) : (
             <>
               {/* No category yet (an unsorted transfer): what it was for, first. */}
-              {needsCat && (
+              {askCat && (
                 <CategoryChips groups={spendingCats} value={cat} label="What was it for?" onChange={setCat} />
               )}
-              {(!needsCat || cat) && (
+              {(!askCat || cat) && (
                 <SplitThis tx={{ full_amount: Math.abs(it.txn.amount), splitting: null,
-                                 category: categoryLabel(cat || it.txn.category) }}
+                                 category: categoryLabel(splitCat || cat || it.txn.category) }}
                            busy={busy}
                            onSave={(split) => {
                              const theirs = split.people.reduce((a, p) => a + (Number(p.amount) || 0), 0);
                              const yours = Math.max(0, Math.abs(it.txn.amount) - theirs);
                              const who = split.people.map((p) => p.name).join(', ');
                              // One answer for the step, so Undo reopens it.
+                             const picked = splitCat || (askCat ? cat : '');
                              const answers = [...path, { step: stepId, v: 'split',
-                               label: `${needsCat ? `${categoryLabel(cat)} · ` : ''}Split with ${who}` }];
+                               label: `${askCat ? `${categoryLabel(cat)} · ` : ''}Split with ${who}` }];
                              finish(answers, `Only your share counts: ${txAmount(yours)}.`, () => setSplit(it.txn.id,
-                               { ...split, settle: true, ...(needsCat ? { category: cat } : {}) })
+                               { ...split, settle: true, ...(picked ? { category: picked } : {}) })
                                .then((res) => ({ res, title: `Split with ${who}.`,
                                                  detail: `Only your share counts: ${txAmount(yours)}.`, undo: res?.undo })));
                            }} />

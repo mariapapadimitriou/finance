@@ -43,10 +43,13 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
     expect(S.what_out.tiles).toBe(true);
     expect(S.what_out.options.map((o) => o.label)).toEqual([
       'A bill', 'My own money', 'A loan', 'Not mine']);
-    // Split with others is spending (2026-10-25): a "Yes" on the first question.
+    // Split with others is spending (2026-10-25): an unticked box on the
+    // purchase answers, not an option of its own.
     expect(S.q1.options.map((o) => o.label)).toEqual([
-      'Yes, I spent something', 'Yes, split with others', 'No, I saved it', 'No, something else']);
-    expect(S.q1.options.find((o) => o.v === 'split').to).toBe('split');
+      'Yes, I spent something', 'No, I saved it', 'No, something else']);
+    expect(S.q1.splittable).toBeFalsy();          // asked on "What was it for?" next
+    expect(S.cat.splittable).toBe(true);
+    expect(S.cat_split.to).toBe('split');
     expect(S.what_out.options.find((o) => o.v === 'g:loan').to).toBe('what_out_loan');
     expect(S.what_out_loan.options.map((o) => o.label)).toEqual(['I lent it to someone', 'I’m paying back a loan']);
     expect(S.what_out_loan.options.find((o) => o.v === 'lent').to).toBe('who_to');
@@ -59,7 +62,10 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
   it('a guessed category asks "Is this Dining out?" first', () => {
     const { S } = steps({ ...out, kind: 'category', guess: 'Dining' }, null);
     expect(S.q1.title).toMatch(/^Is this /);
-    expect(S.q1.options.map((o) => o.v)).toEqual(['yes', 'split', 'other', 'else']);
+    expect(S.q1.options.filter((o) => !o.hidden).map((o) => o.v)).toEqual(['yes', 'other', 'else']);
+    // "Yes, Dining" with Split ticked goes on to who it was with.
+    expect(S.q1.splitFor.yes).toBe('split');
+    expect(S.q1.options.find((o) => o.v === 'split')).toMatchObject({ hidden: true, to: 'split' });
   });
 
   it('a joint deposit goes from "something else" to "Who put this in?" (R-08)', () => {
@@ -73,6 +79,17 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
     expect(S.q1.left).toBe(3);
     expect(S.what_in.options.find((o) => o.v === 'payback').to).toBe('name');
     expect(S.name.title).toBe('Who sent this?');
+  });
+
+  it('"What was it for?" asks Split with others, unticked (2026-10-25)', async () => {
+    const { default: SortCard } = await import('./SortCard.jsx');
+    const page = html(<SortCard it={out} commit={() => {}} initialPath={[{ step: 'q1', v: 'spent' }]} />);
+    expect(page).toContain('What was it for?');
+    expect(page).toContain('Split with others');
+    expect(page).not.toContain('Yes, split with others');
+    expect(page).not.toMatch(/type="checkbox"[^>]*checked/);
+    // Not on "Was this spending?" itself, where No answers sit too.
+    expect(html(<SortCard it={out} commit={() => {}} />)).not.toContain('Split with others');
   });
 
   it('Change category reopens as the card it was answered in (2026-10-25)', async () => {
