@@ -270,9 +270,11 @@ export const setTxNote   = (id, note) =>
   json('PUT', `/api/transactions/${encodeURIComponent(id)}/note`, { note });
 
 // How much of a charge was yours, when friends paid you back the rest.
-// null puts the whole charge back.
-export const setShare      = (id, myShare) =>
-  json('PUT', `/api/transactions/${id}/share`, { my_share: myShare });
+// null puts the whole charge back. On a joint account, part of a charge is
+// remembered for every charge from that name there unless `always` is false.
+export const setShare      = (id, myShare, { always } = {}) =>
+  json('PUT', `/api/transactions/${id}/share`,
+       always === undefined ? { my_share: myShare } : { my_share: myShare, always });
 // Money into a joint account: who put it in, 'me' or 'them' (null asks
 // again); `remember` answers for every deposit from that sender.
 // Who an e-Transfer was from or to; '' goes back to the bank's name.

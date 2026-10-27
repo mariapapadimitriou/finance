@@ -613,8 +613,12 @@ def set_transaction_share(txn_id: str):
         # of it (yours), nothing (theirs, the default) or part — and that
         # applies to money coming in as much as going out.
         from .transfers import apply_transfer_matches
+        rule = ""
         if raw is None or (isinstance(raw, str) and not raw.strip()):
-            st.set_share(txn_id, None)
+            # "Mine" on a charge from a name she always splits: all hers this
+            # once, said outright, or the split would come straight back.
+            st.set_share(txn_id, txn.amount if txn.joint_split is not None and txn.amount > 0
+                         else None)
         else:
             try:
                 share = round(float(raw), 2)
@@ -624,8 +628,19 @@ def set_transaction_share(txn_id: str):
                 return jsonify({"error": "Your share has to be between nothing "
                                          "and the whole amount."}), 400
             st.set_share(txn_id, share)
+            # Split once, split always (2026-10-26): part of a charge says
+            # how she shares that name on this account, so every charge
+            # there from it is split the same way, unless she says no.
+            part = txn.amount > 0 and 0.005 < share < txn.amount - 0.005
+            if part and body.get("always", True) is not False:
+                pct = share / txn.amount * 100
+                st.set_joint_split(txn.account_id, txn.merchant, pct)
+                rule = (f"Every {txn.merchant} charge on this joint account is split "
+                        f"this way from now on: {pct:.0f}% yours.")
+            elif part or body.get("always") is False:
+                st.set_joint_split(txn.account_id, txn.merchant, None)
         apply_transfer_matches(st)
-        return jsonify({"ok": True, "my_share": st.get_transaction(txn_id).my_share})
+        return jsonify({"ok": True, "my_share": st.get_transaction(txn_id).my_share, "rule": rule})
     if txn.amount <= 0:
         return jsonify({"error": "Only a charge can be split. This is money "
                                  "that came back."}), 400
