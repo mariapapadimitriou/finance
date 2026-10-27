@@ -678,7 +678,11 @@ export default function TransactionsList({ summary, categories, accounts, review
       </header>
       <CashFlowTabs current="transactions" onTab={onTab} />
 
-      {!empty && <FlowCards totals={totals} />}
+      {(!empty || filters.counts) && (
+        // Spent / Came in filter the list (2026-10-26); tapped again, all of it.
+        <FlowCards totals={data?.month_totals ?? totals} counts={filters.counts}
+                   onCounts={(v) => choose({ counts: filters.counts === v ? '' : v })} />
+      )}
 
       <div className="tx-toolbar">
         <SearchField value={query} onChange={setQuery} label="Search transactions"

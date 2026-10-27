@@ -88,3 +88,29 @@ describe('Transactions polish (2026-10-21)', () => {
     expect(out).toContain('pk-avatar ic');
   });
 });
+
+describe('Spent and Came in filter the list (2026-10-26)', () => {
+  const totals = { spent: 120, income: 2000 };
+  const page = (counts) => renderToStaticMarkup(<FlowCards totals={totals} counts={counts} onCounts={() => {}} />);
+
+  it('are buttons, Left is not', () => {
+    const html = page('');
+    expect(html).toMatch(/<button[^>]*class="tm-stat out"[^>]*aria-pressed="false"/);
+    expect(html).toMatch(/<button[^>]*class="tm-stat in"[^>]*aria-pressed="false"/);
+    expect(html).not.toMatch(/<button[^>]*class="tm-stat left"/);
+    expect(html).toContain('aria-label="Showing what you spent"');
+    expect(html).not.toContain('Show all');
+  });
+
+  it('the one showing is pressed, with Show all', () => {
+    const html = page('spending');
+    expect(html).toMatch(/class="tm-stat out on"[^>]*aria-pressed="true"/);
+    expect(html).toContain('Showing what you spent');
+    expect(html).toContain('Show all');
+    expect(page('income')).toContain('Showing what came in');
+  });
+
+  it('without onCounts nothing is a button, as before', () => {
+    expect(renderToStaticMarkup(<FlowCards totals={totals} />)).not.toContain('<button');
+  });
+});
