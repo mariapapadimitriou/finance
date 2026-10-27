@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { TAGS_ON } from '../features.js';
 import { ErrorNote } from '../components/ui.jsx';
 import {
   deleteRule, editRule, getRules, money, renameTag, setCategoryHidden, setCategoryKind, setMerchantName,
@@ -138,11 +139,13 @@ export function CategoriesSection({ categories = [], kinds = {}, pearl = {}, hid
 }
 
 const TABS = [{ value: 'rules', label: 'Rules' }, { value: 'categories', label: 'Categories' },
-              { value: 'merchants', label: 'Merchants' }, { value: 'tags', label: 'Tags' }];
+              { value: 'merchants', label: 'Merchants' },
+              ...(TAGS_ON ? [{ value: 'tags', label: 'Tags' }] : [])];
 
 export function RulesPage({ rules, onTab, onEdit, categories = [], kinds = {}, pearlKinds = {},
                             onKind, names = [], tags = [], hidden = [], onRenameName, onForgetName,
                             onRenameTag, onRemoveTag, onHide, tab = 'rules', onTabChange }) {
+  if (!TAGS_ON && tab === 'tags') tab = 'rules';   // tags are off for now (2026-10-26)
   return (
     <div className="pk hm-page pf-page">
       <PageHead trail={[{ label: 'Profile', to: 'profile' }, { label: 'Categories and rules' }]}
@@ -189,7 +192,7 @@ export function RulesPage({ rules, onTab, onEdit, categories = [], kinds = {}, p
                            onKind={onKind} onHide={onHide} />
       )}
       {tab === 'merchants' && <NamesSection names={names} onRename={onRenameName} onForget={onForgetName} />}
-      {tab === 'tags' && <TagsSection tags={tags} onRename={onRenameTag} onRemove={onRemoveTag} />}
+      {TAGS_ON && tab === 'tags' && <TagsSection tags={tags} onRename={onRenameTag} onRemove={onRemoveTag} />}
     </div>
   );
 }

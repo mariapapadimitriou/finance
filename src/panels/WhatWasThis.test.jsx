@@ -242,7 +242,7 @@ describe('Mark as… in the transaction panel (2026-10-23)', () => {
                  counts: 'spending', chip: { label: 'Dining' }, tags: [] };
     const out = html(<TransactionDetail id="t1" initial={tx} categories={CATS} startStep="what" />);
     expect(out).toMatch(/class="nl-card-top"/);
-    expect(out).toMatch(/aria-label="Edit Pilot: note, tags and more"/);
+    expect(out).toMatch(/aria-label="Edit Pilot: note, name and more"/);
   });
 });
 

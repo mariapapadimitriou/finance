@@ -3,6 +3,7 @@ import {
   Alert, Avatar, CategoryChip, Choice, DetailPanel, PButton, StatusPill, amountTone, txAmount,
 } from '../pearl/kit.jsx';
 import { depositChoices } from './joint.js';
+import { TAGS_ON } from '../features.js';
 import PIcon from '../pearl/icons.jsx';
 import { categoryLabel } from './CategoryPicker.jsx';
 import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
@@ -238,7 +239,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
         <section className="nl-card nl-stack txd-sort" aria-label={sorted ? 'Sorted' : label}>
           <div className="nl-card-top">
             <Pill icon="edit" className="nl-edit" disabled={busy}
-                  aria-label={`Edit ${tx.merchant}: note, tags and more`} onClick={sortEdit}>
+                  aria-label={`Edit ${tx.merchant}: note, name and more`} onClick={sortEdit}>
               Edit
             </Pill>
           </div>
@@ -400,7 +401,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
               <Detail key={r.id} label="Refunded"
                       value={`${r.merchant} · ${longDate(r.date)} · ${txAmount(r.amount, { inflow: true })}`} />
             ))}
-            {tx.tags?.length > 0 && <Detail label="Tags" value={tx.tags.join(', ')} />}
+            {TAGS_ON && tx.tags?.length > 0 && <Detail label="Tags" value={tx.tags.join(', ')} />}
             {tx.bank_merchant && tx.bank_merchant !== tx.merchant && (
               <Detail label="Bank calls it" value={tx.bank_merchant} />
             )}
@@ -474,9 +475,11 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                 {bank ? 'Change treasure chest' : 'Pay from a treasure chest'}
               </button>
             )}
-            <button type="button" className="txd-link" onClick={() => setStep('tags')}>
-              <PIcon name="tag" size={18} /> {tx.tags?.length ? 'Edit tags' : 'Add a tag'}
-            </button>
+            {TAGS_ON && (
+              <button type="button" className="txd-link" onClick={() => setStep('tags')}>
+                <PIcon name="tag" size={18} /> {tx.tags?.length ? 'Edit tags' : 'Add a tag'}
+              </button>
+            )}
             <button type="button" className="txd-link" onClick={() => setStep('note')}>
               <PIcon name="info" size={18} /> {tx.my_note ? 'Edit note' : 'Add a note'}
             </button>
