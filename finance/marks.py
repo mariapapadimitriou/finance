@@ -84,6 +84,8 @@ IN_CASES = (
      "needs": "candidates", "effect": "Pays back a work expense. Both leave your numbers.", "remember": None},
     {"key": "own", "label": "From my own account", "group": "not_income", "needs": None,
      "effect": "Your own money moving, so it isn’t counted as income.", "remember": "destination"},
+    {"key": "cash", "label": "A cash deposit", "group": "not_income", "needs": None,
+     "effect": "Cash you put in, so it isn’t counted as income.", "remember": None},
     {"key": "out_of_savings", "label": "Taken out of my savings", "group": "not_income",
      "needs": None, "effect": "Comes off your total saved. It isn’t income.", "remember": "destination"},
     {"key": "borrowed", "label": "Money I borrowed", "group": "not_income", "needs": None,
@@ -609,6 +611,12 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         recat(cat, bool(body.get("remember")))
         _tick_bill(store, t, cat, today)
         title = f"Counted as a bill, in {cat}."
+    elif case == "cash":
+        # A cash deposit (2026-10-26): her own cash going in. Not income, and
+        # not taken off what she withdrew, which may never have been in Pearl.
+        un_exclude()
+        recat("Transfers")
+        title = "Sorted as a cash deposit."
     elif case in ("moved", "own"):
         un_exclude()
         # No destination to remember: her Remember becomes a rule for this
@@ -790,7 +798,7 @@ def preview(t: Transaction, txns: list[Transaction], body: dict) -> list[Transac
         cat = body.get("category")
         new = replace(t, category=cat, category_source="user", excluded=None) if cat in CATEGORIES \
             else None
-    elif case in ("moved", "own"):
+    elif case in ("moved", "own", "cash"):
         new = replace(t, category="Transfers", category_source="user", excluded=None)
     elif case in ("saved", "out_of_savings"):
         new = replace(t, category="Saved", category_source="user", excluded=None)
