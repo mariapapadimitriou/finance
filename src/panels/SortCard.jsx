@@ -111,6 +111,7 @@ export const DEFAULT_CASES = {
     { key: 'refund', label: 'A refund', group: 'not_income', needs: 'refund', effect: 'Links to the purchase and comes off its category.', remember: null },
     { key: 'reimbursement', label: 'A reimbursement', group: 'not_income', needs: 'candidates', effect: 'Pays back a work expense. Both leave your numbers.', remember: null },
     { key: 'own', label: 'From my own account', group: 'not_income', needs: null, effect: 'Your own money moving, so it isn’t counted as income.', remember: 'destination' },
+    { key: 'cash', label: 'A cash deposit', group: 'not_income', needs: null, effect: 'Cash you put in, so it isn’t counted as income.', remember: null },
     { key: 'out_of_savings', label: 'Taken out of my savings', group: 'not_income', needs: null, effect: 'Comes off your total saved. It isn’t income.', remember: 'destination' },
     { key: 'borrowed', label: 'Money I borrowed', group: 'not_income', needs: null, effect: 'A loan, so it isn’t counted as income.', remember: null },
     { key: 'lent_back', label: 'Paying back money I lent', group: 'not_income', needs: null, effect: 'A friend paying back what you lent, so it isn’t counted as income.', remember: null },
@@ -133,7 +134,7 @@ export const DONE = {
   saved: 'Saved', lent: 'Lent', paying_back: 'Paying someone back', work: 'A work expense',
   not_mine: 'Not mine', saved_part: 'Part put away',
   pay: 'Income', regular_pay: 'My regular pay', payback: 'Paying me back', refund: 'A refund',
-  reimbursement: 'A reimbursement', own: 'My own money', out_of_savings: 'Out of savings',
+  reimbursement: 'A reimbursement', own: 'My own money', cash: 'A cash deposit', out_of_savings: 'Out of savings',
   borrowed: 'Borrowed', lent_back: 'Paying back money I lent', joint_them: 'Someone else put this in',
 };
 
@@ -188,6 +189,7 @@ const FOLDS = {
   in: [
     { id: 'own', label: 'My own money', icon: 'arrows', title: 'Where did it come from?', keys: {
       own: ['Another of my accounts', 'Not income.'],
+      cash: ['A cash deposit', 'Not income.'],
       out_of_savings: ['Out of savings', 'Comes off your total saved.'] } },
     { id: 'loan', label: 'A loan', icon: 'landmark', title: 'Which way did it go?', keys: {
       borrowed: ['I borrowed it', 'Not income.'],
@@ -348,10 +350,12 @@ export function steps(it, cases, mode = 'stacked') {
     options: [
       { v: 'income', label: 'Yes, it’s income', done: 'Income', to: 'kind' },
       { v: 'own', label: 'No, I moved my own money', done: 'My own money' },
+      // A cash deposit (2026-10-26): her own cash, not income.
+      { v: 'cash', label: 'No, it’s a cash deposit', done: 'A cash deposit' },
       { v: 'else', label: 'No, something else', done: 'Something else', to: joint ? 'who_in' : 'what_in' },
     ],
   };
-  S.what_in = { title: 'What was it?', left: 2, tiles: true, options: rest(['pay', 'regular_pay', 'own', 'joint_them'], 'what_in') };
+  S.what_in = { title: 'What was it?', left: 2, tiles: true, options: rest(['pay', 'regular_pay', 'own', 'cash', 'joint_them'], 'what_in') };
   return { start: match ? 'match' : said ? 'memo' : 'q1', S };
 }
 
@@ -648,6 +652,11 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       return finish(answers, `Stays in ${categoryLabel(it.guess)}.`, () => (rem()
         ? plain(() => setCategory(it.txn.id, it.guess, true), `${categoryLabel(it.guess)} for every ${it.to || it.txn.merchant}.`)
         : plain(() => confirmTx(it.txn.id), 'Confirmed.')), true);
+    }
+    if (sId === 'q1' && v === 'cash') {                                     // a cash deposit
+      return finish(answers, 'Cash you put in, so it isn’t counted as income.', () => (it.kind === 'joint_in'
+        ? plain(() => setJointFrom(it.txn.id, 'me', false), 'Sorted as a cash deposit.')
+        : via({ case: 'cash' }, 'Sorted as a cash deposit.')));
     }
     if (sId === 'q1') {                                                     // my own money
       return finish(answers, 'Your own money moving, so it isn’t counted as income.', () => (it.kind === 'joint_in'

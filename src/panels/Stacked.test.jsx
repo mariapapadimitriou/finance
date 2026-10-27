@@ -95,6 +95,17 @@ describe('Needs a look, stacked (R-07 to R-12)', () => {
     expect(page).not.toContain('You’ll say who it was with next');
   });
 
+  it('"Is this income?" offers a cash deposit, and it is under My own money too (2026-10-26)', async () => {
+    const { steps: sortSteps } = await import('./SortCard.jsx');
+    const { S } = sortSteps(inn, null);
+    expect(S.q1.options.map((o) => o.label)).toEqual(
+      ['Yes, it’s income', 'No, I moved my own money', 'No, it’s a cash deposit', 'No, something else']);
+    expect(S.what_in.options.map((o) => o.label)).not.toContain('A cash deposit');
+    const all = sortSteps(inn, null, 'all').S;
+    const own = all.all.options.find((o) => o.label === 'My own money');
+    expect(all[own.to].options.map((o) => o.label)).toContain('A cash deposit');
+  });
+
   it('a reopened guess shows "Yes, Groceries" once, not its split twin too (2026-10-26)', async () => {
     const { default: SortCard, shownOptions } = await import('./SortCard.jsx');
     const buy = { key: 'cat:g', kind: 'category', guess: 'Groceries', learnable: true,

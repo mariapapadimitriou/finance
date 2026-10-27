@@ -855,3 +855,26 @@ def test_a_joint_income_deposit_is_one_question(client):
     assert [it["key"] for it in r["joint_in"]] == [f"joint:{tid}"]
     assert all(it["txn"]["id"] != tid for it in r["income_type"])
     assert r["count"] == 1
+
+
+def test_a_cash_deposit_is_not_income(client):
+    """"No, it's a cash deposit" (2026-10-26): her own cash going in, so not
+    income, and not taken off what she withdrew."""
+    ids = load(client.st, row(-2000, "PAYROLL ACME", category="Income", when=in_month(1)),
+               row(-300, "ATM DEPOSIT", when=in_month(5)))
+    tid = ids["ATM DEPOSIT"]
+    assert any(c["key"] == "cash" for c in cases(client, tid)["cases"])
+    before = listing(client)["totals"]
+    res = mark(client, tid, case="cash")
+    assert res["title"] == "Sorted as a cash deposit."
+    t = client.st.get_transaction(tid)
+    assert (t.category, t.category_source) == ("Transfers", "user")
+    after = listing(client)["totals"]
+    assert after["income"] == before["income"] == 2000 and after["spent"] == 0
+    own = mark(client, tid, case="own")                # the same as her own money moving
+    assert listing(client)["totals"] == after
+    undo(client, own)
+    from finance.review import for_store, ids_in
+    assert tid not in ids_in(for_store(client.st))
+    undo(client, res)
+    assert client.st.get_transaction(tid).category != "Transfers"
