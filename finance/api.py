@@ -137,7 +137,8 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
                          kinds=kinds.kind_map(st, txns, _date.fromisoformat(_today_iso())),
                          tags=st.tags(), saved_to=st.saved_to(), refunds=st.refunds(),
                          payback_kinds=st.payback_kinds(), names=st.merchant_names(),
-                         accounts=marks.account_labels(st), payer=st.payback_people())
+                         accounts=marks.account_labels(st), payer=st.payback_people(),
+                         recurring=st.recurring_transfers())
     if everything:
         rows = txlist.visible(txns) + txlist.left_out(txns) + txlist.theirs(txns)
     elif excluded:
@@ -2360,3 +2361,4 @@ def skip_review():
 from . import income_bills_api, insights_api, privacy_api, profile_api  # noqa: E402,F401,I001
 from . import marks_api, ranges_api, transactions_extras_api  # noqa: E402,F401
 from . import calendar_api, quick_sort_api  # noqa: E402,F401
+from . import recurring_api  # noqa: E402,F401

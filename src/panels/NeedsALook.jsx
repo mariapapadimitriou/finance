@@ -10,6 +10,7 @@ import TransactionDetail from './TransactionDetail.jsx';
 
 export { SortedCard };
 import { depositChoices } from './joint.js';
+import RecurringQuestion from './RecurringTransfer.jsx';
 import {
   INCOME_KINDS, answerDuplicate, dismissReview, getReview, money, setCategory, setIncomeType,
   setJointFrom, skipReview, undoChange,
@@ -59,6 +60,8 @@ export function queue(data) {
       key: `u:${t.id}`, kind: 'unsorted', date: t.date, txn: t, to: t.to || t.merchant,
       learnable: learnable.has(t.id), skipped: !!t.skipped,
     })),
+    // 2026-10-27: the same amount on a schedule, asked once for all of them.
+    ...(data.recurring_transfer ?? []).map((it) => ({ ...it, kind: 'recurring', date: it.txn.date })),
     ...(data.unsure_category ?? []).map((it) => ({ ...it, kind: 'category', date: it.txn.date })),
     ...(data.money_in ?? []).map((it) => ({ ...it, kind: 'money_in', date: it.txn.date })),
     ...(data.joint_in ?? []).map((it) => ({ ...it, kind: 'joint_in', date: it.txn.date })),
@@ -74,7 +77,7 @@ export function queue(data) {
 
 // The chips over the queue, in this order; a type with nothing shows none.
 export const KIND_LABELS = {
-  unsorted: 'Where it went', category: 'Categories', money_in: 'Money in',
+  unsorted: 'Where it went', recurring: 'Recurring transfers', category: 'Categories', money_in: 'Money in',
   joint_in: 'Joint deposits', who_sent: 'Who sent it', income: 'Income', pay3: 'Paycheques',
   duplicate: 'Duplicates',
 };
@@ -83,6 +86,7 @@ export const KIND_LABELS = {
 export function skippedLine(it) {
   switch (it.kind) {
     case 'unsorted': return 'Where did this go? Counted as spending until you answer';
+    case 'recurring': return 'Is this a recurring transfer? Counted as spending until you answer';
     case 'category': return `Pearl guessed ${it.guess}`;
     case 'money_in': return 'What was this money? Not counted as income yet';
     case 'joint_in': return 'Who put this in? Pearl isn’t counting it yet';
@@ -98,6 +102,7 @@ export function skippedLine(it) {
 export function questionLabel(it) {
   switch (it.kind) {
     case 'unsorted': return 'Where did this go?';
+    case 'recurring': return 'Recurring transfer?';
     case 'category': return it.guess && it.guess !== 'Other' ? `Is this ${categoryLabel(it.guess)}?` : 'What was this?';
     case 'money_in': return it.guess?.action === 'split' ? 'Paid back to you?' : 'Is this income?';
     case 'joint_in': return 'Who put this in?';
@@ -586,7 +591,10 @@ function TxHead({ txn, name }) {
 }
 
 /** The one-step questions: a duplicate (D-02) and a third paycheque. */
-export function Question({ it, busy, onSkip, act, commit, onBack }) {
+export function Question({ it, categories = [], busy, onSkip, act, commit, onBack }) {
+  if (it.kind === 'recurring') {
+    return <RecurringQuestion it={it} categories={categories} busy={busy} act={act} commit={commit} onSkip={onSkip} />;
+  }
   if (it.kind === 'duplicate') {
     return (
       <>

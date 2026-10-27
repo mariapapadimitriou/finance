@@ -138,7 +138,7 @@ def charge_candidates(inflow: Transaction, transactions: list[Transaction]) -> l
 def build(transactions: list[Transaction], today: str | None = None,
           dismissed: set[str] | None = None, splits: dict | None = None,
           payer: dict | None = None, found_on: dict[str, str] | None = None,
-          skipped: set[str] | None = None) -> dict:
+          skipped: set[str] | None = None, recurring: list[dict] | None = None) -> dict:
     today_d = date.fromisoformat(today) if today else date.today()
     since = (today_d - timedelta(days=ASK_DAYS)).isoformat()
     dismissed = dismissed or set()
@@ -146,6 +146,35 @@ def build(transactions: list[Transaction], today: str | None = None,
 
     # 1. Unsorted transfers.
     groups = unsorted_groups(live)
+
+    # 1b. Recurring transfers (2026-10-27): the same amount out of one account
+    # on a schedule is asked once, "Is this a recurring transfer?", instead of
+    # once for each.
+    from .recurring_transfers import series
+    from .transfers import transfer_pairs
+    by_id = {t.fingerprint: t for t in live}
+    waiting = {t["id"] for t in groups["transfers"]}
+    repeating = []
+    for s in series(live, recurring or [], set(transfer_pairs(transactions, today=today_d.isoformat()))):
+        key = s["key"]
+        if key in dismissed:
+            continue
+        rows = [by_id[i] for i in s["ids"] if i in by_id]
+        last = rows[-1]
+        to = f" to {s['to']}" if s["to"] else ""
+        repeating.append({
+            "key": key, "txn": _brief(last), "series": s,
+            "rows": [_brief(t) for t in reversed(rows)],
+            # The ones still counted as spending until she answers.
+            "asked": [i for i in s["ids"] if i in waiting],
+            "reason": (f"${s['amount']:,.2f}{to}, {s['when']}: {s['count']} times "
+                       f"since {date.fromisoformat(s['first']).strftime('%B %-d')}.")})
+    asked = {i for it in repeating for i in it["asked"]}
+    if asked:
+        kept = [t for t in groups["transfers"] if t["id"] not in asked]
+        groups = {**groups, "transfers": kept, "count": len(kept),
+                  "total": round(sum(t["amount"] for t in kept), 2),
+                  "groups": [g for g in groups["groups"] if not set(g["ids"]) <= asked]}
 
     # 2. Categories Pearl isn't sure of.
     unsure = []
@@ -287,21 +316,22 @@ def build(transactions: list[Transaction], today: str | None = None,
 
     # Skipped items stay listed, marked, and leave the badge (THL-213).
     keys = ({"u:" + t["id"] for t in groups["transfers"]}
-            | {it["key"] for part in (unsure, money_in, joint_in, who_sent, income, three, dupes)
+            | {it["key"] for part in (repeating, unsure, money_in, joint_in, who_sent, income, three, dupes)
                for it in part})
     held = keys & (skipped or set())
     for t in groups["transfers"]:
         t["skipped"] = "u:" + t["id"] in held
-    for part in (unsure, money_in, joint_in, who_sent, income, three, dupes):
+    for part in (repeating, unsure, money_in, joint_in, who_sent, income, three, dupes):
         for it in part:
             it["skipped"] = it["key"] in held
     # One number for the whole app (2026-10-22): everything that needs a
     # look, skipped or not — the badge, Home, the Transactions banner, To
     # review and the Needs a look filter all show this. `open` is the part
     # not skipped, for To review's tabs.
-    total = (groups["count"] + len(unsure) + len(money_in) + len(joint_in) + len(who_sent)
-             + len(income) + len(three) + len(dupes))
-    return {"count": total, "open": total - len(held), "skipped": len(held), "unsorted": groups, "unsure_category": unsure,
+    total = (groups["count"] + len(repeating) + len(unsure) + len(money_in) + len(joint_in)
+             + len(who_sent) + len(income) + len(three) + len(dupes))
+    return {"count": total, "open": total - len(held), "skipped": len(held), "unsorted": groups,
+            "recurring_transfer": repeating, "unsure_category": unsure,
             "money_in": money_in, "joint_in": joint_in, "who_sent": who_sent,
             "income_type": income, "three_pay_month": three,
             "duplicate": dupes, "kinds": KINDS}
@@ -312,12 +342,14 @@ def for_store(st, today: str | None = None) -> dict:
     found_on = {k: v["found_on"] for k, v in st.duplicates().items()}
     return build(st.all_transactions(), today=today, dismissed=st.dismissed_reviews(),
                  splits=st.splits(), payer=st.payback_people(), found_on=found_on,
-                 skipped=st.skipped_reviews())
+                 skipped=st.skipped_reviews(), recurring=st.recurring_transfers())
 
 
 def ids_in(review: dict) -> set[str]:
     """Every transaction the review asks about, for the list's Needs a look."""
     out = {t["id"] for t in (review.get("unsorted") or {}).get("transfers", [])}
+    for it in review.get("recurring_transfer") or []:
+        out.update(it.get("asked") or [])
     for part in ("unsure_category", "money_in", "joint_in", "who_sent", "income_type", "duplicate"):
         for it in review.get(part) or []:
             if it.get("txn"):

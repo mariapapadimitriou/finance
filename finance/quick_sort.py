@@ -144,8 +144,8 @@ def questions(review: dict) -> list[tuple[str, str | None]]:
     """Every question Needs a look asks, as (key, transaction id): the same
     list, so Quick sort and Needs a look count the same (2026-10-24)."""
     out = [("u:" + t["id"], t["id"]) for t in (review.get("unsorted") or {}).get("transfers", [])]
-    for part in ("unsure_category", "money_in", "joint_in", "who_sent", "income_type",
-                 "three_pay_month", "duplicate"):
+    for part in ("recurring_transfer", "unsure_category", "money_in", "joint_in", "who_sent",
+                 "income_type", "three_pay_month", "duplicate"):
         for it in review.get(part) or []:
             out.append((it["key"], (it.get("txn") or {}).get("id")))
     return out

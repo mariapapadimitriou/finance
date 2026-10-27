@@ -201,6 +201,19 @@ CREATE TABLE IF NOT EXISTS joint_shares_kept (
     txn_id TEXT PRIMARY KEY
 );
 
+-- Recurring transfers she confirmed (2026-10-27, finance/recurring_transfers.py):
+-- the same amount out of one account on a schedule, sorted as `category`.
+CREATE TABLE IF NOT EXISTS recurring_transfers (
+    id         TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    amount     REAL NOT NULL,
+    cadence    TEXT NOT NULL,
+    anchor     TEXT NOT NULL,
+    dest_key   TEXT,
+    label      TEXT,
+    category   TEXT NOT NULL
+);
+
 -- Names where a purchase on a joint account is always yours.
 CREATE TABLE IF NOT EXISTS joint_mine (
     merchant_key TEXT PRIMARY KEY
@@ -1885,6 +1898,7 @@ class Store:
             ("joint_accounts", "joint accounts"),
             ("joint_mine", "names always yours on a joint account"),
             ("joint_split_rules", "names always split on a joint account"),
+            ("recurring_transfers", "recurring transfers"),
             ("joint_shares_kept", "joint purchases held at an earlier share"),
             ("joint_deposits", "who put money into a joint account"),
             ("joint_deposit_rules", "senders into a joint account"),
@@ -1953,6 +1967,7 @@ class Store:
         ("exclusion_rules", "rules"),
         ("joint_mine", "rules"),
         ("joint_split_rules", "rules"),
+        ("recurring_transfers", "rules"),
         ("joint_deposit_rules", "rules"),
         # Budgets.
         ("budgets", "budgets"),
@@ -2778,6 +2793,25 @@ class Store:
             if who:
                 c.execute("INSERT INTO joint_deposit_rules (account_id, sender_key, who, person) "
                           "VALUES (?, ?, ?, ?)", (account_id, key, who, person or None))
+
+    def recurring_transfers(self) -> list[dict]:
+        with self.conn() as c:
+            rows = c.execute("SELECT * FROM recurring_transfers ORDER BY amount DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    def set_recurring_transfer(self, rule: dict) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM recurring_transfers WHERE id = ?", (rule["id"],))
+            c.execute("INSERT INTO recurring_transfers (id, account_id, amount, cadence, anchor, "
+                      "dest_key, label, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                      (rule["id"], rule["account_id"], round(float(rule["amount"]), 2),
+                       rule["cadence"], rule["anchor"], rule.get("dest_key"),
+                       rule.get("label") or "", rule["category"]))
+
+    def delete_recurring_transfer(self, rule_id: str) -> bool:
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM recurring_transfers WHERE id = ?", (rule_id,))
+            return (cur.rowcount or 0) > 0
 
     def set_joint_mine(self, merchant: str, on: bool) -> None:
         key = merchant.strip().lower()
