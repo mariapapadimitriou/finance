@@ -111,6 +111,8 @@ def trust(base, user_id: int, token: str, label: str) -> None:
     until = t + TRUST_DAYS * 86400
     with base.conn() as c:
         c.execute("DELETE FROM app_devices WHERE id = ?", (_hash(token),))
+        c.execute("DELETE FROM app_devices_removed WHERE id = ? AND user_id = ?",
+                  (_hash(token), int(user_id)))
         c.execute("INSERT INTO app_devices (id, user_id, label, trusted_until, created_at, "
                   "last_used_at) VALUES (?, ?, ?, ?, ?, ?)",
                   (_hash(token), int(user_id), label, until, t, t))
@@ -133,6 +135,47 @@ def others(base, user_id: int, token: str | None) -> list[dict]:
                          "AND id != ? ORDER BY last_used_at DESC",
                          (int(user_id), users.now(), mine)).fetchall()
     return [dict(r) for r in rows]
+
+
+def hashed(token: str | None) -> str:
+    """The stored id of a browser's token (its row in app_devices)."""
+    return _hash(token) if token else ""
+
+
+def mine(base, user_id: int, token: str | None) -> list[dict]:
+    """Profile › Sign-in and security (2026-10-26): every browser trusted for
+    her, this one first, then the most recently used. `id` is the stored
+    hash, never the token itself."""
+    here = hashed(token)
+    with base.conn() as c:
+        rows = c.execute("SELECT id, label, last_used_at, created_at FROM app_devices "
+                         "WHERE user_id = ? AND trusted_until > ? ORDER BY last_used_at DESC",
+                         (int(user_id), users.now())).fetchall()
+    out = [{**dict(r), "this": r["id"] == here} for r in rows]
+    return sorted(out, key=lambda d: not d["this"])
+
+
+def forget(base, user_id: int, device_id: str) -> bool:
+    """Stop trusting one of her browsers: it's signed out on its next
+    request, and never asked to approve a sign-in again."""
+    with base.conn() as c:
+        cur = c.execute("DELETE FROM app_devices WHERE id = ? AND user_id = ?",
+                        (str(device_id or ""), int(user_id)))
+        if cur.rowcount <= 0:
+            return False
+        c.execute("DELETE FROM app_devices_removed WHERE id = ? AND user_id = ?",
+                  (str(device_id), int(user_id)))
+        c.execute("INSERT INTO app_devices_removed (id, user_id, removed_at) VALUES (?, ?, ?)",
+                  (str(device_id), int(user_id), users.now()))
+        return True
+
+
+def still_hers(base, user_id: int, device_id: str) -> bool:
+    """False once she removed this browser from her devices."""
+    with base.conn() as c:
+        r = c.execute("SELECT 1 FROM app_devices_removed WHERE id = ? AND user_id = ?",
+                      (str(device_id or ""), int(user_id))).fetchone()
+    return r is None
 
 
 def needs_check(base, user_id: int, token: str | None) -> bool:

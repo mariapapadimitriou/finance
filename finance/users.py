@@ -83,6 +83,14 @@ CREATE TABLE IF NOT EXISTS app_devices (
     created_at     REAL NOT NULL,
     last_used_at   REAL
 );
+-- Browsers she removed from her devices (2026-10-26): signed out on their
+-- next request, until she signs in on one again.
+CREATE TABLE IF NOT EXISTS app_devices_removed (
+    id          TEXT NOT NULL,
+    user_id     INTEGER NOT NULL,
+    removed_at  REAL NOT NULL,
+    PRIMARY KEY (id, user_id)
+);
 CREATE TABLE IF NOT EXISTS app_device_approvals (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id      INTEGER NOT NULL,
@@ -668,6 +676,7 @@ def forget(base, user: User) -> None:
             c.execute("DELETE FROM app_codes WHERE email = ?", (normalise(user.email),))
         c.execute("DELETE FROM app_consent_log WHERE user_id = ?", (int(user.id),))
         c.execute("DELETE FROM app_devices WHERE user_id = ?", (int(user.id),))
+        c.execute("DELETE FROM app_devices_removed WHERE user_id = ?", (int(user.id),))
         c.execute("DELETE FROM app_device_approvals WHERE user_id = ?", (int(user.id),))
         c.execute("DELETE FROM app_users WHERE id = ?", (int(user.id),))
         c.execute("INSERT INTO app_deleted_accounts (user_id, created_at, deleted_at) "

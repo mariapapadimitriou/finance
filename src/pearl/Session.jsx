@@ -177,6 +177,14 @@ export function ApprovalPrompt({ approval, busy = false, onAnswer, onClose }) {
       <span className="pk-bubble" aria-hidden="true"><PIcon name="phone" /></span>
       <p className="pk-overline accent">New device</p>
       <h2 className="pk-h2" id="pk-approve-title">Is this you signing in?</h2>
+      {/* Whose account (2026-10-26): a phone left signed in to someone
+          else's Pearl shows their name, not a question that looks like hers. */}
+      {approval.account && (
+        <p className="pk-approve-account">
+          {`To ${approval.account.name}’s account`}
+          {approval.account.email && <span className="pk-muted">{approval.account.email}</span>}
+        </p>
+      )}
       <p className="pk-muted">{`${where}, just now. Only approve it if you’re signing in yourself.`}</p>
       <div className="pk-dialog-stack">
         <PButton disabled={busy} onClick={() => onAnswer(true)}>Approve</PButton>

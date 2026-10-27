@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
 import {
-  changePassword, getAuthStatus, makeRecoveryCodes, passkeyRegister, passkeyRegisterOptions,
-  startEmailChange, verifyEmailChange,
+  changePassword, getAuthStatus, getDevices, makeRecoveryCodes, passkeyRegister, passkeyRegisterOptions,
+  removeDevice, startEmailChange, verifyEmailChange,
 } from '../api.js';
+import { usedWords } from '../pearl/SignedOut.jsx';
 import { Alert, DetailPanel, PButton, Toast } from '../pearl/kit.jsx';
 import { CodeInput } from '../pearl/ui.jsx';
 import { createPasskey, passkeysSupported } from '../pearl/webauthn.js';
@@ -64,6 +65,30 @@ export function SecurityPage({ user, mail, onTab, onChangeEmail, onPasskey, pass
         <PButton variant="secondary" onClick={onSignOut}>Sign out</PButton>
       </div>
     </div>
+  );
+}
+
+/**
+ * The devices signed in as her (2026-10-26): each one she confirmed, this one
+ * first. Removing one signs it out, and it's never asked "Is this you signing
+ * in?" again until she signs in on it and confirms it.
+ */
+export function DevicesSection({ devices = [], busy = false, onRemove }) {
+  if (!devices.length) return null;
+  return (
+    <section className="pf-section" aria-labelledby="sc-devices">
+      <h2 className="pk-h3" id="sc-devices">Your devices</h2>
+      <p className="pk-muted">Signed in as you. These are asked to approve a sign-in somewhere new.
+        Remove any that isn’t yours.</p>
+      <ul className="pf-list">
+        {devices.map((d) => (
+          <ListRow key={d.id} name={d.label || 'A browser'} chevron={false}
+                   sub={d.this ? 'This device' : usedWords(d.last_used_at).replace(/^used/, 'Used')}
+                   onOpen={d.this || !onRemove || busy ? undefined : () => onRemove(d)}
+                   end={!d.this && onRemove && <span className="pf-end-link">Remove</span>} />
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -270,7 +295,26 @@ export default function SecurityPanel({ onTab, onSignOut, version }) {
   const [view, setView] = useState('page');
   const [note, setNote] = useState(null);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
-  const load = useCallback(() => getAuthStatus().then(setStatus).catch(setError), []);
+  const [devices, setDevices] = useState([]);
+  const [removing, setRemoving] = useState(false);
+  const load = useCallback(() => Promise.all([
+    getAuthStatus().then(setStatus),
+    getDevices().then((d) => setDevices(d.devices ?? [])).catch(() => {}),
+  ]).catch(setError), []);
+  async function forget(d) {
+    if (!window.confirm(`Remove ${d.label || 'this browser'}? It’s signed out, and won’t be asked to approve sign-ins.`)) return;
+    setRemoving(true);
+    setError(null);
+    try {
+      const r = await removeDevice(d.id);
+      setDevices(r.devices ?? []);
+      setNote(`${d.label || 'That browser'} removed.`);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setRemoving(false);
+    }
+  }
   useEffect(() => { load(); }, [load, version]);
   useEffect(() => { if (view !== 'recovery') window.scrollTo?.(0, 0); }, [view]);
   const user = status?.user;
@@ -305,6 +349,7 @@ export default function SecurityPanel({ onTab, onSignOut, version }) {
                     onChangeEmail={() => setView('email')}
                     canPasskey={passkeysSupported()} onPasskey={addPasskey} passkeyBusy={passkeyBusy}
                     onRecovery={() => setView('recovery')} onSignOut={onSignOut}>
+        <DevicesSection devices={devices} busy={removing} onRemove={forget} />
         {user?.has_password && <PasswordForm onDone={() => setNote('Password changed.')} />}
       </SecurityPage>
       {view === 'recovery' && (

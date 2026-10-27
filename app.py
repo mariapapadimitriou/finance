@@ -248,6 +248,17 @@ def _install_auth(app: Flask) -> None:
             }), 503
 
         g.user = signed_in_user()
+        # Sessions from before 2026-10-26 don't carry their device; the
+        # browser's device cookie says which it is.
+        dev = session.get("dev") or devices.hashed(request.cookies.get(devices.COOKIE))
+        if g.user is not None and dev and not _is_static_asset(path) \
+                and not devices.still_hers(base, g.user.id, dev):
+            # Removed from her devices (2026-10-26), here or from another one.
+            session.clear()
+            g.user = None
+            if path.startswith("/api/") and path not in _OPEN_PATHS:
+                return jsonify({"error": "This device was removed from your account.",
+                                "unauthorized": True}), 401
         if path in _OPEN_PATHS or _is_static_asset(path):
             return None
         if g.user is not None:
@@ -435,6 +446,9 @@ def _install_auth(app: Flask) -> None:
         """Trust this browser for her, and give it a token if it has none."""
         token = device_token() or devices.new_token()
         devices.trust(base, user.id, token, devices.label_from(request.headers.get("User-Agent")))
+        # The session belongs to this browser (2026-10-26): removing it from
+        # her devices signs it out.
+        session["dev"] = devices.hashed(token)
         resp.set_cookie(devices.COOKIE, token, max_age=400 * 86400, httponly=True,
                         samesite="Lax", secure=_is_hosted())
         return resp
@@ -524,7 +538,32 @@ def _install_auth(app: Flask) -> None:
             return jsonify({"approvals": []})
         if user is None:
             return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
-        return jsonify({"approvals": devices.waiting(base, user.id)})
+        # Only a device she confirmed is asked (2026-10-26), and the question
+        # names the account, so a phone left signed in to hers is plain.
+        if not devices.trusted(base, user.id, device_token()):
+            return jsonify({"approvals": []})
+        account = {"name": user.first_name or user.username, "email": user.email or ""}
+        return jsonify({"approvals": [{**a, "account": account}
+                                      for a in devices.waiting(base, user.id)]})
+
+    @app.get("/api/auth/devices")
+    def _devices_list():
+        """Profile › Sign-in and security: the devices signed in as her."""
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        return jsonify({"devices": devices.mine(base, user.id, device_token())})
+
+    @app.delete("/api/auth/devices/<device_id>")
+    def _devices_forget(device_id: str):
+        user = g.get("user")
+        if user is None:
+            return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
+        if device_id == devices.hashed(device_token()):
+            return jsonify({"error": "That’s this device. Sign out instead."}), 400
+        if not devices.forget(base, user.id, device_id):
+            return jsonify({"error": "That device isn’t signed in any more."}), 404
+        return jsonify({"ok": True, "devices": devices.mine(base, user.id, device_token())})
 
     @app.post("/api/auth/approvals/<int:approval_id>")
     def _approval_answer(approval_id: int):
@@ -533,6 +572,8 @@ def _install_auth(app: Flask) -> None:
         if user is None:
             return jsonify({"error": "Sign in first.", "unauthorized": True}), 401
         approve = bool((request.get_json(silent=True) or {}).get("approve"))
+        if approve and not devices.trusted(base, user.id, device_token()):
+            return jsonify({"error": "Only a device you’ve confirmed can approve a sign-in."}), 403
         row = devices.answer(base, user.id, approval_id, approve)
         if row is None:
             return jsonify({"error": "That sign-in has expired, so there’s nothing to "
