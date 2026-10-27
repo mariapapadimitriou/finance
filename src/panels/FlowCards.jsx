@@ -68,20 +68,45 @@ export function monthStats(spent = 0, income = 0) {
   ];
 }
 
-function Stats({ spent, income, ghost = false }) {
+// Spent and Came in filter the list below (2026-10-26); Left doesn't.
+const SHOWS = { spent: 'spending', in: 'income' };
+const SHOWING = { spending: 'Showing what you spent', income: 'Showing what came in' };
+
+function Stats({ spent, income, ghost = false, counts = '', onCounts }) {
   return (
     <div className="tm-stats" aria-hidden={ghost ? 'true' : undefined}>
-      {monthStats(spent, income).map((s) => (
-        <div key={s.key} className={`tm-stat ${s.tone}`}>
-          <span className="tm-stat-label">{s.label}</span>
-          {ghost ? <span className="tm-stat-value tm-ghost-text" /> : <span className="tm-stat-value">{s.value}</span>}
-        </div>
-      ))}
+      {monthStats(spent, income).map((s) => {
+        const inner = (
+          <>
+            <span className="tm-stat-label">{s.label}</span>
+            {ghost ? <span className="tm-stat-value tm-ghost-text" /> : <span className="tm-stat-value">{s.value}</span>}
+          </>
+        );
+        const shows = SHOWS[s.key];
+        if (ghost || !shows || !onCounts) return <div key={s.key} className={`tm-stat ${s.tone}`}>{inner}</div>;
+        return (
+          <button key={s.key} type="button" className={`tm-stat ${s.tone}${counts === shows ? ' on' : ''}`}
+                  aria-pressed={counts === shows} onClick={() => onCounts(shows)}>
+            {inner}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-export default function FlowCards({ totals }) {
+/** A bar row that filters the list when tapped (desktop). */
+function Row({ shows, counts, onCounts, children }) {
+  if (!onCounts) return <div className="tm-row" aria-hidden="true">{children}</div>;
+  return (
+    <button type="button" className={`tm-row tm-pick${counts === shows ? ' on' : ''}`}
+            aria-pressed={counts === shows} aria-label={SHOWING[shows]} onClick={() => onCounts(shows)}>
+      {children}
+    </button>
+  );
+}
+
+export default function FlowCards({ totals, counts = '', onCounts }) {
   // Not loaded yet: the same card at the same height, so nothing below it
   // jumps when the numbers arrive (2026-10-21).
   if (!totals) {
@@ -105,15 +130,15 @@ export default function FlowCards({ totals }) {
   return (
     <section className="tm-card" aria-label="This month">
       <p className="pk-sr">{cardWords(totals)}</p>
-      <div className="tm-row" aria-hidden="true">
+      <Row shows="income" counts={counts} onCounts={onCounts}>
         <span className="tm-label">My income</span>
         <span className="tm-track">
           <span className="tm-bar in" style={{ width: pct(m.income) }} />
           {m.over > EPS && <span className="tm-income-line" style={{ left: pct(m.income) }} />}
         </span>
         <span className="tm-amt in">{txAmount(income, { inflow: income > EPS })}</span>
-      </div>
-      <div className="tm-row" aria-hidden="true">
+      </Row>
+      <Row shows="spending" counts={counts} onCounts={onCounts}>
         <span className="tm-label">What I spent</span>
         <span className="tm-track">
           <span className="tm-bar out" style={{ width: pct(m.over > EPS ? m.income : m.spent) }} />
@@ -124,9 +149,15 @@ export default function FlowCards({ totals }) {
           )}
         </span>
         <span className="tm-amt out">{txAmount(spent, { signed: spent > EPS })}</span>
-      </div>
+      </Row>
       {leftWords(spent, income) && <p className="tm-left" aria-hidden="true">{leftWords(spent, income)}</p>}
-      <Stats spent={spent} income={income} />
+      <Stats spent={spent} income={income} counts={counts} onCounts={onCounts} />
+      {SHOWING[counts] && onCounts && (
+        <p className="tm-showing">
+          {SHOWING[counts]}
+          <button type="button" className="txd-link" onClick={() => onCounts(counts)}>Show all</button>
+        </p>
+      )}
     </section>
   );
 }

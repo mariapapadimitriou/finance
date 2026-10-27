@@ -225,6 +225,9 @@ def transactions_list():
         for k in ("month", "day", "first", "last"):
             filters[k] = None
     chosen = txlist.select(rows, **filters)
+    # The month's cards stay the month's when Spent or Came in filters the
+    # list (2026-10-26): what counts is a view of the rows, not of the totals.
+    whole = txlist.select(rows, **{**filters, "counts": None}) if filters.get("counts") else chosen
     # A transfer between two of her accounts is one line, not two (2026-10-22).
     from .transfers import transfer_pairs
     pairs = transfer_pairs(st.all_transactions(), today=_today_iso())
@@ -239,6 +242,7 @@ def transactions_list():
         "owed": owed,
         "total": len(chosen),
         "totals": txlist.totals(every),
+        "month_totals": txlist.totals(whole),
         # ALT-04: the Outflows and Inflows cards.
         "flows": txlist.flows(rows, filters, _date_today()),
         "focus": txlist.focus(rows, month=month, account=filters["account"],

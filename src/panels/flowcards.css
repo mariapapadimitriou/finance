@@ -220,3 +220,18 @@
   .tx-page .tx-chips .tx-seg .tx-filters { width: 36px; }
   .tx-seg { height: 40px; }
 }
+
+/* Spent and Came in filter the list (2026-10-26). */
+button.tm-row, button.tm-stat {
+  font: inherit; color: inherit; text-align: left; cursor: pointer; width: 100%;
+  border: 1px solid transparent; background: none; padding: 0; border-radius: var(--radius-md);
+}
+button.tm-row { padding: 4px 6px; margin: -4px -6px; width: calc(100% + 12px); }
+button.tm-row:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+button.tm-row.on { border-color: var(--action); background: color-mix(in srgb, var(--action) 6%, transparent); }
+button.tm-row:focus-visible, button.tm-stat:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+.tm-showing { display: flex; align-items: center; gap: var(--space-3); font-size: 14px; color: var(--ink-muted); }
+@media (max-width: 720px) {
+  button.tm-stat { padding: 10px 12px; border: 1px solid var(--border); background: var(--surface-card); }
+  button.tm-stat.on { border-color: var(--action); box-shadow: inset 0 0 0 1px var(--action); }
+}

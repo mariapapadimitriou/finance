@@ -441,3 +441,25 @@ def test_a_transfer_whose_arrival_was_guessed_other_links(client):
     rows = by_desc(data)
     assert "MOBILE DEPOSIT" not in rows and rows["TFR-TO 9876543"]["transfer"]["to"] == "sav"
     assert data["totals"]["spent"] == 0 and data["totals"]["income"] == 0
+
+
+def test_the_months_cards_stay_whole_when_spent_or_income_filters(tmp_path):
+    """Tapping Spent or Came in filters the rows (2026-10-26); the cards
+    above keep the whole month."""
+    import sys
+    sys.path.insert(0, "tests")
+    from test_what_was_this import row, load, in_month
+    from app import create_app
+    app = create_app(str(tmp_path / "cards.db"))
+    app.config.update(TESTING=True)
+    c = app.test_client()
+    load(app.config["STORE"], row(-2000, "PAYROLL ACME", category="Income", when=in_month(1)),
+         row(80, "SUSHI NAMI", account="card", kind="credit", merchant="Sushi Nami",
+             category="Dining", when=in_month(2)))
+    month = in_month(1)[:7]
+    spent = c.get("/api/transactions/list", query_string={"month": month, "counts": "spending"}).get_json()
+    assert [t["merchant"] for t in spent["transactions"]] == ["Sushi Nami"]
+    assert spent["month_totals"]["spent"] == 80 and spent["month_totals"]["income"] == 2000
+    came = c.get("/api/transactions/list", query_string={"month": month, "counts": "income"}).get_json()
+    assert [t["merchant"] for t in came["transactions"]] == ["Payroll Acme"]
+    assert came["month_totals"] == spent["month_totals"]
