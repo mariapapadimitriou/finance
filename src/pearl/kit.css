@@ -801,3 +801,8 @@
 .pk-toast, .pk-toast-card { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 /* While a finger drags a toast, it follows without lag. */
 .pk-toast.dragging, .pk-toast-card.dragging { transition: none; }
+
+/* Whose account a sign-in is for, on "Is this you signing in?" (2026-10-26). */
+.pk-approve-account { display: flex; flex-direction: column; gap: 2px; margin: 0;
+  font-weight: 600; color: var(--ink); }
+.pk-approve-account .pk-muted { font-weight: 400; font-size: 14px; }

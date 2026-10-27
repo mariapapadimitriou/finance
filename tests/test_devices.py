@@ -262,3 +262,73 @@ class TestNamesAndForgetting:
             assert c.execute("SELECT COUNT(*) AS n FROM app_devices").fetchone()["n"] == 0
         assert devices.recovery_left(base, user.id) == 0
 
+
+
+class TestASisterPhoneLeftSignedIn:
+    """2026-10-26: Maria's sign-in prompt came up on her sister's phone. Only
+    browsers signed in to the same account are ever asked, so a browser on
+    that phone was still signed in as Maria. Now the question names the
+    account, and Maria can remove that browser from her devices."""
+
+    def test_the_question_says_whose_account_it_is(self, app, phone, outbox):
+        laptop = browser(app)
+        code_sign_in(laptop, outbox)
+        laptop.post("/api/auth/device/ask")
+        [waiting] = phone.get("/api/auth/approvals").get_json()["approvals"]
+        assert waiting["account"] == {"name": "Alex", "email": EMAIL}
+
+    def test_she_sees_her_devices_and_removes_one(self, app, phone, outbox):
+        laptop = browser(app)
+        code_sign_in(laptop, outbox)
+        laptop.post("/api/auth/device/ask")
+        [waiting] = phone.get("/api/auth/approvals").get_json()["approvals"]
+        phone.post(f"/api/auth/approvals/{waiting['id']}", json={"approve": True})
+        assert laptop.get("/api/auth/device/status").get_json()["signed_in"]
+        listed = laptop.get("/api/auth/devices").get_json()["devices"]
+        assert [(d["label"], d["this"]) for d in listed] == [("Chrome on Mac", True),
+                                                             ("Safari on iPhone", False)]
+        assert "token" not in listed[1]
+        # Not this device: that's Sign out.
+        assert laptop.delete(f"/api/auth/devices/{listed[0]['id']}").status_code == 400
+        r = laptop.delete(f"/api/auth/devices/{listed[1]['id']}")
+        assert r.status_code == 200 and [d["label"] for d in r.get_json()["devices"]] == ["Chrome on Mac"]
+        # The removed browser is signed out, and isn't asked about a sign-in.
+        assert phone.get("/api/home").status_code == 401
+        assert not signed_in(phone)
+        third = browser(app, IPHONE.replace("iPhone OS", "iPad OS").replace("iPhone", "iPad"))
+        code_sign_in(third, outbox)
+        third.post("/api/auth/device/ask")
+        assert phone.get("/api/auth/approvals").status_code == 401
+        assert [a["label"] for a in laptop.get("/api/auth/approvals").get_json()["approvals"]] == ["Safari on iPad"]
+        # Signing in on that phone again has to be confirmed like any new one.
+        assert code_sign_in(phone, outbox).get("confirm_device")
+
+    def test_a_session_on_a_browser_she_never_confirmed_is_not_asked(self, app, phone, outbox):
+        """An old password sign-in on the owner account is the one way in
+        without the device check; such a browser can't approve anything."""
+        laptop = browser(app)
+        code_sign_in(laptop, outbox)
+        laptop.post("/api/auth/device/ask")
+        [waiting] = phone.get("/api/auth/approvals").get_json()["approvals"]
+        # Its device row gone (as on a browser trusted before this existed).
+        with app.config["STORE"].conn() as c:
+            c.execute("DELETE FROM app_devices WHERE label = 'Safari on iPhone'")
+        assert phone.get("/api/auth/approvals").get_json()["approvals"] == []
+        assert phone.post(f"/api/auth/approvals/{waiting['id']}",
+                          json={"approve": True}).status_code == 403
+
+
+def test_removing_signs_out_a_session_from_before_devices_were_listed(app, phone, outbox):
+    """A session signed in before 2026-10-26 has no device in it; its
+    browser's device cookie is enough to sign it out once removed."""
+    with phone.session_transaction() as sess:
+        sess.pop("dev", None)
+    laptop = browser(app)
+    code_sign_in(laptop, outbox)
+    laptop.post("/api/auth/device/ask")
+    [waiting] = phone.get("/api/auth/approvals").get_json()["approvals"]
+    phone.post(f"/api/auth/approvals/{waiting['id']}", json={"approve": True})
+    laptop.get("/api/auth/device/status")
+    iphone = next(d for d in laptop.get("/api/auth/devices").get_json()["devices"] if not d["this"])
+    laptop.delete(f"/api/auth/devices/{iphone['id']}")
+    assert phone.get("/api/home").status_code == 401

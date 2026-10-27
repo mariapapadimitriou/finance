@@ -135,6 +135,10 @@ export const signInWithRecoveryCode = (code) => authPost('/api/auth/device/recov
 export const cancelDeviceCheck = () => authPost('/api/auth/device/cancel', {});
 // On her signed-in devices: what's waiting for approval, and her answer.
 export const getApprovals   = () => req('/api/auth/approvals');
+// Profile › Sign-in and security: the devices signed in as her, and removing
+// one (it's signed out, and never asked to approve a sign-in again).
+export const getDevices     = () => req('/api/auth/devices');
+export const removeDevice   = (id) => json('DELETE', `/api/auth/devices/${encodeURIComponent(id)}`);
 export const answerApproval = (id, approve) =>
   json('POST', `/api/auth/approvals/${id}`, { approve });
 export const makeRecoveryCodes = () => json('POST', '/api/auth/recovery-codes', {});
