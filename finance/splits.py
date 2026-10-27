@@ -23,7 +23,7 @@ from datetime import date
 
 from .models import Transaction
 
-MAX_PEOPLE = 8
+MAX_PEOPLE = 50   # paybacks on one split (2026-10-26: was 8)
 MAX_NAME = 40
 MATCH_WITHIN = 1.00        # dollars
 MATCH_DAYS = 60

@@ -11,7 +11,7 @@ import PIcon from '../pearl/icons.jsx';
  * as that repayment (S-02). Repayments are never income.
  */
 
-const MAX_PEOPLE = 8;
+export const MAX_PEOPLE = 50;   // as finance/splits.py (2026-10-26: was 8)
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export const shortDate = (iso) => {
@@ -41,7 +41,7 @@ function YouAvatar() {
 }
 
 /**
- * Split this (S-01): evenly or by amount, with up to eight people, and
+ * Split this (S-01): evenly or by amount, with up to 50 people, and
  * "Watch for … paying me back".
  */
 export function SplitThis({ tx, busy, onSave, onClear }) {
