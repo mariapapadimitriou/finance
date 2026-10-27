@@ -203,6 +203,30 @@ def accounts_overview():
     })
 
 
+def _apply_share_change(st, account_id: str, apply: str) -> dict:
+    """Before the account's share changes: "from_today" fixes each earlier
+    purchase at what it counts now, so only today's and later ones change;
+    "all" clears a purchase marked just "Mine" (the old default said out
+    loud), so it takes the new share too. Someone else's, a part she set
+    and names always hers are her answers, and stay. Returns counts."""
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    held = st.kept_joint_shares()
+    kept = changed = 0
+    for t in st.all_transactions():
+        if t.account_id != account_id or t.amount <= 0 or t.excluded:
+            continue
+        if apply == "from_today":
+            # A name always split her way isn't moved by the account's share.
+            if t.date[:10] < today and not t.share_set and (t.joint_split is None):
+                st.keep_joint_share(t.fingerprint, t.my_share if t.my_share is not None else t.amount)
+                kept += 1
+        elif t.fingerprint in held or (t.share_set and abs((t.my_share or 0.0) - t.amount) < 0.005):
+            st.set_share(t.fingerprint, None)
+            changed += 1
+    return {"apply": apply, "kept": kept, "cleared": changed}
+
+
 @bp.put("/accounts/<path:account_id>/settings")
 def account_settings(account_id: str):
     """How one account counts (AM-02 to AM-04, AM-06): `counted`,
@@ -239,12 +263,20 @@ def account_settings(account_id: str):
         st.update_manual_account(account_id, last4=last4 or None)
         reclassify = True
 
+    applied = None
     if "joint_share" in body:
         if hand:
             return jsonify({"error": "Only a linked account can be joint."}), 400
         share = body.get("joint_share")
+        # How a change of how purchases count applies (2026-10-26): to every
+        # purchase on the account, or to purchases from today on, earlier
+        # ones counting as they do now.
+        apply = body.get("apply") or "all"
+        if apply not in ("all", "from_today"):
+            return jsonify({"error": "Apply it to every purchase, or from today."}), 400
         if share == "auto":
-            # AM-08: joint, with the share worked out from what each puts in.
+            # AM-08: joint, every purchase hers unless she marks it.
+            applied = _apply_share_change(st, account_id, apply)
             st.clear_joint_share(account_id)
             reclassify = True
         else:
@@ -256,6 +288,7 @@ def account_settings(account_id: str):
                 if not (SHARE_MIN <= share <= SHARE_MAX):
                     return jsonify({"error": "Enter a share between 1% and 99%."}), 400
                 share = round(share, 2)
+                applied = _apply_share_change(st, account_id, apply)
             st.set_joint_share(account_id, share)
             reclassify = True
 
@@ -305,7 +338,8 @@ def account_settings(account_id: str):
     if reclassify:
         _reclassify(st)
     return jsonify({"ok": True, "account": _find(st, account_id),
-                    "safe_to_spend": _safe_to_spend(st), "resync": resync})
+                    "safe_to_spend": _safe_to_spend(st), "resync": resync,
+                    **({"applied": applied} if applied else {})})
 
 
 def _parse_balance(value) -> float | None:
