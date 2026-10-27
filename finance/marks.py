@@ -972,4 +972,12 @@ def undo_marks(store, marks: dict) -> int:
         if tid in known and isinstance(tags, list):
             store.set_tags(tid, clean_tags(tags))
             n += 1
+    # A recurring transfer she confirmed (2026-10-27): the rule goes again,
+    # or the one it replaced comes back.
+    for rid, was in (marks.get("recurring_transfers") or {}).items():
+        if isinstance(was, dict):
+            store.set_recurring_transfer(was)
+        else:
+            store.delete_recurring_transfer(str(rid))
+        n += 1
     return n

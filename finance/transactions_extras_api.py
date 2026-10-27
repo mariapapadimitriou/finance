@@ -340,6 +340,10 @@ def undo_extras(st, body: dict) -> tuple[int, str | None]:
     for i in unconfirm:
         st.unconfirm_category(i)
         st.undismiss_review("cat:" + i)
+    # A recurring transfer's question comes back with Undo (2026-10-27).
+    for key in body.get("undismiss") or []:
+        if isinstance(key, str) and key.startswith("rt:") and len(key) < 40:
+            st.undismiss_review(key)
     # What was this? (2026-10-14): the parts a category doesn't cover.
     extra = 0
     if body.get("marks"):

@@ -441,3 +441,7 @@ export function pct(n, digits = 0) {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';
   return `${(n * 100).toFixed(digits)}%`;
 }
+// Recurring transfers (2026-10-27): "Yes, it repeats", as `kind` (saved,
+// moved, rent) or a spending `category`, for the series asked about.
+export const confirmRecurring = (key, { kind = null, category = null } = {}) =>
+  json('POST', '/api/recurring-transfers', { key, ...(kind ? { kind } : {}), ...(category ? { category } : {}) });

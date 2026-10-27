@@ -235,7 +235,8 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
                     destinations: dict[str, str] | None = None,
                     used_out: set[str] | None = None,
                     accounts: dict | None = None,
-                    pairs_out: dict[str, str] | None = None) -> dict[str, str]:
+                    pairs_out: dict[str, str] | None = None,
+                    recurring: list[dict] | None = None) -> dict[str, str]:
     """The category each sortable outflow should have: Transfers when its
     other end is here, Unsorted transfers when it isn't.
 
@@ -366,8 +367,15 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
             out[t.fingerprint] = NEUTRAL
 
     rules = destinations or {}
+    from .recurring_transfers import rule_for
     for t in candidates:
         if t.fingerprint not in out:
+            # A recurring transfer she confirmed (2026-10-27): amount and
+            # schedule, more particular than where it goes.
+            rec = rule_for(t, recurring) if recurring else None
+            if rec:
+                out[t.fingerprint] = rec["category"]
+                continue
             where = destination(t)
             if where and where[0] in rules:
                 out[t.fingerprint] = rules[where[0]]
@@ -449,7 +457,8 @@ def apply_transfer_matches(store, transactions: list[Transaction] | None = None)
     current = {t.fingerprint: (t.category, t.category_source) for t in txns}
     changes = {}
     for tid, cat in match_transfers(txns, destinations=known_destinations(store),
-                                    accounts=linked_accounts(store)).items():
+                                    accounts=linked_accounts(store),
+                                    recurring=store.recurring_transfers()).items():
         source = "transfer_match" if cat in (NEUTRAL, UNSORTED) else RULED
         if current.get(tid) != (cat, source):
             changes[tid] = (cat, source)

@@ -579,6 +579,12 @@ def _rules(st) -> list[dict]:
     accounts = {a["account_id"]: nicknames.get(a["account_id"])
                 or _base_name(a.get("account_name") or a["account_id"])
                 for a in st.accounts()}
+    # Recurring transfers she confirmed (2026-10-27).
+    from .recurring_transfers import rule_words
+    for r in st.recurring_transfers():
+        out.append({"id": f"recurring:{r['id']}", "kind": "recurring",
+                    "name": rule_words(r, accounts.get(r["account_id"], "")),
+                    "category": r["category"]})
     for r in st.exclusion_rules():
         out.append({"id": f"exclusion:{r['id']}", "kind": "exclusion",
                     "name": _exclusion_name(r, accounts), "category": None,
@@ -636,6 +642,10 @@ def edit_rule(rule_id: str):
     elif kind == "destination" and key in st.destinations():
         st.set_destination(key, category, st.destination_labels().get(key, ""))
         apply_transfer_matches(st)
+    elif kind == "recurring" and any(r["id"] == key for r in st.recurring_transfers()):
+        rule = next(r for r in st.recurring_transfers() if r["id"] == key)
+        st.set_recurring_transfer({**rule, "category": category})
+        apply_transfer_matches(st)
     else:
         return jsonify({"error": "No such rule."}), 404
     rule = next((r for r in _rules(st) if r["id"] == rule_id), None)
@@ -671,6 +681,11 @@ def delete_rule(rule_id: str):
         if not st.delete_exclusion_rule(rid):
             return jsonify({"error": "No such rule."}), 404
         _reclassify(st)
+    elif kind == "recurring":
+        from .recurring_api import delete_recurring_transfer
+        r = delete_recurring_transfer(key)
+        if isinstance(r, tuple):
+            return r
     elif kind == "name":
         if key not in st.merchant_names():
             return jsonify({"error": "No such rule."}), 404

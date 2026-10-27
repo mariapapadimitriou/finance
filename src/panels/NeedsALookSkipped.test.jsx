@@ -23,7 +23,7 @@ describe('Needs a look chips', () => {
   it('shows All, each type with open questions, then Skipped', () => {
     expect(chips(items).map((c) => `${c.label} (${c.count})`)).toEqual(
       ['All (3)', 'Where it went (1)', 'Categories (1)', 'Duplicates (1)', 'Skipped (2)']);
-    expect(Object.keys(KIND_LABELS)).toHaveLength(8);
+    expect(Object.keys(KIND_LABELS)).toHaveLength(9);
   });
 
   it('leaves Skipped out when nothing is skipped', () => {

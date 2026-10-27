@@ -89,6 +89,27 @@ def _name(t: Transaction | None, ctx: "Context") -> str:
     return ctx.names.get(_key(t.merchant)) or t.merchant or t.description
 
 
+def _recurring_id(t: Transaction, ctx) -> str | None:
+    if not getattr(ctx, "recurring", None) or t.amount <= 0 or t.category_source != "destination" \
+            and t.category != "Transfers":
+        return None
+    from .recurring_transfers import rule_for
+    rule = rule_for(t, ctx.recurring)
+    return rule["id"] if rule and t.category == rule["category"] else None
+
+
+def _recurring_note(t: Transaction, ctx) -> str:
+    """"Recurring · every month, around the 1st" on a transfer a recurring
+    rule sorted (2026-10-27)."""
+    rid = _recurring_id(t, ctx)
+    if not rid:
+        return ""
+    from datetime import date as _date
+    from .recurring_transfers import when_words
+    rule = next(r for r in ctx.recurring if r["id"] == rid)
+    return f"Recurring · {when_words(rule['cadence'], _date.fromisoformat(rule['anchor']))}"
+
+
 class Context:
     """What a row needs to know about the others: the charge a repayment paid
     for, who paid back a split, and what the piggy banks are called."""
@@ -102,8 +123,11 @@ class Context:
                  payback_kinds: dict[str, str] | None = None,
                  names: dict[str, str] | None = None,
                  accounts: dict[str, str] | None = None,
-                 payer: dict[str, str] | None = None):
+                 payer: dict[str, str] | None = None,
+                 recurring: list[dict] | None = None):
         self.by_id = {t.fingerprint: t for t in transactions}
+        # Recurring transfers she confirmed (2026-10-27).
+        self.recurring = recurring or []
         # Fixed or Variable, per spending row (finance/kinds.py).
         self.kinds = kinds or {}
         self.confirmed = confirmed
@@ -356,7 +380,8 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "inflow": inflow,
         "counts": counts,
         "counts_toward": toward,
-        "note": note,
+        "note": _recurring_note(t, ctx) or note,
+        "recurring": _recurring_id(t, ctx),
         "note_link": note_link,
         "my_note": ctx.notes.get(t.fingerprint, ""),
         "split": split,
