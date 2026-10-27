@@ -273,6 +273,8 @@ class Transaction:
     paid_back: float | None = None
     # On money coming in: the charge it paid you back for.
     repays: str | None = None
+    # How much of it paid that charge back, when not all of it (2026-10-26).
+    repays_amount: float | None = None
     # Refunds linked to a purchase (2026-10-24): on the purchase, what came
     # back; on the refund, the purchase it is of. The refund comes off the
     # purchase, like a payback, and doesn't count again on its own.
@@ -356,6 +358,20 @@ class Transaction:
     def month(self) -> str:
         return self.date[:7]
 
+    @property
+    def paid_part(self) -> float:
+        """On a payback: how much of this inflow paid its charge back — all
+        of it unless she said a part (2026-10-26)."""
+        whole = round(-self.amount, 2)
+        if self.repays_amount is None:
+            return whole
+        return min(whole, round(self.repays_amount, 2))
+
+    @property
+    def unlinked_part(self) -> float:
+        """The rest of a payback inflow, which counts as money in."""
+        return round(-self.amount - self.paid_part, 2) if self.repays else 0.0
+
     def to_dict(self) -> dict:
         d = asdict(self)
         d["id"] = self.fingerprint
@@ -394,6 +410,8 @@ class Transaction:
             paid_back=(None if row.get("paid_back") is None
                        else round(float(row["paid_back"]), 2)),
             repays=row.get("repays"),
+            repays_amount=(None if row.get("repays_amount") is None
+                           else round(float(row["repays_amount"]), 2)),
             refunded=round(float(row.get("refunded") or 0.0), 2),
             refund_of=row.get("refund_of") or None,
             joint=row.get("joint") or None,

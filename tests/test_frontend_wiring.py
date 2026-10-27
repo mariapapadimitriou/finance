@@ -550,11 +550,11 @@ class TestSplitsAndRepayments:
         src = (SRC / "panels" / "Splits.jsx").read_text(encoding="utf-8")
         for text in ("Is {match.name} paying you back for this?", "Exact match",
                      "Which split is this for?", "None of these",
-                     "Paid back part of it? Pick the split and we’ll keep the rest open."):
+                     "Paid back part of their share? Pick the split and we’ll keep the rest open."):
             assert text in src, text
         detail = (SRC / "panels" / "TransactionDetail.jsx").read_text(encoding="utf-8")
         assert "Yes, link them" in detail and "No, it’s something else" in detail
-        assert "linkPayback(o.charge_id, tx.id, o.name)" in detail
+        assert "linkPayback(o.charge_id, tx.id, o.name, part)" in detail
         review = (SRC / "panels" / "NeedsALook.jsx").read_text(encoding="utf-8")
         assert "it.guess?.action === 'split'" in review
 

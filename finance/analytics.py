@@ -215,6 +215,10 @@ def monthly_totals(transactions: list[Transaction]) -> list[dict]:
             # A friend paying you back is not money in: it came off the
             # charge it was for.
             inflows[t.month] += abs(t.amount)
+        elif t.amount < 0 and t.unlinked_part > 0.005:
+            # Only part of it paid the charge back (2026-10-26): the rest is
+            # money in like any other.
+            inflows[t.month] += t.unlinked_part
 
     return [
         {

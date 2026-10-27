@@ -235,7 +235,10 @@ CREATE TABLE IF NOT EXISTS joint_deposit_rules (
 -- nor money in — it was always theirs.
 CREATE TABLE IF NOT EXISTS txn_paybacks (
     inflow_id TEXT PRIMARY KEY,
-    charge_id TEXT NOT NULL
+    charge_id TEXT NOT NULL,
+    -- How much of the inflow paid it back (2026-10-26); NULL is all of it.
+    -- The rest of the inflow counts as money in.
+    amount    REAL
 );
 CREATE INDEX IF NOT EXISTS idx_payback_charge ON txn_paybacks(charge_id);
 
@@ -593,7 +596,7 @@ _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts
 
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
-    SELECT p.charge_id AS charge_id, -SUM(r.amount) AS total
+    SELECT p.charge_id AS charge_id, SUM(COALESCE(p.amount, -r.amount)) AS total
       FROM txn_paybacks p
       JOIN transactions r ON r.id = p.inflow_id
      GROUP BY p.charge_id
@@ -607,6 +610,7 @@ _CHARGE_COLUMNS = """sh.my_share AS my_share,
                           ivx.amount AS invested,
                           pbx.total AS paid_back,
                           rpx.charge_id AS repays,
+                          rpx.amount AS repays_amount,
                           jax.label AS joint,
                           jax.share AS joint_share,
                           jsx.pct AS joint_split,
@@ -914,7 +918,9 @@ class Store:
         fails, and on Postgres a failed statement spoils its transaction."""
         for sql in ("ALTER TABLE joint_accounts ADD COLUMN people TEXT",
                     "ALTER TABLE joint_deposits ADD COLUMN person TEXT",
-                    "ALTER TABLE joint_deposit_rules ADD COLUMN person TEXT"):
+                    "ALTER TABLE joint_deposit_rules ADD COLUMN person TEXT",
+                    # Part of an inflow paying a charge back (2026-10-26).
+                    "ALTER TABLE txn_paybacks ADD COLUMN amount REAL"):
             try:
                 with self.conn() as c:
                     c.execute(sql)
@@ -1318,15 +1324,17 @@ class Store:
                 c.execute("INSERT INTO txn_notes (txn_id, note) VALUES (?, ?)",
                           (txn_id, note))
 
-    def link_payback(self, charge_id: str, inflow_id: str, person: str | None = None) -> None:
+    def link_payback(self, charge_id: str, inflow_id: str, person: str | None = None,
+                     amount: float | None = None) -> None:
         """Say this money coming in was a friend paying you back for that
         charge — and, for a split, which of the people it was. An inflow
-        repays one charge, so linking it again moves it."""
+        repays one charge, so linking it again moves it. `amount` is how
+        much of it paid the charge back; None is all of it."""
         with self.conn() as c:
             c.execute("DELETE FROM txn_paybacks WHERE inflow_id = ?", (inflow_id,))
             c.execute("DELETE FROM txn_payback_person WHERE inflow_id = ?", (inflow_id,))
-            c.execute("INSERT INTO txn_paybacks (inflow_id, charge_id) VALUES (?, ?)",
-                      (inflow_id, charge_id))
+            c.execute("INSERT INTO txn_paybacks (inflow_id, charge_id, amount) VALUES (?, ?, ?)",
+                      (inflow_id, charge_id, None if amount is None else round(float(amount), 2)))
             if person:
                 c.execute("INSERT INTO txn_payback_person (inflow_id, person) VALUES (?, ?)",
                           (inflow_id, person))

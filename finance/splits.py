@@ -130,13 +130,13 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
         if who is None:
             unnamed.append(t)
             continue
-        paid[who] = round(paid[who] + -t.amount, 2)
+        paid[who] = round(paid[who] + t.paid_part, 2)
         when[who] = t.date[:10]
     # A payback nobody's name is on (a bank that leaves the sender off, or
     # one linked from search) still counts (2026-10-24): to whoever owes
     # exactly that much, else the first who still owes anything.
     for t in unnamed:
-        got = -t.amount
+        got = t.paid_part
         owing = [n for n in names if part[n] - paid[n] >= 0.005]
         if not owing:
             continue
@@ -233,7 +233,7 @@ def add_payer(store, charge: Transaction, inflow: Transaction, person: str | Non
     people = list(current["people"]) if current else []
     if any(first_name(p["name"]) == first_name(person) for p in people):
         return None
-    got = round(-inflow.amount, 2)
+    got = inflow.paid_part
     if current is None and (charge.paid_back or 0.0) - got > 0.005:
         # Others already paid some of it back with no split to say who;
         # a split now would have to guess their names, so it nets as before.
@@ -261,7 +261,7 @@ def drop_payer(store, inflow: Transaction):
     if charge is None or current is None:
         return None
     person = store.payback_people().get(inflow.fingerprint)
-    got = round(-inflow.amount, 2)
+    got = inflow.paid_part
     idx = next((i for i, p in enumerate(current["people"])
                 if p["name"] == person and abs(p["amount"] - got) < 0.01), None)
     if idx is None:
