@@ -195,7 +195,7 @@ def test_cases_come_grouped_with_pearls_best_guess_on_top(client):
     assert d["best"] == "pay"
     assert [g["key"] for g in d["groups"]] == ["income", "not_income"]
     assert [c["key"] for c in d["cases"]] == [
-        "pay", "regular_pay", "payback", "refund", "reimbursement", "own", "out_of_savings",
+        "pay", "regular_pay", "payback", "refund", "reimbursement", "own", "cash", "out_of_savings",
         "borrowed", "lent_back", "not_mine"]
     r = client.post(f"/api/transactions/{ids['E-TRANSFER FROM SAM']}/mark",
                     json={"case": "regular_pay"}).get_json()
@@ -237,7 +237,7 @@ def test_who_sent_this_is_asked_for_a_nameless_etransfer(client):
     assert not any(it.get("nameless") for it in r["money_in"])
 
 
-@pytest.mark.parametrize("case", ["pay", "regular_pay", "own", "out_of_savings", "borrowed",
+@pytest.mark.parametrize("case", ["pay", "regular_pay", "own", "cash", "out_of_savings", "borrowed",
                                   "lent_back", "refund", "payback", "not_mine"])
 def test_a_nameless_etransfer_sorted_elsewhere_is_not_asked_again(client, case):
     """2026-10-23: sorted on the transactions tab, a nameless e-Transfer in

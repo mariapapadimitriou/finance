@@ -194,6 +194,13 @@ CREATE TABLE IF NOT EXISTS joint_accounts (
     label      TEXT NOT NULL
 );
 
+-- Purchases on a joint account held at what they counted when she changed
+-- how purchases count "from today" (2026-10-26). Their share rows are
+-- Pearl's, not hers, so "every purchase" later moves them too.
+CREATE TABLE IF NOT EXISTS joint_shares_kept (
+    txn_id TEXT PRIMARY KEY
+);
+
 -- Names where a purchase on a joint account is always yours.
 CREATE TABLE IF NOT EXISTS joint_mine (
     merchant_key TEXT PRIMARY KEY
@@ -1129,9 +1136,23 @@ class Store:
         """Say how much of a charge was yours; None says all of it again."""
         with self.conn() as c:
             c.execute("DELETE FROM txn_shares WHERE txn_id = ?", (txn_id,))
+            # Her own answer now, not one Pearl held (joint_shares_kept).
+            c.execute("DELETE FROM joint_shares_kept WHERE txn_id = ?", (txn_id,))
             if my_share is not None:
                 c.execute("INSERT INTO txn_shares (txn_id, my_share) VALUES (?, ?)",
                           (txn_id, round(float(my_share), 2)))
+
+    def keep_joint_share(self, txn_id: str, my_share: float) -> None:
+        """Hold a joint purchase at what it counts now (a change of how the
+        account counts, from today on)."""
+        self.set_share(txn_id, my_share)
+        with self.conn() as c:
+            c.execute("DELETE FROM joint_shares_kept WHERE txn_id = ?", (txn_id,))
+            c.execute("INSERT INTO joint_shares_kept (txn_id) VALUES (?)", (txn_id,))
+
+    def kept_joint_shares(self) -> set[str]:
+        with self.conn() as c:
+            return {r["txn_id"] for r in c.execute("SELECT txn_id FROM joint_shares_kept").fetchall()}
 
     def set_invested(self, txn_id: str, amount: float | None) -> None:
         """Say how much of a transaction went to investments; None clears it."""
@@ -1864,6 +1885,7 @@ class Store:
             ("joint_accounts", "joint accounts"),
             ("joint_mine", "names always yours on a joint account"),
             ("joint_split_rules", "names always split on a joint account"),
+            ("joint_shares_kept", "joint purchases held at an earlier share"),
             ("joint_deposits", "who put money into a joint account"),
             ("joint_deposit_rules", "senders into a joint account"),
             ("txn_party", "names on e-Transfers"),
@@ -1920,6 +1942,7 @@ class Store:
         ("txn_payback_person", "who paid you back"),
         ("txn_payback_kind", "reimbursements"),
         ("txn_refunds", "refunds"),
+        ("joint_shares_kept", "answers about transactions"),
         ("sorted_ranges", "answers about transactions"),
         ("dismissed_insights", "dismissed findings"),
         ("review_dismissed", "settled review items"),

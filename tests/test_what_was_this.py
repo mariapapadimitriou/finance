@@ -109,7 +109,7 @@ def test_money_in_offers_its_cases(client):
     d = cases(client, ids["E-TRANSFER FROM SAM"])
     assert d["direction"] == "in"
     assert [c["key"] for c in d["cases"]] == [
-        "pay", "regular_pay", "payback", "refund", "reimbursement", "own", "out_of_savings",
+        "pay", "regular_pay", "payback", "refund", "reimbursement", "own", "cash", "out_of_savings",
         "borrowed", "lent_back", "not_mine"]
     assert d["income_kinds"]["salary"] == "Salary"
 

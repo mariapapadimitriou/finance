@@ -774,7 +774,15 @@ export function JointPage({ a, onTab, onBack, onSave, busy = false }) {
   const [mode, setMode] = useState(fixed ? 'fixed' : 'auto');
   const [text, setText] = useState(fixed ? `${a.joint_share}%` : '50%');
   const [error, setError] = useState(null);
-  useEffect(() => { setMode(a.joint_share != null ? 'fixed' : 'auto'); }, [a.id, a.joint_share]);
+  // Which purchases a change reaches (2026-10-26): all of them by default,
+  // or from today on. Nothing is saved until Save.
+  const [apply, setApply] = useState('all');
+  useEffect(() => {
+    setMode(a.joint_share != null ? 'fixed' : 'auto');
+    setText(a.joint_share != null ? `${a.joint_share}%` : '50%');
+  }, [a.id, a.joint_share]);
+  const typed = parseShare(text);
+  const changed = mode === 'auto' ? fixed : (!fixed || Math.abs(typed - a.joint_share) >= 0.005);
   const title = people.length ? `Joint with ${peopleWords(people)}` : 'A joint account';
   const trail = [{ label: 'Profile', to: 'profile' }, { label: 'Accounts', onClick: onBack },
                  { label: a.name, onClick: () => onBack('detail') }, { label: 'Joint' }];
@@ -789,13 +797,12 @@ export function JointPage({ a, onTab, onBack, onSave, busy = false }) {
     if (rest.length) onSave({ joint_people: rest });
     else onSave({ joint_share: null });
   };
-  const saveShare = (next) => {
+  const saveShare = () => {
     setError(null);
-    if (next === 'auto') { setMode('auto'); onSave({ joint_share: 'auto' }); return; }
+    if (mode === 'auto') { onSave({ joint_share: 'auto', apply }); return; }
     const share = parseShare(text);
-    if (Number.isNaN(share) || share < 1 || share > 99) { setMode('fixed'); setError('Enter a share between 1% and 99%.'); return; }
-    setMode('fixed');
-    onSave({ joint_share: share });
+    if (Number.isNaN(share) || share < 1 || share > 99) { setError('Enter a share between 1% and 99%.'); return; }
+    onSave({ joint_share: share, apply });
   };
   const words = fixed ? `your share is ${Math.round(a.joint_share)}%` : 'all yours unless you mark it';
   return (
@@ -832,19 +839,29 @@ export function JointPage({ a, onTab, onBack, onSave, busy = false }) {
                   onChange={() => setMode('fixed')} label="Split every purchase"
                   description="Each purchase counts as your share, for example 50%." />
           <Choice name="ac-share-mode" checked={mode === 'auto'} disabled={busy}
-                  onChange={() => saveShare('auto')} label="All mine unless I mark it"
+                  onChange={() => setMode('auto')} label="All mine unless I mark it"
                   description="Every purchase counts as yours. Mark the ones someone else paid for." />
         </div>
-        {mode === 'fixed' && (
-          <form className="pf-form" onSubmit={(e) => { e.preventDefault(); saveShare('fixed'); }}>
+        <form className="pf-form" onSubmit={(e) => { e.preventDefault(); saveShare(); }}>
+          {mode === 'fixed' && (
             <Field label="Your share" id="ac-share-pc" error={error}>
               <input id="ac-share-pc" inputMode="decimal" autoComplete="off" value={text}
-                     onChange={(e) => { setText(e.target.value); setError(null); }}
-                     onBlur={() => saveShare('fixed')} />
+                     onChange={(e) => { setText(e.target.value); setError(null); }} />
               {!error && <p className="gl-hint">Between 1% and 99%</p>}
             </Field>
-          </form>
-        )}
+          )}
+          {changed && (
+            <div className="pk-choices" role="radiogroup" aria-label="Which purchases">
+              <Choice name="ac-share-apply" checked={apply === 'all'} disabled={busy}
+                      onChange={() => setApply('all')} label="Apply to all purchases from this account"
+                      description="Ones you’ve sorted too. Purchases you marked as someone else’s, or gave your own part, stay as you said." />
+              <Choice name="ac-share-apply" checked={apply === 'from_today'} disabled={busy}
+                      onChange={() => setApply('from_today')} label="Apply starting today"
+                      description="Earlier purchases keep counting the way they do now." />
+            </div>
+          )}
+          <PButton type="submit" disabled={busy || !changed}>{busy ? 'Saving…' : 'Save'}</PButton>
+        </form>
       </section>
       <p className="pf-foot">{`In Accounts this row reads: “${people.length ? `joint with ${peopleWords(people)}` : 'joint'} · ${words}”.`}</p>
     </div>
@@ -928,6 +945,10 @@ export default function AccountsPanel({ onChanged, onTab, version }) {
         setNote('Nickname saved.');
       } else if ('last4' in fields) {
         setNote(fields.last4 ? 'Transfers naming these digits count as saved.' : 'Digits removed.');
+      } else if (r.applied) {
+        setNote(r.applied.apply === 'from_today'
+          ? 'Saved. Purchases from today count this way; earlier ones stay as they were.'
+          : 'Saved. Every purchase on this account counts this way now.');
       } else if ('joint_people' in fields || 'joint_share' in fields) {
         setNote('Saved.');
       }

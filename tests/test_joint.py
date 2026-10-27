@@ -309,3 +309,55 @@ def test_always_mine_ends_always_split(client):
     client.put(f"/api/transactions/{i['LOBLAWS']}/mine-always", json={"on": True})
     ingest(st, IngestResult([row(40, "LOBLAWS", "fam")], "fam"))
     assert next(t for t in st.all_transactions() if t.amount == 40).my_share == 40.0
+
+
+class TestChangingHowPurchasesCount:
+    """2026-10-26: her sister set 50% after sorting a lot of purchases. The
+    change can apply to every purchase on the account, or from today on."""
+
+    def setup(self, client):
+        st = client.application.config["STORE"]
+        old = Transaction(date=(TODAY - timedelta(days=40)).isoformat(), description="COSTCO",
+                          amount=200, account_id="fam", account_name="fam",
+                          raw={"account_type": "depository"}, category="Groceries")
+        ingest(st, IngestResult([old], "fam"))
+        new = Transaction(date=TODAY.isoformat(), description="SHELL", amount=60, account_id="fam",
+                          account_name="fam", raw={"account_type": "depository"}, category="Gas")
+        ingest(st, IngestResult([new], "fam"))
+        by = {t.description: t.fingerprint for t in st.all_transactions()}
+        return st, by
+
+    def share(self, st, by, name):
+        return st.get_transaction(by[name]).my_share
+
+    def test_every_purchase_including_sorted_ones(self, client):
+        st, by = self.setup(client)
+        # Sorted earlier: one said "Mine" outright, one someone else's.
+        client.put(f"/api/transactions/{by['LOBLAWS']}/share", json={"my_share": 120})
+        client.put(f"/api/transactions/{by['SEND E-TFR ***Mom1']}/share", json={"my_share": 0})
+        r = client.put("/api/accounts/fam/settings", json={"joint_share": 50, "apply": "all"})
+        assert r.status_code == 200 and r.get_json()["applied"]["cleared"] == 1
+        assert self.share(st, by, "LOBLAWS") == 60
+        assert self.share(st, by, "COSTCO") == 100 and self.share(st, by, "SHELL") == 30
+        assert self.share(st, by, "SEND E-TFR ***Mom1") == 0        # her answer stays
+
+    def test_from_today_leaves_earlier_purchases_as_they_were(self, client):
+        st, by = self.setup(client)
+        r = client.put("/api/accounts/fam/settings", json={"joint_share": 50, "apply": "from_today"})
+        assert r.get_json()["applied"]["kept"] >= 1
+        assert self.share(st, by, "COSTCO") == 200
+        assert self.share(st, by, "SHELL") == 30
+        # Changing it again "every purchase" moves the held ones too.
+        client.put("/api/accounts/fam/settings", json={"joint_share": 40, "apply": "all"})
+        assert self.share(st, by, "COSTCO") == 80 and self.share(st, by, "SHELL") == 24
+        # And back to all mine, from today: earlier ones keep 40%.
+        client.put("/api/accounts/fam/settings", json={"joint_share": "auto", "apply": "from_today"})
+        assert self.share(st, by, "COSTCO") == 80 and self.share(st, by, "SHELL") == 60
+
+    def test_a_bad_choice_or_share_changes_nothing(self, client):
+        st, by = self.setup(client)
+        assert client.put("/api/accounts/fam/settings",
+                          json={"joint_share": 50, "apply": "sometimes"}).status_code == 400
+        assert client.put("/api/accounts/fam/settings",
+                          json={"joint_share": 150, "apply": "from_today"}).status_code == 400
+        assert self.share(st, by, "COSTCO") == 200 and not st.get_transaction(by["COSTCO"]).share_set
