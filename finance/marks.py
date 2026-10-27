@@ -735,7 +735,12 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         if was is not None:
             marks.setdefault("splits", {}).setdefault(charge_id, was)
             share = (store.get_transaction(charge_id) or fresh).my_share or 0.0
-            title = f"{charge.merchant} is now split with {person}."
+            from .splits import first_name
+            again = next((p for p in ((was.get("split") or {}).get("people") or [])
+                          if first_name(p["name"]) == first_name(person)), None)
+            title = (f"{person} has now paid you back "
+                     f"${again['amount'] + (part if part is not None else -t.amount):,.2f} for {charge.merchant}."
+                     if again else f"{charge.merchant} is now split with {person}.")
             detail = (f"Their ${part if part is not None else -t.amount:,.2f} comes off what you spent, so your share "
                       f"is ${share:,.2f}. Not income."
                       + (f" The other ${-t.amount - part:,.2f} counts as money in."

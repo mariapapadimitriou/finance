@@ -231,9 +231,23 @@ def add_payer(store, charge: Transaction, inflow: Transaction, person: str | Non
     if current is None and charge.share_set:
         return None
     people = list(current["people"]) if current else []
-    if any(first_name(p["name"]) == first_name(person) for p in people):
-        return None
     got = inflow.paid_part
+    at = next((i for i, p in enumerate(people) if first_name(p["name"]) == first_name(person)), None)
+    if at is not None:
+        # Someone paying back in more than one e-Transfer (2026-10-26): if
+        # their place was made by their earlier payback, it grows by this
+        # one; a part she set in the split herself stays what she said.
+        if not _made_by_paybacks(store, charge, people[at]["name"], inflow):
+            return None
+        yours = round(charge.my_share if charge.my_share is not None else charge.amount, 2)
+        if got > yours + 0.005:
+            return None
+        was = {"split": current, "share": charge.my_share if charge.share_set else None}
+        people[at] = {**people[at], "amount": round(float(people[at]["amount"]) + got, 2)}
+        store.set_split(charge.fingerprint, current["mode"], people, current["watch"])
+        store.set_share(charge.fingerprint, round(yours - got, 2))
+        store.set_payback_kind(inflow.fingerprint, MADE_SPLIT)
+        return was
     if current is None and (charge.paid_back or 0.0) - got > 0.005:
         # Others already paid some of it back with no split to say who;
         # a split now would have to guess their names, so it nets as before.
@@ -247,6 +261,17 @@ def add_payer(store, charge: Transaction, inflow: Transaction, person: str | Non
     store.set_share(charge.fingerprint, round(yours - got, 2))
     store.set_payback_kind(inflow.fingerprint, MADE_SPLIT)
     return was
+
+
+def _made_by_paybacks(store, charge: Transaction, name: str, inflow: Transaction) -> bool:
+    """Whether `name`'s place in the charge's split was made by paybacks of
+    theirs (add_payer), not set by her."""
+    kinds = store.payback_kinds()
+    payer = store.payback_people()
+    return any(t.repays == charge.fingerprint and t.fingerprint != inflow.fingerprint
+               and kinds.get(t.fingerprint) == MADE_SPLIT
+               and first_name(payer.get(t.fingerprint) or "") == first_name(name)
+               for t in store.all_transactions())
 
 
 def drop_payer(store, inflow: Transaction):
@@ -263,11 +288,16 @@ def drop_payer(store, inflow: Transaction):
     person = store.payback_people().get(inflow.fingerprint)
     got = inflow.paid_part
     idx = next((i for i, p in enumerate(current["people"])
-                if p["name"] == person and abs(p["amount"] - got) < 0.01), None)
+                if p["name"] == person and p["amount"] - got > -0.01), None)
     if idx is None:
         return None
     was = {"split": current, "share": charge.my_share if charge.share_set else None}
-    people = [p for i, p in enumerate(current["people"]) if i != idx]
+    left = round(float(current["people"][idx]["amount"]) - got, 2)
+    if left > 0.005:
+        # One of their e-Transfers goes; their place shrinks by it.
+        people = [dict(p, amount=left) if i == idx else p for i, p in enumerate(current["people"])]
+    else:
+        people = [p for i, p in enumerate(current["people"]) if i != idx]
     if people:
         store.set_split(charge.fingerprint, current["mode"], people, current["watch"])
         store.set_share(charge.fingerprint, round((charge.my_share or 0.0) + got, 2))

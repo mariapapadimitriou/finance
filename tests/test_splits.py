@@ -222,3 +222,54 @@ def test_up_to_fifty_people(client):
     too_many = split(client, tid, [{"name": f"Guest {n}"} for n in range(51)])
     assert too_many.status_code == 400
     assert too_many.get_json()["error"] == "Up to 50 people."
+
+
+class TestTwoETransfersFromOnePerson:
+    """2026-10-26: a friend can pay back their part in two e-Transfers."""
+
+    def setup(self, client):
+        ids = load(client.st, charge(120, "SUSHI NAMI", "Sushi Nami", when=day(1)),
+                   etransfer_in(30, "Anna Lee", when=day(0)))
+        st = client.st
+        # The second one, a separate e-Transfer the same day.
+        second = etransfer_in(30, "Anna Lee", when=day(0))
+        second.description = "INTERAC E-TRANSFER 2 FROM ANNA LEE"
+        second.raw = dict(second.raw, transaction_id="second")
+        ids |= load(st, second)
+        anna = [t.fingerprint for t in st.all_transactions() if t.amount == -30]
+        assert len(anna) == 2
+        return ids["SUSHI NAMI"], anna
+
+    def mark(self, client, inflow, sushi):
+        return client.post(f"/api/transactions/{inflow}/mark",
+                           json={"case": "payback", "charge": sushi, "person": "Anna Lee"}).get_json()
+
+    def test_both_come_off_a_purchase_that_was_not_split(self, client):
+        sushi, (a1, a2) = self.setup(client)
+        assert self.mark(client, a1, sushi)["title"] == "Sushi Nami is now split with Anna Lee."
+        res = self.mark(client, a2, sushi)
+        assert res["title"] == "Anna Lee has now paid you back $60.00 for Sushi Nami."
+        d = detail(client, sushi)
+        assert d["splitting"]["you"] == 60
+        assert d["splitting"]["people"] == [{"name": "Anna Lee", "amount": 60.0, "paid": 60.0,
+                                             "owes": 0.0, "paid_on": d["splitting"]["people"][0]["paid_on"]}]
+        # Undo the second: back to one e-Transfer's worth.
+        client.post("/api/transactions/undo", json=res["undo"])
+        d = detail(client, sushi)
+        assert d["splitting"]["you"] == 90 and d["splitting"]["people"][0]["amount"] == 30
+        # Unlinking one of two leaves the other's.
+        self.mark(client, a2, sushi)
+        client.delete(f"/api/transactions/{sushi}/paybacks/{a1}")
+        d = detail(client, sushi)
+        assert d["splitting"]["you"] == 90 and d["splitting"]["people"][0]["amount"] == 30
+        client.delete(f"/api/transactions/{sushi}/paybacks/{a2}")
+        assert detail(client, sushi).get("splitting") is None
+
+    def test_a_part_she_set_in_the_split_stays_what_she_said(self, client):
+        sushi, (a1, a2) = self.setup(client)
+        split(client, sushi, [{"name": "Anna Lee"}])          # $60 each
+        self.mark(client, a1, sushi)
+        self.mark(client, a2, sushi)
+        d = detail(client, sushi)
+        assert d["splitting"]["you"] == 60
+        assert d["splitting"]["people"][0]["amount"] == 60 and d["splitting"]["people"][0]["owes"] == 0
