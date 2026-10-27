@@ -204,6 +204,10 @@ def describe(t: Transaction, ctx: Context) -> dict:
         chip, structural, group = "Repayment", True, "transfer"
         note = (f"Paid back to me · for {_name(charge, ctx)} · comes off your spending" if charge
                 else "Paid back to me · comes off your spending")
+        if t.unlinked_part > 0.005:
+            # Part of it (2026-10-26).
+            note = (f"${t.paid_part:,.2f} paid back for {_name(charge, ctx) if charge else 'a purchase'}"
+                    f" · ${t.unlinked_part:,.2f} money in")
     elif cat == "Unsorted transfers":
         chip, counts = "Not sorted yet", "spending"
         note, note_link = "Saved or spent? Tell us", True
@@ -357,6 +361,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "my_note": ctx.notes.get(t.fingerprint, ""),
         "split": split,
         "repays": t.repays,
+        "paid_part": t.paid_part if t.repays else None,
         "excluded": "" if copy else (t.excluded or ""),
         # THL-71: only a row that counts can be a one-off — not a transfer,
         # a repayment you linked, or a row left out.

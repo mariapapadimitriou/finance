@@ -670,10 +670,14 @@ def set_transaction_share(txn_id: str):
 # ── Where transfers went, and who paid you back ──────────────────────────────
 
 def _txn_brief(t) -> dict:
-    return {"id": t.fingerprint, "date": t.date, "merchant": t.merchant,
-            "description": t.description, "amount": t.amount,
-            "account_id": t.account_id, "account_name": t.account_name or "",
-            "category": t.category}
+    out = {"id": t.fingerprint, "date": t.date, "merchant": t.merchant,
+           "description": t.description, "amount": t.amount,
+           "account_id": t.account_id, "account_name": t.account_name or "",
+           "category": t.category}
+    if t.repays:
+        # How much of it paid its charge back (2026-10-26).
+        out["paid_part"] = t.paid_part
+    return out
 
 
 @bp.get("/transfers/unsorted")
@@ -866,11 +870,19 @@ def add_payback(txn_id: str, inflow_id: str):
         return jsonify({"error": "Only money coming in can pay back a charge."}), 400
     if inflow.repays and inflow.repays != txn_id:
         return jsonify({"error": "That money already paid back another charge."}), 400
-    already = 0.0 if inflow.repays == txn_id else (charge.paid_back or 0.0)
-    if already - inflow.amount > charge.amount + 0.005:
+    body = request.get_json(silent=True) or {}
+    # Part of it (2026-10-26): how much of the money in paid this back; all
+    # of it unless she says less, and the rest counts as money in.
+    from .marks import Problem, _payback_part
+    try:
+        part = _payback_part(inflow, body)
+    except Problem as e:
+        return jsonify({"error": str(e)}), 400
+    paying = part if part is not None else -inflow.amount
+    already = (charge.paid_back or 0.0) - (inflow.paid_part if inflow.repays == txn_id else 0.0)
+    if already + paying > charge.amount + 0.005:
         return jsonify({"error": "That's more than the charge — friends can't pay "
                                  "back more than it cost."}), 400
-    body = request.get_json(silent=True) or {}
     person = body.get("person")
     if person is not None:
         names = [p["name"] for p in (st.splits().get(txn_id) or {}).get("people", [])]
@@ -879,14 +891,14 @@ def add_payback(txn_id: str, inflow_id: str):
     from .impact import snapshot, undo_payload
     before = snapshot(st, st.all_transactions())
     was = {"charge": inflow.repays, "kind": st.payback_kinds().get(inflow_id),
-           "person": st.payback_people().get(inflow_id)}
+           "person": st.payback_people().get(inflow_id), "amount": inflow.repays_amount}
     split_was = {}
     if inflow.repays and inflow.repays != txn_id:
         from .splits import drop_payer
         moved = drop_payer(st, inflow)
         if moved is not None:
             split_was[inflow.repays] = moved
-    st.link_payback(txn_id, inflow_id, person)
+    st.link_payback(txn_id, inflow_id, person, part)
     # Never income: Plaid sometimes calls an e-transfer in "income".
     if inflow.category != "Transfers":
         st.set_transaction_category(inflow_id, "Transfers")

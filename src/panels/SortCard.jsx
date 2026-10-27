@@ -56,11 +56,21 @@ export function nameIn(text = '') {
 
 /** What a payback does (THL-260): a purchase nobody split becomes a split
  * with whoever sent it; one already split just has their part paid. */
-export function paybackEffect(cand, who, amt) {
+export function paybackEffect(cand, who, amt, rest = '') {
+  // Part of it (2026-10-26): the rest counts as money in.
+  const tail = rest ? ` The other ${rest} counts as money in.` : '';
   if (who && cand && !cand.split) {
-    return `${cand.merchant} becomes a split with ${who}. Their ${amt} comes off what you spent. Not income.`;
+    return `${cand.merchant} becomes a split with ${who}. Their ${amt} comes off what you spent. Not income.${tail}`;
   }
-  return `Comes off what you spent at ${cand?.merchant}. Not income.`;
+  return `${rest ? `${amt} comes off` : 'Comes off'} what you spent at ${cand?.merchant}. Not income.${tail}`;
+}
+
+/** How much of money in paid a purchase back (2026-10-26): the number she
+ * typed when it's a part, or null for all of it (or nothing sensible). */
+export function paidPartOf(typed, whole) {
+  const n = Math.round(Number(typed) * 100) / 100;
+  if (!(n > 0) || n >= whole - 0.005) return null;
+  return n;
 }
 
 const isOut = (it) => (it.txn?.amount ?? 0) > 0;
@@ -270,9 +280,12 @@ export function steps(it, cases, mode = 'stacked') {
                         candidates: c.candidates ?? [] };
     }
   }
-  S.name = { title: 'Who sent this?', left: S.pick_payback?.candidates.length ? 2 : 1, ask: 'sender',
+  // Who sent it, then which purchase, always (2026-10-26): with no likely
+  // match the step still finds any purchase, and only part of the money
+  // may have paid it back.
+  S.name = { title: 'Who sent this?', left: S.pick_payback ? 2 : 1, ask: 'sender',
              sub: 'Your bank left the name off. Pearl uses it to match paybacks.',
-             to: S.pick_payback?.candidates.length ? 'pick_payback' : undefined };
+             to: S.pick_payback ? 'pick_payback' : undefined };
 
 
   // ── Everything at once (a transaction's panel, "It wasn’t a purchase"):
@@ -445,6 +458,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   const [amount, setAmount] = useState('');
   // "Which purchase?": what she typed, and what the server found for it.
   const [find, setFind] = useState('');
+  // Paid back: how much of it, all of it to start (2026-10-26).
+  const [paidPart, setPaidPart] = useState(() => Math.abs(it.txn?.amount ?? 0).toFixed(2));
   const [found, setFound] = useState(null);
   // Remember is asked on the last card, after the answer (2026-10-23),
   // unticked: a rule is hers to choose, never a default. The saving call
@@ -582,12 +597,15 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       // The name she typed on "Who sent this?", when the bank left it off.
       const typed = s.key === 'payback' ? (answered('name') || '').trim() : '';
       const who = cand?.person || (s.key === 'payback' ? typed || nameIn(it.txn.merchant) : '');
-      const effect = s.key === 'payback' ? paybackEffect(cand, who, amt)
+      const whole = Math.abs(it.txn.amount);
+      const part = s.key === 'payback' ? paidPartOf(paidPart, whole) : null;
+      const effect = s.key === 'payback'
+        ? paybackEffect(cand, who, part ? txAmount(part) : amt, part ? txAmount(whole - part) : '')
           : s.key === 'refund' ? `Comes off ${cand?.category || ''}. Not income.`
             : 'Pays back a work expense. Not income.';
       return finish(answers, effect, async () => {
         if (typed) await setParty(it.txn.id, typed).catch(() => {});
-        return via({ case: s.key, charge: v, ...(who ? { person: who } : {}) }, 'Sorted.');
+        return via({ case: s.key, charge: v, ...(who ? { person: who } : {}), ...(part ? { amount: part } : {}) }, 'Sorted.');
       });
     }
     if (s.ask === 'name') {
@@ -855,6 +873,20 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
             );
             return (
               <>
+                {step.key === 'payback' && (
+                  // Not always all of it (2026-10-26): the rest counts as money in.
+                  <div className="txd-field nl-paid-part">
+                    <label className="pk-label" htmlFor={`${group}-part`}>How much of it was paying you back?</label>
+                    <input id={`${group}-part`} type="number" inputMode="decimal" min="0.01" step="0.01"
+                           max={Math.abs(it.txn.amount)} value={paidPart} disabled={busy}
+                           onChange={(e) => setPaidPart(e.target.value)} />
+                    {paidPartOf(paidPart, Math.abs(it.txn.amount)) && (
+                      <p className="pk-label pk-muted">
+                        {`The other ${txAmount(Math.abs(it.txn.amount) - paidPartOf(paidPart, Math.abs(it.txn.amount)))} counts as money in`}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="txd-field nl-find">
                   <input type="search" value={find} aria-label="Find the purchase" placeholder="Find by name or amount"
                          autoComplete="off" disabled={busy} onChange={(e) => setFind(e.target.value)} />

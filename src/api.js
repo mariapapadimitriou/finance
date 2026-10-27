@@ -287,8 +287,10 @@ export const setJointFrom  = (id, who, remember = false, person = null) =>
 export const sortTransfers = (ids, category, remember) =>
   json('POST', '/api/transfers/sort', { ids, category, remember });
 // Money a friend sent back, linked to the charge it repays.
-export const linkPayback   = (id, inflowId, person) =>
-  json('POST', `/api/transactions/${id}/paybacks/${inflowId}`, person ? { person } : {});
+// `amount`: how much of it paid the charge back, when not all of it.
+export const linkPayback   = (id, inflowId, person, amount = null) =>
+  json('POST', `/api/transactions/${id}/paybacks/${inflowId}`,
+       { ...(person ? { person } : {}), ...(amount ? { amount } : {}) });
 // A charge split with people (S-01, THL-124): {mode, people: [{name, amount}], watch}.
 export const setSplit      = (id, split) => json('PUT', `/api/transactions/${id}/split`, split);
 export const clearSplit    = (id) =>

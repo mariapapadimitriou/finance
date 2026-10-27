@@ -222,6 +222,12 @@ export function LinkToSplit({ tx, busy, onLink, onNone }) {
   const [pick, setPick] = useState(r?.suggestion
     ? `${r.suggestion.charge_id}|${r.suggestion.name}` : '');
   const sender = r?.from_sender && first ? first.name : null;
+  // How much of it paid the split back: all of it to start (2026-10-26).
+  const whole = tx.full_amount;
+  const [part, setPart] = useState(() => Number(whole).toFixed(2));
+  const n = Math.round(Number(part) * 100) / 100;
+  const partOk = n > 0 && n <= whole + 0.005;
+  const some = partOk && n < whole - 0.005 ? n : null;
   return (
     <div className="txd-step">
       <p className="pk-muted">
@@ -241,13 +247,21 @@ export function LinkToSplit({ tx, busy, onLink, onNone }) {
                 label="None of these"
                 description="We’ll ask where it goes instead. It could be income or something else." />
       </div>
+      {pick && pick !== 'none' && (
+        <div className="txd-field">
+          <label className="pk-label" htmlFor="paid-part">How much of it was paying you back?</label>
+          <input id="paid-part" type="number" inputMode="decimal" min="0.01" step="0.01" max={whole}
+                 value={part} disabled={busy} onChange={(e) => setPart(e.target.value)} />
+          {some && <p className="pk-label pk-muted">{`The other ${txAmount(whole - some)} counts as money in`}</p>}
+        </div>
+      )}
       <p className="pk-impact"><PIcon name="info" size={18} />
-        <span>Paid back part of it? Pick the split and we’ll keep the rest open.</span></p>
-      <PButton className="txd-save" disabled={busy || !pick}
+        <span>Paid back part of their share? Pick the split and we’ll keep the rest open.</span></p>
+      <PButton className="txd-save" disabled={busy || !pick || (pick !== 'none' && !partOk)}
                onClick={() => {
                  if (pick === 'none') { onNone(); return; }
                  const [chargeId, ...rest] = pick.split('|');
-                 onLink(options.find((o) => o.charge_id === chargeId && o.name === rest.join('|')));
+                 onLink(options.find((o) => o.charge_id === chargeId && o.name === rest.join('|')), some);
                }}>
         {pick === 'none' ? 'Choose a category' : 'Link'}
       </PButton>

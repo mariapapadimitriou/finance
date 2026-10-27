@@ -130,3 +130,45 @@ class TestPaidBack:
     def test_refused_the_wrong_way_round(self, client, dinner):
         assert link(client, dinner["E-TRANSFER FROM ANNA"],
                     dinner["UBER EATS TORONTO"]).status_code == 400
+
+
+class TestPartOfIt:
+    """Only part of the money in paid it back (2026-10-26): the default is all
+    of it; a part comes off the charge, and the rest counts as money in."""
+
+    def test_part_comes_off_and_the_rest_is_money_in(self, client):
+        ids = load(client, [(d(0), "SUSHI NAMI", 80, None)], "card", "credit")
+        ids |= load(client, [(d(1), "E-TRANSFER FROM ANNA", -100, None)], "chq", "depository")
+        before = month(client)
+        r = client.post(f"/api/transactions/{ids['SUSHI NAMI']}/paybacks/{ids['E-TRANSFER FROM ANNA']}",
+                        json={"amount": 40})
+        assert r.status_code == 200, r.get_json()
+        body = r.get_json()
+        assert body["paid_back"] == 40 and body["share"] == 40
+        assert body["linked"][0]["paid_part"] == 40
+        after = month(client)
+        assert after["spend"] == before["spend"] - 40
+        assert after["inflows"] == 60 and after["income"] == before["income"]
+        row = next(t for t in client.get("/api/transactions/list", query_string={"month": MONTH})
+                   .get_json()["transactions"] if t["id"] == ids["E-TRANSFER FROM ANNA"])
+        assert row["note"] == "$40.00 paid back for Sushi Nami · $60.00 money in"
+
+    def test_all_of_it_by_default_and_bad_parts_refused(self, client):
+        ids = load(client, [(d(0), "SUSHI NAMI", 80, None)], "card", "credit")
+        ids |= load(client, [(d(1), "E-TRANSFER FROM ANNA", -30, None)], "chq", "depository")
+        url = f"/api/transactions/{ids['SUSHI NAMI']}/paybacks/{ids['E-TRANSFER FROM ANNA']}"
+        for bad in (0, -5, 31, "lots"):
+            assert client.post(url, json={"amount": bad}).status_code == 400, bad
+        assert client.post(url).get_json()["paid_back"] == 30
+        assert client.post(url, json={"amount": 30}).get_json()["paid_back"] == 30
+
+    def test_from_the_sort_card_with_undo(self, client):
+        ids = load(client, [(d(0), "SUSHI NAMI", 80, None)], "card", "credit")
+        ids |= load(client, [(d(1), "E-TRANSFER FROM ANNA", -100, None)], "chq", "depository")
+        st = client.application.config["STORE"]
+        res = client.post(f"/api/transactions/{ids['E-TRANSFER FROM ANNA']}/mark",
+                          json={"case": "payback", "charge": ids["SUSHI NAMI"], "amount": 25}).get_json()
+        assert st.get_transaction(ids["SUSHI NAMI"]).paid_back == 25
+        assert st.get_transaction(ids["E-TRANSFER FROM ANNA"]).unlinked_part == 75
+        client.post("/api/transactions/undo", json=res["undo"])
+        assert not st.get_transaction(ids["E-TRANSFER FROM ANNA"]).repays

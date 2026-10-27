@@ -273,17 +273,19 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
   }
 
   // Money in that pays back a split (S-02, S-03).
-  const linked = (o) => () => {
-    const owed = Math.round((o.owes - tx.full_amount) * 100) / 100;
+  const linked = (o, part) => () => {
+    const paid = part ?? tx.full_amount;
+    const owed = Math.round((o.owes - paid) * 100) / 100;
+    const rest = part ? ` The other ${txAmount(tx.full_amount - part)} counts as money in.` : '';
     return {
       id: tx.id,
       title: `Linked to ${o.merchant}.`,
-      detail: owed > 0.004 ? `${o.name} still owes ${txAmount(owed)}. It won’t count as income.`
-        : `${o.name}’s share is paid back. It won’t count as income.`,
+      detail: (owed > 0.004 ? `${o.name} still owes ${txAmount(owed)}. It won’t count as income.`
+        : `${o.name}’s share is paid back. It won’t count as income.`) + rest,
     };
   };
-  const link = (o) => save(() => linkPayback(o.charge_id, tx.id, o.name),
-                           { close: true, change: linked(o) });
+  const link = (o, part = null) => save(() => linkPayback(o.charge_id, tx.id, o.name, part),
+                                        { close: true, change: linked(o, part) });
 
   if (step === 'link') {
     return (

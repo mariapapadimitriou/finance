@@ -705,16 +705,20 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         if charge is None or charge.amount <= 0:
             raise Problem("Pick the charge it pays back.")
         un_exclude()
+        part = _payback_part(t, body)
         marks.setdefault("paybacks", {})[t.fingerprint] = {
             "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
-            "person": store.payback_people().get(t.fingerprint)}
+            "person": store.payback_people().get(t.fingerprint), "amount": t.repays_amount}
         _drop_made_split(store, t, marks)
         from .etransfers import party as etransfer_party
         person = (" ".join(str(body.get("person") or "").split())
                   or (etransfer_party(t) or {}).get("name") or None)
-        store.link_payback(charge_id, t.fingerprint, person)
+        store.link_payback(charge_id, t.fingerprint, person, part)
         store.set_payback_kind(t.fingerprint, None)
         title = f"Linked to {charge.merchant}. Not income."
+        if part is not None:
+            detail = (f"${part:,.2f} of it comes off {charge.merchant}. The other "
+                      f"${-t.amount - part:,.2f} counts as money in, not income.")
         # A purchase that was never split becomes a split with whoever sent
         # it (THL-260): the split card shows them, paid back.
         from .splits import add_payer
@@ -724,8 +728,10 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             marks.setdefault("splits", {}).setdefault(charge_id, was)
             share = (store.get_transaction(charge_id) or fresh).my_share or 0.0
             title = f"{charge.merchant} is now split with {person}."
-            detail = (f"Their ${-t.amount:,.2f} comes off what you spent, so your share "
-                      f"is ${share:,.2f}. Not income.")
+            detail = (f"Their ${part if part is not None else -t.amount:,.2f} comes off what you spent, so your share "
+                      f"is ${share:,.2f}. Not income."
+                      + (f" The other ${-t.amount - part:,.2f} counts as money in."
+                         if part is not None else ""))
     elif case == "reimbursement":
         charge_id = str(body.get("charge") or "")
         charge = next((x for x in store.all_transactions() if x.fingerprint == charge_id), None)
@@ -874,6 +880,23 @@ def _drop_made_split(store, t: Transaction, marks: dict) -> None:
         marks.setdefault("splits", {}).setdefault(charge_id, was)
 
 
+def _payback_part(t: Transaction, body: dict) -> float | None:
+    """How much of inflow `t` paid the charge back (2026-10-26): None for all
+    of it, the default; otherwise a part, more than nothing and no more than
+    came in."""
+    raw = body.get("amount")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None
+    try:
+        part = round(float(raw), 2)
+    except (TypeError, ValueError):
+        raise Problem("How much they paid back has to be an amount.") from None
+    whole = round(-t.amount, 2)
+    if part <= 0 or part > whole + 0.005:
+        raise Problem(f"How much they paid back has to be between $0.01 and ${whole:,.2f}.")
+    return None if abs(part - whole) < 0.005 else part
+
+
 def undo_marks(store, marks: dict) -> int:
     """Put back what `apply` recorded in `marks`. Returns how many."""
     if not isinstance(marks, dict):
@@ -900,7 +923,7 @@ def undo_marks(store, marks: dict) -> int:
         if tid not in known or not isinstance(was, dict):
             continue
         if was.get("charge"):
-            store.link_payback(was["charge"], tid, was.get("person"))
+            store.link_payback(was["charge"], tid, was.get("person"), was.get("amount"))
             store.set_payback_kind(tid, was.get("kind"))
         else:
             store.unlink_payback(tid)
