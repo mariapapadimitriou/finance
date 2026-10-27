@@ -99,7 +99,7 @@ def test_by_amount_and_validation(client):
         ([{"name": "", "amount": 10}], "amount"),
         ([{"name": "Sam", "amount": -1}], "amount"),
         ([], "even"),
-        ([{"name": f"P{i}"} for i in range(9)], "even"),
+        ([{"name": f"P{i}"} for i in range(51)], "even"),
         ([{"name": "Sam"}], "thirds"),
     ]
     for people, mode in bad:
@@ -209,3 +209,16 @@ def test_bought_on_is_the_earlier_date():
     assert bought_on(t).isoformat() == "2026-10-03"
     t.post_date = "2026-10-08"                       # a statement: posted later
     assert bought_on(t).isoformat() == "2026-10-06"
+
+
+def test_up_to_fifty_people(client):
+    """A split takes up to 50 paybacks (2026-10-26: was 8)."""
+    ids = load(client.st, charge(5100, "WEDDING VENUE"))
+    tid = ids["WEDDING VENUE"]
+    r = split(client, tid, [{"name": f"Guest {n}"} for n in range(50)])
+    assert r.status_code == 200, r.get_json()
+    body = r.get_json()["splitting"]
+    assert len(body["people"]) == 50 and body["you"] == 100.0
+    too_many = split(client, tid, [{"name": f"Guest {n}"} for n in range(51)])
+    assert too_many.status_code == 400
+    assert too_many.get_json()["error"] == "Up to 50 people."
