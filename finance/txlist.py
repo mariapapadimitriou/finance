@@ -370,6 +370,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
                          if _waiting(t) or t.fingerprint in ctx.twins else ""),
         "joint": t.joint or "",
         "share_set": bool(t.share_set),
+        "joint_split": t.joint_split,
         "joint_from": t.joint_from or "",
         "joint_person": t.joint_person or "",
         "joint_people": list(t.joint_people or []),

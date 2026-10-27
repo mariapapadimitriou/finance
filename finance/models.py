@@ -284,6 +284,9 @@ class Transaction:
     # Money in: who put it there, "me" or "them" (finance/joint.py).
     joint: str | None = None
     share_set: bool = False
+    # On a joint account: the percent of every charge from this name that is
+    # hers, when she splits them all (2026-10-26). None when she doesn't.
+    joint_split: float | None = None
     joint_from: str | None = None
     # The person an e-Transfer was from or to, as she typed it (THL-122);
     # see finance/etransfers.py for the bank's own.
@@ -395,6 +398,7 @@ class Transaction:
             refund_of=row.get("refund_of") or None,
             joint=row.get("joint") or None,
             share_set=row.get("my_share") is not None,
+            joint_split=(None if row.get("joint_split") is None else float(row["joint_split"])),
             excluded=row.get("excluded") or None,
             income_type=row.get("income_type") or None,
             income_type_source=row.get("income_type_source") or None,
@@ -413,7 +417,9 @@ class Transaction:
             from .joint import my_share
             t.my_share = my_share(t.amount, category=t.category,
                                   mine=bool(row.get("joint_mine")),
-                                  share=row.get("joint_share"), who=row.get("joint_from"),
+                                  share=(row.get("joint_split") if row.get("joint_split") is not None
+                                         else row.get("joint_share")),
+                                  who=row.get("joint_from"),
                                   ratio=row.get("joint_ratio"))
             t.joint_from = row.get("joint_from") or None
         return t

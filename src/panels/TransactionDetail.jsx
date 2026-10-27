@@ -308,10 +308,11 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
                      onSave={(bankId) => save(() => (bankId ? allocateToBank(Number(bankId), tx.id)
                                                               : unallocate(tx.id)))} />,
     whose: <Whose tx={tx} busy={busy} onBack={back}
-                  onSave={(share, always) => save(async () => {
-                    await setShare(tx.id, share);
+                  onSave={(share, always, split) => save(async () => {
+                    const res = await setShare(tx.id, share, split === undefined ? {} : { always: split });
                     if (always) await setMineAlways(tx.id, true);
-                  })} />,
+                    return res;
+                  }, { change: (res) => (res?.rule ? { id: tx.id, title: 'Split saved.', detail: res.rule } : undefined) })} />,
     party: <Party tx={tx} busy={busy} onBack={back}
                   onSave={(name) => save(() => setParty(tx.id, name))} />,
     from: <JointFrom tx={tx} busy={busy} onBack={back}
@@ -725,21 +726,26 @@ function PiggyBank({ tx, banks, busy, onBack, onSave }) {
 }
 
 /**
- * A charge on a joint account: hers by default, less what the other person
- * put in that month (finance/joint.py); or all theirs, or a part she says.
+ * A charge on a joint account: hers by default (finance/joint.py); or all
+ * theirs, or a part she says — remembered for that name on the account.
  */
-function Whose({ tx, busy, onBack, onSave }) {
+export function Whose({ tx, busy, onBack, onSave }) {
   const full = tx.full_amount;
   const theirs = tx.share_set && tx.amount < 0.005;
-  const part = tx.share_set && !theirs && Math.abs(tx.amount - full) >= 0.005;
+  // Part of it: set on this charge, or split like every one from this name
+  // on the account (2026-10-26).
+  const splitAll = tx.joint_split != null;
+  const part = (tx.share_set || splitAll) && !theirs && Math.abs(tx.amount - full) >= 0.005;
   const [mode, setMode] = useState(theirs ? 'theirs' : part ? 'part' : 'mine');
   const [amount, setAmount] = useState(part ? String(tx.amount) : '');
   const [always, setAlways] = useState(false);
+  // Split once, split always: on by default, so the next one is split too.
+  const [splitAlways, setSplitAlways] = useState(splitAll || !part);
   const n = Number(amount);
   return (
     <Step title="Whose was it?" onBack={onBack}>
-      <p className="pk-muted">On a joint account, spending is yours, less what {tx.joint} puts
-        in that month. Only your part counts.</p>
+      <p className="pk-muted">On a joint account, spending is yours unless you say otherwise.
+        Only your part counts.</p>
       <div className="txd-quick" role="radiogroup" aria-label="Whose was it">
         {[['mine', 'Mine'], ['theirs', `${tx.joint}’s`], ['part', 'Part of it']].map(([k, l]) => (
           <button key={k} type="button" role="radio" aria-checked={mode === k}
@@ -756,6 +762,12 @@ function Whose({ tx, busy, onBack, onSave }) {
           )}
         </Field>
       )}
+      {mode === 'part' && (
+        <label className="txd-check">
+          <input type="checkbox" checked={splitAlways} onChange={(e) => setSplitAlways(e.target.checked)} />
+          Always split {tx.merchant} like this
+        </label>
+      )}
       {mode === 'mine' && (
         <label className="txd-check">
           <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
@@ -764,7 +776,8 @@ function Whose({ tx, busy, onBack, onSave }) {
       )}
       <PButton disabled={busy || (mode === 'part' && !(n > 0 && n <= full))}
                onClick={() => onSave(mode === 'mine' ? null : mode === 'theirs' ? 0 : n,
-                                     mode === 'mine' && always)}>
+                                     mode === 'mine' && always,
+                                     mode === 'part' ? splitAlways : undefined)}>
         Save
       </PButton>
     </Step>

@@ -199,6 +199,16 @@ CREATE TABLE IF NOT EXISTS joint_mine (
     merchant_key TEXT PRIMARY KEY
 );
 
+-- Names whose purchases on a joint account she splits (2026-10-26): once
+-- she gives one charge a part, every charge there from that name is split
+-- the same way, `pct` of it hers, unless she sets that charge herself.
+CREATE TABLE IF NOT EXISTS joint_split_rules (
+    account_id   TEXT NOT NULL,
+    merchant_key TEXT NOT NULL,
+    pct          REAL NOT NULL,
+    PRIMARY KEY (account_id, merchant_key)
+);
+
 -- Money that came into a joint account from outside: who put it in, "me"
 -- (from an account not in Pearl) or "them" (the other person), for one row
 -- or for every deposit from that sender to that account. What "them" puts
@@ -599,6 +609,7 @@ _CHARGE_COLUMNS = """sh.my_share AS my_share,
                           rpx.charge_id AS repays,
                           jax.label AS joint,
                           jax.share AS joint_share,
+                          jsx.pct AS joint_split,
                           jax.people AS joint_people,
                           COALESCE(jdx.person, jrx.person) AS joint_person,
                           CASE WHEN jmx.merchant_key IS NULL THEN 0 ELSE 1 END
@@ -949,6 +960,8 @@ class Store:
                      LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
                      LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
                      LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
+                     LEFT JOIN joint_split_rules jsx ON jsx.account_id = t.account_id
+                                                    AND jsx.merchant_key = LOWER(t.merchant)
                      LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
                      LEFT JOIN txn_party ptx ON ptx.txn_id = t.id
                      LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
@@ -1004,6 +1017,8 @@ class Store:
                       LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
                       LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
                       LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
+                      LEFT JOIN joint_split_rules jsx ON jsx.account_id = t.account_id
+                                                     AND jsx.merchant_key = LOWER(t.merchant)
                       LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
                       LEFT JOIN txn_party ptx ON ptx.txn_id = t.id
                       LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
@@ -1045,6 +1060,8 @@ class Store:
                      LEFT JOIN txn_paybacks rpx ON rpx.inflow_id = t.id
                      LEFT JOIN joint_accounts jax ON jax.account_id = t.account_id
                      LEFT JOIN joint_mine jmx ON jmx.merchant_key = LOWER(t.merchant)
+                     LEFT JOIN joint_split_rules jsx ON jsx.account_id = t.account_id
+                                                    AND jsx.merchant_key = LOWER(t.merchant)
                      LEFT JOIN joint_deposits jdx ON jdx.txn_id = t.id
                      LEFT JOIN txn_party ptx ON ptx.txn_id = t.id
                      LEFT JOIN joint_deposit_rules jrx ON jrx.account_id = t.account_id
@@ -1838,6 +1855,7 @@ class Store:
             ("transfer_destinations", "where transfers go"),
             ("joint_accounts", "joint accounts"),
             ("joint_mine", "names always yours on a joint account"),
+            ("joint_split_rules", "names always split on a joint account"),
             ("joint_deposits", "who put money into a joint account"),
             ("joint_deposit_rules", "senders into a joint account"),
             ("txn_party", "names on e-Transfers"),
@@ -1903,6 +1921,7 @@ class Store:
         ("transfer_destinations", "rules"),
         ("exclusion_rules", "rules"),
         ("joint_mine", "rules"),
+        ("joint_split_rules", "rules"),
         ("joint_deposit_rules", "rules"),
         # Budgets.
         ("budgets", "budgets"),
@@ -2735,6 +2754,22 @@ class Store:
             c.execute("DELETE FROM joint_mine WHERE merchant_key = ?", (key,))
             if on:
                 c.execute("INSERT INTO joint_mine (merchant_key) VALUES (?)", (key,))
+                # Always all hers ends always splitting it.
+                c.execute("DELETE FROM joint_split_rules WHERE merchant_key = ?", (key,))
+
+    def set_joint_split(self, account_id: str, merchant: str, pct: float | None) -> None:
+        """Split every charge from this name on this joint account, `pct` of
+        each hers; None stops. Splitting it ends "always all mine"."""
+        key = (merchant or "").strip().lower()
+        if not key:
+            return
+        with self.conn() as c:
+            c.execute("DELETE FROM joint_split_rules WHERE account_id = ? AND merchant_key = ?",
+                      (account_id, key))
+            if pct is not None:
+                c.execute("INSERT INTO joint_split_rules (account_id, merchant_key, pct) "
+                          "VALUES (?, ?, ?)", (account_id, key, round(float(pct), 4)))
+                c.execute("DELETE FROM joint_mine WHERE merchant_key = ?", (key,))
 
     def write_categories(self, changes: dict[str, tuple[str, str]]) -> None:
         """Write (category, source) for these rows, your own choices included —

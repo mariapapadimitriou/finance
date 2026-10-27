@@ -269,3 +269,43 @@ def test_a_purchase_marked_theirs_is_joint_spent(client):
                                            query_string={"month": MONTH, "joint": "1"}).get_json()["transactions"]}
     assert rows[i["LOBLAWS"]]["chip"]["label"] == "Joint spent"
     assert rows[i["LOBLAWS"]]["note"] == "Family’s · not your spending"
+
+
+def test_split_once_split_always(client):
+    """Part of one charge on a joint account splits every charge from that
+    name there the same way, old and new, until she says otherwise
+    (2026-10-26)."""
+    st = client.application.config["STORE"]
+    ingest(st, IngestResult([row(60, "LOBLAWS", "fam"), row(50, "LOBLAWS", "chq")], "fam"))
+    i = {t.description + str(t.amount): t.fingerprint for t in st.all_transactions()}
+    r = client.put(f"/api/transactions/{i['LOBLAWS120.0']}/share", json={"my_share": 60}).get_json()
+    assert r["rule"] == ("Every Loblaws charge on this joint account is split this way "
+                         "from now on: 50% yours.")
+    by = {(t.account_id, t.amount): t for t in st.all_transactions() if t.description == "LOBLAWS"}
+    assert by[("fam", 60.0)].my_share == 30.0 and not by[("fam", 60.0)].share_set
+    assert by[("chq", 50.0)].my_share is None          # only on that joint account
+    # A new one arrives already split.
+    ingest(st, IngestResult([row(90, "LOBLAWS", "fam")], "fam"))
+    new = next(t for t in st.all_transactions() if t.amount == 90)
+    assert new.my_share == 45.0 and new.joint_split == 50.0
+    listed = {t["id"]: t for t in client.get("/api/transactions/list?limit=50").get_json()["transactions"]}
+    assert listed[new.fingerprint]["joint_split"] == 50.0
+    # "Mine" on one of them is that one only; the rest stay split.
+    client.put(f"/api/transactions/{new.fingerprint}/share", json={"my_share": None})
+    assert st.get_transaction(new.fingerprint).my_share == 90.0
+    assert st.get_transaction(by[("fam", 60.0)].fingerprint).my_share == 30.0
+    # Unticking "Always split" stops it.
+    client.put(f"/api/transactions/{by[('fam', 60.0)].fingerprint}/share",
+               json={"my_share": 20, "always": False})
+    ingest(st, IngestResult([row(10, "LOBLAWS", "fam")], "fam"))
+    assert next(t for t in st.all_transactions() if t.amount == 10).my_share == 10.0
+
+
+def test_always_mine_ends_always_split(client):
+    st = client.application.config["STORE"]
+    i = ids(client)
+    client.put(f"/api/transactions/{i['LOBLAWS']}/share", json={"my_share": 30})
+    assert st.get_transaction(i["LOBLAWS"]).joint_split == 25.0
+    client.put(f"/api/transactions/{i['LOBLAWS']}/mine-always", json={"on": True})
+    ingest(st, IngestResult([row(40, "LOBLAWS", "fam")], "fam"))
+    assert next(t for t in st.all_transactions() if t.amount == 40).my_share == 40.0
