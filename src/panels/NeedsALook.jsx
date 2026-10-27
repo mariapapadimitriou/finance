@@ -484,7 +484,7 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
             {(entry ? entry.it?.txn : current?.txn) && (
               <div className="nl-card-top">
                 <Pill icon="edit" className="nl-edit" disabled={busy}
-                      aria-label={`Edit ${(entry ? entry.it.txn : current.txn).merchant}: note, tags and more`}
+                      aria-label={`Edit ${(entry ? entry.it.txn : current.txn).merchant}: note, name and more`}
                       onClick={() => setEditing((entry ? entry.it.txn : current.txn).id)}>
                   Edit
                 </Pill>

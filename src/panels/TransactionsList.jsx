@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { TAGS_ON } from '../features.js';
 import {
   ActionToast, Alert, EmptyState, FilterChip, PButton, SearchField, Toast, TxRow, txAmount,
 } from '../pearl/kit.jsx';
@@ -180,7 +181,7 @@ function fromUrl() {
   return { month: f.month || thisMonth(), account: f.account || '', group: f.group || '',
            category: f.category || '', excluded: f.excluded || '', joint: f.joint || '',
            recurring: f.recurring || '', q: f.q || '',
-           tag: f.tag || '', counts: f.counts || '', amount: f.amount || '',
+           tag: TAGS_ON ? f.tag || '' : '', counts: f.counts || '', amount: f.amount || '',
            pending: f.pending || '', look: f.look || '', merchant: f.merchant || '',
            by: f.by || '', owed: f.owed || '',
            first: f.first || '', last: f.last || '',
@@ -625,7 +626,7 @@ export default function TransactionsList({ summary, categories, accounts, review
                ? () => open(r.id, 'category') : undefined}
              note={r.note || r.my_note} noteLink={r.note_link}
              chip={r.chip} amount={r.amount} inflow={r.inflow}
-             tags={r.tags ?? []} ruled={r.ruled}
+             tags={TAGS_ON ? r.tags ?? [] : []} ruled={r.ruled}
              muted={r.counts === 'none'} flash={flash.has(r.id)}
              onOpen={() => openRow(r)}
              {...(desktop ? {
@@ -810,7 +811,7 @@ export default function TransactionsList({ summary, categories, accounts, review
         <SelectedBar count={selected.length} total={selectedTotal} singleKey={desktop && singleKey}
                      onChange={() => setPicking(selected)}
                      onMark={() => setMarking(selected)}
-                     onTag={() => setTagging(selected)}
+                     onTag={TAGS_ON ? () => setTagging(selected) : undefined}
                      onLeaveOut={() => leaveOut(selected)}
                      onConfirm={() => confirmRows(selected)}
                      onClear={clearSelection} />
@@ -829,7 +830,7 @@ export default function TransactionsList({ summary, categories, accounts, review
         <TxFiltersPanel filters={{ ...filters, cat: categoryValue }} thisMonth={thisMonth()}
                         categoryOptions={categoryOptions}
                         accounts={accountOptions.flatMap((o) => o.options ?? [o]).filter((o) => o.value)}
-                        tags={data?.tag_totals ?? (data?.tags ?? [])}
+                        tags={TAGS_ON ? data?.tag_totals ?? (data?.tags ?? []) : []}
                         onApply={({ cat, ...f }) => { setFiltering(false); choose(f); }}
                         onSelect={!desktop && shownRows.length > 0
                           ? () => { setFiltering(false); clearSelection(); setSelecting(true); } : undefined}
