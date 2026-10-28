@@ -157,6 +157,10 @@ class Context:
                            for cid, sp in (splits or {}).items()}
         self.splits = splits or {}
         self.payer = payer or {}
+        # The names she uses for people (2026-10-28), so a Wealthsimple Pay
+        # handle reads as the person: "Anastasia", not "Anastasiapapas".
+        from .etransfers import known_people
+        self.people = known_people(transactions, self.splits, self.payer)
         # Rows with a copy still waiting for an answer (D-01), and the copies:
         # both sides say where they came from.
         self.twins = {t.duplicate_of for t in transactions if _waiting(t)}
@@ -330,7 +334,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
 
     raw = t.raw or {}
     # An e-Transfer reads as the person it was from or to (finance/etransfers.py).
-    who = party(t)
+    who = party(t, ctx.people)
     # Decided by a rule of hers: "Apply to all from…" or "Remember where
     # these go". The chip says so, so it's clear why it won't change.
     ruled = t.category_source in ("merchant_override", RULED)
@@ -643,6 +647,16 @@ def tag_totals(rows: list[tuple[Transaction, dict]]) -> list[dict]:
 
 
 # ── Totals ───────────────────────────────────────────────────────────────
+
+def still_asking(row: dict, money_in: set[str]) -> dict:
+    """Money in that Needs a look is still asking about (2026-10-28) isn't a
+    transfer yet: its chip and note say it's waiting, not "Transfer · not
+    counted". It counts as nothing until she answers either way."""
+    if row["id"] not in money_in or (row.get("chip") or {}).get("label") != "Transfer":
+        return row
+    return {**row, "chip": {"label": "Not sorted yet", "suggested": True}, "suggested": True,
+            "note": "Paid back or income? Tell us", "note_link": True}
+
 
 def collapse_transfers(rows: list[tuple[Transaction, dict]],
                        pairs: dict[str, str]) -> list[tuple[Transaction, dict]]:

@@ -104,7 +104,7 @@ export function questionLabel(it) {
     case 'unsorted': return 'Where did this go?';
     case 'recurring': return 'Recurring transfer?';
     case 'category': return it.guess && it.guess !== 'Other' ? `Is this ${categoryLabel(it.guess)}?` : 'What was this?';
-    case 'money_in': return it.guess?.action === 'split' ? 'Paid back to you?' : 'Is this income?';
+    case 'money_in': return it.guess?.action === 'split' || it.from ? 'Paid back to you?' : 'Is this income?';
     case 'joint_in': return 'Who put this in?';
     case 'who_sent': return 'Who sent this?';
     case 'income': return 'What kind of income?';

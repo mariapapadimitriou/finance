@@ -25,17 +25,62 @@ _BANK_WORDS = {
     "mobile", "banking", "bank", "web", "www", "ref", "reference", "conf", "confirmation", "no",
     "number", "msg", "memo", "for", "via", "the", "of", "and", "a", "ca", "cad", "ach", "credit",
     "debit", "inc", "ltd",
+    # Wealthsimple Pay's own words: "Cash Received - anastasiapapas".
+    "cash", "pay",
     # Banks, which a feed sometimes names as the counterparty.
     "td", "rbc", "bmo", "cibc", "scotiabank", "scotia", "tangerine", "simplii", "eq",
     "desjardins", "hsbc", "national", "wealthsimple", "koho", "neo", "atb", "pc", "financial",
 }
 
 
-def is_etransfer(t: Transaction) -> bool:
+# Wealthsimple Pay (2026-10-28): money sent between Wealthsimple accounts by
+# handle. The bank writes "Cash Received - anastasiapapas" or "Cash Sent -
+# anastasiapapas": a person's handle, their first and last name run
+# together, not a cash deposit and not her own money moving.
+_WS_PAY = re.compile(r"^\s*cash\s+(?:received|sent)\s*[-–—:]\s*\$?([A-Za-z0-9._']{2,40})\s*$", re.I)
+_WS_PAY_WORDS = re.compile(r"\b(?:wealthsimple|ws)\s+pay\b", re.I)
+
+
+def handle(t: Transaction) -> str | None:
+    """The Wealthsimple Pay handle a row names ("anastasiapapas"), or None."""
     raw = t.raw or {}
-    return bool(_ETRANSFER.search(" ".join(str(x or "") for x in (
+    for text in (t.description, raw.get("plaid_name"), raw.get("original_description"), t.merchant):
+        m = _WS_PAY.match(str(text or ""))
+        if m:
+            return m.group(1)
+    return None
+
+
+def is_etransfer(t: Transaction) -> bool:
+    """Money sent to or from a person: an Interac e-Transfer, or Wealthsimple
+    Pay (2026-10-28)."""
+    raw = t.raw or {}
+    text = " ".join(str(x or "") for x in (
         t.description, t.merchant, raw.get("counterparty"), raw.get("plaid_name"),
-        raw.get("original_description")))))
+        raw.get("original_description")))
+    return bool(_ETRANSFER.search(text) or _WS_PAY_WORDS.search(text) or handle(t))
+
+
+def person_for(tag: str, people) -> str | None:
+    """The one person she named whose first name a handle starts with:
+    "anastasiapapas" is the Anastasia of her splits or her joint account.
+    Three letters at least, and only when it's one person: "al" could be
+    anyone, and so could a handle two of her people's names fit."""
+    tag = re.sub(r"[^a-zà-ÿ]", "", (tag or "").lower())
+    hits = {}
+    for name in people or []:
+        words = re.findall(r"[a-zà-ÿ']+", (name or "").lower())
+        first = words[0] if words else ""
+        if len(first) >= 3 and tag.startswith(first):
+            hits.setdefault(first, name)
+    return next(iter(hits.values())) if len(hits) == 1 else None
+
+
+def handle_matches(t: Transaction, first: str) -> bool:
+    """Whether a Wealthsimple Pay handle starts with this first name."""
+    tag = handle(t)
+    first = (first or "").lower()
+    return bool(tag) and len(first) >= 3 and re.sub(r"[^a-zà-ÿ]", "", tag.lower()).startswith(first)
 
 
 def _name_in(text: str) -> str | None:
@@ -52,14 +97,42 @@ def _name_in(text: str) -> str | None:
     return " ".join(w if any(c.islower() for c in w) else w.capitalize() for w in words)
 
 
-def party(t: Transaction) -> dict | None:
+def known_people(transactions, splits: dict | None = None, payer: dict | None = None) -> list[str]:
+    """The names she uses for people: in her splits, on her joint accounts,
+    and who she said paid her back."""
+    names: list[str] = []
+    for sp in (splits or {}).values():
+        names += [p.get("name") or "" for p in sp.get("people") or []]
+    for t in transactions:
+        names += list(getattr(t, "joint_people", None) or [])
+    names += list((payer or {}).values())
+    seen, out = set(), []
+    for n in names:
+        n = " ".join(str(n or "").split())
+        if n and n.lower() not in seen:
+            seen.add(n.lower())
+            out.append(n)
+    return out
+
+
+def party(t: Transaction, people=None) -> dict | None:
     """{"direction": "from" | "to", "name": str | None, "named_by": "you" |
-    "bank" | None} for an e-Transfer; None for anything else."""
+    "bank" | None} for an e-Transfer; None for anything else.
+
+    `people` are the names she uses (her splits, her joint accounts, who
+    paid her back): a Wealthsimple Pay handle reads as the one of them it
+    starts with, "Anastasia" rather than "Anastasiapapas"."""
     if not is_etransfer(t) and not t.party:
         return None
     direction = "from" if t.amount < 0 else "to"
     if t.party:
         return {"direction": direction, "name": t.party, "named_by": "you"}
+    tag = handle(t)
+    if tag:
+        known = person_for(tag, people)
+        return {"direction": direction, "handle": tag,
+                "name": known or (tag[:1].upper() + tag[1:] if tag.islower() else tag),
+                "named_by": "bank"}
     raw = t.raw or {}
     # Plaid's payment_meta names the payer of money in and the payee of
     # money out, when the bank sends it (2026-10-22); then the counterparty,

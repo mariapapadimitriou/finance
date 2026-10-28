@@ -216,7 +216,10 @@ def transactions_list():
     # so the filter shows the same number as the badge; and a dashed chip
     # only ever marks one of them.
     from .review import for_store, ids_in
-    looking = ids_in(for_store(st))
+    rev = for_store(st)
+    looking = ids_in(rev)
+    asking_in = {it["txn"]["id"] for it in rev.get("money_in") or []}
+    rows = [(t, txlist.still_asking(r, asking_in)) for t, r in rows]
     rows = [(t, r if not r.get("suggested") or r["id"] in looking else {**r, "suggested": False,
                                                                        "chip": {**(r.get("chip") or {}), "suggested": False}})
             for t, r in rows]

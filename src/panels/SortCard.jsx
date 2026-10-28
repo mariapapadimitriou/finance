@@ -358,6 +358,23 @@ export function steps(it, cases, mode = 'stacked') {
       ],
     };
   }
+  // From someone else (2026-10-28): an e-Transfer or Wealthsimple Pay with
+  // another person's name asks whether they're paying her back before
+  // "Is this income?", whose first answers are about her own money.
+  const top = it.guess?.action === 'payback' && it.guess.charge?.likely ? it.guess.charge : null;
+  const person = !match && !said && it.kind === 'money_in' && !out && S.pick_payback ? it.from : null;
+  if (person) {
+    S.person = {
+      title: `Is ${person} paying you back?`, left: 3, top,
+      options: [
+        ...(top ? [{ v: 'top', label: `Yes, for ${top.merchant} · ${shortDate(top.date)}`,
+                     done: `Paying me back for ${top.merchant}`, effect: txAmount(top.amount, { signed: true }) }] : []),
+        { v: 'yes', label: top ? 'Yes, for something else' : 'Yes, they’re paying me back',
+          done: 'Paying me back', to: 'pick_payback' },
+        { v: 'no', label: 'No, it’s not a payback', done: 'Not a payback', to: 'q1' },
+      ],
+    };
+  }
   S.q1 = {
     title: 'Is this income?', left: nameless ? 3 : 2,
     options: [
@@ -369,7 +386,7 @@ export function steps(it, cases, mode = 'stacked') {
     ],
   };
   S.what_in = { title: 'What was it?', left: 2, tiles: true, options: rest(['pay', 'regular_pay', 'own', 'cash', 'joint_them'], 'what_in') };
-  return { start: match ? 'match' : said ? 'memo' : 'q1', S };
+  return { start: match ? 'match' : said ? 'memo' : person ? 'person' : 'q1', S };
 }
 
 /** The dots: answered steps filled, the rest dashed, and "2 of 3" — or,
@@ -600,7 +617,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       if (s.key === 'refund' && v === '') return undefined;                 // a category comes next
       // The name she typed on "Who sent this?", when the bank left it off.
       const typed = s.key === 'payback' ? (answered('name') || '').trim() : '';
-      const who = cand?.person || (s.key === 'payback' ? typed || nameIn(it.txn.merchant) : '');
+      const who = cand?.person || (s.key === 'payback' ? typed || it.from || nameIn(it.txn.merchant) : '');
       const whole = Math.abs(it.txn.amount);
       const part = s.key === 'payback' ? paidPartOf(paidPart, whole) : null;
       const effect = s.key === 'payback'
@@ -658,6 +675,11 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       return finish(answers, `Comes off what you spent at ${s.said.merchant}. Not income.`,
         () => via({ case: 'payback', charge: s.said.id, ...(who ? { person: who } : {}) },
           `Linked to ${s.said.merchant}. Not income.`));
+    }
+    if (sId === 'person' && v === 'top') {
+      return finish(answers, `Comes off what you spent at ${s.top.merchant}. Not income.`,
+        () => via({ case: 'payback', charge: s.top.id, person: it.from },
+          `Linked to ${s.top.merchant}. Not income.`));
     }
     if (sId === 'match') {
       return finish(answers, 'Not income. The split shows as paid back.',

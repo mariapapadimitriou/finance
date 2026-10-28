@@ -52,8 +52,8 @@ def _money(x: float) -> str:
     return f"${abs(x):,.2f}"
 
 
-def _brief(t: Transaction) -> dict:
-    who = party(t)
+def _brief(t: Transaction, people=None) -> dict:
+    who = party(t, people)
     return {"id": t.fingerprint, "date": t.date,
             "merchant": (who or {}).get("name") or t.merchant,
             "description": t.description, "amount": t.amount,
@@ -138,8 +138,12 @@ def charge_candidates(inflow: Transaction, transactions: list[Transaction]) -> l
 def build(transactions: list[Transaction], today: str | None = None,
           dismissed: set[str] | None = None, splits: dict | None = None,
           payer: dict | None = None, found_on: dict[str, str] | None = None,
-          skipped: set[str] | None = None, recurring: list[dict] | None = None) -> dict:
+          skipped: set[str] | None = None, recurring: list[dict] | None = None,
+          me: str | None = None) -> dict:
     today_d = date.fromisoformat(today) if today else date.today()
+    from .etransfers import known_people
+    from .splits import same_person
+    people = known_people(transactions, splits, payer)
     since = (today_d - timedelta(days=ASK_DAYS)).isoformat()
     dismissed = dismissed or set()
     live = [t for t in transactions if not t.excluded]
@@ -213,7 +217,7 @@ def build(transactions: list[Transaction], today: str | None = None,
         from .marks import memo_match
         said = None if match else memo_match(t, transactions)
         if said:
-            who = (party(t) or {}).get("name") or "They"
+            who = (party(t, people) or {}).get("name") or "They"
             guess = {"action": "memo", "charge": said, "memo": memo(t)}
             on = date.fromisoformat(said["date"]).strftime("%b %-d")
             reason = (f"{who}’s message says “{memo(t)}”: {said['merchant']} on "
@@ -233,8 +237,19 @@ def build(transactions: list[Transaction], today: str | None = None,
         else:
             guess = {"action": "own"}
             reason = "It didn’t pair with any of your accounts or charges."
-        money_in.append({"key": key, "txn": _brief(t), "guess": guess,
-                         "candidates": candidates, "reason": reason})
+        # From someone else (2026-10-28): an e-Transfer or Wealthsimple Pay
+        # with another person's name is asked "Is Anastasia paying you
+        # back?" first, never guessed to be her own money moving.
+        sent = party(t, people) or {}
+        person = sent.get("name") if sent.get("direction") == "from" else None
+        if person and me and same_person(person, me):
+            person = None
+        if person and guess["action"] == "own":
+            guess = {"action": "person"}
+            reason = f"From {person}. It didn’t pair with any of your accounts."
+        money_in.append({"key": key, "txn": _brief(t, people), "guess": guess,
+                         "candidates": candidates, "reason": reason,
+                         **({"from": person} if person else {})})
 
     # 3b. Money into a joint account from outside: whose was it?
     joint_in = []
@@ -342,7 +357,18 @@ def for_store(st, today: str | None = None) -> dict:
     found_on = {k: v["found_on"] for k, v in st.duplicates().items()}
     return build(st.all_transactions(), today=today, dismissed=st.dismissed_reviews(),
                  splits=st.splits(), payer=st.payback_people(), found_on=found_on,
-                 skipped=st.skipped_reviews(), recurring=st.recurring_transfers())
+                 skipped=st.skipped_reviews(), recurring=st.recurring_transfers(), me=_me())
+
+
+def _me() -> str | None:
+    """Her own first name, so money she sent herself isn't asked about as
+    someone paying her back."""
+    try:
+        from flask import g
+        user = g.get("user")
+    except RuntimeError:            # outside a request
+        return None
+    return getattr(user, "first_name", None) if user else None
 
 
 def ids_in(review: dict) -> set[str]:
