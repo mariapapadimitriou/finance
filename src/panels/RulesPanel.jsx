@@ -28,6 +28,7 @@ import './profile.css';
 /** "Always Groceries", "Always left out". */
 export function ruleWords(r) {
   if (r.kind === 'exclusion') return 'Always left out';
+  if (r.kind === 'pay') return 'Always your regular pay';
   return `Always ${categoryLabel(r.category)}`;
 }
 
@@ -209,6 +210,22 @@ export function RulePanel({ rule, categories, onClose, onSave, onDelete }) {
     fn().catch((e) => { setError(e.message); setBusy(false); });
   };
   const leaveOut = rule.kind === 'exclusion';
+  // Regular pay (2026-10-28): always income, so the only change is removing it.
+  if (rule.kind === 'pay') {
+    return (
+      <DetailPanel label={`Rule for ${rule.name}`} overline="Rule" onClose={onClose}>
+        <h1 className="pk-h2">{rule.name}</h1>
+        <p className="pk-muted">
+          {`Every deposit from ${rule.name} counts as your regular pay: income, and part of your monthly income.`}
+        </p>
+        <p className="pk-muted">
+          Removing it keeps the ones already sorted as your pay. The next deposit from them is asked about again.
+        </p>
+        {error && <Alert tone="caution">{error}</Alert>}
+        <PButton disabled={busy} onClick={() => run(onDelete)}>Remove this rule</PButton>
+      </DetailPanel>
+    );
+  }
   return (
     <DetailPanel label={`Rule for ${rule.name}`} overline="Rule" onClose={onClose}>
       <h1 className="pk-h2">{rule.name}</h1>

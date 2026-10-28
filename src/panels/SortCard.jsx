@@ -49,6 +49,16 @@ const shortDate = (iso) => `${SHORT[Number(iso.slice(5, 7)) - 1]} ${Number(iso.s
 const monthName = (iso) => MONTHS[Number(iso.slice(5, 7)) - 1] ?? '';
 
 /** "e-Transfer to M. Papas" → "M. Papas". */
+/** Regular pay's Remember (2026-10-28): a rule for every deposit from them. */
+export function payWords(c, merchant = '') {
+  if (c?.key !== 'regular_pay' || !c.remember) return null;
+  const who = (c.remember_label || '').replace(/^Always count deposits from /, '').replace(/ as my regular pay$/, '')
+    || merchant;
+  return { label: c.remember_label || `Always count deposits from ${who} as my regular pay`,
+           rule: `Every deposit from ${who} counts as your regular pay from now on.`,
+           description: 'The ones already here and every new one count as income' };
+}
+
 export function nameIn(text = '') {
   const m = text.match(/(?:e-?\s?transfer|interac)\s*(?:to|from)\s+(.+)$/i);
   return (m ? m[1] : '').replace(/\*+/g, '').trim();
@@ -116,7 +126,7 @@ export const DEFAULT_CASES = {
   ],
   in: [
     { key: 'pay', label: 'Pay', group: 'income', needs: 'income_kind', effect: 'Counts as income. Pick the kind: salary, bonus, benefits, interest or a refund of tax.', remember: null },
-    { key: 'regular_pay', label: 'This is my regular pay', group: 'income', needs: null, effect: 'Pearl uses it for your monthly income from now on.', remember: null },
+    { key: 'regular_pay', label: 'This is my regular pay', group: 'income', needs: null, effect: 'Pearl uses it for your monthly income from now on.', remember: 'payer' },
     { key: 'payback', label: 'Someone paying me back', group: 'not_income', needs: 'candidates', effect: 'Comes off what you spent for them. Never income.', remember: null },
     { key: 'refund', label: 'A refund', group: 'not_income', needs: 'refund', effect: 'Links to the purchase and comes off its category.', remember: null },
     { key: 'reimbursement', label: 'A reimbursement', group: 'not_income', needs: 'candidates', effect: 'Pays back a work expense. Both leave your numbers.', remember: null },
@@ -551,11 +561,13 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   const ruleOk = it.kind !== 'who_sent' && !it.nameless && !(it.kind === 'unsorted' && !it.learnable)
     // Not for a name every transfer shares, like "Interac e-Transfer" (2026-10-23).
     && cases?.learnable !== false;
-  const finish = (answers, effect, run, ruleable = false) => {
+  // `words` (2026-10-28): a case's own Remember wording, like regular pay's
+  // "Always count deposits from Acme as my regular pay".
+  const finish = (answers, effect, run, ruleable = false, words = null) => {
     const go = (on) => {
       rememberRef.current = on;
       forgetCases(it.txn.id);
-      return run().then((r) => ({ ...r, rule: (r?.res?.remember ?? on) ? ruleText : '' }));
+      return run().then((r) => ({ ...r, rule: (r?.res?.remember ?? on) ? (words?.rule ?? ruleText) : '' }));
     };
     return commit(() => go(false), {
       answers: answers.map((p) => {
@@ -564,12 +576,13 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
         return { ...p, label: p.label ?? answerLabel(flow, p), title: st?.title, marked: at,
                  options: vis?.map((o) => ({ v: o.v, label: o.label })) };
       }), effect,
-      remember: ruleable && ruleOk ? { label: `Remember for ${it.to || it.txn.merchant}`, redo: go } : null,
+      remember: ruleable && ruleOk ? { label: words?.label ?? `Remember for ${it.to || it.txn.merchant}`,
+                                       description: words?.description, redo: go } : null,
     });
   };
   const markCase = (c, extra = {}, answers, effect) => finish(answers, effect ?? c.effect,
     () => via({ case: c.key, ...(c.remember ? { remember: !!rem() } : {}), ...extra }, `Sorted as ${c.label.toLowerCase()}.`),
-    !!c.remember);
+    !!c.remember, payWords(c, it.txn.merchant));
 
   // One savings bucket (2026-10-23): saved, or taken out, with no account.
   const saveSavings = (answers, into) => finish(answers,
@@ -1175,7 +1188,7 @@ export function SortedCard({ entry, busy = false, isPast = false, nextLabel = 'N
       {entry.remember && onRemember && !isPast && (
         <Choice type="checkbox" checked={!!entry.remembered} disabled={busy}
                 onChange={(on) => onRemember(on)} label={entry.remember.label}
-                description="Sorts every transaction from them the same way from now on" />
+                description={entry.remember.description ?? 'Sorts every transaction from them the same way from now on'} />
       )}
       {/* What changed (2026-10-22): what it is now, what that does to her
           numbers, and her rule if she saved one. A neutral box with a label,

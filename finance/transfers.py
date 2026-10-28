@@ -43,7 +43,7 @@ def _window(arrival: Transaction) -> int:
     kind = str((arrival.raw or {}).get("account_type", "")).lower()
     return CARD_DAYS if kind == "credit" else WINDOW_DAYS
 
-_DECIDED = {"user", "merchant_override"}
+_DECIDED = {"user", "merchant_override", "pay_rule"}
 # Sorted by a destination rule: re-decided on every run, so a transfer whose
 # other end turns up later becomes neutral after all.
 RULED = "destination"
