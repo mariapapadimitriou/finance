@@ -123,3 +123,9 @@ def test_unknown_rules(client):
     assert client.delete("/api/rules/bogus:1").status_code == 404
     assert client.delete("/api/rules/exclusion:abc").status_code == 404
     assert client.delete("/api/rules/exclusion:99").status_code == 404
+
+
+def test_an_account_destination_reads_as_its_last_four(client):
+    # 2026-10-28: "Transfers to ••3333", not "Transfers to 3333".
+    store(client).set_destination("acct:3333", "Saved")
+    assert rules(client)["rules"][0]["name"] == "Transfers to ••3333"

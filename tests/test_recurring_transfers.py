@@ -226,3 +226,8 @@ class TestSummaryPage:
         assert r["what"] == "Into savings"
         assert client.delete(f"/api/rules/{r['rule_id']}").status_code == 200
         assert client.get("/api/recurring-transfers").get_json()["count"] == 0
+
+
+def test_rule_words_read_as_a_sentence():
+    rule = {"amount": 1500, "cadence": "monthly", "anchor": "2026-10-01", "label": ""}
+    assert rt.rule_words(rule, "Chequing") == "$1,500.00 every month, around the 1st, from Chequing"
