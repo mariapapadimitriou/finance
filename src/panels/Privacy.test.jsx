@@ -366,8 +366,12 @@ describe('Your data › Start over', () => {
     const el = <BeforeYouStart onBack={() => {}} onContinue={() => {}} onDownload={() => {}} />;
     const t = text(el);
     for (const s of ['Here’s exactly what happens. Download a copy first', 'What goes', 'What stays',
-      'Every transaction and what you told Pearl about it', 'Your rules: merchant, transfer, leave-out and joint rules',
-      'Your bank connections', 'Your Anchor accounts, treasure chests and the money in them',
+      'Every transaction and what you told Pearl about it',
+      'Your rules: merchant, transfer, recurring transfer, leave-out and joint rules',
+      'Categories: Fixed or Variable, hidden categories, and your names for merchants',
+      'Income and bills setup', 'Account setup: nicknames, joint accounts',
+      'Goals, treasure chests and your Anchor',
+      'Your bank connections, so you don’t sign in to your banks again',
       'Continue', 'Download a copy first', 'Cancel']) {
       expect(t).toContain(s);
     }

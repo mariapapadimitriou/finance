@@ -1971,6 +1971,19 @@ class Store:
         ("joint_deposit_rules", "rules"),
         # Budgets.
         ("budgets", "budgets"),
+        # Everything else she set up (2026-10-28: "reset everything in the
+        # account including rules, categories, and merchants").
+        ("merchant_names", "your names for merchants"),
+        ("category_groups", "categories"),
+        ("fixed_costs", "income and bills"),
+        ("joint_accounts", "account setup"),
+        ("manual_accounts", "account setup"),
+        ("piggy_banks", "goals"),
+        ("piggy_draws", "goals"),
+        ("piggy_bank_categories", "goals"),
+        ("buckets", "goals"),
+        ("bucket_draws", "goals"),
+        ("challenges", "goals"),
     )
     START_OVER_SETTINGS = (
         # Income and bills.
@@ -1979,6 +1992,11 @@ class Store:
         # Budgets and plan.
         "category_budgets", "monthly_amount", "savings_target", "savings_rate",
         "rec_dismissed", "subscription_choices", "budget_focus",
+        # Categories: always Fixed or Variable, and the ones kept out of pickers.
+        "category_kinds", "hidden_categories",
+        # Debts, the Anchor, and Quick sort's place.
+        "debt_details", "coastfire", "anchor_accounts", "anchor_earned_on", "anchor_started",
+        "anchor_unusual", "quick_sort_offered", "quick_sort_batch", "quick_sort_shown_on",
         # A cache: the next sync matches transfers afresh.
         "transfer_destinations",
     )
@@ -1986,13 +2004,14 @@ class Store:
     def start_over(self) -> dict:
         """Clear the transactions and her organizing, and download them again.
 
-        Gone: every row and every answer about one, her rules, her income and
-        bills setup, and her budgets. Kept: the bank connections (rewound, so
-        the next sync brings the whole history back), what she set on each
-        account (nicknames, joint shares, the copies she hid), accounts added
-        by hand, goals and treasure chests with the money added to them, and
-        everything about signing in. Unlike `reset`, which empties the ledger
-        for a demo or a test.
+        Gone (2026-10-28, everything she set up): every row and every answer
+        about one, her rules, categories (Fixed or Variable, hidden, groups),
+        her names for merchants, income and bills, budgets, account setup
+        (nicknames, joint accounts, accounts added by hand, debt details),
+        goals and the Anchor. Kept: the bank connections (rewound, so the next
+        sync brings the whole history back) with which accounts sync and the
+        copies she hid, and everything about signing in and privacy. Unlike
+        `reset`, which empties the ledger for a demo or a test.
         """
         removed: dict[str, int] = {}
         with self.conn() as c:
@@ -2002,6 +2021,11 @@ class Store:
             marks = ",".join("?" * len(self.START_OVER_SETTINGS))
             c.execute(f"DELETE FROM settings WHERE key IN ({marks})",
                       self.START_OVER_SETTINGS)
+            # Account setup goes too: nicknames, and counted back on. A copy
+            # she hid stays hidden: it's the same bank account twice, and
+            # showing it again would count everything twice.
+            c.execute("DELETE FROM account_settings WHERE removed = 0")
+            c.execute("UPDATE account_settings SET counted = 1, nickname = NULL")
             c.execute("UPDATE plaid_items SET cursor = NULL, "
                       "last_synced = NULL, last_error = NULL, error_code = NULL")
             # Empty on purpose: the seeder must not refill it.

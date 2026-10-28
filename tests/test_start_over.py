@@ -1,5 +1,5 @@
-"""Start over (Profile › Your data): the transactions and her organizing go,
-the banks stay and bring the history back, and goals and account setup stay."""
+"""Start over (Profile › Your data): the transactions and everything she set
+up go (2026-10-28); the bank connections stay and bring the history back."""
 
 from __future__ import annotations
 
@@ -49,7 +49,12 @@ def client(tmp_path, monkeypatch):
         st.set_setting("carryover", "{}")
         st.set_budget("Dining", 300)
         st.set_setting("category_budgets", '{"Dining": 300}')
-        # Kept: goals, account setup.
+        # Categories and merchants (2026-10-28).
+        st.set_merchant_name("Pai", "Pai Northern Thai")
+        st.set_setting("category_kinds", '{"Dining": "fixed"}')
+        st.set_setting("hidden_categories", '["Pets"]')
+        st.set_setting("quick_sort_offered", '["x"]')
+        # Gone too now: goals, account setup.
         chest = st.add_piggy_bank("Travel", 2000, "annual", None, "2026-01")
         st.add_draw(chest, "2026-09", 150.0, "top-up")
         st.allocate(pai, chest, 45.0)
@@ -78,19 +83,27 @@ def test_it_clears_the_transactions_and_her_organizing(client):
         assert st.setting(key) in (None, ""), key
 
 
-def test_it_keeps_the_banks_goals_and_account_setup(client):
+def test_it_clears_categories_merchants_and_account_setup(client):
+    start_over(client)
+    st = client.st
+    assert st.merchant_names() == {}
+    for key in ("category_kinds", "hidden_categories", "quick_sort_offered", "anchor_accounts"):
+        assert st.setting(key) in (None, ""), key
+    assert st.account_nicknames() == {}
+    assert st.joint_accounts() == {}
+    assert st.piggy_banks() == [] and st.draws() == []
+
+
+def test_it_keeps_the_banks(client):
+    """No signing in to the banks again: the connections stay, rewound."""
     start_over(client)
     st = client.st
     item = st.plaid_items()[0]
     assert item["cursor"] in (None, "") and item["last_synced"] is None   # re-downloads all
     assert set(st.account_sync_rules()) == {"chq", "chq-copy"}
     settings = st.account_settings()
-    assert settings["chq"]["nickname"] == "Everyday"
     assert settings["chq-copy"]["removed"] is True                       # the hidden copy
-    assert st.joint_accounts() == {"chq": "Family"} and st.joint_shares()["chq"] == 60
-    assert [b.name for b in st.piggy_banks()] == ["Travel"]
-    assert [d["amount"] for d in st.draws()] == [150.0]
-    assert st.setting("anchor_accounts") == '["sav"]'
+    assert "chq" not in settings or (settings["chq"]["counted"] and not settings["chq"]["nickname"])
     assert st.seed_suppressed()
 
 

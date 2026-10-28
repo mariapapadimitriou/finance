@@ -29,11 +29,11 @@ import './profile.css';
  * everything. Nothing is deleted until a passkey, an email code or, for an
  * account from before Pearl, the password confirms it's her.
  *
- * Start over (2026-10-14) clears her transactions and her organizing — every
- * answer about a transaction, her rules, income and bills, budgets — and
- * downloads the history again from the banks, which stay connected. Goals,
- * treasure chests and what she set on each account stay. Typing "start over"
- * confirms it (finance/store.py Store.start_over).
+ * Start over (2026-10-14) clears her transactions and everything she set up
+ * (2026-10-28: rules, categories, merchant names, income and bills, budgets,
+ * account setup, goals) and downloads the history again from the banks,
+ * which stay connected so nobody signs in to a bank again. Typing "start
+ * over" confirms it (finance/store.py Store.start_over).
  */
 
 const TRAIL = [{ label: 'Profile', to: 'profile' }, { label: 'Your data' }];
@@ -61,14 +61,16 @@ export function readyWords(summary) {
 // What Start over does, in her words (SO-02): what goes, and what stays.
 export const START_OVER_GOES = [
   'Every transaction and what you told Pearl about it: categories, splits, notes, left-out rows, Needs a look answers, duplicates',
-  'Your rules: merchant, transfer, leave-out and joint rules',
+  'Your rules: merchant, transfer, recurring transfer, leave-out and joint rules',
+  'Categories: Fixed or Variable, hidden categories, and your names for merchants',
   'Income and bills setup, and how last month carried over',
   'Category budgets and dismissed suggestions',
+  'Account setup: nicknames, joint accounts, accounts added by hand, debt details',
+  'Goals, treasure chests and your Anchor',
 ];
 export const START_OVER_STAYS = [
-  'Your bank connections (Pearl downloads your full history again)',
-  'Account setup: nicknames, joint shares and names, hidden copies, accounts added by hand, debt details',
-  'Your Anchor accounts, treasure chests and the money in them',
+  'Your bank connections, so you don’t sign in to your banks again (Pearl downloads your full history)',
+  'Copies of an account you hid, so nothing counts twice',
   'Sign-in, passkeys and privacy choices',
 ];
 export const START_OVER_ROWS = [
@@ -122,8 +124,8 @@ export function DataPage({ summary, preparing = false, error = null, onTab, onPr
         <section className="pf-section" aria-labelledby="dt-start-over">
           <h2 className="pk-h3" id="dt-start-over">Start over</h2>
           <p className="pf-foot">
-            Clear your transactions and how you sorted them, then bring them back fresh from your
-            banks. Your banks, goals and treasure chests stay.
+            Clear your transactions and everything you set up, then bring them back fresh from
+            your banks. Your bank connections stay.
           </p>
           <div className="pf-stack">
             <PButton variant="secondary" onClick={onStartOver}>Start over</PButton>
