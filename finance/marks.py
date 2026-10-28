@@ -718,9 +718,10 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
             "person": store.payback_people().get(t.fingerprint), "amount": t.repays_amount}
         _drop_made_split(store, t, marks)
-        from .etransfers import party as etransfer_party
+        from .etransfers import known_people, party as etransfer_party
+        people = known_people(store.all_transactions(), store.splits(), store.payback_people())
         person = (" ".join(str(body.get("person") or "").split())
-                  or (etransfer_party(t) or {}).get("name") or None)
+                  or (etransfer_party(t, people) or {}).get("name") or None)
         store.link_payback(charge_id, t.fingerprint, person, part)
         store.set_payback_kind(t.fingerprint, None)
         title = f"Linked to {charge.merchant}. Not income."
@@ -735,9 +736,9 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         if was is not None:
             marks.setdefault("splits", {}).setdefault(charge_id, was)
             share = (store.get_transaction(charge_id) or fresh).my_share or 0.0
-            from .splits import first_name
+            from .splits import same_person
             again = next((p for p in ((was.get("split") or {}).get("people") or [])
-                          if first_name(p["name"]) == first_name(person)), None)
+                          if same_person(p["name"], person)), None)
             title = (f"{person} has now paid you back "
                      f"${again['amount'] + (part if part is not None else -t.amount):,.2f} for {charge.merchant}."
                      if again else f"{charge.merchant} is now split with {person}.")

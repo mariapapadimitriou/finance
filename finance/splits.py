@@ -45,6 +45,20 @@ def first_name(name: str) -> str:
     return words[0] if words else ""
 
 
+def same_person(a: str, b: str) -> bool:
+    """Two names for one person: the same first name, or a Wealthsimple Pay
+    handle that starts with the other's first name ("Anastasiapapas" and
+    "Anastasia", 2026-10-28)."""
+    fa, fb = first_name(a), first_name(b)
+    if not fa or not fb:
+        return False
+    if fa == fb:
+        return True
+    one_word = lambda n: len(_WORD.findall((n or "").lower())) == 1
+    return ((one_word(a) and len(fb) >= 3 and fa.startswith(fb))
+            or (one_word(b) and len(fa) >= 3 and fb.startswith(fa)))
+
+
 def sender(t: Transaction) -> str:
     """Who money in came from, as the bank wrote it."""
     raw = t.raw or {}
@@ -55,7 +69,14 @@ def sender(t: Transaction) -> str:
 def from_person(inflow: Transaction, name: str) -> bool:
     """Did this money come from someone with this first name?"""
     first = first_name(name)
-    return bool(first) and first in _WORD.findall(sender(inflow).lower())
+    if not first:
+        return False
+    if first in _WORD.findall(sender(inflow).lower()):
+        return True
+    # A Wealthsimple Pay handle runs the names together (2026-10-28):
+    # "anastasiapapas" is Anastasia.
+    from .etransfers import handle_matches
+    return handle_matches(inflow, first)
 
 
 def even_amounts(total: float, n_people: int) -> tuple[float, list[float]]:
@@ -124,7 +145,7 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
         who = payer.get(t.fingerprint)
         if who not in paid and who:
             # "Sam Lee" paying back the Sam in the split.
-            who = next((n for n in names if first_name(n).lower() == first_name(who).lower()), None)
+            who = next((n for n in names if same_person(n, who)), None)
         if who not in paid:
             who = next((n for n in names if from_person(t, n)), None)
         if who is None:
@@ -232,7 +253,7 @@ def add_payer(store, charge: Transaction, inflow: Transaction, person: str | Non
         return None
     people = list(current["people"]) if current else []
     got = inflow.paid_part
-    at = next((i for i, p in enumerate(people) if first_name(p["name"]) == first_name(person)), None)
+    at = next((i for i, p in enumerate(people) if same_person(p["name"], person)), None)
     if at is not None:
         # Someone paying back in more than one e-Transfer (2026-10-26): if
         # their place was made by their earlier payback, it grows by this
@@ -270,7 +291,7 @@ def _made_by_paybacks(store, charge: Transaction, name: str, inflow: Transaction
     payer = store.payback_people()
     return any(t.repays == charge.fingerprint and t.fingerprint != inflow.fingerprint
                and kinds.get(t.fingerprint) == MADE_SPLIT
-               and first_name(payer.get(t.fingerprint) or "") == first_name(name)
+               and same_person(payer.get(t.fingerprint) or "", name)
                for t in store.all_transactions())
 
 

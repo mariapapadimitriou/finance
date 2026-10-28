@@ -82,10 +82,18 @@ def test_money_from_your_own_account_is_not_asked_about(client):
 
 
 def test_unknown_money_in_with_no_match_guesses_your_own(client):
+    load(client.st, row(-75, "TRANSFER RECEIVED", issuer="TRANSFER_IN_ACCOUNT_TRANSFER"))
+    item = queue(client)["money_in"][0]
+    assert item["guess"] == {"action": "own"} and item["candidates"] == []
+    assert "from" not in item
+
+
+def test_money_from_someone_else_is_not_guessed_your_own(client):
+    # 2026-10-28: from a person, it's asked "Is Mom paying you back?" first.
     load(client.st, row(-75, "E-TRANSFER RECEIVED MOM", who="Mom",
                         issuer="TRANSFER_IN_ACCOUNT_TRANSFER"))
     item = queue(client)["money_in"][0]
-    assert item["guess"] == {"action": "own"} and item["candidates"] == []
+    assert item["guess"] == {"action": "person"} and item["from"] == "Mom"
 
 
 def test_dismissing_settles_an_item(client):
