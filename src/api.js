@@ -443,5 +443,7 @@ export function pct(n, digits = 0) {
 }
 // Recurring transfers (2026-10-27): "Yes, it repeats", as `kind` (saved,
 // moved, rent) or a spending `category`, for the series asked about.
+// Profile › Recurring transfers (2026-10-28).
+export const getRecurringTransfers = () => req('/api/recurring-transfers');
 export const confirmRecurring = (key, { kind = null, category = null } = {}) =>
   json('POST', '/api/recurring-transfers', { key, ...(kind ? { kind } : {}), ...(category ? { category } : {}) });

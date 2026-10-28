@@ -80,3 +80,46 @@ def delete_recurring_transfer(rule_id: str):
         st.write_categories(keep)
     apply_transfer_matches(st)
     return jsonify({"ok": True})
+
+
+# What each schedule comes to in a month, on average.
+PER_MONTH = {"weekly": 52 / 12, "biweekly": 26 / 12, "monthly": 1.0}
+# What she called it, for the categories Needs a look offers by name.
+WHAT = {category: words for category, words in KINDS.values()}
+WHAT["Transfers"] = "Moved to another of my accounts"
+
+
+@bp.get("/recurring-transfers")
+def list_recurring_transfers():
+    """Profile › Recurring transfers (2026-10-28): every one she confirmed,
+    what it is, its schedule, the next one, and what a month of them comes
+    to; and how many Needs a look is still asking about."""
+    from datetime import date
+    from .profile_api import _base_name
+    from .review import for_store
+    st = store()
+    today = date.fromisoformat(_today_iso())
+    nicknames = st.account_nicknames()
+    accounts = {a["account_id"]: nicknames.get(a["account_id"])
+                or _base_name(a.get("account_name") or a["account_id"]) for a in st.accounts()}
+    txns = st.all_transactions()
+    out = []
+    for r in st.recurring_transfers():
+        rows = sorted((t for t in txns if rt.matches(t, r)), key=lambda t: t.date, reverse=True)
+        monthly = round(float(r["amount"]) * PER_MONTH.get(r["cadence"], 1.0), 2)
+        out.append({
+            "id": r["id"], "rule_id": f"recurring:{r['id']}",
+            "name": r.get("label") or "Transfer",
+            "account": accounts.get(r["account_id"], ""),
+            "amount": round(float(r["amount"]), 2), "cadence": r["cadence"],
+            "when": rt.when_words(r["cadence"], date.fromisoformat(r["anchor"][:10])),
+            "category": r["category"], "what": WHAT.get(r["category"], r["category"]),
+            "monthly": monthly,
+            "next": rt.next_after(r, today).isoformat(),
+            "count": len(rows), "last": rows[0].date[:10] if rows else None,
+            "transactions": [{"id": t.fingerprint, "date": t.date[:10], "amount": round(t.amount, 2)}
+                             for t in rows[:12]],
+        })
+    asking = len(for_store(st, today=today.isoformat()).get("recurring_transfer") or [])
+    return jsonify({"transfers": out, "count": len(out), "asking": asking,
+                    "monthly": round(sum(r["monthly"] for r in out), 2)})

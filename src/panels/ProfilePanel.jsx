@@ -89,6 +89,10 @@ export function hubRows(summary, user) {
         sub: s.rules ? plural(s.rules, 'saved rule') : 'No saved rules yet' },
       { key: 'income', name: 'Income and bills',
         sub: 'Your pay, and the regular bills set aside' },
+      // 2026-10-28: rent, savings, money between accounts on a schedule.
+      { key: 'recurring', name: 'Recurring transfers',
+        sub: s.recurring ? plural(s.recurring, 'recurring transfer')
+          : 'Transfers that repeat, like rent or savings' },
     ] },
     { title: 'You', rows: [
       { key: 'security', name: 'Sign-in and security',

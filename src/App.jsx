@@ -11,6 +11,7 @@ import IncomeBillsPanel from './panels/IncomeBillsPanel.jsx';
 import AccountsPanel from './panels/AccountsPanel.jsx';
 import ProfilePanel from './panels/ProfilePanel.jsx';
 import RulesPanel from './panels/RulesPanel.jsx';
+import RecurringPanel from './panels/RecurringPanel.jsx';
 import SecurityPanel from './panels/SecurityPanel.jsx';
 import NotificationsPanel from './panels/NotificationsPanel.jsx';
 import ConsentPanel from './panels/ConsentPanel.jsx';
@@ -39,7 +40,7 @@ import {
 // hub and its pages too: a brand-new account has an empty ledger, and must
 // still be able to change its email or sign out. And Home, whose no-data
 // state is where linking starts.
-const WORKS_WHEN_EMPTY = ['home', 'debts', 'budgets', 'accounts', 'income', 'profile', 'security',
+const WORKS_WHEN_EMPTY = ['home', 'debts', 'budgets', 'accounts', 'income', 'recurring', 'profile', 'security',
                           'rules', 'notifications', 'consent', 'data', 'protect'];
 
 // Pages that draw their section pills themselves, under their own title
@@ -392,7 +393,7 @@ export default function App() {
       // The Pearl pages draw their own header (overline + title). Insights
       // has its own month switcher too (GR-28), so the shell picks no month.
       ownTitle={['home', 'insights', 'calendar', 'debts', 'budgets', 'transactions', 'review', 'profile',
-                 'accounts', 'rules', 'security', 'income', 'notifications', 'consent', 'data',
+                 'accounts', 'rules', 'security', 'income', 'recurring', 'notifications', 'consent', 'data',
                  'protect'].includes(panel)}
       ownSections={OWN_SECTIONS.includes(panel)}
       onSignOut={signOut}
@@ -423,6 +424,9 @@ export default function App() {
       {panel === 'accounts' && <AccountsPanel onChanged={load} onTab={goFrom} version={version} />}
       {panel === 'rules' && (
         <RulesPanel categories={categories} onTab={goFrom} onChanged={load} version={version} />
+      )}
+      {panel === 'recurring' && (
+        <RecurringPanel categories={categories} onTab={goFrom} onChanged={load} version={version} />
       )}
       {panel === 'notifications' && <NotificationsPanel onTab={goFrom} version={version} />}
       {panel === 'consent' && <ConsentPanel onTab={goFrom} version={version} />}
