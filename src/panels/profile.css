@@ -180,7 +180,18 @@ a.pk-btn { text-decoration: none; box-sizing: border-box; }
 .pf-tabs { display: flex; }
 .pf-tabs .pk-seg { width: auto; }
 .pf-tabs .pk-seg button { flex: none; padding: 8px 16px; }
-.pf-row-links { display: inline-flex; align-items: center; gap: var(--space-4); flex: none; }
+.pf-row-links { display: inline-flex; align-items: center; gap: var(--space-4); flex: none;
+                padding-right: 20px; }
+/* Centred beside the dropdown, not at the top of the row (2026-10-28). */
+.pk .pf-row-links .pf-text-link { align-self: center; white-space: nowrap; padding: 4px 0; }
+/* A phone has no room for the name, a dropdown and a link on one line: the
+ * controls go under the name, lined up with it (2026-10-28). */
+@media (max-width: 720px) {
+  .pf-row:has(> .pf-row-links) { flex-wrap: wrap; }
+  .pf-row:has(> .pf-row-links) > .pf-row-main { flex-basis: 100%; padding-bottom: 6px; }
+  .pf-row-links { width: 100%; padding: 0 16px 14px; gap: var(--space-4); }
+  .pf-row-links .pk-filter { flex: 0 1 auto; min-width: 0; }
+}
 /* SO-02: what goes and what stays, side by side. */
 .dt-lists { display: flex; gap: var(--space-4); }
 .dt-list {

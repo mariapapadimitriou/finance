@@ -240,7 +240,7 @@ def rule_from(found: dict, category: str, label: str = "") -> dict:
 def rule_words(rule: dict, account_name: str = "") -> str:
     """"$1,500.00 every month, around the 1st, from Chequing"."""
     where = f" to {rule['label']}" if rule.get("label") else ""
-    frm = f" from {account_name}" if account_name else ""
+    frm = f", from {account_name}" if account_name else ""
     return (f"${rule['amount']:,.2f}{where} {when_words(rule['cadence'], _d(rule['anchor']))}"
             f"{frm}")
 

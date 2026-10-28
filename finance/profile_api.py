@@ -572,7 +572,8 @@ def _rules(st) -> list[dict]:
                     "name": names.get(key) or key.title(), "category": category})
     labels = st.destination_labels()
     for key, category in sorted(st.destinations().items()):
-        label = labels.get(key) or key.split(":", 1)[-1].title()
+        label = labels.get(key) or (("••" + key[5:]) if key.startswith("acct:")
+                                    else key.split(":", 1)[-1].title())
         name = (f"Transfers to {label}" if key.startswith(("to:", "acct:")) else label)
         out.append({"id": f"destination:{key}", "kind": "destination",
                     "name": name, "category": category})
