@@ -201,3 +201,7 @@ a.pk-btn { text-decoration: none; box-sizing: border-box; }
 /* Remove a bank entirely (2026-10-21): the accounts that go with it. */
 .pf-bank-list { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 4px;
                 font-size: 14px; line-height: 20px; color: var(--ink-muted); }
+
+/* Profile › Recurring transfers (2026-10-28) */
+.rt-tiles { margin: var(--space-4) 0; }
+.rt-tiles .pk-tile { flex: 1; }

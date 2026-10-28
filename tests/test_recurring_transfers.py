@@ -179,3 +179,50 @@ def test_the_list_says_recurring(client):
             .get_json()["transactions"] if r["amount"] == 1500]
     assert rows and rows[0]["note"] == "Recurring · every month, around the 1st"
     assert rows[0]["recurring"] == it["key"]
+
+
+class TestSummaryPage:
+    """Profile › Recurring transfers (2026-10-28)."""
+
+    def test_empty(self, client):
+        body = client.get("/api/recurring-transfers").get_json()
+        assert body == {"transfers": [], "count": 0, "asking": 0, "monthly": 0}
+
+    def test_waiting_ones_are_counted(self, client):
+        rent(client)
+        assert client.get("/api/recurring-transfers").get_json()["asking"] == 1
+
+    def test_a_confirmed_one_is_summarized(self, client):
+        rent(client)
+        [it] = asked(client)
+        client.post("/api/recurring-transfers", json={"key": it["key"], "kind": "rent"})
+        body = client.get("/api/recurring-transfers").get_json()
+        assert body["count"] == 1 and body["asking"] == 0
+        [r] = body["transfers"]
+        assert r["amount"] == 1500 and r["cadence"] == "monthly"
+        assert r["when"] == "every month, around the 1st"
+        assert r["category"] == "Rent & Housing" and r["what"] == "Rent"
+        assert r["count"] == 3 and r["last"] == month_day(0)
+        assert [t["date"] for t in r["transactions"]] == [month_day(0), month_day(1), month_day(2)]
+        assert r["next"] > TODAY.isoformat() and r["next"].endswith("-01")
+        assert body["monthly"] == 1500 and r["rule_id"] == f"recurring:{r['id']}"
+
+    def test_a_month_of_a_weekly_one(self, client):
+        load(client.st, *[row(50, f"SEND E-TFR ***W{i}k", when=(TODAY - timedelta(days=7 * i)).isoformat())
+                          for i in range(4)])
+        [it] = asked(client)
+        client.post("/api/recurring-transfers", json={"key": it["key"], "kind": "saved"})
+        [r] = client.get("/api/recurring-transfers").get_json()["transfers"]
+        assert r["cadence"] == "weekly" and r["what"] == "Into savings"
+        assert r["monthly"] == round(50 * 52 / 12, 2)
+
+    def test_changing_and_stopping_one(self, client):
+        rent(client)
+        [it] = asked(client)
+        client.post("/api/recurring-transfers", json={"key": it["key"], "kind": "rent"})
+        [r] = client.get("/api/recurring-transfers").get_json()["transfers"]
+        assert client.put(f"/api/rules/{r['rule_id']}", json={"category": "Saved"}).status_code == 200
+        [r] = client.get("/api/recurring-transfers").get_json()["transfers"]
+        assert r["what"] == "Into savings"
+        assert client.delete(f"/api/rules/{r['rule_id']}").status_code == 200
+        assert client.get("/api/recurring-transfers").get_json()["count"] == 0

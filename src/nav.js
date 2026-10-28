@@ -57,6 +57,10 @@ export const PANELS = {
   // what a phone shows where the full label will not fit.
   income:        { label: 'Income and bills', short: 'Income',
                    hint: 'What comes in, and the regular bills set aside' },
+  // Profile › Recurring transfers (2026-10-28): every transfer she said
+  // repeats, what it is, and the next one.
+  recurring:     { label: 'Recurring transfers', short: 'Recurring',
+                   hint: 'Transfers that repeat, like rent or savings' },
   // Profile › Notifications (THL-139 N-02): which nudges, and how.
   notifications: { label: 'Notifications',
                    hint: 'Payday, weekly check-in, progress and milestones' },
@@ -101,8 +105,8 @@ export const GROUPS = [
     hint: 'What Pearl can and can’t do',
     icon: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01' },
   { key: 'profile', label: 'Profile',
-    panels: ['profile', 'accounts', 'rules', 'security', 'income', 'notifications', 'consent',
-             'data'], foot: true, crumbs: true,
+    panels: ['profile', 'accounts', 'rules', 'security', 'income', 'recurring', 'notifications',
+             'consent', 'data'], foot: true, crumbs: true,
     hint: 'Your accounts, rules, sign-in and privacy',
     icon: 'M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z' },
 ];

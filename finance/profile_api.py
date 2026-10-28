@@ -537,7 +537,8 @@ def profile_summary():
     rows = _all_rows(st)
     return jsonify({"accounts": len(rows),
                     "needs_you": sum(1 for a in rows if a["status"] in NEEDS_YOU),
-                    "rules": len(_rules(st))})
+                    "rules": len(_rules(st)),
+                    "recurring": len(st.recurring_transfers())})
 
 
 # ── S-03: Categories and rules ───────────────────────────────────────────
