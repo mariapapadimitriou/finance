@@ -74,7 +74,7 @@ IN_CASES = (
      "effect": "Counts as income. Pick the kind: salary, bonus, benefits, interest or a refund "
                "of tax.", "remember": None},
     {"key": "regular_pay", "label": "This is my regular pay", "group": "income", "needs": None,
-     "effect": "Pearl uses it for your monthly income from now on.", "remember": None},
+     "effect": "Pearl uses it for your monthly income from now on.", "remember": "payer"},
     {"key": "payback", "label": "Someone paying me back", "group": "not_income",
      "needs": "candidates", "effect": "Comes off what you spent for them. Never income.",
      "remember": None},
@@ -447,6 +447,13 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
             item["remember_label"] = f"Leave out every {t.merchant} from now on"
         elif c["remember"] == "sender":
             item["remember_label"] = f"The same for every deposit from {t.merchant}"
+        elif c["remember"] == "payer":
+            # Her regular pay, remembered (2026-10-28): every deposit from them.
+            from .pay_rules import key_of
+            payer = key_of(t)
+            item["remember"] = "payer" if payer else None
+            item["remember_label"] = (f"Always count deposits from {payer[1]} as my regular pay"
+                                      if payer else "")
         if c["needs"] == "candidates" and c["key"] == "payback":
             item["candidates"] = payback_candidates(t, txns, store.splits(),
                                                     store.payback_people(), names)
@@ -707,6 +714,17 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         store.set_income_type(t.fingerprint, "salary", "user")
         _regular_pay(store, t, today)
         title = "Counted as your regular pay."
+        # Remembered (2026-10-28): every deposit from the same payer, here
+        # now and still to come, is sorted as her regular pay.
+        from .pay_rules import key_of
+        payer = key_of(t) if body.get("remember") else None
+        if payer:
+            marks.setdefault("pay_rules", {})[payer[0]] = store.pay_rules().get(payer[0])
+            store.set_pay_rule(payer[0], payer[1])
+            from .pipeline import classify_ledger
+            classify_ledger(store)
+            remember = True
+            title = f"Counted as your regular pay, and every deposit from {payer[1]}."
     elif case == "payback":
         charge_id = str(body.get("charge") or "")
         charge = next((x for x in store.all_transactions() if x.fingerprint == charge_id), None)
@@ -973,6 +991,16 @@ def undo_marks(store, marks: dict) -> int:
         if tid in known and isinstance(tags, list):
             store.set_tags(tid, clean_tags(tags))
             n += 1
+    # A regular pay rule (2026-10-28): gone again, or the one it replaced.
+    if marks.get("pay_rules"):
+        for key, name in (marks.get("pay_rules") or {}).items():
+            if name:
+                store.set_pay_rule(str(key), str(name))
+            else:
+                store.delete_pay_rule(str(key))
+            n += 1
+        from .income import apply_income_types
+        apply_income_types(store)
     # A recurring transfer she confirmed (2026-10-27): the rule goes again,
     # or the one it replaced comes back.
     for rid, was in (marks.get("recurring_transfers") or {}).items():

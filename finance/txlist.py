@@ -337,7 +337,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
     who = party(t, ctx.people)
     # Decided by a rule of hers: "Apply to all from…" or "Remember where
     # these go". The chip says so, so it's clear why it won't change.
-    ruled = t.category_source in ("merchant_override", RULED)
+    ruled = t.category_source in ("merchant_override", RULED, "pay_rule")
     refund_of = ctx.by_id.get(ctx.refunds.get(t.fingerprint, ""))
     return {
         "id": t.fingerprint,

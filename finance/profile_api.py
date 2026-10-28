@@ -587,6 +587,9 @@ def _rules(st) -> list[dict]:
         out.append({"id": f"recurring:{r['id']}", "kind": "recurring",
                     "name": rule_words(r, accounts.get(r["account_id"], "")),
                     "category": r["category"]})
+    # Her regular pay (2026-10-28): always income, of the salary kind.
+    for key, name in st.pay_rules().items():
+        out.append({"id": f"pay:{key}", "kind": "pay", "name": name, "category": "Income"})
     for r in st.exclusion_rules():
         out.append({"id": f"exclusion:{r['id']}", "kind": "exclusion",
                     "name": _exclusion_name(r, accounts), "category": None,
@@ -644,6 +647,8 @@ def edit_rule(rule_id: str):
     elif kind == "destination" and key in st.destinations():
         st.set_destination(key, category, st.destination_labels().get(key, ""))
         apply_transfer_matches(st)
+    elif kind == "pay":
+        return jsonify({"error": "Pay is always income. Remove the rule to sort them yourself."}), 400
     elif kind == "recurring" and any(r["id"] == key for r in st.recurring_transfers()):
         rule = next(r for r in st.recurring_transfers() if r["id"] == key)
         st.set_recurring_transfer({**rule, "category": category})
@@ -692,6 +697,21 @@ def delete_rule(rule_id: str):
         if key not in st.merchant_names():
             return jsonify({"error": "No such rule."}), 404
         st.set_merchant_name(key, None)
+    elif kind == "pay":
+        # Her regular pay (2026-10-28): what it sorted stays her pay; the next
+        # deposit from them is asked about again.
+        from .pay_rules import SOURCE, matches
+        rules = st.pay_rules()
+        if key not in rules:
+            return jsonify({"error": "No such rule."}), 404
+        one = {key: rules[key]}
+        kept = [t for t in st.all_transactions()
+                if t.category_source == SOURCE and matches(t, one)]
+        st.delete_pay_rule(key)
+        if kept:
+            st.write_categories({t.fingerprint: ("Income", "user") for t in kept})
+            for t in kept:
+                st.set_income_type(t.fingerprint, "salary", "user")
     else:
         return jsonify({"error": "No such rule."}), 404
     return jsonify({"ok": True, "count": len(_rules(st))})

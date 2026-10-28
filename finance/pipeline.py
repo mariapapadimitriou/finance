@@ -121,6 +121,10 @@ def classify_ledger(store: Store) -> None:
     never pairs as a transfer), then transfer matching, then income types."""
     from .exclusions import reapply
     from .income import apply_income_types
+    from .pay_rules import apply as apply_pay_rules
     reapply(store)
+    # Her regular pay (2026-10-28) before transfers: a paycheque is never the
+    # other end of one of her own transfers.
+    apply_pay_rules(store)
     apply_transfer_matches(store)
     apply_income_types(store)

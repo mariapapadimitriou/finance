@@ -68,10 +68,12 @@ def guess(t: Transaction) -> str:
     return "other"
 
 
-def classify(transactions: list[Transaction]) -> dict[str, str]:
-    """{txn_id: kind} for every income row whose type wasn't chosen by you."""
+def classify(transactions: list[Transaction], salary: set[str] | None = None) -> dict[str, str]:
+    """{txn_id: kind} for every income row whose type wasn't chosen by you.
+    `salary` are the deposits a regular pay rule of hers covers (2026-10-28)."""
     rows = [t for t in transactions if is_income(t)]
-    kinds = {t.fingerprint: guess(t) for t in rows}
+    salary = salary or set()
+    kinds = {t.fingerprint: "salary" if t.fingerprint in salary else guess(t) for t in rows}
     pay = [-t.amount for t in rows if kinds[t.fingerprint] == "salary"]
     if len(pay) >= 3:
         usual = statistics.median(pay)
@@ -83,9 +85,11 @@ def classify(transactions: list[Transaction]) -> dict[str, str]:
 
 
 def apply_income_types(store, transactions: list[Transaction] | None = None) -> int:
+    from .pay_rules import salary_ids
     txns = transactions if transactions is not None else store.all_transactions()
     current = {t.fingerprint: t.income_type for t in txns}
-    changes = {tid: k for tid, k in classify(txns).items() if current.get(tid) != k}
+    salary = salary_ids(txns, store.pay_rules())
+    changes = {tid: k for tid, k in classify(txns, salary).items() if current.get(tid) != k}
     return store.write_income_types(changes)
 
 

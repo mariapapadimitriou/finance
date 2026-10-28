@@ -214,6 +214,13 @@ CREATE TABLE IF NOT EXISTS recurring_transfers (
     category   TEXT NOT NULL
 );
 
+-- Payers whose deposits are always her regular pay (2026-10-28,
+-- finance/pay_rules.py): sorted as income, of the salary kind.
+CREATE TABLE IF NOT EXISTS pay_rules (
+    payer_key TEXT PRIMARY KEY,
+    name      TEXT NOT NULL
+);
+
 -- Names where a purchase on a joint account is always yours.
 CREATE TABLE IF NOT EXISTS joint_mine (
     merchant_key TEXT PRIMARY KEY
@@ -1899,6 +1906,7 @@ class Store:
             ("joint_mine", "names always yours on a joint account"),
             ("joint_split_rules", "names always split on a joint account"),
             ("recurring_transfers", "recurring transfers"),
+            ("pay_rules", "regular pay rules"),
             ("joint_shares_kept", "joint purchases held at an earlier share"),
             ("joint_deposits", "who put money into a joint account"),
             ("joint_deposit_rules", "senders into a joint account"),
@@ -1968,6 +1976,7 @@ class Store:
         ("joint_mine", "rules"),
         ("joint_split_rules", "rules"),
         ("recurring_transfers", "rules"),
+        ("pay_rules", "rules"),
         ("joint_deposit_rules", "rules"),
         # Budgets.
         ("budgets", "budgets"),
@@ -2817,6 +2826,23 @@ class Store:
             if who:
                 c.execute("INSERT INTO joint_deposit_rules (account_id, sender_key, who, person) "
                           "VALUES (?, ?, ?, ?)", (account_id, key, who, person or None))
+
+    # ── Regular pay rules (2026-10-28) ─────────────────────────────────────
+    def pay_rules(self) -> dict[str, str]:
+        """{payer key: the payer's name}."""
+        with self.conn() as c:
+            rows = c.execute("SELECT payer_key, name FROM pay_rules ORDER BY name").fetchall()
+        return {r["payer_key"]: r["name"] for r in rows}
+
+    def set_pay_rule(self, key: str, name: str) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM pay_rules WHERE payer_key = ?", (key,))
+            c.execute("INSERT INTO pay_rules (payer_key, name) VALUES (?, ?)", (key, name[:80]))
+
+    def delete_pay_rule(self, key: str) -> bool:
+        with self.conn() as c:
+            cur = c.execute("DELETE FROM pay_rules WHERE payer_key = ?", (key,))
+            return (cur.rowcount or 0) > 0
 
     def recurring_transfers(self) -> list[dict]:
         with self.conn() as c:
