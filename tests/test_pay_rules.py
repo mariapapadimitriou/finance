@@ -59,7 +59,7 @@ def test_remembered_every_deposit_from_them_is_pay(client):
     first, second, third = pay(client)
     res = mark(client, first, case="regular_pay", remember=True)
     assert res["remember"] is True
-    assert res["title"] == "Counted as your regular pay, and every deposit from Acme Corp."
+    assert res["title"] == "Counted as your regular pay, and the 2 other deposits from Acme Corp."
     rows = by_id(client)
     for tid in (second, third):
         assert rows[tid].category == "Income" and rows[tid].category_source == "pay_rule"
@@ -132,3 +132,19 @@ def test_start_over_clears_pay_rules(client):
     mark(client, first, case="regular_pay", remember=True)
     client.post("/api/data/start-over", json={"confirm": "start over"})
     assert client.st.pay_rules() == {}
+
+
+def test_the_rest_leave_needs_a_look_with_the_first(client):
+    """2026-10-29: deposits Needs a look asks "Is this income?" about. One
+    marked as regular pay, remembered, takes the rest with it."""
+    rows = load(client.st, *[deposit(ago(14 * i + 1), amount=-2150.0 - i * 6.5,
+                                     desc=f"WEALTHSIMPLE TECHNOLOGIES {i}",
+                                     merchant="Wealthsimple Technologies") for i in range(4)])
+    ids = list(rows.values())
+    review = client.get("/api/review").get_json()
+    assert {it["txn"]["id"] for it in review["money_in"]} == set(ids)
+    res = mark(client, ids[0], case="regular_pay", remember=True)
+    assert res["title"] == ("Counted as your regular pay, and the 3 other deposits from "
+                            "Wealthsimple Technologies.")
+    review = client.get("/api/review").get_json()
+    assert review["count"] == 0
