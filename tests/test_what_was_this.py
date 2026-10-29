@@ -210,7 +210,7 @@ def test_a_work_expense_and_its_reimbursement_both_vanish(client):
     assert res["title"] == "Left out until it’s reimbursed."
     assert listing(client)["totals"]["spent"] == 0
     left = by_desc(listing(client, excluded=1))["AIR CANADA"]
-    assert left["note"] == "Left out · Work expense · waiting to be reimbursed"
+    assert left["note"] == "Left out · Waiting to be reimbursed"
     assert cases(client, flight)["current"] == "work"
     # The deposit's reimbursement case offers the flight first.
     d = cases(client, back)
@@ -228,7 +228,7 @@ def test_a_work_expense_and_its_reimbursement_both_vanish(client):
     assert cases(client, back)["current"] == "reimbursement"
     undo(client, res)
     rows = by_desc(listing(client, excluded=1))
-    assert rows["AIR CANADA"]["note"].startswith("Left out · Work expense")
+    assert rows["AIR CANADA"]["note"].startswith("Left out · Waiting to be reimbursed")
     assert client.st.payback_kinds() == {}
 
 

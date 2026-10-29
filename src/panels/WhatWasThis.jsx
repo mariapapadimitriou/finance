@@ -118,7 +118,7 @@ function Candidate({ name, checked, onChange, c, what }) {
   const bits = [txAmount(c.amount, { signed: true }), c.category].filter(Boolean);
   if (c.person) bits.push(`${c.person}’s share`);
   else if (c.share) bits.push(`about a 1/${c.share} share`);
-  if (c.work) bits.push('left out as a work expense');
+  if (c.work) bits.push('waiting to be reimbursed');
   if (c.exact) bits.push('exact match');
   return (
     <Choice name={name} checked={checked} onChange={onChange}

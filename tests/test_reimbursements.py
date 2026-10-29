@@ -187,3 +187,16 @@ class TestSearch:
         assert [d["merchant"] for d in found] == ["Expensify"]          # a search looks further
         everything = client.get(f"/api/transactions/{taxi}/deposits").get_json()["deposits"]
         assert "Expensify" not in [d["merchant"] for d in everything]
+
+
+def test_to_be_reimbursed_is_not_only_for_work():
+    """2026-10-29: the option asks whether she'll be reimbursed, not whether
+    it was a work expense; expenses marked with the older words still wait."""
+    from finance.marks import OUT_CASES, WORK_REASON, waiting_reimbursed
+    work = next(c for c in OUT_CASES if c["key"] == "work")
+    assert work["label"] == "To be reimbursed"
+    assert "work" not in work["label"].lower()
+    assert WORK_REASON == "Waiting to be reimbursed"
+    assert waiting_reimbursed(WORK_REASON)
+    assert waiting_reimbursed("Work expense · waiting to be reimbursed")
+    assert not waiting_reimbursed("Not mine") and not waiting_reimbursed(None)
