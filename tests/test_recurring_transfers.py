@@ -231,3 +231,107 @@ class TestSummaryPage:
 def test_rule_words_read_as_a_sentence():
     rule = {"amount": 1500, "cadence": "monthly", "anchor": "2026-10-01", "label": ""}
     assert rt.rule_words(rule, "Chequing") == "$1,500.00 every month, around the 1st, from Chequing"
+
+
+# ── Every payday (2026-10-28) ────────────────────────────────────────────
+
+import calendar  # noqa: E402
+
+
+def _paydays(months=6):
+    """Pay on the 15th and the last day of the month, a weekend pushing
+    either to the next weekday."""
+    start = date(TODAY.year, TODAY.month, 1) - timedelta(days=31 * months)
+    out, y, m = [], start.year, start.month
+    while date(y, m, 1) <= TODAY:
+        for d in (date(y, m, 15), date(y, m, calendar.monthrange(y, m)[1])):
+            while d.weekday() >= 5:
+                d += timedelta(days=1)
+            if start <= d <= TODAY:
+                out.append(d)
+        m += 1
+        if m > 12:
+            y, m = y + 1, 1
+    return out
+
+
+def payday_rows(dests=("TFR-TO 4411111", "TFR-TO 7722222"), lag=0, pay=True):
+    out = []
+    for i, d in enumerate(_paydays()):
+        if pay:
+            p = row(-2300.0, f"ACME PAYROLL {i}", when=d.isoformat(), merchant="Acme Corp")
+            p.raw["issuer_category"] = "INCOME_WAGES"
+            out.append(p)
+        for desc in dests:
+            t = row(500.0, f"{desc} #{i}", when=(d + timedelta(days=lag)).isoformat())
+            t.description = desc
+            out.append(t)
+    return out
+
+
+class TestEveryPayday:
+    def test_transfers_that_follow_her_pay_are_one_series_each(self, client):
+        load(client.st, *payday_rows())
+        found = asked(client)
+        assert [s["series"]["cadence"] for s in found] == ["payday", "payday"]
+        assert {s["series"]["to"] for s in found} == {"••1111", "••2222"}
+        n = len(_paydays())
+        assert all(s["series"]["count"] == n for s in found)
+        assert found[0]["reason"].startswith("$500.00 to ••")
+        assert ", every payday: " in found[0]["reason"]
+
+    def test_unnamed_ones_on_the_same_payday_are_the_same_transfer(self, client):
+        load(client.st, *payday_rows(dests=("SEND E-TFR ***A1k", "SEND E-TFR ***B2k")))
+        [it] = asked(client)
+        assert it["series"]["cadence"] == "payday" and it["series"]["count"] == 2 * len(_paydays())
+
+    def test_a_day_or_three_after_pay_still_counts(self, client):
+        load(client.st, *payday_rows(lag=3))
+        assert [s["series"]["cadence"] for s in asked(client)] == ["payday", "payday"]
+
+    def test_confirming_sorts_every_one_and_the_next(self, client):
+        load(client.st, *payday_rows())
+        it = next(s for s in asked(client) if s["series"]["to"] == "••1111")
+        r = client.post("/api/recurring-transfers", json={"key": it["key"], "kind": "saved"})
+        assert r.status_code == 200
+        assert r.get_json()["title"] == "Recurring: $500.00 to ••1111, every payday."
+        mine = [t for t in client.st.all_transactions()
+                if t.amount == 500 and t.description == "TFR-TO 4411111"]
+        assert mine and all(t.category == "Saved" for t in mine)
+        summary = client.get("/api/recurring-transfers").get_json()
+        [rule] = summary["transfers"]
+        assert rule["when"] == "every payday" and rule["count"] == len(_paydays())
+        assert rule["monthly"] == 1000.0            # twice a month
+        assert rule["next"] is None or rule["next"] > TODAY.isoformat()
+
+    def test_it_replaces_a_rule_that_only_caught_the_15ths(self, client):
+        load(client.st, *payday_rows(dests=("TFR-TO 4411111",)))
+        mid = next(d for d in reversed(_paydays()) if d.day <= 17)
+        half = {"id": "rt:half", "account_id": "chq", "amount": 500.0, "cadence": "monthly",
+                "anchor": mid.isoformat(), "dest_key": "acct:1111", "label": "", "category": "Saved"}
+        client.st.set_recurring_transfer(half)
+        from finance.transfers import apply_transfer_matches
+        apply_transfer_matches(client.st)
+        [it] = asked(client)
+        assert it["series"]["cadence"] == "payday" and it["series"]["replaces"] == ["rt:half"]
+        res = client.post("/api/recurring-transfers", json={"key": it["key"], "kind": "saved"}).get_json()
+        assert [r["cadence"] for r in client.st.recurring_transfers()] == ["payday"]
+        # Undo brings the half rule back.
+        assert client.post("/api/transactions/undo", json=res["undo"]).status_code == 200
+        assert [r["id"] for r in client.st.recurring_transfers()] == ["rt:half"]
+
+    def test_rent_on_the_first_is_not_every_payday(self, client):
+        rent(client, months=6)
+        load(client.st, *[p for p in payday_rows(dests=()) ])
+        cadences = [s["series"]["cadence"] for s in asked(client)]
+        assert "payday" not in cadences and "monthly" in cadences
+
+    def test_without_pay_in_pearl_it_falls_back_to_the_calendar(self, client):
+        load(client.st, *payday_rows(dests=("TFR-TO 4411111",), pay=False))
+        assert "payday" not in [s["series"]["cadence"] for s in asked(client)]
+
+
+def test_the_next_payday_is_never_a_weekend():
+    pays = [date(2026, 9, 15), date(2026, 9, 30), date(2026, 10, 15)]
+    nxt = rt.next_payday(pays, date(2026, 10, 28))
+    assert nxt == date(2026, 11, 2)            # Oct 31 is a Saturday

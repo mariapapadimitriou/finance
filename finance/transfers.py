@@ -367,12 +367,14 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
             out[t.fingerprint] = NEUTRAL
 
     rules = destinations or {}
-    from .recurring_transfers import rule_for
+    from .recurring_transfers import paydays, rule_for
+    # Every payday (2026-10-28) needs her paydays; only read when a rule asks.
+    pays = paydays(transactions) if any(r["cadence"] == "payday" for r in recurring or []) else []
     for t in candidates:
         if t.fingerprint not in out:
             # A recurring transfer she confirmed (2026-10-27): amount and
             # schedule, more particular than where it goes.
-            rec = rule_for(t, recurring) if recurring else None
+            rec = rule_for(t, recurring, pays) if recurring else None
             if rec:
                 out[t.fingerprint] = rec["category"]
                 continue

@@ -93,8 +93,10 @@ def _recurring_id(t: Transaction, ctx) -> str | None:
     if not getattr(ctx, "recurring", None) or t.amount <= 0 or t.category_source != "destination" \
             and t.category != "Transfers":
         return None
-    from .recurring_transfers import rule_for
-    rule = rule_for(t, ctx.recurring)
+    from .recurring_transfers import paydays, rule_for
+    if getattr(ctx, "_paydays", None) is None:
+        ctx._paydays = paydays(list(ctx.by_id.values()))
+    rule = rule_for(t, ctx.recurring, ctx._paydays)
     return rule["id"] if rule and t.category == rule["category"] else None
 
 

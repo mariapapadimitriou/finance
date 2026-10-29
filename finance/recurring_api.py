@@ -47,13 +47,21 @@ def confirm_recurring_transfer():
     s = item["series"]
     rule = rt.rule_from(s, category, " ".join(str(body.get("label") or "").split())[:60])
     before = snapshot(st, st.all_transactions())
-    was = next((r for r in st.recurring_transfers() if r["id"] == rule["id"]), None)
+    existing = {r["id"]: r for r in st.recurring_transfers()}
+    was = existing.get(rule["id"])
+    # Every payday (2026-10-28) takes over a calendar rule of hers that only
+    # caught half of it ("around the 15th"); Undo brings that one back.
+    replaced = {rid: existing[rid] for rid in s.get("replaces") or [] if rid in existing}
+    for rid in replaced:
+        st.delete_recurring_transfer(rid)
     st.set_recurring_transfer(rule)
     st.dismiss_review(s["key"])
     apply_transfer_matches(st)
-    sorted_now = sum(1 for t in st.all_transactions() if rt.matches(t, rule))
-    undo = undo_payload(before, snapshot(st, st.all_transactions()))
-    undo["marks"] = {"recurring_transfers": {rule["id"]: was}}
+    txns = st.all_transactions()
+    pays = rt.paydays(txns)
+    sorted_now = sum(1 for t in txns if rt.matches(t, rule, pays))
+    undo = undo_payload(before, snapshot(st, txns))
+    undo["marks"] = {"recurring_transfers": {rule["id"]: was, **replaced}}
     undo["undismiss"] = [s["key"]]
     to = f" to {s['to']}" if s["to"] else ""
     return jsonify({
@@ -73,8 +81,10 @@ def delete_recurring_transfer(rule_id: str):
     rule = next((r for r in st.recurring_transfers() if r["id"] == rule_id), None)
     if rule is None:
         return jsonify({"error": "No such rule."}), 404
-    keep = {t.fingerprint: (t.category, "user") for t in st.all_transactions()
-            if rt.matches(t, rule) and t.category_source not in ("user", "merchant_override")}
+    txns = st.all_transactions()
+    pays = rt.paydays(txns)
+    keep = {t.fingerprint: (t.category, "user") for t in txns
+            if rt.matches(t, rule, pays) and t.category_source not in ("user", "merchant_override")}
     st.delete_recurring_transfer(rule_id)
     if keep:
         st.write_categories(keep)
@@ -82,8 +92,16 @@ def delete_recurring_transfer(rule_id: str):
     return jsonify({"ok": True})
 
 
-# What each schedule comes to in a month, on average.
-PER_MONTH = {"weekly": 52 / 12, "biweekly": 26 / 12, "monthly": 1.0}
+# What each schedule comes to in a month, on average. Every payday goes by
+# how often she's paid.
+PER_MONTH = {"weekly": 52 / 12, "biweekly": 26 / 12, "monthly": 1.0, "semimonthly": 2.0}
+
+
+def _paydays_a_month(pays, today) -> float:
+    from .income_bills import _cadence_of
+    recent = [p for p in pays if p <= today][-8:]
+    cadence = _cadence_of(recent) if len(recent) >= 3 else None
+    return PER_MONTH.get(cadence or "", 1.0)
 # What she called it, for the categories Needs a look offers by name.
 WHAT = {category: words for category, words in KINDS.values()}
 WHAT["Transfers"] = "Moved to another of my accounts"
@@ -103,10 +121,13 @@ def list_recurring_transfers():
     accounts = {a["account_id"]: nicknames.get(a["account_id"])
                 or _base_name(a.get("account_name") or a["account_id"]) for a in st.accounts()}
     txns = st.all_transactions()
+    pays = rt.paydays(txns)
     out = []
     for r in st.recurring_transfers():
-        rows = sorted((t for t in txns if rt.matches(t, r)), key=lambda t: t.date, reverse=True)
-        monthly = round(float(r["amount"]) * PER_MONTH.get(r["cadence"], 1.0), 2)
+        rows = sorted((t for t in txns if rt.matches(t, r, pays)), key=lambda t: t.date, reverse=True)
+        per = _paydays_a_month(pays, today) if r["cadence"] == "payday" else PER_MONTH.get(r["cadence"], 1.0)
+        monthly = round(float(r["amount"]) * per, 2)
+        nxt = rt.next_after(r, today, pays)
         out.append({
             "id": r["id"], "rule_id": f"recurring:{r['id']}",
             "name": r.get("label") or "Transfer",
@@ -115,7 +136,7 @@ def list_recurring_transfers():
             "when": rt.when_words(r["cadence"], date.fromisoformat(r["anchor"][:10])),
             "category": r["category"], "what": WHAT.get(r["category"], r["category"]),
             "monthly": monthly,
-            "next": rt.next_after(r, today).isoformat(),
+            "next": nxt.isoformat() if nxt else None,
             "count": len(rows), "last": rows[0].date[:10] if rows else None,
             "transactions": [{"id": t.fingerprint, "date": t.date[:10], "amount": round(t.amount, 2)}
                              for t in rows[:12]],
