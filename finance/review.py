@@ -360,6 +360,14 @@ def for_store(st, today: str | None = None) -> dict:
     # made before that rule claimed them aren't asked "Who put this in?".
     from .pay_rules import claim_waiting
     claim_waiting(st, txns)
+    # Bonuses measured per payer (2026-10-29): kinds saved before then are
+    # worked out again, once, so paycheques guessed as bonuses stop being
+    # asked about without waiting for new transactions.
+    if st.setting("income_kinds_by_payer") != "1":
+        from .income import apply_income_types
+        if apply_income_types(st, txns):
+            txns = st.all_transactions()
+        st.set_setting("income_kinds_by_payer", "1")
     return build(txns, today=today, dismissed=st.dismissed_reviews(),
                  splits=st.splits(), payer=st.payback_people(), found_on=found_on,
                  skipped=st.skipped_reviews(), recurring=st.recurring_transfers(), me=_me())

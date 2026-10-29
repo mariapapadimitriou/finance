@@ -189,3 +189,22 @@ def test_two_jobs_both_count():
              category="Income") for i in range(8)]
     found = income.cadence(a + b, today="2026-09-30")
     assert {a[0].date, b[0].date} <= set(found["paydays"])
+
+
+def test_kinds_saved_before_are_worked_out_again_once(tmp_path):
+    """Paycheques saved as bonuses before 2026-10-29 stop being asked about
+    on the next look at Needs a look, with no new transactions."""
+    from app import create_app
+    from finance.review import for_store
+    st = create_app(str(tmp_path / "once.db")).config["STORE"]
+    pay, side = _semimonthly_with_claims()
+    today = date.today()
+    for i, t in enumerate(pay + side):                # recent enough to be asked
+        t.date = (today - timedelta(days=90 - 6 * i)).isoformat()
+    ingest(st, IngestResult(transactions=pay + side, account_id="chq"))
+    paid = [t for t in st.all_transactions() if t.description.startswith("Wealthsimple")]
+    st.write_income_types({t.fingerprint: "bonus" for t in paid})     # as saved before
+    st.set_setting("income_kinds_by_payer", "")
+    asked = {it["txn"]["id"] for it in for_store(st)["income_type"]}
+    assert not asked & {t.fingerprint for t in paid}
+    assert st.setting("income_kinds_by_payer") == "1"
