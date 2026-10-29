@@ -242,10 +242,16 @@ export function StartedOver({ syncing = false, imported = null, needsLook = null
         <section className="dt-result" aria-label="What came back">
           <h2 className="pk-h2">{back}</h2>
           <p>{sorted}</p>
+          <p>Your income and bills start over too. Pearl has found them again for you to confirm.</p>
         </section>
       )}
       <div className="pf-actions">
         <PButton disabled={syncing} onClick={onSort}>Start sorting</PButton>
+        {/* Income and bills start over too (2026-10-29): Pearl finds them
+            again, for her to confirm. */}
+        <PButton variant="secondary" disabled={syncing} onClick={() => onTab?.('income')}>
+          Confirm your income and bills
+        </PButton>
         <PButton variant="text" disabled={syncing} onClick={onHome}>Go to Home</PButton>
       </div>
     </div>
