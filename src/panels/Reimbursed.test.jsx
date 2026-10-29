@@ -7,7 +7,7 @@ const inn = { key: 'in:p', kind: 'money_in', txn: { id: 'p', date: '2026-10-26',
 
 describe('A work expense already reimbursed', () => {
   it('asks "Has it been reimbursed yet?" with the deposits that came', () => {
-    const cases = { cases: [{ key: 'work', label: 'A work expense, to be reimbursed', group: 'not_mine',
+    const cases = { cases: [{ key: 'work', label: 'To be reimbursed', group: 'not_mine',
       needs: 'reimbursed', candidates: [{ id: 'p', merchant: 'Acme Corp Expenses', date: '2026-10-26', amount: 160, left: 160 }] }] };
     const { S } = steps(out, cases, 'all');
     expect(S.reimbursed.title).toBe('Has it been reimbursed yet?');
@@ -16,7 +16,7 @@ describe('A work expense already reimbursed', () => {
   });
 
   it('with no deposit yet, there is no such step', () => {
-    const cases = { cases: [{ key: 'work', label: 'A work expense, to be reimbursed', group: 'not_mine', needs: null }] };
+    const cases = { cases: [{ key: 'work', label: 'To be reimbursed', group: 'not_mine', needs: null }] };
     expect(steps(out, cases, 'all').S.reimbursed).toBeUndefined();
   });
 });

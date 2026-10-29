@@ -189,7 +189,7 @@ def test_cases_come_grouped_with_pearls_best_guess_on_top(client):
     by = {c["key"]: c for c in d["cases"]}
     assert by["saved"]["label"] == "Put into savings" and by["saved"]["group"] == "not_spending"
     assert by["bill"]["label"] == "A bill"
-    assert by["work"]["label"] == "A work expense, to be reimbursed"
+    assert by["work"]["label"] == "To be reimbursed"
     assert "saved_part" not in by                    # kept off the sheet
     d = client.get(f"/api/transactions/{ids['E-TRANSFER FROM SAM']}/cases").get_json()
     assert d["best"] == "pay"

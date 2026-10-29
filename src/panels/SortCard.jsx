@@ -136,7 +136,7 @@ export const DEFAULT_CASES = {
     { key: 'saved', label: 'Put into savings', group: 'not_spending', needs: null, effect: 'Adds to your total saved. It isn’t spending.', remember: 'destination' },
     { key: 'lent', label: 'Lent to someone', group: 'not_spending', needs: null, effect: 'Not counted as spending. Pearl watches for it coming back.', remember: 'merchant' },
     { key: 'paying_back', label: 'Paying back money I borrowed', group: 'not_spending', needs: 'borrowed', effect: 'Paying back a loan, so it isn’t counted as spending.', remember: null },
-    { key: 'work', label: 'A work expense, to be reimbursed', group: 'not_mine', needs: null, effect: 'Left out of your spending until the money comes back.', remember: null },
+    { key: 'work', label: 'To be reimbursed', group: 'not_mine', needs: null, effect: 'Left out of your spending until the money comes back.', remember: null },
     { key: 'not_mine', label: 'Not mine', group: 'not_mine', needs: 'reason', effect: 'Left out of all your numbers.', remember: 'exclusion' },
   ],
   in: [
@@ -144,7 +144,7 @@ export const DEFAULT_CASES = {
     { key: 'regular_pay', label: 'This is my regular pay', group: 'income', needs: null, effect: 'Pearl uses it for your monthly income from now on.', remember: 'payer' },
     { key: 'payback', label: 'Someone paying me back', group: 'not_income', needs: 'candidates', effect: 'Comes off what you spent for them. Never income.', remember: null },
     { key: 'refund', label: 'A refund', group: 'not_income', needs: 'refund', effect: 'Links to the purchase and comes off its category.', remember: null },
-    { key: 'reimbursement', label: 'A reimbursement', group: 'not_income', needs: 'candidates', effect: 'Pays back a work expense. Both leave your numbers.', remember: null },
+    { key: 'reimbursement', label: 'A reimbursement', group: 'not_income', needs: 'candidates', effect: 'Pays back something you spent. Both leave your numbers.', remember: null },
     { key: 'own', label: 'From my own account', group: 'not_income', needs: null, effect: 'Your own money moving, so it isn’t counted as income.', remember: 'destination' },
     { key: 'cash', label: 'A cash deposit', group: 'not_income', needs: null, effect: 'Cash you put in, so it isn’t counted as income.', remember: null },
     { key: 'out_of_savings', label: 'Taken out of my savings', group: 'not_income', needs: null, effect: 'Comes off your total saved. It isn’t income.', remember: 'destination' },
@@ -166,7 +166,7 @@ function withDefaults(it, cases) {
 // The short line each case folds into once answered.
 export const DONE = {
   spending: 'Spending', bill: 'A bill', shared: 'Split with others', moved: 'Moved between my accounts',
-  saved: 'Saved', lent: 'Lent', paying_back: 'Paying someone back', work: 'A work expense',
+  saved: 'Saved', lent: 'Lent', paying_back: 'Paying someone back', work: 'To be reimbursed',
   not_mine: 'Not mine', saved_part: 'Part put away',
   pay: 'Income', regular_pay: 'My regular pay', payback: 'Paying me back', refund: 'A refund',
   reimbursement: 'A reimbursement', own: 'My own money', cash: 'A cash deposit', out_of_savings: 'Out of savings',
@@ -219,7 +219,7 @@ const FOLDS = {
       lent: ['I lent it to someone', 'Pearl watches for it coming back.'],
       paying_back: ['I’m paying back a loan', 'Not spending.'] } },
     { id: 'not', label: 'Not mine', icon: 'ban', title: 'Whose was it?', keys: {
-      work: ['A work expense', 'Left out until it’s reimbursed.'],
+      work: ['I’ll be reimbursed', 'Left out until the money comes back.'],
       not_mine: ['Not mine at all', 'Left out of all your numbers.'] } },
   ],
   in: [
@@ -709,7 +709,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       const effect = s.key === 'payback'
         ? paybackEffect(cand, who, part ? txAmount(part) : amt, part ? txAmount(whole - part) : '')
           : s.key === 'refund' ? `Comes off ${cand?.category || ''}. Not income.`
-            : 'Pays back a work expense. Not income.';
+            : 'Pays back something you spent. Not income.';
       return finish(answers, effect, async () => {
         if (typed) await setParty(it.txn.id, typed).catch(() => {});
         return via({ case: s.key, charge: v, ...(who ? { person: who } : {}), ...(part ? { amount: part } : {}) }, 'Sorted.');

@@ -30,7 +30,7 @@ const OUT = {
       effect: 'Moved to one of your savings accounts.', remember: 'destination',
       remember_label: 'Do this for every transfer to ••3333 from now on' },
     { key: 'shared', label: 'Paid for a group', group: 'spending', needs: 'split', effect: 'Only your share counts.', remember: null },
-    { key: 'work', label: 'A work expense, to be reimbursed', group: 'not_mine', needs: null,
+    { key: 'work', label: 'To be reimbursed', group: 'not_mine', needs: null,
       effect: 'Left out of your spending until the money comes back.', remember: null },
   ],
   accounts: [{ id: 'inv1', label: 'My RRSP', kind: 'investment', source: 'linked', anchor: false, sub: 'Investment' },
@@ -81,7 +81,7 @@ describe('What was this? (2026-10-14)', () => {
     calm(out);
     for (const s of ['Pilot', 'Wednesday, October 7 · TD Chequing ••4417', '-$500.00', 'Pearl’s best guess',
       'A purchase', 'Counts as spending in a category you pick.', 'Spending', 'Not spending',
-      'Not mine to count', 'Put into savings', 'A work expense, to be reimbursed']) {
+      'Not mine to count', 'Put into savings', 'To be reimbursed']) {
       expect(out).toContain(s);
     }
     expect(out).not.toContain('What was it for?');              // that's step 2
@@ -129,7 +129,7 @@ describe('the selection, answered at once', () => {
     calm(out);
     expect(out).toContain('What were these?');
     expect(out).toContain('The same answer for all 3. Nothing becomes a rule.');
-    expect(out).toContain('A work expense, to be reimbursed');   // the server's words, as everywhere
+    expect(out).toContain('To be reimbursed');   // the server's words, as everywhere
     expect(out).toContain('nl-pill nl-undo');
     expect(out).not.toContain('>Mark 3<');                         // tapping the last answer saves
   });

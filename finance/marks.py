@@ -30,7 +30,16 @@ from .categorize import CATEGORIES, NON_SPEND, group_of
 from .income import KINDS as INCOME_KINDS
 from .models import Transaction
 
-WORK_REASON = "Work expense · waiting to be reimbursed"
+WORK_REASON = "Waiting to be reimbursed"
+# What it said before 2026-10-29, still on expenses she marked then.
+OLD_WORK_PREFIX = "work expense"
+
+
+def waiting_reimbursed(reason: str | None) -> bool:
+    """Left out until it's reimbursed: work or not (2026-10-29), and the
+    older "Work expense · waiting to be reimbursed" too."""
+    r = (reason or "").lower()
+    return r.startswith(WORK_REASON.lower()) or r.startswith(OLD_WORK_PREFIX)
 NOT_MINE = "Not mine"
 REIMBURSEMENT = "reimbursement"
 # How far back a refund or a reimbursement looks for the purchase it is of.
@@ -61,7 +70,7 @@ OUT_CASES = (
      "effect": "Not counted as spending. Pearl watches for it coming back.", "remember": "merchant"},
     {"key": "paying_back", "label": "Paying back money I borrowed", "group": "not_spending",
      "needs": "borrowed", "effect": "Paying back a loan, so it isn’t counted as spending.", "remember": None},
-    {"key": "work", "label": "A work expense, to be reimbursed", "group": "not_mine", "needs": None,
+    {"key": "work", "label": "To be reimbursed", "group": "not_mine", "needs": None,
      "effect": "Left out of your spending until the money comes back.", "remember": None},
     {"key": "not_mine", "label": "Not mine", "group": "not_mine", "needs": "reason",
      "effect": "Left out of all your numbers.", "remember": "exclusion"},
@@ -81,7 +90,7 @@ IN_CASES = (
     {"key": "refund", "label": "A refund", "group": "not_income", "needs": "refund",
      "effect": "Links to the purchase and comes off its category.", "remember": None},
     {"key": "reimbursement", "label": "A reimbursement", "group": "not_income",
-     "needs": "candidates", "effect": "Pays back a work expense. Both leave your numbers.", "remember": None},
+     "needs": "candidates", "effect": "Pays back something you spent. Both leave your numbers.", "remember": None},
     {"key": "own", "label": "From my own account", "group": "not_income", "needs": None,
      "effect": "Your own money moving, so it isn’t counted as income.", "remember": "destination"},
     {"key": "cash", "label": "A cash deposit", "group": "not_income", "needs": None,
@@ -211,7 +220,7 @@ def reimbursement_candidates(inflow: Transaction, txns: list[Transaction],
         gap = _days(inflow.date, c.date)
         if gap < -3 or gap > REFUND_DAYS:
             continue
-        work = (c.excluded or "").lower().startswith("work expense")
+        work = waiting_reimbursed(c.excluded)
         left = round(c.amount - (c.paid_back or 0.0) + inflow.part_for(c.fingerprint), 2)
         if left <= 0.005:
             continue
@@ -394,7 +403,7 @@ def current_case(t: Transaction, store_refunds: dict[str, str],
     """The case a row answers now, from what's recorded on it."""
     cat = t.category or "Other"
     if t.excluded:
-        if (t.excluded or "").lower().startswith("work expense"):
+        if waiting_reimbursed(t.excluded):
             return "work"
         return "not_mine" if t.excluded != "Possible duplicate" else None
     if t.amount > 0:
@@ -876,7 +885,7 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
                 marks.setdefault("exclusions", {})[charge.fingerprint] = charge.excluded
                 store.include(charge.fingerprint)
         else:
-            if (charge.excluded or "") != WORK_REASON:
+            if not waiting_reimbursed(charge.excluded):
                 marks.setdefault("exclusions", {})[charge.fingerprint] = charge.excluded
                 store.exclude(charge.fingerprint, WORK_REASON)
             title = f"Part of {charge.merchant} reimbursed."
@@ -1174,7 +1183,7 @@ def _reimbursed_by(store, charge: Transaction, inflow_ids, marks: dict) -> tuple
             store.include(charge.fingerprint)
         detail = "Both are out of your numbers." if len(linked) == 1 else "They’re all out of your numbers."
     else:
-        if (charge.excluded or "") != WORK_REASON:
+        if not waiting_reimbursed(charge.excluded):
             marks.setdefault("exclusions", {})[charge.fingerprint] = charge.excluded
             store.exclude(charge.fingerprint, WORK_REASON)
         detail = (f"${used:,.2f} of it was reimbursed; the other ${left:,.2f} stays left out "
