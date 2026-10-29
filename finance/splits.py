@@ -125,7 +125,8 @@ def your_part(charge: Transaction, people: list[dict]) -> float:
 
 
 def _linked(charge_id: str, transactions: list[Transaction]) -> list[Transaction]:
-    return sorted((t for t in transactions if t.repays == charge_id), key=lambda t: t.date)
+    # A payback can cover several purchases (2026-10-28).
+    return sorted((t for t in transactions if charge_id in t.repays_all), key=lambda t: t.date)
 
 
 def people_status(charge: Transaction, split: dict, transactions: list[Transaction],
@@ -151,13 +152,13 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
         if who is None:
             unnamed.append(t)
             continue
-        paid[who] = round(paid[who] + t.paid_part, 2)
+        paid[who] = round(paid[who] + t.part_for(charge.fingerprint), 2)
         when[who] = t.date[:10]
     # A payback nobody's name is on (a bank that leaves the sender off, or
     # one linked from search) still counts (2026-10-24): to whoever owes
     # exactly that much, else the first who still owes anything.
     for t in unnamed:
-        got = t.paid_part
+        got = t.part_for(charge.fingerprint)
         owing = [n for n in names if part[n] - paid[n] >= 0.005]
         if not owing:
             continue
@@ -239,7 +240,8 @@ def brief(r: dict, exact: bool = False) -> dict:
 MADE_SPLIT = "made_split"
 
 
-def add_payer(store, charge: Transaction, inflow: Transaction, person: str | None):
+def add_payer(store, charge: Transaction, inflow: Transaction, person: str | None,
+              got: float | None = None):
     """Put the sender into the charge's split for what they sent, if they
     aren't in it already. Returns what to put back for an Undo
     ({"split", "share"}), or None when nothing changed: no name, a joint
@@ -252,7 +254,9 @@ def add_payer(store, charge: Transaction, inflow: Transaction, person: str | Non
     if current is None and charge.share_set:
         return None
     people = list(current["people"]) if current else []
-    got = inflow.paid_part
+    # What this payback put toward this purchase: all of it, or its part of
+    # a payback that covered several (2026-10-28).
+    got = inflow.part_for(charge.fingerprint) if got is None else got
     at = next((i for i, p in enumerate(people) if same_person(p["name"], person)), None)
     if at is not None:
         # Someone paying back in more than one e-Transfer (2026-10-26): if
@@ -289,25 +293,32 @@ def _made_by_paybacks(store, charge: Transaction, name: str, inflow: Transaction
     theirs (add_payer), not set by her."""
     kinds = store.payback_kinds()
     payer = store.payback_people()
-    return any(t.repays == charge.fingerprint and t.fingerprint != inflow.fingerprint
+    return any(charge.fingerprint in t.repays_all and t.fingerprint != inflow.fingerprint
                and kinds.get(t.fingerprint) == MADE_SPLIT
                and same_person(payer.get(t.fingerprint) or "", name)
                for t in store.all_transactions())
 
 
-def drop_payer(store, inflow: Transaction):
+def drop_payer(store, inflow: Transaction, charge_id: str | None = None,
+               checked: bool = False):
     """Undo `add_payer` when the payback is unlinked or moved: its person
     leaves the split and their part is hers again; a split left with nobody
-    goes. Returns what to put back for an Undo, or None."""
-    if not inflow.repays or store.payback_kinds().get(inflow.fingerprint) != MADE_SPLIT:
+    goes. Returns what to put back for an Undo, or None. `charge_id` is one
+    of the purchases it covers (the first, unless said); `checked` is for
+    `drop_payer_all`, which has already looked."""
+    cid = charge_id or inflow.repays
+    if not cid:
         return None
-    charge = store.get_transaction(inflow.repays)
-    current = store.splits().get(inflow.repays)
-    store.set_payback_kind(inflow.fingerprint, None)
+    if not checked:
+        if store.payback_kinds().get(inflow.fingerprint) != MADE_SPLIT:
+            return None
+        store.set_payback_kind(inflow.fingerprint, None)
+    charge = store.get_transaction(cid)
+    current = store.splits().get(cid)
     if charge is None or current is None:
         return None
     person = store.payback_people().get(inflow.fingerprint)
-    got = inflow.paid_part
+    got = inflow.part_for(cid)
     idx = next((i for i, p in enumerate(current["people"])
                 if p["name"] == person and p["amount"] - got > -0.01), None)
     if idx is None:
@@ -326,3 +337,17 @@ def drop_payer(store, inflow: Transaction):
         store.clear_split(charge.fingerprint)
         store.set_share(charge.fingerprint, None)
     return was
+
+
+def drop_payer_all(store, inflow: Transaction) -> dict[str, dict]:
+    """`drop_payer` for every purchase a payback covers (2026-10-28).
+    Returns {charge id: what to put back}."""
+    if not inflow.repays or store.payback_kinds().get(inflow.fingerprint) != MADE_SPLIT:
+        return {}
+    store.set_payback_kind(inflow.fingerprint, None)
+    out = {}
+    for cid in inflow.repays_all:
+        was = drop_payer(store, inflow, cid, checked=True)
+        if was is not None:
+            out[cid] = was
+    return out

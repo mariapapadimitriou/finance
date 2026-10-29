@@ -89,6 +89,23 @@ def _name(t: Transaction | None, ctx: "Context") -> str:
     return ctx.names.get(_key(t.merchant)) or t.merchant or t.description
 
 
+def _paid_for(t: Transaction, ctx) -> str:
+    """What a payback paid for: "GoodLife Fitness", or for one that covered
+    several purchases (2026-10-28) "3 GoodLife Fitness purchases" or
+    "Sushi Nami and Cineplex"."""
+    charges = [c for c in (ctx.by_id.get(i) for i in t.repays_all) if c is not None]
+    if not charges:
+        return ""
+    names = list(dict.fromkeys(_name(c, ctx) for c in charges))
+    if len(charges) == 1:
+        return names[0]
+    if len(names) == 1:
+        return f"{len(charges)} {names[0]} purchases"
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return f"{len(charges)} purchases"
+
+
 def _recurring_id(t: Transaction, ctx) -> str | None:
     if not getattr(ctx, "recurring", None) or t.amount <= 0 or t.category_source != "destination" \
             and t.category != "Transfers":
@@ -168,10 +185,10 @@ class Context:
         self.twins = {t.duplicate_of for t in transactions if _waiting(t)}
         self.paid_by: dict[str, list[str]] = defaultdict(list)
         for t in transactions:
-            if t.repays:
+            for cid in t.repays_all:
                 name = _who(t)
-                if name and name not in self.paid_by[t.repays]:
-                    self.paid_by[t.repays].append(name)
+                if name and name not in self.paid_by[cid]:
+                    self.paid_by[cid].append(name)
 
 
 def _waiting(t: Transaction) -> bool:
@@ -232,11 +249,12 @@ def describe(t: Transaction, ctx: Context) -> dict:
     elif t.repays:
         charge = ctx.by_id.get(t.repays)
         chip, structural, group = "Repayment", True, "transfer"
-        note = (f"Paid back to me · for {_name(charge, ctx)} · comes off your spending" if charge
+        what = _paid_for(t, ctx)
+        note = (f"Paid back to me · for {what} · comes off your spending" if what
                 else "Paid back to me · comes off your spending")
         if t.unlinked_part > 0.005:
             # Part of it (2026-10-26).
-            note = (f"${t.paid_part:,.2f} paid back for {_name(charge, ctx) if charge else 'a purchase'}"
+            note = (f"${t.paid_part:,.2f} paid back for {what or 'a purchase'}"
                     f" · ${t.unlinked_part:,.2f} money in")
     elif cat == "Unsorted transfers":
         chip, counts = "Not sorted yet", "spending"

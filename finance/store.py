@@ -269,6 +269,17 @@ CREATE TABLE IF NOT EXISTS txn_paybacks (
 );
 CREATE INDEX IF NOT EXISTS idx_payback_charge ON txn_paybacks(charge_id);
 
+-- One payback for several purchases (2026-10-28): a lump sum from her sister
+-- for months of gym. The first purchase stays in txn_paybacks; the others
+-- are here, each with how much of the inflow went to it.
+CREATE TABLE IF NOT EXISTS txn_payback_more (
+    inflow_id TEXT NOT NULL,
+    charge_id TEXT NOT NULL,
+    amount    REAL NOT NULL,
+    PRIMARY KEY (inflow_id, charge_id)
+);
+CREATE INDEX IF NOT EXISTS idx_payback_more_charge ON txn_payback_more(charge_id);
+
 -- Rows you left out, and why. A row is either excluded on its own (rule_id
 -- NULL) or because a rule of yours matched it. `kept` = 1 is a row a rule
 -- matched that you put back: it stays here so the rule never takes it again.
@@ -1130,6 +1141,21 @@ class Store:
                     d["refunded"] = back[d["id"]]
                 if d.get("id") in of:
                     d["refund_of"] = of[d["id"]]
+            # One payback, several purchases (2026-10-28): each purchase after
+            # the first is paid back by its part, and the payback knows them.
+            with self.conn() as c:
+                more = c.execute("SELECT inflow_id, charge_id, amount FROM txn_payback_more").fetchall()
+            if more:
+                extra: dict[str, float] = {}
+                also: dict[str, dict[str, float]] = {}
+                for m in more:
+                    extra[m["charge_id"]] = extra.get(m["charge_id"], 0.0) + float(m["amount"])
+                    also.setdefault(m["inflow_id"], {})[m["charge_id"]] = float(m["amount"])
+                for d in dicts:
+                    if d.get("id") in extra:
+                        d["paid_back"] = float(d.get("paid_back") or 0.0) + extra[d["id"]]
+                    if d.get("id") in also:
+                        d["also_repays"] = also[d["id"]]
         return [Transaction.from_row(d) for d in dicts]
     def delete_transaction(self, txn_id: str) -> bool:
         with self.conn() as c:
@@ -1139,6 +1165,8 @@ class Store:
             c.execute("DELETE FROM txn_party WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_invested WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_paybacks WHERE inflow_id = ? OR charge_id = ?",
+                      (txn_id, txn_id))
+            c.execute("DELETE FROM txn_payback_more WHERE inflow_id = ? OR charge_id = ?",
                       (txn_id, txn_id))
             c.execute("DELETE FROM txn_exclusions WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_income_type WHERE txn_id = ?", (txn_id,))
@@ -1373,6 +1401,7 @@ class Store:
         much of it paid the charge back; None is all of it."""
         with self.conn() as c:
             c.execute("DELETE FROM txn_paybacks WHERE inflow_id = ?", (inflow_id,))
+            c.execute("DELETE FROM txn_payback_more WHERE inflow_id = ?", (inflow_id,))
             c.execute("DELETE FROM txn_payback_person WHERE inflow_id = ?", (inflow_id,))
             c.execute("INSERT INTO txn_paybacks (inflow_id, charge_id, amount) VALUES (?, ?, ?)",
                       (inflow_id, charge_id, None if amount is None else round(float(amount), 2)))
@@ -1384,9 +1413,25 @@ class Store:
         with self.conn() as c:
             c.execute("DELETE FROM txn_payback_person WHERE inflow_id = ?", (inflow_id,))
             c.execute("DELETE FROM txn_payback_kind WHERE inflow_id = ?", (inflow_id,))
+            c.execute("DELETE FROM txn_payback_more WHERE inflow_id = ?", (inflow_id,))
             cur = c.execute("DELETE FROM txn_paybacks WHERE inflow_id = ?",
                             (inflow_id,))
             return (cur.rowcount or 0) > 0
+
+    def set_payback_more(self, inflow_id: str, parts: list[tuple[str, float]]) -> None:
+        """The purchases after the first one a payback covers (2026-10-28),
+        each with how much of it went there."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_payback_more WHERE inflow_id = ?", (inflow_id,))
+            for charge_id, amount in parts:
+                c.execute("INSERT INTO txn_payback_more (inflow_id, charge_id, amount) "
+                          "VALUES (?, ?, ?)", (inflow_id, charge_id, round(float(amount), 2)))
+
+    def payback_more(self, inflow_id: str) -> list[tuple[str, float]]:
+        with self.conn() as c:
+            rows = c.execute("SELECT charge_id, amount FROM txn_payback_more WHERE inflow_id = ? "
+                             "ORDER BY charge_id", (inflow_id,)).fetchall()
+        return [(r["charge_id"], float(r["amount"])) for r in rows]
 
     def payback_people(self) -> dict[str, str]:
         """inflow id → the person in a split it came from, where you said."""
@@ -1620,8 +1665,9 @@ class Store:
     def paybacks_for(self, charge_id: str) -> list[str]:
         """The inflows linked to a charge, as ids."""
         with self.conn() as c:
-            rows = c.execute("SELECT inflow_id FROM txn_paybacks WHERE charge_id = ?",
-                             (charge_id,)).fetchall()
+            rows = c.execute("SELECT inflow_id FROM txn_paybacks WHERE charge_id = ? "
+                             "UNION SELECT inflow_id FROM txn_payback_more WHERE charge_id = ?",
+                             (charge_id, charge_id)).fetchall()
         return [r["inflow_id"] for r in rows]
 
     def set_categories(self, changes: dict[str, tuple[str, str]]) -> int:
@@ -1714,6 +1760,8 @@ class Store:
                 c.execute(f"DELETE FROM txn_payback_kind WHERE inflow_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_paybacks WHERE inflow_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_paybacks WHERE charge_id IN ({marks})", chunk)
+                c.execute(f"DELETE FROM txn_payback_more WHERE inflow_id IN ({marks})", chunk)
+                c.execute(f"DELETE FROM txn_payback_more WHERE charge_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_refunds WHERE inflow_id IN ({marks})", chunk)
                 c.execute(f"DELETE FROM txn_refunds WHERE charge_id IN ({marks})", chunk)
             if import_suffix:
@@ -1850,6 +1898,11 @@ class Store:
                     else:
                         c.execute(f"UPDATE {table} SET {col} = ? WHERE {col} = ?", (new, old))
                 c.execute("UPDATE txn_paybacks SET charge_id = ? WHERE charge_id = ?", (new, old))
+                for col in ("inflow_id", "charge_id"):
+                    other = "charge_id" if col == "inflow_id" else "inflow_id"
+                    c.execute(f"DELETE FROM txn_payback_more WHERE {col} = ? AND {other} IN "
+                              f"(SELECT {other} FROM txn_payback_more WHERE {col} = ?)", (old, new))
+                    c.execute(f"UPDATE txn_payback_more SET {col} = ? WHERE {col} = ?", (new, old))
             # A "same purchase?" question between the two copies is answered
             # by the merge itself: both sides are now one row. Left in, it
             # would ask whether a row is a copy of itself, and hide it.
@@ -1898,6 +1951,7 @@ class Store:
             ("txn_shares", "your shares of split charges"),
             ("txn_invested", "amounts marked as invested"),
             ("txn_paybacks", "money friends paid back"),
+            ("txn_payback_more", "money friends paid back"),
             ("txn_payback_person", "who paid you back"),
             ("txn_splits", "split charges"),
             ("txn_split_people", "people in split charges"),
@@ -1961,6 +2015,7 @@ class Store:
         ("imports", "import history"),
         *((tbl, "answers about transactions") for tbl in _ROW_TABLES),
         ("txn_paybacks", "money friends paid back"),
+        ("txn_payback_more", "money friends paid back"),
         ("txn_payback_person", "who paid you back"),
         ("txn_payback_kind", "reimbursements"),
         ("txn_refunds", "refunds"),

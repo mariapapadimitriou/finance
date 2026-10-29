@@ -83,6 +83,21 @@ export function paidPartOf(typed, whole) {
   return n;
 }
 
+/** One payback, several purchases (2026-10-28): each purchase picked takes
+ * what's still unpaid on it, up to what's left of the money, in the order
+ * picked. `left` is what's unpaid on a purchase (its `amount` when unsaid). */
+export function allocatePicks(budget, picks) {
+  let rest = Math.round(budget * 100) / 100;
+  const rows = picks.map((c) => {
+    const room = Math.max(0, Math.round(Number(c.left ?? c.amount) * 100) / 100);
+    const use = Math.round(Math.min(room, Math.max(rest, 0)) * 100) / 100;
+    rest = Math.round((rest - use) * 100) / 100;
+    return { ...c, use };
+  });
+  const used = Math.round(rows.reduce((n, r) => n + r.use, 0) * 100) / 100;
+  return { rows, used, left: Math.max(0, Math.round((budget - used) * 100) / 100) };
+}
+
 const isOut = (it) => (it.txn?.amount ?? 0) > 0;
 
 // What the server says about each transaction's answers, kept for the visit
@@ -491,6 +506,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   const [find, setFind] = useState('');
   // Paid back: how much of it, all of it to start (2026-10-26).
   const [paidPart, setPaidPart] = useState(() => Math.abs(it.txn?.amount ?? 0).toFixed(2));
+  // The purchases picked for a payback, in the order picked (2026-10-28).
+  const [picks, setPicks] = useState([]);
   const [found, setFound] = useState(null);
   // Remember is asked on the last card, after the answer (2026-10-23),
   // unticked: a rule is hers to choose, never a default. The saving call
@@ -521,6 +538,8 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     }, find ? 200 : 0);
     return () => { live = false; clearTimeout(t); };
   }, [it.txn.id, find, picking]);
+  // A new card or step starts with nothing picked (2026-10-28).
+  useEffect(() => { setPicks([]); }, [it.txn.id, stepIdNow]);
   const stepId = path.length ? nextOf(flow, path[path.length - 1]) : flow.start;
   const step = flow.S[stepId];
   const total = path.length + (step?.left ?? 1);
@@ -623,6 +642,23 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       const effect = ch?.who === 'me' ? 'A transfer, not income.'
         : `Covers ${ch?.label}’s share of joint spending. Your spending goes down by ${amt}.`;
       return finish(answers, effect, () => plain(() => setJointFrom(it.txn.id, ch.who, rem(), ch.person), 'Sorted.'), true);
+    }
+    if (s.ask === 'pick' && s.key === 'payback' && Array.isArray(v)) {   // several purchases
+      const typed = (answered('name') || '').trim();
+      const who = v[0]?.person || typed || it.from || nameIn(it.txn.merchant);
+      const whole = Math.abs(it.txn.amount);
+      const part = paidPartOf(paidPart, whole);
+      const { rows, used } = allocatePicks(part ?? whole, v);
+      const names = [...new Set(rows.map((r) => r.merchant))];
+      const effect = `Comes off what you spent on ${rows.length} purchases${names.length === 1 ? ` at ${names[0]}` : ''}. Not income.`
+        + (whole - used > 0.005 ? ` The other ${txAmount(whole - used)} counts as money in.` : '');
+      const answersMany = [...path, { step: stepId, v: rows.map((r) => r.id).join(','),
+                                              label: `${rows.length} purchases · ${txAmount(used)}` }];
+      return finish(answersMany, effect, async () => {
+        if (typed) await setParty(it.txn.id, typed).catch(() => {});
+        return via({ case: 'payback', charges: rows.map((r) => ({ id: r.id, amount: r.use })),
+                     ...(who ? { person: who } : {}), ...(part ? { amount: part } : {}) }, 'Sorted.');
+      });
     }
     if (s.ask === 'pick') {
       const cand = s.candidates.find((x) => x.id === v) ?? (found ?? []).find((x) => x.id === v);
@@ -906,15 +942,41 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
             const seen = new Set(step.candidates.map((c) => c.id));
             const more = (found ?? []).filter((c) => !seen.has(c.id) || find);
             const shown = find ? (found ?? []) : step.candidates;
-            const rowFor = (c, extra) => (
-              <Choice key={`${c.id}|${c.person || ''}`} name={group} checked={false} disabled={busy}
-                      onChange={() => saveAsk(step, c.id, `${c.merchant} · ${shortDate(c.date)}`)}
-                      label={`${c.merchant} · ${shortDate(c.date)}`}
-                      description={[txAmount(c.amount, { signed: true }), c.category,
-                        c.person ? `${c.person}’s share` : null,
-                        c.paid_back ? `${txAmount(c.paid_back)} paid back so far` : null,
-                        c.memo ? 'what their message names' : null, extra].filter(Boolean).join(' · ')} />
-            );
+            // A payback can cover several purchases (2026-10-28): pick them
+            // one by one; each takes what's unpaid on it, and once the money
+            // is used up nothing else can be picked.
+            const many = step.key === 'payback';
+            const whole = Math.abs(it.txn.amount);
+            const budget = paidPartOf(paidPart, whole) ?? whole;
+            const alloc = allocatePicks(budget, picks);
+            const keyOf = (c) => `${c.id}|${c.person || ''}`;
+            const pickedRow = (c) => alloc.rows.find((r) => keyOf(r) === keyOf(c));
+            const roomOf = (c) => Number(c.left ?? c.amount);
+            const toggle = (c) => {
+              if (pickedRow(c)) { setPicks(picks.filter((p) => keyOf(p) !== keyOf(c))); return; }
+              // One purchase that takes all of it links straight away, as before.
+              if (!picks.length && roomOf(c) >= budget - 0.005) {
+                saveAsk(step, c.id, `${c.merchant} · ${shortDate(c.date)}`);
+                return;
+              }
+              setPicks([...picks.filter((p) => p.id !== c.id), c]);
+            };
+            const rowFor = (c, extra) => {
+              const on = many ? pickedRow(c) : null;
+              const paidUp = many && roomOf(c) <= 0.005;
+              const full = many && !on && alloc.left <= 0.005 && picks.length > 0;
+              return (
+                <Choice key={keyOf(c)} type={many ? 'checkbox' : 'radio'} name={group} checked={!!on}
+                        disabled={busy || paidUp || full}
+                        onChange={() => (many ? toggle(c) : saveAsk(step, c.id, `${c.merchant} · ${shortDate(c.date)}`))}
+                        label={`${c.merchant} · ${shortDate(c.date)}`}
+                        description={[txAmount(c.amount, { signed: true }), c.category,
+                          c.person ? `${c.person}’s share` : null,
+                          paidUp ? 'already paid back' : c.paid_back ? `${txAmount(c.paid_back)} paid back so far` : null,
+                          on ? `${txAmount(on.use)} of this payback` : null,
+                          c.memo ? 'what their message names' : null, extra].filter(Boolean).join(' · ')} />
+              );
+            };
             return (
               <>
                 {step.key === 'payback' && (
@@ -949,6 +1011,22 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
                   )}
                   {find && found && !found.length && (
                     <p className="pk-muted">Nothing called “{find}” in the last six months of spending.</p>
+                  )}
+                  {many && picks.length > 0 && (
+                    <div className="nl-picked" role="status">
+                      <p className="nl-picked-total">
+                        <strong>{`${txAmount(alloc.used)} of ${txAmount(budget)}`}</strong>
+                        {` · ${alloc.rows.length} ${alloc.rows.length === 1 ? 'purchase' : 'purchases'}`}
+                      </p>
+                      <p className="pk-label pk-muted">
+                        {alloc.left > 0.005
+                          ? `${txAmount(alloc.left)} left. Pick another, or link these and the rest counts as money in.`
+                          : 'All of it is used. Untick one to pick a different purchase.'}
+                      </p>
+                      <PButton disabled={busy} onClick={() => saveAsk(step, alloc.rows, `${alloc.rows.length} purchases`)}>
+                        {`Link ${alloc.rows.length === 1 ? 'this purchase' : `these ${alloc.rows.length} purchases`}`}
+                      </PButton>
+                    </div>
                   )}
                   {!find && found && !found.length && !step.candidates.length && (
                     <p className="pk-muted">No spending in the last six months to link it to.</p>
