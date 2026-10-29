@@ -82,18 +82,36 @@ def payer_of(t: Transaction) -> str:
 SIDE_PAYOUT_SHARE = 0.25
 
 
-def _main_pay(rows: list[Transaction]) -> list[Transaction]:
+# How many deposits make a payer regular: one or two can be a one-off (a
+# lump sum, a refund sent as "Direct deposit"), never a pay schedule.
+REGULAR_DEPOSITS = 3
+
+
+def _main_pay(rows: list[Transaction], ruled: set[str] | None = None) -> list[Transaction]:
     """Salary deposits from the payers that pay her, without side payouts
-    (2026-10-29). Two jobs both count; small payouts sent the same way
-    don't."""
-    by_payer: dict[str, list[float]] = {}
+    or one-offs (2026-10-29). Two jobs both count.
+
+    Her pay is what she said with a regular-pay rule (`ruled`: deposits a
+    rule covers, or sorted by one). Without a rule, it's a payer that pays
+    her regularly — three deposits or more — and the biggest of those sets
+    the bar: a payer whose usual deposit is under a quarter of it is a side
+    payout. Which came first doesn't matter; all of it is worked out again
+    each time. A one-off lump sum, however big, never sets the bar."""
+    ruled = ruled or set()
+    by_payer: dict[str, list[Transaction]] = {}
     for t in rows:
-        by_payer.setdefault(payer_of(t), []).append(-t.amount)
+        by_payer.setdefault(payer_of(t), []).append(t)
     if len(by_payer) < 2:
         return rows
-    usual = {k: statistics.median(v) for k, v in by_payer.items()}
-    top = max(usual.values())
-    keep = {k for k, u in usual.items() if u >= top * SIDE_PAYOUT_SHARE}
+    hers = {k for k, g in by_payer.items()
+            if any(t.fingerprint in ruled or t.category_source == "pay_rule" for t in g)}
+    regular = {k for k, g in by_payer.items() if len(g) >= REGULAR_DEPOSITS}
+    usual = {k: statistics.median(-t.amount for t in g) for k, g in by_payer.items()}
+    judged = hers or regular
+    if not judged:
+        return rows                     # nothing regular yet to tell them apart
+    top = max(usual[k] for k in judged)
+    keep = hers | {k for k in regular if usual[k] >= top * SIDE_PAYOUT_SHARE}
     return [t for t in rows if payer_of(t) in keep]
 
 
@@ -115,7 +133,7 @@ def classify(transactions: list[Transaction], salary: set[str] | None = None) ->
             by_payer.setdefault(payer_of(t), []).append(t)
     # A payer with too few deposits to have a usual of its own ("PAYROLL
     # ACME BONUS" beside "PAYROLL ACME") is measured against her main pay.
-    main = [-t.amount for t in _main_pay([t for g in by_payer.values() for t in g])]
+    main = [-t.amount for t in _main_pay([t for g in by_payer.values() for t in g], salary)]
     main_usual = statistics.median(main) if len(main) >= 3 else None
     for group in by_payer.values():
         usual = statistics.median(-t.amount for t in group) if len(group) >= 3 else main_usual

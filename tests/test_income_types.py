@@ -208,3 +208,38 @@ def test_kinds_saved_before_are_worked_out_again_once(tmp_path):
     asked = {it["txn"]["id"] for it in for_store(st)["income_type"]}
     assert not asked & {t.fingerprint for t in paid}
     assert st.setting("income_kinds_by_payer") == "1"
+
+
+# ── Which payer is her pay doesn't depend on what came first (2026-10-29) ──
+
+def test_a_one_off_lump_sum_never_becomes_her_pay():
+    pay, side = _semimonthly_with_claims()
+    lump = row(-20000.0, "ESTATE SETTLEMENT - Direct deposit", "2026-10-20", category="Income")
+    found = income.cadence(pay + side + [lump], today="2026-10-29")
+    assert found["cadence"] == "semimonthly"
+    assert found["paycheque"] == pytest.approx(3347.42, abs=0.01)
+    assert "2026-10-20" not in found["paydays"]
+    # And it is asked about as bigger than her usual pay.
+    assert income.classify(pay + side + [lump])[lump.fingerprint] == "bonus"
+
+
+def test_a_smaller_payer_first_then_a_bigger_regular_one_takes_over():
+    small = [row(-300.0, "TUTORING CO - Direct deposit", d, category="Income")
+             for d in ("2026-05-15", "2026-05-29", "2026-06-15", "2026-06-30")]
+    first = income.cadence(small, today="2026-07-01")
+    assert first["paycheque"] == 300.0
+    big = [row(-3400.0, "Wealthsimple-OS - Direct deposit", d, category="Income")
+           for d in ("2026-07-15", "2026-07-30", "2026-08-14", "2026-08-28", "2026-09-15")]
+    later = income.cadence(small + big, today="2026-09-20")
+    assert later["paycheque"] == 3400.0
+
+
+def test_her_rule_keeps_a_small_pay_she_named():
+    small = [row(-300.0, "TUTORING CO - Direct deposit", d, category="Income")
+             for d in ("2026-07-10", "2026-07-24", "2026-08-07", "2026-08-21")]
+    big = [row(-3400.0, "Wealthsimple-OS - Direct deposit", d, category="Income")
+           for d in ("2026-07-15", "2026-07-30", "2026-08-14", "2026-08-28")]
+    for t in small + big:
+        t.category_source = "pay_rule"            # she named both her pay
+    days = income.cadence(small + big, today="2026-09-01")["paydays"]
+    assert "2026-07-10" in days and "2026-07-15" in days
