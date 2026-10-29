@@ -1,11 +1,11 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Alert, Avatar, CategoryChip, Choice, DetailPanel, PButton, StatusPill, amountTone, txAmount,
 } from '../pearl/kit.jsx';
 import { depositChoices } from './joint.js';
 import { TAGS_ON } from '../features.js';
 import PIcon from '../pearl/icons.jsx';
-import { categoryLabel } from './CategoryPicker.jsx';
+import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.jsx';
 import { LinkToSplit, RepaymentQuestion, SplitSummary, SplitThis } from './Splits.jsx';
 import { TagEditor } from './WhatWasThis.jsx';
 import SortCard, { SortedCard, loadCases, prefetchCases, rememberEntry, resumeFor } from './SortCard.jsx';
@@ -830,6 +830,11 @@ export function AddTransaction({ categories, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => { setConflict(null); setDraft({ ...draft, [k]: e.target.value }); };
   const ok = draft.description.trim() && Number(draft.amount) > 0 && draft.date;
+  // Spending categories as the tiles every picker uses (2026-10-28), not a
+  // dropdown of every category: this is something she spent.
+  const groups = useMemo(() => groupCategories(categories, {
+    only: (c) => ['essentials', 'lifestyle'].includes(c.group),
+  }), [categories]);
 
   async function submit(confirm = false) {
     setBusy(true);
@@ -853,21 +858,34 @@ export function AddTransaction({ categories, onClose, onSaved }) {
           {(id) => <input id={id} type="text" required value={draft.description}
                           onChange={set('description')} maxLength={80} />}
         </Field>
-        <Field label="Amount">
-          {(id) => <input id={id} type="number" inputMode="decimal" min="0.01" step="0.01"
-                          required value={draft.amount} onChange={set('amount')} />}
-        </Field>
-        <Field label="Date">
-          {(id) => <input id={id} type="date" required value={draft.date} onChange={set('date')} />}
-        </Field>
-        <Field label="Category">
-          {(id) => (
-            <select id={id} value={draft.category} onChange={set('category')}>
-              <option value="">Let Pearl suggest one</option>
-              {categories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-            </select>
-          )}
-        </Field>
+        <div className="txd-pair">
+          <Field label="Amount">
+            {(id) => (
+              <span className="txd-money">
+                <span aria-hidden="true">$</span>
+                <input id={id} type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="0.00"
+                       required value={draft.amount} onChange={set('amount')} />
+              </span>
+            )}
+          </Field>
+          <Field label="Date">
+            {(id) => <input id={id} type="date" required value={draft.date} onChange={set('date')} />}
+          </Field>
+        </div>
+        <div className="txd-field">
+          <p className="pk-label">Category</p>
+          <p className="pk-label pk-muted">
+            {draft.category ? `${categoryLabel(draft.category)}.` : 'Pick one, or leave it and Pearl suggests one.'}
+            {draft.category && (
+              <button type="button" className="txd-link txd-inline"
+                      onClick={() => { setConflict(null); setDraft({ ...draft, category: '' }); }}>
+                Let Pearl suggest one
+              </button>
+            )}
+          </p>
+          <CategoryChips groups={groups} value={draft.category} label="Category"
+                         onChange={(v) => { setConflict(null); setDraft({ ...draft, category: v }); }} />
+        </div>
         {error && <p className="txd-error" role="alert">{error.message}</p>}
         {conflict ? (
           <div className="txd-step" role="status">
@@ -886,7 +904,9 @@ export function AddTransaction({ categories, onClose, onSaved }) {
             )}
           </div>
         ) : (
-          <PButton type="submit" disabled={busy || !ok}>Add it</PButton>
+          <div className="txd-sticky">
+            <PButton type="submit" disabled={busy || !ok}>Add it</PButton>
+          </div>
         )}
       </form>
     </DetailPanel>
