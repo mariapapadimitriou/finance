@@ -14,3 +14,13 @@ export function depositChoices(people, label) {
     })),
   ];
 }
+
+/** "Sam, Alex" → ["Sam", "Alex"]: trimmed, no repeats. */
+export function parsePeople(text) {
+  const out = [];
+  for (const raw of String(text || '').split(/[,;\n]|\band\b/i)) {
+    const name = raw.trim().replace(/\s+/g, ' ');
+    if (name && !out.some((n) => n.toLowerCase() === name.toLowerCase())) out.push(name);
+  }
+  return out;
+}

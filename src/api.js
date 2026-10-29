@@ -54,6 +54,10 @@ export const setMineAlways   = (id, on) =>
   json('PUT', `/api/transactions/${id}/mine-always`, { on });
 // Profile › Accounts (Pearl AM-01 to AM-07, C-01, C-06).
 export const getAccountsOverview = () => req('/api/accounts/overview');
+// Set up again, after Start over (2026-10-29, finance/setup_again.py).
+export const getSetupAgain = () => req('/api/setup-again');
+export const markSetupAgain = (step) => json('POST', '/api/setup-again', { step });
+export const hideSetupAgain = () => json('POST', '/api/setup-again', { hide: true });
 // `counted`, `joint_share` (1–99 or null), `anchor`, `nickname`.
 export const saveAccountSettings = (id, fields) =>
   json('PUT', `/api/accounts/${encodeURIComponent(id)}/settings`, fields);

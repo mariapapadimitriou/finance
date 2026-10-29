@@ -13,6 +13,7 @@ import PIcon from '../pearl/icons.jsx';
 import { Field, parseAmount } from './GoalsParts.jsx';
 import { MONTH_NAMES, ReconnectPanel, shown } from './HomePanel.jsx';
 import { ListRow, PageHead } from './ProfilePanel.jsx';
+import { parsePeople } from './joint.js';
 import './home.css';
 import './profile.css';
 
@@ -109,15 +110,8 @@ export function peopleWords(people = []) {
   return `${p.slice(0, -1).join(', ')} and ${p[p.length - 1]}`;
 }
 
-/** "Sam, Alex" → ["Sam", "Alex"]: trimmed, no repeats. */
-export function parsePeople(text) {
-  const out = [];
-  for (const raw of String(text || '').split(/[,;\n]|\band\b/i)) {
-    const name = raw.trim().replace(/\s+/g, ' ');
-    if (name && !out.some((n) => n.toLowerCase() === name.toLowerCase())) out.push(name);
-  }
-  return out;
-}
+// "Sam, Alex" → ["Sam", "Alex"], shared with Set up again (joint.js).
+export { parsePeople } from './joint.js';
 
 /** The status pill (C-01): the state in a word, with an icon. */
 export function pillFor(a) {

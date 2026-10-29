@@ -430,7 +430,9 @@ OPTIONAL = ("ai_sort", "tips", "analytics")
 KNOWN = REQUIRED + OPTIONAL
 DEFAULT_ON = {"analytics"}
 
-STEPS = ("province", "protect", "consents", "bank", "linked", "uses", "income", "email",
+# "shared" (2026-10-29): which linked accounts she shares, right after
+# linking — Set up again asks it after Start over too.
+STEPS = ("province", "protect", "consents", "bank", "linked", "shared", "uses", "income", "email",
          "path")
 
 
