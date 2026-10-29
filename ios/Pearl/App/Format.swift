@@ -1,0 +1,93 @@
+import Foundation
+
+/// Money, dates and months, worded the way Pearl's web app words them.
+enum Format {
+    private static let money: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "CAD"
+        f.currencySymbol = "$"
+        f.locale = Locale(identifier: "en_CA")
+        return f
+    }()
+
+    private static let wholeMoney: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "CAD"
+        f.currencySymbol = "$"
+        f.locale = Locale(identifier: "en_CA")
+        f.maximumFractionDigits = 0
+        return f
+    }()
+
+    /// "$1,234.56".
+    static func amount(_ value: Double) -> String {
+        money.string(from: NSNumber(value: abs(value))) ?? "$\(abs(value))"
+    }
+
+    /// "$1,235", for totals.
+    static func whole(_ value: Double) -> String {
+        wholeMoney.string(from: NSNumber(value: abs(value))) ?? "$\(Int(abs(value)))"
+    }
+
+    /// "+$5,850.00" for money in, "$22.57" for money out.
+    static func signed(_ value: Double, inflow: Bool) -> String {
+        inflow ? "+" + amount(value) : amount(value)
+    }
+
+    private static let iso: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static func formatter(_ pattern: String) -> DateFormatter {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_CA")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = pattern
+        return f
+    }
+
+    private static let longDay = formatter("EEEE, MMMM d")
+    private static let shortDay = formatter("MMM d")
+    private static let monthYear = formatter("MMMM yyyy")
+    private static let monthOnly = formatter("MMMM")
+
+    static func date(_ iso: String) -> Date? {
+        Format.iso.date(from: String(iso.prefix(10)))
+    }
+
+    /// "Wednesday, October 14".
+    static func day(_ iso: String) -> String {
+        date(iso).map { longDay.string(from: $0) } ?? iso
+    }
+
+    /// "Oct 14".
+    static func short(_ iso: String) -> String {
+        date(iso).map { shortDay.string(from: $0) } ?? iso
+    }
+
+    /// "October 2026" from "2026-10".
+    static func month(_ ym: String) -> String {
+        date(ym + "-01").map { monthYear.string(from: $0) } ?? ym
+    }
+
+    /// "October" from "2026-10".
+    static func monthName(_ ym: String) -> String {
+        date(ym + "-01").map { monthOnly.string(from: $0) } ?? ym
+    }
+
+    /// "Good morning" / "Good afternoon" / "Good evening".
+    static func greeting(now: Date = Date()) -> String {
+        let hour = Calendar.current.component(.hour, from: now)
+        if hour < 12 { return "Good morning" }
+        if hour < 18 { return "Good afternoon" }
+        return "Good evening"
+    }
+}
