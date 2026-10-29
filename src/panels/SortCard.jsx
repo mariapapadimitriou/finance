@@ -178,6 +178,7 @@ function optionFor(c, { nameless = false } = {}) {
   const to = {
     category: 'cat', account: 'account', income_kind: 'kind', candidates: `pick_${c.key}`,
     refund: 'pick_refund', person: 'who_in', amount: 'amount', borrowed: 'borrowed', split: 'split',
+    reimbursed: 'reimbursed',
   }[c.needs] ?? null;
   // Lent and paying someone back ask who (R-12); a payback with no name from
   // the bank asks who sent it first (R-09).
@@ -301,6 +302,11 @@ export function steps(it, cases, mode = 'stacked') {
       S[`pick_${c.key}`] = { title: c.key === 'payback' ? 'Which purchase is it for?' : 'Which expense does it pay back?',
                              left: 1, ask: 'pick', key: c.key, candidates: c.candidates ?? [],
                              none: c.key === 'payback' ? 'None of these: money I lent' : null };
+    }
+    // A work expense (2026-10-29): already reimbursed by a deposit that came?
+    if (c.key === 'work' && c.needs === 'reimbursed') {
+      S.reimbursed = { title: 'Has it been reimbursed yet?', left: 1, ask: 'deposit',
+                       candidates: c.candidates ?? [] };
     }
     if (c.needs === 'refund') {
       S.pick_refund = { title: 'Which purchase is it a refund of?', left: 1, ask: 'pick', key: 'refund',
@@ -643,6 +649,24 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
         : `Covers ${ch?.label}’s share of joint spending. Your spending goes down by ${amt}.`;
       return finish(answers, effect, () => plain(() => setJointFrom(it.txn.id, ch.who, rem(), ch.person), 'Sorted.'), true);
     }
+    if (s.ask === 'pick' && s.key === 'reimbursement' && Array.isArray(v)) {   // several expenses
+      const whole = Math.abs(it.txn.amount);
+      const { rows, used } = allocatePicks(whole, v);
+      const effect = `Reimburses ${rows.length} expenses. Both leave your numbers.`.replace('Both', rows.length > 2 ? 'All' : 'Both')
+        + (whole - used > 0.005 ? ` The other ${txAmount(whole - used)} counts as money in.` : '');
+      const answersMany = [...path, { step: stepId, v: rows.map((r) => r.id).join(','),
+                                      label: `${rows.length} expenses · ${txAmount(used)}` }];
+      return finish(answersMany, effect, () => via({ case: 'reimbursement',
+        charges: rows.map((r) => ({ id: r.id, amount: r.use })) }, 'Sorted.'));
+    }
+    if (s.ask === 'deposit') {                                              // reimbursed already?
+      const d = s.candidates.find((x) => x.id === v);
+      const effect = d
+        ? `Linked to the ${txAmount(d.amount)} from ${d.merchant}. Both leave your numbers.`
+        : 'Left out of your spending until the money comes back.';
+      return finish(answers, effect, () => via({ case: 'work', ...(d ? { reimbursed_by: d.id } : {}) },
+        d ? 'Reimbursed.' : 'Left out until it’s reimbursed.'));
+    }
     if (s.ask === 'pick' && s.key === 'payback' && Array.isArray(v)) {   // several purchases
       const typed = (answered('name') || '').trim();
       const who = v[0]?.person || typed || it.from || nameIn(it.txn.merchant);
@@ -938,6 +962,20 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
               )}
             </>
           )}
+          {step.ask === 'deposit' && (
+            <div className="pk-choices" role="radiogroup" aria-label={step.title}>
+              {step.candidates.map((d) => (
+                <Choice key={d.id} name={group} checked={false} disabled={busy}
+                        onChange={() => saveAsk(step, d.id, `${d.merchant} · ${shortDate(d.date)}`)}
+                        label={`Yes, by ${d.merchant} · ${shortDate(d.date)}`}
+                        description={[txAmount(d.amount, { inflow: true }),
+                          d.linked ? `${txAmount(d.left)} of it not used yet` : null].filter(Boolean).join(' · ')} />
+              ))}
+              <Choice name={group} checked={false} disabled={busy}
+                      onChange={() => saveAsk(step, '', 'Not yet')}
+                      label="Not yet" description="Left out of your spending until the money comes back" />
+            </div>
+          )}
           {step.ask === 'pick' && (() => {
             const seen = new Set(step.candidates.map((c) => c.id));
             const more = (found ?? []).filter((c) => !seen.has(c.id) || find);
@@ -945,9 +983,10 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
             // A payback can cover several purchases (2026-10-28): pick them
             // one by one; each takes what's unpaid on it, and once the money
             // is used up nothing else can be picked.
-            const many = step.key === 'payback';
+            const many = step.key === 'payback' || step.key === 'reimbursement';
             const whole = Math.abs(it.txn.amount);
-            const budget = paidPartOf(paidPart, whole) ?? whole;
+            const budget = step.key === 'payback' ? (paidPartOf(paidPart, whole) ?? whole) : whole;
+            const noun = step.key === 'reimbursement' ? 'expense' : 'purchase';
             const alloc = allocatePicks(budget, picks);
             const keyOf = (c) => `${c.id}|${c.person || ''}`;
             const pickedRow = (c) => alloc.rows.find((r) => keyOf(r) === keyOf(c));
@@ -973,7 +1012,7 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
                         description={[txAmount(c.amount, { signed: true }), c.category,
                           c.person ? `${c.person}’s share` : null,
                           paidUp ? 'already paid back' : c.paid_back ? `${txAmount(c.paid_back)} paid back so far` : null,
-                          on ? `${txAmount(on.use)} of this payback` : null,
+                          on ? `${txAmount(on.use)} of this ${step.key === 'reimbursement' ? 'reimbursement' : 'payback'}` : null,
                           c.memo ? 'what their message names' : null, extra].filter(Boolean).join(' · ')} />
               );
             };
@@ -1016,15 +1055,15 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
                     <div className="nl-picked" role="status">
                       <p className="nl-picked-total">
                         <strong>{`${txAmount(alloc.used)} of ${txAmount(budget)}`}</strong>
-                        {` · ${alloc.rows.length} ${alloc.rows.length === 1 ? 'purchase' : 'purchases'}`}
+                        {` · ${alloc.rows.length} ${noun}${alloc.rows.length === 1 ? '' : 's'}`}
                       </p>
                       <p className="pk-label pk-muted">
                         {alloc.left > 0.005
                           ? `${txAmount(alloc.left)} left. Pick another, or link these and the rest counts as money in.`
-                          : 'All of it is used. Untick one to pick a different purchase.'}
+                          : `All of it is used. Untick one to pick a different ${noun}.`}
                       </p>
                       <PButton disabled={busy} onClick={() => saveAsk(step, alloc.rows, `${alloc.rows.length} purchases`)}>
-                        {`Link ${alloc.rows.length === 1 ? 'this purchase' : `these ${alloc.rows.length} purchases`}`}
+                        {`Link ${alloc.rows.length === 1 ? `this ${noun}` : `these ${alloc.rows.length} ${noun}s`}`}
                       </PButton>
                     </div>
                   )}
