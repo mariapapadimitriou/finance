@@ -24,6 +24,15 @@ A rule matches on:
 
 A transfer whose other end is in Pearl (between her own accounts) is matched
 before any rule, and anything she sorted herself is never touched.
+
+Every payday (2026-10-28): money that moves when her pay comes in — "$500
+to savings every time a paycheque hits" — follows the pay, not the
+calendar. Pay on the 15th and the last day of the month, pushed past a
+weekend, is neither monthly nor every two weeks. So a series can also be
+"every payday": a transfer on, or up to `PAYDAY_LAG` days after, each of
+her paydays (deposits that are her pay: salary, or a regular pay rule of
+hers). It's preferred to a calendar schedule when it fits, and replaces a
+calendar rule of hers that only caught half of it ("around the 15th").
 """
 
 from __future__ import annotations
@@ -41,7 +50,15 @@ CADENCE_WORDS = {"weekly": "every week", "biweekly": "every two weeks", "monthly
 MIN_SERIES = 2
 # How many it takes to call a schedule: two a month apart for the same
 # amount is rent-like enough to ask; two a week apart could be anything.
-MIN_FOR = {"weekly": 3, "biweekly": 3, "monthly": 2}
+MIN_FOR = {"weekly": 3, "biweekly": 3, "monthly": 2, "payday": 3}
+CADENCE_WORDS["payday"] = "every payday"
+# Every payday: from the day before a paycheque posts (the two can post in
+# either order) to three days after (pay on a Friday, moved on Monday).
+PAYDAY_LAG = (-1, 3)
+# Of her paydays from the first to the last of a series, how many it has to
+# fall on: most, so rent on the 1st isn't "every payday" because one of two
+# paydays a month is the day before.
+PAYDAY_SHARE = 0.75
 
 
 def _d(iso: str) -> date:
@@ -105,8 +122,64 @@ def cadence_of(days: list[date]) -> str | None:
     return None
 
 
+def paydays(transactions: list[Transaction]) -> list[date]:
+    """The days her pay came in: deposits counted as income of the salary
+    kind, or sorted by a regular pay rule of hers. Oldest first."""
+    from .income import is_income, kind_of
+    return sorted({_d(t.date) for t in transactions
+                   if is_income(t) and (t.category_source == "pay_rule" or kind_of(t) == "salary")})
+
+
+def _payday_of(day: date, pays: list[date]) -> date | None:
+    lo, hi = PAYDAY_LAG
+    best = None
+    for p in pays:
+        gap = (day - p).days
+        if lo <= gap <= hi and (best is None or abs(gap) < abs((day - best).days)):
+            best = p
+    return best
+
+
+def after_payday(day: date, pays: list[date]) -> bool:
+    return _payday_of(day, pays) is not None
+
+
+def _payday_run(rows: list[Transaction], pays: list[date]) -> list[Transaction] | None:
+    """The transfers in `rows` that follow her paydays, when they follow most
+    of them: every one that does, two on one payday included (the same $500
+    to two accounts the bank doesn't name)."""
+    if not pays:
+        return None
+    hits = [t for t in rows if after_payday(_d(t.date), pays)]
+    days = sorted({_payday_of(_d(t.date), pays) for t in hits})
+    if len(days) < MIN_FOR["payday"]:
+        return None
+    span = [p for p in pays if days[0] <= p <= days[-1]]
+    if len(days) < PAYDAY_SHARE * len(span):
+        return None
+    return sorted(hits, key=lambda t: t.date)
+
+
+def next_payday(pays: list[date], today: date) -> date | None:
+    """When her next pay is due, from the rhythm of the last few."""
+    from .income_bills import _cadence_of, predict_next
+    recent = [p for p in pays if p <= today][-8:]
+    if len(recent) < 3:
+        return None
+    cadence = _cadence_of(recent)
+    if not cadence:
+        return None
+    nxt = predict_next(recent, cadence, today)
+    # Pay doesn't land on a weekend: a Saturday payday comes on Monday.
+    while nxt.weekday() >= 5:
+        nxt += timedelta(days=1)
+    return nxt
+
+
 def when_words(cadence: str, anchor: date) -> str:
     """"every month, around the 1st"."""
+    if cadence == "payday":
+        return "every payday"
     if cadence == "monthly":
         n = anchor.day
         suffix = "th" if 11 <= n % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
@@ -126,8 +199,9 @@ def key_for(account_id: str, cents: int, cadence: str, dest: str | None) -> str:
     return "rt:" + hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
-def matches(t: Transaction, rule: dict) -> bool:
-    """Whether a transfer is one of a rule's."""
+def matches(t: Transaction, rule: dict, pays: list[date] | None = None) -> bool:
+    """Whether a transfer is one of a rule's. An every-payday rule needs her
+    paydays (`paydays`)."""
     if t.amount <= 0 or t.account_id != rule["account_id"]:
         return False
     if _cents(t.amount) != _cents(rule["amount"]):
@@ -136,11 +210,13 @@ def matches(t: Transaction, rule: dict) -> bool:
         where = _dest(t)
         if where and where[0] != rule["dest_key"]:
             return False
+    if rule["cadence"] == "payday":
+        return after_payday(_d(t.date), pays or [])
     return on_schedule(_d(t.date), _d(rule["anchor"]), rule["cadence"])
 
 
-def rule_for(t: Transaction, rules: list[dict]) -> dict | None:
-    return next((r for r in rules if matches(t, r)), None)
+def rule_for(t: Transaction, rules: list[dict], pays: list[date] | None = None) -> dict | None:
+    return next((r for r in rules if matches(t, r, pays)), None)
 
 
 def _is_bank(t: Transaction) -> bool:
@@ -152,17 +228,26 @@ def series(transactions: list[Transaction], rules: list[dict] | None = None,
     """Runs of transfers out that look recurring and are still asked about:
     the same account and amount (and destination, when there is one), on a
     schedule, at least one of them in Unsorted transfers, and not already a
-    rule's. Newest first."""
-    from .transfers import NEUTRAL, UNSORTED
+    rule's. Newest first.
+
+    Every payday is tried first, over the transfers a calendar rule of hers
+    sorted too: when the series is really every payday, the answer replaces
+    that rule (`replaces`)."""
+    from .transfers import NEUTRAL, RULED, UNSORTED
     rules = rules or []
     paired = paired or set()
+    pays = paydays(transactions)
+    calendar_rules = [r for r in rules if r["cadence"] != "payday"]
+    payday_rules = [r for r in rules if r["cadence"] == "payday"]
     groups: dict[tuple, list[Transaction]] = {}
     for t in transactions:
         if t.amount <= 0 or not _is_bank(t) or t.excluded or t.fingerprint in paired:
             continue
-        if t.category not in (NEUTRAL, UNSORTED) or t.category_source in ("user", "merchant_override"):
+        if rule_for(t, payday_rules, pays):
             continue
-        if rule_for(t, rules):
+        by_calendar = t.category_source == RULED and rule_for(t, calendar_rules)
+        if not by_calendar and (t.category not in (NEUTRAL, UNSORTED)
+                                or t.category_source in ("user", "merchant_override")):
             continue
         where = _dest(t)
         groups.setdefault((t.account_id, _cents(t.amount), where[0] if where else None),
@@ -170,6 +255,12 @@ def series(transactions: list[Transaction], rules: list[dict] | None = None,
     out = []
     for (account, cents, dest), pool in groups.items():
         pool = sorted(pool, key=lambda t: t.date)
+        run = _payday_run(pool, pays)
+        if run and any(t.category == UNSORTED for t in run):
+            replaces = sorted({r["id"] for t in run for r in calendar_rules if matches(t, r)})
+            out.append({**_series(account, cents, dest, "payday", run), "replaces": replaces})
+            continue
+        pool = [t for t in pool if not rule_for(t, calendar_rules)]
         while True:
             found = _best_run(pool)
             if not found:
@@ -245,8 +336,11 @@ def rule_words(rule: dict, account_name: str = "") -> str:
             f"{frm}")
 
 
-def next_after(rule: dict, today: date) -> date:
-    """The next date the schedule lands on after today."""
+def next_after(rule: dict, today: date, pays: list[date] | None = None) -> date | None:
+    """The next date the schedule lands on after today: for every payday,
+    her next pay, when its rhythm is clear."""
+    if rule["cadence"] == "payday":
+        return next_payday(pays or [], today)
     anchor = _d(rule["anchor"])
     if rule["cadence"] == "monthly":
         y, m = today.year, today.month

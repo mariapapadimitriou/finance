@@ -72,7 +72,7 @@ export function RecurringPage({ data, onTab, onOpen }) {
               {list.map((r) => (
                 <ListRow key={r.id} name={r.name !== 'Transfer' ? `${r.what} · ${r.name}` : r.what}
                          sub={scheduleWords(r)}
-                         end={<span className="pf-row-sub">{`Next ${shortDay(r.next)}`}</span>}
+                         end={<span className="pf-row-sub">{r.next ? `Next ${shortDay(r.next)}` : 'Next payday'}</span>}
                          onOpen={() => onOpen(r)} />
               ))}
             </ul>
@@ -102,7 +102,7 @@ export function RecurringDetail({ item, categories = [], onClose, onSave, onStop
   return (
     <DetailPanel label={`Recurring transfer: ${item.what}`} overline="Recurring transfer" onClose={onClose}>
       <h1 className="pk-h2">{item.name !== 'Transfer' ? item.name : item.what}</h1>
-      <p className="pk-muted">{`${scheduleWords(item)}. Next on ${longDay(item.next)}.`}</p>
+      <p className="pk-muted">{`${scheduleWords(item)}. ${item.next ? `Next on ${longDay(item.next)}` : 'Next with your pay'}.`}</p>
       <section className="pf-section" aria-labelledby="rt-what">
         <h2 className="pk-h3" id="rt-what">What is it?</h2>
         <div className="pk-choices" role="radiogroup" aria-labelledby="rt-what">
