@@ -355,7 +355,12 @@ def build(transactions: list[Transaction], today: str | None = None,
 def for_store(st, today: str | None = None) -> dict:
     """The review as every screen sees it: one call, so one number."""
     found_on = {k: v["found_on"] for k, v in st.duplicates().items()}
-    return build(st.all_transactions(), today=today, dismissed=st.dismissed_reviews(),
+    txns = st.all_transactions()
+    # Her pay into a joint account is hers (2026-10-29): deposits a pay rule
+    # made before that rule claimed them aren't asked "Who put this in?".
+    from .pay_rules import claim_waiting
+    claim_waiting(st, txns)
+    return build(txns, today=today, dismissed=st.dismissed_reviews(),
                  splits=st.splits(), payer=st.payback_people(), found_on=found_on,
                  skipped=st.skipped_reviews(), recurring=st.recurring_transfers(), me=_me())
 

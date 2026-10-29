@@ -8,6 +8,11 @@ income count it without asking. The payer is the merchant the bank names
 the transfer names. A name every transfer shares ("Interac e-Transfer")
 never becomes a rule.
 
+Into a joint account (2026-10-29): her pay is hers, so a deposit the rule
+sorts there is answered "me" for "Who put this in?" too — asked about
+otherwise, and counted as none of hers until answered. A deposit she said
+someone else put in stays theirs.
+
 Never touched: a row she sorted herself. Removing a rule keeps what it
 sorted as it is; the next deposit from that payer is asked about again.
 """
@@ -56,10 +61,42 @@ def apply(store, transactions: list[Transaction] | None = None) -> int:
     txns = transactions if transactions is not None else store.all_transactions()
     changes = {}
     for t in txns:
-        if t.category_source == "user" or not matches(t, rules):
+        if not matches(t, rules):
+            continue
+        claim_joint(store, t)
+        if t.category_source == "user":
             continue
         if (t.category, t.category_source) != ("Income", SOURCE):
             changes[t.fingerprint] = ("Income", SOURCE)
     if changes:
         store.write_categories(changes)
     return len(changes)
+
+
+def unclaimed_joint(t: Transaction) -> bool:
+    """A deposit into a joint account nobody has said is whose yet."""
+    return bool(t.joint) and t.amount < 0 and not t.joint_from
+
+
+def claim_joint(store, t: Transaction, marks: dict | None = None) -> bool:
+    """Her pay into a joint account is hers (2026-10-29). `marks` notes the
+    old answer for Undo."""
+    if not unclaimed_joint(t):
+        return False
+    from .joint import ME
+    if marks is not None:
+        marks.setdefault("joint_from", {}).setdefault(
+            t.fingerprint, {"who": t.joint_from, "person": t.joint_person})
+    store.set_joint_deposit(t.fingerprint, ME, None)
+    t.joint_from = ME
+    return True
+
+
+def claim_waiting(store, transactions: list[Transaction]) -> int:
+    """Joint deposits a pay rule covers that still wait on "Who put this
+    in?", answered as hers. No rules, nothing read or written."""
+    rules = store.pay_rules()
+    if not rules:
+        return 0
+    return sum(1 for t in transactions if unclaimed_joint(t) and matches(t, rules)
+               and claim_joint(store, t))

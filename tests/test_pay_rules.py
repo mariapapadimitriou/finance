@@ -148,3 +148,47 @@ def test_the_rest_leave_needs_a_look_with_the_first(client):
                             "Wealthsimple Technologies.")
     review = client.get("/api/review").get_json()
     assert review["count"] == 0
+
+
+def joint_pay(c, n=4):
+    rows = load(c.st, *[deposit(ago(14 * i + 1), amount=-3419.22, desc="Wealthsimple-os - Direct Deposit",
+                                merchant="Wealthsimple-os - Direct Deposit") for i in range(n)])
+    ids = sorted((t.fingerprint for t in c.st.all_transactions()), key=str)
+    acct = c.st.all_transactions()[0].account_id
+    assert c.put(f"/api/accounts/{acct}/joint", json={"label": "Anastasia"}).status_code == 200
+    return ids
+
+
+def test_pay_into_a_joint_account_is_hers_and_not_asked_again(client):
+    """2026-10-29: pay landing in an account she shares. Needs a look asks
+    "Who put this in?" about money in from outside; her regular pay is hers,
+    so the rule answers that too, and counts it."""
+    ids = joint_pay(client)
+    review = client.get("/api/review").get_json()
+    asked = [it["txn"]["id"] for it in review["joint_in"]]
+    assert sorted(asked) == sorted(ids)
+    res = mark(client, asked[0], case="regular_pay", remember=True)
+    assert "3 other deposits" in res["title"]
+    assert client.get("/api/review").get_json()["joint_in"] == []
+    assert all(t.joint_from == "me" for t in client.st.all_transactions())
+    # Undo gives the question back.
+    undo(client, res)
+    assert len(client.get("/api/review").get_json()["joint_in"]) == 4
+
+
+def test_a_rule_made_before_claims_its_waiting_joint_pay(client):
+    """A pay rule saved before 2026-10-29 left joint deposits asked about;
+    the next look at Needs a look answers them."""
+    joint_pay(client)
+    client.st.set_pay_rule("payer:wealthsimple-os - direct deposit", "Wealthsimple-os - Direct Deposit")
+    assert len(client.get("/api/review").get_json()["joint_in"]) == 0
+    assert all(t.joint_from == "me" for t in client.st.all_transactions())
+
+
+def test_a_deposit_she_said_was_theirs_stays_theirs(client):
+    ids = joint_pay(client, n=2)
+    client.put(f"/api/transactions/{ids[0]}/joint-from", json={"who": "them"})
+    client.st.set_pay_rule("payer:wealthsimple-os - direct deposit", "Wealthsimple-os - Direct Deposit")
+    client.get("/api/review")
+    by = {t.fingerprint: t.joint_from for t in client.st.all_transactions()}
+    assert by[ids[0]] == "them" and by[ids[1]] == "me"

@@ -795,14 +795,21 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         from .pay_rules import key_of
         payer = key_of(t) if body.get("remember") else None
         if payer:
-            from .pay_rules import matches
+            from .pay_rules import claim_joint, matches, unclaimed_joint
             rule = {payer[0]: payer[1]}
             # The others it sorts now (2026-10-29): said, so she sees Needs a
-            # look count down by more than one.
-            others = sum(1 for x in store.all_transactions()
-                         if x.fingerprint != t.fingerprint and x.category_source != "user"
-                         and matches(x, rule)
-                         and (x.category, x.category_source) != ("Income", "pay_rule"))
+            # look count down by more than one. Into a joint account, they
+            # are hers too, and Undo gives "Who put this in?" back.
+            others = 0
+            for x in store.all_transactions():
+                if x.fingerprint == t.fingerprint or not matches(x, rule):
+                    continue
+                joint = unclaimed_joint(x)
+                if joint:
+                    claim_joint(store, x, marks)
+                if joint or (x.category_source != "user"
+                             and (x.category, x.category_source) != ("Income", "pay_rule")):
+                    others += 1
             marks.setdefault("pay_rules", {})[payer[0]] = store.pay_rules().get(payer[0])
             store.set_pay_rule(payer[0], payer[1])
             from .pipeline import classify_ledger
