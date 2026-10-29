@@ -8,6 +8,7 @@ import { BEFORE_YOU_GO, Rows } from '../pearl/privacy.jsx';
 import { CodeInput, Heading, Lockup } from '../pearl/ui.jsx';
 import { getPasskey, passkeysSupported } from '../pearl/webauthn.js';
 import { Field } from './GoalsParts.jsx';
+import SetupAgain from './SetupAgain.jsx';
 import { PageHead } from './ProfilePanel.jsx';
 import './home.css';
 import './profile.css';
@@ -223,7 +224,7 @@ export function ConfirmStartOver({ typed = '', onTyped, busy = false, error = nu
 
 /** SO-04: your transactions are back. */
 export function StartedOver({ syncing = false, imported = null, needsLook = null, onHome, onSort,
-                              onTab }) {
+                              onTab, setup = null }) {
   const back = imported > 0
     ? `${plural(imported, 'transaction')} ${imported === 1 ? 'is' : 'are'} back, ready to sort`
     : 'Your history is on its way back';
@@ -242,16 +243,14 @@ export function StartedOver({ syncing = false, imported = null, needsLook = null
         <section className="dt-result" aria-label="What came back">
           <h2 className="pk-h2">{back}</h2>
           <p>{sorted}</p>
-          <p>Your income and bills start over too. Pearl has found them again for you to confirm.</p>
         </section>
       )}
+      {/* What only she can say, as a list (2026-10-29): shared accounts,
+          income and bills, how accounts count, debt details. It stays on
+          Home until it's done. */}
+      {!syncing && setup}
       <div className="pf-actions">
         <PButton disabled={syncing} onClick={onSort}>Start sorting</PButton>
-        {/* Income and bills start over too (2026-10-29): Pearl finds them
-            again, for her to confirm. */}
-        <PButton variant="secondary" disabled={syncing} onClick={() => onTab?.('income')}>
-          Confirm your income and bills
-        </PButton>
         <PButton variant="text" disabled={syncing} onClick={onHome}>Go to Home</PButton>
       </div>
     </div>
@@ -440,7 +439,9 @@ export default function DataPanel({ onTab, onDeleted, onChanged }) {
 
   if (view === 'fresh') {
     return <StartedOver syncing={fresh?.syncing} imported={fresh?.imported} needsLook={fresh?.needsLook}
-                        onHome={() => onTab?.('home')} onSort={() => onTab?.('review')} onTab={onTab} />;
+                        onHome={() => onTab?.('home')} onSort={() => onTab?.('review')} onTab={onTab}
+                        setup={<SetupAgain onTab={onTab} always heading="Set up again"
+                                           version={fresh?.syncing ? 0 : 1} />} />;
   }
   if (view === 'start-confirm') {
     return (

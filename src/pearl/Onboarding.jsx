@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  createLinkToken, exchangePublicToken, getAccounts, getOnboarding, money,
-  passkeyRegister, passkeyRegisterOptions, saveOnboarding,
+  createLinkToken, exchangePublicToken, getAccounts, getAccountsOverview, getOnboarding, money,
+  passkeyRegister, passkeyRegisterOptions, saveAccountSettings, saveOnboarding,
 } from '../api.js';
+import { SharedAccountsForm, shareable } from '../panels/SetupAgain.jsx';
 import { loadPlaidScript } from '../plaid.js';
 import { DocSheet } from './docs.jsx';
 import IncomeBillsFlow from './IncomeBills.jsx';
@@ -44,6 +45,8 @@ const PANEL = {
             body: 'Your bank account is exactly as it was.' },
   linked: { step: 'done', headline: 'You’re all set.',
             body: 'Your accounts keep up to date on their own.' },
+  shared: { headline: 'Only your share counts.',
+            body: 'On an account you share, Pearl counts your part and asks who put money in.' },
 };
 
 function screenFor(user, startAt) {
@@ -51,7 +54,7 @@ function screenFor(user, startAt) {
   if (startAt === 'passkey' && passkeysSupported() && !(user?.passkeys > 0)) return 'passkey';
   if (ob.province === 'QC') return 'quebec';
   return { protect: 'protect', consents: 'consents', bank: 'bank', linked: 'linked',
-           uses: 'uses', income: 'income', email: 'email', path: 'email' }[ob.step] ?? 'province';
+           shared: 'shared', uses: 'uses', income: 'income', email: 'email', path: 'email' }[ob.step] ?? 'province';
 }
 
 /**
@@ -442,8 +445,8 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
         {error && <Banner tone="caution">{error}</Banner>}
         <div className="p-actions">
           <button type="button" className="p-btn primary" disabled={busy}
-                  onClick={() => save({ step: 'uses' }, 'uses')}>
-            See your path
+                  onClick={() => save({ step: 'shared' }, 'shared')}>
+            Continue
           </button>
           <button type="button" className="p-btn secondary"
                   onClick={() => { setChosen(null); setItemId(null); setScreen('bank'); }}>
@@ -452,6 +455,29 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
         </div>
       </>
     ));
+  }
+
+  // ── Which accounts do you share? (2026-10-29) ───────────────────────────
+  // Right after linking, so a joint account counts only her share from the
+  // start. Start over asks it again (SetupAgain.jsx).
+  if (screen === 'shared') {
+    return (
+      <SharedStep busy={busy} error={error} onBack={() => setScreen('linked')}
+                  layout={(content) => layout('shared', { onBack: () => setScreen('linked') }, content)}
+                  onDone={async (changes) => {
+                    setBusy(true);
+                    setError(null);
+                    try {
+                      for (const [id, fields] of changes) await saveAccountSettings(id, fields);
+                    } catch (e) {
+                      setError(e.message);
+                      setBusy(false);
+                      return;
+                    }
+                    setBusy(false);
+                    save({ step: 'uses' }, 'uses');
+                  }} />
+    );
   }
 
   // ── CN-02 How Pearl uses your transactions (after linking) ────────────────
@@ -521,6 +547,35 @@ export default function Onboarding({ user: initialUser, startAt, onDone, onSignO
   }
 
   return null;
+}
+
+/** "Do you share any of these accounts?", in setup's layout. */
+function SharedStep({ layout, busy, error, onDone }) {
+  const [accounts, setAccounts] = useState(null);
+  const [failed, setFailed] = useState(null);
+  useEffect(() => {
+    getAccountsOverview().then((o) => setAccounts(shareable(o.linked ?? [])))
+      .catch((e) => setFailed(e.message));
+  }, []);
+  return layout(
+    <>
+      <Heading eyebrow="One more thing" title="Do you share any of these accounts?"
+               sub="With a partner, a sibling or a roommate. Change it any time in Profile › Accounts." />
+      {failed && <Banner tone="caution">{failed}</Banner>}
+      {accounts == null && !failed && <p className="p-muted" role="status">Getting your accounts…</p>}
+      {accounts && (
+        <div className="pk">
+          <SharedAccountsForm accounts={accounts} busy={busy} error={error} saveLabel="Continue"
+                              onSave={onDone} onNone={() => onDone([])} />
+        </div>
+      )}
+      {failed && (
+        <div className="p-actions">
+          <button type="button" className="p-btn primary" onClick={() => onDone([])}>Skip for now</button>
+        </div>
+      )}
+    </>,
+  );
 }
 
 function AccountRow({ a }) {

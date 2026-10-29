@@ -5,6 +5,7 @@ import { loadPlaidScript } from '../plaid.js';
 import { Alert, DetailPanel, PButton } from '../pearl/kit.jsx';
 import PIcon from '../pearl/icons.jsx';
 import './home.css';
+import SetupAgain from './SetupAgain.jsx';
 
 /**
  * Home, stripped down (2026-10-21).
@@ -110,6 +111,9 @@ export default function HomePanel({ onTab, onChanged, onQuickSort, version }) {
           {alert.text}
         </Alert>
       )}
+
+      {/* After Start over (2026-10-29): what only she can set again. */}
+      <SetupAgain onTab={onTab} onChanged={onChanged} version={version} />
 
       {home.review_count > 0 && (
         <NeedsALook count={home.review_count} onReview={() => onTab?.('review')} onQuickSort={onQuickSort} />

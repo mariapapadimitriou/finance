@@ -200,3 +200,28 @@
 /* Needs a look on Home: Quick sort, then the way to To review (2026-10-22). */
 .hm-actions { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
 .pk .hm-quick { width: auto; height: 40px; padding: 0 20px; font-size: 14px; }
+
+/* ── Set up again, after Start over (2026-10-29, SetupAgain.jsx) ─────────── */
+.su-card { align-items: stretch; }
+.su-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.su-steps li + li { border-top: 1px solid var(--border); }
+.su-step {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: 56px;
+  padding: var(--space-3) 0; background: none; border: 0; text-align: left; color: var(--ink);
+  font: inherit; cursor: pointer;
+}
+.su-step:disabled { cursor: default; }
+.su-tick {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--border);
+}
+.su-step.done .su-tick { background: var(--action); border-color: var(--action); color: var(--on-action); }
+.su-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.su-title { font-weight: 600; }
+.su-step.done .su-title { color: var(--ink-muted); }
+.su-sub { font-size: 14px; line-height: 20px; color: var(--ink-muted); }
+.su-shared { gap: var(--space-3); }
+.su-account { display: flex; flex-direction: column; gap: var(--space-2); }
+.su-account .gl-field { margin-left: var(--space-8); }
+.su-actions { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-4); }
+@media (max-width: 860px) { .su-account .gl-field { margin-left: 0; } }

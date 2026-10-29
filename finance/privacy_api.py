@@ -174,8 +174,34 @@ def data_start_over():
     body = request.get_json(silent=True) or {}
     if " ".join(str(body.get("confirm") or "").lower().split()) != "start over":
         return jsonify({"error": "Type “start over” to confirm."}), 400
-    removed = store().start_over()
+    st = store()
+    removed = st.start_over()
+    # What only she can say comes back as a short list (finance/setup_again.py).
+    from . import setup_again
+    setup_again.begin(st)
     return jsonify({"ok": True, "removed": removed, "resync": True})
+
+
+# ── Set up again, after Start over (2026-10-29) ─────────────────────────
+
+@bp.get("/setup-again")
+def setup_again_status():
+    from . import setup_again
+    return jsonify(setup_again.status(store()))
+
+
+@bp.post("/setup-again")
+def setup_again_update():
+    """`{"step": key}` marks one done; `{"hide": true}` hides the list."""
+    from . import setup_again
+    body = request.get_json(silent=True) or {}
+    st = store()
+    if body.get("hide"):
+        return jsonify(setup_again.hide(st))
+    try:
+        return jsonify(setup_again.mark(st, str(body.get("step") or "")))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
 
 # ── D-03 to D-05 ─────────────────────────────────────────────────────────
