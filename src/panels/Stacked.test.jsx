@@ -256,13 +256,14 @@ describe('Sorted card rows are for a look (2026-10-23)', () => {
 });
 
 describe('What kind of income? order (2026-10-23)', () => {
-  it('Salary and regular pay first, Other last', async () => {
+  // Regular pay first (2026-10-29): it sorts the rest from that payer too.
+  it('Regular pay and salary first, Other last', async () => {
     const { default: Stacked2 } = await import('./SortCard.jsx');
     const page = html(<Stacked2 it={{ ...inn, kind: 'income' }} commit={noop}
                                 initialPath={[{ step: 'q1', v: 'income' }]} />);
     const labels = [...page.matchAll(/pk-ctile-label">([^<]+)</g)].map((m) => m[1]);
-    expect(labels[0]).toBe('Salary');
-    expect(labels[1]).toBe('My regular pay');
+    expect(labels[0]).toBe('My regular pay');
+    expect(labels[1]).toBe('Salary');
     expect(labels[labels.length - 1]).toBe('Other income');
   });
 });

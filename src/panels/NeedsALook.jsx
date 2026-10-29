@@ -227,7 +227,7 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
   }
 
   /** The last answer's call, then the Sorted card (R-13). */
-  async function commit(fn, { answers = [], effect = '', remember = null } = {}) {
+  async function commit(fn, { answers = [], effect = '', remember = null, remembered = false } = {}) {
     setBusy(true);
     setError(null);
     try {
@@ -237,7 +237,7 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
         title: out?.title || 'Sorted.', detail: out?.detail || effect || '', undo: out?.undo,
         rule: out?.rule || '',
         // Remember, asked on the Sorted card (2026-10-23).
-        remember, remembered: false,
+        remember, remembered: !!(remember && remembered),
         // Where it was in the list when answered, for the header.
         pos: position, of: open.length,
         // Where Next goes: the transaction after this one in the list.
@@ -462,7 +462,11 @@ export default function NeedsALook({ categories, onChanged, onTab, version }) {
         </h1>
         {showing && (
           <p className="pk-label pk-muted">
-            {`${Math.min(n, Math.max(total, 1))} of ${Math.max(total, 1)} to review`}
+            {/* On the Sorted card, what's left (2026-10-29): a rule that
+                sorted others with it counts down by all of them. */}
+            {sorted && back === null
+              ? (open.length ? `${open.length} left to review` : 'None left to review')
+              : `${Math.min(n, Math.max(total, 1))} of ${Math.max(total, 1)} to review`}
             {skipped.length ? ` · ${skipped.length} skipped` : ''}
           </p>
         )}

@@ -61,13 +61,13 @@ export default function QuickSort({ data, categories = [], onClose, onChanged })
   };
   const skip = () => (txnId ? run(() => quickSortStep(txnId, { action: 'skip' }), next) : next());
   // The sort card did the work; the batch notes what it said (QS-04).
-  const commit = (fn, { answers, effect, remember = null }) => run(async () => {
+  const commit = (fn, { answers, effect, remember = null, remembered = false }) => run(async () => {
     const r = await fn();
     if (txnId) await quickSortStep(txnId, { action: 'marked', title: r.title || '' }).catch(() => {});
     return r;
   }, (r) => setSorted({ key: item.key, it: item, answers, effect, title: r.title,
                         detail: r.detail || effect || '', undo: r.undo, rule: r.rule || '',
-                        remember, remembered: false }));
+                        remember, remembered: !!(remember && remembered) }));
   // Remember on the Sorted card (2026-10-23).
   const rememberIt = (on) => run(() => rememberEntry(sorted, on), setSorted);
   const reopen = (k = sorted.answers.length - 1, pick) => run(async () => {

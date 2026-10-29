@@ -171,13 +171,13 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
     key: `tx:${tx.id}`, kind: 'panel', to: tx.party || '',
     txn: { ...tx, amount: tx.inflow ? -Math.abs(tx.amount) : Math.abs(tx.amount) },
   };
-  const sortCommit = async (fn, { answers, effect, remember = null }) => {
+  const sortCommit = async (fn, { answers, effect, remember = null, remembered = false }) => {
     setBusy(true);
     setError(null);
     try {
       const r = await fn();
       setSorted({ key: asItem.key, it: asItem, answers, effect, title: r.title, detail: r.detail || effect || '', undo: r.undo, rule: r.rule || '',
-                  remember, remembered: false });
+                  remember, remembered: !!(remember && remembered) });
       setResume(null);
     } catch (e) {
       setError(e);

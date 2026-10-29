@@ -795,12 +795,25 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         from .pay_rules import key_of
         payer = key_of(t) if body.get("remember") else None
         if payer:
+            from .pay_rules import matches
+            rule = {payer[0]: payer[1]}
+            # The others it sorts now (2026-10-29): said, so she sees Needs a
+            # look count down by more than one.
+            others = sum(1 for x in store.all_transactions()
+                         if x.fingerprint != t.fingerprint and x.category_source != "user"
+                         and matches(x, rule)
+                         and (x.category, x.category_source) != ("Income", "pay_rule"))
             marks.setdefault("pay_rules", {})[payer[0]] = store.pay_rules().get(payer[0])
             store.set_pay_rule(payer[0], payer[1])
             from .pipeline import classify_ledger
             classify_ledger(store)
             remember = True
-            title = f"Counted as your regular pay, and every deposit from {payer[1]}."
+            if others == 1:
+                title = f"Counted as your regular pay, and the other deposit from {payer[1]}."
+            elif others:
+                title = f"Counted as your regular pay, and the {others} other deposits from {payer[1]}."
+            else:
+                title = f"Counted as your regular pay, and every deposit from {payer[1]}."
     elif case == "payback" and isinstance(body.get("charges"), list) and len(body["charges"]) > 1:
         # One payback, several purchases (2026-10-28): her sister's lump sum
         # for months of gym. Each purchase takes what's still unpaid on it,

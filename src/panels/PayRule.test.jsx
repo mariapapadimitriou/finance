@@ -12,7 +12,7 @@ describe('Regular pay, remembered (2026-10-28)', () => {
     expect(payWords(c, 'ACME CORP PAY')).toEqual({
       label: 'Always count deposits from Acme Corp as my regular pay',
       rule: 'Every deposit from Acme Corp counts as your regular pay from now on.',
-      description: 'The ones already here and every new one count as income',
+      description: 'The ones already here and every new one count as income', on: true,
     });
     expect(payWords({ key: 'regular_pay', remember: null })).toBeNull();
     expect(payWords({ key: 'spending', remember: 'merchant' })).toBeNull();

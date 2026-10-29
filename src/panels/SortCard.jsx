@@ -56,7 +56,7 @@ export function payWords(c, merchant = '') {
     || merchant;
   return { label: c.remember_label || `Always count deposits from ${who} as my regular pay`,
            rule: `Every deposit from ${who} counts as your regular pay from now on.`,
-           description: 'The ones already here and every new one count as income' };
+           description: 'The ones already here and every new one count as income', on: true };
 }
 
 export function nameIn(text = '') {
@@ -208,7 +208,7 @@ const KIND_ICONS = {
   government: 'landmark', tax_refund: 'refresh', other: 'dots',
 };
 // The usual ones first, Other last.
-const KIND_ORDER = ['salary', 'regular_pay', 'bonus', 'interest', 'gifts', 'government', 'tax_refund', 'other'];
+const KIND_ORDER = ['regular_pay', 'salary', 'bonus', 'interest', 'gifts', 'government', 'tax_refund', 'other'];
 const kindOrder = (k) => (KIND_ORDER.includes(k) ? KIND_ORDER.indexOf(k) : KIND_ORDER.length - 1);
 const FOLDS = {
   out: [
@@ -591,13 +591,18 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
     && cases?.learnable !== false;
   // `words` (2026-10-28): a case's own Remember wording, like regular pay's
   // "Always count deposits from Acme as my regular pay".
+  // `words.on` (2026-10-29): Remember starts ticked. Regular pay is every
+  // deposit from that payer, so the rest of them leave Needs a look with
+  // this one instead of being asked one by one.
   const finish = (answers, effect, run, ruleable = false, words = null) => {
     const go = (on) => {
       rememberRef.current = on;
       forgetCases(it.txn.id);
       return run().then((r) => ({ ...r, rule: (r?.res?.remember ?? on) ? (words?.rule ?? ruleText) : '' }));
     };
-    return commit(() => go(false), {
+    const ticked = !!(words?.on && ruleable && ruleOk);
+    return commit(() => go(ticked), {
+      remembered: ticked,
       answers: answers.map((p) => {
         const st = flow.S[p.step];
         const [vis, at] = st?.options ? shownOptions(st.options, p.v) : [null, p.v];
