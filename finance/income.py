@@ -68,17 +68,61 @@ def guess(t: Transaction) -> str:
     return "other"
 
 
+def payer_of(t: Transaction) -> str:
+    """Who paid a deposit, as one key: the name its regular-pay rule would
+    use, else the merchant."""
+    from .pay_rules import key_of
+    found = key_of(t)
+    return found[0] if found else "payer:" + " ".join((t.merchant or t.description or "").lower().split())
+
+
+# A payer whose usual deposit is under this share of the main payer's is a
+# side payout (a health-spending claim, an expense reimbursement), not a
+# paycheque that sets how often she's paid or how big a paycheque is.
+SIDE_PAYOUT_SHARE = 0.25
+
+
+def _main_pay(rows: list[Transaction]) -> list[Transaction]:
+    """Salary deposits from the payers that pay her, without side payouts
+    (2026-10-29). Two jobs both count; small payouts sent the same way
+    don't."""
+    by_payer: dict[str, list[float]] = {}
+    for t in rows:
+        by_payer.setdefault(payer_of(t), []).append(-t.amount)
+    if len(by_payer) < 2:
+        return rows
+    usual = {k: statistics.median(v) for k, v in by_payer.items()}
+    top = max(usual.values())
+    keep = {k for k, u in usual.items() if u >= top * SIDE_PAYOUT_SHARE}
+    return [t for t in rows if payer_of(t) in keep]
+
+
 def classify(transactions: list[Transaction], salary: set[str] | None = None) -> dict[str, str]:
     """{txn_id: kind} for every income row whose type wasn't chosen by you.
     `salary` are the deposits a regular pay rule of hers covers (2026-10-28)."""
     rows = [t for t in transactions if is_income(t)]
     salary = salary or set()
     kinds = {t.fingerprint: "salary" if t.fingerprint in salary else guess(t) for t in rows}
-    pay = [-t.amount for t in rows if kinds[t.fingerprint] == "salary"]
-    if len(pay) >= 3:
-        usual = statistics.median(pay)
-        for t in rows:
-            if kinds[t.fingerprint] == "salary" and -t.amount > usual * BONUS_FACTOR:
+    # A bonus is bigger than the usual paycheque from the same payer
+    # (2026-10-29). Measured against every deposit that looks like pay, a
+    # few small ones — health-spending claims, expense payouts, also sent as
+    # "Direct deposit" — pulled the usual down until real paycheques read as
+    # bonuses. And what her regular-pay rule covers is her regular pay,
+    # whatever it comes to: its amount varies with taxable benefits.
+    by_payer: dict[str, list[Transaction]] = {}
+    for t in rows:
+        if kinds[t.fingerprint] == "salary":
+            by_payer.setdefault(payer_of(t), []).append(t)
+    # A payer with too few deposits to have a usual of its own ("PAYROLL
+    # ACME BONUS" beside "PAYROLL ACME") is measured against her main pay.
+    main = [-t.amount for t in _main_pay([t for g in by_payer.values() for t in g])]
+    main_usual = statistics.median(main) if len(main) >= 3 else None
+    for group in by_payer.values():
+        usual = statistics.median(-t.amount for t in group) if len(group) >= 3 else main_usual
+        if usual is None:
+            continue
+        for t in group:
+            if t.fingerprint not in salary and -t.amount > usual * BONUS_FACTOR:
                 kinds[t.fingerprint] = "bonus"
     yours = {t.fingerprint for t in rows if t.income_type_source == "user"}
     return {tid: k for tid, k in kinds.items() if tid not in yours}
@@ -109,9 +153,10 @@ def cadence(transactions: list[Transaction], today: str | None = None) -> dict |
     start = end - timedelta(days=183)
     # Paycheques on the same day (a split deposit) count as one.
     by_day: dict[str, float] = {}
-    for t in transactions:
-        if is_income(t) and kind_of(t) == "salary" and t.date[:10] >= start.isoformat():
-            by_day[t.date[:10]] = by_day.get(t.date[:10], 0.0) - t.amount
+    pay = [t for t in transactions
+           if is_income(t) and kind_of(t) == "salary" and t.date[:10] >= start.isoformat()]
+    for t in _main_pay(pay):
+        by_day[t.date[:10]] = by_day.get(t.date[:10], 0.0) - t.amount
     days = sorted(by_day)
     if len(days) < 3:
         return None
