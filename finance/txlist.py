@@ -168,8 +168,9 @@ class Context:
         self.payback_kinds = payback_kinds or {}
         self.names = names or {}
         self.accounts = accounts or {}
-        self.reimbursed = {t.repays for t in transactions
-                           if t.repays and self.payback_kinds.get(t.fingerprint) == "reimbursement"}
+        self.reimbursed = {cid for t in transactions
+                           if t.repays and self.payback_kinds.get(t.fingerprint) == "reimbursement"
+                           for cid in t.repays_all}
         self.names_for = {t.fingerprint for t in transactions if _key(t.merchant) in self.names}
         # Who a split charge was split with, as you named them (THL-124).
         self.split_with = {cid: [p["name"] for p in sp["people"]]
@@ -244,7 +245,8 @@ def describe(t: Transaction, ctx: Context) -> dict:
     elif t.repays and ctx.payback_kinds.get(t.fingerprint) == "reimbursement":
         charge = ctx.by_id.get(t.repays)
         chip, structural, group = "Reimbursement", True, "transfer"
-        note = (f"Reimbursed you for {_name(charge, ctx)} · not income" if charge
+        what = _paid_for(t, ctx)
+        note = (f"Reimbursed you for {what} · not income" if what
                 else "Reimbursement · not income")
     elif t.repays:
         charge = ctx.by_id.get(t.repays)
