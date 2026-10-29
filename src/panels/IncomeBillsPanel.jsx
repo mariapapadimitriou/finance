@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote } from '../components/ui.jsx';
 import {
-  addBill, addPay, answerRent, clearExpected, confirmBills, editBill, editPay, getIncomeBills,
+  addBill, addPay, answerPay, answerRent, clearExpected, confirmBills, editBill, editPay, getIncomeBills,
   money, removeBill, saveExpected,
 } from '../api.js';
 import { ActionToast, Alert, DetailPanel, PButton, StatTile } from '../pearl/kit.jsx';
@@ -45,6 +45,9 @@ export default function IncomeBillsPanel({ onTab, onChanged, version }) {
   return (
     <IncomeBillsPage data={data} onTab={onTab} onOpen={setPanel}
                      onTick={(key, on) => confirmBills({ [key]: on }).then(saved).catch(setError)}
+                     onConfirmBills={() => confirmBills(Object.fromEntries(data.bills.filter((b) => b.source !== 'added')
+                       .map((b) => [b.key, !!b.ticked]))).then(saved).catch(setError)}
+                     onPay={(c, yes) => answerPay(c.payer, yes ? 'yes' : 'no').then(saved).catch(setError)}
                      onRent={(q) => answerRent(q.key).then(saved).catch(setError)}
                      onCheck={() => setChecking(true)}>
       {panel?.kind === 'pay' && (
@@ -103,10 +106,16 @@ export default function IncomeBillsPanel({ onTab, onChanged, version }) {
 }
 
 /** The page itself, from the check's payload. */
-export function IncomeBillsPage({ data, onTab, onOpen, onTick, onRent, onCheck, children = null }) {
+export function IncomeBillsPage({ data, onTab, onOpen, onTick, onRent, onCheck, onConfirmBills, onPay,
+                                 children = null }) {
   const counted = data.bills.filter((b) => b.ticked);
   const others = data.bills.filter((b) => !b.ticked);
   const exp = data.expected;
+  // Found, not confirmed (2026-10-29): after Start over (or before the
+  // check) Pearl finds bills and pay in the history again. They're its
+  // suggestions until she confirms them, and the page says so.
+  const billsFound = !data.checked?.bills && counted.length > 0;
+  const payFound = !data.pays.length ? (data.candidates ?? []) : [];
   return (
     <div className="pk hm-page pf-page ib-page">
       <PageHead trail={[{ label: 'Profile', to: 'profile' }, { label: 'Income and bills' }]}
@@ -116,7 +125,8 @@ export function IncomeBillsPage({ data, onTab, onOpen, onTick, onRent, onCheck, 
 
       <div className="pk-tiles">
         <StatTile label="Income each month" value={data.totals.income > 0 ? whole(data.totals.income) : 'Not set yet'} />
-        <StatTile label="Regular bills" value={data.totals.bills > 0 ? whole(data.totals.bills) : 'None yet'} />
+        <StatTile label={billsFound ? 'Regular bills Pearl found' : 'Regular bills'}
+                  value={data.totals.bills > 0 ? whole(data.totals.bills) : 'None yet'} />
       </div>
 
       <section className="pf-section" aria-labelledby="ib-income">
@@ -133,13 +143,27 @@ export function IncomeBillsPage({ data, onTab, onOpen, onTick, onRent, onCheck, 
                      end={<span className="pk-label ib-link">Edit</span>}
                      onOpen={() => onOpen({ kind: 'pay', pay: p })} />
           ))}
-          {!data.pays.length && !(exp.amount > 0) && exp.estimate > 0 && (
+          {payFound.map((c) => (
+            <li className="pf-row static ib-found" key={c.payer}>
+              <div className="pf-row-main">
+                <span className="pf-row-text">
+                  <span className="pf-row-name">{`Is ${c.name} your pay?`}</span>
+                  <span className="pf-row-sub">{`Found in your transactions · ${payMeta(c)}`}</span>
+                </span>
+              </div>
+              <span className="pf-row-links">
+                <button type="button" className="pf-text-link" onClick={() => onPay?.(c, true)}>Yes</button>
+                <button type="button" className="pf-text-link" onClick={() => onPay?.(c, false)}>No</button>
+              </span>
+            </li>
+          ))}
+          {!data.pays.length && !payFound.length && !(exp.amount > 0) && exp.estimate > 0 && (
             <ListRow name="Pearl’s estimate"
                      sub={`${whole(exp.estimate)} a month · the average of your last 3 months`}
                      end={<span className="pk-label ib-link">Use my own amount</span>}
                      onOpen={() => onOpen({ kind: 'expected' })} />
           )}
-          {!data.pays.length && !(exp.amount > 0) && !(exp.estimate > 0) && (
+          {!data.pays.length && !payFound.length && !(exp.amount > 0) && !(exp.estimate > 0) && (
             <ListRow name="No income confirmed yet" sub="Check again, or tell us what you expect"
                      onOpen={() => onOpen({ kind: 'expected' })} />
           )}
@@ -154,6 +178,11 @@ export function IncomeBillsPage({ data, onTab, onOpen, onTick, onRent, onCheck, 
         {data.rent_question && (
           <Alert action="Yes, it’s my rent" onAction={() => onRent(data.rent_question)}>
             {rentWords(data.rent_question)}
+          </Alert>
+        )}
+        {billsFound && (
+          <Alert action={`Confirm ${counted.length === 1 ? 'it' : counted.length}`} onAction={onConfirmBills}>
+            Found in your transactions, not confirmed yet.
           </Alert>
         )}
         {counted.length === 0 && <p className="pk-muted">No regular bills counted yet.</p>}
