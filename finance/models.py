@@ -275,6 +275,9 @@ class Transaction:
     repays: str | None = None
     # How much of it paid that charge back, when not all of it (2026-10-26).
     repays_amount: float | None = None
+    # One payback, several purchases (2026-10-28): the purchases after
+    # `repays`, each with how much of this inflow went to it.
+    also_repays: dict = field(default_factory=dict)
     # Refunds linked to a purchase (2026-10-24): on the purchase, what came
     # back; on the refund, the purchase it is of. The refund comes off the
     # purchase, like a payback, and doesn't count again on its own.
@@ -363,9 +366,20 @@ class Transaction:
         """On a payback: how much of this inflow paid its charge back — all
         of it unless she said a part (2026-10-26)."""
         whole = round(-self.amount, 2)
-        if self.repays_amount is None:
-            return whole
-        return min(whole, round(self.repays_amount, 2))
+        first = whole if self.repays_amount is None else min(whole, round(self.repays_amount, 2))
+        return min(whole, round(first + sum(self.also_repays.values()), 2))
+
+    def part_for(self, charge_id: str) -> float:
+        """How much of this payback went to one purchase."""
+        if charge_id == self.repays:
+            whole = round(-self.amount, 2)
+            return whole if self.repays_amount is None else min(whole, round(self.repays_amount, 2))
+        return round(float(self.also_repays.get(charge_id, 0.0)), 2)
+
+    @property
+    def repays_all(self) -> list[str]:
+        """Every purchase this payback covers, the first one first."""
+        return ([self.repays] if self.repays else []) + list(self.also_repays)
 
     @property
     def unlinked_part(self) -> float:
@@ -412,6 +426,7 @@ class Transaction:
             repays=row.get("repays"),
             repays_amount=(None if row.get("repays_amount") is None
                            else round(float(row["repays_amount"]), 2)),
+            also_repays=dict(row.get("also_repays") or {}),
             refunded=round(float(row.get("refunded") or 0.0), 2),
             refund_of=row.get("refund_of") or None,
             joint=row.get("joint") or None,

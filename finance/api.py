@@ -902,10 +902,8 @@ def add_payback(txn_id: str, inflow_id: str):
            "person": st.payback_people().get(inflow_id), "amount": inflow.repays_amount}
     split_was = {}
     if inflow.repays and inflow.repays != txn_id:
-        from .splits import drop_payer
-        moved = drop_payer(st, inflow)
-        if moved is not None:
-            split_was[inflow.repays] = moved
+        from .splits import drop_payer_all
+        split_was.update(drop_payer_all(st, inflow))
     st.link_payback(txn_id, inflow_id, person, part)
     # Never income: Plaid sometimes calls an e-transfer in "income".
     if inflow.category != "Transfers":
@@ -943,8 +941,8 @@ def remove_payback(txn_id: str, inflow_id: str):
         return jsonify({"error": "That money isn't linked to this charge."}), 404
     # A payback that made its sender's place in the split takes them out
     # again (THL-260): the charge costs what it did before.
-    from .splits import drop_payer
-    drop_payer(st, inflow)
+    from .splits import drop_payer_all
+    drop_payer_all(st, inflow)
     st.unlink_payback(inflow_id)
     apply_transfer_matches(st)
     return list_paybacks(txn_id)

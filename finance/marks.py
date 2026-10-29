@@ -232,18 +232,23 @@ def payback_candidates(inflow: Transaction, txns: list[Transaction], splits: dic
     from .review import charge_candidates
     out = []
     seen = set()
+    by_id = {t.fingerprint: t for t in txns}
     options, _ = sp.for_inflow(inflow, txns, splits, payer)
     for o in options:
         seen.add((o["charge_id"], o["name"]))
         out.append({"id": o["charge_id"], "date": o["date"][:10], "merchant": o["merchant"],
                     "amount": round(float(o["owes"]), 2), "person": o["name"],
+                    "left": round(float(o["owes"]), 2),
                     "split": True, "exact": abs(float(o["owes"]) + inflow.amount) < 0.01})
     for c in charge_candidates(inflow, txns):
         if (c["id"], None) in seen or any(o["id"] == c["id"] for o in out):
             continue
+        charge = by_id.get(c["id"])
+        left = (round(charge.amount - (charge.paid_back or 0.0) + inflow.part_for(c["id"]), 2)
+                if charge else round(float(c["amount"]), 2))
         out.append({"id": c["id"], "date": c["date"][:10],
                     "merchant": (names or {}).get(_key(c["merchant"])) or c["merchant"],
-                    "amount": round(float(c["amount"]), 2), "person": None,
+                    "amount": round(float(c["amount"]), 2), "person": None, "left": left,
                     "split": False, "share": c["split"], "exact": False})
     return out[:8]
 
@@ -318,7 +323,9 @@ def search_charges(inflow: Transaction, txns: list[Transaction], q: str = "",
         if needle and needle not in hay \
                 and not (amount_q is not None and abs(round(c.amount, 2) - amount_q) < 0.01):
             continue
-        paid = round(c.paid_back or 0.0, 2)
+        # What this payback already put toward it doesn't count against it:
+        # linking it again moves that part (2026-10-28).
+        paid = round((c.paid_back or 0.0) - inflow.part_for(c.fingerprint), 2)
         out.append({"id": c.fingerprint, "date": c.date[:10], "merchant": shown,
                     "amount": round(c.amount, 2), "category": c.category or "Other",
                     "paid_back": paid, "left": round(c.amount - paid, 2),
@@ -725,7 +732,18 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             classify_ledger(store)
             remember = True
             title = f"Counted as your regular pay, and every deposit from {payer[1]}."
+    elif case == "payback" and isinstance(body.get("charges"), list) and len(body["charges"]) > 1:
+        # One payback, several purchases (2026-10-28): her sister's lump sum
+        # for months of gym. Each purchase takes what's still unpaid on it,
+        # up to what's left of the money, in the order she picked them.
+        title, detail = _payback_many(store, t, body, marks)
+        un_exclude()
     elif case == "payback":
+        if isinstance(body.get("charges"), list) and body["charges"]:
+            one = body["charges"][0]
+            body = {**body, "charge": one.get("id") if isinstance(one, dict) else one}
+            if isinstance(one, dict) and one.get("amount") is not None and body.get("amount") is None:
+                body["amount"] = one["amount"]
         charge_id = str(body.get("charge") or "")
         charge = next((x for x in store.all_transactions() if x.fingerprint == charge_id), None)
         if charge is None or charge.amount <= 0:
@@ -905,11 +923,80 @@ def clean_tags(raw) -> list[str]:
 def _drop_made_split(store, t: Transaction, marks: dict) -> None:
     """Before an inflow is linked anew: if it had made its sender's place
     in a split (THL-260), take them out, and remember the split for Undo."""
-    from .splits import drop_payer
-    charge_id = t.repays
-    was = drop_payer(store, t)
-    if was is not None and charge_id:
+    from .splits import drop_payer_all
+    for charge_id, was in drop_payer_all(store, t).items():
         marks.setdefault("splits", {}).setdefault(charge_id, was)
+
+
+def _payback_many(store, t: Transaction, body: dict, marks: dict) -> tuple[str, str]:
+    """Link one payback to several purchases. Returns (title, detail)."""
+    from .etransfers import known_people, party as etransfer_party
+    from .splits import add_payer
+    txns = store.all_transactions()
+    by_id = {x.fingerprint: x for x in txns}
+    whole = round(-t.amount, 2)
+    total = _payback_part(t, body)
+    budget = whole if total is None else total
+    picks, seen = [], set()
+    for p in body["charges"][:50]:
+        cid = str((p.get("id") if isinstance(p, dict) else p) or "")
+        charge = by_id.get(cid)
+        if charge is None or charge.amount <= 0 or cid == t.fingerprint:
+            raise Problem("Pick the purchases it pays back.")
+        if cid in seen:
+            continue
+        seen.add(cid)
+        asked = p.get("amount") if isinstance(p, dict) else None
+        picks.append((charge, asked))
+    parts: list[tuple[Transaction, float]] = []
+    left_over = budget
+    for charge, asked in picks:
+        room = round(charge.amount - (charge.paid_back or 0.0) + t.part_for(charge.fingerprint), 2)
+        if left_over <= 0.005:
+            raise Problem("They’ve all been paid for: that’s more purchases than the money covers.")
+        if room <= 0.005:
+            raise Problem(f"{charge.merchant} is already paid back.")
+        if asked is None:
+            use = round(min(room, left_over), 2)
+        else:
+            try:
+                use = round(float(asked), 2)
+            except (TypeError, ValueError):
+                raise Problem("How much went to each purchase has to be an amount.") from None
+            if use <= 0 or use > room + 0.005:
+                raise Problem(f"{charge.merchant} only has ${room:,.2f} left to pay back.")
+            if use > left_over + 0.005:
+                raise Problem("Those add up to more than they sent.")
+        parts.append((charge, use))
+        left_over = round(left_over - use, 2)
+    marks.setdefault("paybacks", {})[t.fingerprint] = {
+        "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
+        "person": store.payback_people().get(t.fingerprint), "amount": t.repays_amount}
+    marks.setdefault("payback_more", {})[t.fingerprint] = store.payback_more(t.fingerprint)
+    _drop_made_split(store, t, marks)
+    people = known_people(txns, store.splits(), store.payback_people())
+    person = (" ".join(str(body.get("person") or "").split())
+              or (etransfer_party(t, people) or {}).get("name") or None)
+    (first, first_use), rest = parts[0], parts[1:]
+    store.link_payback(first.fingerprint, t.fingerprint, person, first_use)
+    store.set_payback_more(t.fingerprint, [(c.fingerprint, use) for c, use in rest])
+    store.set_payback_kind(t.fingerprint, None)
+    # A purchase nobody split becomes a split with whoever sent it (THL-260),
+    # each by its own part.
+    fresh_in = store.get_transaction(t.fingerprint) or t
+    for charge, use in parts:
+        was = add_payer(store, store.get_transaction(charge.fingerprint) or charge, fresh_in, person, use)
+        if was is not None:
+            marks.setdefault("splits", {}).setdefault(charge.fingerprint, was)
+    used = round(sum(use for _, use in parts), 2)
+    names = sorted({c.merchant for c, _ in parts})
+    what = names[0] if len(names) == 1 else ", ".join(names[:-1]) + f" and {names[-1]}"
+    title = f"Linked to {len(parts)} purchases at {what}. Not income." if len(names) == 1 \
+        else f"Linked to {len(parts)} purchases: {what}. Not income."
+    detail = f"${used:,.2f} comes off what you spent on them."
+    if whole - used > 0.005:
+        detail += f" The other ${whole - used:,.2f} counts as money in, not income."
+    return title, detail
 
 
 def _payback_part(t: Transaction, body: dict) -> float | None:
@@ -960,6 +1047,11 @@ def undo_marks(store, marks: dict) -> int:
         else:
             store.unlink_payback(tid)
         n += 1
+    # One payback, several purchases (2026-10-28): the others as they were.
+    for tid, parts in (marks.get("payback_more") or {}).items():
+        if tid in known and isinstance(parts, list):
+            store.set_payback_more(tid, [(str(c), float(a)) for c, a in parts])
+            n += 1
     for tid, share in (marks.get("shares") or {}).items():
         if tid in known:
             store.set_share(tid, None if share is None else float(share))
