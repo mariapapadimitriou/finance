@@ -24,6 +24,8 @@ struct SignInView: View {
     @State private var error: String?
     @State private var info: String?
     @State private var waitState: String?
+    /// The one "has it been approved?" loop, so asking again never runs two.
+    @State private var polling: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -200,6 +202,7 @@ struct SignInView: View {
     // MARK: Actions
 
     private func go(_ next: Step) {
+        if next != .waiting { polling?.cancel() }
         error = nil
         info = nil
         step = next
@@ -211,6 +214,8 @@ struct SignInView: View {
         Task {
             do {
                 try await action()
+            } catch is CancellationError {
+                // Nothing to say: it was stopped on purpose.
             } catch {
                 self.error = error.localizedDescription
             }
@@ -255,14 +260,15 @@ struct SignInView: View {
         let _: OK = try await app.api.post("api/auth/device/ask")
         waitState = "pending"
         step = .waiting
-        Task { await poll() }
+        polling?.cancel()
+        polling = Task { await poll() }
     }
 
     /// Ask the server every few seconds until the other device answers.
     private func poll() async {
-        while step == .waiting {
+        while step == .waiting && !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard step == .waiting else { return }
+            guard step == .waiting, !Task.isCancelled else { return }
             do {
                 let status: DeviceStatus = try await app.api.get("api/auth/device/status")
                 if status.signedIn == true {
@@ -272,6 +278,8 @@ struct SignInView: View {
                 }
                 waitState = status.state
                 if status.state == "refused" || status.state == "expired" { return }
+            } catch is CancellationError {
+                return
             } catch {
                 self.error = error.localizedDescription
                 return
@@ -291,6 +299,7 @@ struct SignInView: View {
     }
 
     private func cancelPending() async throws {
+        polling?.cancel()
         let _: OK = try await app.api.post("api/auth/device/cancel")
         go(.email)
     }

@@ -65,6 +65,8 @@ final class APIClient {
         }
         if !query.isEmpty {
             parts.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+            // The server reads "+" as a space; a search for "+5850" keeps it.
+            parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
         }
         guard let url = parts.url else { throw APIError.message("That server address doesn't look right.") }
         var request = URLRequest(url: url)
@@ -78,10 +80,21 @@ final class APIClient {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
-            throw APIError.message("Pearl couldn't reach the server. Check your connection and try again.")
+            // A screen that reloaded or went away cancels its request: not a
+            // connection problem, so it isn't reported as one.
+            if error is CancellationError || (error as? URLError)?.code == .cancelled {
+                throw CancellationError()
+            }
+            throw APIError.offline
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         if status == 401 {
+            // Signing in with a wrong password is a 401 too: say what the
+            // server said rather than "signed out".
+            if path.hasPrefix("api/auth/") {
+                let problem = (try? decoder.decode(ServerProblem.self, from: data))?.error
+                throw APIError.message(problem ?? "That didn't work. Try again.")
+            }
             throw APIError.signedOut
         }
         if !(200..<300).contains(status) {
@@ -109,11 +122,13 @@ final class APIClient {
 
 enum APIError: LocalizedError, Equatable {
     case signedOut
+    case offline
     case message(String)
 
     var errorDescription: String? {
         switch self {
         case .signedOut: return "You've been signed out. Sign in again."
+        case .offline: return "Pearl couldn't reach the server. Check your connection and try again."
         case .message(let text): return text
         }
     }

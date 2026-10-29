@@ -46,6 +46,15 @@ struct ReviewView: View {
                         ReviewCard(entry: entry, kinds: review.kinds ?? [:], categories: categories,
                                    busy: busy) { answer in Task { await send(answer) } }
                             .id(entry.id)
+                    } else if review.webOnly > 0 {
+                        PearlCard {
+                            Text("The rest are on the web").font(Pearl.title).foregroundColor(Pearl.ink)
+                            Text(review.webOnly == 1 ? "1 more question can only be answered in Pearl on the web for now."
+                                 : "\(review.webOnly) more questions can only be answered in Pearl on the web for now.")
+                                .foregroundColor(Pearl.muted)
+                            Link("Open Pearl on the web", destination: app.api.baseURL)
+                                .foregroundColor(Pearl.action).font(.body.weight(.semibold))
+                        }
                     } else {
                         AllSorted()
                     }
@@ -58,11 +67,12 @@ struct ReviewView: View {
         .pearlPage()
         .navigationTitle("Needs a look")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
         .task { await load() }
     }
 
     private func countWords(_ review: Review) -> String {
-        let n = review.entries.count
+        let n = review.entries.count + review.webOnly
         let skipped = review.count - (review.open ?? review.count)
         let left = n == 0 ? "Nothing left to review" : n == 1 ? "1 left to review" : "\(n) left to review"
         return skipped > 0 ? "\(left) · \(skipped) skipped" : left
@@ -86,8 +96,8 @@ struct ReviewView: View {
         do {
             switch answer {
             case .confirm(let id):
-                let _: CategoryChange = try await app.api.put("api/transactions/\(id)/confirm")
-                last = ("Sorted. Pearl will remember it was right.", nil)
+                let reply: MarkReply = try await app.api.put("api/transactions/\(id)/confirm")
+                last = ("Sorted. Pearl will remember it was right.", reply.undo)
             case .category(let id, let name, let remember):
                 let reply: MarkReply = try await app.api.patch("api/transactions/\(id)",
                                                                ["category": name, "apply_to_merchant": remember])
@@ -177,7 +187,11 @@ struct ReviewCard: View {
             CategoryPicker(categories: categories, current: entry.item.guess?.text ?? t.category ?? "",
                            merchant: t.name) { name, remember in
                 picking = false
-                answer(.category(t.id, name: name, remember: remember))
+                if entry.kind == .transfer {
+                    mark("spending", ["category": name, "remember": remember])
+                } else {
+                    answer(.category(t.id, name: name, remember: remember))
+                }
             }
         }
     }
@@ -223,6 +237,15 @@ struct ReviewCard: View {
                     }
                 }
             }
+        case (.transfer, _):
+            ChoiceRow(label: "Moved between my accounts", detail: "Not spending or income") {
+                mark("moved", ["remember": false])
+            }
+            ChoiceRow(label: "Put into savings", detail: "Adds to your total saved") {
+                mark("saved", ["remember": false])
+            }
+            ChoiceRow(label: "A purchase", detail: "Pick the category") { picking = true }
+            ChoiceRow(label: "Lent to someone", detail: "Pearl watches for it coming back") { mark("lent") }
         case (.other, _):
             Notice(text: "Pearl can't answer this kind of question on iPhone yet. Answer it in Pearl on the web, or skip it for now.")
         default:

@@ -23,6 +23,17 @@ struct RootView: View {
             switch app.phase {
             case .starting:
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).pearlPage()
+            case .offline:
+                VStack(spacing: 16) {
+                    Text("Pearl can't reach the server").font(Pearl.title).foregroundColor(Pearl.ink)
+                    Text("Check your connection and try again.").foregroundColor(Pearl.muted)
+                    Button("Try again") { Task { await app.start() } }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .frame(maxWidth: 240)
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .pearlPage()
             case .signedOut:
                 SignInView()
             case .signedIn(let user):

@@ -267,9 +267,11 @@ struct BriefTransaction: Decodable, Hashable {
     let amount: Double
     let accountName: String?
     let category: String?
+    /// Set on an unsorted transfer she skipped.
+    let skipped: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, date, merchant, description, amount, category
+        case id, date, merchant, description, amount, category, skipped
         case accountName = "account_name"
     }
 
@@ -365,7 +367,7 @@ struct Review: Decodable {
 
 /// What Needs a look asks about, in the order it asks.
 enum ReviewKind: String {
-    case category, moneyIn, incomeType, other
+    case category, moneyIn, incomeType, transfer, other
 }
 
 struct ReviewEntry: Identifiable, Hashable {
@@ -377,20 +379,33 @@ struct ReviewEntry: Identifiable, Hashable {
         case .category: return "What was this?"
         case .moneyIn: return "Is this income?"
         case .incomeType: return item.guessLabel == "Bonus / irregular" ? "Is this a bonus?" : "What kind of income?"
+        case .transfer: return "Where did it go?"
         case .other: return "Needs a look"
         }
     }
 }
 
 extension Review {
-    /// Every open question, the kinds the app answers first.
+    /// Every open question the app can show, the kinds it answers first.
     var entries: [ReviewEntry] {
         let open: (Item) -> Bool = { $0.skipped != true }
-        return unsureCategory.filter(open).map { ReviewEntry(kind: .category, item: $0) }
-            + moneyIn.filter(open).map { ReviewEntry(kind: .moneyIn, item: $0) }
-            + incomeType.filter(open).map { ReviewEntry(kind: .incomeType, item: $0) }
-            + (jointIn + whoSent + duplicate + recurringTransfer).filter(open)
-                .map { ReviewEntry(kind: .other, item: $0) }
+        var out: [ReviewEntry] = unsureCategory.filter(open).map { ReviewEntry(kind: .category, item: $0) }
+        out += moneyIn.filter(open).map { ReviewEntry(kind: .moneyIn, item: $0) }
+        out += incomeType.filter(open).map { ReviewEntry(kind: .incomeType, item: $0) }
+        let transfers: [BriefTransaction] = (unsorted?.transfers ?? []).filter { $0.skipped != true }
+        out += transfers.map { t in
+            ReviewEntry(kind: .transfer, item: Item(key: "u:" + t.id, txn: t, reason: nil, skipped: nil,
+                                                    from: nil, guessLabel: nil, guess: nil))
+        }
+        let others: [Item] = jointIn + whoSent + duplicate + recurringTransfer
+        out += others.filter(open).map { ReviewEntry(kind: .other, item: $0) }
+        return out
+    }
+
+    /// Open questions the app has no card for at all (months with a third
+    /// paycheque): answered on the web.
+    var webOnly: Int {
+        max(0, (open ?? count) - entries.count)
     }
 }
 

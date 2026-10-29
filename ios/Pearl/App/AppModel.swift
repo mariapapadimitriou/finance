@@ -6,6 +6,8 @@ import SwiftUI
 final class AppModel: ObservableObject {
     enum Phase: Equatable {
         case starting
+        /// Couldn't reach the server at launch: still signed in, try again.
+        case offline
         case signedOut
         case signedIn(PearlUser?)
     }
@@ -21,8 +23,13 @@ final class AppModel: ObservableObject {
         do {
             let status: AuthStatus = try await api.get("api/auth/status")
             phase = status.signedIn ? .signedIn(status.user) : .signedOut
-        } catch {
+        } catch APIError.signedOut {
             phase = .signedOut
+        } catch is CancellationError {
+            return
+        } catch {
+            // Offline: the saved session is still good, so don't ask to sign in.
+            phase = .offline
         }
     }
 
@@ -37,6 +44,7 @@ final class AppModel: ObservableObject {
 
     /// Any call that comes back "signed out" lands here.
     func handle(_ error: Error) -> String? {
+        if error is CancellationError { return nil }
         if let api = error as? APIError, api == .signedOut {
             phase = .signedOut
             return nil

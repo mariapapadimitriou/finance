@@ -14,6 +14,8 @@ struct TransactionsView: View {
     @State private var totals: TransactionList.Totals?
     @State private var reviewCount = 0
     @State private var loading = false
+    /// Once the first list has come back (or failed), never spin forever.
+    @State private var loadedOnce = false
     @State private var error: String?
     @State private var categories: [CategoryList.Category] = []
 
@@ -43,7 +45,7 @@ struct TransactionsView: View {
             }
             if rows.isEmpty {
                 Section {
-                    if loading || (error == nil && month == nil) {
+                    if loading || !loadedOnce {
                         HStack { Spacer(); ProgressView(); Spacer() }
                     } else if let error = error {
                         Text(error).foregroundColor(Pearl.muted)
@@ -67,7 +69,7 @@ struct TransactionsView: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(Pearl.page.ignoresSafeArea())
-        .navigationTitle(query.isEmpty ? Format.month(month ?? "") : "Search")
+        .navigationTitle(query.isEmpty ? (month.map { Format.month($0) } ?? "Transactions") : "Search")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Search all transactions")
         .onSubmit(of: .search) { Task { await reload() } }
@@ -142,7 +144,10 @@ struct TransactionsView: View {
 
     private func reload() async {
         loading = true
-        defer { loading = false }
+        defer {
+            loading = false
+            loadedOnce = true
+        }
         do {
             let list: TransactionList = try await app.api.get("api/transactions/list", query: params(offset: 0))
             rows = list.transactions
