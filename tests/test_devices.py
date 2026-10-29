@@ -332,3 +332,12 @@ def test_removing_signs_out_a_session_from_before_devices_were_listed(app, phone
     iphone = next(d for d in laptop.get("/api/auth/devices").get_json()["devices"] if not d["this"])
     laptop.delete(f"/api/auth/devices/{iphone['id']}")
     assert phone.get("/api/home").status_code == 401
+
+
+def test_the_iphone_app_names_itself():
+    """Pearl's iPhone app (2026-10-29): "Pearl app on iPhone" when it asks
+    her other devices to approve it."""
+    from finance.devices import label_from
+    assert label_from("PearlApp/1.0 (iPhone; iOS 17.4) CFNetwork/1490.0.4 Darwin/23.2.0") == "Pearl app on iPhone"
+    assert label_from("Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 "
+                      "(KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1") == "Safari on iPhone"

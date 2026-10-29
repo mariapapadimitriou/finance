@@ -66,7 +66,10 @@ def label_from(user_agent: str | None) -> str:
         system = "Linux"
     else:
         system = ""
-    if "Edg/" in ua:
+    # Pearl's iPhone app (2026-10-29) names itself: "PearlApp/1.0 (iPhone; iOS 17.4)".
+    if "PearlApp/" in ua:
+        browser = "Pearl app"
+    elif "Edg/" in ua:
         browser = "Edge"
     elif "Firefox/" in ua or "FxiOS" in ua:
         browser = "Firefox"

@@ -1,0 +1,391 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AEEA3ED321BEA8B167EC2950 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9447FB87C39BED247C466A /* APIClient.swift */; };
+		B83A9DA9B4B837A8966C5B1C /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC593419BBFC2C02400C055 /* Models.swift */; };
+		447CDE89543B103ACD878613 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C5660576F12049C54E11ECA /* AppModel.swift */; };
+		320A0024BC90E91C1C716012 /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95910E98ECA767C288B13D6F /* Format.swift */; };
+		D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 955CF69FC7C7C7429408F5FF /* PearlApp.swift */; };
+		B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97809C6135186A3BD204F423 /* Theme.swift */; };
+		D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = C497270FF4823ED50730E0BC /* Components.swift */; };
+		F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F7C177E913CEBE0B53FA5 /* HomeView.swift */; };
+		658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 186A54E5EB12390A80B72B43 /* ProfileView.swift */; };
+		5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02873771C6DC13EA678089B1 /* ReviewView.swift */; };
+		164B080F19365D41A9D8BFF2 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02DCE2D0020FD79FD491D0DF /* SignInView.swift */; };
+		014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63873676D9EA2C177703422C /* TransactionDetailView.swift */; };
+		8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */; };
+		1BB8E4A8EF14595F39E91CE8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D8703406E9B80F661A813DA6 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		95D653871703BB6B6441A16C /* Pearl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pearl.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9B9447FB87C39BED247C466A /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		CEC593419BBFC2C02400C055 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		9C5660576F12049C54E11ECA /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		95910E98ECA767C288B13D6F /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
+		955CF69FC7C7C7429408F5FF /* PearlApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlApp.swift; sourceTree = "<group>"; };
+		97809C6135186A3BD204F423 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		C497270FF4823ED50730E0BC /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		663F7C177E913CEBE0B53FA5 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		186A54E5EB12390A80B72B43 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		02873771C6DC13EA678089B1 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
+		02DCE2D0020FD79FD491D0DF /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
+		63873676D9EA2C177703422C /* TransactionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionDetailView.swift; sourceTree = "<group>"; };
+		4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsView.swift; sourceTree = "<group>"; };
+		D8703406E9B80F661A813DA6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		CC637901ACFE841FF5877B6C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		EA8594C83D82D703505DFABE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4815E8BA076BC7E930F44831 = {
+			isa = PBXGroup;
+			children = (
+				2DC8CB804A1707D9C674979F /* Pearl */,
+				8241ED42B56CC1DA7F726566 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		8241ED42B56CC1DA7F726566 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				95D653871703BB6B6441A16C /* Pearl.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		2DC8CB804A1707D9C674979F /* Pearl */ = {
+			isa = PBXGroup;
+			children = (
+				265B72681C5FF6681EA44180 /* API */,
+				19B2223411966CF353BDA057 /* App */,
+				A199E4A32186257ECD0BEBD8 /* Theme */,
+				3C6EFF52DDDC977F66941AB7 /* Views */,
+				D8703406E9B80F661A813DA6 /* Assets.xcassets */,
+				CC637901ACFE841FF5877B6C /* Info.plist */,
+			);
+			path = Pearl;
+			sourceTree = "<group>";
+		};
+		265B72681C5FF6681EA44180 /* API */ = {
+			isa = PBXGroup;
+			children = (
+				9B9447FB87C39BED247C466A /* APIClient.swift */,
+				CEC593419BBFC2C02400C055 /* Models.swift */,
+			);
+			path = API;
+			sourceTree = "<group>";
+		};
+		19B2223411966CF353BDA057 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				9C5660576F12049C54E11ECA /* AppModel.swift */,
+				95910E98ECA767C288B13D6F /* Format.swift */,
+				955CF69FC7C7C7429408F5FF /* PearlApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A199E4A32186257ECD0BEBD8 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				97809C6135186A3BD204F423 /* Theme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		3C6EFF52DDDC977F66941AB7 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				CD85065437072E6040614BC4 /* Components */,
+				91800D9EF29E7A94176F29D6 /* Home */,
+				7067600B49381F5C11E3B0CF /* Profile */,
+				1669F177E81E2EFD031CCB22 /* Review */,
+				8B203545C203BD480BBFE730 /* SignIn */,
+				11154C8D437A90D8972D0515 /* Transactions */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		CD85065437072E6040614BC4 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				C497270FF4823ED50730E0BC /* Components.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		91800D9EF29E7A94176F29D6 /* Home */ = {
+			isa = PBXGroup;
+			children = (
+				663F7C177E913CEBE0B53FA5 /* HomeView.swift */,
+			);
+			path = Home;
+			sourceTree = "<group>";
+		};
+		7067600B49381F5C11E3B0CF /* Profile */ = {
+			isa = PBXGroup;
+			children = (
+				186A54E5EB12390A80B72B43 /* ProfileView.swift */,
+			);
+			path = Profile;
+			sourceTree = "<group>";
+		};
+		1669F177E81E2EFD031CCB22 /* Review */ = {
+			isa = PBXGroup;
+			children = (
+				02873771C6DC13EA678089B1 /* ReviewView.swift */,
+			);
+			path = Review;
+			sourceTree = "<group>";
+		};
+		8B203545C203BD480BBFE730 /* SignIn */ = {
+			isa = PBXGroup;
+			children = (
+				02DCE2D0020FD79FD491D0DF /* SignInView.swift */,
+			);
+			path = SignIn;
+			sourceTree = "<group>";
+		};
+		11154C8D437A90D8972D0515 /* Transactions */ = {
+			isa = PBXGroup;
+			children = (
+				63873676D9EA2C177703422C /* TransactionDetailView.swift */,
+				4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */,
+			);
+			path = Transactions;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B8D1D9F1319003213E1C8FF6 /* Pearl */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ADA8AAA82D482A5327115063 /* Build configuration list for PBXNativeTarget "Pearl" */;
+			buildPhases = (
+				80DAA310FC779194862C0D32 /* Sources */,
+				EA8594C83D82D703505DFABE /* Frameworks */,
+				16B6DB84760A9CCAF0F0E448 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Pearl;
+			productName = Pearl;
+			productReference = 95D653871703BB6B6441A16C /* Pearl.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		46F86FAA6BBF9AC94A7E4595 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					B8D1D9F1319003213E1C8FF6 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = BEE1607168D4EBCB69E53BCE /* Build configuration list for PBXProject "Pearl" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 4815E8BA076BC7E930F44831;
+			productRefGroup = 8241ED42B56CC1DA7F726566 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B8D1D9F1319003213E1C8FF6 /* Pearl */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		16B6DB84760A9CCAF0F0E448 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1BB8E4A8EF14595F39E91CE8 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		80DAA310FC779194862C0D32 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AEEA3ED321BEA8B167EC2950 /* APIClient.swift in Sources */,
+				B83A9DA9B4B837A8966C5B1C /* Models.swift in Sources */,
+				447CDE89543B103ACD878613 /* AppModel.swift in Sources */,
+				320A0024BC90E91C1C716012 /* Format.swift in Sources */,
+				D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */,
+				B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */,
+				D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */,
+				F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */,
+				658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */,
+				5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */,
+				164B080F19365D41A9D8BFF2 /* SignInView.swift in Sources */,
+				014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */,
+				8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		79202D6F05A2EB0B50AEA796 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		BA9524E20EE286DFD03FCC44 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AF9D2D27DADC25B267ED81C6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Pearl/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Pearl;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mariapapadimitriou.pearl;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		7D8C6F6E45786682C7D8EF1D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Pearl/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Pearl;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mariapapadimitriou.pearl;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		BEE1607168D4EBCB69E53BCE /* Build configuration list for PBXProject "Pearl" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				79202D6F05A2EB0B50AEA796 /* Debug */,
+				BA9524E20EE286DFD03FCC44 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ADA8AAA82D482A5327115063 /* Build configuration list for PBXNativeTarget "Pearl" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AF9D2D27DADC25B267ED81C6 /* Debug */,
+				7D8C6F6E45786682C7D8EF1D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 46F86FAA6BBF9AC94A7E4595 /* Project object */;
+}
