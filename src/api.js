@@ -365,6 +365,8 @@ export const batchConfirm = (ids) => json('POST', '/api/transactions/batch/confi
 // row, doing one (with `dry` for the line underneath), and a selection at once.
 export const getTxCases = (id) => req(`/api/transactions/${encodeURIComponent(id)}/cases`);
 // Any purchase this money coming in could pay back, by name or amount.
+// Deposits that may have reimbursed an expense (2026-10-29).
+export const searchDeposits = (id, q = '') => req(`/api/transactions/${encodeURIComponent(id)}/deposits?q=${encodeURIComponent(q)}`);
 export const searchCharges = (id, q = '') => req(`/api/transactions/${encodeURIComponent(id)}/charges?q=${encodeURIComponent(q)}`);
 export const markTx = (id, body, dry = false) =>
   json('POST', `/api/transactions/${encodeURIComponent(id)}/mark${dry ? '?dry=1' : ''}`, body);

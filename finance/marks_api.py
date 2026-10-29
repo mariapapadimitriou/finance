@@ -74,6 +74,24 @@ def transaction_charges(txn_id: str):
                                                     st.merchant_names())})
 
 
+@bp.get("/transactions/<txn_id>/deposits")
+def transaction_deposits(txn_id: str):
+    """Deposits that could have reimbursed this expense, searched by name or
+    amount (?q=); for "Has it been reimbursed yet?" (2026-10-29). A search
+    looks a year past the expense."""
+    st = store()
+    txns = st.all_transactions()
+    t = next((x for x in txns if x.fingerprint == txn_id), None)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if t.amount <= 0:
+        return jsonify({"deposits": []})
+    q = request.args.get("q", "")
+    return jsonify({"deposits": marks.reimbursing_deposits(
+        t, txns, st.merchant_names(), st.payback_kinds(), q=q,
+        days=365 if q.strip() else marks.REFUND_DAYS, limit=20)})
+
+
 def _impact_for(st, before_txns, after_txns, t, res: dict) -> dict:
     return core._impact(st, before_txns, after_txns, res["from"], res["to"], t.date[:7])
 

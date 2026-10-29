@@ -228,12 +228,21 @@ def reimbursement_candidates(inflow: Transaction, txns: list[Transaction],
 
 def reimbursing_deposits(charge: Transaction, txns: list[Transaction],
                          names: dict[str, str] | None = None,
-                         kinds: dict[str, str] | None = None) -> list[dict]:
+                         kinds: dict[str, str] | None = None, q: str = "",
+                         days: int = REFUND_DAYS, limit: int = 12) -> list[dict]:
     """Deposits that may have reimbursed this expense (2026-10-29), from the
     expense's side: money in from three days before it to four months after,
     not paying back something else, with room left. The same amount first,
     then deposits already reimbursing other expenses, then the nearest."""
+    from .etransfers import party as etransfer_party
     want = round(charge.amount - (charge.paid_back or 0.0), 2)
+    # Searched (2026-10-29): by the name she'd type or the amount, as the
+    # purchase search does.
+    needle = " ".join((q or "").lower().split())
+    try:
+        amount_q = round(float(needle.replace("$", "").replace(",", "")), 2) if needle else None
+    except ValueError:
+        amount_q = None
     out = []
     for d in txns:
         if d.amount >= 0 or d.fingerprint == charge.fingerprint or d.refund_of:
@@ -241,8 +250,13 @@ def reimbursing_deposits(charge: Transaction, txns: list[Transaction],
         if d.excluded and d.excluded != "Possible duplicate":
             continue
         gap = _days(d.date, charge.date)
-        if gap < -3 or gap > REFUND_DAYS:
+        if gap < -3 or gap > days:
             continue
+        if needle:
+            shown = (names or {}).get(_key(d.merchant)) or d.merchant or ""
+            hay = " ".join(x for x in (shown, d.merchant, d.description or "", d.category or "") if x).lower()
+            if needle not in hay and not (amount_q is not None and abs(round(-d.amount, 2) - amount_q) < 0.01):
+                continue
         whole = round(-d.amount, 2)
         # A friend's payback isn't a reimbursement; one reimbursing other
         # expenses can take this one too, with what it has left.
@@ -254,11 +268,12 @@ def reimbursing_deposits(charge: Transaction, txns: list[Transaction],
             continue
         out.append(((0 if abs(room - want) < 0.01 or abs(whole - want) < 0.01 else 1, abs(gap)),
                     {"id": d.fingerprint, "date": d.date[:10],
-                     "merchant": (names or {}).get(_key(d.merchant)) or d.merchant or d.description,
+                     "merchant": ((names or {}).get(_key(d.merchant))
+                                  or (etransfer_party(d) or {}).get("name") or d.merchant or d.description),
                      "amount": whole, "left": room, "category": d.category or "Other",
                      "linked": bool(d.repays)}))
-    out.sort(key=lambda r: r[0])
-    return [r for _, r in out[:12]]
+    out.sort(key=(lambda r: r[1]["date"]) if needle else (lambda r: r[0]), reverse=bool(needle))
+    return [r for _, r in out[:limit]]
 
 
 def payback_candidates(inflow: Transaction, txns: list[Transaction], splits: dict,
@@ -509,6 +524,8 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
             # Already reimbursed (2026-10-29): link the deposit from here.
             item["candidates"] = reimbursing_deposits(t, txns, names, kinds)
             item["needs"] = "reimbursed" if item["candidates"] else None
+            # What it still needs, for the running total (2026-10-29).
+            item["owed"] = round(t.amount - (t.paid_back or 0.0), 2)
         elif c["needs"] == "candidates" and c["key"] == "reimbursement":
             item["candidates"] = reimbursement_candidates(t, txns, names)
         elif c["needs"] == "refund":
@@ -723,7 +740,7 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             recat("Borrowed")
             title = "Sorted as paying back what you borrowed."
     elif case == "work" and body.get("reimbursed_by"):
-        title, detail = _reimbursed_by(store, t, str(body["reimbursed_by"]), marks)
+        title, detail = _reimbursed_by(store, t, body["reimbursed_by"], marks)
     elif case == "work":
         marks.setdefault("exclusions", {})[t.fingerprint] = t.excluded
         store.exclude(t.fingerprint, WORK_REASON)
@@ -838,16 +855,35 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         if charge is None or charge.amount <= 0:
             raise Problem("Pick the expense it reimburses.")
         un_exclude()
-        if charge.excluded and charge.excluded != "Possible duplicate":
-            marks.setdefault("exclusions", {})[charge.fingerprint] = charge.excluded
-            store.include(charge.fingerprint)
+        # Many to many (2026-10-29): the deposit gives what's unpaid on the
+        # expense, up to all of it; the rest of a bigger deposit is money in,
+        # and an expense still partly owed stays left out for the rest.
+        whole = round(-t.amount, 2)
+        owed = round(charge.amount - (charge.paid_back or 0.0) + t.part_for(charge_id), 2)
+        if owed <= 0.005:
+            raise Problem(f"{charge.merchant} is already reimbursed.")
+        use = round(min(whole, owed), 2)
         marks.setdefault("paybacks", {})[t.fingerprint] = {
             "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
-            "person": store.payback_people().get(t.fingerprint)}
+            "person": store.payback_people().get(t.fingerprint), "amount": t.repays_amount}
+        marks.setdefault("payback_more", {})[t.fingerprint] = store.payback_more(t.fingerprint)
         _drop_made_split(store, t, marks)
-        store.link_payback(charge_id, t.fingerprint, None)
+        store.link_payback(charge_id, t.fingerprint, None, None if abs(use - whole) < 0.005 else use)
         store.set_payback_kind(t.fingerprint, REIMBURSEMENT)
         title = f"Reimbursement for {charge.merchant}. Both are out of your numbers."
+        if use >= owed - 0.005:
+            if charge.excluded and charge.excluded != "Possible duplicate":
+                marks.setdefault("exclusions", {})[charge.fingerprint] = charge.excluded
+                store.include(charge.fingerprint)
+        else:
+            if (charge.excluded or "") != WORK_REASON:
+                marks.setdefault("exclusions", {})[charge.fingerprint] = charge.excluded
+                store.exclude(charge.fingerprint, WORK_REASON)
+            title = f"Part of {charge.merchant} reimbursed."
+            detail = (f"${use:,.2f} of it; the other ${owed - use:,.2f} stays left out until it’s "
+                      "reimbursed.")
+        if whole - use > 0.005:
+            detail = f"The other ${whole - use:,.2f} of this deposit counts as money in."
     elif case == "refund":
         charge_id = str(body.get("charge") or "")
         charge = next((x for x in store.all_transactions() if x.fingerprint == charge_id),
@@ -1042,6 +1078,11 @@ def _payback_many(store, t: Transaction, body: dict, marks: dict,
     if kind == REIMBURSEMENT:
         # A work expense left out while it waited counts again, reimbursed.
         for charge, use in parts:
+            # Many to many (2026-10-29): only one reimbursed in full counts
+            # again; one still partly owed stays left out for the rest.
+            fresh = store.get_transaction(charge.fingerprint) or charge
+            if fresh.amount - (fresh.paid_back or 0.0) > 0.005:
+                continue
             if charge.excluded and charge.excluded != "Possible duplicate":
                 marks.setdefault("exclusions", {})[charge.fingerprint] = charge.excluded
                 store.include(charge.fingerprint)
@@ -1068,10 +1109,9 @@ def _payback_many(store, t: Transaction, body: dict, marks: dict,
     return title, detail
 
 
-def _reimbursed_by(store, charge: Transaction, inflow_id: str, marks: dict) -> tuple[str, str]:
-    """A work expense, linked to the deposit that already reimbursed it
-    (2026-10-29). A deposit already reimbursing other expenses takes this
-    one too, with what it has left. Returns (title, detail)."""
+def _link_reimbursing(store, charge: Transaction, inflow_id: str, marks: dict) -> tuple[Transaction, float]:
+    """Put one deposit toward a work expense: what's unpaid on the expense,
+    up to what the deposit has left. Returns (deposit, how much)."""
     d = store.get_transaction(inflow_id)
     if d is None or d.amount >= 0:
         raise Problem("Pick the deposit that reimbursed it.")
@@ -1082,13 +1122,16 @@ def _reimbursed_by(store, charge: Transaction, inflow_id: str, marks: dict) -> t
     others = [(cid, d.part_for(cid)) for cid in d.repays_all if cid != charge.fingerprint]
     room = round(whole - sum(a for _, a in others), 2)
     want = round(charge.amount - (charge.paid_back or 0.0) + d.part_for(charge.fingerprint), 2)
+    if want <= 0.005:
+        raise Problem("It’s already been reimbursed in full: that’s more deposits than it needs.")
     use = round(min(room, want), 2)
     if use <= 0.005:
         raise Problem("That deposit’s already used up by other expenses.")
-    marks.setdefault("paybacks", {})[d.fingerprint] = {
-        "charge": d.repays, "kind": kind, "person": store.payback_people().get(d.fingerprint),
-        "amount": d.repays_amount}
-    marks.setdefault("payback_more", {})[d.fingerprint] = store.payback_more(d.fingerprint)
+    if d.fingerprint not in marks.get("paybacks", {}):
+        marks.setdefault("paybacks", {})[d.fingerprint] = {
+            "charge": d.repays, "kind": kind, "person": store.payback_people().get(d.fingerprint),
+            "amount": d.repays_amount}
+        marks.setdefault("payback_more", {})[d.fingerprint] = store.payback_more(d.fingerprint)
     if others:
         (first, first_use), rest = others[0], others[1:]
         store.link_payback(first, d.fingerprint, None, first_use)
@@ -1096,18 +1139,45 @@ def _reimbursed_by(store, charge: Transaction, inflow_id: str, marks: dict) -> t
     else:
         store.link_payback(charge.fingerprint, d.fingerprint, None, None if abs(use - whole) < 0.005 else use)
     store.set_payback_kind(d.fingerprint, REIMBURSEMENT)
-    title = f"Reimbursed by {d.merchant or d.description} on {date.fromisoformat(d.date[:10]).strftime('%B %-d')}."
-    if use >= want - 0.005:
+    return d, use
+
+
+def _reimbursed_by(store, charge: Transaction, inflow_ids, marks: dict) -> tuple[str, str]:
+    """A work expense, linked to the deposit — or deposits, many to many
+    (2026-10-29) — that already reimbursed it. Each deposit gives what the
+    expense still needs, up to what it has left (a deposit reimbursing other
+    expenses too keeps their parts). Returns (title, detail)."""
+    ids = [str(i) for i in (inflow_ids if isinstance(inflow_ids, list) else [inflow_ids]) if i][:20]
+    if not ids:
+        raise Problem("Pick the deposit that reimbursed it.")
+    want = round(charge.amount - (charge.paid_back or 0.0), 2)
+    used, linked = 0.0, []
+    for i in dict.fromkeys(ids):
+        fresh = store.get_transaction(charge.fingerprint) or charge
+        d, use = _link_reimbursing(store, fresh, i, marks)
+        used = round(used + use, 2)
+        linked.append(d)
+    fresh = store.get_transaction(charge.fingerprint) or charge
+    left = round(fresh.amount - (fresh.paid_back or 0.0), 2)
+    if len(linked) == 1:
+        d = linked[0]
+        title = (f"Reimbursed by {d.merchant or d.description} on "
+                 f"{date.fromisoformat(d.date[:10]).strftime('%B %-d')}.")
+    else:
+        names = list(dict.fromkeys((d.merchant or d.description) for d in linked))
+        title = f"Reimbursed by {len(linked)} deposits" + (f" from {names[0]}." if len(names) == 1
+                                                           else f": {', '.join(names)}.")
+    if left <= 0.005:
         # Paid back in full: it counts again, and both leave her numbers.
         if charge.excluded and charge.excluded != "Possible duplicate":
             marks.setdefault("exclusions", {})[charge.fingerprint] = charge.excluded
             store.include(charge.fingerprint)
-        detail = "Both are out of your numbers."
+        detail = "Both are out of your numbers." if len(linked) == 1 else "They’re all out of your numbers."
     else:
         if (charge.excluded or "") != WORK_REASON:
             marks.setdefault("exclusions", {})[charge.fingerprint] = charge.excluded
             store.exclude(charge.fingerprint, WORK_REASON)
-        detail = (f"${use:,.2f} of it was reimbursed; the other ${want - use:,.2f} stays left out "
+        detail = (f"${used:,.2f} of it was reimbursed; the other ${left:,.2f} stays left out "
                   "until it’s reimbursed.")
     return title, detail
 

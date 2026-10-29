@@ -126,3 +126,64 @@ class TestFromTheExpense:
         undo(client, res)
         r = rows(client)
         assert r[pay].repays_all == [taxi]
+
+
+class TestManyToMany:
+    """2026-10-29: several deposits for one expense, and one deposit for several."""
+
+    def test_two_deposits_reimburse_one_expense(self, client):
+        hotel = row(300.0, "MARRIOTT", account="cc", kind="credit", when=ago(20), merchant="Marriott")
+        hotel.category, hotel.category_source = "Lodging", "user"
+        a = row(-200.0, "ACME EXPENSES ONE", when=ago(8), merchant="Acme Expenses")
+        b = row(-100.0, "ACME EXPENSES TWO", when=ago(4), merchant="Acme Expenses")
+        ids = load(client.st, hotel, a, b)
+        h, d1, d2 = ids["MARRIOTT"], ids["ACME EXPENSES ONE"], ids["ACME EXPENSES TWO"]
+        res = mark(client, h, case="work", reimbursed_by=[d1, d2])
+        assert res["title"] == "Reimbursed by 2 deposits from Acme Expenses."
+        r = rows(client)
+        assert r[h].paid_back == 300 and not r[h].excluded
+        assert r[d1].paid_part == 200 and r[d2].paid_part == 100
+
+    def test_one_deposit_then_another_from_the_deposit_side(self, client):
+        hotel = row(300.0, "MARRIOTT", account="cc", kind="credit", when=ago(20), merchant="Marriott")
+        hotel.category, hotel.category_source = "Lodging", "user"
+        a = row(-200.0, "ACME EXPENSES ONE", when=ago(8), merchant="Acme Expenses")
+        b = row(-100.0, "ACME EXPENSES TWO", when=ago(4), merchant="Acme Expenses")
+        ids = load(client.st, hotel, a, b)
+        h, d1, d2 = ids["MARRIOTT"], ids["ACME EXPENSES ONE"], ids["ACME EXPENSES TWO"]
+        mark(client, h, case="work")
+        res = mark(client, d1, case="reimbursement", charge=h)
+        assert res["title"] == "Part of Marriott reimbursed."
+        assert rows(client)[h].excluded                      # $100 still to come
+        offered = {x["id"]: x for x in cases(client, d2)["reimbursement"]["candidates"]}
+        assert offered[h]["left"] == 100
+        mark(client, d2, case="reimbursement", charge=h)
+        r = rows(client)
+        assert r[h].paid_back == 300 and not r[h].excluded
+
+    def test_a_bigger_deposit_leaves_the_rest_as_money_in(self, client):
+        taxi, hotel, pay = setup(client)
+        res = mark(client, pay, case="reimbursement", charge=taxi)
+        assert res["detail"] == "The other $115.00 of this deposit counts as money in."
+        r = rows(client)
+        assert r[taxi].paid_back == 45 and r[pay].paid_part == 45 and r[pay].unlinked_part == 115
+
+    def test_more_deposits_than_it_needs_is_refused(self, client):
+        taxi, hotel, pay = setup(client, work=False)
+        extra = row(-50.0, "ACME EXPENSES LATE", when=ago(1), merchant="Acme Expenses")
+        lid = load(client.st, extra)["ACME EXPENSES LATE"]
+        r = client.post(f"/api/transactions/{taxi}/mark", json={"case": "work", "reimbursed_by": [pay, lid]})
+        assert r.status_code == 400 and "more deposits than it needs" in r.get_json()["error"]
+
+
+class TestSearch:
+    def test_deposits_can_be_searched_by_name_or_amount(self, client):
+        taxi, hotel, pay = setup(client, work=False)
+        far = row(-45.0, "EXPENSIFY PAYOUT", when=ago(-200), merchant="Expensify")
+        load(client.st, far)
+        found = client.get(f"/api/transactions/{taxi}/deposits", query_string={"q": "acme"}).get_json()["deposits"]
+        assert [d["merchant"] for d in found] == ["Acme Corp Expenses"]
+        found = client.get(f"/api/transactions/{taxi}/deposits", query_string={"q": "45"}).get_json()["deposits"]
+        assert [d["merchant"] for d in found] == ["Expensify"]          # a search looks further
+        everything = client.get(f"/api/transactions/{taxi}/deposits").get_json()["deposits"]
+        assert "Expensify" not in [d["merchant"] for d in everything]

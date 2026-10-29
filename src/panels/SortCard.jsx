@@ -5,7 +5,7 @@ import { CategoryChips, categoryLabel, groupCategories } from './CategoryPicker.
 import { RepaymentMatch, SplitThis } from './Splits.jsx';
 import { depositChoices } from './joint.js';
 import {
-  INCOME_KINDS, confirmTx, dismissReview, getTxCases, linkPayback, markTx, searchCharges, setCategory,
+  INCOME_KINDS, confirmTx, dismissReview, getTxCases, linkPayback, markTx, searchCharges, searchDeposits, setCategory,
   setIncomeType, setJointFrom, setParty, setSplit, sortTransfers, undoChange,
 } from '../api.js';
 import './stacked.css';
@@ -306,7 +306,7 @@ export function steps(it, cases, mode = 'stacked') {
     // A work expense (2026-10-29): already reimbursed by a deposit that came?
     if (c.key === 'work' && c.needs === 'reimbursed') {
       S.reimbursed = { title: 'Has it been reimbursed yet?', left: 1, ask: 'deposit',
-                       candidates: c.candidates ?? [] };
+                       candidates: c.candidates ?? [], owed: c.owed };
     }
     if (c.needs === 'refund') {
       S.pick_refund = { title: 'Which purchase is it a refund of?', left: 1, ask: 'pick', key: 'refund',
@@ -536,14 +536,17 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
   // Any of her charges can be found (2026-10-23), a reimbursement's too:
   // no need to mark the expense first.
   const picking = flow.S[stepIdNow]?.ask === 'pick';
+  // "Has it been reimbursed yet?" searches deposits the same way (2026-10-29).
+  const depositing = flow.S[stepIdNow]?.ask === 'deposit';
   useEffect(() => {
-    if (!picking) { setFound(null); return undefined; }
+    if (!picking && !(depositing && find)) { setFound(null); return undefined; }
     let live = true;
     const t = setTimeout(() => {
-      searchCharges(it.txn.id, find).then((d) => { if (live) setFound(d.charges ?? []); }).catch(() => { if (live) setFound([]); });
+      (depositing ? searchDeposits(it.txn.id, find).then((d) => d.deposits) : searchCharges(it.txn.id, find).then((d) => d.charges))
+        .then((rows) => { if (live) setFound(rows ?? []); }).catch(() => { if (live) setFound([]); });
     }, find ? 200 : 0);
     return () => { live = false; clearTimeout(t); };
-  }, [it.txn.id, find, picking]);
+  }, [it.txn.id, find, picking, depositing]);
   // A new card or step starts with nothing picked (2026-10-28).
   useEffect(() => { setPicks([]); }, [it.txn.id, stepIdNow]);
   const stepId = path.length ? nextOf(flow, path[path.length - 1]) : flow.start;
@@ -659,8 +662,18 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
       return finish(answersMany, effect, () => via({ case: 'reimbursement',
         charges: rows.map((r) => ({ id: r.id, amount: r.use })) }, 'Sorted.'));
     }
+    if (s.ask === 'deposit' && Array.isArray(v)) {                          // several deposits
+      const owed = s.owed ?? Math.abs(it.txn.amount);
+      const { rows, used } = allocatePicks(owed, v);
+      const effect = `Linked to ${rows.length} deposits. `
+        + (owed - used > 0.005 ? `The other ${txAmount(owed - used)} stays left out until it’s reimbursed.`
+          : 'They’re all out of your numbers.');
+      const answersMany = [...path, { step: stepId, v: rows.map((r) => r.id).join(','),
+                                      label: `${rows.length} deposits · ${txAmount(used)}` }];
+      return finish(answersMany, effect, () => via({ case: 'work', reimbursed_by: rows.map((r) => r.id) }, 'Reimbursed.'));
+    }
     if (s.ask === 'deposit') {                                              // reimbursed already?
-      const d = s.candidates.find((x) => x.id === v);
+      const d = s.candidates.find((x) => x.id === v) ?? (found ?? []).find((x) => x.id === v);
       const effect = d
         ? `Linked to the ${txAmount(d.amount)} from ${d.merchant}. Both leave your numbers.`
         : 'Left out of your spending until the money comes back.';
@@ -962,20 +975,69 @@ export default function SortCard({ it, categories = [], busy, act, commit, onSki
               )}
             </>
           )}
-          {step.ask === 'deposit' && (
-            <div className="pk-choices" role="radiogroup" aria-label={step.title}>
-              {step.candidates.map((d) => (
-                <Choice key={d.id} name={group} checked={false} disabled={busy}
-                        onChange={() => saveAsk(step, d.id, `${d.merchant} · ${shortDate(d.date)}`)}
-                        label={`Yes, by ${d.merchant} · ${shortDate(d.date)}`}
-                        description={[txAmount(d.amount, { inflow: true }),
-                          d.linked ? `${txAmount(d.left)} of it not used yet` : null].filter(Boolean).join(' · ')} />
-              ))}
-              <Choice name={group} checked={false} disabled={busy}
-                      onChange={() => saveAsk(step, '', 'Not yet')}
-                      label="Not yet" description="Left out of your spending until the money comes back" />
-            </div>
-          )}
+          {step.ask === 'deposit' && (() => {
+            // Many to many (2026-10-29): tick the deposits that reimbursed it;
+            // each gives what the expense still needs, up to what it has left.
+            const owed = step.owed ?? Math.abs(it.txn.amount);
+            const alloc = allocatePicks(owed, picks);
+            const list = find ? (found ?? []) : step.candidates;
+            const on = (d) => alloc.rows.find((r) => r.id === d.id);
+            const toggle = (d) => {
+              if (on(d)) { setPicks(picks.filter((p) => p.id !== d.id)); return; }
+              // One deposit that covers all of it links straight away.
+              if (!picks.length && Number(d.left) >= owed - 0.005) {
+                saveAsk(step, d.id, `${d.merchant} · ${shortDate(d.date)}`);
+                return;
+              }
+              setPicks([...picks, d]);
+            };
+            return (
+              <>
+                <div className="txd-field nl-find">
+                  <input type="search" value={find} aria-label="Find the deposit" placeholder="Find a deposit by name or amount"
+                         autoComplete="off" disabled={busy} onChange={(e) => setFind(e.target.value)} />
+                </div>
+                <div className="pk-choices" role="group" aria-label={step.title}>
+                  {list.map((d) => {
+                    const mine = on(d);
+                    const full = !mine && picks.length > 0 && alloc.left <= 0.005;
+                    return (
+                      <Choice key={d.id} type="checkbox" name={group} checked={!!mine} disabled={busy || full}
+                              onChange={() => toggle(d)}
+                              label={`Yes, by ${d.merchant} · ${shortDate(d.date)}`}
+                              description={[txAmount(d.amount, { inflow: true }),
+                                d.linked ? `${txAmount(d.left)} of it not used yet` : null,
+                                mine ? `${txAmount(mine.use)} toward this` : null].filter(Boolean).join(' · ')} />
+                    );
+                  })}
+                  {find && found && !found.length && (
+                    <p className="pk-muted">No deposit called “{find}” in the year after it.</p>
+                  )}
+                  {!picks.length && !find && (
+                    <Choice name={group} checked={false} disabled={busy}
+                            onChange={() => saveAsk(step, '', 'Not yet')}
+                            label="Not yet" description="Left out of your spending until the money comes back" />
+                  )}
+                </div>
+                {picks.length > 0 && (
+                  <div className="nl-picked" role="status">
+                    <p className="nl-picked-total">
+                      <strong>{`${txAmount(alloc.used)} of ${txAmount(owed)}`}</strong>
+                      {` · ${alloc.rows.length} ${alloc.rows.length === 1 ? 'deposit' : 'deposits'}`}
+                    </p>
+                    <p className="pk-label pk-muted">
+                      {alloc.left > 0.005
+                        ? `${txAmount(alloc.left)} still to be reimbursed. Pick another, or link these and the rest stays left out.`
+                        : 'All of it is reimbursed. Untick one to pick a different deposit.'}
+                    </p>
+                    <PButton disabled={busy} onClick={() => saveAsk(step, alloc.rows, `${alloc.rows.length} deposits`)}>
+                      {`Link ${alloc.rows.length === 1 ? 'this deposit' : `these ${alloc.rows.length} deposits`}`}
+                    </PButton>
+                  </div>
+                )}
+              </>
+            );
+          })()}
           {step.ask === 'pick' && (() => {
             const seen = new Set(step.candidates.map((c) => c.id));
             const more = (found ?? []).filter((c) => !seen.has(c.id) || find);
