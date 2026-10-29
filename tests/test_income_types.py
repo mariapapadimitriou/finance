@@ -135,3 +135,57 @@ def test_undo_puts_a_guessed_bonus_back(tmp_path):
     back = st.get_transaction(bonus.fingerprint)
     assert (back.income_type, back.income_type_source) == ("bonus", "rule")
     assert bonus.fingerprint in ids_in(for_store(st))
+
+
+# ── Side payouts sent as "Direct deposit" (2026-10-29) ───────────────────
+# Her paycheques ("Wealthsimple-OS - Direct deposit", $2,993–$3,562 twice a
+# month) land beside health-spending claims and small payouts that also say
+# "Direct deposit". Measured against all of them, the paycheques read as
+# bonuses, and Needs a look asked about each one.
+
+def _semimonthly_with_claims():
+    pay = [row(-a, "Wealthsimple-OS - Direct deposit", d, category="Income") for d, a in (
+        ("2026-07-30", 2993.20), ("2026-08-13", 3275.62), ("2026-08-28", 3562.27),
+        ("2026-09-14", 3152.46), ("2026-09-28", 3419.22), ("2026-10-14", 3419.22))]
+    claims = [row(-a, "HSA CAD CAN - Direct deposit", d, category="Income") for d, a in (
+        ("2026-08-07", 268.71), ("2026-09-21", 213.98), ("2026-10-16", 31.64),
+        ("2026-10-19", 132.68), ("2026-10-23", 55.00), ("2026-10-28", 349.68))]
+    other = [row(-100.0, "IND ALL AC-TOR - Direct deposit", "2026-10-22", category="Income")]
+    return pay, claims + other
+
+
+def test_a_paycheque_is_measured_against_the_same_payers_pay():
+    pay, side = _semimonthly_with_claims()
+    kinds = income.classify(pay + side)
+    assert {kinds[t.fingerprint] for t in pay} == {"salary"}
+
+
+def test_a_bonus_is_still_found_against_the_same_payer():
+    pay, side = _semimonthly_with_claims()
+    big = row(-9000.0, "Wealthsimple-OS - Direct deposit", "2026-10-20", category="Income")
+    assert income.classify(pay + side + [big])[big.fingerprint] == "bonus"
+
+
+def test_what_her_pay_rule_covers_is_never_a_bonus():
+    pay, side = _semimonthly_with_claims()
+    big = row(-9000.0, "Wealthsimple-OS - Direct deposit", "2026-10-20", category="Income")
+    rows = pay + side + [big]
+    covered = {t.fingerprint for t in pay + [big]}
+    assert income.classify(rows, covered)[big.fingerprint] == "salary"
+
+
+def test_side_payouts_dont_set_how_often_or_how_much_she_is_paid():
+    pay, side = _semimonthly_with_claims()
+    found = income.cadence(pay + side, today="2026-10-29")
+    assert found["cadence"] == "semimonthly"
+    assert found["paycheque"] == pytest.approx(3347.42, abs=0.01)   # median of the six
+    assert "2026-10-16" not in found["paydays"]
+
+
+def test_two_jobs_both_count():
+    a = [row(-2400.0, "PAYROLL ACME CORP", (date(2026, 6, 5) + timedelta(days=14 * i)).isoformat(),
+             category="Income") for i in range(8)]
+    b = [row(-1600.0, "PAYROLL NORTHWIND", (date(2026, 6, 12) + timedelta(days=14 * i)).isoformat(),
+             category="Income") for i in range(8)]
+    found = income.cadence(a + b, today="2026-09-30")
+    assert {a[0].date, b[0].date} <= set(found["paydays"])
