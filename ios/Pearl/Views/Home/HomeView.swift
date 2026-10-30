@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Home: what needs you, then how the month is going.
+/// Home, bare (SC-40): the greeting, what needs you, and a way to Cash flow.
 @MainActor
 struct HomeView: View {
     @EnvironmentObject private var app: AppModel
@@ -13,15 +13,7 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    if let today = home?.today {
-                        Text(Format.day(today).uppercased())
-                            .font(Pearl.text(.caption, .semibold)).tracking(1)
-                            .foregroundColor(Pearl.muted)
-                    }
-                    Text(greeting).font(Pearl.display()).foregroundColor(Pearl.ink)
-                }
-                .padding(.top, 8)
+                PageHeader(overline: home?.today.map { Format.day($0) }, title: greeting)
 
                 if let home = home {
                     if let setup = setup, setup.active {
@@ -30,12 +22,13 @@ struct HomeView: View {
                     if home.reviewCount > 0 {
                         NeedsALookCard(count: home.reviewCount)
                     }
-                    MonthCard(home: home, onTransactions: { tab = .cashFlow })
+                    MonthCard(month: home.month, onTransactions: { tab = .cashFlow })
                 } else {
                     LoadState(error: error) { Task { await load() } }
                 }
             }
-            .padding(Pearl.gutter)
+            .padding(.horizontal, Pearl.gutter)
+            .padding(.vertical, 24)
         }
         .pearlPage()
         .navigationBarHidden(true)
@@ -59,100 +52,46 @@ struct HomeView: View {
     }
 }
 
-/// "N transactions need a look".
+/// "N transactions need a look", opening Needs a look.
 struct NeedsALookCard: View {
     let count: Int
 
     var body: some View {
-        PearlCard {
+        PearlCard(spacing: 8) {
             Text(count == 1 ? "1 transaction needs a look" : "\(count) transactions need a look")
-                .font(Pearl.title).foregroundColor(Pearl.ink)
+                .font(Pearl.cardTitle).foregroundColor(Pearl.ink)
             Text("We weren't sure how to sort these. Sorting them keeps your numbers right.")
-                .foregroundColor(Pearl.muted)
+                .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
             NavigationLink {
                 ReviewView()
             } label: {
-                Text("Review one by one")
-            }
-            .buttonStyle(PrimaryButtonStyle())
-        }
-    }
-}
-
-/// "October so far": income in, and each kind of spending against your usual.
-struct MonthCard: View {
-    let home: Home
-    let onTransactions: () -> Void
-
-    var body: some View {
-        PearlCard {
-            Text("\(Format.monthName(home.month)) so far").font(Pearl.title).foregroundColor(Pearl.ink)
-            ForEach(rows) { row in
-                MonthRow(row: row)
-                if row.id != rows.last?.id { Divider().overlay(Pearl.border) }
-            }
-            Button(action: onTransactions) {
-                HStack(spacing: 4) {
-                    Text("Transactions")
-                    Image(systemName: "chevron.right").font(Pearl.text(.caption, .semibold))
-                }
-                .foregroundColor(Pearl.action)
-                .font(Pearl.text(.body, .semibold))
+                LinkLabel(text: "Review one by one")
             }
             .padding(.top, 4)
         }
     }
-
-    private var rows: [Home.Snapshot.Row] {
-        (home.snapshot?.rows ?? []).filter { $0.lens == nil && $0.key != "savings" }
-    }
 }
 
-struct MonthRow: View {
-    let row: Home.Snapshot.Row
+/// "October so far": everything else about the month is on Cash flow.
+struct MonthCard: View {
+    let month: String
+    let onTransactions: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(row.label ?? row.key.capitalized).foregroundColor(Pearl.ink)
-                Spacer()
-                Text(Format.whole(amount)).font(Pearl.text(.body, .semibold)).foregroundColor(Pearl.ink)
-            }
-            if let line = line {
-                Text(line).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
-            }
-            if let progress = progress {
-                ProgressView(value: min(progress, 1))
-                    .tint(progress > 1 ? Pearl.caution : Pearl.action)
+        Button(action: onTransactions) {
+            PearlCard(spacing: 8) {
+                Text("\(Format.monthName(month)) so far").font(Pearl.cardTitle).foregroundColor(Pearl.ink)
+                Text("Every transaction, what needs a look, and your month in pictures are on Cash flow.")
+                    .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
+                    .multilineTextAlignment(.leading)
+                LinkLabel(text: "Transactions").padding(.top, 4)
             }
         }
-    }
-
-    private var amount: Double { row.key == "income" ? (row.received ?? 0) : (row.spent ?? 0) }
-
-    private var line: String? {
-        if row.key == "income" {
-            guard let expected = row.expected, expected > 0 else { return "Received so far" }
-            return "Received of \(Format.whole(expected)) expected"
-        }
-        guard let usual = row.usualByToday, usual > 0 else { return nil }
-        let diff = (row.spent ?? 0) - usual
-        if abs(diff) < 1 { return "About usual for this point in the month" }
-        return diff > 0 ? "\(Format.whole(diff)) more than usual by today"
-                        : "\(Format.whole(diff)) less than usual by today"
-    }
-
-    private var progress: Double? {
-        if row.key == "income" {
-            guard let expected = row.expected, expected > 0 else { return nil }
-            return (row.received ?? 0) / expected
-        }
-        guard let usual = row.usual, usual > 0 else { return nil }
-        return (row.spent ?? 0) / usual
+        .buttonStyle(.plain)
     }
 }
 
-/// After Start over: what only you can set again.
+/// After Start over: what only you can set again, each step opening the web.
 @MainActor
 struct SetupAgainCard: View {
     @EnvironmentObject private var app: AppModel
@@ -161,35 +100,54 @@ struct SetupAgainCard: View {
 
     var body: some View {
         PearlCard {
-            Text("Set Pearl up again").font(Pearl.title).foregroundColor(Pearl.ink)
+            Text("Set Pearl up again").font(Pearl.cardTitle).foregroundColor(Pearl.ink)
             Text(setup.left == 1 ? "Start over cleared what only you can tell Pearl. 1 thing to set again."
                  : "Start over cleared what only you can tell Pearl. \(setup.left) things to set again.")
-                .foregroundColor(Pearl.muted)
-            ForEach(setup.steps) { step in
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(step.done ? Pearl.action : Pearl.muted)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(step.title).font(Pearl.text(.body, .semibold))
-                            .foregroundColor(step.done ? Pearl.muted : Pearl.ink)
-                        Text(step.done ? "Done" : step.sub).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
-                    }
+                .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
+            VStack(spacing: 0) {
+                ForEach(Array(setup.steps.enumerated()), id: \.element.id) { index, step in
+                    if index > 0 { Rectangle().fill(Pearl.rule).frame(height: 1) }
+                    Link(destination: app.api.baseURL) { stepRow(step) }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens Pearl on the web")
                 }
             }
-            Text("Each of these is done in Pearl on the web for now.")
-                .font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
-            HStack {
-                Link("Open Pearl on the web", destination: app.api.baseURL)
-                    .foregroundColor(Pearl.action).font(Pearl.text(.body, .semibold))
-                Spacer()
-                Button("Hide") {
-                    Task {
-                        let _: SetupAgain? = try? await app.api.post("api/setup-again", ["hide": true])
-                        onChanged()
-                    }
+            Button("Hide this list") {
+                Task {
+                    let _: SetupAgain? = try? await app.api.post("api/setup-again", ["hide": true])
+                    onChanged()
                 }
-                .foregroundColor(Pearl.muted)
             }
+            .font(Pearl.text(.subheadline, .medium))
+            .foregroundColor(Pearl.action)
         }
+    }
+
+    private func stepRow(_ step: SetupAgain.Step) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                if step.done {
+                    Circle().fill(Pearl.action)
+                } else {
+                    Circle().strokeBorder(Pearl.border, lineWidth: 1.5)
+                }
+            }
+            .frame(width: 22, height: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(step.title).font(Pearl.text(.body))
+                    .foregroundColor(step.done ? Pearl.muted : Pearl.ink)
+                Text(step.done ? "Done" : step.sub).font(Pearl.text(.subheadline, .medium))
+                    .foregroundColor(Pearl.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .multilineTextAlignment(.leading)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Pearl.muted)
+        }
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(step.done ? "Done" : "")
     }
 }

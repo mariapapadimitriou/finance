@@ -60,7 +60,7 @@ struct TransactionsView: View {
                         }
                         .buttonStyle(.plain)
                         .onAppear { if t.id == rows.last?.id { Task { await loadMore() } } }
-                        if t.id != group.rows.last?.id { Divider().overlay(Pearl.border) }
+                        Rectangle().fill(Pearl.border).frame(height: 1)
                     }
                 }
             }
@@ -93,7 +93,7 @@ struct TransactionsView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundColor(Pearl.muted)
                 TextField("Search", text: $query)
-                    .font(Pearl.text(.callout))
+                    .font(Pearl.text(.subheadline, .medium))
                     .foregroundColor(Pearl.ink)
                     .submitLabel(.search)
                     .onSubmit { Task { await reload() } }
@@ -120,13 +120,13 @@ struct TransactionsView: View {
                     Text(month.map { Format.monthName($0) } ?? "Month")
                     Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
                 }
-                .font(Pearl.text(.callout, .medium))
+                .font(Pearl.text(.subheadline, .medium))
                 .foregroundColor(Pearl.ink)
                 .padding(.horizontal, 14)
                 .frame(height: 40)
                 .background(Pearl.card)
                 .clipShape(Capsule())
-                .overlay(Capsule().stroke(Pearl.borderStrong, lineWidth: 1))
+                .overlay(Capsule().stroke(Pearl.border, lineWidth: 1))
             }
             .disabled(months.isEmpty)
             .accessibilityLabel("Month")
@@ -211,10 +211,10 @@ struct MonthStats: View {
     var body: some View {
         let left = max(income, 0) - max(spent, 0)
         HStack(spacing: 8) {
-            tile("Spent", Format.amount(spent), Pearl.spent)
-            tile("Came in", Format.amount(income), Pearl.cameIn)
+            tile("Spent", Format.amount(spent), Pearl.moneyOut)
+            tile("Came in", Format.amount(income), Pearl.moneyIn)
             if left < -0.005 {
-                tile("Over", Format.amount(left), Pearl.spent)
+                tile("Over", Format.amount(left), Pearl.moneyOut)
             } else {
                 tile("Left", Format.amount(left), Pearl.ink)
             }
@@ -222,42 +222,43 @@ struct MonthStats: View {
     }
 
     private func tile(_ label: String, _ value: String, _ tone: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(Pearl.text(.caption, .medium)).foregroundColor(Pearl.muted)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(Pearl.text(.footnote, .medium)).foregroundColor(Pearl.muted)
             Text(value)
-                .font(Pearl.text(.headline, .semibold)).monospacedDigit()
+                .font(Pearl.display(.headline)).tracking(-0.34)
                 .foregroundColor(tone)
                 .lineLimit(1).minimumScaleFactor(0.7)
+                .padding(.vertical, 6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12).padding(.vertical, 10)
+        .padding(12)
         .background(Pearl.card)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Pearl.border, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).stroke(Pearl.border, lineWidth: 1))
         .accessibilityElement(children: .combine)
     }
 }
 
-/// "12 need a look.  Review ›" on blush.
+/// "12 need a quick look.  Review ›" on blush.
 struct NeedsALookBanner: View {
     let count: Int
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "info.circle").font(.system(size: 18))
-            Text(count == 1 ? "1 needs a look." : "\(count) need a look.")
-                .font(Pearl.text(.callout))
+        HStack(spacing: 10) {
+            Image(systemName: "info.circle").font(.system(size: 17))
+            Text(count == 1 ? "1 needs a quick look." : "\(count) need a quick look.")
+                .font(Pearl.text(.callout, .medium))
             Spacer(minLength: 8)
-            HStack(spacing: 2) {
+            HStack(spacing: 4) {
                 Text("Review").underline()
                 Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
             }
-            .font(Pearl.text(.footnote, .semibold))
+            .font(Pearl.text(.subheadline, .semibold))
         }
         .foregroundColor(Pearl.onBlush)
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .padding(.horizontal, 16).padding(.vertical, 14)
         .background(Pearl.blush)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous))
     }
 }
 
@@ -270,8 +271,8 @@ struct DayHeading: View {
         (Text(parts.name.uppercased()).foregroundColor(Pearl.ink)
             + Text(parts.date.isEmpty ? "" : " · " + parts.date.uppercased()).foregroundColor(Pearl.muted))
             .font(Pearl.text(.caption, .semibold)).tracking(1.44)
-            .padding(.horizontal, 12)
-            .padding(.top, 24).padding(.bottom, 6)
+            .padding(.horizontal, 4)
+            .padding(.top, 20).padding(.bottom, 6)
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -282,16 +283,16 @@ struct TransactionRow: View {
     let t: Transaction
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .center, spacing: 14) {
             CategoryAvatar(category: t.chip?.label ?? t.category, name: t.merchant)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(t.merchant).font(Pearl.text(.callout)).foregroundColor(Pearl.ink).lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t.merchant).font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.ink).lineLimit(1)
                 if let meta = meta {
-                    Text(meta).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted).lineLimit(1)
+                    Text(meta).font(Pearl.text(.footnote, .medium)).foregroundColor(Pearl.muted).lineLimit(2)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .trailing, spacing: 8) {
+            VStack(alignment: .trailing, spacing: 6) {
                 Text(amount)
                     .font(Pearl.text(.body, muted ? .medium : .semibold)).monospacedDigit()
                     .foregroundColor(muted ? Pearl.muted : (t.inflow ? Pearl.moneyIn : Pearl.moneyOut))
@@ -300,7 +301,7 @@ struct TransactionRow: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 4)
         .padding(.vertical, 14)
         .contentShape(Rectangle())
     }
@@ -332,7 +333,7 @@ struct CategoryChip: View {
             .padding(.horizontal, 10).padding(.vertical, 3)
             .background(suggested ? Pearl.card : Pearl.blush)
             .clipShape(Capsule())
-            .overlay(Capsule().strokeBorder(Color(hex: 0xFF8FB1),
+            .overlay(Capsule().strokeBorder(Pearl.suggested,
                                             style: StrokeStyle(lineWidth: 1, dash: [3]))
                 .opacity(suggested ? 1 : 0))
     }
@@ -348,7 +349,7 @@ struct CategoryAvatar: View {
         ZStack {
             if let symbol = symbol {
                 Circle().fill(Pearl.blush)
-                Image(systemName: symbol).font(.system(size: 16)).foregroundColor(Pearl.rose)
+                Image(systemName: symbol).font(.system(size: 17)).foregroundColor(Pearl.action)
             } else {
                 Circle().fill(Pearl.track)
                 Text(initials).font(Pearl.text(.footnote, .semibold)).foregroundColor(Pearl.ink)

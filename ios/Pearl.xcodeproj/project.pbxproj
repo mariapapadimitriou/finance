@@ -15,6 +15,7 @@
 		B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97809C6135186A3BD204F423 /* Theme.swift */; };
 		D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = C497270FF4823ED50730E0BC /* Components.swift */; };
 		2D87BDD1BFBA43066EAAD9A8 /* PearlTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDFBF20E490A5725C46595AC /* PearlTabBar.swift */; };
+		C16A72243F03CBEE1A963979 /* HelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA063D67E5820FB107B21E9 /* HelpView.swift */; };
 		F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F7C177E913CEBE0B53FA5 /* HomeView.swift */; };
 		658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 186A54E5EB12390A80B72B43 /* ProfileView.swift */; };
 		5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02873771C6DC13EA678089B1 /* ReviewView.swift */; };
@@ -39,6 +40,7 @@
 		97809C6135186A3BD204F423 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		C497270FF4823ED50730E0BC /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		CDFBF20E490A5725C46595AC /* PearlTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlTabBar.swift; sourceTree = "<group>"; };
+		5BA063D67E5820FB107B21E9 /* HelpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpView.swift; sourceTree = "<group>"; };
 		663F7C177E913CEBE0B53FA5 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		186A54E5EB12390A80B72B43 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		02873771C6DC13EA678089B1 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
@@ -138,6 +140,7 @@
 			isa = PBXGroup;
 			children = (
 				CD85065437072E6040614BC4 /* Components */,
+				0FCA19DA952651364CBA7F7C /* Help */,
 				91800D9EF29E7A94176F29D6 /* Home */,
 				7067600B49381F5C11E3B0CF /* Profile */,
 				1669F177E81E2EFD031CCB22 /* Review */,
@@ -154,6 +157,14 @@
 				CDFBF20E490A5725C46595AC /* PearlTabBar.swift */,
 			);
 			path = Components;
+			sourceTree = "<group>";
+		};
+		0FCA19DA952651364CBA7F7C /* Help */ = {
+			isa = PBXGroup;
+			children = (
+				5BA063D67E5820FB107B21E9 /* HelpView.swift */,
+			);
+			path = Help;
 			sourceTree = "<group>";
 		};
 		91800D9EF29E7A94176F29D6 /* Home */ = {
@@ -279,6 +290,7 @@
 				B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */,
 				D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */,
 				2D87BDD1BFBA43066EAAD9A8 /* PearlTabBar.swift in Sources */,
+				C16A72243F03CBEE1A963979 /* HelpView.swift in Sources */,
 				F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */,
 				658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */,
 				5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */,

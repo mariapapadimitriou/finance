@@ -30,16 +30,9 @@ struct ReviewView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let review = review {
-                    Text(countWords(review)).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
+                    PageHeader(title: headline(review), sub: countWords(review))
                     if let last = last {
-                        HStack(alignment: .top) {
-                            Notice(text: last.title)
-                            if last.undo != nil {
-                                Button("Undo") { Task { await undo() } }
-                                    .foregroundColor(Pearl.action)
-                                    .padding(.top, 14)
-                            }
-                        }
+                        Sorted(text: last.title, onUndo: last.undo == nil ? nil : { Task { await undo() } })
                     }
                     if let error = error { Notice(text: error, tone: .caution) }
                     if let entry = review.entries.first {
@@ -47,13 +40,13 @@ struct ReviewView: View {
                                    busy: busy) { answer in Task { await send(answer) } }
                             .id(entry.id)
                     } else if review.webOnly > 0 {
-                        PearlCard {
-                            Text("The rest are on the web").font(Pearl.title).foregroundColor(Pearl.ink)
+                        PearlCard(spacing: 8) {
+                            Text("The rest are on the web").font(Pearl.cardTitle).foregroundColor(Pearl.ink)
                             Text(review.webOnly == 1 ? "1 more question can only be answered in Pearl on the web for now."
                                  : "\(review.webOnly) more questions can only be answered in Pearl on the web for now.")
-                                .foregroundColor(Pearl.muted)
-                            Link("Open Pearl on the web", destination: app.api.baseURL)
-                                .foregroundColor(Pearl.action).font(Pearl.text(.body, .semibold))
+                                .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
+                            Link(destination: app.api.baseURL) { LinkLabel(text: "Open Pearl on the web") }
+                                .padding(.top, 4)
                         }
                     } else {
                         AllSorted()
@@ -62,13 +55,21 @@ struct ReviewView: View {
                     LoadState(error: error) { Task { await load() } }
                 }
             }
-            .padding(Pearl.gutter)
+            .padding(.horizontal, Pearl.gutter)
+            .padding(.bottom, 24)
         }
         .pearlPage()
-        .navigationTitle("Needs a look")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .task { await load() }
+    }
+
+    /// "1 transaction needs a look".
+    private func headline(_ review: Review) -> String {
+        let n = review.entries.count + review.webOnly
+        if n == 0 { return "Needs a look" }
+        return n == 1 ? "1 transaction needs a look" : "\(n) transactions need a look"
     }
 
     private func countWords(_ review: Review) -> String {
@@ -139,11 +140,42 @@ struct ReviewView: View {
 
 struct AllSorted: View {
     var body: some View {
-        PearlCard {
+        PearlCard(spacing: 8) {
             Image(systemName: "checkmark.circle.fill").font(.largeTitle).foregroundColor(Pearl.action)
-            Text("All sorted").font(Pearl.title).foregroundColor(Pearl.ink)
+            Text("All sorted").font(Pearl.cardTitle).foregroundColor(Pearl.ink)
             Text("Your numbers are up to date. We'll let you know when something new needs a look.")
-                .foregroundColor(Pearl.muted)
+                .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
+        }
+    }
+}
+
+/// "✓ Sorted as Groceries." with Undo, after an answer.
+struct Sorted: View {
+    let text: String
+    let onUndo: (() -> Void)?
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Label {
+                Text(text).fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
+            }
+            .font(Pearl.text(.subheadline, .medium))
+            .foregroundColor(Pearl.action)
+            Spacer(minLength: 8)
+            if let onUndo = onUndo {
+                Button(action: onUndo) {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
+                        .font(Pearl.text(.callout, .semibold))
+                        .foregroundColor(Pearl.ink)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(Pearl.card)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(Pearl.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }
@@ -163,25 +195,28 @@ struct ReviewCard: View {
     private var t: BriefTransaction { entry.item.txn }
 
     var body: some View {
-        PearlCard(padding: 16) {
+        PearlCard(padding: 16, spacing: 16, radius: Pearl.radiusSort) {
             TransactionHeader(name: t.name, date: t.date, account: t.accountName,
                               amount: abs(t.amount), inflow: t.inflow)
             if let reason = entry.item.reason, !reason.isEmpty {
-                Text(reason).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
+                Text(reason).font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
             }
-            Text(title).font(Pearl.title).foregroundColor(Pearl.ink).padding(.top, 4)
-            VStack(spacing: 10) { choices }
+            Text(title).font(Pearl.title).tracking(-0.24).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(spacing: 12) { choices }
                 .disabled(busy)
             HStack {
                 if step != .first {
-                    Button("Back") { step = .first }.foregroundColor(Pearl.action)
+                    Button { step = .first } label: {
+                        Label("Back", systemImage: "arrow.left")
+                    }
                 }
                 Spacer()
                 Button("Skip for now") { answer(.skip(entry.item.key)) }
-                    .foregroundColor(Pearl.action)
                     .disabled(busy)
             }
-            .padding(.top, 4)
+            .font(Pearl.text(.subheadline, .medium))
+            .foregroundColor(Pearl.action)
         }
         .sheet(isPresented: $picking) {
             CategoryPicker(categories: categories, current: entry.item.guess?.text ?? t.category ?? "",

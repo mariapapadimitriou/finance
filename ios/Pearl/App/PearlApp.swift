@@ -60,16 +60,18 @@ struct RootView: View {
     }
 }
 
-/// Home, Cash flow and Profile, with the web's bar along the bottom.
+/// Home, Cash flow, Help and support, and Profile, with the web's bar along
+/// the bottom.
 @MainActor
 struct MainTabs: View {
     enum Tab: Hashable, CaseIterable {
-        case home, cashFlow, profile
+        case home, cashFlow, help, profile
 
         var label: String {
             switch self {
             case .home: return "Home"
             case .cashFlow: return "Cash flow"
+            case .help: return "Help and support"
             case .profile: return "Profile"
             }
         }
@@ -81,10 +83,11 @@ struct MainTabs: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // All three stay alive, so each keeps its place, as tabs do.
+            // All four stay alive, so each keeps its place, as tabs do.
             ZStack {
                 page(.home) { HomeView(tab: $tab) }
                 page(.cashFlow) { TransactionsView() }
+                page(.help) { HelpView() }
                 page(.profile) { ProfileView() }
             }
             PearlTabBar(selection: $tab, badges: [.cashFlow: reviewCount])
