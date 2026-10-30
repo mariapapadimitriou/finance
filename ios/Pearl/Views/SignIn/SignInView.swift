@@ -183,7 +183,7 @@ struct SignInView: View {
             }
             .padding(.top, 8)
         } label: {
-            Text("Server").font(.subheadline).foregroundColor(Pearl.muted)
+            Text("Server").font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
         }
         .padding(.top, 24)
     }

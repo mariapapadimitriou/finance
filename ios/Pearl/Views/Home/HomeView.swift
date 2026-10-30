@@ -16,7 +16,7 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     if let today = home?.today {
                         Text(Format.day(today).uppercased())
-                            .font(.caption.weight(.semibold)).tracking(1)
+                            .font(Pearl.text(.caption, .semibold)).tracking(1)
                             .foregroundColor(Pearl.muted)
                     }
                     Text(greeting).font(Pearl.display()).foregroundColor(Pearl.ink)
@@ -94,10 +94,10 @@ struct MonthCard: View {
             Button(action: onTransactions) {
                 HStack(spacing: 4) {
                     Text("Transactions")
-                    Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                    Image(systemName: "chevron.right").font(Pearl.text(.caption, .semibold))
                 }
                 .foregroundColor(Pearl.action)
-                .font(.body.weight(.semibold))
+                .font(Pearl.text(.body, .semibold))
             }
             .padding(.top, 4)
         }
@@ -116,10 +116,10 @@ struct MonthRow: View {
             HStack {
                 Text(row.label ?? row.key.capitalized).foregroundColor(Pearl.ink)
                 Spacer()
-                Text(Format.whole(amount)).font(.body.weight(.semibold)).foregroundColor(Pearl.ink)
+                Text(Format.whole(amount)).font(Pearl.text(.body, .semibold)).foregroundColor(Pearl.ink)
             }
             if let line = line {
-                Text(line).font(.subheadline).foregroundColor(Pearl.muted)
+                Text(line).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
             }
             if let progress = progress {
                 ProgressView(value: min(progress, 1))
@@ -170,17 +170,17 @@ struct SetupAgainCard: View {
                     Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
                         .foregroundColor(step.done ? Pearl.action : Pearl.muted)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(step.title).font(.body.weight(.semibold))
+                        Text(step.title).font(Pearl.text(.body, .semibold))
                             .foregroundColor(step.done ? Pearl.muted : Pearl.ink)
-                        Text(step.done ? "Done" : step.sub).font(.subheadline).foregroundColor(Pearl.muted)
+                        Text(step.done ? "Done" : step.sub).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
                     }
                 }
             }
             Text("Each of these is done in Pearl on the web for now.")
-                .font(.footnote).foregroundColor(Pearl.muted)
+                .font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
             HStack {
                 Link("Open Pearl on the web", destination: app.api.baseURL)
-                    .foregroundColor(Pearl.action).font(.body.weight(.semibold))
+                    .foregroundColor(Pearl.action).font(Pearl.text(.body, .semibold))
                 Spacer()
                 Button("Hide") {
                     Task {

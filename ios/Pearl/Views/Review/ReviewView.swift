@@ -30,7 +30,7 @@ struct ReviewView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let review = review {
-                    Text(countWords(review)).font(.subheadline).foregroundColor(Pearl.muted)
+                    Text(countWords(review)).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
                     if let last = last {
                         HStack(alignment: .top) {
                             Notice(text: last.title)
@@ -53,7 +53,7 @@ struct ReviewView: View {
                                  : "\(review.webOnly) more questions can only be answered in Pearl on the web for now.")
                                 .foregroundColor(Pearl.muted)
                             Link("Open Pearl on the web", destination: app.api.baseURL)
-                                .foregroundColor(Pearl.action).font(.body.weight(.semibold))
+                                .foregroundColor(Pearl.action).font(Pearl.text(.body, .semibold))
                         }
                     } else {
                         AllSorted()
@@ -167,7 +167,7 @@ struct ReviewCard: View {
             TransactionHeader(name: t.name, date: t.date, account: t.accountName,
                               amount: abs(t.amount), inflow: t.inflow)
             if let reason = entry.item.reason, !reason.isEmpty {
-                Text(reason).font(.subheadline).foregroundColor(Pearl.muted)
+                Text(reason).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
             }
             Text(title).font(Pearl.title).foregroundColor(Pearl.ink).padding(.top, 4)
             VStack(spacing: 10) { choices }

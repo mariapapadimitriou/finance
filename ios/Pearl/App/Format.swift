@@ -83,6 +83,30 @@ enum Format {
         date(ym + "-01").map { monthOnly.string(from: $0) } ?? ym
     }
 
+    private static let weekday = formatter("EEEE")
+    private static let shortWeekdayDay = formatter("EEE, MMM d")
+    private static let monthDay = formatter("MMMM d")
+    private static let monthDayYear = formatter("MMMM d, yyyy")
+
+    /// A day in the list, as the web heads it: "Today" · "Thu, Oct 29",
+    /// "Monday" · "Oct 26", or "October 20" · "Tuesday".
+    static func dayParts(_ iso: String, now: Date = Date()) -> (name: String, date: String) {
+        guard let day = date(iso) else { return (iso, "") }
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let local = Calendar.current.dateComponents([.year, .month, .day], from: now)
+        let today = utc.date(from: local) ?? now
+        let ago = utc.dateComponents([.day], from: day, to: today).day ?? 0
+        switch ago {
+        case 0: return ("Today", shortWeekdayDay.string(from: day))
+        case 1: return ("Yesterday", shortWeekdayDay.string(from: day))
+        case 2..<7: return (weekday.string(from: day), shortDay.string(from: day))
+        default:
+            let sameYear = utc.component(.year, from: day) == local.year
+            return ((sameYear ? monthDay : monthDayYear).string(from: day), weekday.string(from: day))
+        }
+    }
+
     /// "Good morning" / "Good afternoon" / "Good evening".
     static func greeting(now: Date = Date()) -> String {
         let hour = Calendar.current.component(.hour, from: now)

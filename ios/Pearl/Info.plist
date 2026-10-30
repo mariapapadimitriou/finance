@@ -9,5 +9,15 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- Pearl's two faces, as on the web: Fraunces for display, Figtree for
+	     text (ios/Pearl/Fonts, SIL Open Font License). -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fraunces-SemiBold.ttf</string>
+		<string>Figtree-Regular.ttf</string>
+		<string>Figtree-Medium.ttf</string>
+		<string>Figtree-SemiBold.ttf</string>
+		<string>Figtree-Bold.ttf</string>
+	</array>
 </dict>
 </plist>

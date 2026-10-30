@@ -22,7 +22,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.body.weight(.semibold))
+            .font(Pearl.text(.body, .semibold))
             .frame(maxWidth: .infinity, minHeight: 50)
             .foregroundColor(Pearl.onAction)
             .background(Pearl.action.opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4))
@@ -34,7 +34,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.body.weight(.semibold))
+            .font(Pearl.text(.body, .semibold))
             .frame(maxWidth: .infinity, minHeight: 50)
             .foregroundColor(Pearl.ink)
             .background(Pearl.card.opacity(configuration.isPressed ? 0.7 : 1))
@@ -58,7 +58,7 @@ struct ChoiceRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label).foregroundColor(Pearl.ink)
                     if let detail = detail {
-                        Text(detail).font(.subheadline).foregroundColor(Pearl.muted)
+                        Text(detail).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
                     }
                 }
                 Spacer(minLength: 0)
@@ -87,7 +87,7 @@ struct Notice: View {
             Text(text).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .font(.subheadline)
+        .font(Pearl.text(.subheadline))
         .foregroundColor(tone == .caution ? Pearl.caution : Pearl.ink)
         .padding(14)
         .background(tone == .caution ? Pearl.cautionBackground : Pearl.blush.opacity(0.6))
@@ -106,9 +106,9 @@ struct TransactionHeader: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(name).font(.body.weight(.semibold)).foregroundColor(Pearl.ink)
+                Text(name).font(Pearl.text(.body, .semibold)).foregroundColor(Pearl.ink)
                 Text([Format.day(date), account].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.subheadline).foregroundColor(Pearl.muted)
+                    .font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
             }
             Spacer(minLength: 8)
             Text(Format.signed(amount, inflow: inflow))
