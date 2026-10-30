@@ -4,11 +4,23 @@ import SwiftUI
 struct PearlApp: App {
     @StateObject private var app = AppModel()
 
+    init() {
+        // Pushed screens' titles in Pearl's faces too.
+        let bar = UINavigationBarAppearance()
+        bar.configureWithTransparentBackground()
+        bar.titleTextAttributes = [.font: Pearl.uiText(17), .foregroundColor: UIColor(Pearl.ink)]
+        bar.largeTitleTextAttributes = [.font: Pearl.uiText(30, "Fraunces-SemiBold"),
+                                        .foregroundColor: UIColor(Pearl.ink)]
+        UINavigationBar.appearance().standardAppearance = bar
+        UINavigationBar.appearance().scrollEdgeAppearance = bar
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(app)
                 .tint(Pearl.action)
+                .font(Pearl.text())
         }
     }
 }
@@ -48,29 +60,45 @@ struct RootView: View {
     }
 }
 
-/// Home, Cash flow and Profile, as on the web.
+/// Home, Cash flow and Profile, with the web's bar along the bottom.
 @MainActor
 struct MainTabs: View {
-    enum Tab: Hashable { case home, cashFlow, profile }
+    enum Tab: Hashable, CaseIterable {
+        case home, cashFlow, profile
+
+        var label: String {
+            switch self {
+            case .home: return "Home"
+            case .cashFlow: return "Cash flow"
+            case .profile: return "Profile"
+            }
+        }
+    }
 
     @EnvironmentObject private var app: AppModel
     @State private var tab: Tab = .home
     @State private var reviewCount = 0
 
     var body: some View {
-        TabView(selection: $tab) {
-            NavigationStack { HomeView(tab: $tab) }
-                .tabItem { Label("Home", systemImage: "house") }
-                .tag(Tab.home)
-            NavigationStack { TransactionsView() }
-                .tabItem { Label("Cash flow", systemImage: "chart.line.uptrend.xyaxis") }
-                .badge(reviewCount)
-                .tag(Tab.cashFlow)
-            NavigationStack { ProfileView() }
-                .tabItem { Label("Profile", systemImage: "person.crop.circle") }
-                .tag(Tab.profile)
+        VStack(spacing: 0) {
+            // All three stay alive, so each keeps its place, as tabs do.
+            ZStack {
+                page(.home) { HomeView(tab: $tab) }
+                page(.cashFlow) { TransactionsView() }
+                page(.profile) { ProfileView() }
+            }
+            PearlTabBar(selection: $tab, badges: [.cashFlow: reviewCount])
         }
+        .background(Pearl.page.ignoresSafeArea())
         .task(id: app.version) { await loadCount() }
+    }
+
+    private func page<Content: View>(_ which: Tab, @ViewBuilder content: () -> Content) -> some View {
+        let open = tab == which
+        return NavigationStack(root: content)
+            .opacity(open ? 1 : 0)
+            .allowsHitTesting(open)
+            .accessibilityHidden(!open)
     }
 
     private func loadCount() async {

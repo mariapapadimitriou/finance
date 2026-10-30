@@ -5,8 +5,9 @@ Run it after adding or removing a Swift file:
 
     python3 ios/tools/make_project.py
 
-Every .swift file under ios/Pearl is compiled; Assets.xcassets is the one
-resource. IDs are derived from paths, so running it twice gives the same
+Every .swift file under ios/Pearl is compiled; Assets.xcassets and the fonts
+in Fonts/ are the resources. The signing team already chosen in Xcode is kept.
+IDs are derived from paths, so running it twice gives the same
 project and git diffs stay small. Works with Xcode 14 and later.
 """
 
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IOS = os.path.dirname(HERE)
@@ -35,7 +37,8 @@ def q(s: str) -> str:
 
 
 def collect():
-    """Swift files and the asset catalogue, as paths relative to ios/Pearl."""
+    """Swift files and the resources (the asset catalogue and the fonts), as
+    paths relative to ios/Pearl."""
     swift, assets = [], []
     for root, dirs, files in os.walk(SRC):
         rel_root = os.path.relpath(root, SRC)
@@ -49,7 +52,21 @@ def collect():
         for f in sorted(files):
             if f.endswith(".swift"):
                 swift.append(os.path.normpath(os.path.join(rel_root, f)))
+            elif f.endswith(".ttf"):
+                assets.append(os.path.normpath(os.path.join(rel_root, f)))
     return sorted(swift), sorted(assets)
+
+
+def team() -> str:
+    """The signing team picked in Xcode (Signing & Capabilities), so running
+    this again doesn't sign her out of running on her iPhone."""
+    path = os.path.join(IOS, f"{APP}.xcodeproj", "project.pbxproj")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            found = re.search(r'DEVELOPMENT_TEAM = "?([A-Z0-9]+)"?;', fh.read())
+    except OSError:
+        return ""
+    return found.group(1) if found else ""
 
 
 def main() -> None:
@@ -99,6 +116,8 @@ def main() -> None:
             return "folder.assetcatalog"
         if f.endswith(".plist"):
             return "text.plist.xml"
+        if f.endswith(".ttf"):
+            return "file"
         return "text"
 
     out = []
@@ -281,7 +300,7 @@ def main() -> None:
         "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
         "CODE_SIGN_STYLE": "Automatic",
         "CURRENT_PROJECT_VERSION": "1",
-        "DEVELOPMENT_TEAM": "",
+        "DEVELOPMENT_TEAM": team(),
         "ENABLE_PREVIEWS": "YES",
         "GENERATE_INFOPLIST_FILE": "YES",
         "INFOPLIST_FILE": f"{APP}/Info.plist",
@@ -387,7 +406,7 @@ def main() -> None:
 """
     with open(os.path.join(scheme_dir, f"{APP}.xcscheme"), "w", encoding="utf-8") as fh:
         fh.write(scheme)
-    print(f"Wrote {APP}.xcodeproj: {len(swift)} Swift files, {len(assets)} asset catalogue(s).")
+    print(f"Wrote {APP}.xcodeproj: {len(swift)} Swift files, {len(assets)} resource(s).")
 
 
 if __name__ == "__main__":

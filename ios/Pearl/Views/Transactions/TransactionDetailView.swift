@@ -28,7 +28,7 @@ struct TransactionDetailView: View {
                         row("Left out", excluded)
                     }
                     if let note = transaction.note, !note.isEmpty {
-                        Text(note).font(.subheadline).foregroundColor(Pearl.muted)
+                        Text(note).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
                     }
                     Button("Change category") { picking = true }
                         .buttonStyle(SecondaryButtonStyle())
@@ -36,7 +36,7 @@ struct TransactionDetailView: View {
                 }
                 if let description = transaction.description, !description.isEmpty {
                     PearlCard {
-                        Text("From your bank").font(.caption.weight(.semibold)).foregroundColor(Pearl.muted)
+                        Text("From your bank").font(Pearl.text(.caption, .semibold)).foregroundColor(Pearl.muted)
                         Text(description).font(.callout.monospaced()).foregroundColor(Pearl.ink)
                     }
                 }

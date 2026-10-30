@@ -14,6 +14,7 @@
 		D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 955CF69FC7C7C7429408F5FF /* PearlApp.swift */; };
 		B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97809C6135186A3BD204F423 /* Theme.swift */; };
 		D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = C497270FF4823ED50730E0BC /* Components.swift */; };
+		2D87BDD1BFBA43066EAAD9A8 /* PearlTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDFBF20E490A5725C46595AC /* PearlTabBar.swift */; };
 		F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F7C177E913CEBE0B53FA5 /* HomeView.swift */; };
 		658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 186A54E5EB12390A80B72B43 /* ProfileView.swift */; };
 		5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02873771C6DC13EA678089B1 /* ReviewView.swift */; };
@@ -21,6 +22,11 @@
 		014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63873676D9EA2C177703422C /* TransactionDetailView.swift */; };
 		8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */; };
 		1BB8E4A8EF14595F39E91CE8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D8703406E9B80F661A813DA6 /* Assets.xcassets */; };
+		BD5EB114D1EB1BE542EB08CC /* Figtree-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4F5C06D826B3B2F97FA3CD5D /* Figtree-Bold.ttf */; };
+		2E3C240D14D92767BB8B25F7 /* Figtree-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = EA019A3B8EDA8CB9DD51DE01 /* Figtree-Medium.ttf */; };
+		8192994F5CA4B50389C5F343 /* Figtree-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9F22CB3AA59E6225E5EE47B0 /* Figtree-Regular.ttf */; };
+		EC66893B148B0A5506232830 /* Figtree-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1B44118C5090D128283D7F5E /* Figtree-SemiBold.ttf */; };
+		90C363208D3502F31EE967BE /* Fraunces-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5123041A452F1AE9E3CD559D /* Fraunces-SemiBold.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +38,7 @@
 		955CF69FC7C7C7429408F5FF /* PearlApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlApp.swift; sourceTree = "<group>"; };
 		97809C6135186A3BD204F423 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		C497270FF4823ED50730E0BC /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		CDFBF20E490A5725C46595AC /* PearlTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlTabBar.swift; sourceTree = "<group>"; };
 		663F7C177E913CEBE0B53FA5 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		186A54E5EB12390A80B72B43 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		02873771C6DC13EA678089B1 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
@@ -39,6 +46,11 @@
 		63873676D9EA2C177703422C /* TransactionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionDetailView.swift; sourceTree = "<group>"; };
 		4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsView.swift; sourceTree = "<group>"; };
 		D8703406E9B80F661A813DA6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4F5C06D826B3B2F97FA3CD5D /* Figtree-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Bold.ttf"; sourceTree = "<group>"; };
+		EA019A3B8EDA8CB9DD51DE01 /* Figtree-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Medium.ttf"; sourceTree = "<group>"; };
+		9F22CB3AA59E6225E5EE47B0 /* Figtree-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Regular.ttf"; sourceTree = "<group>"; };
+		1B44118C5090D128283D7F5E /* Figtree-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-SemiBold.ttf"; sourceTree = "<group>"; };
+		5123041A452F1AE9E3CD559D /* Fraunces-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces-SemiBold.ttf"; sourceTree = "<group>"; };
 		CC637901ACFE841FF5877B6C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -74,6 +86,7 @@
 			children = (
 				265B72681C5FF6681EA44180 /* API */,
 				19B2223411966CF353BDA057 /* App */,
+				3AA1CDF3F944EAFBBC8FA574 /* Fonts */,
 				A199E4A32186257ECD0BEBD8 /* Theme */,
 				3C6EFF52DDDC977F66941AB7 /* Views */,
 				D8703406E9B80F661A813DA6 /* Assets.xcassets */,
@@ -101,6 +114,18 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		3AA1CDF3F944EAFBBC8FA574 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				4F5C06D826B3B2F97FA3CD5D /* Figtree-Bold.ttf */,
+				EA019A3B8EDA8CB9DD51DE01 /* Figtree-Medium.ttf */,
+				9F22CB3AA59E6225E5EE47B0 /* Figtree-Regular.ttf */,
+				1B44118C5090D128283D7F5E /* Figtree-SemiBold.ttf */,
+				5123041A452F1AE9E3CD559D /* Fraunces-SemiBold.ttf */,
+			);
+			path = Fonts;
+			sourceTree = "<group>";
+		};
 		A199E4A32186257ECD0BEBD8 /* Theme */ = {
 			isa = PBXGroup;
 			children = (
@@ -126,6 +151,7 @@
 			isa = PBXGroup;
 			children = (
 				C497270FF4823ED50730E0BC /* Components.swift */,
+				CDFBF20E490A5725C46595AC /* PearlTabBar.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -230,6 +256,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				1BB8E4A8EF14595F39E91CE8 /* Assets.xcassets in Resources */,
+				BD5EB114D1EB1BE542EB08CC /* Figtree-Bold.ttf in Resources */,
+				2E3C240D14D92767BB8B25F7 /* Figtree-Medium.ttf in Resources */,
+				8192994F5CA4B50389C5F343 /* Figtree-Regular.ttf in Resources */,
+				EC66893B148B0A5506232830 /* Figtree-SemiBold.ttf in Resources */,
+				90C363208D3502F31EE967BE /* Fraunces-SemiBold.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -247,6 +278,7 @@
 				D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */,
 				B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */,
 				D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */,
+				2D87BDD1BFBA43066EAAD9A8 /* PearlTabBar.swift in Sources */,
 				F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */,
 				658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */,
 				5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */,
@@ -311,7 +343,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 747896Q3U5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Pearl/Info.plist;
@@ -341,7 +373,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 747896Q3U5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Pearl/Info.plist;

@@ -23,16 +23,64 @@ enum Pearl {
         colors: [Color(hex: 0xFFD6E0), Color(hex: 0xE3D4FF), Color(hex: 0xCFF3EE)],
         startPoint: .topLeading, endPoint: .bottomTrailing)
 
-    // MARK: Type
-    // Fraunces (display) and Figtree (text) on the web. On iPhone, New York
-    // stands in for Fraunces and SF for Figtree, so text follows Dynamic Type.
+    static let borderStrong = dynamic(light: 0x8A87A3, dark: 0x8A87A3) // --border-strong
+    static let moneyOut = dynamic(light: 0xC0392B, dark: 0xFF7B72)  // --money-out
+    static let rose = Color(hex: 0xE2557F)                          // --rose (category icons)
+    static let spent = dynamic(light: 0xB8285A, dark: 0xFBF8F6)     // .tm-stat.out
+    static let cameIn = dynamic(light: 0x12736B, dark: 0xFBF8F6)    // .tm-stat.in
+    static let onBlush = Color(hex: 0x1C1A33)                       // --on-nacre
+    static let bar = dynamic(light: 0xFFFFFF, dark: 0x151B44)       // --surface, the tab bar
 
+    // MARK: Type
+    // Fraunces (display) and Figtree (text), as on the web, bundled in Fonts/.
+    // Sizes are the web's in points, and scale with Dynamic Type.
+
+    /// Fraunces SemiBold: page titles, card titles and big amounts.
     static func display(_ style: Font.TextStyle = .largeTitle) -> Font {
-        .system(style, design: .serif).weight(.semibold)
+        let size: CGFloat
+        switch style {
+        case .largeTitle: size = 30   // .pk-h1
+        case .title: size = 28
+        case .title2: size = 24       // .pk-h2
+        case .title3: size = 20
+        default: size = 18            // .pk-h3
+        }
+        return .custom("Fraunces-SemiBold", size: size, relativeTo: style)
     }
 
-    static let title = Font.system(.title2, design: .serif).weight(.semibold)
-    static let heading = Font.system(.headline, design: .serif).weight(.semibold)
+    static let title = display(.title2)
+    static let heading = display(.headline)
+
+    /// Figtree, for everything that isn't a title.
+    static func text(_ style: Font.TextStyle = .body, _ weight: Font.Weight = .regular) -> Font {
+        let size: CGFloat
+        switch style {
+        case .largeTitle: size = 30
+        case .title: size = 26
+        case .title2: size = 22
+        case .title3: size = 20
+        case .headline: size = 17
+        case .body: size = 16         // .text-body-large
+        case .callout: size = 15      // .pk-row-name
+        case .subheadline: size = 14
+        case .footnote: size = 13     // .pk-row-meta
+        case .caption: size = 12      // .pk-overline
+        default: size = 11
+        }
+        let face: String
+        switch weight {
+        case .medium: face = "Figtree-Medium"
+        case .semibold: face = "Figtree-SemiBold"
+        case .bold, .heavy, .black: face = "Figtree-Bold"
+        default: face = "Figtree-Regular"
+        }
+        return .custom(face, size: size, relativeTo: style)
+    }
+
+    /// The same faces for UIKit's bars.
+    static func uiText(_ size: CGFloat, _ face: String = "Figtree-SemiBold") -> UIFont {
+        UIFont(name: face, size: size) ?? .systemFont(ofSize: size, weight: .semibold)
+    }
 
     // MARK: Shape
 
