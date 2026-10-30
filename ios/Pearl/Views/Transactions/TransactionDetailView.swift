@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// One transaction: what it counts as, and changing its category.
+/// One transaction (AB-22): what it counts as, and changing its category.
 @MainActor
 struct TransactionDetailView: View {
     @EnvironmentObject private var app: AppModel
@@ -16,37 +16,47 @@ struct TransactionDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                TransactionHeader(name: transaction.merchant, date: transaction.date,
-                                  account: transaction.account, amount: transaction.amount,
-                                  inflow: transaction.inflow)
-                PearlCard {
-                    row("Category", current)
-                    if let toward = transaction.countsToward, !toward.isEmpty {
-                        row("Counts toward", toward)
+                Overline("Transaction", tone: Pearl.action)
+                header
+                if !facts.isEmpty {
+                    PearlCard(padding: 0, spacing: 0, radius: Pearl.radiusTile) {
+                        ForEach(Array(facts.enumerated()), id: \.offset) { index, fact in
+                            if index > 0 { Rectangle().fill(Pearl.border).frame(height: 1) }
+                            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                                Text(fact.label).foregroundColor(Pearl.muted)
+                                Spacer(minLength: 8)
+                                Text(fact.value).foregroundColor(Pearl.ink).multilineTextAlignment(.trailing)
+                            }
+                            .font(Pearl.text(.body))
+                            .padding(.horizontal, 20).padding(.vertical, 14)
+                        }
                     }
-                    if let excluded = transaction.excluded, !excluded.isEmpty {
-                        row("Left out", excluded)
-                    }
-                    if let note = transaction.note, !note.isEmpty {
-                        Text(note).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
-                    }
-                    Button("Change category") { picking = true }
-                        .buttonStyle(SecondaryButtonStyle())
-                        .disabled(busy)
+                }
+                PearlCard(spacing: 10, radius: Pearl.radiusTile) {
+                    Overline("Category")
+                    CategoryChip(label: current)
+                }
+                if let note = transaction.note, !note.isEmpty {
+                    Text(note).font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
                 }
                 if let description = transaction.description, !description.isEmpty {
-                    PearlCard {
-                        Text("From your bank").font(Pearl.text(.caption, .semibold)).foregroundColor(Pearl.muted)
+                    PearlCard(spacing: 10, radius: Pearl.radiusTile) {
+                        Overline("From your bank")
                         Text(description).font(.callout.monospaced()).foregroundColor(Pearl.ink)
                     }
                 }
                 if let message = message { Notice(text: message) }
                 if let error = error { Notice(text: error, tone: .caution) }
+                Button("Change category") { picking = true }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(busy)
+                    .padding(.top, 4)
             }
-            .padding(Pearl.gutter)
+            .padding(.horizontal, Pearl.gutter)
+            .padding(.bottom, 24)
         }
         .pearlPage()
-        .navigationTitle(transaction.merchant)
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $picking) {
             CategoryPicker(categories: categories, current: current, merchant: transaction.merchant) { name, remember in
@@ -56,14 +66,53 @@ struct TransactionDetailView: View {
         }
     }
 
+    /// Initials, who and when, and the amount.
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(initials)
+                .font(Pearl.text(.body, .medium)).foregroundColor(Pearl.ink)
+                .frame(width: 48, height: 48)
+                .background(Circle().fill(Pearl.track))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(transaction.merchant)
+                    .font(Pearl.display(.title3)).tracking(-0.44).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(Format.day(transaction.date))
+                    .font(Pearl.text(.footnote, .medium)).foregroundColor(Pearl.muted)
+            }
+            Spacer(minLength: 8)
+            Text(amount)
+                .font(Pearl.display(.title3)).tracking(-0.44)
+                .foregroundColor(left ? Pearl.muted : (transaction.inflow ? Pearl.moneyIn : Pearl.moneyOut))
+                .lineLimit(1)
+        }
+    }
+
     private var current: String { category ?? transaction.category ?? "Other" }
 
-    private func row(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label).foregroundColor(Pearl.muted)
-            Spacer()
-            Text(value).foregroundColor(Pearl.ink).multilineTextAlignment(.trailing)
+    private var left: Bool { !(transaction.excluded ?? "").isEmpty || transaction.countsToward == "none" }
+
+    private var amount: String {
+        if left { return Format.amount(transaction.amount) }
+        return (transaction.inflow ? "+" : "-") + Format.amount(transaction.amount)
+    }
+
+    private var initials: String {
+        transaction.merchant.split(separator: " ").prefix(2)
+            .compactMap { $0.first.map(String.init) }.joined().uppercased()
+    }
+
+    /// Account, what it counts toward, and why it's left out.
+    private var facts: [(label: String, value: String)] {
+        var out: [(label: String, value: String)] = []
+        if let account = transaction.account, !account.isEmpty { out.append(("Account", account)) }
+        if let toward = transaction.countsToward, !toward.isEmpty {
+            out.append(("Counts toward", toward == "none" ? "Not counted" : toward))
         }
+        if let excluded = transaction.excluded, !excluded.isEmpty { out.append(("Left out", excluded)) }
+        if transaction.pending == true { out.append(("Status", "Pending")) }
+        return out
     }
 
     private func change(to name: String, remember: Bool) async {

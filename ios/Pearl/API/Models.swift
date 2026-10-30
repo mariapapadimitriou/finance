@@ -466,3 +466,26 @@ indirect enum JSONValue: Codable, Hashable {
         }
     }
 }
+
+// MARK: - Help and support
+
+/// GET /api/privacy: the banks Pearl reads, and who to write to.
+struct Privacy: Decodable {
+    let connections: [Connection]
+    let contact: String?
+
+    struct Connection: Decodable, Identifiable {
+        let itemId: String
+        let institution: String
+        let accounts: Int?
+        let lastSynced: String?
+        let state: String?
+        var id: String { itemId }
+
+        enum CodingKeys: String, CodingKey {
+            case institution, accounts, state
+            case itemId = "item_id"
+            case lastSynced = "last_synced"
+        }
+    }
+}
