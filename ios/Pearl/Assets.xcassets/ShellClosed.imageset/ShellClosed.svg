@@ -1,0 +1,20 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="34" height="28.3333" viewBox="0 0 34 28.3333" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Shell mark/Closed">
+<path id="Vector" d="M17 25.641C23.6503 25.641 29.0414 23.7383 29.0414 21.3911C29.0414 19.044 23.6503 17.1412 17 17.1412C10.3497 17.1412 4.95863 19.044 4.95863 21.3911C4.95863 23.7383 10.3497 25.641 17 25.641Z" fill="#C9426E"/>
+<path id="Vector_2" d="M17 23.2328L30.8575 21.4053C30.9935 19.5845 29.8167 18.1895 27.3272 17.2206C25.9219 15.6188 23.7498 14.8029 20.8107 14.7726C18.2702 13.8547 15.7298 13.8547 13.1893 14.7726C10.2502 14.8029 8.07806 15.6188 6.67276 17.2206C4.18326 18.1895 3.00652 19.5845 3.14251 21.4053L17 23.2328Z" fill="url(#paint0_linear_0_226)"/>
+<g id="Group">
+<path id="Vector_3" d="M17 23.2328L5.80861 18.5579" stroke-width="0.453322" stroke-linecap="round" stroke="white" stroke-opacity="0.4"/>
+<path id="Vector_4" d="M17 23.2328L9.52019 16.2629" stroke-width="0.453322" stroke-linecap="round" stroke="white" stroke-opacity="0.4"/>
+<path id="Vector_5" d="M17 23.2328L14.3934 15.0446" stroke-width="0.453322" stroke-linecap="round" stroke="white" stroke-opacity="0.4"/>
+<path id="Vector_6" d="M17 23.2328L19.6066 15.0446" stroke-width="0.453322" stroke-linecap="round" stroke="white" stroke-opacity="0.4"/>
+<path id="Vector_7" d="M17 23.2328L24.4798 16.2629" stroke-width="0.453322" stroke-linecap="round" stroke="white" stroke-opacity="0.4"/>
+<path id="Vector_8" d="M17 23.2328L28.1914 18.5579" stroke-width="0.453322" stroke-linecap="round" stroke="white" stroke-opacity="0.4"/>
+</g>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_226" x1="3.13195" y1="14.0841" x2="3.13195" y2="23.2328" gradientUnits="userSpaceOnUse">
+<stop stop-color="#FF8FB1"/>
+<stop offset="1" stop-color="#E2557F"/>
+</linearGradient>
+</defs>
+</svg>

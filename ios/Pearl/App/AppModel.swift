@@ -15,14 +15,35 @@ final class AppModel: ObservableObject {
     @Published var phase: Phase = .starting
     /// Bumped after any change, so every screen reloads what it shows.
     @Published var version = 0
+    /// The account was made just now: setup starts at Face ID (O-04), not at
+    /// "Let's finish setting up" (O-00).
+    @Published var justCreated = false
+    /// A-08: Face ID is on and Pearl has been away long enough to lock.
+    @Published var locked = false
+    /// A reset link opened the app (pearl://reset?token=…): A-07.
+    @Published var resetToken: String?
+    /// Where "Contact support" writes to (A-10).
+    @Published var contact: String?
 
     let api = APIClient()
+    private var leftAt: Date?
+
+    private static let faceIDKey = "pearl.faceID"
+
+    /// Face ID unlocks Pearl on this iPhone (O-04, A-09, Settings).
+    var faceIDOn: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.faceIDKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.faceIDKey); objectWillChange.send() }
+    }
 
     /// On launch: is the saved session still good?
     func start() async {
         do {
             let status: AuthStatus = try await api.get("api/auth/status")
+            contact = status.contact
             phase = status.signedIn ? .signedIn(status.user) : .signedOut
+            // Opening Pearl with Face ID on asks for it first (THL-114).
+            if status.signedIn && faceIDOn && AppLock.available { locked = true }
         } catch APIError.signedOut {
             phase = .signedOut
         } catch is CancellationError {
@@ -35,6 +56,7 @@ final class AppModel: ObservableObject {
 
     func signedIn(_ user: PearlUser?) {
         phase = .signedIn(user)
+        locked = false
         version += 1
     }
 
@@ -52,10 +74,39 @@ final class AppModel: ObservableObject {
         return error.localizedDescription
     }
 
+    /// Signing out on the iPhone forgets it as a trusted device, so the next
+    /// sign-in here asks for an email code again (THL-114).
     func signOut() async {
-        let _: OK? = try? await api.post("api/auth/logout")
+        let _: OK? = try? await api.post("api/auth/logout", ["forget_device": true])
         api.clearCookies()
+        justCreated = false
+        locked = false
         phase = .signedOut
+    }
+
+    // MARK: App lock (A-08)
+
+    func wentToBackground() {
+        leftAt = Date()
+    }
+
+    func cameBack() {
+        guard case .signedIn = phase, faceIDOn, AppLock.available, let left = leftAt else { return }
+        if Date().timeIntervalSince(left) >= AppLock.after { locked = true }
+        leftAt = nil
+    }
+
+    // MARK: Links into the app
+
+    /// pearl://reset?token=… opens "Choose a new password" (A-07).
+    func open(_ url: URL) {
+        guard url.scheme == "pearl", url.host == "reset",
+              let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "token" })?.value else { return }
+        resetToken = token
+        if case .signedIn = phase {
+            Task { await signOut() }
+        }
     }
 
     var user: PearlUser? {

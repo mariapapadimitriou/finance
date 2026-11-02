@@ -36,11 +36,11 @@ DEFAULT_OWNER = "mariapapas"
 
 USERNAME = re.compile(r"^[a-z0-9._-]{3,32}$")
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-MIN_PASSWORD = 10
+MIN_PASSWORD = 12          # finance/passwords.py has the rest of the rules
 
-# The one thing ever emailed: a link to choose a new password. It is stored
-# only as a hash, works once, and lasts half an hour.
-RESET_TTL = 30 * 60
+# A link to choose a new password. It is stored only as a hash, works once,
+# and lasts fifteen minutes (THL-114).
+RESET_TTL = 15 * 60
 RESETS_PER_HOUR = 3
 
 _TABLE = """
@@ -333,6 +333,19 @@ def issue_reset(base, user_id: int) -> str | None:
     return token
 
 
+def reset_owner(base, token: str) -> User | None:
+    """The account a reset link belongs to, without using it up, so a new
+    password can be checked against her email first."""
+    if not token:
+        return None
+    with base.conn() as c:
+        r = c.execute("SELECT user_id, expires_at FROM app_codes WHERE purpose = 'reset' "
+                      "AND secret_hash = ? AND used = 0", (_digest(str(token)),)).fetchone()
+    if r is None or float(r["expires_at"]) < now():
+        return None
+    return by_id(base, r["user_id"])
+
+
 def redeem_reset(base, token: str) -> User | None:
     """The account a reset link belongs to, using the link up. None if the
     link is unknown, used, or expired."""
@@ -352,9 +365,8 @@ def check_new(username: str, password: str) -> str | None:
     if not USERNAME.match(username):
         return ("Usernames are 3 to 32 characters: letters, numbers, "
                 "dots, dashes and underscores.")
-    if len(password or "") < MIN_PASSWORD:
-        return f"Passwords need at least {MIN_PASSWORD} characters."
-    return None
+    from . import passwords
+    return passwords.problem(password, username)
 
 
 def create(base, username: str, password_hash: str, owner: bool = False) -> User | None:
@@ -593,7 +605,9 @@ def set_password(base, user_id: int, password_hash: str) -> None:
 
 
 def authenticate(base, username: str, password: str) -> User | None:
-    user = by_username(base, username)
+    """The account for a username or an email (THL-114 signs in by email),
+    if the password is its own."""
+    user = by_identifier(base, username)
     if user is None:
         # Spend the same time as a real check, so a missing username can't be
         # told apart from a wrong password by how long the answer takes.

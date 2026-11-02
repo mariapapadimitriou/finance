@@ -57,6 +57,10 @@ final class APIClient {
         try await send("PATCH", path, query: [:], body: body)
     }
 
+    func delete<T: Decodable>(_ path: String) async throws -> T {
+        try await send("DELETE", path, query: [:], body: nil)
+    }
+
     private func send<T: Decodable>(_ method: String, _ path: String, query: [String: String],
                                     body: [String: Any]?) async throws -> T {
         guard var parts = URLComponents(url: baseURL.appendingPathComponent(path),
@@ -92,14 +96,18 @@ final class APIClient {
             // Signing in with a wrong password is a 401 too: say what the
             // server said rather than "signed out".
             if path.hasPrefix("api/auth/") {
-                let problem = (try? decoder.decode(ServerProblem.self, from: data))?.error
-                throw APIError.message(problem ?? "That didn't work. Try again.")
+                if let problem = try? decoder.decode(ServerProblem.self, from: data), problem.error != nil {
+                    throw APIError.server(problem)
+                }
+                throw APIError.message("That didn't work. Try again.")
             }
             throw APIError.signedOut
         }
         if !(200..<300).contains(status) {
-            let problem = (try? decoder.decode(ServerProblem.self, from: data))?.error
-            throw APIError.message(problem ?? "Something went wrong (\(status)). Try again.")
+            if let problem = try? decoder.decode(ServerProblem.self, from: data), problem.error != nil {
+                throw APIError.server(problem)
+            }
+            throw APIError.message("Something went wrong (\(status)). Try again.")
         }
         do {
             return try decoder.decode(T.self, from: data)
@@ -124,18 +132,44 @@ enum APIError: LocalizedError, Equatable {
     case signedOut
     case offline
     case message(String)
+    /// What the server said went wrong, with its flags (a wrong code, a pause…).
+    case server(ServerProblem)
 
     var errorDescription: String? {
         switch self {
         case .signedOut: return "You've been signed out. Sign in again."
         case .offline: return "Pearl couldn't reach the server. Check your connection and try again."
         case .message(let text): return text
+        case .server(let problem): return problem.error
         }
+    }
+
+    var problem: ServerProblem? {
+        if case .server(let problem) = self { return problem }
+        return nil
     }
 }
 
-private struct ServerProblem: Decodable {
+/// An error reply: the words, and what kind of problem it was.
+struct ServerProblem: Decodable, Equatable {
     let error: String?
+    var taken: Bool? = nil
+    var weak: Bool? = nil
+    var wrong: Bool? = nil
+    var left: Int? = nil
+    var paused: Bool? = nil
+    var retryIn: Int? = nil
+    var expired: Bool? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case error, taken, weak, wrong, left, paused, expired
+        case retryIn = "retry_in"
+    }
+}
+
+extension Error {
+    /// The server's problem behind an error, if there was one.
+    var serverProblem: ServerProblem? { (self as? APIError)?.problem }
 }
 
 /// For calls whose answer we don't need beyond "it worked".

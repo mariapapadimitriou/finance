@@ -10,9 +10,11 @@ struct AuthStatus: Decodable {
     let signedIn: Bool
     let required: Bool?
     let user: PearlUser?
+    /// Where "Contact support" writes to (A-10).
+    let contact: String?
 
     enum CodingKeys: String, CodingKey {
-        case signedIn = "signed_in", required, user
+        case signedIn = "signed_in", required, user, contact
     }
 }
 
@@ -25,6 +27,7 @@ struct PearlUser: Decodable, Equatable {
 
     struct Onboarding: Decodable, Equatable {
         let done: Bool?
+        let step: String?
     }
 
     enum CodingKeys: String, CodingKey {
@@ -32,29 +35,25 @@ struct PearlUser: Decodable, Equatable {
         case firstName = "first_name"
     }
 
-    var name: String { firstName ?? username ?? "" }
+    var name: String { firstName ?? "" }
 }
 
-/// The answer to a sign-in: signed in, or waiting to confirm this device.
+/// The answer to a sign-in: signed in, or a code sent to her email first
+/// (THL-114, on a device that isn't trusted yet).
 struct SignInReply: Decodable {
     let signedIn: Bool?
     let user: PearlUser?
-    let confirmDevice: Bool?
-    let choices: DeviceChoices?
+    let codeNeeded: Bool?
+    let sentTo: String?
+    let resendIn: Int?
+    let created: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case user, choices
+        case user, created
         case signedIn = "signed_in"
-        case confirmDevice = "confirm_device"
-    }
-}
-
-struct DeviceChoices: Decodable {
-    let approve: Approver?
-    let recovery: Bool?
-
-    struct Approver: Decodable {
-        let label: String?
+        case codeNeeded = "code_needed"
+        case sentTo = "sent_to"
+        case resendIn = "resend_in"
     }
 }
 
@@ -67,14 +66,138 @@ struct CodeSent: Decodable {
     }
 }
 
-/// Polling "Approve on another device".
-struct DeviceStatus: Decodable {
-    let signedIn: Bool?
-    let state: String?
-    let user: PearlUser?
+/// The three password rules and the strength meter (THL-114).
+struct PasswordRules: Decodable, Equatable {
+    var length: Bool
+    var common: Bool
+    var email: Bool
+    var more: Int
+    var ok: Bool
+    var segments: Int
+    var label: String
+}
+
+// MARK: - Linking a bank (O-06 to O-09)
+
+struct LinkToken: Decodable {
+    let linkToken: String
+
+    enum CodingKeys: String, CodingKey { case linkToken = "link_token" }
+}
+
+struct LinkedItem: Decodable {
+    let itemId: String?
+    let institution: String?
+    let syncError: String?
 
     enum CodingKeys: String, CodingKey {
-        case signedIn = "signed_in", state, user
+        case institution
+        case itemId = "item_id"
+        case syncError = "sync_error"
+    }
+}
+
+struct AccountsOverview: Decodable {
+    let linked: [Account]
+
+    struct Account: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String
+        let mask: String?
+        let institution: String?
+        let kind: String?
+        let balance: Double?
+        let owing: Bool?
+        let joint: Bool?
+        let jointShare: Double?
+        let jointPeople: [String]?
+        let historyFrom: String?
+        let transactions: Int?
+        let itemId: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, name, mask, institution, kind, balance, owing, joint, transactions
+            case jointShare = "joint_share"
+            case jointPeople = "joint_people"
+            case historyFrom = "history_from"
+            case itemId = "item_id"
+        }
+
+        var isCard: Bool { kind == "card" || kind == "loan" }
+    }
+}
+
+// MARK: - Pay and bills (O-10)
+
+struct IncomeBills: Decodable {
+    let pays: [Pay]
+    let candidates: [Candidate]
+    let bills: [Bill]
+
+    struct Pay: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String
+        let amount: Double
+        let cadence: String
+        let next: String?
+        let payer: String?
+    }
+
+    /// A deposit that looks like pay, not yet answered.
+    struct Candidate: Decodable, Identifiable, Hashable {
+        let payer: String
+        let name: String
+        let amount: Double
+        let cadence: String
+        let next: String?
+        var id: String { payer }
+    }
+
+    struct Bill: Decodable, Identifiable, Hashable {
+        let key: String
+        let name: String
+        let amount: Double
+        let varies: Bool?
+        let cadence: String
+        let next: String?
+        let day: Int?
+        let category: String?
+        let ticked: Bool?
+        let source: String?
+        var id: String { key }
+    }
+}
+
+// MARK: - Your Allowance (O-11)
+
+/// GET /api/home, as the end of onboarding reads it.
+struct AllowanceHome: Decodable {
+    let month: String
+    let reviewCount: Int?
+    let safeToSpend: Allowance?
+
+    enum CodingKeys: String, CodingKey {
+        case month
+        case reviewCount = "review_count"
+        case safeToSpend = "safe_to_spend"
+    }
+}
+
+struct Allowance: Decodable {
+    let state: String?
+    let amount: Double?
+    let shown: Double?
+    let daysLeft: Int?
+    let month: String?
+    let nextPay: String?
+    let overBy: Double?
+    let estimate: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case state, amount, shown, month, estimate
+        case daysLeft = "days_left"
+        case nextPay = "next_pay"
+        case overBy = "over_by"
     }
 }
 

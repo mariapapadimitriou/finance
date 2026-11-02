@@ -12,14 +12,20 @@
 		447CDE89543B103ACD878613 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C5660576F12049C54E11ECA /* AppModel.swift */; };
 		320A0024BC90E91C1C716012 /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95910E98ECA767C288B13D6F /* Format.swift */; };
 		D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 955CF69FC7C7C7429408F5FF /* PearlApp.swift */; };
+		197D74CCEC857E06FD81CB2C /* Nacre.swift in Sources */ = {isa = PBXBuildFile; fileRef = A959B442690D5F84B1A63FFA /* Nacre.swift */; };
 		B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97809C6135186A3BD204F423 /* Theme.swift */; };
 		D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = C497270FF4823ED50730E0BC /* Components.swift */; };
 		2D87BDD1BFBA43066EAAD9A8 /* PearlTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDFBF20E490A5725C46595AC /* PearlTabBar.swift */; };
 		C16A72243F03CBEE1A963979 /* HelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA063D67E5820FB107B21E9 /* HelpView.swift */; };
 		F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F7C177E913CEBE0B53FA5 /* HomeView.swift */; };
+		7579BBE295A41A951C73B4E3 /* AllowanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49B60D0B387295A6F5633F43 /* AllowanceView.swift */; };
+		3E714132CCE10921CFECCE51 /* AuthFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE32207A5401B96AA021225 /* AuthFlow.swift */; };
+		36B2ADE3D4D2AADFAF7450C6 /* FaceIDViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D792DA47AD008651315BC81E /* FaceIDViews.swift */; };
+		EDF62B098CA2F256BB968358 /* PayAndBillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */; };
+		B012721D7224087DA976961B /* PlaidLinker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */; };
+		619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */; };
 		658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 186A54E5EB12390A80B72B43 /* ProfileView.swift */; };
 		5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02873771C6DC13EA678089B1 /* ReviewView.swift */; };
-		164B080F19365D41A9D8BFF2 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02DCE2D0020FD79FD491D0DF /* SignInView.swift */; };
 		014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63873676D9EA2C177703422C /* TransactionDetailView.swift */; };
 		8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */; };
 		1BB8E4A8EF14595F39E91CE8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D8703406E9B80F661A813DA6 /* Assets.xcassets */; };
@@ -27,7 +33,9 @@
 		2E3C240D14D92767BB8B25F7 /* Figtree-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = EA019A3B8EDA8CB9DD51DE01 /* Figtree-Medium.ttf */; };
 		8192994F5CA4B50389C5F343 /* Figtree-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9F22CB3AA59E6225E5EE47B0 /* Figtree-Regular.ttf */; };
 		EC66893B148B0A5506232830 /* Figtree-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1B44118C5090D128283D7F5E /* Figtree-SemiBold.ttf */; };
+		959B46154061EE62EAB76049 /* Fraunces-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 65A3C8DF5AC5DCF94ADBAF19 /* Fraunces-Regular.ttf */; };
 		90C363208D3502F31EE967BE /* Fraunces-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5123041A452F1AE9E3CD559D /* Fraunces-SemiBold.ttf */; };
+		436E75E984B4850BBF8D916E /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = A8318EFB1C654A8D1F922D04 /* LinkKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,14 +45,20 @@
 		9C5660576F12049C54E11ECA /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		95910E98ECA767C288B13D6F /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
 		955CF69FC7C7C7429408F5FF /* PearlApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlApp.swift; sourceTree = "<group>"; };
+		A959B442690D5F84B1A63FFA /* Nacre.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nacre.swift; sourceTree = "<group>"; };
 		97809C6135186A3BD204F423 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		C497270FF4823ED50730E0BC /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		CDFBF20E490A5725C46595AC /* PearlTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlTabBar.swift; sourceTree = "<group>"; };
 		5BA063D67E5820FB107B21E9 /* HelpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpView.swift; sourceTree = "<group>"; };
 		663F7C177E913CEBE0B53FA5 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		49B60D0B387295A6F5633F43 /* AllowanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowanceView.swift; sourceTree = "<group>"; };
+		DBE32207A5401B96AA021225 /* AuthFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFlow.swift; sourceTree = "<group>"; };
+		D792DA47AD008651315BC81E /* FaceIDViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceIDViews.swift; sourceTree = "<group>"; };
+		FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayAndBillsView.swift; sourceTree = "<group>"; };
+		AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaidLinker.swift; sourceTree = "<group>"; };
+		D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupFlow.swift; sourceTree = "<group>"; };
 		186A54E5EB12390A80B72B43 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		02873771C6DC13EA678089B1 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
-		02DCE2D0020FD79FD491D0DF /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
 		63873676D9EA2C177703422C /* TransactionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionDetailView.swift; sourceTree = "<group>"; };
 		4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsView.swift; sourceTree = "<group>"; };
 		D8703406E9B80F661A813DA6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -52,6 +66,7 @@
 		EA019A3B8EDA8CB9DD51DE01 /* Figtree-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Medium.ttf"; sourceTree = "<group>"; };
 		9F22CB3AA59E6225E5EE47B0 /* Figtree-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Regular.ttf"; sourceTree = "<group>"; };
 		1B44118C5090D128283D7F5E /* Figtree-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-SemiBold.ttf"; sourceTree = "<group>"; };
+		65A3C8DF5AC5DCF94ADBAF19 /* Fraunces-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces-Regular.ttf"; sourceTree = "<group>"; };
 		5123041A452F1AE9E3CD559D /* Fraunces-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces-SemiBold.ttf"; sourceTree = "<group>"; };
 		CC637901ACFE841FF5877B6C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -61,6 +76,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				436E75E984B4850BBF8D916E /* LinkKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -123,6 +139,7 @@
 				EA019A3B8EDA8CB9DD51DE01 /* Figtree-Medium.ttf */,
 				9F22CB3AA59E6225E5EE47B0 /* Figtree-Regular.ttf */,
 				1B44118C5090D128283D7F5E /* Figtree-SemiBold.ttf */,
+				65A3C8DF5AC5DCF94ADBAF19 /* Fraunces-Regular.ttf */,
 				5123041A452F1AE9E3CD559D /* Fraunces-SemiBold.ttf */,
 			);
 			path = Fonts;
@@ -131,6 +148,7 @@
 		A199E4A32186257ECD0BEBD8 /* Theme */ = {
 			isa = PBXGroup;
 			children = (
+				A959B442690D5F84B1A63FFA /* Nacre.swift */,
 				97809C6135186A3BD204F423 /* Theme.swift */,
 			);
 			path = Theme;
@@ -142,9 +160,9 @@
 				CD85065437072E6040614BC4 /* Components */,
 				0FCA19DA952651364CBA7F7C /* Help */,
 				91800D9EF29E7A94176F29D6 /* Home */,
+				A5A82F1323916033D57B0352 /* Onboarding */,
 				7067600B49381F5C11E3B0CF /* Profile */,
 				1669F177E81E2EFD031CCB22 /* Review */,
-				8B203545C203BD480BBFE730 /* SignIn */,
 				11154C8D437A90D8972D0515 /* Transactions */,
 			);
 			path = Views;
@@ -175,6 +193,19 @@
 			path = Home;
 			sourceTree = "<group>";
 		};
+		A5A82F1323916033D57B0352 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				49B60D0B387295A6F5633F43 /* AllowanceView.swift */,
+				DBE32207A5401B96AA021225 /* AuthFlow.swift */,
+				D792DA47AD008651315BC81E /* FaceIDViews.swift */,
+				FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */,
+				AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */,
+				D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
 		7067600B49381F5C11E3B0CF /* Profile */ = {
 			isa = PBXGroup;
 			children = (
@@ -189,14 +220,6 @@
 				02873771C6DC13EA678089B1 /* ReviewView.swift */,
 			);
 			path = Review;
-			sourceTree = "<group>";
-		};
-		8B203545C203BD480BBFE730 /* SignIn */ = {
-			isa = PBXGroup;
-			children = (
-				02DCE2D0020FD79FD491D0DF /* SignInView.swift */,
-			);
-			path = SignIn;
 			sourceTree = "<group>";
 		};
 		11154C8D437A90D8972D0515 /* Transactions */ = {
@@ -224,6 +247,9 @@
 			dependencies = (
 			);
 			name = Pearl;
+			packageProductDependencies = (
+				A8318EFB1C654A8D1F922D04 /* LinkKit */,
+			);
 			productName = Pearl;
 			productReference = 95D653871703BB6B6441A16C /* Pearl.app */;
 			productType = "com.apple.product-type.application";
@@ -252,6 +278,9 @@
 				Base,
 			);
 			mainGroup = 4815E8BA076BC7E930F44831;
+			packageReferences = (
+				A6D5A498A3AB05EE90F9F27B /* XCRemoteSwiftPackageReference "plaid-link-ios-spm" */,
+			);
 			productRefGroup = 8241ED42B56CC1DA7F726566 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -271,6 +300,7 @@
 				2E3C240D14D92767BB8B25F7 /* Figtree-Medium.ttf in Resources */,
 				8192994F5CA4B50389C5F343 /* Figtree-Regular.ttf in Resources */,
 				EC66893B148B0A5506232830 /* Figtree-SemiBold.ttf in Resources */,
+				959B46154061EE62EAB76049 /* Fraunces-Regular.ttf in Resources */,
 				90C363208D3502F31EE967BE /* Fraunces-SemiBold.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -287,14 +317,20 @@
 				447CDE89543B103ACD878613 /* AppModel.swift in Sources */,
 				320A0024BC90E91C1C716012 /* Format.swift in Sources */,
 				D10AA7E5417A8A26C680693D /* PearlApp.swift in Sources */,
+				197D74CCEC857E06FD81CB2C /* Nacre.swift in Sources */,
 				B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */,
 				D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */,
 				2D87BDD1BFBA43066EAAD9A8 /* PearlTabBar.swift in Sources */,
 				C16A72243F03CBEE1A963979 /* HelpView.swift in Sources */,
 				F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */,
+				7579BBE295A41A951C73B4E3 /* AllowanceView.swift in Sources */,
+				3E714132CCE10921CFECCE51 /* AuthFlow.swift in Sources */,
+				36B2ADE3D4D2AADFAF7450C6 /* FaceIDViews.swift in Sources */,
+				EDF62B098CA2F256BB968358 /* PayAndBillsView.swift in Sources */,
+				B012721D7224087DA976961B /* PlaidLinker.swift in Sources */,
+				619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */,
 				658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */,
 				5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */,
-				164B080F19365D41A9D8BFF2 /* SignInView.swift in Sources */,
 				014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */,
 				8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */,
 			);
@@ -430,6 +466,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A6D5A498A3AB05EE90F9F27B /* XCRemoteSwiftPackageReference "plaid-link-ios-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/plaid/plaid-link-ios-spm";
+			requirement = {
+				kind = exactVersion;
+				version = 6.5.4;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A8318EFB1C654A8D1F922D04 /* LinkKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A6D5A498A3AB05EE90F9F27B /* XCRemoteSwiftPackageReference "plaid-link-ios-spm" */;
+			productName = LinkKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 46F86FAA6BBF9AC94A7E4595 /* Project object */;
 }

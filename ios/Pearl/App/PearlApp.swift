@@ -29,34 +29,59 @@ struct PearlApp: App {
 @MainActor
 struct RootView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
             switch app.phase {
             case .starting:
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).pearlPage()
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).nacreScreen()
             case .offline:
                 VStack(spacing: 16) {
-                    Text("Pearl can't reach the server").font(Pearl.title).foregroundColor(Pearl.ink)
-                    Text("Check your connection and try again.").foregroundColor(Pearl.muted)
+                    Text("Pearl can't reach the server").font(Nacre.title).multilineTextAlignment(.center)
+                    Text("Check your connection and try again.").font(Nacre.body)
                     Button("Try again") { Task { await app.start() } }
-                        .buttonStyle(PrimaryButtonStyle())
+                        .buttonStyle(NacreButtonStyle())
                         .frame(maxWidth: 240)
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .pearlPage()
+                .nacreScreen()
             case .signedOut:
-                SignInView()
+                AuthFlow()
             case .signedIn(let user):
-                if user?.onboarding?.done == false {
-                    FinishOnWebView()
+                if user?.onboarding?.done == false || Self.debugSetup {
+                    SetupFlow()
                 } else {
                     MainTabs()
                 }
             }
         }
+        .overlay {
+            if app.locked {
+                AppLockView().transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: app.locked)
         .task { await app.start() }
+        .onOpenURL { app.open($0) }
+        .onChange(of: scenePhase) { phase in
+            switch phase {
+            case .background: app.wentToBackground()
+            case .active: app.cameBack()
+            default: break
+            }
+        }
+    }
+
+    /// DEBUG: `-pearl-setup <screen>` opens setup even on an account that
+    /// finished it (see SetupFlow).
+    private static var debugSetup: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-pearl-setup")
+        #else
+        return false
+        #endif
     }
 }
 
@@ -108,28 +133,5 @@ struct MainTabs: View {
         if let review: Review = try? await app.api.get("api/review") {
             reviewCount = review.open ?? review.count
         }
-    }
-}
-
-/// An account that hasn't finished setting up does that on the web first:
-/// linking a bank happens there.
-@MainActor
-struct FinishOnWebView: View {
-    @EnvironmentObject private var app: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Finish setting up Pearl").font(Pearl.display()).foregroundColor(Pearl.ink)
-            Text("Linking your bank and the rest of setup happen on the web. Once that's done, everything is here too.")
-                .foregroundColor(Pearl.muted)
-            Link("Open Pearl on the web", destination: app.api.baseURL)
-                .buttonStyle(PrimaryButtonStyle())
-            Button("I've finished, check again") { Task { await app.start() } }
-                .buttonStyle(SecondaryButtonStyle())
-            Button("Sign out") { Task { await app.signOut() } }.foregroundColor(Pearl.action)
-            Spacer()
-        }
-        .padding(24)
-        .pearlPage()
     }
 }

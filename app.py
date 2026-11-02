@@ -25,7 +25,7 @@ from datetime import timedelta
 from flask import Flask, abort, g, jsonify, request, send_from_directory, session
 from flask_cors import CORS
 
-from finance import auth, devices, mailer, passkeys, security, signin_codes, users
+from finance import auth, devices, mailer, passkeys, passwords, security, signin_codes, users
 from finance.api import bp
 # storage_mode is re-exported for convenience; /api/health reads it from db.
 from finance.db import database_url, is_hosted as _is_hosted, storage_mode  # noqa: F401
@@ -78,7 +78,11 @@ _OPEN_PATHS = frozenset({"/api/auth/status", "/api/auth/login", "/api/auth/signu
                          "/api/auth/passkey/options", "/api/auth/passkey/verify",
                          # A-07, A-08: a sign-in waiting to confirm the device.
                          "/api/auth/device/ask", "/api/auth/device/status",
-                         "/api/auth/device/recovery", "/api/auth/device/cancel"})
+                         "/api/auth/device/recovery", "/api/auth/device/cancel",
+                         # THL-114: email + password sign-up, and the email code
+                         # a new device is asked for after the password.
+                         "/api/auth/password/check", "/api/auth/signup/start",
+                         "/api/auth/login/code", "/api/auth/login/resend"})
 
 
 def _is_static_asset(path: str) -> bool:
@@ -304,6 +308,8 @@ def _install_auth(app: Flask) -> None:
             "signed_in": (not need) or user is not None,
             "user": status_user(user) if user else None,
             "mail": mailer.configured(),
+            # A-10 "Contact support", reachable while signed out.
+            "contact": mailer.reply_address(),
         })
 
     @app.post("/api/auth/login")
@@ -311,13 +317,22 @@ def _install_auth(app: Flask) -> None:
         if not required():
             return jsonify({"ok": True, "signed_in": True})
         body = request.get_json(silent=True) or {}
-        user = users.authenticate(base, body.get("username", ""),
+        by_email = bool(body.get("email"))
+        user = users.authenticate(base, body.get("email") or body.get("username", ""),
                                   str(body.get("password", "")))
         if user is None:
             # The same message whatever went wrong, so it never confirms that
-            # a username exists or that a guess was partly right.
+            # an account exists or that a guess was partly right.
+            if by_email:
+                return jsonify({"error": "That email and password don't match."}), 401
             return jsonify({"error": "That username and password don't match."}), 401
-        if devices.needs_check(base, user.id, device_token()):
+        if body.get("two_step") == "email":
+            # THL-114 (the iPhone app): on a device that isn't trusted yet, or
+            # after signing out of it, the password is followed by a code
+            # sent to her email. Never on a device she uses every day.
+            if not devices.trusted(base, user.id, device_token()):
+                return email_step_reply(user)
+        elif devices.needs_check(base, user.id, device_token()):
             return confirm_device_reply(user)
         start_session(user)
         return keep_device(jsonify({"ok": True, "signed_in": True, "user": user.public()}), user)
@@ -336,7 +351,7 @@ def _install_auth(app: Flask) -> None:
                 try:
                     mailer.send(user.email, "Reset your Pearl password",
                                 f"Hi {user.username},\n\nTo choose a new "
-                                f"password, open this link within 30 minutes:\n\n"
+                                f"password, open this link within 15 minutes:\n\n"
                                 f"{link}\n\nIt works once. If you didn't ask "
                                 "for this, ignore this email — your password "
                                 "hasn't changed.")
@@ -351,9 +366,11 @@ def _install_auth(app: Flask) -> None:
     def _auth_reset():
         body = request.get_json(silent=True) or {}
         password = str(body.get("password", ""))
-        if len(password) < users.MIN_PASSWORD:
-            return jsonify({"error": f"Passwords need at least "
-                                     f"{users.MIN_PASSWORD} characters."}), 400
+        owner = users.reset_owner(base, str(body.get("token", "")))
+        problem = passwords.problem(password, owner.email if owner else None,
+                                    remote=passwords.pwned_check_on(_is_hosted()))
+        if problem:
+            return jsonify({"error": problem}), 400
         user = users.redeem_reset(base, str(body.get("token", "")))
         if user is None:
             return jsonify({"error": "That reset link has expired or was already "
@@ -375,6 +392,9 @@ def _install_auth(app: Flask) -> None:
             # Asked for whenever email works, since it is where a reset link
             # goes; optional only where none can be sent.
             problem = users.check_email(email)
+        if not problem and email:
+            problem = passwords.problem(password, email,
+                                        remote=passwords.pwned_check_on(_is_hosted()))
         if problem:
             return jsonify({"error": problem}), 400
         if email and users.by_email(base, email) is not None:
@@ -401,9 +421,10 @@ def _install_auth(app: Flask) -> None:
         if not auth.verify_password(str(body.get("current", "")), user.password_hash):
             return jsonify({"error": "Your current password isn't right."}), 400
         new = str(body.get("new", ""))
-        if len(new) < users.MIN_PASSWORD:
-            return jsonify({"error": f"Passwords need at least "
-                                     f"{users.MIN_PASSWORD} characters."}), 400
+        problem = passwords.problem(new, user.email,
+                                    remote=passwords.pwned_check_on(_is_hosted()))
+        if problem:
+            return jsonify({"error": problem}), 400
         users.set_password(base, user.id, auth.hash_password(new))
         # Every other session is signed out; this one carries on.
         start_session(users.by_id(base, user.id))
@@ -607,9 +628,134 @@ def _install_auth(app: Flask) -> None:
     app.config["STATUS_USER"] = status_user
 
     def pause_reply(seconds: int):
-        return jsonify({"error": "There were too many sign-in attempts, so we've "
-                                 "paused sign-in for 15 minutes.",
+        minutes = max(1, -(-int(seconds) // 60))
+        return jsonify({"error": "Too many tries. Try again in "
+                                 f"{minutes} minute{'' if minutes == 1 else 's'}.",
                         "paused": True, "retry_in": seconds}), 429
+
+    # ── THL-114: email + a strong password, and an email code on new devices ──
+    def mail_code(email: str, out: dict, first_name: str | None = None):
+        """Email the code `signin_codes.start` made, or print it when running
+        locally with no mail server. A reply to send back if it failed."""
+        if not out.get("code"):
+            return None
+        subject, text = signin_codes.email_text(out["purpose"], out["code"],
+                                                first_name, public_url())
+        if mailer.configured():
+            try:
+                mailer.send(email, subject, text)
+            except Exception:                          # noqa: BLE001
+                return jsonify({"error": "The email didn't send. Try again "
+                                         "in a minute."}), 502
+        else:
+            print(f"[pearl] {subject} → {email}: {out['code']}", file=sys.stderr)
+        return None
+
+    def no_mail():
+        if _is_hosted() and not mailer.configured():
+            return jsonify({"error": "Email isn't set up on this deployment yet, "
+                                     "so a code can't be sent."}), 503
+        return None
+
+    @app.post("/api/auth/password/check")
+    def _password_check():
+        """The strength meter and its three rules (O-02, A-07, S-02), as the
+        server will judge them, so the screen and the server agree."""
+        body = request.get_json(silent=True) or {}
+        user = g.get("user")
+        email = body.get("email") or (user.email if user else None)
+        return jsonify(passwords.rules(str(body.get("password", "")), email,
+                                       remote=passwords.pwned_check_on(_is_hosted())))
+
+    @app.post("/api/auth/signup/start")
+    def _signup_start():
+        """O-02 "Create your account": email and a strong password. Nothing
+        is made yet; O-03's code, checked by /api/auth/code/verify, makes the
+        account with this password."""
+        body = request.get_json(silent=True) or {}
+        email = users.normalise(body.get("email"))
+        password = str(body.get("password", ""))
+        problem = users.check_email(email)
+        if problem:
+            return jsonify({"error": problem}), 400
+        if users.by_email(base, email) is not None:
+            # O-02a asks for this, so she can sign in instead.
+            return jsonify({"error": "There’s already a Pearl account with this email.",
+                            "taken": True}), 409
+        problem = passwords.problem(password, email,
+                                    remote=passwords.pwned_check_on(_is_hosted()))
+        if problem:
+            return jsonify({"error": problem, "weak": True}), 400
+        failed = no_mail()
+        if failed:
+            return failed
+        out = signin_codes.start(base, email, creating=True,
+                                 password_hash=auth.hash_password(password))
+        if out.get("paused"):
+            return pause_reply(out["paused"])
+        failed = mail_code(email, out)
+        if failed:
+            return failed
+        return jsonify({"ok": True, "sent_to": email,
+                        "resend_in": out.get("resend_in", signin_codes.RESEND_AFTER),
+                        "ttl": signin_codes.TTL})
+
+    def email_step_reply(user):
+        """A-02: the password was right; now the code sent to her email."""
+        failed = no_mail()
+        if failed:
+            return failed
+        out = signin_codes.start(base, user.email)
+        if out.get("paused"):
+            return pause_reply(out["paused"])
+        failed = mail_code(user.email, out, user.first_name)
+        if failed:
+            return failed
+        session.clear()
+        session["pending"] = {"uid": user.id, "pw": user.fingerprint, "at": users.now(),
+                              "tries": 0, "via": "email"}
+        return jsonify({"ok": True, "signed_in": False, "code_needed": True,
+                        "sent_to": user.email,
+                        "resend_in": out.get("resend_in", signin_codes.RESEND_AFTER)})
+
+    @app.post("/api/auth/login/code")
+    def _login_code():
+        """A-02 → signed in, and this device trusted from now on."""
+        user = pending_user()
+        if user is None or (session.get("pending") or {}).get("via") != "email":
+            return pending_over()
+        body = request.get_json(silent=True) or {}
+        out = signin_codes.verify(base, user.email, body.get("code", ""))
+        if out.get("error") == "paused":
+            return pause_reply(out["paused"])
+        if out.get("error") == "wrong":
+            left = out["left"]
+            return jsonify({"error": "That code didn’t match. Try again.",
+                            "wrong": True, "left": left}), 400
+        if out.get("error") or out["user"].id != user.id:
+            return jsonify({"error": "That code has expired. Send a new one.",
+                            "expired": True}), 400
+        session.pop("pending", None)
+        return signed_in_reply(user)
+
+    @app.post("/api/auth/login/resend")
+    def _login_resend():
+        """A-02's "Resend code" and A-10's "Send a new code"."""
+        user = pending_user()
+        if user is None or (session.get("pending") or {}).get("via") != "email":
+            return pending_over()
+        failed = no_mail()
+        if failed:
+            return failed
+        out = signin_codes.start(base, user.email)
+        if out.get("paused"):
+            return pause_reply(out["paused"])
+        failed = mail_code(user.email, out, user.first_name)
+        if failed:
+            return failed
+        session["pending"] = {**session["pending"], "at": users.now()}
+        return jsonify({"ok": True, "sent_to": user.email,
+                        "resend_in": out.get("resend_in", signin_codes.RESEND_AFTER)})
 
     @app.post("/api/auth/code/start")
     def _code_start():
@@ -849,7 +995,9 @@ def _install_auth(app: Flask) -> None:
                 return jsonify({"error": "Unknown step."}), 400
             later = users.STEPS.index(step)
             province = fields.get("province") or user.province
-            if later > 0 and (not province or province in users.UNAVAILABLE):
+            # The iPhone onboarding no longer asks where she lives (THL-119,
+            # Oct 30); the web still does, and still waitlists Quebec.
+            if later > 0 and province in users.UNAVAILABLE:
                 return jsonify({"error": "Choose where you live first."}), 400
             consents = user.consents or {}
             if later >= users.STEPS.index("bank") and not all(
@@ -866,6 +1014,12 @@ def _install_auth(app: Flask) -> None:
 
     @app.post("/api/auth/logout")
     def _auth_logout():
+        user = g.get("user")
+        body = request.get_json(silent=True) or {}
+        if user is not None and body.get("forget_device"):
+            # THL-114: after signing out on the iPhone, the next sign-in there
+            # asks for an email code again.
+            devices.forget(base, user.id, devices.hashed(device_token()))
         session.clear()
         return jsonify({"ok": True, "signed_in": False})
 

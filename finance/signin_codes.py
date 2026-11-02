@@ -30,6 +30,7 @@ RESEND_AFTER = 30
 WINDOW = 15 * 60
 SENDS_PER_WINDOW = 4     # the first code and three new ones
 FAILS_PER_WINDOW = 10
+SIGNIN_FAILS = TRIES     # signing in: five wrong in fifteen minutes pause it (THL-114)
 
 SIGNUP, SIGNIN, NONE = "signup", "signin", "none"
 
@@ -48,18 +49,20 @@ def _paused(c, email: str, t: float, sending: bool = False) -> float:
         "AND purpose IN ('signup', 'signin', 'none') AND created_at > ? "
         "ORDER BY created_at", (email, t - WINDOW)).fetchall()
     if (sending and len(rows) >= SENDS_PER_WINDOW) or \
-            sum(int(r["attempts"]) for r in rows) >= FAILS_PER_WINDOW:
+            sum(int(r["attempts"]) for r in rows) >= SIGNIN_FAILS:
         return max(float(rows[0]["created_at"]) + WINDOW - t, 1.0)
     return 0.0
 
 
 def start(base, email: str, first_name: str | None = None,
-          creating: bool = False) -> dict:
+          creating: bool = False, password_hash: str | None = None) -> dict:
     """Make a code for this address.
 
     Returns {"code", "purpose", "resend_in"} when one should be emailed,
     {"resend_in"} when the last one is too recent to replace, or
-    {"paused": seconds}. `creating` is True on the sign-up screen.
+    {"paused": seconds}. `creating` is True on the sign-up screen; with
+    `password_hash` (THL-114, sign-up by email and password) the account made
+    when the code is typed in has that password.
     """
     email = users.normalise(email)
     t = users.now()
@@ -84,7 +87,8 @@ def start(base, email: str, first_name: str | None = None,
             "INSERT INTO app_codes (user_id, purpose, secret_hash, payload, "
             "expires_at, created_at, email) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (account.id if account else 0, purpose, _digest(email, code),
-             json.dumps({"first_name": users.clean_name(first_name)}),
+             json.dumps({"first_name": users.clean_name(first_name),
+                         **({"password_hash": password_hash} if password_hash else {})}),
              t + TTL, t, email))
     return {"code": code, "purpose": purpose, "resend_in": RESEND_AFTER}
 
@@ -120,9 +124,11 @@ def verify(base, email: str, code: str, owner: bool = False) -> dict:
         c.execute("UPDATE app_codes SET used = 1 WHERE id = ?", (r["id"],))
         purpose = r["purpose"]
         try:
-            first_name = json.loads(r["payload"] or "{}").get("first_name")
+            payload = json.loads(r["payload"] or "{}")
         except ValueError:
-            first_name = None
+            payload = {}
+        first_name = payload.get("first_name")
+        password_hash = payload.get("password_hash")
     user = users.by_email(base, email)
     if user is not None:
         users.mark_verified(base, user.id)
@@ -132,6 +138,9 @@ def verify(base, email: str, code: str, owner: bool = False) -> dict:
     user = users.create_passwordless(base, email, first_name, owner=owner)
     if user is None:
         return {"error": "expired"}
+    if password_hash:
+        users.set_password(base, user.id, password_hash)
+        user = users.by_id(base, user.id)
     return {"user": user, "created": True}
 
 

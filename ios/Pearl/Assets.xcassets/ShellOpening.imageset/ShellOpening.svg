@@ -1,0 +1,25 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="34" height="28.3333" viewBox="0 0 34 28.3333" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Shell mark/Opening">
+<path id="Vector" d="M5.1003 22.0994C7.36691 28.0493 26.6331 28.0493 28.8997 22.0994C20.9666 23.7994 13.0334 23.7994 5.1003 22.0994Z" fill="#C9426E"/>
+<path id="Vector_2" d="M17 22.0994L30.8575 20.272C31.171 18.9592 30.4533 17.9194 28.7042 17.1526C28.1923 15.8625 26.8919 15.0682 24.8028 14.7698C23.5411 13.6969 21.8524 13.2672 19.7369 13.4807C17.9123 12.7856 16.0877 12.7856 14.2631 13.4807C12.1476 13.2672 10.4589 13.6969 9.1972 14.7698C7.10814 15.0682 5.80767 15.8625 5.29579 17.1526C3.54673 17.9194 2.82897 18.9592 3.14251 20.272L17 22.0994Z" fill="url(#paint0_linear_0_158)"/>
+<path id="Vector_3" d="M17 22.0994L28.0016 17.4472" stroke-width="0.424989" stroke-linecap="round" stroke="white" stroke-opacity="0.38"/>
+<path id="Vector_4" d="M17 22.0994L24.3353 15.209" stroke-width="0.424989" stroke-linecap="round" stroke="white" stroke-opacity="0.38"/>
+<path id="Vector_5" d="M17 22.0994L19.5726 13.9991" stroke-width="0.424989" stroke-linecap="round" stroke="white" stroke-opacity="0.38"/>
+<path id="Vector_6" d="M17 22.0994L14.4274 13.9991" stroke-width="0.424989" stroke-linecap="round" stroke="white" stroke-opacity="0.38"/>
+<path id="Vector_7" d="M17 22.0994L9.66468 15.209" stroke-width="0.424989" stroke-linecap="round" stroke="white" stroke-opacity="0.38"/>
+<path id="Vector_8" d="M17 22.0994L5.99844 17.4472" stroke-width="0.424989" stroke-linecap="round" stroke="white" stroke-opacity="0.38"/>
+<path id="Vector_9" d="M17 24.3661C18.7212 24.3661 20.1166 22.9707 20.1166 21.2495C20.1166 19.5282 18.7212 18.1329 17 18.1329C15.2788 18.1329 13.8834 19.5282 13.8834 21.2495C13.8834 22.9707 15.2788 24.3661 17 24.3661Z" fill="url(#paint1_radial_0_158)"/>
+<path id="Vector_10" d="M15.9092 20.6885C16.3911 20.6885 16.7818 20.4094 16.7818 20.0652C16.7818 19.7209 16.3911 19.4418 15.9092 19.4418C15.4272 19.4418 15.0365 19.7209 15.0365 20.0652C15.0365 20.4094 15.4272 20.6885 15.9092 20.6885Z" fill="white" fill-opacity="0.9"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_158" x1="3.07102" y1="12.9593" x2="3.07102" y2="22.0994" gradientUnits="userSpaceOnUse">
+<stop stop-color="#FF8FB1"/>
+<stop offset="1" stop-color="#E2557F"/>
+</linearGradient>
+<radialGradient id="paint1_radial_0_158" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(16.252 20.1275) scale(4.67488)">
+<stop stop-color="white"/>
+<stop offset="0.55" stop-color="#FCE8F0"/>
+<stop offset="1" stop-color="#D9C6FF"/>
+</radialGradient>
+</defs>
+</svg>
