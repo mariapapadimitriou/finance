@@ -9,9 +9,11 @@ enum Pearl {
     static let card = dynamic(light: 0xFFFFFF, dark: 0x151B44)      // --surface-card
     static let border = dynamic(light: 0xEEDFE6, dark: 0x252C5E)    // --border
     static let track = dynamic(light: 0xF1E9EE, dark: 0x252C5E)     // --track
-    static let ink = dynamic(light: 0x1C1A33, dark: 0xFBF8F6)       // --ink
-    static let muted = dynamic(light: 0x686580, dark: 0xB4B1CC)     // --ink-muted
-    static let action = dynamic(light: 0xB8285A, dark: 0xFF8FB1)    // --action
+    // Text and the one pink, from the Pearl Design System iOS library (Oct 31:
+    // text is plum #2E2547 in light mode, the action rose #B22757).
+    static let ink = dynamic(light: 0x2E2547, dark: 0xFBF8F6)       // color/text/primary
+    static let muted = dynamic(light: 0x605D76, dark: 0xB4B1CC)     // color/text/secondary
+    static let action = dynamic(light: 0xB22757, dark: 0xFF8FB1)    // --action
     static let onAction = dynamic(light: 0xFFFFFF, dark: 0x1C1A33)  // --on-action
     static let blush = Color(hex: 0xFFE4EC)                         // --blush
     static let answered = dynamic(light: 0xF1E9EE, dark: 0x252C5E)  // answered rows
@@ -49,6 +51,12 @@ enum Pearl {
 
     static let title = display(.title2)
     static let heading = display(.headline)
+    /// Fraunces Regular for headings (Oct 31: titles are Regular; amounts and
+    /// the wordmark stay SemiBold). 34 Large Title, 28 Title 1, 22 Title 2.
+    static func heading(_ size: CGFloat = 28, relativeTo style: Font.TextStyle = .title) -> Font {
+        .custom("Fraunces-Regular", size: size, relativeTo: style)
+    }
+
     /// A card's title on Home ("October so far"): Figtree, not Fraunces.
     static let cardTitle = Font.custom("Figtree-Regular", size: 20, relativeTo: .title3)
 
@@ -92,7 +100,7 @@ enum Pearl {
     static let radiusChoice: CGFloat = 12   // --radius-sm, an answer
     static let gutter: CGFloat = 16
 
-    private static func dynamic(light: UInt32, dark: UInt32) -> Color {
+    static func dynamic(light: UInt32, dark: UInt32) -> Color {
         Color(UIColor { traits in
             UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light)
         })

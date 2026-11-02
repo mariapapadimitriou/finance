@@ -1,0 +1,26 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="256" height="213.333" viewBox="0 0 256 213.333" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Logo/Mark">
+<path id="Vector" d="M128 166.4L232.341 144.213C234.702 128.256 229.298 115.62 216.128 106.304C212.274 90.6453 202.482 81.0027 186.752 77.376C177.252 64.3484 164.537 59.136 148.608 61.7387C134.869 53.2907 121.131 53.2907 107.392 61.7387C91.4631 59.136 78.7484 64.3484 69.248 77.376C53.5182 81.0027 43.7262 90.6453 39.872 106.304C26.7022 115.62 21.2978 128.256 23.6587 144.213L128 166.4Z" fill="url(#paint0_linear_0_50)"/>
+<path id="Vector_2" d="M128 166.4L210.837 109.909" stroke-width="3.2" stroke-linecap="round" stroke="white" stroke-opacity="0.38"/>
+<path id="Vector_3" d="M128 166.4L183.232 82.7307" stroke-width="3.2" stroke-linecap="round" stroke="white" stroke-opacity="0.38"/>
+<path id="Vector_4" d="M128 166.4L147.371 68.032" stroke-width="3.2" stroke-linecap="round" stroke="white" stroke-opacity="0.38"/>
+<path id="Vector_5" d="M128 166.4L108.629 68.032" stroke-width="3.2" stroke-linecap="round" stroke="white" stroke-opacity="0.38"/>
+<path id="Vector_6" d="M128 166.4L72.768 82.7307" stroke-width="3.2" stroke-linecap="round" stroke="white" stroke-opacity="0.38"/>
+<path id="Vector_7" d="M128 166.4L45.1627 109.909" stroke-width="3.2" stroke-linecap="round" stroke="white" stroke-opacity="0.38"/>
+<path id="Vector_8" d="M38.4 166.4C55.4667 211.2 200.533 211.2 217.6 166.4C157.867 179.2 98.1333 179.2 38.4 166.4Z" fill="#C9426E"/>
+<path id="Vector_9" d="M128 187.733C152.742 187.733 172.8 167.676 172.8 142.933C172.8 118.191 152.742 98.1333 128 98.1333C103.258 98.1333 83.2 118.191 83.2 142.933C83.2 167.676 103.258 187.733 128 187.733Z" fill="#E3D4FF" fill-opacity="0.45"/>
+<path id="Vector_10" d="M128 174.933C145.673 174.933 160 160.606 160 142.933C160 125.26 145.673 110.933 128 110.933C110.327 110.933 96 125.26 96 142.933C96 160.606 110.327 174.933 128 174.933Z" fill="url(#paint1_radial_0_50)"/>
+<path id="Vector_11" d="M116.8 137.173C121.748 137.173 125.76 134.308 125.76 130.773C125.76 127.239 121.748 124.373 116.8 124.373C111.852 124.373 107.84 127.239 107.84 130.773C107.84 134.308 111.852 137.173 116.8 137.173Z" fill="white" fill-opacity="0.9"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_50" x1="23.1203" y1="55.4027" x2="23.1203" y2="166.4" gradientUnits="userSpaceOnUse">
+<stop stop-color="#FF8FB1"/>
+<stop offset="1" stop-color="#E2557F"/>
+</linearGradient>
+<radialGradient id="paint1_radial_0_50" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(120.32 131.413) scale(48)">
+<stop stop-color="white"/>
+<stop offset="0.55" stop-color="#FCE8F0"/>
+<stop offset="1" stop-color="#D9C6FF"/>
+</radialGradient>
+</defs>
+</svg>

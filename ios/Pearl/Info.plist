@@ -13,11 +13,27 @@
 	     text (ios/Pearl/Fonts, SIL Open Font License). -->
 	<key>UIAppFonts</key>
 	<array>
+		<string>Fraunces-Regular.ttf</string>
 		<string>Fraunces-SemiBold.ttf</string>
 		<string>Figtree-Regular.ttf</string>
 		<string>Figtree-Medium.ttf</string>
 		<string>Figtree-SemiBold.ttf</string>
 		<string>Figtree-Bold.ttf</string>
+	</array>
+	<!-- O-04a: the system's Face ID prompt (THL-119). -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Unlock Pearl quickly and privately.</string>
+	<!-- pearl://reset?token=… opens A-07 "Choose a new password". -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.mariapapadimitriou.pearl</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>pearl</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

@@ -6,7 +6,8 @@ Run it after adding or removing a Swift file:
     python3 ios/tools/make_project.py
 
 Every .swift file under ios/Pearl is compiled; Assets.xcassets and the fonts
-in Fonts/ are the resources. The signing team already chosen in Xcode is kept.
+in Fonts/ are the resources; PACKAGES are the Swift packages it links. The
+signing team already chosen in Xcode is kept.
 IDs are derived from paths, so running it twice gives the same
 project and git diffs stay small. Works with Xcode 14 and later.
 """
@@ -23,6 +24,13 @@ APP = "Pearl"
 SRC = os.path.join(IOS, APP)
 BUNDLE_ID = "com.mariapapadimitriou.pearl"
 DEPLOYMENT = "16.0"
+
+# Swift packages: Plaid Link draws the bank picker and the bank's sign-in
+# (O-07, THL-119). Pinned to an exact release.
+PACKAGES = [
+    {"repo": "plaid-link-ios-spm", "url": "https://github.com/plaid/plaid-link-ios-spm",
+     "version": "6.5.4", "products": ["LinkKit"]},
+]
 
 
 def uid(*parts: str) -> str:
@@ -84,6 +92,11 @@ def main() -> None:
     project_configs = uid("configlist", "project")
     target_configs = uid("configlist", "target")
 
+    package_ref = {p["repo"]: uid("package", p["repo"]) for p in PACKAGES}
+    products = [(p["repo"], name) for p in PACKAGES for name in p["products"]]
+    product_dep = {name: uid("product-dep", repo, name) for repo, name in products}
+    product_build = {name: uid("build-product", repo, name) for repo, name in products}
+
     file_ref = {f: uid("file", f) for f in files}
     build_file = {f: uid("build", f) for f in swift + assets}
 
@@ -136,6 +149,9 @@ def main() -> None:
         name = os.path.basename(f)
         w(f"\t\t{build_file[f]} /* {name} in {phase} */ = {{isa = PBXBuildFile; "
           f"fileRef = {file_ref[f]} /* {name} */; }};")
+    for _, name in products:
+        w(f"\t\t{product_build[name]} /* {name} in Frameworks */ = {{isa = PBXBuildFile; "
+          f"productRef = {product_dep[name]} /* {name} */; }};")
     w("/* End PBXBuildFile section */")
     w("")
     w("/* Begin PBXFileReference section */")
@@ -152,6 +168,8 @@ def main() -> None:
     w("\t\t\tisa = PBXFrameworksBuildPhase;")
     w("\t\t\tbuildActionMask = 2147483647;")
     w("\t\t\tfiles = (")
+    for _, name in products:
+        w(f"\t\t\t\t{product_build[name]} /* {name} in Frameworks */,")
     w("\t\t\t);")
     w("\t\t\trunOnlyForDeploymentPostprocessing = 0;")
     w("\t\t};")
@@ -208,6 +226,10 @@ def main() -> None:
     w("\t\t\tdependencies = (")
     w("\t\t\t);")
     w(f"\t\t\tname = {APP};")
+    w("\t\t\tpackageProductDependencies = (")
+    for _, name in products:
+        w(f"\t\t\t\t{product_dep[name]} /* {name} */,")
+    w("\t\t\t);")
     w(f"\t\t\tproductName = {APP};")
     w(f"\t\t\tproductReference = {product} /* {APP}.app */;")
     w("\t\t\tproductType = \"com.apple.product-type.application\";")
@@ -236,6 +258,10 @@ def main() -> None:
     w("\t\t\t\tBase,")
     w("\t\t\t);")
     w(f"\t\t\tmainGroup = {main_group};")
+    w("\t\t\tpackageReferences = (")
+    for p in PACKAGES:
+        w(f"\t\t\t\t{package_ref[p['repo']]} /* XCRemoteSwiftPackageReference \"{p['repo']}\" */,")
+    w("\t\t\t);")
     w(f"\t\t\tproductRefGroup = {products_group} /* Products */;")
     w("\t\t\tprojectDirPath = \"\";")
     w("\t\t\tprojectRoot = \"\";")
@@ -362,6 +388,27 @@ def main() -> None:
         w("\t\t\tdefaultConfigurationName = Release;")
         w("\t\t};")
     w("/* End XCConfigurationList section */")
+    w("")
+    w("/* Begin XCRemoteSwiftPackageReference section */")
+    for p in PACKAGES:
+        w(f"\t\t{package_ref[p['repo']]} /* XCRemoteSwiftPackageReference \"{p['repo']}\" */ = {{")
+        w("\t\t\tisa = XCRemoteSwiftPackageReference;")
+        w(f"\t\t\trepositoryURL = {q(p['url'])};")
+        w("\t\t\trequirement = {")
+        w("\t\t\t\tkind = exactVersion;")
+        w(f"\t\t\t\tversion = {q(p['version'])};")
+        w("\t\t\t};")
+        w("\t\t};")
+    w("/* End XCRemoteSwiftPackageReference section */")
+    w("")
+    w("/* Begin XCSwiftPackageProductDependency section */")
+    for repo, name in products:
+        w(f"\t\t{product_dep[name]} /* {name} */ = {{")
+        w("\t\t\tisa = XCSwiftPackageProductDependency;")
+        w(f"\t\t\tpackage = {package_ref[repo]} /* XCRemoteSwiftPackageReference \"{repo}\" */;")
+        w(f"\t\t\tproductName = {name};")
+        w("\t\t};")
+    w("/* End XCSwiftPackageProductDependency section */")
     w("\t};")
     w(f"\trootObject = {project} /* Project object */;")
     w("}")

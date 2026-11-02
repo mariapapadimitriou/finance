@@ -1,0 +1,15 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="8.35891" height="13.1354" viewBox="0 0 8.35891 13.1354" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Pearl dot wrap" clip-path="url(#clip0_0_103)">
+<circle id="Pearl dot" cx="4.17946" cy="4.17946" r="4.17946" fill="url(#paint0_radial_0_103)"/>
+</g>
+<defs>
+<radialGradient id="paint0_radial_0_103" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(5.43329 5.85124) scale(4.17946)">
+<stop stop-color="white"/>
+<stop offset="0.55" stop-color="#FCE8F0"/>
+<stop offset="1" stop-color="#DCCBFF"/>
+</radialGradient>
+<clipPath id="clip0_0_103">
+<rect width="8.35891" height="13.1354" fill="white"/>
+</clipPath>
+</defs>
+</svg>

@@ -115,7 +115,7 @@ def test_same_answer_for_known_and_unknown_addresses(app, outbox):
     assert users.by_email(app.config["STORE"], "nobody@example.com") is None
 
 
-def test_wrong_code_counts_down_then_dies(app, outbox):
+def test_wrong_code_counts_down_then_pauses(app, outbox):
     c = app.test_client()
     start(c, "alex@example.com", "Alex", create=True)
     good = code_in(outbox[-1])
@@ -128,9 +128,9 @@ def test_wrong_code_counts_down_then_dies(app, outbox):
     assert lefts == [4, 3, 2, 1]
     r = c.post("/api/auth/code/verify", json={"email": "alex@example.com", "code": bad})
     assert r.get_json().get("expired")
-    # Even the right code is dead now.
+    # Five wrong tries pause it (THL-114), so even the right code waits.
     r = c.post("/api/auth/code/verify", json={"email": "alex@example.com", "code": good})
-    assert r.get_json().get("expired")
+    assert r.status_code == 429 and r.get_json()["paused"]
 
 
 def test_code_expires_after_ten_minutes(app, outbox, clock):

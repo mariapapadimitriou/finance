@@ -39,3 +39,10 @@ def _database(monkeypatch):
         c.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
         c.commit()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_pwned_lookups(monkeypatch):
+    """Tests never ask Have I Been Pwned (finance/passwords.py): the short
+    list of common passwords is checked, the network isn't."""
+    monkeypatch.setenv("PEARL_PWNED_CHECK", "0")

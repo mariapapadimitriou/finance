@@ -133,7 +133,7 @@ class TestLockedDeployment:
         assert r.status_code == 200
         assert r.get_json() == {"required": True, "configured": True,
                                 "signed_in": False, "user": None,
-                                "mail": False}
+                                "mail": False, "contact": None}
 
     def test_status_reports_signed_in_after_login(self, c):
         c.post("/api/auth/login", json={"username": "mariapapas", "password": "hunter2"})
@@ -166,7 +166,7 @@ class TestRunningLocally:
         assert c.get("/api/summary").status_code == 200
         assert c.get("/api/auth/status").get_json() == {
             "required": False, "configured": False, "signed_in": True, "user": None,
-            "mail": False}
+            "mail": False, "contact": None}
 
     def test_setting_one_locally_is_honoured(self, tmp_path, monkeypatch):
         c = client_for(tmp_path, monkeypatch, hosted=False, password="local")
