@@ -539,7 +539,8 @@ struct JointAccountsView: View {
         .task { await load() }
         .sheet(item: $editing) { account in
             JointSheet(account: account) { await load() }
-                .presentationDetents([.medium])
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
                 .background(NacreBackground().opacity(0.35))
                 .background(Pearl.page)
         }
@@ -575,36 +576,51 @@ struct JointSheet: View {
     @State private var busy = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(account.name).font(Nacre.title2)
-                    Text("Joint account" + (account.mask.map { " · ••\($0)" } ?? "")).font(Nacre.subheadline)
+        VStack(spacing: 0) {
+            // Scrolls, so the keyboard shortens the sheet instead of squeezing
+            // its rows into each other.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(account.name).font(Nacre.title2)
+                            Text("Joint account" + (account.mask.map { " · ••\($0)" } ?? "")).font(Nacre.subheadline)
+                        }
+                        Spacer()
+                        CloseButton { dismiss() }
+                    }
+                    VStack(spacing: 0) {
+                        FieldRow(label: "Shared with", text: $name, prompt: "Their name")
+                        RowSeparator()
+                        // The percentage is its own text and the stepper has no
+                        // label, so the − / + sits on the row's line.
+                        HStack(spacing: 12) {
+                            Text("Your share").font(Nacre.body)
+                            Spacer(minLength: 8)
+                            Text("\(share)%").font(Nacre.body).monospacedDigit()
+                            Stepper("Your share", value: $share, in: 1...99, step: 5)
+                                .labelsHidden()
+                                .fixedSize()
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(height: 52)
+                        .accessibilityElement(children: .combine)
+                    }
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Pearl.card))
+                    Text("Type their name, or leave it blank. Only you can see this.").font(Nacre.footnote)
+                    if let error = error { Hint(text: error) }
                 }
-                Spacer()
-                CloseButton { dismiss() }
+                .padding(16)
             }
-            VStack(spacing: 0) {
-                FieldRow(label: "Shared with", text: $name, prompt: "Their name")
-                RowSeparator()
-                HStack {
-                    Text("Your share").font(Nacre.body)
-                    Spacer()
-                    Stepper("\(share)%", value: $share, in: 1...99, step: 5)
-                        .font(Nacre.body).fixedSize()
-                }
-                .padding(.horizontal, 16).frame(minHeight: 52)
+            .scrollDismissesKeyboard(.interactively)
+            VStack(spacing: 6) {
+                Button("Save") { Task { await save(joint: true) } }
+                    .buttonStyle(NacreButtonStyle(busy: busy))
+                Button("Not a joint account") { Task { await save(joint: false) } }
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             }
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Pearl.card))
-            Text("Type their name, or leave it blank. Only you can see this.").font(Nacre.footnote)
-            if let error = error { Hint(text: error) }
-            Spacer(minLength: 0)
-            Button("Save") { Task { await save(joint: true) } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-            Button("Not a joint account") { Task { await save(joint: false) } }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+            .padding(.horizontal, 16).padding(.bottom, 8)
         }
-        .padding(16)
         .foregroundColor(Pearl.ink)
         .onAppear {
             name = account.jointPeople?.first ?? ""
