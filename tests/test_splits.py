@@ -64,8 +64,8 @@ def detail(c, tid):
     return c.get(f"/api/transactions/{tid}").get_json()
 
 
-def listing(c):
-    return c.get("/api/transactions/list", query_string={"month": MONTH}).get_json()
+def listing(c, **q):
+    return c.get("/api/transactions/list", query_string={"month": MONTH, **q}).get_json()
 
 
 def test_even_split_counts_only_her_share(client):
@@ -150,7 +150,9 @@ def test_partial_repayment_stays_open_and_never_income(client):
     client.post(f"/api/transactions/{tid}/paybacks/{ins[1].fingerprint}", json={"person": "Priya"})
     p = detail(client, tid)["splitting"]["people"][0]
     assert p["owes"] == 0 and p["paid_on"] == ins[1].date[:10]
-    data = listing(client)
+    # The charge is five days back, so early in a month it falls in the last
+    # one: list the days the rows span rather than this month.
+    data = listing(client, month="", first=day(5), last=day())
     assert data["totals"]["income"] == 0, "a repayment is never income"
     assert data["totals"]["spent"] == 45, "only her share counts"
     # A person who isn't in the split can't be named.

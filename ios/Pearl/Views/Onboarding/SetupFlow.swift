@@ -235,7 +235,8 @@ struct ReadingAccountsView: View {
     @State private var spin = false
 
     var body: some View {
-        NacreScreen(scrolls: false) {
+        // Scrolls: a bank can bring a dozen accounts or more.
+        NacreScreen(scrolls: true) {
             VStack(spacing: 12) {
                 ZStack {
                     Circle().stroke(Color.white.opacity(0.5), lineWidth: 4)
@@ -251,6 +252,7 @@ struct ReadingAccountsView: View {
                 .accessibilityHidden(true)
                 Text(longer ? "This is taking a little longer" : "Pearl is reading your accounts")
                     .font(Nacre.title).tracking(0.4).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                 Text(longer ? "Some banks need a few minutes. We can let you know when it’s ready." : "About a minute.")
                     .font(Nacre.body).multilineTextAlignment(.center)
