@@ -182,6 +182,33 @@ def data_start_over():
     return jsonify({"ok": True, "removed": removed, "resync": True})
 
 
+@bp.post("/account/reset")
+def account_reset():
+    """Reset (iPhone Profile, 2026-11-02): back to the start of onboarding, as
+    a new account would be. Every bank is unlinked (revoked at Plaid), and the
+    transactions and everything she set up go, as Start over clears them.
+    Signing in stays: her email, password, devices and consents. Confirmed by
+    sending "reset"."""
+    user = _user()
+    if user is None:
+        return _no_account()
+    body = request.get_json(silent=True) or {}
+    if str(body.get("confirm") or "").strip().lower() != "reset":
+        return jsonify({"error": "Confirm the reset first."}), 400
+    st = store()
+    banks = 0
+    if st.plaid_items():
+        from . import plaid_link
+        for item in st.plaid_items():
+            plaid_link.unlink(st, item["item_id"])
+            banks += 1
+    removed = st.start_over()
+    user = users.update_onboarding(_base(), user.id, onboarded_at=None, onboarding_step="bank")
+    status = current_app.config.get("STATUS_USER")
+    return jsonify({"ok": True, "removed": removed, "banks": banks,
+                    "user": status(user) if status else user.public()})
+
+
 # ── Set up again, after Start over (2026-10-29) ─────────────────────────
 
 @bp.get("/setup-again")

@@ -5,6 +5,9 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject private var app: AppModel
     @State private var confirmSignOut = false
+    @State private var confirmReset = false
+    @State private var resetting = false
+    @State private var error: String?
 
     var body: some View {
         ScrollView {
@@ -35,6 +38,32 @@ struct ProfileView: View {
                 Button("Sign out") { confirmSignOut = true }
                     .buttonStyle(SecondaryButtonStyle())
                     .padding(.top, 4)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Button(role: .destructive) { confirmReset = true } label: {
+                        HStack {
+                            Text(resetting ? "Resetting…" : "Reset Pearl")
+                            Spacer()
+                            if resetting { ProgressView() }
+                        }
+                        .font(Pearl.text(.body))
+                        .foregroundColor(Pearl.moneyOut)
+                        .padding(.horizontal, 20).padding(.vertical, 14)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(resetting)
+                    .sheetCard()
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Pearl.border, lineWidth: 1))
+                    Text("Unlinks your banks and clears your transactions and setup, then starts setup again. You stay signed in.")
+                        .font(Pearl.text(.footnote, .medium)).foregroundColor(Pearl.muted)
+                        .padding(.horizontal, 4)
+                    if let error = error {
+                        Text(error).font(Pearl.text(.footnote, .medium)).foregroundColor(Pearl.caution)
+                    }
+                }
+                .padding(.top, 12)
             }
             .padding(.horizontal, Pearl.gutter)
             .padding(.vertical, 24)
@@ -44,6 +73,26 @@ struct ProfileView: View {
         .confirmationDialog("Sign out of Pearl on this iPhone?", isPresented: $confirmSignOut,
                             titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { Task { await app.signOut() } }
+        }
+        .confirmationDialog("Reset Pearl?", isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("Reset", role: .destructive) { Task { await reset() } }
+        } message: {
+            Text("Your banks are unlinked and your transactions and setup are cleared. Your email, password and Face ID stay. This can't be undone.")
+        }
+    }
+
+    /// Back to the start of setup, as a new account (POST /api/account/reset).
+    private func reset() async {
+        resetting = true
+        defer { resetting = false }
+        do {
+            struct Reply: Decodable { let user: PearlUser? }
+            let reply: Reply = try await app.api.post("api/account/reset", ["confirm": "reset"])
+            error = nil
+            app.justCreated = false
+            app.signedIn(reply.user)
+        } catch {
+            self.error = app.handle(error)
         }
     }
 
