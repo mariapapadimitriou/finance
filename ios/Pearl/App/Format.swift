@@ -185,4 +185,17 @@ enum Format {
         } while day <= today
         return Format.iso.string(from: day)
     }
+
+    /// A calendar day as midnight here, for a date picker.
+    static func localDay(_ iso: String) -> Date? {
+        let parts = iso.prefix(10).split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+    }
+
+    /// "2026-11-06" from a date picker's day, here.
+    static func isoDay(_ d: Date) -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: d)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
 }

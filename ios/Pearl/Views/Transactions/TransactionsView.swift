@@ -35,6 +35,8 @@ struct TransactionsView: View {
     @State private var sync: SyncState = .idle
     @State private var syncedOnce = false
     @State private var reconnecting: String?
+    /// Transactions or Calendar (T-49).
+    @State private var showCalendar = false
 
     enum SyncState { case idle, syncing, failed }
 
@@ -49,12 +51,21 @@ struct TransactionsView: View {
                 } else {
                     searchRow.padding(.top, 20)
                     if !inSearch {
-                        if filters.isActive { activeChips.padding(.top, 12) }
+                        tabs.padding(.top, 14)
+                        if filters.isActive && !showCalendar { activeChips.padding(.top, 12) }
                         summaryCard.padding(.top, 16)
                         bankState
                     }
-                    listHeader.padding(.top, 24)
-                    list.padding(.top, 10)
+                    if showCalendar && !inSearch {
+                        CalendarCard(month: month ?? Format.thisMonth(), categories: categories) { m in
+                            month = m
+                            Task { await reload() }
+                        }
+                        .padding(.top, 16)
+                    } else {
+                        listHeader.padding(.top, 24)
+                        list.padding(.top, 10)
+                    }
                 }
             }
             .padding(.horizontal, Pearl.gutter)
@@ -152,6 +163,26 @@ struct TransactionsView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: inSearch)
+    }
+
+    /// Transactions · Calendar, as a pill switch.
+    private var tabs: some View {
+        HStack(spacing: 0) {
+            ForEach([false, true], id: \.self) { cal in
+                let on = showCalendar == cal
+                Button { withAnimation(.easeOut(duration: 0.2)) { showCalendar = cal } } label: {
+                    Text(cal ? "Calendar" : "Transactions")
+                        .font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                        .frame(maxWidth: .infinity).frame(height: 32)
+                        .background(Capsule().fill(on ? Color.white.opacity(0.9) : .clear))
+                        .shadow(color: .black.opacity(on ? 0.06 : 0), radius: 3, y: 1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Capsule().fill(Pearl.ink.opacity(0.08)))
     }
 
     /// "TD Visa ••9021 ×": each filter that's on, to take it off in one tap.
