@@ -368,6 +368,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
     let recurring: String?
 
     // Only on GET /api/transactions/<id>.
+    /// Money in: what kind of income ("salary"), and her regular pay from
+    /// this payer, when it is one (THL-198).
+    let incomeType: String?
+    let regularPay: RegularPay?
     let oneOffLine: OneOffLine?
     let repaidBy: [Brief]
     let transfer: Transfer?
@@ -404,6 +408,11 @@ struct Transaction: Decodable, Identifiable, Hashable {
         var name: String { person ?? merchant ?? description ?? "Transaction" }
     }
 
+    struct RegularPay: Decodable, Hashable {
+        let cadence: String?
+        let next: String?
+    }
+
     struct OneOffLine: Decodable, Hashable {
         let since: String?
         let line: String
@@ -438,6 +447,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case categorySource = "category_source"
         case jointPeople = "joint_people"
         case oneOffLine = "one_off_line"
+        case incomeType = "income_type"
+        case regularPay = "regular_pay"
         case repaidBy = "repaid_by"
         case repaysCharge = "repays_charge"
     }
@@ -482,6 +493,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         manual = opt(Bool.self, .manual) ?? false
         recurring = opt(String.self, .recurring)
         oneOffLine = opt(OneOffLine.self, .oneOffLine)
+        incomeType = opt(String.self, .incomeType)
+        regularPay = opt(RegularPay.self, .regularPay)
         repaidBy = opt([Brief].self, .repaidBy) ?? []
         transfer = opt(Transfer.self, .transfer)
         repaysCharge = opt(Brief.self, .repaysCharge)

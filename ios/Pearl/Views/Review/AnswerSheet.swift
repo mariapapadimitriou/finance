@@ -30,8 +30,10 @@ struct AnswerSheet: View {
 
     enum Then { case category, spending, recurring }
 
+    /// `start` opens on one step, for the transaction page (THL-198):
+    /// the kind of income, how often it pays, or What was this?.
     init(ask: Ask, categories: [CategoryList.Category], accounts: [AccountsOverview.Account], names: [String],
-         api: APIClient, onAnswer: @escaping (ReviewAnswer) -> Void) {
+         api: APIClient, start: Step? = nil, current: String? = nil, onAnswer: @escaping (ReviewAnswer) -> Void) {
         self.ask = ask
         self.categories = categories
         self.accounts = accounts
@@ -53,7 +55,8 @@ struct AnswerSheet: View {
         case .whoSent: first = .sender
         case .recurring: first = .recurring
         }
-        _step = State(initialValue: first)
+        _step = State(initialValue: start ?? first)
+        _choice = State(initialValue: current)
     }
 
     private var t: BriefTransaction { ask.t }
@@ -327,6 +330,7 @@ struct AnswerSheet: View {
             }
         case .cadence:
             return [Option(id: "weekly", label: "Every week"), Option(id: "biweekly", label: "Every 2 weeks"),
+                    Option(id: "semimonthly", label: "Twice a month", detail: "Like the 1st and the 15th"),
                     Option(id: "monthly", label: "Monthly"), Option(id: "changes", label: "It changes"),
                     Option(id: "once", label: "Just this once")]
         case .joint:
@@ -415,11 +419,11 @@ struct AnswerSheet: View {
                 onAnswer(.mark(t.id, ["case": "pay", "income_kind": choice]))
             }
         case .cadence:
-            // Pearl works out the rhythm from the deposits themselves.
+            // Her answer is the schedule in Income and bills, not Pearl's guess.
             if choice == "once" {
                 onAnswer(.mark(t.id, ["case": "pay", "income_kind": "salary"]))
             } else {
-                onAnswer(.mark(t.id, ["case": "regular_pay", "remember": true]))
+                onAnswer(.regularPay(t, cadence: choice == "changes" ? "irregular" : choice))
             }
         case .charges:
             guard let charge = charges.first(where: { $0.id == choice }) else { return }

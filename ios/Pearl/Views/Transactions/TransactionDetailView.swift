@@ -17,6 +17,14 @@ struct TransactionDetailView: View {
     @State private var picking = false
     @State private var editingNote = false
     @State private var editingTags = false
+    /// A money-in question opened from here (THL-198): its kind, how often
+    /// it pays, or What was this?.
+    @State private var asking: Asking?
+
+    struct Asking: Identifiable {
+        let step: AnswerSheet.Step
+        var id: AnswerSheet.Step { step }
+    }
     @State private var oneOff: Bool?
     @State private var busy = false
     @State private var message: String?
@@ -73,6 +81,13 @@ struct TransactionDetailView: View {
                           current: t.category ?? t.label, merchant: t.merchant) { name, remember in
                 picking = false
                 Task { await change(to: name, remember: remember) }
+            }
+        }
+        .sheet(item: $asking) { a in
+            AnswerSheet(ask: moneyIn, categories: categories, accounts: [], names: [], api: app.api,
+                        start: a.step, current: a.step == .kinds ? t.incomeType : t.regularPay?.cadence) { answer in
+                asking = nil
+                Task { await run { try await answer.send(app.api).title ?? answer.done } }
             }
         }
         .sheet(isPresented: $editingNote) {
@@ -136,14 +151,36 @@ struct TransactionDetailView: View {
     // MARK: What it counts as
 
     private var categoryCard: some View {
-        Button { picking = true } label: {
+        Button { if isIncome { asking = Asking(step: .kinds) } else { picking = true } } label: {
             GlassCard {
-                row(title: t.label, sub: countsLine, chevron: true)
+                // Income says what kind (T-37): "Salary · Counts as income".
+                row(title: isIncome ? Self.kindName(t.incomeType) : t.label, sub: countsLine, chevron: true)
             }
         }
         .buttonStyle(.plain)
         .disabled(busy)
-        .accessibilityHint("Changes the category")
+        .accessibilityHint(isIncome ? "Changes what kind of income" : "Changes the category")
+    }
+
+    private var isIncome: Bool { t.inflow && t.counts == "income" && t.transfer == nil }
+
+    /// Money in that could be her pay: not a refund, a payback or a transfer.
+    private var couldBePay: Bool {
+        t.inflow && t.transfer == nil && t.refundOf == nil && t.repays == nil && t.excluded.isEmpty
+    }
+
+    /// The app's income kinds, as Income and bills names them.
+    static func kindName(_ kind: String?) -> String {
+        switch kind {
+        case "salary": return "Salary"
+        case "bonus": return "Bonus"
+        case "interest": return "Interest"
+        case "gifts": return "Gifts"
+        case "government": return "Government credits"
+        case "tax_refund": return "Tax refund"
+        case "other": return "Other income"
+        default: return "Income"
+        }
     }
 
     /// "Counts as spending · Essential", "Your share counts · $46 of $86",
@@ -276,6 +313,26 @@ struct TransactionDetailView: View {
     @ViewBuilder private var options: some View {
         let unlink = t.refundOf != nil
         let canOneOff = t.canOneOff && !t.inflow
+        if couldBePay {
+            // T-37: her regular pay, and how often; or making it so (T-31).
+            section("Options")
+            GlassCard {
+                Button { asking = Asking(step: .cadence) } label: {
+                    if let pay = t.regularPay {
+                        row(title: "Regular pay",
+                            sub: [Format.cadence(pay.cadence ?? ""),
+                                  pay.next.map { "next on \(Format.weekdayDay($0))" }]
+                                .compactMap { $0 }.joined(separator: " · "),
+                            chevron: true)
+                    } else {
+                        row(title: "This is my regular pay",
+                            sub: "Pearl plans with it from now on", chevron: true)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+        }
         if unlink || canOneOff {
             section("Options")
             GlassCard {
@@ -322,8 +379,8 @@ struct TransactionDetailView: View {
                 }
             }
             .buttonStyle(.plain)
-            // A refund's tags are its purchase's (T-41 has no Add tags).
-            if t.refundOf == nil {
+            // A refund's tags are its purchase's (T-41), and income has none (T-37).
+            if t.refundOf == nil && !isIncome {
                 RowSeparator()
                 Button { editingTags = true } label: {
                     if t.tags.isEmpty {
@@ -339,8 +396,8 @@ struct TransactionDetailView: View {
 
     /// "Not income?" (T-37) under income.
     @ViewBuilder private var footerAction: some View {
-        if t.counts == "income" && t.transfer == nil {
-            Button("Not income?") { picking = true }
+        if isIncome {
+            Button("Not income?") { asking = Asking(step: .into) }
                 .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
                 .padding(.top, 12)
         }
@@ -402,6 +459,14 @@ struct TransactionDetailView: View {
         }
         .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
         .contentShape(Rectangle())
+    }
+
+    /// This deposit as a money-in question, for AnswerSheet.
+    private var moneyIn: Ask {
+        let brief = BriefTransaction(id: t.id, date: t.date, merchant: t.merchant, description: t.description,
+                                     amount: -t.amount, accountName: t.account, accountId: t.accountId,
+                                     category: t.category, skipped: nil, likely: nil)
+        return Ask(kind: .incomeType, item: Review.Item(key: "in:" + t.id, txn: brief, skipped: nil))
     }
 
     private var knownTags: [String] {

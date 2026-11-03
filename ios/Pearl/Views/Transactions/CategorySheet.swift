@@ -12,6 +12,9 @@ struct CategorySheet: View {
     /// "Do the same for every Loblaws": a rule for the merchant, when there is one.
     var merchant: String? = nil
     let onSave: (String, Bool) -> Void
+    /// Only spending categories, with no Spending / Not spending switch
+    /// (Sort these days, T-21).
+    var spendingOnly = false
 
     @Environment(\.dismiss) private var dismiss
     @State private var chosen: String
@@ -19,7 +22,8 @@ struct CategorySheet: View {
     @State private var remember = false
 
     init(name: String, amount: String, tone: Color, categories: [CategoryList.Category], current: String,
-         merchant: String? = nil, onSave: @escaping (String, Bool) -> Void) {
+         merchant: String? = nil, spendingOnly: Bool = false, onSave: @escaping (String, Bool) -> Void) {
+        self.spendingOnly = spendingOnly
         self.name = name
         self.amount = amount
         self.tone = tone
@@ -29,7 +33,7 @@ struct CategorySheet: View {
         self.onSave = onSave
         _chosen = State(initialValue: current)
         let group = categories.first { $0.name == current }?.group ?? "lifestyle"
-        _spending = State(initialValue: Self.spendingGroups.contains(group))
+        _spending = State(initialValue: spendingOnly || Self.spendingGroups.contains(group))
     }
 
     private static let spendingGroups = ["essentials", "lifestyle"]
@@ -45,12 +49,14 @@ struct CategorySheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     header
-                    Picker("", selection: $spending) {
-                        Text("Spending").tag(true)
-                        Text("Not spending").tag(false)
+                    if !spendingOnly {
+                        Picker("", selection: $spending) {
+                            Text("Spending").tag(true)
+                            Text("Not spending").tag(false)
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityLabel("Spending or not spending")
                     }
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel("Spending or not spending")
                     ForEach(spending ? Self.spendingGroups : Self.otherGroups, id: \.self) { group in
                         let items = tiles(in: group)
                         if !items.isEmpty {

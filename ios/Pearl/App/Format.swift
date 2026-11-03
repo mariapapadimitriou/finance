@@ -152,4 +152,50 @@ enum Format {
         let hour = Int(stamp.dropFirst(11).prefix(2)) ?? Calendar.current.component(.hour, from: now)
         return hour < 12 ? "Last updated this morning." : hour < 18 ? "Last updated this afternoon." : "Last updated this evening."
     }
+
+    /// "Every 2 weeks" for a pay's cadence (Income and bills).
+    static func cadence(_ c: String) -> String {
+        switch c {
+        case "weekly": return "Every week"
+        case "biweekly": return "Every 2 weeks"
+        case "semimonthly": return "Twice a month"
+        case "monthly": return "Monthly"
+        default: return "It changes"
+        }
+    }
+
+    /// The next pay after this one, from today on: "2026-11-21".
+    static func nextPay(after iso: String, cadence: String, now: Date = Date()) -> String? {
+        guard var day = date(iso) else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let today = cal.startOfDay(for: now)
+        func step(_ d: Date) -> Date? {
+            switch cadence {
+            case "weekly": return cal.date(byAdding: .day, value: 7, to: d)
+            case "biweekly": return cal.date(byAdding: .day, value: 14, to: d)
+            case "semimonthly": return cal.date(byAdding: .day, value: 15, to: d)
+            case "monthly": return cal.date(byAdding: .month, value: 1, to: d)
+            default: return nil
+            }
+        }
+        repeat {
+            guard let next = step(day) else { return nil }
+            day = next
+        } while day <= today
+        return Format.iso.string(from: day)
+    }
+
+    /// A calendar day as midnight here, for a date picker.
+    static func localDay(_ iso: String) -> Date? {
+        let parts = iso.prefix(10).split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+    }
+
+    /// "2026-11-06" from a date picker's day, here.
+    static func isoDay(_ d: Date) -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: d)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
 }

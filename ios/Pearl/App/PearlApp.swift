@@ -105,6 +105,11 @@ struct MainTabs: View {
     @EnvironmentObject private var app: AppModel
     @State private var tab: Tab = .home
     @State private var reviewCount = 0
+    /// Quick sort on return (THL-254): offered at most once a day, when
+    /// Pearl has new guesses to check.
+    @State private var quickSort: [QuickSortPrompt.Card] = []
+    @State private var categories: [CategoryList.Category] = []
+    @State private var offered = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -119,6 +124,21 @@ struct MainTabs: View {
         }
         .background(Pearl.page.ignoresSafeArea())
         .task(id: app.version) { await loadCount() }
+        .task { await offerQuickSort() }
+        .fullScreenCover(isPresented: Binding(get: { !quickSort.isEmpty }, set: { if !$0 { quickSort = [] } })) {
+            QuickSortView(cards: quickSort, categories: categories) { quickSort = [] }
+        }
+    }
+
+    private func offerQuickSort() async {
+        guard !offered else { return }
+        offered = true
+        guard let prompt: QuickSortPrompt = try? await app.api.get("api/quick-sort"),
+              prompt.show, !prompt.items.isEmpty else { return }
+        if let list: CategoryList = try? await app.api.get("api/categories") {
+            categories = list.categories.filter { $0.hidden != true }
+        }
+        quickSort = prompt.items
     }
 
     private func page<Content: View>(_ which: Tab, @ViewBuilder content: () -> Content) -> some View {

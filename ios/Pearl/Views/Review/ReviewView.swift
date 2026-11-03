@@ -14,6 +14,9 @@ struct ReviewView: View {
     @State private var accounts: [AccountsOverview.Account] = []
     @State private var showingSkipped = false
     @State private var asking: Ask?
+    /// Pearl's yes-or-no guesses, for Quick sort (THL-254).
+    @State private var quick: [QuickSortPrompt.Card] = []
+    @State private var sorting = false
     @State private var toast: Toast?
     @State private var busy = false
     @State private var error: String?
@@ -44,6 +47,12 @@ struct ReviewView: View {
         .navigationBarTitleDisplayMode(.inline)
         .overlay(alignment: .bottom) { toastView }
         .task { await load() }
+        .fullScreenCover(isPresented: $sorting) {
+            QuickSortView(cards: quick, categories: categories) {
+                sorting = false
+                Task { await load() }
+            }
+        }
         .sheet(item: $asking) { ask in
             AnswerSheet(ask: ask, categories: categories, accounts: accounts,
                         names: recentNames, api: app.api) { answer in
@@ -125,6 +134,9 @@ struct ReviewView: View {
                     chip("To sort · \(open)", on: !showingSkipped) { showingSkipped = false }
                     chip("Skipped · \(skipped)", on: showingSkipped) { showingSkipped = true }
                 }
+            }
+            if !showingSkipped && !quick.isEmpty {
+                QuickSortCard(count: quick.count) { sorting = true }
             }
             if let error = error, review != nil {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
@@ -228,6 +240,7 @@ struct ReviewView: View {
             if categories.isEmpty, let list: CategoryList = try? await app.api.get("api/categories") {
                 categories = list.categories.filter { $0.hidden != true }
             }
+            quick = ((try? await app.api.get("api/quick-sort", query: ["all": "1"]) as QuickSortPrompt)?.items) ?? []
             if accounts.isEmpty, let overview: AccountsOverview = try? await app.api.get("api/accounts/overview") {
                 accounts = overview.linked
             }
@@ -276,6 +289,9 @@ enum ReviewAnswer {
     case incomeType(String, kind: String)
     /// "Who put this in?" on a joint account: "me", or "them" and who.
     case joint(String, who: String, person: String?)
+    /// "This is my regular pay" (THL-198, T-31): every deposit from this
+    /// payer is her pay, on the schedule she chose.
+    case regularPay(BriefTransaction, cadence: String)
     /// "Who sent this?": the name the bank left out.
     case party(String, name: String)
     /// "Same purchase?": count it once, or both are real.
@@ -317,6 +333,26 @@ enum ReviewAnswer {
             let reply: MarkReply = try await api.put("api/transactions/\(id)/joint-from", body)
             return MarkReply(title: who == "me" ? "Your own money. Not income." : "\(person ?? "Theirs"). Not counted as yours.",
                              detail: nil, undo: reply.undo)
+        case .regularPay(let t, let cadence):
+            let reply: MarkReply = try await api.post("api/transactions/\(t.id)/mark",
+                                                      ["case": "regular_pay", "remember": true])
+            // Pearl may have spotted the rhythm itself; its next date is the
+            // better one when the cadence agrees, so only a different answer
+            // is saved over it.
+            struct Pays: Decodable {
+                struct Pay: Decodable { let payer: String?; let cadence: String? }
+                let pays: [Pay]
+            }
+            let payer = t.merchant ?? t.name
+            let known: Pays? = try? await api.get("api/income-bills")
+            if known?.pays.contains(where: { $0.payer == payer && $0.cadence == cadence }) != true {
+                var pay: [String: Any] = ["name": t.name, "payer": payer,
+                                          "amount": abs(t.amount), "cadence": cadence]
+                if let next = Format.nextPay(after: t.date, cadence: cadence) { pay["next"] = next }
+                let _: OK = try await api.post("api/income-bills/pay", pay)
+            }
+            return MarkReply(title: "Your regular pay, \(Format.cadence(cadence).lowercased()).",
+                             detail: reply.detail, undo: nil)
         case .party(let id, let name):
             return try await api.put("api/transactions/\(id)/party", ["name": name])
         case .duplicate(let id, let same):
