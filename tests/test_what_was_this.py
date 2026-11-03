@@ -382,6 +382,19 @@ def test_a_selection_answers_at_once_with_one_undo(client):
                        json={"ids": list(ids.values()), "case": "refund"}).status_code == 400
 
 
+def test_not_counted_from_a_selection(client):
+    """The iPhone's Select › Not counted (T-19): Not mine with no reason, for
+    money out and money in alike, and one Undo."""
+    ids = load(client.st, row(40, "TAPAS", category="Dining"), row(30, "LOBLAWS", category="Groceries"),
+               row(-25, "E-TRANSFER FROM JO", who="Jo"))
+    res = client.post("/api/transactions/batch/mark",
+                      json={"ids": list(ids.values()), "case": "not_mine", "reason": ""}).get_json()
+    assert res["updated"] == 3, res
+    assert listing(client)["totals"]["spent"] == 0
+    undo(client, res)
+    assert listing(client)["totals"]["spent"] == 70
+
+
 # ── Tags ─────────────────────────────────────────────────────────────────
 
 def test_tags_group_rows_without_moving_them(client):

@@ -120,7 +120,9 @@ struct MainTabs: View {
                 page(.help) { HelpView() }
                 page(.profile) { ProfileView() }
             }
-            PearlTabBar(selection: $tab, badges: [.cashFlow: reviewCount])
+            if !app.hidesTabBar {
+                PearlTabBar(selection: $tab, badges: [.cashFlow: reviewCount])
+            }
         }
         .background(Pearl.page.ignoresSafeArea())
         .task(id: app.version) { await loadCount() }

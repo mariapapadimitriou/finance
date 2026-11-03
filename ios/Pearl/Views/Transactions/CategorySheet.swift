@@ -15,6 +15,8 @@ struct CategorySheet: View {
     /// Only spending categories, with no Spending / Not spending switch
     /// (Sort these days, T-21).
     var spendingOnly = false
+    /// What the disc shows instead of initials: "3" for three picked (T-51).
+    var mark: String? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var chosen: String
@@ -22,8 +24,10 @@ struct CategorySheet: View {
     @State private var remember = false
 
     init(name: String, amount: String, tone: Color, categories: [CategoryList.Category], current: String,
-         merchant: String? = nil, spendingOnly: Bool = false, onSave: @escaping (String, Bool) -> Void) {
+         merchant: String? = nil, spendingOnly: Bool = false, mark: String? = nil,
+         onSave: @escaping (String, Bool) -> Void) {
         self.spendingOnly = spendingOnly
+        self.mark = mark
         self.name = name
         self.amount = amount
         self.tone = tone
@@ -94,7 +98,7 @@ struct CategorySheet: View {
     /// "LO  Loblaws  −$84.12".
     private var header: some View {
         HStack(spacing: 12) {
-            Initials(name: name, size: 48)
+            Initials(name: mark ?? name, size: 48)
                 .overlay(Circle().strokeBorder(
                     AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
                     lineWidth: 1.2))
