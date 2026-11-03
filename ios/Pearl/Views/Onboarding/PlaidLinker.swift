@@ -29,8 +29,11 @@ final class PlaidLinker: ObservableObject {
 
     private var handler: Handler?
 
-    func open(api: APIClient) async throws -> Outcome {
-        let token: LinkToken = try await api.post("api/plaid/link-token")
+    /// With an `itemId`, Link opens in update mode to sign in to that bank
+    /// again (THL-120 C-04); its accounts and history stay.
+    func open(api: APIClient, itemId: String? = nil) async throws -> Outcome {
+        let token: LinkToken = try await api.post("api/plaid/link-token",
+                                                  itemId.map { ["item_id": $0] } ?? [:])
         return try await withCheckedThrowingContinuation { continuation in
             var finished = false
             // The handler is kept until the next open replaces it.
