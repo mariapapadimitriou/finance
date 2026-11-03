@@ -366,6 +366,11 @@ struct Transaction: Decodable, Identifiable, Hashable {
     let categorySource: String?
     let joint: String
     let jointPeople: [String]
+    /// Whose money in a joint deposit is: "me", "them", "both", or "" while
+    /// it's asked; which of the people; and the account's share (T-33, T-40).
+    let jointFrom: String
+    let jointPerson: String?
+    let jointShare: Double?
     let manual: Bool
     let recurring: String?
 
@@ -488,6 +493,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case canOneOff = "can_one_off"
         case categorySource = "category_source"
         case jointPeople = "joint_people"
+        case jointFrom = "joint_from"
+        case jointPerson = "joint_person"
+        case jointShare = "joint_share"
+        case jointSplit = "joint_split"
         case oneOffLine = "one_off_line"
         case incomeType = "income_type"
         case regularPay = "regular_pay"
@@ -535,6 +544,9 @@ struct Transaction: Decodable, Identifiable, Hashable {
         categorySource = opt(String.self, .categorySource)
         joint = opt(String.self, .joint) ?? ""
         jointPeople = opt([String].self, .jointPeople) ?? []
+        jointFrom = opt(String.self, .jointFrom) ?? ""
+        jointPerson = opt(String.self, .jointPerson).flatMap { $0.isEmpty ? nil : $0 }
+        jointShare = opt(Double.self, .jointSplit) ?? opt(Double.self, .jointShare)
         manual = opt(Bool.self, .manual) ?? false
         recurring = opt(String.self, .recurring)
         oneOffLine = opt(OneOffLine.self, .oneOffLine)
@@ -775,6 +787,8 @@ struct Review: Decodable {
         let candidates: [BriefTransaction]?
         /// A recurring transfer's pattern ("every month, around the 10th").
         let series: Series?
+        /// A joint account's share, for "Both of us · Your share 50%" (T-33).
+        let share: Double?
         /// The part of a deposit left to sort (THL-291): the whole deposit
         /// and how much of it is sorted.
         let rest: Rest?
@@ -787,16 +801,20 @@ struct Review: Decodable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest
+            case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share
             case guessLabel = "guess_label"
         }
 
-        init(key: String, txn: BriefTransaction, skipped: Bool?) {
+        init(key: String, txn: BriefTransaction, skipped: Bool?, label: String? = nil,
+             people: [String]? = nil, share: Double? = nil) {
             self.key = key
             self.txn = txn
             self.skipped = skipped
+            self.label = label
+            self.people = people
+            self.share = share
             reason = nil; from = nil; guessLabel = nil; guess = nil
-            label = nil; people = nil; candidates = nil; series = nil; rest = nil
+            candidates = nil; series = nil; rest = nil
         }
 
         init(from decoder: Decoder) throws {
@@ -814,6 +832,7 @@ struct Review: Decodable {
             candidates = (opt([Lenient<BriefTransaction>].self, .candidates))?.compactMap { $0.value }
             series = opt(Series.self, .series)
             rest = opt(Rest.self, .rest)
+            share = opt(Double.self, .share)
         }
 
         static func == (a: Item, b: Item) -> Bool { a.key == b.key }

@@ -143,15 +143,49 @@ def test_a_big_deposit_from_them_still_leaves_her_spending_as_it_was(client):
     assert month(client)["spend"] == 200
 
 
+def txn(client, tid):
+    return next(t for t in client.get("/api/transactions").get_json()["transactions"]
+                if t["id"] == tid)
+
+
 def test_her_own_money_in_is_a_transfer_not_income(client):
     i = ids(client)
-    r = answer(client, i["PAYROLL DEPOSIT DAD"], "me")
+    assert txn(client, i["TFR-FR 1111111"])["category"] != "Income"
+    r = answer(client, i["TFR-FR 1111111"], "me")
     assert r.status_code == 200
     m = month(client)
     assert m["income"] == 0 and m["spend"] == 200
-    row_ = next(t for t in client.get("/api/transactions").get_json()["transactions"]
-                if t["id"] == i["PAYROLL DEPOSIT DAD"])
-    assert row_["category"] == "Transfers"
+    assert txn(client, i["TFR-FR 1111111"])["category"] == "Transfers"
+
+
+def test_whose_pay_me_is_her_income(client):
+    """T-33: "Whose pay is this?" — Me: it's her pay, so it stays income."""
+    i = ids(client)
+    pay = i["PAYROLL DEPOSIT DAD"]
+    client.application.config["STORE"].set_transaction_category(pay, "Income")
+    assert answer(client, pay, "me").status_code == 200
+    assert txn(client, pay)["category"] == "Income"
+    assert month(client)["income"] == 1000
+
+
+def test_whose_pay_both_of_us_counts_her_share(client):
+    """T-33's "Both of us": the account's percent of it is hers; half when
+    the account has none."""
+    i = ids(client)
+    pay = i["PAYROLL DEPOSIT DAD"]
+    st = client.application.config["STORE"]
+    st.set_transaction_category(pay, "Income")
+    assert answer(client, pay, "both").status_code == 200
+    assert st.get_transaction(pay).my_share == -500
+    assert month(client)["income"] == 500
+    from finance.safe_to_spend import received_income
+    assert received_income(st.all_transactions(), MONTH) == 500
+    client.put("/api/accounts/fam/settings", json={"joint_share": 40})
+    assert st.get_transaction(pay).my_share == -400
+    row_ = txn(client, pay)
+    assert row_["joint_from"] == "both" and row_["joint_share"] == 40
+    assert client.put(f"/api/transactions/{pay}/joint-from",
+                      json={"who": "both", "person": "Sam"}).status_code == 400
 
 
 def test_remembered_for_that_sender(client):

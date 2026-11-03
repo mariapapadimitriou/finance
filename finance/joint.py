@@ -17,7 +17,10 @@ because two different things look the same: her own money from an account
 Pearl can't see, and the other person's contribution. Until she answers it
 counts as nothing.
 
-* "me": her own money moving between her pockets — not income.
+* "me": hers. Pay stays her income ("Whose pay is this?", T-33); anything
+  else is her own money moving between her pockets — not income.
+* "both": pay that's both of theirs (T-33's "Both of us"): her share of it,
+  the account's percent, or half when the account has none.
 * "them": the other person's money, which pays for that much of the month's
   joint spending on that account. With $600 of joint spending in October
   and $200 put in by her sister, a third of each October charge was paid by
@@ -33,7 +36,7 @@ from __future__ import annotations
 
 from .categorize import is_spend_category
 
-ME, THEM = "me", "them"
+ME, THEM, BOTH = "me", "them", "both"
 
 
 def ratios(store) -> dict[tuple[str, str], float]:
@@ -84,6 +87,8 @@ def my_share(amount: float, *, category: str | None, mine: bool, share: float | 
     # with her sister every purchase is 50/50 but they each put money in
     # separately, so a deposit is never half hers.
     if amount < 0:
+        if who == BOTH:
+            return round(amount * float(share if share is not None else 50) / 100.0, 2)
         return amount if who == ME else 0.0
     # "Split every purchase": her share of each one.
     if share is not None:

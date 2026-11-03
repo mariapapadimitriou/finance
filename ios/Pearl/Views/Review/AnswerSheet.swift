@@ -342,10 +342,13 @@ struct AnswerSheet: View {
                     Option(id: "monthly", label: "Monthly"), Option(id: "changes", label: "It changes"),
                     Option(id: "once", label: "Just this once")]
         case .joint:
+            // T-33: hers, theirs, or both of theirs (her share counts).
             let people = ask.item.people ?? []
+            let share = Int((ask.item.share ?? 50).rounded())
             return [Option(id: "me", label: "Me")]
                 + (people.isEmpty ? [Option(id: "them", label: ask.item.label ?? "Someone else")]
                    : people.map { Option(id: "them:" + $0, label: $0) })
+                + [Option(id: "both", label: "Both of us", detail: "Your share · \(share)%")]
         case .sender:
             let typed = text.trimmingCharacters(in: .whitespaces)
             return names.filter { typed.isEmpty || $0.localizedCaseInsensitiveContains(typed) }
@@ -448,8 +451,8 @@ struct AnswerSheet: View {
             default: go(.into)
             }
         case .joint:
-            if choice == "me" {
-                onAnswer(.joint(t.id, who: "me", person: nil))
+            if choice == "me" || choice == "both" {
+                onAnswer(.joint(t.id, who: choice, person: nil))
             } else {
                 let person = choice.hasPrefix("them:") ? String(choice.dropFirst(5)) : nil
                 onAnswer(.joint(t.id, who: "them", person: person))

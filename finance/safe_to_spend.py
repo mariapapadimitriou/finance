@@ -49,7 +49,7 @@ import calendar
 from collections import Counter
 from datetime import date, timedelta
 
-from .analytics import counts_as_spending, invested_in, is_others, spend_amount
+from .analytics import _mine, counts_as_spending, invested_in, is_others, spend_amount
 from .categorize import group_of, is_spend_category
 from .income import cadence, is_income, kind_of
 from .insights.recurring import detect_recurring
@@ -199,7 +199,7 @@ def cautious_income(transactions: list[Transaction], today: date) -> dict | None
     totals = {m: 0 for m in months}
     for t in transactions:
         if t.month in totals and _counts_as_income(t):
-            totals[t.month] += _cents(-t.amount)
+            totals[t.month] += _cents(-_mine(t))
     if min(totals.values()) <= 0:
         return None
     low = min(months, key=lambda m: (totals[m], m))
@@ -222,7 +222,7 @@ def usual_income(transactions: list[Transaction], today: date) -> dict | None:
     totals = {m: 0 for m in months}
     for t in transactions:
         if t.month in totals and _counts_as_income(t) and not t.one_off:
-            totals[t.month] += _cents(-t.amount)
+            totals[t.month] += _cents(-_mine(t))
     if min(totals.values()) <= 0:
         return None
     return {"average": _dollars(sum(totals.values()) // len(months)), "months": months}
@@ -258,7 +258,7 @@ def _confirmed_pay(pays: list[dict], received: list[Transaction], lines: list,
         from_payer = [date.fromisoformat(t.date[:10]) for t in received
                       if p.get("payer") and (t.merchant or t.description) == p["payer"]]
         if p["cadence"] == "irregular" or not p.get("next"):
-            got_c = sum(_cents(-t.amount) for t in received
+            got_c = sum(_cents(-_mine(t)) for t in received
                         if p.get("payer") and (t.merchant or t.description) == p["payer"])
             rest_c = max(each_c - got_c, 0)
             if rest_c:
@@ -282,7 +282,7 @@ def _confirmed_pay(pays: list[dict], received: list[Transaction], lines: list,
 
 def received_income(transactions: list[Transaction], month: str) -> float:
     """Income that arrived in a month, by the one rule (`_counts_as_income`)."""
-    return round(sum(-t.amount for t in transactions
+    return round(sum(-_mine(t) for t in transactions
                      if t.month == month and _counts_as_income(t)), 2)
 
 
@@ -332,9 +332,9 @@ def income_this_month(transactions: list[Transaction], today: date,
     month = today.strftime("%Y-%m")
     end = month_end(today)
     received = _received(transactions, month, today)
-    received_c = sum(_cents(-t.amount) for t in received)
+    received_c = sum(_cents(-_mine(t)) for t in received)
     lines = [{"label": t.merchant or t.description, "date": t.date,
-              "amount": _dollars(_cents(-t.amount)), "arrived": True,
+              "amount": _dollars(_cents(-_mine(t))), "arrived": True,
               "kind": kind_of(t)} for t in received]
 
     pay = cadence(transactions, today.isoformat())
@@ -397,7 +397,7 @@ def income_this_month(transactions: list[Transaction], today: date,
         return {**none, "amount": _dollars(amount_c), "source": "entered", "lines": lines}
     if skipped:
         since = (today - timedelta(days=DEPOSIT_DAYS - 1)).isoformat()
-        seen_c = sum(_cents(-t.amount) for t in transactions
+        seen_c = sum(_cents(-_mine(t)) for t in transactions
                      if since <= t.date <= today.isoformat() and _counts_as_income(t))
         if seen_c > 0:
             amount_c = _at_least(_dollars(seen_c), received_c, lines,

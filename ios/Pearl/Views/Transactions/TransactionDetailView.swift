@@ -57,9 +57,11 @@ struct TransactionDetailView: View {
                 if let transfer = t.transfer {
                     transferLegs(transfer)
                 } else {
-                    if !t.parts.isEmpty { partsCard } else if t.asks { askingCard }
+                    if !t.parts.isEmpty { partsCard } else if jointAsks { jointGuessCard }
+                    else if t.asks { askingCard }
                     else if t.suggested { guessCard } else { categoryCard }
                     linked
+                    jointRow
                     splitPeople
                     depositParts
                     options
@@ -122,8 +124,10 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(item: $asking) { a in
-            AnswerSheet(ask: moneyIn, categories: categories, accounts: [], names: [], api: app.api,
-                        start: a.step, current: a.step == .kinds ? t.incomeType : t.regularPay?.cadence) { answer in
+            AnswerSheet(ask: a.step == .joint ? jointAsk : moneyIn, categories: categories, accounts: [],
+                        names: [], api: app.api, start: a.step,
+                        current: a.step == .joint ? jointChoice
+                            : a.step == .kinds ? t.incomeType : t.regularPay?.cadence) { answer in
                 asking = nil
                 Task { await run { try await answer.send(app.api).title ?? answer.done } }
             }
@@ -191,6 +195,18 @@ struct TransactionDetailView: View {
             Text(t.transfer != nil ? "Doesn’t count · Between your accounts" : dateLine)
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center)
+            if !t.joint.isEmpty && t.transfer == nil {
+                // T-40: "Joint with Sam · 50%".
+                HStack(spacing: 6) {
+                    Image(systemName: "person.2").font(.system(size: 12, weight: .medium))
+                    Text(jointLine)
+                }
+                .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                .padding(.horizontal, 12).frame(height: 28)
+                .background(Capsule().fill(Nacre.glass))
+                .padding(.top, 4)
+                .accessibilityElement(children: .combine)
+            }
             if t.pending {
                 HStack(spacing: 6) {
                     Circle().fill(Pearl.moneyOut).frame(width: 8, height: 8)
@@ -234,6 +250,7 @@ struct TransactionDetailView: View {
     /// Money in that could be her pay: not a refund, a payback or a transfer.
     private var couldBePay: Bool {
         t.inflow && t.transfer == nil && t.refundOf == nil && t.repays == nil && t.excluded.isEmpty
+            && t.jointFrom != "them"
     }
 
     /// The app's income kinds, as Income and bills names them.
@@ -261,6 +278,10 @@ struct TransactionDetailView: View {
             return "Your share counts · \(Format.compact(t.amount)) of \(Format.compact(full))"
         }
         switch t.counts {
+        case "income" where t.jointFrom == "both":
+            // T-33's Both of us: only her share is her income.
+            let mine = (t.amount * (t.jointShare ?? 50) / 100 * 100).rounded() / 100
+            return "Your share counts · \(Format.compact(mine)) of \(Format.compact(t.amount))"
         case "income": return "Counts as income"
         case "spending":
             if t.inflow { return t.note.flatMap { $0.isEmpty ? nil : $0 } ?? "Comes off your spending" }
@@ -375,6 +396,89 @@ struct TransactionDetailView: View {
         .accessibilityElement(children: .combine)
     }
 
+    // MARK: Joint accounts (T-33, T-40)
+
+    /// "Joint with Sam · 50%", or the account's name when it has no people.
+    private var jointLine: String {
+        let who = t.jointPeople.isEmpty ? t.joint : "Joint with " + t.jointPeople.joined(separator: " and ")
+        return who + (t.jointShare.map { " · \(Int($0.rounded()))%" } ?? "")
+    }
+
+    /// Money into a joint account nobody has said whose it is.
+    private var jointAsks: Bool {
+        t.inflow && !t.joint.isEmpty && t.jointFrom.isEmpty && t.transfer == nil && t.repays == nil
+    }
+
+    /// T-40: "Is this Sam's pay?" — Yes, or the whole question.
+    private var jointGuessCard: some View {
+        let person = t.jointPeople.count == 1 ? t.jointPeople[0] : nil
+        return VStack(spacing: 14) {
+            Text("PEARL’S GUESS").font(Nacre.caption2).tracking(0.6).foregroundColor(Pearl.action)
+            Text(person.map { "Is this \($0)’s pay?" } ?? "Is this your pay?")
+                .font(Nacre.title2).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
+            HStack(spacing: 10) {
+                Button("Yes") {
+                    let answer = ReviewAnswer.joint(t.id, who: person == nil ? "me" : "them", person: person)
+                    Task { await run { try await answer.send(app.api).title } }
+                }
+                .buttonStyle(NacreButtonStyle(busy: busy))
+                Button("Something else") { asking = Asking(step: .joint) }
+                    .font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Capsule().fill(Color.white.opacity(0.8)))
+                    .buttonStyle(.plain)
+            }
+            .disabled(busy)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(.ultraThinMaterial))
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous)
+            .fill(LinearGradient(colors: [Nacre.rose.opacity(0.35), Nacre.lilac.opacity(0.25), Nacre.seaglass.opacity(0.35)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing)))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1.2))
+    }
+
+    /// Whose an answered joint deposit is, to change it.
+    @ViewBuilder private var jointRow: some View {
+        if t.inflow && !t.joint.isEmpty && !t.jointFrom.isEmpty && t.transfer == nil {
+            section("Joint account")
+            GlassCard {
+                Button { asking = Asking(step: .joint) } label: {
+                    row(title: "Whose pay", sub: jointWhose, chevron: true)
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+        }
+    }
+
+    private var jointWhose: String {
+        switch t.jointFrom {
+        case "me": return "Yours"
+        case "both": return "Both of yours · your share \(Int((t.jointShare ?? 50).rounded()))% counts"
+        default: return t.jointPerson.map { "\($0)’s · not counted as yours" } ?? "Theirs · not counted as yours"
+        }
+    }
+
+    /// The answer so far, as the joint question's choices name it.
+    private var jointChoice: String? {
+        switch t.jointFrom {
+        case "me", "both": return t.jointFrom
+        case "them": return t.jointPerson.map { "them:" + $0 } ?? "them"
+        default: return nil
+        }
+    }
+
+    /// This deposit as the joint question, for AnswerSheet (T-33).
+    private var jointAsk: Ask {
+        let brief = BriefTransaction(id: t.id, date: t.date, merchant: t.merchant, description: t.description,
+                                     amount: -t.amount, accountName: t.account, accountId: t.accountId,
+                                     category: t.category, skipped: nil, likely: nil)
+        return Ask(kind: .joint, item: Review.Item(key: "joint:" + t.id, txn: brief, skipped: nil,
+                                                    label: t.joint, people: t.jointPeople, share: t.jointShare))
+    }
+
     // MARK: Splits and parts (THL-291)
 
     /// A purchase she can split: hers, counted, not a refund or split yet.
@@ -385,7 +489,7 @@ struct TransactionDetailView: View {
     /// Money in she can split into parts: not already sorted into some.
     private var canPart: Bool {
         t.inflow && t.transfer == nil && t.parts.isEmpty && t.partOf == nil && t.refundOf == nil
-            && t.repays == nil && t.excluded.isEmpty
+            && t.repays == nil && t.excluded.isEmpty && t.jointFrom != "them"
     }
 
     private func deposit(rest: Bool) -> PartsDeposit {

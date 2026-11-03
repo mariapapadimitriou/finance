@@ -298,7 +298,8 @@ enum ReviewAnswer {
     case mark(String, [String: Any])
     /// The kind of income, for money already counted as income.
     case incomeType(String, kind: String)
-    /// "Who put this in?" on a joint account: "me", or "them" and who.
+    /// "Whose pay is this?" on a joint account (T-33): "me", "both" (her
+    /// share counts), or "them" and who.
     case joint(String, who: String, person: String?)
     /// "This is my regular pay" (THL-198, T-31): every deposit from this
     /// payer is her pay, on the schedule she chose.
@@ -344,8 +345,13 @@ enum ReviewAnswer {
             var body: [String: Any] = ["who": who, "remember": true]
             if let person = person { body["person"] = person }
             let reply: MarkReply = try await api.put("api/transactions/\(id)/joint-from", body)
-            return MarkReply(title: who == "me" ? "Your own money. Not income." : "\(person ?? "Theirs"). Not counted as yours.",
-                             detail: nil, undo: reply.undo)
+            let title: String
+            switch who {
+            case "me": title = "Yours."
+            case "both": title = "Both of yours. Your share counts."
+            default: title = "\(person ?? "Theirs"). Not counted as yours."
+            }
+            return MarkReply(title: title, detail: nil, undo: reply.undo)
         case .regularPay(let t, let cadence):
             let reply: MarkReply = try await api.post("api/transactions/\(t.id)/mark",
                                                       ["case": "regular_pay", "remember": true])
