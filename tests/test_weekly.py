@@ -110,9 +110,11 @@ class TestStates:
         assert s["state"] == "over" and w["state"] == "over"
 
     def test_a_rough_month_shows_the_week_rounded_down(self):
+        # History from Oct 12 only: the month's $3,100 is for the 20 days
+        # Pearl can see (O-11d), $2,000, so the week is less than a full one.
         s, w = plain(date(2026, 10, 12), [("2026-10-12", 12.34)])
-        assert s["estimate"] == "rough"
-        assert w["left"] == 1072.66 and w["shown"] == 1070
+        assert s["estimate"] == "rough" and s["from"] == "2026-10-12"
+        assert w["left"] == 687.66 and w["shown"] == 680
 
 
 @pytest.fixture
