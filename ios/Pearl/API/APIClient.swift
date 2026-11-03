@@ -104,7 +104,8 @@ final class APIClient {
             throw APIError.signedOut
         }
         if !(200..<300).contains(status) {
-            if let problem = try? decoder.decode(ServerProblem.self, from: data), problem.error != nil {
+            if let problem = try? decoder.decode(ServerProblem.self, from: data),
+               problem.error != nil || problem.needsConfirmation == true {
                 throw APIError.server(problem)
             }
             throw APIError.message("Something went wrong (\(status)). Try again.")
@@ -160,10 +161,22 @@ struct ServerProblem: Decodable, Equatable {
     var paused: Bool? = nil
     var retryIn: Int? = nil
     var expired: Bool? = nil
+    /// Adding by hand (T-23): something like it is already there.
+    var needsConfirmation: Bool? = nil
+    var duplicate: Bool? = nil
+    var matches: [Match]? = nil
+
+    struct Match: Decodable, Equatable, Identifiable {
+        let id: String
+        let date: String
+        let merchant: String
+        let amount: Double
+    }
 
     enum CodingKeys: String, CodingKey {
-        case error, taken, weak, wrong, left, paused, expired
+        case error, taken, weak, wrong, left, paused, expired, duplicate, matches
         case retryIn = "retry_in"
+        case needsConfirmation = "needs_confirmation"
     }
 }
 

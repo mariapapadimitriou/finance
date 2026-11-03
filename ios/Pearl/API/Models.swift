@@ -99,6 +99,8 @@ struct LinkedItem: Decodable {
 
 struct AccountsOverview: Decodable {
     let linked: [Account]
+    /// Accounts added by hand: what a purchase added by hand was paid with.
+    var added: [Account]? = nil
 
     struct Account: Decodable, Identifiable, Hashable {
         let id: String

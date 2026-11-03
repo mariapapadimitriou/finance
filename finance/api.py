@@ -1465,19 +1465,37 @@ def plaid_unlink(item_id: str):
 
 @bp.post("/transactions")
 def add_manual_transaction():
-    """Add a purchase by hand, refusing to create a duplicate silently."""
+    """Add a purchase by hand, refusing to create a duplicate silently.
+
+    `account` (T-23) is "cash" or an account added by hand ("hand:3"): what
+    it was paid with, or for money in (a negative amount, T-61) where it
+    went. `income_kind` says what kind of income money in is."""
+    from .parts import INCOME_KINDS
     body = request.get_json(silent=True) or {}
+    st = store()
+
+    where = {}
+    account = body.get("account")
+    if account == "cash":
+        where = {"account_id": "cash", "account_name": "Cash"}
+    elif account:
+        hand = next((m for m in st.manual_accounts() if m["account_id"] == account), None)
+        if hand is None:
+            return jsonify({"error": "No such account."}), 400
+        where = {"account_id": hand["account_id"], "account_name": hand["name"]}
+    kind = body.get("income_kind")
+    if kind is not None and kind not in INCOME_KINDS:
+        return jsonify({"error": "Choose what kind of income it is."}), 400
 
     candidate = manual.build(
         body.get("date", ""), body.get("description", ""), body.get("amount"),
-        category=body.get("category", ""),
+        category=body.get("category", ""), **where,
     )
     if candidate is None:
         return jsonify({"error": "Need a valid date, description and amount."}), 400
     if body.get("category") and body["category"] not in CATEGORIES:
         return jsonify({"error": f"Unknown category '{body['category']}'."}), 400
 
-    st = store()
     existing = st.all_transactions()
 
     # An exact match is a duplicate outright; anything looser is reported so
@@ -1506,6 +1524,8 @@ def add_manual_transaction():
     if matches and body.get("confirm"):
         # She said it's a different purchase: never ask again (THL-165).
         st.add_duplicate(candidate.fingerprint, matches[0]["id"], state="different")
+    if kind and candidate.amount < 0:
+        st.set_income_type(candidate.fingerprint, kind)
 
     return jsonify({"ok": True, "id": candidate.fingerprint,
                     "merchant": candidate.merchant,

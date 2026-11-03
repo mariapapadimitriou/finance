@@ -28,6 +28,7 @@
 		5A36E4EB024471EF85DA99C8 /* AnswerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4499405DBDB62F2EAAD28248 /* AnswerSheet.swift */; };
 		5A97F97C51EB0251937EA8B1 /* QuickSortView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF92F0A38EF8C1E53492329D /* QuickSortView.swift */; };
 		5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02873771C6DC13EA678089B1 /* ReviewView.swift */; };
+		38B62523E86CEC2E175EB32E /* AddTransactionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DAF48079BA4F788252E43AE /* AddTransactionSheet.swift */; };
 		7000237F2AE92DE2B7AFB076 /* BulkTagSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7A077E46FA501000CDD471 /* BulkTagSheet.swift */; };
 		C85A9FB515E2B60838612A9A /* CalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 482C54893F5AFD82B6CA7430 /* CalendarView.swift */; };
 		B1FFE2B19D12A9AD736E9FBE /* CategorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F3819F3BB3A338B035DE02 /* CategorySheet.swift */; };
@@ -68,6 +69,7 @@
 		4499405DBDB62F2EAAD28248 /* AnswerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnswerSheet.swift; sourceTree = "<group>"; };
 		CF92F0A38EF8C1E53492329D /* QuickSortView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSortView.swift; sourceTree = "<group>"; };
 		02873771C6DC13EA678089B1 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
+		5DAF48079BA4F788252E43AE /* AddTransactionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTransactionSheet.swift; sourceTree = "<group>"; };
 		6B7A077E46FA501000CDD471 /* BulkTagSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTagSheet.swift; sourceTree = "<group>"; };
 		482C54893F5AFD82B6CA7430 /* CalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarView.swift; sourceTree = "<group>"; };
 		56F3819F3BB3A338B035DE02 /* CategorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorySheet.swift; sourceTree = "<group>"; };
@@ -241,6 +243,7 @@
 		11154C8D437A90D8972D0515 /* Transactions */ = {
 			isa = PBXGroup;
 			children = (
+				5DAF48079BA4F788252E43AE /* AddTransactionSheet.swift */,
 				6B7A077E46FA501000CDD471 /* BulkTagSheet.swift */,
 				482C54893F5AFD82B6CA7430 /* CalendarView.swift */,
 				56F3819F3BB3A338B035DE02 /* CategorySheet.swift */,
@@ -354,6 +357,7 @@
 				5A36E4EB024471EF85DA99C8 /* AnswerSheet.swift in Sources */,
 				5A97F97C51EB0251937EA8B1 /* QuickSortView.swift in Sources */,
 				5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */,
+				38B62523E86CEC2E175EB32E /* AddTransactionSheet.swift in Sources */,
 				7000237F2AE92DE2B7AFB076 /* BulkTagSheet.swift in Sources */,
 				C85A9FB515E2B60838612A9A /* CalendarView.swift in Sources */,
 				B1FFE2B19D12A9AD736E9FBE /* CategorySheet.swift in Sources */,
