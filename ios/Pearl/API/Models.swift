@@ -497,6 +497,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// The category the row shows: Pearl's chip, else the stored one.
     var label: String { chip?.label ?? category ?? "Other" }
 
+    /// Needs a look asking a question ("Not sorted yet", "Whose?"), not
+    /// Pearl guessing at a category.
+    var asks: Bool { suggested && ["Not sorted yet", "Possible duplicate", "Whose?"].contains(label) }
+
     /// Left out, a transfer, a repayment: shown, but not counted.
     var notCounted: Bool { !excluded.isEmpty || counts == "none" }
 
