@@ -215,3 +215,37 @@ class TestCashInHand:
         # Unlinking frees the cash again.
         client.delete(f"/api/transactions/{dep}/parts")
         assert len(client.get(f"/api/transactions/{dep}/cash-matches").get_json()["cash"]) == 1
+
+
+class TestFindingPayments:
+    def test_part_of_a_bigger_e_transfer_can_pay_it_back(self, client):
+        """S-26: Dad's $200 and $228 of his $600 pay back his $428."""
+        i = add(client, tx("FLIGHT", 856.0, "Travel", when=day(20)),
+                tx("E-TRANSFER FROM DAD", -200.0, when=day(8), merchant="Dad"),
+                tx("E-TRANSFER FROM DAD 2", -600.0, when=day(2), merchant="Dad"))
+        split(client, i["FLIGHT"], mode="amount", people=[{"name": "Dad", "amount": 428}])
+        found = client.get(f"/api/transactions/{i['FLIGHT']}/paybacks").get_json()["candidates"]
+        by_id = {c["id"]: c for c in found}
+        assert by_id[i["E-TRANSFER FROM DAD 2"]]["part"] == 428.0       # all that's left, of $600
+        client.post(f"/api/transactions/{i['FLIGHT']}/paybacks/{i['E-TRANSFER FROM DAD']}", json={"person": "Dad"})
+        r = client.post(f"/api/transactions/{i['FLIGHT']}/paybacks/{i['E-TRANSFER FROM DAD 2']}",
+                        json={"person": "Dad", "amount": 228})
+        assert r.status_code == 200, r.get_json()
+        dad = detail(client, i["FLIGHT"])["splitting"]["people"][0]
+        assert (dad["paid"], dad["owes"]) == (428.0, 0.0)
+
+    def test_a_deposit_splits_and_links_a_purchase(self, client):
+        """S-24: Costco wasn't split; Dad's half of it is part of his $600."""
+        i = add(client, tx("COSTCO", 212.40, "Shopping", when=day(10)),
+                tx("E-TRANSFER FROM DAD", -600.0, when=day(2), merchant="Dad"))
+        dep = i["E-TRANSFER FROM DAD"]
+        hit = next(c for c in client.get(f"/api/transactions/{dep}/charges", query_string={"q": "cost"})
+                   .get_json()["charges"] if c["id"] == i["COSTCO"])
+        assert hit["split"] is False
+        split(client, i["COSTCO"], mode="even", people=[{"name": "Dad"}])
+        owes = detail(client, i["COSTCO"])["splitting"]["people"][0]["owes"]
+        assert owes == 106.20
+        r = client.post(f"/api/transactions/{dep}/parts", json={"parts": [
+            {"kind": "payback", "amount": owes, "charge": i["COSTCO"], "person": "Dad"}], "later": True})
+        assert r.status_code == 200, r.get_json()
+        assert detail(client, i["COSTCO"])["splitting"]["people"][0]["owes"] == 0

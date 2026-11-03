@@ -13,6 +13,10 @@ struct SplitSheet: View {
     /// Names to offer: people she's split with before.
     let recent: [String]
     let onSaved: (String) -> Void
+    /// From a deposit (S-24): who it's with already, so it opens on how to
+    /// split, under "Dad's share" with "Split and link".
+    var title: String? = nil
+    var saveTitle = "Save"
 
     @Environment(\.dismiss) private var dismiss
     @State private var people: [String]
@@ -26,13 +30,17 @@ struct SplitSheet: View {
 
     private static let me = "\u{0}me"
 
-    init(t: Transaction, api: APIClient, recent: [String], onSaved: @escaping (String) -> Void) {
+    init(t: Transaction, api: APIClient, recent: [String], with names: [String]? = nil,
+         title: String? = nil, saveTitle: String = "Save", onSaved: @escaping (String) -> Void) {
         self.t = t
         self.api = api
         self.recent = recent
         self.onSaved = onSaved
+        self.title = title
+        self.saveTitle = saveTitle
         let existing = t.splitting?.people.map(\.name) ?? []
-        _people = State(initialValue: existing)
+        _people = State(initialValue: names ?? existing)
+        _step = State(initialValue: names == nil ? 0 : 1)
         _withMe = State(initialValue: t.splitting.map { $0.you >= 0.005 } ?? true)
         if let s = t.splitting, let m = s.mode, m != "even" {
             _mode = State(initialValue: m == "amount" ? "amount" : m)
@@ -44,7 +52,7 @@ struct SplitSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: step == 0 ? "Who was it with?" : "How to split") { dismiss() }
+            SheetTitle(title: step == 0 ? "Who was it with?" : (title ?? "How to split")) { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     QuestionHeader(name: t.merchant, amount: Format.money(t), tone: t.tone, sub: nil)
@@ -283,7 +291,7 @@ struct SplitSheet: View {
     // MARK: Save
 
     private var footer: some View {
-        Button(step == 0 ? "Next" : "Save") {
+        Button(step == 0 ? "Next" : saveTitle) {
             if step == 0 { addTyped(); step = 1 } else { Task { await save() } }
         }
         .buttonStyle(NacreButtonStyle(busy: busy))
@@ -457,8 +465,29 @@ struct MarkPaidSheet: View {
     @State private var amount: String
     @State private var when = Date()
     @State private var finding = false
-    @State private var deposits: [BriefTransaction] = []
-    @State private var picked: String?
+    @State private var deposits: [Candidate] = []
+    /// The deposits she ticked, in the order she ticked them (S-26).
+    @State private var picked: [String] = []
+
+    /// A deposit that could pay it back, and how much of it could.
+    struct Candidate: Decodable, Identifiable, Hashable {
+        let id: String
+        let date: String
+        let merchant: String?
+        let description: String?
+        let amount: Double
+        let accountName: String?
+        let likely: Bool?
+        let part: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case id, date, merchant, description, amount, likely, part
+            case accountName = "account_name"
+        }
+
+        var name: String { (merchant?.isEmpty == false ? merchant : description) ?? "Deposit" }
+        var whole: Double { abs(amount) }
+    }
     @State private var busy = false
     @State private var error: String?
 
@@ -472,14 +501,19 @@ struct MarkPaidSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: finding ? "Find \(person.name)’s payment" : "Mark paid back") { dismiss() }
+            SheetTitle(title: finding ? "What paid this back?" : "Mark paid back") { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 12) {
-                        Initials(name: person.name, size: 48)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(person.name).font(Nacre.title2).foregroundColor(Pearl.ink)
-                            Text("Owes \(Format.amount(person.owes))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    if finding {
+                        QuestionHeader(name: t.merchant, amount: Format.money(t), tone: t.tone,
+                                       sub: Format.short(t.date))
+                    } else {
+                        HStack(spacing: 12) {
+                            Initials(name: person.name, size: 48)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(person.name).font(Nacre.title2).foregroundColor(Pearl.ink)
+                                Text("Owes \(Format.amount(person.owes))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            }
                         }
                     }
                     if finding { depositList } else { form }
@@ -489,11 +523,11 @@ struct MarkPaidSheet: View {
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
-            Button(finding ? "Link payment" : how == "bank" ? "Find it" : "Mark paid back") {
+            Button(finding ? "Save" : how == "bank" ? "Find it" : "Mark paid back") {
                 Task { await primary() }
             }
             .buttonStyle(NacreButtonStyle(busy: busy))
-            .disabled(busy || (finding && picked == nil))
+            .disabled(busy || (finding && picked.isEmpty))
             .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         }
         .background(SheetBackground())
@@ -547,33 +581,90 @@ struct MarkPaidSheet: View {
         .accessibilityAddTraits(how == key ? .isSelected : [])
     }
 
+    /// What each ticked deposit pays of what they owe, in the order ticked:
+    /// all of it, or the part that's left (S-26's "part of $600").
+    private var uses: [String: Double] {
+        var left = person.owes
+        var out: [String: Double] = [:]
+        for id in picked {
+            guard let d = deposits.first(where: { $0.id == id }), left >= 0.005 else { continue }
+            let use = min(d.whole, d.part ?? d.whole, left)
+            out[id] = (use * 100).rounded() / 100
+            left -= use
+        }
+        return out
+    }
+
+    private var paying: Double { uses.values.reduce(0, +) }
+
+    /// S-26: "DAD'S SHARE · $428.00", their deposits to tick, and how far
+    /// they go towards it.
     private var depositList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(deposits.isEmpty ? "NO DEPOSITS LOOK LIKE IT YET" : "LOOKS LIKE THIS ONE")
+            Text(deposits.isEmpty ? "NO DEPOSITS LOOK LIKE IT YET"
+                 : "\(person.name.uppercased())’S SHARE · \(Format.amount(person.amount))")
                 .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted).padding(.horizontal, 16)
             if !deposits.isEmpty {
                 GlassCard {
                     ForEach(Array(deposits.enumerated()), id: \.element.id) { i, d in
                         if i > 0 { RowSeparator() }
-                        Button { picked = d.id } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(d.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                                    Text([Format.short(d.date), d.accountName].compactMap { $0 }.joined(separator: " · "))
-                                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                                }
-                                Spacer()
-                                Text(Format.amount(d.amount)).font(Nacre.headline).monospacedDigit()
-                                Image(systemName: picked == d.id ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 22)).foregroundColor(picked == d.id ? Pearl.action : Pearl.muted)
-                            }
-                            .padding(.horizontal, 16).frame(minHeight: 56).contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+                        depositRow(d)
                     }
                 }
+                let paid = person.paid + paying
+                VStack(alignment: .leading, spacing: 6) {
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Pearl.ink.opacity(0.1))
+                            Capsule().fill(Pearl.action)
+                                .frame(width: g.size.width * min(1, paid / max(person.amount, 0.01)))
+                        }
+                    }
+                    .frame(height: 6)
+                    HStack(spacing: 14) {
+                        HStack(spacing: 5) {
+                            Circle().fill(Pearl.action).frame(width: 7, height: 7)
+                            Text("Paid back \(Format.amount(paid))")
+                        }
+                        HStack(spacing: 5) {
+                            Circle().fill(Pearl.ink.opacity(0.2)).frame(width: 7, height: 7)
+                            Text("\(person.name)’s share \(Format.amount(person.amount))")
+                        }
+                    }
+                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                }
+                .padding(.top, 4)
+                .accessibilityElement(children: .combine)
             }
         }
+    }
+
+    /// "e-Transfer from Dad · Nov 9 · part of $600 · $228.00 ✓".
+    private func depositRow(_ d: Candidate) -> some View {
+        let on = picked.contains(d.id)
+        let use = uses[d.id]
+        let how: String? = use.map { abs($0 - d.whole) < 0.005 ? "all of it" : "part of \(Format.whole(d.whole))" }
+        let full = !on && person.owes - paying < 0.005
+        return Button {
+            if let i = picked.firstIndex(of: d.id) { picked.remove(at: i) } else { picked.append(d.id) }
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(d.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                    Text([Format.short(d.date), how].compactMap { $0 }.joined(separator: " · "))
+                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                }
+                Spacer()
+                Text(Format.amount(use ?? d.whole)).font(Nacre.headline).monospacedDigit()
+                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22)).foregroundColor(on ? Pearl.action : Pearl.muted)
+            }
+            .padding(.horizontal, 16).frame(minHeight: 56).contentShape(Rectangle())
+            .opacity(full ? 0.5 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(full)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     private func primary() async {
@@ -581,14 +672,26 @@ struct MarkPaidSheet: View {
         defer { busy = false }
         do {
             if finding {
-                guard let id = picked else { return }
-                let _: OK = try await api.post("api/transactions/\(t.id)/paybacks/\(id)", ["person": person.name])
-                onDone("Linked. \(person.name) paid you back.")
+                let linking = uses
+                for id in picked {
+                    guard let use = linking[id], let d = deposits.first(where: { $0.id == id }) else { continue }
+                    var body: [String: Any] = ["person": person.name]
+                    if use < d.whole - 0.005 { body["amount"] = use }
+                    let _: OK = try await api.post("api/transactions/\(t.id)/paybacks/\(id)", body)
+                }
+                let total = linking.values.reduce(0, +)
+                onDone(total >= person.owes - 0.005 ? "Linked. \(person.name) paid you back."
+                       : "Linked. \(person.name) paid \(Format.amount(total)) of \(Format.amount(person.owes)).")
             } else if how == "bank" {
-                struct Reply: Decodable { let candidates: [Lenient<BriefTransaction>]? }
+                struct Reply: Decodable { let candidates: [Lenient<Candidate>]? }
                 let r: Reply = try await api.get("api/transactions/\(t.id)/paybacks")
-                deposits = (r.candidates ?? []).compactMap { $0.value }
-                picked = deposits.first(where: { $0.likely == true })?.id
+                // Theirs first: deposits that name them, then the rest.
+                let first = person.name.split(separator: " ").first.map(String.init)?.lowercased() ?? ""
+                deposits = (r.candidates ?? []).compactMap { $0.value }.enumerated().sorted { a, b in
+                    let x = a.element.name.lowercased().contains(first), y = b.element.name.lowercased().contains(first)
+                    return x != y ? x : a.offset < b.offset
+                }.map(\.element)
+                picked = deposits.first(where: { $0.likely == true }).map { [$0.id] } ?? []
                 finding = true
             } else {
                 guard let value = Double(amount.replacingOccurrences(of: "$", with: "")), value > 0 else {

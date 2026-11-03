@@ -99,7 +99,14 @@ struct PartsSheet: View {
         let owes: Double
         let person: String?
         let theirs: Bool?
+        /// A purchase found by searching that isn't split yet (S-23, S-24).
+        var notSplit: Bool? = nil
+
+        enum CodingKeys: String, CodingKey { case id, merchant, date, owes, person, theirs }
     }
+
+    /// S-24: a purchase that isn't split, opened to split with the sender.
+    @State private var splitCharge: Transaction?
 
     private var wholeCents: Int { cents(deposit.amount) }
     private var sortedCents: Int { parts.map { cents($0.amount) }.reduce(0, +) }
@@ -130,6 +137,12 @@ struct PartsSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task { await load() }
+        .sheet(item: $splitCharge) { t in
+            SplitSheet(t: t, api: api, recent: [], with: [who], title: "\(who)’s share",
+                       saveTitle: "Split and link") { _ in
+                Task { await linkSplit(t) }
+            }
+        }
         .task(id: query) {
             guard step == .owing || step == .refund else { return }
             try? await Task.sleep(nanoseconds: 250_000_000)
@@ -238,11 +251,48 @@ struct PartsSheet: View {
     }
 
     private func owingRow(_ o: Owing, _ byName: Bool) -> some View {
+        if o.notSplit == true && step == .owing {
+            // S-23: "Costco · Oct 11 · not split yet ›" — split it first (S-24).
+            return AnyView(Button { Task { await openSplit(o) } } label: {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(o.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                        Text("\(Format.short(o.date)) · not split yet").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    }
+                    Spacer(minLength: 8)
+                    Text(Format.amount(o.owes)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
+                }
+                .padding(.horizontal, 16).frame(minHeight: 56).padding(.vertical, 2).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Splits it with \(who), then links it"))
+        }
         let sub = byName ? "Owes \(Format.amount(o.owes)) · \(o.merchant)"
             : [Format.short(o.date), o.person.map { "\($0)’s share" } ?? "\(Format.amount(o.owes)) left"]
                 .joined(separator: " · ")
-        return pickRow(name: byName ? (o.person ?? o.merchant) : o.merchant, sub: sub, amount: o.owes,
-                       on: picked[o.id] != nil) { toggle(o) }
+        return AnyView(pickRow(name: byName ? (o.person ?? o.merchant) : o.merchant, sub: sub, amount: o.owes,
+                               on: picked[o.id] != nil) { toggle(o) })
+    }
+
+    /// S-24: the purchase in full, to split with whoever sent this.
+    private func openSplit(_ o: Owing) async {
+        do {
+            splitCharge = try await api.get("api/transactions/\(o.id)")
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Split: their share of it is a part of this deposit.
+    private func linkSplit(_ t: Transaction) async {
+        splitCharge = nil
+        guard let full: Transaction = try? await api.get("api/transactions/\(t.id)"),
+              let p = full.splitting?.people.first(where: { $0.name == who }) ?? full.splitting?.people.first,
+              p.owes >= 0.005 else { return }
+        found.removeAll { $0.id == t.id }
+        query = ""
+        add(Part(kind: "payback", amount: min(p.owes, left), charge: t.id, merchant: t.merchant, person: p.name))
     }
 
     private func toggle(_ o: Owing) {
@@ -533,12 +583,15 @@ struct PartsSheet: View {
 
     private func search() async {
         struct Reply: Decodable { let charges: [Lenient<Charge>] }
-        struct Charge: Decodable { let id: String; let date: String; let merchant: String; let left: Double? }
+        struct Charge: Decodable {
+            let id: String; let date: String; let merchant: String; let left: Double?; let split: Bool?
+        }
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty || step == .refund else { found = []; return }
         if let r: Reply = try? await api.get("api/transactions/\(deposit.id)/charges", query: ["q": q]) {
             found = r.charges.compactMap { $0.value }.filter { ($0.left ?? 0) >= 0.01 }.map {
-                Owing(id: $0.id, merchant: $0.merchant, date: $0.date, owes: $0.left ?? 0, person: nil, theirs: nil)
+                Owing(id: $0.id, merchant: $0.merchant, date: $0.date, owes: $0.left ?? 0, person: nil, theirs: nil,
+                      notSplit: $0.split == false && step == .owing)
             }
         }
     }
