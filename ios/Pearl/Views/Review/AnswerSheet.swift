@@ -23,6 +23,8 @@ struct AnswerSheet: View {
     /// For a category picked as part of another answer (a purchase, a
     /// recurring payment): what to do with it.
     @State private var then: Then = .category
+    /// "A refund or payback": the deposit's parts (THL-291, S-09 to S-12).
+    @State private var parting = false
 
     enum Step: Hashable {
         case guess, out, into, accounts, charges, kinds, cadence, joint, sender, recurring, payback, category
@@ -81,6 +83,12 @@ struct AnswerSheet: View {
             }
         }
         .presentationDragIndicator(.visible)
+        .sheet(isPresented: $parting) {
+            PartsSheet(deposit: PartsDeposit(id: t.id, name: who, amount: t.amount, date: t.date), api: api) { reply in
+                parting = false
+                onAnswer(.done(reply))
+            }
+        }
     }
 
     // MARK: Pearl's guess (T-06a)
@@ -406,7 +414,7 @@ struct AnswerSheet: View {
         case .into:
             switch choice {
             case "earned": go(.kinds)
-            case "back": go(.charges)
+            case "back": parting = true
             case "own": onAnswer(.mark(t.id, ["case": "own", "remember": true]))
             case "loan": onAnswer(.mark(t.id, ["case": "borrowed"]))
             default: onAnswer(.mark(t.id, ["case": "not_mine", "reason": "Holding it for someone"]))
@@ -436,7 +444,7 @@ struct AnswerSheet: View {
                 if let charge = ask.item.guess?.charge {
                     onAnswer(.mark(t.id, ["case": "payback", "charge": charge.id]))
                 }
-            case "other": go(.charges)
+            case "other": parting = true
             default: go(.into)
             }
         case .joint:

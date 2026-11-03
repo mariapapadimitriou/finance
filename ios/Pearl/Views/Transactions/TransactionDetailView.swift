@@ -26,6 +26,14 @@ struct TransactionDetailView: View {
         var id: AnswerSheet.Step { step }
     }
     @State private var oneOff: Bool?
+    /// Splits and parts (THL-291).
+    @State private var splitting = false
+    @State private var marking: Transaction.Splitting.Person?
+    @State private var lettingGo: Transaction.Splitting.Person?
+    @State private var seeingOwed = false
+    @State private var parting: PartsDeposit?
+    @State private var unlinking = false
+    @State private var recent: [String] = []
     @State private var busy = false
     @State private var message: String?
     @State private var error: String?
@@ -39,8 +47,11 @@ struct TransactionDetailView: View {
                 if let transfer = t.transfer {
                     transferLegs(transfer)
                 } else {
-                    if t.asks { askingCard } else if t.suggested { guessCard } else { categoryCard }
+                    if !t.parts.isEmpty { partsCard } else if t.asks { askingCard }
+                    else if t.suggested { guessCard } else { categoryCard }
                     linked
+                    splitPeople
+                    depositParts
                     options
                     details
                 }
@@ -90,6 +101,32 @@ struct TransactionDetailView: View {
                 Task { await run { try await answer.send(app.api).title ?? answer.done } }
             }
         }
+        .sheet(isPresented: $splitting) {
+            SplitSheet(t: t, api: app.api, recent: recent) { done in
+                splitting = false
+                Task { await run { done } }
+            }
+        }
+        .sheet(item: $marking) { person in
+            MarkPaidSheet(t: t, person: person, api: app.api) { done in
+                marking = nil
+                Task { await run { done } }
+            }
+        }
+        .sheet(item: $lettingGo) { person in
+            LetGoSheet(person: person) {
+                lettingGo = nil
+                Task { await letGo(person) }
+            }
+        }
+        .sheet(item: $parting) { deposit in
+            PartsSheet(deposit: deposit, api: app.api) { reply in
+                parting = nil
+                Task { await run { reply.title ?? "Sorted." } }
+            }
+        }
+        .sheet(isPresented: $unlinking) { unlinkSheet }
+        .navigationDestination(isPresented: $seeingOwed) { OwedView() }
         .sheet(isPresented: $editingNote) {
             NoteSheet(note: t.myNote) { note in
                 editingNote = false
@@ -151,7 +188,10 @@ struct TransactionDetailView: View {
     // MARK: What it counts as
 
     private var categoryCard: some View {
-        Button { if isIncome { asking = Asking(step: .kinds) } else { picking = true } } label: {
+        Button {
+            if t.leftToSort { parting = deposit(rest: true) }
+            else if isIncome { asking = Asking(step: .kinds) } else { picking = true }
+        } label: {
             GlassCard {
                 // Income says what kind (T-37): "Salary · Counts as income".
                 row(title: isIncome ? Self.kindName(t.incomeType) : t.label, sub: countsLine, chevron: true)
@@ -170,7 +210,7 @@ struct TransactionDetailView: View {
     }
 
     /// The app's income kinds, as Income and bills names them.
-    static func kindName(_ kind: String?) -> String {
+    nonisolated static func kindName(_ kind: String?) -> String {
         switch kind {
         case "salary": return "Salary"
         case "bonus": return "Bonus"
@@ -308,14 +348,167 @@ struct TransactionDetailView: View {
         .accessibilityElement(children: .combine)
     }
 
+    // MARK: Splits and parts (THL-291)
+
+    /// A purchase she can split: hers, counted, not a refund or split yet.
+    private var canSplit: Bool {
+        !t.inflow && t.transfer == nil && t.refundOf == nil && t.splitting == nil && t.excluded.isEmpty
+    }
+
+    /// Money in she can split into parts: not already sorted into some.
+    private var canPart: Bool {
+        t.inflow && t.transfer == nil && t.parts.isEmpty && t.partOf == nil && t.refundOf == nil
+            && t.repays == nil && t.excluded.isEmpty
+    }
+
+    private func deposit(rest: Bool) -> PartsDeposit {
+        PartsDeposit(id: t.id, name: t.merchant, amount: t.amount, date: t.date, rest: rest)
+    }
+
+    /// OWED TO YOU or SPLIT 3 WAYS (S-04, S-05, S-19, S-20).
+    @ViewBuilder private var splitPeople: some View {
+        if let split = t.splitting, !split.people.isEmpty, !t.inflow {
+            SplitPeople(t: t, split: split,
+                        onMarkPaid: { marking = $0 },
+                        onRemind: remind,
+                        onLetGo: { lettingGo = $0 },
+                        onUndoLetGo: { p in Task { await undoLetGo(p) } },
+                        onEdit: { splitting = true },
+                        onOwed: { seeingOwed = true })
+        }
+    }
+
+    /// "Payback + gift": what a deposit in parts was (S-33).
+    private var partsCard: some View {
+        GlassCard {
+            row(title: partsTitle, sub: "In \(t.parts.count) parts", chevron: false)
+        }
+    }
+
+    private var partsTitle: String {
+        var kinds: [String] = []
+        for p in t.parts {
+            let k = p.kind == "payback" ? "Payback" : p.kind == "refund" ? "Refund" : p.label
+            if !kinds.contains(k) { kinds.append(k) }
+        }
+        return kinds.joined(separator: " + ")
+    }
+
+    /// Its parts and what each pays back; or, for a part, the deposit it's
+    /// from (S-33, S-34).
+    @ViewBuilder private var depositParts: some View {
+        let parts = !t.parts.isEmpty ? t.parts : (t.partOf?.parts ?? [])
+        if !parts.isEmpty {
+            section(t.partOf.map { "Part of a \(Format.amount($0.amount)) deposit" } ?? "Parts")
+            SolidCard {
+                ForEach(Array(parts.enumerated()), id: \.element.id) { index, p in
+                    if index > 0 { RowSeparator(inset: 72) }
+                    partRow(p)
+                }
+            }
+            section("Options")
+            GlassCard {
+                Button { unlinking = true } label: {
+                    row(title: "Unlink", sub: "Make it one deposit again", chevron: true)
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+        }
+    }
+
+    /// "Flight to Athens  Travel · Dad's share  $428.00"; new money in green.
+    private func partRow(_ p: DepositPart) -> some View {
+        let income = ["gift", "income"].contains(p.kind)
+        return HStack(spacing: 14) {
+            Initials(name: p.charge?.merchant ?? p.label)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(p.charge?.merchant ?? p.label).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(partLine(p)).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text((income ? "+" : "") + Format.amount(p.amount))
+                .font(Nacre.headline).monospacedDigit()
+                .foregroundColor(income ? Pearl.moneyIn : Pearl.ink)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// "Travel · Dad's share", "Counts as income", "Left to sort".
+    private func partLine(_ p: DepositPart) -> String {
+        switch p.kind {
+        case "payback":
+            return [p.charge?.category, p.person.map { "\($0)’s share" }].compactMap { $0 }.joined(separator: " · ")
+        case "refund": return [p.charge?.category, "Refund"].compactMap { $0 }.joined(separator: " · ")
+        case "gift": return "Counts as income"
+        case "income": return "\(Self.kindName(p.incomeKind)) · counts as income"
+        case "moved": return "Not new money"
+        case "savings": return "Out of savings"
+        case "cash": return "Cash you were paid"
+        case "overpaid": return "You owe \(p.person ?? "them") this"
+        case "rest": return p.sorted == true ? "Sorted" : "Left to sort"
+        default: return p.category ?? p.label
+        }
+    }
+
+    /// S-34 Unlink?: "Dad will owe you $492 again."
+    private var unlinkSheet: some View {
+        let parts = !t.parts.isEmpty ? t.parts : (t.partOf?.parts ?? [])
+        let paybacks = parts.filter { $0.kind == "payback" }
+        let back = paybacks.map(\.amount).reduce(0, +)
+        let person = paybacks.compactMap(\.person).first
+        return VStack(spacing: 16) {
+            SheetTitle(title: "Unlink?") { unlinking = false }
+            QuestionHeader(name: t.partOf == nil ? t.merchant : t.merchant,
+                           amount: Format.amount(t.partOf?.amount ?? t.amount), tone: Pearl.ink,
+                           sub: Format.short(t.partOf?.date ?? t.date))
+                .padding(.horizontal, 16)
+            Text(back > 0 ? "\(person ?? "They") will owe you \(Format.amount(back)) again."
+                 : "It goes back to one deposit, not sorted yet.")
+                .font(Nacre.footnote).foregroundColor(Pearl.ink)
+            HStack(spacing: 10) {
+                Button("Unlink") {
+                    unlinking = false
+                    Task { await unlinkParts() }
+                }
+                .buttonStyle(NacreButtonStyle())
+                Button("Keep linked") { unlinking = false }
+                    .font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Capsule().fill(Color.white.opacity(0.85)))
+                    .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(SheetBackground())
+        .presentationDetents([.height(320)])
+    }
+
     // MARK: Options
 
     @ViewBuilder private var options: some View {
         let unlink = t.refundOf != nil
         let canOneOff = t.canOneOff && !t.inflow
+        if canSplit || canPart {
+            section("Options")
+            GlassCard {
+                Button { if canSplit { splitting = true } else { parting = deposit(rest: false) } } label: {
+                    if canSplit {
+                        row(title: "Split with others", sub: "Count only your share", chevron: true)
+                    } else {
+                        row(title: "Split into parts", sub: "Like a payback and a gift in one", chevron: true)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+        }
         if couldBePay {
             // T-37: her regular pay, and how often; or making it so (T-31).
-            section("Options")
+            if !(canSplit || canPart) { section("Options") }
             GlassCard {
                 Button { asking = Asking(step: .cadence) } label: {
                     if let pay = t.regularPay {
@@ -334,7 +527,7 @@ struct TransactionDetailView: View {
             }
         }
         if unlink || canOneOff {
-            section("Options")
+            if !(canSplit || canPart || couldBePay) { section("Options") }
             GlassCard {
                 if unlink {
                     Button { Task { await unlinkRefund() } } label: {
@@ -478,9 +671,17 @@ struct TransactionDetailView: View {
     // MARK: Changes
 
     private func load() async {
-        if let full: Transaction = try? await app.api.get("api/transactions/\(transaction.id)") {
+        if let full: Transaction = try? await app.api.get("api/transactions/\(detail?.id ?? transaction.id)") {
             detail = full
             oneOff = nil
+        }
+        // People she's split with before, for Who was it with? (S-02).
+        if recent.isEmpty, !t.inflow, let owed: OwedOverview = try? await app.api.get("api/owed") {
+            var names: [String] = []
+            for n in owed.owesYou.map(\.name) + owed.paidBack.compactMap(\.name) where !names.contains(n) {
+                names.append(n)
+            }
+            recent = names
         }
     }
 
@@ -525,6 +726,42 @@ struct TransactionDetailView: View {
         await run {
             let _: OK = try await app.api.delete("api/transactions/\(t.id)/refund")
             return "Unlinked. It counts as money in now."
+        }
+    }
+
+    /// A split change's reply: what to say. (Its `detail` is the whole
+    /// transaction, which load() fetches anyway.)
+    private struct Titled: Decodable { let title: String? }
+
+    /// S-07: a reminder she can paste into a message.
+    private func remind(_ p: Transaction.Splitting.Person) {
+        UIPasteboard.general.string = "Hey \(p.name)! Your share of \(t.merchant) on \(Format.short(t.date)) "
+            + "is \(Format.amount(p.owes)). Thanks!"
+        message = "Reminder for \(p.name) copied. Paste it in a message."
+    }
+
+    private func letGo(_ p: Transaction.Splitting.Person) async {
+        await run {
+            let reply: Titled = try await app.api.post("api/transactions/\(t.id)/split/let-go", ["name": p.name])
+            return reply.title
+        }
+    }
+
+    private func undoLetGo(_ p: Transaction.Splitting.Person) async {
+        await run {
+            let reply: Titled = try await app.api.delete("api/transactions/\(t.id)/split/let-go",
+                                                            query: ["name": p.name])
+            return reply.title
+        }
+    }
+
+    /// A part is gone once unlinked, so the page shows the deposit it was.
+    private func unlinkParts() async {
+        struct Reply: Decodable { let id: String; let title: String? }
+        await run {
+            let reply: Reply = try await app.api.delete("api/transactions/\(t.id)/parts")
+            detail = try await app.api.get("api/transactions/\(reply.id)")
+            return reply.title
         }
     }
 

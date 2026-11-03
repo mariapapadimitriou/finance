@@ -297,6 +297,16 @@ def transaction_detail(txn_id: str):
         txns = [x for x, _ in rows]
         splits, payer = st.splits(), st.payback_people()
         r = dict(_needs_a_look(st)[1](r))
+        # THL-291: a deposit split into parts, or a part of one.
+        from . import parts as dp
+        if st.parts().get(txn_id):
+            r["parts"] = dp.listed(st, txn_id)
+        part_of = (t.raw or {}).get("part_of")
+        if part_of:
+            whole = st.get_transaction(part_of)
+            r["part_of"] = ({"id": part_of, "amount": round(-whole.amount, 2), "date": whole.date[:10],
+                             "parts": dp.listed(st, part_of)} if whole else None)
+            r["left_to_sort"] = t.excluded == dp.REST
         if t.amount < 0:
             # THL-198: what kind of income it is, and the regular pay it is,
             # when its payer is one of hers in Income and bills.
@@ -363,7 +373,8 @@ def set_transaction_split(txn_id: str):
     if t.joint:
         return jsonify({"error": "On a joint account, say whose it was instead."}), 400
     mode = body.get("mode")
-    people, problem = sp.validate(t, mode, body.get("people"))
+    people, problem = sp.validate(t, mode, body.get("people"), body.get("you"),
+                                  body.get("include_me", True) is not False)
     if problem:
         return jsonify({"error": problem}), 400
     from .categorize import CATEGORIES, is_unsure
@@ -547,6 +558,14 @@ def undo_change():
     from .impact import SOURCE
     from .transfers import apply_transfer_matches
     body = request.get_json(silent=True) or {}
+    if isinstance(body.get("parts"), str):
+        # A deposit split into parts (THL-291): one deposit again.
+        from . import parts as dp
+        st = store()
+        if not dp.undo(st, body["parts"]):
+            return jsonify({"error": "Nothing to undo."}), 400
+        _reclassify(st)
+        return jsonify({"ok": True})
     rows = body.get("rows") or []
     overrides = body.get("overrides") or {}
     dests = body.get("destinations") or {}
@@ -2384,5 +2403,5 @@ def skip_review():
 # blueprint too; imported last so they can use the helpers above.
 from . import income_bills_api, insights_api, privacy_api, profile_api  # noqa: E402,F401,I001
 from . import marks_api, ranges_api, transactions_extras_api  # noqa: E402,F401
-from . import calendar_api, quick_sort_api  # noqa: E402,F401
+from . import calendar_api, parts_api, quick_sort_api  # noqa: E402,F401
 from . import recurring_api  # noqa: E402,F401

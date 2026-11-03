@@ -54,10 +54,19 @@ struct ReviewView: View {
             }
         }
         .sheet(item: $asking) { ask in
-            AnswerSheet(ask: ask, categories: categories, accounts: accounts,
-                        names: recentNames, api: app.api) { answer in
-                asking = nil
-                Task { await send(answer) }
+            if ask.item.rest != nil {
+                // "$172 left to sort" (S-28): sorting the rest of a deposit.
+                PartsSheet(deposit: PartsDeposit(id: ask.t.id, name: ask.t.name, amount: ask.t.amount,
+                                                 date: ask.t.date, rest: true), api: app.api) { reply in
+                    asking = nil
+                    Task { await send(.done(reply)) }
+                }
+            } else {
+                AnswerSheet(ask: ask, categories: categories, accounts: accounts,
+                            names: recentNames, api: app.api) { answer in
+                    asking = nil
+                    Task { await send(answer) }
+                }
             }
         }
     }
@@ -165,7 +174,9 @@ struct ReviewView: View {
             Initials(name: t.name)
             VStack(alignment: .leading, spacing: 3) {
                 Text(t.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                Text(ask.kind == .joint ? "Joint · \(Format.relativeDay(t.date))" : Format.relativeDay(t.date))
+                Text(ask.kind == .joint ? "Joint · \(Format.relativeDay(t.date))"
+                     : ask.item.rest.map { "\(Format.relativeDay(t.date)) · \(Format.amount($0.sorted)) sorted" }
+                     ?? Format.relativeDay(t.date))
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
                 GuessChip(label: ask.chip, question: false).padding(.top, 4)
             }
@@ -302,6 +313,8 @@ enum ReviewAnswer {
     case dismiss(String)
     /// Skip for now, or put a skipped one back.
     case skip(String, Bool)
+    /// Already sent (a deposit split into parts, THL-291): its reply.
+    case done(MarkReply)
 
     /// What the toast says when the server doesn't.
     var done: String {
@@ -366,6 +379,8 @@ enum ReviewAnswer {
             return try await api.post("api/review/dismiss", ["key": key])
         case .skip(let key, let on):
             return try await api.post("api/review/skip", ["key": key, "skip": on])
+        case .done(let reply):
+            return reply
         }
     }
 }

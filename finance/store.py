@@ -487,6 +487,37 @@ CREATE TABLE IF NOT EXISTS txn_split_people (
     amount REAL NOT NULL,
     PRIMARY KEY (txn_id, pos)
 );
+-- Cash in hand (THL-291): someone in a split paid her back in cash, with no
+-- bank transaction. It counts as paid at once; a later cash deposit that
+-- holds it links to it (`deposit_id`) so it's never counted twice.
+CREATE TABLE IF NOT EXISTS txn_split_cash (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    txn_id     TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    amount     REAL NOT NULL,
+    day        TEXT NOT NULL,
+    deposit_id TEXT
+);
+-- Let the rest go (THL-291): what someone's part was before she let the
+-- rest of it go, so it can be put back.
+CREATE TABLE IF NOT EXISTS txn_split_let_go (
+    txn_id TEXT NOT NULL,
+    name   TEXT NOT NULL,
+    was    REAL NOT NULL,
+    day    TEXT NOT NULL,
+    PRIMARY KEY (txn_id, name)
+);
+-- A deposit split into parts (THL-291): each part is a row of its own,
+-- `part_of` the deposit, which is left out so nothing counts twice.
+CREATE TABLE IF NOT EXISTS txn_parts (
+    txn_id  TEXT NOT NULL,
+    pos     INTEGER NOT NULL,
+    part_id TEXT NOT NULL,
+    kind    TEXT NOT NULL,
+    amount  REAL NOT NULL,
+    detail  TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (txn_id, pos)
+);
 -- Which person in a split a repayment came from, when you said.
 CREATE TABLE IF NOT EXISTS txn_payback_person (
     inflow_id TEXT PRIMARY KEY,
@@ -630,7 +661,8 @@ _CHARGES = """(
 _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts",
                "txn_exclusions", "txn_income_type", "txn_confirmed", "txn_notes",
                "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
-               "joint_deposits", "txn_party", "txn_tags", "txn_saved_to", "sorted_range_rows")
+               "joint_deposits", "txn_party", "txn_tags", "txn_saved_to", "sorted_range_rows",
+               "txn_split_cash", "txn_split_let_go", "txn_parts")
 
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
@@ -1633,18 +1665,92 @@ class Store:
 
     # ── Splits (THL-124) ─────────────────────────────────────────────────
     def splits(self) -> dict[str, dict]:
-        """charge id → {mode, watch, people: [{name, amount}]}."""
+        """charge id → {mode, watch, people: [{name, amount}]}, each person
+        with any cash they paid her (`cash`) and what their part was before
+        she let the rest go (`let_go`)."""
         with self.conn() as c:
             heads = c.execute("SELECT txn_id, mode, watch FROM txn_splits").fetchall()
             people = c.execute("SELECT txn_id, pos, name, amount FROM txn_split_people "
                                "ORDER BY txn_id, pos").fetchall()
+            cash = c.execute("SELECT id, txn_id, name, amount, day, deposit_id FROM txn_split_cash "
+                             "ORDER BY id").fetchall()
+            gone = c.execute("SELECT txn_id, name, was, day FROM txn_split_let_go").fetchall()
         out = {r["txn_id"]: {"mode": r["mode"], "watch": bool(r["watch"]), "people": []}
                for r in heads}
         for r in people:
             if r["txn_id"] in out:
                 out[r["txn_id"]]["people"].append(
                     {"name": r["name"], "amount": round(float(r["amount"]), 2)})
+        for r in cash:
+            for p in (out.get(r["txn_id"]) or {}).get("people", []):
+                if p["name"] == r["name"]:
+                    p.setdefault("cash", []).append(
+                        {"id": r["id"], "amount": round(float(r["amount"]), 2), "day": r["day"],
+                         "deposit_id": r["deposit_id"]})
+        for r in gone:
+            for p in (out.get(r["txn_id"]) or {}).get("people", []):
+                if p["name"] == r["name"]:
+                    p["let_go"] = {"was": round(float(r["was"]), 2), "day": r["day"]}
         return out
+
+    # Cash in hand and Let the rest go (THL-291).
+    def add_split_cash(self, txn_id: str, name: str, amount: float, day: str) -> int:
+        with self.conn() as c:
+            cur = c.execute("INSERT INTO txn_split_cash (txn_id, name, amount, day) VALUES (?,?,?,?)",
+                            (txn_id, name, round(amount, 2), day))
+            return int(cur.lastrowid)
+
+    def remove_split_cash(self, cash_id: int) -> bool:
+        with self.conn() as c:
+            return (c.execute("DELETE FROM txn_split_cash WHERE id = ?", (cash_id,)).rowcount or 0) > 0
+
+    def split_cash(self) -> list[dict]:
+        """Every cash payback: {id, txn_id, name, amount, day, deposit_id}."""
+        with self.conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM txn_split_cash ORDER BY id").fetchall()]
+
+    def set_cash_deposit(self, cash_ids: list[int], deposit_id: str | None) -> None:
+        with self.conn() as c:
+            for i in cash_ids:
+                c.execute("UPDATE txn_split_cash SET deposit_id = ? WHERE id = ?", (deposit_id, i))
+
+    def clear_cash_deposit(self, deposit_id: str) -> None:
+        with self.conn() as c:
+            c.execute("UPDATE txn_split_cash SET deposit_id = NULL WHERE deposit_id = ?", (deposit_id,))
+
+    def set_let_go(self, txn_id: str, name: str, was: float, day: str) -> None:
+        with self.conn() as c:
+            c.execute("INSERT OR REPLACE INTO txn_split_let_go (txn_id, name, was, day) VALUES (?,?,?,?)",
+                      (txn_id, name, round(was, 2), day))
+
+    def clear_let_go(self, txn_id: str, name: str) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_split_let_go WHERE txn_id = ? AND name = ?", (txn_id, name))
+
+    # Deposits split into parts (THL-291).
+    def parts(self) -> dict[str, list[dict]]:
+        """deposit id → its parts in order: {pos, part_id, kind, amount, detail}."""
+        with self.conn() as c:
+            rows = c.execute("SELECT * FROM txn_parts ORDER BY txn_id, pos").fetchall()
+        out: dict[str, list[dict]] = {}
+        for r in rows:
+            out.setdefault(r["txn_id"], []).append(
+                {"pos": r["pos"], "part_id": r["part_id"], "kind": r["kind"],
+                 "amount": round(float(r["amount"]), 2), "detail": json.loads(r["detail"] or "{}")})
+        return out
+
+    def set_parts(self, txn_id: str, parts: list[dict]) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_parts WHERE txn_id = ?", (txn_id,))
+            for pos, p in enumerate(parts):
+                c.execute("INSERT INTO txn_parts (txn_id, pos, part_id, kind, amount, detail) "
+                          "VALUES (?,?,?,?,?,?)",
+                          (txn_id, pos, p["part_id"], p["kind"], p["amount"],
+                           json.dumps(p.get("detail") or {})))
+
+    def clear_parts(self, txn_id: str) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_parts WHERE txn_id = ?", (txn_id,))
 
     def set_split(self, txn_id: str, mode: str, people: list[dict], watch: bool) -> None:
         with self.conn() as c:
@@ -1955,6 +2061,9 @@ class Store:
             ("txn_payback_person", "who paid you back"),
             ("txn_splits", "split charges"),
             ("txn_split_people", "people in split charges"),
+            ("txn_split_cash", "cash you were paid back"),
+            ("txn_split_let_go", "shares you let go"),
+            ("txn_parts", "deposits split into parts"),
             ("transfer_destinations", "where transfers go"),
             ("joint_accounts", "joint accounts"),
             ("joint_mine", "names always yours on a joint account"),

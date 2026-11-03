@@ -24,6 +24,8 @@ final class AppModel: ObservableObject {
     @Published var resetToken: String?
     /// Where "Contact support" writes to (A-10).
     @Published var contact: String?
+    /// Cash flow's Select (T-19) puts its own bar where the tab bar is.
+    @Published var hidesTabBar = false
 
     let api = APIClient()
     private var leftAt: Date?

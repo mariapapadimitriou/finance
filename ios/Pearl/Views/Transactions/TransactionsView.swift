@@ -2,7 +2,9 @@ import SwiftUI
 
 /// Cash flow (THL-122, T-01): the month's transactions under Spent, Came in
 /// and Leftover, with search (T-45), Filter & sort (T-17), Choose a month
-/// (T-47), and the bank's state: syncing, failed, disconnected (T-36, T-58, T-59).
+/// (T-47), the bank's state: syncing, failed, disconnected (T-36, T-58, T-59),
+/// and Select (T-19): a category, a tag or Not counted for several at once
+/// (T-51, T-20), with one Undo.
 @MainActor
 struct TransactionsView: View {
     @EnvironmentObject private var app: AppModel
@@ -38,6 +40,23 @@ struct TransactionsView: View {
     /// Transactions or Calendar (T-49).
     @State private var showCalendar = false
 
+    /// T-19: picking rows to change together, and the sheet for what to change.
+    @State private var selecting = false
+    @State private var picked: Set<String> = []
+    @State private var bulk: Bulk?
+    @State private var busy = false
+    @State private var toast: Toast?
+
+    enum Bulk: String, Identifiable {
+        case category, tag
+        var id: String { rawValue }
+    }
+
+    struct Toast: Equatable {
+        let title: String
+        let undo: JSONValue?
+    }
+
     enum SyncState { case idle, syncing, failed }
 
     var body: some View {
@@ -72,8 +91,32 @@ struct TransactionsView: View {
             .padding(.bottom, 32)
         }
         .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                toastView
+                if selecting { selectionBar }
+            }
+        }
         .nacreScreen()
         .navigationBarHidden(true)
+        .onChange(of: selecting) { on in app.hidesTabBar = on }
+        .onDisappear { app.hidesTabBar = false }
+        .sheet(item: $bulk) { which in
+            switch which {
+            case .category:
+                CategorySheet(name: pickedTitle, amount: pickedAmount, tone: pickedTone, categories: categories,
+                              current: pickedCategory, mark: "\(picked.count)") { name, _ in
+                    bulk = nil
+                    Task { await change(["category": name], path: "api/transactions/batch/category") }
+                }
+            case .tag:
+                BulkTagSheet(title: pickedTitle, amount: pickedAmount, tone: pickedTone,
+                             count: picked.count, known: tags) { add in
+                    bulk = nil
+                    Task { await change(["add": add], path: "api/transactions/batch/tags") }
+                }
+            }
+        }
         .navigationDestination(for: Transaction.self) { t in
             TransactionDetailView(transaction: t, categories: categories, siblings: rows)
         }
@@ -374,8 +417,18 @@ struct TransactionsView: View {
                 Spacer()
                 Button("Show all") { self.counts = nil }
                     .font(Nacre.body).foregroundColor(Pearl.action)
+            } else if selecting {
+                Text("\(picked.count) selected · \(pickedAmount.replacingOccurrences(of: "\u{2212}", with: ""))")
+                Spacer()
+                Button("Cancel") { endSelecting() }
+                    .font(Nacre.body).foregroundColor(Pearl.action)
             } else if loadedOnce {
                 Text(shown.count == 1 ? "1 transaction" : "\(shown.count) transactions")
+                if !shown.isEmpty {
+                    Spacer()
+                    Button("Select") { selecting = true }
+                        .font(Nacre.body).foregroundColor(Pearl.action)
+                }
             }
         }
         .font(Nacre.footnote)
@@ -422,14 +475,138 @@ struct TransactionsView: View {
                     GlassCard {
                         ForEach(Array(section.rows.enumerated()), id: \.element.id) { index, t in
                             if index > 0 { RowSeparator(inset: 72) }
-                            NavigationLink(value: t) {
-                                TransactionRow(t: t, paidBack: paidBack(for: t))
+                            if selecting {
+                                Button { toggle(t) } label: {
+                                    TransactionRow(t: t, paidBack: paidBack(for: t), picked: picked.contains(t.id))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(picked.contains(t.id) ? .isSelected : [])
+                            } else {
+                                NavigationLink(value: t) {
+                                    TransactionRow(t: t, paidBack: paidBack(for: t))
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
             }
+        }
+    }
+
+    // MARK: Select (T-19)
+
+    /// Category, Tag and Not counted, where the tab bar was.
+    private var selectionBar: some View {
+        HStack(spacing: 0) {
+            barButton("Category") { bulk = .category }
+            barButton("Tag") { bulk = .tag }
+            barButton("Not counted") {
+                let n = picked.count
+                Task {
+                    await change(["case": "not_mine", "reason": ""], path: "api/transactions/batch/mark",
+                                 say: n == 1 ? "Not counted." : "\(n) not counted.")
+                }
+            }
+        }
+        .padding(.horizontal, 8).padding(.top, 14).padding(.bottom, 10)
+        .background(Pearl.bar.ignoresSafeArea(edges: .bottom))
+        .overlay(alignment: .top) { Rectangle().fill(Pearl.border).frame(height: 1) }
+    }
+
+    private func barButton(_ title: String, _ run: @escaping () -> Void) -> some View {
+        Button(action: run) {
+            Text(title).font(Nacre.textButton).foregroundColor(Pearl.action)
+                .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(picked.isEmpty || busy)
+        .opacity(picked.isEmpty ? 0.4 : 1)
+    }
+
+    /// "✓ Changed 3 to Dining out. Allowance is now $842.  Undo".
+    @ViewBuilder private var toastView: some View {
+        if let toast = toast {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundColor(Nacre.teal)
+                Text(toast.title).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                if toast.undo != nil {
+                    Button("Undo") { Task { await undo() } }
+                        .font(Nacre.textButton).foregroundColor(Pearl.action)
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .background(Capsule().fill(.ultraThinMaterial))
+            .background(Capsule().fill(Nacre.glass))
+            .overlay(Capsule().strokeBorder(Nacre.edge, lineWidth: 1))
+            .padding(.horizontal, 16).padding(.bottom, 12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .task(id: toast) {
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                if self.toast == toast { withAnimation { self.toast = nil } }
+            }
+        }
+    }
+
+    private var pickedRows: [Transaction] { shown.filter { picked.contains($0.id) } }
+
+    private var pickedTitle: String { picked.count == 1 ? "1 transaction" : "\(picked.count) transactions" }
+
+    /// "−$89.00": what the picked rows come to, out less in.
+    private var pickedAmount: String {
+        let net = pickedRows.reduce(0) { $0 + ($1.inflow ? -$1.amount : $1.amount) }
+        return (net < 0 ? "+" : "\u{2212}") + Format.amount(net)
+    }
+
+    private var pickedTone: Color {
+        pickedRows.reduce(0) { $0 + ($1.inflow ? -$1.amount : $1.amount) } < 0 ? Pearl.moneyIn : Pearl.moneyOut
+    }
+
+    /// Their category when they all share one, so Save waits for a change.
+    private var pickedCategory: String {
+        let cats = Set(pickedRows.map { $0.category ?? $0.label })
+        return cats.count == 1 ? cats.first ?? "" : ""
+    }
+
+    private func toggle(_ t: Transaction) {
+        if picked.contains(t.id) { picked.remove(t.id) } else { picked.insert(t.id) }
+    }
+
+    private func endSelecting() {
+        selecting = false
+        picked = []
+    }
+
+    /// One change for every picked row; the server's words (or `say` and
+    /// what it did to the Allowance) and its Undo.
+    private func change(_ body: [String: Any], path: String, say: String? = nil) async {
+        busy = true
+        defer { busy = false }
+        var payload = body
+        payload["ids"] = Array(picked)
+        do {
+            let reply: MarkReply = try await app.api.post(path, payload)
+            endSelecting()
+            let title = say.map { [$0, reply.detail ?? ""].filter { !$0.isEmpty }.joined(separator: " ") }
+                ?? reply.title ?? "Changed."
+            withAnimation { toast = Toast(title: title, undo: reply.undo) }
+            error = nil
+            app.changed()
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+
+    private func undo() async {
+        guard let payload = toast?.undo, let body = payload.any as? [String: Any] else { return }
+        do {
+            let _: OK = try await app.api.post("api/transactions/undo", body)
+            withAnimation { toast = Toast(title: "Undone.", undo: nil) }
+            app.changed()
+        } catch {
+            self.error = app.handle(error)
         }
     }
 
@@ -668,9 +845,17 @@ struct TransactionsView: View {
 struct TransactionRow: View {
     let t: Transaction
     var paidBack: String? = nil
+    /// Picked or not, while Cash flow is selecting (T-19); nil otherwise.
+    var picked: Bool? = nil
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
+            if let picked = picked {
+                Image(systemName: picked ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundColor(picked ? Pearl.action : Pearl.muted)
+                    .padding(.trailing, -4)
+            }
             Initials(name: t.merchant)
             VStack(alignment: .leading, spacing: 3) {
                 Text(t.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
