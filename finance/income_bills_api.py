@@ -21,7 +21,7 @@ from . import income_bills as ib
 from .api import _today_iso, bp, store
 
 _ROW_FIELDS = ("key", "name", "amount", "varies", "cadence", "next", "day", "category",
-               "counts", "ticked", "source", "edited", "question", "recipient", "rent")
+               "counts", "ticked", "source", "edited", "question", "recipient", "rent", "shared")
 
 
 def _payload(st) -> dict:
@@ -38,6 +38,7 @@ def _payload(st) -> dict:
         "checked": {"income": state["income_on"], "bills": state["bills_on"]},
         "pays": state["pays"],
         "candidates": ib.pay_candidates(txns, today, state),
+        "asks": ib.pay_asks(txns, today, state),
         # Her own amount (it overrides the rest), and Pearl's estimate from
         # her last three months (2026-10-13, THL-45).
         "expected": {"amount": told or None, "varies": bool(state["varies"]),
@@ -88,8 +89,11 @@ def income_bills_pay_answer():
     if answer not in ("yes", "no"):
         return _error("Say whether it’s your pay.")
     today = date.fromisoformat(_today_iso())
-    found = next((c for c in ib.pay_candidates(st.all_transactions(), today, state)
-                  if c["payer"] == payer), None)
+    txns = st.all_transactions()
+    found = next((c for c in ib.pay_candidates(txns, today, state) if c["payer"] == payer), None)
+    if found is None and answer == "no" and any(a["payer"] == payer for a in ib.pay_asks(txns, today, state)):
+        # O-10f's "This isn't regular pay", before it's a candidate.
+        found = {"payer": payer}
     if found is None:
         return _error("We couldn’t find that deposit any more.", 404)
     if answer == "yes":
@@ -391,3 +395,47 @@ def transaction_bill_add(txn_id: str):
     ib.save(st, state)
     return jsonify({"ok": True, "key": key,
                     "title": f"{t.merchant} is in your bills: ${amount:,.2f} {_EVERY[cadence]}."})
+
+
+# ── O-10g: someone's regular e-Transfers ─────────────────────────────────
+
+@bp.post("/income-bills/etransfer")
+def income_bills_etransfer():
+    """"What is it?" for someone's regular e-Transfers: their share of a bill
+    (`bill` is its key: it counts net of their part, and their e-Transfers so
+    far leave her numbers), paying her back (not income), or something else
+    (left for Needs a look). Setup doesn't ask again."""
+    from . import marks
+    body = _body()
+    st = store()
+    state = ib.load(st)
+    today = date.fromisoformat(_today_iso())
+    txns = st.all_transactions()
+    payer = ib.clean_name(body.get("payer"))
+    ask = next((a for a in ib.pay_asks(txns, today, state)
+                if a["kind"] == "etransfer" and a["payer"] == payer), None)
+    if ask is None:
+        return _error("We couldn’t find those e-Transfers any more.", 404)
+    answer = body.get("answer")
+    if answer not in ("share", "payback", "else"):
+        return _error("Say what they are.")
+    by_id = {t.fingerprint: t for t in txns}
+    if answer == "share":
+        bill = next((r for r in ib.bills(txns, today, state) if r["key"] == body.get("bill")), None)
+        if bill is None:
+            return _error("Choose the bill it’s for.")
+        state["shares"][payer] = {"bill": bill["key"], "person": ask["person"],
+                                  "amount": ask["amount"], "cadence": ask["cadence"]}
+        for i in ask["ids"]:
+            st.exclude(i, f"{ask['person']}’s share of {bill['name']}")
+    elif answer == "payback":
+        for i in ask["ids"]:
+            try:
+                marks.apply(st, by_id[i], {"case": "lent_back"}, today)
+            except marks.Problem as exc:
+                return _error(str(exc))
+    state["etransfer_done"] = sorted(set(state["etransfer_done"]) | {payer})
+    ib.save(st, state)
+    from .api import _reclassify
+    _reclassify(st)
+    return jsonify(_payload(st))

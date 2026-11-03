@@ -34,7 +34,7 @@ import re
 import statistics
 from datetime import date, timedelta
 
-from .analytics import is_others
+from .analytics import _mine, is_others
 from .income import is_income, kind_of
 from .models import Transaction
 
@@ -70,7 +70,11 @@ _ETRANSFER = re.compile(r"\b(e-?\s?transfer|e-?tfr|etfr|interac|autodeposit)\b",
 def empty() -> dict:
     return {"income_on": None, "bills_on": None, "pays": [], "pay_no": [],
             "varies": False, "bills": {}, "added": [], "rent": {}, "seq": 0,
-            "income_skipped": None}
+            "income_skipped": None,
+            # O-10g: someone's regular e-Transfers that are their share of a
+            # bill ({payer: {bill, person, amount, cadence}}), and the ones
+            # she's answered so setup stops asking.
+            "shares": {}, "etransfer_done": []}
 
 
 def load(st) -> dict:
@@ -182,6 +186,69 @@ def could_be_pay(t: Transaction) -> bool:
     return True
 
 
+def _regular(by_day: dict[str, float]) -> tuple[list[date], str, float] | None:
+    """Deposits on three or more days, on a schedule, at much the same
+    amount: (the days, how often, the usual amount); None otherwise."""
+    days = sorted(_d(d) for d in by_day)
+    if len(days) < 3:
+        return None
+    cadence = _cadence_of(days)
+    if not cadence:
+        return None
+    amounts = list(by_day.values())
+    usual = statistics.median(amounts)
+    if usual <= 0 or any(abs(a - usual) / usual > 0.2 for a in amounts):
+        return None
+    return days, cadence, usual
+
+
+def pay_asks(transactions: list[Transaction], today: date, state: dict | None = None) -> list[dict]:
+    """What setup asks about a regular deposit before it can be pay (O-10f,
+    O-10g): pay into a joint account nobody has said whose it is ("Whose
+    pay?"), and someone's regular e-Transfers ("What is it?")."""
+    from .etransfers import party
+    state = state or empty()
+    skip = (set(state.get("pay_no") or []) | set(state.get("etransfer_done") or [])
+            | {p.get("payer") for p in state.get("pays") or []})
+    since = (today - timedelta(days=PAY_LOOKBACK_DAYS)).isoformat()
+    groups: dict[tuple[str, str], dict] = {}
+    for t in transactions:
+        if (t.amount >= 0 or t.date[:10] < since or t.date[:10] > today.isoformat()
+                or t.repays or t.excluded):
+            continue
+        payer = payer_of(t)
+        if not payer or payer in skip:
+            continue
+        if t.joint and not t.joint_from and is_income(t):
+            kind = "joint"
+        elif looks_like_etransfer(t) and not t.joint and kind_of(t) != "salary" and not is_others(t):
+            kind = "etransfer"
+        else:
+            continue
+        g = groups.setdefault((kind, payer), {"days": {}, "rows": []})
+        g["days"][t.date[:10]] = g["days"].get(t.date[:10], 0.0) - t.amount
+        g["rows"].append(t)
+    out = []
+    for (kind, payer), g in groups.items():
+        regular = _regular(g["days"])
+        if regular is None:
+            continue
+        days, cadence, usual = regular
+        last = max(g["rows"], key=lambda r: r.date)
+        ask = {"kind": kind, "key": f"{kind}:{payer}", "payer": payer, "amount": round(usual, 2),
+               "cadence": cadence, "next": predict_next(days, cadence, today).isoformat(),
+               "txn": last.fingerprint, "ids": [r.fingerprint for r in g["rows"]]}
+        if kind == "joint":
+            ask.update(name=payer, label=last.joint, people=list(last.joint_people or []),
+                       share=last.joint_split if last.joint_split is not None else last.joint_share)
+        else:
+            who = (party(last) or {}).get("name") or payer
+            ask.update(name=f"e-Transfer from {who}", person=who)
+        out.append(ask)
+    out.sort(key=lambda a: (a["kind"] != "joint", -a["amount"]))
+    return out
+
+
 def _cadence_of(days: list[date]) -> str | None:
     gaps = [(b - a).days for a, b in zip(days, days[1:])]
     if not gaps:
@@ -232,20 +299,15 @@ def pay_candidates(transactions: list[Transaction], today: date,
         if not payer or payer in skip:
             continue
         days = by_payer.setdefault(payer, {})
-        days[t.date[:10]] = days.get(t.date[:10], 0.0) - t.amount
+        # Her part: on a joint account, her share of pay that's both of theirs.
+        days[t.date[:10]] = days.get(t.date[:10], 0.0) - _mine(t)
         salary[payer] = salary.get(payer, False) or kind_of(t) == "salary"
     out = []
     for payer, by_day in by_payer.items():
-        days = sorted(_d(d) for d in by_day)
-        if len(days) < 3:
+        regular = _regular(by_day)
+        if regular is None:
             continue
-        cadence = _cadence_of(days)
-        if not cadence:
-            continue
-        amounts = list(by_day.values())
-        usual = statistics.median(amounts)
-        if usual <= 0 or any(abs(a - usual) / usual > 0.2 for a in amounts):
-            continue
+        days, cadence, usual = regular
         out.append({
             "payer": payer, "name": payer, "amount": round(usual, 2), "cadence": cadence,
             "last": days[-1].isoformat(), "next": predict_next(days, cadence, today).isoformat(),
@@ -370,6 +432,15 @@ def bills(transactions: list[Transaction], today: date, state: dict | None) -> l
             "counts": True, "ticked": True,
             "source": "added", "edited": False, "dates": [], "rec": None,
         })
+    # O-10g: someone's share of a bill comes off it.
+    for s in (state.get("shares") or {}).values():
+        r = next((r for r in out if r["key"] == s.get("bill")), None)
+        if r is None:
+            continue
+        theirs = round(float(s["amount"]) * PER_YEAR.get(s["cadence"], 12)
+                       / PER_YEAR.get(r["cadence"], 12), 2)
+        r["shared"] = {"person": s.get("person"), "amount": min(theirs, r["amount"])}
+        r["amount"] = round(max(r["amount"] - theirs, 0.0), 2)
     return out
 
 

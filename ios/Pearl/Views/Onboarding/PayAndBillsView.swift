@@ -17,9 +17,11 @@ struct PayAndBillsView: View {
     enum Sheet: Identifiable {
         case candidate(IncomeBills.Candidate), pay(IncomeBills.Pay), addPay
         case bill(IncomeBills.Bill), addBill
+        case ask(IncomeBills.Ask)
 
         var id: String {
             switch self {
+            case .ask(let a): return "a" + a.id
             case .candidate(let c): return "c" + c.id
             case .pay(let p): return "p" + p.id
             case .addPay: return "add-pay"
@@ -55,6 +57,10 @@ struct PayAndBillsView: View {
                     }
                     ForEach(candidates) { c in
                         incomeRow(c.name, cadence(c.cadence), c.amount) { sheet = .candidate(c) }
+                        RowSeparator(inset: 64)
+                    }
+                    ForEach(data.asks ?? []) { a in
+                        askRow(a)
                         RowSeparator(inset: 64)
                     }
                     addRow(noPay ? "Add your income" : "Add other income") { sheet = .addPay }
@@ -113,6 +119,10 @@ struct PayAndBillsView: View {
                     BillSheet(bill: nil, counted: nil) { reply in
                         if let reply = reply { apply(reply) }
                     }
+                case .ask(let a) where a.kind == "joint":
+                    WhosePaySheet(ask: a) { reply in apply(reply) }
+                case .ask(let a):
+                    WhatIsItSheet(ask: a, bills: bills) { reply in apply(reply) }
                 }
             }
             .presentationDetents([.large])
@@ -122,7 +132,9 @@ struct PayAndBillsView: View {
 
     // MARK: Rows
 
-    private var noPay: Bool { data != nil && data!.pays.isEmpty && candidates.isEmpty }
+    private var noPay: Bool {
+        data != nil && data!.pays.isEmpty && candidates.isEmpty && (data!.asks ?? []).isEmpty
+    }
 
     private var candidates: [IncomeBills.Candidate] {
         (data?.candidates ?? []).filter { !notPay.contains($0.payer) }
@@ -172,6 +184,28 @@ struct PayAndBillsView: View {
         .accessibilityHint("Change it")
     }
 
+    /// "Maple Co · Joint account · Whose pay? ›", "e-Transfer from Sam ·
+    /// $725 · monthly · What is it? ›" (O-10f, O-10g).
+    private func askRow(_ a: IncomeBills.Ask) -> some View {
+        Button { sheet = .ask(a) } label: {
+            HStack(spacing: 12) {
+                TrendBadge()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(a.name).font(Nacre.body)
+                    Text(a.kind == "joint" ? "Joint account" : "\(Format.whole(a.amount)) · \(cadence(a.cadence).lowercased())")
+                        .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                }
+                Spacer(minLength: 8)
+                Text(a.kind == "joint" ? "Whose pay?" : "What is it?")
+                    .font(Nacre.headline).foregroundColor(Pearl.action)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
     private func billRow(_ bill: IncomeBills.Bill) -> some View {
         let on = ticked[bill.key] ?? bill.ticked ?? true
         return HStack(spacing: 12) {
@@ -211,9 +245,11 @@ struct PayAndBillsView: View {
 
     private func billWhen(_ bill: IncomeBills.Bill) -> String {
         let how = cadence(bill.cadence)
-        if bill.varies == true { return "\(how) · varies" }
-        guard let day = bill.day else { return how }
-        return "\(how) · around the \(ordinal(day))"
+        // "Monthly · Sam pays $725": someone's share comes off it (O-10g).
+        let shared = bill.shared.map { " · \($0.person ?? "They") pay\($0.person == nil ? "" : "s") \(Format.whole($0.amount))" } ?? ""
+        if bill.varies == true { return "\(how) · varies" + shared }
+        guard let day = bill.day else { return how + shared }
+        return "\(how) · around the \(ordinal(day))" + shared
     }
 
     // MARK: Loading and saving

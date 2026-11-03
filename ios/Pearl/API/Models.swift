@@ -143,6 +143,23 @@ struct IncomeBills: Decodable {
     let pays: [Pay]
     let candidates: [Candidate]
     let bills: [Bill]
+    /// O-10f, O-10g: a regular deposit setup asks about before it can be pay.
+    let asks: [Ask]?
+
+    struct Ask: Decodable, Identifiable, Hashable {
+        /// "joint" (Whose pay?) or "etransfer" (What is it?).
+        let kind: String
+        let key: String
+        let payer: String
+        let name: String
+        let amount: Double
+        let cadence: String
+        let txn: String
+        let people: [String]?
+        let share: Double?
+        let person: String?
+        var id: String { key }
+    }
 
     struct Pay: Decodable, Identifiable, Hashable {
         let id: String
@@ -174,7 +191,14 @@ struct IncomeBills: Decodable {
         let category: String?
         let ticked: Bool?
         let source: String?
+        /// Someone's share that comes off it (O-10g).
+        let shared: Shared?
         var id: String { key }
+
+        struct Shared: Decodable, Hashable {
+            let person: String?
+            let amount: Double
+        }
     }
 }
 
