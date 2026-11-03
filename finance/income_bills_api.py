@@ -4,6 +4,11 @@ I-06), and Profile › Income and bills, which shows the same answers.
 Every write returns the whole check again, so a screen never has to work
 out a total itself. See `income_bills` for what each answer means and how
 safe-to-spend and the path use it.
+
+* GET  /api/transactions/<id>/bill   what "Add to your bills?" (T-32) starts
+  with for this purchase: how often, the next payment, her share.
+* POST /api/transactions/<id>/bill   {cadence, next, share, category}: it's
+  a bill. One Pearl already found for that merchant is the one that counts.
 """
 
 from __future__ import annotations
@@ -292,3 +297,97 @@ def income_bills_rent():
     apply_transfer_matches(st)
     ib.save(st, state)
     return jsonify(_payload(st))
+
+
+# ── A bill from a transaction (T-32) ─────────────────────────────────────
+
+_EVERY = {"weekly": "every week", "biweekly": "every 2 weeks", "monthly": "every month",
+          "bimonthly": "every 2 months", "quarterly": "every 3 months",
+          "semiannual": "every 6 months", "annual": "every year"}
+_STEP_DAYS = {"weekly": 7, "biweekly": 14}
+_STEP_MONTHS = {"monthly": 1, "bimonthly": 2, "quarterly": 3, "semiannual": 6, "annual": 12}
+
+
+def _next_after(day: date, cadence: str, today: date) -> date:
+    """The first payment after this one that isn't in the past."""
+    from datetime import timedelta
+    nxt = day
+    while nxt <= day or nxt < today:
+        if cadence in _STEP_DAYS:
+            nxt = nxt + timedelta(days=_STEP_DAYS[cadence])
+        else:
+            nxt = ib._add_months(nxt, _STEP_MONTHS.get(cadence, 1), day.day)
+    return nxt
+
+
+def _found_bill(rows: list[dict], merchant: str) -> dict | None:
+    return next((r for r in rows if r["source"] == "found" and r.get("merchant") == merchant), None)
+
+
+def _charge_or_error(st, txn_id: str):
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return None, _error("No such transaction.", 404)
+    if t.amount <= 0:
+        return None, _error("Only money going out can be a bill.")
+    return t, None
+
+
+@bp.get("/transactions/<txn_id>/bill")
+def transaction_bill_get(txn_id: str):
+    st = store()
+    t, err = _charge_or_error(st, txn_id)
+    if err:
+        return err
+    today = date.fromisoformat(_today_iso())
+    found = _found_bill(ib.bills(st.all_transactions(), today, ib.load(st)), t.merchant)
+    cadence = found["cadence"] if found and found["cadence"] in ib.BILL_CADENCES else "monthly"
+    nxt = found["next"] if found else _next_after(date.fromisoformat(t.date[:10]), cadence,
+                                                   today).isoformat()
+    share = round(t.my_share / t.amount * 100) if t.my_share is not None and t.amount else 100
+    return jsonify({"name": t.merchant, "amount": round(t.amount, 2), "cadence": cadence,
+                    "next": nxt, "share": max(1, min(100, share)), "category": t.category or "Other",
+                    "is_bill": bool(found and found["counts"])})
+
+
+@bp.post("/transactions/<txn_id>/bill")
+def transaction_bill_add(txn_id: str):
+    from .categorize import CATEGORIES
+    st = store()
+    t, err = _charge_or_error(st, txn_id)
+    if err:
+        return err
+    body = _body()
+    cadence = body.get("cadence")
+    if cadence not in ib.BILL_CADENCES:
+        return _error("Choose how often it’s due.")
+    nxt = ib.clean_date(body.get("next"))
+    if nxt is None:
+        return _error("Choose the next due date.")
+    try:
+        share = float(body.get("share", 100))
+    except (TypeError, ValueError):
+        share = -1
+    if not 0 < share <= 100:
+        return _error("Your share is between 1% and 100%.")
+    category = body.get("category") or t.category or "Other"
+    if category not in CATEGORIES:
+        return _error("Choose a category.")
+    amount = round(t.amount * share / 100, 2)
+    today = date.fromisoformat(_today_iso())
+    state = ib.load(st)
+    found = _found_bill(ib.bills(st.all_transactions(), today, state), t.merchant)
+    if found:
+        key = found["key"]
+        state["bills"][key] = {"state": "yes", "name": t.merchant, "amount": amount,
+                               "cadence": cadence, "next": nxt}
+    else:
+        bill = {"id": ib.next_id(state, "b"), "name": t.merchant, "amount": amount,
+                "cadence": cadence, "next": nxt, "varies": False, "merchant": t.merchant,
+                "category": category}
+        state["added"].append(bill)
+        key = f"added:{bill['id']}"
+    state["bills_on"] = state["bills_on"] or today.isoformat()
+    ib.save(st, state)
+    return jsonify({"ok": True, "key": key,
+                    "title": f"{t.merchant} is in your bills: ${amount:,.2f} {_EVERY[cadence]}."})

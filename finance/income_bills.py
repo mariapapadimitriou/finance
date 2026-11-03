@@ -364,9 +364,10 @@ def bills(transactions: list[Transaction], today: date, state: dict | None) -> l
     for b in state.get("added") or []:
         key = f"added:{b['id']}"
         out.append({
-            "key": key, "name": b["name"], "merchant": "", "amount": b["amount"],
+            "key": key, "name": b["name"], "merchant": b.get("merchant") or "", "amount": b["amount"],
             "varies": bool(b.get("varies")), "cadence": b["cadence"], "next": b["next"],
-            "day": _d(b["next"]).day, "category": "Other", "counts": True, "ticked": True,
+            "day": _d(b["next"]).day, "category": b.get("category") or "Other",
+            "counts": True, "ticked": True,
             "source": "added", "edited": False, "dates": [], "rec": None,
         })
     return out
