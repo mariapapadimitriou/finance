@@ -33,6 +33,12 @@ struct ProfileView: View {
                         row("Linked accounts", chevron: true)
                     }
                     .buttonStyle(.plain)
+                    Rectangle().fill(Pearl.rule).frame(height: 1)
+                    // Help isn't a tab in the new bar (THL-209), so it lives here.
+                    NavigationLink { HelpView() } label: {
+                        row("Help and support", chevron: true)
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 PearlCard(padding: 0, spacing: 0) {

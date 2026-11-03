@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Help and support: How we protect you (T-04), as on the web — what Pearl
+/// Help and support, from Profile: How we protect you (T-04), as on the web — what Pearl
 /// can and can't do, the banks it reads, and a way to reach a person.
 @MainActor
 struct HelpView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
     @State private var privacy: Privacy?
     @State private var error: String?
 
@@ -50,7 +51,19 @@ struct HelpView: View {
             .padding(.vertical, 24)
         }
         .pearlPage()
-        .navigationBarHidden(true)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(Pearl.ink)
+                }
+                .accessibilityLabel("Back")
+            }
+        }
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
         .task(id: app.version) { await load() }
     }

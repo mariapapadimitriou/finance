@@ -15,7 +15,6 @@
 		197D74CCEC857E06FD81CB2C /* Nacre.swift in Sources */ = {isa = PBXBuildFile; fileRef = A959B442690D5F84B1A63FFA /* Nacre.swift */; };
 		B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97809C6135186A3BD204F423 /* Theme.swift */; };
 		D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = C497270FF4823ED50730E0BC /* Components.swift */; };
-		2D87BDD1BFBA43066EAAD9A8 /* PearlTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDFBF20E490A5725C46595AC /* PearlTabBar.swift */; };
 		C16A72243F03CBEE1A963979 /* HelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA063D67E5820FB107B21E9 /* HelpView.swift */; };
 		F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F7C177E913CEBE0B53FA5 /* HomeView.swift */; };
 		7579BBE295A41A951C73B4E3 /* AllowanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49B60D0B387295A6F5633F43 /* AllowanceView.swift */; };
@@ -60,7 +59,6 @@
 		A959B442690D5F84B1A63FFA /* Nacre.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nacre.swift; sourceTree = "<group>"; };
 		97809C6135186A3BD204F423 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		C497270FF4823ED50730E0BC /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
-		CDFBF20E490A5725C46595AC /* PearlTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlTabBar.swift; sourceTree = "<group>"; };
 		5BA063D67E5820FB107B21E9 /* HelpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpView.swift; sourceTree = "<group>"; };
 		663F7C177E913CEBE0B53FA5 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		49B60D0B387295A6F5633F43 /* AllowanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowanceView.swift; sourceTree = "<group>"; };
@@ -196,7 +194,6 @@
 			isa = PBXGroup;
 			children = (
 				C497270FF4823ED50730E0BC /* Components.swift */,
-				CDFBF20E490A5725C46595AC /* PearlTabBar.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -356,7 +353,6 @@
 				197D74CCEC857E06FD81CB2C /* Nacre.swift in Sources */,
 				B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */,
 				D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */,
-				2D87BDD1BFBA43066EAAD9A8 /* PearlTabBar.swift in Sources */,
 				C16A72243F03CBEE1A963979 /* HelpView.swift in Sources */,
 				F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */,
 				7579BBE295A41A951C73B4E3 /* AllowanceView.swift in Sources */,
