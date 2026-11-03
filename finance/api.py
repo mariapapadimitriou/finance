@@ -297,6 +297,16 @@ def transaction_detail(txn_id: str):
         txns = [x for x, _ in rows]
         splits, payer = st.splits(), st.payback_people()
         r = dict(_needs_a_look(st)[1](r))
+        if t.amount < 0:
+            # THL-198: what kind of income it is, and the regular pay it is,
+            # when its payer is one of hers in Income and bills.
+            from . import income_bills as ib
+            r["income_type"] = t.income_type
+            payer_name = ib.clean_name(t.merchant)
+            pay = next((p for p in ib.load(st)["pays"]
+                        if payer_name and p.get("payer") == payer_name), None)
+            r["regular_pay"] = ({k: pay.get(k) for k in ("id", "name", "amount", "cadence", "next")}
+                                if pay else None)
         # U-03: when it was left out, and a usual month of its group.
         from .transactions_extras_api import one_off_line
         r["one_off_line"] = one_off_line(st, txns, t)
