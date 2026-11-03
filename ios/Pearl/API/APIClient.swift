@@ -57,8 +57,8 @@ final class APIClient {
         try await send("PATCH", path, query: [:], body: body)
     }
 
-    func delete<T: Decodable>(_ path: String) async throws -> T {
-        try await send("DELETE", path, query: [:], body: nil)
+    func delete<T: Decodable>(_ path: String, query: [String: String] = [:]) async throws -> T {
+        try await send("DELETE", path, query: query, body: nil)
     }
 
     private func send<T: Decodable>(_ method: String, _ path: String, query: [String: String],

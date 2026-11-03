@@ -312,6 +312,18 @@ def build(transactions: list[Transaction], today: str | None = None,
         income.append({"key": key, "txn": _brief(t), "guess": kind,
                        "guess_label": KINDS[kind], "reason": reason})
 
+    # 4b. What's left of a deposit split into parts (THL-291): "$172 left to
+    # sort", asked as money in until she says what it is.
+    from .parts import rest_questions
+    for q in rest_questions(None, transactions):
+        rt = q["t"]
+        key = "in:" + rt.fingerprint
+        if key in dismissed:
+            continue
+        money_in.append({"key": key, "txn": _brief(rt), "guess": {"action": "rest"},
+                         "rest": {"whole": q["whole"], "sorted": q["sorted"]},
+                         "reason": f"${-rt.amount:,.2f} left to sort from a ${q['whole']:,.2f} deposit."})
+
     # 5. Months with a third paycheque.
     pay = cadence(transactions, today_d.isoformat())
     three = []

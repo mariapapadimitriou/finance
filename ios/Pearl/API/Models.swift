@@ -372,6 +372,12 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// this payer, when it is one (THL-198).
     let incomeType: String?
     let regularPay: RegularPay?
+    /// A purchase split with people (THL-291): your part and each of theirs.
+    let splitting: Splitting?
+    /// A deposit split into parts, or a part of one.
+    let parts: [DepositPart]
+    let partOf: PartOf?
+    let leftToSort: Bool
     let oneOffLine: OneOffLine?
     let repaidBy: [Brief]
     let transfer: Transfer?
@@ -406,6 +412,40 @@ struct Transaction: Decodable, Identifiable, Hashable {
         }
 
         var name: String { person ?? merchant ?? description ?? "Transaction" }
+    }
+
+    struct Splitting: Decodable, Hashable {
+        let mode: String?
+        let you: Double
+        let people: [Person]
+
+        struct Person: Decodable, Hashable, Identifiable {
+            let name: String
+            let amount: Double
+            let paid: Double
+            let owes: Double
+            let paidOn: String?
+            let cash: Double?
+            let cashIds: [Int]?
+            let letGo: LetGo?
+            var id: String { name }
+
+            struct LetGo: Decodable, Hashable { let was: Double; let day: String }
+
+            enum CodingKeys: String, CodingKey {
+                case name, amount, paid, owes, cash
+                case paidOn = "paid_on"
+                case cashIds = "cash_ids"
+                case letGo = "let_go"
+            }
+        }
+    }
+
+    struct PartOf: Decodable, Hashable {
+        let id: String
+        let amount: Double
+        let date: String
+        let parts: [DepositPart]
     }
 
     struct RegularPay: Decodable, Hashable {
@@ -449,6 +489,9 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case oneOffLine = "one_off_line"
         case incomeType = "income_type"
         case regularPay = "regular_pay"
+        case splitting, parts
+        case partOf = "part_of"
+        case leftToSort = "left_to_sort"
         case repaidBy = "repaid_by"
         case repaysCharge = "repays_charge"
     }
@@ -495,6 +538,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
         oneOffLine = opt(OneOffLine.self, .oneOffLine)
         incomeType = opt(String.self, .incomeType)
         regularPay = opt(RegularPay.self, .regularPay)
+        splitting = opt(Splitting.self, .splitting)
+        parts = opt([DepositPart].self, .parts) ?? []
+        partOf = opt(PartOf.self, .partOf)
+        leftToSort = opt(Bool.self, .leftToSort) ?? false
         repaidBy = opt([Brief].self, .repaidBy) ?? []
         transfer = opt(Transfer.self, .transfer)
         repaysCharge = opt(Brief.self, .repaysCharge)
@@ -519,6 +566,86 @@ struct Transaction: Decodable, Identifiable, Hashable {
 
     static func == (a: Transaction, b: Transaction) -> Bool { a.id == b.id && a.category == b.category }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+/// One part of a deposit (THL-291): a payback, a gift, money from her own
+/// accounts…, and the purchase it pays back.
+struct DepositPart: Decodable, Hashable, Identifiable {
+    let id: String
+    let kind: String
+    let amount: Double
+    let person: String?
+    let incomeKind: String?
+    let category: String?
+    let charge: Charge?
+    let sorted: Bool?
+
+    struct Charge: Decodable, Hashable {
+        let id: String
+        let merchant: String
+        let date: String
+        let amount: Double
+        let category: String?
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, amount, person, category, charge, sorted
+        case incomeKind = "income_kind"
+    }
+
+    /// "Payback · Flight to Athens", "Gift", "Dad overpaid".
+    var label: String {
+        switch kind {
+        case "payback": return "Payback" + (charge.map { " · \($0.merchant)" } ?? "")
+        case "refund": return "Refund" + (charge.map { " · \($0.merchant)" } ?? "")
+        case "gift": return "Gift"
+        case "income": return "Income"
+        case "moved": return "From my own accounts"
+        case "savings": return "Out of savings"
+        case "cash": return "Cash you were paid"
+        case "overpaid": return "\(person ?? "They") overpaid"
+        case "category": return category ?? "Other"
+        default: return "Left to sort"
+        }
+    }
+}
+
+/// GET /api/owed (S-14).
+struct OwedOverview: Decodable {
+    let total: Double
+    let people: Int
+    let owesYou: [Row]
+    let youOwe: [Row]
+    let paidBack: [Back]
+
+    struct Row: Decodable, Hashable, Identifiable {
+        let name: String
+        let total: Double
+        let items: [Item]
+        var id: String { name }
+
+        struct Item: Decodable, Hashable {
+            let merchant: String?
+            let date: String
+            let owes: Double?
+            let amount: Double?
+        }
+    }
+
+    struct Back: Decodable, Hashable {
+        let name: String?
+        let merchant: String?
+        let date: String
+        let amount: Double
+        let cash: Bool?
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case total, people
+        case owesYou = "owes_you"
+        case youOwe = "you_owe"
+        case paidBack = "paid_back"
+    }
 }
 
 /// What turning one-off on or off answers (U-02's toast).
@@ -646,11 +773,19 @@ struct Review: Decodable {
         let candidates: [BriefTransaction]?
         /// A recurring transfer's pattern ("every month, around the 10th").
         let series: Series?
+        /// The part of a deposit left to sort (THL-291): the whole deposit
+        /// and how much of it is sorted.
+        let rest: Rest?
 
         var id: String { key }
 
+        struct Rest: Decodable, Hashable {
+            let whole: Double
+            let sorted: Double
+        }
+
         enum CodingKeys: String, CodingKey {
-            case key, txn, reason, skipped, from, guess, label, people, candidates, series
+            case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest
             case guessLabel = "guess_label"
         }
 
@@ -659,7 +794,7 @@ struct Review: Decodable {
             self.txn = txn
             self.skipped = skipped
             reason = nil; from = nil; guessLabel = nil; guess = nil
-            label = nil; people = nil; candidates = nil; series = nil
+            label = nil; people = nil; candidates = nil; series = nil; rest = nil
         }
 
         init(from decoder: Decoder) throws {
@@ -676,6 +811,7 @@ struct Review: Decodable {
             people = opt([String].self, .people)
             candidates = (opt([Lenient<BriefTransaction>].self, .candidates))?.compactMap { $0.value }
             series = opt(Series.self, .series)
+            rest = opt(Rest.self, .rest)
         }
 
         static func == (a: Item, b: Item) -> Bool { a.key == b.key }
@@ -728,7 +864,7 @@ struct Ask: Identifiable, Hashable {
         switch kind {
         case .category: return "\(item.guess?.text ?? t.category ?? "Other")?"
         case .transfer: return "Saved or spent?"
-        case .moneyIn: return "What was this?"
+        case .moneyIn: return item.rest != nil ? "\(Format.amount(t.amount)) left to sort" : "What was this?"
         case .incomeType: return "What kind of income?"
         case .joint: return "Whose?"
         case .whoSent: return "Who sent this?"

@@ -87,10 +87,23 @@ def even_amounts(total: float, n_people: int) -> tuple[float, list[float]]:
     return round(total - sum(theirs), 2), theirs
 
 
-def validate(charge: Transaction, mode: str, people: list) -> tuple[list[dict], str | None]:
-    """Clean the people of a split, or say what is wrong with them."""
-    if mode not in ("even", "amount"):
-        return [], "Split evenly or by amount."
+MODES = ("even", "amount", "percent", "shares")
+
+
+def _cents(x) -> int:
+    return int(round(float(x) * 100))
+
+
+def validate(charge: Transaction, mode: str, people: list, you=None,
+             include_me: bool = True) -> tuple[list[dict], str | None]:
+    """Clean the people of a split, or say what is wrong with them.
+
+    THL-291: evenly (any odd cent to you), by amount, by percent or by
+    shares. `you` is your own amount, percent or shares; with it, the parts
+    must add up to the whole charge exactly ("$4.12 left to assign"). With
+    `include_me` off ("I had some too" off) your share is nothing."""
+    if mode not in MODES:
+        return [], "Split evenly, by amount, by percent or by shares."
     if not isinstance(people, list) or not people:
         return [], "Add someone to split it with."
     if len(people) > MAX_PEOPLE:
@@ -103,10 +116,41 @@ def validate(charge: Transaction, mode: str, people: list) -> tuple[list[dict], 
         if not name:
             return [], "Give everyone a name."
         clean.append({"name": name, "amount": p.get("amount")})
+    total = _cents(charge.amount)
     if mode == "even":
-        _, theirs = even_amounts(charge.amount, len(clean))
+        if include_me:
+            _, theirs = even_amounts(charge.amount, len(clean))
+        else:
+            # All theirs: split among them, the odd cents to the first.
+            each, odd = divmod(total, len(clean))
+            theirs = [(each + (1 if i < odd else 0)) / 100 for i in range(len(clean))]
         for p, a in zip(clean, theirs):
             p["amount"] = a
+    elif mode in ("percent", "shares"):
+        key = mode
+        try:
+            weights = [float(p.get(key) if isinstance(p.get(key), (int, float, str)) else "x")
+                       for p in people]
+            mine = 0.0 if not include_me else float(you if you is not None else
+                                                  (100 - sum(weights) if mode == "percent" else 1))
+        except (TypeError, ValueError):
+            return [], "Give everyone a number."
+        if any(w < 0 for w in weights) or mine < 0:
+            return [], "A part can’t be less than nothing."
+        whole = sum(weights) + mine
+        if whole <= 0:
+            return [], "Give someone a part."
+        if mode == "percent" and abs(whole - 100) > 0.001:
+            left = 100 - whole
+            return [], (f"{left:g}% left to assign." if left > 0 else f"That’s {-left:g}% too much.")
+        # Theirs rounded down to the cent; what's left over is yours.
+        for p, w in zip(clean, weights):
+            p["amount"] = (total * w // whole) / 100 if whole else 0.0
+            p[key] = w
+        if not include_me:
+            gap = total - sum(_cents(p["amount"]) for p in clean)
+            for i in range(gap):
+                clean[i % len(clean)]["amount"] = round(clean[i % len(clean)]["amount"] + 0.01, 2)
     else:
         for p in clean:
             try:
@@ -115,8 +159,18 @@ def validate(charge: Transaction, mode: str, people: list) -> tuple[list[dict], 
                 return [], f"How much was {p['name']}’s part?"
             if p["amount"] < 0:
                 return [], f"{p['name']}’s part can’t be less than nothing."
-        if sum(p["amount"] for p in clean) > charge.amount + 0.005:
+        theirs = sum(_cents(p["amount"]) for p in clean)
+        mine = None if you is None else _cents(you) if include_me else 0
+        if mine is None and not include_me:
+            mine = 0
+        if mine is not None and theirs + mine != total:
+            gap = total - theirs - mine
+            return [], (f"${gap / 100:,.2f} left to assign." if gap > 0
+                        else f"That’s ${-gap / 100:,.2f} more than the charge.")
+        if theirs > total:
             return [], "Their parts add up to more than the whole charge."
+    for p in clean:
+        p["amount"] = round(p["amount"], 2)
     return clean, None
 
 
@@ -141,6 +195,13 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
     part = {p["name"]: float(p["amount"]) for p in split["people"]}
     paid = {n: 0.0 for n in names}
     when: dict[str, str] = {}
+    # Cash in hand (THL-291) counts as paid the day she marked it.
+    cash = {p["name"]: round(sum(c["amount"] for c in p.get("cash") or []), 2)
+            for p in split["people"]}
+    for p in split["people"]:
+        for c in p.get("cash") or []:
+            paid[p["name"]] = round(paid[p["name"]] + c["amount"], 2)
+            when[p["name"]] = max(when.get(p["name"], ""), c["day"])
     unnamed: list[Transaction] = []
     for t in sorted(_linked(charge.fingerprint, transactions), key=lambda x: x.date):
         who = payer.get(t.fingerprint)
@@ -169,7 +230,10 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
     for p in split["people"]:
         owes = round(max(p["amount"] - paid[p["name"]], 0.0), 2)
         out.append({"name": p["name"], "amount": p["amount"], "paid": paid[p["name"]],
-                    "owes": owes, "paid_on": when.get(p["name"]) if owes < 0.005 else None})
+                    "owes": owes, "paid_on": when.get(p["name"]) if owes < 0.005 else None,
+                    "cash": cash.get(p["name"], 0.0),
+                    "cash_ids": [c["id"] for c in p.get("cash") or []],
+                    "let_go": p.get("let_go")})
     return out
 
 
