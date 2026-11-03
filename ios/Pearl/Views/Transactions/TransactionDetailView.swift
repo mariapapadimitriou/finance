@@ -34,6 +34,8 @@ struct TransactionDetailView: View {
     @State private var parting: PartsDeposit?
     @State private var unlinking = false
     @State private var recent: [String] = []
+    /// A transaction added by hand can be taken out again.
+    @State private var deleting = false
     @State private var busy = false
     @State private var message: String?
     @State private var error: String?
@@ -587,12 +589,23 @@ struct TransactionDetailView: View {
         }
     }
 
-    /// "Not income?" (T-37) under income.
+    /// "Not income?" (T-37) under income; Delete under one added by hand.
     @ViewBuilder private var footerAction: some View {
         if isIncome {
             Button("Not income?") { asking = Asking(step: .into) }
                 .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
                 .padding(.top, 12)
+        }
+        if t.manual {
+            Button("Delete transaction") { deleting = true }
+                .buttonStyle(NacreTextButtonStyle(tone: Pearl.moneyOut))
+                .padding(.top, isIncome ? 0 : 12)
+                .disabled(busy)
+                .confirmationDialog("Delete \(t.merchant)?", isPresented: $deleting, titleVisibility: .visible) {
+                    Button("Delete", role: .destructive) { Task { await delete() } }
+                } message: {
+                    Text("You added it by hand. It comes out of your numbers.")
+                }
         }
     }
 
@@ -762,6 +775,18 @@ struct TransactionDetailView: View {
             let reply: Reply = try await app.api.delete("api/transactions/\(t.id)/parts")
             detail = try await app.api.get("api/transactions/\(reply.id)")
             return reply.title
+        }
+    }
+
+    private func delete() async {
+        busy = true
+        defer { busy = false }
+        do {
+            let _: OK = try await app.api.delete("api/transactions/\(t.id)")
+            app.changed()
+            dismiss()
+        } catch {
+            self.error = app.handle(error)
         }
     }
 
