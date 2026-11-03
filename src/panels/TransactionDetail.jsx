@@ -342,7 +342,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
           <span className="pk-label pk-muted">{longDate(tx.date)}</span>
         </div>
         <span className={`txd-amount ${muted ? 'muted' : amountTone(tx.inflow)}`}>
-          <span className="pk-h1">{txAmount(tx.amount, { inflow: tx.inflow && !muted, signed: !muted })}</span>
+          <span className="pk-h1">{txAmount(tx.amount, { inflow: tx.inflow, signed: true })}</span>
           {tx.split && (
             <span className="pk-label pk-muted txd-sub">your share of {txAmount(tx.full_amount)}</span>
           )}

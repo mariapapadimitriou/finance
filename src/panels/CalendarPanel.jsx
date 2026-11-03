@@ -439,8 +439,9 @@ export function RangeBody({ d, onClose, onSort, onChange, onTransactions }) {
                   <span>{r.merchant}</span>
                   <span className="pk-label pk-muted">{`${r.why} · stays as it is`}</span>
                 </span>
-                <span className={`cal-amt${r.inflow ? ' in' : r.why === 'Bill' ? '' : ' flat'}`}>
-                  {txAmount(r.amount, { inflow: r.inflow, signed: r.inflow || r.why === 'Bill' })}
+                {/* Not counted: grey, but signed either way (THL-258). */}
+                <span className={`cal-amt${r.why === 'Bill' ? '' : ' flat'}`}>
+                  {txAmount(r.amount, { inflow: r.inflow, signed: true })}
                 </span>
               </li>
             ))}

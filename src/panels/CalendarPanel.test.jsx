@@ -145,7 +145,8 @@ describe('Select days (CAL-06 to CAL-09)', () => {
     staying: 'Staying as they are: 2 bills and subscriptions, 1 transfer. Money in, transfers, card payments, savings and lending never change.',
     by_category: [{ category: 'Lodging', count: 6, total: 640 }, { category: 'Dining out', count: 9, total: 412.6 }],
     not_counted: [{ id: 'r', merchant: 'Rogers', why: 'Bill', amount: 85, inflow: false },
-                  { id: 'v', merchant: 'Payment to Visa', why: 'Transfers', amount: 612, inflow: false }],
+                  { id: 'v', merchant: 'Payment to Visa', why: 'Transfers', amount: 612, inflow: false },
+                  { id: 'w', merchant: 'From TD Chequing', why: 'Transfers', amount: 612, inflow: true }],
     ranges: [],
   };
 
@@ -182,6 +183,9 @@ describe('Select days (CAL-06 to CAL-09)', () => {
     expect(out).toContain('-$640.00');
     expect(out).toContain('Not counted here');
     expect(out).toContain('Bill · stays as it is');
+    // A transfer isn't counted: grey, but signed which way it went (THL-258).
+    expect(out).toContain('<span class="cal-amt flat">-$612.00</span>');
+    expect(out).toContain('<span class="cal-amt flat">+$612.00</span>');
     expect(out).toContain('Sort these 4 days');
     expect(out).toContain('See these 23 transactions');
     expect(out).not.toContain('chest');
