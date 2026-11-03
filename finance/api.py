@@ -328,7 +328,9 @@ def transaction_detail(txn_id: str):
                 "people": sp.people_status(t, split, txns, payer),
             }
         if t.amount > 0:
-            r["repaid_by"] = [dict(_txn_brief(x), person=payer.get(x.fingerprint))
+            # `paid`: how much of each went to this charge (S-26: $228 of $600).
+            r["repaid_by"] = [dict(_txn_brief(x), person=payer.get(x.fingerprint),
+                                   paid=round(x.paid_part, 2))
                               for x in txns if x.repays == txn_id]
         # The other end of a transfer between her accounts (2026-10-22).
         from .transfers import transfer_pairs
@@ -861,7 +863,9 @@ def _payback_candidates(charge, txns) -> list[dict]:
     from datetime import date as _date
     from .splits import bought_on
     start = bought_on(charge)
-    remaining = round(charge.amount - (charge.paid_back or 0.0), 2)
+    # What can still be paid back: the others' part of a split, else all of it.
+    theirs = charge.amount - charge.my_share if charge.my_share is not None else charge.amount
+    remaining = round(theirs - (charge.paid_back or 0.0), 2)
     out = []
     for t in txns:
         if t.amount >= 0 or t.repays or t.fingerprint == charge.fingerprint:
@@ -872,15 +876,19 @@ def _payback_candidates(charge, txns) -> list[dict]:
         if gap < -_PAYBACK_BEFORE_DAYS or gap > _PAYBACK_AFTER_DAYS:
             continue
         amount = -t.amount
-        if amount > remaining + 0.005:
-            continue
         name = f"{t.merchant} {t.description}".lower()
         by_name = any(k in name for k in _PAYBACK_NAMES)
+        # More than is left can still pay part of it (S-26: $228 of Dad's
+        # $600), from someone sending money; a bigger paycheque can't.
+        if amount > remaining + 0.005 and not by_name:
+            continue
         # $20 back on an $80 charge is a quarter: one of four people.
         even = any(abs(charge.amount / n - amount) < 0.51 for n in range(2, 11))
         out.append((0 if by_name else 1, 0 if even else 1, abs(gap), t))
     out.sort(key=lambda r: r[:3])
-    return [dict(_txn_brief(t), likely=(a == 0 and b == 0)) for a, b, _, t in out[:12]]
+    return [dict(_txn_brief(t), likely=(a == 0 and b == 0 and -t.amount <= remaining + 0.005),
+                 part=round(min(-t.amount, remaining), 2))
+            for a, b, _, t in out[:12]]
 
 
 @bp.get("/transactions/<txn_id>/paybacks")

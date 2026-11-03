@@ -345,11 +345,16 @@ struct TransactionDetailView: View {
     /// payback is for.
     @ViewBuilder private var linked: some View {
         if !t.repaidBy.isEmpty {
-            section("Paid back")
+            // A split shows who paid back below; this is the money that did.
+            section(t.splitting == nil ? "Paid back" : "Paid back with")
             SolidCard {
                 ForEach(Array(t.repaidBy.enumerated()), id: \.element.id) { index, b in
                     if index > 0 { RowSeparator(inset: 72) }
-                    linkedRow(name: b.merchant ?? b.name, sub: Format.short(b.date), amount: b.amount, inflow: true)
+                    let part = b.paid.flatMap { abs($0 - abs(b.amount)) >= 0.005 ? $0 : nil }
+                    linkedRow(name: b.merchant ?? b.name,
+                              sub: [Format.short(b.date), part.map { _ in "part of \(Format.whole(abs(b.amount)))" }]
+                                .compactMap { $0 }.joined(separator: " · "),
+                              amount: part ?? abs(b.amount), inflow: true)
                 }
             }
         }

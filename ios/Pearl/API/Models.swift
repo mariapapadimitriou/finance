@@ -455,9 +455,11 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let amount: Double
         let accountName: String?
         let person: String?
+        /// The part of it that paid this back, when that's less than all.
+        let paid: Double?
 
         enum CodingKeys: String, CodingKey {
-            case id, date, merchant, description, amount, person
+            case id, date, merchant, description, amount, person, paid
             case accountName = "account_name"
         }
 
