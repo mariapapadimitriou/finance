@@ -26,6 +26,7 @@
 		619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */; };
 		3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */; };
 		658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 186A54E5EB12390A80B72B43 /* ProfileView.swift */; };
+		8541BEB8A83C0BFE242DC4CF /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC55387F573CD646F00874AD /* SettingsViews.swift */; };
 		5A36E4EB024471EF85DA99C8 /* AnswerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4499405DBDB62F2EAAD28248 /* AnswerSheet.swift */; };
 		5A97F97C51EB0251937EA8B1 /* QuickSortView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF92F0A38EF8C1E53492329D /* QuickSortView.swift */; };
 		5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02873771C6DC13EA678089B1 /* ReviewView.swift */; };
@@ -69,6 +70,7 @@
 		D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupFlow.swift; sourceTree = "<group>"; };
 		44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupPayQuestions.swift; sourceTree = "<group>"; };
 		186A54E5EB12390A80B72B43 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		CC55387F573CD646F00874AD /* SettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViews.swift; sourceTree = "<group>"; };
 		4499405DBDB62F2EAAD28248 /* AnswerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnswerSheet.swift; sourceTree = "<group>"; };
 		CF92F0A38EF8C1E53492329D /* QuickSortView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSortView.swift; sourceTree = "<group>"; };
 		02873771C6DC13EA678089B1 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
@@ -231,6 +233,7 @@
 			isa = PBXGroup;
 			children = (
 				186A54E5EB12390A80B72B43 /* ProfileView.swift */,
+				CC55387F573CD646F00874AD /* SettingsViews.swift */,
 			);
 			path = Profile;
 			sourceTree = "<group>";
@@ -361,6 +364,7 @@
 				619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */,
 				3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */,
 				658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */,
+				8541BEB8A83C0BFE242DC4CF /* SettingsViews.swift in Sources */,
 				5A36E4EB024471EF85DA99C8 /* AnswerSheet.swift in Sources */,
 				5A97F97C51EB0251937EA8B1 /* QuickSortView.swift in Sources */,
 				5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */,
