@@ -1,133 +1,555 @@
 import SwiftUI
 
-/// One transaction (AB-22): what it counts as, and changing its category.
+/// One transaction (THL-122, T-03): who and how much, what it counts as,
+/// Pearl's guess to confirm (T-38), the payback or refund it's linked to
+/// (T-39, T-41), one-off (T-42), a note and tags; a transfer between her
+/// accounts shows both ends (T-05).
 @MainActor
 struct TransactionDetailView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
     let transaction: Transaction
     let categories: [CategoryList.Category]
+    var siblings: [Transaction] = []
 
-    @State private var category: String?
+    /// The full detail once it's come back; the list's row until then.
+    @State private var detail: Transaction?
     @State private var picking = false
+    @State private var editingNote = false
+    @State private var editingTags = false
+    @State private var oneOff: Bool?
     @State private var busy = false
     @State private var message: String?
     @State private var error: String?
 
+    private var t: Transaction { detail ?? transaction }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Overline("Transaction", tone: Pearl.action)
-                header
-                if !facts.isEmpty {
-                    PearlCard(padding: 0, spacing: 0, radius: Pearl.radiusTile) {
-                        ForEach(Array(facts.enumerated()), id: \.offset) { index, fact in
-                            if index > 0 { Rectangle().fill(Pearl.border).frame(height: 1) }
-                            HStack(alignment: .firstTextBaseline, spacing: 16) {
-                                Text(fact.label).foregroundColor(Pearl.muted)
-                                Spacer(minLength: 8)
-                                Text(fact.value).foregroundColor(Pearl.ink).multilineTextAlignment(.trailing)
-                            }
-                            .font(Pearl.text(.body))
-                            .padding(.horizontal, 20).padding(.vertical, 14)
-                        }
-                    }
+            VStack(alignment: .leading, spacing: 8) {
+                header.padding(.bottom, 16)
+                if let transfer = t.transfer {
+                    transferLegs(transfer)
+                } else {
+                    if t.suggested { guessCard } else { categoryCard }
+                    linked
+                    options
+                    details
                 }
-                PearlCard(spacing: 10, radius: Pearl.radiusTile) {
-                    Overline("Category")
-                    CategoryChip(label: current)
+                if let message = message {
+                    Text(message).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                        .padding(.horizontal, 16).padding(.top, 8)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                if let note = transaction.note, !note.isEmpty {
-                    Text(note).font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
+                if let error = error {
+                    Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
+                        .padding(.horizontal, 16).padding(.top, 8)
                 }
-                if let description = transaction.description, !description.isEmpty {
-                    PearlCard(spacing: 10, radius: Pearl.radiusTile) {
-                        Overline("From your bank")
-                        Text(description).font(.callout.monospaced()).foregroundColor(Pearl.ink)
-                    }
-                }
-                if let message = message { Notice(text: message) }
-                if let error = error { Notice(text: error, tone: .caution) }
-                Button("Change category") { picking = true }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(busy)
-                    .padding(.top, 4)
+                footerAction
             }
             .padding(.horizontal, Pearl.gutter)
-            .padding(.bottom, 24)
+            .padding(.bottom, 32)
         }
-        .pearlPage()
+        .nacreScreen()
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                // The bar draws the glass circle round it.
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(Pearl.ink)
+                }
+                .accessibilityLabel("Back")
+            }
+        }
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .navigationBarHidden(false)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
         .sheet(isPresented: $picking) {
-            CategoryPicker(categories: categories, current: current, merchant: transaction.merchant) { name, remember in
+            CategoryPicker(categories: categories, current: t.label, merchant: t.merchant) { name, remember in
                 picking = false
                 Task { await change(to: name, remember: remember) }
             }
         }
+        .sheet(isPresented: $editingNote) {
+            NoteSheet(note: t.myNote) { note in
+                editingNote = false
+                Task { await save(note: note) }
+            }
+            .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $editingTags) {
+            TagsSheet(tags: t.tags, known: knownTags) { tags in
+                editingTags = false
+                Task { await save(tags: tags) }
+            }
+            .presentationDetents([.medium, .large])
+        }
     }
 
-    /// Initials, who and when, and the amount.
+    // MARK: Header
+
     private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(initials)
-                .font(Pearl.text(.body, .medium)).foregroundColor(Pearl.ink)
-                .frame(width: 48, height: 48)
-                .background(Circle().fill(Pearl.track))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(transaction.merchant)
-                    .font(Pearl.display(.title3)).tracking(-0.44).foregroundColor(Pearl.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(Format.day(transaction.date))
-                    .font(Pearl.text(.footnote, .medium)).foregroundColor(Pearl.muted)
+        VStack(spacing: 8) {
+            if t.transfer == nil {
+                Initials(name: t.merchant, size: 56)
+                    .overlay(Circle().strokeBorder(
+                        AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
+                        lineWidth: 1.2))
+                    .padding(.bottom, 6)
+            }
+            Text(t.merchant).font(Nacre.title2).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+            Text(Format.money(t))
+                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
+                .foregroundColor(t.tone)
+                .lineLimit(1).minimumScaleFactor(0.5)
+            Text(t.transfer != nil ? "Doesn’t count · Between your accounts" : dateLine)
+                .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center)
+            if t.pending {
+                HStack(spacing: 6) {
+                    Circle().fill(Pearl.moneyOut).frame(width: 8, height: 8)
+                    Text("Pending · amount may change")
+                }
+                .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                .padding(.horizontal, 12).frame(height: 28)
+                .background(Capsule().fill(Nacre.glass))
+                .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+    }
+
+    /// "Wed, Nov 11 · TD Chequing ••4417".
+    private var dateLine: String {
+        let when = Format.relativeDay(t.date) == "Today" ? "Today" : Format.weekdayDay(t.date)
+        return [when, t.account].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    // MARK: What it counts as
+
+    private var categoryCard: some View {
+        Button { picking = true } label: {
+            GlassCard {
+                row(title: t.label, sub: countsLine, chevron: true)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .accessibilityHint("Changes the category")
+    }
+
+    /// "Counts as spending · Essential", "Your share counts · $46 of $86",
+    /// "Refund · lowers Shopping by $68".
+    private var countsLine: String {
+        if !t.excluded.isEmpty { return "Left out · \(t.excluded)" }
+        if t.refundOf != nil {
+            return "Refund · lowers \(t.label) by \(Format.compact(t.amount))"
+        }
+        if t.split, let full = t.fullAmount {
+            return "Your share counts · \(Format.compact(t.amount)) of \(Format.compact(full))"
+        }
+        switch t.counts {
+        case "income": return "Counts as income"
+        case "spending":
+            if t.inflow { return t.note.flatMap { $0.isEmpty ? nil : $0 } ?? "Comes off your spending" }
+            let rest = (oneOff ?? t.oneOff) ? "One-off" : groupName
+            return ["Counts as spending", rest].compactMap { $0 }.joined(separator: " · ")
+        default:
+            return t.note.flatMap { $0.isEmpty ? nil : $0 } ?? "Doesn’t count"
+        }
+    }
+
+    private var groupName: String? {
+        switch t.group {
+        case "essentials": return "Essential"
+        case "lifestyle": return "Lifestyle"
+        case "savings": return "Savings"
+        default: return nil
+        }
+    }
+
+    /// T-38: "Was this dining out?" Yes, or something else.
+    private var guessCard: some View {
+        VStack(spacing: 14) {
+            Text("PEARL’S GUESS").font(Nacre.caption2).tracking(0.6).foregroundColor(Pearl.action)
+            Text("Was this \(t.label.lowercased())?")
+                .font(Nacre.title2).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
+            HStack(spacing: 10) {
+                Button("Yes") { Task { await confirm() } }
+                    .buttonStyle(NacreButtonStyle(busy: busy))
+                Button("Something else") { picking = true }
+                    .font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Capsule().fill(Color.white.opacity(0.8)))
+                    .buttonStyle(.plain)
+            }
+            .disabled(busy)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(.ultraThinMaterial))
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous)
+            .fill(LinearGradient(colors: [Nacre.rose.opacity(0.35), Nacre.lilac.opacity(0.25), Nacre.seaglass.opacity(0.35)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing)))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1.2))
+    }
+
+    // MARK: Linked transactions
+
+    /// PAID BACK (T-39), REFUND FOR (T-41), REFUNDED BY, or the charge a
+    /// payback is for.
+    @ViewBuilder private var linked: some View {
+        if !t.repaidBy.isEmpty {
+            section("Paid back")
+            SolidCard {
+                ForEach(Array(t.repaidBy.enumerated()), id: \.element.id) { index, b in
+                    if index > 0 { RowSeparator(inset: 72) }
+                    linkedRow(name: b.merchant ?? b.name, sub: Format.short(b.date), amount: b.amount, inflow: true)
+                }
+            }
+        }
+        if let charge = t.refundOf {
+            section("Refund for")
+            SolidCard {
+                let category = siblings.first { $0.id == charge.id }?.label
+                linkedRow(name: charge.merchant,
+                          sub: [category, Format.short(charge.date)].compactMap { $0 }.joined(separator: " · "),
+                          amount: charge.amount, inflow: false)
+            }
+        }
+        if !t.refundedBy.isEmpty {
+            section("Refunded by")
+            SolidCard {
+                ForEach(Array(t.refundedBy.enumerated()), id: \.element.id) { index, r in
+                    if index > 0 { RowSeparator(inset: 72) }
+                    linkedRow(name: r.merchant, sub: Format.short(r.date), amount: r.amount, inflow: true)
+                }
+            }
+        }
+        if let charge = t.repaysCharge {
+            section("Pays back")
+            SolidCard {
+                linkedRow(name: charge.merchant ?? charge.name, sub: Format.short(charge.date),
+                          amount: abs(charge.amount), inflow: false)
+            }
+        }
+    }
+
+    private func linkedRow(name: String, sub: String, amount: Double, inflow: Bool) -> some View {
+        HStack(spacing: 14) {
+            Initials(name: name)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
             }
             Spacer(minLength: 8)
-            Text(amount)
-                .font(Pearl.display(.title3)).tracking(-0.44)
-                .foregroundColor(left ? Pearl.muted : (transaction.inflow ? Pearl.moneyIn : Pearl.moneyOut))
-                .lineLimit(1)
+            Text((inflow ? "+" : "\u{2212}") + Format.amount(amount))
+                .font(Nacre.headline).monospacedDigit()
+                .foregroundColor(inflow ? Pearl.ink : Pearl.moneyOut)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Options
+
+    @ViewBuilder private var options: some View {
+        let unlink = t.refundOf != nil
+        let canOneOff = t.canOneOff && !t.inflow
+        if unlink || canOneOff {
+            section("Options")
+            GlassCard {
+                if unlink {
+                    Button { Task { await unlinkRefund() } } label: {
+                        row(title: "Unlink refund", sub: "Count it as money in instead", chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                }
+                if canOneOff {
+                    if unlink { RowSeparator() }
+                    Toggle(isOn: Binding(get: { oneOff ?? t.oneOff },
+                                         set: { on in Task { await setOneOff(on) } })) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("One-off purchase").font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text((oneOff ?? t.oneOff) ? "Left out of your usual month" : "Leave out of your usual month")
+                                .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        }
+                    }
+                    .tint(Pearl.action)
+                    .disabled(busy)
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    if let line = t.oneOffLine?.line, oneOff ?? t.oneOff {
+                        Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                            .padding(.horizontal, 16).padding(.bottom, 12)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
         }
     }
 
-    private var current: String { category ?? transaction.category ?? "Other" }
+    // MARK: Details
 
-    private var left: Bool { !(transaction.excluded ?? "").isEmpty || transaction.countsToward == "none" }
-
-    private var amount: String {
-        if left { return Format.amount(transaction.amount) }
-        return (transaction.inflow ? "+" : "-") + Format.amount(transaction.amount)
-    }
-
-    private var initials: String {
-        transaction.merchant.split(separator: " ").prefix(2)
-            .compactMap { $0.first.map(String.init) }.joined().uppercased()
-    }
-
-    /// Account, what it counts toward, and why it's left out.
-    private var facts: [(label: String, value: String)] {
-        var out: [(label: String, value: String)] = []
-        if let account = transaction.account, !account.isEmpty { out.append(("Account", account)) }
-        if let toward = transaction.countsToward, !toward.isEmpty {
-            out.append(("Counts toward", toward == "none" ? "Not counted" : toward))
+    @ViewBuilder private var details: some View {
+        section("Details")
+        GlassCard {
+            Button { editingNote = true } label: {
+                if t.myNote.isEmpty {
+                    row(title: "Add a note", placeholder: true, chevron: true)
+                } else {
+                    row(title: t.myNote, sub: "Note", chevron: true)
+                }
+            }
+            .buttonStyle(.plain)
+            // A refund's tags are its purchase's (T-41 has no Add tags).
+            if t.refundOf == nil {
+                RowSeparator()
+                Button { editingTags = true } label: {
+                    if t.tags.isEmpty {
+                        row(title: "Add tags", placeholder: true, chevron: true)
+                    } else {
+                        row(title: t.tags.map { "#" + $0 }.joined(separator: "  "), sub: "Tags", chevron: true)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
         }
-        if let excluded = transaction.excluded, !excluded.isEmpty { out.append(("Left out", excluded)) }
-        if transaction.pending == true { out.append(("Status", "Pending")) }
+    }
+
+    /// "Not income?" (T-37) under income.
+    @ViewBuilder private var footerAction: some View {
+        if t.counts == "income" && t.transfer == nil {
+            Button("Not income?") { picking = true }
+                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .padding(.top, 12)
+        }
+    }
+
+    // MARK: A transfer (T-05)
+
+    @ViewBuilder private func transferLegs(_ transfer: Transaction.Transfer) -> some View {
+        let outDate = transfer.from == t.account ? t.date : (transfer.otherDate ?? t.date)
+        let inDate = transfer.to == t.account ? t.date : (transfer.otherDate ?? t.date)
+        SolidCard {
+            leg(account: transfer.from, sub: "Out · \(Format.weekdayDay(outDate))", sign: "\u{2212}")
+            RowSeparator(inset: 72)
+            leg(account: transfer.to, sub: "In · \(Format.weekdayDay(inDate))", sign: "+")
+        }
+        Spacer(minLength: 120)
+        Button("This isn’t a transfer") { picking = true }
+            .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+            .padding(.top, 24)
+    }
+
+    private func leg(account: String, sub: String, sign: String) -> some View {
+        HStack(spacing: 14) {
+            Initials(name: account)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(account).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+            }
+            Spacer(minLength: 8)
+            Text(sign + Format.amount(t.amount)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.muted)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Parts
+
+    private func section(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+            .padding(.horizontal, 16).padding(.top, 12)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func row(title: String, sub: String? = nil, placeholder: Bool = false, chevron: Bool) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(placeholder ? Nacre.body : (sub == nil ? Nacre.body : Nacre.headline))
+                    .foregroundColor(placeholder ? Pearl.muted : Pearl.ink)
+                    .lineLimit(2)
+                if let sub = sub {
+                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                }
+            }
+            Spacer(minLength: 8)
+            if chevron {
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
+            }
+        }
+        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
+        .contentShape(Rectangle())
+    }
+
+    private var knownTags: [String] {
+        var out: [String] = []
+        for tag in siblings.flatMap(\.tags) where !out.contains(tag) { out.append(tag) }
         return out
     }
 
-    private func change(to name: String, remember: Bool) async {
+    // MARK: Changes
+
+    private func load() async {
+        if let full: Transaction = try? await app.api.get("api/transactions/\(transaction.id)") {
+            detail = full
+            oneOff = nil
+        }
+    }
+
+    private func run(_ work: () async throws -> String?) async {
         busy = true
         defer { busy = false }
         do {
-            let _: CategoryChange = try await app.api.patch("api/transactions/\(transaction.id)",
-                                                            ["category": name, "apply_to_merchant": remember])
-            category = name
-            message = remember ? "\(name), and every \(transaction.merchant) from now on." : "Moved to \(name)."
+            message = try await work()
             error = nil
+            await load()
             app.changed()
         } catch {
             self.error = app.handle(error)
         }
+    }
+
+    /// Yes: Pearl's guess was right.
+    private func confirm() async {
+        await run {
+            let _: CategoryChange = try await app.api.put("api/transactions/\(t.id)/confirm")
+            return nil
+        }
+    }
+
+    private func change(to name: String, remember: Bool) async {
+        await run {
+            let _: CategoryChange = try await app.api.patch("api/transactions/\(t.id)",
+                                                            ["category": name, "apply_to_merchant": remember])
+            return remember ? "\(name), and every \(t.merchant) from now on." : "Moved to \(name)."
+        }
+    }
+
+    private func setOneOff(_ on: Bool) async {
+        oneOff = on
+        await run {
+            let reply: OneOffReply = try await app.api.put("api/transactions/\(t.id)/one-off", ["on": on])
+            return [reply.title, reply.detail].compactMap { $0 }.joined(separator: " ")
+        }
+    }
+
+    private func unlinkRefund() async {
+        await run {
+            let _: OK = try await app.api.delete("api/transactions/\(t.id)/refund")
+            return "Unlinked. It counts as money in now."
+        }
+    }
+
+    private func save(note: String) async {
+        await run {
+            let _: OK = try await app.api.put("api/transactions/\(t.id)/note", ["note": note])
+            return nil
+        }
+    }
+
+    private func save(tags: [String]) async {
+        await run {
+            let _: OK = try await app.api.put("api/transactions/\(t.id)/tags", ["tags": tags])
+            return nil
+        }
+    }
+}
+
+/// The white card a linked transaction sits on (T-39, T-41, T-05).
+struct SolidCard<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0, content: content)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Pearl.card))
+            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1.2))
+            .shadow(color: Color(red: 0.4, green: 0.3, blue: 0.6).opacity(0.1), radius: 10, y: 6)
+    }
+}
+
+/// Her own words about it, up to 200 characters.
+struct NoteSheet: View {
+    @State var note: String
+    let onSave: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SheetTitle(title: "Note") { dismiss() }
+            TextField("", text: $note, prompt: Text("What was it for?").foregroundColor(Pearl.muted), axis: .vertical)
+                .font(Nacre.body).lineLimit(3...6)
+                .focused($focused)
+                .padding(16)
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Nacre.glass))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1))
+                .padding(.horizontal, 16)
+                .onChange(of: note) { value in if value.count > 200 { note = String(value.prefix(200)) } }
+            Spacer()
+            Button("Save") { onSave(note.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                .buttonStyle(NacreButtonStyle())
+                .padding(.horizontal, 16).padding(.bottom, 8)
+        }
+        .background(SheetBackground())
+        .onAppear { focused = true }
+    }
+}
+
+/// Tags: hers to name ("Cottage weekend"), any number of them.
+struct TagsSheet: View {
+    @State var tags: [String]
+    let known: [String]
+    let onSave: ([String]) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var typed = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SheetTitle(title: "Tags") { dismiss() }
+            HStack(spacing: 8) {
+                TextField("", text: $typed, prompt: Text("Add a tag").foregroundColor(Pearl.muted))
+                    .font(Nacre.body).autocorrectionDisabled()
+                    .submitLabel(.done)
+                    .onSubmit(add)
+                Button("Add", action: add).font(Nacre.textButton).foregroundColor(Pearl.action)
+                    .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            .padding(.horizontal, 16).frame(height: 48)
+            .background(Capsule().fill(Nacre.glass))
+            .overlay(Capsule().strokeBorder(Nacre.edge, lineWidth: 1))
+            .padding(.horizontal, 16)
+            ScrollView {
+                Chips {
+                    ForEach(Array(Set(tags + known)).sorted(), id: \.self) { tag in
+                        FilterChip(label: tag, on: tags.contains(tag)) {
+                            if let i = tags.firstIndex(of: tag) { tags.remove(at: i) } else { tags.append(tag) }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            Button("Save") { onSave(tags) }
+                .buttonStyle(NacreButtonStyle())
+                .padding(.horizontal, 16).padding(.bottom, 8)
+        }
+        .background(SheetBackground())
+    }
+
+    private func add() {
+        let tag = typed.trimmingCharacters(in: .whitespaces)
+        guard !tag.isEmpty else { return }
+        if !tags.contains(tag) { tags.append(tag) }
+        typed = ""
     }
 }
 

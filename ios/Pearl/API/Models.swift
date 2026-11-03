@@ -114,9 +114,13 @@ struct AccountsOverview: Decodable {
         let historyFrom: String?
         let transactions: Int?
         let itemId: String?
+        /// "up_to_date", "sign_in", "disconnected", "retrying"…
+        let status: String?
+        let updatedAt: String?
 
         enum CodingKeys: String, CodingKey {
-            case id, name, mask, institution, kind, balance, owing, joint, transactions
+            case id, name, mask, institution, kind, balance, owing, joint, transactions, status
+            case updatedAt = "updated_at"
             case jointShare = "joint_share"
             case jointPeople = "joint_people"
             case historyFrom = "history_from"
@@ -124,6 +128,10 @@ struct AccountsOverview: Decodable {
         }
 
         var isCard: Bool { kind == "card" || kind == "loan" }
+        /// Signed out at the bank, or cut off: only signing in again fixes it.
+        var needsReconnect: Bool { status == "sign_in" || status == "disconnected" }
+        /// "TD Visa ••9021".
+        var label: String { (mask ?? "").isEmpty ? name : "\(name) ••\(mask!)" }
     }
 }
 
@@ -293,53 +301,190 @@ struct TransactionList: Decodable {
     let transactions: [Transaction]
     let total: Int
     let monthTotals: Totals?
+    /// Who owes her for splits, and the rows behind it ("Owed to you").
+    let owedIds: [String]
+    /// Every tag she has used, for the filter.
+    let tags: [String]
 
     enum CodingKeys: String, CodingKey {
-        case transactions, total
+        case transactions, total, owed, tags
         case monthTotals = "month_totals"
     }
+
+    private struct Owed: Decodable { let ids: [String]? }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         transactions = try c.decode([Lenient<Transaction>].self, forKey: .transactions).compactMap { $0.value }
         total = try c.decodeIfPresent(Int.self, forKey: .total) ?? transactions.count
         monthTotals = try? c.decodeIfPresent(Totals.self, forKey: .monthTotals)
+        owedIds = ((try? c.decodeIfPresent(Owed.self, forKey: .owed)) ?? nil)?.ids ?? []
+        tags = ((try? c.decodeIfPresent([String].self, forKey: .tags)) ?? nil) ?? []
     }
 
-    struct Totals: Decodable {
+    struct Totals: Decodable, Hashable {
         let income: Double?
         let spent: Double?
         let count: Int?
     }
 }
 
+/// One transaction as the list (THL-122) and its detail describe it.
 struct Transaction: Decodable, Identifiable, Hashable {
     let id: String
     let date: String
     private let merchantName: String?
     let description: String?
-    /// Always positive; `inflow` says which way it went.
+    /// Always positive; `inflow` says which way it went. A split's is her share.
     let amount: Double
     let inflow: Bool
     let category: String?
     let account: String?
+    let accountId: String?
     let note: String?
-    let pending: Bool?
-    let excluded: String?
+    let pending: Bool
+    let excluded: String
     let countsToward: String?
+    /// "spending", "income" or "none".
+    let counts: String
     let chip: Chip?
-    let myNote: String?
+    /// Pearl's guess at the category, waiting for her yes (a dashed chip).
+    let suggested: Bool
+    let myNote: String
+    let split: Bool
+    let fullAmount: Double?
+    let refundOf: Linked?
+    let refundedBy: [Linked]
+    let repays: String?
+    let oneOff: Bool
+    let canOneOff: Bool
+    let tags: [String]
+    let kind: String?
+    let group: String?
+    let categorySource: String?
+    let joint: String
+    let jointPeople: [String]
+    let manual: Bool
+    let recurring: String?
+
+    // Only on GET /api/transactions/<id>.
+    let oneOffLine: OneOffLine?
+    let repaidBy: [Brief]
+    let transfer: Transfer?
+    let repaysCharge: Brief?
 
     struct Chip: Decodable, Hashable {
         let label: String?
         let suggested: Bool?
     }
 
+    /// A refund and the purchase it came off, either way round.
+    struct Linked: Decodable, Hashable {
+        let id: String
+        let merchant: String
+        let date: String
+        let amount: Double
+    }
+
+    /// Another transaction, briefly: a payback, or the charge one repays.
+    struct Brief: Decodable, Hashable {
+        let id: String
+        let date: String
+        let merchant: String?
+        let description: String?
+        let amount: Double
+        let accountName: String?
+        let person: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, date, merchant, description, amount, person
+            case accountName = "account_name"
+        }
+
+        var name: String { person ?? merchant ?? description ?? "Transaction" }
+    }
+
+    struct OneOffLine: Decodable, Hashable {
+        let since: String?
+        let line: String
+    }
+
+    /// The other end of a transfer between her accounts.
+    struct Transfer: Decodable, Hashable {
+        let from: String
+        let to: String
+        let otherId: String?
+        let otherDate: String?
+
+        enum CodingKeys: String, CodingKey {
+            case from, to
+            case otherId = "other_id"
+            case otherDate = "other_date"
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, date, description, amount, inflow, category, account, note, pending, excluded, chip
+        case counts, suggested, split, repays, tags, kind, group, joint, manual, recurring, transfer
         case merchantName = "merchant"
+        case accountId = "account_id"
         case countsToward = "counts_toward"
         case myNote = "my_note"
+        case fullAmount = "full_amount"
+        case refundOf = "refund_of"
+        case refundedBy = "refunded_by"
+        case oneOff = "one_off"
+        case canOneOff = "can_one_off"
+        case categorySource = "category_source"
+        case jointPeople = "joint_people"
+        case oneOffLine = "one_off_line"
+        case repaidBy = "repaid_by"
+        case repaysCharge = "repays_charge"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // The row's identity must be there; everything else has a default,
+        // so one odd field never drops a row from the list.
+        func opt<T: Decodable>(_ type: T.Type, _ key: CodingKeys) -> T? {
+            (try? c.decodeIfPresent(type, forKey: key)) ?? nil
+        }
+        id = try c.decode(String.self, forKey: .id)
+        date = try c.decode(String.self, forKey: .date)
+        amount = try c.decode(Double.self, forKey: .amount)
+        merchantName = opt(String.self, .merchantName)
+        description = opt(String.self, .description)
+        inflow = opt(Bool.self, .inflow) ?? false
+        category = opt(String.self, .category)
+        account = opt(String.self, .account)
+        accountId = opt(String.self, .accountId)
+        note = opt(String.self, .note)
+        pending = opt(Bool.self, .pending) ?? false
+        excluded = opt(String.self, .excluded) ?? ""
+        countsToward = opt(String.self, .countsToward)
+        counts = opt(String.self, .counts) ?? "spending"
+        chip = opt(Chip.self, .chip)
+        suggested = opt(Bool.self, .suggested) ?? (chip?.suggested ?? false)
+        myNote = opt(String.self, .myNote) ?? ""
+        split = opt(Bool.self, .split) ?? false
+        fullAmount = opt(Double.self, .fullAmount)
+        refundOf = opt(Linked.self, .refundOf)
+        refundedBy = opt([Linked].self, .refundedBy) ?? []
+        repays = opt(String.self, .repays)
+        oneOff = opt(Bool.self, .oneOff) ?? false
+        canOneOff = opt(Bool.self, .canOneOff) ?? false
+        tags = opt([String].self, .tags) ?? []
+        kind = opt(String.self, .kind)
+        group = opt(String.self, .group)
+        categorySource = opt(String.self, .categorySource)
+        joint = opt(String.self, .joint) ?? ""
+        jointPeople = opt([String].self, .jointPeople) ?? []
+        manual = opt(Bool.self, .manual) ?? false
+        recurring = opt(String.self, .recurring)
+        oneOffLine = opt(OneOffLine.self, .oneOffLine)
+        repaidBy = opt([Brief].self, .repaidBy) ?? []
+        transfer = opt(Transfer.self, .transfer)
+        repaysCharge = opt(Brief.self, .repaysCharge)
     }
 
     /// The name to show: the merchant, else the bank's description.
@@ -349,8 +494,26 @@ struct Transaction: Decodable, Identifiable, Hashable {
         return "Transaction"
     }
 
+    /// The category the row shows: Pearl's chip, else the stored one.
+    var label: String { chip?.label ?? category ?? "Other" }
+
+    /// Left out, a transfer, a repayment: shown, but not counted.
+    var notCounted: Bool { !excluded.isEmpty || counts == "none" }
+
     static func == (a: Transaction, b: Transaction) -> Bool { a.id == b.id && a.category == b.category }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+/// What turning one-off on or off answers (U-02's toast).
+struct OneOffReply: Decodable {
+    let oneOff: Bool
+    let title: String?
+    let detail: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title, detail
+        case oneOff = "one_off"
+    }
 }
 
 struct Summary: Decodable {

@@ -114,4 +114,42 @@ enum Format {
         if hour < 18 { return "Good afternoon" }
         return "Good evening"
     }
+
+    /// "−$24.80" out, "+$40.00" in: signed even when it doesn't count.
+    static func money(_ t: Transaction) -> String {
+        (t.inflow ? "+" : "\u{2212}") + amount(t.amount)
+    }
+
+    /// "$86" when whole, "$86.50" when not.
+    static func compact(_ value: Double) -> String {
+        abs(value.rounded() - value) < 0.005 ? whole(value) : amount(value)
+    }
+
+    /// "Today", "Yesterday", "Nov 12".
+    static func relativeDay(_ iso: String, now: Date = Date()) -> String {
+        let name = dayParts(iso, now: now).name
+        return name == "Today" || name == "Yesterday" ? name : short(iso)
+    }
+
+    /// "Wed, Nov 11".
+    static func weekdayDay(_ iso: String) -> String {
+        date(iso).map { shortWeekdayDay.string(from: $0) } ?? iso
+    }
+
+    /// "2026-11", this month here.
+    static func thisMonth(now: Date = Date()) -> String {
+        let c = Calendar.current.dateComponents([.year, .month], from: now)
+        return String(format: "%04d-%02d", c.year ?? 0, c.month ?? 0)
+    }
+
+    /// "Last updated this morning.", "Last updated Nov 12."
+    static func lastUpdated(_ stamp: String?, now: Date = Date()) -> String {
+        guard let stamp = stamp, !stamp.isEmpty else { return "It needs you to sign in again." }
+        let day = String(stamp.prefix(10))
+        let today = String(format: "%04d-%02d-%02d", Calendar.current.component(.year, from: now),
+                           Calendar.current.component(.month, from: now), Calendar.current.component(.day, from: now))
+        guard day == today else { return "Last updated \(short(day))." }
+        let hour = Int(stamp.dropFirst(11).prefix(2)) ?? Calendar.current.component(.hour, from: now)
+        return hour < 12 ? "Last updated this morning." : hour < 18 ? "Last updated this afternoon." : "Last updated this evening."
+    }
 }

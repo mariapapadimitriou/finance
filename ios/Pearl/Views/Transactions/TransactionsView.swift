@@ -1,160 +1,522 @@
 import SwiftUI
 
-/// Cash flow › Transactions: a month at a time, newest first, or a search
-/// across everything.
+/// Cash flow (THL-122, T-01): the month's transactions under Spent, Came in
+/// and Leftover, with search (T-45), Filter & sort (T-17), Choose a month
+/// (T-47), and the bank's state: syncing, failed, disconnected (T-36, T-58, T-59).
 @MainActor
 struct TransactionsView: View {
     @EnvironmentObject private var app: AppModel
+    @StateObject private var plaid = PlaidLinker()
 
     @State private var months: [String] = []
     @State private var month: String?
-    @State private var query = ""
+    /// The whole month (or what a server-side filter keeps), newest first.
     @State private var rows: [Transaction] = []
-    @State private var total = 0
-    @State private var totals: TransactionList.Totals?
+    @State private var monthTotals: TransactionList.Totals?
+    @State private var owed: Set<String> = []
+    @State private var tags: [String] = []
+    @State private var categories: [CategoryList.Category] = []
+    @State private var accounts: [AccountsOverview.Account] = []
     @State private var reviewCount = 0
-    @State private var loading = false
-    /// Once the first list has come back (or failed), never spin forever.
     @State private var loadedOnce = false
     @State private var error: String?
-    @State private var categories: [CategoryList.Category] = []
 
-    private let page = 100
+    @State private var query = ""
+    @FocusState private var searching: Bool
+    /// What the search found across every month; nil while not searching.
+    @State private var results: [Transaction]?
+
+    @State private var filters = TxFilters()
+    /// T-67: Spent or Came in tapped, to see just those.
+    @State private var counts: String?
+    @State private var showFilters = false
+    @State private var showMonths = false
+
+    @State private var sync: SyncState = .idle
+    @State private var syncedOnce = false
+    @State private var reconnecting: String?
+
+    enum SyncState { case idle, syncing, failed }
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                header
-                if query.isEmpty, let totals = totals {
-                    MonthStats(spent: totals.spent ?? 0, income: totals.income ?? 0)
-                        .padding(.top, 20)
-                }
-                toolbar.padding(.top, 16)
-                if reviewCount > 0 {
-                    NavigationLink {
-                        ReviewView()
-                    } label: {
-                        NeedsALookBanner(count: reviewCount)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Cash flow").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.top, 24)
+                if noTransactionsYet {
+                    emptyLedger
+                } else {
+                    searchRow.padding(.top, 20)
+                    if !inSearch {
+                        if filters.isActive { activeChips.padding(.top, 12) }
+                        summaryCard.padding(.top, 16)
+                        bankState
                     }
-                    .buttonStyle(.plain)
-                    .padding(.top, 16)
-                }
-                if rows.isEmpty {
-                    Group {
-                        if loading || !loadedOnce {
-                            ProgressView().frame(maxWidth: .infinity)
-                        } else if let error = error {
-                            Text(error).foregroundColor(Pearl.muted)
-                        } else {
-                            Text(query.isEmpty ? "No transactions this month." : "Nothing matches “\(query)”.")
-                                .foregroundColor(Pearl.muted)
-                        }
-                    }
-                    .padding(.vertical, 32)
-                }
-                ForEach(days) { group in
-                    DayHeading(iso: group.day)
-                    ForEach(group.rows) { t in
-                        NavigationLink(value: t) {
-                            TransactionRow(t: t)
-                        }
-                        .buttonStyle(.plain)
-                        .onAppear { if t.id == rows.last?.id { Task { await loadMore() } } }
-                        Rectangle().fill(Pearl.border).frame(height: 1)
-                    }
+                    listHeader.padding(.top, 24)
+                    list.padding(.top, 10)
                 }
             }
             .padding(.horizontal, Pearl.gutter)
-            .padding(.top, 24)
-            .padding(.bottom, 24)
+            .padding(.bottom, 32)
         }
-        .pearlPage()
+        .scrollDismissesKeyboard(.interactively)
+        .nacreScreen()
         .navigationBarHidden(true)
         .navigationDestination(for: Transaction.self) { t in
-            TransactionDetailView(transaction: t, categories: categories)
+            TransactionDetailView(transaction: t, categories: categories, siblings: rows)
         }
-        .refreshable { await reload() }
+        .refreshable {
+            await runSync(force: true)
+            await reload()
+        }
         .task(id: app.version) { await start() }
-    }
-
-    /// "OCTOBER 2026" over "Cash flow", as on the web.
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text((query.isEmpty ? (month.map { Format.month($0) } ?? "") : "Search").uppercased())
-                .font(Pearl.text(.caption, .semibold)).tracking(1.44)
-                .foregroundColor(Pearl.action)
-            Text("Cash flow").font(Pearl.display()).foregroundColor(Pearl.ink)
+        .task(id: query) { await search() }
+        .sheet(isPresented: $showFilters) {
+            FilterSheet(filters: filters, month: month, months: months, accounts: filterAccounts,
+                        categories: monthCategories, tags: tags,
+                        count: { visible(applying: $0).count }) { chosen, chosenMonth in
+                showFilters = false
+                let reload = chosen.needsServer != filters.needsServer || chosenMonth != month
+                filters = chosen
+                if let chosenMonth = chosenMonth, chosenMonth != month { month = chosenMonth }
+                if reload { Task { await self.reload() } }
+            }
+        }
+        .sheet(isPresented: $showMonths) {
+            MonthSheet(months: months, current: month) { chosen in
+                showMonths = false
+                if chosen != month {
+                    month = chosen
+                    Task { await reload() }
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
     }
 
-    /// Search · Month, in one row.
-    private var toolbar: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundColor(Pearl.muted)
-                TextField("Search", text: $query)
-                    .font(Pearl.text(.subheadline, .medium))
+    // MARK: Search
+
+    private var inSearch: Bool { searching || !query.isEmpty }
+
+    private var searchRow: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").font(.system(size: 16)).foregroundColor(Pearl.muted)
+                TextField("", text: $query, prompt: Text("Search").foregroundColor(Pearl.muted))
+                    .font(Nacre.body)
                     .foregroundColor(Pearl.ink)
+                    .focused($searching)
                     .submitLabel(.search)
-                    .onSubmit { Task { await reload() } }
+                    .autocorrectionDisabled()
                 if !query.isEmpty {
                     Button { query = "" } label: {
                         Image(systemName: "xmark.circle.fill").foregroundColor(Pearl.muted)
                     }
+                    .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
                 }
             }
             .padding(.horizontal, 14)
-            .frame(height: 40)
-            .background(Pearl.card)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Pearl.border, lineWidth: 1))
-            .onChange(of: query) { value in if value.isEmpty { Task { await reload() } } }
+            .frame(height: 44)
+            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+            .background(Capsule().fill(.ultraThinMaterial))
 
-            Menu {
-                ForEach(months.reversed(), id: \.self) { m in
-                    Button(Format.month(m)) { month = m; query = ""; Task { await reload() } }
+            if inSearch {
+                Button("Cancel") {
+                    query = ""
+                    searching = false
                 }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(month.map { Format.monthName($0) } ?? "Month")
-                    Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
+                .font(Nacre.body)
+                .foregroundColor(Pearl.action)
+                .padding(.horizontal, 8)
+            } else {
+                Button { showFilters = true } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 18))
+                        .foregroundColor(Pearl.ink)
+                        .frame(width: 44, height: 44)
+                        .background(Circle().fill(.ultraThinMaterial))
+                        .background(Circle().fill(Nacre.glass))
+                        .overlay(Circle().strokeBorder(Nacre.edge, lineWidth: 1))
+                        .overlay(alignment: .topTrailing) {
+                            if filters.isActive {
+                                Circle().fill(Pearl.moneyOut).frame(width: 10, height: 10)
+                                    .offset(x: -2, y: 2)
+                            }
+                        }
                 }
-                .font(Pearl.text(.subheadline, .medium))
-                .foregroundColor(Pearl.ink)
-                .padding(.horizontal, 14)
-                .frame(height: 40)
-                .background(Pearl.card)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(Pearl.border, lineWidth: 1))
+                .buttonStyle(.plain)
+                .accessibilityLabel(filters.isActive ? "Filter and sort, filters on" : "Filter and sort")
             }
-            .disabled(months.isEmpty)
-            .accessibilityLabel("Month")
+        }
+        .animation(.easeOut(duration: 0.2), value: inSearch)
+    }
+
+    /// "TD Visa ••9021 ×": each filter that's on, to take it off in one tap.
+    private var activeChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(filters.chips(accounts: filterAccounts), id: \.id) { chip in
+                    Button {
+                        let reload = chip.needsServer
+                        filters.remove(chip.id)
+                        if reload { Task { await self.reload() } }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(chip.label)
+                            Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
+                        }
+                        .font(Nacre.footnote)
+                        .foregroundColor(Pearl.onBlush)
+                        .padding(.horizontal, 12).frame(height: 32)
+                        .background(Capsule().fill(Pearl.blush))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove \(chip.label)")
+                }
+            }
         }
     }
 
-    private struct Day: Identifiable {
-        let day: String
-        var rows: [Transaction]
-        var id: String { day }
+    // MARK: The month
+
+    private var summaryCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Button { showMonths = true } label: {
+                    HStack(spacing: 6) {
+                        Text(month.map { Format.monthName($0) } ?? "This month").font(Nacre.headline)
+                        Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundColor(Pearl.ink)
+                }
+                .buttonStyle(.plain)
+                .disabled(months.isEmpty)
+                .accessibilityLabel("Month, \(month.map { Format.month($0) } ?? "")")
+
+                HStack(spacing: 0) {
+                    let spent = monthTotals?.spent ?? 0
+                    let income = monthTotals?.income ?? 0
+                    let left = income - spent
+                    stat("Spent", Format.whole(spent), Pearl.moneyOut, filter: "spending")
+                    divider
+                    stat("Came in", Format.whole(income), Pearl.moneyIn, filter: "income")
+                    divider
+                    stat(left < -0.5 ? "Over" : "Leftover", Format.whole(left),
+                         left < -0.5 ? Pearl.moneyOut : Pearl.moneyIn, filter: nil)
+                }
+            }
+            .padding(16)
+            RowSeparator(inset: 0)
+            if reviewCount > 0 {
+                NavigationLink { ReviewView() } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "questionmark.circle").font(.system(size: 18))
+                        Text("\(reviewCount) need\(reviewCount == 1 ? "s" : "") a look").font(Nacre.body)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(Pearl.muted)
+                    }
+                    .foregroundColor(Pearl.ink)
+                    .padding(.horizontal, 16).frame(height: 48)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                Label("All sorted", systemImage: "checkmark")
+                    .font(Nacre.body).foregroundColor(Nacre.teal)
+                    .padding(.horizontal, 16).frame(height: 48)
+            }
+        }
     }
 
-    private var days: [Day] {
-        var out: [Day] = []
-        for t in rows {
-            if let last = out.last, last.day == t.date {
-                out[out.count - 1].rows.append(t)
+    private var divider: some View {
+        Rectangle().fill(Nacre.separator).frame(width: 0.5, height: 44).padding(.horizontal, 10)
+    }
+
+    /// One of the three numbers; Spent and Came in narrow the list (T-67).
+    private func stat(_ label: String, _ value: String, _ tone: Color, filter: String?) -> some View {
+        let on = filter != nil && counts == filter
+        let content = VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(Nacre.footnote).foregroundColor(Pearl.muted)
+            Text(value).font(Pearl.display(.title3)).foregroundColor(tone)
+                .lineLimit(1).minimumScaleFactor(0.6)
+        }
+        .padding(.horizontal, on ? 8 : 0).padding(.vertical, on ? 4 : 0)
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(tone, lineWidth: 1.5).opacity(on ? 1 : 0))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        return Group {
+            if let filter = filter {
+                Button { counts = on ? nil : filter } label: { content.contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(label) \(value)")
+                    .accessibilityHint(on ? "Shows everything again" : "Shows only these")
+                    .accessibilityAddTraits(on ? .isSelected : [])
             } else {
-                out.append(Day(day: t.date, rows: [t]))
+                content.accessibilityElement(children: .combine)
+            }
+        }
+    }
+
+    // MARK: The bank
+
+    /// Getting the latest (T-58), couldn't (T-59), or a bank to sign in to
+    /// again (T-36).
+    @ViewBuilder private var bankState: some View {
+        ForEach(disconnected, id: \.itemId) { bank in
+            GlassCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 18))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(bank.name) is disconnected").font(Nacre.headline)
+                            Text(bank.updated).font(Nacre.footnote)
+                        }
+                    }
+                    .foregroundColor(Pearl.ink)
+                    Button("Reconnect") { Task { await reconnect(bank.itemId) } }
+                        .buttonStyle(NacreButtonStyle(busy: reconnecting == bank.itemId))
+                        .disabled(reconnecting != nil)
+                }
+                .padding(16)
+            }
+            .padding(.top, 12)
+        }
+        switch sync {
+        case .syncing:
+            banner(symbol: "arrow.triangle.2.circlepath", text: "Getting your latest transactions…")
+        case .failed:
+            banner(symbol: "exclamationmark.triangle", text: "Couldn’t update just now.") {
+                Button("Try again") { Task { await runSync(force: true) } }
+                    .font(Nacre.textButton).foregroundColor(Pearl.action)
+            }
+        case .idle:
+            EmptyView()
+        }
+    }
+
+    private func banner<Trailing: View>(symbol: String, text: String,
+                                        @ViewBuilder trailing: () -> Trailing = { EmptyView() }) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 15))
+            Text(text).font(Nacre.footnote)
+            Spacer(minLength: 8)
+            trailing()
+        }
+        .foregroundColor(Pearl.ink)
+        .padding(.horizontal, 16).frame(minHeight: 40)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Nacre.glass))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1))
+        .padding(.top, 12)
+        .accessibilityElement(children: .combine)
+    }
+
+    private struct Disconnected {
+        let itemId: String
+        let name: String
+        let updated: String
+    }
+
+    /// One card per bank, however many of its accounts are cut off.
+    private var disconnected: [Disconnected] {
+        var seen = Set<String>()
+        return accounts.compactMap { a in
+            guard a.needsReconnect, let item = a.itemId, !item.isEmpty, seen.insert(item).inserted else { return nil }
+            return Disconnected(itemId: item, name: (a.institution ?? "").isEmpty ? a.name : a.institution!,
+                                updated: Format.lastUpdated(a.updatedAt))
+        }
+    }
+
+    // MARK: The list
+
+    private var listHeader: some View {
+        HStack {
+            if inSearch {
+                if results != nil {
+                    Text(shown.count == 1 ? "1 result" : "\(shown.count) results")
+                }
+            } else if let counts = counts {
+                Text("\(counts == "income" ? "Money in only" : "Spending only") · \(shown.count)")
+                Spacer()
+                Button("Show all") { self.counts = nil }
+                    .font(Nacre.body).foregroundColor(Pearl.action)
+            } else if loadedOnce {
+                Text(shown.count == 1 ? "1 transaction" : "\(shown.count) transactions")
+            }
+        }
+        .font(Nacre.footnote)
+        .foregroundColor(Pearl.muted)
+        .padding(.horizontal, 4)
+    }
+
+    @ViewBuilder private var list: some View {
+        let sections = self.sections
+        if inSearch && query.isEmpty {
+            EmptyView()
+        } else if (!loadedOnce && !inSearch) || (inSearch && results == nil) {
+            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+        } else if let error = error, shown.isEmpty {
+            nothing(title: "Couldn’t load your transactions", line: error, action: "Try again") {
+                Task { await reload() }
+            }
+        } else if shown.isEmpty {
+            if inSearch {
+                nothing(title: "No matches", line: "Try another word.", action: "Clear search") { query = "" }
+            } else if filters.isActive || counts != nil {
+                nothing(title: "Nothing matches", line: "Try fewer filters.", action: "Clear filters") {
+                    let reload = filters.needsServer
+                    filters = TxFilters(sort: filters.sort)
+                    counts = nil
+                    if reload { Task { await self.reload() } }
+                }
+            } else {
+                nothing(title: "Nothing yet in \(month.map { Format.monthName($0) } ?? "this month")",
+                        line: "Transactions show up here as your bank sends them.", action: nil) {}
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(sections, id: \.title) { section in
+                    if !section.title.isEmpty {
+                        HStack {
+                            Text(section.title.uppercased()).tracking(0.4)
+                            Spacer()
+                            Text(Format.whole(section.rows.reduce(0) { $0 + $1.amount }))
+                        }
+                        .font(Nacre.caption2).foregroundColor(Pearl.muted)
+                        .padding(.horizontal, 16).padding(.top, 10)
+                    }
+                    GlassCard {
+                        ForEach(Array(section.rows.enumerated()), id: \.element.id) { index, t in
+                            if index > 0 { RowSeparator(inset: 72) }
+                            NavigationLink(value: t) {
+                                TransactionRow(t: t, paidBack: paidBack(for: t))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func nothing(title: String, line: String, action: String?, _ run: @escaping () -> Void) -> some View {
+        VStack(spacing: 8) {
+            Text(title).font(Nacre.title2).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
+            Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
+            if let action = action {
+                Button(action, action: run).font(Nacre.textButton).foregroundColor(Pearl.action).padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+    }
+
+    /// T-35: no bank yet, so nothing to show.
+    private var emptyLedger: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 20, weight: .medium)).foregroundColor(Pearl.action)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(Pearl.blush))
+                .padding(.bottom, 8)
+                .accessibilityHidden(true)
+            Text("No transactions yet").font(Nacre.title2)
+            Text("Link a bank to see them.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+            Button { Task { await link() } } label: {
+                Text("Link your bank").font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .frame(width: 240, height: 56)
+                    .overlay(Capsule().strokeBorder(Pearl.ink, lineWidth: 1.2))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(reconnecting != nil)
+            .padding(.top, 12)
+            if let error = error {
+                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 72)
+    }
+
+    // MARK: What's shown
+
+    private var noTransactionsYet: Bool { loadedOnce && months.isEmpty && rows.isEmpty && error == nil }
+
+    private var shown: [Transaction] { visible(applying: filters) }
+
+    /// The rows the list shows under these filters: the search's or the
+    /// month's, narrowed, then sorted.
+    private func visible(applying f: TxFilters) -> [Transaction] {
+        let base = inSearch ? (results ?? []) : rows
+        var out = base.filter { f.matches($0, owed: owed) }
+        if !inSearch, let counts = counts { out = out.filter { $0.counts == counts } }
+        switch f.sort {
+        case .largest: out.sort { $0.amount > $1.amount }
+        case .category: out.sort { ($0.label, $1.date) < ($1.label, $0.date) }
+        case .merchant: out.sort { ($0.merchant.lowercased(), $1.date) < ($1.merchant.lowercased(), $0.date) }
+        case .newest: break
+        }
+        return out
+    }
+
+    private struct Section { let title: String; let rows: [Transaction] }
+
+    /// One card, or one per category or merchant when sorted that way.
+    private var sections: [Section] {
+        let rows = shown
+        let key: ((Transaction) -> String)?
+        switch filters.sort {
+        case .category: key = { $0.label }
+        case .merchant: key = { $0.merchant }
+        default: key = nil
+        }
+        guard let key = key else { return [Section(title: "", rows: rows)] }
+        var out: [Section] = []
+        for t in rows {
+            if let last = out.last, last.title == key(t) {
+                out[out.count - 1] = Section(title: last.title, rows: last.rows + [t])
+            } else {
+                out.append(Section(title: key(t), rows: [t]))
             }
         }
         return out
     }
 
+    /// "Paid back · Sushi Nami": the charge a payback is for, when it's in view.
+    private func paidBack(for t: Transaction) -> String? {
+        guard let id = t.repays else { return nil }
+        return (rows + (results ?? [])).first { $0.id == id }?.merchant
+    }
+
+    /// The month's accounts, named as Accounts names them when it can.
+    private var filterAccounts: [FilterAccount] {
+        var out: [FilterAccount] = []
+        for t in rows {
+            guard let id = t.accountId, !id.isEmpty, !out.contains(where: { $0.id == id }) else { continue }
+            let linked = accounts.first { $0.id == id }
+            out.append(FilterAccount(id: id, label: linked?.label ?? t.account ?? "Account",
+                                     joint: linked?.joint == true || !t.joint.isEmpty))
+        }
+        return out.sorted { $0.label < $1.label }
+    }
+
+    /// The month's categories, most used first.
+    private var monthCategories: [String] {
+        var count: [String: Int] = [:]
+        for t in rows { count[t.label, default: 0] += 1 }
+        return count.sorted { ($0.value, $1.key) > ($1.value, $0.key) }.map(\.key)
+    }
+
+    // MARK: Loading
+
     private func start() async {
-        if months.isEmpty, let summary: Summary = try? await app.api.get("api/summary") {
+        if let summary: Summary = try? await app.api.get("api/summary") {
             months = summary.months ?? []
-            if month == nil { month = summary.latestMonth ?? months.last }
+            if month == nil || !months.contains(month!) { month = summary.latestMonth ?? months.last }
         }
         if categories.isEmpty, let list: CategoryList = try? await app.api.get("api/categories") {
             categories = list.categories.filter { $0.hidden != true }
@@ -162,222 +524,731 @@ struct TransactionsView: View {
         if let review: Review = try? await app.api.get("api/review") {
             reviewCount = review.open ?? review.count
         }
+        await loadAccounts()
         await reload()
+        if !syncedOnce {
+            syncedOnce = true
+            await runSync(force: false)
+        }
     }
 
-    private func params(offset: Int) -> [String: String] {
-        var p = ["limit": String(page), "offset": String(offset)]
-        if !query.isEmpty {
-            p["q"] = query
-        } else if let month = month {
-            p["month"] = month
+    private func loadAccounts() async {
+        if let overview: AccountsOverview = try? await app.api.get("api/accounts/overview") {
+            accounts = overview.linked
         }
-        return p
     }
 
     private func reload() async {
-        loading = true
-        defer {
-            loading = false
-            loadedOnce = true
-        }
+        defer { loadedOnce = true }
+        var p = ["limit": "1000"]
+        if let month = month { p["month"] = month }
+        if filters.only.contains(.leftOut) { p["excluded"] = "1" }
+        if filters.only.contains(.subscriptions) { p["recurring"] = "1" }
         do {
-            let list: TransactionList = try await app.api.get("api/transactions/list", query: params(offset: 0))
+            let list: TransactionList = try await app.api.get("api/transactions/list", query: p)
             rows = list.transactions
-            total = list.total
-            totals = list.monthTotals
+            owed = Set(list.owedIds)
+            tags = list.tags
+            if filters.needsServer, let month = month {
+                // The cards are the month's, whatever the list is narrowed to.
+                let plain: TransactionList? = try? await app.api.get("api/transactions/list",
+                                                                     query: ["month": month, "limit": "1"])
+                monthTotals = plain?.monthTotals ?? list.monthTotals
+            } else {
+                monthTotals = list.monthTotals
+            }
             error = nil
         } catch {
             self.error = app.handle(error)
         }
     }
 
-    private func loadMore() async {
-        guard !loading, rows.count < total else { return }
-        loading = true
-        defer { loading = false }
+    private func search() async {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else {
+            results = nil
+            return
+        }
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        guard !Task.isCancelled else { return }
         if let list: TransactionList = try? await app.api.get("api/transactions/list",
-                                                               query: params(offset: rows.count)) {
-            rows += list.transactions
+                                                               query: ["q": q, "limit": "200"]) {
+            guard !Task.isCancelled else { return }
+            results = list.transactions
         }
     }
-}
 
-/// Spent · Came in · Left: the month as three numbers, as on a phone on the web.
-struct MonthStats: View {
-    let spent: Double
-    let income: Double
-
-    var body: some View {
-        let left = max(income, 0) - max(spent, 0)
-        HStack(spacing: 8) {
-            tile("Spent", Format.amount(spent), Pearl.moneyOut)
-            tile("Came in", Format.amount(income), Pearl.moneyIn)
-            if left < -0.005 {
-                tile("Over", Format.amount(left), Pearl.moneyOut)
-            } else {
-                tile("Left", Format.amount(left), Pearl.ink)
+    /// The bank's latest. Opening asks without `force`, so a sync a moment
+    /// ago isn't repeated; pulling down and Try again ask with it.
+    private func runSync(force: Bool) async {
+        guard !accounts.isEmpty else { return }
+        struct Reply: Decodable { let imported: Int?; let recent: Bool? }
+        sync = .syncing
+        do {
+            let reply: Reply = try await app.api.post("api/plaid/sync", force ? ["force": true] : [:])
+            sync = .idle
+            if (reply.imported ?? 0) > 0 || force {
+                await loadAccounts()
+                if (reply.imported ?? 0) > 0 { app.changed() }
             }
+        } catch {
+            // A server without Plaid has nothing to sync: not a failure.
+            let words = (error as? APIError)?.problem?.error ?? ""
+            sync = words.contains("isn't configured") || error is CancellationError ? .idle : .failed
         }
     }
 
-    private func tile(_ label: String, _ value: String, _ tone: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(Pearl.text(.footnote, .medium)).foregroundColor(Pearl.muted)
-            Text(value)
-                .font(Pearl.display(.headline)).tracking(-0.34)
-                .foregroundColor(tone)
-                .lineLimit(1).minimumScaleFactor(0.7)
-                .padding(.vertical, 6)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Pearl.card)
-        .clipShape(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).stroke(Pearl.border, lineWidth: 1))
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// "12 need a quick look.  Review ›" on blush.
-struct NeedsALookBanner: View {
-    let count: Int
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "info.circle").font(.system(size: 17))
-            Text(count == 1 ? "1 needs a quick look." : "\(count) need a quick look.")
-                .font(Pearl.text(.callout, .medium))
-            Spacer(minLength: 8)
-            HStack(spacing: 4) {
-                Text("Review").underline()
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+    /// T-36: sign in to the bank again in Plaid's update mode, then sync.
+    private func reconnect(_ itemId: String) async {
+        reconnecting = itemId
+        defer { reconnecting = nil }
+        do {
+            if case .linked = try await plaid.open(api: app.api, itemId: itemId) {
+                await runSync(force: true)
+                app.changed()
             }
-            .font(Pearl.text(.subheadline, .semibold))
+        } catch {
+            sync = .failed
         }
-        .foregroundColor(Pearl.onBlush)
-        .padding(.horizontal, 16).padding(.vertical, 14)
-        .background(Pearl.blush)
-        .clipShape(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous))
+    }
+
+    /// T-35: link a first bank from here.
+    private func link() async {
+        reconnecting = "new"
+        defer { reconnecting = nil }
+        do {
+            if case .linked(let linked) = try await plaid.open(api: app.api) {
+                let _: LinkedItem = try await app.api.post("api/plaid/exchange",
+                                                           ["public_token": linked.publicToken,
+                                                            "institution": linked.institution])
+                syncedOnce = true
+                app.changed()
+            }
+        } catch {
+            self.error = app.handle(error)
+        }
     }
 }
 
-/// "TODAY · THU, OCT 29".
-struct DayHeading: View {
-    let iso: String
+// MARK: - A row
 
-    var body: some View {
-        let parts = Format.dayParts(iso)
-        (Text(parts.name.uppercased()).foregroundColor(Pearl.ink)
-            + Text(parts.date.isEmpty ? "" : " · " + parts.date.uppercased()).foregroundColor(Pearl.muted))
-            .font(Pearl.text(.caption, .semibold)).tracking(1.44)
-            .padding(.horizontal, 4)
-            .padding(.top, 20).padding(.bottom, 6)
-            .accessibilityAddTraits(.isHeader)
-    }
-}
-
-/// One transaction: the category's icon, who and which account, the amount
-/// and the category under it.
+/// One transaction (T-01): initials, who, "Category · when", any line about
+/// a split or a refund, and Pearl's guess as a dashed chip.
 struct TransactionRow: View {
     let t: Transaction
+    var paidBack: String? = nil
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            CategoryAvatar(category: t.chip?.label ?? t.category, name: t.merchant)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(t.merchant).font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.ink).lineLimit(1)
-                if let meta = meta {
-                    Text(meta).font(Pearl.text(.footnote, .medium)).foregroundColor(Pearl.muted).lineLimit(2)
+            Initials(name: t.merchant)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(t.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(meta).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+                if let extra = extra {
+                    Text(extra).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
+                }
+                if t.suggested {
+                    GuessChip(label: t.label).padding(.top, 4)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .trailing, spacing: 6) {
-                Text(amount)
-                    .font(Pearl.text(.body, muted ? .medium : .semibold)).monospacedDigit()
-                    .foregroundColor(muted ? Pearl.muted : (t.inflow ? Pearl.moneyIn : Pearl.moneyOut))
-                if let label = t.chip?.label ?? t.category {
-                    CategoryChip(label: label, suggested: t.chip?.suggested == true)
-                }
-            }
+            Text(Format.money(t))
+                .font(Nacre.headline).monospacedDigit()
+                .foregroundColor(t.tone)
+                .lineLimit(1).fixedSize()
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(t.suggested ? "Pearl’s guess. Opens it to check." : "")
     }
 
-    private var muted: Bool { !(t.excluded ?? "").isEmpty || t.countsToward == "none" }
-
-    private var amount: String {
-        if muted { return Format.amount(t.amount) }
-        return t.inflow ? "+" + Format.amount(t.amount) : "-" + Format.amount(t.amount)
+    /// "Health · Today"; "Today · Pending" while it's a guess; "Paid back · Sushi Nami".
+    private var meta: String {
+        let when = Format.relativeDay(t.date)
+        if let paidBack = paidBack { return "Paid back · \(paidBack)" }
+        if let charge = t.refundOf { return "Refund · \(charge.merchant)" }
+        if t.suggested { return t.pending ? "\(when) · Pending" : when }
+        return [t.label, when, t.pending ? "Pending" : nil].compactMap { $0 }.joined(separator: " · ")
     }
 
-    private var meta: String? {
-        let parts = [t.account, t.pending == true ? "Pending" : nil].compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    /// "Your share of $86", "Refunded in full · Nov 10".
+    private var extra: String? {
+        if t.split, let full = t.fullAmount, abs(full - t.amount) >= 0.005 {
+            return "Your share of \(Format.compact(full))"
+        }
+        if !t.refundedBy.isEmpty {
+            let back = t.refundedBy.reduce(0) { $0 + $1.amount }
+            let what = back >= (t.fullAmount ?? t.amount) - 0.005 ? "Refunded in full" : "\(Format.compact(back)) refunded"
+            return t.refundedBy.count == 1 ? "\(what) · \(Format.short(t.refundedBy[0].date))" : what
+        }
+        if t.oneOff { return "One-off · left out of your usual month" }
+        return nil
     }
 }
 
-/// The category as a chip: blush once settled, a dashed outline while it's
-/// Pearl's guess.
-struct CategoryChip: View {
-    let label: String
-    var suggested = false
+/// The merchant's initials on a pale disc.
+struct Initials: View {
+    let name: String
+    var size: CGFloat = 40
 
     var body: some View {
-        Text(label)
-            .font(Pearl.text(.footnote, .medium))
-            .lineLimit(1)
-            .foregroundColor(suggested ? Pearl.ink : Pearl.onBlush)
-            .padding(.horizontal, 10).padding(.vertical, 3)
-            .background(suggested ? Pearl.card : Pearl.blush)
-            .clipShape(Capsule())
-            .overlay(Capsule().strokeBorder(Pearl.suggested,
-                                            style: StrokeStyle(lineWidth: 1, dash: [3]))
-                .opacity(suggested ? 1 : 0))
+        Text(letters)
+            .font(.custom("Figtree-Medium", size: size * 0.36))
+            .foregroundColor(Pearl.ink)
+            .frame(width: size, height: size)
+            .background(Circle().fill(Pearl.dynamic(light: 0xEFE4EB, dark: 0x252C5E)))
+            .accessibilityHidden(true)
+    }
+
+    private var letters: String {
+        let words = name.split { !$0.isLetter && !$0.isNumber }.prefix(2)
+        let out = words.compactMap { $0.first.map(String.init) }.joined().uppercased()
+        return out.isEmpty ? "·" : out
     }
 }
 
-/// The category's icon in rose on blush; the name's initials when there's
-/// no category to show.
-struct CategoryAvatar: View {
-    let category: String?
-    let name: String
+/// "? Dining out?": Pearl's guess, dashed, waiting for a yes.
+struct GuessChip: View {
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "questionmark.circle").font(.system(size: 11, weight: .semibold))
+            Text("\(label)?")
+        }
+        .font(Nacre.footnote)
+        .foregroundColor(Pearl.ink)
+        .padding(.horizontal, 10).frame(height: 24)
+        .overlay(Capsule().strokeBorder(Pearl.ink.opacity(0.7), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
+        .accessibilityLabel("Pearl’s guess: \(label)")
+    }
+}
+
+// MARK: - Filter & sort
+
+/// An account the filter can keep in: "TD Savings ••2210 · Joint".
+struct FilterAccount: Hashable {
+    let id: String
+    let label: String
+    let joint: Bool
+}
+
+/// What Filter & sort (T-17) has chosen. Sections combine; choices within a
+/// section are either-or.
+struct TxFilters: Equatable {
+    enum Sort: String, CaseIterable { case newest = "Newest first", largest = "Largest first",
+                                           category = "By category", merchant = "By merchant" }
+    enum Only: String, CaseIterable {
+        case leftOut = "Left out", subscriptions = "Subscriptions", joint = "Joint", bills = "Bills"
+        case owed = "Owed to you", pending = "Pending", look = "Needs a look", manual = "Added by hand"
+    }
+
+    var sort: Sort = .newest
+    /// The accounts kept in; empty is every account.
+    var accounts: Set<String> = []
+    var categories: Set<String> = []
+    /// Groups and kinds: essentials, lifestyle… and fixed, variable.
+    var groups: Set<String> = []
+    var only: Set<Only> = []
+    var tags: Set<String> = []
+    var min = ""
+    var max = ""
+    var merchant = ""
+
+    static let groupNames: [(key: String, name: String)] = [
+        ("essentials", "Essentials"), ("lifestyle", "Lifestyle"), ("income", "Income"),
+        ("savings", "Savings"), ("transfer", "Transfers"), ("variable", "Variable"), ("fixed", "Fixed"),
+    ]
+
+    var isActive: Bool { self != TxFilters(sort: sort) }
+
+    /// Left out and Subscriptions are the server's to work out.
+    var needsServer: Bool { only.contains(.leftOut) || only.contains(.subscriptions) }
+
+    private var minValue: Double? { Double(min.replacingOccurrences(of: "$", with: "")) }
+    private var maxValue: Double? { Double(max.replacingOccurrences(of: "$", with: "")) }
+
+    func matches(_ t: Transaction, owed: Set<String>) -> Bool {
+        if !accounts.isEmpty && !accounts.contains(t.accountId ?? "") { return false }
+        if !categories.isEmpty && !categories.contains(t.label) { return false }
+        if !groups.isEmpty && !groups.contains(t.group ?? "") && !groups.contains(t.kind ?? "") { return false }
+        if !tags.isEmpty && tags.isDisjoint(with: t.tags) { return false }
+        if let lo = minValue, t.amount < lo - 0.005 { return false }
+        if let hi = maxValue, t.amount > hi + 0.005 { return false }
+        let name = merchant.trimmingCharacters(in: .whitespaces)
+        if !name.isEmpty && !t.merchant.localizedCaseInsensitiveContains(name) { return false }
+        // Left out and Subscriptions were already chosen by the server.
+        let here = only.subtracting([.leftOut, .subscriptions])
+        if !here.isEmpty && !here.contains(where: { flag in
+            switch flag {
+            case .joint: return !t.joint.isEmpty
+            case .bills: return t.kind == "fixed" && t.counts == "spending"
+            case .owed: return owed.contains(t.id)
+            case .pending: return t.pending
+            case .look: return t.suggested
+            case .manual: return t.manual
+            case .leftOut, .subscriptions: return true
+            }
+        }) { return false }
+        return true
+    }
+
+    struct Chip { let id: String; let label: String; let needsServer: Bool }
+
+    func chips(accounts all: [FilterAccount]) -> [Chip] {
+        var out: [Chip] = []
+        for id in accounts.sorted() {
+            out.append(Chip(id: "a:" + id, label: all.first { $0.id == id }?.label ?? "Account", needsServer: false))
+        }
+        out += categories.sorted().map { Chip(id: "c:" + $0, label: $0, needsServer: false) }
+        out += Self.groupNames.filter { groups.contains($0.key) }
+            .map { Chip(id: "g:" + $0.key, label: $0.name, needsServer: false) }
+        out += Only.allCases.filter { only.contains($0) }
+            .map { Chip(id: "o:" + $0.rawValue, label: $0.rawValue, needsServer: $0 == .leftOut || $0 == .subscriptions) }
+        out += tags.sorted().map { Chip(id: "t:" + $0, label: "#" + $0, needsServer: false) }
+        if minValue != nil || maxValue != nil {
+            let lo = minValue.map { Format.compact($0) } ?? "$0"
+            let label = maxValue.map { "\(lo)–\(Format.compact($0))" } ?? "\(lo) and up"
+            out.append(Chip(id: "amount", label: label, needsServer: false))
+        }
+        if !merchant.trimmingCharacters(in: .whitespaces).isEmpty {
+            out.append(Chip(id: "merchant", label: merchant, needsServer: false))
+        }
+        return out
+    }
+
+    mutating func remove(_ chip: String) {
+        let value = String(chip.dropFirst(2))
+        switch chip.prefix(2) {
+        case "a:": accounts.remove(value)
+        case "c:": categories.remove(value)
+        case "g:": groups.remove(value)
+        case "o:": if let flag = Only(rawValue: value) { only.remove(flag) }
+        case "t:": tags.remove(value)
+        default:
+            if chip == "amount" { min = ""; max = "" }
+            if chip == "merchant" { merchant = "" }
+        }
+    }
+}
+
+/// T-17: sort, then narrow by month, account, category, group, a few
+/// "only show" flags, tags, amount and merchant. "Show 36" applies it.
+struct FilterSheet: View {
+    @State var filters: TxFilters
+    @State var month: String?
+    let months: [String]
+    let accounts: [FilterAccount]
+    let categories: [String]
+    let tags: [String]
+    let count: (TxFilters) -> Int
+    let onApply: (TxFilters, String?) -> Void
+    /// The month the list is on: only its rows can be counted here.
+    private let initialMonth: String?
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var allMonths = false
+    @State private var allCategories = false
+
+    init(filters: TxFilters, month: String?, months: [String], accounts: [FilterAccount],
+         categories: [String], tags: [String], count: @escaping (TxFilters) -> Int,
+         onApply: @escaping (TxFilters, String?) -> Void) {
+        _filters = State(initialValue: filters)
+        _month = State(initialValue: month)
+        initialMonth = month
+        self.months = months
+        self.accounts = accounts
+        self.categories = categories
+        self.tags = tags
+        self.count = count
+        self.onApply = onApply
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SheetTitle(title: "Filter & sort") { dismiss() }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    heading("Sort by")
+                    GlassCard {
+                        ForEach(Array(TxFilters.Sort.allCases.enumerated()), id: \.element) { index, sort in
+                            if index > 0 { RowSeparator() }
+                            Button { filters.sort = sort } label: {
+                                HStack {
+                                    Text(sort.rawValue).font(Nacre.body).foregroundColor(Pearl.ink)
+                                    Spacer()
+                                    if filters.sort == sort {
+                                        Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(Pearl.action)
+                                    }
+                                }
+                                .padding(.horizontal, 16).frame(height: 52)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(filters.sort == sort ? .isSelected : [])
+                        }
+                    }
+
+                    if !months.isEmpty {
+                        heading("Month")
+                        Chips {
+                            let recent = Array(months.suffix(4))
+                            ForEach(allMonths ? months.reversed() : recent, id: \.self) { m in
+                                FilterChip(label: allMonths ? Format.month(m) : String(Format.monthName(m).prefix(3)),
+                                           on: month == m) { month = m }
+                            }
+                            if months.count > 4 && !allMonths {
+                                FilterChip(label: "Earlier…", on: false) { allMonths = true }
+                            }
+                        }
+                    }
+
+                    if !accounts.isEmpty {
+                        heading("Account")
+                        GlassCard {
+                            ForEach(Array(accounts.enumerated()), id: \.element.id) { index, a in
+                                if index > 0 { RowSeparator(inset: 52) }
+                                let on = filters.accounts.isEmpty || filters.accounts.contains(a.id)
+                                Button { toggleAccount(a.id) } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                                            .font(.system(size: 22))
+                                            .foregroundColor(on ? Pearl.action : Pearl.muted)
+                                        Text(a.label + (a.joint ? " · Joint" : ""))
+                                            .font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 16).frame(height: 52)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(on ? .isSelected : [])
+                            }
+                        }
+                    }
+
+                    if !categories.isEmpty {
+                        heading("Category")
+                        Chips {
+                            ForEach(allCategories ? categories : Array(categories.prefix(8)), id: \.self) { c in
+                                FilterChip(label: c, on: filters.categories.contains(c)) {
+                                    filters.categories.formSymmetricDifference([c])
+                                }
+                            }
+                            if categories.count > 8 && !allCategories {
+                                FilterChip(label: "More…", on: false) { allCategories = true }
+                            }
+                        }
+                    }
+
+                    heading("Group")
+                    Chips {
+                        ForEach(TxFilters.groupNames, id: \.key) { g in
+                            FilterChip(label: g.name, on: filters.groups.contains(g.key)) {
+                                filters.groups.formSymmetricDifference([g.key])
+                            }
+                        }
+                    }
+
+                    heading("Only show")
+                    Chips {
+                        ForEach(TxFilters.Only.allCases, id: \.self) { flag in
+                            FilterChip(label: flag.rawValue, on: filters.only.contains(flag)) {
+                                filters.only.formSymmetricDifference([flag])
+                            }
+                        }
+                    }
+
+                    if !tags.isEmpty {
+                        heading("Tags")
+                        Chips {
+                            ForEach(tags, id: \.self) { tag in
+                                FilterChip(label: tag, on: filters.tags.contains(tag)) {
+                                    filters.tags.formSymmetricDifference([tag])
+                                }
+                            }
+                        }
+                    }
+
+                    heading("Amount")
+                    HStack(spacing: 12) {
+                        amountField("Min", text: $filters.min, prompt: "$0")
+                        amountField("Max", text: $filters.max, prompt: "Any")
+                    }
+
+                    heading("Merchant")
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted)
+                        TextField("", text: $filters.merchant, prompt: Text("Any merchant").foregroundColor(Pearl.muted))
+                            .font(Nacre.body).autocorrectionDisabled()
+                    }
+                    .padding(.horizontal, 14).frame(height: 44)
+                    .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+            }
+            .scrollDismissesKeyboard(.interactively)
+
+            HStack(spacing: 16) {
+                Button("Reset") {
+                    filters = TxFilters()
+                }
+                .font(Nacre.headline).foregroundColor(Pearl.action)
+                .frame(width: 84)
+                Button(showLabel) { onApply(filters, month) }
+                    .buttonStyle(NacreButtonStyle())
+            }
+            .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+        }
+        .background(SheetBackground())
+        .presentationDragIndicator(.visible)
+    }
+
+    /// "Show 36", or just "Show" when another month is chosen (its rows aren't here yet).
+    private var showLabel: String {
+        guard month == initialMonth else { return "Show" }
+        return "Show \(count(filters))"
+    }
+
+
+    private func toggleAccount(_ id: String) {
+        var chosen = filters.accounts.isEmpty ? Set(accounts.map(\.id)) : filters.accounts
+        chosen.formSymmetricDifference([id])
+        filters.accounts = chosen.count == accounts.count ? [] : chosen
+    }
+
+    private func heading(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+            .padding(.horizontal, 16).padding(.top, 14)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func amountField(_ label: String, text: Binding<String>, prompt: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(Nacre.footnote).foregroundColor(Pearl.muted)
+            TextField("", text: text, prompt: Text(prompt).foregroundColor(Pearl.muted))
+                .font(Nacre.body).keyboardType(.decimalPad)
+                .accessibilityLabel("\(label) amount")
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Nacre.glass))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1))
+    }
+}
+
+/// A capsule that's on (blush) or off (outlined).
+struct FilterChip: View {
+    let label: String
+    let on: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(Nacre.footnote)
+                .foregroundColor(on ? Pearl.onBlush : Pearl.ink)
+                .lineLimit(1)
+                .padding(.horizontal, 14).frame(height: 34)
+                .background(Capsule().fill(on ? Pearl.blush : Nacre.glass))
+                .overlay(Capsule().strokeBorder(on ? Color.clear : Nacre.separator, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+/// Chips that wrap onto as many lines as they need.
+struct Chips<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        FlowLayout(spacing: 8) { content() }
+            .padding(.horizontal, 2)
+    }
+}
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: proposal.width ?? rows.map(\.width).max() ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.items {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row { var items: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = [Row()]
+        for (index, view) in subviews.enumerated() {
+            let size = view.sizeThatFits(.unspecified)
+            if !rows[rows.count - 1].items.isEmpty && rows[rows.count - 1].width + spacing + size.width > width {
+                rows.append(Row())
+            }
+            var row = rows[rows.count - 1]
+            row.width += (row.items.isEmpty ? 0 : spacing) + size.width
+            row.height = max(row.height, size.height)
+            row.items.append(index)
+            rows[rows.count - 1] = row
+        }
+        return rows.filter { !$0.items.isEmpty }
+    }
+}
+
+// MARK: - Choose a month
+
+/// T-47: each month and how it came out; Done goes to the one chosen.
+struct MonthSheet: View {
+    let months: [String]
+    let current: String?
+    let onDone: (String?) -> Void
+
+    @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var chosen: String?
+    @State private var left: [String: Double] = [:]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SheetTitle(title: "Choose a month") { dismiss() }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(years, id: \.self) { year in
+                        Text(year).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                            .padding(.horizontal, 16).padding(.top, 8)
+                        GlassCard {
+                            let inYear = months.reversed().filter { $0.hasPrefix(year) }
+                            ForEach(Array(inYear.enumerated()), id: \.element) { index, m in
+                                if index > 0 { RowSeparator() }
+                                Button { chosen = m } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(Format.monthName(m)).font(Nacre.body).foregroundColor(Pearl.ink)
+                                            if let line = line(m) {
+                                                Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                                            }
+                                        }
+                                        Spacer()
+                                        if (chosen ?? current) == m {
+                                            Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+                                                .foregroundColor(Pearl.action)
+                                        }
+                                    }
+                                    .padding(.horizontal, 16).frame(minHeight: 64)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits((chosen ?? current) == m ? .isSelected : [])
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16).padding(.bottom, 16)
+            }
+            Button("Done") { onDone(chosen ?? current) }
+                .buttonStyle(NacreButtonStyle())
+                .padding(.horizontal, 16).padding(.bottom, 8)
+        }
+        .background(SheetBackground())
+        .task { await loadTotals() }
+    }
+
+    private var years: [String] {
+        var out: [String] = []
+        for m in months.reversed() where !out.contains(String(m.prefix(4))) { out.append(String(m.prefix(4))) }
+        return out
+    }
+
+    /// "Leftover $866 so far", "Over $140".
+    private func line(_ m: String) -> String? {
+        guard let value = left[m] else { return nil }
+        let running = m == months.last && m == Format.thisMonth()
+        let words = value < -0.5 ? "Over \(Format.whole(value))" : "Leftover \(Format.whole(value))"
+        return running ? words + " so far" : words
+    }
+
+    private func loadTotals() async {
+        let api = app.api
+        await withTaskGroup(of: (String, Double?).self) { group in
+            for m in months.suffix(12) {
+                group.addTask {
+                    let list: TransactionList? = try? await api.get("api/transactions/list",
+                                                                    query: ["month": m, "limit": "1"])
+                    guard let t = list?.monthTotals else { return (m, nil) }
+                    return (m, (t.income ?? 0) - (t.spent ?? 0))
+                }
+            }
+            for await (m, value) in group {
+                if let value = value { left[m] = value }
+            }
+        }
+    }
+}
+
+// MARK: - Sheet parts
+
+/// A sheet's centred title with a round close button (T-17, T-47).
+struct SheetTitle: View {
+    let title: String
+    let close: () -> Void
 
     var body: some View {
         ZStack {
-            if let symbol = symbol {
-                Circle().fill(Pearl.blush)
-                Image(systemName: symbol).font(.system(size: 17)).foregroundColor(Pearl.action)
-            } else {
-                Circle().fill(Pearl.track)
-                Text(initials).font(Pearl.text(.footnote, .semibold)).foregroundColor(Pearl.ink)
+            Text(title).font(Nacre.headline).foregroundColor(Pearl.ink)
+                .accessibilityAddTraits(.isHeader)
+            HStack {
+                Spacer()
+                Button(action: close) {
+                    Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(Pearl.ink)
+                        .frame(width: 44, height: 44)
+                        .background(Circle().fill(Nacre.glass))
+                        .overlay(Circle().strokeBorder(Nacre.glassEdge, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close")
             }
         }
-        .frame(width: 40, height: 40)
-        .accessibilityHidden(true)
+        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 12)
     }
+}
 
-    private var initials: String {
-        name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
-    }
+/// A sheet's pale nacre wash.
+struct SheetBackground: View {
+    @Environment(\.colorScheme) private var scheme
 
-    /// The web's CATEGORY_ICONS (src/pearl/icons.jsx), in SF Symbols.
-    private var symbol: String? {
-        guard let category = category, !["Possible duplicate", "Whose?"].contains(category) else { return nil }
-        let icons: [String: String] = [
-            "Groceries": "cart", "Dining": "fork.knife", "Food Delivery": "box.truck", "Coffee": "cup.and.saucer",
-            "Alcohol & Bars": "wineglass", "Transport": "bus", "Gas & Fuel": "fuelpump", "Travel": "airplane",
-            "Lodging": "bed.double", "Shopping": "bag", "Streaming": "play.rectangle", "News & Media": "newspaper",
-            "Software": "laptopcomputer", "Utilities": "bolt", "Phone & Internet": "wifi",
-            "Rent & Housing": "house", "Insurance": "checkmark.shield", "Health": "heart", "Fitness": "dumbbell",
-            "Personal Care": "sparkles", "Entertainment": "ticket", "Education": "book", "Pets": "pawprint",
-            "Home": "sofa", "Gifts & Charity": "gift", "Fees & Interest": "percent", "Taxes": "building.columns",
-            "Cash & ATM": "banknote", "Saved": "lifepreserver", "Lent": "arrow.up.forward",
-            "Borrowed": "arrow.down.backward", "Income": "chart.line.uptrend.xyaxis",
-            "Transfers": "arrow.left.arrow.right", "Transfer": "arrow.left.arrow.right",
-        ]
-        return icons[category] ?? "ellipsis"
+    var body: some View {
+        Group {
+            if scheme == .dark {
+                LinearGradient(colors: [Color(hex: 0x1C2F73), Color(hex: 0x12163F)], startPoint: .top, endPoint: .bottom)
+            } else {
+                LinearGradient(colors: [Color(hex: 0xFFF1F5), Color(hex: 0xFBF8FB)], startPoint: .top, endPoint: .bottom)
+            }
+        }
+        .ignoresSafeArea()
     }
+}
+
+extension Transaction {
+    /// Red going out, green coming in, grey when it doesn't count.
+    var tone: Color { notCounted ? Pearl.muted : (inflow ? Pearl.moneyIn : Pearl.moneyOut) }
 }
