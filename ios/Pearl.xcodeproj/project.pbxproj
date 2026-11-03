@@ -24,6 +24,7 @@
 		EDF62B098CA2F256BB968358 /* PayAndBillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */; };
 		B012721D7224087DA976961B /* PlaidLinker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */; };
 		619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */; };
+		3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */; };
 		658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 186A54E5EB12390A80B72B43 /* ProfileView.swift */; };
 		5A36E4EB024471EF85DA99C8 /* AnswerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4499405DBDB62F2EAAD28248 /* AnswerSheet.swift */; };
 		5A97F97C51EB0251937EA8B1 /* QuickSortView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF92F0A38EF8C1E53492329D /* QuickSortView.swift */; };
@@ -66,6 +67,7 @@
 		FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayAndBillsView.swift; sourceTree = "<group>"; };
 		AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaidLinker.swift; sourceTree = "<group>"; };
 		D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupFlow.swift; sourceTree = "<group>"; };
+		44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupPayQuestions.swift; sourceTree = "<group>"; };
 		186A54E5EB12390A80B72B43 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		4499405DBDB62F2EAAD28248 /* AnswerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnswerSheet.swift; sourceTree = "<group>"; };
 		CF92F0A38EF8C1E53492329D /* QuickSortView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSortView.swift; sourceTree = "<group>"; };
@@ -220,6 +222,7 @@
 				FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */,
 				AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */,
 				D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */,
+				44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */,
 			);
 			path = Onboarding;
 			sourceTree = "<group>";
@@ -356,6 +359,7 @@
 				EDF62B098CA2F256BB968358 /* PayAndBillsView.swift in Sources */,
 				B012721D7224087DA976961B /* PlaidLinker.swift in Sources */,
 				619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */,
+				3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */,
 				658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */,
 				5A36E4EB024471EF85DA99C8 /* AnswerSheet.swift in Sources */,
 				5A97F97C51EB0251937EA8B1 /* QuickSortView.swift in Sources */,
