@@ -14,8 +14,6 @@ struct ReviewView: View {
     @State private var accounts: [AccountsOverview.Account] = []
     @State private var showingSkipped = false
     @State private var asking: Ask?
-    /// Pearl's yes-or-no guesses, for Quick sort (THL-254).
-    @State private var quick: [QuickSortPrompt.Card] = []
     @State private var sorting = false
     @State private var toast: Toast?
     @State private var busy = false
@@ -48,7 +46,7 @@ struct ReviewView: View {
         .overlay(alignment: .bottom) { toastView }
         .task { await load() }
         .fullScreenCover(isPresented: $sorting) {
-            QuickSortView(cards: quick, categories: categories) {
+            QuickSortView(asks: quick, categories: categories, names: recentNames) {
                 sorting = false
                 Task { await load() }
             }
@@ -237,11 +235,10 @@ struct ReviewView: View {
     }
 
     /// Names she already uses, for "Who sent this?".
-    private var recentNames: [String] {
-        var out: [String] = []
-        for name in (review?.jointIn ?? []).flatMap({ $0.people ?? [] }) where !out.contains(name) { out.append(name) }
-        return out
-    }
+    private var recentNames: [String] { review?.people ?? [] }
+
+    /// Quick sort (THL-254) walks the same open questions as this list.
+    private var quick: [Ask] { review?.asks.filter { !$0.skipped } ?? [] }
 
     // MARK: Loading and answering
 
@@ -251,7 +248,6 @@ struct ReviewView: View {
             if categories.isEmpty, let list: CategoryList = try? await app.api.get("api/categories") {
                 categories = list.categories.filter { $0.hidden != true }
             }
-            quick = ((try? await app.api.get("api/quick-sort", query: ["all": "1"]) as QuickSortPrompt)?.items) ?? []
             if accounts.isEmpty, let overview: AccountsOverview = try? await app.api.get("api/accounts/overview") {
                 accounts = overview.linked
             }
