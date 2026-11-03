@@ -17,17 +17,22 @@ struct CategorySheet: View {
     var spendingOnly = false
     /// What the disc shows instead of initials: "3" for three picked (T-51).
     var mark: String? = nil
+    /// T-04's "Regular bill": told on Save, so it can go on to Add to your
+    /// bills? (T-32). Nil hides the switch.
+    var onRegularBill: ((Bool) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var chosen: String
     @State private var spending: Bool
     @State private var remember = false
+    @State private var bill = false
 
     init(name: String, amount: String, tone: Color, categories: [CategoryList.Category], current: String,
          merchant: String? = nil, spendingOnly: Bool = false, mark: String? = nil,
-         onSave: @escaping (String, Bool) -> Void) {
+         onRegularBill: ((Bool) -> Void)? = nil, onSave: @escaping (String, Bool) -> Void) {
         self.spendingOnly = spendingOnly
         self.mark = mark
+        self.onRegularBill = onRegularBill
         self.name = name
         self.amount = amount
         self.tone = tone
@@ -81,13 +86,24 @@ struct CategorySheet: View {
                         .tint(Pearl.action)
                         .padding(.horizontal, 4)
                     }
+                    if onRegularBill != nil, spending {
+                        if merchant == nil { RowSeparator(inset: 0).padding(.top, 4) }
+                        Toggle(isOn: $bill) {
+                            Text("Regular bill").font(Nacre.body).foregroundColor(Pearl.ink)
+                        }
+                        .tint(Pearl.action)
+                        .padding(.horizontal, 4)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
             }
-            Button("Save") { onSave(chosen, remember) }
+            Button("Save") {
+                onRegularBill?(bill && spending)
+                onSave(chosen, remember)
+            }
                 .buttonStyle(NacreButtonStyle())
-                .disabled(chosen == current && !remember)
+                .disabled(chosen == current && !remember && !bill)
                 .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
         }
         .background(SheetBackground())

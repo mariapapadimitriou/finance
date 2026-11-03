@@ -21,6 +21,11 @@ struct TransactionDetailView: View {
     /// it pays, or What was this?.
     @State private var asking: Asking?
 
+    struct BillStart: Identifiable {
+        let category: String
+        var id: String { category }
+    }
+
     struct Asking: Identifiable {
         let step: AnswerSheet.Step
         var id: AnswerSheet.Step { step }
@@ -36,6 +41,9 @@ struct TransactionDetailView: View {
     @State private var recent: [String] = []
     /// A transaction added by hand can be taken out again.
     @State private var deleting = false
+    /// T-04's Regular bill, then Add to your bills? (T-32) with the category chosen.
+    @State private var regularBill = false
+    @State private var billing: String?
     @State private var busy = false
     @State private var message: String?
     @State private var error: String?
@@ -91,9 +99,26 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $picking) {
             // The stored category, not the chip ("Transfer", "Not sorted yet").
             CategorySheet(name: t.merchant, amount: Format.money(t), tone: t.tone, categories: categories,
-                          current: t.category ?? t.label, merchant: t.merchant) { name, remember in
+                          current: t.category ?? t.label, merchant: t.merchant,
+                          onRegularBill: t.inflow ? nil : { regularBill = $0 }) { name, remember in
                 picking = false
-                Task { await change(to: name, remember: remember) }
+                let bill = regularBill
+                regularBill = false
+                Task {
+                    if name != (t.category ?? t.label) || remember {
+                        await change(to: name, remember: remember)
+                    } else {
+                        // Let Change category close before the next sheet opens.
+                        try? await Task.sleep(nanoseconds: 450_000_000)
+                    }
+                    if bill { billing = name }
+                }
+            }
+        }
+        .sheet(item: Binding(get: { billing.map { BillStart(category: $0) } }, set: { billing = $0?.category })) { start in
+            AddToBillsSheet(t: t, api: app.api, categories: categories, category: start.category) { said in
+                billing = nil
+                Task { await run { said } }
             }
         }
         .sheet(item: $asking) { a in
