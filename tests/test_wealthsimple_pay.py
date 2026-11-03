@@ -102,6 +102,17 @@ def test_her_split_is_suggested(client):
     assert row["note"] == "Paid back or income? Tell us"
 
 
+def test_opening_it_still_says_not_sorted_yet(client):
+    # The detail marks it as the list does (2026-11-02), not "Transfer".
+    ingest(client.st, IngestResult([tx("Cash Received - Anastasiapapas")], "ws"))
+    i = ids(client.st)["Cash Received - Anastasiapapas"]
+    rows = client.get("/api/transactions/list", query_string={"month": day(3)[:7]}).get_json()
+    row = next(r for r in rows["transactions"] if r["id"] == i)
+    detail = client.get(f"/api/transactions/{i}").get_json()
+    assert detail["chip"] == row["chip"] == {"label": "Not sorted yet", "suggested": True}
+    assert detail["note"] == row["note"] == "Paid back or income? Tell us"
+
+
 def test_with_no_split_it_asks_whether_she_is_paying_you_back(client):
     ingest(client.st, IngestResult([tx("Cash Received - Anastasiapapas")], "ws"))
     item = client.get("/api/review").get_json()["money_in"][0]

@@ -31,7 +31,7 @@ struct TransactionDetailView: View {
                 if let transfer = t.transfer {
                     transferLegs(transfer)
                 } else {
-                    if t.suggested { guessCard } else { categoryCard }
+                    if t.asks { askingCard } else if t.suggested { guessCard } else { categoryCard }
                     linked
                     options
                     details
@@ -172,6 +172,18 @@ struct TransactionDetailView: View {
         case "savings": return "Savings"
         default: return nil
         }
+    }
+
+    /// "Not sorted yet · Paid back or income? Tell us": Needs a look is
+    /// asking, so answering it happens there.
+    private var askingCard: some View {
+        NavigationLink { ReviewView() } label: {
+            GlassCard {
+                row(title: t.label, sub: t.note.flatMap { $0.isEmpty ? nil : $0 } ?? "Needs a look", chevron: true)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens Needs a look")
     }
 
     /// T-38: "Was this dining out?" Yes, or something else.

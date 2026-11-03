@@ -150,6 +150,28 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
     return [(t, txlist.describe(t, ctx)) for t in rows]
 
 
+def _needs_a_look(st):
+    """What Needs a look asks about, and how a row says so.
+
+    Needs a look is the review's own set (2026-10-22), whatever the month, so
+    the filter shows the same number as the badge; a dashed chip only ever
+    marks one of them; and money in it's still asking about is "Not sorted
+    yet", not a Transfer. The list and the detail mark rows the same way, so
+    opening one never changes what it says (2026-11-02)."""
+    from . import txlist
+    from .review import for_store, ids_in
+    rev = for_store(st)
+    looking = ids_in(rev)
+    asking_in = {it["txn"]["id"] for it in rev.get("money_in") or []}
+
+    def mark(r: dict) -> dict:
+        r = txlist.still_asking(r, asking_in)
+        if r.get("suggested") and r["id"] not in looking:
+            r = {**r, "suggested": False, "chip": {**(r.get("chip") or {}), "suggested": False}}
+        return r
+    return looking, mark
+
+
 @bp.get("/transactions/list")
 def transactions_list():
     """The transactions list (THL-122): one page of rows and the totals above.
@@ -212,17 +234,8 @@ def transactions_list():
                                                  _date.fromisoformat(_today_iso()))
                    for d in r["dates"]}
         rows = [(t, r) for t, r in rows if (t.merchant, t.date[:10]) in charges]
-    # Needs a look is the review's own set (2026-10-22), whatever the month,
-    # so the filter shows the same number as the badge; and a dashed chip
-    # only ever marks one of them.
-    from .review import for_store, ids_in
-    rev = for_store(st)
-    looking = ids_in(rev)
-    asking_in = {it["txn"]["id"] for it in rev.get("money_in") or []}
-    rows = [(t, txlist.still_asking(r, asking_in)) for t, r in rows]
-    rows = [(t, r if not r.get("suggested") or r["id"] in looking else {**r, "suggested": False,
-                                                                       "chip": {**(r.get("chip") or {}), "suggested": False}})
-            for t, r in rows]
+    looking, mark = _needs_a_look(st)
+    rows = [(t, mark(r)) for t, r in rows]
     if filters["look"]:
         filters["ids"] = looking if "ids" not in filters else (filters["ids"] & looking)
         filters["look"] = False
@@ -283,7 +296,7 @@ def transaction_detail(txn_id: str):
             continue
         txns = [x for x, _ in rows]
         splits, payer = st.splits(), st.payback_people()
-        r = dict(r)
+        r = dict(_needs_a_look(st)[1](r))
         # U-03: when it was left out, and a usual month of its group.
         from .transactions_extras_api import one_off_line
         r["one_off_line"] = one_off_line(st, txns, t)

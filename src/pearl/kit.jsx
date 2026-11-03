@@ -203,7 +203,8 @@ export function TxRow({ name, logo, meta, note, noteLink = false, chip, amount,
         {tags.map((t) => <TagChip key={t} label={t} />)}
       </span>
       <span className={`pk-amt ${muted ? 'muted' : amountTone(inflow)}`}>
-        {txAmount(amount, { inflow: inflow && !muted, signed: !muted })}
+        {/* Grey says it isn't counted; the sign still says which way it went (THL-258). */}
+        {txAmount(amount, { inflow, signed: true })}
       </span>
     </button>
   );

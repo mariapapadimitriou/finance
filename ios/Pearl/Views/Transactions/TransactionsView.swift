@@ -648,7 +648,7 @@ struct TransactionRow: View {
                     Text(extra).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
                 }
                 if t.suggested {
-                    GuessChip(label: t.label).padding(.top, 4)
+                    GuessChip(label: t.label, question: !t.asks).padding(.top, 4)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -712,11 +712,13 @@ struct Initials: View {
 /// "? Dining out?": Pearl's guess, dashed, waiting for a yes.
 struct GuessChip: View {
     let label: String
+    /// "Dining out?" for a guess; "Not sorted yet" already says it's waiting.
+    var question = true
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "questionmark.circle").font(.system(size: 11, weight: .semibold))
-            Text("\(label)?")
+            Text(question ? "\(label)?" : label)
         }
         .font(Nacre.footnote)
         .foregroundColor(Pearl.ink)

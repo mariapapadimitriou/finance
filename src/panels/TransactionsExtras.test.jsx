@@ -250,12 +250,14 @@ describe('transaction amounts are signed and coloured (2026-10-14)', () => {
     expect(inn).toContain('+$590.00');
     expect(inn).toMatch(/pk-amt in/);
     expect(txAmount(130)).toBe('$130.00');
-    // A transfer is neither: grey, no sign.
+    // A transfer is neither: grey, but signed by which way it went (THL-258).
     const tr = renderToStaticMarkup(<TxRow name="TFR-TO 3333" amount={500} muted />);
     expect(tr).toContain('pk-amt muted');
     expect(tr).not.toMatch(/pk-amt (in|out)/);
-    expect(tr).toContain('>$500.00<');
-    expect(tr).not.toContain('-$500.00');
+    expect(tr).toContain('-$500.00');
+    const back = renderToStaticMarkup(<TxRow name="TFR-FROM 4417" amount={500} inflow muted />);
+    expect(back).toContain('pk-amt muted');
+    expect(back).toContain('+$500.00');
   });
 });
 

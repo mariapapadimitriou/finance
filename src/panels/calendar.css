@@ -132,7 +132,7 @@
 }
 .cal-range-rows .cal-amt { color: var(--money-out); }
 .cal-range-rows .cal-amt.in { color: var(--money-in); }
-.cal-range-rows .cal-amt.flat { color: var(--ink); }
+.cal-range-rows .cal-amt.flat { color: var(--ink-muted); }   /* not counted: grey, still signed (THL-258) */
 .pk .rg-ranges { gap: var(--space-4); align-items: stretch; }
 .rg-ranges-head { display: flex; flex-direction: column; gap: var(--space-1); }
 .rg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--space-4); }
