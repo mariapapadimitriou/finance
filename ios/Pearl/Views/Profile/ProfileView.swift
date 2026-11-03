@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Profile: who's signed in, where the rest of Pearl lives, and signing out.
+/// Profile: who's signed in, Sign-in & security and Linked accounts (S-01,
+/// S-05), where the rest of Pearl lives, and signing out.
 @MainActor
 struct ProfileView: View {
     @EnvironmentObject private var app: AppModel
@@ -23,9 +24,21 @@ struct ProfileView: View {
                 }
 
                 PearlCard(padding: 0, spacing: 0) {
+                    NavigationLink { SignInSecurityView() } label: {
+                        row("Sign-in & security", chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                    Rectangle().fill(Pearl.rule).frame(height: 1)
+                    NavigationLink { LinkedAccountsView() } label: {
+                        row("Linked accounts", chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                PearlCard(padding: 0, spacing: 0) {
                     Link(destination: app.api.baseURL) {
                         row("Open Pearl on the web",
-                            sub: "Accounts, rules, income and bills, and privacy are on the web for now.",
+                            sub: "Rules, income and bills, and privacy are on the web for now.",
                             chevron: true)
                     }
                     .buttonStyle(.plain)
