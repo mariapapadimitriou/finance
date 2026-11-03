@@ -68,7 +68,9 @@ struct TransactionDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .sheet(isPresented: $picking) {
-            CategoryPicker(categories: categories, current: t.label, merchant: t.merchant) { name, remember in
+            // The stored category, not the chip ("Transfer", "Not sorted yet").
+            CategorySheet(name: t.merchant, amount: Format.money(t), tone: t.tone, categories: categories,
+                          current: t.category ?? t.label, merchant: t.merchant) { name, remember in
                 picking = false
                 Task { await change(to: name, remember: remember) }
             }
