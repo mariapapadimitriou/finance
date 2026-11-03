@@ -106,8 +106,9 @@ struct MainTabs: View {
     @State private var tab: Tab = .home
     @State private var reviewCount = 0
     /// Quick sort on return (THL-254): offered at most once a day, when
-    /// Pearl has new guesses to check.
-    @State private var quickSort: [QuickSortPrompt.Card] = []
+    /// something new needs a look; it walks every open question.
+    @State private var quickSort: [Ask] = []
+    @State private var quickSortNames: [String] = []
     @State private var categories: [CategoryList.Category] = []
     @State private var offered = false
 
@@ -128,7 +129,7 @@ struct MainTabs: View {
         .task(id: app.version) { await loadCount() }
         .task { await offerQuickSort() }
         .fullScreenCover(isPresented: Binding(get: { !quickSort.isEmpty }, set: { if !$0 { quickSort = [] } })) {
-            QuickSortView(cards: quickSort, categories: categories) { quickSort = [] }
+            QuickSortView(asks: quickSort, categories: categories, names: quickSortNames) { quickSort = [] }
         }
     }
 
@@ -136,11 +137,12 @@ struct MainTabs: View {
         guard !offered else { return }
         offered = true
         guard let prompt: QuickSortPrompt = try? await app.api.get("api/quick-sort"),
-              prompt.show, !prompt.items.isEmpty else { return }
+              prompt.show, !prompt.asks.isEmpty else { return }
         if let list: CategoryList = try? await app.api.get("api/categories") {
             categories = list.categories.filter { $0.hidden != true }
         }
-        quickSort = prompt.items
+        quickSortNames = prompt.review?.people ?? []
+        quickSort = prompt.asks
     }
 
     private func page<Content: View>(_ which: Tab, @ViewBuilder content: () -> Content) -> some View {

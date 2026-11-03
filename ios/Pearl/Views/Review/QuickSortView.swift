@@ -1,26 +1,20 @@
 import SwiftUI
 
-/// What GET /api/quick-sort says: whether to offer it today, and its cards.
+/// What GET /api/quick-sort says: whether to offer it today, and what to
+/// walk. One number for the whole app (2026-10-24): Quick sort goes through
+/// every question Needs a look asks, in its order, not only Pearl's guesses.
 struct QuickSortPrompt: Decodable {
     let show: Bool
-    let items: [Card]
+    let review: Review?
 
-    struct Card: Decodable, Identifiable, Hashable {
-        let id: String
-        let merchant: String
-        let date: String
-        let account: String?
-        let amount: Double
-        let inflow: Bool
-        /// Pearl's guess at the category.
-        let guess: String
-    }
+    /// The open questions, skipped ones left where they are.
+    var asks: [Ask] { review?.asks.filter { !$0.skipped } ?? [] }
 
     init(from decoder: Decoder) throws {
-        enum Keys: String, CodingKey { case show, items }
+        enum Keys: String, CodingKey { case show, review }
         let c = try decoder.container(keyedBy: Keys.self)
         show = (try? c.decodeIfPresent(Bool.self, forKey: .show)) ?? false
-        items = ((try? c.decodeIfPresent([Lenient<Card>].self, forKey: .items)) ?? [])?.compactMap { $0.value } ?? []
+        review = (try? c.decodeIfPresent(Review.self, forKey: .review)) ?? nil
     }
 }
 
@@ -31,23 +25,40 @@ struct QuickSortDone: Decodable {
     let after: Double?
 }
 
-/// Quick sort (THL-254; T-63 to T-66, T-72): Pearl's yes-or-no guesses as a
-/// stack of cards. Swipe right or ✓ for yes; swipe left or ✕ for something
-/// else, which opens the category sheet. Leaving early keeps the rest in
-/// Needs a look.
+extension Review {
+    /// Names she already uses, for "Who sent this?".
+    var people: [String] {
+        var out: [String] = []
+        for name in jointIn.flatMap({ $0.people ?? [] }) where !out.contains(name) { out.append(name) }
+        return out
+    }
+}
+
+/// Quick sort (THL-254; T-63 to T-66, T-72): Needs a look's questions as a
+/// stack of cards. Pearl's guesses are yes-or-no: swipe right or ✓ for yes;
+/// swipe left or ✕ for something else, which opens the category sheet. Any
+/// other question opens the sheet Needs a look asks it with; swipe left
+/// skips it. Leaving early keeps the rest in Needs a look.
 @MainActor
 struct QuickSortView: View {
     @EnvironmentObject private var app: AppModel
-    let cards: [QuickSortPrompt.Card]
+    let asks: [Ask]
     let categories: [CategoryList.Category]
+    var names: [String] = []
     let onClose: () -> Void
 
     @State private var index = 0
     @State private var drag: CGSize = .zero
     /// The card flying off, and which way.
     @State private var leaving: Bool?
-    @State private var picking: QuickSortPrompt.Card?
+    /// Something else on a guess: the category sheet.
+    @State private var picking: Ask?
+    /// Any other question: the sheet it's asked in.
+    @State private var asking: Ask?
+    @State private var accounts: [AccountsOverview.Account] = []
     @State private var done: QuickSortDone?
+    /// An answer on its way: a closing sheet mustn't bring the card back.
+    @State private var busy = false
     @State private var error: String?
 
     /// How far a card has to travel to count as a swipe.
@@ -62,7 +73,8 @@ struct QuickSortView: View {
                 Spacer(minLength: 12)
                 stack.padding(.horizontal, 32)
                 Spacer(minLength: 16)
-                Text("Swipe right for yes, left if it’s something else")
+                Text(current.map(isGuess) ?? true ? "Swipe right for yes, left if it’s something else"
+                     : "Swipe right to answer, left to skip")
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .accessibilityHidden(true)
                 if let error = error {
@@ -73,17 +85,36 @@ struct QuickSortView: View {
         }
         .nacreScreen()
         .task { await begin() }
-        .sheet(item: $picking, onDismiss: {
-            // Closed without choosing: the card comes back.
-            withAnimation(.spring()) { leaving = nil; drag = .zero }
-        }) { card in
-            CategorySheet(name: card.merchant, amount: amount(card), tone: tone(card),
-                          categories: categories, current: card.guess) { name, _ in
+        .sheet(item: $picking, onDismiss: comeBack) { ask in
+            CategorySheet(name: ask.t.name, amount: amount(ask.t), tone: tone(ask.t),
+                          categories: categories, current: guess(ask)) { name, _ in
                 picking = nil
-                Task { await answer(card, ["action": "category", "category": name]) }
+                Task { await step(ask, ["action": "category", "category": name]) }
+            }
+        }
+        .sheet(item: $asking, onDismiss: comeBack) { ask in
+            if ask.item.rest != nil {
+                // "$172 left to sort" (S-28): sorting the rest of a deposit.
+                PartsSheet(deposit: PartsDeposit(id: ask.t.id, name: ask.t.name, amount: ask.t.amount,
+                                                 date: ask.t.date, rest: true), api: app.api) { reply in
+                    asking = nil
+                    Task { await answered(ask, .done(reply)) }
+                }
+            } else {
+                AnswerSheet(ask: ask, categories: categories, accounts: accounts,
+                            names: names, api: app.api) { answer in
+                    asking = nil
+                    Task { await answered(ask, answer) }
+                }
             }
         }
     }
+
+    private var current: Ask? { index < asks.count ? asks[index] : nil }
+
+    private func isGuess(_ ask: Ask) -> Bool { ask.kind == .category }
+
+    private func guess(_ ask: Ask) -> String { ask.item.guess?.text ?? ask.t.category ?? "Other" }
 
     // MARK: The deck
 
@@ -91,7 +122,7 @@ struct QuickSortView: View {
         ZStack {
             VStack(spacing: 4) {
                 Text("Quick sort").font(Nacre.headline).foregroundColor(Pearl.ink)
-                Text("\(min(index + 1, cards.count)) of \(cards.count)")
+                Text("\(min(index + 1, asks.count)) of \(asks.count)")
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
             }
             .accessibilityElement(children: .combine)
@@ -115,7 +146,7 @@ struct QuickSortView: View {
         ZStack {
             // The cards still to come, peeking out underneath.
             ForEach((1...2).reversed(), id: \.self) { depth in
-                if index + depth < cards.count {
+                if index + depth < asks.count {
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
                         .fill(Color.white.opacity(0.55))
                         .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -124,15 +155,15 @@ struct QuickSortView: View {
                         .offset(y: CGFloat(depth) * 10)
                 }
             }
-            if index < cards.count {
-                card(cards[index])
+            if let ask = current {
+                card(ask)
                     .offset(x: offsetX, y: drag.height * 0.2)
                     .rotationEffect(.degrees(Double(offsetX / 18)))
                     .gesture(swipe)
                     .accessibilityElement(children: .combine)
-                    .accessibilityAction(named: "Yes") { Task { await yes() } }
-                    .accessibilityAction(named: "Something else") { no() }
-                    .id(cards[index].id)
+                    .accessibilityAction(named: isGuess(ask) ? "Yes" : "Answer") { right() }
+                    .accessibilityAction(named: isGuess(ask) ? "Something else" : "Skip") { left() }
+                    .id(ask.id)
             }
         }
         .frame(height: 400)
@@ -146,25 +177,30 @@ struct QuickSortView: View {
         }
     }
 
-    private func card(_ c: QuickSortPrompt.Card) -> some View {
-        VStack(spacing: 10) {
-            Text("PEARL’S GUESS").font(Nacre.caption2).tracking(0.6).foregroundColor(Pearl.action)
-            Initials(name: c.merchant, size: 64)
+    /// Who, how much, when, and the question: "Dining out?" for a guess,
+    /// "Saved or spent?", "Who sent this?"… for the rest.
+    private func card(_ ask: Ask) -> some View {
+        let t = ask.t
+        return VStack(spacing: 10) {
+            Text(isGuess(ask) ? "PEARL’S GUESS" : "NEEDS A LOOK")
+                .font(Nacre.caption2).tracking(0.6).foregroundColor(Pearl.action)
+            Initials(name: t.name, size: 64)
                 .overlay(Circle().strokeBorder(
                     AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
                     lineWidth: 1.2))
                 .padding(.top, 4)
-            Text(c.merchant).font(Nacre.headline).foregroundColor(Pearl.ink)
+            Text(t.name).font(Nacre.headline).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(2)
-            Text(amount(c))
+            Text(amount(t))
                 .font(.custom("Fraunces-SemiBold", size: 40, relativeTo: .largeTitle))
-                .foregroundColor(tone(c)).lineLimit(1).minimumScaleFactor(0.6)
-            Text([Format.relativeDay(c.date), c.account].compactMap { $0 }.filter { !$0.isEmpty }
+                .foregroundColor(tone(t)).lineLimit(1).minimumScaleFactor(0.6)
+            Text([Format.relativeDay(t.date), t.accountName].compactMap { $0 }.filter { !$0.isEmpty }
                     .joined(separator: " · "))
                 .font(Nacre.footnote).foregroundColor(Pearl.ink).lineLimit(1)
-            Text("\(c.guess)?")
+            Text(isGuess(ask) ? "\(guess(ask))?" : ask.chip)
                 .font(Nacre.title).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center).padding(.top, 14)
+                .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8)
+                .padding(.top, 14)
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -175,15 +211,16 @@ struct QuickSortView: View {
             .strokeBorder(LinearGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass],
                                          startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2))
         .shadow(color: Color(red: 0.4, green: 0.3, blue: 0.6).opacity(0.15), radius: 16, y: 10)
-        .overlay(alignment: .topLeading) { stamp }
+        .overlay(alignment: .topLeading) { stamp(guessing: isGuess(ask)) }
     }
 
-    /// YES or SOMETHING ELSE, as the card leans one way (T-64, T-65).
-    @ViewBuilder private var stamp: some View {
+    /// YES or SOMETHING ELSE as a guess leans one way (T-64, T-65); ANSWER
+    /// or SKIP for a question.
+    @ViewBuilder private func stamp(guessing: Bool) -> some View {
         let lean = leaving.map { $0 ? threshold : -threshold } ?? drag.width
         let strength = min(1, abs(lean) / threshold)
         if lean > 8 {
-            Text("YES")
+            Text(guessing ? "YES" : "ANSWER")
                 .font(.custom("Figtree-SemiBold", size: 18)).tracking(1)
                 .foregroundColor(Pearl.action)
                 .padding(.horizontal, 14).padding(.vertical, 6)
@@ -192,7 +229,7 @@ struct QuickSortView: View {
                 .padding(28)
                 .opacity(strength)
         } else if lean < -8 {
-            Text("SOMETHING ELSE")
+            Text(guessing ? "SOMETHING ELSE" : "SKIP")
                 .font(.custom("Figtree-SemiBold", size: 16)).tracking(1)
                 .foregroundColor(Pearl.ink)
                 .padding(.horizontal, 14).padding(.vertical, 6)
@@ -209,21 +246,24 @@ struct QuickSortView: View {
             .onChanged { drag = $0.translation }
             .onEnded { value in
                 if value.translation.width > threshold {
-                    Task { await yes() }
+                    right()
                 } else if value.translation.width < -threshold {
-                    no()
+                    left()
                 } else {
                     withAnimation(.spring()) { drag = .zero }
                 }
             }
     }
 
-    private var buttons: some View {
+    @ViewBuilder private var buttons: some View {
+        let guessing = current.map(isGuess) ?? true
         HStack(spacing: 64) {
-            roundButton(symbol: "xmark", label: "Something else", filled: false) { no() }
-            roundButton(symbol: "checkmark", label: "Yes", filled: true) { Task { await yes() } }
+            roundButton(symbol: guessing ? "xmark" : "forward", label: guessing ? "Something else" : "Skip",
+                        filled: false) { left() }
+            roundButton(symbol: guessing ? "checkmark" : "text.bubble", label: guessing ? "Yes" : "Answer",
+                        filled: true) { right() }
         }
-        .disabled(index >= cards.count || leaving != nil)
+        .disabled(current == nil || leaving != nil)
     }
 
     private func roundButton(symbol: String, label: String, filled: Bool,
@@ -271,31 +311,72 @@ struct QuickSortView: View {
     // MARK: Answers
 
     private func begin() async {
-        // Started: today's offer is used, and these cards aren't new any more.
-        let _: OK? = try? await app.api.post("api/quick-sort/seen", ["ids": cards.map(\.id), "start": true])
+        // Started: today's offer is used, and these questions aren't new any more.
+        let _: OK? = try? await app.api.post("api/quick-sort/seen", ["ids": asks.map(\.item.key), "start": true])
+        if accounts.isEmpty, let overview: AccountsOverview = try? await app.api.get("api/accounts/overview") {
+            accounts = overview.linked
+        }
     }
 
-    private func yes() async {
-        guard index < cards.count, leaving == nil else { return }
-        let card = cards[index]
-        withAnimation(.easeIn(duration: 0.25)) { leaving = true }
-        await answer(card, ["action": "right"])
+    /// Yes to a guess, or open a question.
+    private func right() {
+        guard let ask = current, leaving == nil else { return }
+        if isGuess(ask) {
+            withAnimation(.easeIn(duration: 0.25)) { leaving = true }
+            Task { await step(ask, ["action": "right"]) }
+        } else {
+            withAnimation(.spring()) { drag = .zero }
+            asking = ask
+        }
     }
 
-    private func no() {
-        guard index < cards.count, leaving == nil else { return }
+    /// Something else for a guess; skip a question.
+    private func left() {
+        guard let ask = current, leaving == nil else { return }
         withAnimation(.easeIn(duration: 0.25)) { leaving = false }
-        picking = cards[index]
+        if isGuess(ask) {
+            picking = ask
+        } else {
+            Task { await step(ask, ["action": "skip"]) }
+        }
     }
 
-    private func answer(_ card: QuickSortPrompt.Card, _ body: [String: Any]) async {
+    /// A sheet closed without an answer: the card comes back.
+    private func comeBack() {
+        guard !busy else { return }
+        withAnimation(.spring()) { leaving = nil; drag = .zero }
+    }
+
+    /// The question's sheet did the work; the batch notes what it said, for
+    /// the done screen. Skip in the sheet moves it to Skipped too.
+    private func answered(_ ask: Ask, _ answer: ReviewAnswer) async {
+        busy = true
+        withAnimation(.easeIn(duration: 0.25)) { leaving = true }
         do {
-            let _: OK = try await app.api.put("api/quick-sort/\(card.id)", body)
+            let reply = try await answer.send(app.api)
+            if case .skip(_, _) = answer {
+                await step(ask, ["action": "skip"])
+            } else {
+                await step(ask, ["action": "marked", "title": reply.title ?? answer.done])
+            }
+        } catch {
+            busy = false
+            self.error = app.handle(error)
+            comeBack()
+        }
+    }
+
+    private func step(_ ask: Ask, _ body: [String: Any]) async {
+        busy = true
+        defer { busy = false }
+        do {
+            let _: OK = try await app.api.put("api/quick-sort/\(ask.t.id)", body)
             error = nil
             next()
         } catch {
             self.error = app.handle(error)
-            withAnimation(.spring()) { leaving = nil; drag = .zero }
+            busy = false
+            comeBack()
         }
     }
 
@@ -303,7 +384,7 @@ struct QuickSortView: View {
         drag = .zero
         leaving = nil
         index += 1
-        if index >= cards.count { Task { await finish() } }
+        if index >= asks.count { Task { await finish() } }
     }
 
     private func finish() async {
@@ -321,14 +402,14 @@ struct QuickSortView: View {
         onClose()
     }
 
-    private func amount(_ c: QuickSortPrompt.Card) -> String {
-        (c.inflow ? "+" : "\u{2212}") + Format.amount(c.amount)
+    private func amount(_ t: BriefTransaction) -> String {
+        (t.inflow ? "+" : "\u{2212}") + Format.amount(abs(t.amount))
     }
 
-    private func tone(_ c: QuickSortPrompt.Card) -> Color { c.inflow ? Pearl.moneyIn : Pearl.moneyOut }
+    private func tone(_ t: BriefTransaction) -> Color { t.inflow ? Pearl.moneyIn : Pearl.moneyOut }
 }
 
-/// "Quick sort · 4 guesses to check" at the top of Needs a look (T-10).
+/// "Quick sort · 11 to sort, one at a time" at the top of Needs a look (T-10).
 struct QuickSortCard: View {
     let count: Int
     let action: () -> Void
@@ -341,7 +422,7 @@ struct QuickSortCard: View {
                     .frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Quick sort").font(Nacre.headline).foregroundColor(Pearl.ink)
-                    Text(count == 1 ? "1 guess to check" : "\(count) guesses to check")
+                    Text("\(count) to sort, one at a time")
                         .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 }
                 Spacer()
