@@ -34,6 +34,7 @@
 		38B62523E86CEC2E175EB32E /* AddTransactionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DAF48079BA4F788252E43AE /* AddTransactionSheet.swift */; };
 		7000237F2AE92DE2B7AFB076 /* BulkTagSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7A077E46FA501000CDD471 /* BulkTagSheet.swift */; };
 		C85A9FB515E2B60838612A9A /* CalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 482C54893F5AFD82B6CA7430 /* CalendarView.swift */; };
+		4887016EBE5C811B5754C433 /* CategoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04FB8BCBA07E255A096C7C58 /* CategoryPage.swift */; };
 		B1FFE2B19D12A9AD736E9FBE /* CategorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F3819F3BB3A338B035DE02 /* CategorySheet.swift */; };
 		8AF9A0C07760B9758CC9F76D /* PartsFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */; };
 		00E8B2945E5B9C6B0391813A /* SplitFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A5D39D9874E14925943286 /* SplitFlow.swift */; };
@@ -78,6 +79,7 @@
 		5DAF48079BA4F788252E43AE /* AddTransactionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTransactionSheet.swift; sourceTree = "<group>"; };
 		6B7A077E46FA501000CDD471 /* BulkTagSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkTagSheet.swift; sourceTree = "<group>"; };
 		482C54893F5AFD82B6CA7430 /* CalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarView.swift; sourceTree = "<group>"; };
+		04FB8BCBA07E255A096C7C58 /* CategoryPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryPage.swift; sourceTree = "<group>"; };
 		56F3819F3BB3A338B035DE02 /* CategorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorySheet.swift; sourceTree = "<group>"; };
 		96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartsFlow.swift; sourceTree = "<group>"; };
 		53A5D39D9874E14925943286 /* SplitFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitFlow.swift; sourceTree = "<group>"; };
@@ -255,6 +257,7 @@
 				5DAF48079BA4F788252E43AE /* AddTransactionSheet.swift */,
 				6B7A077E46FA501000CDD471 /* BulkTagSheet.swift */,
 				482C54893F5AFD82B6CA7430 /* CalendarView.swift */,
+				04FB8BCBA07E255A096C7C58 /* CategoryPage.swift */,
 				56F3819F3BB3A338B035DE02 /* CategorySheet.swift */,
 				96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */,
 				53A5D39D9874E14925943286 /* SplitFlow.swift */,
@@ -372,6 +375,7 @@
 				38B62523E86CEC2E175EB32E /* AddTransactionSheet.swift in Sources */,
 				7000237F2AE92DE2B7AFB076 /* BulkTagSheet.swift in Sources */,
 				C85A9FB515E2B60838612A9A /* CalendarView.swift in Sources */,
+				4887016EBE5C811B5754C433 /* CategoryPage.swift in Sources */,
 				B1FFE2B19D12A9AD736E9FBE /* CategorySheet.swift in Sources */,
 				8AF9A0C07760B9758CC9F76D /* PartsFlow.swift in Sources */,
 				00E8B2945E5B9C6B0391813A /* SplitFlow.swift in Sources */,
