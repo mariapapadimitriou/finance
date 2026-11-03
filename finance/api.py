@@ -1091,15 +1091,16 @@ def set_transaction_party(txn_id: str):
 
 @bp.put("/transactions/<txn_id>/joint-from")
 def set_joint_from(txn_id: str):
-    """Who put this money into a joint account: "me" (her own money, from an
-    account not in Pearl) or "them" (the other person, whose money pays for
-    that much of the month's joint spending), or null to ask again.
+    """Who put this money into a joint account: "me" (hers: her pay, or her
+    own money from an account not in Pearl), "them" (the other person's),
+    "both" (pay that's both of theirs: her share of it counts, T-33), or
+    null to ask again.
     `remember` answers for every deposit from that sender too. `person` is
     which of the people she shares the account with put it in."""
-    from .joint import ME, THEM
+    from .joint import BOTH, ME, THEM
     body = request.get_json(silent=True) or {}
     who = body.get("who")
-    if who not in (ME, THEM, None):
+    if who not in (ME, THEM, BOTH, None):
         return jsonify({"error": "Say who put it in: you, or the other person."}), 400
     st = store()
     t = st.get_transaction(txn_id)
@@ -1116,10 +1117,10 @@ def set_joint_from(txn_id: str):
     st.set_joint_deposit(txn_id, who, person)
     if body.get("remember"):
         st.set_joint_deposit_rule(t.account_id, t.merchant, who, person)
-    # Her own money moving between her pockets is never income.
     # Her own money into the joint account is her money moving: a transfer,
-    # never income or savings (2026-10-23).
-    if who == ME and t.category in ("Income", "Saved", "Other", "Unsorted transfers"):
+    # never savings (2026-10-23). Her pay stays income: "Whose pay is this?
+    # Me" (T-33).
+    if who == ME and t.category in ("Saved", "Other", "Unsorted transfers"):
         st.set_transaction_category(txn_id, "Transfers")
     undo = undo_payload(before, snapshot(st, st.all_transactions()))
     undo["marks"] = {"joint_from": {txn_id: was}}

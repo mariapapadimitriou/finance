@@ -292,6 +292,8 @@ class Transaction:
     # On a joint account: the percent of every charge from this name that is
     # hers, when she splits them all (2026-10-26). None when she doesn't.
     joint_split: float | None = None
+    # The account's share (AM-04), when she set one.
+    joint_share: float | None = None
     joint_from: str | None = None
     # The person an e-Transfer was from or to, as she typed it (THL-122);
     # see finance/etransfers.py for the bank's own.
@@ -432,6 +434,7 @@ class Transaction:
             joint=row.get("joint") or None,
             share_set=row.get("my_share") is not None,
             joint_split=(None if row.get("joint_split") is None else float(row["joint_split"])),
+            joint_share=(None if row.get("joint_share") is None else float(row["joint_share"])),
             excluded=row.get("excluded") or None,
             income_type=row.get("income_type") or None,
             income_type_source=row.get("income_type_source") or None,

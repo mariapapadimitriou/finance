@@ -262,6 +262,7 @@ def build(transactions: list[Transaction], today: str | None = None,
             continue
         joint_in.append({"key": key, "txn": _brief(t), "label": t.joint,
                          "people": list(t.joint_people or []),
+                         "share": t.joint_split if t.joint_split is not None else t.joint_share,
                          "reason": f"It came into your account with {t.joint} from "
                                    "outside Pearl, so it could be yours or theirs."})
 

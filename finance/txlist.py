@@ -28,7 +28,7 @@ from collections import defaultdict
 from datetime import date
 
 from . import duplicates as dup
-from .analytics import counts_as_spending, is_others, share_amount, spend_amount
+from .analytics import _mine, counts_as_spending, is_others, share_amount, spend_amount
 from .categorize import CATEGORY_GROUPS, group_of, is_unsure
 from .etransfers import memo as etransfer_memo, party
 from .income import is_income
@@ -427,6 +427,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "joint": t.joint or "",
         "share_set": bool(t.share_set),
         "joint_split": t.joint_split,
+        "joint_share": t.joint_share,
         "joint_from": t.joint_from or "",
         "joint_person": t.joint_person or "",
         "joint_people": list(t.joint_people or []),
@@ -572,7 +573,7 @@ def grouped(rows: list[tuple[Transaction, dict]], by: str) -> list[dict]:
         if r["counts"] == "spending":
             g["spent"] += spend_amount(t)
         elif r["counts"] == "income":
-            g["income"] += -t.amount
+            g["income"] += -_mine(t)
         else:
             g["not_counted"] += r["amount"]
     groups = list(out.values())
@@ -617,7 +618,7 @@ def by_merchant(rows: list[tuple[Transaction, dict]]) -> list[dict]:
         if r["counts"] == "spending":
             g["spent"] += spend_amount(t)
         elif r["counts"] == "income":
-            g["income"] += -t.amount
+            g["income"] += -_mine(t)
         else:
             g["not_counted"] += r["amount"]
     groups = list(out.values())
@@ -639,7 +640,7 @@ def by_category(rows: list[tuple[Transaction, dict]]) -> list[dict]:
         if r["counts"] == "spending":
             g["spent"] += spend_amount(t)
         elif r["counts"] == "income":
-            g["income"] += -t.amount
+            g["income"] += -_mine(t)
         else:
             g["not_counted"] += r["amount"]
     groups = list(out.values())
@@ -725,7 +726,7 @@ def totals(rows: list[tuple[Transaction, dict]]) -> dict:
         if r["counts"] == "spending":
             spent += spend_amount(t)
         elif r["counts"] == "income":
-            income += -t.amount
+            income += -_mine(t)
         else:
             not_counted += r["amount"]
     return {"spent": round(spent, 2), "income": round(income, 2),

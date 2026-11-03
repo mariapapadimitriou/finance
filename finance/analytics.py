@@ -43,6 +43,12 @@ def share_amount(t: Transaction) -> float:
     return base
 
 
+def _mine(t: Transaction) -> float:
+    """Her part of money in: on a joint account, her share of pay that's
+    both of theirs (finance/joint.py); otherwise all of it."""
+    return t.my_share if t.joint and t.my_share is not None else t.amount
+
+
 def is_others(t: Transaction) -> bool:
     """A row that counts as nothing of yours: one you excluded, or a row on a
     joint account that is another member's money, in or out. Not your
@@ -210,11 +216,11 @@ def monthly_totals(transactions: list[Transaction]) -> list[dict]:
         elif is_others(t):
             continue                      # another member's, on a joint account
         elif cat == "Income" and t.amount < 0:
-            income[t.month] += abs(t.amount)
+            income[t.month] += abs(_mine(t))
         elif t.amount < 0 and not t.repays:
             # A friend paying you back is not money in: it came off the
             # charge it was for.
-            inflows[t.month] += abs(t.amount)
+            inflows[t.month] += abs(_mine(t))
         elif t.amount < 0 and t.unlinked_part > 0.005:
             # Only part of it paid the charge back (2026-10-26): the rest is
             # money in like any other.
