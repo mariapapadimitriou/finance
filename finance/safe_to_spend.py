@@ -86,6 +86,28 @@ def days_left(today: date) -> int:
     return (month_end(today) - today).days + 1
 
 
+def started_on(transactions: list[Transaction], today: date) -> date | None:
+    """The day Pearl's history starts, when that's after the 1st of this
+    month (O-11d, "Started mid-month"): the Allowance can only be for the
+    rest of it. None when there's history from before."""
+    if not transactions:
+        return None
+    first = date.fromisoformat(min(t.date for t in transactions)[:10])
+    if first.strftime("%Y-%m") != today.strftime("%Y-%m") or first.day == 1 or first > today:
+        return None
+    return first
+
+
+def _covered(transactions: list[Transaction], today: date) -> float:
+    """The part of this month Pearl can see: all of it, or from the day
+    history starts (`started_on`) to the end, of the month's days."""
+    start = started_on(transactions, today)
+    if start is None:
+        return 1.0
+    total = calendar.monthrange(today.year, today.month)[1]
+    return (total - start.day + 1) / total
+
+
 def _on_day(year: int, month: int, day: int) -> date:
     """`day` of a month, or its last day when the month is shorter. A pay day
     or bill on the 28th or later is taken as month end."""
@@ -331,6 +353,10 @@ def income_this_month(transactions: list[Transaction], today: date,
     """
     month = today.strftime("%Y-%m")
     end = month_end(today)
+    # A month's worth of income, for only the part of the month Pearl can
+    # see when history starts partway through it (O-11d). Pay with dates
+    # (confirmed or detected) already counts only what lands from then.
+    part = _covered(transactions, today)
     received = _received(transactions, month, today)
     received_c = sum(_cents(-_mine(t)) for t in received)
     lines = [{"label": t.merchant or t.description, "date": t.date,
@@ -345,12 +371,12 @@ def income_this_month(transactions: list[Transaction], today: date,
     # She asked for caution: the lowest of the last three months, once there
     # is history for it (I-03's "My income varies").
     if varies and careful:
-        amount_c = _at_least(careful["lowest"], received_c, lines,
+        amount_c = _at_least(careful["lowest"] * part, received_c, lines,
                              "Still expected, being cautious")
         return {**none, "amount": _dollars(amount_c), "source": "cautious",
                 "lines": lines, "cautious": careful}
     if told and told > 0:
-        amount_c = _at_least(told, received_c, lines, "Still expected this month")
+        amount_c = _at_least(told * part, received_c, lines, "Still expected this month")
         return {**none, "amount": _dollars(amount_c), "source": "told", "lines": lines,
                 "cautious": careful, "overridden": overridden}
     if pays:
@@ -388,12 +414,12 @@ def income_this_month(transactions: list[Transaction], today: date,
 
     usual = usual_income(transactions, today)
     if usual:
-        amount_c = _at_least(usual["average"], received_c, lines,
+        amount_c = _at_least(usual["average"] * part, received_c, lines,
                              "Still expected, from your usual month")
         return {**none, "amount": _dollars(amount_c), "source": "usual",
                 "lines": lines, "usual": usual}
     if entered_monthly and entered_monthly > 0:
-        amount_c = _at_least(entered_monthly, received_c, lines, "Still expected this month")
+        amount_c = _at_least(entered_monthly * part, received_c, lines, "Still expected this month")
         return {**none, "amount": _dollars(amount_c), "source": "entered", "lines": lines}
     if skipped:
         since = (today - timedelta(days=DEPOSIT_DAYS - 1)).isoformat()
@@ -622,7 +648,11 @@ def compute(transactions: list[Transaction], today: date, *,
     days = history_days(transactions, today)
     estimate = ("rough" if days < LEARNING_DAYS or income["source"] == "deposits"
                 else income["source"] if income["source"] in ("cautious", "usual") else None)
+    start = started_on(transactions, today)
     base = {"month": month, "today": today.isoformat(), "days_left": left,
+            # O-11d: history starts partway through the month, so the
+            # Allowance is for the rest of it, from this day.
+            "from": start.isoformat() if start else None,
             "next_pay": income["next_pay"], "income_source": income["source"],
             "estimate": estimate, "cautious": income["cautious"],
             # Pearl's own estimate, for "Use Pearl's estimate" when she has

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// O-11 "Your Allowance" (THL-125, THL-129): the first Allowance in a nacre
 /// ring, and the first steps. O-11b while Pearl is still learning, O-11c over
-/// this month's plan, O-12 when linking was skipped.
+/// this month's plan, O-11d started mid-month, O-12 when linking was skipped.
 @MainActor
 struct AllowanceView: View {
     @EnvironmentObject private var app: AppModel
@@ -83,7 +83,18 @@ struct AllowanceView: View {
 
     private var ringOverline: String {
         if over, let left = allowance?.daysLeft { return "\(left) DAYS LEFT" }
+        if let range = midMonth { return range }
         return Format.monthName(home?.month ?? Self.thisMonth).uppercased()
+    }
+
+    /// O-11d: "NOV 20–30", from the day history starts to the month's end.
+    private var midMonth: String? {
+        guard let from = allowance?.from, let start = Format.localDay(from) else { return nil }
+        let cal = Calendar.current
+        guard let days = cal.range(of: .day, in: .month, for: start)?.count else { return nil }
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return "\(f.string(from: start))–\(days)".uppercased()
     }
 
     private var ringAmount: String {
@@ -95,8 +106,12 @@ struct AllowanceView: View {
 
     private var progress: Double {
         guard !skipped, !over, let left = allowance?.daysLeft else { return 0 }
-        let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        return min(max(Double(left) / days, 0.05), 1)
+        var days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+        // Started mid-month: of the days it covers, not the whole month.
+        if let from = allowance?.from, let start = Format.localDay(from) {
+            days -= Double(Calendar.current.component(.day, from: start) - 1)
+        }
+        return min(max(Double(left) / max(days, 1), 0.05), 1)
     }
 
     private var caption: String {
@@ -109,6 +124,7 @@ struct AllowanceView: View {
             if (a.overBy ?? 0) < 0.5 { return "You’ve used this month’s Allowance.\(next)" }
             return "\(Format.whole(a.overBy ?? 0)) past this month’s plan.\(next)"
         default:
+            if midMonth != nil { return "For the rest of this month." }
             if a.estimate == true {
                 let when = a.nextPay.map { " on \(Format.short($0))" } ?? ""
                 return "An estimate for now. It gets sharper after your next pay\(when)."

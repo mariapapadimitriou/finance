@@ -226,12 +226,31 @@ struct Allowance: Decodable {
     let nextPay: String?
     let overBy: Double?
     let estimate: Bool?
+    /// O-11d: history starts this day, partway through the month, so the
+    /// Allowance is for the rest of it.
+    let from: String?
 
     enum CodingKeys: String, CodingKey {
-        case state, amount, shown, month, estimate
+        case state, amount, shown, month, estimate, from
         case daysLeft = "days_left"
         case nextPay = "next_pay"
         case overBy = "over_by"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func opt<T: Decodable>(_ type: T.Type, _ k: CodingKeys) -> T? { (try? c.decodeIfPresent(type, forKey: k)) ?? nil }
+        state = opt(String.self, .state)
+        amount = opt(Double.self, .amount)
+        shown = opt(Double.self, .shown)
+        daysLeft = opt(Int.self, .daysLeft)
+        month = opt(String.self, .month)
+        nextPay = opt(String.self, .nextPay)
+        overBy = opt(Double.self, .overBy)
+        // The server says which kind of estimate ("rough", "usual",
+        // "cautious") or null; any of them is an estimate.
+        estimate = opt(Bool.self, .estimate) ?? opt(String.self, .estimate).map { !$0.isEmpty }
+        from = opt(String.self, .from)
     }
 }
 

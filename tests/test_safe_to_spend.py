@@ -134,7 +134,8 @@ class TestMoneyComingIn:
         assert sts.income_this_month(rows, TODAY)["amount"] is None
 
     def test_without_regular_pay_it_uses_what_she_told_us(self):
-        rows = [tx("2026-10-02", "Client A", -900.00, "Income")]
+        # From the 1st: history from the 2nd would be the rest of the month (O-11d).
+        rows = [tx("2026-10-01", "Client A", -900.00, "Income")]
         income = sts.income_this_month(rows, TODAY, entered_monthly=3000.0)
         assert income["source"] == "entered" and income["amount"] == 3000.00
 
