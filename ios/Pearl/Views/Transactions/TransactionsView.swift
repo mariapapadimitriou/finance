@@ -3,8 +3,8 @@ import SwiftUI
 /// Cash flow (THL-122, T-01): the month's transactions under Spent, Came in
 /// and Leftover, with search (T-45), Filter & sort (T-17), Choose a month
 /// (T-47), the bank's state: syncing, failed, disconnected (T-36, T-58, T-59),
-/// and Select (T-19): a category, a tag or Not counted for several at once
-/// (T-51, T-20), with one Undo.
+/// Select (T-19): a category, a tag or Not counted for several at once
+/// (T-51, T-20), with one Undo; and Add a transaction by hand (T-23).
 @MainActor
 struct TransactionsView: View {
     @EnvironmentObject private var app: AppModel
@@ -46,6 +46,8 @@ struct TransactionsView: View {
     @State private var bulk: Bulk?
     @State private var busy = false
     @State private var toast: Toast?
+    /// T-23: adding one by hand.
+    @State private var adding = false
 
     enum Bulk: String, Identifiable {
         case category, tag
@@ -84,6 +86,11 @@ struct TransactionsView: View {
                     } else {
                         listHeader.padding(.top, 24)
                         list.padding(.top, 10)
+                        if !inSearch && !selecting && loadedOnce {
+                            Button("Add a transaction") { adding = true }
+                                .font(Nacre.textButton).foregroundColor(Pearl.action)
+                                .padding(.horizontal, 4).frame(minHeight: 44).padding(.top, 8)
+                        }
                     }
                 }
             }
@@ -101,6 +108,13 @@ struct TransactionsView: View {
         .navigationBarHidden(true)
         .onChange(of: selecting) { on in app.hidesTabBar = on }
         .onDisappear { app.hidesTabBar = false }
+        .sheet(isPresented: $adding) {
+            AddTransactionSheet(api: app.api, categories: categories) { said in
+                adding = false
+                withAnimation { toast = Toast(title: said, undo: nil) }
+                app.changed()
+            }
+        }
         .sheet(item: $bulk) { which in
             switch which {
             case .category:
