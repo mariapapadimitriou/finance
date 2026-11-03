@@ -348,6 +348,10 @@ struct TransactionList: Decodable {
     let monthTotals: Totals?
     /// Who owes her for splits, and the rows behind it ("Owed to you").
     let owedIds: [String]
+    /// "Sam and Dad · 2 · $106.06": who, for how many purchases, and how much.
+    let owedNames: [String]
+    let owedCount: Int
+    let owedTotal: Double
     /// Every tag she has used, for the filter.
     let tags: [String]
 
@@ -356,14 +360,23 @@ struct TransactionList: Decodable {
         case monthTotals = "month_totals"
     }
 
-    private struct Owed: Decodable { let ids: [String]? }
+    private struct Owed: Decodable {
+        let ids: [String]?
+        let names: [String]?
+        let count: Int?
+        let total: Double?
+    }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         transactions = try c.decode([Lenient<Transaction>].self, forKey: .transactions).compactMap { $0.value }
         total = try c.decodeIfPresent(Int.self, forKey: .total) ?? transactions.count
         monthTotals = try? c.decodeIfPresent(Totals.self, forKey: .monthTotals)
-        owedIds = ((try? c.decodeIfPresent(Owed.self, forKey: .owed)) ?? nil)?.ids ?? []
+        let owed = (try? c.decodeIfPresent(Owed.self, forKey: .owed)) ?? nil
+        owedIds = owed?.ids ?? []
+        owedNames = owed?.names ?? []
+        owedCount = owed?.count ?? owedIds.count
+        owedTotal = owed?.total ?? 0
         tags = ((try? c.decodeIfPresent([String].self, forKey: .tags)) ?? nil) ?? []
     }
 
