@@ -1,89 +1,235 @@
 import SwiftUI
 
-/// What an answer does on the server.
-enum ReviewAnswer {
-    /// Pearl's guess is right.
-    case confirm(String)
-    /// A different category, and maybe every one like it.
-    case category(String, name: String, remember: Bool)
-    /// "What was this?" answered: `case` and its details (finance/marks.py).
-    case mark(String, body: [String: Any])
-    /// The kind of income, for money already counted as income.
-    case incomeType(String, kind: String)
-    /// Skip for now.
-    case skip(String)
-}
-
-/// Needs a look, one at a time: answer it, see what changed, Undo if it
-/// wasn't right, and the next one is already up.
+/// Needs a look (THL-123, THL-232; T-10, T-11): every question as a row,
+/// its dashed chip naming what it needs, To sort or Skipped. Tapping one
+/// opens its question (AnswerSheet); swiping skips it, or puts a skipped
+/// one back. Skipped ones count the way Pearl guessed.
 @MainActor
 struct ReviewView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
 
     @State private var review: Review?
     @State private var categories: [CategoryList.Category] = []
-    @State private var last: (title: String, undo: JSONValue?)?
+    @State private var accounts: [AccountsOverview.Account] = []
+    @State private var showingSkipped = false
+    @State private var asking: Ask?
+    @State private var toast: Toast?
     @State private var busy = false
     @State private var error: String?
 
+    struct Toast: Equatable {
+        let title: String
+        let undo: JSONValue?
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if let review = review {
-                    PageHeader(title: headline(review), sub: countWords(review))
-                    if let last = last {
-                        Sorted(text: last.title, onUndo: last.undo == nil ? nil : { Task { await undo() } })
-                    }
-                    if let error = error { Notice(text: error, tone: .caution) }
-                    if let entry = review.entries.first {
-                        ReviewCard(entry: entry, kinds: review.kinds ?? [:], categories: categories,
-                                   busy: busy) { answer in Task { await send(answer) } }
-                            .id(entry.id)
-                    } else if review.webOnly > 0 {
-                        PearlCard(spacing: 8) {
-                            Text("The rest are on the web").font(Pearl.cardTitle).foregroundColor(Pearl.ink)
-                            Text(review.webOnly == 1 ? "1 more question can only be answered in Pearl on the web for now."
-                                 : "\(review.webOnly) more questions can only be answered in Pearl on the web for now.")
-                                .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
-                            Link(destination: app.api.baseURL) { LinkLabel(text: "Open Pearl on the web") }
-                                .padding(.top, 4)
-                        }
-                    } else {
-                        AllSorted()
-                    }
-                } else {
-                    LoadState(error: error) { Task { await load() } }
-                }
-            }
-            .padding(.horizontal, Pearl.gutter)
-            .padding(.bottom, 24)
+        VStack(alignment: .leading, spacing: 0) {
+            header.padding(.horizontal, 16)
+            list
         }
-        .pearlPage()
+        .nacreScreen()
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(Pearl.ink)
+                }
+                .accessibilityLabel("Back")
+            }
+        }
+        .toolbarBackground(.hidden, for: .navigationBar)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
+        .overlay(alignment: .bottom) { toastView }
         .task { await load() }
+        .sheet(item: $asking) { ask in
+            AnswerSheet(ask: ask, categories: categories, accounts: accounts,
+                        names: recentNames, api: app.api) { answer in
+                asking = nil
+                Task { await send(answer) }
+            }
+        }
     }
 
-    /// "1 transaction needs a look".
-    private func headline(_ review: Review) -> String {
-        let n = review.entries.count + review.webOnly
-        if n == 0 { return "Needs a look" }
-        return n == 1 ? "1 transaction needs a look" : "\(n) transactions need a look"
+    private var list: some View {
+        List {
+            if let review = review {
+                let rows = review.asks.filter { $0.skipped == showingSkipped }
+                if showingSkipped && !rows.isEmpty {
+                    Text("Guesses count for now. Swipe left to put one back.")
+                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 4, trailing: 16))
+                }
+                if rows.isEmpty {
+                    empty(review)
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                } else {
+                    Section {
+                        ForEach(rows) { ask in
+                            Button { asking = ask } label: { row(ask) }
+                                .buttonStyle(.plain)
+                                .listRowBackground(Nacre.glass)
+                                .listRowSeparatorTint(Nacre.separator)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(ask.skipped ? "Put back" : "Skip") {
+                                        Task { await send(.skip(ask.item.key, !ask.skipped)) }
+                                    }
+                                    .tint(ask.skipped ? Pearl.action : Pearl.muted)
+                                }
+                        }
+                    }
+                }
+                if review.webOnly > 0 && !showingSkipped {
+                    Text(review.webOnly == 1 ? "1 more question can only be answered in Pearl on the web for now."
+                         : "\(review.webOnly) more questions can only be answered in Pearl on the web for now.")
+                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                }
+            } else {
+                LoadState(error: error) { Task { await load() } }
+                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListHeaderHeight, 0)
+        .modifier(TightTop())
+        .clipped()
     }
 
-    private func countWords(_ review: Review) -> String {
-        let n = review.entries.count + review.webOnly
-        let skipped = review.count - (review.open ?? review.count)
-        let left = n == 0 ? "Nothing left to review" : n == 1 ? "1 left to review" : "\(n) left to review"
-        return skipped > 0 ? "\(left) · \(skipped) skipped" : left
+    /// The grouped list's own top gap, trimmed where iOS lets us.
+    private struct TightTop: ViewModifier {
+        func body(content: Content) -> some View {
+            if #available(iOS 17.0, *) {
+                content.contentMargins(.top, 0, for: .scrollContent)
+            } else {
+                content
+            }
+        }
     }
+
+    // MARK: Parts
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Needs a look").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
+                .accessibilityAddTraits(.isHeader)
+            if let review = review {
+                let open = review.asks.filter { !$0.skipped }.count
+                let skipped = review.asks.count - open
+                HStack(spacing: 8) {
+                    chip("To sort · \(open)", on: !showingSkipped) { showingSkipped = false }
+                    chip("Skipped · \(skipped)", on: showingSkipped) { showingSkipped = true }
+                }
+            }
+            if let error = error, review != nil {
+                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
+            }
+        }
+        .padding(.bottom, 12)
+    }
+
+    private func chip(_ label: String, on: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(Nacre.footnote)
+                .foregroundColor(Pearl.ink)
+                .padding(.horizontal, 14).frame(height: 34)
+                .background(Capsule().fill(on ? Color.white.opacity(0.9) : Nacre.glass))
+                .overlay(Capsule().strokeBorder(Nacre.glassEdge, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    /// Initials, who, when, the question as a dashed chip, and the amount.
+    private func row(_ ask: Ask) -> some View {
+        let t = ask.t
+        return HStack(spacing: 14) {
+            Initials(name: t.name)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(t.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(ask.kind == .joint ? "Joint · \(Format.relativeDay(t.date))" : Format.relativeDay(t.date))
+                    .font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+                GuessChip(label: ask.chip, question: false).padding(.top, 4)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text((t.inflow ? "+" : "\u{2212}") + Format.amount(t.amount))
+                .font(Nacre.headline).monospacedDigit()
+                .foregroundColor(t.inflow ? Pearl.ink : Pearl.moneyOut)
+                .fixedSize()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(ask.skipped ? "Answers it. Swipe to put it back." : "Answers it. Swipe to skip.")
+    }
+
+    @ViewBuilder private func empty(_ review: Review) -> some View {
+        if showingSkipped {
+            Text("Nothing skipped.").font(Nacre.body).foregroundColor(Pearl.muted)
+                .frame(maxWidth: .infinity).padding(.vertical, 32)
+        } else {
+            // T-16: All sorted.
+            VStack(spacing: 8) {
+                Image(systemName: "checkmark").font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(Nacre.teal)
+                    .frame(width: 56, height: 56).background(Circle().fill(Nacre.mint))
+                    .padding(.bottom, 6)
+                Text("All sorted").font(Nacre.title2).foregroundColor(Pearl.ink)
+                Text("Your numbers are up to date. We’ll let you know when something new needs a look.")
+                    .font(Nacre.subheadline).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 40)
+        }
+    }
+
+    @ViewBuilder private var toastView: some View {
+        if let toast = toast {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundColor(Nacre.teal)
+                Text(toast.title).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                if toast.undo != nil {
+                    Button("Undo") { Task { await undo() } }
+                        .font(Nacre.textButton).foregroundColor(Pearl.action)
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .background(Capsule().fill(.ultraThinMaterial))
+            .background(Capsule().fill(Nacre.glass))
+            .overlay(Capsule().strokeBorder(Nacre.edge, lineWidth: 1))
+            .padding(.horizontal, 16).padding(.bottom, 12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .task(id: toast) {
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                if self.toast == toast { withAnimation { self.toast = nil } }
+            }
+        }
+    }
+
+    /// Names she already uses, for "Who sent this?".
+    private var recentNames: [String] {
+        var out: [String] = []
+        for name in (review?.jointIn ?? []).flatMap({ $0.people ?? [] }) where !out.contains(name) { out.append(name) }
+        return out
+    }
+
+    // MARK: Loading and answering
 
     private func load() async {
         do {
             review = try await app.api.get("api/review")
             if categories.isEmpty, let list: CategoryList = try? await app.api.get("api/categories") {
                 categories = list.categories.filter { $0.hidden != true }
+            }
+            if accounts.isEmpty, let overview: AccountsOverview = try? await app.api.get("api/accounts/overview") {
+                accounts = overview.linked
             }
             error = nil
         } catch {
@@ -95,24 +241,8 @@ struct ReviewView: View {
         busy = true
         defer { busy = false }
         do {
-            switch answer {
-            case .confirm(let id):
-                let reply: MarkReply = try await app.api.put("api/transactions/\(id)/confirm")
-                last = ("Sorted. Pearl will remember it was right.", reply.undo)
-            case .category(let id, let name, let remember):
-                let reply: MarkReply = try await app.api.patch("api/transactions/\(id)",
-                                                               ["category": name, "apply_to_merchant": remember])
-                last = (remember ? "\(name), and every one like it from now on." : "Moved to \(name).", reply.undo)
-            case .mark(let id, let body):
-                let reply: MarkReply = try await app.api.post("api/transactions/\(id)/mark", body)
-                last = (reply.title ?? "Sorted.", reply.undo)
-            case .incomeType(let id, let kind):
-                let reply: MarkReply = try await app.api.put("api/transactions/\(id)/income-type", ["kind": kind])
-                last = ("Sorted as \(kindName(kind)).", reply.undo)
-            case .skip(let key):
-                let _: OK = try await app.api.post("api/review/skip", ["key": key, "skip": true])
-                last = ("Moved to Skipped. It's still in Needs a look on the web.", nil)
-            }
+            let reply = try await answer.send(app.api)
+            withAnimation { toast = Toast(title: reply.title ?? answer.done, undo: reply.undo) }
             error = nil
             await load()
             app.changed()
@@ -122,181 +252,84 @@ struct ReviewView: View {
     }
 
     private func undo() async {
-        guard let payload = last?.undo, let body = payload.any as? [String: Any] else { return }
+        guard let payload = toast?.undo, let body = payload.any as? [String: Any] else { return }
         do {
             let _: OK = try await app.api.post("api/transactions/undo", body)
-            last = ("Undone.", nil)
+            withAnimation { toast = Toast(title: "Undone.", undo: nil) }
             await load()
             app.changed()
         } catch {
             self.error = app.handle(error)
         }
     }
-
-    private func kindName(_ kind: String) -> String {
-        (review?.kinds?[kind] ?? kind).lowercased()
-    }
 }
 
-struct AllSorted: View {
-    var body: some View {
-        PearlCard(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill").font(.largeTitle).foregroundColor(Pearl.action)
-            Text("All sorted").font(Pearl.cardTitle).foregroundColor(Pearl.ink)
-            Text("Your numbers are up to date. We'll let you know when something new needs a look.")
-                .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
-        }
-    }
-}
+/// What an answer does on the server, each the call the web makes for it.
+enum ReviewAnswer {
+    /// Pearl's guess is right.
+    case confirm(String)
+    /// A different category, and maybe every one like it.
+    case category(String, name: String, remember: Bool)
+    /// "What was this?" answered: `case` and its details (finance/marks.py).
+    case mark(String, [String: Any])
+    /// The kind of income, for money already counted as income.
+    case incomeType(String, kind: String)
+    /// "Who put this in?" on a joint account: "me", or "them" and who.
+    case joint(String, who: String, person: String?)
+    /// "Who sent this?": the name the bank left out.
+    case party(String, name: String)
+    /// "Same purchase?": count it once, or both are real.
+    case duplicate(String, same: Bool)
+    /// "Is this a recurring transfer?": what the series is.
+    case recurring(key: String, kind: String?, category: String?)
+    /// "No, it doesn't repeat": not asked again.
+    case dismiss(String)
+    /// Skip for now, or put a skipped one back.
+    case skip(String, Bool)
 
-/// "✓ Sorted as Groceries." with Undo, after an answer.
-struct Sorted: View {
-    let text: String
-    let onUndo: (() -> Void)?
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Label {
-                Text(text).fixedSize(horizontal: false, vertical: true)
-            } icon: {
-                Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
-            }
-            .font(Pearl.text(.subheadline, .medium))
-            .foregroundColor(Pearl.action)
-            Spacer(minLength: 8)
-            if let onUndo = onUndo {
-                Button(action: onUndo) {
-                    Label("Undo", systemImage: "arrow.uturn.backward")
-                        .font(Pearl.text(.callout, .semibold))
-                        .foregroundColor(Pearl.ink)
-                        .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(Pearl.card)
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(Pearl.border, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-}
-
-/// One question and its answers.
-struct ReviewCard: View {
-    let entry: ReviewEntry
-    let kinds: [String: String]
-    let categories: [CategoryList.Category]
-    let busy: Bool
-    let answer: (ReviewAnswer) -> Void
-
-    private enum Step { case first, kind, other }
-    @State private var step: Step = .first
-    @State private var picking = false
-
-    private var t: BriefTransaction { entry.item.txn }
-
-    var body: some View {
-        PearlCard(padding: 16, spacing: 16, radius: Pearl.radiusSort) {
-            TransactionHeader(name: t.name, date: t.date, account: t.accountName,
-                              amount: abs(t.amount), inflow: t.inflow)
-            if let reason = entry.item.reason, !reason.isEmpty {
-                Text(reason).font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
-            }
-            Text(title).font(Pearl.title).tracking(-0.24).foregroundColor(Pearl.ink)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(spacing: 12) { choices }
-                .disabled(busy)
-            HStack {
-                if step != .first {
-                    Button { step = .first } label: {
-                        Label("Back", systemImage: "arrow.left")
-                    }
-                }
-                Spacer()
-                Button("Skip for now") { answer(.skip(entry.item.key)) }
-                    .disabled(busy)
-            }
-            .font(Pearl.text(.subheadline, .medium))
-            .foregroundColor(Pearl.action)
-        }
-        .sheet(isPresented: $picking) {
-            CategoryPicker(categories: categories, current: entry.item.guess?.text ?? t.category ?? "",
-                           merchant: t.name) { name, remember in
-                picking = false
-                if entry.kind == .transfer {
-                    mark("spending", ["category": name, "remember": remember])
-                } else {
-                    answer(.category(t.id, name: name, remember: remember))
-                }
-            }
+    /// What the toast says when the server doesn't.
+    var done: String {
+        switch self {
+        case .skip(_, let on): return on ? "Moved to Skipped. Pearl uses its guess until you sort it." : "Back in To sort."
+        case .party(_, let name): return "Sent by \(name)."
+        case .duplicate(_, let same): return same ? "Counted once." : "Both counted."
+        case .dismiss: return "Pearl won’t ask about it again."
+        default: return "Sorted."
         }
     }
 
-    private var title: String {
-        switch step {
-        case .kind: return "What kind of income?"
-        case .other: return "What was it?"
-        case .first: return entry.question
+    func send(_ api: APIClient) async throws -> MarkReply {
+        switch self {
+        case .confirm(let id):
+            return try await api.put("api/transactions/\(id)/confirm")
+        case .category(let id, let name, let remember):
+            let reply: MarkReply = try await api.patch("api/transactions/\(id)",
+                                                       ["category": name, "apply_to_merchant": remember])
+            return MarkReply(title: reply.title ?? (remember ? "\(name), and every one like it from now on." : "Moved to \(name)."),
+                             detail: reply.detail, undo: reply.undo)
+        case .mark(let id, let body):
+            return try await api.post("api/transactions/\(id)/mark", body)
+        case .incomeType(let id, let kind):
+            return try await api.put("api/transactions/\(id)/income-type", ["kind": kind])
+        case .joint(let id, let who, let person):
+            var body: [String: Any] = ["who": who, "remember": true]
+            if let person = person { body["person"] = person }
+            let reply: MarkReply = try await api.put("api/transactions/\(id)/joint-from", body)
+            return MarkReply(title: who == "me" ? "Your own money. Not income." : "\(person ?? "Theirs"). Not counted as yours.",
+                             detail: nil, undo: reply.undo)
+        case .party(let id, let name):
+            return try await api.put("api/transactions/\(id)/party", ["name": name])
+        case .duplicate(let id, let same):
+            return try await api.post("api/review/duplicates/\(id)", ["answer": same ? "same" : "different"])
+        case .recurring(let key, let kind, let category):
+            var body: [String: Any] = ["key": key]
+            if let kind = kind { body["kind"] = kind }
+            if let category = category { body["category"] = category }
+            return try await api.post("api/recurring-transfers", body)
+        case .dismiss(let key):
+            return try await api.post("api/review/dismiss", ["key": key])
+        case .skip(let key, let on):
+            return try await api.post("api/review/skip", ["key": key, "skip": on])
         }
-    }
-
-    @ViewBuilder private var choices: some View {
-        switch (entry.kind, step) {
-        case (.category, _):
-            if let guess = entry.item.guess?.text {
-                ChoiceRow(label: "Yes, it's \(guess)") { answer(.confirm(t.id)) }
-            }
-            ChoiceRow(label: "Something else", detail: "Pick the category") { picking = true }
-        case (.moneyIn, .first):
-            ChoiceRow(label: "Yes, it's income") { step = .kind }
-            ChoiceRow(label: "No, I moved my own money") { mark("own", ["remember": false]) }
-            ChoiceRow(label: "No, it's a cash deposit") { mark("cash") }
-            ChoiceRow(label: "No, something else") { step = .other }
-        case (.moneyIn, .other):
-            ChoiceRow(label: "Taken out of my savings") { mark("out_of_savings") }
-            ChoiceRow(label: "Money I borrowed") { mark("borrowed") }
-            ChoiceRow(label: "Paying back money I lent") { mark("lent_back") }
-            ChoiceRow(label: "Not mine", detail: "Left out of all your numbers") { mark("not_mine", ["reason": ""]) }
-            Notice(text: "Someone paying you back, a refund or a reimbursement: sort those in Pearl on the web for now, where you pick what it was for.")
-        case (.moneyIn, .kind), (.incomeType, _):
-            ChoiceRow(label: "My regular pay",
-                      detail: "Every deposit from \(t.name) counts as your pay") {
-                mark("regular_pay", ["remember": true])
-            }
-            ForEach(kindOrder, id: \.self) { kind in
-                ChoiceRow(label: kinds[kind] ?? kind.capitalized,
-                          selected: entry.kind == .incomeType && entry.item.guess?.text == kind) {
-                    if entry.kind == .incomeType {
-                        answer(.incomeType(t.id, kind: kind))
-                    } else {
-                        mark("pay", ["income_kind": kind])
-                    }
-                }
-            }
-        case (.transfer, _):
-            ChoiceRow(label: "Moved between my accounts", detail: "Not spending or income") {
-                mark("moved", ["remember": false])
-            }
-            ChoiceRow(label: "Put into savings", detail: "Adds to your total saved") {
-                mark("saved", ["remember": false])
-            }
-            ChoiceRow(label: "A purchase", detail: "Pick the category") { picking = true }
-            ChoiceRow(label: "Lent to someone", detail: "Pearl watches for it coming back") { mark("lent") }
-        case (.other, _):
-            Notice(text: "Pearl can't answer this kind of question on iPhone yet. Answer it in Pearl on the web, or skip it for now.")
-        default:
-            EmptyView()
-        }
-    }
-
-    private var kindOrder: [String] {
-        let order = ["salary", "bonus", "interest", "gifts", "government", "tax_refund", "other"]
-        let known = order.filter { kinds[$0] != nil }
-        return known.isEmpty ? order : known
-    }
-
-    private func mark(_ key: String, _ extra: [String: Any] = [:]) {
-        var body = extra
-        body["case"] = key
-        answer(.mark(t.id, body: body))
     }
 }

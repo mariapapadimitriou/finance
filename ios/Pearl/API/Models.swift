@@ -556,13 +556,17 @@ struct BriefTransaction: Decodable, Hashable {
     let description: String?
     let amount: Double
     let accountName: String?
+    let accountId: String?
     let category: String?
     /// Set on an unsorted transfer she skipped.
     let skipped: Bool?
+    /// A payback candidate Pearl thinks most likely.
+    let likely: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, date, merchant, description, amount, category, skipped
+        case id, date, merchant, description, amount, category, skipped, likely
         case accountName = "account_name"
+        case accountId = "account_id"
     }
 
     var inflow: Bool { amount < 0 }
@@ -622,23 +626,60 @@ struct Review: Decodable {
         let from: String?
         let guessLabel: String?
         let guess: Guess?
+        /// A joint account's name and the people on it ("Who put this in?").
+        let label: String?
+        let people: [String]?
+        /// Purchases money in could pay back, likeliest first.
+        let candidates: [BriefTransaction]?
+        /// A recurring transfer's pattern ("every month, around the 10th").
+        let series: Series?
 
         var id: String { key }
 
         enum CodingKeys: String, CodingKey {
-            case key, txn, reason, skipped, from, guess
+            case key, txn, reason, skipped, from, guess, label, people, candidates, series
             case guessLabel = "guess_label"
+        }
+
+        init(key: String, txn: BriefTransaction, skipped: Bool?) {
+            self.key = key
+            self.txn = txn
+            self.skipped = skipped
+            reason = nil; from = nil; guessLabel = nil; guess = nil
+            label = nil; people = nil; candidates = nil; series = nil
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            func opt<T: Decodable>(_ type: T.Type, _ k: CodingKeys) -> T? { (try? c.decodeIfPresent(type, forKey: k)) ?? nil }
+            key = try c.decode(String.self, forKey: .key)
+            txn = try c.decode(BriefTransaction.self, forKey: .txn)
+            reason = opt(String.self, .reason)
+            skipped = opt(Bool.self, .skipped)
+            from = opt(String.self, .from)
+            guessLabel = opt(String.self, .guessLabel)
+            guess = opt(Guess.self, .guess)
+            label = opt(String.self, .label)
+            people = opt([String].self, .people)
+            candidates = (opt([Lenient<BriefTransaction>].self, .candidates))?.compactMap { $0.value }
+            series = opt(Series.self, .series)
         }
 
         static func == (a: Item, b: Item) -> Bool { a.key == b.key }
         func hash(into hasher: inout Hasher) { hasher.combine(key) }
     }
 
+    struct Series: Decodable, Hashable {
+        let when: String?
+        let count: Int?
+        let to: String?
+    }
+
     /// Pearl's guess: a category name for "unsure", an income kind, or an
-    /// object ({"action": "own"}) for money in.
-    enum Guess: Decodable {
+    /// object ({"action": "payback", "charge": …}) for money in.
+    enum Guess: Decodable, Hashable {
         case text(String)
-        case action(String)
+        case action(String, charge: BriefTransaction?)
 
         init(from decoder: Decoder) throws {
             let single = try decoder.singleValueContainer()
@@ -646,56 +687,64 @@ struct Review: Decodable {
                 self = .text(s)
                 return
             }
-            struct Action: Decodable { let action: String? }
+            struct Action: Decodable { let action: String?; let charge: BriefTransaction? }
             let a = try single.decode(Action.self)
-            self = .action(a.action ?? "")
+            self = .action(a.action ?? "", charge: a.charge)
         }
 
         var text: String? { if case .text(let s) = self { return s } else { return nil } }
+        var action: String? { if case .action(let a, _) = self { return a } else { return nil } }
+        var charge: BriefTransaction? { if case .action(_, let c) = self { return c } else { return nil } }
     }
 }
 
-/// What Needs a look asks about, in the order it asks.
-enum ReviewKind: String {
-    case category, moneyIn, incomeType, transfer, other
+/// What Needs a look asks about (T-10), each row's dashed chip naming it.
+enum Question: Hashable {
+    case category, transfer, moneyIn, incomeType, joint, whoSent, duplicate, recurring
 }
 
-struct ReviewEntry: Identifiable, Hashable {
-    let kind: ReviewKind
+struct Ask: Identifiable, Hashable {
+    let kind: Question
     let item: Review.Item
     var id: String { item.key }
-    var question: String {
+    var t: BriefTransaction { item.txn }
+    var skipped: Bool { item.skipped == true }
+
+    /// "Dining?", "Saved or spent?", "Whose?"…
+    var chip: String {
         switch kind {
-        case .category: return "What was this?"
-        case .moneyIn: return "Is this income?"
-        case .incomeType: return item.guessLabel == "Bonus / irregular" ? "Is this a bonus?" : "What kind of income?"
-        case .transfer: return "Where did it go?"
-        case .other: return "Needs a look"
+        case .category: return "\(item.guess?.text ?? t.category ?? "Other")?"
+        case .transfer: return "Saved or spent?"
+        case .moneyIn: return "What was this?"
+        case .incomeType: return "What kind of income?"
+        case .joint: return "Whose?"
+        case .whoSent: return "Who sent this?"
+        case .duplicate: return "Same purchase?"
+        case .recurring: return "Recurring?"
         }
     }
 }
 
 extension Review {
-    /// Every open question the app can show, the kinds it answers first.
-    var entries: [ReviewEntry] {
-        let open: (Item) -> Bool = { $0.skipped != true }
-        var out: [ReviewEntry] = unsureCategory.filter(open).map { ReviewEntry(kind: .category, item: $0) }
-        out += moneyIn.filter(open).map { ReviewEntry(kind: .moneyIn, item: $0) }
-        out += incomeType.filter(open).map { ReviewEntry(kind: .incomeType, item: $0) }
-        let transfers: [BriefTransaction] = (unsorted?.transfers ?? []).filter { $0.skipped != true }
-        out += transfers.map { t in
-            ReviewEntry(kind: .transfer, item: Item(key: "u:" + t.id, txn: t, reason: nil, skipped: nil,
-                                                    from: nil, guessLabel: nil, guess: nil))
+    /// Every question, oldest kinds first, skipped ones included (they say so).
+    var asks: [Ask] {
+        var out = unsureCategory.map { Ask(kind: .category, item: $0) }
+        out += (unsorted?.transfers ?? []).map { t in
+            Ask(kind: .transfer, item: Item(key: "u:" + t.id, txn: t, skipped: t.skipped))
         }
-        let others: [Item] = jointIn + whoSent + duplicate + recurringTransfer
-        out += others.filter(open).map { ReviewEntry(kind: .other, item: $0) }
+        out += moneyIn.map { Ask(kind: .moneyIn, item: $0) }
+        out += incomeType.map { Ask(kind: .incomeType, item: $0) }
+        out += jointIn.map { Ask(kind: .joint, item: $0) }
+        out += whoSent.map { Ask(kind: .whoSent, item: $0) }
+        out += duplicate.map { Ask(kind: .duplicate, item: $0) }
+        out += recurringTransfer.map { Ask(kind: .recurring, item: $0) }
         return out
     }
 
-    /// Open questions the app has no card for at all (months with a third
+    /// Open questions the app has no row for (months with a third
     /// paycheque): answered on the web.
     var webOnly: Int {
-        max(0, (open ?? count) - entries.count)
+        max(0, (open ?? count) - asks.filter { !$0.skipped }.count)
     }
 }
 
