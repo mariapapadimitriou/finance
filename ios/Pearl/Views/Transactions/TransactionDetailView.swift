@@ -120,7 +120,12 @@ struct TransactionDetailView: View {
             CategorySheet(name: t.merchant, amount: Format.money(t), tone: t.tone, categories: categories,
                           current: t.category ?? t.label, merchant: t.merchant,
                           onRegularBill: t.inflow ? nil : { regularBill = $0 },
-                          preview: { name, remember in await previewLine(name, remember) }) { name, remember in
+                          preview: { name, remember in await previewLine(name, remember) },
+                          notSpending: t.inflow ? nil : CaseTile.notSpending,
+                          onCase: { key in
+                              picking = false
+                              Task { await markOut(key) }
+                          }) { name, remember in
                 picking = false
                 let bill = regularBill
                 regularBill = false
@@ -1001,6 +1006,22 @@ struct TransactionDetailView: View {
             let _: CategoryChange = try await app.api.patch("api/transactions/\(t.id)",
                                                             ["category": name, "apply_to_merchant": remember])
             return remember ? "\(name), and every \(t.merchant) from now on." : "Moved to \(name)."
+        }
+    }
+
+    /// T-04n: an answer from the Not spending side.
+    private func markOut(_ key: String) async {
+        var body: [String: Any]
+        switch key {
+        case "own", "card": body = ["case": "moved", "remember": true]
+        case "saved": body = ["case": "saved", "remember": true]
+        case "lent": body = ["case": "lent", "remember": true]
+        case "work": body = ["case": "work"]
+        default: body = ["case": "not_mine", "reason": "Not mine"]
+        }
+        await run {
+            let reply: MarkReply = try await app.api.post("api/transactions/\(t.id)/mark", body)
+            return reply.title ?? "Sorted."
         }
     }
 

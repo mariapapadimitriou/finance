@@ -28,6 +28,11 @@ struct CategorySheet: View {
     /// Loblaws transactions…"), for the category and the remember switch.
     var preview: ((String, Bool) async -> String?)? = nil
     @State private var previewLine: String?
+    /// T-06 / T-04n: the Not spending side as answers, not categories
+    /// (Saved, My own account, Card payment…), with Continue.
+    var notSpending: [CaseTile]? = nil
+    var onCase: ((String) -> Void)? = nil
+    @State private var chosenCase: String?
 
     @Environment(\.dismiss) private var dismiss
     @State private var chosen: String
@@ -39,9 +44,12 @@ struct CategorySheet: View {
          merchant: String? = nil, spendingOnly: Bool = false, mark: String? = nil,
          onRegularBill: ((Bool) -> Void)? = nil, title: String = "Category",
          onDelete: (() -> Void)? = nil, preview: ((String, Bool) async -> String?)? = nil,
+         notSpending: [CaseTile]? = nil, startNotSpending: Bool = false, onCase: ((String) -> Void)? = nil,
          onSave: @escaping (String, Bool) -> Void) {
         self.title = title
         self.preview = preview
+        self.notSpending = notSpending
+        self.onCase = onCase
         self.onDelete = onDelete
         self.spendingOnly = spendingOnly
         self.mark = mark
@@ -55,8 +63,11 @@ struct CategorySheet: View {
         self.onSave = onSave
         _chosen = State(initialValue: current)
         let group = categories.first { $0.name == current }?.group ?? "lifestyle"
-        _spending = State(initialValue: spendingOnly || Self.spendingGroups.contains(group))
+        _spending = State(initialValue: !(startNotSpending && notSpending != nil)
+                          && (spendingOnly || Self.spendingGroups.contains(group)))
     }
+
+    private var answering: Bool { !spending && notSpending != nil }
 
     private static let spendingGroups = ["essentials", "lifestyle"]
     private static let otherGroups = ["income", "savings", "transfer"]
@@ -79,7 +90,10 @@ struct CategorySheet: View {
                         .pickerStyle(.segmented)
                         .accessibilityLabel("Spending or not spending")
                     }
-                    ForEach(spending ? Self.spendingGroups : Self.otherGroups, id: \.self) { group in
+                    if answering, let cases = notSpending {
+                        CaseGrid(cases: cases, chosen: $chosenCase)
+                    }
+                    ForEach(answering ? [] : (spending ? Self.spendingGroups : Self.otherGroups), id: \.self) { group in
                         let items = tiles(in: group)
                         if !items.isEmpty {
                             Text((Self.groupNames[group] ?? group).uppercased())
@@ -91,7 +105,7 @@ struct CategorySheet: View {
                             }
                         }
                     }
-                    if let merchant = merchant {
+                    if let merchant = merchant, !answering {
                         RowSeparator(inset: 0).padding(.top, 4)
                         Toggle(isOn: $remember) {
                             Text("Do the same for every \(merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
@@ -99,7 +113,7 @@ struct CategorySheet: View {
                         .tint(Pearl.action)
                         .padding(.horizontal, 4)
                     }
-                    if onRegularBill != nil, spending {
+                    if onRegularBill != nil, spending, !answering {
                         if merchant == nil { RowSeparator(inset: 0).padding(.top, 4) }
                         Toggle(isOn: $bill) {
                             Text("Regular bill").font(Nacre.body).foregroundColor(Pearl.ink)
@@ -111,7 +125,7 @@ struct CategorySheet: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
             }
-            if let line = previewLine {
+            if let line = previewLine, !answering {
                 GlassCard {
                     HStack(spacing: 12) {
                         IconBubble(symbol: "arrow.triangle.2.circlepath")
@@ -124,6 +138,12 @@ struct CategorySheet: View {
                 .padding(.horizontal, 16).padding(.top, 8)
                 .accessibilityElement(children: .combine)
             }
+            if answering {
+                Button("Continue") { if let c = chosenCase { onCase?(c) } }
+                    .buttonStyle(NacreButtonStyle())
+                    .disabled(chosenCase == nil)
+                    .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
+            } else {
             Button("Save") {
                 onRegularBill?(bill && spending)
                 onSave(chosen, remember)
@@ -139,6 +159,7 @@ struct CategorySheet: View {
                 .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
                 .disabled(chosen == current)
                 .padding(.horizontal, 16).padding(.bottom, 8)
+            }
             }
             if let onDelete = onDelete {
                 Button("Delete this rule", action: onDelete)
@@ -222,5 +243,83 @@ struct CategorySheet: View {
             "Other": "ellipsis",
         ]
         return icons[category] ?? "ellipsis"
+    }
+}
+
+// MARK: - Answers as tiles (T-06, T-08, T-12, T-78)
+
+/// One answer on a What was this? grid.
+struct CaseTile: Identifiable, Hashable {
+    let key: String
+    let label: String
+    let symbol: String
+    var id: String { key }
+
+    /// T-06: money out that isn't spending.
+    static let notSpending: [CaseTile] = [
+        CaseTile(key: "saved", label: "Saved", symbol: "lifepreserver"),
+        CaseTile(key: "own", label: "My own account", symbol: "arrow.left.arrow.right"),
+        CaseTile(key: "card", label: "Card payment", symbol: "creditcard"),
+        CaseTile(key: "lent", label: "Lent to someone", symbol: "arrow.up.forward"),
+        CaseTile(key: "work", label: "Work expense", symbol: "briefcase"),
+        CaseTile(key: "not_mine", label: "Not mine", symbol: "person.crop.circle.badge.xmark"),
+    ]
+
+    /// T-12: money in that isn't income.
+    static let notIncome: [CaseTile] = [
+        CaseTile(key: "paid_back", label: "Paid back", symbol: "person.2"),
+        CaseTile(key: "refund", label: "Refund", symbol: "arrow.uturn.backward"),
+        CaseTile(key: "own", label: "My own money", symbol: "arrow.left.arrow.right"),
+        CaseTile(key: "loan", label: "Loan", symbol: "banknote"),
+        CaseTile(key: "out_of_savings", label: "Out of savings", symbol: "lifepreserver"),
+        CaseTile(key: "lent_back", label: "Money I lent, back", symbol: "arrow.down.backward"),
+        CaseTile(key: "else", label: "Something else", symbol: "ellipsis"),
+        CaseTile(key: "not_mine", label: "Not mine", symbol: "person.crop.circle.badge.xmark"),
+    ]
+
+    /// T-08: kinds of income (T-71's tiles).
+    static let income: [CaseTile] = [
+        CaseTile(key: "salary", label: "Salary", symbol: "briefcase"),
+        CaseTile(key: "regular", label: "My regular pay", symbol: "calendar"),
+        CaseTile(key: "bonus", label: "Bonus", symbol: "sparkle"),
+        CaseTile(key: "interest", label: "Interest", symbol: "percent"),
+        CaseTile(key: "gifts", label: "Gifts", symbol: "gift"),
+        CaseTile(key: "government", label: "Government credits", symbol: "building.columns"),
+        CaseTile(key: "tax_refund", label: "Tax refund", symbol: "dollarsign.square"),
+        CaseTile(key: "other", label: "Other income", symbol: "ellipsis"),
+    ]
+}
+
+/// Three across, the category sheet's tile look.
+struct CaseGrid: View {
+    let cases: [CaseTile]
+    @Binding var chosen: String?
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+            ForEach(cases) { c in
+                let on = chosen == c.key
+                Button { chosen = c.key } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: c.symbol).font(.system(size: 16)).foregroundColor(Pearl.action)
+                            .frame(width: 36, height: 36).background(Circle().fill(Pearl.blush.opacity(on ? 1 : 0.7)))
+                        Text(c.label)
+                            .font(.custom(on ? "Figtree-SemiBold" : "Figtree-Regular", size: 13, relativeTo: .footnote))
+                            .foregroundColor(on ? Pearl.action : Pearl.ink)
+                            .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.85)
+                            .padding(.horizontal, 4)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 76).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(on ? Pearl.blush.opacity(0.75) : Nacre.glass))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(on ? Pearl.action : Nacre.separator, lineWidth: on ? 1.5 : 1))
+                    .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(c.label)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
     }
 }

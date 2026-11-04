@@ -144,10 +144,24 @@ struct TransactionsView: View {
                     Task { await change(["add": add], path: "api/transactions/batch/tags") }
                 }
             case .mark:
-                MarkSelectionSheet(title: pickedTitle, amount: pickedAmount, tone: pickedTone,
-                                   count: picked.count, inflow: pickedRows.allSatisfy(\.inflow)) { body in
+                // T-78: the selection as one, Spending (a category) or Not spending (T-06's answers).
+                CategorySheet(name: "\(picked.count) selected", amount: pickedNames, tone: pickedTone,
+                              categories: categories, current: pickedCategory, mark: "\(picked.count)",
+                              title: "Mark \(picked.count) as…", notSpending: CaseTile.notSpending,
+                              startNotSpending: true, onCase: { key in
                     bulk = nil
+                    let body: [String: Any]
+                    switch key {
+                    case "own", "card": body = ["case": "moved"]
+                    case "saved": body = ["case": "saved"]
+                    case "lent": body = ["case": "lent"]
+                    case "work": body = ["case": "work"]
+                    default: body = ["case": "not_mine", "reason": "Not mine"]
+                    }
                     Task { await change(body, path: "api/transactions/batch/mark") }
+                }) { name, _ in
+                    bulk = nil
+                    Task { await change(["category": name], path: "api/transactions/batch/category") }
                 }
             }
         }
@@ -679,6 +693,13 @@ struct TransactionsView: View {
     }
 
     private var pickedRows: [Transaction] { shown.filter { picked.contains($0.id) } }
+
+    /// "−$89.00 · Uber Eats, Shoppers, Sushi Nami" (T-78).
+    private var pickedNames: String {
+        let names = pickedRows.prefix(3).map { $0.merchant.components(separatedBy: " ").prefix(2).joined(separator: " ") }
+        let more = pickedRows.count > 3 ? " and \(pickedRows.count - 3) more" : ""
+        return "\(pickedAmount) · \(names.joined(separator: ", "))\(more)"
+    }
 
     private var pickedTitle: String { picked.count == 1 ? "1 transaction" : "\(picked.count) transactions" }
 
@@ -1697,79 +1718,4 @@ struct SheetBackground: View {
 extension Transaction {
     /// Red going out, green coming in, grey when it doesn't count.
     var tone: Color { notCounted ? Pearl.muted : (inflow ? Pearl.moneyIn : Pearl.moneyOut) }
-}
-
-// MARK: - T-78 Mark n as…
-
-/// What a selection was, at once: the What was this? answers that apply to
-/// many rows (finance/marks_api.py BATCH_CASES). A purchase is Category.
-struct MarkSelectionSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let title: String
-    let amount: String
-    let tone: Color
-    let count: Int
-    let inflow: Bool
-    let onMark: ([String: Any]) -> Void
-
-    @State private var pick: String?
-    @State private var reason = ""
-
-    private var cases: [(key: String, label: String, sub: String)] {
-        inflow ? [("own", "From my own account", "Your money moving, not income"),
-                  ("out_of_savings", "Taken out of my savings", "Not income"),
-                  ("borrowed", "Money I borrowed", "Not income; you’ll pay it back"),
-                  ("lent_back", "Paying back money I lent", "Not income"),
-                  ("not_mine", "Not mine", "Left out of all your numbers")]
-            : [("moved", "Moved between my accounts", "Not spending"),
-               ("saved", "Put into savings", "Adds to your total saved"),
-               ("lent", "Lent to someone", "Pearl watches for it coming back"),
-               ("work", "To be reimbursed", "Left out until the money comes back"),
-               ("not_mine", "Not mine", "Left out of all your numbers")]
-    }
-
-    private var ready: Bool { pick != nil && (pick != "not_mine" || !reason.trimmingCharacters(in: .whitespaces).isEmpty) }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            SheetTitle(title: "Mark \(count) as…") { dismiss() }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 12) {
-                        Initials(name: "\(count)", size: 48)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(title).font(Nacre.title2).foregroundColor(Pearl.ink)
-                            Text(amount).font(Nacre.subheadline).foregroundColor(tone)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    GlassCard {
-                        ForEach(Array(cases.enumerated()), id: \.element.key) { i, c in
-                            if i > 0 { RowSeparator() }
-                            ChoiceLine(title: c.label, sub: c.sub, selected: pick == c.key) { pick = c.key }
-                        }
-                    }
-                    if pick == "not_mine" {
-                        FieldRow(label: "Why?", text: $reason, prompt: "A friend’s purchase").sheetCard()
-                    }
-                    Text(inflow ? "Money in that’s a purchase refund or your pay? Use Category or open it."
-                                : "A purchase? Use Category instead.")
-                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                }
-                .padding(.horizontal, 16).padding(.bottom, 16)
-            }
-            Button("Save") {
-                guard let pick = pick else { return }
-                var body: [String: Any] = ["case": pick]
-                if pick == "not_mine" { body["reason"] = reason.trimmingCharacters(in: .whitespaces) }
-                onMark(body)
-            }
-            .buttonStyle(NacreButtonStyle())
-            .disabled(!ready)
-            .padding(.horizontal, 16).padding(.vertical, 8)
-        }
-        .background(SheetBackground())
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-    }
 }
