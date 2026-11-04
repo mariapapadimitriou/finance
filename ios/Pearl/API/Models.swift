@@ -887,6 +887,8 @@ struct CategoryList: Decodable {
 
 struct CategoryChange: Decodable {
     let category: String?
+    /// What Undo sends back (T-38b).
+    var undo: JSONValue? = nil
 }
 
 // MARK: - Categories and rules

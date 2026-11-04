@@ -61,6 +61,10 @@ struct TransactionDetailView: View {
     @State private var whose = false
     @State private var billing: String?
     @State private var busy = false
+    /// T-38b / T-40b: "Dining out · Undo" after a guess is confirmed.
+    @State private var toast: (title: String, undo: JSONValue?)?
+    /// T-41b: Unlink? before a refund goes back to Needs a look.
+    @State private var unlinkingRefund = false
     @State private var message: String?
     @State private var error: String?
 
@@ -78,7 +82,6 @@ struct TransactionDetailView: View {
                     else if t.suggested { guessCard } else { categoryCard }
                     linked
                     jointRow
-                    jointSpendRow
                     splitPeople
                     depositParts
                     options
@@ -180,6 +183,15 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $unlinking) { unlinkSheet }
+        .sheet(isPresented: $unlinkingRefund) { refundUnlinkSheet }
+        .overlay(alignment: .bottom) {
+            if let toast = toast {
+                UndoToast(text: toast.title, undo: toast.undo.map { payload in { Task { await undo(payload) } } }) {
+                    withAnimation { self.toast = nil }
+                }
+                .padding(.bottom, 8)
+            }
+        }
         .sheet(item: $unlinkingPayback) { link in paybackUnlinkSheet(link) }
         .sheet(isPresented: $renaming) {
             RenameSheet(title: "Rename merchant", label: "Call it", initial: t.merchant,
@@ -245,10 +257,11 @@ struct TransactionDetailView: View {
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center)
             if !t.joint.isEmpty && t.transfer == nil {
-                // T-40: "Joint with Sam · 50%".
+                // T-40: "Joint with Sam · 50%"; T-75 on a charge: "yours unless you say".
                 HStack(spacing: 6) {
                     Image(systemName: "person.2").font(.system(size: 12, weight: .medium))
-                    Text(jointLine)
+                    Text(!t.inflow && t.accountShare == nil && !t.jointPeople.isEmpty
+                         ? "Joint with \(t.jointPeople.joined(separator: " and ")) · yours unless you say" : jointLine)
                 }
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 .padding(.horizontal, 12).frame(height: 28)
@@ -497,7 +510,19 @@ struct TransactionDetailView: View {
             HStack(spacing: 10) {
                 Button("Yes") {
                     let answer = ReviewAnswer.joint(t.id, who: person == nil ? "me" : "them", person: person)
-                    Task { await run { try await answer.send(app.api).title } }
+                    Task {
+                        busy = true
+                        defer { busy = false }
+                        do {
+                            let reply = try await answer.send(app.api)
+                            // T-40b: "Sam's pay · Undo".
+                            withAnimation { toast = (person.map { "\($0)’s pay" } ?? "Your pay", reply.undo) }
+                            await load()
+                            app.changed()
+                        } catch {
+                            self.error = app.handle(error)
+                        }
+                    }
                 }
                 .buttonStyle(NacreButtonStyle(busy: busy))
                 Button("Something else") { asking = Asking(step: .joint) }
@@ -524,27 +549,6 @@ struct TransactionDetailView: View {
             GlassCard {
                 Button { asking = Asking(step: .joint) } label: {
                     row(title: "Whose pay", sub: jointWhose, chevron: true)
-                }
-                .buttonStyle(.plain)
-                .disabled(busy)
-            }
-        }
-    }
-
-    /// T-75: a charge on a joint account is hers unless she says otherwise.
-    @ViewBuilder private var jointSpendRow: some View {
-        if !t.inflow && !t.joint.isEmpty && t.transfer == nil {
-            GlassCard {
-                Button { whose = true } label: {
-                    HStack {
-                        Text("Whose was it?").font(Nacre.body).foregroundColor(Pearl.ink)
-                        Spacer()
-                        Text(spendWhose).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
-                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(Pearl.muted)
-                    }
-                    .padding(.horizontal, 16).frame(minHeight: 50)
-                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(busy)
@@ -807,7 +811,7 @@ struct TransactionDetailView: View {
             if !(canSplit || canPart || couldBePay) { section("Options") }
             GlassCard {
                 if unlink {
-                    Button { Task { await unlinkRefund() } } label: {
+                    Button { unlinkingRefund = true } label: {
                         row(title: "Unlink refund", sub: "Count it as money in instead", chevron: true)
                     }
                     .buttonStyle(.plain)
@@ -841,6 +845,15 @@ struct TransactionDetailView: View {
     @ViewBuilder private var details: some View {
         section("Details")
         GlassCard {
+            // T-75: whose a joint charge was, first in Details.
+            if !t.inflow && !t.joint.isEmpty && t.transfer == nil {
+                Button { whose = true } label: {
+                    row(title: "Whose was it?", sub: nil, chevron: true, value: spendWhose)
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                RowSeparator()
+            }
             Button { editingNote = true } label: {
                 if t.myNote.isEmpty {
                     row(title: "Add a note", placeholder: true, chevron: true)
@@ -930,7 +943,8 @@ struct TransactionDetailView: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    private func row(title: String, sub: String? = nil, placeholder: Bool = false, chevron: Bool) -> some View {
+    private func row(title: String, sub: String? = nil, placeholder: Bool = false, chevron: Bool,
+                     value: String? = nil) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(placeholder ? Nacre.body : (sub == nil ? Nacre.body : Nacre.headline))
@@ -941,6 +955,9 @@ struct TransactionDetailView: View {
                 }
             }
             Spacer(minLength: 8)
+            if let value = value {
+                Text(value).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
+            }
             if chevron {
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
             }
@@ -993,10 +1010,49 @@ struct TransactionDetailView: View {
         }
     }
 
-    /// Yes: Pearl's guess was right.
-    private func confirm() async {
+    /// T-41b: "Unlink? · It goes back to Needs a look."
+    private var refundUnlinkSheet: some View {
+        VStack(spacing: 16) {
+            SheetTitle(title: "Unlink?") { unlinkingRefund = false }
+            QuestionHeader(name: t.merchant, amount: "+" + Format.amount(t.amount), tone: Pearl.ink,
+                           sub: Format.short(t.date))
+                .padding(.horizontal, 16)
+            Text("It goes back to Needs a look.").font(Nacre.footnote).foregroundColor(Pearl.ink)
+            HStack(spacing: 10) {
+                Button("Unlink") {
+                    unlinkingRefund = false
+                    Task { await unlinkRefund() }
+                }
+                .buttonStyle(NacreButtonStyle())
+                Button("Keep linked") { unlinkingRefund = false }
+                    .font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Capsule().fill(Pearl.card))
+                    .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(SheetBackground())
+        .presentationDetents([.height(300)])
+    }
+
+    private func undo(_ payload: JSONValue) async {
+        guard let body = payload.any as? [String: Any] else { return }
+        withAnimation { toast = nil }
         await run {
-            let _: CategoryChange = try await app.api.put("api/transactions/\(t.id)/confirm")
+            let _: OK = try await app.api.post("api/transactions/undo", body)
+            return "Undone."
+        }
+    }
+
+    /// Yes: Pearl's guess was right. T-38b: "Dining out · Undo".
+    private func confirm() async {
+        let label = t.label
+        await run {
+            let reply: CategoryChange = try await app.api.put("api/transactions/\(t.id)/confirm")
+            withAnimation { toast = (reply.category ?? label, reply.undo) }
             return nil
         }
     }
@@ -1321,7 +1377,9 @@ struct WhoseSheet: View {
                             .padding(.horizontal, 16).frame(minHeight: 52)
                             .sheetCard()
                     }
-                    Text(footnote).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    if t.accountShare != nil {
+                        Text(footnote).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    }
                     if let error = error { Hint(text: error) }
                 }
             }
