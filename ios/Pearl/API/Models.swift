@@ -64,9 +64,13 @@ struct SignInReply: Decodable {
     let sentTo: String?
     let resendIn: Int?
     let created: Bool?
+    /// A-11: the sign-in waits until this iPhone is confirmed.
+    var confirmDevice: Bool? = nil
+    var choices: DeviceChoices? = nil
 
     enum CodingKeys: String, CodingKey {
-        case user, created
+        case user, created, choices
+        case confirmDevice = "confirm_device"
         case signedIn = "signed_in"
         case codeNeeded = "code_needed"
         case sentTo = "sent_to"
@@ -1320,5 +1324,35 @@ struct Privacy: Decodable {
             case itemId = "item_id"
             case lastSynced = "last_synced"
         }
+    }
+}
+
+/// A-11: how this iPhone can be confirmed: approved on her other device,
+/// or with a recovery code.
+struct DeviceChoices: Decodable, Hashable {
+    let approve: Approve?
+    let recovery: Bool?
+
+    struct Approve: Decodable, Hashable {
+        let label: String?
+        /// Seconds since 1970.
+        let usedAt: Double?
+        enum CodingKeys: String, CodingKey {
+            case label
+            case usedAt = "used_at"
+        }
+    }
+}
+
+/// SEC-10: another device asking to sign in as her.
+struct Approval: Decodable, Identifiable, Hashable {
+    let id: Int
+    let label: String?
+    let near: String?
+    let account: Account?
+
+    struct Account: Decodable, Hashable {
+        let name: String?
+        let email: String?
     }
 }

@@ -18,6 +18,7 @@
 		F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F7C177E913CEBE0B53FA5 /* HomeView.swift */; };
 		7579BBE295A41A951C73B4E3 /* AllowanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49B60D0B387295A6F5633F43 /* AllowanceView.swift */; };
 		3E714132CCE10921CFECCE51 /* AuthFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE32207A5401B96AA021225 /* AuthFlow.swift */; };
+		1737B01420B21E146BFB197B /* DeviceCheckViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A966825B8DAB6D808EE38B1 /* DeviceCheckViews.swift */; };
 		36B2ADE3D4D2AADFAF7450C6 /* FaceIDViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D792DA47AD008651315BC81E /* FaceIDViews.swift */; };
 		EDF62B098CA2F256BB968358 /* PayAndBillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */; };
 		B012721D7224087DA976961B /* PlaidLinker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */; };
@@ -73,6 +74,7 @@
 		663F7C177E913CEBE0B53FA5 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		49B60D0B387295A6F5633F43 /* AllowanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowanceView.swift; sourceTree = "<group>"; };
 		DBE32207A5401B96AA021225 /* AuthFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFlow.swift; sourceTree = "<group>"; };
+		8A966825B8DAB6D808EE38B1 /* DeviceCheckViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCheckViews.swift; sourceTree = "<group>"; };
 		D792DA47AD008651315BC81E /* FaceIDViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceIDViews.swift; sourceTree = "<group>"; };
 		FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayAndBillsView.swift; sourceTree = "<group>"; };
 		AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaidLinker.swift; sourceTree = "<group>"; };
@@ -232,6 +234,7 @@
 			children = (
 				49B60D0B387295A6F5633F43 /* AllowanceView.swift */,
 				DBE32207A5401B96AA021225 /* AuthFlow.swift */,
+				8A966825B8DAB6D808EE38B1 /* DeviceCheckViews.swift */,
 				D792DA47AD008651315BC81E /* FaceIDViews.swift */,
 				FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */,
 				AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */,
@@ -381,6 +384,7 @@
 				F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */,
 				7579BBE295A41A951C73B4E3 /* AllowanceView.swift in Sources */,
 				3E714132CCE10921CFECCE51 /* AuthFlow.swift in Sources */,
+				1737B01420B21E146BFB197B /* DeviceCheckViews.swift in Sources */,
 				36B2ADE3D4D2AADFAF7450C6 /* FaceIDViews.swift in Sources */,
 				EDF62B098CA2F256BB968358 /* PayAndBillsView.swift in Sources */,
 				B012721D7224087DA976961B /* PlaidLinker.swift in Sources */,

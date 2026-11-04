@@ -24,6 +24,9 @@ struct AuthFlow: View {
                     case .resetSent: ResetSentView(path: $path)
                     case .newPassword(let token): NewPasswordView(path: $path, token: token)
                     case .faceID(let user): FaceIDOfferView(mode: .newIPhone) { app.signedIn(user) }
+                    case .confirmDevice(let choices): ConfirmDeviceView(path: $path, choices: choices)
+                    case .waitingApproval(let from): WaitingApprovalView(path: $path, from: from)
+                    case .recoveryCode: RecoveryCodeView(path: $path)
                     }
                 }
         }
@@ -54,6 +57,10 @@ enum AuthRoute: Hashable {
     case resetSent
     case newPassword(token: String)
     case faceID(PearlUser?)
+    /// A-11, the wait for her other device, and A-12.
+    case confirmDevice(DeviceChoices)
+    case waitingApproval(from: String?)
+    case recoveryCode
 }
 
 extension PearlUser: Hashable {
@@ -297,7 +304,9 @@ struct VerifyEmailView: View {
         defer { busy = false }
         do {
             let reply: SignInReply = try await app.api.post("api/auth/code/verify", ["email": email, "code": code])
-            if reply.signedIn == true {
+            if reply.confirmDevice == true, let choices = reply.choices {
+                path.append(.confirmDevice(choices))
+            } else if reply.signedIn == true {
                 app.justCreated = reply.created ?? true
                 app.signedIn(reply.user)
             }
