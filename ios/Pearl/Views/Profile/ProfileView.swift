@@ -25,7 +25,7 @@ struct ProfileView: View {
 
                 ProfileSection("Money")
                 GlassCard {
-                    NavigationLink { LinkedAccountsView() } label: {
+                    NavigationLink { AccountsView() } label: {
                         ProfileRow(symbol: "cylinder.split.1x2", title: "Accounts", sub: accountsLine) {
                             if let n = summary?.needsYou, n > 0 {
                                 StatusPill(text: "\(n) needs you", tone: .attention)

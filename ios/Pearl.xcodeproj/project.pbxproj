@@ -23,8 +23,10 @@
 		B012721D7224087DA976961B /* PlaidLinker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */; };
 		619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */; };
 		3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */; };
+		0E20B3BEDE9BE9508D94E4E3 /* AccountsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */; };
 		50683C7CA113D2D071892AF2 /* CategoriesRulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BEADC70C1E3D94BE931A082 /* CategoriesRulesView.swift */; };
 		BBCC842E851D26BEAEC2BE80 /* ChangeEmailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB4B09F8E2A41BCAB614B60 /* ChangeEmailView.swift */; };
+		8FD19041B28DB92BD2932DBF /* JointMergeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97D9AE67E5566CC11FECF29E /* JointMergeViews.swift */; };
 		2559937CB8EFC5C8717E15C4 /* ProfileParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4F39129DB8BAC5939CA6611 /* ProfileParts.swift */; };
 		658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 186A54E5EB12390A80B72B43 /* ProfileView.swift */; };
 		F6D402A4740A8C45147DA054 /* ProtectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD70F7C6FB3D121DE879E76 /* ProtectView.swift */; };
@@ -70,8 +72,10 @@
 		AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaidLinker.swift; sourceTree = "<group>"; };
 		D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupFlow.swift; sourceTree = "<group>"; };
 		44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupPayQuestions.swift; sourceTree = "<group>"; };
+		8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsViews.swift; sourceTree = "<group>"; };
 		9BEADC70C1E3D94BE931A082 /* CategoriesRulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoriesRulesView.swift; sourceTree = "<group>"; };
 		0AB4B09F8E2A41BCAB614B60 /* ChangeEmailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangeEmailView.swift; sourceTree = "<group>"; };
+		97D9AE67E5566CC11FECF29E /* JointMergeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JointMergeViews.swift; sourceTree = "<group>"; };
 		A4F39129DB8BAC5939CA6611 /* ProfileParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileParts.swift; sourceTree = "<group>"; };
 		186A54E5EB12390A80B72B43 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		CCD70F7C6FB3D121DE879E76 /* ProtectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectView.swift; sourceTree = "<group>"; };
@@ -228,8 +232,10 @@
 		7067600B49381F5C11E3B0CF /* Profile */ = {
 			isa = PBXGroup;
 			children = (
+				8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */,
 				9BEADC70C1E3D94BE931A082 /* CategoriesRulesView.swift */,
 				0AB4B09F8E2A41BCAB614B60 /* ChangeEmailView.swift */,
+				97D9AE67E5566CC11FECF29E /* JointMergeViews.swift */,
 				A4F39129DB8BAC5939CA6611 /* ProfileParts.swift */,
 				186A54E5EB12390A80B72B43 /* ProfileView.swift */,
 				CCD70F7C6FB3D121DE879E76 /* ProtectView.swift */,
@@ -362,8 +368,10 @@
 				B012721D7224087DA976961B /* PlaidLinker.swift in Sources */,
 				619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */,
 				3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */,
+				0E20B3BEDE9BE9508D94E4E3 /* AccountsViews.swift in Sources */,
 				50683C7CA113D2D071892AF2 /* CategoriesRulesView.swift in Sources */,
 				BBCC842E851D26BEAEC2BE80 /* ChangeEmailView.swift in Sources */,
+				8FD19041B28DB92BD2932DBF /* JointMergeViews.swift in Sources */,
 				2559937CB8EFC5C8717E15C4 /* ProfileParts.swift in Sources */,
 				658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */,
 				F6D402A4740A8C45147DA054 /* ProtectView.swift in Sources */,

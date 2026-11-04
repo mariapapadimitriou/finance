@@ -115,6 +115,13 @@ struct AccountsOverview: Decodable {
     let linked: [Account]
     /// Accounts added by hand: what a purchase added by hand was paid with.
     var added: [Account]? = nil
+    /// Banks to sign in to again, or cut off (THL-120).
+    var needsYou: Int? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case linked, added
+        case needsYou = "needs_you"
+    }
 
     struct Account: Decodable, Identifiable, Hashable {
         let id: String
@@ -133,10 +140,21 @@ struct AccountsOverview: Decodable {
         /// "up_to_date", "sign_in", "disconnected", "retrying"…
         let status: String?
         let updatedAt: String?
+        /// "plaid", or "hand" for a balance she added (AM-05).
+        var source: String? = nil
+        /// Counted toward Allowance and her totals (AM-02, AM-03).
+        var counted: Bool? = nil
+        var anchor: Bool? = nil
+        var canAnchor: Bool? = nil
+        var nickname: String? = nil
+        var disconnectedOn: String? = nil
 
         enum CodingKeys: String, CodingKey {
             case id, name, mask, institution, kind, balance, owing, joint, transactions, status
+            case source, counted, anchor, nickname
             case updatedAt = "updated_at"
+            case canAnchor = "can_anchor"
+            case disconnectedOn = "disconnected_on"
             case jointShare = "joint_share"
             case jointPeople = "joint_people"
             case historyFrom = "history_from"
@@ -148,6 +166,19 @@ struct AccountsOverview: Decodable {
         var needsReconnect: Bool { status == "sign_in" || status == "disconnected" }
         /// "TD Visa ••9021".
         var label: String { (mask ?? "").isEmpty ? name : "\(name) ••\(mask!)" }
+        var isHand: Bool { source == "hand" }
+    }
+}
+
+/// PUT /api/accounts/<id>/settings: the account afterwards, and the
+/// Allowance it leaves (AM-03's "Allowance is now $738.58").
+struct AccountSaved: Decodable {
+    let account: AccountsOverview.Account?
+    let safeToSpend: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case account
+        case safeToSpend = "safe_to_spend"
     }
 }
 
