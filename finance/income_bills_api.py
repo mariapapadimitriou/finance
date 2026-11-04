@@ -20,7 +20,7 @@ from flask import jsonify, request
 from . import income_bills as ib
 from .api import _today_iso, bp, store
 
-_ROW_FIELDS = ("key", "name", "amount", "varies", "cadence", "next", "day", "category",
+_ROW_FIELDS = ("key", "name", "amount", "full", "share", "varies", "cadence", "next", "day", "category",
                "counts", "ticked", "source", "edited", "question", "recipient", "rent", "shared")
 
 

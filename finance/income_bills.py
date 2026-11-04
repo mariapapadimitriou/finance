@@ -392,11 +392,15 @@ def bills(transactions: list[Transaction], today: date, state: dict | None) -> l
         else:
             counts = None                      # not answered: S9's rule applies
         ticked = counts if counts is not None else rec.get("confidence", 0) >= TICK_CONFIDENCE
+        full = round(float(amount), 2)
+        share = a.get("share")
         return {
             "key": key, "name": a.get("name") or name, "merchant": rec["merchant"],
-            "amount": round(float(amount), 2), "varies": bool(varies), "cadence": cadence,
+            # O-10a (2026-11-04): her share of it is what counts; `full` is the bill.
+            "amount": _part(full, share), "full": full, "share": share,
+            "varies": bool(varies), "cadence": cadence,
             "next": nxt, "day": _d(nxt).day if a.get("next") else day,
-            "category": rec.get("category") or "Other",
+            "category": a.get("category") or rec.get("category") or "Other",
             "counts": counts, "ticked": bool(ticked), "source": "found",
             "edited": bool(a.get("amount") or a.get("cadence") or a.get("next")),
             "dates": rec["dates"], "rec": rec,
@@ -426,7 +430,8 @@ def bills(transactions: list[Transaction], today: date, state: dict | None) -> l
     for b in state.get("added") or []:
         key = f"added:{b['id']}"
         out.append({
-            "key": key, "name": b["name"], "merchant": b.get("merchant") or "", "amount": b["amount"],
+            "key": key, "name": b["name"], "merchant": b.get("merchant") or "",
+            "amount": _part(b["amount"], b.get("share")), "full": b["amount"], "share": b.get("share"),
             "varies": bool(b.get("varies")), "cadence": b["cadence"], "next": b["next"],
             "day": _d(b["next"]).day, "category": b.get("category") or "Other",
             "counts": True, "ticked": True,
@@ -480,6 +485,11 @@ def income_each_month(state: dict, told: float = 0.0, estimate: float | None = N
 
 # ── Validation (the endpoints) ──────────────────────────────────────────
 
+def _part(amount: float, share) -> float:
+    """Her share of a bill, from the percent she gave (none is all of it)."""
+    return round(float(amount) * float(share) / 100, 2) if share else round(float(amount), 2)
+
+
 def clean_name(value) -> str:
     return " ".join(str(value or "").split())[:MAX_NAME]
 
@@ -513,8 +523,14 @@ def pay_from(body: dict) -> tuple[dict | None, str | None]:
     nxt = clean_date(body.get("next"))
     if nxt is None and cadence != "irregular":
         return None, "Choose your next pay date."
-    return {"name": name, "amount": amount, "cadence": cadence,
-            "next": nxt, "payer": clean_name(body.get("payer")) or ""}, None
+    out = {"name": name, "amount": amount, "cadence": cadence,
+           "next": nxt, "payer": clean_name(body.get("payer")) or ""}
+    # O-10b, O-10d (2026-11-04): where it lands, and whether it changes.
+    if body.get("account"):
+        out["account"] = clean_name(body.get("account"))
+    if "varies" in body:
+        out["varies"] = bool(body.get("varies"))
+    return out, None
 
 
 def bill_from(body: dict) -> tuple[dict | None, str | None]:
@@ -531,5 +547,20 @@ def bill_from(body: dict) -> tuple[dict | None, str | None]:
     nxt = clean_date(body.get("next"))
     if nxt is None:
         return None, "Choose the next due date."
-    return {"name": name, "amount": amount, "cadence": cadence, "next": nxt,
-            "varies": bool(body.get("varies"))}, None
+    out = {"name": name, "amount": amount, "cadence": cadence, "next": nxt,
+           "varies": bool(body.get("varies"))}
+    # O-10a, O-10c (2026-11-04): its category and her share of it.
+    from .categorize import CATEGORIES
+    if body.get("category") in CATEGORIES:
+        out["category"] = body["category"]
+    share = body.get("share")
+    if share not in (None, ""):
+        try:
+            pct = int(float(str(share).replace("%", "")))
+        except ValueError:
+            return None, "Your share is a percent, from 1 to 100."
+        if not 1 <= pct <= 100:
+            return None, "Your share is a percent, from 1 to 100."
+        if pct < 100:
+            out["share"] = pct
+    return out, None

@@ -270,6 +270,9 @@ struct IncomeBills: Decodable {
         let cadence: String
         let next: String?
         let payer: String?
+        /// O-10b: the account it lands in, and whether it changes each time.
+        var account: String? = nil
+        var varies: Bool? = nil
     }
 
     /// A deposit that looks like pay, not yet answered.
@@ -293,6 +296,9 @@ struct IncomeBills: Decodable {
         let category: String?
         let ticked: Bool?
         let source: String?
+        /// O-10a: the whole bill, and her percent of it (nil is all of it).
+        var full: Double? = nil
+        var share: Int? = nil
         /// Someone's share that comes off it (O-10g).
         let shared: Shared?
         var id: String { key }

@@ -191,7 +191,7 @@ struct IncomeBillsView: View {
             }
         case .pay(let p):
             PaySheet(title: p.name, subtitle: "Your pay · \(cadence(p.cadence))", payer: p.payer, payId: p.id,
-                     amount: p.amount, cadence: p.cadence, next: p.next) { reply in
+                     amount: p.amount, cadence: p.cadence, next: p.next, account: p.account, varies: p.varies ?? false) { reply in
                 if let reply = reply { saved(reply) }
             }
         case .addPay:
@@ -381,9 +381,9 @@ struct ExpectedIncomeSheet: View {
     private var own: Double? { expected?.amount.flatMap { $0 > 0 ? $0 : nil } }
 
     var body: some View {
-        SheetFrame(title: "Your own amount", subtitle: subtitle, symbol: "chart.line.uptrend.xyaxis",
-                   close: { dismiss() }) {
-            FieldRow(label: "After tax", text: $amount, prompt: "$0.00")
+        SheetFrame(title: "Income each month", subtitle: subtitle, symbol: "chart.line.uptrend.xyaxis",
+                   heading: "Your own amount", close: { dismiss() }) {
+            FieldRow(label: "Each month, after tax", text: $amount, prompt: "$0.00")
                 .keyboardType(.decimalPad)
                 .sheetCard()
             Toggle("It changes month to month", isOn: $varies)
@@ -398,7 +398,7 @@ struct ExpectedIncomeSheet: View {
             Button("Save") { Task { await save() } }
                 .buttonStyle(NacreButtonStyle(busy: busy))
                 .disabled(busy || amount.isEmpty)
-            if own != nil, expected?.estimate != nil || hasPay {
+            if expected?.estimate != nil || (own != nil && hasPay) {
                 Button(expected?.estimate.map { "Use Pearl’s estimate (\(Format.whole($0)))" } ?? "Use my pay instead") {
                     Task { await clear() }
                 }
@@ -416,7 +416,7 @@ struct ExpectedIncomeSheet: View {
 
     private var subtitle: String {
         if let estimate = expected?.estimate, estimate > 0 {
-            return "Each month. Pearl’s estimate is \(Format.whole(estimate)), from your last 3 months."
+            return "Pearl’s estimate is \(Format.whole(estimate)), from your last 3 months"
         }
         return "Roughly what comes in each month after tax"
     }
