@@ -26,6 +26,8 @@ struct PearlUser: Decodable, Equatable {
     let onboarding: Onboarding?
     /// Passkeys saved for her (from the sign-in status).
     var passkeys: Int? = nil
+    /// Recovery codes she has left (SEC-08).
+    var recoveryCodes: Int? = nil
 
     struct Onboarding: Decodable, Equatable {
         let done: Bool?
@@ -34,6 +36,7 @@ struct PearlUser: Decodable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, username, email, onboarding, passkeys
+        case recoveryCodes = "recovery_codes"
         case firstName = "first_name"
     }
 
