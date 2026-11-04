@@ -784,6 +784,13 @@ struct TransactionDetailView: View {
 
     /// "Not income?" (T-37) under income; Delete under one added by hand.
     @ViewBuilder private var footerAction: some View {
+        if !t.excluded.isEmpty && t.transfer == nil {
+            // Left out (T-56, T-77's Leave out): put it back in her numbers.
+            Button("Put it back") { Task { await putBack() } }
+                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .padding(.top, 12)
+                .disabled(busy)
+        }
         if isIncome {
             Button("Not income?") { asking = Asking(step: .into) }
                 .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
@@ -940,6 +947,13 @@ struct TransactionDetailView: View {
         }
         if let line = p.line, !line.isEmpty { words.append(line) }
         return words.isEmpty ? nil : words.joined(separator: " ")
+    }
+
+    private func putBack() async {
+        await run {
+            let _: OK = try await app.api.delete("api/transactions/\(t.id)/exclude")
+            return "Back in your numbers."
+        }
     }
 
     /// T-80: her name for the merchant; empty goes back to the bank's.
