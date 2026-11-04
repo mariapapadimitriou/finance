@@ -1,3 +1,4 @@
+import Contacts
 import SwiftUI
 
 // THL-291, the purchase side: split it with people (S-02, S-03, S-15 to
@@ -27,6 +28,10 @@ struct SplitSheet: View {
     @State private var values: [String: String] = [:]
     @State private var busy = false
     @State private var error: String?
+    /// S-17 Add someone: names from her contacts, and the one she picked.
+    @State private var adding = false
+    @State private var contacts: [String] = []
+    @State private var contact: String?
 
     private static let me = "\u{0}me"
 
@@ -52,11 +57,13 @@ struct SplitSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: step == 0 ? "Who was it with?" : (title ?? "How to split")) { dismiss() }
+            SheetTitle(title: adding ? "Add someone" : step == 0 ? "Who was it with?" : (title ?? "How to split")) {
+                if adding { adding = false; typed = "" } else { dismiss() }
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     QuestionHeader(name: t.merchant, amount: Format.money(t), tone: t.tone, sub: nil)
-                    if step == 0 { who } else { how }
+                    if adding { addSomeone } else if step == 0 { who } else { how }
                     if let error = error {
                         Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
                     }
@@ -69,6 +76,108 @@ struct SplitSheet: View {
         .background(SheetBackground())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+    }
+
+    // MARK: S-17 Add someone
+
+    private var addSomeone: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted)
+                TextField("", text: $typed, prompt: Text("Name").foregroundColor(Pearl.muted))
+                    .font(Nacre.body).textInputAutocapitalization(.words).autocorrectionDisabled()
+            }
+            .padding(.horizontal, 14).frame(height: 44)
+            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+            let q = typed.trimmingCharacters(in: .whitespaces)
+            if !contacts.isEmpty || !q.isEmpty {
+                if !contacts.isEmpty {
+                    Text("FROM YOUR CONTACTS").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                        .padding(.horizontal, 16)
+                }
+                GlassCard {
+                    ForEach(Array(contacts.enumerated()), id: \.element) { i, name in
+                        if i > 0 { RowSeparator(inset: 64) }
+                        Button { contact = contact == name ? nil : name } label: {
+                            HStack(spacing: 12) {
+                                Initials(name: name, size: 34)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
+                                    Text("In your contacts").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                                }
+                                Spacer()
+                                Image(systemName: contact == name ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(contact == name ? Pearl.action : Pearl.muted)
+                            }
+                            .padding(.horizontal, 16).frame(minHeight: 54).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(contact == name ? .isSelected : [])
+                    }
+                    if !q.isEmpty {
+                        if !contacts.isEmpty { RowSeparator() }
+                        Button { contact = nil; add(q) } label: {
+                            HStack {
+                                Text("Add “\(q)” without a contact").font(Nacre.body).foregroundColor(Pearl.action)
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(Pearl.muted)
+                            }
+                            .padding(.horizontal, 16).frame(minHeight: 52).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            withMeCard
+        }
+        .task(id: typed) {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            if !Task.isCancelled { await searchContacts() }
+        }
+    }
+
+    /// Names in her contacts matching what she typed. iOS asks the first time.
+    private func searchContacts() async {
+        let q = typed.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { contacts = []; return }
+        let store = CNContactStore()
+        if CNContactStore.authorizationStatus(for: .contacts) == .notDetermined {
+            _ = try? await store.requestAccess(for: .contacts)
+        }
+        let status = CNContactStore.authorizationStatus(for: .contacts)
+        guard status != .denied && status != .restricted && status != .notDetermined else { contacts = []; return }
+        let found: [String] = await Task.detached {
+            let keys = [CNContactGivenNameKey, CNContactFamilyNameKey] as [CNKeyDescriptor]
+            let people = (try? store.unifiedContacts(matching: CNContact.predicateForContacts(matchingName: q),
+                                                     keysToFetch: keys)) ?? []
+            return people.map { "\($0.givenName) \($0.familyName)".trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+        }.value
+        contacts = Array(NSOrderedSet(array: found).array as? [String] ?? found).prefix(6).map { $0 }
+        if let c = contact, !contacts.contains(c) { contact = nil }
+    }
+
+    private func add(_ name: String) {
+        if !people.contains(name) { people.append(name) }
+        typed = ""
+        contacts = []
+        contact = nil
+        adding = false
+    }
+
+    private var withMeCard: some View {
+        GlassCard {
+            Toggle(isOn: $withMe) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("I had some too").font(Nacre.body).foregroundColor(Pearl.ink)
+                    Text("Turn off if it was all for them").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                }
+            }
+            .tint(Pearl.action)
+            .padding(.horizontal, 16).padding(.vertical, 12)
+        }
     }
 
     // MARK: S-02 Who was it with?
@@ -106,19 +215,27 @@ struct SplitSheet: View {
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(people.contains(name) ? .isSelected : [])
                     }
+                    RowSeparator()
+                    // S-02: Add someone new opens S-17.
+                    addNewRow
                 }
+            } else {
+                GlassCard { addNewRow }
             }
-            GlassCard {
-                Toggle(isOn: $withMe) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("I had some too").font(Nacre.body).foregroundColor(Pearl.ink)
-                        Text("Turn off if it was all for them").font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    }
-                }
-                .tint(Pearl.action)
-                .padding(.horizontal, 16).padding(.vertical, 12)
-            }
+            withMeCard
         }
+    }
+
+    private var addNewRow: some View {
+        Button { adding = true } label: {
+            HStack {
+                Text("Add someone new").font(Nacre.body).foregroundColor(Pearl.action)
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
+            }
+            .padding(.horizontal, 16).frame(minHeight: 52).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var choices: [String] {
@@ -290,7 +407,14 @@ struct SplitSheet: View {
 
     // MARK: Save
 
-    private var footer: some View {
+    @ViewBuilder private var footer: some View {
+        if adding {
+            let name = contact ?? typed.trimmingCharacters(in: .whitespaces)
+            Button(name.isEmpty ? "Add" : "Add \(name.components(separatedBy: " ").first ?? name)") { add(name) }
+                .buttonStyle(NacreButtonStyle())
+                .disabled(name.isEmpty)
+                .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
+        } else {
         Button(step == 0 ? "Next" : saveTitle) {
             if step == 0 { addTyped(); step = 1 } else { Task { await save() } }
         }
@@ -298,6 +422,7 @@ struct SplitSheet: View {
         .disabled(step == 0 ? people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
                   : (gapCents != 0 || busy))
         .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
+        }
     }
 
     private func save() async {
