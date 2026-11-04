@@ -9,14 +9,10 @@ import SwiftUI
 // AM-10 add a balance by hand, with its last four digits (THL-226)
 
 extension AccountsOverview.Account {
-    /// Has transactions of its own: a linked or imported account, not a
-    /// balance she added by hand (finance/merge.py has nothing to merge there).
-    var hasHistory: Bool { status != "manual" || (transactions ?? 0) > 0 }
-
-    /// The accounts this one could be another copy of: the same kind, with
-    /// transactions.
+    /// The accounts this one could be another copy of: the same kind, and not
+    /// a balance she added by hand (finance/merge.py has nothing to merge there).
     func copies(among all: [AccountsOverview.Account]) -> [AccountsOverview.Account] {
-        all.filter { $0.id != id && $0.kind == kind && $0.hasHistory }
+        all.filter { $0.id != id && $0.kind == kind && !$0.isHand }
     }
 
     var kindWord: String {
@@ -323,8 +319,8 @@ struct SameAccountView: View {
     let account: AccountsOverview.Account
     /// Every account she has, to find the others of the same kind.
     let all: [AccountsOverview.Account]
-    /// What was done, in words, once they're combined.
-    let combined: (String) -> Void
+    /// What was done, in words, and the account that's gone.
+    let combined: (String, String) -> Void
     @State private var keep: String?
     @State private var preview: Preview?
     @State private var busy = false
@@ -413,7 +409,7 @@ struct SameAccountView: View {
         do {
             let _: Preview = try await app.api.post("api/accounts/\(copy.id)/merge", ["into": kept.id])
             app.changed()
-            combined("Combined. \(kept.name) stays and \(copy.name) is gone.")
+            combined("Combined. \(kept.name) stays and \(copy.name) is gone.", copy.id)
             dismiss()
         } catch {
             self.error = app.handle(error)

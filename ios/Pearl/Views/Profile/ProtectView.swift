@@ -115,7 +115,7 @@ struct ProtectView: View {
     }
 
     /// The server's "2026-11-03T14:05:00" (with or without a zone or fraction).
-    static func parse(_ text: String) -> Date? {
+    nonisolated static func parse(_ text: String) -> Date? {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let d = iso.date(from: text) { return d }

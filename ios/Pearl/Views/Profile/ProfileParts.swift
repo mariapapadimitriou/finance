@@ -166,6 +166,7 @@ struct StatusPill: View {
         case .positive: return "checkmark"
         case .attention: return "exclamationmark.triangle"
         case .info: return "info.circle"
+        case .joint: return "person.2"
         case .neutral: return nil
         case .joint: return "person.2"
         }
