@@ -330,23 +330,39 @@ extension String {
 struct ReconnectSheet: View {
     @EnvironmentObject private var app: AppModel
     @StateObject private var plaid = PlaidLinker()
-    let account: AccountsOverview.Account
+    let bank: String
+    let label: String
+    let itemId: String?
+    let updatedAt: String?
     let finished: (Bool) -> Void
+
+    init(account: AccountsOverview.Account, finished: @escaping (Bool) -> Void) {
+        self.init(bank: AccountWords.bank(account), label: account.label, itemId: account.itemId,
+                  updatedAt: account.updatedAt, finished: finished)
+    }
+
+    init(bank: String, label: String, itemId: String?, updatedAt: String?, finished: @escaping (Bool) -> Void) {
+        self.bank = bank
+        self.label = label
+        self.itemId = itemId
+        self.updatedAt = updatedAt
+        self.finished = finished
+    }
     @State private var busy = false
     @State private var error: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ProfileHeading(title: "Sign in to \(AccountWords.bank(account)) again",
+            ProfileHeading(title: "Sign in to \(bank) again",
                            intro: "Banks ask you to sign in again every so often. It’s routine, and nothing is wrong with your account.")
                 .padding(.top, 28)
             GlassCard {
-                ProfileRow(initials: AccountWords.bank(account), title: account.label,
-                           sub: account.updatedAt.map { "Last updated \(AccountWords.when($0))" }, chevron: false)
+                ProfileRow(initials: bank, title: label,
+                           sub: updatedAt.map { "Last updated \(AccountWords.when($0))" }, chevron: false)
             }
             if let error = error { Hint(text: error) }
             Spacer(minLength: 0)
-            Button("Continue to \(AccountWords.bank(account))") { Task { await go() } }
+            Button("Continue to \(bank)") { Task { await go() } }
                 .buttonStyle(NacreButtonStyle(busy: busy))
                 .disabled(busy)
             Button("Not now") { finished(false) }
@@ -357,7 +373,7 @@ struct ReconnectSheet: View {
     }
 
     private func go() async {
-        guard let item = account.itemId, !item.isEmpty else {
+        guard let item = itemId, !item.isEmpty else {
             error = "This account isn’t linked to a bank any more. Remove it and link the bank again."
             return
         }

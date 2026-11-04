@@ -412,9 +412,22 @@ struct Home: Decodable {
         }
     }
 
-    struct Connection: Decodable {
+    /// A bank connection, worst first: "needs_sign_in", "disconnected",
+    /// "bank_down" (H-01).
+    struct Connection: Decodable, Identifiable {
+        let itemId: String?
         let institution: String?
         let state: String?
+        let lastSynced: String?
+        let cardsOnly: Bool?
+        var id: String { itemId ?? institution ?? "" }
+
+        enum CodingKeys: String, CodingKey {
+            case institution, state
+            case itemId = "item_id"
+            case lastSynced = "last_synced"
+            case cardsOnly = "cards_only"
+        }
     }
 }
 
