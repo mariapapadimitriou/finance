@@ -115,6 +115,13 @@ struct AccountsOverview: Decodable {
     let linked: [Account]
     /// Accounts added by hand: what a purchase added by hand was paid with.
     var added: [Account]? = nil
+    /// Banks to sign in to again, or cut off (THL-120).
+    var needsYou: Int? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case linked, added
+        case needsYou = "needs_you"
+    }
 
     struct Account: Decodable, Identifiable, Hashable {
         let id: String
@@ -133,10 +140,21 @@ struct AccountsOverview: Decodable {
         /// "up_to_date", "sign_in", "disconnected", "retrying"…
         let status: String?
         let updatedAt: String?
+        /// "plaid", or "hand" for a balance she added (AM-05).
+        var source: String? = nil
+        /// Counted toward Allowance and her totals (AM-02, AM-03).
+        var counted: Bool? = nil
+        var anchor: Bool? = nil
+        var canAnchor: Bool? = nil
+        var nickname: String? = nil
+        var disconnectedOn: String? = nil
 
         enum CodingKeys: String, CodingKey {
             case id, name, mask, institution, kind, balance, owing, joint, transactions, status
+            case source, counted, anchor, nickname
             case updatedAt = "updated_at"
+            case canAnchor = "can_anchor"
+            case disconnectedOn = "disconnected_on"
             case jointShare = "joint_share"
             case jointPeople = "joint_people"
             case historyFrom = "history_from"
@@ -148,6 +166,19 @@ struct AccountsOverview: Decodable {
         var needsReconnect: Bool { status == "sign_in" || status == "disconnected" }
         /// "TD Visa ••9021".
         var label: String { (mask ?? "").isEmpty ? name : "\(name) ••\(mask!)" }
+        var isHand: Bool { source == "hand" }
+    }
+}
+
+/// PUT /api/accounts/<id>/settings: the account afterwards, and the
+/// Allowance it leaves (AM-03's "Allowance is now $738.58").
+struct AccountSaved: Decodable {
+    let account: AccountsOverview.Account?
+    let safeToSpend: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case account
+        case safeToSpend = "safe_to_spend"
     }
 }
 
@@ -769,6 +800,87 @@ struct CategoryList: Decodable {
 
 struct CategoryChange: Decodable {
     let category: String?
+}
+
+// MARK: - Categories and rules
+
+/// GET /api/rules: her saved rules, Fixed or Variable by category, her names
+/// for merchants, her tags, and the categories she hid.
+struct RulesBook: Decodable {
+    let rules: [Rule]
+    /// What she chose: category → "fixed" or "variable".
+    let kinds: [String: String]?
+    /// What Pearl would say on its own, the same way.
+    let pearlKinds: [String: String]?
+    let names: [MerchantName]?
+    let tags: [TagTotal]?
+    let hidden: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case rules, kinds, names, tags, hidden
+        case pearlKinds = "pearl_kinds"
+    }
+
+    struct Rule: Decodable, Identifiable, Hashable {
+        /// "merchant:loblaws", "destination:…", "recurring:…", "pay:…", "exclusion:3".
+        let id: String
+        let kind: String
+        let name: String
+        let category: String?
+        let reason: String?
+        let matched: Int?
+
+        /// Files things under a category she can change. Pay is always income,
+        /// and a leave-out rule has no category.
+        var isSorting: Bool { kind != "pay" && kind != "exclusion" }
+
+        /// "Always Groceries".
+        var words: String {
+            switch kind {
+            case "exclusion": return "Always left out"
+            case "pay": return "Always your regular pay"
+            default: return "Always \(category ?? "Other")"
+            }
+        }
+
+        /// What the rule does, in a sentence (pay and leave-out rules).
+        var does: String {
+            if kind == "pay" {
+                return "Every deposit from \(name) counts as your regular pay: income, and part of your monthly income."
+            }
+            let why = reason.map { $0.isEmpty ? "" : ": \($0)" } ?? ""
+            let now: String
+            switch matched ?? 0 {
+            case 0: now = "It catches new ones as they come in."
+            case 1: now = "It leaves out 1 transaction now."
+            case let n: now = "It leaves out \(n) transactions now."
+            }
+            return "Always left out\(why). \(now)"
+        }
+
+        /// What removing it does.
+        var removing: String {
+            kind == "pay"
+                ? "Removing it keeps the ones already sorted as your pay. The next deposit from them is asked about again."
+                : "Removing it puts what it left out back into your spending."
+        }
+    }
+
+    struct MerchantName: Decodable, Identifiable, Hashable {
+        /// The bank's spelling.
+        let merchant: String
+        let key: String
+        /// Her name for it.
+        let name: String
+        var id: String { key }
+    }
+
+    struct TagTotal: Decodable, Identifiable, Hashable {
+        let tag: String
+        let count: Int
+        let spent: Double
+        var id: String { tag }
+    }
 }
 
 // MARK: - Needs a look

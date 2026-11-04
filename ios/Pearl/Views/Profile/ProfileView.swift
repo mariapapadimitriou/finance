@@ -27,7 +27,7 @@ struct ProfileView: View {
 
                 ProfileSection("Money")
                 GlassCard {
-                    NavigationLink { LinkedAccountsView() } label: {
+                    NavigationLink { AccountsView() } label: {
                         ProfileRow(symbol: "cylinder.split.1x2", title: "Accounts", sub: accountsLine) {
                             if let n = summary?.needsYou, n > 0 {
                                 StatusPill(text: "\(n) needs you", tone: .attention)
@@ -39,7 +39,10 @@ struct ProfileView: View {
                     webRow(symbol: "chart.line.uptrend.xyaxis", title: "Income and bills",
                            sub: "Your pay, and the regular bills set aside")
                     RowSeparator(inset: 64)
-                    webRow(symbol: "list.bullet", title: "Categories and rules", sub: rulesLine)
+                    NavigationLink { CategoriesRulesView() } label: {
+                        ProfileRow(symbol: "list.bullet", title: "Categories and rules", sub: rulesLine)
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 ProfileSection("You")

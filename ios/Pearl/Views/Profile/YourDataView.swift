@@ -8,7 +8,7 @@ import UIKit
 // MARK: - The look these screens share
 
 /// A line icon from the handoff file in a rose-tinted circle.
-struct TintedIcon: View {
+struct DataIcon: View {
     let image: String
     var size: CGFloat = 34
 
@@ -35,7 +35,7 @@ struct DataRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            TintedIcon(image: icon)
+            DataIcon(image: icon)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Nacre.body).foregroundColor(tone)
                     .fixedSize(horizontal: false, vertical: true)
@@ -81,7 +81,7 @@ struct DataCaption: View {
     init(_ text: String) { self.text = text }
 
     var body: some View {
-        Text(text.uppercased()).font(Nacre.caption).foregroundColor(Pearl.ink)
+        Text(text.uppercased()).font(Nacre.caption1).foregroundColor(Pearl.ink)
             .padding(.leading, 16).padding(.top, 4)
             .accessibilityAddTraits(.isHeader)
     }

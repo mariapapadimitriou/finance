@@ -96,3 +96,22 @@ def test_refused_for_the_wrong_kind_or_a_hand_account(client):
     assert client.post("/api/accounts/old/merge", json={"into": hand}).status_code == 400
     assert client.post("/api/accounts/old/merge", json={"into": "old"}).status_code == 404
     assert client.post("/api/accounts/old/merge", json={"into": "nope"}).status_code == 404
+
+
+def test_preview_says_what_a_merge_would_do_and_changes_nothing(client):
+    before = {t.fingerprint for t in client.st.all_transactions()}
+    r = client.get("/api/accounts/old/merge/preview?into=new")
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json() == {"matched": 2, "moved": 1}
+    assert {t.fingerprint for t in client.st.all_transactions()} == before
+    assert "old" in accounts(client)
+    done = client.post("/api/accounts/old/merge", json={"into": "new"}).get_json()
+    assert (done["matched"], done["moved"]) == (2, 1)
+
+
+def test_preview_refuses_what_a_merge_refuses(client):
+    r = client.post("/api/accounts/manual", json={"name": "Cash", "kind": "chequing", "balance": 50})
+    hand = r.get_json()["account"]["id"]
+    assert client.get(f"/api/accounts/old/merge/preview?into={hand}").status_code == 400
+    assert client.get("/api/accounts/old/merge/preview?into=old").status_code == 404
+    assert client.get("/api/accounts/old/merge/preview").status_code == 404
