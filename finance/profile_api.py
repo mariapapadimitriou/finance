@@ -462,6 +462,31 @@ def remove_linked_bank(item_id: str):
                     "revoked_at_plaid": revoked})
 
 
+def _merge_pair(st, account_id: str, into_id: str):
+    """The copy and the account she keeps, or the refusal to give instead."""
+    account, into = _find(st, account_id), _find(st, into_id)
+    if account is None or into is None or account_id == into_id:
+        return None, None, (jsonify({"error": "Choose the other account to keep."}), 404)
+    if "hand" in (account["source"], into["source"]):
+        return None, None, (jsonify({"error": "An account you added by hand has no transactions to merge."}), 400)
+    if account["kind"] != into["kind"]:
+        return None, None, (jsonify({"error": "Only the same kind of account can be merged."}), 400)
+    return account, into, None
+
+
+@bp.get("/accounts/<path:account_id>/merge/preview")
+def merge_account_preview(account_id: str):
+    """AM-09: how many rows are in both and how many only the copy has, before
+    she combines them. Changes nothing."""
+    from . import merge
+    st = store()
+    into_id = request.args.get("into") or ""
+    _, _, refused = _merge_pair(st, account_id, into_id)
+    if refused:
+        return refused
+    return jsonify(merge.preview(st, account_id, into_id))
+
+
 @bp.post("/accounts/<path:account_id>/merge")
 def merge_account(account_id: str):
     """"Same account as…": merge this account into another one (`into`),
@@ -471,13 +496,9 @@ def merge_account(account_id: str):
     from . import merge, plaid_link
     st = store()
     into_id = str((request.get_json(silent=True) or {}).get("into") or "")
-    account, into = _find(st, account_id), _find(st, into_id)
-    if account is None or into is None or account_id == into_id:
-        return jsonify({"error": "Choose the other account to keep."}), 404
-    if "hand" in (account["source"], into["source"]):
-        return jsonify({"error": "An account you added by hand has no transactions to merge."}), 400
-    if account["kind"] != into["kind"]:
-        return jsonify({"error": "Only the same kind of account can be merged."}), 400
+    account, into, refused = _merge_pair(st, account_id, into_id)
+    if refused:
+        return refused
     out = merge.merge(st, account_id, into_id)
     if account["joint"] and not into["joint"]:
         st.set_joint(into_id, (st.joint_accounts() or {}).get(account_id) or "Joint")

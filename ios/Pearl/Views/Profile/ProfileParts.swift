@@ -168,6 +168,7 @@ struct StatusPill: View {
         case .info: return "info.circle"
         case .joint: return "person.2"
         case .neutral: return nil
+        case .joint: return "person.2"
         }
     }
 

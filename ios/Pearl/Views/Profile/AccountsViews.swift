@@ -7,10 +7,12 @@ import SwiftUI
 //               that needs her (THL-120, two taps: Reconnect, Continue)
 // AM-02 / AM-03 a linked account: how it counts, saved on tap; leaving it
 //               out of the budget has no confirmation, just Undo (THL-121)
-// AM-04         a joint account's share (THL-172)
-// AM-05 / AM-06 a balance added by hand, and updating it
+// AM-06         a balance added by hand, and updating it
 // AM-07         removing an account, keeping or deleting its history
 // C-06          a disconnected account: reconnect, keep it by hand, remove
+//
+// JointMergeViews.swift has what these open: AM-08 who a joint account is
+// shared with, AM-09 Same account twice?, and AM-10 add a balance by hand.
 
 // MARK: - Words
 
@@ -161,8 +163,14 @@ struct AccountsView: View {
                 GlassCard {
                     ForEach(Array(added.enumerated()), id: \.element.id) { i, a in
                         if i > 0 { RowSeparator(inset: 64) }
-                        NavigationLink { ManualAccountView(account: a) } label: { row(a) }
-                            .buttonStyle(.plain)
+                        NavigationLink {
+                            if a.isHand {
+                                ManualAccountView(account: a)
+                            } else {
+                                AccountDetailView(account: a)
+                            }
+                        } label: { row(a) }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -182,9 +190,9 @@ struct AccountsView: View {
         .refreshable { await load() }
         .task(id: app.version) { await load() }
         .sheet(isPresented: $adding) {
-            AddBalanceSheet { await load() }
+            AddHandBalanceSheet { await load() }
                 .background(SheetBackground())
-                .presentationDetents([.large])
+                .presentationDetents([.height(450), .large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $reconnecting) { a in
@@ -363,7 +371,7 @@ struct AccountHero: View {
     }
 }
 
-// MARK: - AM-02 / AM-03 / AM-04 / C-06 A linked account
+// MARK: - AM-02 / AM-03 / C-06 A linked account
 
 @MainActor
 struct AccountDetailView: View {
@@ -373,8 +381,10 @@ struct AccountDetailView: View {
     @State private var counted = true
     @State private var joint = false
     @State private var anchor = false
-    @State private var customShare = false
-    @State private var shareText = ""
+    /// Every account, to know whether this one could be a copy of another.
+    @State private var all: [AccountsOverview.Account] = []
+    /// Combined away while AM-09 was open: nothing left to show here.
+    @State private var gone = false
     @State private var renaming = false
     @State private var nickname = ""
     @State private var removing = false
@@ -384,7 +394,6 @@ struct AccountDetailView: View {
     @State private var error: String?
 
     private var isInvestment: Bool { account.kind == "investment" }
-    private var share: Int { Int((account.jointShare ?? 50).rounded()) }
 
     var body: some View {
         ProfilePage {
@@ -413,7 +422,15 @@ struct AccountDetailView: View {
                 }
             }
 
-            if joint { shareBlock }
+            if joint {
+                GlassCard {
+                    NavigationLink { JointAccountView(account: account) } label: {
+                        ProfileRow(symbol: "person.2", title: "Shared with", sub: sharedLine)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 4)
+            }
 
             ProfileSection("Details")
             GlassCard {
@@ -424,6 +441,21 @@ struct AccountDetailView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                if !account.copies(among: all).isEmpty {
+                    RowSeparator(inset: 64)
+                    NavigationLink {
+                        SameAccountView(account: account, all: all) { text, goneId in
+                            if goneId == account.id {
+                                gone = true
+                            } else {
+                                withAnimation { toast = (text, nil) }
+                            }
+                        }
+                    } label: {
+                        ProfileRow(symbol: "square.on.square", title: "Same account twice?")
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             GlassCard {
@@ -441,7 +473,10 @@ struct AccountDetailView: View {
                 UndoToast(text: toast.text, undo: toast.undo) { withAnimation { self.toast = nil } }
             }
         }
-        .onAppear(perform: syncState)
+        .onAppear {
+            if gone { dismiss() } else { syncState() }
+        }
+        .task(id: app.version) { await refresh() }
         .alert("Nickname", isPresented: $renaming) {
             TextField(account.name, text: $nickname)
             Button("Cancel", role: .cancel) {}
@@ -474,6 +509,13 @@ struct AccountDetailView: View {
 
     // MARK: Parts
 
+    /// "Sam and Alex · your share is 50%".
+    private var sharedLine: String {
+        let people = (account.jointPeople ?? []).joined(separator: " and ")
+        let share = account.jointShare.map { "your share is \(Int($0.rounded()))%" } ?? "all yours unless you mark it"
+        return people.isEmpty ? "Add who you share it with" : "\(people) · \(share)"
+    }
+
     private var heroCard: some View { AccountHero(account: account, note: heroNote) }
 
     private var heroNote: String {
@@ -504,57 +546,6 @@ struct AccountDetailView: View {
         }
     }
 
-    /// AM-04: half, or a share she types.
-    private var shareBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ProfileSection("Your share")
-            GlassCard {
-                shareChoice("Half (50%)", selected: !customShare && share == 50) {
-                    customShare = false
-                    Task { await save(["joint_share": 50], saying: "Your share of \(account.name) is 50%.") }
-                }
-                RowSeparator()
-                shareChoice("A different share", selected: customShare || share != 50) {
-                    customShare = true
-                    shareText = share == 50 ? "" : "\(share)"
-                }
-                if customShare || share != 50 {
-                    RowSeparator()
-                    HStack(spacing: 12) {
-                        Text("Your share").font(Nacre.body).foregroundColor(Pearl.ink)
-                        TextField("50", text: $shareText)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .font(Nacre.body).foregroundColor(Pearl.ink)
-                            .accessibilityLabel("Your share, in percent")
-                        Text("%").font(Nacre.body).foregroundColor(Pearl.muted)
-                        Button("Save") { Task { await saveShare() } }
-                            .font(Nacre.headline).foregroundColor(Pearl.action)
-                            .disabled(Int(shareText) == nil)
-                    }
-                    .padding(.horizontal, 16).frame(minHeight: 52)
-                }
-            }
-            ProfileNote("Between 1% and 99%. Only your share of its spending, income and balance counts. Change it any time.")
-        }
-    }
-
-    private func shareChoice(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                Text(label).font(Nacre.body).foregroundColor(Pearl.ink)
-                Spacer()
-                if selected {
-                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundColor(Pearl.action)
-                }
-            }
-            .padding(.horizontal, 16).frame(minHeight: 52)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
     private func toggleRow(symbol: String, title: String, sub: String, on: Binding<Bool>, disabled: Bool = false,
                            changed: @escaping (Bool) -> Void) -> some View {
         HStack(spacing: 12) {
@@ -579,7 +570,17 @@ struct AccountDetailView: View {
         counted = account.counted ?? true
         joint = account.joint == true
         anchor = account.anchor == true
-        customShare = joint && share != 50
+    }
+
+    /// What AM-08 or AM-09 changed while they were open, and the other
+    /// accounts AM-09 could combine this one with.
+    private func refresh() async {
+        guard let overview: AccountsOverview = try? await app.api.get("api/accounts/overview") else { return }
+        all = overview.linked + (overview.added ?? [])
+        if let now = all.first(where: { $0.id == account.id }) {
+            account = now
+            syncState()
+        }
     }
 
     @discardableResult
@@ -618,14 +619,6 @@ struct AccountDetailView: View {
         } else {
             await save(["joint_share": NSNull()], saying: "\(account.name) is just yours again.")
         }
-    }
-
-    private func saveShare() async {
-        guard let n = Int(shareText), (1...99).contains(n) else {
-            error = "Enter a share between 1% and 99%."
-            return
-        }
-        await save(["joint_share": n], saying: "Your share of \(account.name) is \(n)%.")
     }
 
     private func setAnchor(_ on: Bool) async {
@@ -912,121 +905,6 @@ struct AmountField: View {
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(focused ? Pearl.action : Nacre.edge, lineWidth: focused ? 1.5 : 1))
             .accessibilityLabel(label)
-        }
-    }
-}
-
-// MARK: - AM-05 Add a balance by hand
-
-@MainActor
-struct AddBalanceSheet: View {
-    @EnvironmentObject private var app: AppModel
-    @Environment(\.dismiss) private var dismiss
-    let added: () async -> Void
-    @State private var name = ""
-    @State private var kind = "savings"
-    @State private var last4 = ""
-    @State private var balance = ""
-    @State private var busy = false
-    @State private var error: String?
-
-    private let kinds: [(id: String, title: String, sub: String?)] = [
-        ("chequing", "Chequing", nil),
-        ("savings", "Savings", "Can count toward your Anchor"),
-        ("investment", "Investment", "Not part of your Anchor"),
-        ("credit", "Credit card", "Counts as money you owe"),
-    ]
-
-    private var canAdd: Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty && !balance.isEmpty
-            && (last4.isEmpty || last4.count == 4)
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top) {
-                        ProfileHeading(title: "Add a balance by hand",
-                                       intro: "For a bank Pearl can’t link yet. The balance shows on Home. Transactions won’t come in, so it won’t change your spending.")
-                        CloseButton { dismiss() }
-                    }
-                    .padding(.top, 20)
-                    LabeledText(label: "Name", text: $name, prompt: "Meridian Savings")
-                    ProfileSection("Type")
-                    GlassCard {
-                        ForEach(Array(kinds.enumerated()), id: \.element.id) { i, k in
-                            if i > 0 { RowSeparator() }
-                            ChoiceLine(title: k.title, sub: k.sub, selected: kind == k.id) { kind = k.id }
-                        }
-                    }
-                    if kind == "savings" || kind == "investment" {
-                        LabeledText(label: "Last four digits (optional)", text: $last4, prompt: "5521",
-                                    hint: "Transfers to an account ending in these digits are sorted as Saved automatically.",
-                                    numbers: true)
-                    }
-                    AmountField(label: "Balance today", text: $balance)
-                    if let error = error { Hint(text: error) }
-                }
-                .padding(.horizontal, 16).padding(.bottom, 16)
-            }
-            .scrollDismissesKeyboard(.interactively)
-            VStack(spacing: 6) {
-                Button("Add account") { Task { await add() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(!canAdd || busy)
-                Button("Cancel") { dismiss() }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-            }
-            .padding(.horizontal, 16).padding(.bottom, 8)
-        }
-        .onChange(of: last4) { v in
-            let digits = String(v.filter(\.isNumber).prefix(4))
-            if digits != v { last4 = digits }
-        }
-    }
-
-    private func add() async {
-        busy = true
-        defer { busy = false }
-        do {
-            var body: [String: Any] = ["name": name, "kind": kind, "balance": balance]
-            if kind == "savings" || kind == "investment", !last4.isEmpty { body["last4"] = last4 }
-            let _: OK = try await app.api.post("api/accounts/manual", body)
-            app.changed()
-            await added()
-            dismiss()
-        } catch {
-            self.error = app.handle(error)
-        }
-    }
-}
-
-/// A plain text field with the Input look: label above, hint below.
-struct LabeledText: View {
-    let label: String
-    @Binding var text: String
-    var prompt = ""
-    var hint: String? = nil
-    var numbers = false
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(Nacre.footnote).foregroundColor(Pearl.ink)
-            TextField("", text: $text, prompt: Text(prompt).foregroundColor(Pearl.muted))
-                .keyboardType(numbers ? .numberPad : .default)
-                .textInputAutocapitalization(numbers ? .never : .words)
-                .focused($focused)
-                .font(Nacre.body).foregroundColor(Pearl.ink)
-                .padding(.horizontal, 16).frame(height: 52)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Nacre.glass))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(focused ? Pearl.action : Nacre.edge, lineWidth: focused ? 1.5 : 1))
-                .accessibilityLabel(label)
-            if let hint = hint {
-                Text(hint).font(Nacre.footnote).foregroundColor(Pearl.muted).fixedSize(horizontal: false, vertical: true)
-            }
         }
     }
 }
