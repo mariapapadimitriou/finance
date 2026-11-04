@@ -531,7 +531,8 @@ struct JointAccountsView: View {
     var body: some View {
         NacreScreen {
             if onDone == nil { ShellProgress(part: 3, name: "Your money") }
-            Text("Any joint accounts?").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
+            Text(onDone == nil ? "Any joint accounts?" : "Which accounts do you share?")
+                .font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
             Text("Tap one you share. We’ll only count your part.").font(Nacre.body)
             if !accounts.isEmpty {
                 GlassCard {
@@ -558,6 +559,15 @@ struct JointAccountsView: View {
                     }
                 }
                 .buttonStyle(NacreButtonStyle())
+            } secondary: {
+                // SU-02 (THL-300): saying none are shared answers the step too.
+                if let onDone = onDone, !accounts.contains(where: { $0.joint == true }) {
+                    Button("None of these are shared") {
+                        onDone()
+                        dismiss()
+                    }
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                }
             }
         }
         .task { await load() }
