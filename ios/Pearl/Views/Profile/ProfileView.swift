@@ -12,6 +12,7 @@ struct ProfileView: View {
     @State private var doc: PearlDoc?
     @State private var showYourData = false
     @State private var showConsent = false
+    @AppStorage(Appearance.key) private var appearance = Appearance.automatic.rawValue
     @State private var confirmSignOut = false
     @State private var confirmReset = false
     @State private var resetting = false
@@ -55,6 +56,8 @@ struct ProfileView: View {
                         ProfileRow(symbol: "bell", title: "Notifications", sub: "Payday · weekly check-in")
                     }
                     .buttonStyle(.plain)
+                    RowSeparator(inset: 62)
+                    appearanceRow
                 }
 
                 ProfileSection("Privacy")
@@ -147,6 +150,23 @@ struct ProfileView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens Sign-in and security")
+    }
+
+    /// "Appearance   Automatic ›": Automatic, Light or Dark, on this iPhone.
+    private var appearanceRow: some View {
+        Menu {
+            Picker("Appearance", selection: $appearance) {
+                ForEach(Appearance.allCases) { Text($0.title).tag($0.rawValue) }
+            }
+        } label: {
+            ProfileRow(symbol: "moon", title: "Appearance") {
+                Text(Appearance(rawValue: appearance)?.title ?? Appearance.automatic.title)
+                    .font(Nacre.body).foregroundColor(Pearl.muted)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Appearance")
+        .accessibilityValue(Appearance(rawValue: appearance)?.title ?? Appearance.automatic.title)
     }
 
     /// A page that's only on the web for now.
@@ -244,6 +264,31 @@ struct ProfileView: View {
             app.signedIn(reply.user)
         } catch {
             self.error = app.handle(error)
+        }
+    }
+}
+
+/// Light or dark, or whichever the iPhone is set to (P-01's Appearance).
+enum Appearance: String, CaseIterable, Identifiable {
+    case automatic, light, dark
+
+    static let key = "pearl.appearance"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .automatic: return "Automatic"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+
+    var scheme: ColorScheme? {
+        switch self {
+        case .automatic: return nil
+        case .light: return .light
+        case .dark: return .dark
         }
     }
 }

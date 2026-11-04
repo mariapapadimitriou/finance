@@ -3,6 +3,8 @@ import SwiftUI
 @main
 struct PearlApp: App {
     @StateObject private var app = AppModel()
+    /// P-01's Appearance: Automatic follows the iPhone.
+    @AppStorage(Appearance.key) private var appearance = Appearance.automatic.rawValue
 
     init() {
         // Pushed screens' titles in Pearl's faces too.
@@ -21,6 +23,7 @@ struct PearlApp: App {
                 .environmentObject(app)
                 .tint(Pearl.action)
                 .font(Pearl.text())
+                .preferredColorScheme(Appearance(rawValue: appearance)?.scheme)
         }
     }
 }
