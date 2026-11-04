@@ -190,6 +190,54 @@ struct IncomeBills: Decodable {
     let bills: [Bill]
     /// O-10f, O-10g: a regular deposit setup asks about before it can be pay.
     let asks: [Ask]?
+    /// When she confirmed her income and her bills; nil until she has
+    /// (IB-02: what Pearl found is only its suggestion until then).
+    var checked: Checked? = nil
+    /// Her own amount a month, and Pearl's estimate (IB-03).
+    var expected: Expected? = nil
+    var totals: Totals? = nil
+    /// "Are your e-Transfers to M. Papas your rent?"
+    var rentQuestion: RentQuestion? = nil
+    /// What a bill's removal took away, for Undo.
+    var removed: Removed? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case pays, candidates, bills, asks, checked, expected, totals, removed
+        case rentQuestion = "rent_question"
+    }
+
+    struct Checked: Decodable, Hashable {
+        let income: String?
+        let bills: String?
+    }
+
+    struct Expected: Decodable, Hashable {
+        let amount: Double?
+        let varies: Bool?
+        let estimate: Double?
+    }
+
+    struct Totals: Decodable, Hashable {
+        let income: Double?
+        let bills: Double?
+    }
+
+    struct RentQuestion: Decodable, Hashable, Identifiable {
+        let key: String
+        let recipient: String?
+        let amount: Double
+        let day: Int?
+        var id: String { key }
+    }
+
+    struct Removed: Decodable, Hashable {
+        let key: String
+        let name: String
+        let amount: Double
+        let cadence: String
+        let next: String?
+        let varies: Bool?
+    }
 
     struct Ask: Decodable, Identifiable, Hashable {
         /// "joint" (Whose pay?) or "etransfer" (What is it?).
