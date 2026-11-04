@@ -1247,6 +1247,15 @@ struct WhoseSheet: View {
     }
 
     private var full: Double { t.fullAmount ?? t.amount }
+
+    /// THL-282: an account set to split every purchase says so.
+    private var footnote: String {
+        if let share = t.accountShare {
+            let mine = Int(share.rounded())
+            return "On this account, purchases are split \(mine)/\(100 - mine) unless you say otherwise. Only your part counts."
+        }
+        return "On a joint account, spending is yours unless you say otherwise. Only your part counts."
+    }
     private var amount: Double? { Double(part.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")) }
     private var ready: Bool { mode != "part" || (amount.map { $0 > 0 && $0 <= full } ?? false) }
 
@@ -1291,8 +1300,7 @@ struct WhoseSheet: View {
                             .padding(.horizontal, 16).frame(minHeight: 52)
                             .sheetCard()
                     }
-                    Text("On a joint account, spending is yours unless you say otherwise. Only your part counts.")
-                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    Text(footnote).font(Nacre.footnote).foregroundColor(Pearl.ink)
                     if let error = error { Hint(text: error) }
                 }
             }

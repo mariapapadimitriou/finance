@@ -546,6 +546,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
     let bankMerchant: String?
     /// Her share was set on this charge (T-76).
     let shareSet: Bool
+    /// The joint account's fixed share, when it splits every purchase (AM-08).
+    let accountShare: Double?
     let manual: Bool
     let recurring: String?
 
@@ -728,6 +730,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         jointShare = opt(Double.self, .jointSplit) ?? opt(Double.self, .jointShare)
         bankMerchant = opt(String.self, .bankMerchant)
         shareSet = opt(Bool.self, .shareSet) ?? false
+        accountShare = opt(Double.self, .jointShare)
         manual = opt(Bool.self, .manual) ?? false
         recurring = opt(String.self, .recurring)
         oneOffLine = opt(OneOffLine.self, .oneOffLine)

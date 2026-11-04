@@ -24,7 +24,8 @@ struct HomeView: View {
                 PageHeader(overline: home?.today.map { Format.day($0) }, title: greeting)
 
                 if let home = home {
-                    if let c = home.connections?.first, ["needs_sign_in", "disconnected", "bank_down"].contains(c.state ?? "") {
+                    // H-02 (THL-120): every bank in trouble, worst first.
+                    ForEach((home.connections ?? []).filter { ["needs_sign_in", "disconnected", "bank_down"].contains($0.state ?? "") }) { c in
                         BankAlertCard(connection: c, today: home.today) { openAccounts = true } reconnect: {
                             reconnecting = c
                         }

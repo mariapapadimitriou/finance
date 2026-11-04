@@ -92,6 +92,8 @@ struct SignInSecurityView: View {
     @State private var devices: [Device] = []
     @State private var faceID = false
     @State private var confirming = false
+    /// SEC-12: the device she's removing.
+    @State private var removingDevice: Device?
     /// SEC-08: recovery codes she has left; SEC-09: the new ones, shown once.
     @State private var codesLeft: Int?
     @State private var askingCodes = false
@@ -157,8 +159,21 @@ struct SignInSecurityView: View {
             GlassCard {
                 ForEach(Array(devices.enumerated()), id: \.element.id) { i, d in
                     if i > 0 { RowSeparator() }
-                    settingsRow(d.this == true ? "This iPhone" : (d.label ?? "Device"),
-                                value: d.this == true ? "Now" : d.lastUsedAt.map(Self.ago))
+                    if d.this == true {
+                        settingsRow("This iPhone", value: "Now")
+                    } else {
+                        // SEC-11 (THL-287): each other device can be removed.
+                        HStack {
+                            Text([d.label ?? "Device", d.lastUsedAt.map(Self.ago)].compactMap { $0 }.joined(separator: " · "))
+                                .font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                            Spacer()
+                            Button("Remove") { removingDevice = d }
+                                .font(Nacre.body).foregroundColor(Pearl.action)
+                                .buttonStyle(.plain)
+                                .disabled(busy)
+                        }
+                        .padding(.horizontal, 16).frame(minHeight: 52)
+                    }
                 }
                 if devices.contains(where: { $0.this != true }) {
                     RowSeparator()
@@ -181,6 +196,15 @@ struct SignInSecurityView: View {
             faceID = app.faceIDOn
             codesLeft = app.user?.recoveryCodes
             await load()
+        }
+        .alert("Remove \(removingDevice?.label ?? "this device")?",
+               isPresented: Binding(get: { removingDevice != nil }, set: { if !$0 { removingDevice = nil } })) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) {
+                if let d = removingDevice { Task { await remove(d) } }
+            }
+        } message: {
+            Text("It’s signed out of Pearl and won’t be asked to approve sign-ins again.")
         }
         .alert("Make new recovery codes?", isPresented: $askingCodes) {
             Button("Cancel", role: .cancel) {}
@@ -261,6 +285,18 @@ struct SignInSecurityView: View {
         app.faceIDOn = on
         faceID = on
         error = nil
+    }
+
+    private func remove(_ d: Device) async {
+        busy = true
+        defer { busy = false }
+        do {
+            let _: OK = try await app.api.delete("api/auth/devices/\(d.id)")
+            await load()
+            message = "\(d.label ?? "That device") is signed out."
+        } catch {
+            self.error = app.handle(error)
+        }
     }
 
     private func signOutOthers() async {
