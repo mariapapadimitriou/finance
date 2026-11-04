@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// P-01 Profile (THL-104, THL-209, THL-120): who's signed in, then Money,
-/// You, Privacy and Help, each row led by its icon. Pages the iPhone doesn't
-/// have yet open Pearl on the web, marked with an arrow out.
+/// You, Privacy and Help, each row led by its icon, and Sign out under them.
+/// Pages the iPhone doesn't have yet open Pearl on the web, marked with an
+/// arrow out.
 @MainActor
 struct ProfileView: View {
     @EnvironmentObject private var app: AppModel
@@ -29,19 +30,16 @@ struct ProfileView: View {
                 ProfileSection("Money")
                 GlassCard {
                     NavigationLink { AccountsView() } label: {
-                        ProfileRow(symbol: "cylinder.split.1x2", title: "Accounts", sub: accountsLine) {
-                            if let n = summary?.needsYou, n > 0 {
-                                StatusPill(text: "\(n) needs you", tone: .attention)
-                            }
-                        }
+                        ProfileRow(symbol: "building.columns", title: "Accounts", sub: accountsLine,
+                                   pill: summary?.needsYou.flatMap { $0 > 0 ? StatusPill(text: "\($0) needs you", tone: .needsALook) : nil })
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 64)
-                    webRow(symbol: "chart.line.uptrend.xyaxis", title: "Income and bills",
-                           sub: "Your pay, and the regular bills set aside")
-                    RowSeparator(inset: 64)
+                    RowSeparator(inset: 62)
+                    webRow(symbol: "dollarsign.square", title: "Income and bills",
+                           sub: "Your pay and regular bills")
+                    RowSeparator(inset: 62)
                     NavigationLink { CategoriesRulesView() } label: {
-                        ProfileRow(symbol: "list.bullet", title: "Categories and rules", sub: rulesLine)
+                        ProfileRow(symbol: "square.on.circle", title: "Categories and rules", sub: rulesLine)
                     }
                     .buttonStyle(.plain)
                 }
@@ -49,18 +47,12 @@ struct ProfileView: View {
                 ProfileSection("You")
                 GlassCard {
                     NavigationLink { SignInSecurityView() } label: {
-                        ProfileRow(symbol: "key", title: "Sign-in and security", sub: securityLine)
+                        ProfileRow(symbol: "lock", title: "Sign-in and security", sub: securityLine)
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 64)
+                    RowSeparator(inset: 62)
                     NavigationLink { NotificationsView() } label: {
-                        ProfileRow(symbol: "bell", title: "Notifications", sub: "Payday, weekly check-in, progress")
-                    }
-                    .buttonStyle(.plain)
-                    RowSeparator(inset: 64)
-                    Button { confirmSignOut = true } label: {
-                        ProfileRow(symbol: "rectangle.portrait.and.arrow.right", title: "Sign out",
-                                   sub: "On this iPhone", tone: Pearl.action, chevron: false)
+                        ProfileRow(symbol: "bell", title: "Notifications", sub: "Payday · weekly check-in")
                     }
                     .buttonStyle(.plain)
                 }
@@ -68,40 +60,38 @@ struct ProfileView: View {
                 ProfileSection("Privacy")
                 GlassCard {
                     Button { showConsent = true } label: {
-                        ProfileRow(symbol: "eye", title: "Privacy and consent", sub: "What you’ve agreed to")
+                        ProfileRow(symbol: "eye", title: "Privacy and consent")
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 64)
+                    RowSeparator(inset: 62)
                     Button { showYourData = true } label: {
                         ProfileRow(symbol: "tray.and.arrow.down", title: "Your data",
                                    sub: "Download, start over or delete")
                     }
                     .buttonStyle(.plain)
-                    RowSeparator(inset: 64)
+                    RowSeparator(inset: 62)
                     NavigationLink { ProtectView() } label: {
-                        ProfileRow(symbol: "shield", title: "How we protect you", sub: "What Pearl can and can’t do")
+                        ProfileRow(symbol: "checkmark.shield", title: "How we protect you")
                     }
                     .buttonStyle(.plain)
                 }
 
-                ProfileSection("Help")
                 GlassCard {
                     Button { doc = .help } label: {
-                        ProfileRow(symbol: "questionmark.circle", title: "Help and support",
-                                   sub: "Signing in, and new devices")
-                    }
-                    .buttonStyle(.plain)
-                    RowSeparator(inset: 64)
-                    Button { doc = .legal } label: {
-                        ProfileRow(symbol: "doc.text", title: "Privacy policy and terms", sub: "Plain-language drafts")
+                        ProfileRow(symbol: "questionmark.circle", title: "Help and support")
                     }
                     .buttonStyle(.plain)
                 }
+                .padding(.top, 12)
 
-                resetCard.padding(.top, 16)
+                Button("Sign out") { confirmSignOut = true }
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 8)
 
-                ProfileNote("Pearl for iPhone · Version \(version) · \(app.api.baseURL.host ?? app.api.baseURL.absoluteString)",
-                            centred: true)
+                resetCard.padding(.top, 8)
+
+                ProfileNote("Pearl for iPhone · \(version)", centred: true)
                     .padding(.top, 12)
             }
             .padding(.horizontal, Pearl.gutter)
@@ -141,12 +131,7 @@ struct ProfileView: View {
     private var identity: some View {
         GlassCard {
             HStack(spacing: 14) {
-                Text(initials)
-                    .font(Nacre.title2).foregroundColor(Nacre.onNacre)
-                    .frame(width: 60, height: 60)
-                    .background(Circle().fill(Pearl.nacre))
-                    .overlay(Circle().strokeBorder(Color.white.opacity(0.8), lineWidth: 2))
-                    .accessibilityHidden(true)
+                RowAvatar(name: initials, size: 52, font: Nacre.headline)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(1)
                     if let email = app.user?.email, !email.isEmpty {
@@ -157,7 +142,7 @@ struct ProfileView: View {
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
                     .foregroundColor(Pearl.muted)
             }
-            .padding(16)
+            .padding(.horizontal, 16).padding(.vertical, 11)
             .contentShape(Rectangle())
         }
         .accessibilityElement(children: .combine)
@@ -219,14 +204,16 @@ struct ProfileView: View {
 
     private var rulesLine: String {
         guard let n = summary?.rules else { return " " }
-        return n > 0 ? plural(n, "saved rule") : "No saved rules yet"
+        return n > 0 ? plural(n, "rule") : "No saved rules yet"
     }
 
-    /// "alex@example.com · email codes", as the web's hub says it.
+    /// "Face ID · passkey", or "Email codes" before she's added either.
     private var securityLine: String {
         let passkeys = app.user?.passkeys ?? 0
-        return [app.user?.email, passkeys > 0 ? plural(passkeys, "passkey") : "email codes"]
-            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        let words = [app.faceIDOn ? "Face ID" : nil,
+                     passkeys == 1 ? "passkey" : passkeys > 1 ? plural(passkeys, "passkey") : nil]
+            .compactMap { $0 }
+        return words.isEmpty ? "Email codes" : words.joined(separator: " · ")
     }
 
     private var version: String {

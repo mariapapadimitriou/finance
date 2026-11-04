@@ -13,53 +13,49 @@ struct ProtectView: View {
     var body: some View {
         ProfilePage {
             VStack(spacing: 12) {
-                IconOrb(symbol: "shield", size: 72)
-                ProfileHeading(eyebrow: "Profile", title: "How we protect you",
-                               intro: "What Pearl can and can’t do with your bank, and what happens to your data.",
+                IconBubble(symbol: "checkmark.shield", size: 72)
+                ProfileHeading(title: "How we protect you", intro: "What Pearl can and can’t do.",
                                centred: true)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 8).padding(.bottom, 4)
 
             GlassCard {
-                ProfileRow(symbol: "eye", title: "Read-only access",
-                           sub: "Pearl can see your balances and transactions. That’s all.", chevron: false)
-                RowSeparator(inset: 64)
-                ProfileRow(symbol: "nosign", title: "Pearl can’t move money",
-                           sub: "No payments, transfers or withdrawals, ever.", chevron: false)
-                RowSeparator(inset: 64)
-                ProfileRow(symbol: "key", title: "We never see your bank password",
-                           sub: "You sign in to your bank through Plaid. Your login goes to your bank, not to us.",
+                ProfileRow(symbol: "eye", title: "Read-only", sub: "Sees balances and transactions", chevron: false)
+                RowSeparator(inset: 62)
+                ProfileRow(symbol: "nosign", title: "Can’t move money", sub: "No payments or transfers, ever",
+                           chevron: false)
+                RowSeparator(inset: 62)
+                ProfileRow(symbol: "key", title: "Never sees your bank password", sub: "You sign in through Plaid",
                            chevron: false)
                 RowSeparator()
-                docRow("How signing in through Plaid works", .plaid)
+                docRow("How Plaid sign-in works", .plaid)
             }
 
             ProfileSection("Your data")
             GlassCard {
-                ProfileRow(symbol: "lock", title: "Encrypted when stored and when it moves",
-                           sub: "Account names, balances and transactions.", chevron: false)
-                RowSeparator(inset: 64)
-                ProfileRow(symbol: "person.2", title: "We don’t sell your data",
-                           sub: "We share only what’s needed to run Pearl.", chevron: false)
+                ProfileRow(symbol: "cpu", title: "Kept in Canada", sub: "Encrypted", chevron: false)
+                RowSeparator(inset: 62)
+                ProfileRow(symbol: "heart", title: "Never sold", chevron: false)
                 RowSeparator()
-                docRow("See everything we store", .store)
+                docRow("See what we store", .store)
                 RowSeparator()
                 docRow("See who we share with", .share)
             }
 
-            ProfileSection("Your connections")
+            ProfileSection("Connections")
             if let privacy = privacy {
                 if privacy.connections.isEmpty {
                     ProfileNote("No banks are linked, so Pearl can’t see any.")
                 } else {
                     GlassCard {
                         ForEach(Array(privacy.connections.enumerated()), id: \.element.id) { i, c in
-                            if i > 0 { RowSeparator(inset: 64) }
-                            ProfileRow(initials: c.institution, title: connectionName(c),
-                                       sub: connectionLine(c), chevron: false) {
-                                StatusPill(text: pill(c).text, tone: pill(c).tone)
+                            if i > 0 { RowSeparator(inset: 62) }
+                            NavigationLink { AccountsView() } label: {
+                                ProfileRow(initials: c.institution, title: c.institution, sub: connectionLine(c),
+                                           pill: StatusPill(text: pill(c).text, tone: pill(c).tone))
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -91,18 +87,10 @@ struct ProtectView: View {
         .buttonStyle(.plain)
     }
 
-    /// "TD · 3 accounts".
-    private func connectionName(_ c: Privacy.Connection) -> String {
-        let n = c.accounts ?? 0
-        guard n > 0 else { return c.institution }
-        return "\(c.institution) · \(n) account\(n == 1 ? "" : "s")"
-    }
-
-    /// "Read-only through Plaid · synced 5 min ago".
+    /// "3 accounts".
     private func connectionLine(_ c: Privacy.Connection) -> String {
-        guard let synced = c.lastSynced.flatMap(Self.parse) else { return "Read-only through Plaid" }
-        let words = RelativeDateTimeFormatter().localizedString(for: synced, relativeTo: Date())
-        return "Read-only through Plaid · synced \(words)"
+        let n = c.accounts ?? 0
+        return n > 0 ? "\(n) account\(n == 1 ? "" : "s")" : "Read-only"
     }
 
     private func pill(_ c: Privacy.Connection) -> (text: String, tone: StatusPill.Tone) {
@@ -110,7 +98,7 @@ struct ProtectView: View {
         case "needs_sign_in": return ("Sign in again", .attention)
         case "bank_down": return ("Retrying", .info)
         case "disconnected": return ("Disconnected", .neutral)
-        default: return ("Healthy", .positive)
+        default: return ("Up to date", .positive)
         }
     }
 
