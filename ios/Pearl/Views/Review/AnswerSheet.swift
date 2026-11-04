@@ -50,7 +50,7 @@ struct AnswerSheet: View {
         let first: Step
         switch ask.kind {
         case .category, .duplicate: first = .guess
-        case .transfer: first = .out
+        case .transfer: first = ask.savedTo(accounts) != nil ? .guess : .out
         case .moneyIn:
             switch ask.item.guess?.action {
             case "payback" where ask.item.guess?.charge != nil: first = .payback
@@ -134,6 +134,7 @@ struct AnswerSheet: View {
         switch ask.kind {
         case .duplicate: return "Same purchase?"
         case .moneyIn: return "From your own account?"
+        case .transfer: return "Saved to \(ask.savedTo(accounts) ?? "savings")?"
         default: return "\(ask.item.guess?.text ?? t.category ?? "Other")?"
         }
     }
@@ -145,6 +146,7 @@ struct AnswerSheet: View {
         switch ask.kind {
         case .duplicate: onAnswer(.duplicate(t.id, same: true))
         case .moneyIn: onAnswer(.mark(t.id, ["case": "own", "remember": true]))
+        case .transfer: onAnswer(.mark(t.id, ["case": "saved", "remember": true]))
         default: onAnswer(.confirm(t.id))
         }
     }
@@ -153,6 +155,7 @@ struct AnswerSheet: View {
         switch ask.kind {
         case .duplicate: onAnswer(.duplicate(t.id, same: false))
         case .moneyIn: go(.into)
+        case .transfer: go(.out)
         default:
             then = .category
             go(.category)

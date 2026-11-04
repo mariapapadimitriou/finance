@@ -987,9 +987,11 @@ struct BriefTransaction: Decodable, Hashable {
     let skipped: Bool?
     /// A payback candidate Pearl thinks most likely.
     let likely: Bool?
+    /// An unsorted transfer: where it went ("••4567", a payee).
+    var to: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, date, merchant, description, amount, category, skipped, likely
+        case id, date, merchant, description, amount, category, skipped, likely, to
         case accountName = "account_name"
         case accountId = "account_id"
     }
@@ -1164,6 +1166,15 @@ enum Question: Hashable {
 struct Ask: Identifiable, Hashable {
     let kind: Question
     let item: Review.Item
+
+    /// T-06a: a transfer to one of her savings accounts, by its last digits.
+    func savedTo(_ accounts: [AccountsOverview.Account]) -> String? {
+        guard kind == .transfer, let to = item.txn.to, to.contains("••") else { return nil }
+        let digits = to.filter(\.isNumber)
+        return accounts.first { a in
+            ["savings", "investment"].contains(a.kind ?? "") && !(a.mask ?? "").isEmpty && digits.hasSuffix(a.mask!)
+        }?.name
+    }
     var id: String { item.key }
     var t: BriefTransaction { item.txn }
     var skipped: Bool { item.skipped == true }
