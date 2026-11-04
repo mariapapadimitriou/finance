@@ -98,9 +98,12 @@ struct RowAvatar: View {
             .accessibilityHidden(true)
     }
 
+    /// "TD" and "RBC" as they are, "AE" for American Express, "T" for
+    /// Tangerine (AM-01).
     private var letters: String {
-        let words = name.split { !$0.isLetter && !$0.isNumber }.prefix(2)
-        let out = words.compactMap { $0.first.map(String.init) }.joined().uppercased()
+        let words = name.split { !$0.isLetter && !$0.isNumber }
+        if words.count == 1, let w = words.first, w.count <= 3 { return w.uppercased() }
+        let out = words.prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
         return out.isEmpty ? "·" : out
     }
 }
