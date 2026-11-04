@@ -30,8 +30,10 @@ def _days(a: str, b: str) -> int:
     return abs((date.fromisoformat(a[:10]) - date.fromisoformat(b[:10])).days)
 
 
-def merge(store, from_id: str, into_id: str) -> dict:
-    """Merge account `from_id` into `into_id`. Returns what happened."""
+def _plan(store, from_id: str, into_id: str):
+    """Pair each row of the copy with its twin in the kept account, without
+    changing anything: (the copy's rows, the rows that move, old id → new id,
+    twin id → the category she gave its copy)."""
     rows = store.all_transactions()
     copy = sorted((t for t in rows if t.account_id == from_id), key=lambda t: (t.date, t.seq))
     kept = [t for t in rows if t.account_id == into_id]
@@ -62,6 +64,18 @@ def merge(store, from_id: str, into_id: str) -> dict:
         moved.append(again)
         mapping[t.fingerprint] = again.fingerprint
 
+    return copy, moved, mapping, categories
+
+
+def preview(store, from_id: str, into_id: str) -> dict:
+    """What `merge` would do, for "291 purchases are in both" (AM-09)."""
+    copy, moved, _, _ = _plan(store, from_id, into_id)
+    return {"matched": len(copy) - len(moved), "moved": len(moved)}
+
+
+def merge(store, from_id: str, into_id: str) -> dict:
+    """Merge account `from_id` into `into_id`. Returns what happened."""
+    copy, moved, mapping, categories = _plan(store, from_id, into_id)
     store.add_transactions(moved)
     store.rekey_rows(mapping)
     store.forget_rows({t.fingerprint for t in copy})

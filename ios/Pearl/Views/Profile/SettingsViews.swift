@@ -310,7 +310,13 @@ struct LinkedAccountsView: View {
     @EnvironmentObject private var app: AppModel
     @StateObject private var plaid = PlaidLinker()
     @State private var accounts: [AccountsOverview.Account] = []
+    @State private var added: [AccountsOverview.Account] = []
     @State private var editing: AccountsOverview.Account?
+    /// An account with a possible copy: asks which she came here for.
+    @State private var choosing: AccountsOverview.Account?
+    @State private var sharing: AccountsOverview.Account?
+    @State private var combining: AccountsOverview.Account?
+    @State private var addingBalance = false
     @State private var disconnecting: Bank?
     @State private var busy = false
     @State private var message: String?
@@ -328,14 +334,28 @@ struct LinkedAccountsView: View {
             SettingsPage(title: "Linked accounts") {
                 Text("Tap an account to change who it’s shared with.").font(Nacre.body).foregroundColor(Pearl.ink)
                     .padding(.bottom, 4)
-                if accounts.isEmpty && error == nil {
+                if accounts.isEmpty && added.isEmpty && error == nil {
                     ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
                 } else if !accounts.isEmpty {
                     GlassCard {
                         ForEach(Array(accounts.enumerated()), id: \.element.id) { i, a in
                             if i > 0 { RowSeparator(inset: 64) }
-                            Button { editing = a } label: { accountRow(a) }
+                            Button { open(a) } label: { accountRow(a) }
                                 .buttonStyle(.plain)
+                        }
+                    }
+                }
+                if !added.isEmpty {
+                    settingsSection("Added by you")
+                    GlassCard {
+                        ForEach(Array(added.enumerated()), id: \.element.id) { i, a in
+                            if i > 0 { RowSeparator(inset: 64) }
+                            if a.hasHistory {
+                                Button { open(a) } label: { accountRow(a) }
+                                    .buttonStyle(.plain)
+                            } else {
+                                addedRow(a)
+                            }
                         }
                     }
                 }
@@ -347,6 +367,8 @@ struct LinkedAccountsView: View {
                 Button("Link another bank") { Task { await link() } }
                     .buttonStyle(NacreButtonStyle(busy: busy))
                     .disabled(busy)
+                Button("Add a balance by hand") { addingBalance = true }
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
                 ForEach(banks) { bank in
                     Button("Disconnect \(bank.name)") { disconnecting = bank }
                         .buttonStyle(NacreTextButtonStyle(tone: Pearl.ink))
@@ -354,12 +376,32 @@ struct LinkedAccountsView: View {
                 }
             }
         }
-        .task { await load() }
+        .task(id: app.version) { await load() }
         .sheet(item: $editing) { a in
             JointSheet(account: a) { await load() }
                 .background(SheetBackground())
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $addingBalance) {
+            AddHandBalanceSheet { await load() }
+                .background(SheetBackground())
+                .presentationDetents([.height(450), .large])
+                .presentationDragIndicator(.visible)
+        }
+        .confirmationDialog(choosing?.name ?? "", isPresented: Binding(get: { choosing != nil },
+                                                                       set: { if !$0 { choosing = nil } }),
+                            titleVisibility: .visible) {
+            Button("Who it’s shared with") { if let a = choosing { share(a) } }
+            Button("Same account twice?") { combining = choosing }
+        }
+        .navigationDestination(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) {
+            if let a = sharing { JointAccountView(account: a) }
+        }
+        .navigationDestination(isPresented: Binding(get: { combining != nil }, set: { if !$0 { combining = nil } })) {
+            if let a = combining {
+                SameAccountView(account: a, all: accounts + added) { message = $0 }
+            }
         }
         .alert("Disconnect \(disconnecting?.name ?? "this bank")?",
                isPresented: Binding(get: { disconnecting != nil }, set: { if !$0 { disconnecting = nil } })) {
@@ -373,13 +415,42 @@ struct LinkedAccountsView: View {
         }
     }
 
+    /// Straight to who it's shared with, unless it might be a copy of another.
+    private func open(_ a: AccountsOverview.Account) {
+        if a.copies(among: accounts + added).isEmpty { share(a) } else { choosing = a }
+    }
+
+    private func share(_ a: AccountsOverview.Account) {
+        if a.joint == true { sharing = a } else { editing = a }
+    }
+
+    /// A balance added by hand: nothing to open here yet.
+    private func addedRow(_ a: AccountsOverview.Account) -> some View {
+        HStack(spacing: 12) {
+            Initials(name: a.name, size: 34)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(a.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text([a.kindWord, (a.mask ?? "").isEmpty ? nil : "••\(a.mask!)"]
+                    .compactMap { $0 }.joined(separator: " · "))
+                    .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+            }
+            Spacer(minLength: 8)
+            if let balance = a.balance {
+                Text(Format.amount(abs(balance))).font(Nacre.body).foregroundColor(Pearl.ink)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+    }
+
     /// "TD  TD Savings  Your share · 50%  [Joint with Sam]  ›".
     private func accountRow(_ a: AccountsOverview.Account) -> some View {
         HStack(spacing: 12) {
             Initials(name: a.institution ?? a.name, size: 34)
             VStack(alignment: .leading, spacing: 3) {
                 Text(a.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                Text(a.joint == true ? "Your share · \(Int((a.jointShare ?? 50).rounded()))%" : "Just you")
+                Text(a.joint != true ? "Just you"
+                     : a.jointShare.map { "Your share · \(Int($0.rounded()))%" } ?? "All yours unless you mark it")
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted)
                 if a.joint == true {
                     HStack(spacing: 5) {
@@ -420,6 +491,7 @@ struct LinkedAccountsView: View {
         do {
             let overview: AccountsOverview = try await app.api.get("api/accounts/overview")
             accounts = overview.linked
+            added = overview.added ?? []
             error = nil
         } catch {
             self.error = app.handle(error)

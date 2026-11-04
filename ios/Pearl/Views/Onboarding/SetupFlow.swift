@@ -633,9 +633,12 @@ struct JointSheet: View {
         defer { busy = false }
         do {
             let trimmed = name.trimmingCharacters(in: .whitespaces)
-            let body: [String: Any] = joint
-                ? ["joint_share": share, "joint_people": trimmed.isEmpty ? [] : [trimmed]]
-                : ["joint_share": NSNull(), "joint_people": []]
+            // The server refuses an empty list of people, so a blank name and
+            // "Not a joint account" send none. Anyone after the first stays.
+            var body: [String: Any] = ["joint_share": joint ? share as Any : NSNull()]
+            if joint && !trimmed.isEmpty {
+                body["joint_people"] = [trimmed] + (account.jointPeople ?? []).dropFirst()
+            }
             let _: OK = try await app.api.put("api/accounts/\(account.id)/settings", body)
             await saved()
             dismiss()

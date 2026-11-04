@@ -143,7 +143,7 @@ extension ProfileRow where Trailing == EmptyView {
 
 /// "✓ Up to date", "⚠ 1 needs you": always an icon and words, never colour alone.
 struct StatusPill: View {
-    enum Tone { case positive, attention, info, neutral }
+    enum Tone { case positive, attention, info, neutral, joint }
 
     let text: String
     var tone: Tone = .positive
@@ -167,6 +167,7 @@ struct StatusPill: View {
         case .attention: return "exclamationmark.triangle"
         case .info: return "info.circle"
         case .neutral: return nil
+        case .joint: return "person.2"
         }
     }
 
@@ -174,7 +175,7 @@ struct StatusPill: View {
         switch tone {
         case .positive: return Nacre.teal
         case .attention: return Pearl.caution
-        case .info, .neutral: return Pearl.ink
+        case .info, .neutral, .joint: return Pearl.ink
         }
     }
 
@@ -182,7 +183,7 @@ struct StatusPill: View {
         switch tone {
         case .positive: return Nacre.mint
         case .attention: return Pearl.cautionBackground
-        case .info: return Nacre.lilac.opacity(0.35)
+        case .info, .joint: return Nacre.lilac.opacity(0.35)
         case .neutral: return Pearl.track
         }
     }
