@@ -85,19 +85,32 @@ struct RootView: View {
     }
 }
 
-/// Home, Cash flow, Help and support, and Profile, with the web's bar along
-/// the bottom.
+/// Home, Cash flow, Save, Wins and Profile in the system tab bar, Liquid
+/// Glass on iOS 26 (THL-209: "use the system TabView, don't rebuild it").
+/// Save and Wins have no design yet, so they're blank.
 @MainActor
 struct MainTabs: View {
     enum Tab: Hashable, CaseIterable {
-        case home, cashFlow, help, profile
+        case home, cashFlow, save, wins, profile
 
         var label: String {
             switch self {
             case .home: return "Home"
             case .cashFlow: return "Cash flow"
-            case .help: return "Help and support"
+            case .save: return "Save"
+            case .wins: return "Wins"
             case .profile: return "Profile"
+            }
+        }
+
+        /// The handoff file's line icons, as template images.
+        var icon: String {
+            switch self {
+            case .home: return "TabHome"
+            case .cashFlow: return "TabCashFlow"
+            case .save: return "TabSave"
+            case .wins: return "TabWins"
+            case .profile: return "TabProfile"
             }
         }
     }
@@ -113,19 +126,15 @@ struct MainTabs: View {
     @State private var offered = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // All four stay alive, so each keeps its place, as tabs do.
-            ZStack {
-                page(.home) { HomeView(tab: $tab) }
-                page(.cashFlow) { TransactionsView() }
-                page(.help) { HelpView() }
-                page(.profile) { ProfileView() }
-            }
-            if !app.hidesTabBar {
-                PearlTabBar(selection: $tab, badges: [.cashFlow: reviewCount])
-            }
+        TabView(selection: $tab) {
+            page(.home) { HomeView(tab: $tab) }
+            page(.cashFlow) { TransactionsView() }
+                .badge(reviewCount)
+            page(.save) { BlankTab() }
+            page(.wins) { BlankTab() }
+            page(.profile) { ProfileView() }
         }
-        .background(Pearl.page.ignoresSafeArea())
+        .tint(Pearl.action)
         .task(id: app.version) { await loadCount() }
         .task { await offerQuickSort() }
         .fullScreenCover(isPresented: Binding(get: { !quickSort.isEmpty }, set: { if !$0 { quickSort = [] } })) {
@@ -145,17 +154,28 @@ struct MainTabs: View {
         quickSort = prompt.asks
     }
 
+    /// One tab: its own navigation, so each keeps its place. Select in Cash
+    /// flow (T-19) puts its bar where the tab bar was.
     private func page<Content: View>(_ which: Tab, @ViewBuilder content: () -> Content) -> some View {
-        let open = tab == which
-        return NavigationStack(root: content)
-            .opacity(open ? 1 : 0)
-            .allowsHitTesting(open)
-            .accessibilityHidden(!open)
+        NavigationStack {
+            content().toolbar(app.hidesTabBar ? .hidden : .visible, for: .tabBar)
+        }
+        .tabItem { Label(which.label, image: which.icon) }
+        .tag(which)
     }
 
     private func loadCount() async {
         if let review: Review = try? await app.api.get("api/review") {
             reviewCount = review.open ?? review.count
         }
+    }
+}
+
+/// A tab with no design yet: just the nacre.
+private struct BlankTab: View {
+    var body: some View {
+        Color.clear
+            .nacreScreen()
+            .navigationBarHidden(true)
     }
 }
