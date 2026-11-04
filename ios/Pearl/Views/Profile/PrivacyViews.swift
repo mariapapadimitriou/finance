@@ -31,7 +31,7 @@ private struct CardCaption: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(Nacre.caption)
+            .font(Nacre.caption1)
             .foregroundColor(Pearl.ink)
             .padding(.leading, 16).padding(.top, 4)
             .accessibilityAddTraits(.isHeader)
@@ -99,10 +99,8 @@ private struct SwitchRow: View {
 }
 
 private struct RowChevron: View {
-    var symbol = "chevron.right"
-
     var body: some View {
-        Image(systemName: symbol).font(.system(size: 13, weight: .semibold))
+        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
             .foregroundColor(Pearl.muted)
             .accessibilityHidden(true)
     }
@@ -112,11 +110,13 @@ private struct RowChevron: View {
 
 /// What's been agreed to, each with its date. Reading linked accounts is
 /// managed in Accounts. Working out the numbers is withdrawn by deleting the
-/// account, which is on the web until the iPhone has Your data. The optional
-/// ones change on tap and the server logs each change with its time.
+/// account, from Your data. The optional ones change on tap and the server
+/// logs each change with its time.
 @MainActor
 struct ConsentView: View {
     @EnvironmentObject private var app: AppModel
+    /// Your data's way home, after Start over.
+    let goHome: () -> Void
     @State private var privacy: Privacy?
     @State private var doc: PearlDoc?
     @State private var askingAIOff = false
@@ -157,12 +157,12 @@ struct ConsentView: View {
             }
             .buttonStyle(.plain)
             RowSeparator()
-            Link(destination: app.api.baseURL) {
+            NavigationLink { YourDataView(goHome: goHome) } label: {
                 PrivacyRow(symbol: "chart.line.uptrend.xyaxis", title: "Working out your numbers",
-                           sub: agreed("insights")) { RowChevron(symbol: "arrow.up.right") }
+                           sub: agreed("insights")) { RowChevron() }
             }
             .buttonStyle(.plain)
-            .accessibilityHint("Opens Pearl on the web. To withdraw this, you delete your account.")
+            .accessibilityHint("Opens Your data. To withdraw this, you delete your account.")
         }
 
         CardCaption("Your choice")

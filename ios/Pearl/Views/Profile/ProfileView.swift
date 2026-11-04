@@ -6,8 +6,11 @@ import SwiftUI
 @MainActor
 struct ProfileView: View {
     @EnvironmentObject private var app: AppModel
+    @Binding var tab: MainTabs.Tab
     @State private var summary: ProfileSummary?
     @State private var doc: PearlDoc?
+    @State private var showYourData = false
+    @State private var showConsent = false
     @State private var confirmSignOut = false
     @State private var confirmReset = false
     @State private var resetting = false
@@ -37,7 +40,10 @@ struct ProfileView: View {
                     webRow(symbol: "chart.line.uptrend.xyaxis", title: "Income and bills",
                            sub: "Your pay, and the regular bills set aside")
                     RowSeparator(inset: 64)
-                    webRow(symbol: "list.bullet", title: "Categories and rules", sub: rulesLine)
+                    NavigationLink { CategoriesRulesView() } label: {
+                        ProfileRow(symbol: "list.bullet", title: "Categories and rules", sub: rulesLine)
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 ProfileSection("You")
@@ -61,13 +67,16 @@ struct ProfileView: View {
 
                 ProfileSection("Privacy")
                 GlassCard {
-                    NavigationLink { ConsentView() } label: {
+                    Button { showConsent = true } label: {
                         ProfileRow(symbol: "eye", title: "Privacy and consent", sub: "What you’ve agreed to")
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 64)
-                    webRow(symbol: "tray.and.arrow.down", title: "Your data",
-                           sub: "Download a copy or delete your account")
+                    Button { showYourData = true } label: {
+                        ProfileRow(symbol: "tray.and.arrow.down", title: "Your data",
+                                   sub: "Download, start over or delete")
+                    }
+                    .buttonStyle(.plain)
                     RowSeparator(inset: 64)
                     NavigationLink { ProtectView() } label: {
                         ProfileRow(symbol: "shield", title: "How we protect you", sub: "What Pearl can and can’t do")
@@ -103,6 +112,18 @@ struct ProfileView: View {
         .navigationBarHidden(true)
         .task(id: app.version) { await load() }
         .docSheet($doc)
+        .navigationDestination(isPresented: $showConsent) {
+            ConsentView(goHome: {
+                showConsent = false
+                tab = .home
+            })
+        }
+        .navigationDestination(isPresented: $showYourData) {
+            YourDataView(goHome: {
+                showYourData = false
+                tab = .home
+            })
+        }
         .confirmationDialog("Sign out of Pearl on this iPhone?", isPresented: $confirmSignOut,
                             titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { Task { await app.signOut() } }

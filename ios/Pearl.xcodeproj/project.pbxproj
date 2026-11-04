@@ -24,12 +24,16 @@
 		619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */; };
 		3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */; };
 		0E20B3BEDE9BE9508D94E4E3 /* AccountsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */; };
+		50683C7CA113D2D071892AF2 /* CategoriesRulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BEADC70C1E3D94BE931A082 /* CategoriesRulesView.swift */; };
 		BBCC842E851D26BEAEC2BE80 /* ChangeEmailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB4B09F8E2A41BCAB614B60 /* ChangeEmailView.swift */; };
+		8FD19041B28DB92BD2932DBF /* JointMergeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97D9AE67E5566CC11FECF29E /* JointMergeViews.swift */; };
 		5DE68AB7BA55645741B1B0EB /* PrivacyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21825288F624437936E734DA /* PrivacyViews.swift */; };
 		2559937CB8EFC5C8717E15C4 /* ProfileParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4F39129DB8BAC5939CA6611 /* ProfileParts.swift */; };
 		658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 186A54E5EB12390A80B72B43 /* ProfileView.swift */; };
 		F6D402A4740A8C45147DA054 /* ProtectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD70F7C6FB3D121DE879E76 /* ProtectView.swift */; };
 		8541BEB8A83C0BFE242DC4CF /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC55387F573CD646F00874AD /* SettingsViews.swift */; };
+		96BB57CFA23EE730CDB16CE8 /* StartOverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ADEFD24047E445C0F974C8F /* StartOverView.swift */; };
+		1B5B689F266EAA4C32E801A7 /* YourDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D4F8532A209DD7AFB203DF /* YourDataView.swift */; };
 		5A36E4EB024471EF85DA99C8 /* AnswerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4499405DBDB62F2EAAD28248 /* AnswerSheet.swift */; };
 		5A97F97C51EB0251937EA8B1 /* QuickSortView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF92F0A38EF8C1E53492329D /* QuickSortView.swift */; };
 		5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02873771C6DC13EA678089B1 /* ReviewView.swift */; };
@@ -72,12 +76,16 @@
 		D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupFlow.swift; sourceTree = "<group>"; };
 		44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupPayQuestions.swift; sourceTree = "<group>"; };
 		8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsViews.swift; sourceTree = "<group>"; };
+		9BEADC70C1E3D94BE931A082 /* CategoriesRulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoriesRulesView.swift; sourceTree = "<group>"; };
 		0AB4B09F8E2A41BCAB614B60 /* ChangeEmailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangeEmailView.swift; sourceTree = "<group>"; };
+		97D9AE67E5566CC11FECF29E /* JointMergeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JointMergeViews.swift; sourceTree = "<group>"; };
 		21825288F624437936E734DA /* PrivacyViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyViews.swift; sourceTree = "<group>"; };
 		A4F39129DB8BAC5939CA6611 /* ProfileParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileParts.swift; sourceTree = "<group>"; };
 		186A54E5EB12390A80B72B43 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		CCD70F7C6FB3D121DE879E76 /* ProtectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectView.swift; sourceTree = "<group>"; };
 		CC55387F573CD646F00874AD /* SettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViews.swift; sourceTree = "<group>"; };
+		2ADEFD24047E445C0F974C8F /* StartOverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartOverView.swift; sourceTree = "<group>"; };
+		A8D4F8532A209DD7AFB203DF /* YourDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YourDataView.swift; sourceTree = "<group>"; };
 		4499405DBDB62F2EAAD28248 /* AnswerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnswerSheet.swift; sourceTree = "<group>"; };
 		CF92F0A38EF8C1E53492329D /* QuickSortView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSortView.swift; sourceTree = "<group>"; };
 		02873771C6DC13EA678089B1 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
@@ -231,12 +239,16 @@
 			isa = PBXGroup;
 			children = (
 				8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */,
+				9BEADC70C1E3D94BE931A082 /* CategoriesRulesView.swift */,
 				0AB4B09F8E2A41BCAB614B60 /* ChangeEmailView.swift */,
+				97D9AE67E5566CC11FECF29E /* JointMergeViews.swift */,
 				21825288F624437936E734DA /* PrivacyViews.swift */,
 				A4F39129DB8BAC5939CA6611 /* ProfileParts.swift */,
 				186A54E5EB12390A80B72B43 /* ProfileView.swift */,
 				CCD70F7C6FB3D121DE879E76 /* ProtectView.swift */,
 				CC55387F573CD646F00874AD /* SettingsViews.swift */,
+				2ADEFD24047E445C0F974C8F /* StartOverView.swift */,
+				A8D4F8532A209DD7AFB203DF /* YourDataView.swift */,
 			);
 			path = Profile;
 			sourceTree = "<group>";
@@ -366,12 +378,16 @@
 				619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */,
 				3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */,
 				0E20B3BEDE9BE9508D94E4E3 /* AccountsViews.swift in Sources */,
+				50683C7CA113D2D071892AF2 /* CategoriesRulesView.swift in Sources */,
 				BBCC842E851D26BEAEC2BE80 /* ChangeEmailView.swift in Sources */,
+				8FD19041B28DB92BD2932DBF /* JointMergeViews.swift in Sources */,
 				5DE68AB7BA55645741B1B0EB /* PrivacyViews.swift in Sources */,
 				2559937CB8EFC5C8717E15C4 /* ProfileParts.swift in Sources */,
 				658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */,
 				F6D402A4740A8C45147DA054 /* ProtectView.swift in Sources */,
 				8541BEB8A83C0BFE242DC4CF /* SettingsViews.swift in Sources */,
+				96BB57CFA23EE730CDB16CE8 /* StartOverView.swift in Sources */,
+				1B5B689F266EAA4C32E801A7 /* YourDataView.swift in Sources */,
 				5A36E4EB024471EF85DA99C8 /* AnswerSheet.swift in Sources */,
 				5A97F97C51EB0251937EA8B1 /* QuickSortView.swift in Sources */,
 				5D995D92A0DA70EDA7064263 /* ReviewView.swift in Sources */,

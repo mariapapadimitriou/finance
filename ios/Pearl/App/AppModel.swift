@@ -10,6 +10,8 @@ final class AppModel: ObservableObject {
         case offline
         case signedOut
         case signedIn(PearlUser?)
+        /// D-05: the account is gone; "Close" goes to signing in.
+        case deleted(sentTo: String?)
     }
 
     @Published var phase: Phase = .starting
@@ -70,6 +72,9 @@ final class AppModel: ObservableObject {
     func handle(_ error: Error) -> String? {
         if error is CancellationError { return nil }
         if let api = error as? APIError, api == .signedOut {
+            // A call still on its way when the account was deleted doesn't
+            // take "Your account is deleted" off the screen.
+            if case .deleted = phase { return nil }
             phase = .signedOut
             return nil
         }
@@ -84,6 +89,16 @@ final class AppModel: ObservableObject {
         justCreated = false
         locked = false
         phase = .signedOut
+    }
+
+    /// The server has deleted the account (D-04), so there's nothing to sign
+    /// out of: forget it here too, and show D-05.
+    func accountDeleted(sentTo: String?) {
+        api.clearCookies()
+        justCreated = false
+        locked = false
+        faceIDOn = false
+        phase = .deleted(sentTo: sentTo)
     }
 
     // MARK: App lock (A-08)

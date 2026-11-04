@@ -143,7 +143,7 @@ extension ProfileRow where Trailing == EmptyView {
 
 /// "✓ Up to date", "⚠ 1 needs you": always an icon and words, never colour alone.
 struct StatusPill: View {
-    enum Tone { case positive, attention, info, neutral, joint }
+    enum Tone { case positive, attention, info, neutral, joint, needsALook }
 
     let text: String
     var tone: Tone = .positive
@@ -155,19 +155,23 @@ struct StatusPill: View {
             }
             Text(text).lineLimit(1)
         }
-        .font(Nacre.footnote)
+        .font(tone == .neutral ? Nacre.label : Nacre.footnote)
         .foregroundColor(foreground)
-        .padding(.horizontal, 10).frame(height: 26)
+        .padding(.horizontal, tone == .neutral ? 12 : 10).frame(height: 26)
         .background(Capsule().fill(background))
+        .overlay {
+            if tone == .neutral { Capsule().strokeBorder(Pearl.border, lineWidth: 1) }
+        }
     }
 
     private var symbol: String? {
         switch tone {
         case .positive: return "checkmark"
-        case .attention: return "exclamationmark.triangle"
+        case .attention, .needsALook: return "exclamationmark.triangle"
         case .info: return "info.circle"
         case .joint: return "person.2"
         case .neutral: return nil
+        case .joint: return "person.2"
         }
     }
 
@@ -175,7 +179,9 @@ struct StatusPill: View {
         switch tone {
         case .positive: return Nacre.teal
         case .attention: return Pearl.caution
-        case .info, .neutral, .joint: return Pearl.ink
+        case .needsALook: return Pearl.action
+        case .info, .joint: return Pearl.ink
+        case .neutral: return Pearl.muted
         }
     }
 
@@ -183,8 +189,9 @@ struct StatusPill: View {
         switch tone {
         case .positive: return Nacre.mint
         case .attention: return Pearl.cautionBackground
+        case .needsALook: return Pearl.dynamic(light: 0xFFE4EC, dark: 0x4E2238)
         case .info, .joint: return Nacre.lilac.opacity(0.35)
-        case .neutral: return Pearl.track
+        case .neutral: return Pearl.page
         }
     }
 }

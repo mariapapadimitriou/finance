@@ -20,7 +20,8 @@ and rules are the same in both. Nothing about your bank connections changes.
   a loan, not yours), and the kind of income, with Undo. Paybacks, refunds,
   reimbursements and joint-account questions are answered on the web for now;
   the app lets you skip them.
-- **Profile**: sign out, and a link to Pearl on the web for everything else.
+- **Profile**: sign out; **Your data**, to download a copy, start over or
+  delete your account; and a link to Pearl on the web for everything else.
 
 ## Run it
 
