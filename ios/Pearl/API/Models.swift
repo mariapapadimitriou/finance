@@ -536,6 +536,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
     let jointFrom: String
     let jointPerson: String?
     let jointShare: Double?
+    /// The bank's spelling of the merchant, which a rename is keyed on (T-80).
+    let bankMerchant: String?
+    /// Her share was set on this charge (T-76).
+    let shareSet: Bool
     let manual: Bool
     let recurring: String?
 
@@ -664,6 +668,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case jointPerson = "joint_person"
         case jointShare = "joint_share"
         case jointSplit = "joint_split"
+        case bankMerchant = "bank_merchant"
+        case shareSet = "share_set"
         case oneOffLine = "one_off_line"
         case incomeType = "income_type"
         case regularPay = "regular_pay"
@@ -714,6 +720,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         jointFrom = opt(String.self, .jointFrom) ?? ""
         jointPerson = opt(String.self, .jointPerson).flatMap { $0.isEmpty ? nil : $0 }
         jointShare = opt(Double.self, .jointSplit) ?? opt(Double.self, .jointShare)
+        bankMerchant = opt(String.self, .bankMerchant)
+        shareSet = opt(Bool.self, .shareSet) ?? false
         manual = opt(Bool.self, .manual) ?? false
         recurring = opt(String.self, .recurring)
         oneOffLine = opt(OneOffLine.self, .oneOffLine)

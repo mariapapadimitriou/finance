@@ -659,7 +659,7 @@ private struct CategoryKindSheet: View {
 }
 
 /// A new name for a merchant or a tag, and the other thing she can do with it.
-private struct RenameSheet: View {
+struct RenameSheet: View {
     @Environment(\.dismiss) private var dismiss
     let title: String
     let label: String

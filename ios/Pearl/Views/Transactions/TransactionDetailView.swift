@@ -43,6 +43,9 @@ struct TransactionDetailView: View {
     @State private var deleting = false
     /// T-04's Regular bill, then Add to your bills? (T-32) with the category chosen.
     @State private var regularBill = false
+    /// T-80: renaming the merchant; T-76: whose a joint charge was.
+    @State private var renaming = false
+    @State private var whose = false
     @State private var billing: String?
     @State private var busy = false
     @State private var message: String?
@@ -62,6 +65,7 @@ struct TransactionDetailView: View {
                     else if t.suggested { guessCard } else { categoryCard }
                     linked
                     jointRow
+                    jointSpendRow
                     splitPeople
                     depositParts
                     options
@@ -102,7 +106,8 @@ struct TransactionDetailView: View {
             // The stored category, not the chip ("Transfer", "Not sorted yet").
             CategorySheet(name: t.merchant, amount: Format.money(t), tone: t.tone, categories: categories,
                           current: t.category ?? t.label, merchant: t.merchant,
-                          onRegularBill: t.inflow ? nil : { regularBill = $0 }) { name, remember in
+                          onRegularBill: t.inflow ? nil : { regularBill = $0 },
+                          preview: { name, remember in await previewLine(name, remember) }) { name, remember in
                 picking = false
                 let bill = regularBill
                 regularBill = false
@@ -157,6 +162,25 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $unlinking) { unlinkSheet }
+        .sheet(isPresented: $renaming) {
+            RenameSheet(title: "Rename merchant", label: "Call it", initial: t.merchant,
+                        hint: "Bank: \(t.bankMerchant ?? t.merchant)", other: "Use the bank’s name",
+                        onSave: { name in
+                            renaming = false
+                            Task { await rename(to: name) }
+                        }, onOther: {
+                            renaming = false
+                            Task { await rename(to: "") }
+                        })
+        }
+        .sheet(isPresented: $whose) {
+            WhoseSheet(t: t, api: app.api) { said in
+                whose = false
+                Task { await run { said } }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         .navigationDestination(isPresented: $seeingOwed) { OwedView() }
         .sheet(isPresented: $editingNote) {
             NoteSheet(note: t.myNote) { note in
@@ -185,9 +209,15 @@ struct TransactionDetailView: View {
                         lineWidth: 1.2))
                     .padding(.bottom, 6)
             }
-            Text(t.merchant).font(Nacre.title2).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center)
-                .accessibilityAddTraits(.isHeader)
+            // T-80: tap the name to rename the merchant.
+            Button { if t.transfer == nil { renaming = true } } label: {
+                Text(t.merchant).font(Nacre.title2).foregroundColor(Pearl.ink)
+                    .multilineTextAlignment(.center)
+            }
+            .buttonStyle(.plain)
+            .disabled(t.transfer != nil)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityHint(t.transfer == nil ? "Rename the merchant" : "")
             Text(Format.money(t))
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
                 .foregroundColor(t.tone)
@@ -456,6 +486,35 @@ struct TransactionDetailView: View {
                 .disabled(busy)
             }
         }
+    }
+
+    /// T-75: a charge on a joint account is hers unless she says otherwise.
+    @ViewBuilder private var jointSpendRow: some View {
+        if !t.inflow && !t.joint.isEmpty && t.transfer == nil {
+            GlassCard {
+                Button { whose = true } label: {
+                    HStack {
+                        Text("Whose was it?").font(Nacre.body).foregroundColor(Pearl.ink)
+                        Spacer()
+                        Text(spendWhose).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
+                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(Pearl.muted)
+                    }
+                    .padding(.horizontal, 16).frame(minHeight: 50)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+        }
+    }
+
+    /// "Yours", "Sam’s", "$93.20 of $186.40".
+    private var spendWhose: String {
+        let full = t.fullAmount ?? t.amount
+        if t.shareSet && t.amount < 0.005 { return "\(t.joint)’s" }
+        if abs(t.amount - full) >= 0.005 { return "\(Format.amount(t.amount)) of \(Format.amount(full))" }
+        return "Yours"
     }
 
     private var jointWhose: String {
@@ -861,6 +920,37 @@ struct TransactionDetailView: View {
         }
     }
 
+    /// T-79: what this category would do, before it's saved.
+    private func previewLine(_ name: String, _ remember: Bool) async -> String? {
+        struct Preview: Decodable {
+            let line: String?
+            let merchantCount: Int?
+            enum CodingKeys: String, CodingKey {
+                case line
+                case merchantCount = "merchant_count"
+            }
+        }
+        guard let p: Preview = try? await app.api.post("api/transactions/\(t.id)/category/preview",
+                                                     ["category": name, "apply_to_merchant": remember]) else { return nil }
+        var words: [String] = []
+        if remember {
+            let others = max(0, (p.merchantCount ?? 1) - 1)
+            words.append(others == 0 ? "New \(t.merchant) transactions go to \(name) from now on."
+                         : "Also moves \(others) other \(t.merchant) transaction\(others == 1 ? "" : "s"), and new ones from now on.")
+        }
+        if let line = p.line, !line.isEmpty { words.append(line) }
+        return words.isEmpty ? nil : words.joined(separator: " ")
+    }
+
+    /// T-80: her name for the merchant; empty goes back to the bank's.
+    private func rename(to name: String) async {
+        let bank = t.bankMerchant ?? t.merchant
+        await run {
+            let _: OK = try await app.api.put("api/merchants/name", ["merchant": bank, "name": name])
+            return name.isEmpty ? "\(bank) uses the bank’s name again." : "\(bank) is \(name) now."
+        }
+    }
+
     private func setOneOff(_ on: Bool) async {
         oneOff = on
         await run {
@@ -1025,5 +1115,124 @@ struct TagsSheet: View {
         guard !tag.isEmpty else { return }
         if !tags.contains(tag) { tags.append(tag) }
         typed = ""
+    }
+}
+
+// MARK: - T-76 Whose was it?
+
+/// A charge on a joint account: hers by default, or all theirs, or a part
+/// she says, which is remembered for that merchant on the account unless she
+/// turns it off (finance/joint.py).
+struct WhoseSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let t: Transaction
+    let api: APIClient
+    let done: (String) -> Void
+
+    @State private var mode: String
+    @State private var part: String
+    @State private var splitAlways: Bool
+    @State private var mineAlways = false
+    @State private var busy = false
+    @State private var error: String?
+
+    init(t: Transaction, api: APIClient, done: @escaping (String) -> Void) {
+        self.t = t
+        self.api = api
+        self.done = done
+        let full = t.fullAmount ?? t.amount
+        let theirs = t.shareSet && t.amount < 0.005
+        let isPart = !theirs && abs(t.amount - full) >= 0.005
+        _mode = State(initialValue: theirs ? "theirs" : isPart ? "part" : "mine")
+        _part = State(initialValue: isPart ? String(format: "%.2f", t.amount) : "")
+        _splitAlways = State(initialValue: t.jointShare != nil || !isPart)
+    }
+
+    private var full: Double { t.fullAmount ?? t.amount }
+    private var amount: Double? { Double(part.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")) }
+    private var ready: Bool { mode != "part" || (amount.map { $0 > 0 && $0 <= full } ?? false) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Spacer()
+                Text("Whose was it?").font(Nacre.headline).foregroundColor(Pearl.ink).accessibilityAddTraits(.isHeader)
+                Spacer()
+            }
+            .overlay(alignment: .trailing) { CloseButton { dismiss() } }
+            .padding(.top, 20)
+            HStack(spacing: 12) {
+                RowAvatar(name: t.merchant, size: 48, font: Nacre.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(t.merchant).font(Nacre.title2).foregroundColor(Pearl.ink)
+                    Text("\(Format.money(t)) · joint with \(t.joint)").font(Nacre.footnote).foregroundColor(Pearl.ink)
+                }
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    GlassCard {
+                        ChoiceLine(title: "Mine", sub: "All of it counts as yours", selected: mode == "mine") { mode = "mine" }
+                        RowSeparator()
+                        ChoiceLine(title: "\(t.joint)’s", sub: "None of it counts", selected: mode == "theirs") { mode = "theirs" }
+                        RowSeparator()
+                        ChoiceLine(title: "Part of it", sub: "Say how much was yours", selected: mode == "part") { mode = "part" }
+                    }
+                    if mode == "part" {
+                        FieldRow(label: "Your part", text: $part, prompt: Format.amount(full / 2))
+                            .keyboardType(.decimalPad)
+                            .sheetCard()
+                        Toggle("Always split \(t.merchant) like this", isOn: $splitAlways)
+                            .font(Nacre.body).tint(Pearl.action)
+                            .padding(.horizontal, 16).frame(minHeight: 52)
+                            .sheetCard()
+                    } else if mode == "mine" {
+                        Toggle("Always all mine at \(t.merchant)", isOn: $mineAlways)
+                            .font(Nacre.body).tint(Pearl.action)
+                            .padding(.horizontal, 16).frame(minHeight: 52)
+                            .sheetCard()
+                    }
+                    Text("On a joint account, spending is yours unless you say otherwise. Only your part counts.")
+                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    if let error = error { Hint(text: error) }
+                }
+            }
+            Button("Save") { Task { await save() } }
+                .buttonStyle(NacreButtonStyle(busy: busy))
+                .disabled(busy || !ready)
+        }
+        .padding(.horizontal, 16).padding(.bottom, 8)
+        .background(SheetBackground())
+    }
+
+    private struct Reply: Decodable { let rule: String? }
+
+    private func save() async {
+        busy = true
+        defer { busy = false }
+        var body: [String: Any] = [:]
+        switch mode {
+        case "theirs": body["my_share"] = 0
+        case "part":
+            body["my_share"] = amount ?? 0
+            body["always"] = splitAlways
+        default: body["my_share"] = NSNull()
+        }
+        do {
+            let reply: Reply = try await api.put("api/transactions/\(t.id)/share", body)
+            if mode == "mine" && mineAlways {
+                let _: OK = try await api.put("api/transactions/\(t.id)/mine-always", ["on": true])
+            }
+            let said: String
+            switch mode {
+            case "theirs": said = "\(t.joint)’s. It doesn’t count as yours."
+            case "part": said = reply.rule.flatMap { $0.isEmpty ? nil : $0 } ?? "Your part is \(Format.amount(amount ?? 0))."
+            default: said = mineAlways ? "Yours, and every \(t.merchant) on this account from now on." : "Yours."
+            }
+            done(said)
+        } catch {
+            self.error = (error as? LocalizedError)?.errorDescription ?? "That didn’t save. Try again."
+        }
     }
 }
