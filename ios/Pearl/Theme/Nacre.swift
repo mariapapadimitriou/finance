@@ -197,15 +197,16 @@ struct IconOrb: View {
 /// A frosted-glass card with the pink nacre edge (the "List section").
 struct GlassCard<Content: View>: View {
     var spacing: CGFloat = 0
+    var radius: CGFloat = 26
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: spacing, content: content)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(.ultraThinMaterial))
-            .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Nacre.glass))
-            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1.2))
+            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(.ultraThinMaterial))
+            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Nacre.glass))
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1.2))
             .shadow(color: Color(red: 0.4, green: 0.3, blue: 0.6).opacity(0.12), radius: 12, y: 8)
     }
 }
@@ -226,6 +227,7 @@ struct FieldRow: View {
     var prompt: String = ""
     var kind: Kind = .text
     var content: UITextContentType? = nil
+    var tone: Color = Pearl.muted
     var submit: () -> Void = {}
 
     enum Kind { case text, email, secure }
@@ -243,7 +245,7 @@ struct FieldRow: View {
                 }
             }
             .font(Nacre.body)
-            .foregroundColor(Pearl.muted)
+            .foregroundColor(tone)
             .multilineTextAlignment(.trailing)
             .textContentType(content)
             .keyboardType(kind == .email ? .emailAddress : .default)

@@ -61,8 +61,26 @@ final class APIClient {
         try await send("DELETE", path, query: query, body: nil)
     }
 
+    /// A file's bytes rather than an answer to read (Your data's .zip).
+    func download(_ path: String) async throws -> Data {
+        try await fetch("GET", path, query: [:], body: nil)
+    }
+
     private func send<T: Decodable>(_ method: String, _ path: String, query: [String: String],
                                     body: [String: Any]?) async throws -> T {
+        let data = try await fetch(method, path, query: query, body: body)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            #if DEBUG
+            print("Pearl: couldn't read \(path): \(error)")
+            #endif
+            throw APIError.message("Pearl got an answer it couldn't read. Try again.")
+        }
+    }
+
+    private func fetch(_ method: String, _ path: String, query: [String: String],
+                       body: [String: Any]?) async throws -> Data {
         guard var parts = URLComponents(url: baseURL.appendingPathComponent(path),
                                         resolvingAgainstBaseURL: false) else {
             throw APIError.message("That server address doesn't look right.")
@@ -110,14 +128,7 @@ final class APIClient {
             }
             throw APIError.message("Something went wrong (\(status)). Try again.")
         }
-        do {
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            #if DEBUG
-            print("Pearl: couldn't read \(path): \(error)")
-            #endif
-            throw APIError.message("Pearl got an answer it couldn't read. Try again.")
-        }
+        return data
     }
 
     /// Forget the session and the device, as signing out does.
