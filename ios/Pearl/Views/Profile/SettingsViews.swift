@@ -145,15 +145,7 @@ struct SignInSecurityView: View {
                 settingsNote("Asks for Face ID when you come back to Pearl after a minute away.")
             }
 
-            settingsSection("Recovery codes")
-            GlassCard {
-                Button { if (codesLeft ?? 0) > 0 { askingCodes = true } else { Task { await makeCodes() } } } label: {
-                    settingsRow("Recovery codes", value: codesValue, chevron: true)
-                }
-                .buttonStyle(.plain)
-                .disabled(busy)
-            }
-            settingsNote("For signing in on a new device when your others aren’t with you. Each works once.")
+            // Recovery codes (SEC-08, SEC-09) are left out for now (2026-11-04).
 
             settingsSection("Your devices")
             GlassCard {
