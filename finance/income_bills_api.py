@@ -182,6 +182,42 @@ def income_bills_expected_clear():
     return jsonify(_payload(st))
 
 
+@bp.get("/income-bills/saving")
+def income_bills_saving_get():
+    """O-10s: how much of her pay she means to save, as she last said."""
+    return jsonify(_saving(store()))
+
+
+@bp.put("/income-bills/saving")
+def income_bills_saving():
+    """O-10s "How much do you want to save?" (2026-11-04): a share of each
+    paycheque, 1% to 50%. Kept as `savings_rate`; the saving goal
+    (`savings_target`) follows her income, as on Income and bills."""
+    raw = _body().get("pct")
+    try:
+        pct = float(raw)
+    except (TypeError, ValueError):
+        return _error("Choose how much of your pay to save.")
+    if not 0 <= pct <= 50:
+        return _error("Choose a share of your pay from 0% to 50%.")
+    st = store()
+    st.set_setting("savings_rate", str(round(pct / 100, 4)))
+    _sync_plan_income(st, ib.load(st))
+    return jsonify(_saving(st))
+
+
+def _saving(st) -> dict:
+    """{pct, per_pay, cadence, monthly}: the share and what it comes to."""
+    state = ib.load(st)
+    rate = st.float_setting("savings_rate", 0.0)
+    income = ib.income_each_month(state, st.float_setting("home_income", 0.0)) or 0.0
+    pay = (state.get("pays") or [None])[0]
+    return {"pct": round(rate * 100, 2) if rate else None,
+            "monthly": round(rate * income, 2),
+            "per_pay": round(rate * pay["amount"], 2) if pay else None,
+            "cadence": pay["cadence"] if pay else None}
+
+
 @bp.post("/income-bills/expected/skip")
 def income_bills_expected_skip():
     """I-03's "Skip for now": remembered, so Home can make a rough estimate

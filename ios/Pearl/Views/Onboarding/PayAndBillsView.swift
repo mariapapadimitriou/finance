@@ -206,7 +206,7 @@ struct PayAndBillsView: View {
             for bill in data.bills { answers[bill.key] = ticked[bill.key] ?? bill.ticked ?? true }
             let _: IncomeBills = try await app.api.put("api/income-bills/bills", ["ticked": answers])
             app.changed()
-            if let onDone = onDone { onDone() } else { path.append(.allowance) }
+            if let onDone = onDone { onDone() } else { path.append(.saving) }
         } catch {
             self.error = app.handle(error)
         }
