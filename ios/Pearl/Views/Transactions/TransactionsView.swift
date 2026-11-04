@@ -1439,17 +1439,22 @@ struct FilterSheet: View {
 struct FilterChip: View {
     let label: String
     let on: Bool
+    /// The tabs on Categories and rules (CR-00): opaque when off, and a deep
+    /// blush with light words when on in dark mode.
+    var solid = false
     let action: () -> Void
+
+    private static let solidOn = Pearl.dynamic(light: 0xFFE4EC, dark: 0x4E2238)
 
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(Nacre.footnote)
-                .foregroundColor(on ? Pearl.onBlush : Pearl.ink)
+                .font(solid ? Nacre.label : Nacre.footnote)
+                .foregroundColor(solid ? Pearl.ink : (on ? Pearl.onBlush : Pearl.ink))
                 .lineLimit(1)
-                .padding(.horizontal, 14).frame(height: 34)
-                .background(Capsule().fill(on ? Pearl.blush : Nacre.glass))
-                .overlay(Capsule().strokeBorder(on ? Color.clear : Nacre.separator, lineWidth: 1))
+                .padding(.horizontal, 14).frame(height: solid ? 36 : 34)
+                .background(Capsule().fill(on ? (solid ? Self.solidOn : Pearl.blush) : (solid ? Pearl.card : Nacre.glass)))
+                .overlay(Capsule().strokeBorder(on ? Color.clear : (solid ? Pearl.border : Nacre.separator), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])

@@ -50,6 +50,9 @@ enum Nacre {
     static let textButton = Font.custom("Figtree-Medium", size: 16, relativeTo: .callout)
     static let subheadline = Font.custom("Figtree-Regular", size: 15, relativeTo: .subheadline)
     static let footnote = Font.custom("Figtree-Regular", size: 13, relativeTo: .footnote)
+    /// Text/Label: a chip's or a pill's words.
+    static let label = Font.custom("Figtree-Medium", size: 13, relativeTo: .footnote)
+    static let caption1 = Font.custom("Figtree-Regular", size: 12, relativeTo: .caption)
     static let caption2 = Font.custom("Figtree-Medium", size: 11, relativeTo: .caption2)
 }
 
