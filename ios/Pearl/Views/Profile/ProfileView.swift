@@ -2,8 +2,7 @@ import SwiftUI
 
 /// P-01 Profile (THL-104, THL-209, THL-120): who's signed in, then Money,
 /// You, Privacy and Help, each row led by its icon, and Sign out under them.
-/// Pages the iPhone doesn't have yet open Pearl on the web, marked with an
-/// arrow out.
+/// Everything opens in the app; nothing sends her to the web.
 @MainActor
 struct ProfileView: View {
     @EnvironmentObject private var app: AppModel
@@ -35,8 +34,11 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
-                    webRow(symbol: "dollarsign.square", title: "Income and bills",
-                           sub: "Your pay and regular bills")
+                    NavigationLink { IncomeBillsView() } label: {
+                        ProfileRow(symbol: "dollarsign.square", title: "Income and bills",
+                                   sub: "Your pay and regular bills")
+                    }
+                    .buttonStyle(.plain)
                     RowSeparator(inset: 62)
                     NavigationLink { CategoriesRulesView() } label: {
                         ProfileRow(symbol: "square.on.circle", title: "Categories and rules", sub: rulesLine)
@@ -147,18 +149,6 @@ struct ProfileView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens Sign-in and security")
-    }
-
-    /// A page that's only on the web for now.
-    private func webRow(symbol: String, title: String, sub: String) -> some View {
-        Link(destination: app.api.baseURL) {
-            ProfileRow(symbol: symbol, title: title, sub: sub, chevron: false) {
-                Image(systemName: "arrow.up.right").font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(Pearl.muted)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint("Opens Pearl on the web")
     }
 
     /// Reset Pearl: back to the start of setup, keeping the sign-in.

@@ -320,9 +320,19 @@ struct EmailField: View {
 
 /// What Pearl stores, who sees it, how Plaid works, help, and the drafts.
 enum PearlDoc: String, Identifiable {
-    case plaid, store, share, help, legal
+    /// `terms` and `privacy` are LG-01 and LG-02: the drafts, read in the
+    /// app from the welcome screen, setup's consent and Privacy and consent.
+    case plaid, store, share, help, terms, privacy
 
     var id: String { rawValue }
+
+    /// "pearl-doc:terms": a link in running text that opens the page here.
+    var url: URL { URL(string: "pearl-doc:\(rawValue)")! }
+
+    init?(url: URL) {
+        guard url.scheme == "pearl-doc" else { return nil }
+        self.init(rawValue: url.absoluteString.replacingOccurrences(of: "pearl-doc:", with: ""))
+    }
 
     struct Fact: Hashable {
         let label: String
@@ -341,7 +351,7 @@ enum PearlDoc: String, Identifiable {
         case .store: return "What we store"
         case .share: return "Who we share with"
         case .help: return "Help"
-        case .legal: return "Drafts"
+        case .terms, .privacy: return "Draft"
         }
     }
 
@@ -351,7 +361,8 @@ enum PearlDoc: String, Identifiable {
         case .store: return "Your data, plainly"
         case .share: return "Who sees your data"
         case .help: return "Getting in"
-        case .legal: return "Privacy policy and terms"
+        case .terms: return "Terms"
+        case .privacy: return "Privacy policy"
         }
     }
 
@@ -373,7 +384,6 @@ enum PearlDoc: String, Identifiable {
         switch self {
         case .store: return Self.storeFacts
         case .share: return Self.shareFacts
-        case .legal: return Self.storeFacts + Self.shareFacts
         default: return []
         }
     }
@@ -392,9 +402,13 @@ enum PearlDoc: String, Identifiable {
                 Part(heading: "New phone or computer?", text: "Sign in with an email code. If you’ve signed in somewhere before, Pearl asks you to approve the new device there."),
                 Part(heading: "Too many tries?", text: "Sign-in pauses for 15 minutes after too many attempts. Nothing about your money changes while it’s paused."),
             ]
-        case .legal:
+        case .privacy:
+            return [Part(text: "A plain-language draft, not yet a formal policy.")]
+                + Self.storeFacts.map { Part(heading: $0.label, text: $0.text + ".") }
+                + [Part(heading: "Who sees it", text: "Plaid, to connect to your bank, read-only. Our cloud host (Vercel and Neon), to run Pearl. Our email service, for sign-in codes. An investing partner only if you choose to go there — we always ask first.")]
+        case .terms:
             return [
-                Part(text: "These are plain-language drafts, not yet a formal privacy policy or terms of service."),
+                Part(text: "A plain-language draft, not yet formal terms of service."),
                 Part(heading: "What Pearl is", text: "Pearl helps you see your Allowance and plan what’s next. It reads your accounts; it doesn’t move money, and it isn’t financial advice."),
                 Part(heading: "Your part", text: "Keep your email and devices secure, since a code sent to your email or a passkey on your device is how you get in."),
                 Part(heading: "Ending", text: "You can stop any time. Deleting your account in Profile › Your data disconnects your banks and deletes your data."),

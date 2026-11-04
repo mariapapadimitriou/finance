@@ -196,7 +196,7 @@ struct ConsentView: View {
                 .accessibilityHint("Writes to our privacy officer, who replies within 30 days")
                 RowSeparator()
             }
-            Button { doc = .legal } label: {
+            Button { doc = .privacy } label: {
                 PrivacyRow(title: "Privacy policy") {
                     // The design's "v1.0" isn't true yet: the policy is a draft.
                     Text("Draft").font(Nacre.body).foregroundColor(Pearl.muted)

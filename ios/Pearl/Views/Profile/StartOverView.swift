@@ -137,6 +137,7 @@ struct StartedOverView: View {
 
     @State private var stage = Stage.syncing
     @State private var linking = false
+    @State private var adding = false
     @State private var error: String?
 
     private struct Synced: Decodable { let imported: Int? }
@@ -182,21 +183,27 @@ struct StartedOverView: View {
                 sortingButtons(enabled: true)
             }
         case .noBank:
+            // SO-05b: statement uploads are gone (THL-205), so a bank or a
+            // balance by hand brings her money back.
             DataResult(title: "You’re starting fresh",
-                       line: "Import your statements to bring your history back.") {
+                       line: "Link a bank to bring your history back, or add a balance by hand.") {
                 if let error = error { Hint(text: error).padding(.top, 4) }
             } actions: {
-                // Statements only import on the web for now.
-                Link("Import a statement", destination: app.api.baseURL)
-                    .buttonStyle(NacreButtonStyle())
-                    .accessibilityHint("Opens Pearl on the web")
-                Button("Link a bank instead") { Task { await link() } }
+                Button("Link a bank") { Task { await link() } }
+                    .buttonStyle(NacreButtonStyle(busy: linking))
+                    .disabled(linking)
+                Button("Add a balance by hand") { adding = true }
                     .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
                     .disabled(linking)
-                // Not drawn in SO-05, but this screen needs a way out.
-                Button("Go to Home", action: close)
+                Button("Not now", action: close)
                     .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
                     .disabled(linking)
+            }
+            .sheet(isPresented: $adding) {
+                AddHandBalanceSheet { app.changed(); close() }
+                    .background(SheetBackground())
+                    .presentationDetents([.height(450), .large])
+                    .presentationDragIndicator(.visible)
             }
         }
     }
