@@ -49,6 +49,8 @@ struct RootView: View {
                 .nacreScreen()
             case .signedOut:
                 AuthFlow()
+            case .deleted(let sentTo):
+                AccountDeletedView(sentTo: sentTo)
             case .signedIn(let user):
                 if user?.onboarding?.done == false || Self.debugSetup {
                     SetupFlow()
@@ -132,7 +134,7 @@ struct MainTabs: View {
                 .badge(reviewCount)
             page(.save) { BlankTab() }
             page(.wins) { BlankTab() }
-            page(.profile) { ProfileView() }
+            page(.profile) { ProfileView(tab: $tab) }
         }
         .tint(Pearl.action)
         .task(id: app.version) { await loadCount() }
