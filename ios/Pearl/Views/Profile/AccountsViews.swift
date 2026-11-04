@@ -23,12 +23,19 @@ enum AccountWords {
         case "sign_in": return ("Sign in again", .attention)
         case "retrying": return ("Retrying", .info)
         case "disconnected": return ("Disconnected", .neutral)
-        case "joint": return ("Joint", .joint)
+        case "joint": return (a.jointShare.map { "Joint · \(Int($0.rounded()))%" } ?? "Joint", .joint)
         case "not_counted": return ("Not in budget", .neutral)
         case "manual": return ("Manual", .neutral)
         case "investment": return ("Investment", .neutral)
-        default: return ("Up to date", .positive)
+        default: return a.anchor == true ? ("Anchor", .info) : ("Up to date", .positive)
         }
+    }
+
+    /// AM-01's pill: only when there's something to say, so a healthy
+    /// account's row is just its name and number.
+    static func listPill(_ a: AccountsOverview.Account) -> StatusPill? {
+        let p = pill(a)
+        return p.tone == .positive ? nil : StatusPill(text: p.text, tone: p.tone)
     }
 
     static func kind(_ a: AccountsOverview.Account) -> String {
@@ -41,12 +48,8 @@ enum AccountWords {
         }
     }
 
-    static func balance(_ a: AccountsOverview.Account) -> String? {
-        guard let b = a.balance else { return nil }
-        return Format.amount(abs(b)) + (a.owing == true ? " owing" : "")
-    }
-
-    /// "••4417 · $2,340.18", "••1203 · last updated Oct 6".
+    /// "••1203 · owing", "••1203 · last updated Oct 6", "Oct 1" for a
+    /// balance added by hand; the balance itself sits at the row's end.
     static func line(_ a: AccountsOverview.Account) -> String {
         let mask = (a.mask ?? "").isEmpty ? nil : "••\(a.mask!)"
         switch a.status {
@@ -56,10 +59,17 @@ enum AccountWords {
             return [mask, (a.disconnectedOn ?? a.updatedAt).map { "since \(Format.short($0))" }]
                 .compactMap { $0 }.joined(separator: " · ")
         case "manual":
-            return [balance(a), a.updatedAt.map { updatedLine($0) }].compactMap { $0 }.joined(separator: " · ")
+            return a.updatedAt.map { stale($0) ?? Format.short($0) } ?? ""
         default:
-            return [mask, balance(a)].compactMap { $0 }.joined(separator: " · ")
+            return [mask, a.owing == true ? "owing" : nil].compactMap { $0 }.joined(separator: " · ")
         }
+    }
+
+    /// "updated 32 days ago" once a hand-added balance is a month old.
+    private static func stale(_ day: String, now: Date = Date()) -> String? {
+        guard let d = Format.localDay(day),
+              let days = Calendar.current.dateComponents([.day], from: d, to: now).day, days >= 30 else { return nil }
+        return "updated \(days) days ago"
     }
 
     /// "5 minutes ago", "Tuesday, Oct 6".
@@ -137,8 +147,7 @@ struct AccountsView: View {
 
     var body: some View {
         ProfilePage {
-            ProfileHeading(eyebrow: "Profile", title: "Accounts",
-                           intro: "Pearl checks your banks a few times a day. Every balance shows when it was last updated.")
+            ProfileHeading(title: "Accounts", intro: updatedLine)
             if let first = linked.first(where: { $0.needsReconnect }) {
                 reconnectNotice(first)
             }
@@ -149,20 +158,17 @@ struct AccountsView: View {
                 ProfileSection("Linked")
                 GlassCard {
                     ForEach(Array(linked.enumerated()), id: \.element.id) { i, a in
-                        if i > 0 { RowSeparator(inset: 64) }
+                        if i > 0 { RowSeparator(inset: 62) }
                         NavigationLink { AccountDetailView(account: a) } label: { row(a) }
                             .buttonStyle(.plain)
                     }
                 }
-            } else if loaded {
-                ProfileNote("No banks are linked yet. Link one, or add a balance by hand.")
-                    .padding(.top, 8)
             }
             if !added.isEmpty {
                 ProfileSection("Added by you")
                 GlassCard {
                     ForEach(Array(added.enumerated()), id: \.element.id) { i, a in
-                        if i > 0 { RowSeparator(inset: 64) }
+                        if i > 0 { RowSeparator(inset: 62) }
                         NavigationLink {
                             if a.isHand {
                                 ManualAccountView(account: a)
@@ -207,10 +213,22 @@ struct AccountsView: View {
     }
 
     private func row(_ a: AccountsOverview.Account) -> some View {
-        let pill = AccountWords.pill(a)
-        return ProfileRow(initials: AccountWords.bank(a), title: a.name, sub: AccountWords.line(a)) {
-            StatusPill(text: pill.text, tone: pill.tone)
+        ProfileRow(initials: AccountWords.bank(a), title: a.name, sub: AccountWords.line(a),
+                   pill: AccountWords.listPill(a)) {
+            if let b = a.balance {
+                Text(Format.amount(abs(b))).font(Nacre.body).foregroundColor(Pearl.ink)
+                    .monospacedDigit().lineLimit(1).fixedSize()
+            }
         }
+    }
+
+    /// "Updated 5 minutes ago": when the banks were last read.
+    private var updatedLine: String? {
+        let stamps = linked.compactMap { $0.updatedAt }.compactMap { s in ProtectView.parse(s).map { (s, $0) } }
+        guard let latest = stamps.max(by: { $0.1 < $1.1 }) else {
+            return loaded && linked.isEmpty ? "Link a bank, or add a balance by hand." : nil
+        }
+        return "Updated \(AccountWords.when(latest.0))"
     }
 
     /// C-01's banner for the first bank that needs her.
@@ -323,51 +341,48 @@ struct ReconnectSheet: View {
 
 // MARK: - The top of an account's page
 
-/// The bank, the name, its pill, the balance in Fraunces, and its facts.
+/// AM-02: the bank's initials, the name, the balance in Fraunces and the
+/// line under it, centred over the page, with its pill; then, for a linked
+/// account, how far back its history goes.
 struct AccountHero: View {
     let account: AccountsOverview.Account
     var note: String
 
     var body: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                Initials(name: AccountWords.bank(account), size: 48)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(account.name).font(Nacre.headline).foregroundColor(Pearl.ink)
-                    Text([(account.mask ?? "").isEmpty ? nil : "••\(account.mask!)", AccountWords.kind(account)]
-                        .compactMap { $0 }.joined(separator: " · "))
-                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                let pill = AccountWords.pill(account)
-                StatusPill(text: pill.text, tone: pill.tone)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(account.balance.map { Format.amount(abs($0)) } ?? "—")
-                    .font(Pearl.display(.title)).foregroundColor(Pearl.ink)
-                    .lineLimit(1).minimumScaleFactor(0.7)
-                Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted)
-            }
-            if !account.isHand {
-                Rectangle().fill(Nacre.separator).frame(height: 0.5)
-                HStack(alignment: .top, spacing: 12) {
-                    fact("History from", account.historyFrom.map { Format.month(String($0.prefix(7))) } ?? "—")
-                    fact("Transactions", "\(account.transactions ?? 0)")
-                }
-            }
-            }
-            .padding(18)
+        VStack(spacing: 6) {
+            RowAvatar(name: AccountWords.bank(account), size: 52, font: Nacre.headline)
+                .padding(.bottom, 4)
+            Text(account.name).font(Nacre.title2).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center)
+            Text(account.balance.map { Format.amount(abs($0)) } ?? "—")
+                .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle)).foregroundColor(Pearl.ink)
+                .lineLimit(1).minimumScaleFactor(0.6)
+            Text(note).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center)
+            let pill = AccountWords.pill(account)
+            StatusPill(text: pill.text, tone: pill.tone).padding(.top, 4)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4).padding(.bottom, 8)
         .accessibilityElement(children: .combine)
+
+        if !account.isHand {
+            GlassCard {
+                fact("History from", account.historyFrom.map { Format.month(String($0.prefix(7))) } ?? "—")
+                RowSeparator()
+                fact("Transactions", "\(account.transactions ?? 0)")
+            }
+        }
     }
 
     private func fact(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(Nacre.footnote).foregroundColor(Pearl.muted)
-            Text(value).font(Nacre.subheadline).foregroundColor(Pearl.ink)
+        HStack {
+            Text(label).font(Nacre.body).foregroundColor(Pearl.ink)
+            Spacer()
+            Text(value).font(Nacre.body).foregroundColor(Pearl.muted)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16).frame(minHeight: 50)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -403,46 +418,40 @@ struct AccountDetailView: View {
                 Notice(text: "This account isn’t in your budget. Its transactions stay here, but they don’t count toward Allowance, spending or your totals on Home.")
             }
 
-            ProfileSection("How it counts")
+            ProfileSection("Settings")
             GlassCard {
-                toggleRow(symbol: "target", title: "Count in my budget",
+                toggleRow(title: "Include in my budget",
                           sub: isInvestment ? "Spending doesn’t happen from an investment account."
                               : "Its spending, bills and balance count toward Allowance and your totals on Home.",
                           on: $counted, disabled: isInvestment) { on in Task { await setCounted(on) } }
                 if !isInvestment {
-                    RowSeparator(inset: 64)
-                    toggleRow(symbol: "person.2", title: "This is a joint account",
+                    RowSeparator()
+                    toggleRow(title: "Joint account",
                               sub: "Only your share counts. You choose the share.",
                               on: $joint) { on in Task { await setJoint(on) } }
                 }
                 if account.canAnchor == true {
-                    RowSeparator(inset: 64)
-                    toggleRow(symbol: "lifepreserver", title: "Counts toward my Anchor",
+                    RowSeparator()
+                    toggleRow(title: "Part of my Anchor",
                               sub: "Savings accounts only", on: $anchor) { on in Task { await setAnchor(on) } }
                 }
-            }
-
-            if joint {
-                GlassCard {
+                if joint {
+                    RowSeparator()
                     NavigationLink { JointAccountView(account: account) } label: {
-                        ProfileRow(symbol: "person.2", title: "Shared with", sub: sharedLine)
+                        ProfileRow(title: "Shared with", sub: sharedLine)
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.top, 4)
-            }
-
-            ProfileSection("Details")
-            GlassCard {
+                RowSeparator()
                 Button { nickname = account.nickname ?? ""; renaming = true } label: {
-                    ProfileRow(symbol: "pencil", title: "Nickname", sub: nil) {
+                    ProfileRow(title: "Nickname", sub: nil) {
                         Text((account.nickname ?? "").isEmpty ? "Add" : account.nickname!)
                             .font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
                     }
                 }
                 .buttonStyle(.plain)
                 if !account.copies(among: all).isEmpty {
-                    RowSeparator(inset: 64)
+                    RowSeparator()
                     NavigationLink {
                         SameAccountView(account: account, all: all) { text, goneId in
                             if goneId == account.id {
@@ -452,7 +461,7 @@ struct AccountDetailView: View {
                             }
                         }
                     } label: {
-                        ProfileRow(symbol: "square.on.square", title: "Same account twice?")
+                        ProfileRow(title: "Same account twice?")
                     }
                     .buttonStyle(.plain)
                 }
@@ -460,8 +469,7 @@ struct AccountDetailView: View {
 
             GlassCard {
                 Button { removing = true } label: {
-                    Text("Remove this account").font(Nacre.body).foregroundColor(Pearl.action)
-                        .frame(maxWidth: .infinity, minHeight: 52)
+                    ProfileRow(title: "Remove this account", tone: Pearl.moneyOut, chevron: false)
                 }
                 .buttonStyle(.plain)
             }
@@ -519,12 +527,14 @@ struct AccountDetailView: View {
     private var heroCard: some View { AccountHero(account: account, note: heroNote) }
 
     private var heroNote: String {
-        let what = account.owing == true ? "Owing" : "Balance"
+        let mask = (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)"
         switch account.status {
         case "disconnected":
             return "Balance on \((account.disconnectedOn ?? account.updatedAt).map { Format.short($0) } ?? "the day it disconnected")"
         default:
-            return [what, account.updatedAt.map { "updated \(AccountWords.when($0))" }].compactMap { $0 }.joined(separator: " · ")
+            // "Owing · ••1203", "Chequing · ••6612".
+            return [account.owing == true ? "Owing" : AccountWords.kind(account), mask]
+                .compactMap { $0 }.joined(separator: " · ")
         }
     }
 
@@ -546,22 +556,16 @@ struct AccountDetailView: View {
         }
     }
 
-    private func toggleRow(symbol: String, title: String, sub: String, on: Binding<Bool>, disabled: Bool = false,
+    /// A setting and its switch; what it does is VoiceOver's hint.
+    private func toggleRow(title: String, sub: String, on: Binding<Bool>, disabled: Bool = false,
                            changed: @escaping (Bool) -> Void) -> some View {
-        HStack(spacing: 12) {
-            IconBubble(symbol: symbol)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
-                Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Toggle(title, isOn: Binding(get: { on.wrappedValue }, set: { v in on.wrappedValue = v; changed(v) }))
-                .labelsHidden()
-                .tint(Pearl.action)
-                .disabled(disabled || busy)
+        Toggle(isOn: Binding(get: { on.wrappedValue }, set: { v in on.wrappedValue = v; changed(v) })) {
+            Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .tint(Pearl.action)
+        .disabled(disabled || busy)
+        .accessibilityHint(sub)
+        .padding(.horizontal, 16).frame(minHeight: 50)
     }
 
     // MARK: Saving (on tap: there's no Save button)
@@ -741,27 +745,23 @@ struct ManualAccountView: View {
     var body: some View {
         ProfilePage {
             AccountHero(account: account,
-                        note: account.updatedAt.map { "You \(AccountWords.updatedLine($0))" } ?? "Added by you")
+                        note: account.updatedAt.map { "Added by you · \(AccountWords.updatedLine($0))" } ?? "Added by you")
             Button("Update balance") { updating = true }
                 .buttonStyle(SecondaryButtonStyle())
                 .padding(.top, 4)
-            ProfileNote("Added by you. Pearl can’t see its transactions, so it only shows in your balances on Home.")
 
-            ProfileSection("How it counts")
+            ProfileSection("Settings")
             GlassCard {
-                toggle(symbol: "house", title: "Show on Home", sub: "Counts in your balances and totals",
+                toggle(title: "Show on Home", sub: "Counts in your balances and totals",
                        on: $counted) { on in Task { await save(["counted": on], saying: on ? "\(account.name) shows on Home." : "\(account.name) is off Home.") } }
                 if account.canAnchor == true {
-                    RowSeparator(inset: 64)
-                    toggle(symbol: "lifepreserver", title: "Counts toward my Anchor", sub: "Savings accounts only",
+                    RowSeparator()
+                    toggle(title: "Part of my Anchor", sub: "Savings accounts only",
                            on: $anchor) { on in Task { await save(["anchor": on], saying: on ? "\(account.name) counts toward your Anchor." : "\(account.name) no longer counts toward your Anchor.") } }
                 }
-            }
-
-            ProfileSection("Details")
-            GlassCard {
+                RowSeparator()
                 Button { name = account.name; renaming = true } label: {
-                    ProfileRow(symbol: "pencil", title: "Name") {
+                    ProfileRow(title: "Name") {
                         Text(account.name).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
                     }
                 }
@@ -769,8 +769,7 @@ struct ManualAccountView: View {
             }
             GlassCard {
                 Button { removing = true } label: {
-                    Text("Remove this account").font(Nacre.body).foregroundColor(Pearl.action)
-                        .frame(maxWidth: .infinity, minHeight: 52)
+                    ProfileRow(title: "Remove this account", tone: Pearl.moneyOut, chevron: false)
                 }
                 .buttonStyle(.plain)
             }
@@ -810,19 +809,14 @@ struct ManualAccountView: View {
         }
     }
 
-    private func toggle(symbol: String, title: String, sub: String, on: Binding<Bool>,
+    private func toggle(title: String, sub: String, on: Binding<Bool>,
                         changed: @escaping (Bool) -> Void) -> some View {
-        HStack(spacing: 12) {
-            IconBubble(symbol: symbol)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
-                Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Toggle(title, isOn: Binding(get: { on.wrappedValue }, set: { v in on.wrappedValue = v; changed(v) }))
-                .labelsHidden().tint(Pearl.action).disabled(busy)
+        Toggle(isOn: Binding(get: { on.wrappedValue }, set: { v in on.wrappedValue = v; changed(v) })) {
+            Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .tint(Pearl.action).disabled(busy)
+        .accessibilityHint(sub)
+        .padding(.horizontal, 16).frame(minHeight: 50)
     }
 
     private func save(_ body: [String: Any], saying: String?) async {

@@ -31,7 +31,7 @@ struct ChangeEmailView: View {
     var body: some View {
         ProfilePage {
             if let sentTo = sentTo {
-                ProfileHeading(eyebrow: "Sign-in and security", title: "Check your email",
+                ProfileHeading(title: "Check your email",
                                intro: "We sent a 6-digit code to \(sentTo). It works for 10 minutes.")
                 CodeBoxes(code: $code, failed: failed) { Task { await verify() } }
                     .padding(.top, 8)
@@ -41,8 +41,7 @@ struct ChangeEmailView: View {
                     .disabled(busy)
                     .padding(.top, 4)
             } else {
-                ProfileHeading(eyebrow: "Sign-in and security", title: "Change your sign-in email",
-                               intro: "We’ll send a 6-digit code to the new address to check it’s yours, and let your old email know.")
+                ProfileHeading(title: "Change your email", intro: "We’ll send a code to the new address.")
                 VStack(alignment: .leading, spacing: 14) {
                     EmailField(label: "Current email", text: $current, readOnly: true)
                     EmailField(label: "New email", text: $email,

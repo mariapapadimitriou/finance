@@ -1,22 +1,23 @@
 import SwiftUI
 
-// The Profile pages' look (Pearl iOS Handoff File, Profile page, P-01 to
-// P-03): glass cards of rows, each row led by a line icon in a frosted
-// bubble, an eyebrow over the Fraunces title, and status pills.
+// The Profile pages' look (Pearl iOS Handoff File, Pearl app page, P-01 to
+// P-03 and AM-01 to AM-10): glass cards of rows, each row led by a line icon
+// in a rose-washed circle or a bank's initials, the Fraunces title with one
+// line under it, and status pills.
 
-/// A line icon in a round frosted bubble, at the start of a row.
+/// A line icon in a rose-washed circle at the start of a row: 34pt in a
+/// row, 72pt over a page's hero.
 struct IconBubble: View {
     let symbol: String
-    var size: CGFloat = 36
-    var tone: Color = Pearl.ink
+    var size: CGFloat = 34
+    var tone: Color = Pearl.action
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: size * 0.42, weight: .regular))
+            .font(.system(size: size / 2, weight: .regular))
             .foregroundColor(tone)
             .frame(width: size, height: size)
-            .background(Circle().fill(Nacre.glass))
-            .overlay(Circle().strokeBorder(Nacre.separator, lineWidth: 1))
+            .background(Circle().fill(Nacre.roseWash))
             .accessibilityHidden(true)
     }
 }
@@ -29,9 +30,9 @@ struct ProfileSection: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(Nacre.caption2).tracking(0.4)
-            .foregroundColor(Pearl.muted)
-            .padding(.horizontal, 16).padding(.top, 14)
+            .font(Nacre.caption1)
+            .foregroundColor(Pearl.ink)
+            .padding(.horizontal, 16).padding(.top, 10)
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -55,7 +56,7 @@ struct ProfileNote: View {
     }
 }
 
-/// "PROFILE / How we protect you / What Pearl can and can't do…".
+/// "Accounts / Updated 5 minutes ago": the Fraunces title and its one line.
 struct ProfileHeading: View {
     var eyebrow: String? = nil
     let title: String
@@ -67,18 +68,40 @@ struct ProfileHeading: View {
             if let eyebrow = eyebrow {
                 Text(eyebrow.uppercased()).font(Nacre.caption2).tracking(1.4).foregroundColor(Pearl.muted)
             }
-            Text(title).font(Nacre.title).foregroundColor(Pearl.ink)
+            Text(title).font(Nacre.title).tracking(0.4).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(centred ? .center : .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             if let intro = intro {
-                Text(intro).font(Nacre.body).foregroundColor(Pearl.muted)
+                Text(intro).font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(centred ? .center : .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: centred ? .center : .leading)
         .padding(.bottom, 6)
+    }
+}
+
+/// A bank's or a person's initials in a frosted circle (AM-01, P-01).
+struct RowAvatar: View {
+    let name: String
+    var size: CGFloat = 36
+    var font: Font = Nacre.footnote
+
+    var body: some View {
+        Text(letters)
+            .font(font).foregroundColor(Pearl.ink)
+            .frame(width: size, height: size)
+            .background(Circle().fill(Nacre.glass))
+            .overlay(Circle().strokeBorder(Nacre.edge, lineWidth: 1))
+            .accessibilityHidden(true)
+    }
+
+    private var letters: String {
+        let words = name.split { !$0.isLetter && !$0.isNumber }.prefix(2)
+        let out = words.compactMap { $0.first.map(String.init) }.joined().uppercased()
+        return out.isEmpty ? "·" : out
     }
 }
 
@@ -89,6 +112,8 @@ struct ProfileRow<Trailing: View>: View {
     var initials: String? = nil
     let title: String
     var sub: String? = nil
+    /// "⚠ 1 needs you", "Joint · 50%": on the line under the title.
+    var pill: StatusPill? = nil
     var tone: Color = Pearl.ink
     var chevron = true
     var trailing: Trailing
@@ -96,13 +121,18 @@ struct ProfileRow<Trailing: View>: View {
     var body: some View {
         HStack(spacing: 12) {
             if let symbol = symbol { IconBubble(symbol: symbol) }
-            if let initials = initials { Initials(name: initials, size: 36) }
+            if let initials = initials { RowAvatar(name: initials) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Nacre.body).foregroundColor(tone)
                     .fixedSize(horizontal: false, vertical: true)
-                if let sub = sub {
-                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        .fixedSize(horizontal: false, vertical: true)
+                if sub != nil || pill != nil {
+                    HStack(spacing: 8) {
+                        if let sub = sub, !sub.isEmpty {
+                            Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if let pill = pill { pill }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -122,11 +152,13 @@ struct ProfileRow<Trailing: View>: View {
 
 extension ProfileRow {
     init(symbol: String? = nil, initials: String? = nil, title: String, sub: String? = nil,
-         tone: Color = Pearl.ink, chevron: Bool = true, @ViewBuilder trailing: () -> Trailing) {
+         pill: StatusPill? = nil, tone: Color = Pearl.ink, chevron: Bool = true,
+         @ViewBuilder trailing: () -> Trailing) {
         self.symbol = symbol
         self.initials = initials
         self.title = title
         self.sub = sub
+        self.pill = pill
         self.tone = tone
         self.chevron = chevron
         self.trailing = trailing()
@@ -135,9 +167,9 @@ extension ProfileRow {
 
 extension ProfileRow where Trailing == EmptyView {
     init(symbol: String? = nil, initials: String? = nil, title: String, sub: String? = nil,
-         tone: Color = Pearl.ink, chevron: Bool = true) {
-        self.init(symbol: symbol, initials: initials, title: title, sub: sub, tone: tone,
-                  chevron: chevron, trailing: EmptyView())
+         pill: StatusPill? = nil, tone: Color = Pearl.ink, chevron: Bool = true) {
+        self.init(symbol: symbol, initials: initials, title: title, sub: sub, pill: pill, tone: tone,
+                  chevron: chevron, trailing: { EmptyView() })
     }
 }
 
@@ -171,7 +203,6 @@ struct StatusPill: View {
         case .info: return "info.circle"
         case .joint: return "person.2"
         case .neutral: return nil
-        case .joint: return "person.2"
         }
     }
 
