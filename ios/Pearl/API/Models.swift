@@ -48,9 +48,11 @@ struct ProfileSummary: Decodable {
     let accounts: Int?
     let needsYou: Int?
     let rules: Int?
+    /// Recurring transfers she confirmed (THL-295).
+    var recurring: Int? = nil
 
     enum CodingKeys: String, CodingKey {
-        case accounts, rules
+        case accounts, rules, recurring
         case needsYou = "needs_you"
     }
 }

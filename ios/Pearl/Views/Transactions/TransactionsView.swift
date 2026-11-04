@@ -1041,6 +1041,8 @@ struct TransactionRow: View {
         let when = Format.relativeDay(t.date)
         if let paidBack = paidBack { return "Paid back · \(paidBack)" }
         if let charge = t.refundOf { return "Refund · \(charge.merchant)" }
+        // T-82 (THL-292): a transfer a recurring rule sorted says so.
+        if t.recurring != nil, let note = t.note, note.hasPrefix("Recurring") { return note }
         if t.suggested { return t.pending ? "\(when) · Pending" : when }
         return [showsCategory ? t.label : nil, when, t.pending ? "Pending" : nil].compactMap { $0 }
             .joined(separator: " · ")

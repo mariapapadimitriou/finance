@@ -65,6 +65,12 @@ struct RecurringTransfersView: View {
                     ProfileNote("When the same amount goes out on a schedule, Needs a look asks whether it repeats. The ones you say yes to are sorted on their own and listed here.")
                         .padding(.top, 8)
                 } else {
+                    // RT-01's two tiles (THL-295).
+                    HStack(spacing: 12) {
+                        tile("A month, on average", Format.whole(data.monthly))
+                        tile("Recurring", "\(data.count)")
+                    }
+                    .padding(.top, 4)
                     ProfileSection("\(data.count) recurring")
                     GlassCard {
                         ForEach(Array(data.transfers.enumerated()), id: \.element.id) { i, t in
@@ -113,16 +119,28 @@ struct RecurringTransfersView: View {
         }
     }
 
-    /// "Transfers that repeat, sorted on their own. $2,050 a month on average."
     private var lead: String? {
         guard let data = data, !data.transfers.isEmpty else { return nil }
-        return "Transfers that repeat, sorted on their own. \(Format.whole(data.monthly)) a month on average."
+        return "Transfers that repeat, sorted on their own."
     }
 
-    /// "Rent · monthly · next Dec 1".
+    private func tile(_ label: String, _ value: String) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                Text(value).font(.custom("Fraunces-SemiBold", size: 28, relativeTo: .title)).foregroundColor(Pearl.ink)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16).padding(.vertical, 14)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// "Rent · monthly · TD Chequing · next Dec 1".
     private func line(_ t: RecurringTransfers.Transfer) -> String {
         let how = t.cadence == "payday" ? "every payday" : cadence(t.cadence).lowercased()
-        return [t.what ?? t.category, how, t.next.map { "next \(Format.short($0))" }]
+        return [t.what ?? t.category, how, t.account.flatMap { $0.isEmpty ? nil : $0 }, t.next.map { "next \(Format.short($0))" }]
             .compactMap { $0 }.joined(separator: " · ")
     }
 
