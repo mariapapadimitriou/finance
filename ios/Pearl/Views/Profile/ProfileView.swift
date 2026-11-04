@@ -10,6 +10,7 @@ struct ProfileView: View {
     @State private var summary: ProfileSummary?
     @State private var doc: PearlDoc?
     @State private var showYourData = false
+    @State private var showConsent = false
     @State private var confirmSignOut = false
     @State private var confirmReset = false
     @State private var resetting = false
@@ -52,7 +53,10 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 64)
-                    webRow(symbol: "bell", title: "Notifications", sub: "Payday, weekly check-in, progress")
+                    NavigationLink { NotificationsView() } label: {
+                        ProfileRow(symbol: "bell", title: "Notifications", sub: "Payday, weekly check-in, progress")
+                    }
+                    .buttonStyle(.plain)
                     RowSeparator(inset: 64)
                     Button { confirmSignOut = true } label: {
                         ProfileRow(symbol: "rectangle.portrait.and.arrow.right", title: "Sign out",
@@ -63,7 +67,10 @@ struct ProfileView: View {
 
                 ProfileSection("Privacy")
                 GlassCard {
-                    webRow(symbol: "eye", title: "Privacy and consent", sub: "What you’ve agreed to")
+                    Button { showConsent = true } label: {
+                        ProfileRow(symbol: "eye", title: "Privacy and consent", sub: "What you’ve agreed to")
+                    }
+                    .buttonStyle(.plain)
                     RowSeparator(inset: 64)
                     Button { showYourData = true } label: {
                         ProfileRow(symbol: "tray.and.arrow.down", title: "Your data",
@@ -105,6 +112,12 @@ struct ProfileView: View {
         .navigationBarHidden(true)
         .task(id: app.version) { await load() }
         .docSheet($doc)
+        .navigationDestination(isPresented: $showConsent) {
+            ConsentView(goHome: {
+                showConsent = false
+                tab = .home
+            })
+        }
         .navigationDestination(isPresented: $showYourData) {
             YourDataView(goHome: {
                 showYourData = false

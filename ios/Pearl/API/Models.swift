@@ -1160,12 +1160,69 @@ indirect enum JSONValue: Codable, Hashable {
     }
 }
 
+// MARK: - Notifications (N-01, N-02)
+
+/// GET and PUT /api/notifications.
+struct NotificationSettings: Decodable {
+    var prefs: Prefs
+
+    struct Prefs: Decodable {
+        var types: [String: Channels]
+        var quiet: Quiet
+        var lockAmounts: Bool
+        let prompt: Prompt?
+
+        enum CodingKeys: String, CodingKey {
+            case types, quiet, prompt
+            case lockAmounts = "lock_amounts"
+        }
+    }
+
+    struct Channels: Decodable {
+        var phone: Bool
+        var email: Bool
+    }
+
+    /// "21:00" to "08:00".
+    struct Quiet: Decodable, Identifiable {
+        var from: String
+        var to: String
+        var id: String { "\(from)-\(to)" }
+    }
+
+    /// N-01's answer: "on", "not_now", or none yet.
+    struct Prompt: Decodable {
+        let answer: String?
+    }
+}
+
 // MARK: - How we protect you (P-03)
 
 /// GET /api/privacy: the banks Pearl reads, and who to write to.
 struct Privacy: Decodable {
     let connections: [Connection]
     let contact: String?
+    /// CN-04: "read_data", "insights", "ai_sort", "tips", "analytics"…
+    var consents: [String: Consent]?
+
+    struct Consent: Decodable {
+        let value: Bool?
+        /// When it was given, in seconds. Usage data, on by default, has none.
+        let at: Double?
+
+        init(value: Bool?, at: Double?) {
+            self.value = value
+            self.at = at
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            value = (try? c.decodeIfPresent(Bool.self, forKey: .value)) ?? nil
+            at = (try? c.decodeIfPresent(Double.self, forKey: .at)) ?? nil
+        }
+
+        private enum CodingKeys: String, CodingKey { case value, at }
+    }
 
     struct Connection: Decodable, Identifiable {
         let itemId: String

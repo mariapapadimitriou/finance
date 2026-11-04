@@ -21,6 +21,10 @@ enum Nacre {
     static let mint = Color(UIColor { $0.userInterfaceStyle == .dark
         ? UIColor(red: 143 / 255, green: 227 / 255, blue: 214 / 255, alpha: 0.16)
         : UIColor(red: 210 / 255, green: 244 / 255, blue: 236 / 255, alpha: 0.9) })
+    /// The circle behind a rose line icon (Privacy and notifications).
+    static let roseWash = Color(UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 255 / 255, green: 143 / 255, blue: 177 / 255, alpha: 0.22)
+        : UIColor(red: 178 / 255, green: 39 / 255, blue: 87 / 255, alpha: 0.1) })
     /// Light mode's primary button text, and dark mode's (ink on nacre).
     static let onNacre = Color(hex: 0x1C1A33)
 

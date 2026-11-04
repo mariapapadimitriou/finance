@@ -63,6 +63,19 @@ enum Format {
         Format.iso.date(from: String(iso.prefix(10)))
     }
 
+    private static let agreedDayFormat: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MMM d, yyyy"
+        return f
+    }()
+
+    /// "Oct 2, 2026", from a consent's time in seconds, on this iPhone's clock.
+    static func agreedDay(_ seconds: Double) -> String {
+        agreedDayFormat.string(from: Date(timeIntervalSince1970: seconds))
+    }
+
     /// "Wednesday, October 14".
     static func day(_ iso: String) -> String {
         date(iso).map { longDay.string(from: $0) } ?? iso
