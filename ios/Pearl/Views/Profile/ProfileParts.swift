@@ -155,10 +155,13 @@ struct StatusPill: View {
             }
             Text(text).lineLimit(1)
         }
-        .font(Nacre.footnote)
+        .font(tone == .neutral ? Nacre.label : Nacre.footnote)
         .foregroundColor(foreground)
-        .padding(.horizontal, 10).frame(height: 26)
+        .padding(.horizontal, tone == .neutral ? 12 : 10).frame(height: 26)
         .background(Capsule().fill(background))
+        .overlay {
+            if tone == .neutral { Capsule().strokeBorder(Pearl.border, lineWidth: 1) }
+        }
     }
 
     private var symbol: String? {
@@ -176,7 +179,8 @@ struct StatusPill: View {
         switch tone {
         case .positive: return Nacre.teal
         case .attention: return Pearl.caution
-        case .info, .neutral, .joint: return Pearl.ink
+        case .info, .joint: return Pearl.ink
+        case .neutral: return Pearl.muted
         }
     }
 
@@ -185,7 +189,7 @@ struct StatusPill: View {
         case .positive: return Nacre.mint
         case .attention: return Pearl.cautionBackground
         case .info, .joint: return Nacre.lilac.opacity(0.35)
-        case .neutral: return Pearl.track
+        case .neutral: return Pearl.page
         }
     }
 }

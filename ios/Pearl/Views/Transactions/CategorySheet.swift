@@ -20,6 +20,10 @@ struct CategorySheet: View {
     /// T-04's "Regular bill": told on Save, so it can go on to Add to your
     /// bills? (T-32). Nil hides the switch.
     var onRegularBill: ((Bool) -> Void)? = nil
+    /// The title at the top ("Rule" when editing a saved rule).
+    var title = "Category"
+    /// "Delete this rule" under Save, when editing a saved rule.
+    var onDelete: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var chosen: String
@@ -29,7 +33,10 @@ struct CategorySheet: View {
 
     init(name: String, amount: String, tone: Color, categories: [CategoryList.Category], current: String,
          merchant: String? = nil, spendingOnly: Bool = false, mark: String? = nil,
-         onRegularBill: ((Bool) -> Void)? = nil, onSave: @escaping (String, Bool) -> Void) {
+         onRegularBill: ((Bool) -> Void)? = nil, title: String = "Category",
+         onDelete: (() -> Void)? = nil, onSave: @escaping (String, Bool) -> Void) {
+        self.title = title
+        self.onDelete = onDelete
         self.spendingOnly = spendingOnly
         self.mark = mark
         self.onRegularBill = onRegularBill
@@ -54,7 +61,7 @@ struct CategorySheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: "Category") { dismiss() }
+            SheetTitle(title: title) { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     header
@@ -105,6 +112,11 @@ struct CategorySheet: View {
                 .buttonStyle(NacreButtonStyle())
                 .disabled(chosen == current && !remember && !bill)
                 .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
+            if let onDelete = onDelete {
+                Button("Delete this rule", action: onDelete)
+                    .buttonStyle(NacreTextButtonStyle())
+                    .padding(.horizontal, 16).padding(.bottom, 8)
+            }
         }
         .background(SheetBackground())
         .presentationDetents([.large])
@@ -119,7 +131,7 @@ struct CategorySheet: View {
                     AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
                     lineWidth: 1.2))
             VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(onDelete == nil ? 1 : 3)
                 Text(amount).font(Nacre.subheadline).foregroundColor(tone)
             }
             Spacer(minLength: 0)
