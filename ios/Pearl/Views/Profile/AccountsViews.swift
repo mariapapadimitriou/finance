@@ -217,6 +217,8 @@ struct AccountsView: View {
         }
         .refreshable { await load() }
         .task(id: app.version) { await load() }
+        .onAppear(perform: showNotice)
+        .onChange(of: app.accountsNotice) { _ in showNotice() }
         .sheet(isPresented: $adding) {
             AddHandBalanceSheet { await load() }
                 .background(SheetBackground())
@@ -232,6 +234,13 @@ struct AccountsView: View {
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
         }
+    }
+
+    /// AM-13: what the page it came back from did.
+    private func showNotice() {
+        guard let notice = app.accountsNotice else { return }
+        app.accountsNotice = nil
+        withAnimation { toast = notice }
     }
 
     /// C-01: a bank needs her or isn't responding, so the rows say how each
@@ -462,8 +471,8 @@ struct AccountDetailView: View {
     @State private var nickname = ""
     @State private var removing = false
     @State private var reconnecting = false
-    /// SEC-07: disconnecting the whole bank.
-    @State private var disconnecting = false
+    /// AM-12: removing the whole bank.
+    @State private var removingBank = false
     @State private var busy = false
     @State private var toast: (text: String, undo: (() -> Void)?)?
     @State private var error: String?
@@ -536,11 +545,11 @@ struct AccountDetailView: View {
                 }
                 .buttonStyle(.plain)
                 if sameBank.count > 1 {
-                    // SEC-07: every account on this bank login at once.
+                    // AM-11 (THL-262): every account on this bank login at once.
                     RowSeparator()
-                    Button { disconnecting = true } label: {
-                        ProfileRow(title: "Disconnect \(AccountWords.bank(account))",
-                                   sub: "All \(sameBank.count) accounts from this bank", tone: Pearl.moneyOut, chevron: false)
+                    Button { removingBank = true } label: {
+                        ProfileRow(title: "Remove \(AccountWords.bank(account)) entirely · \(sameBank.count == 2 ? "both accounts" : "all \(sameBank.count) accounts")",
+                                   tone: Pearl.moneyOut, chevron: false)
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
@@ -549,11 +558,14 @@ struct AccountDetailView: View {
             .padding(.top, 12)
             if let error = error { Hint(text: error).padding(.top, 4) }
         }
-        .alert("Disconnect \(AccountWords.bank(account))?", isPresented: $disconnecting) {
-            Button("Cancel", role: .cancel) {}
-            Button("Disconnect", role: .destructive) { Task { await disconnectBank() } }
-        } message: {
-            Text("Pearl will stop updating these \(sameBank.count) accounts. Your history stays unless you delete your data.")
+        .sheet(isPresented: $removingBank) {
+            RemoveBankSheet(bank: AccountWords.bank(account), itemId: account.itemId ?? "", accounts: sameBank) { removed in
+                removingBank = false
+                if removed { app.changed(); dismiss() }
+            }
+            .background(SheetBackground())
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .overlay(alignment: .bottom) {
             // AM-03: the toast sits at the bottom, with Undo.
@@ -574,7 +586,7 @@ struct AccountDetailView: View {
             Text("A name you’ll recognise. It shows everywhere in Pearl.")
         }
         .sheet(isPresented: $removing) {
-            RemoveAccountSheet(account: account) { removed in
+            RemoveAccountSheet(account: account, lastAtBank: sameBank.count == 1) { removed in
                 removing = false
                 if removed { app.changed(); dismiss() }
             }
@@ -602,21 +614,6 @@ struct AccountDetailView: View {
     private var sameBank: [AccountsOverview.Account] {
         guard let item = account.itemId, !item.isEmpty else { return [] }
         return all.filter { $0.itemId == item }
-    }
-
-    /// SEC-07: every account on the login comes off, history kept, and the
-    /// login is revoked at Plaid so the bank can be linked again from scratch.
-    private func disconnectBank() async {
-        guard let item = account.itemId else { return }
-        busy = true
-        defer { busy = false }
-        do {
-            let _: OK = try await app.api.post("api/banks/\(item)/remove", ["transactions": "keep"])
-            app.changed()
-            dismiss()
-        } catch {
-            self.error = app.handle(error)
-        }
     }
 
     /// "Sam and Alex", or "Add" before she's said.
@@ -722,6 +719,8 @@ struct RemoveAccountSheet: View {
     let account: AccountsOverview.Account
     /// C-06's "Remove it and its history" starts on Delete.
     var deleting = false
+    /// AM-07b: the last account on its bank login, so the bank goes too.
+    var lastAtBank = false
     let finished: (Bool) -> Void
     @State private var deleteHistory = false
     @State private var busy = false
@@ -774,7 +773,8 @@ struct RemoveAccountSheet: View {
             return [mask, account.balance.map { Format.amount(abs($0)) }].compactMap { $0 }.joined(separator: " · ")
         }
         let n = account.transactions ?? 0
-        return [mask, "\(n.formatted()) transaction\(n == 1 ? "" : "s")"].compactMap { $0 }.joined(separator: " · ")
+        let last = lastAtBank ? "the last \(AccountWords.bank(account)) account, so \(AccountWords.bank(account)) is disconnected too" : nil
+        return [mask, "\(n.formatted()) transaction\(n == 1 ? "" : "s")", last].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func remove() async {
@@ -800,6 +800,8 @@ struct DisconnectedAccountView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
     let account: AccountsOverview.Account
+    /// AM-07b: no other account on its bank login.
+    @State private var lastAtBank = false
     @State private var reconnecting = false
     @State private var removing = false
     @State private var busy = false
@@ -829,6 +831,11 @@ struct DisconnectedAccountView: View {
                 .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
                 .disabled(busy)
         }
+        .task {
+            if let o: AccountsOverview = try? await app.api.get("api/accounts/overview"), let item = account.itemId {
+                lastAtBank = (o.linked + (o.added ?? [])).filter { $0.itemId == item }.count <= 1
+            }
+        }
         .sheet(isPresented: $reconnecting) {
             ReconnectSheet(account: account) { ok in
                 reconnecting = false
@@ -839,7 +846,7 @@ struct DisconnectedAccountView: View {
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $removing) {
-            RemoveAccountSheet(account: account, deleting: true) { removed in
+            RemoveAccountSheet(account: account, deleting: true, lastAtBank: lastAtBank) { removed in
                 removing = false
                 if removed { app.changed(); dismiss() }
             }
@@ -1084,6 +1091,87 @@ struct AmountField: View {
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(focused ? Pearl.action : Nacre.edge, lineWidth: focused ? 1.5 : 1))
             .accessibilityLabel(label)
+        }
+    }
+}
+
+// MARK: - AM-12 Remove a bank entirely
+
+/// "Remove TD entirely?": the accounts on the login, keep or delete their
+/// transactions, then Remove TD. The login is revoked at Plaid, so the bank
+/// can be linked again from scratch (THL-262).
+@MainActor
+struct RemoveBankSheet: View {
+    @EnvironmentObject private var app: AppModel
+    let bank: String
+    let itemId: String
+    let accounts: [AccountsOverview.Account]
+    let finished: (Bool) -> Void
+    @State private var deleteHistory = false
+    @State private var busy = false
+    @State private var error: String?
+
+    private struct Reply: Decodable { let accounts: Int? }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Spacer()
+                Text("Remove \(bank) entirely?").font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .lineLimit(1).accessibilityAddTraits(.isHeader)
+                Spacer()
+            }
+            .overlay(alignment: .trailing) { CloseButton { finished(false) } }
+            .padding(.top, 20)
+            HStack(spacing: 12) {
+                RowAvatar(name: bank, size: 48, font: Nacre.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(bank).font(Nacre.title2).foregroundColor(Pearl.ink)
+                    Text("\(accounts.count) accounts · Pearl disconnects \(bank) so it can be linked again from scratch")
+                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+            ScrollView {
+                VStack(spacing: 12) {
+                    GlassCard {
+                        ForEach(Array(accounts.enumerated()), id: \.element.id) { i, a in
+                            if i > 0 { RowSeparator(inset: 62) }
+                            ProfileRow(initials: bank, title: a.name,
+                                       sub: (a.mask ?? "").isEmpty ? AccountWords.kind(a) : "••\(a.mask!)", chevron: false)
+                        }
+                    }
+                    GlassCard {
+                        ChoiceLine(title: "Keep their transactions", sub: "Past months stay the same",
+                                   selected: !deleteHistory) { deleteHistory = false }
+                        RowSeparator()
+                        ChoiceLine(title: "Delete them too", sub: "This can’t be undone",
+                                   selected: deleteHistory) { deleteHistory = true }
+                    }
+                }
+            }
+            if let error = error { Hint(text: error) }
+            Button("Remove \(bank)") { Task { await remove() } }
+                .buttonStyle(NacreButtonStyle(busy: busy))
+                .disabled(busy || itemId.isEmpty)
+        }
+        .padding(.horizontal, 16).padding(.bottom, 8)
+    }
+
+    private func remove() async {
+        busy = true
+        defer { busy = false }
+        do {
+            let reply: Reply = try await app.api.post("api/banks/\(itemId)/remove",
+                                                      ["transactions": deleteHistory ? "delete" : "keep"])
+            let n = reply.accounts ?? accounts.count
+            // AM-13, said on Accounts once this page has closed.
+            app.accountsNotice = "\(bank) is removed. Its \(n) account\(n == 1 ? " is" : "s are") off your Accounts."
+            finished(true)
+        } catch {
+            self.error = app.handle(error)
         }
     }
 }
