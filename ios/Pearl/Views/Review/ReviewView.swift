@@ -12,7 +12,9 @@ struct ReviewView: View {
     @State private var review: Review?
     @State private var categories: [CategoryList.Category] = []
     @State private var accounts: [AccountsOverview.Account] = []
-    @State private var showingSkipped = false
+    /// T-83 (THL-213): "all", a kind of question, "pay3" or "skipped".
+    @State private var filter = "all"
+    private var showingSkipped: Bool { filter == "skipped" }
     @State private var asking: Ask?
     /// T-74, open.
     @State private var payMonth: Review.PayMonth?
@@ -82,8 +84,8 @@ struct ReviewView: View {
     private var list: some View {
         List {
             if let review = review {
-                let rows = review.asks.filter { $0.skipped == showingSkipped }
-                let months = review.threePayMonth.filter { ($0.skipped ?? false) == showingSkipped }
+                let rows = review.asks.filter { $0.skipped == showingSkipped && (["all", "skipped"].contains(filter) || Self.kindName($0.kind) == filter) }
+                let months = review.threePayMonth.filter { ($0.skipped ?? false) == showingSkipped && ["all", "skipped", "pay3"].contains(filter) }
                 if showingSkipped && !rows.isEmpty {
                     Text("Guesses count for now. Swipe left to put one back.")
                         .font(Nacre.footnote).foregroundColor(Pearl.ink)
@@ -153,11 +155,23 @@ struct ReviewView: View {
             Text("Needs a look").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
                 .accessibilityAddTraits(.isHeader)
             if let review = review {
-                let open = review.asks.filter { !$0.skipped }.count
-                let skipped = review.asks.count - open
-                HStack(spacing: 8) {
-                    chip("To sort · \(open)", on: !showingSkipped) { showingSkipped = false }
-                    chip("Skipped · \(skipped)", on: showingSkipped) { showingSkipped = true }
+                // T-83: All, then a chip per kind of question with any to sort,
+                // then Skipped, third paycheques included.
+                let open = review.asks.filter { !$0.skipped }
+                let months = review.threePayMonth.filter { $0.skipped != true }.count
+                let skipped = review.asks.count - open.count + review.threePayMonth.filter { $0.skipped == true }.count
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        chip("All · \(open.count + months)", on: filter == "all") { filter = "all" }
+                        ForEach(Self.kindOrder, id: \.self) { kind in
+                            let n = open.filter { Self.kindName($0.kind) == kind }.count
+                            if n > 0 { chip("\(kind) · \(n)", on: filter == kind) { filter = kind } }
+                        }
+                        if months > 0 { chip("Paycheques · \(months)", on: filter == "pay3") { filter = "pay3" } }
+                        if skipped > 0 || showingSkipped {
+                            chip("Skipped · \(skipped)", on: showingSkipped) { filter = "skipped" }
+                        }
+                    }
                 }
             }
             if !showingSkipped && !quick.isEmpty {
@@ -168,6 +182,23 @@ struct ReviewView: View {
             }
         }
         .padding(.bottom, 12)
+    }
+
+    /// The web's names for each kind of question (NeedsALook.jsx).
+    static let kindOrder = ["Where it went", "Recurring", "Categories", "Money in", "Joint deposits",
+                            "Who sent it", "Income", "Duplicates"]
+
+    static func kindName(_ q: Question) -> String {
+        switch q {
+        case .transfer: return "Where it went"
+        case .recurring: return "Recurring"
+        case .category: return "Categories"
+        case .moneyIn: return "Money in"
+        case .joint: return "Joint deposits"
+        case .whoSent: return "Who sent it"
+        case .incomeType: return "Income"
+        case .duplicate: return "Duplicates"
+        }
     }
 
     private func chip(_ label: String, on: Bool, _ action: @escaping () -> Void) -> some View {
@@ -341,7 +372,7 @@ enum ReviewAnswer {
     case incomeType(String, kind: String)
     /// "Whose pay is this?" on a joint account (T-33): "me", "both" (her
     /// share counts), or "them" and who.
-    case joint(String, who: String, person: String?)
+    case joint(String, who: String, person: String?, remember: Bool = true)
     /// "This is my regular pay" (THL-198, T-31): every deposit from this
     /// payer is her pay, on the schedule she chose.
     case regularPay(BriefTransaction, cadence: String)
@@ -382,8 +413,8 @@ enum ReviewAnswer {
             return try await api.post("api/transactions/\(id)/mark", body)
         case .incomeType(let id, let kind):
             return try await api.put("api/transactions/\(id)/income-type", ["kind": kind])
-        case .joint(let id, let who, let person):
-            var body: [String: Any] = ["who": who, "remember": true]
+        case .joint(let id, let who, let person, let remember):
+            var body: [String: Any] = ["who": who, "remember": remember]
             if let person = person { body["person"] = person }
             let reply: MarkReply = try await api.put("api/transactions/\(id)/joint-from", body)
             let title: String
