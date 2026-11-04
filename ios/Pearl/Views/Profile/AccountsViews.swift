@@ -462,6 +462,8 @@ struct AccountDetailView: View {
     @State private var nickname = ""
     @State private var removing = false
     @State private var reconnecting = false
+    /// SEC-07: disconnecting the whole bank.
+    @State private var disconnecting = false
     @State private var busy = false
     @State private var toast: (text: String, undo: (() -> Void)?)?
     @State private var error: String?
@@ -533,9 +535,25 @@ struct AccountDetailView: View {
                     ProfileRow(title: "Remove this account", tone: Pearl.moneyOut, chevron: false)
                 }
                 .buttonStyle(.plain)
+                if sameBank.count > 1 {
+                    // SEC-07: every account on this bank login at once.
+                    RowSeparator()
+                    Button { disconnecting = true } label: {
+                        ProfileRow(title: "Disconnect \(AccountWords.bank(account))",
+                                   sub: "All \(sameBank.count) accounts from this bank", tone: Pearl.moneyOut, chevron: false)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                }
             }
             .padding(.top, 12)
             if let error = error { Hint(text: error).padding(.top, 4) }
+        }
+        .alert("Disconnect \(AccountWords.bank(account))?", isPresented: $disconnecting) {
+            Button("Cancel", role: .cancel) {}
+            Button("Disconnect", role: .destructive) { Task { await disconnectBank() } }
+        } message: {
+            Text("Pearl will stop updating these \(sameBank.count) accounts. Your history stays unless you delete your data.")
         }
         .overlay(alignment: .bottom) {
             // AM-03: the toast sits at the bottom, with Undo.
@@ -579,6 +597,27 @@ struct AccountDetailView: View {
     }
 
     // MARK: Parts
+
+    /// Every linked account on this one's bank login.
+    private var sameBank: [AccountsOverview.Account] {
+        guard let item = account.itemId, !item.isEmpty else { return [] }
+        return all.filter { $0.itemId == item }
+    }
+
+    /// SEC-07: every account on the login comes off, history kept, and the
+    /// login is revoked at Plaid so the bank can be linked again from scratch.
+    private func disconnectBank() async {
+        guard let item = account.itemId else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let _: OK = try await app.api.post("api/banks/\(item)/remove", ["transactions": "keep"])
+            app.changed()
+            dismiss()
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
 
     /// "Sam and Alex", or "Add" before she's said.
     private var people: String {

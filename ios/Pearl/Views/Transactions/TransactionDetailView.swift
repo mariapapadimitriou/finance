@@ -38,6 +38,19 @@ struct TransactionDetailView: View {
     @State private var seeingOwed = false
     @State private var parting: PartsDeposit?
     @State private var unlinking = false
+    /// S-34 for a payback linked to one purchase, from either side.
+    @State private var unlinkingPayback: PaybackLink?
+
+    struct PaybackLink: Identifiable {
+        let charge: String
+        let inflow: String
+        /// "Dad", the e-Transfer's sender.
+        let who: String
+        let name: String
+        let amount: Double
+        let date: String
+        var id: String { charge + inflow }
+    }
     @State private var recent: [String] = []
     /// A transaction added by hand can be taken out again.
     @State private var deleting = false
@@ -162,6 +175,7 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $unlinking) { unlinkSheet }
+        .sheet(item: $unlinkingPayback) { link in paybackUnlinkSheet(link) }
         .sheet(isPresented: $renaming) {
             RenameSheet(title: "Rename merchant", label: "Call it", initial: t.merchant,
                         hint: "Bank: \(t.bankMerchant ?? t.merchant)", other: "Use the bank’s name",
@@ -381,10 +395,22 @@ struct TransactionDetailView: View {
                 ForEach(Array(t.repaidBy.enumerated()), id: \.element.id) { index, b in
                     if index > 0 { RowSeparator(inset: 72) }
                     let part = b.paid.flatMap { abs($0 - abs(b.amount)) >= 0.005 ? $0 : nil }
-                    linkedRow(name: b.merchant ?? b.name,
-                              sub: [Format.short(b.date), part.map { _ in "part of \(Format.whole(abs(b.amount)))" }]
-                                .compactMap { $0 }.joined(separator: " · "),
-                              amount: part ?? abs(b.amount), inflow: true)
+                    let row = linkedRow(name: b.merchant ?? b.name,
+                                        sub: [Format.short(b.date), part.map { _ in "part of \(Format.whole(abs(b.amount)))" }]
+                                            .compactMap { $0 }.joined(separator: " · "),
+                                        amount: part ?? abs(b.amount), inflow: true)
+                    if t.splitting == nil {
+                        // S-34 from the purchase: unlink the money that paid it back.
+                        Button {
+                            unlinkingPayback = PaybackLink(charge: t.id, inflow: b.id, who: b.person ?? b.merchant ?? b.name,
+                                                           name: b.merchant ?? b.name, amount: part ?? abs(b.amount),
+                                                           date: b.date)
+                        } label: { row }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Unlink it")
+                    } else {
+                        row
+                    }
                 }
             }
         }
@@ -411,6 +437,18 @@ struct TransactionDetailView: View {
             SolidCard {
                 linkedRow(name: charge.merchant ?? charge.name, sub: Format.short(charge.date),
                           amount: abs(charge.amount), inflow: false)
+            }
+            // S-33: the money that paid it back can be unlinked (S-34).
+            section("Options")
+            GlassCard {
+                Button {
+                    unlinkingPayback = PaybackLink(charge: charge.id, inflow: t.id, who: charge.person ?? "They",
+                                                   name: t.merchant, amount: t.amount, date: t.date)
+                } label: {
+                    row(title: "Unlink", sub: "It counts as money in again", chevron: true)
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
             }
         }
     }
@@ -594,7 +632,8 @@ struct TransactionDetailView: View {
     @ViewBuilder private var depositParts: some View {
         let parts = !t.parts.isEmpty ? t.parts : (t.partOf?.parts ?? [])
         if !parts.isEmpty {
-            section(t.partOf.map { "Part of a \(Format.amount($0.amount)) deposit" } ?? "Parts")
+            section(t.partOf.map { "Part of a \(Format.amount($0.amount)) deposit" }
+                    ?? (parts.contains { $0.kind == "payback" } ? "Pays back" : "Parts"))
             SolidCard {
                 ForEach(Array(parts.enumerated()), id: \.element.id) { index, p in
                     if index > 0 { RowSeparator(inset: 72) }
@@ -603,6 +642,15 @@ struct TransactionDetailView: View {
             }
             section("Options")
             GlassCard {
+                if t.partOf == nil {
+                    // S-33's Edit: the parts sheet again, to change amounts or purchases.
+                    Button { parting = deposit(rest: false) } label: {
+                        row(title: "Edit", sub: "Change amounts or purchases", chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                    RowSeparator()
+                }
                 Button { unlinking = true } label: {
                     row(title: "Unlink", sub: "Make it one deposit again", chevron: true)
                 }
@@ -669,6 +717,35 @@ struct TransactionDetailView: View {
                 }
                 .buttonStyle(NacreButtonStyle())
                 Button("Keep linked") { unlinking = false }
+                    .font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Capsule().fill(Color.white.opacity(0.85)))
+                    .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(SheetBackground())
+        .presentationDetents([.height(320)])
+    }
+
+    /// S-34 for one payback: "Dad will owe you $64.00 again."
+    private func paybackUnlinkSheet(_ link: PaybackLink) -> some View {
+        VStack(spacing: 16) {
+            SheetTitle(title: "Unlink?") { unlinkingPayback = nil }
+            QuestionHeader(name: link.name, amount: Format.amount(link.amount), tone: Pearl.ink,
+                           sub: Format.short(link.date))
+                .padding(.horizontal, 16)
+            Text("\(link.who) will owe you \(Format.amount(link.amount)) again.")
+                .font(Nacre.footnote).foregroundColor(Pearl.ink)
+            HStack(spacing: 10) {
+                Button("Unlink") {
+                    unlinkingPayback = nil
+                    Task { await unlinkPayback(link) }
+                }
+                .buttonStyle(NacreButtonStyle())
+                Button("Keep linked") { unlinkingPayback = nil }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
                     .background(Capsule().fill(Color.white.opacity(0.85)))
@@ -1007,6 +1084,13 @@ struct TransactionDetailView: View {
     }
 
     /// A part is gone once unlinked, so the page shows the deposit it was.
+    private func unlinkPayback(_ link: PaybackLink) async {
+        await run {
+            let _: OK = try await app.api.delete("api/transactions/\(link.charge)/paybacks/\(link.inflow)")
+            return "Unlinked. \(link.who) owes you \(Format.amount(link.amount)) again."
+        }
+    }
+
     private func unlinkParts() async {
         struct Reply: Decodable { let id: String; let title: String? }
         await run {
