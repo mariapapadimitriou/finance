@@ -593,6 +593,9 @@ struct MarkPaidSheet: View {
     @State private var deposits: [Candidate] = []
     /// The deposits she ticked, in the order she ticked them (S-26).
     @State private var picked: [String] = []
+    /// S-29: "Search any purchase" past the likely ones.
+    @State private var query = ""
+    @State private var found: [Candidate] = []
 
     /// A deposit that could pay it back, and how much of it could.
     struct Candidate: Decodable, Identifiable, Hashable {
@@ -626,10 +629,11 @@ struct MarkPaidSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: finding ? "What paid this back?" : "Mark paid back") { dismiss() }
+            SheetTitle(title: finding ? (inParts ? "What paid this back?" : "Find \(person.name)’s payment")
+                       : "Mark paid back") { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if finding {
+                    if finding && inParts {
                         QuestionHeader(name: t.merchant, amount: Format.money(t), tone: t.tone,
                                        sub: Format.short(t.date))
                     } else {
@@ -648,7 +652,7 @@ struct MarkPaidSheet: View {
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
-            Button(finding ? "Save" : how == "bank" ? "Find it" : "Mark paid back") {
+            Button(finding ? (inParts ? "Save" : "Link payment") : how == "bank" ? "Find it" : "Mark paid back") {
                 Task { await primary() }
             }
             .buttonStyle(NacreButtonStyle(busy: busy))
@@ -722,20 +726,56 @@ struct MarkPaidSheet: View {
 
     private var paying: Double { uses.values.reduce(0, +) }
 
+    /// S-26 when it takes more than one deposit (or part of one); S-29,
+    /// one payment that looks like theirs, otherwise.
+    private var inParts: Bool {
+        picked.count > 1 || deposits.contains { abs(min($0.whole, $0.part ?? $0.whole) - person.owes) >= 0.005 && picked.contains($0.id) }
+    }
+
+    /// The likely ones and, while searching, what the search found.
+    private var shown: [Candidate] {
+        query.trimmingCharacters(in: .whitespaces).isEmpty ? deposits
+            : found + deposits.filter { d in picked.contains(d.id) && !found.contains { $0.id == d.id } }
+    }
+
+    private func search() async {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { found = []; return }
+        struct Reply: Decodable { let deposits: [Lenient<Candidate>]? }
+        let r: Reply? = try? await api.get("api/transactions/\(t.id)/deposits", query: ["q": q])
+        let more = (r?.deposits ?? []).compactMap { $0.value }
+        found = more
+        for d in more where !deposits.contains(where: { $0.id == d.id }) { deposits.append(d) }
+    }
+
     /// S-26: "DAD'S SHARE · $428.00", their deposits to tick, and how far
     /// they go towards it.
     private var depositList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(deposits.isEmpty ? "NO DEPOSITS LOOK LIKE IT YET"
-                 : "\(person.name.uppercased())’S SHARE · \(Format.amount(person.amount))")
+            Text(shown.isEmpty ? "NO DEPOSITS LOOK LIKE IT YET"
+                 : !query.isEmpty ? "FOUND"
+                 : inParts ? "\(person.name.uppercased())’S SHARE · \(Format.amount(person.amount))" : "LOOKS LIKE THIS ONE")
                 .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted).padding(.horizontal, 16)
-            if !deposits.isEmpty {
+            if !shown.isEmpty {
                 GlassCard {
-                    ForEach(Array(deposits.enumerated()), id: \.element.id) { i, d in
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { i, d in
                         if i > 0 { RowSeparator() }
                         depositRow(d)
                     }
                 }
+            }
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted)
+                TextField("", text: $query, prompt: Text("Search any purchase").foregroundColor(Pearl.muted))
+                    .font(Nacre.body).autocorrectionDisabled()
+            }
+            .padding(.horizontal, 14).frame(height: 44)
+            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+            .task(id: query) {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                if !Task.isCancelled { await search() }
+            }
+            if !deposits.isEmpty && inParts {
                 let paid = person.paid + paying
                 VStack(alignment: .leading, spacing: 6) {
                     GeometryReader { g in
