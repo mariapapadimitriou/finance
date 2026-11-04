@@ -969,8 +969,22 @@ struct Review: Decodable {
     let whoSent: [Item]
     let duplicate: [Item]
     let recurringTransfer: [Item]
+    /// T-74: months that held a third paycheque. No transaction to sort;
+    /// "Got it" dismisses one.
+    let threePayMonth: [PayMonth]
     let unsorted: Unsorted?
     let kinds: [String: String]?
+
+    struct PayMonth: Decodable, Identifiable, Hashable {
+        let key: String
+        /// "2026-10".
+        let month: String
+        let paycheque: Double?
+        let monthly: Double?
+        let reason: String?
+        let skipped: Bool?
+        var id: String { key }
+    }
 
     enum CodingKeys: String, CodingKey {
         case count, open, unsorted, kinds, duplicate
@@ -980,6 +994,7 @@ struct Review: Decodable {
         case jointIn = "joint_in"
         case whoSent = "who_sent"
         case recurringTransfer = "recurring_transfer"
+        case threePayMonth = "three_pay_month"
     }
 
     init(from decoder: Decoder) throws {
@@ -998,6 +1013,8 @@ struct Review: Decodable {
         whoSent = items(.whoSent)
         duplicate = items(.duplicate)
         recurringTransfer = items(.recurringTransfer)
+        threePayMonth = (try? c.decodeIfPresent([Lenient<PayMonth>].self, forKey: .threePayMonth))?
+            .compactMap { $0.value } ?? []
     }
 
     struct Unsorted: Decodable {
@@ -1141,12 +1158,6 @@ extension Review {
         out += duplicate.map { Ask(kind: .duplicate, item: $0) }
         out += recurringTransfer.map { Ask(kind: .recurring, item: $0) }
         return out
-    }
-
-    /// Open questions the app has no row for (months with a third
-    /// paycheque): answered on the web.
-    var webOnly: Int {
-        max(0, (open ?? count) - asks.filter { !$0.skipped }.count)
     }
 }
 

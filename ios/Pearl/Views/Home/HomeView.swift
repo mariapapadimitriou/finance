@@ -111,7 +111,11 @@ struct MonthCard: View {
     }
 }
 
-/// After Start over: what only you can set again, each step opening the web.
+/// SU-01 Set Pearl up again (THL-300, THL-294): after Start over, what
+/// only she can tell Pearl, each step opening its page in the app: shared
+/// accounts (O-09b), Income and bills (IB-01), Accounts (AM-01) and Debts
+/// (DB-01). Opening Accounts or Debts is the step; sharing is done when she
+/// finishes O-09b; income when she confirms her income and bills.
 @MainActor
 struct SetupAgainCard: View {
     @EnvironmentObject private var app: AppModel
@@ -119,17 +123,22 @@ struct SetupAgainCard: View {
     let onChanged: () -> Void
 
     var body: some View {
-        PearlCard {
-            Text("Set Pearl up again").font(Pearl.cardTitle).foregroundColor(Pearl.ink)
-            Text(setup.left == 1 ? "Start over cleared what only you can tell Pearl. 1 thing to set again."
-                 : "Start over cleared what only you can tell Pearl. \(setup.left) things to set again.")
-                .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
-            VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Set Pearl up again").font(Nacre.title2).foregroundColor(Pearl.ink)
+                .accessibilityAddTraits(.isHeader)
+            Text(setup.left == 1 ? "Start over cleared what only you can tell Pearl. 1 thing left to set again."
+                 : "Start over cleared what only you can tell Pearl. \(setup.left) things left to set again.")
+                .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            GlassCard {
                 ForEach(Array(setup.steps.enumerated()), id: \.element.id) { index, step in
-                    if index > 0 { Rectangle().fill(Pearl.rule).frame(height: 1) }
-                    Link(destination: app.api.baseURL) { stepRow(step) }
-                        .buttonStyle(.plain)
-                        .accessibilityHint("Opens Pearl on the web")
+                    if index > 0 { RowSeparator(inset: 62) }
+                    NavigationLink { destination(step) } label: {
+                        ProfileRow(symbol: symbol(step.key), title: step.title,
+                                   sub: step.done ? "Done" : step.sub)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityValue(step.done ? "Done" : "")
                 }
             }
             Button("Hide this list") {
@@ -138,36 +147,35 @@ struct SetupAgainCard: View {
                     onChanged()
                 }
             }
-            .font(Pearl.text(.subheadline, .medium))
-            .foregroundColor(Pearl.action)
+            .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
         }
     }
 
-    private func stepRow(_ step: SetupAgain.Step) -> some View {
-        HStack(spacing: 12) {
-            ZStack {
-                if step.done {
-                    Circle().fill(Pearl.action)
-                } else {
-                    Circle().strokeBorder(Pearl.border, lineWidth: 1.5)
+    @ViewBuilder
+    private func destination(_ step: SetupAgain.Step) -> some View {
+        switch step.key {
+        case "shared":
+            JointAccountsView(path: .constant([])) {
+                Task {
+                    await mark("shared")
                 }
             }
-            .frame(width: 22, height: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(step.title).font(Pearl.text(.body))
-                    .foregroundColor(step.done ? Pearl.muted : Pearl.ink)
-                Text(step.done ? "Done" : step.sub).font(Pearl.text(.subheadline, .medium))
-                    .foregroundColor(Pearl.muted)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .multilineTextAlignment(.leading)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(Pearl.muted)
+        case "income":
+            IncomeBillsView()
+        case "debts":
+            DebtsView().task { await mark("debts") }
+        default:
+            AccountsView().task { await mark("accounts") }
         }
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(step.done ? "Done" : "")
+    }
+
+    private func symbol(_ key: String) -> String {
+        ["shared": "person.2", "income": "dollarsign.square", "accounts": "building.columns",
+         "debts": "creditcard"][key] ?? "checkmark.circle"
+    }
+
+    private func mark(_ key: String) async {
+        let _: SetupAgain? = try? await app.api.post("api/setup-again", ["step": key])
+        onChanged()
     }
 }
