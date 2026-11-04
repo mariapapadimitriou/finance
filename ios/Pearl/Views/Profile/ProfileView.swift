@@ -47,7 +47,10 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 64)
-                    webRow(symbol: "bell", title: "Notifications", sub: "Payday, weekly check-in, progress")
+                    NavigationLink { NotificationsView() } label: {
+                        ProfileRow(symbol: "bell", title: "Notifications", sub: "Payday, weekly check-in, progress")
+                    }
+                    .buttonStyle(.plain)
                     RowSeparator(inset: 64)
                     Button { confirmSignOut = true } label: {
                         ProfileRow(symbol: "rectangle.portrait.and.arrow.right", title: "Sign out",
@@ -58,7 +61,10 @@ struct ProfileView: View {
 
                 ProfileSection("Privacy")
                 GlassCard {
-                    webRow(symbol: "eye", title: "Privacy and consent", sub: "What you’ve agreed to")
+                    NavigationLink { ConsentView() } label: {
+                        ProfileRow(symbol: "eye", title: "Privacy and consent", sub: "What you’ve agreed to")
+                    }
+                    .buttonStyle(.plain)
                     RowSeparator(inset: 64)
                     webRow(symbol: "tray.and.arrow.down", title: "Your data",
                            sub: "Download a copy or delete your account")

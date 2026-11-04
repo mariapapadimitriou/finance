@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 /// Home, bare (SC-40): the greeting, what needs you, and a way to Cash flow.
 @MainActor
@@ -9,6 +10,9 @@ struct HomeView: View {
     @State private var home: Home?
     @State private var setup: SetupAgain?
     @State private var error: String?
+    /// N-01's quiet hours, while it's showing.
+    @State private var askingToNotify: NotificationSettings.Quiet?
+    @State private var checkedNotify = false
 
     var body: some View {
         ScrollView {
@@ -34,6 +38,9 @@ struct HomeView: View {
         .navigationBarHidden(true)
         .refreshable { await load() }
         .task(id: app.version) { await load() }
+        .fullScreenCover(item: $askingToNotify) { quiet in
+            TurnOnNotificationsView(quiet: quiet)
+        }
     }
 
     private var greeting: String {
@@ -46,9 +53,22 @@ struct HomeView: View {
             home = try await app.api.get("api/home")
             setup = try? await app.api.get("api/setup-again")
             error = nil
+            await offerNotifications()
         } catch {
             self.error = app.handle(error)
         }
+    }
+
+    /// N-01 (THL-139): once the Allowance has a number, if iOS hasn't asked
+    /// yet (setup's O-08b may have) and N-01 hasn't been answered on any device.
+    private func offerNotifications() async {
+        guard !checkedNotify, home?.safeToSpend?.state == "ok" else { return }
+        checkedNotify = true
+        let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        guard status == .notDetermined,
+              let settings: NotificationSettings = try? await app.api.get("api/notifications"),
+              settings.prefs.prompt?.answer == nil else { return }
+        askingToNotify = settings.prefs.quiet
     }
 }
 

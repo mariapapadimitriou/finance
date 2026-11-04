@@ -25,6 +25,7 @@
 		3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */; };
 		0E20B3BEDE9BE9508D94E4E3 /* AccountsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */; };
 		BBCC842E851D26BEAEC2BE80 /* ChangeEmailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB4B09F8E2A41BCAB614B60 /* ChangeEmailView.swift */; };
+		5DE68AB7BA55645741B1B0EB /* PrivacyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21825288F624437936E734DA /* PrivacyViews.swift */; };
 		2559937CB8EFC5C8717E15C4 /* ProfileParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4F39129DB8BAC5939CA6611 /* ProfileParts.swift */; };
 		658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 186A54E5EB12390A80B72B43 /* ProfileView.swift */; };
 		F6D402A4740A8C45147DA054 /* ProtectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD70F7C6FB3D121DE879E76 /* ProtectView.swift */; };
@@ -72,6 +73,7 @@
 		44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupPayQuestions.swift; sourceTree = "<group>"; };
 		8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsViews.swift; sourceTree = "<group>"; };
 		0AB4B09F8E2A41BCAB614B60 /* ChangeEmailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangeEmailView.swift; sourceTree = "<group>"; };
+		21825288F624437936E734DA /* PrivacyViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyViews.swift; sourceTree = "<group>"; };
 		A4F39129DB8BAC5939CA6611 /* ProfileParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileParts.swift; sourceTree = "<group>"; };
 		186A54E5EB12390A80B72B43 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		CCD70F7C6FB3D121DE879E76 /* ProtectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectView.swift; sourceTree = "<group>"; };
@@ -230,6 +232,7 @@
 			children = (
 				8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */,
 				0AB4B09F8E2A41BCAB614B60 /* ChangeEmailView.swift */,
+				21825288F624437936E734DA /* PrivacyViews.swift */,
 				A4F39129DB8BAC5939CA6611 /* ProfileParts.swift */,
 				186A54E5EB12390A80B72B43 /* ProfileView.swift */,
 				CCD70F7C6FB3D121DE879E76 /* ProtectView.swift */,
@@ -364,6 +367,7 @@
 				3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */,
 				0E20B3BEDE9BE9508D94E4E3 /* AccountsViews.swift in Sources */,
 				BBCC842E851D26BEAEC2BE80 /* ChangeEmailView.swift in Sources */,
+				5DE68AB7BA55645741B1B0EB /* PrivacyViews.swift in Sources */,
 				2559937CB8EFC5C8717E15C4 /* ProfileParts.swift in Sources */,
 				658A845AEC5C3686A9644FDE /* ProfileView.swift in Sources */,
 				F6D402A4740A8C45147DA054 /* ProtectView.swift in Sources */,
