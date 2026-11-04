@@ -67,6 +67,8 @@ struct WelcomeView: View {
     @EnvironmentObject private var app: AppModel
     @Binding var path: [AuthRoute]
     @State private var showServer = false
+    /// LG-01, LG-02, read in the app.
+    @State private var doc: PearlDoc?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -92,10 +94,11 @@ struct WelcomeView: View {
                 Button("I already have an account") { path.append(.signIn(email: "")) }
                     .buttonStyle(NacreTextButtonStyle())
                 HStack(spacing: 4) {
-                    Link("Privacy", destination: app.api.baseURL.appendingPathComponent("privacy"))
+                    Button("Privacy") { doc = .privacy }
                     Text("·")
-                    Link("Terms", destination: app.api.baseURL.appendingPathComponent("terms"))
+                    Button("Terms") { doc = .terms }
                 }
+                .buttonStyle(.plain)
                 .font(Nacre.caption2)
                 .foregroundColor(Pearl.ink)
             }
@@ -103,6 +106,7 @@ struct WelcomeView: View {
         .nacreScreen()
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showServer) { ServerSheet() }
+        .docSheet($doc)
     }
 }
 

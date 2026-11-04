@@ -7,6 +7,9 @@ import SwiftUI
 struct PayAndBillsView: View {
     @EnvironmentObject private var app: AppModel
     @Binding var path: [SetupRoute]
+    /// Profile › Income and bills' "Check again" (IB-01): the same check,
+    /// without setup's progress, ending back on the page.
+    var onDone: (() -> Void)? = nil
     @State private var data: IncomeBills?
     @State private var ticked: [String: Bool] = [:]
     @State private var notPay: Set<String> = []
@@ -33,7 +36,7 @@ struct PayAndBillsView: View {
 
     var body: some View {
         NacreScreen {
-            ShellProgress(part: 3, name: "Your money")
+            if onDone == nil { ShellProgress(part: 3, name: "Your money") }
             Text("Your pay and bills").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
             Text(noPay ? "We couldn’t find a regular paycheque. Add your income so your Allowance is right."
                        : "Check these look right. Tap any to change it.")
@@ -140,116 +143,35 @@ struct PayAndBillsView: View {
         (data?.candidates ?? []).filter { !notPay.contains($0.payer) }
     }
 
-    private static let subscriptionCategories: Set<String> = ["Streaming", "Software", "Subscriptions", "News & Media"]
-
     private var bills: [IncomeBills.Bill] {
-        (data?.bills ?? []).filter { !Self.subscriptionCategories.contains($0.category ?? "") }
+        (data?.bills ?? []).filter { !subscriptionCategories.contains($0.category ?? "") }
     }
 
     private var subscriptions: [IncomeBills.Bill] {
-        (data?.bills ?? []).filter { Self.subscriptionCategories.contains($0.category ?? "") }
+        (data?.bills ?? []).filter { subscriptionCategories.contains($0.category ?? "") }
     }
 
     private func section<Content: View>(_ title: String, note: String? = nil,
                                         @ViewBuilder content: @escaping () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased()).font(Nacre.caption2).tracking(0.6).padding(.leading, 16)
-            GlassCard {
-                content()
-                if let note = note {
-                    Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                }
-            }
-        }
+        MoneySection(title: title, note: note, content: content)
     }
 
     private func incomeRow(_ name: String, _ sub: String, _ amount: Double,
                            tap: @escaping () -> Void) -> some View {
-        Button(action: tap) {
-            HStack(spacing: 12) {
-                TrendBadge()
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(Nacre.body)
-                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                }
-                Spacer(minLength: 8)
-                Text("+" + Format.whole(amount)).font(Nacre.headline).foregroundColor(Pearl.moneyIn)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-            }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint("Change it")
+        IncomeLine(name: name, sub: sub, amount: amount, tap: tap)
     }
 
-    /// "Maple Co · Joint account · Whose pay? ›", "e-Transfer from Sam ·
-    /// $725 · monthly · What is it? ›" (O-10f, O-10g).
     private func askRow(_ a: IncomeBills.Ask) -> some View {
-        Button { sheet = .ask(a) } label: {
-            HStack(spacing: 12) {
-                TrendBadge()
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(a.name).font(Nacre.body)
-                    Text(a.kind == "joint" ? "Joint account" : "\(Format.whole(a.amount)) · \(cadence(a.cadence).lowercased())")
-                        .font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                }
-                Spacer(minLength: 8)
-                Text(a.kind == "joint" ? "Whose pay?" : "What is it?")
-                    .font(Nacre.headline).foregroundColor(Pearl.action)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-            }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        AskLine(ask: a) { sheet = .ask(a) }
     }
 
     private func billRow(_ bill: IncomeBills.Bill) -> some View {
         let on = ticked[bill.key] ?? bill.ticked ?? true
-        return HStack(spacing: 12) {
-            Button { ticked[bill.key] = !on } label: {
-                Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22))
-                    .foregroundColor(on ? Pearl.action : Pearl.ink)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(on ? "Counted, \(bill.name)" : "Not counted, \(bill.name)")
-            VStack(alignment: .leading, spacing: 2) {
-                Text(bill.name).font(Nacre.body)
-                Text(billWhen(bill)).font(Nacre.subheadline).foregroundColor(Pearl.muted)
-            }
-            Spacer(minLength: 8)
-            Text((bill.varies == true ? "~" : "") + Format.amount(bill.amount)).font(Nacre.body)
-            Button("Edit") { sheet = .bill(bill) }
-                .font(Nacre.subheadline).foregroundColor(Pearl.action)
-                .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .opacity(on ? 1 : 0.6)
+        return BillLine(bill: bill, on: on, toggle: { ticked[bill.key] = !on }, edit: { sheet = .bill(bill) })
     }
 
     private func addRow(_ title: String, tap: @escaping () -> Void) -> some View {
-        Button(action: tap) {
-            HStack(spacing: 12) {
-                Image(systemName: "plus.circle.fill").font(.system(size: 22)).foregroundColor(Pearl.action)
-                Text(title).font(Nacre.body).foregroundColor(Pearl.action)
-                Spacer()
-            }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func billWhen(_ bill: IncomeBills.Bill) -> String {
-        let how = cadence(bill.cadence)
-        // "Monthly · Sam pays $725": someone's share comes off it (O-10g).
-        let shared = bill.shared.map { " · \($0.person ?? "They") pay\($0.person == nil ? "" : "s") \(Format.whole($0.amount))" } ?? ""
-        if bill.varies == true { return "\(how) · varies" + shared }
-        guard let day = bill.day else { return how + shared }
-        return "\(how) · around the \(ordinal(day))" + shared
+        AddLine(title: title, tap: tap)
     }
 
     // MARK: Loading and saving
@@ -284,12 +206,163 @@ struct PayAndBillsView: View {
             for bill in data.bills { answers[bill.key] = ticked[bill.key] ?? bill.ticked ?? true }
             let _: IncomeBills = try await app.api.put("api/income-bills/bills", ["ticked": answers])
             app.changed()
-            path.append(.allowance)
+            if let onDone = onDone { onDone() } else { path.append(.allowance) }
         } catch {
             self.error = app.handle(error)
         }
     }
 }
+
+// MARK: - Rows (O-10 and Profile › Income and bills, IB-01)
+
+/// "MONEY IN": the caption and its card, with an optional note in it.
+struct MoneySection<Content: View>: View {
+    let title: String
+    var note: String? = nil
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased()).font(Nacre.caption2).tracking(0.6).padding(.leading, 16)
+                .accessibilityAddTraits(.isHeader)
+            GlassCard {
+                content()
+                if let note = note {
+                    Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                }
+            }
+        }
+    }
+}
+
+/// "↗  Northwind Ltd · Every 2 weeks   +$2,150 ›".
+struct IncomeLine: View {
+    let name: String
+    let sub: String
+    let amount: Double
+    let tap: () -> Void
+
+    var body: some View {
+        Button(action: tap) {
+            HStack(spacing: 12) {
+                TrendBadge()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(Nacre.body)
+                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                }
+                Spacer(minLength: 8)
+                Text("+" + Format.whole(amount)).font(Nacre.headline).foregroundColor(Pearl.moneyIn)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Change it")
+    }
+}
+
+/// An income row that's a question: "Brightside Co · Found · every 2 weeks
+/// · Your pay? ›" (IB-02), "Maple Co · Joint account · Whose pay? ›" (O-10f).
+struct QuestionLine: View {
+    let name: String
+    let sub: String
+    let question: String
+    let tap: () -> Void
+
+    var body: some View {
+        Button(action: tap) {
+            HStack(spacing: 12) {
+                TrendBadge()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(Nacre.body)
+                    Text(sub).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                }
+                Spacer(minLength: 8)
+                Text(question).font(Nacre.headline).foregroundColor(Pearl.action)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// O-10f, O-10g's questions about a deposit.
+struct AskLine: View {
+    let ask: IncomeBills.Ask
+    let tap: () -> Void
+
+    var body: some View {
+        QuestionLine(name: ask.name,
+                     sub: ask.kind == "joint" ? "Joint account" : "\(Format.whole(ask.amount)) · \(cadence(ask.cadence).lowercased())",
+                     question: ask.kind == "joint" ? "Whose pay?" : "What is it?", tap: tap)
+    }
+}
+
+/// "✓  Rent · Monthly · around the 1st   $1,450.00  Edit".
+struct BillLine: View {
+    let bill: IncomeBills.Bill
+    let on: Bool
+    let toggle: () -> Void
+    let edit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: toggle) {
+                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundColor(on ? Pearl.action : Pearl.ink)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(on ? "Counted, \(bill.name)" : "Not counted, \(bill.name)")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(bill.name).font(Nacre.body)
+                Text(billWhen(bill)).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+            }
+            Spacer(minLength: 8)
+            Text((bill.varies == true ? "~" : "") + Format.amount(bill.amount)).font(Nacre.body)
+            Button("Edit", action: edit)
+                .font(Nacre.subheadline).foregroundColor(Pearl.action)
+                .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .opacity(on ? 1 : 0.6)
+    }
+}
+
+/// "⊕  Add other income".
+struct AddLine: View {
+    let title: String
+    let tap: () -> Void
+
+    var body: some View {
+        Button(action: tap) {
+            HStack(spacing: 12) {
+                Image(systemName: "plus.circle.fill").font(.system(size: 22)).foregroundColor(Pearl.action)
+                Text(title).font(Nacre.body).foregroundColor(Pearl.action)
+                Spacer()
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// "Monthly · around the 1st", "Monthly · Sam pays $725" (O-10g).
+func billWhen(_ bill: IncomeBills.Bill) -> String {
+    let how = cadence(bill.cadence)
+    let shared = bill.shared.map { " · \($0.person ?? "They") pay\($0.person == nil ? "" : "s") \(Format.whole($0.amount))" } ?? ""
+    if bill.varies == true { return "\(how) · varies" + shared }
+    guard let day = bill.day else { return how + shared }
+    return "\(how) · around the \(ordinal(day))" + shared
+}
+
+/// Bills in these categories are listed as Subscriptions.
+let subscriptionCategories: Set<String> = ["Streaming", "Software", "Subscriptions", "News & Media"]
 
 /// The small "↗" badge on an income row.
 struct TrendBadge: View {

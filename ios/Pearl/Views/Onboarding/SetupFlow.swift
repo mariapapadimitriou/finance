@@ -123,6 +123,8 @@ struct LinkBankView: View {
     @EnvironmentObject private var plaid: PlaidLinker
     @Binding var path: [SetupRoute]
     @State private var agreed = false
+    /// LG-01, LG-02 from the consent line's links.
+    @State private var doc: PearlDoc?
     @State private var busy = false
     @State private var error: String?
 
@@ -147,19 +149,30 @@ struct LinkBankView: View {
                 point("checkmark", "Your data is never sold", "No ads. Delete your data anytime.")
                 point("xmark", "Disconnect anytime", "In Settings, or at my.plaid.com.")
             }
-            Button { agreed.toggle() } label: {
-                HStack(alignment: .top, spacing: 12) {
+            // The links sit outside the button, so tapping Terms opens it
+            // rather than ticking the box.
+            HStack(alignment: .top, spacing: 12) {
+                Button { agreed.toggle() } label: {
                     Image(systemName: agreed ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 22))
                         .foregroundColor(agreed ? Pearl.action : Pearl.ink)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("I’m 19 or older and agree to:").font(Nacre.body)
-                        consentLine.font(Nacre.subheadline)
-                    }
-                    Spacer(minLength: 0)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("I’m 19 or older and agree")
+                VStack(alignment: .leading, spacing: 2) {
+                    Button { agreed.toggle() } label: {
+                        Text("I’m 19 or older and agree to:").font(Nacre.body)
+                    }
+                    .buttonStyle(.plain)
+                    consentLine.font(Nacre.subheadline)
+                        .environment(\.openURL, OpenURLAction { url in
+                            guard let d = PearlDoc(url: url) else { return .systemAction }
+                            doc = d
+                            return .handled
+                        })
+                }
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
             .accessibilityAddTraits(agreed ? .isSelected : [])
             .padding(.horizontal, 8)
             if let error = error { Hint(text: error) }
@@ -173,15 +186,15 @@ struct LinkBankView: View {
                     .buttonStyle(NacreTextButtonStyle())
             }
         }
+        .docSheet($doc)
     }
 
     private var consentLine: Text {
-        let base = app.api.baseURL
         var terms = AttributedString("Terms")
-        terms.link = base.appendingPathComponent("terms")
+        terms.link = PearlDoc.terms.url
         terms.underlineStyle = .single
         var privacy = AttributedString("Privacy Policy")
-        privacy.link = base.appendingPathComponent("privacy")
+        privacy.link = PearlDoc.privacy.url
         privacy.underlineStyle = .single
         var plaid = AttributedString("End User Privacy Policy")
         plaid.link = URL(string: "https://plaid.com/legal/#end-user-privacy-policy")
@@ -506,14 +519,18 @@ struct LinkProblemView: View {
 @MainActor
 struct JointAccountsView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
     @Binding var path: [SetupRoute]
+    /// Home's "Which accounts do you share?" after Start over (SU-01): the
+    /// same question, without setup's progress, ending back on Home.
+    var onDone: (() -> Void)? = nil
     @State private var accounts: [AccountsOverview.Account] = []
     @State private var editing: AccountsOverview.Account?
     @State private var error: String?
 
     var body: some View {
         NacreScreen {
-            ShellProgress(part: 3, name: "Your money")
+            if onDone == nil { ShellProgress(part: 3, name: "Your money") }
             Text("Any joint accounts?").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
             Text("Tap one you share. We’ll only count your part.").font(Nacre.body)
             if !accounts.isEmpty {
@@ -532,8 +549,15 @@ struct JointAccountsView: View {
             if let error = error { Hint(text: error) }
         } actions: {
             BottomActions {
-                Button("Continue") { path.append(.payBills) }
-                    .buttonStyle(NacreButtonStyle())
+                Button(onDone == nil ? "Continue" : "Done") {
+                    if let onDone = onDone {
+                        onDone()
+                        dismiss()
+                    } else {
+                        path.append(.payBills)
+                    }
+                }
+                .buttonStyle(NacreButtonStyle())
             }
         }
         .task { await load() }

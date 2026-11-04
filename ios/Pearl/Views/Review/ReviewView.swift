@@ -14,6 +14,8 @@ struct ReviewView: View {
     @State private var accounts: [AccountsOverview.Account] = []
     @State private var showingSkipped = false
     @State private var asking: Ask?
+    /// T-74, open.
+    @State private var payMonth: Review.PayMonth?
     @State private var sorting = false
     @State private var toast: Toast?
     @State private var busy = false
@@ -51,6 +53,14 @@ struct ReviewView: View {
                 Task { await load() }
             }
         }
+        .sheet(item: $payMonth) { m in
+            ThirdPaychequeSheet(month: m) { answer in
+                payMonth = nil
+                Task { await send(answer) }
+            }
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
         .sheet(item: $asking) { ask in
             if ask.item.rest != nil {
                 // "$172 left to sort" (S-28): sorting the rest of a deposit.
@@ -73,13 +83,14 @@ struct ReviewView: View {
         List {
             if let review = review {
                 let rows = review.asks.filter { $0.skipped == showingSkipped }
+                let months = review.threePayMonth.filter { ($0.skipped ?? false) == showingSkipped }
                 if showingSkipped && !rows.isEmpty {
                     Text("Guesses count for now. Swipe left to put one back.")
                         .font(Nacre.footnote).foregroundColor(Pearl.ink)
                         .listRowBackground(Color.clear).listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 4, trailing: 16))
                 }
-                if rows.isEmpty {
+                if rows.isEmpty && months.isEmpty {
                     empty(review)
                         .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 } else {
@@ -97,13 +108,20 @@ struct ReviewView: View {
                                     .tint(ask.skipped ? Pearl.action : Pearl.muted)
                                 }
                         }
+                        ForEach(months) { m in
+                            Button { payMonth = m } label: { monthRow(m) }
+                                .buttonStyle(.plain)
+                                .listRowBackground(Nacre.glass)
+                                .listRowSeparatorTint(Nacre.separator)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(m.skipped == true ? "Put back" : "Skip") {
+                                        Task { await send(.skip(m.key, !(m.skipped ?? false))) }
+                                    }
+                                    .tint(m.skipped == true ? Pearl.action : Pearl.muted)
+                                }
+                        }
                     }
-                }
-                if review.webOnly > 0 && !showingSkipped {
-                    Text(review.webOnly == 1 ? "1 more question can only be answered in Pearl on the web for now."
-                         : "\(review.webOnly) more questions can only be answered in Pearl on the web for now.")
-                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 }
             } else {
                 LoadState(error: error) { Task { await load() } }
@@ -188,6 +206,33 @@ struct ReviewView: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint(ask.skipped ? "Answers it. Swipe to put it back." : "Answers it. Swipe to skip.")
+    }
+
+    /// "October had three paycheques", its chip, and the paycheque.
+    private func monthRow(_ m: Review.PayMonth) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: "calendar")
+                .font(.system(size: 15))
+                .foregroundColor(Pearl.ink)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(Pearl.dynamic(light: 0xEFE4EB, dark: 0x252C5E)))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(Format.monthName(m.month)) had three paycheques").font(Nacre.body).foregroundColor(Pearl.ink)
+                    .lineLimit(1)
+                Text("Your pay").font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+                GuessChip(label: "A third paycheque", question: false).padding(.top, 4)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let pay = m.paycheque {
+                Text("+" + Format.amount(pay)).font(Nacre.headline).monospacedDigit()
+                    .foregroundColor(Pearl.ink).fixedSize()
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(m.skipped == true ? "Opens it. Swipe to put it back." : "Opens it. Swipe to skip.")
     }
 
     @ViewBuilder private func empty(_ review: Review) -> some View {
@@ -384,5 +429,48 @@ enum ReviewAnswer {
         case .done(let reply):
             return reply
         }
+    }
+}
+
+// MARK: - T-74 A third paycheque
+
+/// A month paid every two weeks that held a third paycheque: nothing to
+/// sort, just what Pearl does about it. Got it dismisses it.
+struct ThirdPaychequeSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let month: Review.PayMonth
+    let answered: (ReviewAnswer) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Spacer()
+                Text("A third paycheque").font(Nacre.headline).foregroundColor(Pearl.ink)
+                Spacer()
+            }
+            .overlay(alignment: .trailing) { CloseButton { dismiss() } }
+            .padding(.top, 20)
+            Text("\(Format.monthName(month.month)) had three paycheques")
+                .font(Nacre.title2).foregroundColor(Pearl.ink)
+                .accessibilityAddTraits(.isHeader)
+            Text(words).font(Nacre.body).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button("Got it") { answered(.dismiss(month.key)) }
+                .buttonStyle(NacreButtonStyle())
+            if month.skipped != true {
+                Button("Skip for now") { answered(.skip(month.key, true)) }
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+            }
+        }
+        .padding(.horizontal, 16).padding(.bottom, 8)
+        .background(SheetBackground())
+    }
+
+    /// The server's reason, and what a month of her pay comes to.
+    private var words: String {
+        let reason = month.reason ?? "Paid every two weeks, so two months a year hold a third paycheque."
+        guard let monthly = month.monthly, let pay = month.paycheque else { return reason }
+        return "\(reason) That’s \(Format.whole(monthly)) a month from \(Format.whole(pay)) paycheques. The extra one isn’t counted as a raise."
     }
 }

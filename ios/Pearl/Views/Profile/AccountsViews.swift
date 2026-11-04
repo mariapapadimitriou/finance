@@ -50,17 +50,20 @@ enum AccountWords {
 
     /// "••1203 · owing", "••1203 · last updated Oct 6", "Oct 1" for a
     /// balance added by hand; the balance itself sits at the row's end.
-    static func line(_ a: AccountsOverview.Account) -> String {
+    static func line(_ a: AccountsOverview.Account, states: Bool = false) -> String {
         let mask = (a.mask ?? "").isEmpty ? nil : "••\(a.mask!)"
         switch a.status {
-        case "sign_in", "retrying":
-            return [mask, a.updatedAt.map { "last updated \(when($0))" }].compactMap { $0 }.joined(separator: " · ")
+        case "sign_in":
+            return a.updatedAt.map { "Since \(Format.short($0))" } ?? (mask ?? "")
+        case "retrying":
+            return a.updatedAt.map { when($0).capitalizedFirst } ?? (mask ?? "")
         case "disconnected":
-            return [mask, (a.disconnectedOn ?? a.updatedAt).map { "since \(Format.short($0))" }]
-                .compactMap { $0 }.joined(separator: " · ")
+            return (a.disconnectedOn ?? a.updatedAt).map { "Since \(Format.short($0))" } ?? (mask ?? "")
         case "manual":
             return a.updatedAt.map { stale($0) ?? Format.short($0) } ?? ""
         default:
+            // C-01: while a bank needs her, every row says how it's doing.
+            if states { return "Up to date" }
             return [mask, a.owing == true ? "owing" : nil].compactMap { $0 }.joined(separator: " · ")
         }
     }
@@ -91,6 +94,11 @@ enum AccountWords {
         if days >= 30 { return "updated \(days) days ago" }
         if days < 1 { return "updated today" }
         return "updated \(Format.short(day))"
+    }
+
+    /// C-01: some bank needs her or isn't responding.
+    static func trouble(_ a: AccountsOverview.Account) -> Bool {
+        ["sign_in", "retrying", "disconnected"].contains(a.status ?? "")
     }
 
     static func bank(_ a: AccountsOverview.Account) -> String {
@@ -147,9 +155,9 @@ struct AccountsView: View {
 
     var body: some View {
         ProfilePage {
-            ProfileHeading(title: "Accounts", intro: updatedLine)
+            ProfileHeading(title: "Accounts", intro: states ? nil : updatedLine)
             if let first = linked.first(where: { $0.needsReconnect }) {
-                reconnectNotice(first)
+                ConnectionBanner(account: first) { reconnecting = first }
             }
             if !loaded && error == nil {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
@@ -159,10 +167,17 @@ struct AccountsView: View {
                 GlassCard {
                     ForEach(Array(linked.enumerated()), id: \.element.id) { i, a in
                         if i > 0 { RowSeparator(inset: 62) }
-                        NavigationLink { AccountDetailView(account: a) } label: { row(a) }
-                            .buttonStyle(.plain)
+                        NavigationLink {
+                            if a.status == "disconnected" {
+                                DisconnectedAccountView(account: a)
+                            } else {
+                                AccountDetailView(account: a)
+                            }
+                        } label: { row(a) }
+                        .buttonStyle(.plain)
                     }
                 }
+                if states { ProfileNote("If a bank isn’t responding, Pearl keeps trying.") }
             }
             if !added.isEmpty {
                 ProfileSection("Added by you")
@@ -182,11 +197,18 @@ struct AccountsView: View {
             }
             if let error = error { Hint(text: error).padding(.top, 4) }
         } bottom: {
-            Button("Link another bank") { Task { await link() } }
-                .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(busy)
-            Button("Add a balance by hand") { adding = true }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+            if states {
+                // C-01: Reconnect is the one primary action on the page.
+                Button("Link another bank") { Task { await link() } }
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    .disabled(busy)
+            } else {
+                Button("Link another bank") { Task { await link() } }
+                    .buttonStyle(NacreButtonStyle(busy: busy))
+                    .disabled(busy)
+                Button("Add a balance by hand") { adding = true }
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+            }
         }
         .overlay(alignment: .top) {
             if let toast = toast {
@@ -212,10 +234,14 @@ struct AccountsView: View {
         }
     }
 
+    /// C-01: a bank needs her or isn't responding, so the rows say how each
+    /// is doing instead of their balances.
+    private var states: Bool { linked.contains(where: AccountWords.trouble) }
+
     private func row(_ a: AccountsOverview.Account) -> some View {
-        ProfileRow(initials: AccountWords.bank(a), title: a.name, sub: AccountWords.line(a),
+        ProfileRow(initials: AccountWords.bank(a), title: a.name, sub: AccountWords.line(a, states: states),
                    pill: AccountWords.listPill(a)) {
-            if let b = a.balance {
+            if !states, let b = a.balance {
                 Text(Format.amount(abs(b))).font(Nacre.body).foregroundColor(Pearl.ink)
                     .monospacedDigit().lineLimit(1).fixedSize()
             }
@@ -229,25 +255,6 @@ struct AccountsView: View {
             return loaded && linked.isEmpty ? "Link a bank, or add a balance by hand." : nil
         }
         return "Updated \(AccountWords.when(latest.0))"
-    }
-
-    /// C-01's banner for the first bank that needs her.
-    private func reconnectNotice(_ a: AccountsOverview.Account) -> some View {
-        let text = a.status == "disconnected"
-            ? "\(a.name) is disconnected. New transactions won’t come in until you reconnect it."
-            : "\(a.name) needs you to sign in again. Its purchases since \(a.updatedAt.map { Format.short($0) } ?? "then") aren’t counted yet."
-        return HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle").font(.system(size: 15))
-            VStack(alignment: .leading, spacing: 6) {
-                Text(text).font(Nacre.subheadline).fixedSize(horizontal: false, vertical: true)
-                Button("Reconnect") { reconnecting = a }
-                    .font(Nacre.headline).foregroundColor(Pearl.action)
-            }
-            Spacer(minLength: 0)
-        }
-        .foregroundColor(Pearl.caution)
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Pearl.cautionBackground))
     }
 
     private func load() async {
@@ -281,6 +288,39 @@ struct AccountsView: View {
         withAnimation { toast = "\(a.name) is up to date again." }
         app.changed()
     }
+}
+
+/// C-01's card for a bank that needs her: what's wrong, and Reconnect.
+struct ConnectionBanner: View {
+    let account: AccountsOverview.Account
+    let reconnect: () -> Void
+
+    var body: some View {
+        GlassCard {
+            VStack(spacing: 14) {
+                HStack(spacing: 12) {
+                    IconBubble(symbol: "arrow.triangle.2.circlepath")
+                    Text(text).font(Nacre.body).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Button("Reconnect", action: reconnect)
+                    .buttonStyle(NacreButtonStyle())
+            }
+            .padding(16)
+        }
+    }
+
+    private var text: String {
+        account.status == "disconnected"
+            ? "\(account.name) is disconnected."
+            : "\(account.name) needs you to sign in again."
+    }
+}
+
+extension String {
+    /// "6 hours ago" → "6 hours ago"; "just now" → "Just now".
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }
 
 // MARK: - C-04 Reconnect: tap 2 of 2
@@ -347,6 +387,8 @@ struct ReconnectSheet: View {
 struct AccountHero: View {
     let account: AccountsOverview.Account
     var note: String
+    /// C-06 shows its own facts.
+    var facts = true
 
     var body: some View {
         VStack(spacing: 6) {
@@ -366,7 +408,7 @@ struct AccountHero: View {
         .padding(.top, 4).padding(.bottom, 8)
         .accessibilityElement(children: .combine)
 
-        if !account.isHand {
+        if facts && !account.isHand {
             GlassCard {
                 fact("History from", account.historyFrom.map { Format.month(String($0.prefix(7))) } ?? "—")
                 RowSeparator()
@@ -413,9 +455,19 @@ struct AccountDetailView: View {
     var body: some View {
         ProfilePage {
             heroCard
-            if account.needsReconnect { reconnectBlock }
-            if !counted && !isInvestment {
-                Notice(text: "This account isn’t in your budget. Its transactions stay here, but they don’t count toward Allowance, spending or your totals on Home.")
+            if account.needsReconnect {
+                ConnectionBanner(account: account) { reconnecting = true }
+            }
+            if joint {
+                // AM-04: who it's shared with, under the balance.
+                GlassCard {
+                    NavigationLink { JointAccountView(account: account) } label: {
+                        ProfileRow(title: "Shared with") {
+                            Text(people).font(Nacre.body).foregroundColor(Pearl.muted).lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             ProfileSection("Settings")
@@ -434,13 +486,6 @@ struct AccountDetailView: View {
                     RowSeparator()
                     toggleRow(title: "Part of my Anchor",
                               sub: "Savings accounts only", on: $anchor) { on in Task { await setAnchor(on) } }
-                }
-                if joint {
-                    RowSeparator()
-                    NavigationLink { JointAccountView(account: account) } label: {
-                        ProfileRow(title: "Shared with", sub: sharedLine)
-                    }
-                    .buttonStyle(.plain)
                 }
                 RowSeparator()
                 Button { nickname = account.nickname ?? ""; renaming = true } label: {
@@ -476,9 +521,11 @@ struct AccountDetailView: View {
             .padding(.top, 12)
             if let error = error { Hint(text: error).padding(.top, 4) }
         }
-        .overlay(alignment: .top) {
+        .overlay(alignment: .bottom) {
+            // AM-03: the toast sits at the bottom, with Undo.
             if let toast = toast {
                 UndoToast(text: toast.text, undo: toast.undo) { withAnimation { self.toast = nil } }
+                    .padding(.bottom, 8)
             }
         }
         .onAppear {
@@ -517,11 +564,10 @@ struct AccountDetailView: View {
 
     // MARK: Parts
 
-    /// "Sam and Alex · your share is 50%".
-    private var sharedLine: String {
-        let people = (account.jointPeople ?? []).joined(separator: " and ")
-        let share = account.jointShare.map { "your share is \(Int($0.rounded()))%" } ?? "all yours unless you mark it"
-        return people.isEmpty ? "Add who you share it with" : "\(people) · \(share)"
+    /// "Sam and Alex", or "Add" before she's said.
+    private var people: String {
+        let names = (account.jointPeople ?? []).joined(separator: " and ")
+        return names.isEmpty ? "Add" : names
     }
 
     private var heroCard: some View { AccountHero(account: account, note: heroNote) }
@@ -535,24 +581,6 @@ struct AccountDetailView: View {
             // "Owing · ••1203", "Chequing · ••6612".
             return [account.owing == true ? "Owing" : AccountWords.kind(account), mask]
                 .compactMap { $0 }.joined(separator: " · ")
-        }
-    }
-
-    /// C-04 / C-06: sign in again, or keep it as a balance by hand.
-    private var reconnectBlock: some View {
-        VStack(spacing: 6) {
-            Notice(text: account.status == "disconnected"
-                   ? "Disconnected\((account.disconnectedOn).map { " on \(Format.short($0))" } ?? ""). Your past transactions stay in Pearl, but new ones won’t come in."
-                   : "\(AccountWords.bank(account)) needs you to sign in again. Purchases since \(account.updatedAt.map { Format.short($0) } ?? "then") aren’t counted yet.",
-                   tone: .caution)
-            Button("Reconnect") { reconnecting = true }
-                .buttonStyle(NacreButtonStyle())
-                .padding(.top, 6)
-            if account.status == "disconnected" {
-                Button("Keep it as a manual account") { Task { await keepAsManual() } }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-                    .disabled(busy)
-            }
         }
     }
 
@@ -609,11 +637,10 @@ struct AccountDetailView: View {
     /// AM-03: no confirmation; the toast says what changed, with Undo.
     private func setCounted(_ on: Bool) async {
         let name = account.name
-        guard let reply = await save(["counted": on], saying: nil) else { return }
-        let allowance = reply.safeToSpend.map { " Allowance is now \(Format.amount($0))." } ?? ""
-        let text = on ? "\(name) counts again.\(allowance)" : "\(name) no longer counts.\(allowance)"
+        guard await save(["counted": on], saying: nil) != nil else { return }
+        let text = on ? "\(name) is back in your budget." : "\(name) left your budget."
         withAnimation {
-            toast = (text, { Task { await save(["counted": !on], saying: on ? "\(name) no longer counts." : "\(name) counts again.") } })
+            toast = (text, { Task { await save(["counted": !on], saying: on ? "\(name) left your budget." : "\(name) is back in your budget.") } })
         }
     }
 
@@ -629,25 +656,17 @@ struct AccountDetailView: View {
         await save(["anchor": on], saying: on ? "\(account.name) counts toward your Anchor." : "\(account.name) no longer counts toward your Anchor.")
     }
 
-    private func keepAsManual() async {
-        busy = true
-        defer { busy = false }
-        do {
-            let _: OK = try await app.api.post("api/accounts/\(account.id)/keep-as-manual")
-            app.changed()
-            dismiss()
-        } catch {
-            self.error = app.handle(error)
-        }
-    }
 }
 
 // MARK: - AM-07 Remove an account
 
+/// "Remove TD Visa?": the account, then keep or delete its transactions.
 @MainActor
 struct RemoveAccountSheet: View {
     @EnvironmentObject private var app: AppModel
     let account: AccountsOverview.Account
+    /// C-06's "Remove it and its history" starts on Delete.
+    var deleting = false
     let finished: (Bool) -> Void
     @State private var deleteHistory = false
     @State private var busy = false
@@ -655,18 +674,31 @@ struct RemoveAccountSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ProfileHeading(title: "Remove \(account.name)?",
-                           intro: account.isHand
-                               ? "Its balance comes off Home. This can’t be undone."
-                               : "Pearl stops syncing it and disconnects it from your bank straight away.")
-                .padding(.top, 28)
-            if !account.isHand {
-                ProfileSection("Its \(account.transactions ?? 0) transactions")
+            HStack {
+                Spacer()
+                Text("Remove \(account.name)?").font(Nacre.headline).foregroundColor(Pearl.ink)
+                    .lineLimit(1).accessibilityAddTraits(.isHeader)
+                Spacer()
+            }
+            .overlay(alignment: .trailing) { CloseButton { finished(false) } }
+            .padding(.top, 20)
+            HStack(spacing: 12) {
+                RowAvatar(name: AccountWords.bank(account), size: 48, font: Nacre.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(account.name).font(Nacre.title2).foregroundColor(Pearl.ink)
+                    Text(detail).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                }
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+            if account.isHand {
+                ProfileNote("Its balance comes off Home. This can’t be undone.")
+            } else {
                 GlassCard {
-                    ChoiceLine(title: "Keep them", sub: "Past months stay accurate. Nothing new comes in.",
+                    ChoiceLine(title: "Keep its transactions", sub: "Past months stay the same",
                                selected: !deleteHistory) { deleteHistory = false }
                     RowSeparator()
-                    ChoiceLine(title: "Delete them too", sub: "Your averages will change. This can’t be undone.",
+                    ChoiceLine(title: "Delete them too", sub: "This can’t be undone",
                                selected: deleteHistory) { deleteHistory = true }
                 }
             }
@@ -675,10 +707,19 @@ struct RemoveAccountSheet: View {
             Button("Remove account") { Task { await remove() } }
                 .buttonStyle(NacreButtonStyle(busy: busy))
                 .disabled(busy)
-            Button("Keep it") { finished(false) }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
         }
         .padding(.horizontal, 16).padding(.bottom, 8)
+        .onAppear { deleteHistory = deleting }
+    }
+
+    /// "••1203 · 388 transactions", or a balance by hand's amount.
+    private var detail: String {
+        let mask = (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)"
+        if account.isHand {
+            return [mask, account.balance.map { Format.amount(abs($0)) }].compactMap { $0 }.joined(separator: " · ")
+        }
+        let n = account.transactions ?? 0
+        return [mask, "\(n.formatted()) transaction\(n == 1 ? "" : "s")"].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func remove() async {
@@ -688,6 +729,95 @@ struct RemoveAccountSheet: View {
             let _: OK = try await app.api.post("api/accounts/\(account.id)/remove",
                                                ["transactions": deleteHistory ? "delete" : "keep"])
             finished(true)
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+}
+
+// MARK: - C-06 A disconnected account
+
+/// "Wealthsimple Cash · Balance on Oct 1 · Disconnected": what Pearl still
+/// has, and three ways on: reconnect it, keep it as a balance by hand, or
+/// remove it and its history.
+@MainActor
+struct DisconnectedAccountView: View {
+    @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let account: AccountsOverview.Account
+    @State private var reconnecting = false
+    @State private var removing = false
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        ProfilePage {
+            AccountHero(account: account, note: note, facts: false)
+            GlassCard {
+                fact("In Pearl", "\((account.transactions ?? 0).formatted()) transactions")
+                RowSeparator()
+                fact("History from", account.historyFrom.map { Format.month(String($0.prefix(7))) } ?? "—")
+            }
+            GlassCard {
+                Button { removing = true } label: {
+                    ProfileRow(title: "Remove it and its history", tone: Pearl.moneyOut, chevron: false)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 4)
+            if let error = error { Hint(text: error).padding(.top, 4) }
+        } bottom: {
+            Button("Reconnect") { reconnecting = true }
+                .buttonStyle(NacreButtonStyle())
+                .disabled(busy)
+            Button("Keep as a manual account") { Task { await keepAsManual() } }
+                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .disabled(busy)
+        }
+        .sheet(isPresented: $reconnecting) {
+            ReconnectSheet(account: account) { ok in
+                reconnecting = false
+                if ok { app.changed(); dismiss() }
+            }
+            .background(SheetBackground())
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $removing) {
+            RemoveAccountSheet(account: account, deleting: true) { removed in
+                removing = false
+                if removed { app.changed(); dismiss() }
+            }
+            .background(SheetBackground())
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    /// "Balance on Oct 1 · ••7710".
+    private var note: String {
+        let mask = (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)"
+        let on = (account.disconnectedOn ?? account.updatedAt).map { "Balance on \(Format.short($0))" }
+        return [on ?? "Balance when it disconnected", mask].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private func fact(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).font(Nacre.body).foregroundColor(Pearl.ink)
+            Spacer()
+            Text(value).font(Nacre.body).foregroundColor(Pearl.muted)
+        }
+        .padding(.horizontal, 16).frame(minHeight: 50)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func keepAsManual() async {
+        busy = true
+        defer { busy = false }
+        do {
+            let _: OK = try await app.api.post("api/accounts/\(account.id)/keep-as-manual")
+            app.changed()
+            dismiss()
         } catch {
             self.error = app.handle(error)
         }

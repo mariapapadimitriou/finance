@@ -190,6 +190,54 @@ struct IncomeBills: Decodable {
     let bills: [Bill]
     /// O-10f, O-10g: a regular deposit setup asks about before it can be pay.
     let asks: [Ask]?
+    /// When she confirmed her income and her bills; nil until she has
+    /// (IB-02: what Pearl found is only its suggestion until then).
+    var checked: Checked? = nil
+    /// Her own amount a month, and Pearl's estimate (IB-03).
+    var expected: Expected? = nil
+    var totals: Totals? = nil
+    /// "Are your e-Transfers to M. Papas your rent?"
+    var rentQuestion: RentQuestion? = nil
+    /// What a bill's removal took away, for Undo.
+    var removed: Removed? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case pays, candidates, bills, asks, checked, expected, totals, removed
+        case rentQuestion = "rent_question"
+    }
+
+    struct Checked: Decodable, Hashable {
+        let income: String?
+        let bills: String?
+    }
+
+    struct Expected: Decodable, Hashable {
+        let amount: Double?
+        let varies: Bool?
+        let estimate: Double?
+    }
+
+    struct Totals: Decodable, Hashable {
+        let income: Double?
+        let bills: Double?
+    }
+
+    struct RentQuestion: Decodable, Hashable, Identifiable {
+        let key: String
+        let recipient: String?
+        let amount: Double
+        let day: Int?
+        var id: String { key }
+    }
+
+    struct Removed: Decodable, Hashable {
+        let key: String
+        let name: String
+        let amount: Double
+        let cadence: String
+        let next: String?
+        let varies: Bool?
+    }
 
     struct Ask: Decodable, Identifiable, Hashable {
         /// "joint" (Whose pay?) or "etransfer" (What is it?).
@@ -921,8 +969,22 @@ struct Review: Decodable {
     let whoSent: [Item]
     let duplicate: [Item]
     let recurringTransfer: [Item]
+    /// T-74: months that held a third paycheque. No transaction to sort;
+    /// "Got it" dismisses one.
+    let threePayMonth: [PayMonth]
     let unsorted: Unsorted?
     let kinds: [String: String]?
+
+    struct PayMonth: Decodable, Identifiable, Hashable {
+        let key: String
+        /// "2026-10".
+        let month: String
+        let paycheque: Double?
+        let monthly: Double?
+        let reason: String?
+        let skipped: Bool?
+        var id: String { key }
+    }
 
     enum CodingKeys: String, CodingKey {
         case count, open, unsorted, kinds, duplicate
@@ -932,6 +994,7 @@ struct Review: Decodable {
         case jointIn = "joint_in"
         case whoSent = "who_sent"
         case recurringTransfer = "recurring_transfer"
+        case threePayMonth = "three_pay_month"
     }
 
     init(from decoder: Decoder) throws {
@@ -950,6 +1013,8 @@ struct Review: Decodable {
         whoSent = items(.whoSent)
         duplicate = items(.duplicate)
         recurringTransfer = items(.recurringTransfer)
+        threePayMonth = (try? c.decodeIfPresent([Lenient<PayMonth>].self, forKey: .threePayMonth))?
+            .compactMap { $0.value } ?? []
     }
 
     struct Unsorted: Decodable {
@@ -1093,12 +1158,6 @@ extension Review {
         out += duplicate.map { Ask(kind: .duplicate, item: $0) }
         out += recurringTransfer.map { Ask(kind: .recurring, item: $0) }
         return out
-    }
-
-    /// Open questions the app has no row for (months with a third
-    /// paycheque): answered on the web.
-    var webOnly: Int {
-        max(0, (open ?? count) - asks.filter { !$0.skipped }.count)
     }
 }
 
