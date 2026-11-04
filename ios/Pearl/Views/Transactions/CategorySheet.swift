@@ -32,11 +32,14 @@ struct CategorySheet: View {
     /// (Saved, My own account, Card payment…), with Continue.
     var notSpending: [CaseTile]? = nil
     var onCase: ((String) -> Void)? = nil
+    /// T-52: Save on Pearl's guess, unchanged, confirms it.
+    var confirmsCurrent = false
     @State private var chosenCase: String?
 
     @Environment(\.dismiss) private var dismiss
     @State private var chosen: String
     @State private var spending: Bool
+    /// T-79: saving would move her other transactions there too.
     @State private var remember = false
     @State private var bill = false
 
@@ -45,7 +48,8 @@ struct CategorySheet: View {
          onRegularBill: ((Bool) -> Void)? = nil, title: String = "Category",
          onDelete: (() -> Void)? = nil, preview: ((String, Bool) async -> String?)? = nil,
          notSpending: [CaseTile]? = nil, startNotSpending: Bool = false, onCase: ((String) -> Void)? = nil,
-         onSave: @escaping (String, Bool) -> Void) {
+         confirmsCurrent: Bool = false, onSave: @escaping (String, Bool) -> Void) {
+        self.confirmsCurrent = confirmsCurrent
         self.title = title
         self.preview = preview
         self.notSpending = notSpending
@@ -105,16 +109,8 @@ struct CategorySheet: View {
                             }
                         }
                     }
-                    if let merchant = merchant, !answering {
-                        RowSeparator(inset: 0).padding(.top, 4)
-                        Toggle(isOn: $remember) {
-                            Text("Do the same for every \(merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
-                        }
-                        .tint(Pearl.action)
-                        .padding(.horizontal, 4)
-                    }
                     if onRegularBill != nil, spending, !answering {
-                        if merchant == nil { RowSeparator(inset: 0).padding(.top, 4) }
+                        RowSeparator(inset: 0).padding(.top, 4)
                         Toggle(isOn: $bill) {
                             Text("Regular bill").font(Nacre.body).foregroundColor(Pearl.ink)
                         }
@@ -149,9 +145,9 @@ struct CategorySheet: View {
                 onSave(chosen, remember)
             }
                 .buttonStyle(NacreButtonStyle())
-                .disabled(chosen == current && !remember && !bill)
-                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, remember && preview != nil ? 0 : 8)
-            if remember && preview != nil {
+                .disabled(chosen == current && !bill && !confirmsCurrent)
+                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, remember ? 0 : 8)
+            if remember {
                 Button("Just this one") {
                     onRegularBill?(bill && spending)
                     onSave(chosen, false)
@@ -170,9 +166,16 @@ struct CategorySheet: View {
         .background(SheetBackground())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task(id: "\(chosen)|\(remember)") {
-            guard let preview = preview, chosen != current || remember else { previewLine = nil; return }
-            previewLine = await preview(chosen, remember)
+        .task(id: chosen) {
+            // T-79: what saving does, said before it's saved; when it would
+            // move others, Save does and Just this one doesn't.
+            guard let preview = preview, merchant != nil, chosen != current else {
+                previewLine = nil
+                remember = false
+                return
+            }
+            previewLine = await preview(chosen, true)
+            remember = previewLine?.hasPrefix("Also moves") == true
         }
     }
 
@@ -320,6 +323,32 @@ struct CaseGrid: View {
                 .accessibilityLabel(c.label)
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
+        }
+    }
+}
+
+extension CategorySheet {
+    /// T-79's line for a transaction: "Also moves 6 other Loblaws
+    /// transactions, and new ones from now on." and what it does to Allowance.
+    static func preview(api: APIClient, id: String, merchant: String) -> (String, Bool) async -> String? {
+        { name, remember in
+            struct Preview: Decodable {
+                let line: String?
+                let merchantCount: Int?
+                enum CodingKeys: String, CodingKey {
+                    case line
+                    case merchantCount = "merchant_count"
+                }
+            }
+            guard let p: Preview = try? await api.post("api/transactions/\(id)/category/preview",
+                                                     ["category": name, "apply_to_merchant": remember]) else { return nil }
+            var words: [String] = []
+            let others = max(0, (p.merchantCount ?? 1) - 1)
+            if remember && others > 0 {
+                words.append("Also moves \(others) other \(merchant) transaction\(others == 1 ? "" : "s"), and new ones from now on.")
+            }
+            if let line = p.line, !line.isEmpty { words.append(line) }
+            return words.isEmpty ? nil : words.joined(separator: " ")
         }
     }
 }

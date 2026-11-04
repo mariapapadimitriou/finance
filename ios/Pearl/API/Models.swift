@@ -1084,6 +1084,8 @@ struct Review: Decodable {
         /// The part of a deposit left to sort (THL-291): the whole deposit
         /// and how much of it is sorted.
         let rest: Rest?
+        /// T-15: the other copy of a possible duplicate.
+        var twin: BriefTransaction? = nil
 
         var id: String { key }
 
@@ -1093,7 +1095,7 @@ struct Review: Decodable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share
+            case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share, twin
             case guessLabel = "guess_label"
         }
 
@@ -1125,6 +1127,7 @@ struct Review: Decodable {
             series = opt(Series.self, .series)
             rest = opt(Rest.self, .rest)
             share = opt(Double.self, .share)
+            twin = opt(BriefTransaction.self, .twin)
         }
 
         static func == (a: Item, b: Item) -> Bool { a.key == b.key }

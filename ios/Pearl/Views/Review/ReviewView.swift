@@ -176,6 +176,8 @@ struct ReviewView: View {
             }
             if !showingSkipped && !quick.isEmpty {
                 QuickSortCard(count: quick.count) { sorting = true }
+                // T-10.
+                Text("Tap one to sort it.").font(Nacre.footnote).foregroundColor(Pearl.ink)
             }
             if let error = error, review != nil {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
@@ -278,8 +280,11 @@ struct ReviewView: View {
                     .frame(width: 56, height: 56).background(Circle().fill(Nacre.mint))
                     .padding(.bottom, 6)
                 Text("All sorted").font(Nacre.title2).foregroundColor(Pearl.ink)
-                Text("Your numbers are up to date. We’ll let you know when something new needs a look.")
+                Text("Your numbers are up to date.")
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
+                Button("Done") { dismiss() }
+                    .buttonStyle(NacreButtonStyle())
+                    .padding(.top, 20)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 40)
         }
@@ -481,6 +486,11 @@ struct ThirdPaychequeSheet: View {
             }
             .overlay(alignment: .trailing) { CloseButton { dismiss() } }
             .padding(.top, 20)
+            if let pay = month.paycheque {
+                // T-74: the paycheque it's about.
+                QuestionHeader(name: "Your pay", amount: "+" + Format.amount(pay), tone: Pearl.moneyIn,
+                               sub: Format.monthName(month.month))
+            }
             Text("\(Format.monthName(month.month)) had three paycheques")
                 .font(Nacre.title2).foregroundColor(Pearl.ink)
                 .accessibilityAddTraits(.isHeader)

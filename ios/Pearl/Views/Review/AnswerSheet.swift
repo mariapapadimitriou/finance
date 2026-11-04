@@ -30,6 +30,8 @@ struct AnswerSheet: View {
     /// T-08 / T-12: which side of money in is showing.
     @State private var incomeSide = true
     @State private var intoChoice: String?
+    /// Her confirmed pay, for T-31's hint.
+    @State private var pays: [IncomeBills.Pay] = []
 
     enum Step: Hashable {
         case guess, out, into, accounts, charges, kinds, cadence, joint, sender, recurring, payback, category
@@ -49,7 +51,8 @@ struct AnswerSheet: View {
         self.onAnswer = onAnswer
         let first: Step
         switch ask.kind {
-        case .category, .duplicate: first = .guess
+        case .category: first = .category      // T-52: straight to the categories
+        case .duplicate: first = .guess
         case .transfer: first = ask.savedTo(accounts) != nil ? .guess : .out
         case .moneyIn:
             switch ask.item.guess?.action {
@@ -86,8 +89,12 @@ struct AnswerSheet: View {
             } else if step == .category {
                 CategorySheet(name: who, amount: amountText, tone: tone, categories: categories,
                               current: t.category ?? ask.item.guess?.text ?? "Other",
-                              merchant: then == .recurring ? nil : who) { name, remember in
+                              merchant: then == .recurring ? nil : who,
+                              preview: then == .recurring ? nil : CategorySheet.preview(api: api, id: t.id, merchant: who),
+                              confirmsCurrent: ask.kind == .category && then == .category) { name, remember in
                     switch then {
+                    case .category where ask.kind == .category && name == (t.category ?? ask.item.guess?.text) && !remember:
+                        onAnswer(.confirm(t.id))
                     case .category: onAnswer(.category(t.id, name: name, remember: remember))
                     case .spending: onAnswer(.mark(t.id, ["case": "spending", "category": name, "remember": remember]))
                     case .recurring: onAnswer(.recurring(key: ask.item.key, kind: nil, category: name))
@@ -113,7 +120,22 @@ struct AnswerSheet: View {
     private var guessSheet: some View {
         VStack(spacing: 16) {
             SheetTitle(title: guessTitle) { dismiss() }
-            QuestionHeader(name: who, amount: amountText, tone: tone, sub: nil).padding(.horizontal, 16)
+            if ask.kind == .duplicate {
+                // T-15: both charges, one above the other.
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Looks like the same charge twice.").font(Nacre.body).foregroundColor(Pearl.ink)
+                    GlassCard {
+                        dupRow(t)
+                        if let twin = ask.item.twin {
+                            RowSeparator(inset: 62)
+                            dupRow(twin)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            } else {
+                QuestionHeader(name: who, amount: amountText, tone: tone, sub: nil).padding(.horizontal, 16)
+            }
             HStack(spacing: 10) {
                 Button(yesLabel) { yes() }.buttonStyle(NacreButtonStyle())
                 Button(noLabel) { no() }
@@ -127,7 +149,24 @@ struct AnswerSheet: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SheetBackground())
-        .presentationDetents([.height(280)])
+        .presentationDetents(ask.kind == .duplicate ? [.large] : [.height(280)])
+    }
+
+    /// "CO  Costco · Groceries · Nov 9 · TD Visa ••9021   −$142.60".
+    private func dupRow(_ b: BriefTransaction) -> some View {
+        HStack(spacing: 12) {
+            Initials(name: b.name, size: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(b.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text([b.category, Format.short(b.date), b.accountName].compactMap { $0 }.joined(separator: " · "))
+                    .font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text((b.inflow ? "+" : "\u{2212}") + Format.amount(abs(b.amount))).font(Nacre.headline).monospacedDigit()
+                .foregroundColor(b.inflow ? Pearl.ink : Pearl.moneyOut)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
     }
 
     private var guessTitle: String {
@@ -296,7 +335,10 @@ struct AnswerSheet: View {
         }
         .background(SheetBackground())
         .presentationDetents([.large])
-        .task(id: step) { if step == .charges { await searchCharges() } }
+        .task(id: step) {
+            if step == .charges { await searchCharges() }
+            if step == .cadence, pays.isEmpty, let d: IncomeBills = try? await api.get("api/income-bills") { pays = d.pays }
+        }
         .task(id: text) {
             guard step == .charges else { return }
             try? await Task.sleep(nanoseconds: 250_000_000)
@@ -376,6 +418,11 @@ struct AnswerSheet: View {
         ("tax_refund", "Tax refund", "dollarsign.square"), ("other", "Other income", "ellipsis"),
     ]
 
+    /// T-31: "Like Northwind Ltd" under the schedule her pay already has.
+    private func like(_ cadence: String) -> String? {
+        pays.first { $0.cadence == cadence && $0.name.lowercased() != who.lowercased() }.map { "Like \($0.name)" }
+    }
+
     // MARK: What each step asks
 
     private var title: String {
@@ -436,7 +483,8 @@ struct AnswerSheet: View {
                        detail: [Format.weekdayDay(c.date), c.accountName].compactMap { $0 }.joined(separator: " · "))
             }
         case .cadence:
-            return [Option(id: "weekly", label: "Every week"), Option(id: "biweekly", label: "Every 2 weeks"),
+            return [Option(id: "weekly", label: "Every week", detail: like("weekly")),
+                    Option(id: "biweekly", label: "Every 2 weeks", detail: like("biweekly")),
                     Option(id: "semimonthly", label: "Twice a month", detail: "Like the 1st and the 15th"),
                     Option(id: "monthly", label: "Monthly"), Option(id: "changes", label: "It changes"),
                     Option(id: "once", label: "Just this once")]

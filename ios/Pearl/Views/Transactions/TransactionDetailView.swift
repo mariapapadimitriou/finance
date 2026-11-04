@@ -123,7 +123,7 @@ struct TransactionDetailView: View {
             CategorySheet(name: t.merchant, amount: Format.money(t), tone: t.tone, categories: categories,
                           current: t.category ?? t.label, merchant: t.merchant,
                           onRegularBill: t.inflow ? nil : { regularBill = $0 },
-                          preview: { name, remember in await previewLine(name, remember) },
+                          preview: CategorySheet.preview(api: app.api, id: t.id, merchant: t.merchant),
                           notSpending: t.inflow ? nil : CaseTile.notSpending,
                           onCase: { key in
                               picking = false
@@ -1079,28 +1079,6 @@ struct TransactionDetailView: View {
             let reply: MarkReply = try await app.api.post("api/transactions/\(t.id)/mark", body)
             return reply.title ?? "Sorted."
         }
-    }
-
-    /// T-79: what this category would do, before it's saved.
-    private func previewLine(_ name: String, _ remember: Bool) async -> String? {
-        struct Preview: Decodable {
-            let line: String?
-            let merchantCount: Int?
-            enum CodingKeys: String, CodingKey {
-                case line
-                case merchantCount = "merchant_count"
-            }
-        }
-        guard let p: Preview = try? await app.api.post("api/transactions/\(t.id)/category/preview",
-                                                     ["category": name, "apply_to_merchant": remember]) else { return nil }
-        var words: [String] = []
-        if remember {
-            let others = max(0, (p.merchantCount ?? 1) - 1)
-            words.append(others == 0 ? "New \(t.merchant) transactions go to \(name) from now on."
-                         : "Also moves \(others) other \(t.merchant) transaction\(others == 1 ? "" : "s"), and new ones from now on.")
-        }
-        if let line = p.line, !line.isEmpty { words.append(line) }
-        return words.isEmpty ? nil : words.joined(separator: " ")
     }
 
     private func putBack() async {
