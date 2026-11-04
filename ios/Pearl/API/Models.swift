@@ -24,6 +24,8 @@ struct PearlUser: Decodable, Equatable {
     let email: String?
     let firstName: String?
     let onboarding: Onboarding?
+    /// Passkeys saved for her (from the sign-in status).
+    var passkeys: Int? = nil
 
     struct Onboarding: Decodable, Equatable {
         let done: Bool?
@@ -31,11 +33,23 @@ struct PearlUser: Decodable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, username, email, onboarding
+        case id, username, email, onboarding, passkeys
         case firstName = "first_name"
     }
 
     var name: String { firstName ?? "" }
+}
+
+/// GET /api/profile: the counts on Profile's rows (P-01).
+struct ProfileSummary: Decodable {
+    let accounts: Int?
+    let needsYou: Int?
+    let rules: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case accounts, rules
+        case needsYou = "needs_you"
+    }
 }
 
 /// The answer to a sign-in: signed in, or a code sent to her email first
@@ -1034,7 +1048,7 @@ indirect enum JSONValue: Codable, Hashable {
     }
 }
 
-// MARK: - Help and support
+// MARK: - How we protect you (P-03)
 
 /// GET /api/privacy: the banks Pearl reads, and who to write to.
 struct Privacy: Decodable {

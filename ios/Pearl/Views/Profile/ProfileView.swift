@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// Profile: who's signed in, Sign-in & security and Linked accounts (S-01,
-/// S-05), where the rest of Pearl lives, and signing out.
+/// P-01 Profile (THL-104, THL-209, THL-120): who's signed in, then Money,
+/// You, Privacy and Help, each row led by its icon. Pages the iPhone doesn't
+/// have yet open Pearl on the web, marked with an arrow out.
 @MainActor
 struct ProfileView: View {
     @EnvironmentObject private var app: AppModel
+    @State private var summary: ProfileSummary?
+    @State private var doc: PearlDoc?
     @State private var confirmSignOut = false
     @State private var confirmReset = false
     @State private var resetting = false
@@ -12,83 +15,88 @@ struct ProfileView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                PageHeader(title: "Profile")
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Profile").font(Nacre.largeTitle).foregroundColor(Pearl.ink)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.top, 8).padding(.bottom, 8)
 
-                PearlCard(spacing: 4) {
-                    Text(app.user?.name.isEmpty == false ? app.user!.name : "Your account")
-                        .font(Pearl.cardTitle).foregroundColor(Pearl.ink)
-                    if let email = app.user?.email, !email.isEmpty {
-                        Text(email).font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
-                    }
-                }
-
-                PearlCard(padding: 0, spacing: 0) {
-                    NavigationLink { SignInSecurityView() } label: {
-                        row("Sign-in & security", chevron: true)
-                    }
+                NavigationLink { SignInSecurityView() } label: { identity }
                     .buttonStyle(.plain)
-                    Rectangle().fill(Pearl.rule).frame(height: 1)
+
+                ProfileSection("Money")
+                GlassCard {
                     NavigationLink { LinkedAccountsView() } label: {
-                        row("Linked accounts", chevron: true)
-                    }
-                    .buttonStyle(.plain)
-                    Rectangle().fill(Pearl.rule).frame(height: 1)
-                    // Help isn't a tab in the new bar (THL-209), so it lives here.
-                    NavigationLink { HelpView() } label: {
-                        row("Help and support", chevron: true)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                PearlCard(padding: 0, spacing: 0) {
-                    Link(destination: app.api.baseURL) {
-                        row("Open Pearl on the web",
-                            sub: "Rules, income and bills, and privacy are on the web for now.",
-                            chevron: true)
-                    }
-                    .buttonStyle(.plain)
-                    Rectangle().fill(Pearl.rule).frame(height: 1)
-                    row("Server", value: app.api.baseURL.host ?? app.api.baseURL.absoluteString)
-                    Rectangle().fill(Pearl.rule).frame(height: 1)
-                    row("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
-                }
-
-                Button("Sign out") { confirmSignOut = true }
-                    .buttonStyle(SecondaryButtonStyle())
-                    .padding(.top, 4)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Button(role: .destructive) { confirmReset = true } label: {
-                        HStack {
-                            Text(resetting ? "Resetting…" : "Reset Pearl")
-                            Spacer()
-                            if resetting { ProgressView() }
+                        ProfileRow(symbol: "cylinder.split.1x2", title: "Accounts", sub: accountsLine) {
+                            if let n = summary?.needsYou, n > 0 {
+                                StatusPill(text: "\(n) needs you", tone: .attention)
+                            }
                         }
-                        .font(Pearl.text(.body))
-                        .foregroundColor(Pearl.moneyOut)
-                        .padding(.horizontal, 20).padding(.vertical, 14)
-                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(resetting)
-                    .sheetCard()
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Pearl.border, lineWidth: 1))
-                    Text("Unlinks your banks and clears your transactions and setup, then starts setup again. You stay signed in.")
-                        .font(Pearl.text(.footnote, .medium)).foregroundColor(Pearl.muted)
-                        .padding(.horizontal, 4)
-                    if let error = error {
-                        Text(error).font(Pearl.text(.footnote, .medium)).foregroundColor(Pearl.caution)
-                    }
+                    RowSeparator(inset: 64)
+                    webRow(symbol: "chart.line.uptrend.xyaxis", title: "Income and bills",
+                           sub: "Your pay, and the regular bills set aside")
+                    RowSeparator(inset: 64)
+                    webRow(symbol: "list.bullet", title: "Categories and rules", sub: rulesLine)
                 }
-                .padding(.top, 12)
+
+                ProfileSection("You")
+                GlassCard {
+                    NavigationLink { SignInSecurityView() } label: {
+                        ProfileRow(symbol: "key", title: "Sign-in and security", sub: securityLine)
+                    }
+                    .buttonStyle(.plain)
+                    RowSeparator(inset: 64)
+                    webRow(symbol: "bell", title: "Notifications", sub: "Payday, weekly check-in, progress")
+                    RowSeparator(inset: 64)
+                    Button { confirmSignOut = true } label: {
+                        ProfileRow(symbol: "rectangle.portrait.and.arrow.right", title: "Sign out",
+                                   sub: "On this iPhone", tone: Pearl.action, chevron: false)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                ProfileSection("Privacy")
+                GlassCard {
+                    webRow(symbol: "eye", title: "Privacy and consent", sub: "What you’ve agreed to")
+                    RowSeparator(inset: 64)
+                    webRow(symbol: "tray.and.arrow.down", title: "Your data",
+                           sub: "Download a copy or delete your account")
+                    RowSeparator(inset: 64)
+                    NavigationLink { ProtectView() } label: {
+                        ProfileRow(symbol: "shield", title: "How we protect you", sub: "What Pearl can and can’t do")
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                ProfileSection("Help")
+                GlassCard {
+                    Button { doc = .help } label: {
+                        ProfileRow(symbol: "questionmark.circle", title: "Help and support",
+                                   sub: "Signing in, and new devices")
+                    }
+                    .buttonStyle(.plain)
+                    RowSeparator(inset: 64)
+                    Button { doc = .legal } label: {
+                        ProfileRow(symbol: "doc.text", title: "Privacy policy and terms", sub: "Plain-language drafts")
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                resetCard.padding(.top, 16)
+
+                ProfileNote("Pearl for iPhone · Version \(version) · \(app.api.baseURL.host ?? app.api.baseURL.absoluteString)",
+                            centred: true)
+                    .padding(.top, 12)
             }
             .padding(.horizontal, Pearl.gutter)
-            .padding(.vertical, 24)
+            .padding(.bottom, 32)
         }
-        .pearlPage()
+        .refreshable { await load() }
+        .nacreScreen()
         .navigationBarHidden(true)
+        .task(id: app.version) { await load() }
+        .docSheet($doc)
         .confirmationDialog("Sign out of Pearl on this iPhone?", isPresented: $confirmSignOut,
                             titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { Task { await app.signOut() } }
@@ -97,6 +105,116 @@ struct ProfileView: View {
             Button("Reset", role: .destructive) { Task { await reset() } }
         } message: {
             Text("Your banks are unlinked and your transactions and setup are cleared. Your email, password and Face ID stay. This can't be undone.")
+        }
+    }
+
+    // MARK: Parts
+
+    /// The nacre avatar, her name and her email; opens Sign-in and security.
+    private var identity: some View {
+        GlassCard {
+            HStack(spacing: 14) {
+                Text(initials)
+                    .font(Nacre.title2).foregroundColor(Nacre.onNacre)
+                    .frame(width: 60, height: 60)
+                    .background(Circle().fill(Pearl.nacre))
+                    .overlay(Circle().strokeBorder(Color.white.opacity(0.8), lineWidth: 2))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(1)
+                    if let email = app.user?.email, !email.isEmpty {
+                        Text(email).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Pearl.muted)
+            }
+            .padding(16)
+            .contentShape(Rectangle())
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens Sign-in and security")
+    }
+
+    /// A page that's only on the web for now.
+    private func webRow(symbol: String, title: String, sub: String) -> some View {
+        Link(destination: app.api.baseURL) {
+            ProfileRow(symbol: symbol, title: title, sub: sub, chevron: false) {
+                Image(systemName: "arrow.up.right").font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Pearl.muted)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens Pearl on the web")
+    }
+
+    /// Reset Pearl: back to the start of setup, keeping the sign-in.
+    private var resetCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            GlassCard {
+                Button(role: .destructive) { confirmReset = true } label: {
+                    ProfileRow(symbol: "arrow.counterclockwise", title: resetting ? "Resetting…" : "Reset Pearl",
+                               tone: Pearl.moneyOut, chevron: false) {
+                        if resetting { ProgressView() }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(resetting)
+            }
+            ProfileNote("Unlinks your banks and clears your transactions and setup, then starts setup again. You stay signed in.")
+            if let error = error {
+                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 16)
+            }
+        }
+    }
+
+    // MARK: Words
+
+    private var name: String {
+        if let first = app.user?.firstName, !first.isEmpty { return first }
+        if let user = app.user?.username, !user.isEmpty { return user }
+        return "Your account"
+    }
+
+    /// "AP" from her name, or the first letter of her email.
+    private var initials: String {
+        let source = app.user?.firstName?.isEmpty == false ? app.user!.firstName! : (app.user?.email ?? "")
+        let words = source.split { !$0.isLetter }.prefix(2)
+        let out = words.compactMap { $0.first.map(String.init) }.joined().uppercased()
+        return out.isEmpty ? "P" : out
+    }
+
+    private var accountsLine: String {
+        guard let n = summary?.accounts else { return " " }
+        return n > 0 ? plural(n, "account") : "Link a bank or add a balance"
+    }
+
+    private var rulesLine: String {
+        guard let n = summary?.rules else { return " " }
+        return n > 0 ? plural(n, "saved rule") : "No saved rules yet"
+    }
+
+    /// "alex@example.com · email codes", as the web's hub says it.
+    private var securityLine: String {
+        let passkeys = app.user?.passkeys ?? 0
+        return [app.user?.email, passkeys > 0 ? plural(passkeys, "passkey") : "email codes"]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    private var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    }
+
+    private func plural(_ n: Int, _ one: String) -> String { "\(n) \(one)\(n == 1 ? "" : "s")" }
+
+    // MARK: Calls
+
+    private func load() async {
+        do {
+            summary = try await app.api.get("api/profile")
+        } catch {
+            _ = app.handle(error)
         }
     }
 
@@ -113,27 +231,5 @@ struct ProfileView: View {
         } catch {
             self.error = app.handle(error)
         }
-    }
-
-    private func row(_ title: String, sub: String? = nil, value: String? = nil, chevron: Bool = false) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Pearl.text(.body)).foregroundColor(Pearl.ink)
-                if let sub = sub {
-                    Text(sub).font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-            Spacer(minLength: 8)
-            if let value = value {
-                Text(value).font(Pearl.text(.body)).foregroundColor(Pearl.muted).lineLimit(1)
-            }
-            if chevron {
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
-            }
-        }
-        .padding(.horizontal, 20).padding(.vertical, 14)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
     }
 }

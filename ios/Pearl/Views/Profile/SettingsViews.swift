@@ -113,6 +113,11 @@ struct SignInSecurityView: View {
         SettingsPage(title: "Sign-in & security") {
             settingsSection("Sign-in")
             GlassCard {
+                NavigationLink { ChangeEmailView() } label: {
+                    settingsRow("Email", value: app.user?.email ?? "Change", chevron: true)
+                }
+                .buttonStyle(.plain)
+                RowSeparator()
                 NavigationLink { ChangePasswordView() } label: {
                     settingsRow("Password", value: "Change", chevron: true)
                 }
