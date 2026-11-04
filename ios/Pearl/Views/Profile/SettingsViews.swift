@@ -92,6 +92,10 @@ struct SignInSecurityView: View {
     @State private var devices: [Device] = []
     @State private var faceID = false
     @State private var confirming = false
+    /// SEC-08: recovery codes she has left; SEC-09: the new ones, shown once.
+    @State private var codesLeft: Int?
+    @State private var askingCodes = false
+    @State private var codes: RecoveryCodes?
     @State private var busy = false
     @State private var message: String?
     @State private var error: String?
@@ -139,6 +143,16 @@ struct SignInSecurityView: View {
                 settingsNote("Asks for Face ID when you come back to Pearl after a minute away.")
             }
 
+            settingsSection("Recovery codes")
+            GlassCard {
+                Button { if (codesLeft ?? 0) > 0 { askingCodes = true } else { Task { await makeCodes() } } } label: {
+                    settingsRow("Recovery codes", value: codesValue, chevron: true)
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+            settingsNote("For signing in on a new device when your others aren’t with you. Each works once.")
+
             settingsSection("Your devices")
             GlassCard {
                 ForEach(Array(devices.enumerated()), id: \.element.id) { i, d in
@@ -165,7 +179,19 @@ struct SignInSecurityView: View {
         }
         .task {
             faceID = app.faceIDOn
+            codesLeft = app.user?.recoveryCodes
             await load()
+        }
+        .alert("Make new recovery codes?", isPresented: $askingCodes) {
+            Button("Cancel", role: .cancel) {}
+            Button("Make new codes") { Task { await makeCodes() } }
+        } message: {
+            Text("Your old ones stop working.")
+        }
+        .sheet(item: $codes) { made in
+            RecoveryCodesSheet(codes: made.codes)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         .alert("Sign out of other devices?", isPresented: $confirming) {
             Button("Cancel", role: .cancel) {}
@@ -176,6 +202,24 @@ struct SignInSecurityView: View {
     }
 
     private var others: [Device] { devices.filter { $0.this != true } }
+
+    private var codesValue: String {
+        guard let left = codesLeft, left > 0 else { return "Make them" }
+        return "\(left) of 10 left"
+    }
+
+    private func makeCodes() async {
+        busy = true
+        defer { busy = false }
+        do {
+            let reply: RecoveryCodes = try await app.api.post("api/auth/recovery-codes")
+            codesLeft = reply.codes.count
+            codes = reply
+            error = nil
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
 
     /// "Your iPad will be signed out of Pearl."
     private var othersLine: String {
@@ -300,5 +344,58 @@ struct ChangePasswordView: View {
         } catch {
             self.error = app.handle(error)
         }
+    }
+}
+
+// MARK: - SEC-09 Your recovery codes
+
+struct RecoveryCodes: Decodable, Identifiable {
+    let codes: [String]
+    var id: String { codes.joined() }
+}
+
+/// Ten codes, shown once: keep them somewhere safe; each works once.
+struct RecoveryCodesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let codes: [String]
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Spacer()
+                Text("Recovery codes").font(Nacre.headline).foregroundColor(Pearl.ink).accessibilityAddTraits(.isHeader)
+                Spacer()
+            }
+            .overlay(alignment: .trailing) { CloseButton { dismiss() } }
+            .padding(.top, 20)
+            Text("Keep them somewhere safe, like a password manager. Each works once. Making new ones turns these off.")
+                .font(Nacre.body).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            GlassCard {
+                ForEach(Array(stride(from: 0, to: codes.count, by: 2)), id: \.self) { i in
+                    if i > 0 { RowSeparator() }
+                    HStack {
+                        Text(codes[i])
+                        Spacer()
+                        if i + 1 < codes.count { Text(codes[i + 1]) }
+                    }
+                    .font(.system(size: 17, design: .monospaced)).foregroundColor(Pearl.ink)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 16).frame(minHeight: 44)
+                }
+            }
+            Spacer(minLength: 0)
+            Button(copied ? "Copied" : "Copy codes") {
+                UIPasteboard.general.string = codes.joined(separator: "\n")
+                copied = true
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            Button("Done") { dismiss() }
+                .buttonStyle(NacreButtonStyle())
+        }
+        .padding(.horizontal, 16).padding(.bottom, 8)
+        .background(SheetBackground())
+        .interactiveDismissDisabled(!copied)
     }
 }

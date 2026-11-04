@@ -13,6 +13,10 @@ struct HomeView: View {
     /// N-01's quiet hours, while it's showing.
     @State private var askingToNotify: NotificationSettings.Quiet?
     @State private var checkedNotify = false
+    /// H-01's Reconnect.
+    @State private var reconnecting: Home.Connection?
+    /// H-01's "See accounts" for a disconnected bank.
+    @State private var openAccounts = false
 
     var body: some View {
         ScrollView {
@@ -20,6 +24,11 @@ struct HomeView: View {
                 PageHeader(overline: home?.today.map { Format.day($0) }, title: greeting)
 
                 if let home = home {
+                    if let c = home.connections?.first, ["needs_sign_in", "disconnected", "bank_down"].contains(c.state ?? "") {
+                        BankAlertCard(connection: c, today: home.today) { openAccounts = true } reconnect: {
+                            reconnecting = c
+                        }
+                    }
                     if let setup = setup, setup.active {
                         SetupAgainCard(setup: setup, onChanged: { Task { await load() } })
                     }
@@ -38,6 +47,17 @@ struct HomeView: View {
         .navigationBarHidden(true)
         .refreshable { await load() }
         .task(id: app.version) { await load() }
+        .navigationDestination(isPresented: $openAccounts) { AccountsView() }
+        .sheet(item: $reconnecting) { c in
+            ReconnectSheet(bank: c.institution ?? "your bank", label: c.institution ?? "Your bank",
+                           itemId: c.itemId, updatedAt: c.lastSynced) { ok in
+                reconnecting = nil
+                if ok { app.changed() }
+            }
+            .background(SheetBackground())
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
         .fullScreenCover(item: $askingToNotify) { quiet in
             TurnOnNotificationsView(quiet: quiet)
         }
@@ -177,5 +197,51 @@ struct SetupAgainCard: View {
     private func mark(_ key: String) async {
         let _: SetupAgain? = try? await app.api.post("api/setup-again", ["step": key])
         onChanged()
+    }
+}
+
+/// H-01 (THL-120, THL-123): a bank that needs her, at the top of Home: the
+/// same card as Accounts' C-01. Disconnected opens Accounts; a bank that
+/// isn't responding needs nothing from her.
+struct BankAlertCard: View {
+    let connection: Home.Connection
+    let today: String?
+    let openAccounts: () -> Void
+    let reconnect: () -> Void
+
+    var body: some View {
+        GlassCard {
+            VStack(spacing: 14) {
+                HStack(spacing: 12) {
+                    IconBubble(symbol: connection.state == "bank_down" ? "clock" : "arrow.triangle.2.circlepath")
+                    Text(text).font(Nacre.body).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                switch connection.state {
+                case "needs_sign_in":
+                    Button("Reconnect", action: reconnect).buttonStyle(NacreButtonStyle())
+                case "disconnected":
+                    Button("See accounts", action: openAccounts).buttonStyle(NacreButtonStyle())
+                default:
+                    EmptyView()
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    private var text: String {
+        let bank = connection.institution ?? "Your bank"
+        switch connection.state {
+        case "needs_sign_in":
+            let what = connection.cardsOnly == true ? "Its purchases" : "Its transactions"
+            let since = connection.lastSynced.map { " since \(Format.short($0))" } ?? ""
+            return "\(bank) needs you to sign in again. \(what)\(since) aren’t counted yet."
+        case "disconnected":
+            return "\(bank) is no longer connected, so its transactions aren’t coming in."
+        default:
+            return "\(bank) isn’t responding right now. Pearl keeps trying; there’s nothing you need to do."
+        }
     }
 }

@@ -47,13 +47,16 @@ struct TransactionsView: View {
     @State private var selecting = false
     @State private var picked: Set<String> = []
     @State private var bulk: Bulk?
+    /// T-77's Leave out: why, so she can tell later.
+    @State private var leavingOut = false
+    @State private var leaveReason = ""
     @State private var busy = false
     @State private var toast: Toast?
     /// T-23: adding one by hand.
     @State private var adding = false
 
     enum Bulk: String, Identifiable {
-        case category, tag
+        case category, tag, mark
         var id: String { rawValue }
     }
 
@@ -140,7 +143,20 @@ struct TransactionsView: View {
                     bulk = nil
                     Task { await change(["add": add], path: "api/transactions/batch/tags") }
                 }
+            case .mark:
+                MarkSelectionSheet(title: pickedTitle, amount: pickedAmount, tone: pickedTone,
+                                   count: picked.count, inflow: pickedRows.allSatisfy(\.inflow)) { body in
+                    bulk = nil
+                    Task { await change(body, path: "api/transactions/batch/mark") }
+                }
             }
+        }
+        .alert("Leave out \(pickedTitle)?", isPresented: $leavingOut) {
+            TextField("Why? For example, a friend’s purchase", text: $leaveReason)
+            Button("Cancel", role: .cancel) { leaveReason = "" }
+            Button("Leave out") { Task { await leaveOut() } }
+        } message: {
+            Text("They’re left out of all your numbers. Put any back from its transaction.")
         }
         .navigationDestination(for: Transaction.self) { t in
             TransactionDetailView(transaction: t, categories: categories, siblings: rows)
@@ -602,27 +618,33 @@ struct TransactionsView: View {
 
     // MARK: Select (T-19)
 
-    /// Category, Tag and Not counted, where the tab bar was.
+    /// T-77: Category, Mark as…, Confirm (Pearl's guesses, when some are)
+    /// and Leave out, where the tab bar was. Tag waits while tags are off
+    /// (THL-286), as on the web.
     private var selectionBar: some View {
         HStack(spacing: 0) {
             barButton("Category") { bulk = .category }
-            barButton("Tag") { bulk = .tag }
-            barButton("Not counted") {
-                let n = picked.count
-                Task {
-                    await change(["case": "not_mine", "reason": ""], path: "api/transactions/batch/mark",
-                                 say: n == 1 ? "Not counted." : "\(n) not counted.")
+            barButton("Mark as…") { bulk = .mark }
+            if guesses > 0 {
+                barButton("Confirm \(guesses)") {
+                    let ids = pickedRows.filter(\.suggested).map(\.id)
+                    Task { await change(["ids": ids], path: "api/transactions/batch/confirm") }
                 }
             }
+            barButton("Leave out") { leavingOut = true }
         }
         .padding(.horizontal, 8).padding(.top, 14).padding(.bottom, 10)
         .background(Pearl.bar.ignoresSafeArea(edges: .bottom))
         .overlay(alignment: .top) { Rectangle().fill(Pearl.border).frame(height: 1) }
     }
 
+    /// Pearl's guesses among the picked rows, for Confirm.
+    private var guesses: Int { pickedRows.filter(\.suggested).count }
+
     private func barButton(_ title: String, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
             Text(title).font(Nacre.textButton).foregroundColor(Pearl.action)
+                .lineLimit(1).minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -678,6 +700,30 @@ struct TransactionsView: View {
 
     private func toggle(_ t: Transaction) {
         if picked.contains(t.id) { picked.remove(t.id) } else { picked.insert(t.id) }
+    }
+
+    /// Leave out every picked row, with her reason.
+    private func leaveOut() async {
+        let reason = leaveReason.trimmingCharacters(in: .whitespaces)
+        leaveReason = ""
+        guard !reason.isEmpty else {
+            error = "Say why, so you can tell later."
+            return
+        }
+        busy = true
+        defer { busy = false }
+        let ids = Array(picked)
+        do {
+            for id in ids {
+                let _: OK = try await app.api.put("api/transactions/\(id)/exclude", ["reason": reason])
+            }
+            endSelecting()
+            withAnimation { toast = Toast(title: ids.count == 1 ? "Left out." : "\(ids.count) left out.", undo: nil) }
+            app.changed()
+            await reload()
+        } catch {
+            self.error = app.handle(error)
+        }
     }
 
     private func endSelecting() {
@@ -1649,4 +1695,79 @@ struct SheetBackground: View {
 extension Transaction {
     /// Red going out, green coming in, grey when it doesn't count.
     var tone: Color { notCounted ? Pearl.muted : (inflow ? Pearl.moneyIn : Pearl.moneyOut) }
+}
+
+// MARK: - T-78 Mark n as…
+
+/// What a selection was, at once: the What was this? answers that apply to
+/// many rows (finance/marks_api.py BATCH_CASES). A purchase is Category.
+struct MarkSelectionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    let amount: String
+    let tone: Color
+    let count: Int
+    let inflow: Bool
+    let onMark: ([String: Any]) -> Void
+
+    @State private var pick: String?
+    @State private var reason = ""
+
+    private var cases: [(key: String, label: String, sub: String)] {
+        inflow ? [("own", "From my own account", "Your money moving, not income"),
+                  ("out_of_savings", "Taken out of my savings", "Not income"),
+                  ("borrowed", "Money I borrowed", "Not income; you’ll pay it back"),
+                  ("lent_back", "Paying back money I lent", "Not income"),
+                  ("not_mine", "Not mine", "Left out of all your numbers")]
+            : [("moved", "Moved between my accounts", "Not spending"),
+               ("saved", "Put into savings", "Adds to your total saved"),
+               ("lent", "Lent to someone", "Pearl watches for it coming back"),
+               ("work", "To be reimbursed", "Left out until the money comes back"),
+               ("not_mine", "Not mine", "Left out of all your numbers")]
+    }
+
+    private var ready: Bool { pick != nil && (pick != "not_mine" || !reason.trimmingCharacters(in: .whitespaces).isEmpty) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SheetTitle(title: "Mark \(count) as…") { dismiss() }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Initials(name: "\(count)", size: 48)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(title).font(Nacre.title2).foregroundColor(Pearl.ink)
+                            Text(amount).font(Nacre.subheadline).foregroundColor(tone)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    GlassCard {
+                        ForEach(Array(cases.enumerated()), id: \.element.key) { i, c in
+                            if i > 0 { RowSeparator() }
+                            ChoiceLine(title: c.label, sub: c.sub, selected: pick == c.key) { pick = c.key }
+                        }
+                    }
+                    if pick == "not_mine" {
+                        FieldRow(label: "Why?", text: $reason, prompt: "A friend’s purchase").sheetCard()
+                    }
+                    Text(inflow ? "Money in that’s a purchase refund or your pay? Use Category or open it."
+                                : "A purchase? Use Category instead.")
+                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                }
+                .padding(.horizontal, 16).padding(.bottom, 16)
+            }
+            Button("Save") {
+                guard let pick = pick else { return }
+                var body: [String: Any] = ["case": pick]
+                if pick == "not_mine" { body["reason"] = reason.trimmingCharacters(in: .whitespaces) }
+                onMark(body)
+            }
+            .buttonStyle(NacreButtonStyle())
+            .disabled(!ready)
+            .padding(.horizontal, 16).padding(.vertical, 8)
+        }
+        .background(SheetBackground())
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
 }

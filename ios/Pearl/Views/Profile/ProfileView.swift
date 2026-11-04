@@ -41,6 +41,12 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
+                    NavigationLink { RecurringTransfersView() } label: {
+                        ProfileRow(symbol: "arrow.triangle.2.circlepath", title: "Recurring transfers",
+                                   sub: "Rent, savings and others on a schedule")
+                    }
+                    .buttonStyle(.plain)
+                    RowSeparator(inset: 62)
                     NavigationLink { CategoriesRulesView() } label: {
                         ProfileRow(symbol: "square.on.circle", title: "Categories and rules", sub: rulesLine)
                     }

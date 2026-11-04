@@ -26,6 +26,8 @@ struct PearlUser: Decodable, Equatable {
     let onboarding: Onboarding?
     /// Passkeys saved for her (from the sign-in status).
     var passkeys: Int? = nil
+    /// Recovery codes she has left (SEC-08).
+    var recoveryCodes: Int? = nil
 
     struct Onboarding: Decodable, Equatable {
         let done: Bool?
@@ -34,6 +36,7 @@ struct PearlUser: Decodable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, username, email, onboarding, passkeys
+        case recoveryCodes = "recovery_codes"
         case firstName = "first_name"
     }
 
@@ -61,9 +64,13 @@ struct SignInReply: Decodable {
     let sentTo: String?
     let resendIn: Int?
     let created: Bool?
+    /// A-11: the sign-in waits until this iPhone is confirmed.
+    var confirmDevice: Bool? = nil
+    var choices: DeviceChoices? = nil
 
     enum CodingKeys: String, CodingKey {
-        case user, created
+        case user, created, choices
+        case confirmDevice = "confirm_device"
         case signedIn = "signed_in"
         case codeNeeded = "code_needed"
         case sentTo = "sent_to"
@@ -412,9 +419,22 @@ struct Home: Decodable {
         }
     }
 
-    struct Connection: Decodable {
+    /// A bank connection, worst first: "needs_sign_in", "disconnected",
+    /// "bank_down" (H-01).
+    struct Connection: Decodable, Identifiable {
+        let itemId: String?
         let institution: String?
         let state: String?
+        let lastSynced: String?
+        let cardsOnly: Bool?
+        var id: String { itemId ?? institution ?? "" }
+
+        enum CodingKeys: String, CodingKey {
+            case institution, state
+            case itemId = "item_id"
+            case lastSynced = "last_synced"
+            case cardsOnly = "cards_only"
+        }
     }
 }
 
@@ -520,6 +540,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
     let jointFrom: String
     let jointPerson: String?
     let jointShare: Double?
+    /// The bank's spelling of the merchant, which a rename is keyed on (T-80).
+    let bankMerchant: String?
+    /// Her share was set on this charge (T-76).
+    let shareSet: Bool
     let manual: Bool
     let recurring: String?
 
@@ -648,6 +672,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case jointPerson = "joint_person"
         case jointShare = "joint_share"
         case jointSplit = "joint_split"
+        case bankMerchant = "bank_merchant"
+        case shareSet = "share_set"
         case oneOffLine = "one_off_line"
         case incomeType = "income_type"
         case regularPay = "regular_pay"
@@ -698,6 +724,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         jointFrom = opt(String.self, .jointFrom) ?? ""
         jointPerson = opt(String.self, .jointPerson).flatMap { $0.isEmpty ? nil : $0 }
         jointShare = opt(Double.self, .jointSplit) ?? opt(Double.self, .jointShare)
+        bankMerchant = opt(String.self, .bankMerchant)
+        shareSet = opt(Bool.self, .shareSet) ?? false
         manual = opt(Bool.self, .manual) ?? false
         recurring = opt(String.self, .recurring)
         oneOffLine = opt(OneOffLine.self, .oneOffLine)
@@ -1296,5 +1324,35 @@ struct Privacy: Decodable {
             case itemId = "item_id"
             case lastSynced = "last_synced"
         }
+    }
+}
+
+/// A-11: how this iPhone can be confirmed: approved on her other device,
+/// or with a recovery code.
+struct DeviceChoices: Decodable, Hashable {
+    let approve: Approve?
+    let recovery: Bool?
+
+    struct Approve: Decodable, Hashable {
+        let label: String?
+        /// Seconds since 1970.
+        let usedAt: Double?
+        enum CodingKeys: String, CodingKey {
+            case label
+            case usedAt = "used_at"
+        }
+    }
+}
+
+/// SEC-10: another device asking to sign in as her.
+struct Approval: Decodable, Identifiable, Hashable {
+    let id: Int
+    let label: String?
+    let near: String?
+    let account: Account?
+
+    struct Account: Decodable, Hashable {
+        let name: String?
+        let email: String?
     }
 }

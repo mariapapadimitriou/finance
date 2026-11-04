@@ -129,6 +129,10 @@ struct MainTabs: View {
     @State private var quickSortNames: [String] = []
     @State private var categories: [CategoryList.Category] = []
     @State private var offered = false
+    /// SEC-10: another device asking to sign in as her, and the ones she's seen.
+    @State private var approval: Approval?
+    @State private var seenApprovals: Set<Int> = []
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         TabView(selection: $tab) {
@@ -142,8 +146,32 @@ struct MainTabs: View {
         .tint(Pearl.action)
         .task(id: app.version) { await loadCount() }
         .task { await offerQuickSort() }
+        .task(id: scenePhase) { await lookForApprovals() }
+        .sheet(item: $approval) { a in
+            ApprovalPrompt(approval: a) { yes in
+                approval = nil
+                Task {
+                    let _: OK? = try? await app.api.post("api/auth/approvals/\(a.id)", ["approve": yes])
+                }
+            }
+            .presentationDetents([.medium])
+        }
         .fullScreenCover(isPresented: Binding(get: { !quickSort.isEmpty }, set: { if !$0 { quickSort = [] } })) {
             QuickSortView(asks: quickSort, categories: categories, names: quickSortNames) { quickSort = [] }
+        }
+    }
+
+    /// While Pearl is open, every 15 seconds: is another device waiting for
+    /// this one to approve it? (The web looks as often.)
+    private func lookForApprovals() async {
+        struct Waiting: Decodable { let approvals: [Lenient<Approval>] }
+        while scenePhase == .active && !Task.isCancelled {
+            if approval == nil, let w: Waiting = try? await app.api.get("api/auth/approvals"),
+               let next = w.approvals.compactMap(\.value).first(where: { !seenApprovals.contains($0.id) }) {
+                seenApprovals.insert(next.id)
+                approval = next
+            }
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
         }
     }
 

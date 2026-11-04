@@ -24,6 +24,10 @@ struct CategorySheet: View {
     var title = "Category"
     /// "Delete this rule" under Save, when editing a saved rule.
     var onDelete: (() -> Void)? = nil
+    /// T-79: what saving would do, before it's saved ("Also moves 6 other
+    /// Loblaws transactions…"), for the category and the remember switch.
+    var preview: ((String, Bool) async -> String?)? = nil
+    @State private var previewLine: String?
 
     @Environment(\.dismiss) private var dismiss
     @State private var chosen: String
@@ -34,8 +38,10 @@ struct CategorySheet: View {
     init(name: String, amount: String, tone: Color, categories: [CategoryList.Category], current: String,
          merchant: String? = nil, spendingOnly: Bool = false, mark: String? = nil,
          onRegularBill: ((Bool) -> Void)? = nil, title: String = "Category",
-         onDelete: (() -> Void)? = nil, onSave: @escaping (String, Bool) -> Void) {
+         onDelete: (() -> Void)? = nil, preview: ((String, Bool) async -> String?)? = nil,
+         onSave: @escaping (String, Bool) -> Void) {
         self.title = title
+        self.preview = preview
         self.onDelete = onDelete
         self.spendingOnly = spendingOnly
         self.mark = mark
@@ -105,13 +111,35 @@ struct CategorySheet: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
             }
+            if let line = previewLine {
+                GlassCard {
+                    HStack(spacing: 12) {
+                        IconBubble(symbol: "arrow.triangle.2.circlepath")
+                        Text(line).font(Nacre.body).foregroundColor(Pearl.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(14)
+                }
+                .padding(.horizontal, 16).padding(.top, 8)
+                .accessibilityElement(children: .combine)
+            }
             Button("Save") {
                 onRegularBill?(bill && spending)
                 onSave(chosen, remember)
             }
                 .buttonStyle(NacreButtonStyle())
                 .disabled(chosen == current && !remember && !bill)
-                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
+                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, remember && preview != nil ? 0 : 8)
+            if remember && preview != nil {
+                Button("Just this one") {
+                    onRegularBill?(bill && spending)
+                    onSave(chosen, false)
+                }
+                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .disabled(chosen == current)
+                .padding(.horizontal, 16).padding(.bottom, 8)
+            }
             if let onDelete = onDelete {
                 Button("Delete this rule", action: onDelete)
                     .buttonStyle(NacreTextButtonStyle())
@@ -121,6 +149,10 @@ struct CategorySheet: View {
         .background(SheetBackground())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .task(id: "\(chosen)|\(remember)") {
+            guard let preview = preview, chosen != current || remember else { previewLine = nil; return }
+            previewLine = await preview(chosen, remember)
+        }
     }
 
     /// "LO  Loblaws  −$84.12".
