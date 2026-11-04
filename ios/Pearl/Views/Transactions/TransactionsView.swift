@@ -83,12 +83,11 @@ struct TransactionsView: View {
                     emptyLedger
                 } else {
                     searchRow.padding(.top, 20)
-                    if !inSearch {
-                        tabs.padding(.top, 14)
-                        if filtersOn && !showCalendar { activeChips.padding(.top, 12) }
-                        summaryCard.padding(.top, 16)
-                        bankState
-                    }
+                    // T-02, T-45: the tabs and the summary stay while searching.
+                    tabs.padding(.top, 14)
+                    if filtersOn && !showCalendar && !inSearch { activeChips.padding(.top, 12) }
+                    summaryCard.padding(.top, 16)
+                    if !inSearch { bankState }
                     if showCalendar && !inSearch {
                         CalendarCard(month: month ?? Format.thisMonth(), categories: categories) { m in
                             month = m
@@ -209,6 +208,16 @@ struct TransactionsView: View {
 
     private var inSearch: Bool { searching || !query.isEmpty }
 
+    /// T-54: "No money came into TD Visa this month."
+    private var noMatchLine: String {
+        let account = filters.accounts.count == 1 ? filterAccounts.first { filters.accounts.contains($0.id) }?.label : nil
+        let when = month.map { $0 == Format.thisMonth() ? "this month" : "in \(Format.monthName($0))" } ?? "this month"
+        if let account = account, filters.types == ["income"] { return "No money came into \(account) \(when)." }
+        if let account = account, filters.types == ["spending"] { return "Nothing was spent on \(account) \(when)." }
+        if let account = account { return "Nothing on \(account) matches \(when)." }
+        return "Try fewer filters."
+    }
+
     private var searchRow: some View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
@@ -326,15 +335,19 @@ struct TransactionsView: View {
                 .accessibilityLabel("Month, \(month.map { Format.month($0) } ?? "")")
 
                 HStack(spacing: 0) {
-                    let spent = monthTotals?.spent ?? 0
-                    let income = monthTotals?.income ?? 0
+                    // T-45, T-53: a search or a filter shows its own totals.
+                    let narrowed = inSearch || filters.isActive
+                    let spent = narrowed ? shown.filter { !$0.inflow && $0.counts == "spending" }.reduce(0) { $0 + $1.amount }
+                        : (monthTotals?.spent ?? 0)
+                    let income = narrowed ? shown.filter { $0.inflow && $0.counts == "income" }.reduce(0) { $0 + $1.amount }
+                        : (monthTotals?.income ?? 0)
                     let left = income - spent
                     stat("Spent", Format.whole(spent), Pearl.moneyOut, filter: "spending")
                     divider
                     stat("Came in", Format.whole(income), Pearl.moneyIn, filter: "income")
                     divider
-                    stat(left < -0.5 ? "Over" : "Leftover", Format.whole(left),
-                         left < -0.5 ? Pearl.moneyOut : Pearl.moneyIn, filter: nil)
+                    stat(left < -0.5 ? "Over" : "Leftover", narrowed ? "—" : Format.whole(left),
+                         left < -0.5 && !narrowed ? Pearl.moneyOut : (narrowed ? Pearl.muted : Pearl.moneyIn), filter: nil)
                 }
             }
             .padding(16)
@@ -505,7 +518,7 @@ struct TransactionsView: View {
             if inSearch {
                 nothing(title: "No matches", line: "Try another word.", action: "Clear search") { query = "" }
             } else if filters.isActive || counts != nil {
-                nothing(title: "Nothing matches", line: "Try fewer filters.", action: "Clear filters") {
+                nothing(title: "Nothing matches", line: noMatchLine, action: "Clear filters") {
                     let reload = filters.needsServer
                     filters = TxFilters(sort: filters.sort)
                     counts = nil
@@ -815,6 +828,10 @@ struct TransactionsView: View {
             .buttonStyle(.plain)
             .disabled(reconnecting != nil)
             .padding(.top, 12)
+            // T-35.
+            Button("Add one by hand") { adding = true }
+                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .frame(width: 240)
             if let error = error {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).multilineTextAlignment(.center)
             }
@@ -1158,7 +1175,7 @@ struct TxFilters: Equatable {
     var merchant = ""
 
     static let typeNames: [(key: String, name: String)] = [
-        ("spending", "Spending"), ("income", "Income"), ("savings", "Savings"), ("transfer", "Transfers"),
+        ("spending", "Spending"), ("income", "Money in"), ("savings", "Savings"), ("transfer", "Transfers"),
     ]
     static let groupNames: [(key: String, name: String)] = [
         ("essentials", "Essentials"), ("lifestyle", "Lifestyle"), ("fixed", "Fixed"), ("variable", "Variable"),
