@@ -117,6 +117,8 @@ struct TransactionDetailView: View {
         .navigationBarHidden(false)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        // T-03 and every detail frame: no tab bar while it's open.
+        .toolbar(.hidden, for: .tabBar)
         .task { await load() }
         .sheet(isPresented: $picking) {
             // The stored category, not the chip ("Transfer", "Not sorted yet").
@@ -256,6 +258,19 @@ struct TransactionDetailView: View {
             Text(t.transfer != nil ? "Doesn’t count · Between your accounts" : dateLine)
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center)
+            if t.transfer == nil {
+                // T-03's Counts pill: Spending, Income, Refund or Not counted.
+                HStack(spacing: 6) {
+                    Image(systemName: countsPill.up ? "arrow.up" : "arrow.down")
+                        .font(.system(size: 12, weight: .semibold)).foregroundColor(countsPill.tone)
+                    Text(countsPill.label)
+                }
+                .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                .padding(.horizontal, 12).frame(height: 30)
+                .background(Capsule().fill(Nacre.glass))
+                .padding(.top, 4)
+                .accessibilityElement(children: .combine)
+            }
             if !t.joint.isEmpty && t.transfer == nil {
                 // T-40: "Joint with Sam · 50%"; T-75 on a charge: "yours unless you say".
                 HStack(spacing: 6) {
@@ -298,8 +313,26 @@ struct TransactionDetailView: View {
             else if isIncome { asking = Asking(step: .kinds) } else { picking = true }
         } label: {
             GlassCard {
-                // Income says what kind (T-37): "Salary · Counts as income".
-                row(title: isIncome ? Self.kindName(t.incomeType) : t.label, sub: countsLine, chevron: true)
+                // T-03: the category's icon and name; income says what kind
+                // (T-37, "Salary"). The pill above says what it counts as.
+                let title = isIncome ? Self.kindName(t.incomeType) : t.label
+                HStack(spacing: 12) {
+                    Image(systemName: CategorySheet.symbol(for: isIncome ? "Income" : (t.category ?? t.label)))
+                        .font(.system(size: 15, weight: .medium)).foregroundColor(Pearl.action)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(Pearl.action.opacity(0.1)))
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(Nacre.headline).foregroundColor(Pearl.ink).lineLimit(2)
+                        if let sub = countsLine {
+                            Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
+                }
+                .padding(.horizontal, 16).frame(minHeight: 60).padding(.vertical, 4)
+                .contentShape(Rectangle())
             }
         }
         .buttonStyle(.plain)
@@ -331,11 +364,22 @@ struct TransactionDetailView: View {
 
     /// "Counts as spending · Essential", "Your share counts · $46 of $86",
     /// "Refund · lowers Shopping by $68".
-    private var countsLine: String {
-        if !t.excluded.isEmpty { return "Left out · \(t.excluded)" }
-        if t.refundOf != nil {
-            return "Refund · lowers \(t.label) by \(Format.compact(t.amount))"
+    /// What the Counts pill says (T-03, T-37, T-41).
+    private var countsPill: (label: String, up: Bool, tone: Color) {
+        if !t.excluded.isEmpty { return ("Not counted", !t.inflow, Pearl.muted) }
+        if t.refundOf != nil { return ("Refund", true, Pearl.moneyIn) }
+        switch t.counts {
+        case "income": return ("Income", true, Pearl.moneyIn)
+        case "spending": return ("Spending", t.inflow, t.inflow ? Pearl.moneyIn : Pearl.moneyOut)
+        default: return ("Not counted", t.inflow, Pearl.muted)
         }
+    }
+
+    /// The category card's second line, only when the frames draw one:
+    /// a share (T-39, S-05), why it's left out, or a payback's note.
+    private var countsLine: String? {
+        if !t.excluded.isEmpty { return "Left out · \(t.excluded)" }
+        if t.refundOf != nil { return nil }
         if t.split, let full = t.fullAmount {
             // S-05: "Your share · $42.06 of $84.12".
             return "Your share · \(Format.amount(t.amount)) of \(Format.amount(full))"
@@ -345,22 +389,11 @@ struct TransactionDetailView: View {
             // T-33's Both of us: only her share is her income.
             let mine = (t.amount * (t.jointShare ?? 50) / 100 * 100).rounded() / 100
             return "Your share counts · \(Format.compact(mine)) of \(Format.compact(t.amount))"
-        case "income": return "Counts as income"
+        case "income": return nil
         case "spending":
-            if t.inflow { return t.note.flatMap { $0.isEmpty ? nil : $0 } ?? "Comes off your spending" }
-            let rest = (oneOff ?? t.oneOff) ? "One-off" : groupName
-            return ["Counts as spending", rest].compactMap { $0 }.joined(separator: " · ")
+            return t.inflow ? t.note.flatMap { $0.isEmpty ? nil : $0 } : nil
         default:
-            return t.note.flatMap { $0.isEmpty ? nil : $0 } ?? "Doesn’t count"
-        }
-    }
-
-    private var groupName: String? {
-        switch t.group {
-        case "essentials": return "Essential"
-        case "lifestyle": return "Lifestyle"
-        case "savings": return "Savings"
-        default: return nil
+            return t.note.flatMap { $0.isEmpty ? nil : $0 }
         }
     }
 
@@ -771,67 +804,58 @@ struct TransactionDetailView: View {
 
     // MARK: Options
 
+    /// T-03: one Options card. Split with others, Regular pay (T-37),
+    /// Unlink refund (T-41) and One-off purchase, each a plain row.
     @ViewBuilder private var options: some View {
         let unlink = t.refundOf != nil
         let canOneOff = t.canOneOff && !t.inflow
-        if canSplit || canPart {
+        if canSplit || canPart || couldBePay || unlink || canOneOff {
             section("Options")
             GlassCard {
-                Button { if canSplit { splitting = true } else { parting = deposit(rest: false) } } label: {
-                    if canSplit {
-                        row(title: "Split with others", sub: "Count only your share", chevron: true)
-                    } else {
-                        row(title: "Split into parts", sub: "Like a payback and a gift in one", chevron: true)
+                if canSplit || canPart {
+                    Button { if canSplit { splitting = true } else { parting = deposit(rest: false) } } label: {
+                        row(title: canSplit ? "Split with others" : "Split into parts", chevron: true)
                     }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
                 }
-                .buttonStyle(.plain)
-                .disabled(busy)
-            }
-        }
-        if couldBePay {
-            // T-37: her regular pay, and how often; or making it so (T-31).
-            if !(canSplit || canPart) { section("Options") }
-            GlassCard {
-                Button { asking = Asking(step: .cadence) } label: {
-                    if let pay = t.regularPay {
-                        row(title: "Regular pay",
-                            sub: [Format.cadence(pay.cadence ?? ""),
-                                  pay.next.map { "next on \(Format.weekdayDay($0))" }]
-                                .compactMap { $0 }.joined(separator: " · "),
-                            chevron: true)
-                    } else {
-                        row(title: "This is my regular pay",
-                            sub: "Pearl plans with it from now on", chevron: true)
+                if couldBePay {
+                    if canSplit || canPart { RowSeparator() }
+                    Button { asking = Asking(step: .cadence) } label: {
+                        if let pay = t.regularPay {
+                            // T-37: "Every 2 weeks · next on Fri, Nov 21".
+                            row(title: "Regular pay",
+                                sub: [Format.cadence(pay.cadence ?? ""),
+                                      pay.next.map { "next on \(Format.weekdayDay($0))" }]
+                                    .compactMap { $0 }.joined(separator: " · "),
+                                chevron: true)
+                        } else {
+                            row(title: "This is my regular pay", chevron: true)
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
                 }
-                .buttonStyle(.plain)
-                .disabled(busy)
-            }
-        }
-        if unlink || canOneOff {
-            if !(canSplit || canPart || couldBePay) { section("Options") }
-            GlassCard {
                 if unlink {
+                    if canSplit || canPart || couldBePay { RowSeparator() }
                     Button { unlinkingRefund = true } label: {
-                        row(title: "Unlink refund", sub: "Count it as money in instead", chevron: true)
+                        row(title: "Unlink refund", chevron: true)
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
                 }
                 if canOneOff {
-                    if unlink { RowSeparator() }
+                    if canSplit || canPart || couldBePay || unlink { RowSeparator() }
                     Toggle(isOn: Binding(get: { oneOff ?? t.oneOff },
                                          set: { on in Task { await setOneOff(on) } })) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("One-off purchase").font(Nacre.body).foregroundColor(Pearl.ink)
-                            Text((oneOff ?? t.oneOff) ? "Left out of your usual month" : "Leave out of your usual month")
-                                .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        }
+                        Text("One-off purchase").font(Nacre.body).foregroundColor(Pearl.ink)
                     }
                     .tint(Pearl.action)
                     .disabled(busy)
-                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .padding(.horizontal, 16).frame(minHeight: 52)
+                    .accessibilityHint("Leaves it out of your usual month")
                     if let line = t.oneOffLine?.line, oneOff ?? t.oneOff {
+                        // T-42: what leaving it out does to the month.
                         Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
                             .padding(.horizontal, 16).padding(.bottom, 12)
                             .fixedSize(horizontal: false, vertical: true)
