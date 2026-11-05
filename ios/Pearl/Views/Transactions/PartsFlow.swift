@@ -46,6 +46,9 @@ struct PartsSheet: View {
     @State private var partAmount = ""
     @State private var kind: String?
     @State private var busy = false
+    /// S-12: the month's leftover now, and whether the deposit counts as income.
+    @State private var leftoverWas: Double?
+    @State private var depositCounted = false
     @State private var error: String?
 
     enum Step { case loading, cash, owing, progress, kind, incomeKind, refund, review }
@@ -457,6 +460,41 @@ struct PartsSheet: View {
                 }
                 .padding(.horizontal, 16).frame(minHeight: 52)
             }
+            if let was = leftoverWas {
+                // S-12: what saving does to the month.
+                RowSeparator()
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Leftover this month").font(Nacre.body).foregroundColor(Pearl.ink)
+                        Text("Was \(Format.whole(was))").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    }
+                    Spacer()
+                    Text(Format.whole(was + leftoverChange)).font(Nacre.headline).monospacedDigit()
+                        .foregroundColor(Pearl.moneyIn)
+                }
+                .padding(.horizontal, 16).frame(minHeight: 56)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .task { await loadLeftover() }
+    }
+
+    /// Money in that counts (a gift, income) and purchases it pays back or
+    /// refunds add to the month; the deposit stops counting as itself.
+    private var leftoverChange: Double {
+        let adds = parts.filter { ["gift", "income", "payback", "refund"].contains($0.kind) }.map(\.amount).reduce(0, +)
+        return adds - (depositCounted ? deposit.amount : 0)
+    }
+
+    private func loadLeftover() async {
+        guard leftoverWas == nil else { return }
+        let month = String(deposit.date.prefix(7))
+        if let list: TransactionList = try? await api.get("api/transactions/list", query: ["month": month, "limit": "1"]),
+           let t = list.monthTotals {
+            leftoverWas = (t.income ?? 0) - (t.spent ?? 0)
+        }
+        if let d: Transaction = try? await api.get("api/transactions/\(deposit.id)") {
+            depositCounted = d.counts == "income"
         }
     }
 

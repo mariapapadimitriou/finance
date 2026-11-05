@@ -45,6 +45,8 @@ struct QuickSortView: View {
     let asks: [Ask]
     let categories: [CategoryList.Category]
     var names: [String] = []
+    /// Months with a third paycheque (T-74), after the other questions.
+    var months: [Review.PayMonth] = []
     let onClose: () -> Void
 
     @State private var index = 0
@@ -112,6 +114,13 @@ struct QuickSortView: View {
 
     private var current: Ask? { index < asks.count ? asks[index] : nil }
 
+    /// Every question Quick sort walks: Needs a look's, then third paycheques.
+    private var total: Int { asks.count + months.count }
+
+    private var currentMonth: Review.PayMonth? {
+        index >= asks.count && index - asks.count < months.count ? months[index - asks.count] : nil
+    }
+
     private func isGuess(_ ask: Ask) -> Bool { ask.kind == .category || ask.savedTo(accounts) != nil }
 
     /// "Dining out", or T-66's "Saved to TD Savings".
@@ -126,7 +135,7 @@ struct QuickSortView: View {
         ZStack {
             VStack(spacing: 4) {
                 Text("Quick sort").font(Nacre.headline).foregroundColor(Pearl.ink)
-                Text("\(min(index + 1, asks.count)) of \(asks.count)")
+                Text("\(min(index + 1, total)) of \(total)")
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
             }
             .accessibilityElement(children: .combine)
@@ -150,7 +159,7 @@ struct QuickSortView: View {
         ZStack {
             // The cards still to come, peeking out underneath.
             ForEach((1...2).reversed(), id: \.self) { depth in
-                if index + depth < asks.count {
+                if index + depth < total {
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
                         .fill(Color.white.opacity(0.55))
                         .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -168,6 +177,15 @@ struct QuickSortView: View {
                     .accessibilityAction(named: isGuess(ask) ? "Yes" : "Answer") { right() }
                     .accessibilityAction(named: isGuess(ask) ? "Something else" : "Skip") { left() }
                     .id(ask.id)
+            } else if let m = currentMonth {
+                monthCard(m)
+                    .offset(x: offsetX, y: drag.height * 0.2)
+                    .rotationEffect(.degrees(Double(offsetX / 18)))
+                    .gesture(swipe)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAction(named: "Got it") { right() }
+                    .accessibilityAction(named: "Skip") { left() }
+                    .id(m.id)
             }
         }
         .frame(height: 400)
@@ -261,13 +279,56 @@ struct QuickSortView: View {
 
     @ViewBuilder private var buttons: some View {
         let guessing = current.map(isGuess) ?? true
+        let month = currentMonth != nil
         HStack(spacing: 64) {
-            roundButton(symbol: guessing ? "xmark" : "forward", label: guessing ? "Something else" : "Skip",
-                        filled: false) { left() }
-            roundButton(symbol: guessing ? "checkmark" : "text.bubble", label: guessing ? "Yes" : "Answer",
-                        filled: true) { right() }
+            roundButton(symbol: month ? "forward" : guessing ? "xmark" : "forward",
+                        label: month ? "Skip" : guessing ? "Something else" : "Skip", filled: false) { left() }
+            roundButton(symbol: month ? "checkmark" : guessing ? "checkmark" : "text.bubble",
+                        label: month ? "Got it" : guessing ? "Yes" : "Answer", filled: true) { right() }
         }
-        .disabled(current == nil || leaving != nil)
+        .disabled((current == nil && currentMonth == nil) || leaving != nil)
+    }
+
+    /// T-74 as a card: "October had three paycheques".
+    private func monthCard(_ m: Review.PayMonth) -> some View {
+        VStack(spacing: 10) {
+            Text("A THIRD PAYCHEQUE").font(Nacre.caption2).tracking(0.6).foregroundColor(Pearl.action)
+            Image(systemName: "calendar").font(.system(size: 26)).foregroundColor(Pearl.ink)
+                .frame(width: 64, height: 64).background(Circle().fill(Color.white.opacity(0.85)))
+                .padding(.top, 4)
+            if let pay = m.paycheque {
+                Text("+" + Format.amount(pay))
+                    .font(.custom("Fraunces-SemiBold", size: 40, relativeTo: .largeTitle)).foregroundColor(Pearl.moneyIn)
+            }
+            Text("\(Format.monthName(m.month)) had three paycheques")
+                .font(Nacre.title).foregroundColor(Pearl.ink)
+                .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.8)
+                .padding(.top, 10)
+            Text("Your plan uses a typical month, so the extra one isn’t counted as a raise.")
+                .font(Nacre.footnote).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(RoundedRectangle(cornerRadius: 28, style: .continuous)
+            .fill(LinearGradient(colors: [Color(hex: 0xFFF1F6), Color(hex: 0xF7F3FF), Color(hex: 0xEFFBF8)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing)))
+        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(Color.white.opacity(0.9), lineWidth: 1))
+    }
+
+    /// Got it dismisses a third paycheque; Skip moves it to Skipped.
+    private func answerMonth(_ m: Review.PayMonth, gotIt: Bool) async {
+        busy = true
+        defer { busy = false }
+        withAnimation(.easeIn(duration: 0.25)) { leaving = gotIt }
+        do {
+            let answer: ReviewAnswer = gotIt ? .dismiss(m.key) : .skip(m.key, true)
+            _ = try await answer.send(app.api)
+            error = nil
+            next()
+        } catch {
+            self.error = app.handle(error)
+            comeBack()
+        }
     }
 
     private func roundButton(symbol: String, label: String, filled: Bool,
@@ -324,6 +385,7 @@ struct QuickSortView: View {
 
     /// Yes to a guess, or open a question.
     private func right() {
+        if let m = currentMonth, leaving == nil { Task { await answerMonth(m, gotIt: true) }; return }
         guard let ask = current, leaving == nil else { return }
         if ask.savedTo(accounts) != nil {
             withAnimation(.easeIn(duration: 0.25)) { leaving = true }
@@ -339,6 +401,7 @@ struct QuickSortView: View {
 
     /// Something else for a guess; skip a question.
     private func left() {
+        if let m = currentMonth, leaving == nil { Task { await answerMonth(m, gotIt: false) }; return }
         guard let ask = current, leaving == nil else { return }
         withAnimation(.easeIn(duration: 0.25)) { leaving = false }
         if ask.savedTo(accounts) != nil {
@@ -394,7 +457,7 @@ struct QuickSortView: View {
         drag = .zero
         leaving = nil
         index += 1
-        if index >= asks.count { Task { await finish() } }
+        if index >= total { Task { await finish() } }
     }
 
     private func finish() async {
