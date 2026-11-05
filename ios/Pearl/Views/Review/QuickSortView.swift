@@ -44,10 +44,10 @@ extension Review {
 /// Quick sort (THL-254; T-85, T-89, T-86, T-72): Needs a look's questions as
 /// a stack of cards. Pearl's guesses are yes-or-no: swipe right or ✓ for yes;
 /// swipe left or ✕ for something else, which opens the category sheet; Skip
-/// under them leaves it in Needs a look. "All 4 from Uber Eats" sorts the
-/// other guesses from the merchant with it, and a rule. Tapping a guess
-/// turns it over (T-89): its category, Split with others, One-off and Leave
-/// out, all saved by Yes, so each one is touched once. Any other question
+/// under them leaves it in Needs a look. Tapping a guess turns it over
+/// (T-89): its category, "All 4 from Uber Eats" (the other guesses from the
+/// merchant sorted with it, and a rule), Split with others, One-off and
+/// Leave out, all saved by Yes, so each one is touched once. Any other question
 /// opens the sheet Needs a look asks it with; swipe left skips it. Leaving
 /// early keeps the rest in Needs a look.
 @MainActor
@@ -68,7 +68,8 @@ struct QuickSortView: View {
     @State private var leaving: Bool?
     /// Something else on a guess, or the category on its back: the sheet.
     @State private var picking: Picking?
-    /// T-85: every open guess from the merchant, not just this one.
+    /// T-89: every open guess from the merchant, not just this one; on
+    /// unless she turns it off.
     @State private var every = true
     /// T-89: the card turned over, and what's been changed on it.
     @State private var flipped = false
@@ -338,31 +339,13 @@ struct QuickSortView: View {
                 .font(Nacre.title).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8)
                 .padding(.top, 14)
-            let others = siblings(ask).count
-            if others > 0 {
-                // T-85: "All 4 from Uber Eats", on unless she says.
-                Button { every.toggle() } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: every ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 17)).foregroundColor(every ? Pearl.action : Pearl.muted)
-                        Text("All \(others + 1) from \(t.name)").font(Nacre.subheadline).foregroundColor(Pearl.ink)
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 14).frame(height: 34)
-                    .background(Capsule().fill(Color.white.opacity(0.8)))
-                    .overlay(Capsule().strokeBorder(Color.white, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(every ? .isSelected : [])
-                .accessibilityHint("Sorts the other \(others) the same way, and new ones from now on.")
-            }
         }
         .modifier(CardFace())
         .overlay(alignment: .topLeading) { stamp(guessing: isGuess(ask)) }
     }
 
-    /// T-89: the back of a guess. Its category, Split with others, One-off
-    /// and Leave out; Yes saves all of it.
+    /// T-89: the back of a guess. Its category, All 4 from the merchant,
+    /// Split with others, One-off and Leave out; Yes saves all of it.
     private func back(_ ask: Ask) -> some View {
         let t = ask.t
         return VStack(spacing: 14) {
@@ -386,6 +369,17 @@ struct QuickSortView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Changes the category")
+                let others = siblings(ask).count
+                if others > 0 {
+                    // "All 4 from Uber Eats": the others sorted the same way, and a rule.
+                    RowSeparator()
+                    Toggle(isOn: $every) {
+                        Text("All \(others + 1) from \(t.name)").font(Nacre.body).foregroundColor(Pearl.ink)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .tint(Pearl.action).padding(.horizontal, 14).frame(minHeight: 48)
+                    .accessibilityHint("Sorts the other \(others) the same way, and new ones from now on.")
+                }
                 RowSeparator()
                 Button { Task { await openSplit(ask) } } label: {
                     HStack {
