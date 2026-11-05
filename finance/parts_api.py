@@ -198,7 +198,10 @@ def owing(txn_id: str):
     rows = dp.owed(st, st.all_transactions(), _today())["owes_you"]
     mine = [r for r in rows if sp.same_person(r["name"], sender)]
     rest = [r for r in rows if r not in mine]
+    txns = {x.fingerprint: x for x in st.all_transactions()}
+    # S-32 (2026-11-04): a purchase that hasn't posted yet says so.
     items = [{"id": i["charge_id"], "merchant": i["merchant"], "date": i["date"], "owes": i["owes"],
-              "share": i["amount"], "paid": i["paid"], "person": r["name"], "theirs": r in mine}
+              "share": i["amount"], "paid": i["paid"], "person": r["name"], "theirs": r in mine,
+              "pending": bool(((getattr(txns.get(i["charge_id"]), "raw", None)) or {}).get("pending"))}
              for r in mine + rest for i in r["items"]]
     return jsonify({"from": mine[0]["name"] if mine else None, "items": items})
