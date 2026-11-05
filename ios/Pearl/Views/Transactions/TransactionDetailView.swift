@@ -62,7 +62,7 @@ struct TransactionDetailView: View {
     @State private var billing: String?
     @State private var busy = false
     /// T-38b / T-40b: "Dining out · Undo" after a guess is confirmed.
-    @State private var toast: (title: String, undo: JSONValue?)?
+    @State private var toast: (title: String, undo: (() -> Void)?)?
     /// T-41b: Unlink? before a refund goes back to Needs a look.
     @State private var unlinkingRefund = false
     @State private var message: String?
@@ -186,7 +186,7 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $unlinkingRefund) { refundUnlinkSheet }
         .overlay(alignment: .bottom) {
             if let toast = toast {
-                UndoToast(text: toast.title, undo: toast.undo.map { payload in { Task { await undo(payload) } } }) {
+                UndoToast(text: toast.title, undo: toast.undo) {
                     withAnimation { self.toast = nil }
                 }
                 .padding(.bottom, 8)
@@ -516,7 +516,7 @@ struct TransactionDetailView: View {
                         do {
                             let reply = try await answer.send(app.api)
                             // T-40b: "Sam's pay · Undo".
-                            withAnimation { toast = (person.map { "\($0)’s pay" } ?? "Your pay", reply.undo) }
+                            withAnimation { toast = (person.map { "\($0)’s pay" } ?? "Your pay", undoing(reply.undo)) }
                             await load()
                             app.changed()
                         } catch {
@@ -1038,6 +1038,11 @@ struct TransactionDetailView: View {
         .presentationDetents([.height(300)])
     }
 
+    /// Undo for a server change, when it sent one.
+    private func undoing(_ payload: JSONValue?) -> (() -> Void)? {
+        payload.map { p in { Task { await undo(p) } } }
+    }
+
     private func undo(_ payload: JSONValue) async {
         guard let body = payload.any as? [String: Any] else { return }
         withAnimation { toast = nil }
@@ -1052,7 +1057,7 @@ struct TransactionDetailView: View {
         let label = t.label
         await run {
             let reply: CategoryChange = try await app.api.put("api/transactions/\(t.id)/confirm")
-            withAnimation { toast = (reply.category ?? label, reply.undo) }
+            withAnimation { toast = (reply.category ?? label, undoing(reply.undo)) }
             return nil
         }
     }
@@ -1120,7 +1125,10 @@ struct TransactionDetailView: View {
     private func remind(_ p: Transaction.Splitting.Person) {
         UIPasteboard.general.string = "Hey \(p.name)! Your share of \(t.merchant) on \(Format.short(t.date)) "
             + "is \(Format.amount(p.owes)). Thanks!"
-        message = "Reminder for \(p.name) copied. Paste it in a message."
+        // S-07: "Copied · paste it to Sam", with Undo.
+        withAnimation {
+            toast = ("Copied · paste it to \(p.name)", { UIPasteboard.general.string = "" })
+        }
     }
 
     private func letGo(_ p: Transaction.Splitting.Person) async {
