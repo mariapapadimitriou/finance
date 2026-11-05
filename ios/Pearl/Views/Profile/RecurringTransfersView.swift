@@ -54,6 +54,8 @@ struct RecurringTransfersView: View {
     @State private var data: RecurringTransfers?
     @State private var categories: [CategoryList.Category] = []
     @State private var open: RecurringTransfers.Transfer?
+    /// The transfers Needs a look is asking about.
+    @State private var waiting: [Review.Item] = []
     @State private var toast: String?
     @State private var error: String?
 
@@ -86,14 +88,26 @@ struct RecurringTransfersView: View {
                     }
                 }
                 if data.asking > 0 {
+                    // RT-01: each one waiting, as its own row.
                     ProfileSection("New, in Needs a look")
                     GlassCard {
-                        NavigationLink { ReviewView() } label: {
-                            ProfileRow(symbol: "arrow.triangle.2.circlepath",
-                                       title: data.asking == 1 ? "1 transfer to answer" : "\(data.asking) transfers to answer",
-                                       pill: StatusPill(text: "Recurring?", tone: .needsALook))
+                        ForEach(Array(waiting.enumerated()), id: \.element.key) { i, item in
+                            if i > 0 { RowSeparator(inset: 62) }
+                            NavigationLink { ReviewView() } label: {
+                                ProfileRow(initials: item.txn.name, title: item.txn.name,
+                                           sub: "\(Format.amount(abs(item.txn.amount)))" + (item.series?.when.map { " · \($0)" } ?? ""),
+                                           pill: StatusPill(text: "Recurring?", tone: .needsALook))
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        if waiting.isEmpty {
+                            NavigationLink { ReviewView() } label: {
+                                ProfileRow(symbol: "arrow.triangle.2.circlepath",
+                                           title: data.asking == 1 ? "1 transfer to answer" : "\(data.asking) transfers to answer",
+                                           pill: StatusPill(text: "Recurring?", tone: .needsALook))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             } else if error == nil {
@@ -147,6 +161,9 @@ struct RecurringTransfersView: View {
     private func load() async {
         do {
             data = try await app.api.get("api/recurring-transfers")
+            if (data?.asking ?? 0) > 0, let review: Review = try? await app.api.get("api/review") {
+                waiting = review.recurringTransfer
+            }
             if categories.isEmpty, let list: CategoryList = try? await app.api.get("api/categories") {
                 categories = list.categories.filter { $0.hidden != true }
             }
@@ -175,10 +192,10 @@ struct RecurringTransferSheet: View {
     @State private var busy = false
     @State private var error: String?
 
+    /// RT-02: Rent, Saved, or Something else.
     private static let kinds: [(category: String, label: String, sub: String)] = [
         ("Rent & Housing", "Rent", "Counted as a bill"),
         ("Saved", "Saved", "Money you put away"),
-        ("Transfers", "Moved", "To another of my accounts"),
     ]
 
     init(transfer: RecurringTransfers.Transfer, categories: [CategoryList.Category], done: @escaping (String) -> Void) {
@@ -263,7 +280,8 @@ struct RecurringTransferSheet: View {
         }
     }
 
-    private var amountLine: String { "\(Format.amount(transfer.amount)) \(transfer.cadence == "payday" ? "each payday" : "each time")" }
+    /// "$1,450.00 a month".
+    private var amountLine: String { "\(Format.amount(transfer.monthly)) a month" }
 
     /// "Every month, around the 1st · next Monday, December 1".
     private var schedule: String {

@@ -9,6 +9,8 @@ struct ProfileView: View {
     @Binding var tab: MainTabs.Tab
     @State private var summary: ProfileSummary?
     @State private var debts: DebtList?
+    /// P-01: "Every 2 weeks · 5 bills".
+    @State private var incomeBills: IncomeBills?
     @State private var recurringMonthly: Double?
     @State private var doc: PearlDoc?
     @State private var showYourData = false
@@ -39,7 +41,7 @@ struct ProfileView: View {
                     RowSeparator(inset: 62)
                     NavigationLink { IncomeBillsView() } label: {
                         ProfileRow(symbol: "dollarsign.square", title: "Income and bills",
-                                   sub: "Your pay and regular bills")
+                                   sub: incomeLine)
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
@@ -232,6 +234,14 @@ struct ProfileView: View {
         return n > 0 ? plural(n, "account") : "Link a bank or add a balance"
     }
 
+    private var incomeLine: String {
+        guard let d = incomeBills else { return "Your pay and regular bills" }
+        let bills = d.bills.filter { $0.ticked == true }.count
+        let pay = d.pays.first.map { cadence($0.cadence) }
+        let parts = [pay, bills > 0 ? "\(bills) bill\(bills == 1 ? "" : "s")" : nil].compactMap { $0 }
+        return parts.isEmpty ? "Your pay and regular bills" : parts.joined(separator: " · ")
+    }
+
     /// "3 recurring · $2,050 a month" once the page has been loaded.
     private var recurringLine: String {
         guard let n = summary?.recurring, n > 0 else { return "Rent, savings and others on a schedule" }
@@ -275,6 +285,7 @@ struct ProfileView: View {
             _ = app.handle(error)
         }
         debts = try? await app.api.get("api/debts")
+        incomeBills = try? await app.api.get("api/income-bills")
         if (summary?.recurring ?? 0) > 0, let r: RecurringTransfers = try? await app.api.get("api/recurring-transfers") {
             recurringMonthly = r.monthly
         }
