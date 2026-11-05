@@ -697,6 +697,7 @@ struct TransactionsView: View {
             .background(Capsule().fill(Nacre.glass))
             .overlay(Capsule().strokeBorder(Nacre.edge, lineWidth: 1))
             .padding(.horizontal, 16).padding(.bottom, 12)
+            .swipeToDismiss { self.toast = nil }
             .transition(.move(edge: .bottom).combined(with: .opacity))
             .task(id: toast) {
                 try? await Task.sleep(nanoseconds: 6_000_000_000)
