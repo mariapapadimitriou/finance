@@ -1383,7 +1383,7 @@ struct FilterSheet: View {
             }
             RowSeparator()
         }
-        if !tags.isEmpty {
+        if Features.tags && !tags.isEmpty {
             row(.tags, "Tags", list(filters.tags.sorted().map { "#" + $0 }))
             if open == .tags {
                 ForEach(tags, id: \.self) { tag in

@@ -160,7 +160,7 @@ struct CategoriesRulesView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             Chips {
-                ForEach(Tab.allCases) { t in
+                ForEach(Tab.allCases.filter { Features.tags || $0 != .tags }) { t in
                     FilterChip(label: t.rawValue, on: tab == t, solid: true) { tab = t }
                 }
             }
