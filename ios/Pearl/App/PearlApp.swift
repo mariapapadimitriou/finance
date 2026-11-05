@@ -15,6 +15,12 @@ struct PearlApp: App {
                                         .foregroundColor: UIColor(Pearl.ink)]
         UINavigationBar.appearance().standardAppearance = bar
         UINavigationBar.appearance().scrollEdgeAppearance = bar
+        // Cash flow's count in the tab bar's own colour, not system red.
+        let item = UITabBarItem.appearance()
+        item.badgeColor = UIColor(Pearl.action)
+        for state: UIControl.State in [.normal, .selected] {
+            item.setBadgeTextAttributes([.foregroundColor: UIColor(Pearl.onAction)], for: state)
+        }
     }
 
     var body: some Scene {
