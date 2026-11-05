@@ -137,7 +137,7 @@ struct IncomeBillsView: View {
                 RowSeparator(inset: 64)
             }
             AddLine(title: "Add other income") { sheet = .addPay }
-            if !noIncome(data), !((data.expected?.amount ?? 0) > 0) {
+            if !confirming, !noIncome(data), !((data.expected?.amount ?? 0) > 0) {
                 RowSeparator(inset: 64)
                 AddLine(title: "Set my own amount") { sheet = .expected }
                     .accessibilityHint("Use what you expect each month instead of what Pearl works out")
@@ -168,10 +168,8 @@ struct IncomeBillsView: View {
             }
         }
 
-        if !confirming {
-            ProfileSection("Something changed?")
-            ProfileNote("A new job, a new place, a bill that stopped. Check again with your latest transactions.")
-        }
+        ProfileSection("Something changed?")
+        ProfileNote("A new job, a new place, a bill that stopped. Check again with your latest transactions.")
     }
 
     private func billRow(_ bill: IncomeBills.Bill) -> some View {

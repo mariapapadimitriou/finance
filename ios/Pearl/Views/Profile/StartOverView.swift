@@ -217,7 +217,7 @@ struct StartedOverView: View {
     /// SO-04b (THL-300): what only she can say, here as on Home.
     @ViewBuilder private var setupList: some View {
         if let setup = setup, setup.active {
-            SetupAgainCard(setup: setup) { Task { await loadSetup() } }
+            SetupAgainCard(setup: setup, hideable: false) { Task { await loadSetup() } }
                 .padding(.top, 12)
         }
     }

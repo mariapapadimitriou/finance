@@ -25,7 +25,7 @@ struct HomeView: View {
 
                 if let home = home {
                     // H-02 (THL-120): every bank in trouble, worst first.
-                    ForEach((home.connections ?? []).filter { ["needs_sign_in", "disconnected", "bank_down"].contains($0.state ?? "") }) { c in
+                    ForEach((home.connections ?? []).filter { ["needs_sign_in", "disconnected"].contains($0.state ?? "") }) { c in
                         BankAlertCard(connection: c, today: home.today) { openAccounts = true } reconnect: {
                             reconnecting = c
                         }
@@ -141,6 +141,8 @@ struct MonthCard: View {
 struct SetupAgainCard: View {
     @EnvironmentObject private var app: AppModel
     let setup: SetupAgain
+    /// SO-04b leaves Hide this list to Home.
+    var hideable = true
     let onChanged: () -> Void
 
     var body: some View {
@@ -162,6 +164,7 @@ struct SetupAgainCard: View {
                     .accessibilityValue(step.done ? "Done" : "")
                 }
             }
+            if hideable {
             Button("Hide this list") {
                 Task {
                     let _: SetupAgain? = try? await app.api.post("api/setup-again", ["hide": true])
@@ -169,6 +172,7 @@ struct SetupAgainCard: View {
                 }
             }
             .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+            }
         }
     }
 

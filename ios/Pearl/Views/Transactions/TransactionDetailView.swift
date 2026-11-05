@@ -337,7 +337,8 @@ struct TransactionDetailView: View {
             return "Refund · lowers \(t.label) by \(Format.compact(t.amount))"
         }
         if t.split, let full = t.fullAmount {
-            return "Your share counts · \(Format.compact(t.amount)) of \(Format.compact(full))"
+            // S-05: "Your share · $42.06 of $84.12".
+            return "Your share · \(Format.amount(t.amount)) of \(Format.amount(full))"
         }
         switch t.counts {
         case "income" where t.jointFrom == "both":

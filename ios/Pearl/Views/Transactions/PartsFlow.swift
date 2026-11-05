@@ -727,7 +727,7 @@ struct OwedView: View {
                         GlassCard {
                             ForEach(Array(owed.youOwe.enumerated()), id: \.element.id) { i, r in
                                 if i > 0 { RowSeparator(inset: 64) }
-                                personRow(r.name, sub: "They overpaid" + (r.items.first?.merchant.map { " · \($0)" } ?? ""),
+                                personRow(r.name, sub: "Overpaid for " + (r.items.first?.merchant ?? "a purchase"),
                                           amount: r.total, tone: Pearl.ink)
                             }
                         }

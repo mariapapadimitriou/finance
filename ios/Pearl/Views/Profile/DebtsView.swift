@@ -118,7 +118,7 @@ struct DebtsView: View {
     private var lead: String? {
         guard let data = data, !data.debts.isEmpty else { return nil }
         let minimums = data.minimums.map { "Minimums this month: \(Format.whole($0))." } ?? "Add the minimums and Pearl counts them with your bills."
-        return "You owe \(Format.amount(data.total)). \(minimums) Balances aren’t taken out of your Allowance."
+        return "You owe \(Format.amount(data.total)). \(minimums) Balances aren’t taken out of your Allowance; minimums count as bills."
     }
 
     private func load() async {

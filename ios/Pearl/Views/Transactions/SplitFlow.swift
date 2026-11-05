@@ -892,9 +892,6 @@ struct LetGoSheet: View {
                 Spacer()
             }
             .padding(.horizontal, 16)
-            Text("Their \(Format.amount(person.owes)) counts as your spending instead.")
-                .font(Nacre.footnote).foregroundColor(Pearl.ink).padding(.horizontal, 16)
-                .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 10) {
                 Button("Let it go", action: onLetGo).buttonStyle(NacreButtonStyle())
                 Button("Keep waiting") { dismiss() }
