@@ -15,6 +15,25 @@ struct PearlApp: App {
                                         .foregroundColor: UIColor(Pearl.ink)]
         UINavigationBar.appearance().standardAppearance = bar
         UINavigationBar.appearance().scrollEdgeAppearance = bar
+        // Cash flow's count in the tab bar's own colour, not system red.
+        // SwiftUI's TabView reads the bar's appearance, not each item's, so
+        // the badge is set on every layout of both the usual bar and the
+        // see-through one at the bottom of a list.
+        func badged(_ tabs: UITabBarAppearance) -> UITabBarAppearance {
+            for layout in [tabs.stackedLayoutAppearance, tabs.inlineLayoutAppearance, tabs.compactInlineLayoutAppearance] {
+                for state in [layout.normal, layout.selected] {
+                    state.badgeBackgroundColor = UIColor(Pearl.action)
+                    state.badgeTextAttributes = [.foregroundColor: UIColor(Pearl.onAction)]
+                }
+            }
+            return tabs
+        }
+        let tabs = UITabBarAppearance()
+        tabs.configureWithDefaultBackground()
+        let edge = UITabBarAppearance()
+        edge.configureWithTransparentBackground()
+        UITabBar.appearance().standardAppearance = badged(tabs)
+        UITabBar.appearance().scrollEdgeAppearance = badged(edge)
     }
 
     var body: some Scene {
