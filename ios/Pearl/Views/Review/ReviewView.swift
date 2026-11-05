@@ -50,7 +50,8 @@ struct ReviewView: View {
         .overlay(alignment: .bottom) { toastView }
         .task { await load() }
         .fullScreenCover(isPresented: $sorting) {
-            QuickSortView(asks: quick, categories: categories, names: recentNames) {
+            QuickSortView(asks: quick, categories: categories, names: recentNames,
+                          months: review?.threePayMonth.filter { $0.skipped != true } ?? []) {
                 sorting = false
                 Task { await load() }
             }
@@ -174,8 +175,8 @@ struct ReviewView: View {
                     }
                 }
             }
-            if !showingSkipped && !quick.isEmpty {
-                QuickSortCard(count: quick.count) { sorting = true }
+            if !showingSkipped && (!quick.isEmpty || review?.threePayMonth.contains { $0.skipped != true } == true) {
+                QuickSortCard(count: quick.count + (review?.threePayMonth.filter { $0.skipped != true }.count ?? 0)) { sorting = true }
                 // T-10.
                 Text("Tap one to sort it.").font(Nacre.footnote).foregroundColor(Pearl.ink)
             }
