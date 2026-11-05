@@ -117,8 +117,6 @@ struct TransactionDetailView: View {
         .navigationBarHidden(false)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        // T-03 and every detail frame: no tab bar while it's open.
-        .toolbar(.hidden, for: .tabBar)
         .task { await load() }
         .sheet(isPresented: $picking) {
             // The stored category, not the chip ("Transfer", "Not sorted yet").

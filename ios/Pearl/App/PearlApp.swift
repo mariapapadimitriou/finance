@@ -213,7 +213,7 @@ struct MainTabs: View {
     /// flow (T-19) puts its bar where the tab bar was.
     private func page<Content: View>(_ which: Tab, @ViewBuilder content: () -> Content) -> some View {
         NavigationStack {
-            content().toolbar(app.hidesTabBar ? .hidden : .automatic, for: .tabBar)
+            content().toolbar(app.hidesTabBar ? .hidden : .visible, for: .tabBar)
         }
         .tabItem { Label(which.label, image: which.icon) }
         .tag(which)
