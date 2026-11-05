@@ -133,3 +133,11 @@ final class AppModel: ObservableObject {
         return nil
     }
 }
+
+/// What the app shows while a piece of it is held back.
+enum Features {
+    /// Tags wait for THL-286: no Add tags row, no Tags tab in Categories and
+    /// rules, no Tags filter. The server keeps them; turn this on to bring
+    /// them back.
+    static let tags = false
+}

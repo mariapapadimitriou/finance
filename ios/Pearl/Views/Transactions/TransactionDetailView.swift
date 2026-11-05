@@ -864,7 +864,7 @@ struct TransactionDetailView: View {
             }
             .buttonStyle(.plain)
             // A refund's tags are its purchase's (T-41), and income has none (T-37).
-            if t.refundOf == nil && !isIncome {
+            if Features.tags && t.refundOf == nil && !isIncome {
                 RowSeparator()
                 Button { editingTags = true } label: {
                     if t.tags.isEmpty {
