@@ -22,6 +22,7 @@
 		36B2ADE3D4D2AADFAF7450C6 /* FaceIDViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D792DA47AD008651315BC81E /* FaceIDViews.swift */; };
 		EDF62B098CA2F256BB968358 /* PayAndBillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */; };
 		B012721D7224087DA976961B /* PlaidLinker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */; };
+		8B70E2BC087883619C71FE27 /* SavingShareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21457AD97EA4FA1E18A4A44 /* SavingShareView.swift */; };
 		619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */; };
 		3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */; };
 		0E20B3BEDE9BE9508D94E4E3 /* AccountsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */; };
@@ -78,6 +79,7 @@
 		D792DA47AD008651315BC81E /* FaceIDViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceIDViews.swift; sourceTree = "<group>"; };
 		FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayAndBillsView.swift; sourceTree = "<group>"; };
 		AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaidLinker.swift; sourceTree = "<group>"; };
+		E21457AD97EA4FA1E18A4A44 /* SavingShareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavingShareView.swift; sourceTree = "<group>"; };
 		D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupFlow.swift; sourceTree = "<group>"; };
 		44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupPayQuestions.swift; sourceTree = "<group>"; };
 		8A9B1537B9126F6D2FD7C996 /* AccountsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsViews.swift; sourceTree = "<group>"; };
@@ -238,6 +240,7 @@
 				D792DA47AD008651315BC81E /* FaceIDViews.swift */,
 				FE95C0A1931E5F1ECCCF4A48 /* PayAndBillsView.swift */,
 				AD7C3D77C81C6D11AB4C9F67 /* PlaidLinker.swift */,
+				E21457AD97EA4FA1E18A4A44 /* SavingShareView.swift */,
 				D43D3DEF06E783C5559E8A54 /* SetupFlow.swift */,
 				44C291D8EDEBE19AA09259E6 /* SetupPayQuestions.swift */,
 			);
@@ -388,6 +391,7 @@
 				36B2ADE3D4D2AADFAF7450C6 /* FaceIDViews.swift in Sources */,
 				EDF62B098CA2F256BB968358 /* PayAndBillsView.swift in Sources */,
 				B012721D7224087DA976961B /* PlaidLinker.swift in Sources */,
+				8B70E2BC087883619C71FE27 /* SavingShareView.swift in Sources */,
 				619EE1ED914A1D98CEE524E5 /* SetupFlow.swift in Sources */,
 				3093DB11F717FC06657082A6 /* SetupPayQuestions.swift in Sources */,
 				0E20B3BEDE9BE9508D94E4E3 /* AccountsViews.swift in Sources */,

@@ -17,6 +17,8 @@ final class AppModel: ObservableObject {
     @Published var phase: Phase = .starting
     /// Bumped after any change, so every screen reloads what it shows.
     @Published var version = 0
+    /// AM-13: said on Accounts once it's back on screen ("TD is removed…").
+    @Published var accountsNotice: String?
     /// The account was made just now: setup starts at Face ID (O-04), not at
     /// "Let's finish setting up" (O-00).
     @Published var justCreated = false

@@ -35,7 +35,7 @@ struct StartOverView: View {
                 }
                 DataCaption("What stays")
                 DataCard {
-                    DataRow(icon: "DataStays", title: "Your bank connections")
+                    DataRow(icon: "DataStays", title: "Your bank connections, and which accounts sync")
                     RowSeparator()
                     DataRow(icon: "DataStays", title: "Sign-in and privacy")
                 }
@@ -138,6 +138,7 @@ struct StartedOverView: View {
     @State private var stage = Stage.syncing
     @State private var linking = false
     @State private var adding = false
+    @State private var setup: SetupAgain?
     @State private var error: String?
 
     private struct Synced: Decodable { let imported: Int? }
@@ -154,7 +155,10 @@ struct StartedOverView: View {
         NavigationStack {
             content.navigationBarHidden(true)
         }
-        .task { await bringBack() }
+        .task {
+            await bringBack()
+            await loadSetup()
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -167,18 +171,20 @@ struct StartedOverView: View {
                 sortingButtons(enabled: false)
             }
         case .back(let imported, let needsALook):
-            DataResult(title: "You’re starting fresh", line: backLine(imported)) {
+            DataResult(title: "You’re starting fresh", line: backLine(imported), showsArt: setup?.active != true) {
                 if needsALook > 0 {
                     StatusPill(text: "\(needsALook.formatted()) need\(needsALook == 1 ? "s" : "") a look",
                                tone: .needsALook)
                 }
+                setupList
             } actions: {
                 sortingButtons(enabled: true)
             }
         case .late:
             DataResult(title: "You’re starting fresh",
-                       line: "Your banks are still sending your history. It’ll show in Cash flow when it’s ready.") {
-                EmptyView()
+                       line: "Your banks are still sending your history. It’ll show in Cash flow when it’s ready.",
+                       showsArt: setup?.active != true) {
+                setupList
             } actions: {
                 sortingButtons(enabled: true)
             }
@@ -206,6 +212,18 @@ struct StartedOverView: View {
                     .presentationDragIndicator(.visible)
             }
         }
+    }
+
+    /// SO-04b (THL-300): what only she can say, here as on Home.
+    @ViewBuilder private var setupList: some View {
+        if let setup = setup, setup.active {
+            SetupAgainCard(setup: setup, hideable: false) { Task { await loadSetup() } }
+                .padding(.top, 12)
+        }
+    }
+
+    private func loadSetup() async {
+        setup = try? await app.api.get("api/setup-again")
     }
 
     private func sortingButtons(enabled: Bool) -> some View {

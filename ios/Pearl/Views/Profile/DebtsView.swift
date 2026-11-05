@@ -118,7 +118,7 @@ struct DebtsView: View {
     private var lead: String? {
         guard let data = data, !data.debts.isEmpty else { return nil }
         let minimums = data.minimums.map { "Minimums this month: \(Format.whole($0))." } ?? "Add the minimums and Pearl counts them with your bills."
-        return "You owe \(Format.amount(data.total)). \(minimums) Balances aren’t taken out of your Allowance."
+        return "You owe \(Format.amount(data.total)). \(minimums) Balances aren’t taken out of your Allowance; minimums count as bills."
     }
 
     private func load() async {
@@ -151,16 +151,16 @@ struct DebtDetailsSheet: View {
     private var adding: Bool { debt.rate == nil && debt.minimum == nil }
 
     var body: some View {
-        SheetFrame(title: debt.name, subtitle: subtitle, symbol: "creditcard", close: { dismiss() }) {
+        SheetFrame(title: debt.name, subtitle: subtitle, symbol: "creditcard",
+                   heading: adding ? "Add the details" : "Change the details", close: { dismiss() }) {
             VStack(spacing: 0) {
                 FieldRow(label: "Interest rate", text: $rate, prompt: "5.7%").keyboardType(.decimalPad)
                 RowSeparator()
-                FieldRow(label: "Minimum a month", text: $minimum, prompt: "$120").keyboardType(.decimalPad)
+                FieldRow(label: "Minimum payment a month", text: $minimum, prompt: "$120").keyboardType(.decimalPad)
                 RowSeparator()
-                FieldRow(label: "Due day", text: $due, prompt: "Optional").keyboardType(.numberPad)
+                FieldRow(label: "Day it’s due (optional)", text: $due, prompt: "14").keyboardType(.numberPad)
             }
             .sheetCard()
-            Text("From your statement. The minimum is counted with your bills.").font(Nacre.footnote)
             if let error = error { Hint(text: error) }
         } actions: {
             Button("Save") { Task { await save() } }

@@ -112,9 +112,13 @@ struct QuickSortView: View {
 
     private var current: Ask? { index < asks.count ? asks[index] : nil }
 
-    private func isGuess(_ ask: Ask) -> Bool { ask.kind == .category }
+    private func isGuess(_ ask: Ask) -> Bool { ask.kind == .category || ask.savedTo(accounts) != nil }
 
-    private func guess(_ ask: Ask) -> String { ask.item.guess?.text ?? ask.t.category ?? "Other" }
+    /// "Dining out", or T-66's "Saved to TD Savings".
+    private func guess(_ ask: Ask) -> String {
+        if let to = ask.savedTo(accounts) { return "Saved to \(to)" }
+        return ask.item.guess?.text ?? ask.t.category ?? "Other"
+    }
 
     // MARK: The deck
 
@@ -321,7 +325,10 @@ struct QuickSortView: View {
     /// Yes to a guess, or open a question.
     private func right() {
         guard let ask = current, leaving == nil else { return }
-        if isGuess(ask) {
+        if ask.savedTo(accounts) != nil {
+            withAnimation(.easeIn(duration: 0.25)) { leaving = true }
+            Task { await answered(ask, .mark(ask.t.id, ["case": "saved", "remember": true])) }
+        } else if isGuess(ask) {
             withAnimation(.easeIn(duration: 0.25)) { leaving = true }
             Task { await step(ask, ["action": "right"]) }
         } else {
@@ -334,7 +341,10 @@ struct QuickSortView: View {
     private func left() {
         guard let ask = current, leaving == nil else { return }
         withAnimation(.easeIn(duration: 0.25)) { leaving = false }
-        if isGuess(ask) {
+        if ask.savedTo(accounts) != nil {
+            withAnimation(.spring()) { leaving = nil; drag = .zero }
+            asking = ask
+        } else if isGuess(ask) {
             picking = ask
         } else {
             Task { await step(ask, ["action": "skip"]) }

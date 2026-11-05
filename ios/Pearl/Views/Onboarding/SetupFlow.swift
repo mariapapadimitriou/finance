@@ -28,6 +28,7 @@ struct SetupFlow: View {
                 case .notSupported(let bank): LinkProblemView(path: $path, problem: .notSupported(bank))
                 case .joint: JointAccountsView(path: $path)
                 case .payBills: PayAndBillsView(path: $path)
+                case .saving: SavingShareView(path: $path)
                 case .allowance: AllowanceView(path: $path, skipped: false)
                 case .skipped: AllowanceView(path: $path, skipped: true)
                 }
@@ -44,6 +45,7 @@ struct SetupFlow: View {
             switch args[i + 1] {
             case "joint": path = [.joint]
             case "payBills": path = [.payBills]
+            case "saving": path = [.saving]
             case "allowance": path = [.allowance]
             case "linked": path = [.linked]
             default: break
@@ -61,6 +63,8 @@ enum SetupRoute: Hashable {
     case notSupported(String)
     case joint
     case payBills
+    /// O-10s: how much of each paycheque to save.
+    case saving
     case allowance
     case skipped
 }
@@ -436,6 +440,7 @@ struct AccountLine: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.name).font(Nacre.body)
                 Text(sub ?? detail).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
             if let trailing = trailing { trailing }
@@ -531,8 +536,9 @@ struct JointAccountsView: View {
     var body: some View {
         NacreScreen {
             if onDone == nil { ShellProgress(part: 3, name: "Your money") }
-            Text("Any joint accounts?").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text("Tap one you share. We’ll only count your part.").font(Nacre.body)
+            Text(onDone == nil ? "Any joint accounts?" : "Which accounts do you share?")
+                .font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
+            Text("Tap one you share.").font(Nacre.body)
             if !accounts.isEmpty {
                 GlassCard {
                     ForEach(Array(accounts.enumerated()), id: \.element.id) { i, account in
@@ -558,6 +564,15 @@ struct JointAccountsView: View {
                     }
                 }
                 .buttonStyle(NacreButtonStyle())
+            } secondary: {
+                // SU-02 (THL-300): saying none are shared answers the step too.
+                if let onDone = onDone, !accounts.contains(where: { $0.joint == true }) {
+                    Button("None of these are shared") {
+                        onDone()
+                        dismiss()
+                    }
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                }
             }
         }
         .task { await load() }
@@ -570,11 +585,12 @@ struct JointAccountsView: View {
         }
     }
 
+    /// O-09b2: "Your share · 50%", and who with on the line under it.
     private func shared(_ account: AccountsOverview.Account) -> String {
         guard account.joint == true else { return "Just you" }
-        let people = (account.jointPeople ?? []).joined(separator: ", ")
-        let share = account.jointShare.map { " · \(Int($0.rounded()))%" } ?? ""
-        return people.isEmpty ? "Joint account\(share)" : "Joint with \(people)\(share)"
+        let people = (account.jointPeople ?? []).joined(separator: " and ")
+        let share = account.jointShare.map { "Your share · \(Int($0.rounded()))%" } ?? "Joint account"
+        return people.isEmpty ? share : "\(share)\nJoint with \(people)"
     }
 
     private func load() async {
@@ -605,30 +621,26 @@ struct JointSheet: View {
             // its rows into each other.
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(account.name).font(Nacre.title2)
-                            Text("Joint account" + (account.mask.map { " · ••\($0)" } ?? "")).font(Nacre.subheadline)
-                        }
+                    HStack {
                         Spacer()
-                        CloseButton { dismiss() }
+                        Text("Joint account").font(Nacre.headline).accessibilityAddTraits(.isHeader)
+                        Spacer()
+                    }
+                    .overlay(alignment: .trailing) { CloseButton { dismiss() } }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(account.name).font(Nacre.title2)
+                        Text(account.mask.map { "••\($0)" } ?? "").font(Nacre.subheadline)
                     }
                     VStack(spacing: 0) {
                         FieldRow(label: "Shared with", text: $name, prompt: "Their name")
                         RowSeparator()
                         // The percentage is its own text and the stepper has no
                         // label, so the − / + sits on the row's line.
-                        HStack(spacing: 12) {
-                            Text("Your share").font(Nacre.body)
-                            Spacer(minLength: 8)
-                            Text("\(share)%").font(Nacre.body).monospacedDigit()
-                            Stepper("Your share", value: $share, in: 1...99, step: 5)
-                                .labelsHidden()
-                                .fixedSize()
-                        }
-                        .padding(.horizontal, 16)
-                        .frame(height: 52)
-                        .accessibilityElement(children: .combine)
+                        // O-09c: "Your share   50%", typed.
+                        FieldRow(label: "Your share", text: Binding(get: { "\(share)%" }, set: { v in
+                            if let n = Int(v.filter(\.isNumber)), (1...99).contains(n) { share = n }
+                        }), prompt: "50%")
+                        .keyboardType(.numberPad)
                     }
                     .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Pearl.card))
                     Text("Type their name, or leave it blank. Only you can see this.").font(Nacre.footnote)

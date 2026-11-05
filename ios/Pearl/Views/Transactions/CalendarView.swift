@@ -135,6 +135,11 @@ struct CalendarCard: View {
     @State private var sorting: SortPick?
     @State private var toast: (title: String, undo: Int?)?
     @State private var error: String?
+    /// T-49: the day tapped, shown under the grid (today to start with).
+    @State private var shownDay: String?
+    @State private var dayData: CalendarDay?
+    /// T-68: a run of days sorted together, being changed or removed.
+    @State private var bandAction: SortedRange?
 
     struct DayPick: Identifiable { let date: String; let band: SortedRange?; var id: String { date } }
     struct SortPick: Identifiable {
@@ -173,8 +178,20 @@ struct CalendarCard: View {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
             }
             legend
+            comingUp
+            shownDayList
+            sortedTogether
         }
         .task(id: month) { await load() }
+        .task(id: shownDay) { await loadDay() }
+        .confirmationDialog(bandAction.map { $0.name.flatMap { $0.isEmpty ? nil : $0 } ?? $0.category } ?? "",
+                            isPresented: Binding(get: { bandAction != nil }, set: { if !$0 { bandAction = nil } }),
+                            titleVisibility: .visible, presenting: bandAction) { band in
+            Button("Change") { sorting = SortPick(first: band.first, last: band.last, existing: band) }
+            Button("Remove", role: .destructive) { Task { await remove(band.id, undo: false) } }
+        } message: { band in
+            Text("\(Format.short(band.first)) – \(Format.short(band.last)) · \(band.category)")
+        }
         .sheet(item: $day) { pick in
             DaySheet(date: pick.date, band: pick.band, api: app.api,
                      onChange: { band in day = nil; sorting = SortPick(first: band.first, last: band.last, existing: band) },
@@ -321,6 +338,107 @@ struct CalendarCard: View {
         return parts.joined(separator: ", ")
     }
 
+    // MARK: Under the grid (T-49, T-68)
+
+    /// "Coming up": what's due from today to the month's end.
+    @ViewBuilder private var comingUp: some View {
+        let today = data?.cells.first { $0.state == "today" }?.date ?? ""
+        let items = (data?.cells ?? []).filter { $0.inMonth && $0.date >= today && !today.isEmpty }
+            .flatMap { c in c.due.map { (c.date, $0) } }
+        if !items.isEmpty {
+            Text("Coming up").font(Nacre.headline).foregroundColor(Pearl.ink).padding(.top, 4)
+                .accessibilityAddTraits(.isHeader)
+            GlassCard {
+                ForEach(Array(items.prefix(8).enumerated()), id: \.offset) { i, item in
+                    if i > 0 { RowSeparator() }
+                    let pay = item.1.kind == "pay"
+                    HStack(spacing: 12) {
+                        Text(Format.short(item.0)).font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            .frame(width: 54, alignment: .leading)
+                        Text(item.1.label).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text((pay ? "+" : "\u{2212}") + Format.amount(item.1.amount)).font(Nacre.body).monospacedDigit()
+                            .foregroundColor(pay ? Pearl.moneyIn : (item.1.kind == "chest" ? Pearl.muted : Pearl.moneyOut))
+                    }
+                    .padding(.horizontal, 16).frame(minHeight: 48)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+    }
+
+    /// "FRI, NOV 13 · $43 SPENT · ON PACE" and that day's spending.
+    @ViewBuilder private var shownDayList: some View {
+        if let day = shownDay ?? data?.cells.first(where: { $0.state == "today" })?.date, let d = dayData {
+            let cell = data?.cells.first { $0.date == day }
+            let pace = cell?.state == "on" ? " · ON PACE" : cell?.state == "ahead" ? " · OVER PACE" : ""
+            Text("\(Format.weekdayDay(day).uppercased())\(d.spentTotal.map { " · \(Format.whole($0)) SPENT" } ?? "")\(pace)")
+                .font(Nacre.caption1).foregroundColor(Pearl.ink).padding(.leading, 16).padding(.top, 4)
+                .accessibilityAddTraits(.isHeader)
+            if d.spent.isEmpty {
+                ProfileNote(d.past == false ? "Nothing spent yet." : "Nothing was spent.")
+            } else {
+                GlassCard {
+                    ForEach(Array(d.spent.enumerated()), id: \.offset) { i, sp in
+                        if i > 0 { RowSeparator(inset: 62) }
+                        HStack(spacing: 12) {
+                            Initials(name: sp.merchant, size: 36)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(sp.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                                if let c = sp.category { Text(c).font(Nacre.subheadline).foregroundColor(Pearl.muted) }
+                            }
+                            Spacer(minLength: 8)
+                            Text("\u{2212}" + Format.amount(sp.amount)).font(Nacre.body).monospacedDigit()
+                                .foregroundColor(Pearl.moneyOut)
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+        }
+    }
+
+    /// T-68: "Montreal trip · Nov 6 – 8 · Travel · 14 purchases   $612".
+    @ViewBuilder private var sortedTogether: some View {
+        if let bands = data?.bands, !bands.isEmpty {
+            Text("DAYS SORTED TOGETHER").font(Nacre.caption1).foregroundColor(Pearl.ink)
+                .padding(.leading, 16).padding(.top, 4).accessibilityAddTraits(.isHeader)
+            GlassCard {
+                ForEach(Array(bands.enumerated()), id: \.element.id) { i, band in
+                    if i > 0 { RowSeparator() }
+                    Button { bandAction = band } label: {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(band.name.flatMap { $0.isEmpty ? nil : $0 } ?? band.category)
+                                    .font(Nacre.body).foregroundColor(Pearl.ink)
+                                Text(["\(Format.short(band.first)) – \(Format.short(band.last))", band.category,
+                                      band.count.map { "\($0) purchase\($0 == 1 ? "" : "s")" }]
+                                    .compactMap { $0 }.joined(separator: " · "))
+                                    .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            }
+                            Spacer(minLength: 8)
+                            if let total = band.total {
+                                Text(Format.whole(total)).font(Nacre.body).foregroundColor(Pearl.ink)
+                            }
+                            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(Pearl.muted)
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Change or remove it")
+                }
+            }
+        }
+    }
+
+    private func loadDay() async {
+        guard let day = shownDay ?? data?.cells.first(where: { $0.state == "today" })?.date else { return }
+        dayData = try? await app.api.get("api/calendar/day/\(day)")
+    }
+
     private var legend: some View {
         HStack(spacing: 14) {
             Label { Text("Over your usual pace") } icon: {
@@ -384,7 +502,7 @@ struct CalendarCard: View {
 
     private func tap(_ cell: CalendarMonth.Cell, band: SortedRange?) {
         guard selecting else {
-            day = DayPick(date: cell.date, band: band)
+            shownDay = cell.date
             return
         }
         if first == nil || last != nil {
@@ -410,6 +528,7 @@ struct CalendarCard: View {
         do {
             data = try await app.api.get("api/calendar", query: ["month": month])
             error = nil
+            if shownDay == nil { await loadDay() }
         } catch {
             self.error = app.handle(error)
         }

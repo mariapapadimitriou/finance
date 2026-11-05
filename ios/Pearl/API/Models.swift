@@ -48,9 +48,11 @@ struct ProfileSummary: Decodable {
     let accounts: Int?
     let needsYou: Int?
     let rules: Int?
+    /// Recurring transfers she confirmed (THL-295).
+    var recurring: Int? = nil
 
     enum CodingKeys: String, CodingKey {
-        case accounts, rules
+        case accounts, rules, recurring
         case needsYou = "needs_you"
     }
 }
@@ -268,6 +270,9 @@ struct IncomeBills: Decodable {
         let cadence: String
         let next: String?
         let payer: String?
+        /// O-10b: the account it lands in, and whether it changes each time.
+        var account: String? = nil
+        var varies: Bool? = nil
     }
 
     /// A deposit that looks like pay, not yet answered.
@@ -291,6 +296,9 @@ struct IncomeBills: Decodable {
         let category: String?
         let ticked: Bool?
         let source: String?
+        /// O-10a: the whole bill, and her percent of it (nil is all of it).
+        var full: Double? = nil
+        var share: Int? = nil
         /// Someone's share that comes off it (O-10g).
         let shared: Shared?
         var id: String { key }
@@ -544,6 +552,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
     let bankMerchant: String?
     /// Her share was set on this charge (T-76).
     let shareSet: Bool
+    /// The joint account's fixed share, when it splits every purchase (AM-08).
+    let accountShare: Double?
     let manual: Bool
     let recurring: String?
 
@@ -726,6 +736,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         jointShare = opt(Double.self, .jointSplit) ?? opt(Double.self, .jointShare)
         bankMerchant = opt(String.self, .bankMerchant)
         shareSet = opt(Bool.self, .shareSet) ?? false
+        accountShare = opt(Double.self, .jointShare)
         manual = opt(Bool.self, .manual) ?? false
         recurring = opt(String.self, .recurring)
         oneOffLine = opt(OneOffLine.self, .oneOffLine)
@@ -876,6 +887,8 @@ struct CategoryList: Decodable {
 
 struct CategoryChange: Decodable {
     let category: String?
+    /// What Undo sends back (T-38b).
+    var undo: JSONValue? = nil
 }
 
 // MARK: - Categories and rules
@@ -976,9 +989,11 @@ struct BriefTransaction: Decodable, Hashable {
     let skipped: Bool?
     /// A payback candidate Pearl thinks most likely.
     let likely: Bool?
+    /// An unsorted transfer: where it went ("••4567", a payee).
+    var to: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, date, merchant, description, amount, category, skipped, likely
+        case id, date, merchant, description, amount, category, skipped, likely, to
         case accountName = "account_name"
         case accountId = "account_id"
     }
@@ -1069,6 +1084,8 @@ struct Review: Decodable {
         /// The part of a deposit left to sort (THL-291): the whole deposit
         /// and how much of it is sorted.
         let rest: Rest?
+        /// T-15: the other copy of a possible duplicate.
+        var twin: BriefTransaction? = nil
 
         var id: String { key }
 
@@ -1078,7 +1095,7 @@ struct Review: Decodable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share
+            case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share, twin
             case guessLabel = "guess_label"
         }
 
@@ -1110,6 +1127,7 @@ struct Review: Decodable {
             series = opt(Series.self, .series)
             rest = opt(Rest.self, .rest)
             share = opt(Double.self, .share)
+            twin = opt(BriefTransaction.self, .twin)
         }
 
         static func == (a: Item, b: Item) -> Bool { a.key == b.key }
@@ -1153,6 +1171,15 @@ enum Question: Hashable {
 struct Ask: Identifiable, Hashable {
     let kind: Question
     let item: Review.Item
+
+    /// T-06a: a transfer to one of her savings accounts, by its last digits.
+    func savedTo(_ accounts: [AccountsOverview.Account]) -> String? {
+        guard kind == .transfer, let to = item.txn.to, to.contains("••") else { return nil }
+        let digits = to.filter(\.isNumber)
+        return accounts.first { a in
+            ["savings", "investment"].contains(a.kind ?? "") && !(a.mask ?? "").isEmpty && digits.hasSuffix(a.mask!)
+        }?.name
+    }
     var id: String { item.key }
     var t: BriefTransaction { item.txn }
     var skipped: Bool { item.skipped == true }

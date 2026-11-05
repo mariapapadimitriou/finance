@@ -511,6 +511,8 @@ struct AccountDeletedView: View {
 struct DataResult<Extra: View, Actions: View>: View {
     let title: String
     let line: String
+    /// The pearl over the title; off when a list needs the room (SO-04b).
+    var showsArt = true
     @ViewBuilder var extra: () -> Extra
     @ViewBuilder var actions: () -> Actions
 
@@ -518,8 +520,10 @@ struct DataResult<Extra: View, Actions: View>: View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             VStack(spacing: 10) {
-                Image("LogoMark").resizable().frame(width: 160, height: 133.333)
-                    .accessibilityHidden(true)
+                if showsArt {
+                    Image("LogoMark").resizable().frame(width: 160, height: 133.333)
+                        .accessibilityHidden(true)
+                }
                 Text(title).font(Nacre.title).tracking(0.4).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)

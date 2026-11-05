@@ -23,6 +23,9 @@
 	<!-- O-04a: the system's Face ID prompt (THL-119). -->
 	<key>NSFaceIDUsageDescription</key>
 	<string>Unlock Pearl quickly and privately.</string>
+	<!-- S-17: names from her contacts when she adds someone to a split. -->
+	<key>NSContactsUsageDescription</key>
+	<string>Find the people you split purchases with. Pearl only reads names, and only when you search.</string>
 	<!-- pearl://reset?token=… opens A-07 "Choose a new password". -->
 	<key>CFBundleURLTypes</key>
 	<array>

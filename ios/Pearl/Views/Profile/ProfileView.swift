@@ -8,6 +8,10 @@ struct ProfileView: View {
     @EnvironmentObject private var app: AppModel
     @Binding var tab: MainTabs.Tab
     @State private var summary: ProfileSummary?
+    @State private var debts: DebtList?
+    /// P-01: "Every 2 weeks · 5 bills".
+    @State private var incomeBills: IncomeBills?
+    @State private var recurringMonthly: Double?
     @State private var doc: PearlDoc?
     @State private var showYourData = false
     @State private var showConsent = false
@@ -37,13 +41,19 @@ struct ProfileView: View {
                     RowSeparator(inset: 62)
                     NavigationLink { IncomeBillsView() } label: {
                         ProfileRow(symbol: "dollarsign.square", title: "Income and bills",
-                                   sub: "Your pay and regular bills")
+                                   sub: incomeLine)
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
                     NavigationLink { RecurringTransfersView() } label: {
                         ProfileRow(symbol: "arrow.triangle.2.circlepath", title: "Recurring transfers",
-                                   sub: "Rent, savings and others on a schedule")
+                                   sub: recurringLine)
+                    }
+                    .buttonStyle(.plain)
+                    RowSeparator(inset: 62)
+                    // THL-128: Debts has its own row, not only Set Pearl up again's step.
+                    NavigationLink { DebtsView() } label: {
+                        ProfileRow(symbol: "creditcard", title: "Debts", sub: debtsLine)
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
@@ -90,6 +100,12 @@ struct ProfileView: View {
                 GlassCard {
                     Button { doc = .help } label: {
                         ProfileRow(symbol: "questionmark.circle", title: "Help and support")
+                    }
+                    .buttonStyle(.plain)
+                    RowSeparator(inset: 62)
+                    // THL-118: the Terms, after sign-up too.
+                    Button { doc = .terms } label: {
+                        ProfileRow(symbol: "doc.text", title: "Terms")
                     }
                     .buttonStyle(.plain)
                 }
@@ -218,6 +234,28 @@ struct ProfileView: View {
         return n > 0 ? plural(n, "account") : "Link a bank or add a balance"
     }
 
+    private var incomeLine: String {
+        guard let d = incomeBills else { return "Your pay and regular bills" }
+        let bills = d.bills.filter { $0.ticked == true }.count
+        let pay = d.pays.first.map { cadence($0.cadence) }
+        let parts = [pay, bills > 0 ? "\(bills) bill\(bills == 1 ? "" : "s")" : nil].compactMap { $0 }
+        return parts.isEmpty ? "Your pay and regular bills" : parts.joined(separator: " · ")
+    }
+
+    /// "3 recurring · $2,050 a month" once the page has been loaded.
+    private var recurringLine: String {
+        guard let n = summary?.recurring, n > 0 else { return "Rent, savings and others on a schedule" }
+        return "\(n) recurring" + (recurringMonthly.map { " · \(Format.whole($0)) a month" } ?? "")
+    }
+
+    /// "$9,409 owed · add 1 card’s details".
+    private var debtsLine: String {
+        guard let d = debts else { return "Cards and loans you carry" }
+        if d.debts.isEmpty { return "Nothing carried over" }
+        let missing = d.debts.filter { $0.action != nil }.count
+        return "\(Format.whole(d.total)) owed" + (missing > 0 ? " · add \(missing) \(missing == 1 ? "card’s" : "debts’") details" : "")
+    }
+
     private var rulesLine: String {
         guard let n = summary?.rules else { return " " }
         return n > 0 ? plural(n, "rule") : "No saved rules yet"
@@ -245,6 +283,11 @@ struct ProfileView: View {
             summary = try await app.api.get("api/profile")
         } catch {
             _ = app.handle(error)
+        }
+        debts = try? await app.api.get("api/debts")
+        incomeBills = try? await app.api.get("api/income-bills")
+        if (summary?.recurring ?? 0) > 0, let r: RecurringTransfers = try? await app.api.get("api/recurring-transfers") {
+            recurringMonthly = r.monthly
         }
     }
 

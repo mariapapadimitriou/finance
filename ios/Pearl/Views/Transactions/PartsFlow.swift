@@ -101,8 +101,10 @@ struct PartsSheet: View {
         let theirs: Bool?
         /// A purchase found by searching that isn't split yet (S-23, S-24).
         var notSplit: Bool? = nil
+        /// S-32: the purchase hasn't posted yet.
+        var pending: Bool? = nil
 
-        enum CodingKeys: String, CodingKey { case id, merchant, date, owes, person, theirs }
+        enum CodingKeys: String, CodingKey { case id, merchant, date, owes, person, theirs, pending }
     }
 
     /// S-24: a purchase that isn't split, opened to split with the sender.
@@ -213,8 +215,9 @@ struct PartsSheet: View {
 
     private var owingList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if step == .owing && !owing.isEmpty {
-                label(sender.map { "\($0) owes you" } ?? "Owes you about this much")
+            if step == .owing && !owing.isEmpty && query.isEmpty {
+                label(owing.allSatisfy { $0.pending == true } ? "Still pending"
+                      : sender.map { "\($0) owes you" } ?? "Owes you about this much")
                 GlassCard {
                     ForEach(Array(owing.enumerated()), id: \.element.id) { i, o in
                         if i > 0 { RowSeparator() }
@@ -244,8 +247,11 @@ struct PartsSheet: View {
                     }
                 }
             }
-            if step == .owing {
-                bar(sorted: sortedDone + picked.values.reduce(0, +), first: "Linked", second: "Not linked")
+            if step == .owing && sender != nil && query.isEmpty {
+                // S-25's bar; S-35 (who paid?) and S-23's results go without it.
+                bar(sorted: sortedDone + picked.values.reduce(0, +),
+                    first: "\(Format.amount(sortedDone + picked.values.reduce(0, +))) of \(Format.amount(deposit.amount))",
+                    second: "\(Format.amount(max(0, deposit.amount - sortedDone - picked.values.reduce(0, +)))) left")
             }
         }
     }
@@ -268,8 +274,10 @@ struct PartsSheet: View {
             .buttonStyle(.plain)
             .accessibilityHint("Splits it with \(who), then links it"))
         }
-        let sub = byName ? "Owes \(Format.amount(o.owes)) · \(o.merchant)"
-            : [Format.short(o.date), o.person.map { "\($0)’s share" } ?? "\(Format.amount(o.owes)) left"]
+        // S-35: "Owes $64.00 · same amount"; S-32: "Pending · Sam's share".
+        let sub = byName ? "Owes \(Format.amount(o.owes))" + (abs(o.owes - deposit.amount) < 0.005 ? " · same amount" : "")
+            : [o.pending == true ? "Pending" : Format.short(o.date),
+               o.person.map { "\($0)’s share" } ?? "\(Format.amount(o.owes)) left"]
                 .joined(separator: " · ")
         return AnyView(pickRow(name: byName ? (o.person ?? o.merchant) : o.merchant, sub: sub, amount: o.owes,
                                on: picked[o.id] != nil) { toggle(o) })
@@ -355,12 +363,19 @@ struct PartsSheet: View {
     // MARK: S-11, S-36b What's the rest?
 
     private var kinds: [(key: String, title: String, sub: String?)] {
-        [("gift", "A gift", nil),
-         ("payback", "Pays back something else", "Another purchase \(who) owes for"),
-         ("overpaid", "\(who) overpaid", extra ? "I’ll send the \(Format.amount(left)) back" : "I owe them the difference"),
-         ("income", "Money I earned", "Pay, interest, government…"),
-         ("moved", "From my own accounts", "Not new money"),
-         ("refund", "A refund", nil)]
+        if extra {
+            // S-36b: what the extra is.
+            return [("gift", "A gift", nil),
+                    ("payback", "Pays back something else", "Another purchase \(who) owes for"),
+                    ("overpaid", "\(who) overpaid", "I’ll send the \(Format.amount(left)) back"),
+                    ("income", "Money I earned", "A tip or payment")]
+        }
+        return [("gift", "A gift", "Money in · not pay"),
+                ("payback", "Pays back something else", "Another purchase \(who) owes for"),
+                ("overpaid", "\(who) overpaid", "I owe them the difference"),
+                ("income", "Money I earned", "Pay, interest, government…"),
+                ("moved", "From my own accounts", "Not new money"),
+                ("refund", "A refund", nil)]
     }
 
     private var kindList: some View {
@@ -398,7 +413,7 @@ struct PartsSheet: View {
                     .accessibilityAddTraits(kind == k.key ? .isSelected : [])
                 }
             }
-            if !splitting {
+            if !splitting && !extra {
                 Button("Split into another part") { splitting = true }
                     .font(Nacre.textButton).foregroundColor(Pearl.action).frame(maxWidth: .infinity)
             }
@@ -455,18 +470,27 @@ struct PartsSheet: View {
             pair("Next", disabled: cashPicked.isEmpty, { takeCash() }, "None of these") { afterCash() }
         case .owing:
             let n = picked.count
-            Button(n >= 2 ? "Link these \(n) purchases" : "Next") { takeOwing() }
-                .buttonStyle(NacreButtonStyle())
-                .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
+            if sender == nil && !owing.isEmpty && query.isEmpty {
+                // S-35: who it was, or none of them.
+                let who = owing.first { picked[$0.id] != nil }?.person
+                pair(who.map { "It was \($0)" } ?? "Next", disabled: picked.isEmpty, { takeOwing() },
+                     "None of these") { picked = [:]; takeOwing() }
+            } else if !query.isEmpty && picked.isEmpty {
+                // S-23: just the results until she taps one.
+                EmptyView()
+            } else {
+                let pending = !owing.isEmpty && owing.filter { picked[$0.id] != nil }.allSatisfy { $0.pending == true } && n > 0
+                Button(n >= 2 ? "Link these \(n) purchases" : pending ? "Link it" : "Next") { takeOwing() }
+                    .buttonStyle(NacreButtonStyle())
+                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
+            }
         case .refund:
             Button("Next") { takeRefund() }
                 .buttonStyle(NacreButtonStyle()).disabled(picked.isEmpty)
                 .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         case .progress:
             if leftCents == 0 {
-                Button("Review") { step = .review }
-                    .buttonStyle(NacreButtonStyle())
-                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
+                pair("Review", disabled: false, { step = .review }, "Add a part") { splitting = true; step = .kind }
             } else {
                 pair(extra ? "Sort the extra" : "Sort the rest", disabled: false, { step = .kind },
                      "Later") { Task { await save(later: true) } }
@@ -703,7 +727,7 @@ struct OwedView: View {
                         GlassCard {
                             ForEach(Array(owed.youOwe.enumerated()), id: \.element.id) { i, r in
                                 if i > 0 { RowSeparator(inset: 64) }
-                                personRow(r.name, sub: "They overpaid" + (r.items.first?.merchant.map { " · \($0)" } ?? ""),
+                                personRow(r.name, sub: "Overpaid for " + (r.items.first?.merchant ?? "a purchase"),
                                           amount: r.total, tone: Pearl.ink)
                             }
                         }

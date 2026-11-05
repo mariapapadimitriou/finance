@@ -25,35 +25,31 @@ struct ConfirmDeviceView: View {
     init(path: Binding<[AuthRoute]>, choices: DeviceChoices) {
         _path = path
         self.choices = choices
-        _how = State(initialValue: choices.approve != nil ? "approve" : "recovery")
+        _how = State(initialValue: "approve")
     }
 
     var body: some View {
         NacreScreen {
             IconOrb(symbol: "envelope")
             Text("Confirm it’s you").font(Nacre.title).tracking(0.4).accessibilityAddTraits(.isHeader)
-            Text("This iPhone is new to your account. Approve it from a device you’re signed in on, or use a recovery code.")
+            Text("This iPhone is new to your account. Approve it from a device you’re signed in on.")
                 .font(Nacre.body)
             GlassCard {
                 if let approve = choices.approve {
                     ChoiceLine(title: "Approve on my other device", sub: deviceLine(approve),
                                selected: how == "approve") { how = "approve" }
                 }
-                if choices.recovery == true {
-                    if choices.approve != nil { RowSeparator() }
-                    ChoiceLine(title: "Use a recovery code", sub: "One of the ten you saved",
-                               selected: how == "recovery") { how = "recovery" }
-                }
+                // Recovery codes are left out for now (2026-11-04).
             }
-            if choices.approve == nil && choices.recovery != true {
-                Hint(text: "There’s no other device or recovery code to confirm this iPhone with. Contact support to get back in.")
+            if choices.approve == nil {
+                Hint(text: "There’s no other device to confirm this iPhone with. Contact support to get back in.")
             }
             if let error = error { Hint(text: error) }
         } actions: {
             BottomActions {
                 Button("Continue") { Task { await go() } }
                     .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(busy || (choices.approve == nil && choices.recovery != true))
+                    .disabled(busy || choices.approve == nil)
             } secondary: {
                 Button("Use a different email") { Task { await startOver() } }
                     .buttonStyle(NacreTextButtonStyle())
@@ -118,13 +114,15 @@ struct WaitingApprovalView: View {
             if let said = said {
                 Hint(text: said)
             } else {
-                ProgressView().padding(.top, 8)
+                // A-11b: "Waiting for your answer…".
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Waiting for your answer…").font(Nacre.footnote).foregroundColor(Pearl.ink)
+                }
+                .padding(.top, 8)
             }
         } actions: {
             BottomActions {
-                Button("Use a recovery code instead") { path.append(.recoveryCode) }
-                    .buttonStyle(NacreButtonStyle())
-            } secondary: {
                 Button("Cancel") { Task { await cancel() } }
                     .buttonStyle(NacreTextButtonStyle())
             }

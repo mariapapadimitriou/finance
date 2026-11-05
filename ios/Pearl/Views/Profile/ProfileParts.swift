@@ -486,14 +486,46 @@ struct DocSheet: View {
     }
 }
 
+extension PearlDoc {
+    /// LG-01, LG-02: Terms and the Privacy policy are pages, not sheets.
+    var isPage: Bool { self == .terms || self == .privacy }
+}
+
+/// LG-01 Terms, LG-02 Privacy policy: pushed, with a back button.
+struct DocPage: View {
+    let doc: PearlDoc
+
+    var body: some View {
+        ProfilePage {
+            ProfileHeading(title: doc.title, intro: doc.parts.first?.heading == nil ? doc.parts.first?.text : nil)
+            ForEach(doc.parts.dropFirst(doc.parts.first?.heading == nil ? 1 : 0), id: \.self) { part in
+                VStack(alignment: .leading, spacing: 4) {
+                    if let heading = part.heading {
+                        Text(heading.uppercased()).font(Nacre.caption1).foregroundColor(Pearl.ink)
+                            .padding(.leading, 16).accessibilityAddTraits(.isHeader)
+                    }
+                    Text(part.text).font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 6)
+            }
+        }
+    }
+}
+
 extension View {
-    /// A detail sheet over a Profile page.
+    /// A detail sheet over a Profile page; Terms and the Privacy policy push.
     func docSheet(_ doc: Binding<PearlDoc?>) -> some View {
-        sheet(item: doc) { d in
+        sheet(item: Binding(get: { doc.wrappedValue?.isPage == true ? nil : doc.wrappedValue },
+                            set: { doc.wrappedValue = $0 })) { d in
             DocSheet(doc: d)
                 .background(SheetBackground())
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .navigationDestination(isPresented: Binding(get: { doc.wrappedValue?.isPage == true },
+                                                    set: { if !$0 { doc.wrappedValue = nil } })) {
+            if let d = doc.wrappedValue { DocPage(doc: d) }
         }
     }
 }

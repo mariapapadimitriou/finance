@@ -83,12 +83,11 @@ struct TransactionsView: View {
                     emptyLedger
                 } else {
                     searchRow.padding(.top, 20)
-                    if !inSearch {
-                        tabs.padding(.top, 14)
-                        if filtersOn && !showCalendar { activeChips.padding(.top, 12) }
-                        summaryCard.padding(.top, 16)
-                        bankState
-                    }
+                    // T-02, T-45: the tabs and the summary stay while searching.
+                    tabs.padding(.top, 14)
+                    if filtersOn && !showCalendar && !inSearch { activeChips.padding(.top, 12) }
+                    summaryCard.padding(.top, 16)
+                    if !inSearch { bankState }
                     if showCalendar && !inSearch {
                         CalendarCard(month: month ?? Format.thisMonth(), categories: categories) { m in
                             month = m
@@ -144,10 +143,24 @@ struct TransactionsView: View {
                     Task { await change(["add": add], path: "api/transactions/batch/tags") }
                 }
             case .mark:
-                MarkSelectionSheet(title: pickedTitle, amount: pickedAmount, tone: pickedTone,
-                                   count: picked.count, inflow: pickedRows.allSatisfy(\.inflow)) { body in
+                // T-78: the selection as one, Spending (a category) or Not spending (T-06's answers).
+                CategorySheet(name: "\(picked.count) selected", amount: pickedNames, tone: pickedTone,
+                              categories: categories, current: pickedCategory, mark: "\(picked.count)",
+                              title: "Mark \(picked.count) as…", notSpending: CaseTile.notSpending,
+                              startNotSpending: true, onCase: { key in
                     bulk = nil
+                    let body: [String: Any]
+                    switch key {
+                    case "own", "card": body = ["case": "moved"]
+                    case "saved": body = ["case": "saved"]
+                    case "lent": body = ["case": "lent"]
+                    case "work": body = ["case": "work"]
+                    default: body = ["case": "not_mine", "reason": "Not mine"]
+                    }
                     Task { await change(body, path: "api/transactions/batch/mark") }
+                }) { name, _ in
+                    bulk = nil
+                    Task { await change(["category": name], path: "api/transactions/batch/category") }
                 }
             }
         }
@@ -194,6 +207,16 @@ struct TransactionsView: View {
     // MARK: Search
 
     private var inSearch: Bool { searching || !query.isEmpty }
+
+    /// T-54: "No money came into TD Visa this month."
+    private var noMatchLine: String {
+        let account = filters.accounts.count == 1 ? filterAccounts.first { filters.accounts.contains($0.id) }?.label : nil
+        let when = month.map { $0 == Format.thisMonth() ? "this month" : "in \(Format.monthName($0))" } ?? "this month"
+        if let account = account, filters.types == ["income"] { return "No money came into \(account) \(when)." }
+        if let account = account, filters.types == ["spending"] { return "Nothing was spent on \(account) \(when)." }
+        if let account = account { return "Nothing on \(account) matches \(when)." }
+        return "Try fewer filters."
+    }
 
     private var searchRow: some View {
         HStack(spacing: 10) {
@@ -312,15 +335,19 @@ struct TransactionsView: View {
                 .accessibilityLabel("Month, \(month.map { Format.month($0) } ?? "")")
 
                 HStack(spacing: 0) {
-                    let spent = monthTotals?.spent ?? 0
-                    let income = monthTotals?.income ?? 0
+                    // T-45, T-53: a search or a filter shows its own totals.
+                    let narrowed = inSearch || filters.isActive
+                    let spent = narrowed ? shown.filter { !$0.inflow && $0.counts == "spending" }.reduce(0) { $0 + $1.amount }
+                        : (monthTotals?.spent ?? 0)
+                    let income = narrowed ? shown.filter { $0.inflow && $0.counts == "income" }.reduce(0) { $0 + $1.amount }
+                        : (monthTotals?.income ?? 0)
                     let left = income - spent
                     stat("Spent", Format.whole(spent), Pearl.moneyOut, filter: "spending")
                     divider
                     stat("Came in", Format.whole(income), Pearl.moneyIn, filter: "income")
                     divider
-                    stat(left < -0.5 ? "Over" : "Leftover", Format.whole(left),
-                         left < -0.5 ? Pearl.moneyOut : Pearl.moneyIn, filter: nil)
+                    stat(left < -0.5 ? "Over" : "Leftover", narrowed ? "—" : Format.whole(left),
+                         left < -0.5 && !narrowed ? Pearl.moneyOut : (narrowed ? Pearl.muted : Pearl.moneyIn), filter: nil)
                 }
             }
             .padding(16)
@@ -491,7 +518,7 @@ struct TransactionsView: View {
             if inSearch {
                 nothing(title: "No matches", line: "Try another word.", action: "Clear search") { query = "" }
             } else if filters.isActive || counts != nil {
-                nothing(title: "Nothing matches", line: "Try fewer filters.", action: "Clear filters") {
+                nothing(title: "Nothing matches", line: noMatchLine, action: "Clear filters") {
                     let reload = filters.needsServer
                     filters = TxFilters(sort: filters.sort)
                     counts = nil
@@ -680,6 +707,13 @@ struct TransactionsView: View {
 
     private var pickedRows: [Transaction] { shown.filter { picked.contains($0.id) } }
 
+    /// "−$89.00 · Uber Eats, Shoppers, Sushi Nami" (T-78).
+    private var pickedNames: String {
+        let names = pickedRows.prefix(3).map { $0.merchant.components(separatedBy: " ").prefix(2).joined(separator: " ") }
+        let more = pickedRows.count > 3 ? " and \(pickedRows.count - 3) more" : ""
+        return "\(pickedAmount) · \(names.joined(separator: ", "))\(more)"
+    }
+
     private var pickedTitle: String { picked.count == 1 ? "1 transaction" : "\(picked.count) transactions" }
 
     /// "−$89.00": what the picked rows come to, out less in.
@@ -794,6 +828,10 @@ struct TransactionsView: View {
             .buttonStyle(.plain)
             .disabled(reconnecting != nil)
             .padding(.top, 12)
+            // T-35.
+            Button("Add one by hand") { adding = true }
+                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                .frame(width: 240)
             if let error = error {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).multilineTextAlignment(.center)
             }
@@ -1041,6 +1079,8 @@ struct TransactionRow: View {
         let when = Format.relativeDay(t.date)
         if let paidBack = paidBack { return "Paid back · \(paidBack)" }
         if let charge = t.refundOf { return "Refund · \(charge.merchant)" }
+        // T-82 (THL-292): a transfer a recurring rule sorted says so.
+        if t.recurring != nil, let note = t.note, note.hasPrefix("Recurring") { return note }
         if t.suggested { return t.pending ? "\(when) · Pending" : when }
         return [showsCategory ? t.label : nil, when, t.pending ? "Pending" : nil].compactMap { $0 }
             .joined(separator: " · ")
@@ -1135,7 +1175,7 @@ struct TxFilters: Equatable {
     var merchant = ""
 
     static let typeNames: [(key: String, name: String)] = [
-        ("spending", "Spending"), ("income", "Income"), ("savings", "Savings"), ("transfer", "Transfers"),
+        ("spending", "Spending"), ("income", "Money in"), ("savings", "Savings"), ("transfer", "Transfers"),
     ]
     static let groupNames: [(key: String, name: String)] = [
         ("essentials", "Essentials"), ("lifestyle", "Lifestyle"), ("fixed", "Fixed"), ("variable", "Variable"),
@@ -1695,79 +1735,4 @@ struct SheetBackground: View {
 extension Transaction {
     /// Red going out, green coming in, grey when it doesn't count.
     var tone: Color { notCounted ? Pearl.muted : (inflow ? Pearl.moneyIn : Pearl.moneyOut) }
-}
-
-// MARK: - T-78 Mark n as…
-
-/// What a selection was, at once: the What was this? answers that apply to
-/// many rows (finance/marks_api.py BATCH_CASES). A purchase is Category.
-struct MarkSelectionSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let title: String
-    let amount: String
-    let tone: Color
-    let count: Int
-    let inflow: Bool
-    let onMark: ([String: Any]) -> Void
-
-    @State private var pick: String?
-    @State private var reason = ""
-
-    private var cases: [(key: String, label: String, sub: String)] {
-        inflow ? [("own", "From my own account", "Your money moving, not income"),
-                  ("out_of_savings", "Taken out of my savings", "Not income"),
-                  ("borrowed", "Money I borrowed", "Not income; you’ll pay it back"),
-                  ("lent_back", "Paying back money I lent", "Not income"),
-                  ("not_mine", "Not mine", "Left out of all your numbers")]
-            : [("moved", "Moved between my accounts", "Not spending"),
-               ("saved", "Put into savings", "Adds to your total saved"),
-               ("lent", "Lent to someone", "Pearl watches for it coming back"),
-               ("work", "To be reimbursed", "Left out until the money comes back"),
-               ("not_mine", "Not mine", "Left out of all your numbers")]
-    }
-
-    private var ready: Bool { pick != nil && (pick != "not_mine" || !reason.trimmingCharacters(in: .whitespaces).isEmpty) }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            SheetTitle(title: "Mark \(count) as…") { dismiss() }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 12) {
-                        Initials(name: "\(count)", size: 48)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(title).font(Nacre.title2).foregroundColor(Pearl.ink)
-                            Text(amount).font(Nacre.subheadline).foregroundColor(tone)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    GlassCard {
-                        ForEach(Array(cases.enumerated()), id: \.element.key) { i, c in
-                            if i > 0 { RowSeparator() }
-                            ChoiceLine(title: c.label, sub: c.sub, selected: pick == c.key) { pick = c.key }
-                        }
-                    }
-                    if pick == "not_mine" {
-                        FieldRow(label: "Why?", text: $reason, prompt: "A friend’s purchase").sheetCard()
-                    }
-                    Text(inflow ? "Money in that’s a purchase refund or your pay? Use Category or open it."
-                                : "A purchase? Use Category instead.")
-                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                }
-                .padding(.horizontal, 16).padding(.bottom, 16)
-            }
-            Button("Save") {
-                guard let pick = pick else { return }
-                var body: [String: Any] = ["case": pick]
-                if pick == "not_mine" { body["reason"] = reason.trimmingCharacters(in: .whitespaces) }
-                onMark(body)
-            }
-            .buttonStyle(NacreButtonStyle())
-            .disabled(!ready)
-            .padding(.horizontal, 16).padding(.vertical, 8)
-        }
-        .background(SheetBackground())
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-    }
 }

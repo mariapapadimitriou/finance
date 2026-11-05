@@ -492,7 +492,10 @@ struct LoginCodeView: View {
         defer { busy = false }
         do {
             let reply: SignInReply = try await app.api.post("api/auth/login/code", ["code": code])
-            if reply.signedIn == true {
+            if reply.confirmDevice == true, let choices = reply.choices {
+                // A-11: the server wants this iPhone confirmed first.
+                path.append(.confirmDevice(choices))
+            } else if reply.signedIn == true {
                 if !app.faceIDOn && AppLock.available {
                     path.append(.faceID(reply.user))
                 } else {

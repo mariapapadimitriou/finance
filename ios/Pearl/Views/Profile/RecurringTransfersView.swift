@@ -54,6 +54,8 @@ struct RecurringTransfersView: View {
     @State private var data: RecurringTransfers?
     @State private var categories: [CategoryList.Category] = []
     @State private var open: RecurringTransfers.Transfer?
+    /// The transfers Needs a look is asking about.
+    @State private var waiting: [Review.Item] = []
     @State private var toast: String?
     @State private var error: String?
 
@@ -65,6 +67,12 @@ struct RecurringTransfersView: View {
                     ProfileNote("When the same amount goes out on a schedule, Needs a look asks whether it repeats. The ones you say yes to are sorted on their own and listed here.")
                         .padding(.top, 8)
                 } else {
+                    // RT-01's two tiles (THL-295).
+                    HStack(spacing: 12) {
+                        tile("A month, on average", Format.whole(data.monthly))
+                        tile("Recurring", "\(data.count)")
+                    }
+                    .padding(.top, 4)
                     ProfileSection("\(data.count) recurring")
                     GlassCard {
                         ForEach(Array(data.transfers.enumerated()), id: \.element.id) { i, t in
@@ -80,14 +88,26 @@ struct RecurringTransfersView: View {
                     }
                 }
                 if data.asking > 0 {
+                    // RT-01: each one waiting, as its own row.
                     ProfileSection("New, in Needs a look")
                     GlassCard {
-                        NavigationLink { ReviewView() } label: {
-                            ProfileRow(symbol: "arrow.triangle.2.circlepath",
-                                       title: data.asking == 1 ? "1 transfer to answer" : "\(data.asking) transfers to answer",
-                                       pill: StatusPill(text: "Recurring?", tone: .needsALook))
+                        ForEach(Array(waiting.enumerated()), id: \.element.key) { i, item in
+                            if i > 0 { RowSeparator(inset: 62) }
+                            NavigationLink { ReviewView() } label: {
+                                ProfileRow(initials: item.txn.name, title: item.txn.name,
+                                           sub: "\(Format.amount(abs(item.txn.amount)))" + (item.series?.when.map { " · \($0)" } ?? ""),
+                                           pill: StatusPill(text: "Recurring?", tone: .needsALook))
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        if waiting.isEmpty {
+                            NavigationLink { ReviewView() } label: {
+                                ProfileRow(symbol: "arrow.triangle.2.circlepath",
+                                           title: data.asking == 1 ? "1 transfer to answer" : "\(data.asking) transfers to answer",
+                                           pill: StatusPill(text: "Recurring?", tone: .needsALook))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             } else if error == nil {
@@ -113,22 +133,37 @@ struct RecurringTransfersView: View {
         }
     }
 
-    /// "Transfers that repeat, sorted on their own. $2,050 a month on average."
     private var lead: String? {
         guard let data = data, !data.transfers.isEmpty else { return nil }
-        return "Transfers that repeat, sorted on their own. \(Format.whole(data.monthly)) a month on average."
+        return "Transfers that repeat, sorted on their own."
     }
 
-    /// "Rent · monthly · next Dec 1".
+    private func tile(_ label: String, _ value: String) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                Text(value).font(.custom("Fraunces-SemiBold", size: 28, relativeTo: .title)).foregroundColor(Pearl.ink)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16).padding(.vertical, 14)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// "Rent · monthly · TD Chequing · next Dec 1".
     private func line(_ t: RecurringTransfers.Transfer) -> String {
         let how = t.cadence == "payday" ? "every payday" : cadence(t.cadence).lowercased()
-        return [t.what ?? t.category, how, t.next.map { "next \(Format.short($0))" }]
+        return [t.what ?? t.category, how, t.account.flatMap { $0.isEmpty ? nil : $0 }, t.next.map { "next \(Format.short($0))" }]
             .compactMap { $0 }.joined(separator: " · ")
     }
 
     private func load() async {
         do {
             data = try await app.api.get("api/recurring-transfers")
+            if (data?.asking ?? 0) > 0, let review: Review = try? await app.api.get("api/review") {
+                waiting = review.recurringTransfer
+            }
             if categories.isEmpty, let list: CategoryList = try? await app.api.get("api/categories") {
                 categories = list.categories.filter { $0.hidden != true }
             }
@@ -157,10 +192,10 @@ struct RecurringTransferSheet: View {
     @State private var busy = false
     @State private var error: String?
 
+    /// RT-02: Rent, Saved, or Something else.
     private static let kinds: [(category: String, label: String, sub: String)] = [
         ("Rent & Housing", "Rent", "Counted as a bill"),
         ("Saved", "Saved", "Money you put away"),
-        ("Transfers", "Moved", "To another of my accounts"),
     ]
 
     init(transfer: RecurringTransfers.Transfer, categories: [CategoryList.Category], done: @escaping (String) -> Void) {
@@ -245,7 +280,8 @@ struct RecurringTransferSheet: View {
         }
     }
 
-    private var amountLine: String { "\(Format.amount(transfer.amount)) \(transfer.cadence == "payday" ? "each payday" : "each time")" }
+    /// "$1,450.00 a month".
+    private var amountLine: String { "\(Format.amount(transfer.monthly)) a month" }
 
     /// "Every month, around the 1st · next Monday, December 1".
     private var schedule: String {

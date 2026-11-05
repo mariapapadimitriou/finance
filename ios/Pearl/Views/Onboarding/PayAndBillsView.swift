@@ -105,7 +105,7 @@ struct PayAndBillsView: View {
                     }
                 case .pay(let p):
                     PaySheet(title: p.name, subtitle: "Your pay · \(cadence(p.cadence))", payer: p.payer, payId: p.id,
-                             amount: p.amount, cadence: p.cadence, next: p.next) { reply in
+                             amount: p.amount, cadence: p.cadence, next: p.next, account: p.account, varies: p.varies ?? false) { reply in
                         if let reply = reply { data = reply }
                     }
                 case .addPay:
@@ -206,7 +206,7 @@ struct PayAndBillsView: View {
             for bill in data.bills { answers[bill.key] = ticked[bill.key] ?? bill.ticked ?? true }
             let _: IncomeBills = try await app.api.put("api/income-bills/bills", ["ticked": answers])
             app.changed()
-            if let onDone = onDone { onDone() } else { path.append(.allowance) }
+            if let onDone = onDone { onDone() } else { path.append(.saving) }
         } catch {
             self.error = app.handle(error)
         }
@@ -417,11 +417,17 @@ struct PaySheet: View {
     @State private var amount = ""
     @State private var how: String
     @State private var next: Date
+    /// O-10b / O-10d: where it lands, and whether it changes each time.
+    @State private var account: String
+    @State private var varies: Bool
+    @State private var accounts: [String] = []
     @State private var error: String?
     @State private var busy = false
 
     init(title: String, subtitle: String, payer: String?, payId: String?, amount: Double?, cadence: String,
-         next: String?, saved: @escaping (IncomeBills?) -> Void) {
+         next: String?, account: String? = nil, varies: Bool = false, saved: @escaping (IncomeBills?) -> Void) {
+        _account = State(initialValue: account ?? "")
+        _varies = State(initialValue: varies)
         self.title = title
         self.subtitle = subtitle
         self.payer = payer
@@ -436,7 +442,8 @@ struct PaySheet: View {
     private var adding: Bool { payer == nil && payId == nil }
 
     var body: some View {
-        SheetFrame(title: title, subtitle: subtitle, symbol: "chart.line.uptrend.xyaxis", close: { dismiss() }) {
+        SheetFrame(title: title, subtitle: subtitle, symbol: "chart.line.uptrend.xyaxis",
+                   heading: adding ? "Add income" : "Your pay", close: { dismiss() }) {
             VStack(spacing: 0) {
                 if adding {
                     FieldRow(label: "Name", text: $name, prompt: "e.g. Weekend job")
@@ -449,11 +456,16 @@ struct PaySheet: View {
                 RowSeparator()
                 DatePicker(adding ? "Next payment" : "Next pay", selection: $next, displayedComponents: .date)
                     .font(Nacre.body).padding(.horizontal, 16).frame(minHeight: 52)
+                if !accounts.isEmpty {
+                    RowSeparator()
+                    namedPicker("Goes into", selection: $account, options: accounts)
+                }
             }
             .sheetCard()
-            Text(adding ? "Not sure? Enter what you usually get in a month. You can change it any time."
-                        : "If it changes, enter what usually lands. You can change it any time.")
-                .font(Nacre.footnote)
+            Toggle(adding ? "Amount changes each time" : "My pay changes each time", isOn: $varies)
+                .font(Nacre.body).tint(Pearl.action)
+                .padding(.horizontal, 16).frame(minHeight: 52)
+                .sheetCard()
             if let error = error { Hint(text: error) }
         } actions: {
             Button(adding ? "Add income" : "Save") { Task { await save() } }
@@ -465,13 +477,19 @@ struct PaySheet: View {
                     .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             }
         }
+        .task {
+            guard let o: AccountsOverview = try? await app.api.get("api/accounts/overview") else { return }
+            accounts = o.linked.filter { ["chequing", "savings", "depository"].contains($0.kind ?? "chequing") }.map(\.name)
+            if account.isEmpty, let first = accounts.first { account = first }
+        }
     }
 
     private func save() async {
         busy = true
         defer { busy = false }
         var body: [String: Any] = ["name": adding ? name : title, "amount": amount.replacingOccurrences(of: "$", with: ""),
-                                   "cadence": how, "next": isoDay.string(from: next)]
+                                   "cadence": how, "next": isoDay.string(from: next), "varies": varies]
+        if !account.isEmpty { body["account"] = account }
         do {
             let reply: IncomeBills
             if let id = payId {
@@ -520,6 +538,10 @@ struct BillSheet: View {
     @State private var how = "monthly"
     @State private var next = Date()
     @State private var varies = false
+    /// O-10a / O-10c: its category and her share of it.
+    @State private var category = ""
+    @State private var share = "100"
+    @State private var categories: [String] = []
     @State private var error: String?
     @State private var busy = false
 
@@ -527,7 +549,7 @@ struct BillSheet: View {
         SheetFrame(title: bill?.name ?? "Add a bill",
                    subtitle: bill.map { "\($0.category ?? "Bill") · \(cadence($0.cadence))" }
                        ?? "Including ones paid by e-Transfer, cheque or cash",
-                   symbol: "doc.text", close: { dismiss() }) {
+                   symbol: "doc.text", heading: bill == nil ? "Add a bill" : "Edit bill", close: { dismiss() }) {
             VStack(spacing: 0) {
                 if bill == nil {
                     FieldRow(label: "Name", text: $name, prompt: "e.g. Tuition")
@@ -540,6 +562,12 @@ struct BillSheet: View {
                 RowSeparator()
                 DatePicker("Next payment", selection: $next, displayedComponents: .date)
                     .font(Nacre.body).padding(.horizontal, 16).frame(minHeight: 52)
+                RowSeparator()
+                FieldRow(label: "Your share", text: $share, prompt: "100%").keyboardType(.numberPad)
+                if !categories.isEmpty {
+                    RowSeparator()
+                    namedPicker("Category", selection: $category, options: categories, placeholder: "Choose")
+                }
             }
             .sheetCard()
             VStack(spacing: 0) {
@@ -554,22 +582,26 @@ struct BillSheet: View {
                 }
             }
             .sheetCard()
-            if bill != nil {
-                Text("Untick it if it isn’t a regular bill.").font(Nacre.footnote)
-            }
             if let error = error { Hint(text: error) }
         } actions: {
             Button(bill == nil ? "Add bill" : "Save") { Task { await save() } }
                 .buttonStyle(NacreButtonStyle(busy: busy))
-            if let bill = bill, bill.source == "added" {
+            if let bill = bill {
+                // O-10a: any bill can come off, found or added.
                 Button("Remove bill") { Task { await remove(bill) } }
                     .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             }
         }
+        .task {
+            guard let list: CategoryList = try? await app.api.get("api/categories") else { return }
+            categories = list.categories.filter { $0.hidden != true && ["essentials", "lifestyle"].contains($0.group ?? "lifestyle") }.map(\.name)
+        }
         .onAppear {
             guard let bill = bill else { return }
             name = bill.name
-            amount = String(format: "%.2f", bill.amount)
+            amount = String(format: "%.2f", bill.full ?? bill.amount)
+            share = "\(bill.share ?? 100)"
+            category = bill.category ?? ""
             how = bill.cadence
             varies = bill.varies ?? false
             if let n = bill.next, let d = isoDay.date(from: String(n.prefix(10))) { next = d }
@@ -579,8 +611,10 @@ struct BillSheet: View {
     private func save() async {
         busy = true
         defer { busy = false }
-        let body: [String: Any] = ["name": name, "amount": amount.replacingOccurrences(of: "$", with: ""),
-                                   "cadence": how, "next": isoDay.string(from: next), "varies": varies]
+        var body: [String: Any] = ["name": name, "amount": amount.replacingOccurrences(of: "$", with: ""),
+                                   "cadence": how, "next": isoDay.string(from: next), "varies": varies,
+                                   "share": share.replacingOccurrences(of: "%", with: "")]
+        if !category.isEmpty { body["category"] = category }
         do {
             let reply: IncomeBills
             if let bill = bill {
@@ -618,6 +652,8 @@ struct SheetFrame<Content: View, Actions: View>: View {
     let title: String
     let subtitle: String
     let symbol: String
+    /// The centred title over the sheet ("Edit bill", "Your pay").
+    var heading: String? = nil
     let close: () -> Void
     @ViewBuilder var content: () -> Content
     @ViewBuilder var actions: () -> Actions
@@ -626,6 +662,15 @@ struct SheetFrame<Content: View, Actions: View>: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    if let heading = heading {
+                        HStack {
+                            Spacer()
+                            Text(heading).font(Nacre.headline).accessibilityAddTraits(.isHeader)
+                            Spacer()
+                        }
+                        .overlay(alignment: .trailing) { CloseButton(action: close) }
+                        .padding(.top, 4)
+                    }
                     HStack(alignment: .top, spacing: 12) {
                         IconOrb(symbol: symbol, size: 44)
                         VStack(alignment: .leading, spacing: 2) {
@@ -633,7 +678,7 @@ struct SheetFrame<Content: View, Actions: View>: View {
                             Text(subtitle).font(Nacre.subheadline)
                         }
                         Spacer(minLength: 8)
-                        CloseButton(action: close)
+                        if heading == nil { CloseButton(action: close) }
                     }
                     content()
                 }
@@ -666,6 +711,26 @@ func pickerRow(_ label: String, selection: Binding<String>, options: [String]) -
         } label: {
             HStack(spacing: 6) {
                 Text(cadence(selection.wrappedValue))
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+            }
+            .font(Nacre.body).foregroundColor(Pearl.muted)
+        }
+    }
+    .padding(.horizontal, 16).frame(minHeight: 52)
+}
+
+/// "Goes into   TD Chequing ›", "Category   Choose ›" as a menu.
+func namedPicker(_ label: String, selection: Binding<String>, options: [String], placeholder: String = "Choose") -> some View {
+    HStack {
+        Text(label).font(Nacre.body)
+        Spacer()
+        Menu {
+            Picker(label, selection: selection) {
+                ForEach(options, id: \.self) { Text($0).tag($0) }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(selection.wrappedValue.isEmpty ? placeholder : selection.wrappedValue).lineLimit(1)
                 Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
             }
             .font(Nacre.body).foregroundColor(Pearl.muted)
