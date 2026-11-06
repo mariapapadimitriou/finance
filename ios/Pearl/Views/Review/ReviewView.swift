@@ -2,8 +2,9 @@ import SwiftUI
 
 /// Needs a look (THL-123, THL-232; T-10, T-11): every question as a row,
 /// its dashed chip naming what it needs, To sort or Skipped. Tapping one
-/// opens its question (AnswerSheet); swiping skips it, or puts a skipped
-/// one back. Skipped ones count the way Pearl guessed.
+/// opens its guess on the transaction's own page (T-92), or its question
+/// (AnswerSheet); swiping skips it, or puts a skipped one back. Skipped ones
+/// count the way Pearl guessed.
 @MainActor
 struct ReviewView: View {
     @EnvironmentObject private var app: AppModel
@@ -64,7 +65,22 @@ struct ReviewView: View {
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
         }
-        .sheet(item: $asking) { ask in
+        .fullScreenCover(item: Binding(get: { asking.flatMap { $0.opensPage(accounts) ? $0 : nil } },
+                                       set: { asking = $0 })) { ask in
+            GuessPage(actions: GuessActions(
+                ask: ask, label: ask.guessLabel(accounts), accounts: accounts, names: recentNames,
+                secondary: ask.secondaryLabel(accounts),
+                onYes: { asking = nil; Task { await send(ask.yesAnswer(accounts)) } },
+                onSecondary: { asking = nil; Task { await send(ask.secondaryAnswer(accounts)) } },
+                onSkip: ask.skipped ? nil : {
+                    asking = nil
+                    Task { await send(.skip(ask.item.key, true)) }
+                },
+                onAnswer: { answer in asking = nil; Task { await send(answer) } }),
+                      categories: categories)
+        }
+        .sheet(item: Binding(get: { asking.flatMap { $0.opensPage(accounts) ? nil : $0 } },
+                             set: { asking = $0 })) { ask in
             if ask.item.rest != nil {
                 // "$172 left to sort" (S-28): sorting the rest of a deposit.
                 PartsSheet(deposit: PartsDeposit(id: ask.t.id, name: ask.t.name, amount: ask.t.amount,
@@ -371,6 +387,10 @@ struct ReviewView: View {
 enum ReviewAnswer {
     /// Pearl's guess is right.
     case confirm(String)
+    /// Yes where a rule is right: every open guess from the merchant, and the rule.
+    case always(String, label: String)
+    /// T-97: Yes on a merchant she has sorted different ways, with no rule.
+    case varies(String, name: String)
     /// A different category, and maybe every one like it.
     case category(String, name: String, remember: Bool)
     /// "What was this?" answered: `case` and its details (finance/marks.py).
@@ -411,6 +431,13 @@ enum ReviewAnswer {
         switch self {
         case .confirm(let id):
             return try await api.put("api/transactions/\(id)/confirm")
+        case .varies(let id, let name):
+            let reply: MarkReply = try await api.put("api/transactions/\(id)/confirm")
+            return MarkReply(title: "\(name) varies, so no rule", detail: nil, undo: reply.undo)
+        case .always(let id, let label):
+            let reply: QuickSortStep = try await api.put("api/quick-sort/\(id)", ["action": "right", "every": true])
+            return MarkReply(title: QuickSortStep.always(label, sorted: (reply.also?.count ?? 0) + 1),
+                             detail: nil, undo: reply.undo)
         case .category(let id, let name, let remember):
             let reply: MarkReply = try await api.patch("api/transactions/\(id)",
                                                        ["category": name, "apply_to_merchant": remember])

@@ -53,12 +53,16 @@ def _money(x: float) -> str:
 
 
 def _brief(t: Transaction, people=None) -> dict:
+    from .categorize import is_generic_transfer_name
     who = party(t, people)
     return {"id": t.fingerprint, "date": t.date,
             "merchant": (who or {}).get("name") or t.merchant,
             "description": t.description, "amount": t.amount,
             "account_id": t.account_id, "account_name": t.account_label or "",
             "category": t.category, "logo": (t.raw or {}).get("logo_url") or "",
+            # Whether a rule for this name could match the right rows: Always
+            # (T-90) isn't offered for "Interac e-Transfer".
+            "learnable": bool((t.merchant or "").strip()) and not is_generic_transfer_name(t.merchant),
             # An e-Transfer's message, when the bank passed it on (2026-10-21).
             "memo": memo(t)}
 
@@ -365,6 +369,19 @@ def build(transactions: list[Transaction], today: str | None = None,
             "duplicate": dupes, "kinds": KINDS}
 
 
+def mixed_merchants(transactions: list[Transaction], confirmed: dict[str, str]) -> set[str]:
+    """Merchants she has sorted into more than one category, by merchant key:
+    Yes on one of their guesses doesn't save a rule (T-97)."""
+    from .categorize import merchant_key
+    said: dict[str, set[str]] = {}
+    for t in transactions:
+        category = confirmed.get(t.fingerprint) or (t.category if t.category_source == "user" else None)
+        key = merchant_key(t.merchant or "")
+        if category and key:
+            said.setdefault(key, set()).add(category)
+    return {k for k, cats in said.items() if len(cats) > 1}
+
+
 def for_store(st, today: str | None = None) -> dict:
     """The review as every screen sees it: one call, so one number."""
     found_on = {k: v["found_on"] for k, v in st.duplicates().items()}
@@ -381,9 +398,15 @@ def for_store(st, today: str | None = None) -> dict:
         if apply_income_types(st, txns):
             txns = st.all_transactions()
         st.set_setting("income_kinds_by_payer", "1")
-    return build(txns, today=today, dismissed=st.dismissed_reviews(),
-                 splits=st.splits(), payer=st.payback_people(), found_on=found_on,
-                 skipped=st.skipped_reviews(), recurring=st.recurring_transfers(), me=_me())
+    review = build(txns, today=today, dismissed=st.dismissed_reviews(),
+                   splits=st.splits(), payer=st.payback_people(), found_on=found_on,
+                   skipped=st.skipped_reviews(), recurring=st.recurring_transfers(), me=_me())
+    from .categorize import merchant_key
+    mixed = mixed_merchants(txns, st.confirmed_categories())
+    names = {t.fingerprint: merchant_key(t.merchant or "") for t in txns}
+    for it in review.get("unsure_category") or []:
+        it["txn"]["mixed"] = names.get(it["txn"]["id"]) in mixed
+    return review
 
 
 def _me() -> str | None:

@@ -6,6 +6,10 @@ import SwiftUI
 /// (T-07), which purchase (T-09), what kind of income (T-71), how often it
 /// pays (T-31), whose it is (T-13, T-60), who sent it (T-14), whether a
 /// transfer repeats (T-69) or someone is paying her back (T-70).
+///
+/// The one page sorting happens on: Needs a look, Quick sort and a transaction
+/// all open it, so every answer in Figma's Outcome table and every option
+/// (a rule, Regular bill, Split with others, One-off) is reachable from each.
 @MainActor
 struct AnswerSheet: View {
     let ask: Ask
@@ -14,6 +18,15 @@ struct AnswerSheet: View {
     let names: [String]
     let api: APIClient
     let onAnswer: (ReviewAnswer) -> Void
+    /// Quick sort's guesses: a category from What was this? is theirs to save,
+    /// so the others from the merchant can go with it. Save on the guess
+    /// unchanged confirms it.
+    var onCategory: ((String, Bool) -> Void)? = nil
+    /// Save on the unchanged category confirms it; not on a settled one.
+    var confirmsGuess = true
+    /// Opened from the transaction's page (T-03, T-96), which has the options
+    /// already: the tiles alone, as CR-04 has them.
+    var fromPage = false
 
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step
@@ -32,6 +45,30 @@ struct AnswerSheet: View {
     @State private var intoChoice: String?
     /// Her confirmed pay, for T-31's hint.
     @State private var pays: [IncomeBills.Pay] = []
+    /// The transaction in full, for the options.
+    @State private var full: Transaction?
+    /// Whether a rule for this name could match the right rows (not "Interac e-Transfer").
+    @State private var learnable = true
+    /// Accounts for "Where did it go?", when the caller has none to hand.
+    @State private var fetchedAccounts: [AccountsOverview.Account] = []
+    /// The rule for an answer with a follow-up, and for money in.
+    @State private var rememberAnswer = true
+    @State private var rememberInto = true
+    /// What "What did this pay back?" is answering: nil works it out.
+    @State private var chargeCase: String?
+    @State private var splitting = false
+    @State private var splitSaid: String?
+    @State private var oneOff: Bool?
+    /// T-04's Regular bill, then Add to your bills? (T-32), then the answer.
+    @State private var regularBill = false
+    @State private var billing: BillStart?
+    @State private var pending: (() -> Void)?
+
+    struct BillStart: Identifiable {
+        let t: Transaction
+        let category: String
+        var id: String { t.id }
+    }
 
     enum Step: Hashable {
         case guess, out, into, accounts, charges, kinds, cadence, joint, sender, recurring, payback, category
@@ -42,16 +79,21 @@ struct AnswerSheet: View {
     /// `start` opens on one step, for the transaction page (THL-198):
     /// the kind of income, how often it pays, or What was this?.
     init(ask: Ask, categories: [CategoryList.Category], accounts: [AccountsOverview.Account], names: [String],
-         api: APIClient, start: Step? = nil, current: String? = nil, onAnswer: @escaping (ReviewAnswer) -> Void) {
+         api: APIClient, start: Step? = nil, current: String? = nil, onCategory: ((String, Bool) -> Void)? = nil,
+         confirmsGuess: Bool = true, fromPage: Bool = false, onAnswer: @escaping (ReviewAnswer) -> Void) {
+        self.fromPage = fromPage
         self.ask = ask
         self.categories = categories
         self.accounts = accounts
         self.names = names
         self.api = api
         self.onAnswer = onAnswer
+        self.onCategory = onCategory
+        self.confirmsGuess = confirmsGuess
         let first: Step
         switch ask.kind {
-        case .category: first = .category      // T-52: straight to the categories
+        // T-52: straight to the categories, on the page with every other answer.
+        case .category: first = ask.t.inflow ? .into : .out
         case .duplicate: first = .guess
         case .transfer: first = ask.savedTo(accounts) != nil ? .guess : .out
         case .moneyIn:
@@ -68,7 +110,7 @@ struct AnswerSheet: View {
         _step = State(initialValue: start ?? first)
         _choice = State(initialValue: current)
         // "Not income?" on a transaction opens on the Not income side.
-        _incomeSide = State(initialValue: start != .into)
+        _incomeSide = State(initialValue: start != .into && ask.kind != .category)
     }
 
     private var t: BriefTransaction { ask.t }
@@ -79,10 +121,17 @@ struct AnswerSheet: View {
             if step == .out {
                 // T-06: Spending is the categories; Not spending, the answers.
                 CategorySheet(name: who, amount: amountText, tone: tone, categories: categories,
-                              current: t.category ?? "Other", merchant: who, title: "What was this?",
-                              notSpending: CaseTile.notSpending, startNotSpending: true,
-                              onCase: { outCase($0) }) { name, remember in
-                    onAnswer(.mark(t.id, ["case": "spending", "category": name, "remember": remember]))
+                              current: t.category ?? ask.item.guess?.text ?? "Other",
+                              merchant: learnable ? who : nil,
+                              onRegularBill: { regularBill = $0 },
+                              title: fromPage && ask.kind == .category ? "Category" : "What was this?",
+                              preview: learnable ? CategorySheet.preview(api: api, id: t.id, merchant: who) : nil,
+                              notSpending: CaseTile.notSpending, startNotSpending: ask.kind != .category,
+                              onCase: { outCase($0, remember: $1) },
+                              confirmsCurrent: (ask.kind == .category && confirmsGuess) || splitSaid != nil,
+                              caseRule: { outRule($0) },
+                              extras: fromPage ? nil : AnyView(outOptions)) { name, remember in
+                    saveSpending(name, remember)
                 }
             } else if step == .into {
                 intoSheet
@@ -107,11 +156,137 @@ struct AnswerSheet: View {
             }
         }
         .presentationDragIndicator(.visible)
+        .task(id: step) { await loadOptions() }
+        .sheet(isPresented: $splitting) {
+            if let f = full {
+                SplitSheet(t: f, api: api, recent: names) { said in
+                    splitting = false
+                    splitSaid = said
+                }
+            }
+        }
+        .sheet(item: $billing, onDismiss: {
+            let finish = pending
+            pending = nil
+            finish?()
+        }) { start in
+            AddToBillsSheet(t: start.t, api: api, categories: categories, category: start.category) { _ in
+                billing = nil
+            }
+        }
         .sheet(isPresented: $parting) {
             PartsSheet(deposit: PartsDeposit(id: t.id, name: who, amount: t.amount, date: t.date), api: api) { reply in
                 parting = false
                 onAnswer(.done(reply))
             }
+        }
+    }
+
+    // MARK: Options
+
+    private func loadOptions() async {
+        guard step == .out || step == .into, full == nil else { return }
+        struct Cases: Decodable { let learnable: Bool? }
+        if let c: Cases = try? await api.get("api/transactions/\(t.id)/cases") { learnable = c.learnable ?? true }
+        if let f: Transaction = try? await api.get("api/transactions/\(t.id)") { full = f }
+    }
+
+    /// What Spending saves: the caller's way, or the answer for this question.
+    private func saveSpending(_ name: String, _ remember: Bool) {
+        let finish: () -> Void = {
+            if let onCategory = onCategory {
+                onCategory(name, remember)
+            } else if ask.kind == .category {
+                if name == (t.category ?? ask.item.guess?.text) && !remember {
+                    onAnswer(.confirm(t.id))
+                } else {
+                    onAnswer(.category(t.id, name: name, remember: remember))
+                }
+            } else {
+                onAnswer(.mark(t.id, ["case": "spending", "category": name, "remember": remember]))
+            }
+        }
+        guard regularBill, let f = full else { finish(); return }
+        regularBill = false
+        pending = finish
+        billing = BillStart(t: f, category: name)
+    }
+
+    /// The Outcome table's rule for T-06's answers: work never makes one.
+    private func outRule(_ key: String) -> String? {
+        guard learnable else { return nil }
+        switch key {
+        case "work": return nil
+        case "not_mine": return "Leave out every \(who) from now on"
+        default: return "Do this for every \(who) from now on"
+        }
+    }
+
+    /// Split with others (THL-289) and One-off (T-42), for a purchase.
+    @ViewBuilder private var outOptions: some View {
+        if let f = full {
+            let canSplit = f.transfer == nil && f.refundOf == nil && f.splitting == nil && f.excluded.isEmpty
+            if canSplit || f.canOneOff {
+                Text("OPTIONS").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                    .padding(.horizontal, 16).padding(.top, 4)
+                    .accessibilityAddTraits(.isHeader)
+                GlassCard {
+                    if canSplit {
+                        Button { splitting = true } label: {
+                            optionLabel("Split with others", done: splitSaid != nil, icon: "person.2")
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if canSplit && f.canOneOff { RowSeparator() }
+                    if f.canOneOff {
+                        Toggle(isOn: Binding(get: { oneOff ?? f.oneOff }, set: { on in Task { await setOneOff(on) } })) {
+                            HStack(spacing: 12) {
+                                IconBubble(symbol: "1.circle")
+                                Text("One-off purchase").font(Nacre.body).foregroundColor(Pearl.ink)
+                            }
+                        }
+                        .tint(Pearl.action)
+                        .padding(.horizontal, 16).frame(minHeight: 52)
+                        .accessibilityHint("Leaves it out of your usual month")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Split into parts, for a deposit that's more than one thing.
+    @ViewBuilder private var inOptions: some View {
+        if let f = full, f.transfer == nil, f.parts.isEmpty, f.partOf == nil, f.refundOf == nil, f.repays == nil,
+           f.excluded.isEmpty, f.jointFrom != "them" {
+            Text("OPTIONS").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                .padding(.horizontal, 16).padding(.top, 4)
+                .accessibilityAddTraits(.isHeader)
+            GlassCard {
+                Button { parting = true } label: { optionLabel("Split into parts", done: false, icon: "arrow.triangle.branch") }
+                    .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func optionLabel(_ title: String, done: Bool, icon: String? = nil) -> some View {
+        HStack(spacing: 12) {
+            if let icon = icon { IconBubble(symbol: icon) }
+            Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
+            Spacer(minLength: 4)
+            if done {
+                Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundColor(Nacre.teal)
+            }
+            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
+        }
+        .padding(.horizontal, 16).frame(minHeight: 52).contentShape(Rectangle())
+    }
+
+    private func setOneOff(_ on: Bool) async {
+        oneOff = on
+        do {
+            let _: OneOffReply = try await api.put("api/transactions/\(t.id)/one-off", ["on": on])
+        } catch {
+            oneOff = !on
         }
     }
 
@@ -144,12 +319,16 @@ struct AnswerSheet: View {
                     .background(Capsule().fill(Color.white.opacity(0.85)))
                     .buttonStyle(.plain)
             }
-            .padding(.horizontal, 16).padding(.bottom, 8)
+            .padding(.horizontal, 16)
+            if ask.kind != .duplicate && t.learnable != false {
+                Button("Just this one") { yes(remember: false) }
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+            }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SheetBackground())
-        .presentationDetents(ask.kind == .duplicate ? [.large] : [.height(280)])
+        .presentationDetents(ask.kind == .duplicate ? [.large] : [.height(320)])
     }
 
     /// "CO  Costco · Groceries · Nov 9 · TD Visa ••9021   −$142.60".
@@ -181,11 +360,13 @@ struct AnswerSheet: View {
     private var yesLabel: String { ask.kind == .duplicate ? "Yes, count it once" : "Yes" }
     private var noLabel: String { ask.kind == .duplicate ? "No, both are real" : "Something else" }
 
-    private func yes() {
+    /// Yes saves the rule where one can match; Just this one doesn't.
+    private func yes(remember: Bool? = nil) {
+        let rule = remember ?? (t.learnable != false)
         switch ask.kind {
         case .duplicate: onAnswer(.duplicate(t.id, same: true))
-        case .moneyIn: onAnswer(.mark(t.id, ["case": "own", "remember": true]))
-        case .transfer: onAnswer(.mark(t.id, ["case": "saved", "remember": true]))
+        case .moneyIn: onAnswer(.mark(t.id, ["case": "own", "remember": rule]))
+        case .transfer: onAnswer(.mark(t.id, ["case": "saved", "remember": rule]))
         default: onAnswer(.confirm(t.id))
         }
     }
@@ -217,6 +398,15 @@ struct AnswerSheet: View {
                     .accessibilityLabel("Income or not income")
                     .onChange(of: incomeSide) { _ in intoChoice = nil }
                     CaseGrid(cases: incomeSide ? CaseTile.income : CaseTile.notIncome, chosen: $intoChoice)
+                        .onChange(of: intoChoice) { key in rememberInto = key != "not_mine" }
+                    if !incomeSide, learnable, let rule = intoRule {
+                        Toggle(isOn: $rememberInto) {
+                            Text(rule).font(Nacre.body).foregroundColor(Pearl.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .tint(Pearl.action).padding(.horizontal, 4)
+                    }
+                    inOptions
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
@@ -229,15 +419,26 @@ struct AnswerSheet: View {
         .presentationDetents([.large])
     }
 
+    /// The rule money in can make: its own account, or leaving it out.
+    private var intoRule: String? {
+        switch intoChoice {
+        case "own": return "Do this for every \(who) from now on"
+        case "not_mine": return "Leave out every \(who) from now on"
+        default: return nil
+        }
+    }
+
     /// T-06's answers, for money out that isn't spending.
-    private func outCase(_ key: String) {
+    private func outCase(_ key: String, remember: Bool) {
         switch key {
-        case "own": go(.accounts)
-        case "card": onAnswer(.mark(t.id, ["case": "moved", "remember": true]))
-        case "saved": onAnswer(.mark(t.id, ["case": "saved", "remember": true]))
-        case "lent": onAnswer(.mark(t.id, ["case": "lent", "remember": true]))
+        case "own":
+            rememberAnswer = remember
+            go(.accounts)
+        case "card": onAnswer(.mark(t.id, ["case": "moved", "remember": remember]))
+        case "saved": onAnswer(.mark(t.id, ["case": "saved", "remember": remember]))
+        case "lent": onAnswer(.mark(t.id, ["case": "lent", "remember": remember]))
         case "work": onAnswer(.mark(t.id, ["case": "work"]))
-        default: onAnswer(.mark(t.id, ["case": "not_mine", "reason": "Not mine"]))
+        default: onAnswer(.mark(t.id, ["case": "not_mine", "reason": "Not mine", "remember": remember]))
         }
     }
 
@@ -254,13 +455,20 @@ struct AnswerSheet: View {
             return
         }
         switch key {
-        case "paid_back", "refund": go(.charges)       // T-09: what it paid back
-        case "own": onAnswer(.mark(t.id, ["case": "own", "remember": true]))
+        case "paid_back", "refund":                    // T-09: what it paid back
+            chargeCase = nil
+            go(.charges)
+        case "reimbursement":
+            chargeCase = key
+            go(.charges)
+        case "own": onAnswer(.mark(t.id, ["case": "own", "remember": learnable && rememberInto]))
         case "loan": onAnswer(.mark(t.id, ["case": "borrowed"]))
         case "out_of_savings": onAnswer(.mark(t.id, ["case": "out_of_savings"]))
         case "lent_back": onAnswer(.mark(t.id, ["case": "lent_back"]))
+        case "holding": onAnswer(.mark(t.id, ["case": "not_mine", "reason": "Holding it for someone"]))
         case "else": then = .category; go(.category)
-        default: onAnswer(.mark(t.id, ["case": "not_mine", "reason": "Not mine"]))
+        default: onAnswer(.mark(t.id, ["case": "not_mine", "reason": "Not mine",
+                                       "remember": learnable && rememberInto]))
         }
     }
 
@@ -337,6 +545,10 @@ struct AnswerSheet: View {
         .presentationDetents([.large])
         .task(id: step) {
             if step == .charges { await searchCharges() }
+            if step == .accounts, accounts.isEmpty, fetchedAccounts.isEmpty,
+               let o: AccountsOverview = try? await api.get("api/accounts/overview") {
+                fetchedAccounts = o.linked
+            }
             if step == .cadence, pays.isEmpty, let d: IncomeBills = try? await api.get("api/income-bills") { pays = d.pays }
         }
         .task(id: text) {
@@ -472,7 +684,7 @@ struct AnswerSheet: View {
                     Option(id: "holding", label: "Holding it for someone", detail: "Like collecting for a group gift"),
                     Option(id: "else", label: "Something else", detail: "Pick a category")]
         case .accounts:
-            let mine = accounts.filter { $0.id != t.accountId }
+            let mine = (accounts.isEmpty ? fetchedAccounts : accounts).filter { $0.id != t.accountId }
             return mine.map { a in
                 Option(id: "acct:" + a.id, label: a.label,
                        detail: a.joint == true ? "Joint\(a.jointShare.map { " · \(Int($0))%" } ?? "")" : nil)
@@ -518,6 +730,7 @@ struct AnswerSheet: View {
     /// "Pearl will remember this for M. Papas."
     private var footer: String? {
         switch step {
+        case .accounts where !rememberAnswer: return nil
         case .accounts, .joint, .charges: return "Pearl will remember this for \(who)."
         case .cadence where choice != nil && choice != "once": return "Pearl will count every deposit from \(who) as pay."
         default: return nil
@@ -558,9 +771,9 @@ struct AnswerSheet: View {
         case .accounts:
             // A savings account, or one Pearl can't see, is money put away;
             // anything else is her money moving.
-            let account = accounts.first { "acct:" + $0.id == choice }
+            let account = (accounts.isEmpty ? fetchedAccounts : accounts).first { "acct:" + $0.id == choice }
             let saved = choice == "elsewhere" || ["savings", "investment"].contains(account?.kind ?? "")
-            onAnswer(.mark(t.id, ["case": saved ? "saved" : "moved", "remember": true]))
+            onAnswer(.mark(t.id, ["case": saved ? "saved" : "moved", "remember": rememberAnswer]))
         case .into:
             switch choice {
             case "earned": go(.kinds)
@@ -590,7 +803,7 @@ struct AnswerSheet: View {
             guard let charge = charges.first(where: { $0.id == choice }) else { return }
             // The same shop sending money back is a refund; anyone else, a payback.
             let refund = charge.name.lowercased() == who.lowercased()
-            onAnswer(.mark(t.id, ["case": refund ? "refund" : "payback", "charge": charge.id]))
+            onAnswer(.mark(t.id, ["case": chargeCase ?? (refund ? "refund" : "payback"), "charge": charge.id]))
         case .payback:
             switch choice {
             case "this":

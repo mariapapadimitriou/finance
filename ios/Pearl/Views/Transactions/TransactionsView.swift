@@ -143,18 +143,24 @@ struct TransactionsView: View {
                     Task { await change(["add": add], path: "api/transactions/batch/tags") }
                 }
             case .mark:
-                // T-78: the selection as one, Spending (a category) or Not spending (T-06's answers).
+                // T-78: the selection as one, Spending (a category) or Not spending (T-06's
+                // answers, or T-12's for deposits). Only answers that need nothing per row.
+                let deposits = pickedRows.allSatisfy(\.inflow)
                 CategorySheet(name: "\(picked.count) selected", amount: pickedNames, tone: pickedTone,
                               categories: categories, current: pickedCategory, mark: "\(picked.count)",
-                              title: "Mark \(picked.count) as…", notSpending: CaseTile.notSpending,
-                              startNotSpending: true, onCase: { key in
+                              title: "Mark \(picked.count) as…",
+                              notSpending: deposits ? CaseTile.notIncomeTogether : CaseTile.notSpending,
+                              startNotSpending: true, onCase: { key, _ in
                     bulk = nil
                     let body: [String: Any]
                     switch key {
-                    case "own", "card": body = ["case": "moved"]
+                    case "own": body = ["case": deposits ? "own" : "moved"]
+                    case "card": body = ["case": "moved"]
                     case "saved": body = ["case": "saved"]
                     case "lent": body = ["case": "lent"]
                     case "work": body = ["case": "work"]
+                    case "loan": body = ["case": "borrowed"]
+                    case "out_of_savings", "lent_back": body = ["case": key]
                     default: body = ["case": "not_mine", "reason": "Not mine"]
                     }
                     Task { await change(body, path: "api/transactions/batch/mark") }

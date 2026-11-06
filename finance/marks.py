@@ -112,6 +112,14 @@ SAVINGS_SUBTYPES = {"savings", "money market", "hsa", "cash management", "hisa",
                     "tfsa", "rrsp", "fhsa", "resp", "brokerage", "rrif", "lira"}
 
 
+def _mixed(store, t) -> bool:
+    """Whether she has sorted this merchant into more than one category (T-97)."""
+    from .categorize import merchant_key
+    from .review import mixed_merchants
+    return merchant_key(t.merchant or "") in mixed_merchants(store.all_transactions(),
+                                                             store.confirmed_categories())
+
+
 def _generic(t: Transaction) -> bool:
     from .categorize import is_generic_transfer_name
     return is_generic_transfer_name(t.merchant)
@@ -558,6 +566,7 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
         # Whether a rule for this name could ever match the right rows: not
         # for a name every transfer shares (2026-10-23).
         "learnable": not _generic(t),
+        "mixed": _mixed(store, t),
         "saved_to": store.saved_to().get(t.fingerprint),
         "income_kinds": INCOME_KINDS,
         "income_kind": t.income_type,
