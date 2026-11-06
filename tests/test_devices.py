@@ -334,6 +334,22 @@ def test_removing_signs_out_a_session_from_before_devices_were_listed(app, phone
     assert phone.get("/api/home").status_code == 401
 
 
+def test_removing_ends_a_session_that_stays_signed_in(app, phone, outbox):
+    """Face ID's long session (/api/auth/stay) still ends when she removes the device."""
+    r = phone.post("/api/auth/stay", json={"on": True}, headers={"User-Agent": "PearlApp/1.0 (iPhone; iOS 18.3)"})
+    assert r.get_json()["stay"] is True
+    laptop = browser(app)
+    code_sign_in(laptop, outbox)
+    laptop.post("/api/auth/device/ask")
+    [waiting] = phone.get("/api/auth/approvals").get_json()["approvals"]
+    phone.post(f"/api/auth/approvals/{waiting['id']}", json={"approve": True})
+    laptop.get("/api/auth/device/status")
+    iphone = next(d for d in laptop.get("/api/auth/devices").get_json()["devices"] if not d["this"])
+    laptop.delete(f"/api/auth/devices/{iphone['id']}")
+    assert phone.get("/api/home").status_code == 401
+    assert phone.get("/api/auth/status").get_json()["signed_in"] is False
+
+
 def test_the_iphone_app_names_itself():
     """Pearl's iPhone app (2026-10-29): "Pearl app on iPhone" when it asks
     her other devices to approve it."""

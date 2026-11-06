@@ -35,7 +35,12 @@ and recovery codes are stored as hashes (`finance/signin_codes.py`,
 **Sessions and sign-in.** Cookies are `HttpOnly`, `SameSite=Lax` and
 `Secure` when hosted (`app.py`). A session unused for 20 minutes is over on
 the server (`finance/security.py`, `IDLE_SECONDS`), beside the browser's
-own 15-minute timer (A-14). Passwords need 10 characters. A new device must
+own 15-minute timer (A-14). The exception is the iPhone app with Face ID on,
+on a confirmed device (`/api/auth/stay`): its session has no idle limit and
+ends after 30 days unused, because Face ID guards opening the app. The server
+cannot see Face ID happen, so a session cookie copied off that phone would
+last as long; removing the device from the account, signing out or changing
+the password ends it. Passwords need 10 characters. A new device must
 be approved from a device already signed in, or with a recovery code
 (A-07, A-08, `finance/devices.py`). Too many wrong codes pause sign-in for
 15 minutes (`finance/signin_codes.py`). The reply to "send me a code" is
