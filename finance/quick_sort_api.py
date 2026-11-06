@@ -2,7 +2,8 @@
 
 * GET  /api/quick-sort                 whether to show the prompt, and the cards.
 * POST /api/quick-sort/seen            {ids, start}: Start or Later; once a day.
-* PUT  /api/quick-sort/<id>            {action: right|category|marked|skip, category?, title?}.
+* PUT  /api/quick-sort/<id>            {action: right|category|marked|skip|undo, category?, title?,
+                                        every?}: every = every open guess from the merchant (T-85).
 * POST /api/quick-sort/done            the done screen: safe to spend before → after, rules saved.
 """
 
@@ -43,7 +44,8 @@ def quick_sort_step(txn_id):
     st = store()
     body = request.get_json(silent=True) or {}
     out = quick_sort.step(st, st.all_transactions(), _today(), txn_id,
-                          str(body.get("action") or ""), body.get("category"), body.get("title"))
+                          str(body.get("action") or ""), body.get("category"), body.get("title"),
+                          every=body.get("every") if isinstance(body.get("every"), bool) else None)
     if isinstance(out, tuple):
         return jsonify(out[0]), out[1]
     return jsonify(out)

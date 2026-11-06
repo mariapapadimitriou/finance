@@ -194,30 +194,77 @@ def begin(st, transactions: list[Transaction], today: date, ids: list[str], star
     return {"ok": True}
 
 
+def same_merchant(st, transactions: list[Transaction], today: date, t: Transaction) -> list[Transaction]:
+    """The other guesses Needs a look is asking about from the same merchant
+    (T-85's "All 4 from Uber Eats"), skipped ones left where they are."""
+    from .categorize import merchant_key
+    key = merchant_key(t.merchant or "")
+    if not key:
+        return []
+    by_id = {x.fingerprint: x for x in transactions}
+    out = []
+    for row in unsure_rows(st, transactions, today, everything=True):
+        other = by_id.get(row["txn"]["id"])
+        if other is not None and other.fingerprint != t.fingerprint \
+                and merchant_key(other.merchant or "") == key:
+            out.append(other)
+    return out
+
+
 def step(st, transactions: list[Transaction], today: date, txn_id: str, action: str,
-         category: str | None = None, title: str | None = None) -> dict | tuple[dict, int]:
-    """One card answered."""
-    from .categorize import CATEGORIES
+         category: str | None = None, title: str | None = None,
+         every: bool | None = None) -> dict | tuple[dict, int]:
+    """One card answered.
+
+    `every` (T-85, THL-254): Yes or a new category for every open guess from
+    the merchant, and a rule so new ones sort themselves. False is "Just
+    this one". Left out, Something else keeps its old way: a rule whenever
+    the row has a merchant. The reply carries `also` (the others sorted with
+    it) and `undo`, for POST /api/transactions/undo.
+    """
+    from .categorize import CATEGORIES, is_generic_transfer_name
+    from .impact import snapshot, undo_payload
     t = next((x for x in transactions if x.fingerprint == txn_id), None)
     if t is None:
         return {"error": "No such transaction."}, 404
     before = t.category or "Other"
     key = "cat:" + txn_id
     rule = False
+    also: list[Transaction] = []
+    shot = None
+    if action == "undo":
+        # Undo on the toast: the batch forgets this card and the ones sorted
+        # with it; the ledger itself is put back by /api/transactions/undo.
+        batch = _json(st, BATCH_KEY, None)
+        if isinstance(batch, dict):
+            batch["changes"] = [c for c in batch.get("changes", [])
+                                if c.get("id") != txn_id and c.get("via") != txn_id]
+            _save(st, BATCH_KEY, batch)
+        return {"ok": True}
+    named = bool((t.merchant or "").strip()) and not is_generic_transfer_name(t.merchant)
+    if action in ("right", "category"):
+        shot = snapshot(st, transactions)
+        if every and named:
+            also = same_merchant(st, transactions, today, t)
     if action == "right":
+        if every and named and before != "Other":
+            # "Other" is no rule: it would file every one there for good.
+            rule = st.set_override(t.merchant, before) > 0
         st.confirm_category(txn_id, before)
         st.dismiss_review(key)
-        change = {"id": txn_id, "action": "right", "from": before, "to": before}
+        change = {"id": txn_id, "action": "right", "from": before, "to": before, "rule": rule}
+        to = before
     elif action == "category":
         if not category or category not in CATEGORIES:
             return {"error": "Pick a category."}, 400
-        if (t.merchant or "").strip():
+        if named and every is not False:
             st.set_override(t.merchant, category)
             rule = True
         else:
             st.set_transaction_category(txn_id, category)
         st.dismiss_review(key)
         change = {"id": txn_id, "action": "category", "from": before, "to": category, "rule": rule}
+        to = category
     elif action == "marked":
         # What was this? did the work (finance/marks.py); note what it said.
         st.dismiss_review(key)
@@ -227,13 +274,27 @@ def step(st, transactions: list[Transaction], today: date, txn_id: str, action: 
         change = {"id": txn_id, "action": "skip", "from": before, "to": before}
     else:
         return {"error": "Say what to do with it."}, 400
-    mark_offered(st, [txn_id])
+    changes = [change]
+    for other in also:
+        # Sorted with it: the rule filed them already; this says she agreed.
+        if not rule:
+            st.set_transaction_category(other.fingerprint, to)
+        st.confirm_category(other.fingerprint, to)
+        st.dismiss_review("cat:" + other.fingerprint)
+        changes.append({"id": other.fingerprint, "action": change["action"],
+                        "from": other.category or "Other", "to": to, "via": txn_id})
+    ids = [txn_id] + [o.fingerprint for o in also]
+    mark_offered(st, ids)
     batch = _json(st, BATCH_KEY, None)
     if isinstance(batch, dict):
-        batch["changes"] = [c for c in batch.get("changes", []) if c.get("id") != txn_id] + [change]
+        batch["changes"] = [c for c in batch.get("changes", []) if c.get("id") not in ids] + changes
         _save(st, BATCH_KEY, batch)
     fresh = st.all_transactions()
-    return {"ok": True, "rule_saved": rule, "safe_to_spend": safe_to_spend(st, fresh, today)}
+    out = {"ok": True, "rule_saved": rule, "safe_to_spend": safe_to_spend(st, fresh, today),
+           "also": [o.fingerprint for o in also]}
+    if shot is not None:
+        out["undo"] = {**undo_payload(shot, snapshot(st, fresh)), "unconfirm": ids}
+    return out
 
 
 def _count_words(n: int) -> str:

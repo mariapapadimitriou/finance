@@ -126,6 +126,97 @@ class TestTheCards:
         assert done["sorted"] == 0 and done["skipped"] == 1
         assert done["reason"] == "Every guess was right, so nothing moved."
 
+    def test_yes_on_one_card_saves_no_rule(self, client):
+        """T-90: a swipe right sorts this card only, however many others there are."""
+        ledger(client, [unsure("2026-10-08", "Uber Eats", 24.80, "Dining"),
+                        unsure("2026-10-06", "Uber Eats", 31.10, "Dining")])
+        review = client.get("/api/review").get_json()
+        assert all(i["txn"]["learnable"] for i in review["unsure_category"])
+        first, second = [i["txn"]["id"] for i in review["unsure_category"]]
+        r = client.put(f"/api/quick-sort/{first}", json={"action": "right", "every": False}).get_json()
+        assert r["ok"] and not r["rule_saved"] and r["also"] == []
+        assert "uber eats" not in client.st.overrides()
+        open_ids = {i["txn"]["id"] for i in client.get("/api/review").get_json()["unsure_category"]}
+        assert open_ids == {second}
+
+    def test_a_merchant_sorted_different_ways_is_mixed(self, client):
+        """T-97: once she has said two categories for a merchant, its guesses are mixed."""
+        ledger(client, [unsure("2026-10-08", "Amazon", 24.80, "Shopping"),
+                        unsure("2026-10-06", "Amazon", 31.10, "Groceries"),
+                        unsure("2026-10-04", "Amazon", 18.00, "Shopping"),
+                        unsure("2026-10-07", "Loblaws", 56.10, "Groceries")])
+        def guesses():
+            return {i["txn"]["id"]: i for i in client.get("/api/review").get_json()["unsure_category"]}
+        rows = [i for i in guesses().values() if i["txn"]["merchant"] == "Amazon"]
+        assert len(rows) == 3 and not any(i["txn"]["mixed"] for i in rows)
+        shopping = next(i for i in rows if i["guess"] == "Shopping")["txn"]["id"]
+        groceries = next(i for i in rows if i["guess"] == "Groceries")["txn"]["id"]
+        client.put(f"/api/quick-sort/{shopping}", json={"action": "right", "every": False})
+        assert not any(i["txn"]["mixed"] for i in guesses().values())
+        client.put(f"/api/quick-sort/{groceries}", json={"action": "right", "every": False})
+        now = guesses()
+        left = [i for i in now.values() if i["txn"]["merchant"] == "Amazon"]
+        assert len(left) == 1 and left[0]["txn"]["mixed"]
+        assert client.get(f"/api/transactions/{left[0]['txn']['id']}/cases").get_json()["mixed"]
+        # Only Amazon: Loblaws stays one category.
+        assert not next(i for i in now.values() if i["txn"]["merchant"] == "Loblaws")["txn"]["mixed"]
+
+    def test_a_generic_name_cannot_have_a_rule(self, client):
+        """T-90: Always isn't offered for a name every transfer shares."""
+        ledger(client, [unsure("2026-10-08", "Interac e-Transfer", 24.80, "Dining")])
+        items = client.get("/api/review").get_json()["unsure_category"]
+        assert items and not items[0]["txn"]["learnable"]
+
+    def test_yes_for_every_one_from_the_merchant_and_undo(self, client):
+        """T-85 / T-86 (THL-254): Yes with every sorts the other Uber Eats
+        guesses too, saves a rule, and Undo puts all of it back."""
+        ledger(client, [unsure("2026-10-08", "Uber Eats", 24.80, "Dining"),
+                        unsure("2026-10-06", "Uber Eats", 31.10, "Dining"),
+                        unsure("2026-10-04", "UBER EATS", 18.00, "Dining"),
+                        unsure("2026-10-07", "Loblaws", 56.10, "Shopping")])
+        items = client.get("/api/quick-sort").get_json()["items"]
+        uber = [i["id"] for i in items if i["merchant"].lower() == "uber eats"]
+        assert len(uber) == 3
+        client.post("/api/quick-sort/seen", json={"ids": [i["id"] for i in items], "start": True})
+        r = client.put(f"/api/quick-sort/{uber[0]}", json={"action": "right", "every": True}).get_json()
+        assert r["ok"] and r["rule_saved"] and sorted(r["also"]) == sorted(uber[1:])
+        assert client.st.overrides().get("uber eats") == "Dining"
+        open_ids = {i["txn"]["id"] for i in client.get("/api/review").get_json()["unsure_category"]}
+        assert not open_ids & set(uber)
+        # Undo: the rule goes, and all three are questions again.
+        undo = client.post("/api/transactions/undo", json=r["undo"])
+        assert undo.status_code == 200, undo.get_json()
+        assert client.put(f"/api/quick-sort/{uber[0]}", json={"action": "undo"}).get_json()["ok"]
+        assert "uber eats" not in client.st.overrides()
+        open_ids = {i["txn"]["id"] for i in client.get("/api/review").get_json()["unsure_category"]}
+        assert set(uber) <= open_ids
+        assert client.post("/api/quick-sort/done").get_json()["sorted"] == 0
+
+    def test_done_counts_the_ones_sorted_together(self, client):
+        ledger(client, [unsure("2026-10-08", "Uber Eats", 24.80, "Dining"),
+                        unsure("2026-10-06", "Uber Eats", 31.10, "Dining")])
+        items = client.get("/api/quick-sort").get_json()["items"]
+        client.post("/api/quick-sort/seen", json={"ids": [i["id"] for i in items], "start": True})
+        r = client.put(f"/api/quick-sort/{items[0]['id']}",
+                       json={"action": "category", "category": "Groceries", "every": True}).get_json()
+        assert r["also"] == [items[1]["id"]]
+        assert client.st.get_transaction(items[1]["id"]).category == "Groceries"
+        done = client.post("/api/quick-sort/done").get_json()
+        assert done["sorted"] == 2 and done["rules"] == 1
+
+    def test_just_this_one_saves_no_rule(self, client):
+        """Something else with every False (T-79's Just this one)."""
+        ledger(client, [unsure("2026-10-08", "Uber Eats", 24.80, "Dining"),
+                        unsure("2026-10-06", "Uber Eats", 31.10, "Dining")])
+        items = client.get("/api/quick-sort").get_json()["items"]
+        r = client.put(f"/api/quick-sort/{items[0]['id']}",
+                       json={"action": "category", "category": "Groceries", "every": False}).get_json()
+        assert r["ok"] and not r["rule_saved"] and r["also"] == []
+        assert "uber eats" not in client.st.overrides()
+        assert client.st.get_transaction(items[0]["id"]).category == "Groceries"
+        open_ids = {i["txn"]["id"] for i in client.get("/api/review").get_json()["unsure_category"]}
+        assert items[1]["id"] in open_ids and items[0]["id"] not in open_ids
+
     def test_bad_answers(self, client):
         ledger(client, [unsure("2026-10-08", "Shoppers Drug Mart", 18.47, "Personal Care")])
         ids = [i["id"] for i in client.get("/api/quick-sort").get_json()["items"]]

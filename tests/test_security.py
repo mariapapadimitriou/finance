@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from finance import users
+from finance import devices, users
 
 
 @pytest.fixture()
@@ -67,6 +67,66 @@ def test_a_session_left_idle_is_over_on_the_server(hosted, monkeypatch):
     # And it stays signed out: the session was cleared.
     monkeypatch.setattr(users, "now", lambda: now + 22 * 60)
     assert hosted.get("/api/home").status_code == 401
+
+
+IPHONE = {"User-Agent": "PearlApp/1.0 (iPhone; iOS 18.3)"}
+
+
+def away(monkeypatch, minutes):
+    now = users.now()
+    monkeypatch.setattr(users, "now", lambda: now + minutes * 60)
+
+
+def test_status_says_signed_out_once_the_session_has_idled(hosted, monkeypatch):
+    """The iPhone asks for Face ID on status's word, so it can't say yes and
+    have the next request say no."""
+    assert hosted.get("/api/home").status_code == 200
+    away(monkeypatch, 21)
+    assert hosted.get("/api/auth/status").get_json()["signed_in"] is False
+    assert hosted.get("/api/home").status_code == 401
+
+
+def test_status_alone_does_not_keep_a_session_alive(hosted, monkeypatch):
+    assert hosted.get("/api/home").status_code == 200
+    away(monkeypatch, 15)
+    assert hosted.get("/api/auth/status").get_json()["signed_in"] is True
+    away(monkeypatch, 21)
+    assert hosted.get("/api/home").status_code == 401
+
+
+def test_an_iphone_with_face_id_stays_signed_in(hosted, monkeypatch):
+    assert hosted.get("/api/home").status_code == 200
+    assert hosted.post("/api/auth/stay", json={"on": True}, headers=IPHONE).get_json()["stay"] is True
+    away(monkeypatch, 3 * 24 * 60)
+    assert hosted.get("/api/auth/status").get_json()["signed_in"] is True
+    assert hosted.get("/api/home").status_code == 200
+
+
+def test_turning_face_id_off_brings_the_limit_back(hosted, monkeypatch):
+    hosted.post("/api/auth/stay", json={"on": True}, headers=IPHONE)
+    hosted.get("/api/home")
+    assert hosted.post("/api/auth/stay", json={"on": False}, headers=IPHONE).get_json()["stay"] is False
+    away(monkeypatch, 21)
+    assert hosted.get("/api/home").status_code == 401
+
+
+def test_a_browser_cannot_stay_signed_in(hosted, monkeypatch):
+    r = hosted.post("/api/auth/stay", json={"on": True},
+                    headers={"User-Agent": "Mozilla/5.0"})
+    assert r.status_code == 403
+    hosted.get("/api/home")
+    away(monkeypatch, 21)
+    assert hosted.get("/api/home").status_code == 401
+
+
+def test_staying_needs_a_session(hosted):
+    hosted.post("/api/auth/logout")
+    assert hosted.post("/api/auth/stay", json={"on": True}, headers=IPHONE).status_code == 401
+
+
+def test_a_device_not_confirmed_cannot_stay_signed_in(hosted):
+    hosted.delete_cookie(devices.COOKIE)
+    assert hosted.post("/api/auth/stay", json={"on": True}, headers=IPHONE).status_code == 403
 
 
 def test_sign_in_codes_never_reach_the_hosted_log(hosted, capsys):

@@ -39,7 +39,17 @@ final class AppModel: ObservableObject {
     /// Face ID unlocks Pearl on this iPhone (O-04, A-09, Settings).
     var faceIDOn: Bool {
         get { UserDefaults.standard.bool(forKey: Self.faceIDKey) }
-        set { UserDefaults.standard.set(newValue, forKey: Self.faceIDKey); objectWillChange.send() }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.faceIDKey)
+            objectWillChange.send()
+            Task { await tellServerAboutFaceID() }
+        }
+    }
+
+    /// With Face ID on, this iPhone stays signed in between opens and Face ID
+    /// guards the app (SECURITY.md); with it off, the server's idle limit is back.
+    private func tellServerAboutFaceID() async {
+        let _: OK? = try? await api.post("api/auth/stay", ["on": faceIDOn])
     }
 
     /// On launch: is the saved session still good?
@@ -48,8 +58,13 @@ final class AppModel: ObservableObject {
             let status: AuthStatus = try await api.get("api/auth/status")
             contact = status.contact
             phase = status.signedIn ? .signedIn(status.user) : .signedOut
-            // Opening Pearl with Face ID on asks for it first (THL-114).
-            if status.signedIn && faceIDOn && AppLock.available { locked = true }
+            // Opening Pearl with Face ID on asks for it first (THL-114). The
+            // session outlasts the idle limit on the strength of this lock, so
+            // Face ID being unavailable shows it too: the passcode still opens it.
+            if status.signedIn && faceIDOn {
+                locked = true
+                await tellServerAboutFaceID()
+            }
         } catch APIError.signedOut {
             phase = .signedOut
         } catch is CancellationError {
@@ -64,6 +79,7 @@ final class AppModel: ObservableObject {
         phase = .signedIn(user)
         locked = false
         version += 1
+        if faceIDOn { Task { await tellServerAboutFaceID() } }
     }
 
     func changed() {
@@ -110,7 +126,7 @@ final class AppModel: ObservableObject {
     }
 
     func cameBack() {
-        guard case .signedIn = phase, faceIDOn, AppLock.available, let left = leftAt else { return }
+        guard case .signedIn = phase, faceIDOn, let left = leftAt else { return }
         if Date().timeIntervalSince(left) >= AppLock.after { locked = true }
         leftAt = nil
     }

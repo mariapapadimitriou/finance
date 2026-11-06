@@ -1,7 +1,71 @@
 import SwiftUI
 
+/// T-96: how a guess from Needs a look or Quick sort is answered on T-03.
+struct GuessActions {
+    let ask: Ask
+    /// "Dining out", or "Saved to TD Savings".
+    let label: String
+    let accounts: [AccountsOverview.Account]
+    let names: [String]
+    /// The link under Yes: "Just this one", "Always for Amazon", or none.
+    let secondary: String?
+    let onYes: () -> Void
+    let onSecondary: () -> Void
+    var onSkip: (() -> Void)? = nil
+    /// Quick sort's own way of saving a category; nil answers through `onAnswer`.
+    var onCategory: ((String, Bool) -> Void)? = nil
+    let onAnswer: (ReviewAnswer) -> Void
+}
+
+/// T-96 for a question: fetches the transaction, then shows the page a
+/// transaction always opens on.
+@MainActor
+struct GuessPage: View {
+    @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let actions: GuessActions
+    let categories: [CategoryList.Category]
+    @State private var full: Transaction?
+    @State private var error: String?
+
+    var body: some View {
+        Group {
+            if let full = full {
+                NavigationStack {
+                    TransactionDetailView(transaction: full, categories: categories, guessing: actions)
+                }
+            } else {
+                LoadState(error: error) { Task { await load() } }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .nacreScreen()
+                    // A full page can't be swiped away, so a failed load needs a way out.
+                    .overlay(alignment: .topLeading) {
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
+                                .foregroundColor(Pearl.ink)
+                                .frame(width: 44, height: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.leading, 8)
+                        .accessibilityLabel("Back")
+                    }
+            }
+        }
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            full = try await app.api.get("api/transactions/\(actions.ask.t.id)")
+            error = nil
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+}
+
 /// One transaction (THL-122, T-03): who and how much, what it counts as,
-/// Pearl's guess to confirm (T-38), the payback or refund it's linked to
+/// Pearl's guess to confirm (T-96), the payback or refund it's linked to
 /// (T-39, T-41), one-off (T-42), a note and tags; a transfer between her
 /// accounts shows both ends (T-05).
 @MainActor
@@ -11,20 +75,18 @@ struct TransactionDetailView: View {
     let transaction: Transaction
     let categories: [CategoryList.Category]
     var siblings: [Transaction] = []
+    /// T-96 opened from Needs a look or Quick sort; nil from the list.
+    var guessing: GuessActions? = nil
 
     /// The full detail once it's come back; the list's row until then.
     @State private var detail: Transaction?
-    @State private var picking = false
+    /// What was this?: the page sorting happens on, shared with Needs a look and Quick sort.
+    @State private var sorting: Ask?
     @State private var editingNote = false
     @State private var editingTags = false
     /// A money-in question opened from here (THL-198): its kind, how often
     /// it pays, or What was this?.
     @State private var asking: Asking?
-
-    struct BillStart: Identifiable {
-        let category: String
-        var id: String { category }
-    }
 
     struct Asking: Identifiable {
         let step: AnswerSheet.Step
@@ -54,13 +116,14 @@ struct TransactionDetailView: View {
     @State private var recent: [String] = []
     /// A transaction added by hand can be taken out again.
     @State private var deleting = false
-    /// T-04's Regular bill, then Add to your bills? (T-32) with the category chosen.
-    @State private var regularBill = false
     /// T-80: renaming the merchant; T-76: whose a joint charge was.
     @State private var renaming = false
     @State private var whose = false
-    @State private var billing: String?
     @State private var busy = false
+    /// From the list: whether a rule could match this name, and whether she
+    /// has sorted the merchant different ways (T-97).
+    @State private var learnable = false
+    @State private var varies = false
     /// T-38b / T-40b: "Dining out · Undo" after a guess is confirmed.
     @State private var toast: (title: String, undo: (() -> Void)?)?
     /// T-41b: Unlink? before a refund goes back to Needs a look.
@@ -74,12 +137,12 @@ struct TransactionDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 header.padding(.bottom, 16)
-                if let transfer = t.transfer {
+                if let transfer = t.transfer, guessing == nil {
                     transferLegs(transfer)
                 } else {
-                    if !t.parts.isEmpty { partsCard } else if jointAsks { jointGuessCard }
-                    else if t.asks { askingCard }
-                    else if t.suggested { guessCard } else { categoryCard }
+                    if let label = guessName { guessCard(label) }
+                    else if !t.parts.isEmpty { partsCard } else if jointAsks { jointGuessCard }
+                    else if t.asks { askingCard } else { categoryCard }
                     linked
                     jointRow
                     splitPeople
@@ -101,6 +164,7 @@ struct TransactionDetailView: View {
             .padding(.horizontal, Pearl.gutter)
             .padding(.bottom, 32)
         }
+        .safeAreaInset(edge: .bottom) { guessActions }
         .nacreScreen()
         .navigationBarBackButtonHidden(true)
         .toolbar {
@@ -112,41 +176,45 @@ struct TransactionDetailView: View {
                 }
                 .accessibilityLabel("Back")
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if let skip = guessing?.onSkip {
+                    Button("Skip", action: skip)
+                        .font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                        .accessibilityHint("It stays in Needs a look.")
+                }
+            }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarHidden(false)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
-        .sheet(isPresented: $picking) {
-            // The stored category, not the chip ("Transfer", "Not sorted yet").
-            CategorySheet(name: t.merchant, amount: Format.money(t), tone: t.tone, categories: categories,
-                          current: t.category ?? t.label, merchant: t.merchant,
-                          onRegularBill: t.inflow ? nil : { regularBill = $0 },
-                          preview: CategorySheet.preview(api: app.api, id: t.id, merchant: t.merchant),
-                          notSpending: t.inflow ? nil : CaseTile.notSpending,
-                          onCase: { key in
-                              picking = false
-                              Task { await markOut(key) }
-                          }) { name, remember in
-                picking = false
-                let bill = regularBill
-                regularBill = false
-                Task {
-                    if name != (t.category ?? t.label) || remember {
-                        await change(to: name, remember: remember)
-                    } else {
-                        // Let Change category close before the next sheet opens.
-                        try? await Task.sleep(nanoseconds: 450_000_000)
-                    }
-                    if bill { billing = name }
+        .sheet(item: $sorting, onDismiss: { Task { await load() } }) { ask in
+            // The stored category stays hers unless she changes it; a question is answered in place.
+            if let guessing = guessing {
+                // T-96: the guess is wrong, so the answer is the question's. Yes is already on the page.
+                AnswerSheet(ask: ask, categories: categories, accounts: guessing.accounts, names: guessing.names,
+                            api: app.api, start: ask.kind == .transfer ? .out : nil,
+                            onCategory: guessing.onCategory.map { save in
+                                { name, remember in sorting = nil; save(name, remember) }
+                            }, fromPage: true) { answer in
+                    sorting = nil
+                    guessing.onAnswer(answer)
                 }
-            }
-        }
-        .sheet(item: Binding(get: { billing.map { BillStart(category: $0) } }, set: { billing = $0?.category })) { start in
-            AddToBillsSheet(t: t, api: app.api, categories: categories, category: start.category) { said in
-                billing = nil
-                Task { await run { said } }
+            } else {
+                AnswerSheet(ask: ask, categories: categories, accounts: [], names: recent, api: app.api,
+                            onCategory: ask.kind == .category && !t.inflow ? { name, remember in
+                                sorting = nil
+                                Task {
+                                    if name != (t.category ?? t.label) || remember {
+                                        await change(to: name, remember: remember)
+                                    }
+                                }
+                            } : nil,
+                            confirmsGuess: false, fromPage: true) { answer in
+                    sorting = nil
+                    Task { await run { try await answer.send(app.api).title ?? answer.done } }
+                }
             }
         }
         .sheet(item: $asking) { a in
@@ -308,34 +376,101 @@ struct TransactionDetailView: View {
     private var categoryCard: some View {
         Button {
             if t.leftToSort { parting = deposit(rest: true) }
-            else if isIncome { asking = Asking(step: .kinds) } else { picking = true }
+            else if isIncome { asking = Asking(step: .kinds) } else { sorting = sortAsk(.category) }
         } label: {
-            GlassCard {
-                // T-03: the category's icon and name; income says what kind
-                // (T-37, "Salary"). The pill above says what it counts as.
-                let title = isIncome ? Self.kindName(t.incomeType) : t.label
-                HStack(spacing: 12) {
-                    Image(systemName: CategorySheet.symbol(for: isIncome ? "Income" : (t.category ?? t.label)))
-                        .font(.system(size: 15, weight: .medium)).foregroundColor(Pearl.action)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(Pearl.action.opacity(0.1)))
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(Nacre.headline).foregroundColor(Pearl.ink).lineLimit(2)
-                        if let sub = countsLine {
-                            Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        }
-                    }
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
-                }
-                .padding(.horizontal, 16).frame(minHeight: 60).padding(.vertical, 4)
-                .contentShape(Rectangle())
-            }
+            // T-03: the category's icon and name; income says what kind
+            // (T-37, "Salary"). The pill above says what it counts as.
+            categoryLabel(symbol: isIncome ? "Income" : (t.category ?? t.label),
+                          title: isIncome ? Self.kindName(t.incomeType) : t.label, sub: countsLine)
         }
         .buttonStyle(.plain)
         .disabled(busy)
         .accessibilityHint(isIncome ? "Changes what kind of income" : "Changes the category")
+    }
+
+    private func categoryLabel(symbol: String, title: String, sub: String?) -> some View {
+        GlassCard {
+            HStack(spacing: 12) {
+                Image(systemName: CategorySheet.symbol(for: symbol))
+                    .font(.system(size: 15, weight: .medium)).foregroundColor(Pearl.action)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(Pearl.action.opacity(0.1)))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Nacre.headline).foregroundColor(Pearl.ink).lineLimit(2)
+                    if let sub = sub {
+                        Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    }
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
+            }
+            .padding(.horizontal, 16).frame(minHeight: 60).padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+    }
+
+    // MARK: Pearl's guess (T-96)
+
+    /// The guess waiting for a yes: the question's, or the transaction's own.
+    private var guessName: String? {
+        if let guessing = guessing { return guessing.label }
+        guard t.transfer == nil, t.parts.isEmpty, !jointAsks, !t.asks, t.suggested else { return nil }
+        return t.label
+    }
+
+    /// From the list, whether a rule is possible at all.
+    private var canRule: Bool { learnable && (t.category ?? "Other") != "Other" }
+
+    /// The link under Yes.
+    private var secondaryLabel: String? {
+        if let guessing = guessing { return guessing.secondary }
+        guard canRule else { return nil }
+        return varies ? "Always for \(t.merchant)" : "Just this one"
+    }
+
+    /// T-96: the category, marked as a guess. Tapping it changes the answer.
+    private func guessCard(_ label: String) -> some View {
+        Button { sorting = guessing?.ask ?? sortAsk(.category) } label: {
+            categoryLabel(symbol: guessing?.ask.item.guess?.text ?? t.category ?? t.label,
+                          title: label, sub: "Pearl’s guess")
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .accessibilityHint("Changes the answer")
+    }
+
+    /// T-96: Yes saves the rule where one is right; the link does the opposite.
+    @ViewBuilder private var guessActions: some View {
+        if let label = guessName {
+            BottomActions {
+                Button("Yes, \(label)") {
+                    if let guessing = guessing {
+                        guessing.onYes()
+                    } else if canRule && !varies {
+                        Task { await always() }
+                    } else {
+                        Task { await confirm(said: varies && canRule ? "\(t.merchant) varies, so no rule" : nil) }
+                    }
+                }
+                .buttonStyle(NacreButtonStyle(busy: busy))
+                .disabled(busy)
+            } secondary: {
+                if let link = secondaryLabel {
+                    Button(link) {
+                        if let guessing = guessing {
+                            guessing.onSecondary()
+                        } else if varies {
+                            Task { await always() }
+                        } else {
+                            Task { await confirm() }
+                        }
+                    }
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    .disabled(busy)
+                }
+            }
+        }
     }
 
     private var isIncome: Bool { t.inflow && t.counts == "income" && t.transfer == nil }
@@ -395,42 +530,16 @@ struct TransactionDetailView: View {
         }
     }
 
-    /// "Not sorted yet · Paid back or income? Tell us": Needs a look is
-    /// asking, so answering it happens there.
+    /// "Not sorted yet · Paid back or income? Tell us": the question Needs a
+    /// look is asking, answered here.
     private var askingCard: some View {
-        NavigationLink { ReviewView() } label: {
+        Button { Task { await openQuestion() } } label: {
             GlassCard {
                 row(title: t.label, sub: t.note.flatMap { $0.isEmpty ? nil : $0 } ?? "Needs a look", chevron: true)
             }
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Opens Needs a look")
-    }
-
-    /// T-38: "Was this dining out?" Yes, or something else.
-    private var guessCard: some View {
-        VStack(spacing: 14) {
-            Text("PEARL’S GUESS").font(Nacre.caption2).tracking(0.6).foregroundColor(Pearl.action)
-            Text("Was this \(t.label.lowercased())?")
-                .font(Nacre.title2).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
-            HStack(spacing: 10) {
-                Button("Yes") { Task { await confirm() } }
-                    .buttonStyle(NacreButtonStyle(busy: busy))
-                Button("Something else") { picking = true }
-                    .font(Nacre.headline).foregroundColor(Pearl.ink)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Color.white.opacity(0.8)))
-                    .buttonStyle(.plain)
-            }
-            .disabled(busy)
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(.ultraThinMaterial))
-        .background(RoundedRectangle(cornerRadius: 26, style: .continuous)
-            .fill(LinearGradient(colors: [Nacre.rose.opacity(0.35), Nacre.lilac.opacity(0.25), Nacre.seaglass.opacity(0.35)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing)))
-        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1.2))
+        .disabled(busy)
     }
 
     // MARK: Linked transactions
@@ -812,7 +921,8 @@ struct TransactionDetailView: View {
             GlassCard {
                 if canSplit || canPart {
                     Button { if canSplit { splitting = true } else { parting = deposit(rest: false) } } label: {
-                        row(title: canSplit ? "Split with others" : "Split into parts", chevron: true)
+                        row(title: canSplit ? "Split with others" : "Split into parts", chevron: true,
+                            icon: canSplit ? "person.2" : "arrow.triangle.branch")
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
@@ -846,7 +956,10 @@ struct TransactionDetailView: View {
                     if canSplit || canPart || couldBePay || unlink { RowSeparator() }
                     Toggle(isOn: Binding(get: { oneOff ?? t.oneOff },
                                          set: { on in Task { await setOneOff(on) } })) {
-                        Text("One-off purchase").font(Nacre.body).foregroundColor(Pearl.ink)
+                        HStack(spacing: 12) {
+                            IconBubble(symbol: "1.circle")
+                            Text("One-off purchase").font(Nacre.body).foregroundColor(Pearl.ink)
+                        }
                     }
                     .tint(Pearl.action)
                     .disabled(busy)
@@ -879,9 +992,9 @@ struct TransactionDetailView: View {
             }
             Button { editingNote = true } label: {
                 if t.myNote.isEmpty {
-                    row(title: "Add a note", placeholder: true, chevron: true)
+                    row(title: "Add a note", placeholder: true, chevron: true, icon: "square.and.pencil")
                 } else {
-                    row(title: t.myNote, sub: "Note", chevron: true)
+                    row(title: t.myNote, sub: "Note", chevron: true, icon: "square.and.pencil")
                 }
             }
             .buttonStyle(.plain)
@@ -890,9 +1003,9 @@ struct TransactionDetailView: View {
                 RowSeparator()
                 Button { editingTags = true } label: {
                     if t.tags.isEmpty {
-                        row(title: "Add tags", placeholder: true, chevron: true)
+                        row(title: "Add tags", placeholder: true, chevron: true, icon: "tag")
                     } else {
-                        row(title: t.tags.map { "#" + $0 }.joined(separator: "  "), sub: "Tags", chevron: true)
+                        row(title: t.tags.map { "#" + $0 }.joined(separator: "  "), sub: "Tags", chevron: true, icon: "tag")
                     }
                 }
                 .buttonStyle(.plain)
@@ -938,7 +1051,7 @@ struct TransactionDetailView: View {
             leg(account: transfer.to, sub: "In · \(Format.weekdayDay(inDate))", sign: "+")
         }
         Spacer(minLength: 120)
-        Button("This isn’t a transfer") { picking = true }
+        Button("This isn’t a transfer") { sorting = sortAsk(.transfer) }
             .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             .padding(.top, 24)
     }
@@ -967,8 +1080,9 @@ struct TransactionDetailView: View {
     }
 
     private func row(title: String, sub: String? = nil, placeholder: Bool = false, chevron: Bool,
-                     value: String? = nil) -> some View {
+                     value: String? = nil, icon: String? = nil) -> some View {
         HStack(spacing: 12) {
+            if let icon = icon { IconBubble(symbol: icon) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(placeholder ? Nacre.body : (sub == nil ? Nacre.body : Nacre.headline))
                     .foregroundColor(placeholder ? Pearl.muted : Pearl.ink)
@@ -987,6 +1101,25 @@ struct TransactionDetailView: View {
         }
         .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 6)
         .contentShape(Rectangle())
+    }
+
+    /// This transaction as a question for What was this?.
+    private func sortAsk(_ kind: Question) -> Ask {
+        let brief = BriefTransaction(id: t.id, date: t.date, merchant: t.merchant, description: t.description,
+                                     amount: t.inflow ? -abs(t.amount) : abs(t.amount), accountName: t.account,
+                                     accountId: t.accountId, category: t.category, skipped: nil, likely: nil)
+        return Ask(kind: kind, item: Review.Item(key: "sort:" + t.id, txn: brief, skipped: nil))
+    }
+
+    /// The question Needs a look has for it (Same purchase?, Who sent this?…),
+    /// or What was this? if it's gone by now.
+    private func openQuestion() async {
+        let review: Review? = try? await app.api.get("api/review")
+        guard let ask = review?.asks.first(where: { $0.t.id == t.id }) else {
+            sorting = sortAsk(t.inflow ? .moneyIn : .transfer)
+            return
+        }
+        if ask.item.rest != nil { parting = deposit(rest: true) } else { sorting = ask }
     }
 
     /// This deposit as a money-in question, for AnswerSheet.
@@ -1009,6 +1142,12 @@ struct TransactionDetailView: View {
         if let full: Transaction = try? await app.api.get("api/transactions/\(detail?.id ?? transaction.id)") {
             detail = full
             oneOff = nil
+        }
+        if guessing == nil, t.suggested {
+            struct Cases: Decodable { let learnable: Bool?; let mixed: Bool? }
+            let cases: Cases? = try? await app.api.get("api/transactions/\(t.id)/cases")
+            learnable = cases?.learnable ?? false
+            varies = cases?.mixed ?? false
         }
         // People she's split with before, for Who was it with? (S-02).
         if recent.isEmpty, !t.inflow, let owed: OwedOverview = try? await app.api.get("api/owed") {
@@ -1076,11 +1215,23 @@ struct TransactionDetailView: View {
     }
 
     /// Yes: Pearl's guess was right. T-38b: "Dining out · Undo".
-    private func confirm() async {
+    private func confirm(said: String? = nil) async {
         let label = t.label
         await run {
             let reply: CategoryChange = try await app.api.put("api/transactions/\(t.id)/confirm")
-            withAnimation { toast = (reply.category ?? label, undoing(reply.undo)) }
+            withAnimation { toast = (said ?? reply.category ?? label, undoing(reply.undo)) }
+            return nil
+        }
+    }
+
+    /// Yes from the list: every open guess from the merchant, and a rule.
+    private func always() async {
+        let label = t.label
+        await run {
+            let reply: QuickSortStep = try await app.api.put("api/quick-sort/\(t.id)", ["action": "right", "every": true])
+            withAnimation {
+                toast = (QuickSortStep.always(label, sorted: (reply.also?.count ?? 0) + 1), undoing(reply.undo))
+            }
             return nil
         }
     }
@@ -1090,22 +1241,6 @@ struct TransactionDetailView: View {
             let _: CategoryChange = try await app.api.patch("api/transactions/\(t.id)",
                                                             ["category": name, "apply_to_merchant": remember])
             return remember ? "\(name), and every \(t.merchant) from now on." : "Moved to \(name)."
-        }
-    }
-
-    /// T-04n: an answer from the Not spending side.
-    private func markOut(_ key: String) async {
-        var body: [String: Any]
-        switch key {
-        case "own", "card": body = ["case": "moved", "remember": true]
-        case "saved": body = ["case": "saved", "remember": true]
-        case "lent": body = ["case": "lent", "remember": true]
-        case "work": body = ["case": "work"]
-        default: body = ["case": "not_mine", "reason": "Not mine"]
-        }
-        await run {
-            let reply: MarkReply = try await app.api.post("api/transactions/\(t.id)/mark", body)
-            return reply.title ?? "Sorted."
         }
     }
 

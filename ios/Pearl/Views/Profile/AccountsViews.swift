@@ -128,6 +128,7 @@ struct UndoToast: View {
         .background(Capsule().fill(Nacre.glass))
         .overlay(Capsule().strokeBorder(Nacre.edge, lineWidth: 1))
         .padding(.horizontal, 16).padding(.top, 4)
+        .swipeToDismiss(done)
         .transition(.move(edge: .top).combined(with: .opacity))
         .task(id: text) {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
@@ -135,6 +136,39 @@ struct UndoToast: View {
         }
         .accessibilityElement(children: .combine)
         .onAppear { UIAccessibility.post(notification: .announcement, argument: text) }
+    }
+}
+
+/// Every toast closes with a swipe, whichever way (THL-254), as well as on
+/// its own after a few seconds.
+struct SwipeToDismiss: ViewModifier {
+    let onDismiss: () -> Void
+    @State private var offset: CGSize = .zero
+
+    func body(content: Content) -> some View {
+        content
+            .offset(offset)
+            .opacity(1 - min(0.5, Double(max(abs(offset.width), abs(offset.height))) / 240))
+            .gesture(
+                DragGesture(minimumDistance: 6)
+                    .onChanged { offset = $0.translation }
+                    .onEnded { v in
+                        let moved = max(abs(v.translation.width), abs(v.translation.height))
+                        let flung = max(abs(v.predictedEndTranslation.width), abs(v.predictedEndTranslation.height))
+                        if moved > 44 || flung > 120 {
+                            withAnimation(.easeOut(duration: 0.2)) { onDismiss() }
+                        } else {
+                            withAnimation(.spring()) { offset = .zero }
+                        }
+                    }
+            )
+            .accessibilityAction(named: "Dismiss") { withAnimation { onDismiss() } }
+    }
+}
+
+extension View {
+    func swipeToDismiss(_ onDismiss: @escaping () -> Void) -> some View {
+        modifier(SwipeToDismiss(onDismiss: onDismiss))
     }
 }
 

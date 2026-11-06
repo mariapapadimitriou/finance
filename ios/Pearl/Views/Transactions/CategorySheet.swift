@@ -31,7 +31,14 @@ struct CategorySheet: View {
     /// T-06 / T-04n: the Not spending side as answers, not categories
     /// (Saved, My own account, Card payment…), with Continue.
     var notSpending: [CaseTile]? = nil
-    var onCase: ((String) -> Void)? = nil
+    /// The answer, and whether to do the same for every one from now on.
+    var onCase: ((String, Bool) -> Void)? = nil
+    /// The Outcome table's rule for an answer ("Do this for every Rogers from
+    /// now on"); nil when that answer can't make one.
+    var caseRule: ((String) -> String?)? = nil
+    /// Split with others, One-off…: under the categories, for a purchase.
+    var extras: AnyView? = nil
+    @State private var rememberCase = true
     /// T-52: Save on Pearl's guess, unchanged, confirms it.
     var confirmsCurrent = false
     @State private var chosenCase: String?
@@ -47,9 +54,12 @@ struct CategorySheet: View {
          merchant: String? = nil, spendingOnly: Bool = false, mark: String? = nil,
          onRegularBill: ((Bool) -> Void)? = nil, title: String = "Category",
          onDelete: (() -> Void)? = nil, preview: ((String, Bool) async -> String?)? = nil,
-         notSpending: [CaseTile]? = nil, startNotSpending: Bool = false, onCase: ((String) -> Void)? = nil,
-         confirmsCurrent: Bool = false, onSave: @escaping (String, Bool) -> Void) {
+         notSpending: [CaseTile]? = nil, startNotSpending: Bool = false, onCase: ((String, Bool) -> Void)? = nil,
+         confirmsCurrent: Bool = false, caseRule: ((String) -> String?)? = nil, extras: AnyView? = nil,
+         onSave: @escaping (String, Bool) -> Void) {
         self.confirmsCurrent = confirmsCurrent
+        self.caseRule = caseRule
+        self.extras = extras
         self.title = title
         self.preview = preview
         self.notSpending = notSpending
@@ -96,6 +106,15 @@ struct CategorySheet: View {
                     }
                     if answering, let cases = notSpending {
                         CaseGrid(cases: cases, chosen: $chosenCase)
+                            // Leaving every one out is a bigger step: she turns that on herself.
+                            .onChange(of: chosenCase) { key in rememberCase = key != "not_mine" }
+                        if let key = chosenCase, let rule = caseRule?(key) {
+                            Toggle(isOn: $rememberCase) {
+                                Text(rule).font(Nacre.body).foregroundColor(Pearl.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .tint(Pearl.action).padding(.horizontal, 4)
+                        }
                     }
                     ForEach(answering ? [] : (spending ? Self.spendingGroups : Self.otherGroups), id: \.self) { group in
                         let items = tiles(in: group)
@@ -117,6 +136,7 @@ struct CategorySheet: View {
                         .tint(Pearl.action)
                         .padding(.horizontal, 4)
                     }
+                    if spending, !answering, let extras = extras { extras }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
@@ -135,7 +155,9 @@ struct CategorySheet: View {
                 .accessibilityElement(children: .combine)
             }
             if answering {
-                Button("Continue") { if let c = chosenCase { onCase?(c) } }
+                Button("Continue") {
+                    if let c = chosenCase { onCase?(c, caseRule?(c) != nil && rememberCase) }
+                }
                     .buttonStyle(NacreButtonStyle())
                     .disabled(chosenCase == nil)
                     .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
@@ -272,13 +294,20 @@ struct CaseTile: Identifiable, Hashable {
     static let notIncome: [CaseTile] = [
         CaseTile(key: "paid_back", label: "Paid back", symbol: "person.2"),
         CaseTile(key: "refund", label: "Refund", symbol: "arrow.uturn.backward"),
+        CaseTile(key: "reimbursement", label: "Reimbursement", symbol: "briefcase"),
         CaseTile(key: "own", label: "My own money", symbol: "arrow.left.arrow.right"),
         CaseTile(key: "loan", label: "Loan", symbol: "banknote"),
         CaseTile(key: "out_of_savings", label: "Out of savings", symbol: "lifepreserver"),
         CaseTile(key: "lent_back", label: "Money I lent, back", symbol: "arrow.down.backward"),
-        CaseTile(key: "else", label: "Something else", symbol: "ellipsis"),
+        CaseTile(key: "holding", label: "Holding it for someone", symbol: "tray.and.arrow.down"),
         CaseTile(key: "not_mine", label: "Not mine", symbol: "person.crop.circle.badge.xmark"),
+        CaseTile(key: "else", label: "Something else", symbol: "ellipsis"),
     ]
+
+    /// T-78 for deposits: the answers that need nothing per row.
+    static let notIncomeTogether: [CaseTile] = notIncome.filter {
+        ["own", "loan", "out_of_savings", "lent_back", "not_mine"].contains($0.key)
+    }
 
     /// T-08: kinds of income (T-71's tiles).
     static let income: [CaseTile] = [

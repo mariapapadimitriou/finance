@@ -991,9 +991,13 @@ struct BriefTransaction: Decodable, Hashable {
     let likely: Bool?
     /// An unsorted transfer: where it went ("••4567", a payee).
     var to: String? = nil
+    /// Whether a rule for this name could match the right rows.
+    var learnable: Bool? = nil
+    /// A merchant she has sorted into more than one category (T-97).
+    var mixed: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, date, merchant, description, amount, category, skipped, likely, to
+        case id, date, merchant, description, amount, category, skipped, likely, to, learnable, mixed
         case accountName = "account_name"
         case accountId = "account_id"
     }
@@ -1183,6 +1187,57 @@ struct Ask: Identifiable, Hashable {
     var id: String { item.key }
     var t: BriefTransaction { item.txn }
     var skipped: Bool { item.skipped == true }
+
+    /// A guess Pearl can be told yes to (T-90, T-92): a category or "Saved to".
+    func isGuess(_ accounts: [AccountsOverview.Account]) -> Bool {
+        kind == .category || savedTo(accounts) != nil
+    }
+
+    /// A guess opens T-96, a full page; the rest of a deposit and any other
+    /// question open a sheet.
+    func opensPage(_ accounts: [AccountsOverview.Account]) -> Bool {
+        item.rest == nil && isGuess(accounts)
+    }
+
+    /// "Dining out", or T-66's "Saved to TD Savings".
+    func guessLabel(_ accounts: [AccountsOverview.Account]) -> String {
+        if let to = savedTo(accounts) { return "Saved to \(to)" }
+        return item.guess?.text ?? t.category ?? "Other"
+    }
+
+    /// A rule needs a name it can match, and never files everything under Other.
+    private func canRule(_ accounts: [AccountsOverview.Account]) -> Bool {
+        guard t.learnable != false else { return false }
+        return savedTo(accounts) != nil || (t.category ?? "Other") != "Other"
+    }
+
+    /// Sorted into different categories before: Yes says so, and saves no rule (T-97).
+    func varies(_ accounts: [AccountsOverview.Account]) -> Bool {
+        t.mixed == true && savedTo(accounts) == nil && canRule(accounts)
+    }
+
+    /// Whether Yes saves the rule, so nobody has to come back to make one (T-93).
+    func savesRule(_ accounts: [AccountsOverview.Account]) -> Bool {
+        canRule(accounts) && !varies(accounts)
+    }
+
+    /// Yes: the rule and every open guess it covers, where a rule is right.
+    func yesAnswer(_ accounts: [AccountsOverview.Account]) -> ReviewAnswer {
+        if savedTo(accounts) != nil { return .mark(t.id, ["case": "saved", "remember": savesRule(accounts)]) }
+        if varies(accounts) { return .varies(t.id, name: t.name) }
+        return savesRule(accounts) ? .always(t.id, label: guessLabel(accounts)) : .confirm(t.id)
+    }
+
+    /// The link under Yes on T-96: the other way round from what Yes does.
+    func secondaryLabel(_ accounts: [AccountsOverview.Account]) -> String? {
+        if varies(accounts) { return "Always for \(t.name)" }
+        return savesRule(accounts) ? "Just this one" : nil
+    }
+
+    func secondaryAnswer(_ accounts: [AccountsOverview.Account]) -> ReviewAnswer {
+        if varies(accounts) { return .always(t.id, label: guessLabel(accounts)) }
+        return savedTo(accounts) != nil ? .mark(t.id, ["case": "saved", "remember": false]) : .confirm(t.id)
+    }
 
     /// "Dining?", "Saved or spent?", "Whose?"…
     var chip: String {

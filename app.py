@@ -263,6 +263,26 @@ def _install_auth(app: Flask) -> None:
             if path.startswith("/api/") and path not in _OPEN_PATHS:
                 return jsonify({"error": "This device was removed from your account.",
                                 "unauthorized": True}), 401
+
+        def idle_over() -> bool:
+            # A-14 on the server too: a session nobody has used for a while is
+            # over, whatever the browser's own timer did (SECURITY.md). An
+            # iPhone with Face ID on asks for that itself instead (/api/auth/stay).
+            active = float(session.get("active") or 0)
+            return bool(active and not session.get("stay")
+                        and users.now() - active > security.IDLE_SECONDS)
+
+        def end_idle_session() -> None:
+            # Still this device in use (A-07): it stays trusted, so signing
+            # back in won't ask to confirm it.
+            devices.touch(base, g.user.id, request.cookies.get(devices.COOKIE))
+            session.clear()
+            g.user = None
+
+        # Status has to say what the next request will find: an iPhone asks
+        # for Face ID on its word, and Face ID can't bring a session back.
+        if path == "/api/auth/status" and g.user is not None and idle_over():
+            end_idle_session()
         if path in _OPEN_PATHS or _is_static_asset(path):
             return None
         if g.user is not None:
@@ -270,15 +290,8 @@ def _install_auth(app: Flask) -> None:
             if users.now() - float(session.get("seen") or 0) > 86400:
                 devices.touch(base, g.user.id, request.cookies.get(devices.COOKIE))
                 session["seen"] = users.now()
-            # A-14 on the server too: a session nobody has used for a while
-            # is over, whatever the browser's own timer did (SECURITY.md).
-            active = float(session.get("active") or 0)
-            if active and users.now() - active > security.IDLE_SECONDS:
-                # Still this device in use (A-07): it stays trusted, so
-                # signing back in won't ask to confirm it.
-                devices.touch(base, g.user.id, request.cookies.get(devices.COOKIE))
-                session.clear()
-                g.user = None
+            if idle_over():
+                end_idle_session()
                 return jsonify({"error": "You were signed out after a while away.",
                                 "unauthorized": True, "timeout": True}), 401
             session["active"] = users.now()
@@ -1011,6 +1024,25 @@ def _install_auth(app: Flask) -> None:
             fields["onboarding_step"] = "done"
         user = users.update_onboarding(base, user.id, **fields)
         return jsonify({"ok": True, "user": status_user(user)})
+
+    @app.post("/api/auth/stay")
+    def _auth_stay():
+        """The iPhone with Face ID on: Face ID guards opening the app, so the
+        session is left out of the idle limit and lasts until 30 days unused.
+        Only for a device she confirmed; removing it still ends the session."""
+        if not required():
+            return jsonify({"ok": True, "stay": False})
+        body = request.get_json(silent=True) or {}
+        if not body.get("on"):
+            session.pop("stay", None)
+            return jsonify({"ok": True, "stay": False})
+        user_agent = request.headers.get("User-Agent") or ""
+        token = device_token()
+        if not user_agent.startswith("PearlApp/") or not devices.trusted(base, g.user.id, token):
+            return jsonify({"error": "Only a confirmed iPhone can stay signed in."}), 403
+        session["dev"] = devices.hashed(token)
+        session["stay"] = True
+        return jsonify({"ok": True, "stay": True})
 
     @app.post("/api/auth/logout")
     def _auth_logout():
