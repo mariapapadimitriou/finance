@@ -1297,7 +1297,7 @@ struct Ask: Identifiable, Hashable {
         return varies(accounts) ? .varies(t.id, name: t.name) : .confirm(t.id)
     }
 
-    /// Whether the page offers the New ones switch at all.
+    /// Whether the page offers the Always switch at all.
     func canSaveRule(_ accounts: [AccountsOverview.Account]) -> Bool { item.pair == nil && canRule(accounts) }
 
     /// The line above the buttons: what Yes will do, before it's done.
@@ -1305,7 +1305,7 @@ struct Ask: Identifiable, Hashable {
         if let pair = item.pair { return pair.line }
         if let income = incomeGuess { return "Yes counts it as \(income)." }
         if varies(accounts) { return "Yes sorts just this one. \(t.name) varies, so no rule." }
-        return savesRule(accounts) ? "Yes sorts this and new ones from \(t.name)." : "Yes sorts just this one."
+        return savesRule(accounts) ? "Yes sorts this, and always for \(t.name)." : "Yes sorts just this one."
     }
 
     /// "Dining?", "Saved or spent?", "Whose?"…

@@ -1107,7 +1107,7 @@ struct TransactionRow: View {
             let what = back >= (t.fullAmount ?? t.amount) - 0.005 ? "Refunded in full" : "\(Format.compact(back)) refunded"
             return t.refundedBy.count == 1 ? "\(what) · \(Format.short(t.refundedBy[0].date))" : what
         }
-        if t.oneOff { return "One-off · left out of your usual month" }
+        if t.oneOff { return "Left out of your usual month" }
         return nil
     }
 }

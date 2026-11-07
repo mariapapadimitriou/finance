@@ -45,7 +45,7 @@ struct CategorySheet: View {
     /// One page (the redesign): every answer on one scroll, and a tile answers
     /// at once, with Undo after. No tabs, Save or Continue.
     var answersAtOnce = false
-    /// The New ones switch: whether new rows from the merchant sort the same way.
+    /// The Always switch: whether new rows from the merchant sort the same way.
     @State private var newOnes = true
 
     @Environment(\.dismiss) private var dismiss
@@ -103,7 +103,7 @@ struct CategorySheet: View {
     /// A state Pearl puts a row in, not one she picks.
     private static let notPickable: Set<String> = ["Unsorted transfers"]
 
-    /// Every answer on one scroll: the New ones switch, the categories, then Not spending.
+    /// Every answer on one scroll: the Always switch, the categories, then Not spending.
     private var onePage: some View {
         VStack(spacing: 0) {
             SheetTitle(title: title) { dismiss() }
@@ -112,7 +112,7 @@ struct CategorySheet: View {
                     header
                     if let merchant = merchant {
                         Toggle(isOn: $newOnes) {
-                            Text("New ones from \(merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text("Always for \(merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .tint(Pearl.action).padding(.horizontal, 4)

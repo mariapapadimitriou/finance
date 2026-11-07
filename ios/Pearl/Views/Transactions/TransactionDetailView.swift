@@ -252,7 +252,7 @@ struct TransactionDetailView: View {
     /// This page opened on a question, from the list; the next one waits.
     @State private var wasAsked: Bool?
     @State private var nextUp: Ask?
-    /// The New ones switch, once she's touched it.
+    /// The Always switch, once she's touched it.
     @State private var newOnes: Bool?
     /// T-38b / T-40b: "Dining out · Undo" after a guess is confirmed.
     @State private var toast: (title: String, undo: (() -> Void)?)?
@@ -572,7 +572,7 @@ struct TransactionDetailView: View {
     /// From the list, whether a rule is possible at all.
     private var canRule: Bool { learnable && (t.category ?? "Other") != "Other" }
 
-    /// Whether the New ones switch shows: a rule could match this merchant.
+    /// Whether the Always switch shows: a rule could match this merchant.
     private var offersNewOnes: Bool {
         if let guessing = guessing { return guessing.ask.canSaveRule(guessing.accounts) }
         return canRule
@@ -596,7 +596,7 @@ struct TransactionDetailView: View {
         .accessibilityHint("Changes the answer")
     }
 
-    /// T-96: Yes, with the rule stated in plain sight by the New ones switch.
+    /// T-96: Yes, with the rule stated in plain sight by the Always switch.
     @ViewBuilder private var guessActions: some View {
         if let label = guessName {
             BottomActions {
@@ -614,7 +614,7 @@ struct TransactionDetailView: View {
             } secondary: {
                 if offersNewOnes {
                     Toggle(isOn: Binding(get: { newOnesOn }, set: { newOnes = $0 })) {
-                        Text("New ones from \(t.merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
+                        Text("Always for \(t.merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
                     }
                     .tint(Pearl.action)
                     .padding(.horizontal, 4)
@@ -1121,7 +1121,7 @@ struct TransactionDetailView: View {
                                          set: { on in Task { await setOneOff(on) } })) {
                         HStack(spacing: 12) {
                             IconBubble(symbol: "1.circle")
-                            Text("One-off purchase").font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text("Exclude from usual month").font(Nacre.body).foregroundColor(Pearl.ink)
                         }
                     }
                     .tint(Pearl.action)
