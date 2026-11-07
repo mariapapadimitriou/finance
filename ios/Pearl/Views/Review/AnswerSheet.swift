@@ -31,6 +31,8 @@ struct AnswerSheet: View {
     var pageAlways: Bool? = nil
     /// The amount the page behind this sheet shows: her share, on a shared row.
     var pageAmount: String? = nil
+    /// A category already picked on the page behind, shown as the current one.
+    var pageCategory: String? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step
@@ -83,11 +85,12 @@ struct AnswerSheet: View {
     /// `start` opens on one step, for the transaction page (THL-198):
     /// the kind of income, how often it pays, or What was this?.
     init(ask: Ask, categories: [CategoryList.Category], accounts: [AccountsOverview.Account], names: [String],
-         api: APIClient, start: Step? = nil, pageAlways: Bool? = nil, pageAmount: String? = nil, current: String? = nil, onCategory: ((String, Bool) -> Void)? = nil,
+         api: APIClient, start: Step? = nil, pageAlways: Bool? = nil, pageAmount: String? = nil, pageCategory: String? = nil, current: String? = nil, onCategory: ((String, Bool) -> Void)? = nil,
          confirmsGuess: Bool = true, fromPage: Bool = false, onAnswer: @escaping (ReviewAnswer) -> Void) {
         self.fromPage = fromPage
         self.pageAlways = pageAlways
         self.pageAmount = pageAmount
+        self.pageCategory = pageCategory
         _rememberInto = State(initialValue: pageAlways ?? true)
         self.ask = ask
         self.categories = categories
@@ -130,7 +133,7 @@ struct AnswerSheet: View {
             if step == .out {
                 // T-06: Spending is the categories; Not spending, the answers.
                 CategorySheet(name: who, amount: amountText, tone: tone, categories: categories,
-                              current: t.category ?? ask.item.guess?.text ?? "Other",
+                              current: pageCategory ?? t.category ?? ask.item.guess?.text ?? "Other",
                               merchant: learnable ? who : nil,
                               onRegularBill: fromPage ? nil : { regularBill = $0 },
                               title: fromPage && ask.kind == .category ? "Category" : "What was this?",

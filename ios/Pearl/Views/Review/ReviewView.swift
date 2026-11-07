@@ -479,6 +479,56 @@ enum ReviewAnswer {
     /// Already sent (a deposit split into parts, THL-291): its reply.
     case done(MarkReply)
 
+    /// What a Quick sort card asks once this answer is held for its Yes. Nil is
+    /// an answer that has already happened, or that isn't one to hold.
+    var heldLabel: String? {
+        switch self {
+        case .mark(_, let body):
+            switch body["case"] as? String {
+            case "spending": return body["category"] as? String
+            case "saved": return "Saved"
+            case "moved": return "My own account"
+            case "own": return "My own money"
+            case "lent": return "Lending to someone"
+            case "paying_back": return "Paying back a loan"
+            case "work": return "Work expense"
+            case "not_mine": return "Not mine"
+            case "refund": return "Money back"
+            case "payback": return "Paying me back"
+            case "reimbursement": return "Work paying me back"
+            case "borrowed": return "Lent me this"
+            case "out_of_savings": return "Out of savings"
+            case "lent_back": return "Money I lent, back"
+            case "pay": return TransactionDetailView.kindName(body["income_kind"] as? String)
+            default: return "This answer"
+            }
+        case .category(_, let name, _): return name
+        case .incomeType(_, let kind): return TransactionDetailView.kindName(kind)
+        case .regularPay: return "My pay"
+        case .joint(_, let who, let person, _):
+            return who == "me" ? "Yours" : who == "both" ? "Both of yours" : (person ?? "Theirs")
+        case .party(_, let name): return name.isEmpty ? "Your bank’s name" : "From \(name)"
+        case .duplicate(_, let same): return same ? "Same purchase" : "Both are real"
+        case .recurring: return "Recurring"
+        case .dismiss: return "Doesn’t repeat"
+        case .confirm, .always, .varies, .pair, .skip, .done: return nil
+        }
+    }
+
+    /// With the card's Always switch, where this answer can make a rule.
+    func withAlways(_ always: Bool?) -> ReviewAnswer {
+        guard let always = always else { return self }
+        switch self {
+        case .mark(let id, var body) where body["remember"] != nil:
+            body["remember"] = always
+            return .mark(id, body)
+        case .category(let id, let name, _):
+            return .category(id, name: name, remember: always)
+        default:
+            return self
+        }
+    }
+
     /// What the toast says when the server doesn't.
     var done: String {
         switch self {

@@ -10,9 +10,21 @@ struct GuessActions {
     /// Yes, and whether new ones from the merchant sort the same way.
     let onYes: (Bool) -> Void
     var onSkip: (() -> Void)? = nil
-    /// Quick sort's own way of saving a category; nil answers through `onAnswer`.
-    var onCategory: ((String, Bool) -> Void)? = nil
     let onAnswer: (ReviewAnswer) -> Void
+    /// Opened from a Quick sort card, like Slack's catch up: edits are held for
+    /// the card, which is where they're agreed to. This page has no Yes.
+    var onDraft: ((CardDraft) -> Void)? = nil
+    var draft = CardDraft()
+}
+
+/// What she changed on a Quick sort card's page, saved when she says Yes on the card.
+struct CardDraft {
+    /// "Coffee", "Saved": what the card now asks.
+    var label: String?
+    var category: String?
+    var answer: ReviewAnswer?
+    /// The Always switch, once she's touched it.
+    var always: Bool?
 }
 
 /// T-96 for a question: fetches the transaction, then shows the page a
@@ -249,6 +261,10 @@ struct TransactionDetailView: View {
     @State private var varies = false
     /// Pay from a piggy bank.
     @State private var payingFromBank = false
+    /// A category picked for this guess, waiting for Yes.
+    @State private var chosenCategory: String?
+    /// The latest edits held for the Quick sort card.
+    @State private var held: CardDraft?
     /// A rule already sorts this merchant.
     @State private var hasRule = false
     /// The bill this merchant is on, and the sheet that adds it.
@@ -324,6 +340,13 @@ struct TransactionDetailView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .onAppear {
+            // Back on a card's page: what she'd already changed is still there.
+            if let draft = guessing?.draft, chosenCategory == nil, newOnes == nil {
+                chosenCategory = draft.label
+                newOnes = draft.always
+            }
+        }
         .sheet(item: $sorting, onDismiss: { Task { await load() } }) { ask in
             // The stored category stays hers unless she changes it; a question is answered in place.
             if let guessing = guessing {
@@ -331,16 +354,28 @@ struct TransactionDetailView: View {
                 AnswerSheet(ask: ask, categories: categories, accounts: guessing.accounts, names: guessing.names,
                             api: app.api, start: ask.kind == .transfer ? .out : nil,
                             pageAlways: offersNewOnes && newOnesOn, pageAmount: Format.money(t),
-                            onCategory: guessing.onCategory.map { save in
-                                { name, remember in sorting = nil; save(name, remember) }
-                            }, fromPage: true) { answer in
+                            pageCategory: chosenCategory,
+                            onCategory: { name, _ in choose(name) }, fromPage: true) { answer in
                     sorting = nil
-                    guessing.onAnswer(answer)
+                    if guessing.onDraft != nil, let label = answer.heldLabel {
+                        // Not saved yet: the card agrees to it.
+                        chosenCategory = label
+                        holdForCard {
+                            $0.answer = answer
+                            $0.category = nil
+                            $0.label = label
+                        }
+                    } else {
+                        guessing.onAnswer(answer)
+                    }
                 }
             } else {
                 AnswerSheet(ask: ask, categories: categories, accounts: [], names: recent, api: app.api,
                             pageAlways: offersNewOnes && newOnesOn, pageAmount: Format.money(t),
+                            pageCategory: chosenCategory,
                             onCategory: ask.kind == .category && !t.inflow ? { name, remember in
+                                // A guess waits for Yes; a row already sorted has nothing to confirm.
+                                if guessName != nil { choose(name); return }
                                 sorting = nil
                                 Task {
                                     if name != (t.category ?? t.label) || remember {
@@ -577,9 +612,9 @@ struct TransactionDetailView: View {
 
     /// The guess waiting for a yes: the question's, or the transaction's own.
     private var guessName: String? {
-        if let guessing = guessing { return guessing.label }
+        if let guessing = guessing { return chosenCategory ?? guessing.label }
         guard t.transfer == nil, t.parts.isEmpty, !jointAsks, !t.asks, t.suggested else { return nil }
-        return t.label
+        return chosenCategory ?? t.label
     }
 
     /// From the list, whether a rule is possible at all.
@@ -603,8 +638,8 @@ struct TransactionDetailView: View {
     /// T-96: the category, marked as a guess. Tapping it changes the answer.
     private func guessCard(_ label: String) -> some View {
         Button { sorting = guessing?.ask ?? sortAsk(.category) } label: {
-            categoryLabel(symbol: guessing?.ask.item.guess?.text ?? t.category ?? t.label,
-                          title: label, sub: "Pearl’s guess")
+            categoryLabel(symbol: chosenCategory ?? guessing?.ask.item.guess?.text ?? t.category ?? t.label,
+                          title: label, sub: chosenCategory == nil ? "Pearl’s guess" : "Your choice")
         }
         .buttonStyle(.plain)
         .disabled(busy)
@@ -613,11 +648,14 @@ struct TransactionDetailView: View {
 
     /// T-96: Yes, with the rule stated in plain sight by the Always switch.
     @ViewBuilder private var guessActions: some View {
-        if let label = guessName {
+        if let label = guessName, guessing?.onDraft == nil {
             BottomActions {
                 Button("Yes, \(label)") {
-                    if let guessing = guessing {
-                        guessing.onYes(offersNewOnes && newOnesOn)
+                    let keep = offersNewOnes && newOnesOn
+                    if let name = chosenCategory {
+                        answer(with: name, always: keep)
+                    } else if let guessing = guessing {
+                        guessing.onYes(keep)
                     } else if canRule && newOnesOn {
                         Task { await always() }
                     } else {
@@ -1145,7 +1183,12 @@ struct TransactionDetailView: View {
                     if canSplit || canPart || couldBePay || unlink || canOneOff { RowSeparator() }
                     Toggle(isOn: Binding(get: { newOnesOn }, set: { on in
                         // Nothing left to answer on a sorted row, so the switch acts at once.
-                        if guessName == nil { Task { await setAlways(on) } } else { newOnes = on }
+                        if guessName == nil {
+                            Task { await setAlways(on) }
+                        } else {
+                            newOnes = on
+                            holdForCard { $0.always = on }
+                        }
                     })) {
                         HStack(spacing: 12) {
                             IconBubble(symbol: "repeat")
@@ -1173,6 +1216,40 @@ struct TransactionDetailView: View {
                     .accessibilityHint("Adds it to your bills")
                 }
             }
+        }
+    }
+
+    /// A tile on the category page only changes what's on this page, so Yes can
+    /// say it. The guess itself goes back to being the guess.
+    private func choose(_ name: String) {
+        sorting = nil
+        chosenCategory = name == (guessing?.label ?? t.label) ? nil : name
+        holdForCard {
+            $0.answer = nil
+            $0.category = chosenCategory
+            $0.label = chosenCategory
+        }
+    }
+
+    /// An edit for the Quick sort card to agree to.
+    private func holdForCard(_ change: (inout CardDraft) -> Void) {
+        guard let guessing = guessing, let onDraft = guessing.onDraft else { return }
+        var draft = held ?? guessing.draft
+        change(&draft)
+        held = draft
+        onDraft(draft)
+    }
+
+    /// Yes on a category she chose: saved the way the page was opened.
+    private func answer(with name: String, always: Bool) {
+        guard let guessing = guessing else {
+            Task { await change(to: name, remember: always) }
+            return
+        }
+        if guessing.ask.kind == .category {
+            guessing.onAnswer(.category(t.id, name: name, remember: always))
+        } else {
+            guessing.onAnswer(.mark(t.id, ["case": "spending", "category": name, "remember": always]))
         }
     }
 
@@ -1376,6 +1453,7 @@ struct TransactionDetailView: View {
             newOnes = nil
             oneOff = nil
             wasAsked = nil
+            chosenCategory = nil
             detail = full
         }
         await load()
