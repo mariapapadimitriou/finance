@@ -101,12 +101,19 @@ def detect_recurring(transactions: list[Transaction],
 
 def _detect_recurring(transactions: list[Transaction],
                       as_of: str | None = None) -> list[dict]:
+    from dataclasses import replace
+    from ..analytics import is_others, share_amount
     by_merchant: dict[str, list[Transaction]] = defaultdict(list)
     for t in transactions:
         # Fees and interest recur too, but they are not subscriptions and the
         # fees rule already reports them with far better framing.
         if t.amount > 0 and t.category not in {"Transfers", "Income", "Fees & Interest"}:
-            by_merchant[t.merchant].append(t)
+            # A charge left out, someone else's, or paid by a piggy bank isn't
+            # hers to hold back for; a shared one counts her share (gap 9).
+            if is_others(t) or t.bank_id is not None:
+                continue
+            mine = share_amount(t)
+            by_merchant[t.merchant].append(replace(t, amount=mine) if mine != t.amount else t)
 
     today = date.fromisoformat(as_of) if as_of else (
         max((date.fromisoformat(t.date) for t in transactions), default=date.today())

@@ -175,7 +175,8 @@ RULES: list[tuple[str, str]] = [
     # How Canadian chequing statements abbreviate the same thing: TD's
     # "SEND E-TFR", "E-TFR IN", "TFR-TO C/C", "TFR-FR 1234".
     (r"\b(e-?tfr|tfr-?(?:to|fr|from)|send e-?trf)\b", "Transfers"),
-    (r"\b(payroll|direct deposit|salary|dep\s+payroll|refund)\b", "Income"),
+    # Not "refund": a card refund is money back from a store, not pay (gap 31).
+    (r"\b(payroll|direct deposit|salary|dep\s+payroll)\b", "Income"),
 
     # Coffee
     (r"\b(starbucks|blue bottle|peet'?s|tim hortons|dunkin|philz|intelligentsia|"
@@ -414,7 +415,7 @@ def is_unsure(t) -> bool:
 
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
-RULES_VERSION = 14
+RULES_VERSION = 15
 
 
 def plaid_category(code: str) -> str | None:

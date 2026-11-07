@@ -274,7 +274,19 @@ def predict_next(days: list[date], cadence: str, today: date) -> date:
             d += timedelta(days=step)
         return d
     if cadence == "semimonthly":
-        # The two days of the month pay comes on, from the last few.
+        # The two days of the month pay is due on, from the usual days rather
+        # than the last cheque: one that came early for a weekend mustn't
+        # teach a new schedule (the logic review, gap 3).
+        from .safe_to_spend import _pay_days_of_month
+        pattern = _pay_days_of_month(days)
+        if len(pattern) == 2:
+            cursor = today.replace(day=1)
+            for _ in range(3):
+                for day in pattern:
+                    d = _on_day(cursor.year, cursor.month, day)
+                    if d > today:
+                        return d
+                cursor = _add_months(cursor, 1, 1)
         upcoming = occurrences(last, "semimonthly", today + timedelta(days=1),
                                today + timedelta(days=40))
         return upcoming[0] if upcoming else last + timedelta(days=15)
@@ -406,8 +418,14 @@ def bills(transactions: list[Transaction], today: date, state: dict | None) -> l
             "dates": rec["dates"], "rec": rec,
         }
 
+    # A bill she added and the one Pearl found for the same merchant are one
+    # bill, not two (gap 12).
+    added = {" ".join(str(b.get("merchant") or b.get("name") or "").lower().split())
+             for b in state.get("added") or []}
     for rec in detect_recurring(transactions, as_of=today.isoformat()):
         key = rec["merchant"]
+        if " ".join((key or "").lower().split()) in added:
+            continue
         a = answers.get(key) or {}
         if not (_is_bill(rec) or (a.get("state") == "yes" and rec.get("active"))):
             continue

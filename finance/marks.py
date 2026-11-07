@@ -23,6 +23,7 @@ totals), savings go to Saved, and Borrowed is Lent's mirror.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import date, timedelta
 
@@ -633,25 +634,60 @@ def _tick_bill(store, t: Transaction, category: str, today: date) -> None:
     ib.save(store, state)
 
 
-def _regular_pay(store, t: Transaction, today: date) -> None:
+WAITING_KEY = "reimbursement_waited"
+
+
+def _remember_waiting(store, charge_id: str, on: bool) -> None:
+    """Expenses that were waiting to be reimbursed when a reimbursement was
+    linked: unlinking it makes them wait again."""
+    try:
+        ids = set(json.loads(store.setting(WAITING_KEY) or "[]"))
+    except (TypeError, ValueError):
+        ids = set()
+    ids = (ids | {charge_id}) if on else (ids - {charge_id})
+    store.set_setting(WAITING_KEY, json.dumps(sorted(ids)))
+
+
+def was_waiting(store, charge_id: str) -> bool:
+    try:
+        return charge_id in set(json.loads(store.setting(WAITING_KEY) or "[]"))
+    except (TypeError, ValueError):
+        return False
+
+
+def _regular_pay(store, t: Transaction, today: date, body: dict | None = None) -> dict | None:
     """This is my regular pay (THL-198): the payer joins Income and bills'
-    pay, so Pearl plans with it from now on. Only when Pearl can already
-    see it arriving on a rhythm; a single deposit is salary, not a plan."""
+    pay, so Pearl plans with it from now on. On the rhythm Pearl can see, or
+    the one she chose (`cadence`, `next` in the body). Returns what Undo needs
+    to take it back (gap 28), or None when nothing changed."""
     from . import income_bills as ib
+    body = body or {}
     state = ib.load(store)
     payer = ib.clean_name(t.merchant)
-    if any(p.get("payer") == payer for p in state.get("pays") or []):
-        return
     found = next((c for c in ib.pay_candidates(store.all_transactions(), today, state)
                   if c["payer"] == payer), None)
-    if found is None:
-        return
-    state["pays"].append({"id": ib.next_id(state, "p"), "payer": payer, "name": found["name"],
-                          "amount": found["amount"], "cadence": found["cadence"],
-                          "next": found["next"]})
+    cadence = body.get("cadence") if body.get("cadence") in ib.PAY_CADENCES else None
+    known = next((p for p in state.get("pays") or [] if p.get("payer") == payer), None)
+    if known and (cadence is None or known.get("cadence") == cadence):
+        return None
+    pay = None
+    if cadence:
+        nxt = ib.clean_date(body.get("next")) or (found["next"] if found and found["cadence"] == cadence else None)
+        pay = {"payer": payer, "name": t.merchant or t.description, "amount": abs(t.amount),
+               "cadence": cadence, **({"next": nxt} if nxt else {})}
+    elif found is not None:
+        pay = {"payer": payer, "name": found["name"], "amount": found["amount"],
+               "cadence": found["cadence"], "next": found["next"]}
+    if pay is None:
+        return None
+    was = {"pays": [dict(p) for p in state["pays"]], "pay_no": list(state.get("pay_no") or []),
+           "income_on": state.get("income_on")}
+    state["pays"] = [p for p in state["pays"] if p.get("payer") != payer]
+    state["pays"].append({"id": ib.next_id(state, "p"), **pay})
     state["pay_no"] = sorted(set(state.get("pay_no") or []) - {payer})
     state["income_on"] = state["income_on"] or today.isoformat()
     ib.save(store, state)
+    return was
 
 
 def apply(store, t: Transaction, body: dict, today: date) -> dict:
@@ -669,6 +705,23 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
     title = ""
     cat_to = old_cat
 
+    # A new answer replaces the old one: links an earlier answer left (a
+    # payback, a refund, "not mine" on a joint row) go first, and Undo puts
+    # them back (the logic review, gap 24).
+    if not out_ and case not in ("payback", "reimbursement") and t.repays:
+        marks.setdefault("paybacks", {})[t.fingerprint] = {
+            "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
+            "person": store.payback_people().get(t.fingerprint), "amount": t.repays_amount}
+        marks.setdefault("payback_more", {})[t.fingerprint] = store.payback_more(t.fingerprint)
+        _drop_made_split(store, t, marks)
+        store.unlink_payback(t.fingerprint)
+    if not out_ and case != "refund" and t.refund_of:
+        marks.setdefault("refunds", {})[t.fingerprint] = t.refund_of
+        store.link_refund(t.fingerprint, None)
+    if t.joint and t.share_set and abs(t.my_share or 0.0) < 0.005 and case not in ("not_mine", "joint_them"):
+        marks.setdefault("shares", {})[t.fingerprint] = 0.0
+        store.set_share(t.fingerprint, None)
+
     def recat(category: str, always: bool = False) -> None:
         nonlocal cat_to, remember
         cat_to = category
@@ -678,6 +731,11 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         if always:
             store.set_override(t.merchant, category)
             remember = True
+            # The rule leaves rows she set herself alone, and this is one she is
+            # setting now: it moves too (the logic review, gap 26).
+            now = store.get_transaction(t.fingerprint)
+            if now is not None and now.category != category:
+                store.set_transaction_category(t.fingerprint, category)
         else:
             store.set_transaction_category(t.fingerprint, category)
 
@@ -775,10 +833,13 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             marks.setdefault("exclusions", {})[t.fingerprint] = t.excluded
             store.exclude(t.fingerprint, reason)
             if body.get("remember"):
-                store.add_exclusion_rule({"keyword": t.merchant, "reason": reason,
-                                          "account_id": None, "counterparty": None,
-                                          "date_from": None, "date_to": None,
-                                          "amount_min": None, "amount_max": None})
+                # The whole merchant name, and Undo takes the rule away too (gap 27).
+                marks.setdefault("exclusion_rules", []).append(
+                    store.add_exclusion_rule({"keyword": t.merchant, "reason": reason,
+                                              "account_id": None, "counterparty": None,
+                                              "date_from": None, "date_to": None,
+                                              "amount_min": None, "amount_max": None,
+                                              "whole_name": True}))
                 remember = True
             title = "Left out."
     elif case == "pay":
@@ -799,7 +860,9 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         if old_cat != "Income":
             recat("Income")
         store.set_income_type(t.fingerprint, "salary", "user")
-        _regular_pay(store, t, today)
+        was = _regular_pay(store, t, today, body)
+        if was is not None:
+            marks["income_pays"] = was
         title = "Counted as your regular pay."
         # Remembered (2026-10-28): every deposit from the same payer, here
         # now and still to come, is sorted as her regular pay.
@@ -850,6 +913,11 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
             raise Problem("Pick the charge it pays back.")
         un_exclude()
         part = _payback_part(t, body)
+        # It can't pay back more than is left of the charge: the rest of the
+        # money counts as money in, on whichever route linked it (gap 31).
+        left = round(charge.amount - (charge.paid_back or 0.0) + t.part_for(charge.fingerprint), 2)
+        if left > 0.005 and (part if part is not None else -t.amount) > left + 0.005:
+            part = left
         marks.setdefault("paybacks", {})[t.fingerprint] = {
             "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
             "person": store.payback_people().get(t.fingerprint), "amount": t.repays_amount}
@@ -914,6 +982,9 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         if use >= owed - 0.005:
             if charge.excluded and charge.excluded != "Possible duplicate":
                 marks.setdefault("exclusions", {})[charge.fingerprint] = charge.excluded
+                # Remembered, so unlinking puts "waiting to be reimbursed" back (gap 29).
+                if waiting_reimbursed(charge.excluded):
+                    _remember_waiting(store, charge.fingerprint, True)
                 store.include(charge.fingerprint)
         else:
             if not waiting_reimbursed(charge.excluded):
@@ -1316,6 +1387,19 @@ def undo_marks(store, marks: dict) -> int:
             n += 1
         from .income import apply_income_types
         apply_income_types(store)
+    # Her regular pay as it was before "This is my regular pay" (gap 28).
+    if isinstance(marks.get("income_pays"), dict):
+        from . import income_bills as ib
+        state = ib.load(store)
+        was = marks["income_pays"]
+        state["pays"] = was.get("pays") or []
+        state["pay_no"] = was.get("pay_no") or []
+        state["income_on"] = was.get("income_on")
+        ib.save(store, state)
+        n += 1
+    for rid in marks.get("exclusion_rules") or []:
+        if store.delete_exclusion_rule(int(rid)):
+            n += 1
     # A recurring transfer she confirmed (2026-10-27): the rule goes again,
     # or the one it replaced comes back.
     for rid, was in (marks.get("recurring_transfers") or {}).items():

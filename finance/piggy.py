@@ -14,11 +14,15 @@ categories it pays for: travel for one person, concerts or a bike for another.
 Spending in those categories goes to the bank automatically and never touches
 the week.
 
-  * **The money is there from day one.** A bank for $8,000 a year of travel
-    holds $8,000 the day it opens, so the trip can be booked in March without
-    waiting to save for it.
+  * **The money is there from day one, from her savings.** A bank for $8,000
+    a year of travel can pay $8,000 the day it opens: what it hasn't collected
+    yet is lent by her Anchor savings, and comes off the Anchor until she
+    moves the money (decision 1, 2026-11-07). With no Anchor savings there is
+    nowhere real for it to come from, so a bank pays only what it holds and
+    the rest stays in the month.
   * **Going in.** The first year, the target is paid in a twelfth at a time —
-    $667 a month off the allowance. Every year after that, what goes in is
+    $667 a month, which the bank collects from her Anchor savings, not from
+    the month's Allowance. Every year after that, what goes in is
     what the bank actually paid out the year before: spend $6,000 and next
     year costs $500 a month; spend nothing and next year costs nothing,
     because the bank is still full. A bank only ever collects what it has

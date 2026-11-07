@@ -158,6 +158,20 @@ def set_always(txn_id: str):
     return jsonify({"ok": True})
 
 
+@bp.post("/review/check/<path:key>")
+def answer_check(key: str):
+    """Yes or No on a question about her plan (finance/checks.py)."""
+    from . import checks
+    body = request.get_json(silent=True) or {}
+    st = store()
+    line = checks.answer(st, key, bool(body.get("yes")), _today().isoformat())
+    if line is None:
+        return jsonify({"error": "That question has changed. Pull to refresh."}), 409
+    st.dismiss_review(key)
+    core._reclassify(st)
+    return jsonify({"ok": True, "title": line})
+
+
 @bp.post("/review/pair/<txn_id>")
 def answer_pair(txn_id: str):
     """Yes on a pair card (finance/pairs.py): both rows, one answer."""

@@ -411,8 +411,10 @@ class TestTheEndpoints:
 
     def test_a_new_bank_can_pay_its_whole_target_at_once(self, client):
         """The $8,000 bank on its first day takes a $6,000 trip without going
-        over — the money is there from day one."""
+        over — the money is there from day one, lent by her Anchor savings
+        until the bank has collected it (decision 1, 2026-11-07)."""
         st = client.application.config["STORE"]
+        st.set_setting("anchor_accounts", '["sav"]')
         st.add_transactions([txn("2026-09-10", "AIR CANADA", 6000.0)])
         txn_id = st.all_transactions()[0].fingerprint
         bank_id = self._open(client, target=8000).get_json()["id"]
@@ -421,6 +423,7 @@ class TestTheEndpoints:
                            json={"txn_id": txn_id}).get_json()
         assert body["covered"] == 6000.0
         assert body["over"] is False
+        assert body["short"] > 0, "what the bank hasn't collected yet comes off the Anchor"
 
         bank = client.get("/api/piggy").get_json()["banks"][0]
         assert bank["charged"] == 6000.0
@@ -433,6 +436,7 @@ class TestTheEndpoints:
 
     def test_more_than_the_target_is_allowed_and_reported_as_over(self, client):
         st = client.application.config["STORE"]
+        st.set_setting("anchor_accounts", '["sav"]')
         st.add_transactions([txn("2026-09-10", "AIR CANADA", 2000.0)])
         txn_id = st.all_transactions()[0].fingerprint
         bank_id = self._open(client, target=1200).get_json()["id"]
@@ -482,14 +486,27 @@ class TestTheEndpoints:
         month_before = next(m for m in before["monthly"] if m["month"] == "2026-09")
 
         flight = st.all_transactions()[0]
+        st.set_setting("anchor_accounts", '["sav"]')
         bank_id = self._open(client, target=3600).get_json()["id"]   # holds 300
         client.post(f"/api/piggy/{bank_id}/allocate",
                     json={"txn_id": flight.fingerprint})
 
         after = client.get("/api/summary").get_json()
         month_after = next(m for m in after["monthly"] if m["month"] == "2026-09")
-        # All $600, not the $300 the bank had collected.
+        # All $600, not the $300 the bank had collected: her Anchor covers the
+        # rest until she moves it (decision 1).
         assert month_before["spend"] - month_after["spend"] == pytest.approx(600.0)
+
+    def test_with_no_anchor_savings_a_bank_pays_only_what_it_holds(self, client):
+        """Decision 1 (2026-11-07): with nowhere real for the rest to come from,
+        the bank pays what it has collected and the rest stays in the month."""
+        st = client.application.config["STORE"]
+        st.add_transactions([txn("2026-09-10", "AIR CANADA", 600.0)])
+        flight = st.all_transactions()[0]
+        bank_id = self._open(client, target=3600).get_json()["id"]
+        body = client.post(f"/api/piggy/{bank_id}/allocate",
+                           json={"txn_id": flight.fingerprint}).get_json()
+        assert 0 < body["covered"] < 600 and body["short"] == 0
 
     def test_closing_a_bank_reports_what_it_released(self, client):
         st = client.application.config["STORE"]

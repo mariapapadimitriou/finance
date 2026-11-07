@@ -62,15 +62,16 @@ def test_preview_matches_what_saving_does(client):
     pre = client.post(f"/api/transactions/{tid}/category/preview",
                       json={"category": "Saved"}).get_json()
     assert cat(client.st, tid) == "Dining", "a preview writes nothing"
-    # The week's number is the app's own arithmetic, so only its direction is
-    # asserted here; what matters is that the preview and the save agree.
-    assert pre["delta"] > 0 and pre["group_to"] == "savings"
-    assert pre["line"] == (f"Your Allowance goes up by ${pre['delta']:,.2f}, because "
-                           "it went to savings, not spending.")
+    # Saving still comes off the month (THL-230), so moving a purchase to
+    # Saved leaves Home's Allowance where it was: the message says so (the
+    # logic review, gap 30). What matters is that preview and save agree.
+    assert pre["delta"] == 0 and pre["group_to"] == "savings"
+    assert "stays the same" in pre["line"]
     done = client.patch(f"/api/transactions/{tid}", json={"category": "Saved"}).get_json()
     assert done["impact"]["after"] == pre["after"]
     assert done["impact"]["delta"] == pre["delta"]
-    assert done["impact"]["title"] == f"Allowance is now ${pre['after']:,.2f}."
+    # The Allowance didn't move, so the toast talks about the month's spending.
+    assert done["impact"]["title"].startswith("Spent in ")
     assert cat(client.st, tid) == "Saved"
 
 
@@ -118,10 +119,9 @@ def test_sorting_a_transfer_with_remember_and_undo(client):
         "ids": [tid], "category": "Saved", "remember": True}).get_json()
     assert done["learned"] == 1 and cat(client.st, tid) == "Saved"
     imp = done["impact"]
-    # Until it was sorted it counted as spent, safe to spend included.
-    assert imp["spent_delta"] == -200 and imp["delta"] > 0
-    assert imp["detail"] == (f"${imp['delta']:,.2f} more, because it went to savings, "
-                             "not spending.")
+    # Until it was sorted it counted as spent. Saved comes off the month too,
+    # so the Allowance doesn't move (the logic review, gap 30).
+    assert imp["spent_delta"] == -200 and imp["delta"] == 0
     assert client.st.destinations(), "Remember wrote a rule"
 
     assert client.post("/api/transactions/undo", json=done["undo"]).status_code == 200

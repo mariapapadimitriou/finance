@@ -80,7 +80,8 @@ struct PiggyPaySheet: View {
     struct Bank: Decodable, Identifiable {
         let id: Int
         let name: String
-        let balance: Double?
+        /// Real money in it now: what was paid in, less what it paid out.
+        let held: Double?
     }
 
     let t: Transaction
@@ -113,8 +114,8 @@ struct PiggyPaySheet: View {
                                         HStack {
                                             VStack(alignment: .leading, spacing: 2) {
                                                 Text(bank.name).font(Nacre.body).foregroundColor(Pearl.ink)
-                                                if let balance = bank.balance {
-                                                    Text("Has \(Format.whole(balance))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                                                if let held = bank.held {
+                                                    Text(held > 0 ? "Has \(Format.whole(held))" : "Empty").font(Nacre.subheadline).foregroundColor(Pearl.muted)
                                                 }
                                             }
                                             Spacer()
@@ -181,9 +182,18 @@ struct PiggyPaySheet: View {
         busy = true
         defer { busy = false }
         do {
-            let _: OK = try await api.post("api/piggy/\(chosen)/allocate", ["txn_id": t.id, "amount": typed])
+            struct Paid: Decodable { let covered: Double?; let short: Double? }
+            let paid: Paid = try await api.post("api/piggy/\(chosen)/allocate", ["txn_id": t.id, "amount": typed])
             let name = banks?.first { $0.id == chosen }?.name ?? "the piggy bank"
-            onDone(typed >= charge ? "\(name) paid for it." : "\(name) paid \(Format.amount(typed)). \(Format.amount(charge - typed)) is yours.")
+            let covered = paid.covered ?? typed
+            if let short = paid.short, short > 0.005 {
+                // Decision 1: the chest paid it all; what it didn't hold comes off the Anchor.
+                onDone("\(name) paid for it. It was \(Format.amount(short)) short, so that comes off your Anchor until you move \(Format.amount(short)) from savings.")
+            } else if covered < typed - 0.005 {
+                onDone("\(name) only had \(Format.amount(covered)), so it paid that. The rest stays in your month.")
+            } else {
+                onDone(covered >= charge ? "\(name) paid for it." : "\(name) paid \(Format.amount(covered)). \(Format.amount(charge - covered)) is yours.")
+            }
         } catch {
             self.error = "That didn’t save. Try again."
         }

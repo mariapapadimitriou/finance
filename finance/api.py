@@ -456,11 +456,9 @@ def set_transaction_note(txn_id: str):
 
 def _safe_left(st, txns) -> float:
     """Safe to spend: what is left of this week, as Allowance shows it."""
+    # Home's Allowance, so the message and the number she sees agree (gap 30).
     from datetime import date as _date
-    month = _date.today().isoformat()[:7]
-    amount, _ = _allowance(st, txns)
-    return spend_plan.compute(txns, amount, month,
-                              covered=st.covered_in(month))["week"]["left"]
+    return _home_sts(st, txns, _date.fromisoformat(_today_iso())).get("amount") or 0.0
 
 
 def _month_spent(txns, month: str) -> float:
@@ -994,8 +992,16 @@ def remove_payback(txn_id: str, inflow_id: str):
     # A payback that made its sender's place in the split takes them out
     # again (THL-260): the charge costs what it did before.
     from .splits import drop_payer_all
+    from .marks import REIMBURSEMENT, WORK_REASON, _remember_waiting, was_waiting
     drop_payer_all(st, inflow)
+    reimbursed = st.payback_kinds().get(inflow_id) == REIMBURSEMENT
     st.unlink_payback(inflow_id)
+    # A work expense that was waiting to be reimbursed waits again (gap 29).
+    charge = st.get_transaction(txn_id)
+    if (reimbursed and charge is not None and not charge.excluded and not st.paybacks_for(txn_id)
+            and was_waiting(st, txn_id)):
+        st.exclude(txn_id, WORK_REASON)
+        _remember_waiting(st, txn_id, False)
     apply_transfer_matches(st)
     return list_paybacks(txn_id)
 
@@ -1809,16 +1815,12 @@ def remove_bank(bank_id: int):
 
 @bp.post("/piggy/<int:bank_id>/allocate")
 def allocate_to_bank(bank_id: int):
-    """Charge a transaction to a bank, which pays it whether or not it can yet.
+    """Charge a transaction to a bank: her share of it, never more.
 
-    The whole charge leaves the month. A $2,000 trip against a travel fund
-    holding $200 leaves the fund $1,800 behind, and it repays itself out of the
-    months ahead by raising its own contribution — so the trip does come off
-    each month's target, which is the point of having declared it.
-
-    Capping the charge at the balance was the obvious-looking alternative and
-    it fails the case the feature exists for: the month you take the trip is
-    exactly the month that must not absorb it.
+    With savings in her Anchor the whole share leaves the month, even past
+    what the bank holds: the shortfall comes off the Anchor until she moves
+    the money, and the reply says how much (`short`). With no Anchor savings
+    the bank pays what it holds and the rest stays in the month (decision 1).
     """
     from . import piggy
 
@@ -1841,6 +1843,7 @@ def allocate_to_bank(bank_id: int):
     # Part of a charge, when the bank paid only some of it (the redesign's
     # Pay from a piggy bank). Left out, the whole charge.
     amount = txn.amount
+    explicit = body.get("amount") is not None
     if body.get("amount") is not None:
         try:
             amount = round(float(body["amount"]), 2)
@@ -1848,6 +1851,22 @@ def allocate_to_bank(bank_id: int):
             return jsonify({"error": "Enter an amount."}), 400
         if amount <= 0 or amount > txn.amount + 0.005:
             return jsonify({"error": "That’s more than the charge."}), 400
+    # More than the chest holds (decision 1): with savings in her Anchor the
+    # chest pays it all and the shortfall comes off the Anchor until she moves
+    # the money; with none, the chest pays what it holds and the rest stays in
+    # the month.
+    # Only her part of the charge is the bank's to pay: on a shared or joint
+    # charge, her share (the logic review, gap 5).
+    from .analytics import share_amount
+    amount = round(min(amount, max(share_amount(txn), 0.0)), 2)
+    before = piggy.status(bank, st.bank_charges_by_month().get(bank_id, {}))
+    held = before.get("held", before["available"])
+    short = round(max(amount - max(held, 0.0), 0.0), 2)
+    if short and not _json_setting(st, "anchor_accounts", []):
+        amount = round(max(held, 0.0), 2)
+        if amount <= 0:
+            return jsonify({"error": f"{bank.name} is empty, so this stays in your month."}), 400
+        short = 0.0
     st.allocate(txn_id, bank_id, amount)
     played = piggy.status(bank, st.bank_charges_by_month().get(bank_id, {}))
     return jsonify({
@@ -1856,6 +1875,8 @@ def allocate_to_bank(bank_id: int):
         # What leaves the month, whatever the bank holds. What is worth
         # reporting is what the bank has left this year.
         "covered": round(amount, 2),
+        # What the chest paid beyond what it held, now off the Anchor.
+        "short": short,
         "available": played["available"],
         "over": played["over"],
         "behind_by": played["behind_by"],
@@ -1980,7 +2001,9 @@ def _anchor(st, txns, today: str) -> dict:
     counting = [a for a in available if a["account_id"] in chosen]
     savings = sum(a["balance"] for a in counting)
     banks = _bank_status(st)
-    chests = _chests_held(st, banks)
+    # A chest that paid more than it held lent the rest from her savings: it
+    # comes off the Anchor until she moves the money (decision 1).
+    chests = _chests_held(st, banks) + round(sum(max(-r["held"], 0.0) for r in banks), 2)
     unusual = _unusual_months(st)
     suggestion = anchor_math.essentials(txns, today, unusual=unusual)
     usual = suggestion["amount"] if suggestion else None
@@ -2118,7 +2141,7 @@ def home():
 def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
     """Safe to spend this month, from the ledger and what she told us, with
     debt minimums among the bills (THL-49 D1, D2)."""
-    from . import carryover, debts as debt_math, income_bills, safe_to_spend, savings
+    from . import debts as debt_math, income_bills, safe_to_spend, savings
     debts = debts if debts is not None else _debts(st, txns, today)
     return safe_to_spend.compute(
         txns, today,
@@ -2129,7 +2152,8 @@ def _home_sts(st, txns, today, debts: dict | None = None) -> dict:
         debt_bills=debt_math.bills(debts["debts"], txns, today,
                                    safe_to_spend.recurring_bills(txns, today)),
         confirm=income_bills.load(st),
-        carry=carryover.applied(st, today),
+        # From last month (decision 4) is worked out in compute.
+
         moved_to_savings=savings.put_away_month(st, txns, today.strftime("%Y-%m")),
     )
 

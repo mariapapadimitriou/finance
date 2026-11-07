@@ -57,6 +57,8 @@ def _sync_plan_income(st, state: dict) -> None:
     as a share of take-home follows it, as it did there."""
     income = ib.income_each_month(state, st.float_setting("home_income", 0.0))
     if not income:
+        # Nothing of hers left: the old stored figure goes too (gap 16).
+        st.set_setting("monthly_income", "")
         return
     st.set_setting("monthly_income", income)
     rate = st.setting("savings_rate")
@@ -179,6 +181,7 @@ def income_bills_expected_clear():
     pay, or her usual income from the last three months, again."""
     st = store()
     st.set_setting("home_income", "")
+    _sync_plan_income(st, ib.load(st))
     return jsonify(_payload(st))
 
 

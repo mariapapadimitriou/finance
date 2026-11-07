@@ -171,8 +171,25 @@ def linked_accounts(store) -> dict:
     for m in store.manual_accounts():
         if m.get("last4") and m["kind"] in ("savings", "investment"):
             masks.setdefault(m["last4"], (m["account_id"], "investment"))
+    from .checks import savers
     return {"masks": masks,
-            "names": {n: ids[0] for n, ids in names.items() if len({i for i, _ in ids}) == 1}}
+            "names": {n: ids[0] for n, ids in names.items() if len({i for i, _ in ids}) == 1},
+            # Where she saves (decision 2): money moved there is put away.
+            "savers": savers(store)}
+
+
+def _investment(t: Transaction) -> bool:
+    return str((t.raw or {}).get("account_type", "")).lower() in ("investment", "brokerage")
+
+
+def _put_away(t: Transaction) -> bool:
+    """An arrival in a savings or investment account she keeps out of her
+    budget: the money is still hers, put away."""
+    raw = t.raw or {}
+    kind = str(raw.get("account_type", "")).lower()
+    sub = str(raw.get("account_subtype", "")).lower()
+    return bool(getattr(t, "excluded", None)) and (kind in ("investment", "brokerage") or sub in (
+        "savings", "money market", "hisa", "tfsa", "rrsp", "fhsa", "cash management"))
 
 
 def own_account(t: Transaction, accounts: dict | None) -> tuple[str, str] | None:
@@ -273,7 +290,7 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
     inflows = [t for t in transactions
                if t.amount < 0 and not t.repays
                and (t.category != "Income" or _guessed_income(t))
-               and not getattr(t, "excluded", None)
+               and (not getattr(t, "excluded", None) or _put_away(t))
                and str((t.raw or {}).get("account_type", "")).lower() != "loan"]
     # Guessed income is only ever a one-to-one end (pass 1), never part of a
     # sum or a day that nets out: the loose passes need the surer arrivals.
@@ -306,7 +323,20 @@ def match_transfers(transactions: list[Transaction], today: str | None = None,
                     best = (gap, other)
             if best:
                 used.add(best[1].fingerprint)
-                out[t.fingerprint] = NEUTRAL
+                # Money arriving in an investment account is put away, as her
+                # rules say, whether or not Pearl can see it arrive (gap 15);
+                # so is money into savings she keeps out of her budget (gap 21).
+                out[t.fingerprint] = "Saved" if (_put_away(best[1]) or _investment(best[1])) else NEUTRAL
+                # Into an account she saves in: put away. Out of one: taken out
+                # of savings, on the side the money arrives (decision 2). The
+                # saver's own side stays a transfer, so the two don't cancel.
+                keep = (accounts or {}).get("savers") or set()
+                if not same_account and best[1].account_id in keep and t.account_id not in keep:
+                    out[t.fingerprint] = "Saved"
+                elif not same_account and t.account_id in keep and best[1].account_id not in keep:
+                    out[t.fingerprint] = NEUTRAL
+                    out[best[1].fingerprint] = "Saved"
+                    continue
                 # Its arrival was guessed as income: it was this transfer.
                 if best[1].category == "Income":
                     out[best[1].fingerprint] = NEUTRAL

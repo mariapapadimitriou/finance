@@ -199,7 +199,7 @@ struct ReviewView: View {
 
     /// The web's names for each kind of question (NeedsALook.jsx).
     static let kindOrder = ["Where it went", "Recurring", "Categories", "Money in", "Joint deposits",
-                            "Who sent it", "Income", "Duplicates"]
+                            "Who sent it", "Income", "Duplicates", "Your plan"]
 
     static func kindName(_ q: Question) -> String {
         switch q {
@@ -211,6 +211,7 @@ struct ReviewView: View {
         case .whoSent: return "Who sent it"
         case .incomeType: return "Income"
         case .duplicate: return "Duplicates"
+        case .check: return "Your plan"
         }
     }
 
@@ -452,6 +453,8 @@ enum ReviewAnswer {
     case always(String, label: String)
     /// Yes on a question the evidence asked (finance/pairs.py): this row.
     case pair(String)
+    /// Yes or No on a question about her plan (finance/checks.py).
+    case check(String, yes: Bool)
     /// T-97: Yes on a merchant she has sorted different ways, with no rule.
     case varies(String, name: String)
     /// A different category, and maybe every one like it.
@@ -511,7 +514,7 @@ enum ReviewAnswer {
         case .duplicate(_, let same): return same ? "Same purchase" : "Both are real"
         case .recurring: return "Recurring"
         case .dismiss: return "Doesn’t repeat"
-        case .confirm, .always, .varies, .pair, .skip, .done: return nil
+        case .confirm, .always, .varies, .pair, .check, .skip, .done: return nil
         }
     }
 
@@ -553,6 +556,8 @@ enum ReviewAnswer {
             return MarkReply(title: QuickSortStep.always(label, sorted: 1), detail: nil, undo: reply.undo)
         case .pair(let id):
             return try await api.post("api/review/pair/\(id)")
+        case .check(let key, let yes):
+            return try await api.post("api/review/check/\(key)", ["yes": yes])
         case .category(let id, let name, let remember):
             // Only this row moves; the rule is for new ones. Rows she can't see stay put.
             let reply: QuickSortStep = try await api.put("api/quick-sort/\(id)",
@@ -575,25 +580,13 @@ enum ReviewAnswer {
             }
             return MarkReply(title: reply.title ?? title, detail: nil, undo: reply.undo)
         case .regularPay(let t, let cadence):
-            let reply: MarkReply = try await api.post("api/transactions/\(t.id)/mark",
-                                                      ["case": "regular_pay", "remember": true])
-            // Pearl may have spotted the rhythm itself; its next date is the
-            // better one when the cadence agrees, so only a different answer
-            // is saved over it.
-            struct Pays: Decodable {
-                struct Pay: Decodable { let payer: String?; let cadence: String? }
-                let pays: [Pay]
-            }
-            let payer = t.merchant ?? t.name
-            let known: Pays? = try? await api.get("api/income-bills")
-            if known?.pays.contains(where: { $0.payer == payer && $0.cadence == cadence }) != true {
-                var pay: [String: Any] = ["name": t.name, "payer": payer,
-                                          "amount": abs(t.amount), "cadence": cadence]
-                if let next = Format.nextPay(after: t.date, cadence: cadence) { pay["next"] = next }
-                let _: OK = try await api.post("api/income-bills/pay", pay)
-            }
+            // One request: the server adds the pay on the schedule she chose,
+            // and its Undo takes it back (the logic review, gap 28).
+            var body: [String: Any] = ["case": "regular_pay", "remember": true, "cadence": cadence]
+            if let next = Format.nextPay(after: t.date, cadence: cadence) { body["next"] = next }
+            let reply: MarkReply = try await api.post("api/transactions/\(t.id)/mark", body)
             return MarkReply(title: "Your regular pay, \(Format.cadence(cadence).lowercased()).",
-                             detail: reply.detail, undo: nil)
+                             detail: reply.detail, undo: reply.undo)
         case .party(let id, let name):
             return try await api.put("api/transactions/\(id)/party", ["name": name])
         case .duplicate(let id, let same):

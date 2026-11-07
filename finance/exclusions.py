@@ -47,9 +47,15 @@ def matches(rule: dict, t: Transaction) -> bool:
     if rule.get("account_id") and t.account_id != rule["account_id"]:
         return False
     if rule.get("keyword"):
-        text = f"{t.description} {t.merchant}".lower()
-        if rule["keyword"].lower() not in text:
-            return False
+        if rule.get("whole_name"):
+            # Made from a transaction: that merchant, by its whole name.
+            from .categorize import merchant_key
+            if merchant_key(t.merchant or "") != merchant_key(rule["keyword"]):
+                return False
+        else:
+            text = f"{t.description} {t.merchant}".lower()
+            if rule["keyword"].lower() not in text:
+                return False
     if rule.get("counterparty"):
         who = str((t.raw or {}).get("counterparty") or "").lower()
         text = f"{who} {t.description}".lower()
