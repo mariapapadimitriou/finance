@@ -134,10 +134,10 @@ def test_suggested_until_confirmed_or_edited(client):
     rows = by_desc(listing(client))
     assert not rows["LOBLAWS"]["suggested"]                  # a rule knows Loblaws
     assert rows["ZXQ WIDGETS"]["suggested"]                  # Other: a question
-    # Uber Eats: the card provider's label comes first even when Plaid is
-    # unsure (2026-10-21), so it is that category, as a guess to confirm.
+    # Uber Eats: Plaid is unsure, so Pearl's name pattern goes first, as a
+    # guess to confirm.
     assert rows["UBER EATS"]["suggested"]
-    assert rows["UBER EATS"]["category"] == "Dining"
+    assert rows["UBER EATS"]["category"] == "Food Delivery"
     assert client.put(f"/api/transactions/{ids['UBER EATS']}/confirm").status_code == 200
     client.patch(f"/api/transactions/{ids['LOBLAWS']}", json={"category": "Groceries"})
     rows = by_desc(listing(client))

@@ -137,6 +137,22 @@ def mark_transaction(txn_id: str):
                     "remember": res["remember"], "undo": undo})
 
 
+@bp.post("/review/pair/<txn_id>")
+def answer_pair(txn_id: str):
+    """Yes on a pair card (finance/pairs.py): both rows, one answer."""
+    from . import pairs
+    from .review import for_store
+    st = store()
+    try:
+        out = pairs.apply(st, for_store(st, _today().isoformat()), txn_id, _today())
+    except marks.Problem as exc:
+        return jsonify({"error": str(exc)}), 400
+    if out is None:
+        return jsonify({"error": "That question has changed. Pull to refresh."}), 409
+    core._reclassify(st)
+    return jsonify(out)
+
+
 @bp.post("/transactions/batch/mark")
 def batch_mark():
     from .impact import snapshot, undo_payload

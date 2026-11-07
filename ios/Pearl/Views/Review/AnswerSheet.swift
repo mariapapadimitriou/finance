@@ -130,7 +130,10 @@ struct AnswerSheet: View {
                               onCase: { outCase($0, remember: $1) },
                               confirmsCurrent: (ask.kind == .category && confirmsGuess) || splitSaid != nil,
                               caseRule: { outRule($0) },
-                              extras: fromPage ? nil : AnyView(outOptions)) { name, remember in
+                              extras: fromPage ? nil : AnyView(outOptions),
+                              answersAtOnce: true,
+                              // Off where other rows are open or it varies: her answer here is for this row.
+                              newOnesOn: learnable && t.mixed != true && ask.printed.isEmpty) { name, remember in
                     saveSpending(name, remember)
                 }
             } else if step == .into {
@@ -389,34 +392,39 @@ struct AnswerSheet: View {
             SheetTitle(title: "What was this?") { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    QuestionHeader(name: who, amount: amountText, tone: tone, sub: nil)
-                    Picker("", selection: $incomeSide) {
-                        Text("Income").tag(true)
-                        Text("Not income").tag(false)
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel("Income or not income")
-                    .onChange(of: incomeSide) { _ in intoChoice = nil }
-                    CaseGrid(cases: incomeSide ? CaseTile.income : CaseTile.notIncome, chosen: $intoChoice)
-                        .onChange(of: intoChoice) { key in rememberInto = key != "not_mine" }
-                    if !incomeSide, learnable, let rule = intoRule {
+                    QuestionHeader(name: who, amount: amountText, tone: tone, sub: ask.item.pair?.evidence)
+                    if learnable {
                         Toggle(isOn: $rememberInto) {
-                            Text(rule).font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text("New ones from \(who)").font(Nacre.body).foregroundColor(Pearl.ink)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .tint(Pearl.action).padding(.horizontal, 4)
                     }
+                    Text("INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                        .padding(.horizontal, 16).accessibilityAddTraits(.isHeader)
+                    CaseGrid(cases: CaseTile.income, chosen: answer(income: true))
+                    Text("NOT INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                        .padding(.horizontal, 16).padding(.top, 4).accessibilityAddTraits(.isHeader)
+                    CaseGrid(cases: CaseTile.notIncome, chosen: answer(income: false))
                     inOptions
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
-            Button("Continue") { intoCase() }
-                .buttonStyle(NacreButtonStyle())
-                .disabled(intoChoice == nil)
-                .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 8)
         }
         .background(SheetBackground())
         .presentationDetents([.large])
+    }
+
+    /// A tile answers at once.
+    private func answer(income: Bool) -> Binding<String?> {
+        Binding(get: { nil }, set: { key in
+            guard let key = key else { return }
+            incomeSide = income
+            intoChoice = key
+            // Leaving every one out is a bigger step: never by a switch left on.
+            if key == "not_mine" { rememberInto = false }
+            intoCase()
+        })
     }
 
     /// The rule money in can make: its own account, or leaving it out.
@@ -437,6 +445,7 @@ struct AnswerSheet: View {
         case "card": onAnswer(.mark(t.id, ["case": "moved", "remember": remember]))
         case "saved": onAnswer(.mark(t.id, ["case": "saved", "remember": remember]))
         case "lent": onAnswer(.mark(t.id, ["case": "lent", "remember": remember]))
+        case "paying_back": onAnswer(.mark(t.id, ["case": "paying_back", "remember": remember]))
         case "work": onAnswer(.mark(t.id, ["case": "work"]))
         default: onAnswer(.mark(t.id, ["case": "not_mine", "reason": "Not mine", "remember": remember]))
         }

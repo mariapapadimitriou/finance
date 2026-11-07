@@ -147,7 +147,6 @@ struct MainTabs: View {
     @State private var quickSort: [Ask] = []
     @State private var quickSortNames: [String] = []
     @State private var quickSortMonths: [Review.PayMonth] = []
-    @State private var categories: [CategoryList.Category] = []
     @State private var offered = false
     /// SEC-10: another device asking to sign in as her, and the ones she's seen.
     @State private var approval: Approval?
@@ -176,9 +175,12 @@ struct MainTabs: View {
             }
             .presentationDetents([.medium])
         }
-        .fullScreenCover(isPresented: Binding(get: { !quickSort.isEmpty }, set: { if !$0 { quickSort = [] } })) {
-            QuickSortView(asks: quickSort, categories: categories, names: quickSortNames,
-                          months: quickSortMonths) { quickSort = [] }
+        // Part of this screen, not presented over it: nothing dismissed inside can close it.
+        .overlay {
+            if !quickSort.isEmpty {
+                QuickSortView(asks: quickSort, categories: app.categories, names: quickSortNames,
+                              months: quickSortMonths) { quickSort = [] }
+            }
         }
     }
 
@@ -201,9 +203,6 @@ struct MainTabs: View {
         offered = true
         guard let prompt: QuickSortPrompt = try? await app.api.get("api/quick-sort"),
               prompt.show, !prompt.asks.isEmpty else { return }
-        if let list: CategoryList = try? await app.api.get("api/categories") {
-            categories = list.categories.filter { $0.hidden != true }
-        }
         quickSortNames = prompt.review?.people ?? []
         quickSortMonths = prompt.review?.threePayMonth.filter { $0.skipped != true } ?? []
         quickSort = prompt.asks
@@ -214,6 +213,7 @@ struct MainTabs: View {
     private func page<Content: View>(_ which: Tab, @ViewBuilder content: () -> Content) -> some View {
         NavigationStack {
             content().toolbar(app.hidesTabBar ? .hidden : .visible, for: .tabBar)
+                .accessibilityHidden(!quickSort.isEmpty)
         }
         .tabItem { Label(which.label, image: which.icon) }
         .tag(which)

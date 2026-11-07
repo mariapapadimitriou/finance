@@ -1093,6 +1093,11 @@ struct Review: Decodable {
 
         var id: String { key }
 
+        /// The merchant's other open guesses: what Yes moves, printed on the card.
+        var siblings: [BriefTransaction] = []
+        /// A question the evidence asks, where one Yes settles both rows.
+        var pair: Pair? = nil
+
         struct Rest: Decodable, Hashable {
             let whole: Double
             let sorted: Double
@@ -1100,6 +1105,7 @@ struct Review: Decodable {
 
         enum CodingKeys: String, CodingKey {
             case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share, twin
+            case siblings, pair
             case guessLabel = "guess_label"
         }
 
@@ -1132,10 +1138,21 @@ struct Review: Decodable {
             rest = opt(Rest.self, .rest)
             share = opt(Double.self, .share)
             twin = opt(BriefTransaction.self, .twin)
+            siblings = opt([Lenient<BriefTransaction>].self, .siblings)?.compactMap { $0.value } ?? []
+            pair = opt(Pair.self, .pair)
         }
 
         static func == (a: Item, b: Item) -> Bool { a.key == b.key }
         func hash(into hasher: inout Hasher) { hasher.combine(key) }
+    }
+
+    /// Pearl says what it knows first (finance/pairs.py): a question the
+    /// evidence asks, where one Yes settles both rows.
+    struct Pair: Decodable, Hashable {
+        let question: String
+        let evidence: String
+        let line: String
+        let other: String
     }
 
     struct Series: Decodable, Hashable {
@@ -1188,15 +1205,16 @@ struct Ask: Identifiable, Hashable {
     var t: BriefTransaction { item.txn }
     var skipped: Bool { item.skipped == true }
 
-    /// A guess Pearl can be told yes to (T-90, T-92): a category or "Saved to".
+    /// A guess Pearl can be told yes to (T-90, T-92): a category, "Saved to",
+    /// or a question the evidence asks.
     func isGuess(_ accounts: [AccountsOverview.Account]) -> Bool {
-        kind == .category || savedTo(accounts) != nil
+        kind == .category || savedTo(accounts) != nil || item.pair != nil
     }
 
     /// A guess opens T-96, a full page; the rest of a deposit and any other
     /// question open a sheet.
     func opensPage(_ accounts: [AccountsOverview.Account]) -> Bool {
-        item.rest == nil && isGuess(accounts)
+        item.rest == nil && item.pair == nil && isGuess(accounts)
     }
 
     /// "Dining out", or T-66's "Saved to TD Savings".
@@ -1221,30 +1239,44 @@ struct Ask: Identifiable, Hashable {
         canRule(accounts) && !varies(accounts)
     }
 
-    /// Yes: the rule and every open guess it covers, where a rule is right.
-    func yesAnswer(_ accounts: [AccountsOverview.Account]) -> ReviewAnswer {
-        if savedTo(accounts) != nil { return .mark(t.id, ["case": "saved", "remember": savesRule(accounts)]) }
-        if varies(accounts) { return .varies(t.id, name: t.name) }
-        return savesRule(accounts) ? .always(t.id, label: guessLabel(accounts)) : .confirm(t.id)
+    /// The rows Yes moves besides this one, all printed on the card.
+    var printed: [BriefTransaction] { item.siblings }
+
+    /// Yes: the rows on the card, and the rule when `newOnes` says so. Every
+    /// merchant gets a Yes; what varies is how far it reaches.
+    func yesAnswer(_ accounts: [AccountsOverview.Account], newOnes: Bool? = nil) -> ReviewAnswer {
+        if item.pair != nil { return .pair(t.id) }
+        let rule = newOnes ?? savesRule(accounts)
+        if savedTo(accounts) != nil { return .mark(t.id, ["case": "saved", "remember": rule]) }
+        if rule && canRule(accounts) {
+            return .always(t.id, label: guessLabel(accounts), rows: varies(accounts) ? [] : printed.map(\.id))
+        }
+        return varies(accounts) ? .varies(t.id, name: t.name) : .confirm(t.id)
     }
 
-    /// The link under Yes on T-96: the other way round from what Yes does.
-    func secondaryLabel(_ accounts: [AccountsOverview.Account]) -> String? {
-        if varies(accounts) { return "Always for \(t.name)" }
-        return savesRule(accounts) ? "Just this one" : nil
-    }
+    /// Whether the page offers the New ones switch at all.
+    func canSaveRule(_ accounts: [AccountsOverview.Account]) -> Bool { item.pair == nil && canRule(accounts) }
 
-    func secondaryAnswer(_ accounts: [AccountsOverview.Account]) -> ReviewAnswer {
-        if varies(accounts) { return .always(t.id, label: guessLabel(accounts)) }
-        return savedTo(accounts) != nil ? .mark(t.id, ["case": "saved", "remember": false]) : .confirm(t.id)
+    /// The line above the buttons: what Yes will do, before it's done.
+    func yesLine(_ accounts: [AccountsOverview.Account]) -> String {
+        if let pair = item.pair { return pair.line }
+        if varies(accounts) { return "Yes sorts just this one. \(t.name) varies, so no rule." }
+        guard savesRule(accounts) else { return "Yes sorts just this one." }
+        let n = printed.count + 1
+        return n > 1 ? "Yes sorts these \(n) and new ones from \(t.name)." : "Yes sorts this and new ones from \(t.name)."
     }
 
     /// "Dining?", "Saved or spent?", "Whose?"…
     var chip: String {
+        if let pair = item.pair { return pair.question }
         switch kind {
         case .category: return "\(item.guess?.text ?? t.category ?? "Other")?"
         case .transfer: return "Saved or spent?"
-        case .moneyIn: return item.rest != nil ? "\(Format.amount(t.amount)) left to sort" : "What was this?"
+        case .moneyIn:
+            if item.rest != nil { return "\(Format.amount(t.amount)) left to sort" }
+            if item.guess?.action == "refund" { return "Whose refund?" }
+            // A payment network isn't a person: never "Is Interac paying you back?".
+            return t.learnable == false ? "Someone sent you \(Format.amount(t.amount))" : "What was this?"
         case .incomeType: return "What kind of income?"
         case .joint: return "Whose?"
         case .whoSent: return "Who sent this?"
@@ -1267,7 +1299,9 @@ extension Review {
         out += whoSent.map { Ask(kind: .whoSent, item: $0) }
         out += duplicate.map { Ask(kind: .duplicate, item: $0) }
         out += recurringTransfer.map { Ask(kind: .recurring, item: $0) }
-        return out
+        // Two rows settled by one answer come first, so neither is asked about
+        // alone before its pair; the order is otherwise kept.
+        return out.filter { $0.item.pair != nil } + out.filter { $0.item.pair == nil }
     }
 }
 

@@ -2221,7 +2221,11 @@ class Store:
             rows = c.execute("SELECT merchant_key, category FROM merchant_overrides").fetchall()
         return {r["merchant_key"]: r["category"] for r in rows}
 
-    def set_override(self, merchant: str, category: str) -> int:
+    def set_override(self, merchant: str, category: str, move_rows: bool = True) -> int:
+        """Save the rule for a merchant and, unless `move_rows` is off, file
+        its rows there. A row she set by hand or confirmed is hers: a rule
+        never moves it. Quick sort's Yes passes move_rows=False and moves only
+        the rows printed on the card."""
         from .categorize import is_generic_transfer_name
         if is_generic_transfer_name(merchant):
             return 0                    # a name every transfer shares is no rule (2026-10-23)
@@ -2248,13 +2252,18 @@ class Store:
                     """INSERT INTO merchant_overrides (merchant_key, category) VALUES (?, ?)
                        ON CONFLICT(merchant_key) DO UPDATE SET category = excluded.category""",
                     (f"entity:{eid}", category))
-                c.execute(
-                    """UPDATE transactions SET category = ?, category_source = 'merchant_override'
-                       WHERE raw LIKE ? AND category_source != 'user'""",
-                    (category, f'%"merchant_entity_id": "{eid}"%'))
+                if move_rows:
+                    c.execute(
+                        """UPDATE transactions SET category = ?, category_source = 'merchant_override'
+                           WHERE raw LIKE ? AND category_source NOT IN ('user', 'range')
+                             AND id NOT IN (SELECT txn_id FROM txn_confirmed)""",
+                        (category, f'%"merchant_entity_id": "{eid}"%'))
+            if not move_rows:
+                return 1
             cur = c.execute(
                 """UPDATE transactions SET category = ?, category_source = 'merchant_override'
-                   WHERE LOWER(merchant) = ?""",
+                   WHERE LOWER(merchant) = ? AND category_source NOT IN ('user', 'range')
+                     AND id NOT IN (SELECT txn_id FROM txn_confirmed)""",
                 (category, key),
             )
             count = cur.rowcount

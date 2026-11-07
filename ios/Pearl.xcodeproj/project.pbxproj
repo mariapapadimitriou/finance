@@ -60,10 +60,23 @@
 		959B46154061EE62EAB76049 /* Fraunces-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 65A3C8DF5AC5DCF94ADBAF19 /* Fraunces-Regular.ttf */; };
 		90C363208D3502F31EE967BE /* Fraunces-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5123041A452F1AE9E3CD559D /* Fraunces-SemiBold.ttf */; };
 		436E75E984B4850BBF8D916E /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = A8318EFB1C654A8D1F922D04 /* LinkKit */; };
+		B8087047BA447D15D66176FC /* QuickSortCategoryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAE25B547263E40ECA3F49B2 /* QuickSortCategoryUITests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		BCA1C1A9A22CB8C13813F29B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 46F86FAA6BBF9AC94A7E4595 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B8D1D9F1319003213E1C8FF6;
+			remoteInfo = Pearl;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		95D653871703BB6B6441A16C /* Pearl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pearl.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A887B5D29B4EAB09648BF16 /* PearlUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PearlUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AAE25B547263E40ECA3F49B2 /* QuickSortCategoryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSortCategoryUITests.swift; sourceTree = "<group>"; };
 		9B9447FB87C39BED247C466A /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		CEC593419BBFC2C02400C055 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		9C5660576F12049C54E11ECA /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -128,6 +141,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		DE4631A9CA629AB190C7BB6A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -135,6 +155,7 @@
 			isa = PBXGroup;
 			children = (
 				2DC8CB804A1707D9C674979F /* Pearl */,
+				9F83B95509D2F8A0124A86DF /* PearlUITests */,
 				8241ED42B56CC1DA7F726566 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -143,8 +164,17 @@
 			isa = PBXGroup;
 			children = (
 				95D653871703BB6B6441A16C /* Pearl.app */,
+				1A887B5D29B4EAB09648BF16 /* PearlUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		9F83B95509D2F8A0124A86DF /* PearlUITests */ = {
+			isa = PBXGroup;
+			children = (
+				AAE25B547263E40ECA3F49B2 /* QuickSortCategoryUITests.swift */,
+			);
+			path = PearlUITests;
 			sourceTree = "<group>";
 		};
 		2DC8CB804A1707D9C674979F /* Pearl */ = {
@@ -318,6 +348,23 @@
 			productReference = 95D653871703BB6B6441A16C /* Pearl.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A48DA827A856A36C97DF0F83 /* PearlUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A095AFE10A9EA80B48C7AE22 /* Build configuration list for PBXNativeTarget "PearlUITests" */;
+			buildPhases = (
+				16895A5330835E6C712DF244 /* Sources */,
+				DE4631A9CA629AB190C7BB6A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				937FF935290C192747FFA157 /* PBXTargetDependency */,
+			);
+			name = PearlUITests;
+			productName = PearlUITests;
+			productReference = 1A887B5D29B4EAB09648BF16 /* PearlUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -330,6 +377,10 @@
 				TargetAttributes = {
 					B8D1D9F1319003213E1C8FF6 = {
 						CreatedOnToolsVersion = 15.0;
+					};
+					A48DA827A856A36C97DF0F83 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = B8D1D9F1319003213E1C8FF6;
 					};
 				};
 			};
@@ -350,6 +401,7 @@
 			projectRoot = "";
 			targets = (
 				B8D1D9F1319003213E1C8FF6 /* Pearl */,
+				A48DA827A856A36C97DF0F83 /* PearlUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -424,7 +476,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		16895A5330835E6C712DF244 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B8087047BA447D15D66176FC /* QuickSortCategoryUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		937FF935290C192747FFA157 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B8D1D9F1319003213E1C8FF6 /* Pearl */;
+			targetProxy = BCA1C1A9A22CB8C13813F29B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		79202D6F05A2EB0B50AEA796 /* Debug */ = {
@@ -612,6 +680,40 @@
 			};
 			name = Release;
 		};
+		3C4EDF51B2265BCB9C278F9E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 747896Q3U5;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mariapapadimitriou.pearl.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Pearl;
+			};
+			name = Debug;
+		};
+		815F4F5B39F8F4B514E9BDBE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 747896Q3U5;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mariapapadimitriou.pearl.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Pearl;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -629,6 +731,15 @@
 			buildConfigurations = (
 				AF9D2D27DADC25B267ED81C6 /* Debug */,
 				7D8C6F6E45786682C7D8EF1D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A095AFE10A9EA80B48C7AE22 /* Build configuration list for PBXNativeTarget "PearlUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3C4EDF51B2265BCB9C278F9E /* Debug */,
+				815F4F5B39F8F4B514E9BDBE /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

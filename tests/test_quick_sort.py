@@ -142,18 +142,17 @@ class TestTheCards:
     def test_a_merchant_sorted_different_ways_is_mixed(self, client):
         """T-97: once she has said two categories for a merchant, its guesses are mixed."""
         ledger(client, [unsure("2026-10-08", "Amazon", 24.80, "Shopping"),
-                        unsure("2026-10-06", "Amazon", 31.10, "Groceries"),
+                        unsure("2026-10-06", "Amazon", 31.10, "Shopping"),
                         unsure("2026-10-04", "Amazon", 18.00, "Shopping"),
                         unsure("2026-10-07", "Loblaws", 56.10, "Groceries")])
         def guesses():
             return {i["txn"]["id"]: i for i in client.get("/api/review").get_json()["unsure_category"]}
         rows = [i for i in guesses().values() if i["txn"]["merchant"] == "Amazon"]
         assert len(rows) == 3 and not any(i["txn"]["mixed"] for i in rows)
-        shopping = next(i for i in rows if i["guess"] == "Shopping")["txn"]["id"]
-        groceries = next(i for i in rows if i["guess"] == "Groceries")["txn"]["id"]
+        shopping, groceries = rows[0]["txn"]["id"], rows[1]["txn"]["id"]
         client.put(f"/api/quick-sort/{shopping}", json={"action": "right", "every": False})
         assert not any(i["txn"]["mixed"] for i in guesses().values())
-        client.put(f"/api/quick-sort/{groceries}", json={"action": "right", "every": False})
+        client.put(f"/api/quick-sort/{groceries}", json={"action": "category", "category": "Groceries", "every": False})
         now = guesses()
         left = [i for i in now.values() if i["txn"]["merchant"] == "Amazon"]
         assert len(left) == 1 and left[0]["txn"]["mixed"]

@@ -9,6 +9,7 @@ import SwiftUI
 @MainActor
 struct TransactionsView: View {
     @EnvironmentObject private var app: AppModel
+    @State private var loadedVersion = -1
     @StateObject private var plaid = PlaidLinker()
 
     @State private var months: [String] = []
@@ -20,7 +21,7 @@ struct TransactionsView: View {
     /// "Sam and Dad · 2 · $106.06", over By category.
     @State private var owedLine: OwedLine?
     @State private var tags: [String] = []
-    @State private var categories: [CategoryList.Category] = []
+    private var categories: [CategoryList.Category] { app.categories }
     @State private var accounts: [AccountsOverview.Account] = []
     @State private var reviewCount = 0
     @State private var loadedOnce = false
@@ -185,6 +186,11 @@ struct TransactionsView: View {
             await reload()
         }
         .task(id: app.version) { await start() }
+        // An answer given on a transaction's page changes the version while
+        // this list is off screen: come back to the rows as they are now.
+        .onAppear {
+            if loadedVersion != app.version { Task { await start() } }
+        }
         .task(id: query) { await search() }
         .sheet(isPresented: $showFilters) {
             FilterSheet(filters: filters, month: month, months: months, accounts: filterAccounts,
@@ -919,12 +925,10 @@ struct TransactionsView: View {
     // MARK: Loading
 
     private func start() async {
+        loadedVersion = app.version
         if let summary: Summary = try? await app.api.get("api/summary") {
             months = summary.months ?? []
             if month == nil || !months.contains(month!) { month = summary.latestMonth ?? months.last }
-        }
-        if categories.isEmpty, let list: CategoryList = try? await app.api.get("api/categories") {
-            categories = list.categories.filter { $0.hidden != true }
         }
         if let review: Review = try? await app.api.get("api/review") {
             reviewCount = review.open ?? review.count

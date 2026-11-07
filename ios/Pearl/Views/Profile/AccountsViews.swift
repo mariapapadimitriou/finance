@@ -111,6 +111,8 @@ enum AccountWords {
 struct UndoToast: View {
     let text: String
     var undo: (() -> Void)? = nil
+    /// Stays until something replaces it, rather than leaving after a few seconds.
+    var stays = false
     let done: () -> Void
 
     var body: some View {
@@ -131,6 +133,7 @@ struct UndoToast: View {
         .swipeToDismiss(done)
         .transition(.move(edge: .top).combined(with: .opacity))
         .task(id: text) {
+            guard !stays else { return }
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             done()
         }

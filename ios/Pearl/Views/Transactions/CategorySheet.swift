@@ -42,8 +42,14 @@ struct CategorySheet: View {
     /// T-52: Save on Pearl's guess, unchanged, confirms it.
     var confirmsCurrent = false
     @State private var chosenCase: String?
+    /// One page (the redesign): every answer on one scroll, and a tile answers
+    /// at once, with Undo after. No tabs, Save or Continue.
+    var answersAtOnce = false
+    /// The New ones switch: whether new rows from the merchant sort the same way.
+    @State private var newOnes = true
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var app: AppModel
     @State private var chosen: String
     @State private var spending: Bool
     /// T-79: saving would move her other transactions there too.
@@ -56,7 +62,10 @@ struct CategorySheet: View {
          onDelete: (() -> Void)? = nil, preview: ((String, Bool) async -> String?)? = nil,
          notSpending: [CaseTile]? = nil, startNotSpending: Bool = false, onCase: ((String, Bool) -> Void)? = nil,
          confirmsCurrent: Bool = false, caseRule: ((String) -> String?)? = nil, extras: AnyView? = nil,
+         answersAtOnce: Bool = false, newOnesOn: Bool = true,
          onSave: @escaping (String, Bool) -> Void) {
+        self.answersAtOnce = answersAtOnce
+        _newOnes = State(initialValue: newOnesOn)
         self.confirmsCurrent = confirmsCurrent
         self.caseRule = caseRule
         self.extras = extras
@@ -83,6 +92,10 @@ struct CategorySheet: View {
 
     private var answering: Bool { !spending && notSpending != nil }
 
+    /// What the caller passed, or the app's own list if that came up empty: a
+    /// sheet with no tiles is a dead end whatever caused it.
+    private var available: [CategoryList.Category] { categories.isEmpty ? app.categories : categories }
+
     private static let spendingGroups = ["essentials", "lifestyle"]
     private static let otherGroups = ["income", "savings", "transfer"]
     private static let groupNames = ["essentials": "Essentials", "lifestyle": "Lifestyle", "income": "Income",
@@ -90,7 +103,69 @@ struct CategorySheet: View {
     /// A state Pearl puts a row in, not one she picks.
     private static let notPickable: Set<String> = ["Unsorted transfers"]
 
+    /// Every answer on one scroll: the New ones switch, the categories, then Not spending.
+    private var onePage: some View {
+        VStack(spacing: 0) {
+            SheetTitle(title: title) { dismiss() }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    header
+                    if let merchant = merchant {
+                        Toggle(isOn: $newOnes) {
+                            Text("New ones from \(merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .tint(Pearl.action).padding(.horizontal, 4)
+                    }
+                    if available.isEmpty {
+                        LoadState(error: app.categoriesError) { Task { await app.loadCategories() } }
+                    }
+                    ForEach(Self.spendingGroups + ["lifestyleEnd"], id: \.self) { group in
+                        if group == "lifestyleEnd" {
+                            if let cases = notSpending {
+                                Text("NOT SPENDING").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                                    .padding(.horizontal, 16).padding(.top, 4)
+                                    .accessibilityAddTraits(.isHeader)
+                                CaseGrid(cases: cases, chosen: Binding(get: { nil }, set: { key in
+                                    if let key = key { onCase?(key, newOnes && caseRule?(key) != nil && key != "not_mine") }
+                                }))
+                            }
+                        } else {
+                            let items = tiles(in: group)
+                            if !items.isEmpty {
+                                Text((Self.groupNames[group] ?? group).uppercased())
+                                    .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                                    .padding(.horizontal, 16).padding(.top, 4)
+                                    .accessibilityAddTraits(.isHeader)
+                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                                    ForEach(items) { c in tile(c) }
+                                }
+                            }
+                        }
+                    }
+                    if onRegularBill != nil {
+                        RowSeparator(inset: 0).padding(.top, 4)
+                        Toggle(isOn: $bill) {
+                            Text("Regular bill").font(Nacre.body).foregroundColor(Pearl.ink)
+                        }
+                        .tint(Pearl.action).padding(.horizontal, 4)
+                    }
+                    if let extras = extras { extras }
+                }
+                .padding(.horizontal, 16).padding(.bottom, 16)
+            }
+        }
+        .background(SheetBackground())
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .task { if available.isEmpty { await app.loadCategories() } }
+    }
+
     var body: some View {
+        if answersAtOnce { onePage } else { steps }
+    }
+
+    private var steps: some View {
         VStack(spacing: 0) {
             SheetTitle(title: title) { dismiss() }
             ScrollView {
@@ -115,6 +190,9 @@ struct CategorySheet: View {
                             }
                             .tint(Pearl.action).padding(.horizontal, 4)
                         }
+                    }
+                    if !answering && available.isEmpty {
+                        LoadState(error: app.categoriesError) { Task { await app.loadCategories() } }
                     }
                     ForEach(answering ? [] : (spending ? Self.spendingGroups : Self.otherGroups), id: \.self) { group in
                         let items = tiles(in: group)
@@ -167,7 +245,7 @@ struct CategorySheet: View {
                 onSave(chosen, remember)
             }
                 .buttonStyle(NacreButtonStyle())
-                .disabled(chosen == current && !bill && !confirmsCurrent)
+                .disabled((chosen == current && !bill && !confirmsCurrent) || available.isEmpty)
                 .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, remember ? 0 : 8)
             if remember {
                 Button("Just this one") {
@@ -188,6 +266,7 @@ struct CategorySheet: View {
         .background(SheetBackground())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .task { if available.isEmpty { await app.loadCategories() } }
         .task(id: chosen) {
             // T-79: what saving does, said before it's saved; when it would
             // move others, Save does and Just this one doesn't.
@@ -218,7 +297,7 @@ struct CategorySheet: View {
     }
 
     private func tiles(in group: String) -> [CategoryList.Category] {
-        categories.filter {
+        available.filter {
             ($0.group ?? "lifestyle") == group && !Self.notPickable.contains($0.name)
                 && ($0.hidden != true || $0.name == current)
         }
@@ -226,7 +305,14 @@ struct CategorySheet: View {
 
     private func tile(_ c: CategoryList.Category) -> some View {
         let on = chosen == c.name
-        return Button { chosen = c.name } label: {
+        return Button {
+            if answersAtOnce {
+                onRegularBill?(bill)
+                onSave(c.name, merchant != nil && newOnes)
+            } else {
+                chosen = c.name
+            }
+        } label: {
             VStack(spacing: 6) {
                 Image(systemName: Self.symbol(for: c.name))
                     .font(.system(size: 16))
@@ -285,18 +371,19 @@ struct CaseTile: Identifiable, Hashable {
         CaseTile(key: "saved", label: "Saved", symbol: "lifepreserver"),
         CaseTile(key: "own", label: "My own account", symbol: "arrow.left.arrow.right"),
         CaseTile(key: "card", label: "Card payment", symbol: "creditcard"),
-        CaseTile(key: "lent", label: "Lent to someone", symbol: "arrow.up.forward"),
+        CaseTile(key: "lent", label: "Lending to someone", symbol: "arrow.up.forward"),
+        CaseTile(key: "paying_back", label: "Paying back a loan", symbol: "arrow.uturn.left"),
         CaseTile(key: "work", label: "Work expense", symbol: "briefcase"),
         CaseTile(key: "not_mine", label: "Not mine", symbol: "person.crop.circle.badge.xmark"),
     ]
 
     /// T-12: money in that isn't income.
     static let notIncome: [CaseTile] = [
-        CaseTile(key: "paid_back", label: "Paid back", symbol: "person.2"),
-        CaseTile(key: "refund", label: "Refund", symbol: "arrow.uturn.backward"),
-        CaseTile(key: "reimbursement", label: "Reimbursement", symbol: "briefcase"),
+        CaseTile(key: "paid_back", label: "Paying me back", symbol: "person.2"),
+        CaseTile(key: "refund", label: "Money back", symbol: "arrow.uturn.backward"),
+        CaseTile(key: "reimbursement", label: "Work paying me back", symbol: "briefcase"),
         CaseTile(key: "own", label: "My own money", symbol: "arrow.left.arrow.right"),
-        CaseTile(key: "loan", label: "Loan", symbol: "banknote"),
+        CaseTile(key: "loan", label: "Lent me this", symbol: "banknote"),
         CaseTile(key: "out_of_savings", label: "Out of savings", symbol: "lifepreserver"),
         CaseTile(key: "lent_back", label: "Money I lent, back", symbol: "arrow.down.backward"),
         CaseTile(key: "holding", label: "Holding it for someone", symbol: "tray.and.arrow.down"),

@@ -52,7 +52,7 @@ struct RecurringTransfers: Decodable {
 struct RecurringTransfersView: View {
     @EnvironmentObject private var app: AppModel
     @State private var data: RecurringTransfers?
-    @State private var categories: [CategoryList.Category] = []
+    private var categories: [CategoryList.Category] { app.categories }
     @State private var open: RecurringTransfers.Transfer?
     /// The transfers Needs a look is asking about.
     @State private var waiting: [Review.Item] = []
@@ -163,9 +163,6 @@ struct RecurringTransfersView: View {
             data = try await app.api.get("api/recurring-transfers")
             if (data?.asking ?? 0) > 0, let review: Review = try? await app.api.get("api/review") {
                 waiting = review.recurringTransfer
-            }
-            if categories.isEmpty, let list: CategoryList = try? await app.api.get("api/categories") {
-                categories = list.categories.filter { $0.hidden != true }
             }
             error = nil
         } catch {
