@@ -24,9 +24,9 @@ struct QuickSortStep: Decodable {
     let also: [String]?
     let undo: JSONValue?
 
-    /// T-91: "Dining out, and new ones".
+    /// T-91: "Always Dining out".
     static func always(_ label: String, sorted: Int) -> String {
-        sorted > 1 ? "Sorted \(sorted) · \(label), and new ones" : "\(label), and new ones"
+        sorted > 1 ? "Sorted \(sorted) · Always \(label)" : "Always \(label)"
     }
 }
 

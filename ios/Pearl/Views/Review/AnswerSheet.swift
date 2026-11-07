@@ -247,7 +247,7 @@ struct AnswerSheet: View {
                         Toggle(isOn: Binding(get: { oneOff ?? f.oneOff }, set: { on in Task { await setOneOff(on) } })) {
                             HStack(spacing: 12) {
                                 IconBubble(symbol: "1.circle")
-                                Text("One-off purchase").font(Nacre.body).foregroundColor(Pearl.ink)
+                                Text("Exclude from usual month").font(Nacre.body).foregroundColor(Pearl.ink)
                             }
                         }
                         .tint(Pearl.action)
@@ -397,7 +397,7 @@ struct AnswerSheet: View {
                     QuestionHeader(name: who, amount: amountText, tone: tone, sub: ask.evidence)
                     if learnable {
                         Toggle(isOn: $rememberInto) {
-                            Text("New ones from \(who)").font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text("Always for \(who)").font(Nacre.body).foregroundColor(Pearl.ink)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .tint(Pearl.action).padding(.horizontal, 4)

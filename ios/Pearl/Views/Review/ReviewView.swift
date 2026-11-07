@@ -505,7 +505,7 @@ enum ReviewAnswer {
             // Only this row moves; the rule is for new ones. Rows she can't see stay put.
             let reply: QuickSortStep = try await api.put("api/quick-sort/\(id)",
                 ["action": "category", "category": name, "every": false, "rows": [String](), "new_ones": remember])
-            return MarkReply(title: remember ? "\(name), and new ones like it." : "Moved to \(name).",
+            return MarkReply(title: remember ? "Always \(name)." : "Moved to \(name).",
                              detail: nil, undo: reply.undo)
         case .mark(let id, let body):
             return try await api.post("api/transactions/\(id)/mark", body)
