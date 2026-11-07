@@ -62,6 +62,131 @@ struct GuessPage: View {
     }
 }
 
+/// Which piggy bank paid, and how much. What's left stays her spending.
+@MainActor
+struct PiggyPaySheet: View {
+    struct Bank: Decodable, Identifiable {
+        let id: Int
+        let name: String
+        let balance: Double?
+    }
+
+    let t: Transaction
+    let api: APIClient
+    let onDone: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var banks: [Bank]?
+    @State private var chosen: Int?
+    @State private var amount = ""
+    @State private var error: String?
+    @State private var busy = false
+
+    private var charge: Double { abs(t.amount) }
+    private var typed: Double? { Double(amount.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SheetTitle(title: "Pay from a piggy bank") { dismiss() }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    QuestionHeader(name: t.merchant, amount: Format.amount(charge), tone: Pearl.moneyOut, sub: nil)
+                    if let banks = banks {
+                        if banks.isEmpty {
+                            Text("You don’t have a piggy bank yet.").font(Nacre.body).foregroundColor(Pearl.muted)
+                        } else {
+                            GlassCard {
+                                ForEach(Array(banks.enumerated()), id: \.element.id) { index, bank in
+                                    if index > 0 { RowSeparator() }
+                                    Button { chosen = bank.id } label: {
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(bank.name).font(Nacre.body).foregroundColor(Pearl.ink)
+                                                if let balance = bank.balance {
+                                                    Text("Has \(Format.whole(balance))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                                                }
+                                            }
+                                            Spacer()
+                                            if chosen == bank.id {
+                                                Image(systemName: "checkmark").foregroundColor(Pearl.action)
+                                            }
+                                        }
+                                        .padding(.horizontal, 16).frame(minHeight: 56).contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            TextField("Amount", text: $amount)
+                                .keyboardType(.decimalPad)
+                                .font(Nacre.body).padding(.horizontal, 16).frame(minHeight: 52)
+                                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Pearl.card))
+                                .accessibilityLabel("How much the piggy bank paid")
+                            if let typed = typed, typed > 0, typed <= charge {
+                                Text(typed == charge ? "All of it comes out of the piggy bank."
+                                     : "\(Format.amount(charge - typed)) stays yours. \(Format.amount(typed)) comes out of the piggy bank.")
+                                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                            }
+                        }
+                    } else {
+                        LoadState(error: error) { Task { await load() } }
+                    }
+                    if let error = error, banks != nil {
+                        Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
+                    }
+                    if t.bankId != nil {
+                        Button("Put it back in the month") { Task { await takeBack() } }
+                            .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    }
+                }
+                .padding(.horizontal, 16).padding(.bottom, 12)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            Button("Save") { Task { await save() } }
+                .buttonStyle(NacreButtonStyle(busy: busy))
+                .disabled(busy || chosen == nil || (typed ?? 0) <= 0 || (typed ?? 0) > charge + 0.005)
+                .padding(.horizontal, 16).padding(.bottom, 8)
+        }
+        .background(SheetBackground())
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .task { await load() }
+    }
+
+    private func load() async {
+        struct List: Decodable { let banks: [Lenient<Bank>] }
+        do {
+            let list: List = try await api.get("api/piggy")
+            banks = list.banks.compactMap { $0.value }
+            chosen = t.bankId ?? (banks?.count == 1 ? banks?.first?.id : nil)
+            if amount.isEmpty { amount = String(format: "%.2f", charge) }
+            error = nil
+        } catch {
+            self.error = "Couldn’t load your piggy banks."
+        }
+    }
+
+    private func save() async {
+        guard let chosen = chosen, let typed = typed else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let _: OK = try await api.post("api/piggy/\(chosen)/allocate", ["txn_id": t.id, "amount": typed])
+            let name = banks?.first { $0.id == chosen }?.name ?? "the piggy bank"
+            onDone(typed >= charge ? "\(name) paid for it." : "\(name) paid \(Format.amount(typed)). \(Format.amount(charge - typed)) is yours.")
+        } catch {
+            self.error = "That didn’t save. Try again."
+        }
+    }
+
+    private func takeBack() async {
+        do {
+            let _: OK = try await api.delete("api/piggy/allocations/\(t.id)")
+            onDone("Back in the month.")
+        } catch {
+            self.error = "That didn’t save. Try again."
+        }
+    }
+}
+
 /// One transaction (THL-122, T-03): who and how much, what it counts as,
 /// Pearl's guess to confirm (T-96), the payback or refund it's linked to
 /// (T-39, T-41), one-off (T-42), a note and tags; a transfer between her
@@ -122,6 +247,11 @@ struct TransactionDetailView: View {
     /// has sorted the merchant different ways (T-97).
     @State private var learnable = false
     @State private var varies = false
+    /// Pay from a piggy bank.
+    @State private var payingFromBank = false
+    /// This page opened on a question, from the list; the next one waits.
+    @State private var wasAsked: Bool?
+    @State private var nextUp: Ask?
     /// The New ones switch, once she's touched it.
     @State private var newOnes: Bool?
     /// T-38b / T-40b: "Dining out · Undo" after a guess is confirmed.
@@ -253,11 +383,31 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $unlinking) { unlinkSheet }
         .sheet(isPresented: $unlinkingRefund) { refundUnlinkSheet }
         .overlay(alignment: .bottom) {
-            if let toast = toast {
-                UndoToast(text: toast.title, undo: toast.undo) {
-                    withAnimation { self.toast = nil }
+            VStack(spacing: 4) {
+                // After an answer from the list, on to the next without going back.
+                if nextUp != nil {
+                    Button { Task { await goToNext() } } label: {
+                        Text("Next one").font(Nacre.textButton).foregroundColor(Pearl.action)
+                            .padding(.horizontal, 20).frame(minHeight: 44)
+                            .background(Capsule().fill(.ultraThinMaterial))
+                            .overlay(Capsule().strokeBorder(Nacre.edge, lineWidth: 1))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .padding(.bottom, 8)
+                if let toast = toast {
+                    // Stays until something replaces it, so nothing moves under a finger.
+                    UndoToast(text: toast.title, undo: toast.undo, stays: nextUp != nil) {
+                        withAnimation { self.toast = nil }
+                    }
+                }
+            }
+            .padding(.bottom, 8)
+        }
+        .sheet(isPresented: $payingFromBank) {
+            PiggyPaySheet(t: t, api: app.api) { said in
+                payingFromBank = false
+                Task { await run { said } }
             }
         }
         .sheet(item: $unlinkingPayback) { link in paybackUnlinkSheet(link) }
@@ -469,13 +619,6 @@ struct TransactionDetailView: View {
                     .tint(Pearl.action)
                     .padding(.horizontal, 4)
                     .disabled(busy)
-                }
-                // What Yes moves besides this row, printed before it moves.
-                if let rows = guessing?.ask.printed, !rows.isEmpty, newOnesOn {
-                    Text("Also sorts " + rows.map { "\(Format.short($0.date)) \(Format.amount(abs($0.amount)))" }
-                        .joined(separator: ", ") + ".")
-                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                        .multilineTextAlignment(.center)
                 }
             }
         }
@@ -919,14 +1062,26 @@ struct TransactionDetailView: View {
 
     // MARK: Options
 
+    /// A charge a piggy bank could have paid for.
+    private var canPayFromBank: Bool { !t.inflow && t.transfer == nil && t.excluded.isEmpty }
+
     /// T-03: one Options card. Split with others, Regular pay (T-37),
-    /// Unlink refund (T-41) and One-off purchase, each a plain row.
+    /// Unlink refund (T-41), Pay from a piggy bank and One-off purchase, each a plain row.
     @ViewBuilder private var options: some View {
         let unlink = t.refundOf != nil
         let canOneOff = t.canOneOff && !t.inflow
-        if canSplit || canPart || couldBePay || unlink || canOneOff {
+        if canSplit || canPart || couldBePay || unlink || canOneOff || canPayFromBank {
             section("Options")
             GlassCard {
+                if canPayFromBank {
+                    Button { payingFromBank = true } label: {
+                        row(title: t.bankId == nil ? "Pay from a piggy bank" : "Paid from a piggy bank",
+                            chevron: true, icon: "banknote")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                    if canSplit || canPart || couldBePay || unlink || canOneOff { RowSeparator() }
+                }
                 if canSplit || canPart {
                     Button { if canSplit { splitting = true } else { parting = deposit(rest: false) } } label: {
                         row(title: canSplit ? "Split with others" : "Split into parts", chevron: true,
@@ -1146,11 +1301,35 @@ struct TransactionDetailView: View {
 
     // MARK: Changes
 
+    /// The next open question, once this page's own is answered.
+    private func lookForNext() async {
+        guard guessing == nil, wasAsked == true, !t.suggested, !t.asks, nextUp == nil else { return }
+        guard let review: Review = try? await app.api.get("api/review") else { return }
+        nextUp = review.asks.first { !$0.skipped && $0.t.id != t.id }
+    }
+
+    /// Next one: the same page, on the next transaction.
+    private func goToNext() async {
+        guard let next = nextUp,
+              let full: Transaction = try? await app.api.get("api/transactions/\(next.t.id)") else { return }
+        withAnimation {
+            toast = nil
+            message = nil
+            nextUp = nil
+            newOnes = nil
+            oneOff = nil
+            wasAsked = nil
+            detail = full
+        }
+        await load()
+    }
+
     private func load() async {
         if let full: Transaction = try? await app.api.get("api/transactions/\(detail?.id ?? transaction.id)") {
             detail = full
             oneOff = nil
         }
+        if wasAsked == nil { wasAsked = t.suggested || t.asks }
         if guessing == nil, t.suggested {
             struct Cases: Decodable { let learnable: Bool?; let mixed: Bool? }
             let cases: Cases? = try? await app.api.get("api/transactions/\(t.id)/cases")
@@ -1174,6 +1353,7 @@ struct TransactionDetailView: View {
             message = try await work()
             error = nil
             await load()
+            await lookForNext()
             app.changed()
         } catch {
             self.error = app.handle(error)

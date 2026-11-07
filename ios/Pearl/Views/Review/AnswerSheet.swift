@@ -98,7 +98,9 @@ struct AnswerSheet: View {
         case .transfer: first = ask.savedTo(accounts) != nil ? .guess : .out
         case .moneyIn:
             switch ask.item.guess?.action {
-            case "payback" where ask.item.guess?.charge != nil: first = .payback
+            // A nameless e-Transfer isn't "Interac" paying her back, and a guess
+            // with nothing behind it isn't worth asking: the answers instead.
+            case "payback" where ask.item.guess?.charge != nil && ask.t.learnable != false: first = .payback
             case "own": first = .guess
             default: first = .into
             }
@@ -133,7 +135,7 @@ struct AnswerSheet: View {
                               extras: fromPage ? nil : AnyView(outOptions),
                               answersAtOnce: true,
                               // Off where other rows are open or it varies: her answer here is for this row.
-                              newOnesOn: learnable && t.mixed != true && ask.printed.isEmpty) { name, remember in
+                              newOnesOn: learnable && t.mixed != true && ask.item.siblings.isEmpty) { name, remember in
                     saveSpending(name, remember)
                 }
             } else if step == .into {
@@ -392,7 +394,7 @@ struct AnswerSheet: View {
             SheetTitle(title: "What was this?") { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    QuestionHeader(name: who, amount: amountText, tone: tone, sub: ask.item.pair?.evidence)
+                    QuestionHeader(name: who, amount: amountText, tone: tone, sub: ask.evidence)
                     if learnable {
                         Toggle(isOn: $rememberInto) {
                             Text("New ones from \(who)").font(Nacre.body).foregroundColor(Pearl.ink)
@@ -474,8 +476,6 @@ struct AnswerSheet: View {
         case "loan": onAnswer(.mark(t.id, ["case": "borrowed"]))
         case "out_of_savings": onAnswer(.mark(t.id, ["case": "out_of_savings"]))
         case "lent_back": onAnswer(.mark(t.id, ["case": "lent_back"]))
-        case "holding": onAnswer(.mark(t.id, ["case": "not_mine", "reason": "Holding it for someone"]))
-        case "else": then = .category; go(.category)
         default: onAnswer(.mark(t.id, ["case": "not_mine", "reason": "Not mine",
                                        "remember": learnable && rememberInto]))
         }
@@ -545,10 +545,12 @@ struct AnswerSheet: View {
                 Button("Skip") { onAnswer(.skip(ask.item.key, true)) }
                     .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             }
-            Button(primaryLabel) { primary() }
-                .buttonStyle(NacreButtonStyle())
-                .disabled(!ready)
-                .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 8)
+            if step != .kinds {
+                Button(primaryLabel) { primary() }
+                    .buttonStyle(NacreButtonStyle())
+                    .disabled(!ready)
+                    .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 8)
+            }
         }
         .background(SheetBackground())
         .presentationDetents([.large])
@@ -608,7 +610,8 @@ struct AnswerSheet: View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
             ForEach(Self.kinds, id: \.key) { k in
                 let on = choice == k.key
-                Button { choice = k.key } label: {
+                // A tile answers at once.
+                Button { choice = k.key; primary() } label: {
                     VStack(spacing: 6) {
                         Image(systemName: k.symbol).font(.system(size: 16)).foregroundColor(Pearl.action)
                             .frame(width: 36, height: 36).background(Circle().fill(Pearl.blush.opacity(0.7)))
@@ -633,10 +636,8 @@ struct AnswerSheet: View {
 
     /// The app's income kinds (Income and bills), plus "My regular pay".
     private static let kinds: [(key: String, name: String, symbol: String)] = [
-        ("salary", "Salary", "briefcase"), ("regular", "My regular pay", "calendar"),
-        ("bonus", "Bonus", "sparkle"), ("interest", "Interest", "percent"),
-        ("gifts", "Gifts", "gift"), ("government", "Government credits", "building.columns"),
-        ("tax_refund", "Tax refund", "dollarsign.square"), ("other", "Other income", "ellipsis"),
+        ("regular", "My pay", "briefcase"), ("bonus", "Bonus", "sparkle"),
+        ("gifts", "A gift", "gift"), ("other", "Other income", "ellipsis"),
     ]
 
     /// T-31: "Like Northwind Ltd" under the schedule her pay already has.
@@ -804,7 +805,8 @@ struct AnswerSheet: View {
         case .cadence:
             // Her answer is the schedule in Income and bills, not Pearl's guess.
             if choice == "once" {
-                onAnswer(.mark(t.id, ["case": "pay", "income_kind": "salary"]))
+                // Pay that won't repeat isn't a salary.
+                onAnswer(.mark(t.id, ["case": "pay", "income_kind": "other"]))
             } else {
                 onAnswer(.regularPay(t, cadence: choice == "changes" ? "irregular" : choice))
             }

@@ -386,9 +386,7 @@ struct CaseTile: Identifiable, Hashable {
         CaseTile(key: "loan", label: "Lent me this", symbol: "banknote"),
         CaseTile(key: "out_of_savings", label: "Out of savings", symbol: "lifepreserver"),
         CaseTile(key: "lent_back", label: "Money I lent, back", symbol: "arrow.down.backward"),
-        CaseTile(key: "holding", label: "Holding it for someone", symbol: "tray.and.arrow.down"),
         CaseTile(key: "not_mine", label: "Not mine", symbol: "person.crop.circle.badge.xmark"),
-        CaseTile(key: "else", label: "Something else", symbol: "ellipsis"),
     ]
 
     /// T-78 for deposits: the answers that need nothing per row.
@@ -396,15 +394,12 @@ struct CaseTile: Identifiable, Hashable {
         ["own", "loan", "out_of_savings", "lent_back", "not_mine"].contains($0.key)
     }
 
-    /// T-08: kinds of income (T-71's tiles).
+    /// T-08: kinds of income, kept short. Interest, government credits and tax
+    /// refunds Pearl recognises by name; anything else it missed is Other income.
     static let income: [CaseTile] = [
-        CaseTile(key: "salary", label: "Salary", symbol: "briefcase"),
-        CaseTile(key: "regular", label: "My regular pay", symbol: "calendar"),
+        CaseTile(key: "regular", label: "My pay", symbol: "briefcase"),
         CaseTile(key: "bonus", label: "Bonus", symbol: "sparkle"),
-        CaseTile(key: "interest", label: "Interest", symbol: "percent"),
-        CaseTile(key: "gifts", label: "Gifts", symbol: "gift"),
-        CaseTile(key: "government", label: "Government credits", symbol: "building.columns"),
-        CaseTile(key: "tax_refund", label: "Tax refund", symbol: "dollarsign.square"),
+        CaseTile(key: "gifts", label: "A gift", symbol: "gift"),
         CaseTile(key: "other", label: "Other income", symbol: "ellipsis"),
     ]
 }

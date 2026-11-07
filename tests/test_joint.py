@@ -395,3 +395,27 @@ class TestChangingHowPurchasesCount:
         assert client.put("/api/accounts/fam/settings",
                           json={"joint_share": 150, "apply": "from_today"}).status_code == 400
         assert self.share(st, by, "COSTCO") == 200 and not st.get_transaction(by["COSTCO"]).share_set
+
+
+def test_her_rule_applies_once_she_claims_a_joint_deposit(client):
+    """Money into a joint account skips her rule until she says it's hers; then
+    a Costco refund comes off Groceries, as her rule for Costco says."""
+    st = client.application.config["STORE"]
+    t = row(-54.20, "COSTCO REFUND 123", "fam")
+    t.merchant = "Costco"
+    ingest(st, IngestResult([t], "fam"))
+    st.set_override("Costco", "Groceries")
+    tid = next(x.fingerprint for x in st.all_transactions() if x.merchant == "Costco")
+    out = answer(client, tid, "me").get_json()
+    assert out["title"] == "Yours. Comes off Groceries."
+    assert next(x for x in st.all_transactions() if x.fingerprint == tid).category == "Groceries"
+
+
+def test_someone_elses_joint_deposit_doesnt_take_her_rule(client):
+    st = client.application.config["STORE"]
+    t = row(-54.20, "COSTCO REFUND 124", "fam")
+    t.merchant = "Costco"
+    ingest(st, IngestResult([t], "fam"))
+    st.set_override("Costco", "Groceries")
+    tid = next(x.fingerprint for x in st.all_transactions() if x.merchant == "Costco")
+    assert answer(client, tid, "them").get_json()["title"] is None

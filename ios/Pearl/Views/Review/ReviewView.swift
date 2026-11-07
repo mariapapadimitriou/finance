@@ -16,9 +16,10 @@ struct ReviewView: View {
     /// T-83 (THL-213): "all", a kind of question, "pay3" or "skipped".
     @State private var filter = "all"
     private var showingSkipped: Bool { filter == "skipped" }
+    private var showingSorted: Bool { ["today", "pearl"].contains(filter) }
     @State private var asking: Ask?
-    /// T-74, open.
-    @State private var payMonth: Review.PayMonth?
+    /// Sorted today or Pearl sorted, when one of those is the filter.
+    @State private var sortedRows: [SortedRow]?
     @State private var sorting = false
     @State private var toast: Toast?
     @State private var busy = false
@@ -55,8 +56,7 @@ struct ReviewView: View {
         // page closing together took a presented Quick sort with them.
         .overlay {
             if sorting {
-                QuickSortView(asks: quick, categories: categories, names: recentNames,
-                              months: review?.threePayMonth.filter { $0.skipped != true } ?? []) {
+                QuickSortView(asks: quick, categories: categories, names: recentNames) {
                     sorting = false
                     Task { await load() }
                 }
@@ -67,14 +67,6 @@ struct ReviewView: View {
         .toolbar(sorting ? .hidden : .visible, for: .navigationBar)
         .toolbar(sorting ? .hidden : .visible, for: .tabBar)
         .task { await load() }
-        .sheet(item: $payMonth) { m in
-            ThirdPaychequeSheet(month: m) { answer in
-                payMonth = nil
-                Task { await send(answer) }
-            }
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
-        }
         .fullScreenCover(item: Binding(get: { asking.flatMap { $0.opensPage(accounts) ? $0 : nil } },
                                        set: { asking = $0 })) { ask in
             GuessPage(actions: GuessActions(
@@ -110,14 +102,15 @@ struct ReviewView: View {
         List {
             if let review = review {
                 let rows = review.asks.filter { $0.skipped == showingSkipped && (["all", "skipped"].contains(filter) || Self.kindName($0.kind) == filter) }
-                let months = review.threePayMonth.filter { ($0.skipped ?? false) == showingSkipped && ["all", "skipped", "pay3"].contains(filter) }
                 if showingSkipped && !rows.isEmpty {
                     Text("Guesses count for now. Swipe left to put one back.")
                         .font(Nacre.footnote).foregroundColor(Pearl.ink)
                         .listRowBackground(Color.clear).listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 4, trailing: 16))
                 }
-                if rows.isEmpty && months.isEmpty {
+                if showingSorted {
+                    sortedList
+                } else if rows.isEmpty {
                     empty(review, shown: rows.count)
                         .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 } else {
@@ -133,19 +126,6 @@ struct ReviewView: View {
                                         Task { await send(.skip(ask.item.key, !ask.skipped)) }
                                     }
                                     .tint(ask.skipped ? Pearl.action : Pearl.muted)
-                                }
-                        }
-                        ForEach(months) { m in
-                            Button { payMonth = m } label: { monthRow(m) }
-                                .buttonStyle(.plain)
-                                .listRowBackground(Nacre.glass)
-                                .listRowSeparatorTint(Nacre.separator)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(m.skipped == true ? "Put back" : "Skip") {
-                                        Task { await send(.skip(m.key, !(m.skipped ?? false))) }
-                                    }
-                                    .tint(m.skipped == true ? Pearl.action : Pearl.muted)
                                 }
                         }
                     }
@@ -183,24 +163,28 @@ struct ReviewView: View {
                 // T-83: All, then a chip per kind of question with any to sort,
                 // then Skipped, third paycheques included.
                 let open = review.asks.filter { !$0.skipped }
-                let months = review.threePayMonth.filter { $0.skipped != true }.count
-                let skipped = review.asks.count - open.count + review.threePayMonth.filter { $0.skipped == true }.count
+                let skipped = review.asks.count - open.count
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        chip("All · \(open.count + months)", on: filter == "all") { filter = "all" }
+                        chip("All · \(open.count)", on: filter == "all") { filter = "all" }
                         ForEach(Self.kindOrder, id: \.self) { kind in
                             let n = open.filter { Self.kindName($0.kind) == kind }.count
                             if n > 0 { chip("\(kind) · \(n)", on: filter == kind) { filter = kind } }
                         }
-                        if months > 0 { chip("Paycheques · \(months)", on: filter == "pay3") { filter = "pay3" } }
                         if skipped > 0 || showingSkipped {
                             chip("Skipped · \(skipped)", on: showingSkipped) { filter = "skipped" }
+                        }
+                        if review.sortedToday > 0 {
+                            chip("Sorted today · \(review.sortedToday)", on: filter == "today") { showSorted("today") }
+                        }
+                        if review.pearlSorted > 0 {
+                            chip("Pearl sorted · \(review.pearlSorted)", on: filter == "pearl") { showSorted("pearl") }
                         }
                     }
                 }
             }
-            if !showingSkipped && (!quick.isEmpty || review?.threePayMonth.contains { $0.skipped != true } == true) {
-                QuickSortCard(count: quick.count + (review?.threePayMonth.filter { $0.skipped != true }.count ?? 0)) { sorting = true }
+            if !showingSkipped && !showingSorted && !quick.isEmpty {
+                QuickSortCard(count: quick.count) { sorting = true }
                 // T-10.
                 Text("Tap one to sort it.").font(Nacre.footnote).foregroundColor(Pearl.ink)
             }
@@ -266,38 +250,88 @@ struct ReviewView: View {
         .accessibilityHint(ask.skipped ? "Answers it. Swipe to put it back." : "Answers it. Swipe to skip.")
     }
 
-    /// "October had three paycheques", its chip, and the paycheque.
-    private func monthRow(_ m: Review.PayMonth) -> some View {
+    // MARK: Sorted today, Pearl sorted
+
+    private func showSorted(_ view: String) {
+        filter = view
+        sortedRows = nil
+        Task { await loadSorted() }
+    }
+
+    private func loadSorted() async {
+        guard showingSorted else { return }
+        struct Rows: Decodable { let rows: [Lenient<SortedRow>] }
+        let got: Rows? = try? await app.api.get("api/review/sorted", query: ["view": filter])
+        sortedRows = got?.rows.compactMap { $0.value } ?? []
+    }
+
+    /// Each row with why it's sorted. A row opens its own page, to change it;
+    /// today's can also be taken back with a swipe.
+    @ViewBuilder private var sortedList: some View {
+        if let rows = sortedRows {
+            if rows.isEmpty {
+                Text(filter == "today" ? "Nothing sorted today." : "Pearl hasn’t sorted anything by itself.")
+                    .font(Nacre.body).foregroundColor(Pearl.muted)
+                    .frame(maxWidth: .infinity).padding(.vertical, 32)
+                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
+            }
+            Section {
+                ForEach(rows) { row in
+                    NavigationLink {
+                        TransactionByID(id: row.id, categories: categories)
+                    } label: {
+                        sortedRow(row)
+                    }
+                    .listRowBackground(Nacre.glass)
+                    .listRowSeparatorTint(Nacre.separator)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if let body = row.undo {
+                            Button("Undo") { Task { await undoSorted(body) } }.tint(Pearl.action)
+                        }
+                    }
+                }
+            }
+        } else {
+            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 32)
+                .listRowBackground(Color.clear).listRowSeparator(.hidden)
+        }
+    }
+
+    private func sortedRow(_ row: SortedRow) -> some View {
         HStack(spacing: 14) {
-            Image(systemName: "calendar")
-                .font(.system(size: 15))
-                .foregroundColor(Pearl.ink)
-                .frame(width: 40, height: 40)
-                .background(Circle().fill(Pearl.dynamic(light: 0xEFE4EB, dark: 0x252C5E)))
-                .accessibilityHidden(true)
+            Initials(name: row.merchant ?? "?")
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(Format.monthName(m.month)) had three paycheques").font(Nacre.body).foregroundColor(Pearl.ink)
-                    .lineLimit(1)
-                Text("Your pay").font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
-                GuessChip(label: "A third paycheque", question: false).padding(.top, 4)
+                Text(row.merchant ?? "Transaction").font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(row.line).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if let pay = m.paycheque {
-                Text("+" + Format.amount(pay)).font(Nacre.headline).monospacedDigit()
-                    .foregroundColor(Pearl.ink).fixedSize()
-            }
+            Text((row.amount < 0 ? "+" : "\u{2212}") + Format.amount(abs(row.amount)))
+                .font(Nacre.headline).monospacedDigit()
+                .foregroundColor(row.amount < 0 ? Pearl.ink : Pearl.moneyOut)
+                .fixedSize()
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .contentShape(Rectangle())
+        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
-        .accessibilityHint(m.skipped == true ? "Opens it. Swipe to put it back." : "Opens it. Swipe to skip.")
+    }
+
+    private func undoSorted(_ payload: JSONValue) async {
+        guard let body = payload.any as? [String: Any] else { return }
+        do {
+            let _: OK = try await app.api.post("api/transactions/undo", body)
+            withAnimation { toast = Toast(title: "Undone.", undo: nil) }
+            await load()
+            await loadSorted()
+            app.changed()
+        } catch {
+            self.error = app.handle(error)
+        }
     }
 
     /// All sorted only at zero: an empty filter says what's left, and skipped
     /// ones aren't sorted (T-16).
     @ViewBuilder private func empty(_ review: Review, shown: Int) -> some View {
-        let open = review.asks.filter { !$0.skipped }.count + review.threePayMonth.filter { $0.skipped != true }.count
-        let skipped = review.asks.filter(\.skipped).count + review.threePayMonth.filter { $0.skipped == true }.count
+        let open = review.asks.filter { !$0.skipped }.count
+        let skipped = review.asks.filter(\.skipped).count
         if open > 0 {
             VStack(spacing: 12) {
                 Text(showingSkipped ? "Nothing skipped." : "None of these.").font(Nacre.body).foregroundColor(Pearl.muted)
@@ -324,7 +358,8 @@ struct ReviewView: View {
                     .frame(width: 56, height: 56).background(Circle().fill(Nacre.mint))
                     .padding(.bottom, 6)
                 Text("All sorted").font(Nacre.title2).foregroundColor(Pearl.ink)
-                Text("Your numbers are up to date.")
+                Text(review.pearlSorted > 0 ? "Nothing left to sort. Pearl sorted \(review.pearlSorted) more by itself."
+                     : "Your numbers are up to date.")
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
                 Button("Done") { dismiss() }
                     .buttonStyle(NacreButtonStyle())
@@ -411,8 +446,8 @@ struct ReviewView: View {
 enum ReviewAnswer {
     /// Pearl's guess is right.
     case confirm(String)
-    /// Yes where a rule is right: the other rows printed on the card, and the rule.
-    case always(String, label: String, rows: [String])
+    /// Yes where a rule is right: this row, and the rule for new ones.
+    case always(String, label: String)
     /// Yes on a pair card (finance/pairs.py): both rows, one answer.
     case pair(String)
     /// T-97: Yes on a merchant she has sorted different ways, with no rule.
@@ -460,11 +495,10 @@ enum ReviewAnswer {
         case .varies(let id, let name):
             let reply: MarkReply = try await api.put("api/transactions/\(id)/confirm")
             return MarkReply(title: "\(name) varies, so no rule", detail: nil, undo: reply.undo)
-        case .always(let id, let label, let rows):
+        case .always(let id, let label):
             let reply: QuickSortStep = try await api.put("api/quick-sort/\(id)",
-                                                         ["action": "right", "every": true, "rows": rows])
-            return MarkReply(title: QuickSortStep.always(label, sorted: (reply.also?.count ?? 0) + 1),
-                             detail: nil, undo: reply.undo)
+                ["action": "right", "every": false, "rows": [String](), "new_ones": true])
+            return MarkReply(title: QuickSortStep.always(label, sorted: 1), detail: nil, undo: reply.undo)
         case .pair(let id):
             return try await api.post("api/review/pair/\(id)")
         case .category(let id, let name, let remember):
@@ -487,7 +521,7 @@ enum ReviewAnswer {
             case "both": title = "Both of yours. Your share counts."
             default: title = "\(person ?? "Theirs"). Not counted as yours."
             }
-            return MarkReply(title: title, detail: nil, undo: reply.undo)
+            return MarkReply(title: reply.title ?? title, detail: nil, undo: reply.undo)
         case .regularPay(let t, let cadence):
             let reply: MarkReply = try await api.post("api/transactions/\(t.id)/mark",
                                                       ["case": "regular_pay", "remember": true])
@@ -527,50 +561,34 @@ enum ReviewAnswer {
     }
 }
 
-// MARK: - T-74 A third paycheque
-
-/// A month paid every two weeks that held a third paycheque: nothing to
-/// sort, just what Pearl does about it. Got it dismisses it.
-struct ThirdPaychequeSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let month: Review.PayMonth
-    let answered: (ReviewAnswer) -> Void
+/// A transaction's own page, from its id: for a list that only has the row.
+@MainActor
+struct TransactionByID: View {
+    @EnvironmentObject private var app: AppModel
+    let id: String
+    let categories: [CategoryList.Category]
+    @State private var full: Transaction?
+    @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Spacer()
-                Text("A third paycheque").font(Nacre.headline).foregroundColor(Pearl.ink)
-                Spacer()
-            }
-            .overlay(alignment: .trailing) { CloseButton { dismiss() } }
-            .padding(.top, 20)
-            if let pay = month.paycheque {
-                // T-74: the paycheque it's about.
-                QuestionHeader(name: "Your pay", amount: "+" + Format.amount(pay), tone: Pearl.moneyIn,
-                               sub: Format.monthName(month.month))
-            }
-            Text("\(Format.monthName(month.month)) had three paycheques")
-                .font(Nacre.title2).foregroundColor(Pearl.ink)
-                .accessibilityAddTraits(.isHeader)
-            Text(words).font(Nacre.body).foregroundColor(Pearl.ink)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            Button("Got it") { answered(.dismiss(month.key)) }
-                .buttonStyle(NacreButtonStyle())
-            if month.skipped != true {
-                Button("Skip for now") { answered(.skip(month.key, true)) }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+        Group {
+            if let full = full {
+                TransactionDetailView(transaction: full, categories: categories)
+            } else {
+                LoadState(error: error) { Task { await load() } }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .nacreScreen()
             }
         }
-        .padding(.horizontal, 16).padding(.bottom, 8)
-        .background(SheetBackground())
+        .task { await load() }
     }
 
-    /// The server's reason, and what a month of her pay comes to.
-    private var words: String {
-        let reason = month.reason ?? "Paid every two weeks, so two months a year hold a third paycheque."
-        guard let monthly = month.monthly, let pay = month.paycheque else { return reason }
-        return "\(reason) That’s \(Format.whole(monthly)) a month from \(Format.whole(pay)) paycheques. The extra one isn’t counted as a raise."
+    private func load() async {
+        do {
+            full = try await app.api.get("api/transactions/\(id)")
+            error = nil
+        } catch {
+            self.error = app.handle(error)
+        }
     }
 }

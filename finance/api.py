@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import json
+
 from flask import Blueprint, current_app, jsonify, request
 
 from .analytics import (
@@ -1128,11 +1130,19 @@ def set_joint_from(txn_id: str):
     # Her own money into the joint account is her money moving: a transfer,
     # never savings (2026-10-23). Her pay stays income: "Whose pay is this?
     # Me" (T-33).
-    if who == ME and t.category in ("Saved", "Other", "Unsorted transfers"):
+    # Her rule waited for her to say it was hers: a Costco refund she claims
+    # now comes off Groceries, as her rule for Costco says.
+    title = None
+    from .categorize import merchant_key
+    rule = st.overrides().get(merchant_key(t.merchant or "")) if who in (ME, BOTH) else None
+    if rule:
+        st.set_transaction_category(txn_id, rule)
+        title = f"Yours. Comes off {rule}."
+    elif who == ME and t.category in ("Saved", "Other", "Unsorted transfers"):
         st.set_transaction_category(txn_id, "Transfers")
     undo = undo_payload(before, snapshot(st, st.all_transactions()))
     undo["marks"] = {"joint_from": {txn_id: was}}
-    return jsonify({"ok": True, "who": who, "person": person, "undo": undo})
+    return jsonify({"ok": True, "who": who, "person": person, "undo": undo, "title": title})
 
 
 @bp.get("/accounts")
@@ -1828,14 +1838,24 @@ def allocate_to_bank(bank_id: int):
         return jsonify({"error": "Only a charge can come out of a piggy bank. "
                                  "A refund or a payment is money coming back."}), 400
 
-    st.allocate(txn_id, bank_id, txn.amount)
+    # Part of a charge, when the bank paid only some of it (the redesign's
+    # Pay from a piggy bank). Left out, the whole charge.
+    amount = txn.amount
+    if body.get("amount") is not None:
+        try:
+            amount = round(float(body["amount"]), 2)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Enter an amount."}), 400
+        if amount <= 0 or amount > txn.amount + 0.005:
+            return jsonify({"error": "That’s more than the charge."}), 400
+    st.allocate(txn_id, bank_id, amount)
     played = piggy.status(bank, st.bank_charges_by_month().get(bank_id, {}))
     return jsonify({
         "ok": True,
         "charge": round(txn.amount, 2),
-        # The whole charge leaves the month, whatever the bank holds. What is
-        # worth reporting is what the bank has left this year.
-        "covered": round(txn.amount, 2),
+        # What leaves the month, whatever the bank holds. What is worth
+        # reporting is what the bank has left this year.
+        "covered": round(amount, 2),
         "available": played["available"],
         "over": played["over"],
         "behind_by": played["behind_by"],
@@ -2078,6 +2098,9 @@ def home():
         "safe_to_spend": sts,
         "data_state": state,
         "review_count": review.get("count", 0),
+        "pearl_sorted": review.get("pearl_sorted", 0),
+        # A note on Home, not a question (the redesign, decision 8).
+        "paycheque_note": next((it for it in review.get("three_pay_month") or [] if not it.get("skipped")), None),
         "savings": savings.this_month(st, txns, today),
         "connections": milestones.connections(st.plaid_items(), st.account_sync_rules()),
         "usual_month": usual,
@@ -2405,6 +2428,43 @@ def set_income_type(txn_id: str):
 def review_queue():
     from .review import for_store
     return jsonify(for_store(store()))
+
+
+@bp.get("/review/sorted")
+def review_sorted():
+    """Sorted today (view=today) or Pearl sorted (view=pearl), as rows."""
+    from .review import sorted_view
+    view = request.args.get("view")
+    if view not in ("today", "pearl"):
+        return jsonify({"error": "Which list?"}), 400
+    return jsonify({"rows": sorted_view(store(), view, _today_iso())})
+
+
+@bp.after_request
+def _note_an_answer(response):
+    """Every answer lands in Sorted today, whichever way it was given."""
+    from . import sorted_log
+    if response.status_code != 200 or request.args.get("dry"):
+        return response
+    body = request.get_json(silent=True) if request.is_json else None
+    body = body if isinstance(body, dict) else {}
+    if request.path.endswith("/transactions/undo"):
+        if isinstance(body.get("entry"), str):
+            sorted_log.forget(store(), _today_iso(), body["entry"])
+        return response
+    txn_id = sorted_log.answered(request.method, request.path, body)
+    if not txn_id or not response.is_json:
+        return response
+    reply = response.get_json(silent=True)
+    if not isinstance(reply, dict):
+        return response
+    entry = sorted_log.record(store(), _today_iso(), txn_id, reply)
+    if isinstance(reply.get("undo"), dict):
+        reply["undo"]["entry"] = entry
+        response.set_data(json.dumps(reply))
+        # The log keeps the Undo as sent, entry included.
+        sorted_log.record_undo(store(), _today_iso(), entry, reply["undo"])
+    return response
 
 
 @bp.post("/review/dismiss")

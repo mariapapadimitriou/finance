@@ -286,6 +286,10 @@ def describe(t: Transaction, ctx: Context) -> dict:
     elif counts_as_spending(t):
         counts = "spending"
         amount = abs(share_amount(t))
+        # A piggy bank paid part: the row shows what counts, and who paid the rest.
+        if not inflow and t.bank_id is not None and (t.bank_amount or 0) > 0.005:
+            amount = abs(spend_amount(t))
+            note = f"{ctx.banks.get(t.bank_id, 'A piggy bank')} paid ${t.bank_amount:,.2f}"
         if inflow:
             charge = ctx.by_id.get(ctx.refunds.get(t.fingerprint, ""))
             note = (f"Refund of {_name(charge, ctx)} · comes off {cat}" if charge
@@ -367,6 +371,7 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "merchant": _name(t, ctx) if t.fingerprint in ctx.names_for
         else ((who or {}).get("name") or t.merchant or t.description),
         "bank_merchant": t.merchant,
+        "bank_id": t.bank_id,
         "etransfer": who,
         # The sender's message on an e-Transfer, when the bank passed it on.
         "memo": etransfer_memo(t),

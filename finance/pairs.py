@@ -82,6 +82,17 @@ def pair_for(item: dict, t: Transaction, txns: list[Transaction], outs: dict[str
     guess = item.get("guess") or {}
     charge = guess.get("charge") if isinstance(guess, dict) else None
 
+    # A split waiting for this person's share, to the cent.
+    split = guess.get("split") if isinstance(guess, dict) else None
+    if guess.get("action") == "split" and split and split.get("exact"):
+        half = abs(split["amount"] / 2 - got) < 0.01
+        name = split["name"]
+        return {"kind": "split", "question": f"{'Half' if half else f'{_money(got)}'} of {split['merchant']}?",
+                "evidence": f"{name} owes you exactly {_money(got)} for {split['merchant']}, {_on(split['date'])}.",
+                "line": f"Yes takes {_money(got)} off {split['merchant']}.",
+                "steps": [{"id": t.fingerprint, "body": {"case": "payback", "charge": split["charge_id"]}}],
+                "other": split["charge_id"]}
+
     # The friend's own message names the purchase.
     if guess.get("action") == "memo" and charge:
         return {"kind": "memo", "question": f"{who or 'They'}’s message says “{memo(t)}”. Paying you back for {charge['merchant']}?",

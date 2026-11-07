@@ -264,7 +264,8 @@ def build(transactions: list[Transaction], today: str | None = None,
             store_names.setdefault(" ".join(c.merchant.lower().split()), []).append(c)
     for t in live:
         if (t.amount >= 0 or t.date[:10] < since or t.fingerprint in asked_money or t.repays
-                or getattr(t, "refund_of", None) or t.category == "Transfers"
+                or getattr(t, "refund_of", None)
+                or t.category in ("Transfers", "Saved", "Lent", "Borrowed", "Unsorted transfers")
                 or (t.category == "Income" and "refund" not in (t.merchant or "").lower())
                 or t.category_source in ("user", "merchant_override") or t.joint):
             continue
@@ -272,13 +273,18 @@ def build(transactions: list[Transaction], today: str | None = None,
         words = (t.merchant or "").lower().split()
         name = " ".join(w for w in words if w not in ("refund", "return", "credit"))
         bought = [c for c in store_names.get(name, []) if c.date[:10] <= t.date[:10]]
-        if not bought:
+        # Nothing to refund: money that Pearl was quietly taking off spending.
+        # On a card a refund can outlive the purchase in Pearl, so only money
+        # into a bank account, or that nothing recognised, is asked about.
+        if not bought and not (_is_bank(t) or (t.category or "Other") == "Other"):
             continue
         key = "in:" + t.fingerprint
         if key in dismissed:
             continue
-        money_in.append({"key": key, "txn": _brief(t, people), "guess": {"action": "refund"},
-                         "candidates": [], "reason": "Money back from a store you bought from."})
+        money_in.append({"key": key, "txn": _brief(t, people),
+                         "guess": {"action": "refund" if bought else "unknown"}, "candidates": [],
+                         "reason": ("Money back from a store you bought from." if bought
+                                    else "Pearl had this as a refund, with nothing to refund.")})
 
     # 3b. Money into a joint account from outside: whose was it?
     joint_in = []
@@ -324,6 +330,13 @@ def build(transactions: list[Transaction], today: str | None = None,
 
     # 4. Income whose type is a guess.
     income = []
+    from .categorize import merchant_key
+    from .income import guess as income_guess
+    paid_by: dict[str, int] = {}
+    for t in live:
+        if is_income(t):
+            k = merchant_key(t.merchant or "")
+            paid_by[k] = paid_by.get(k, 0) + 1
     refunds_asked = {it["txn"]["id"] for it in money_in if (it.get("guess") or {}).get("action") == "refund"}
     # A joint deposit's card asks what kind of income it is too, so one
     # deposit is one question, and counted once (2026-10-26).
@@ -333,13 +346,20 @@ def build(transactions: list[Transaction], today: str | None = None,
                 or t.fingerprint in joint_asked or t.fingerprint in refunds_asked:
             continue
         kind = kind_of(t)
-        if kind not in ("other", "bonus"):
+        # One payment from someone reads as pay but isn't a salary yet: asked
+        # about, with the safer guess, however much it looks like a paycheque.
+        once = (kind == "salary" and paid_by.get(merchant_key(t.merchant or ""), 0) == 1
+                and t.category_source not in ("merchant_override", "user", "pay_rule"))
+        if kind not in ("other", "bonus") and not once:
             continue
         key = "inc:" + t.fingerprint
         if key in dismissed:
             continue
         reason = ("Bigger than your usual paycheque." if kind == "bonus"
+                  else "The first money from them, so Pearl can’t call it a salary." if once
                   else "Pearl couldn’t tell what kind of income this is.")
+        if once:
+            kind = "other"
         income.append({"key": key, "txn": _brief(t), "guess": kind,
                        "guess_label": KINDS[kind], "reason": reason})
 
@@ -386,8 +406,11 @@ def build(transactions: list[Transaction], today: str | None = None,
     # look, skipped or not — the badge, Home, the Transactions banner, To
     # review and the Needs a look filter all show this. `open` is the part
     # not skipped, for To review's tabs.
+    # A third paycheque is a note, not a question: nothing to sort, so it is
+    # on Home and in no count (the redesign, decision 8).
+    held -= {it["key"] for it in three}
     total = (groups["count"] + len(repeating) + len(unsure) + len(money_in) + len(joint_in)
-             + len(who_sent) + len(income) + len(three) + len(dupes))
+             + len(who_sent) + len(income) + len(dupes))
     return {"count": total, "open": total - len(held), "skipped": len(held), "unsorted": groups,
             "recurring_transfer": repeating, "unsure_category": unsure,
             "money_in": money_in, "joint_in": joint_in, "who_sent": who_sent,
@@ -458,9 +481,35 @@ def for_store(st, today: str | None = None) -> dict:
         # guesses, except where the merchant doesn't sort one way.
         it["siblings"] = ([] if key in mixed or not it["txn"].get("learnable") else
                           [o["txn"] for o in by_merchant.get(key, []) if o is not it])
+    from .etransfers import canonical_names
+    canon = canonical_names(txns)
+    for part in ("money_in", "who_sent", "joint_in", "income_type"):
+        for it in review.get(part) or []:
+            full = canon.get(it["txn"].get("merchant") or "")
+            if full:
+                it["txn"]["merchant"] = full
+                if it.get("from"):
+                    it["from"] = full
+    for row in (review.get("unsorted") or {}).get("transfers", []):
+        full = canon.get(row.get("merchant") or "")
+        if full:
+            row["merchant"] = full
     from .pairs import annotate
     annotate(st, review, txns, today)
+    from . import sorted_log
+    from . import api as core
+    day = today or core._today_iso()
+    review["sorted_today"] = sorted_log.count_today(st, day)
+    review["pearl_sorted"] = len(sorted_log.pearl_rows(st, review, day, ids_in))
     return review
+
+
+def sorted_view(st, view: str, today: str) -> list[dict]:
+    """Sorted today or Pearl sorted, as rows."""
+    from . import sorted_log
+    if view == "today":
+        return sorted_log.today_rows(st, today)
+    return sorted_log.pearl_rows(st, for_store(st, today), today, ids_in)
 
 
 def _me() -> str | None:

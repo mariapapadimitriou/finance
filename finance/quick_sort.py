@@ -145,7 +145,7 @@ def questions(review: dict) -> list[tuple[str, str | None]]:
     list, so Quick sort and Needs a look count the same (2026-10-24)."""
     out = [("u:" + t["id"], t["id"]) for t in (review.get("unsorted") or {}).get("transfers", [])]
     for part in ("recurring_transfer", "unsure_category", "money_in", "joint_in", "who_sent",
-                 "income_type", "three_pay_month", "duplicate"):
+                 "income_type", "duplicate"):
         for it in review.get(part) or []:
             out.append((it["key"], (it.get("txn") or {}).get("id")))
     return out
