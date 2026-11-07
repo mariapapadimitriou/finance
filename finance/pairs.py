@@ -1,10 +1,11 @@
-"""Pearl says what it knows first: pair cards.
+"""Pearl says what it knows first.
 
-When the ledger itself points at the answer to a money-in question, the card
-asks that, and one Yes settles both sides. Only with evidence, and the
-evidence is said out loud: the same store and amount, the exact amount, the
-friend's own message, an even share, or money both ways with one person.
-Two possible answers means no pair: the ordinary question is asked instead.
+When the ledger itself points at the answer to a question, the card asks that.
+Only with evidence, and the evidence is said out loud: the same store and
+amount, the exact amount, the friend's own message, an even share, or money
+both ways with one person. Two possible answers means the ordinary question is
+asked instead. One card is one transaction: Yes answers this row alone, and the
+row on the other side keeps its own card.
 """
 
 from __future__ import annotations
@@ -56,18 +57,26 @@ def _both_ways(t: Transaction, who: str, txns: list[Transaction], outs: dict[str
         # She sent it first: a loan coming back, in whole or in part.
         return {"kind": "lent", "question": f"Did you lend {who} {_money(o.amount)}?",
                 "evidence": f"You sent {who} {_money(o.amount)} on {_on(o.date)}; {_money(got)} came back on {_on(t.date)}.",
-                "line": "Yes marks both as a loan, not spending or income.",
-                "steps": [{"id": t.fingerprint, "body": {"case": "lent_back"}},
-                          {"id": o.fingerprint, "body": {"case": "lent"}}],
-                "other": o.fingerprint}
+                "line": "Yes marks this as a loan paid back, not income.",
+                "steps": [{"id": t.fingerprint, "body": {"case": "lent_back"}}],
+                "other": o.fingerprint,
+                "out": {"kind": "lent", "question": f"Lent to {who}?",
+                        "evidence": f"{_money(got)} came back from {who} on {_on(t.date)}.",
+                        "line": "Yes marks this as a loan, not spending.",
+                        "steps": [{"id": o.fingerprint, "body": {"case": "lent"}}],
+                        "other": t.fingerprint}}
     if t.date[:10] <= o.date[:10] and o.amount <= got + 0.005:
         # They sent it first: she's paying a loan back.
-        return {"kind": "borrowed", "question": f"Paying {who} back?",
-                "evidence": f"{who} sent you {_money(got)} on {_on(t.date)}; you sent {_money(o.amount)} on {_on(o.date)}.",
-                "line": "Yes marks both as a loan, not spending or income.",
-                "steps": [{"id": t.fingerprint, "body": {"case": "borrowed"}},
-                          {"id": o.fingerprint, "body": {"case": "paying_back"}}],
-                "other": o.fingerprint}
+        return {"kind": "borrowed", "question": f"Did {who} lend you this?",
+                "evidence": f"You sent {who} {_money(o.amount)} on {_on(o.date)}.",
+                "line": "Yes marks this as money you borrowed, not income.",
+                "steps": [{"id": t.fingerprint, "body": {"case": "borrowed"}}],
+                "other": o.fingerprint,
+                "out": {"kind": "paying_back", "question": f"Paying {who} back?",
+                        "evidence": f"{who} sent you {_money(got)} on {_on(t.date)}.",
+                        "line": "Yes marks this as paying back a loan, not spending.",
+                        "steps": [{"id": o.fingerprint, "body": {"case": "paying_back"}}],
+                        "other": t.fingerprint}}
     return None
 
 
@@ -163,35 +172,31 @@ def annotate(st, review: dict, txns: list[Transaction], today: str | None) -> No
         if not pair or pair["other"] in claimed:
             continue
         claimed.add(pair["other"])
+        # The money going out asks its own side of it, on its own card.
+        out = pair.pop("out", None)
+        if out and pair["other"] in outs:
+            outs[pair["other"]]["pair"] = out
         it["pair"] = pair
 
 
 def apply(st, review: dict, txn_id: str, today: date) -> dict | None:
-    """Yes on a pair card: every step, and the other row's question closed.
-    Worked out again from the ledger: the app never says what to do."""
+    """Yes on a card the evidence asked: this row, and only this row. Worked
+    out again from the ledger: the app never says what to do."""
     from . import marks
     from .impact import snapshot, undo_payload
-    item = next((i for i in review.get("money_in") or []
-                 if i["txn"]["id"] == txn_id and i.get("pair")), None)
-    if item is None:
+    rows = [i.get("pair") for i in review.get("money_in") or [] if i["txn"]["id"] == txn_id]
+    rows += [t.get("pair") for t in (review.get("unsorted") or {}).get("transfers", []) if t["id"] == txn_id]
+    pair = next((p for p in rows if p), None)
+    if pair is None:
         return None
-    pair = item["pair"]
     before = snapshot(st)
     merged: dict = {}
-    txns = st.all_transactions()
-    by_id = {t.fingerprint: t for t in txns}
+    by_id = {t.fingerprint: t for t in st.all_transactions()}
     for step in pair["steps"]:
         res = marks.apply(st, by_id[step["id"]], step["body"], today)
         for k, v in res["marks"].items():
             merged.setdefault(k, {}).update(v)
-    other = pair["other"]
-    # The purchase was fine as it was: it stops asking "Is this right?", and Yes is an answer.
-    if other in by_id and not any(s["id"] == other for s in pair["steps"]):
-        st.confirm_category(other, by_id[other].category or "Other")
-        st.dismiss_review("cat:" + other)
     undo = undo_payload(before, snapshot(st))
     if merged:
         undo["marks"] = merged
-    undo["unconfirm"] = [other]
-    return {"ok": True, "title": pair["question"].rstrip("?") + ". Sorted both.",
-            "also": [other], "undo": undo}
+    return {"ok": True, "title": pair["question"].rstrip("?") + ".", "also": [], "undo": undo}

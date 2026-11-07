@@ -91,8 +91,15 @@ class TestPairCards:
         item = next(i for i in review(client)["money_in"] if i["txn"]["merchant"] == "Canada Computers")
         assert item["pair"]["question"] == "Money back for Canada Computers?"
         out = client.post(f"/api/review/pair/{item['txn']['id']}").get_json()
-        assert out["ok"] is True and out["also"] == [item["pair"]["other"]]
+        assert out["ok"] is True and out["also"] == []
         assert not [i for i in review(client)["money_in"] if i["txn"]["id"] == item["txn"]["id"]]
+
+    def test_yes_leaves_the_purchase_with_its_own_question(self, client):
+        ledger(client, [unsure("2026-10-08", "Canada Computers", 129.99, "Shopping"),
+                        inflow("2026-10-20", "Canada Computers", 129.99)])
+        item = next(i for i in review(client)["money_in"] if i["txn"]["merchant"] == "Canada Computers")
+        assert client.post(f"/api/review/pair/{item['txn']['id']}").status_code == 200
+        assert guess_for(client, "Canada Computers")
 
     def test_undo_brings_the_question_back(self, client):
         ledger(client, [tx("2026-10-08", "Canada Computers", 129.99, "Shopping", category_source="issuer"),

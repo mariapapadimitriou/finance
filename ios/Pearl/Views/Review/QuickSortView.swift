@@ -47,12 +47,10 @@ extension Review {
 }
 
 /// Quick sort (THL-254; T-85, T-86, T-72): Needs a look's questions as
-/// a stack of cards. A guess has two answers (T-93): swipe right or ✓ for yes,
-/// which sorts the other guesses from the merchant and saves the rule, with
-/// Undo on the toast (T-95), or swipe left, Let me choose or a tap on the card
-/// for the transaction's own page, which holds everything else (T-96). A merchant
-/// sorted different ways gets no rule from a swipe (T-97). Any other question
-/// opens the sheet Needs a look asks it with; swipe left skips it. Leaving early
+/// a stack of cards, one transaction each. A guess has two answers: swipe right
+/// or ✓ for Yes, with Undo on the toast, or swipe left or Skip. Tapping the card
+/// opens every other answer. A merchant sorted different ways gets no rule from
+/// Yes (T-97). A question with no guess has Answer in place of Yes. Leaving early
 /// keeps the rest in Needs a look.
 @MainActor
 struct QuickSortView: View {
@@ -113,6 +111,12 @@ struct QuickSortView: View {
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center).padding(.horizontal, 32)
                     .accessibilityHidden(true)
+                if current.map(isGuess) == true {
+                    Text("Tap the card for other answers.")
+                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        .padding(.top, 2)
+                        .accessibilityHidden(true)
+                }
                 if let error = error {
                     Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.top, 6)
                 }
@@ -137,7 +141,7 @@ struct QuickSortView: View {
             GuessPage(actions: GuessActions(
                 ask: ask, label: guess(ask), accounts: accounts, names: names,
                 onYes: { newOnes in asking = nil; yes(ask, newOnes: newOnes) },
-                onSkip: { asking = nil; skip() },
+                onSkip: { asking = nil; left() },
                 onCategory: plain(ask) ? { name, all in
                     asking = nil
                     withAnimation(.easeIn(duration: 0.25)) { leaving = true }
@@ -180,7 +184,7 @@ struct QuickSortView: View {
 
     private var hint: String {
         guard let ask = current else { return "" }
-        return isGuess(ask) ? ask.yesLine(accounts) : "Swipe right to answer, left to skip"
+        return isGuess(ask) ? ask.yesLine(accounts) : ""
     }
 
     /// "Dining out", or T-66's "Saved to TD Savings".
@@ -228,7 +232,7 @@ struct QuickSortView: View {
             if let ask = current {
                 card(ask)
                     .onTapGesture {
-                        guard isGuess(ask), leaving == nil else { return }
+                        guard leaving == nil else { return }
                         asking = ask
                     }
                     .offset(x: offsetX, y: drag.height * 0.2)
@@ -236,7 +240,9 @@ struct QuickSortView: View {
                     .gesture(swipe)
                     .accessibilityElement(children: .combine)
                     .accessibilityAction(named: isGuess(ask) ? "Yes" : "Answer") { right() }
-                    .accessibilityAction(named: isGuess(ask) ? "Let me choose" : "Skip") { left() }
+                    .accessibilityAction(named: "Skip") { left() }
+                    .accessibilityAction(named: "Other answers") { asking = ask }
+                    .accessibilityIdentifier("quick-sort-card")
                     .id(ask.id)
             }
         }
@@ -284,8 +290,8 @@ struct QuickSortView: View {
         .overlay(alignment: .topLeading) { stamp(guessing: isGuess(ask)) }
     }
 
-    /// YES or LET ME CHOOSE as a guess leans one way (T-64, T-65); ANSWER
-    /// or SKIP for a question.
+    /// YES or SKIP as a guess leans one way (T-64, T-65); ANSWER or SKIP for a
+    /// question.
     @ViewBuilder private func stamp(guessing: Bool) -> some View {
         let lean = leaving.map { $0 ? threshold : -threshold } ?? drag.width
         let strength = min(1, abs(lean) / threshold)
@@ -299,7 +305,7 @@ struct QuickSortView: View {
                 .padding(28)
                 .opacity(strength)
         } else if lean < -8 {
-            Text(guessing ? "LET ME CHOOSE" : "SKIP")
+            Text("SKIP")
                 .font(.custom("Figtree-SemiBold", size: 16)).tracking(1)
                 .foregroundColor(Pearl.ink)
                 .padding(.horizontal, 14).padding(.vertical, 6)
@@ -328,8 +334,7 @@ struct QuickSortView: View {
     @ViewBuilder private var buttons: some View {
         let guessing = current.map(isGuess) ?? true
         HStack(spacing: 64) {
-            roundButton(symbol: guessing ? "slider.horizontal.3" : "forward",
-                        label: guessing ? "Let me choose" : "Skip", filled: false) { left() }
+            roundButton(symbol: "forward", label: "Skip", filled: false) { left() }
             roundButton(symbol: guessing ? "checkmark" : "text.bubble",
                         label: guessing ? "Yes" : "Answer", filled: true) { right() }
         }
@@ -406,9 +411,7 @@ struct QuickSortView: View {
         let rule = newOnes ?? ask.savesRule(accounts)
         withAnimation(.easeIn(duration: 0.25)) { leaving = true }
         Task {
-            if let _ = ask.item.pair {
-                await answered(ask, .pair(ask.t.id))
-            } else if !plain(ask) {
+            if !plain(ask) {
                 await answered(ask, ask.yesAnswer(accounts, newOnes: rule))
             } else {
                 let varies = ask.varies(accounts)
@@ -429,22 +432,11 @@ struct QuickSortView: View {
                    said: "\(ask.t.name) · \(name)")
     }
 
-    private func skip() {
+    /// Skip, for a guess or a question: it stays in Needs a look.
+    private func left() {
         guard let ask = current, leaving == nil else { return }
         withAnimation(.easeIn(duration: 0.25)) { leaving = false }
         Task { await step(ask, ["action": "skip"]) }
-    }
-
-    /// Let me choose for a guess; skip a question.
-    private func left() {
-        guard let ask = current, leaving == nil else { return }
-        if isGuess(ask) {
-            withAnimation(.spring()) { drag = .zero }
-            asking = ask
-        } else {
-            withAnimation(.easeIn(duration: 0.25)) { leaving = false }
-            Task { await step(ask, ["action": "skip"]) }
-        }
     }
 
     /// A sheet closed without an answer: the card comes back.
@@ -466,9 +458,6 @@ struct QuickSortView: View {
                 let before = deck
                 let at = index
                 await step(ask, ["action": "marked", "title": reply.title ?? answer.done], quiet: true)
-                if case .pair = answer, let other = ask.item.pair?.other {
-                    deck = deck.enumerated().filter { $0.offset < index || $0.element.t.id != other }.map(\.element)
-                }
                 withAnimation {
                     toast = Sorted(text: always.map { QuickSortStep.always($0, sorted: 1) } ?? reply.title ?? answer.done,
                                    ask: ask, undo: reply.undo, deck: before, index: at)

@@ -448,7 +448,7 @@ enum ReviewAnswer {
     case confirm(String)
     /// Yes where a rule is right: this row, and the rule for new ones.
     case always(String, label: String)
-    /// Yes on a pair card (finance/pairs.py): both rows, one answer.
+    /// Yes on a question the evidence asked (finance/pairs.py): this row.
     case pair(String)
     /// T-97: Yes on a merchant she has sorted different ways, with no rule.
     case varies(String, name: String)

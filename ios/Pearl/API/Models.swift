@@ -1013,9 +1013,11 @@ struct BriefTransaction: Decodable, Hashable {
     var learnable: Bool? = nil
     /// A merchant she has sorted into more than one category (T-97).
     var mixed: Bool? = nil
+    /// Money going out that the evidence asks about in its own words.
+    var pair: Review.Pair? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, date, merchant, description, amount, category, skipped, likely, to, learnable, mixed
+        case id, date, merchant, description, amount, category, skipped, likely, to, learnable, mixed, pair
         case accountName = "account_name"
         case accountId = "account_id"
     }
@@ -1120,7 +1122,7 @@ struct Review: Decodable {
 
         /// The merchant's other open guesses: the rule waits until these are answered.
         var siblings: [BriefTransaction] = []
-        /// A question the evidence asks, where one Yes settles both rows.
+        /// A question the evidence asks. Yes answers this row alone.
         var pair: Pair? = nil
 
         struct Rest: Decodable, Hashable {
@@ -1174,7 +1176,7 @@ struct Review: Decodable {
     }
 
     /// Pearl says what it knows first (finance/pairs.py): a question the
-    /// evidence asks, where one Yes settles both rows.
+    /// evidence asks. Yes answers this row alone.
     struct Pair: Decodable, Hashable {
         let question: String
         let evidence: String
@@ -1331,7 +1333,9 @@ extension Review {
     var asks: [Ask] {
         var out = unsureCategory.map { Ask(kind: .category, item: $0) }
         out += (unsorted?.transfers ?? []).map { t in
-            Ask(kind: .transfer, item: Item(key: "u:" + t.id, txn: t, skipped: t.skipped))
+            var item = Item(key: "u:" + t.id, txn: t, skipped: t.skipped)
+            item.pair = t.pair
+            return Ask(kind: .transfer, item: item)
         }
         out += moneyIn.map { Ask(kind: .moneyIn, item: $0) }
         out += incomeType.map { Ask(kind: .incomeType, item: $0) }
@@ -1339,9 +1343,7 @@ extension Review {
         out += whoSent.map { Ask(kind: .whoSent, item: $0) }
         out += duplicate.map { Ask(kind: .duplicate, item: $0) }
         out += recurringTransfer.map { Ask(kind: .recurring, item: $0) }
-        // Two rows settled by one answer come first, so neither is asked about
-        // alone before its pair; the order is otherwise kept.
-        return out.filter { $0.item.pair != nil } + out.filter { $0.item.pair == nil }
+        return out
     }
 }
 
