@@ -436,3 +436,40 @@ class TestPiggyBankShort:
         w.st.set_setting("anchor_accounts", '["sav"]')
         out = self._bank(w, ids, "FLIGHT")
         assert out["covered"] == 2000 and out["short"] > 0
+
+
+class TestTheRest:
+    def test_a_piggy_bank_isnt_charged_for_money_that_came_back(self, w):
+        ids = w.load(*pay(), row(1200, "FLIGHT", f"{MONTH}-03", category="Travel"),
+                     row(-400, "AC REFUND", f"{MONTH}-05", merchant="Flight"))
+        w.st.set_setting("anchor_accounts", '["sav"]')
+        w.c.post("/api/piggy", json={"name": "T", "target": 2400})
+        bank = w.c.get("/api/piggy").get_json()["banks"][0]
+        w.c.post(f"/api/piggy/{bank['id']}/allocate", json={"txn_id": ids["FLIGHT"], "amount": 1200})
+        w.mark(ids["AC REFUND"], case="refund", charge=ids["FLIGHT"])
+        assert w.c.get("/api/piggy").get_json()["banks"][0]["charged"] == 800
+
+    def test_irregular_pay_added_by_hand_counts_what_came_in(self, w):
+        w.load(row(-1200, "CLIENT A", f"{MONTH}-03", merchant="Client A", issuer="income_wages"))
+        w.c.post("/api/income-bills/pay", json={"name": "Freelance", "amount": 3000, "cadence": "irregular"})
+        assert w.rows()["income"] == 3000
+
+    def test_it_changes_and_an_amount_are_one_answer(self, w):
+        w.load(*pay())
+        w.c.put("/api/income-bills/expected", json={"amount": 9000, "varies": False})
+        assert w.home()["income_source"] == "told"
+        w.c.put("/api/income-bills/expected", json={"varies": True})
+        data = w.c.get("/api/income-bills").get_json()
+        assert data["expected"]["varies"] is True and not data["expected"]["amount"]
+        assert w.home()["income_source"] != "told"
+
+    def test_a_shared_refund_shrinks_what_a_friend_owes(self, w):
+        from finance import splits as sp
+        ids = w.load(*pay(), row(400, "HOTEL", f"{MONTH}-02", category="Lodging", merchant="Hotel"),
+                     row(-100, "HOTEL CR", f"{MONTH}-06", merchant="Hotel"))
+        w.st.set_split(ids["HOTEL"], "even", [{"name": "Sam", "amount": 200.0}], True)
+        w.st.set_share(ids["HOTEL"], 200.0)
+        w.mark(ids["HOTEL CR"], case="refund", charge=ids["HOTEL"])
+        charge = w.t(ids["HOTEL"])
+        owed = sp.people_status(charge, w.st.splits()[ids["HOTEL"]], w.st.all_transactions(), {})
+        assert owed[0]["owes"] == 150

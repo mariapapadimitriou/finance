@@ -192,7 +192,11 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
     people had names counts for whoever it came from by name.
     """
     names = [p["name"] for p in split["people"]]
-    part = {p["name"]: float(p["amount"]) for p in split["people"]}
+    # A refund on the purchase is shared the way the purchase was: each
+    # person's part shrinks by the same fraction (decision 6).
+    back = getattr(charge, "refunded", 0.0) or 0.0
+    factor = max(1.0 - back / charge.amount, 0.0) if charge.amount > 0 and back else 1.0
+    part = {p["name"]: round(float(p["amount"]) * factor, 2) for p in split["people"]}
     paid = {n: 0.0 for n in names}
     when: dict[str, str] = {}
     # Cash in hand (THL-291) counts as paid the day she marked it.
@@ -228,8 +232,8 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
         when[who] = t.date[:10]
     out = []
     for p in split["people"]:
-        owes = round(max(p["amount"] - paid[p["name"]], 0.0), 2)
-        out.append({"name": p["name"], "amount": p["amount"], "paid": paid[p["name"]],
+        owes = round(max(part[p["name"]] - paid[p["name"]], 0.0), 2)
+        out.append({"name": p["name"], "amount": part[p["name"]], "paid": paid[p["name"]],
                     "owes": owes, "paid_on": when.get(p["name"]) if owes < 0.005 else None,
                     "cash": cash.get(p["name"], 0.0),
                     "cash_ids": [c["id"] for c in p.get("cash") or []],

@@ -381,10 +381,15 @@ struct ExpectedIncomeSheet: View {
     var body: some View {
         SheetFrame(title: "Income each month", subtitle: subtitle, symbol: "chart.line.uptrend.xyaxis",
                    heading: "Your own amount", close: { dismiss() }) {
-            FieldRow(label: "Each month, after tax", text: $amount, prompt: "$0.00")
+            FieldRow(label: "Each month, after tax", text: $amount, prompt: varies ? "Pearl works it out" : "$0.00")
                 .keyboardType(.decimalPad)
                 .sheetCard()
-            Toggle("It changes month to month", isOn: $varies)
+                // The latest answer wins (decision 7): typing an amount means it doesn't change.
+                .onChange(of: amount) { typed in if !typed.isEmpty { varies = false } }
+            Toggle("It changes month to month", isOn: Binding(get: { varies }, set: { on in
+                varies = on
+                if on { amount = "" }
+            }))
                 .font(Nacre.body).tint(Pearl.action)
                 .padding(.horizontal, 16).frame(minHeight: 52)
                 .sheetCard()
@@ -395,7 +400,7 @@ struct ExpectedIncomeSheet: View {
         } actions: {
             Button("Save") { Task { await save() } }
                 .buttonStyle(NacreButtonStyle(busy: busy))
-                .disabled(busy || amount.isEmpty)
+                .disabled(busy || (amount.isEmpty && !varies))
             if expected?.estimate != nil || (own != nil && hasPay) {
                 Button(expected?.estimate.map { "Use Pearl’s estimate (\(Format.whole($0)))" } ?? "Use my pay instead") {
                     Task { await clear() }
@@ -407,8 +412,8 @@ struct ExpectedIncomeSheet: View {
             }
         }
         .onAppear {
-            if let own = own { amount = String(format: "%.2f", own) }
             varies = expected?.varies ?? false
+            if let own = own, !varies { amount = String(format: "%.2f", own) }
         }
     }
 
@@ -423,10 +428,11 @@ struct ExpectedIncomeSheet: View {
         busy = true
         defer { busy = false }
         do {
-            let reply: IncomeBills = try await app.api.put("api/income-bills/expected", [
-                "amount": amount.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: ""),
-                "varies": varies,
-            ])
+            var body: [String: Any] = ["varies": varies]
+            if !varies {
+                body["amount"] = amount.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")
+            }
+            let reply: IncomeBills = try await app.api.put("api/income-bills/expected", body)
             saved(reply)
             dismiss()
         } catch {

@@ -105,9 +105,14 @@ def test_not_counting_an_account_takes_it_out_of_spending(client):
 def test_not_counting_changes_safe_to_spend_and_says_so(client):
     before = client.get("/api/home").get_json()["safe_to_spend"]["amount"]
     body = client.put("/api/accounts/amex/settings", json={"counted": False}).get_json()
-    after = client.get("/api/home").get_json()["safe_to_spend"]["amount"]
+    home = client.get("/api/home").get_json()["safe_to_spend"]
+    after = home["amount"]
     assert after == pytest.approx(before + 300)
-    assert body["safe_to_spend"] == pytest.approx(after)
+    # The toast quotes the figure Home's card shows: rounded down to $10 while
+    # the number is still an estimate, as it is early in a month with little
+    # history (S7). Compared with the exact amount, it failed whenever that
+    # wasn't already a round number.
+    assert body["safe_to_spend"] == pytest.approx(home["shown"])
     # Counting it again undoes it.
     client.put("/api/accounts/amex/settings", json={"counted": True})
     assert client.get("/api/home").get_json()["safe_to_spend"]["amount"] == pytest.approx(before)
