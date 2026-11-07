@@ -399,3 +399,25 @@ class TestTheEndpoints:
         d = client.delete("/api/income-bills/expected").get_json()
         assert d["expected"]["amount"] is None
         assert home(client)["income_source"] != "told"
+
+
+def test_a_transactions_bill_key_is_there_once_its_a_bill(tmp_path, monkeypatch):
+    from app import create_app
+    from test_safe_to_spend import tx
+    from finance import api, secrets_box
+    from test_plaid_link import KEY
+    monkeypatch.setenv(secrets_box.KEY_ENV, KEY)
+    app = create_app(str(tmp_path / "bill.db"))
+    app.config.update(TESTING=True)
+    st = app.config["STORE"]
+    monkeypatch.setattr(api, "_today_iso", lambda: "2026-10-20")
+    st.add_transactions([tx("2026-10-08", "Gym Co", 50.00, "Health", category_source="issuer")])
+    t = next(x for x in st.all_transactions() if x.merchant == "Gym Co")
+    with app.test_client() as c:
+        assert c.get(f"/api/transactions/{t.fingerprint}/bill").get_json()["bill_key"] is None
+        assert c.post(f"/api/transactions/{t.fingerprint}/bill",
+                      json={"cadence": "monthly", "next": "2026-11-08"}).status_code == 200
+        key = c.get(f"/api/transactions/{t.fingerprint}/bill").get_json()["bill_key"]
+        assert key
+        assert c.delete(f"/api/income-bills/bills/{key}").status_code == 200
+        assert c.get(f"/api/transactions/{t.fingerprint}/bill").get_json()["bill_key"] is None

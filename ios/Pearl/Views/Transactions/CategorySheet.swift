@@ -45,6 +45,8 @@ struct CategorySheet: View {
     /// One page (the redesign): every answer on one scroll, and a tile answers
     /// at once, with Undo after. No tabs, Save or Continue.
     var answersAtOnce = false
+    /// Off when the page behind this sheet already has the switch.
+    var showsAlways = true
     /// The Always switch: whether new rows from the merchant sort the same way.
     @State private var newOnes = true
 
@@ -62,9 +64,10 @@ struct CategorySheet: View {
          onDelete: (() -> Void)? = nil, preview: ((String, Bool) async -> String?)? = nil,
          notSpending: [CaseTile]? = nil, startNotSpending: Bool = false, onCase: ((String, Bool) -> Void)? = nil,
          confirmsCurrent: Bool = false, caseRule: ((String) -> String?)? = nil, extras: AnyView? = nil,
-         answersAtOnce: Bool = false, newOnesOn: Bool = true,
+         answersAtOnce: Bool = false, newOnesOn: Bool = true, showsAlways: Bool = true,
          onSave: @escaping (String, Bool) -> Void) {
         self.answersAtOnce = answersAtOnce
+        self.showsAlways = showsAlways
         _newOnes = State(initialValue: newOnesOn)
         self.confirmsCurrent = confirmsCurrent
         self.caseRule = caseRule
@@ -110,7 +113,7 @@ struct CategorySheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     header
-                    if let merchant = merchant {
+                    if let merchant = merchant, showsAlways {
                         Toggle(isOn: $newOnes) {
                             Text("Always for \(merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
                                 .fixedSize(horizontal: false, vertical: true)
