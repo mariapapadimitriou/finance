@@ -162,13 +162,16 @@ def income_bills_expected():
     """I-03: the income she expects each month. The same figure as the one
     she tells Home (`home_income`), so there is one, not two."""
     body = _body()
+    varies = bool(body.get("varies"))
     amount = ib.clean_amount(body.get("amount"))
-    if amount is None:
+    # Her latest answer wins (decision 7): "it changes" means Pearl plans
+    # carefully, so no typed amount stands beside it; an amount means it doesn't.
+    if amount is None and not varies:
         return _error("Enter what you expect each month after tax, like 3800.")
     st = store()
     state = ib.load(st)
-    st.set_setting("home_income", str(amount))
-    state["varies"] = bool(body.get("varies"))
+    st.set_setting("home_income", "" if varies else str(amount))
+    state["varies"] = varies
     state["income_on"] = state["income_on"] or _today_iso()
     ib.save(st, state)
     _sync_plan_income(st, state)

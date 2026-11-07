@@ -287,8 +287,15 @@ def _confirmed_pay(pays: list[dict], received: list[Transaction], lines: list,
         from_payer = [date.fromisoformat(t.date[:10]) for t in landed
                       if p.get("payer") and (t.merchant or t.description) == p["payer"]]
         if p["cadence"] == "irregular" or not p.get("next"):
-            got_c = sum(_cents(-_mine(t)) for t in received
-                        if p.get("payer") and (t.merchant or t.description) == p["payer"])
+            if p.get("payer"):
+                got_c = sum(_cents(-_mine(t)) for t in received
+                            if (t.merchant or t.description) == p["payer"])
+            else:
+                # Added by hand, with no payer to watch: what came in this month
+                # that isn't her other pay counts toward it (gap 14).
+                others = {q.get("payer") for q in pays if q.get("payer")}
+                got_c = sum(_cents(-_mine(t)) for t in received
+                            if (t.merchant or t.description) not in others)
             rest_c = max(each_c - got_c, 0)
             if rest_c:
                 lines.append({"label": p["name"], "date": None, "amount": _dollars(rest_c),

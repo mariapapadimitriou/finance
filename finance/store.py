@@ -629,11 +629,11 @@ _CHARGES = """(
     SELECT t.id AS txn_id,
            COALESCE(m.bank_id, o.bank_id) AS bank_id,
            CASE WHEN m.amount IS NOT NULL
-                     AND m.amount < COALESCE(s.my_share, t.amount - COALESCE(pb.total, 0)) - COALESCE(iv.amount, 0)
+                     AND m.amount < _MINE_
                      THEN m.amount
-                WHEN COALESCE(s.my_share, t.amount - COALESCE(pb.total, 0)) - COALESCE(iv.amount, 0) < 0
+                WHEN _MINE_ < 0
                      THEN 0
-                ELSE COALESCE(s.my_share, t.amount - COALESCE(pb.total, 0)) - COALESCE(iv.amount, 0)
+                ELSE _MINE_
                 END AS charged,
            CASE WHEN m.txn_id IS NULL THEN 1 ELSE 0 END AS auto
       FROM transactions t
@@ -641,6 +641,7 @@ _CHARGES = """(
       LEFT JOIN txn_shares s ON s.txn_id = t.id
       LEFT JOIN txn_invested iv ON iv.txn_id = t.id
       LEFT JOIN _PAYBACKS_ pb ON pb.charge_id = t.id
+      LEFT JOIN _REFUNDS_ rf ON rf.charge_id = t.id
       LEFT JOIN (SELECT bc.category AS category, b.id AS bank_id,
                         b.start_month AS start_month
                    FROM piggy_bank_categories bc
@@ -671,7 +672,22 @@ _PAYBACKS = """(
       JOIN transactions r ON r.id = p.inflow_id
      GROUP BY p.charge_id
 )"""
-_CHARGES = _CHARGES.replace("_PAYBACKS_", _PAYBACKS)
+# What linked refunds gave back for each charge, as a positive total.
+_REFUNDS = """(
+    SELECT f.charge_id AS charge_id, SUM(-r.amount) AS total
+      FROM txn_refunds f
+      JOIN transactions r ON r.id = f.inflow_id
+     GROUP BY f.charge_id
+)"""
+# Her part of a charge: her share, or what's left after paybacks, less linked
+# refunds (shared the way the purchase was, decision 6) and what was invested.
+# A bank is never charged for money that came back (the logic review, gap 5).
+_MINE = """(CASE WHEN s.my_share IS NOT NULL
+                  THEN s.my_share * (1 - COALESCE(COALESCE(rf.total, 0) / NULLIF(t.amount, 0), 0))
+                  ELSE t.amount - COALESCE(pb.total, 0) - COALESCE(rf.total, 0)
+             END - COALESCE(iv.amount, 0))"""
+_CHARGES = (_CHARGES.replace("_MINE_", _MINE).replace("_PAYBACKS_", _PAYBACKS)
+            .replace("_REFUNDS_", _REFUNDS))
 
 # The columns every transaction loader adds, joined as `a` on `_CHARGES`.
 # A bank pays your share of a charge, never more: friends who paid you back
