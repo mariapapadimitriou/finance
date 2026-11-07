@@ -127,8 +127,10 @@ def _counts_as_income(t: Transaction) -> bool:
     instead, and an e-Transfer from a friend that isn't marked as pay looks
     like a repayment, not Income (THL-127 I-01)."""
     from .income_bills import looks_like_etransfer
+    # Income she named herself counts, however it came (the logic review, gap 7).
     return (is_income(t) and not t.repays and not is_others(t)
-            and not (looks_like_etransfer(t) and kind_of(t) != "salary"))
+            and not (looks_like_etransfer(t) and kind_of(t) != "salary"
+                     and t.income_type_source != "user"))
 
 
 def _received(transactions: list[Transaction], month: str, today: date) -> list[Transaction]:
@@ -262,7 +264,7 @@ def _at_least(amount: float, received_c: int, lines: list, label: str) -> int:
 
 
 def _confirmed_pay(pays: list[dict], received: list[Transaction], lines: list,
-                   today: date) -> tuple[int, str | None]:
+                   today: date, transactions: list[Transaction] | None = None) -> tuple[int, str | None]:
     """The paydays of her confirmed pay (THL-127 I-01, I-02) still to come
     this month, as lines; returns their cents and the next payday.
 
@@ -277,7 +279,12 @@ def _confirmed_pay(pays: list[dict], received: list[Transaction], lines: list,
     upcoming: list[date] = []
     for p in pays:
         each_c = _cents(p["amount"])
-        from_payer = [date.fromisoformat(t.date[:10]) for t in received
+        # A payday on the 1st that landed on the 30th has still landed: look at
+        # the last few days of last month too (the logic review, gap 3).
+        since = (first - timedelta(days=PAY_TOLERANCE_DAYS)).isoformat()
+        landed = received + [t for t in (transactions or [])
+                             if since <= t.date[:10] < first.isoformat() and _counts_as_income(t)]
+        from_payer = [date.fromisoformat(t.date[:10]) for t in landed
                       if p.get("payer") and (t.merchant or t.description) == p["payer"]]
         if p["cadence"] == "irregular" or not p.get("next"):
             got_c = sum(_cents(-_mine(t)) for t in received
@@ -290,8 +297,12 @@ def _confirmed_pay(pays: list[dict], received: list[Transaction], lines: list,
             continue
         anchor = date.fromisoformat(p["next"])
         start = first if p.get("payer") else today
+        # Pay she added by hand has no payer to watch, so a deposit of about
+        # its amount within a few days says that payday landed (gap 14).
+        like = [date.fromisoformat(t.date[:10]) for t in received
+                if not p.get("payer") and abs(-_mine(t) - p["amount"]) <= max(1.0, p["amount"] * 0.05)]
         for d in occurrences(anchor, p["cadence"], start, end):
-            if any(abs((d - a).days) <= PAY_TOLERANCE_DAYS for a in from_payer):
+            if any(abs((d - a).days) <= PAY_TOLERANCE_DAYS for a in from_payer + like):
                 continue
             lines.append({"label": p["name"], "date": d.isoformat(),
                           "amount": _dollars(each_c), "arrived": False, "kind": "salary"})
@@ -380,7 +391,7 @@ def income_this_month(transactions: list[Transaction], today: date,
         return {**none, "amount": _dollars(amount_c), "source": "told", "lines": lines,
                 "cautious": careful, "overridden": overridden}
     if pays:
-        expected_c, next_pay = _confirmed_pay(pays, received, lines, today)
+        expected_c, next_pay = _confirmed_pay(pays, received, lines, today, transactions)
         names = {p.get("payer") for p in pays if p.get("payer")}
         paycheques = sum(1 for line in lines
                          if (line["kind"] == "salary" and not line["arrived"])
@@ -467,8 +478,16 @@ def _due(rec: dict, today: date) -> list[date]:
                 due.append(d)
             d += step
     elif rec["cadence"] == "monthly":
-        if not charged_this_month:
-            due.append(_on_day(today.year, today.month, last.day))
+        # A charge belongs to the month whose usual day it's nearest, so rent
+        # paid early on Oct 30 is November's, and a bill on the 30th that
+        # posts Nov 2 is October's (the logic review, gap 11).
+        usual = sorted(_month_day(d) for d in dates[-6:])[len(dates[-6:]) // 2]
+        here = _usual_date(today.year, today.month, usual)
+        before, after = _usual_date(*_shift(today, -1), usual), _usual_date(*_shift(today, 1), usual)
+        paid = any(abs((d - here).days) < min(abs((d - before).days), abs((d - after).days))
+                   for d in dates)
+        if not paid:
+            due.append(here)
     else:                                   # bimonthly, quarterly, semiannual, annual
         d = date.fromisoformat(rec["next_expected"])
         if first <= d <= end and not charged_this_month:
@@ -476,9 +495,41 @@ def _due(rec: dict, today: date) -> list[date]:
     return due
 
 
+def _month_day(d: date) -> int:
+    """A charge's day of the month, the last few days counted back from the
+    end (-1 is the last day), so the 30th and the 31st are one day."""
+    length = calendar.monthrange(d.year, d.month)[1]
+    return d.day - length - 1 if d.day > length - PAY_TOLERANCE_DAYS else d.day
+
+
+def _usual_date(year: int, month: int, day: int) -> date:
+    length = calendar.monthrange(year, month)[1]
+    return date(year, month, length + day + 1 if day < 0 else min(day, length))
+
+
+def _shift(d: date, months: int) -> tuple[int, int]:
+    m = d.month - 1 + months
+    return d.year + m // 12, m % 12 + 1
+
+
 def _answered(confirm: dict | None) -> bool:
     return bool(confirm and (confirm.get("bills") or confirm.get("added")
-                             or confirm.get("rent")))
+                             or confirm.get("rent") or confirm.get("shares")))
+
+
+def _bill_parts(transactions: list[Transaction], today: date, confirm: dict | None) -> dict[str, float]:
+    """Her part of each bill that isn't all hers, by merchant: what the
+    charge paying it counts at (decision 5)."""
+    if not _answered(confirm):
+        return {}
+    from .categorize import merchant_key
+    from .income_bills import bills
+    out = {}
+    for b in bills(transactions, today, confirm):
+        full = float(b.get("full") or 0)
+        if b.get("merchant") and b["counts"] is not False and full > 0 and b["amount"] < full - 0.005:
+            out[merchant_key(b["merchant"])] = round(b["amount"] / full, 6)
+    return out
 
 
 def _confirmed_bills(transactions: list[Transaction], today: date,
@@ -499,6 +550,16 @@ def _confirmed_bills(transactions: list[Transaction], today: date,
         rent_seen = rent_seen or b["category"] == RENT
         if b["source"] == "added":
             due = occurrences(date.fromisoformat(b["next"]), b["cadence"], today, end)
+            # A bill she added is paid by a charge from its merchant: this
+            # month's for a monthly bill, one close by for the rest (gap 12).
+            who = " ".join((b.get("merchant") or b["name"] or "").lower().split())
+            paid = [date.fromisoformat(t.date[:10]) for t in transactions
+                    if t.amount > 0 and who and " ".join((t.merchant or "").lower().split()) == who
+                    and t.date[:10] <= today.isoformat() and counts_as_spending(t)]
+            if b["cadence"] == "monthly":
+                due = [d for d in due if not any((c.year, c.month) == (d.year, d.month) for c in paid)]
+            else:
+                due = [d for d in due if not any(abs((d - c).days) <= PAY_TOLERANCE_DAYS for c in paid)]
         elif b["edited"]:
             charged = [date.fromisoformat(d) for d in b["dates"]]
             due = [d for d in occurrences(date.fromisoformat(b["next"]), b["cadence"], first, end)
@@ -544,8 +605,12 @@ def bills_to_come(transactions: list[Transaction], today: date,
                             "late": d < today, "category": rec["category"],
                             "suggested": True})
     if told_rent and told_rent > 0 and not rent_seen:
+        # Rent paid by e-Transfer and not sorted yet is still rent paid: about
+        # the amount she told us, this month (gap 17).
         paid_c = sum(_cents(spend_amount(t)) for t in transactions
-                     if t.month == month and t.category == RENT and counts_as_spending(t))
+                     if t.month == month and counts_as_spending(t)
+                     and (t.category == RENT or (t.category == "Unsorted transfers"
+                                                 and abs(t.amount - told_rent) <= told_rent * 0.1)))
         if paid_c < _cents(told_rent) * 0.8:
             out.append({"label": "Rent or mortgage", "date": None,
                         "amount": _dollars(_cents(told_rent)), "estimate": False,
@@ -576,15 +641,25 @@ GROUP_LABELS = {"essentials": "Essentials", "lifestyle": "Lifestyle",
                 "transfer": "Transfers we couldn't place"}
 
 
-def already_spent(transactions: list[Transaction], today: date) -> dict:
-    """Everything spent this month so far, pending included (S8)."""
+def already_spent(transactions: list[Transaction], today: date,
+                  parts: dict[str, float] | None = None) -> dict:
+    """Everything spent this month so far, pending included (S8).
+
+    `parts` is her part of a bill by merchant (a share she gave, less what a
+    roommate covers): the charge that pays the bill counts at that part, as
+    the bill was held back at it (decision 5, gap 10)."""
+    from .categorize import merchant_key
     month = today.strftime("%Y-%m")
     by_group: dict[str, int] = {}
     pending_c = 0
     for t in transactions:
         if t.month != month or t.date > today.isoformat() or not counts_as_spending(t):
             continue
-        c = _cents(spend_amount(t))
+        part = (parts or {}).get(merchant_key(t.merchant or ""))
+        amount = spend_amount(t)
+        if part is not None and t.my_share is None:
+            amount = round(amount * part, 2)
+        c = _cents(amount)
         g = group_of(t.category or "Other")
         by_group[g] = by_group.get(g, 0) + c
         if (t.raw or {}).get("pending"):
@@ -619,6 +694,49 @@ def round_50(amount: float) -> int:
     return int((amount + 25) // 50) * 50
 
 
+def from_last_month(transactions: list[Transaction], today: date) -> dict | None:
+    """What belongs to this month though it landed against the last one.
+
+    - Pay due at the turn of the month that arrived in its last few days,
+      when nothing from that payer has come since: November's pay on Oct 30.
+    - Money back (a friend's payback, a refund, a reimbursement) that arrived
+      this month for a charge in an earlier month: it came off that month,
+      which is over.
+    Returns {"amount_c", "lines"}, or None.
+    """
+    from .income_bills import payer_of
+    first = today.replace(day=1)
+    since = (first - timedelta(days=PAY_TOLERANCE_DAYS)).isoformat()
+    month = today.strftime("%Y-%m")
+    by_id = {t.fingerprint: t for t in transactions}
+    lines, total_c = [], 0
+    pay = [t for t in transactions if _counts_as_income(t) and t.date[:10] <= today.isoformat()]
+    for t in pay:
+        if not (since <= t.date[:10] < first.isoformat()):
+            continue
+        who = payer_of(t) or t.merchant
+        earlier = sorted(date.fromisoformat(x.date[:10]) for x in pay
+                         if (payer_of(x) or x.merchant) == who and x.date[:10] < since)
+        came_since = any((payer_of(x) or x.merchant) == who and x.date[:10] >= first.isoformat() for x in pay)
+        days = _pay_days_of_month(earlier + [date.fromisoformat(t.date[:10])])
+        # Due at the turn of the month: the 1st (or so), or month end.
+        if came_since or len(earlier) < 2 or not any(d <= PAY_TOLERANCE_DAYS or d == 31 for d in days):
+            continue
+        c = _cents(-_mine(t))
+        total_c += c
+        lines.append({"label": f"{who} pay, early", "amount": _dollars(c)})
+    for t in transactions:
+        if t.amount >= 0 or t.month != month or t.date[:10] > today.isoformat() or is_others(t):
+            continue
+        charge = by_id.get(t.repays or getattr(t, "refund_of", None) or "")
+        if charge is None or charge.month >= month:
+            continue
+        c = _cents(abs(t.repays_amount) if t.repays and t.repays_amount else -t.amount)
+        total_c += c
+        lines.append({"label": f"Back for {charge.merchant or charge.description}", "amount": _dollars(c)})
+    return {"amount_c": total_c, "lines": lines} if total_c else None
+
+
 def compute(transactions: list[Transaction], today: date, *,
             entered_income: float = 0.0, told_income: float = 0.0,
             told_rent: float = 0.0, overridden: bool = False,
@@ -630,9 +748,9 @@ def compute(transactions: list[Transaction], today: date, *,
     ones still to come join the bills, and what's been paid of them joins
     what's already spent (D1, D2). `confirm` is her income and bills check
     (`income_bills.load`, THL-127): confirmed pay drives what comes in, and
-    the bills she ticked or added are the bills. `carry` is last month's
-    surplus or shortfall coming into this one (`carryover.applied`): a row of
-    its own, added or taken off, so the rows still add up (THL-212).
+    the bills she ticked or added are the bills. `carry` overrides what
+    comes in from last month (`from_last_month`, decision 4): a row of its
+    own, so the rows still add up.
     `moved_to_savings` is what she actually moved to savings this month
     (THL-230: transfers marked Saved, less any taken back out; chests fill
     from her Anchor, not from the month), worked out here from the ledger
@@ -664,7 +782,7 @@ def compute(transactions: list[Transaction], today: date, *,
                 "per_day": None, "over_by": None, "rows": []}
 
     bills = bills_to_come(transactions, today, told_rent, confirm)
-    spent = already_spent(transactions, today)
+    spent = already_spent(transactions, today, _bill_parts(transactions, today, confirm))
     debt_paid_c = 0
     if debt_bills:
         bills = sorted(bills + debt_bills["lines"], key=lambda b: (b["date"] or "9999", b["label"]))
@@ -692,11 +810,14 @@ def compute(transactions: list[Transaction], today: date, *,
     rows.append({"key": "saved", "amount_c": saved_c, "lines": []})
 
     total_c = rows[0]["amount_c"] - sum(r["amount_c"] for r in rows[1:])
-    if carry and carry.get("amount_c"):
-        total_c += carry["amount_c"]
-        rows.append({"key": "carryover", "amount_c": abs(carry["amount_c"]),
-                     "kind": "spare" if carry["amount_c"] > 0 else "short",
-                     "parts": carry.get("parts") or [], "lines": []})
+    # From last month (decision 4): pay that came early for this month, and
+    # money back linked this month to last month's charges. Each counts here,
+    # where it can still be spent; last month is closed.
+    carried = from_last_month(transactions, today) if carry is None else carry
+    if carried and carried.get("amount_c"):
+        total_c += carried["amount_c"]
+        rows.append({"key": "from_last_month", "amount_c": carried["amount_c"],
+                     "lines": carried.get("lines") or []})
     for r in rows:
         r["amount"] = _dollars(r.pop("amount_c"))
     over = total_c < 0

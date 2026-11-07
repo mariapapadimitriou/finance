@@ -121,7 +121,7 @@ def test_income_type_guesses_and_three_paycheque_months(client):
     assert [i["txn"]["description"] for i in q["income_type"]] == ["ODD DEPOSIT"]
     assert q["income_type"][0]["guess"] == "other"
     assert q["three_pay_month"], "biweekly pay over half a year holds a third paycheque"
-    assert "26" in q["three_pay_month"][0]["reason"]
+    assert "two paycheques a month" in q["three_pay_month"][0]["reason"]
 
 
 def test_unsorted_transfers_are_in_the_queue_and_count(client):

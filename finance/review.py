@@ -393,8 +393,8 @@ def build(transactions: list[Transaction], today: str | None = None,
         three.append({"key": key, "month": m, "paycheque": pay["paycheque"],
                       "monthly": pay["monthly"],
                       "reason": "Paid every two weeks, so two months a year hold a "
-                                "third paycheque. Your plan uses a typical month: "
-                                "one paycheque × 26 ÷ 12."})
+                                "third paycheque. Your plan counts two paycheques "
+                                "a month, so the third isn’t a raise."})
 
     # 6. Likely duplicates: is this the same purchase? (THL-165 D-02). Asked
     # until answered, however old: until then the copy is counted once.
@@ -504,6 +504,14 @@ def for_store(st, today: str | None = None) -> dict:
             row["merchant"] = full
     from .pairs import annotate
     annotate(st, review, txns, today)
+    # Questions about her plan (finance/checks.py): Yes or No cards.
+    from . import checks
+    from . import api as core_api
+    review["checks"] = checks.build(st, txns, today or core_api._today_iso())
+    open_checks = sum(1 for c in review["checks"] if not c["skipped"])
+    review["count"] += len(review["checks"])
+    review["open"] += open_checks
+    review["skipped"] += len(review["checks"]) - open_checks
     from . import sorted_log
     from . import api as core
     day = today or core._today_iso()
@@ -536,7 +544,7 @@ def ids_in(review: dict) -> set[str]:
     out = {t["id"] for t in (review.get("unsorted") or {}).get("transfers", [])}
     for it in review.get("recurring_transfer") or []:
         out.update(it.get("asked") or [])
-    for part in ("unsure_category", "money_in", "joint_in", "who_sent", "income_type", "duplicate"):
+    for part in ("unsure_category", "money_in", "joint_in", "who_sent", "income_type", "duplicate", "checks"):
         for it in review.get(part) or []:
             if it.get("txn"):
                 out.add(it["txn"]["id"])

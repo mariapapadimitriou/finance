@@ -167,14 +167,18 @@ def cadence(transactions: list[Transaction], today: str | None = None) -> dict |
      "three_pay_months": months that held a third paycheque}
     or None with fewer than three paycheques to go on.
     """
+    from .analytics import _mine, is_others
     end = date.fromisoformat(today) if today else date.today()
     start = end - timedelta(days=183)
     # Paycheques on the same day (a split deposit) count as one.
     by_day: dict[str, float] = {}
     pay = [t for t in transactions
-           if is_income(t) and kind_of(t) == "salary" and t.date[:10] >= start.isoformat()]
+           if is_income(t) and kind_of(t) == "salary" and t.date[:10] >= start.isoformat()
+           # Someone else's pay into a shared account isn't her schedule, and
+           # pay that's both of theirs is planned at her share (gap 2).
+           and not is_others(t)]
     for t in _main_pay(pay):
-        by_day[t.date[:10]] = by_day.get(t.date[:10], 0.0) - t.amount
+        by_day[t.date[:10]] = by_day.get(t.date[:10], 0.0) - _mine(t)
     days = sorted(by_day)
     if len(days) < 3:
         return None

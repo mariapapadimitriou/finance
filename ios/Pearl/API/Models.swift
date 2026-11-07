@@ -1045,6 +1045,8 @@ struct Review: Decodable {
     let whoSent: [Item]
     let duplicate: [Item]
     let recurringTransfer: [Item]
+    /// "Is TD Savings where you save?", "Still paid by Acme?".
+    let checks: [Item]
     /// T-74: months that held a third paycheque. No transaction to sort;
     /// "Got it" dismisses one.
     let threePayMonth: [PayMonth]
@@ -1073,6 +1075,7 @@ struct Review: Decodable {
         case jointIn = "joint_in"
         case whoSent = "who_sent"
         case recurringTransfer = "recurring_transfer"
+        case checks
         case threePayMonth = "three_pay_month"
         case sortedToday = "sorted_today"
         case pearlSorted = "pearl_sorted"
@@ -1094,6 +1097,7 @@ struct Review: Decodable {
         whoSent = items(.whoSent)
         duplicate = items(.duplicate)
         recurringTransfer = items(.recurringTransfer)
+        checks = items(.checks)
         sortedToday = (try? c.decodeIfPresent(Int.self, forKey: .sortedToday)) ?? 0
         pearlSorted = (try? c.decodeIfPresent(Int.self, forKey: .pearlSorted)) ?? 0
         threePayMonth = (try? c.decodeIfPresent([Lenient<PayMonth>].self, forKey: .threePayMonth))?
@@ -1225,6 +1229,8 @@ struct Review: Decodable {
 /// What Needs a look asks about (T-10), each row's dashed chip naming it.
 enum Question: Hashable {
     case category, transfer, moneyIn, incomeType, joint, whoSent, duplicate, recurring
+    /// A question about her plan, not a category: Yes or No (finance/checks.py).
+    case check
 }
 
 struct Ask: Identifiable, Hashable {
@@ -1296,6 +1302,7 @@ struct Ask: Identifiable, Hashable {
     /// Yes: this row, and the rule when `newOnes` says so. Every merchant gets
     /// a Yes; one card is one transaction.
     func yesAnswer(_ accounts: [AccountsOverview.Account], newOnes: Bool? = nil) -> ReviewAnswer {
+        if kind == .check { return .check(item.key, yes: true) }
         if item.pair != nil { return .pair(t.id) }
         if incomeGuess != nil, let kind = item.guess?.text { return .incomeType(t.id, kind: kind) }
         let rule = newOnes ?? savesRule(accounts)
@@ -1333,6 +1340,7 @@ struct Ask: Identifiable, Hashable {
         case .whoSent: return "Who sent this?"
         case .duplicate: return "Same purchase?"
         case .recurring: return "Recurring?"
+        case .check: return item.pair?.question ?? "Is this right?"
         }
     }
 }
@@ -1352,6 +1360,7 @@ extension Review {
         out += whoSent.map { Ask(kind: .whoSent, item: $0) }
         out += duplicate.map { Ask(kind: .duplicate, item: $0) }
         out += recurringTransfer.map { Ask(kind: .recurring, item: $0) }
+        out += checks.map { Ask(kind: .check, item: $0) }
         return out
     }
 }

@@ -65,6 +65,8 @@ def ingest(store: Store, result: IngestResult, filename: str = "",
 
 def _settle(store: Store) -> int:
     """What new rows change across the ledger. Returns possible duplicates."""
+    # A posted row that replaced a pending one takes what she said about it.
+    store.move_pending_answers()
     # A new arrival can be the other end of a transfer already here, and a
     # new departure may have its other end here already.
     classify_ledger(store)
@@ -101,9 +103,13 @@ def recategorize_all(store: Store) -> int:
     overrides = store.overrides()
     apply_categories(transactions, overrides)
 
+    # A row she said Yes to keeps her answer, as a row set by hand does (gap 25).
+    confirmed = store.confirmed_categories()
     updated = 0
     with store.conn() as c:
         for t in transactions:
+            if t.fingerprint in confirmed:
+                continue
             cur = c.execute(
                 """UPDATE transactions SET category = ?, category_source = ?
                    WHERE id = ? AND category_source != 'user'""",

@@ -738,6 +738,7 @@ class Store:
             c.executescript(SCHEMA)
         self._migrate_buckets()
         self._migrate_allocation_amounts()
+        self._migrate_exclusion_whole_name()
         self._migrate_plaid_error_code()
         self._migrate_plaid_logo()
         self._migrate_joint_share()
@@ -950,6 +951,17 @@ class Store:
                 """UPDATE piggy_allocations SET amount = (
                        SELECT t.amount FROM transactions t WHERE t.id = txn_id)
                     WHERE amount IS NULL""")
+
+    def _migrate_exclusion_whole_name(self) -> None:
+        """Add `exclusion_rules.whole_name`: a rule made from a transaction
+        ("Leave out every Bar") matches that merchant's whole name, not any
+        name containing the word (decision 9). Tried, and a failure read as
+        "already there", as above."""
+        try:
+            with self.conn() as c:
+                c.execute("ALTER TABLE exclusion_rules ADD COLUMN whole_name INTEGER DEFAULT 0")
+        except Exception:                                        # noqa: BLE001
+            return
 
     def _migrate_plaid_error_code(self) -> None:
         """Add `plaid_items.error_code`: Plaid's own code for the last error
@@ -1276,11 +1288,12 @@ class Store:
 
     def add_exclusion_rule(self, rule: dict) -> int:
         cols = ("account_id", "keyword", "counterparty", "date_from", "date_to",
-                "amount_min", "amount_max", "reason")
+                "amount_min", "amount_max", "reason", "whole_name")
         with self.conn() as c:
             c.execute(f"INSERT INTO exclusion_rules ({', '.join(cols)}) "
                       f"VALUES ({', '.join('?' for _ in cols)})",
-                      tuple(rule.get(k) for k in cols))
+                      tuple((1 if rule.get(k) else 0) if k == "whole_name" else rule.get(k)
+                            for k in cols))
             return int(c.execute("SELECT MAX(id) AS id FROM exclusion_rules")
                        .fetchone()["id"])
 
@@ -2004,6 +2017,13 @@ class Store:
                     else:
                         c.execute(f"UPDATE {table} SET {col} = ? WHERE {col} = ?", (new, old))
                 c.execute("UPDATE txn_paybacks SET charge_id = ? WHERE charge_id = ?", (new, old))
+                # A linked refund and the kind of payback move too (gap 23).
+                for table in ("txn_refunds", "txn_payback_kind"):
+                    if c.execute(f"SELECT 1 FROM {table} WHERE inflow_id = ?", (new,)).fetchone():
+                        c.execute(f"DELETE FROM {table} WHERE inflow_id = ?", (old,))
+                    else:
+                        c.execute(f"UPDATE {table} SET inflow_id = ? WHERE inflow_id = ?", (new, old))
+                c.execute("UPDATE txn_refunds SET charge_id = ? WHERE charge_id = ?", (new, old))
                 for col in ("inflow_id", "charge_id"):
                     other = "charge_id" if col == "inflow_id" else "inflow_id"
                     c.execute(f"DELETE FROM txn_payback_more WHERE {col} = ? AND {other} IN "
@@ -3164,6 +3184,45 @@ class Store:
         with self.conn() as c:
             cur = c.execute("DELETE FROM plaid_items WHERE item_id = ?", (item_id,))
             return cur.rowcount > 0
+
+    PENDING_KEY = "pending_answers"
+
+    def keep_answers_for(self, posted: dict[str, str]) -> None:
+        """A pending row is about to be replaced by its posted twin: remember
+        which, by Plaid's ids ({posted plaid id: pending plaid id}), so what
+        she said about the pending row moves to the posted one once it has
+        arrived (gap 22). Matched only on Plaid's own ids."""
+        if not posted:
+            return
+        keep = {}
+        with self.conn() as c:
+            for new_pid, old_pid in posted.items():
+                row = c.execute("SELECT id FROM transactions WHERE raw LIKE ?",
+                                (f'%"plaid_id": "{old_pid}"%',)).fetchone()
+                if row:
+                    keep[new_pid] = row["id"]
+        if keep:
+            waiting = json.loads(self.setting(self.PENDING_KEY) or "{}")
+            waiting.update(keep)
+            self.set_setting(self.PENDING_KEY, json.dumps(waiting))
+
+    def move_pending_answers(self) -> int:
+        """Answers waiting for a posted row that has now arrived move onto it."""
+        waiting = json.loads(self.setting(self.PENDING_KEY) or "{}")
+        if not waiting:
+            return 0
+        mapping, still = {}, {}
+        with self.conn() as c:
+            for new_pid, old_id in waiting.items():
+                row = c.execute("SELECT id FROM transactions WHERE raw LIKE ?",
+                                (f'%"plaid_id": "{new_pid}"%',)).fetchone()
+                if row:
+                    mapping[old_id] = row["id"]
+                else:
+                    still[new_pid] = old_id
+        self.rekey_rows(mapping)
+        self.set_setting(self.PENDING_KEY, json.dumps(still) if still else "")
+        return len(mapping)
 
     def delete_transactions_from(self, plaid_ids: list[str]) -> int:
         """Remove rows Plaid has told us no longer exist.

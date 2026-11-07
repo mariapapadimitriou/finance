@@ -239,6 +239,9 @@ def _sync_one(store, item: dict) -> dict:
     # posted row is the reliable signal.
     removed_ids += [a.get("pending_transaction_id") for a in added
                     if a.get("pending_transaction_id")]
+    # What she said about a pending row goes to its posted twin (gap 22).
+    store.keep_answers_for({a["transaction_id"]: a["pending_transaction_id"] for a in added
+                            if a.get("pending_transaction_id") and a.get("transaction_id")})
     deleted = store.delete_transactions_from(removed_ids)
 
     # A modified row is the same purchase with better information — a merchant

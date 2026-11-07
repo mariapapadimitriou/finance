@@ -35,8 +35,13 @@ def share_amount(t: Transaction) -> float:
     else:
         base = t.amount
     if getattr(t, "refunded", 0.0) and t.amount > 0:
-        # What a refund linked to it gave back (2026-10-24).
-        base = round(max(base - t.refunded, 0.0), 2)
+        # What a refund linked to it gave back (2026-10-24). On a purchase she
+        # shared, the refund is shared the same way (decision 6): a $100
+        # credit on a $400 hotel she paid half of gives her $50 back.
+        if t.my_share is not None and t.amount:
+            base = round(max(base - t.refunded * (t.my_share / t.amount), 0.0), 2)
+        else:
+            base = round(max(base - t.refunded, 0.0), 2)
     if t.invested:
         # The part that was put away was saved, not spent.
         return round(max(base - t.invested, 0.0), 2)
@@ -75,7 +80,13 @@ def spend_amount(t: Transaction) -> float:
     Only your share counts at all: when friends paid you back for part of a
     charge, the part they paid was never yours to budget for.
     """
-    return round(share_amount(t) - (t.bank_amount or 0.0), 2)
+    share = share_amount(t)
+    if t.amount > 0:
+        # A bank never pays more than is hers to pay: a refund or a partner's
+        # share brings her part down, and spending can't go below nothing
+        # (the logic review, gap 5).
+        return round(max(share - (t.bank_amount or 0.0), 0.0), 2)
+    return round(share - (t.bank_amount or 0.0), 2)
 
 
 def counts_as_spending(t: Transaction) -> bool:
@@ -96,6 +107,14 @@ def counts_as_spending(t: Transaction) -> bool:
         return False
     # A refund linked to its purchase already came off it (2026-10-24).
     if getattr(t, "refund_of", None) and t.amount < 0:
+        return False
+    # So did money linked as paying back a charge: counting it here too would
+    # take it off twice (the logic review, gap 1).
+    if t.repays and t.amount < 0:
+        return False
+    # A deposit nothing recognised isn't a refund until she says what it is,
+    # the way money going out counts as spent until she answers (decision 3).
+    if t.amount < 0 and (t.category or "Other") == "Other" and t.category_source in (None, "", "rule"):
         return False
     # A partly covered charge still counts, for the part nobody budgeted. A
     # charge friends paid back in full counts for nothing at all.
@@ -301,10 +320,11 @@ def invested_in(transactions: list[Transaction], month: str) -> float:
     """
     total = 0.0
     for t in transactions:
-        if t.month != month or t.excluded:
+        if t.month != month or t.excluded or is_others(t):
             continue
         if (t.category or "") == "Saved":
-            total += t.amount
+            # On a joint account, her share of it (the logic review, gap 18).
+            total += t.my_share if t.joint and t.my_share is not None else t.amount
         elif t.invested:
             total += t.invested
     return round(total, 2)

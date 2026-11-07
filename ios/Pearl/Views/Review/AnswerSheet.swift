@@ -104,7 +104,7 @@ struct AnswerSheet: View {
         switch ask.kind {
         // T-52: straight to the categories, on the page with every other answer.
         case .category: first = ask.t.inflow ? .into : .out
-        case .duplicate: first = .guess
+        case .duplicate, .check: first = .guess
         case .transfer: first = ask.savedTo(accounts) != nil ? .guess : .out
         case .moneyIn:
             switch ask.item.guess?.action {
@@ -325,7 +325,8 @@ struct AnswerSheet: View {
                 }
                 .padding(.horizontal, 16)
             } else {
-                QuestionHeader(name: who, amount: amountText, tone: tone, sub: nil).padding(.horizontal, 16)
+                QuestionHeader(name: who, amount: amountText, tone: tone,
+                               sub: ask.kind == .check ? ask.evidence : nil).padding(.horizontal, 16)
             }
             HStack(spacing: 10) {
                 Button(yesLabel) { yes() }.buttonStyle(NacreButtonStyle())
@@ -336,7 +337,7 @@ struct AnswerSheet: View {
                     .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
-            if ask.kind != .duplicate && t.learnable != false {
+            if ask.kind != .duplicate && ask.kind != .check && t.learnable != false {
                 Button("Just this one") { yes(remember: false) }
                     .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             }
@@ -367,6 +368,7 @@ struct AnswerSheet: View {
     private var guessTitle: String {
         switch ask.kind {
         case .duplicate: return "Same purchase?"
+        case .check: return ask.item.pair?.question ?? "Is this right?"
         case .moneyIn: return "From your own account?"
         case .transfer: return "Saved to \(ask.savedTo(accounts) ?? "savings")?"
         default: return "\(ask.item.guess?.text ?? t.category ?? "Other")?"
@@ -374,13 +376,16 @@ struct AnswerSheet: View {
     }
 
     private var yesLabel: String { ask.kind == .duplicate ? "Yes, count it once" : "Yes" }
-    private var noLabel: String { ask.kind == .duplicate ? "No, both are real" : "Something else" }
+    private var noLabel: String {
+        ask.kind == .duplicate ? "No, both are real" : ask.kind == .check ? "No" : "Something else"
+    }
 
     /// Yes saves the rule where one can match; Just this one doesn't.
     private func yes(remember: Bool? = nil) {
         let rule = remember ?? (t.learnable != false)
         switch ask.kind {
         case .duplicate: onAnswer(.duplicate(t.id, same: true))
+        case .check: onAnswer(.check(ask.item.key, yes: true))
         case .moneyIn: onAnswer(.mark(t.id, ["case": "own", "remember": rule]))
         case .transfer: onAnswer(.mark(t.id, ["case": "saved", "remember": rule]))
         default: onAnswer(.confirm(t.id))
@@ -390,6 +395,7 @@ struct AnswerSheet: View {
     private func no() {
         switch ask.kind {
         case .duplicate: onAnswer(.duplicate(t.id, same: false))
+        case .check: onAnswer(.check(ask.item.key, yes: false))
         case .moneyIn: go(.into)
         case .transfer: go(.out)
         default:
