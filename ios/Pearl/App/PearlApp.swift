@@ -146,7 +146,6 @@ struct MainTabs: View {
     /// something new needs a look; it walks every open question.
     @State private var quickSort: [Ask] = []
     @State private var quickSortNames: [String] = []
-    @State private var quickSortMonths: [Review.PayMonth] = []
     @State private var offered = false
     /// SEC-10: another device asking to sign in as her, and the ones she's seen.
     @State private var approval: Approval?
@@ -178,8 +177,7 @@ struct MainTabs: View {
         // Part of this screen, not presented over it: nothing dismissed inside can close it.
         .overlay {
             if !quickSort.isEmpty {
-                QuickSortView(asks: quickSort, categories: app.categories, names: quickSortNames,
-                              months: quickSortMonths) { quickSort = [] }
+                QuickSortView(asks: quickSort, categories: app.categories, names: quickSortNames) { quickSort = [] }
             }
         }
     }
@@ -204,7 +202,6 @@ struct MainTabs: View {
         guard let prompt: QuickSortPrompt = try? await app.api.get("api/quick-sort"),
               prompt.show, !prompt.asks.isEmpty else { return }
         quickSortNames = prompt.review?.people ?? []
-        quickSortMonths = prompt.review?.threePayMonth.filter { $0.skipped != true } ?? []
         quickSort = prompt.asks
     }
 

@@ -107,3 +107,92 @@ class TestPairCards:
         item = next(i for i in review(client)["money_in"] if i["txn"]["merchant"] == "Mystery Deposit")
         assert "pair" not in item
         assert client.post(f"/api/review/pair/{item['txn']['id']}").status_code == 409
+
+
+class TestQuestionsPearlWasntAsking:
+    def test_money_in_with_nothing_to_refund_is_asked(self, client):
+        t = inflow("2026-10-14", "ATM Deposit", 200.00)
+        t.category = "Other"
+        ledger(client, [t])
+        item = next(i for i in review(client)["money_in"] if i["txn"]["merchant"] == "ATM Deposit")
+        assert item["guess"]["action"] == "unknown" and "nothing to refund" in item["reason"]
+
+    def test_money_out_of_savings_is_not_called_a_refund(self, client):
+        t = inflow("2026-10-14", "Questrade", 800.00)
+        t.category = "Saved"
+        ledger(client, [t])
+        assert not [i for i in review(client)["money_in"] if i["txn"]["merchant"] == "Questrade"]
+
+
+class TestNames:
+    def test_a_short_name_joins_the_full_one_only_when_it_can_be_one_person(self):
+        from finance.etransfers import canonical_names
+        def sent(name):
+            t = tx("2026-10-10", name, -10.0, "Transfers", party=name)
+            return t
+        assert canonical_names([sent("Priya S"), sent("Priya Shah")]) == {"Priya S": "Priya Shah"}
+        got = canonical_names([sent("Priya"), sent("Priya Shah"), sent("Priya Patel")])
+        assert "Priya" not in got
+
+
+class TestSortedLists:
+    def test_an_answer_lands_in_sorted_today_and_undo_takes_it_out(self, client):
+        ledger(client, [unsure("2026-10-08", "Bistro Nine", 30.00, "Dining")])
+        item = guess_for(client, "Bistro Nine")[0]
+        out = client.put(f"/api/quick-sort/{item['txn']['id']}",
+                         json={"action": "right", "every": False, "rows": []}).get_json()
+        rows = client.get("/api/review/sorted?view=today").get_json()["rows"]
+        assert [r["id"] for r in rows] == [item["txn"]["id"]]
+        assert review(client)["sorted_today"] == 1
+        assert client.post("/api/transactions/undo", json=out["undo"]).status_code == 200
+        assert client.get("/api/review/sorted?view=today").get_json()["rows"] == []
+
+    def test_a_skip_is_not_an_answer(self, client):
+        ledger(client, [unsure("2026-10-08", "Bistro Nine", 30.00, "Dining")])
+        item = guess_for(client, "Bistro Nine")[0]
+        client.put(f"/api/quick-sort/{item['txn']['id']}", json={"action": "skip"})
+        assert client.get("/api/review/sorted?view=today").get_json()["rows"] == []
+
+    def test_pearl_sorted_lists_rows_nobody_was_asked_about_with_a_reason(self, client):
+        ledger(client, [tx("2026-10-09", "Loblaws", 40.00, "Groceries", category_source="issuer")])
+        rows = client.get("/api/review/sorted?view=pearl").get_json()["rows"]
+        row = next(r for r in rows if r["merchant"] == "Loblaws" and r["amount"] == 40.00)
+        assert "your bank said so" in row["line"]
+        assert review(client)["pearl_sorted"] == len(rows)
+
+    def test_a_row_she_was_asked_about_is_not_in_pearl_sorted(self, client):
+        ledger(client, [unsure("2026-10-08", "Bistro Nine", 30.00, "Dining")])
+        rows = client.get("/api/review/sorted?view=pearl").get_json()["rows"]
+        assert not [r for r in rows if r["merchant"] == "Bistro Nine"]
+
+
+class TestPayFromAPiggyBank:
+    def test_part_of_a_charge(self, client):
+        ledger(client, [tx("2026-10-08", "Air Transat", 900.00, "Travel", category_source="issuer")])
+        bank = client.post("/api/piggy", json={"name": "Japan trip", "target": 2000, "monthly": 100}).get_json()
+        bank_id = bank.get("id") or bank["bank"]["id"]
+        t = next(x for x in client.st.all_transactions() if x.merchant == "Air Transat")
+        out = client.post(f"/api/piggy/{bank_id}/allocate", json={"txn_id": t.fingerprint, "amount": 300}).get_json()
+        assert out["covered"] == 300
+        assert client.post(f"/api/piggy/{bank_id}/allocate",
+                           json={"txn_id": t.fingerprint, "amount": 901}).status_code == 400
+
+
+class TestAThirdPaycheque:
+    def test_is_a_note_and_counts_for_nothing(self, client):
+        from finance.quick_sort import questions
+        ledger(client)
+        r = review(client)
+        if r["three_pay_month"]:
+            assert not [k for k, _ in questions(r) if k.startswith("pay3:")]
+
+
+def test_a_row_shows_what_a_piggy_bank_left(client):
+    ledger(client, [tx("2026-10-08", "Air Transat", 900.00, "Travel", category_source="issuer")])
+    bank = client.post("/api/piggy", json={"name": "Japan trip", "target": 2000, "monthly": 100}).get_json()
+    bank_id = bank.get("id") or bank["bank"]["id"]
+    t = next(x for x in client.st.all_transactions() if x.merchant == "Air Transat")
+    client.post(f"/api/piggy/{bank_id}/allocate", json={"txn_id": t.fingerprint, "amount": 300})
+    row = next(r for r in client.get("/api/transactions/list?month=2026-10&limit=1000").get_json()["transactions"]
+               if r["merchant"] == "Air Transat")
+    assert row["amount"] == 600 and row["full_amount"] == 900 and "paid $300.00" in row["note"]

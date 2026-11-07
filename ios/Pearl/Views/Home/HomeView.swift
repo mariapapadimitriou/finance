@@ -34,7 +34,10 @@ struct HomeView: View {
                         SetupAgainCard(setup: setup, onChanged: { Task { await load() } })
                     }
                     if home.reviewCount > 0 {
-                        NeedsALookCard(count: home.reviewCount)
+                        NeedsALookCard(count: home.reviewCount, pearlSorted: home.pearlSorted ?? 0)
+                    }
+                    if let note = home.paychequeNote {
+                        PaychequeNoteCard(month: note) { Task { await dismissNote(note) } }
                     }
                     MonthCard(month: home.month, onTransactions: { tab = .cashFlow })
                 } else {
@@ -69,6 +72,12 @@ struct HomeView: View {
         return name.isEmpty ? Format.greeting() : "\(Format.greeting()), \(name)"
     }
 
+    /// Got it: the note doesn't come back.
+    private func dismissNote(_ note: Review.PayMonth) async {
+        let _: OK? = try? await app.api.post("api/review/dismiss", ["key": note.key])
+        await load()
+    }
+
     private func load() async {
         do {
             home = try await app.api.get("api/home")
@@ -96,12 +105,14 @@ struct HomeView: View {
 /// "N transactions need a look", opening Needs a look.
 struct NeedsALookCard: View {
     let count: Int
+    var pearlSorted = 0
 
     var body: some View {
         PearlCard(spacing: 8) {
             Text(count == 1 ? "1 transaction needs a look" : "\(count) transactions need a look")
                 .font(Pearl.cardTitle).foregroundColor(Pearl.ink)
-            Text("We weren't sure how to sort these. Sorting them keeps your numbers right.")
+            Text("We weren't sure how to sort these. Sorting them keeps your numbers right."
+                 + (pearlSorted > 0 ? " Pearl sorted \(pearlSorted) more by itself." : ""))
                 .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
             NavigationLink {
                 ReviewView()
@@ -109,6 +120,23 @@ struct NeedsALookCard: View {
                 LinkLabel(text: "Review one by one")
             }
             .padding(.top, 4)
+        }
+    }
+}
+
+/// A month with a third paycheque: why it looks bigger, and nothing to do.
+struct PaychequeNoteCard: View {
+    let month: Review.PayMonth
+    let onDismiss: () -> Void
+
+    var body: some View {
+        PearlCard(spacing: 8) {
+            Text("\(Format.monthName(month.month)) had three paycheques, so it looks bigger. Nothing to do.")
+                .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Got it", action: onDismiss)
+                .font(Nacre.textButton).foregroundColor(Pearl.action)
+                .padding(.top, 4)
         }
     }
 }

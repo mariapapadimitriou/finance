@@ -368,6 +368,10 @@ struct Home: Decodable {
     let today: String?
     let month: String
     let reviewCount: Int
+    /// How many Pearl sorted without asking, shown so it isn't silent.
+    var pearlSorted: Int? = nil
+    /// A month with a third paycheque: a note, nothing to do.
+    var paychequeNote: Review.PayMonth? = nil
     let snapshot: Snapshot?
     let safeToSpend: SafeToSpend?
     let connections: [Connection]?
@@ -375,6 +379,8 @@ struct Home: Decodable {
     enum CodingKeys: String, CodingKey {
         case today, month, snapshot, connections
         case reviewCount = "review_count"
+        case pearlSorted = "pearl_sorted"
+        case paychequeNote = "paycheque_note"
         case safeToSpend = "safe_to_spend"
     }
 
@@ -537,6 +543,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
     let repays: String?
     let oneOff: Bool
     let canOneOff: Bool
+    /// The piggy bank that paid for it, in whole or part.
+    var bankId: Int? = nil
     let tags: [String]
     let kind: String?
     let group: String?
@@ -676,6 +684,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case refundedBy = "refunded_by"
         case oneOff = "one_off"
         case canOneOff = "can_one_off"
+        case bankId = "bank_id"
         case categorySource = "category_source"
         case jointPeople = "joint_people"
         case jointFrom = "joint_from"
@@ -725,6 +734,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         repays = opt(String.self, .repays)
         oneOff = opt(Bool.self, .oneOff) ?? false
         canOneOff = opt(Bool.self, .canOneOff) ?? false
+        bankId = opt(Int.self, .bankId)
         tags = opt([String].self, .tags) ?? []
         kind = opt(String.self, .kind)
         group = opt(String.self, .group)
@@ -768,7 +778,15 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// Left out, a transfer, a repayment: shown, but not counted.
     var notCounted: Bool { !excluded.isEmpty || counts == "none" }
 
-    static func == (a: Transaction, b: Transaction) -> Bool { a.id == b.id && a.category == b.category }
+    /// Everything a row shows. SwiftUI skips redrawing a row that compares
+    /// equal, so comparing less leaves old answers on the list: a Yes keeps the
+    /// category and changes only the chip (the critics' stale rows, 2026-11-06).
+    static func == (a: Transaction, b: Transaction) -> Bool {
+        a.id == b.id && a.category == b.category && a.suggested == b.suggested && a.chip == b.chip
+            && a.amount == b.amount && a.fullAmount == b.fullAmount && a.note == b.note && a.counts == b.counts
+            && a.excluded == b.excluded && a.pending == b.pending && a.oneOff == b.oneOff && a.tags == b.tags
+            && a.jointFrom == b.jointFrom && a.bankId == b.bankId && a.merchant == b.merchant
+    }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
@@ -1019,6 +1037,9 @@ struct Review: Decodable {
     /// T-74: months that held a third paycheque. No transaction to sort;
     /// "Got it" dismisses one.
     let threePayMonth: [PayMonth]
+    /// Answers given today, and rows Pearl sorted without asking.
+    var sortedToday: Int = 0
+    var pearlSorted: Int = 0
     let unsorted: Unsorted?
     let kinds: [String: String]?
 
@@ -1042,6 +1063,8 @@ struct Review: Decodable {
         case whoSent = "who_sent"
         case recurringTransfer = "recurring_transfer"
         case threePayMonth = "three_pay_month"
+        case sortedToday = "sorted_today"
+        case pearlSorted = "pearl_sorted"
     }
 
     init(from decoder: Decoder) throws {
@@ -1060,6 +1083,8 @@ struct Review: Decodable {
         whoSent = items(.whoSent)
         duplicate = items(.duplicate)
         recurringTransfer = items(.recurringTransfer)
+        sortedToday = (try? c.decodeIfPresent(Int.self, forKey: .sortedToday)) ?? 0
+        pearlSorted = (try? c.decodeIfPresent(Int.self, forKey: .pearlSorted)) ?? 0
         threePayMonth = (try? c.decodeIfPresent([Lenient<PayMonth>].self, forKey: .threePayMonth))?
             .compactMap { $0.value } ?? []
     }
@@ -1093,7 +1118,7 @@ struct Review: Decodable {
 
         var id: String { key }
 
-        /// The merchant's other open guesses: what Yes moves, printed on the card.
+        /// The merchant's other open guesses: the rule waits until these are answered.
         var siblings: [BriefTransaction] = []
         /// A question the evidence asks, where one Yes settles both rows.
         var pair: Pair? = nil
@@ -1142,7 +1167,9 @@ struct Review: Decodable {
             pair = opt(Pair.self, .pair)
         }
 
-        static func == (a: Item, b: Item) -> Bool { a.key == b.key }
+        static func == (a: Item, b: Item) -> Bool {
+            a.key == b.key && a.txn == b.txn && a.pair == b.pair && a.guess == b.guess && a.skipped == b.skipped
+        }
         func hash(into hasher: inout Hasher) { hasher.combine(key) }
     }
 
@@ -1208,18 +1235,32 @@ struct Ask: Identifiable, Hashable {
     /// A guess Pearl can be told yes to (T-90, T-92): a category, "Saved to",
     /// or a question the evidence asks.
     func isGuess(_ accounts: [AccountsOverview.Account]) -> Bool {
-        kind == .category || savedTo(accounts) != nil || item.pair != nil
+        kind == .category || savedTo(accounts) != nil || item.pair != nil || incomeGuess != nil
     }
 
     /// A guess opens T-96, a full page; the rest of a deposit and any other
     /// question open a sheet.
     func opensPage(_ accounts: [AccountsOverview.Account]) -> Bool {
-        item.rest == nil && item.pair == nil && isGuess(accounts)
+        item.rest == nil && item.pair == nil && incomeGuess == nil && isGuess(accounts)
+    }
+
+    /// "Other income": the kind Pearl would call this money, when it asks.
+    var incomeGuess: String? {
+        guard kind == .incomeType, item.guess?.text != nil else { return nil }
+        return item.guessLabel
+    }
+
+    /// Why Pearl is asking, under the question, where the reason helps.
+    var evidence: String? {
+        if let pair = item.pair { return pair.evidence }
+        if incomeGuess != nil || item.guess?.action == "unknown" { return item.reason }
+        return nil
     }
 
     /// "Dining out", or T-66's "Saved to TD Savings".
     func guessLabel(_ accounts: [AccountsOverview.Account]) -> String {
         if let to = savedTo(accounts) { return "Saved to \(to)" }
+        if let income = incomeGuess { return income }
         return item.guess?.text ?? t.category ?? "Other"
     }
 
@@ -1234,22 +1275,22 @@ struct Ask: Identifiable, Hashable {
         t.mixed == true && savedTo(accounts) == nil && canRule(accounts)
     }
 
-    /// Whether Yes saves the rule, so nobody has to come back to make one (T-93).
+    /// Whether Yes saves the rule. Each row is its own answer, so the rule
+    /// waits for the merchant's last open row: by then her answers have either
+    /// agreed, or they disagreed and the merchant varies.
     func savesRule(_ accounts: [AccountsOverview.Account]) -> Bool {
-        canRule(accounts) && !varies(accounts)
+        canRule(accounts) && !varies(accounts) && item.siblings.isEmpty
     }
 
-    /// The rows Yes moves besides this one, all printed on the card.
-    var printed: [BriefTransaction] { item.siblings }
-
-    /// Yes: the rows on the card, and the rule when `newOnes` says so. Every
-    /// merchant gets a Yes; what varies is how far it reaches.
+    /// Yes: this row, and the rule when `newOnes` says so. Every merchant gets
+    /// a Yes; one card is one transaction.
     func yesAnswer(_ accounts: [AccountsOverview.Account], newOnes: Bool? = nil) -> ReviewAnswer {
         if item.pair != nil { return .pair(t.id) }
+        if incomeGuess != nil, let kind = item.guess?.text { return .incomeType(t.id, kind: kind) }
         let rule = newOnes ?? savesRule(accounts)
         if savedTo(accounts) != nil { return .mark(t.id, ["case": "saved", "remember": rule]) }
         if rule && canRule(accounts) {
-            return .always(t.id, label: guessLabel(accounts), rows: varies(accounts) ? [] : printed.map(\.id))
+            return .always(t.id, label: guessLabel(accounts))
         }
         return varies(accounts) ? .varies(t.id, name: t.name) : .confirm(t.id)
     }
@@ -1260,10 +1301,9 @@ struct Ask: Identifiable, Hashable {
     /// The line above the buttons: what Yes will do, before it's done.
     func yesLine(_ accounts: [AccountsOverview.Account]) -> String {
         if let pair = item.pair { return pair.line }
+        if let income = incomeGuess { return "Yes counts it as \(income)." }
         if varies(accounts) { return "Yes sorts just this one. \(t.name) varies, so no rule." }
-        guard savesRule(accounts) else { return "Yes sorts just this one." }
-        let n = printed.count + 1
-        return n > 1 ? "Yes sorts these \(n) and new ones from \(t.name)." : "Yes sorts this and new ones from \(t.name)."
+        return savesRule(accounts) ? "Yes sorts this and new ones from \(t.name)." : "Yes sorts just this one."
     }
 
     /// "Dining?", "Saved or spent?", "Whose?"…
@@ -1277,7 +1317,7 @@ struct Ask: Identifiable, Hashable {
             if item.guess?.action == "refund" { return "Whose refund?" }
             // A payment network isn't a person: never "Is Interac paying you back?".
             return t.learnable == false ? "Someone sent you \(Format.amount(t.amount))" : "What was this?"
-        case .incomeType: return "What kind of income?"
+        case .incomeType: return incomeGuess.map { "\($0)?" } ?? "What kind of income?"
         case .joint: return "Whose?"
         case .whoSent: return "Who sent this?"
         case .duplicate: return "Same purchase?"
@@ -1303,6 +1343,16 @@ extension Review {
         // alone before its pair; the order is otherwise kept.
         return out.filter { $0.item.pair != nil } + out.filter { $0.item.pair == nil }
     }
+}
+
+/// A row in Sorted today or Pearl sorted: who, how much, and why it's sorted.
+struct SortedRow: Decodable, Identifiable {
+    let id: String
+    let date: String
+    let merchant: String?
+    let amount: Double
+    let line: String
+    let undo: JSONValue?
 }
 
 /// The answer to sorting one transaction: what changed, and how to undo it.

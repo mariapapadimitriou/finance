@@ -115,6 +115,33 @@ def known_people(transactions, splits: dict | None = None, payer: dict | None = 
     return out
 
 
+def canonical_names(transactions) -> dict[str, str]:
+    """Shorter spellings of someone's name → the fullest: "Priya S" → "Priya
+    Shah". Only when it can be one person: the shorter name must be the longer
+    one's start, and one full name must fit it. "Priya" with both a Priya Shah
+    and a Priya Patel stays as it is."""
+    names = set()
+    for t in transactions:
+        who = (party(t) or {}).get("name")
+        if who:
+            names.add(" ".join(who.split()))
+    full = [n for n in names if len(n.split()) >= 2]
+    out = {}
+    for n in names:
+        words = n.lower().rstrip(".").split()
+        fits = []
+        for f in full:
+            have = f.lower().split()
+            if f == n or len(have) < len(words) or words[0] != have[0]:
+                continue
+            if all(have[i] == w or (len(w) == 1 and have[i].startswith(w)) for i, w in enumerate(words)):
+                fits.append(f)
+        fits = [f for f in fits if len(f) > len(n)]
+        if len(fits) == 1:
+            out[n] = fits[0]
+    return out
+
+
 def party(t: Transaction, people=None) -> dict | None:
     """{"direction": "from" | "to", "name": str | None, "named_by": "you" |
     "bank" | None} for an e-Transfer; None for anything else.
