@@ -255,6 +255,31 @@ def build(transactions: list[Transaction], today: str | None = None,
                          "candidates": candidates, "reason": reason,
                          **({"from": person} if person else {})})
 
+    # 3a. Money back from a store she bought from, not yet called a refund:
+    # it nets against the category meanwhile, so the question is which purchase.
+    asked_money = {it["txn"]["id"] for it in money_in}
+    store_names: dict[str, list] = {}
+    for c in live:
+        if c.amount > 0 and (c.merchant or "").strip():
+            store_names.setdefault(" ".join(c.merchant.lower().split()), []).append(c)
+    for t in live:
+        if (t.amount >= 0 or t.date[:10] < since or t.fingerprint in asked_money or t.repays
+                or getattr(t, "refund_of", None) or t.category == "Transfers"
+                or (t.category == "Income" and "refund" not in (t.merchant or "").lower())
+                or t.category_source in ("user", "merchant_override") or t.joint):
+            continue
+        # "Canada Computers Refund" is Canada Computers, whatever Pearl's patterns said.
+        words = (t.merchant or "").lower().split()
+        name = " ".join(w for w in words if w not in ("refund", "return", "credit"))
+        bought = [c for c in store_names.get(name, []) if c.date[:10] <= t.date[:10]]
+        if not bought:
+            continue
+        key = "in:" + t.fingerprint
+        if key in dismissed:
+            continue
+        money_in.append({"key": key, "txn": _brief(t, people), "guess": {"action": "refund"},
+                         "candidates": [], "reason": "Money back from a store you bought from."})
+
     # 3b. Money into a joint account from outside: whose was it?
     joint_in = []
     for t in live:
@@ -299,12 +324,13 @@ def build(transactions: list[Transaction], today: str | None = None,
 
     # 4. Income whose type is a guess.
     income = []
+    refunds_asked = {it["txn"]["id"] for it in money_in if (it.get("guess") or {}).get("action") == "refund"}
     # A joint deposit's card asks what kind of income it is too, so one
     # deposit is one question, and counted once (2026-10-26).
     joint_asked = {it["txn"]["id"] for it in joint_in}
     for t in live:
         if not is_income(t) or t.date[:10] < since or t.income_type_source == "user" \
-                or t.fingerprint in joint_asked:
+                or t.fingerprint in joint_asked or t.fingerprint in refunds_asked:
             continue
         kind = kind_of(t)
         if kind not in ("other", "bonus"):
@@ -370,16 +396,31 @@ def build(transactions: list[Transaction], today: str | None = None,
 
 
 def mixed_merchants(transactions: list[Transaction], confirmed: dict[str, str]) -> set[str]:
-    """Merchants she has sorted into more than one category, by merchant key:
-    Yes on one of their guesses doesn't save a rule (T-97)."""
-    from .categorize import merchant_key
+    """Merchants that don't sort one way, by merchant key: she has sorted them
+    into more than one category, or the bank's own labels disagree, or her
+    answers disagree with the guess still open. Yes on one of their guesses
+    answers that row alone and saves no rule (T-97). Worked out from the
+    ledger for any merchant: there is no list of stores."""
+    from .categorize import is_guess, merchant_key
     said: dict[str, set[str]] = {}
+    labels: dict[str, set[str]] = {}
     for t in transactions:
-        category = confirmed.get(t.fingerprint) or (t.category if t.category_source == "user" else None)
         key = merchant_key(t.merchant or "")
-        if category and key:
+        if not key:
+            continue
+        category = confirmed.get(t.fingerprint) or (t.category if t.category_source == "user" else None)
+        if category:
             said.setdefault(key, set()).add(category)
-    return {k for k, cats in said.items() if len(cats) > 1}
+        elif t.amount > 0 and t.category_source == "issuer" and t.category and t.category != "Other":
+            labels.setdefault(key, set()).add(t.category)
+    out = {k for k, cats in said.items() if len(cats) > 1}
+    out |= {k for k, cats in labels.items() if len(cats) > 1}
+    for t in transactions:
+        key = merchant_key(t.merchant or "")
+        if key in said and t.amount > 0 and t.category_source != "user" \
+                and t.fingerprint not in confirmed and is_guess(t) and t.category not in said[key]:
+            out.add(key)
+    return out
 
 
 def for_store(st, today: str | None = None) -> dict:
@@ -404,8 +445,21 @@ def for_store(st, today: str | None = None) -> dict:
     from .categorize import merchant_key
     mixed = mixed_merchants(txns, st.confirmed_categories())
     names = {t.fingerprint: merchant_key(t.merchant or "") for t in txns}
+    open_guesses = [it for it in review.get("unsure_category") or [] if not it.get("skipped")]
+    by_merchant: dict[str, list[dict]] = {}
+    for it in open_guesses:
+        key = names.get(it["txn"]["id"])
+        if key:
+            by_merchant.setdefault(key, []).append(it)
     for it in review.get("unsure_category") or []:
-        it["txn"]["mixed"] = names.get(it["txn"]["id"]) in mixed
+        key = names.get(it["txn"]["id"])
+        it["txn"]["mixed"] = key in mixed
+        # What Yes moves is printed on the card: the merchant's other open
+        # guesses, except where the merchant doesn't sort one way.
+        it["siblings"] = ([] if key in mixed or not it["txn"].get("learnable") else
+                          [o["txn"] for o in by_merchant.get(key, []) if o is not it])
+    from .pairs import annotate
+    annotate(st, review, txns, today)
     return review
 
 

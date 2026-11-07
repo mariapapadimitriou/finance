@@ -45,7 +45,9 @@ def quick_sort_step(txn_id):
     body = request.get_json(silent=True) or {}
     out = quick_sort.step(st, st.all_transactions(), _today(), txn_id,
                           str(body.get("action") or ""), body.get("category"), body.get("title"),
-                          every=body.get("every") if isinstance(body.get("every"), bool) else None)
+                          every=body.get("every") if isinstance(body.get("every"), bool) else None,
+                          rows=body["rows"] if isinstance(body.get("rows"), list) else None,
+                          new_ones=body.get("new_ones") if isinstance(body.get("new_ones"), bool) else None)
     if isinstance(out, tuple):
         return jsonify(out[0]), out[1]
     return jsonify(out)

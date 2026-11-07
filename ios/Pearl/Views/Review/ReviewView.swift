@@ -11,7 +11,7 @@ struct ReviewView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var review: Review?
-    @State private var categories: [CategoryList.Category] = []
+    private var categories: [CategoryList.Category] { app.categories }
     @State private var accounts: [AccountsOverview.Account] = []
     /// T-83 (THL-213): "all", a kind of question, "pay3" or "skipped".
     @State private var filter = "all"
@@ -35,6 +35,7 @@ struct ReviewView: View {
             list
         }
         .nacreScreen()
+        .accessibilityHidden(sorting)
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -49,14 +50,23 @@ struct ReviewView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .overlay(alignment: .bottom) { toastView }
-        .task { await load() }
-        .fullScreenCover(isPresented: $sorting) {
-            QuickSortView(asks: quick, categories: categories, names: recentNames,
-                          months: review?.threePayMonth.filter { $0.skipped != true } ?? []) {
-                sorting = false
-                Task { await load() }
+        // Quick sort is part of this screen, not a screen presented over it:
+        // nothing dismissed inside it can close it. On iOS 27 a sheet and a
+        // page closing together took a presented Quick sort with them.
+        .overlay {
+            if sorting {
+                QuickSortView(asks: quick, categories: categories, names: recentNames,
+                              months: review?.threePayMonth.filter { $0.skipped != true } ?? []) {
+                    sorting = false
+                    Task { await load() }
+                }
+                .transition(.move(edge: .bottom))
             }
         }
+        .animation(.easeOut(duration: 0.25), value: sorting)
+        .toolbar(sorting ? .hidden : .visible, for: .navigationBar)
+        .toolbar(sorting ? .hidden : .visible, for: .tabBar)
+        .task { await load() }
         .sheet(item: $payMonth) { m in
             ThirdPaychequeSheet(month: m) { answer in
                 payMonth = nil
@@ -69,9 +79,7 @@ struct ReviewView: View {
                                        set: { asking = $0 })) { ask in
             GuessPage(actions: GuessActions(
                 ask: ask, label: ask.guessLabel(accounts), accounts: accounts, names: recentNames,
-                secondary: ask.secondaryLabel(accounts),
-                onYes: { asking = nil; Task { await send(ask.yesAnswer(accounts)) } },
-                onSecondary: { asking = nil; Task { await send(ask.secondaryAnswer(accounts)) } },
+                onYes: { newOnes in asking = nil; Task { await send(ask.yesAnswer(accounts, newOnes: newOnes)) } },
                 onSkip: ask.skipped ? nil : {
                     asking = nil
                     Task { await send(.skip(ask.item.key, true)) }
@@ -110,7 +118,7 @@ struct ReviewView: View {
                         .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 4, trailing: 16))
                 }
                 if rows.isEmpty && months.isEmpty {
-                    empty(review)
+                    empty(review, shown: rows.count)
                         .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 } else {
                     Section {
@@ -285,10 +293,29 @@ struct ReviewView: View {
         .accessibilityHint(m.skipped == true ? "Opens it. Swipe to put it back." : "Opens it. Swipe to skip.")
     }
 
-    @ViewBuilder private func empty(_ review: Review) -> some View {
-        if showingSkipped {
+    /// All sorted only at zero: an empty filter says what's left, and skipped
+    /// ones aren't sorted (T-16).
+    @ViewBuilder private func empty(_ review: Review, shown: Int) -> some View {
+        let open = review.asks.filter { !$0.skipped }.count + review.threePayMonth.filter { $0.skipped != true }.count
+        let skipped = review.asks.filter(\.skipped).count + review.threePayMonth.filter { $0.skipped == true }.count
+        if open > 0 {
+            VStack(spacing: 12) {
+                Text(showingSkipped ? "Nothing skipped." : "None of these.").font(Nacre.body).foregroundColor(Pearl.muted)
+                Button("\(open) other\(open == 1 ? "" : "s") to sort") { filter = "all" }
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 32)
+        } else if showingSkipped {
             Text("Nothing skipped.").font(Nacre.body).foregroundColor(Pearl.muted)
                 .frame(maxWidth: .infinity).padding(.vertical, 32)
+        } else if skipped > 0 {
+            VStack(spacing: 12) {
+                Text("You skipped \(skipped). Pearl uses its guess until you sort them.")
+                    .font(Nacre.body).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
+                Button("See skipped") { filter = "skipped" }
+                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 32)
         } else {
             // T-16: All sorted.
             VStack(spacing: 8) {
@@ -344,9 +371,6 @@ struct ReviewView: View {
     private func load() async {
         do {
             review = try await app.api.get("api/review")
-            if categories.isEmpty, let list: CategoryList = try? await app.api.get("api/categories") {
-                categories = list.categories.filter { $0.hidden != true }
-            }
             if accounts.isEmpty, let overview: AccountsOverview = try? await app.api.get("api/accounts/overview") {
                 accounts = overview.linked
             }
@@ -387,8 +411,10 @@ struct ReviewView: View {
 enum ReviewAnswer {
     /// Pearl's guess is right.
     case confirm(String)
-    /// Yes where a rule is right: every open guess from the merchant, and the rule.
-    case always(String, label: String)
+    /// Yes where a rule is right: the other rows printed on the card, and the rule.
+    case always(String, label: String, rows: [String])
+    /// Yes on a pair card (finance/pairs.py): both rows, one answer.
+    case pair(String)
     /// T-97: Yes on a merchant she has sorted different ways, with no rule.
     case varies(String, name: String)
     /// A different category, and maybe every one like it.
@@ -434,15 +460,19 @@ enum ReviewAnswer {
         case .varies(let id, let name):
             let reply: MarkReply = try await api.put("api/transactions/\(id)/confirm")
             return MarkReply(title: "\(name) varies, so no rule", detail: nil, undo: reply.undo)
-        case .always(let id, let label):
-            let reply: QuickSortStep = try await api.put("api/quick-sort/\(id)", ["action": "right", "every": true])
+        case .always(let id, let label, let rows):
+            let reply: QuickSortStep = try await api.put("api/quick-sort/\(id)",
+                                                         ["action": "right", "every": true, "rows": rows])
             return MarkReply(title: QuickSortStep.always(label, sorted: (reply.also?.count ?? 0) + 1),
                              detail: nil, undo: reply.undo)
+        case .pair(let id):
+            return try await api.post("api/review/pair/\(id)")
         case .category(let id, let name, let remember):
-            let reply: MarkReply = try await api.patch("api/transactions/\(id)",
-                                                       ["category": name, "apply_to_merchant": remember])
-            return MarkReply(title: reply.title ?? (remember ? "\(name), and every one like it from now on." : "Moved to \(name)."),
-                             detail: reply.detail, undo: reply.undo)
+            // Only this row moves; the rule is for new ones. Rows she can't see stay put.
+            let reply: QuickSortStep = try await api.put("api/quick-sort/\(id)",
+                ["action": "category", "category": name, "every": false, "rows": [String](), "new_ones": remember])
+            return MarkReply(title: remember ? "\(name), and new ones like it." : "Moved to \(name).",
+                             detail: nil, undo: reply.undo)
         case .mark(let id, let body):
             return try await api.post("api/transactions/\(id)/mark", body)
         case .incomeType(let id, let kind):

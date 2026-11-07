@@ -414,7 +414,7 @@ def is_unsure(t) -> bool:
 
 # Bumped whenever the rules above change enough that what is already in the
 # ledger should be sorted again; the next sync does it once.
-RULES_VERSION = 13
+RULES_VERSION = 14
 
 
 def plaid_category(code: str) -> str | None:
@@ -506,12 +506,13 @@ def categorize(merchant: str, description: str = "", issuer_category: str = "",
                overrides: dict[str, str] | None = None, confidence: str = "") -> tuple[str, str]:
     """Return (category, source) for one transaction.
 
-    In order (2026-10-21): her own rule for the merchant; then the card
-    provider's category, whenever it names one — even when Plaid says it
-    isn't sure, in which case the row stays marked as a guess (`is_unsure`:
-    a dashed chip, and a question in Needs a look) rather than being
-    overruled by Pearl's patterns; Pearl's own rules only when the label
-    says nothing more than "transfer" or "other"; then Other.
+    In order: her own rule for the merchant; then the card provider's
+    category when it is sure of it; then, when the provider isn't sure,
+    Pearl's name patterns (Uber Eats is Food Delivery whatever the label
+    says) and then the unsure label. Either way the row stays a guess
+    (`is_unsure`: a dashed chip, and a question in Needs a look). Pearl's
+    patterns again when the label says nothing more than "transfer" or
+    "other"; then Other.
     """
     key = (merchant or "").strip().lower()
 
@@ -524,10 +525,15 @@ def categorize(merchant: str, description: str = "", issuer_category: str = "",
         return AUTHORITATIVE_ISSUER_CATEGORIES[code], "issuer"
 
     bank = bank_category(issuer_category)
+    haystack = f"{merchant} || {description}"
     if bank and bank not in _BANK_NOT_AN_ANSWER:
+        # Source stays "issuer" so an unsure row is still asked about.
+        if confidence.upper() in UNSURE_CONFIDENCE:
+            for pattern, category in _COMPILED:
+                if pattern.search(haystack) and category not in _BANK_NOT_AN_ANSWER:
+                    return category, "issuer"
         return bank, "issuer"
 
-    haystack = f"{merchant} || {description}"
     for pattern, category in _COMPILED:
         if pattern.search(haystack):
             return category, "rule"

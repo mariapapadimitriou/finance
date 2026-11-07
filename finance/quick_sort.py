@@ -213,7 +213,8 @@ def same_merchant(st, transactions: list[Transaction], today: date, t: Transacti
 
 def step(st, transactions: list[Transaction], today: date, txn_id: str, action: str,
          category: str | None = None, title: str | None = None,
-         every: bool | None = None) -> dict | tuple[dict, int]:
+         every: bool | None = None, rows: list[str] | None = None,
+         new_ones: bool | None = None) -> dict | tuple[dict, int]:
     """One card answered.
 
     `every` (T-85, THL-254): Yes or a new category for every open guess from
@@ -221,6 +222,10 @@ def step(st, transactions: list[Transaction], today: date, txn_id: str, action: 
     this one". Left out, Something else keeps its old way: a rule whenever
     the row has a merchant. The reply carries `also` (the others sorted with
     it) and `undo`, for POST /api/transactions/undo.
+
+    `rows` are the others printed on the card: with it, only those move, and
+    the rule touches nothing else. `new_ones` says whether to save the rule
+    (the page's New ones switch); left out, `every` decides.
     """
     from .categorize import CATEGORIES, is_generic_transfer_name
     from .impact import snapshot, undo_payload
@@ -246,10 +251,16 @@ def step(st, transactions: list[Transaction], today: date, txn_id: str, action: 
         shot = snapshot(st, transactions)
         if every and named:
             also = same_merchant(st, transactions, today, t)
+            if rows is not None:
+                printed = set(rows)
+                also = [o for o in also if o.fingerprint in printed]
+    # With the card's rows named, the rule files only new ones; the rows move below.
+    exact = rows is not None
+    wants_rule = every if new_ones is None else new_ones
     if action == "right":
-        if every and named and before != "Other":
+        if wants_rule and named and before != "Other":
             # "Other" is no rule: it would file every one there for good.
-            rule = st.set_override(t.merchant, before) > 0
+            rule = st.set_override(t.merchant, before, move_rows=not exact) > 0
         st.confirm_category(txn_id, before)
         st.dismiss_review(key)
         change = {"id": txn_id, "action": "right", "from": before, "to": before, "rule": rule}
@@ -257,9 +268,12 @@ def step(st, transactions: list[Transaction], today: date, txn_id: str, action: 
     elif action == "category":
         if not category or category not in CATEGORIES:
             return {"error": "Pick a category."}, 400
-        if named and every is not False:
-            st.set_override(t.merchant, category)
+        keeps_rule = (every is not False) if new_ones is None else new_ones
+        if named and keeps_rule:
+            st.set_override(t.merchant, category, move_rows=not exact)
             rule = True
+            if exact:
+                st.set_transaction_category(txn_id, category)
         else:
             st.set_transaction_category(txn_id, category)
         st.dismiss_review(key)
@@ -276,8 +290,9 @@ def step(st, transactions: list[Transaction], today: date, txn_id: str, action: 
         return {"error": "Say what to do with it."}, 400
     changes = [change]
     for other in also:
-        # Sorted with it: the rule filed them already; this says she agreed.
-        if not rule:
+        # Sorted with it: this says she agreed. A rule filed them already
+        # only when the card's rows weren't named.
+        if not rule or exact:
             st.set_transaction_category(other.fingerprint, to)
         st.confirm_category(other.fingerprint, to)
         st.dismiss_review("cat:" + other.fingerprint)

@@ -64,13 +64,13 @@ def test_a_plaid_code_maps_to_its_category(code, expected):
 
 
 def test_the_card_providers_category_comes_first():
-    """The category comes from the card provider (2026-10-21): it beats
-    Pearl's pattern rules whenever it names one, sure or not — a doubtful
-    one stays a guess she is asked about (is_unsure)."""
+    """The card provider's category beats Pearl's pattern rules when it is
+    sure. When it isn't, Pearl's name patterns go first, and the row stays a
+    guess she is asked about (is_unsure)."""
     # Plaid calls Netflix entertainment; Pearl's rule would say Streaming.
     assert categorize("NETFLIX.COM", "", "ENTERTAINMENT_TV_AND_MOVIES") == ("Entertainment", "issuer")
     assert categorize("NETFLIX.COM", "", "ENTERTAINMENT_TV_AND_MOVIES",
-                      confidence="LOW") == ("Entertainment", "issuer")
+                      confidence="LOW") == ("Streaming", "issuer")
     assert categorize("ZXQ WIDGETS", "", "GENERAL_MERCHANDISE",
                       confidence="LOW") == ("Shopping", "issuer")
     # A label that only says "transfer" or "other" isn't an answer: Pearl

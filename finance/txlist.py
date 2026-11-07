@@ -468,8 +468,14 @@ def matches(row: dict, q: str) -> bool:
 def visible(transactions: list[Transaction]) -> list[Transaction]:
     """Rows that are yours: not excluded, not another joint member's — and
     the copy of a likely duplicate, shown as not counted until she answers.
-    A copy she said was the same purchase is not listed."""
-    return [t for t in transactions if not is_others(t) or _waiting(t)]
+    A copy she said was the same purchase is not listed. Money into a joint
+    account nobody has claimed is listed too, "Whose?" until she answers: it
+    can't be someone else's before anyone has said so."""
+    return [t for t in transactions if not is_others(t) or _waiting(t) or _unclaimed(t)]
+
+
+def _unclaimed(t: Transaction) -> bool:
+    return bool(t.joint) and t.amount < 0 and not t.excluded and not t.joint_from and not t.share_set
 
 
 def left_out(transactions: list[Transaction]) -> list[Transaction]:

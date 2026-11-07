@@ -370,6 +370,8 @@ struct CategoriesRulesView: View {
             // Together, so a row can't open before its categories are here.
             if let list: CategoryList = try? await app.api.get("api/categories") {
                 categories = list.categories
+                // She may have just hidden or added one: every other screen hears.
+                app.use(list)
             }
             book = rules
             error = nil

@@ -14,7 +14,24 @@ final class AppModel: ObservableObject {
         case deleted(sentTo: String?)
     }
 
-    @Published var phase: Phase = .starting
+    @Published var phase: Phase = .starting {
+        didSet {
+            switch phase {
+            case .signedOut, .deleted:
+                // Her categories aren't the next account's.
+                categories = []
+                categoriesError = nil
+            default: break
+            }
+        }
+    }
+    /// The categories she can pick, for every screen. One list, read when it's
+    /// used: each screen keeping its own copy is how Quick sort came to open with
+    /// none (2026-11-06). CategorySheet asks for it again if it's still empty.
+    @Published private(set) var categories: [CategoryList.Category] = []
+    /// Why the list couldn't load; CategorySheet says so and offers Try again.
+    @Published private(set) var categoriesError: String?
+    private var loadingCategories = false
     /// Bumped after any change, so every screen reloads what it shows.
     @Published var version = 0
     /// AM-13: said on Accounts once it's back on screen ("TD is removed…").
@@ -52,12 +69,33 @@ final class AppModel: ObservableObject {
         let _: OK? = try? await api.post("api/auth/stay", ["on": faceIDOn])
     }
 
+    func loadCategories() async {
+        guard !loadingCategories else { return }
+        loadingCategories = true
+        defer { loadingCategories = false }
+        categoriesError = nil
+        do {
+            use(try await api.get("api/categories"))
+        } catch is CancellationError {
+            return
+        } catch {
+            categoriesError = handle(error)
+        }
+    }
+
+    /// A list fetched elsewhere (Categories and rules, after she changes one).
+    func use(_ list: CategoryList) {
+        categories = list.categories.filter { $0.hidden != true }
+        categoriesError = nil
+    }
+
     /// On launch: is the saved session still good?
     func start() async {
         do {
             let status: AuthStatus = try await api.get("api/auth/status")
             contact = status.contact
             phase = status.signedIn ? .signedIn(status.user) : .signedOut
+            if status.signedIn { Task { await loadCategories() } }
             // Opening Pearl with Face ID on asks for it first (THL-114). The
             // session outlasts the idle limit on the strength of this lock, so
             // Face ID being unavailable shows it too: the passcode still opens it.
@@ -80,6 +118,7 @@ final class AppModel: ObservableObject {
         locked = false
         version += 1
         if faceIDOn { Task { await tellServerAboutFaceID() } }
+        if categories.isEmpty { Task { await loadCategories() } }
     }
 
     func changed() {

@@ -523,7 +523,7 @@ def test_a_rule_is_for_its_merchant_name_only(client):
     for t in client.st.all_transactions():
         by.setdefault(t.description, []).append(t)
     assert all(t.category == "Transport" for t in by["LYFT"])
-    assert by["LYFT *RIDE TUE 6PM"][0].category != "Transport"
+    assert by["LYFT *RIDE TUE 6PM"][0].category_source != "merchant_override"
     assert by["LYFTOPIA"][0].category != "Transport"
     assert ids["LYFT *RIDE TUE 6PM"] in ids_in(for_store(client.st))
 

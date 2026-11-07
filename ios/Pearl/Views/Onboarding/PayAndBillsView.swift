@@ -593,8 +593,8 @@ struct BillSheet: View {
             }
         }
         .task {
-            guard let list: CategoryList = try? await app.api.get("api/categories") else { return }
-            categories = list.categories.filter { $0.hidden != true && ["essentials", "lifestyle"].contains($0.group ?? "lifestyle") }.map(\.name)
+            if app.categories.isEmpty { await app.loadCategories() }
+            categories = app.categories.filter { ["essentials", "lifestyle"].contains($0.group ?? "lifestyle") }.map(\.name)
         }
         .onAppear {
             guard let bill = bill else { return }

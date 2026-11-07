@@ -7,10 +7,8 @@ struct GuessActions {
     let label: String
     let accounts: [AccountsOverview.Account]
     let names: [String]
-    /// The link under Yes: "Just this one", "Always for Amazon", or none.
-    let secondary: String?
-    let onYes: () -> Void
-    let onSecondary: () -> Void
+    /// Yes, and whether new ones from the merchant sort the same way.
+    let onYes: (Bool) -> Void
     var onSkip: (() -> Void)? = nil
     /// Quick sort's own way of saving a category; nil answers through `onAnswer`.
     var onCategory: ((String, Bool) -> Void)? = nil
@@ -124,6 +122,8 @@ struct TransactionDetailView: View {
     /// has sorted the merchant different ways (T-97).
     @State private var learnable = false
     @State private var varies = false
+    /// The New ones switch, once she's touched it.
+    @State private var newOnes: Bool?
     /// T-38b / T-40b: "Dining out · Undo" after a guess is confirmed.
     @State private var toast: (title: String, undo: (() -> Void)?)?
     /// T-41b: Unlink? before a refund goes back to Needs a look.
@@ -422,11 +422,17 @@ struct TransactionDetailView: View {
     /// From the list, whether a rule is possible at all.
     private var canRule: Bool { learnable && (t.category ?? "Other") != "Other" }
 
-    /// The link under Yes.
-    private var secondaryLabel: String? {
-        if let guessing = guessing { return guessing.secondary }
-        guard canRule else { return nil }
-        return varies ? "Always for \(t.merchant)" : "Just this one"
+    /// Whether the New ones switch shows: a rule could match this merchant.
+    private var offersNewOnes: Bool {
+        if let guessing = guessing { return guessing.ask.canSaveRule(guessing.accounts) }
+        return canRule
+    }
+
+    /// The switch's starting place: off where the merchant doesn't sort one way.
+    private var newOnesOn: Bool {
+        if let choice = newOnes { return choice }
+        if let guessing = guessing { return guessing.ask.savesRule(guessing.accounts) }
+        return !varies
     }
 
     /// T-96: the category, marked as a guess. Tapping it changes the answer.
@@ -440,14 +446,14 @@ struct TransactionDetailView: View {
         .accessibilityHint("Changes the answer")
     }
 
-    /// T-96: Yes saves the rule where one is right; the link does the opposite.
+    /// T-96: Yes, with the rule stated in plain sight by the New ones switch.
     @ViewBuilder private var guessActions: some View {
         if let label = guessName {
             BottomActions {
                 Button("Yes, \(label)") {
                     if let guessing = guessing {
-                        guessing.onYes()
-                    } else if canRule && !varies {
+                        guessing.onYes(offersNewOnes && newOnesOn)
+                    } else if canRule && newOnesOn {
                         Task { await always() }
                     } else {
                         Task { await confirm(said: varies && canRule ? "\(t.merchant) varies, so no rule" : nil) }
@@ -456,18 +462,20 @@ struct TransactionDetailView: View {
                 .buttonStyle(NacreButtonStyle(busy: busy))
                 .disabled(busy)
             } secondary: {
-                if let link = secondaryLabel {
-                    Button(link) {
-                        if let guessing = guessing {
-                            guessing.onSecondary()
-                        } else if varies {
-                            Task { await always() }
-                        } else {
-                            Task { await confirm() }
-                        }
+                if offersNewOnes {
+                    Toggle(isOn: Binding(get: { newOnesOn }, set: { newOnes = $0 })) {
+                        Text("New ones from \(t.merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
                     }
-                    .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
+                    .tint(Pearl.action)
+                    .padding(.horizontal, 4)
                     .disabled(busy)
+                }
+                // What Yes moves besides this row, printed before it moves.
+                if let rows = guessing?.ask.printed, !rows.isEmpty, newOnesOn {
+                    Text("Also sorts " + rows.map { "\(Format.short($0.date)) \(Format.amount(abs($0.amount)))" }
+                        .joined(separator: ", ") + ".")
+                        .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                        .multilineTextAlignment(.center)
                 }
             }
         }
@@ -1228,7 +1236,8 @@ struct TransactionDetailView: View {
     private func always() async {
         let label = t.label
         await run {
-            let reply: QuickSortStep = try await app.api.put("api/quick-sort/\(t.id)", ["action": "right", "every": true])
+            let reply: QuickSortStep = try await app.api.put("api/quick-sort/\(t.id)",
+                ["action": "right", "every": false, "rows": [String](), "new_ones": true])
             withAnimation {
                 toast = (QuickSortStep.always(label, sorted: (reply.also?.count ?? 0) + 1), undoing(reply.undo))
             }
