@@ -869,7 +869,7 @@ struct AnswerSheet: View {
 
     // MARK: Money
 
-    private var amountText: String { pageAmount ?? ((t.inflow ? "+" : "\u{2212}") + Format.amount(t.amount)) }
+    private var amountText: String { pageAmount ?? ((t.inflow ? "+" : "\u{2212}") + Format.amount(t.shownAmount)) }
     private var tone: Color { t.inflow ? Pearl.moneyIn : Pearl.moneyOut }
 }
 

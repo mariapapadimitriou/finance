@@ -203,3 +203,33 @@ def test_a_row_shows_what_a_piggy_bank_left(client):
     row = next(r for r in client.get("/api/transactions/list?month=2026-10&limit=1000").get_json()["transactions"]
                if r["merchant"] == "Air Transat")
     assert row["amount"] == 600 and row["full_amount"] == 900 and "paid $300.00" in row["note"]
+
+
+class TestTheAlwaysSwitch:
+    def test_on_saves_a_rule_and_moves_nothing_off_removes_it(self, client):
+        ledger(client, [tx("2026-10-08", "Bistro Nine", 30.00, "Dining", category_source="issuer"),
+                        tx("2026-10-02", "Bistro Nine", 12.00, "Coffee", category_source="issuer")])
+        rows = {t.amount: t for t in client.st.all_transactions() if t.merchant == "Bistro Nine"}
+        tid = rows[30.00].fingerprint
+        assert client.get(f"/api/transactions/{tid}/cases").get_json()["has_rule"] is False
+        assert client.put(f"/api/transactions/{tid}/always", json={"on": True}).status_code == 200
+        assert client.st.overrides()["bistro nine"] == "Dining"
+        assert client.get(f"/api/transactions/{tid}/cases").get_json()["has_rule"] is True
+        after = {t.amount: t.category for t in client.st.all_transactions() if t.merchant == "Bistro Nine"}
+        assert after[12.00] == "Coffee"
+        assert client.put(f"/api/transactions/{tid}/always", json={"on": False}).status_code == 200
+        assert "bistro nine" not in client.st.overrides()
+        assert client.get(f"/api/transactions/{tid}/cases").get_json()["has_rule"] is False
+
+    def test_a_general_name_cant_have_one(self, client):
+        ledger(client, [tx("2026-10-08", "Interac e-Transfer", 30.00, "Dining", category_source="issuer")])
+        t = next(x for x in client.st.all_transactions() if x.merchant == "Interac e-Transfer")
+        assert client.put(f"/api/transactions/{t.fingerprint}/always", json={"on": True}).status_code == 400
+
+
+def test_a_question_shows_her_share():
+    from finance.review import _brief
+    row = _brief(tx("2026-10-08", "Corner Store", 100.00, "Groceries", my_share=40.00))
+    assert row["amount"] == 100.00 and row["my_amount"] == 40.00
+    assert _brief(tx("2026-10-08", "Corner Store", 100.00, "Groceries"))["my_amount"] == 100.00
+    assert _brief(tx("2026-10-08", "Corner Store", -25.00, "Groceries"))["my_amount"] == 25.00

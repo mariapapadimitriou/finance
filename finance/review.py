@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from .analytics import is_others
+from .analytics import is_others, share_amount, spend_amount
 from .categorize import is_unsure
 from .duplicates import questions as duplicate_questions
 from .etransfers import is_etransfer, memo, party
@@ -52,12 +52,20 @@ def _money(x: float) -> str:
     return f"${abs(x):,.2f}"
 
 
+def _mine(t: Transaction) -> float:
+    """What a charge shows as hers: what the month pays for, or her share when a
+    piggy bank paid it all. The whole charge if neither says anything."""
+    if t.amount <= 0:
+        return abs(t.amount)
+    return round(abs(spend_amount(t)) or abs(share_amount(t)) or t.amount, 2)
+
+
 def _brief(t: Transaction, people=None) -> dict:
     from .categorize import is_generic_transfer_name
     who = party(t, people)
     return {"id": t.fingerprint, "date": t.date,
             "merchant": (who or {}).get("name") or t.merchant,
-            "description": t.description, "amount": t.amount,
+            "description": t.description, "amount": t.amount, "my_amount": _mine(t),
             "account_id": t.account_id, "account_name": t.account_label or "",
             "category": t.category, "logo": (t.raw or {}).get("logo_url") or "",
             # Whether a rule for this name could match the right rows: Always

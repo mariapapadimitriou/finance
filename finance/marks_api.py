@@ -137,6 +137,27 @@ def mark_transaction(txn_id: str):
                     "remember": res["remember"], "undo": undo})
 
 
+@bp.put("/transactions/<txn_id>/always")
+def set_always(txn_id: str):
+    """The Always switch on a row that's already sorted: new ones from this
+    merchant go where this one is, or stop doing so. Rows already there stay."""
+    from .categorize import is_generic_transfer_name
+    body = request.get_json(silent=True) or {}
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if not (t.merchant or "").strip() or is_generic_transfer_name(t.merchant):
+        return jsonify({"error": "That name is too general for a rule."}), 400
+    if body.get("on"):
+        if (t.category or "Other") == "Other":
+            return jsonify({"error": "Choose a category first."}), 400
+        st.set_override(t.merchant, t.category, move_rows=False)
+    else:
+        st.clear_override(t.merchant)
+    return jsonify({"ok": True})
+
+
 @bp.post("/review/pair/<txn_id>")
 def answer_pair(txn_id: str):
     """Yes on a pair card (finance/pairs.py): both rows, one answer."""
