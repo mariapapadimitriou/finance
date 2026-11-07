@@ -249,6 +249,8 @@ struct TransactionDetailView: View {
     @State private var varies = false
     /// Pay from a piggy bank.
     @State private var payingFromBank = false
+    /// A rule already sorts this merchant.
+    @State private var hasRule = false
     /// The bill this merchant is on, and the sheet that adds it.
     @State private var billKey: String?
     @State private var addingBill = false
@@ -586,15 +588,16 @@ struct TransactionDetailView: View {
     /// Whether the Always switch shows: a rule could match this merchant.
     private var offersNewOnes: Bool {
         if let guessing = guessing { return guessing.ask.canSaveRule(guessing.accounts) }
-        return canRule
+        // Already sorted: only for spending, where a rule means something.
+        return canRule && (guessName != nil || (!t.inflow && t.transfer == nil && t.excluded.isEmpty))
     }
 
     /// The switch's starting place: off where the merchant doesn't sort one way.
     private var newOnesOn: Bool {
         if let choice = newOnes { return choice }
         if let guessing = guessing { return guessing.ask.savesRule(guessing.accounts) }
-        // A row that's already sorted makes no rule unless she asks.
-        return guessName != nil && !varies
+        // A row that's already sorted shows whether a rule is there.
+        return guessName != nil ? !varies : hasRule
     }
 
     /// T-96: the category, marked as a guess. Tapping it changes the answer.
@@ -1140,7 +1143,10 @@ struct TransactionDetailView: View {
                 }
                 if offersNewOnes {
                     if canSplit || canPart || couldBePay || unlink || canOneOff { RowSeparator() }
-                    Toggle(isOn: Binding(get: { newOnesOn }, set: { newOnes = $0 })) {
+                    Toggle(isOn: Binding(get: { newOnesOn }, set: { on in
+                        // Nothing left to answer on a sorted row, so the switch acts at once.
+                        if guessName == nil { Task { await setAlways(on) } } else { newOnes = on }
+                    })) {
                         HStack(spacing: 12) {
                             IconBubble(symbol: "repeat")
                             Text("Always for \(t.merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
@@ -1167,6 +1173,16 @@ struct TransactionDetailView: View {
                     .accessibilityHint("Adds it to your bills")
                 }
             }
+        }
+    }
+
+    /// Always on a row that's already sorted: new ones go where this one is.
+    private func setAlways(_ on: Bool) async {
+        let category = t.label
+        let merchant = t.merchant
+        await run {
+            let _: OK = try await app.api.put("api/transactions/\(t.id)/always", ["on": on])
+            return on ? "Always \(category) for \(merchant)." : "No rule for \(merchant) now."
         }
     }
 
@@ -1378,10 +1394,14 @@ struct TransactionDetailView: View {
             billKey = bill?.billKey
         }
         if guessing == nil {
-            struct Cases: Decodable { let learnable: Bool?; let mixed: Bool? }
+            struct Cases: Decodable {
+                let learnable: Bool?; let mixed: Bool?; let hasRule: Bool?
+                enum CodingKeys: String, CodingKey { case learnable, mixed; case hasRule = "has_rule" }
+            }
             let cases: Cases? = try? await app.api.get("api/transactions/\(t.id)/cases")
             learnable = cases?.learnable ?? false
             varies = cases?.mixed ?? false
+            hasRule = cases?.hasRule ?? false
         }
         // People she's split with before, for Who was it with? (S-02).
         if recent.isEmpty, !t.inflow, let owed: OwedOverview = try? await app.api.get("api/owed") {
@@ -1472,11 +1492,14 @@ struct TransactionDetailView: View {
         }
     }
 
+    /// A new category: this row, and the rule when Always is on. Other rows
+    /// from the merchant stay as they are.
     private func change(to name: String, remember: Bool) async {
+        let merchant = t.merchant
         await run {
-            let _: CategoryChange = try await app.api.patch("api/transactions/\(t.id)",
-                                                            ["category": name, "apply_to_merchant": remember])
-            return remember ? "\(name), and every \(t.merchant) from now on." : "Moved to \(name)."
+            let _: QuickSortStep = try await app.api.put("api/quick-sort/\(t.id)",
+                ["action": "category", "category": name, "every": false, "rows": [String](), "new_ones": remember])
+            return remember ? "Always \(name) for \(merchant)." : "Moved to \(name)."
         }
     }
 

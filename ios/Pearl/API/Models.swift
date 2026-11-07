@@ -1015,15 +1015,24 @@ struct BriefTransaction: Decodable, Hashable {
     var mixed: Bool? = nil
     /// Money going out that the evidence asks about in its own words.
     var pair: Review.Pair? = nil
+    /// What counts as hers, when she shared it or a piggy bank paid part.
+    var myAmount: Double? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, date, merchant, description, amount, category, skipped, likely, to, learnable, mixed, pair
+        case myAmount = "my_amount"
         case accountName = "account_name"
         case accountId = "account_id"
     }
 
     var inflow: Bool { amount < 0 }
     var name: String { (merchant?.isEmpty == false ? merchant : description) ?? "Transaction" }
+    /// The amount to show: hers, the same as the transaction's own page.
+    var shownAmount: Double { myAmount ?? abs(amount) }
+    /// "Your share of $131.40", when that's less than the whole.
+    var shareNote: String? {
+        !inflow && abs(amount) - shownAmount > 0.005 ? "Your share of \(Format.amount(abs(amount)))" : nil
+    }
 }
 
 struct Review: Decodable {

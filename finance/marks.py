@@ -567,6 +567,8 @@ def cases(store, t: Transaction, txns: list[Transaction]) -> dict:
         # for a name every transfer shares (2026-10-23).
         "learnable": not _generic(t),
         "mixed": _mixed(store, t),
+        # Whether a rule already sorts this merchant (the Always switch).
+        "has_rule": _key(t.merchant) in store.overrides(),
         "saved_to": store.saved_to().get(t.fingerprint),
         "income_kinds": INCOME_KINDS,
         "income_kind": t.income_type,

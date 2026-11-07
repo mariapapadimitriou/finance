@@ -274,6 +274,9 @@ struct QuickSortView: View {
             Text(amount(t))
                 .font(.custom("Fraunces-SemiBold", size: 40, relativeTo: .largeTitle))
                 .foregroundColor(tone(t)).lineLimit(1).minimumScaleFactor(0.6)
+            if let note = t.shareNote {
+                Text(note).font(Nacre.footnote).foregroundColor(Pearl.ink)
+            }
             Text([Format.relativeDay(t.date), t.accountName].compactMap { $0 }.filter { !$0.isEmpty }
                     .joined(separator: " · "))
                 .font(Nacre.footnote).foregroundColor(Pearl.ink).lineLimit(1)
@@ -542,7 +545,7 @@ struct QuickSortView: View {
     }
 
     private func amount(_ t: BriefTransaction) -> String {
-        (t.inflow ? "+" : "\u{2212}") + Format.amount(abs(t.amount))
+        (t.inflow ? "+" : "\u{2212}") + Format.amount(t.shownAmount)
     }
 
     private func tone(_ t: BriefTransaction) -> Color { t.inflow ? Pearl.moneyIn : Pearl.moneyOut }

@@ -65,7 +65,9 @@ struct ReviewView: View {
         }
         .animation(.easeOut(duration: 0.25), value: sorting)
         .toolbar(sorting ? .hidden : .visible, for: .navigationBar)
-        .toolbar(sorting ? .hidden : .visible, for: .tabBar)
+        // The tab holding this screen decides the bar: tell it, so Quick sort has the whole screen.
+        .onChange(of: sorting) { on in app.hidesTabBar = on }
+        .onDisappear { app.hidesTabBar = false }
         .task { await load() }
         .fullScreenCover(item: Binding(get: { asking.flatMap { $0.opensPage(accounts) ? $0 : nil } },
                                        set: { asking = $0 })) { ask in
@@ -234,12 +236,12 @@ struct ReviewView: View {
                 Text(t.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                 Text(ask.kind == .joint ? "Joint · \(Format.relativeDay(t.date))"
                      : ask.item.rest.map { "\(Format.relativeDay(t.date)) · \(Format.amount($0.sorted)) sorted" }
-                     ?? Format.relativeDay(t.date))
+                     ?? [Format.relativeDay(t.date), t.shareNote].compactMap { $0 }.joined(separator: " · "))
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
                 GuessChip(label: ask.chip, question: false).padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text((t.inflow ? "+" : "\u{2212}") + Format.amount(t.amount))
+            Text((t.inflow ? "+" : "\u{2212}") + Format.amount(t.shownAmount))
                 .font(Nacre.headline).monospacedDigit()
                 .foregroundColor(t.inflow ? Pearl.ink : Pearl.moneyOut)
                 .fixedSize()
