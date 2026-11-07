@@ -49,7 +49,8 @@ extension Review {
 /// Quick sort (THL-254; T-85, T-86, T-72): Needs a look's questions as
 /// a stack of cards, one transaction each. A guess has two answers: swipe right
 /// or ✓ for Yes, with Undo on the toast, or swipe left or Skip. Tapping the card
-/// opens every other answer. A merchant sorted different ways gets no rule from
+/// opens its page, like Slack's catch up: edits are held, she goes back, and the
+/// card asks about them. A merchant sorted different ways gets no rule from
 /// Yes (T-97). A question with no guess has Answer in place of Yes. Leaving early
 /// keeps the rest in Needs a look.
 @MainActor
@@ -86,6 +87,11 @@ struct QuickSortView: View {
     @State private var busy = false
     @State private var error: String?
 
+    /// Edits made on a card's page, waiting for Yes on the card.
+    @State private var drafts: [String: CardDraft] = [:]
+    /// What counts as hers now, after a split or a piggy bank on the page.
+    @State private var amounts: [String: Double] = [:]
+
     /// How far a card has to travel to count as a swipe.
     private let threshold: CGFloat = 110
 
@@ -111,7 +117,7 @@ struct QuickSortView: View {
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center).padding(.horizontal, 32)
                     .accessibilityHidden(true)
-                if current.map(isGuess) == true {
+                if current.map(hasYes) == true {
                     Text("Tap the card for other answers.")
                         .font(Nacre.footnote).foregroundColor(Pearl.muted)
                         .padding(.top, 2)
@@ -140,17 +146,14 @@ struct QuickSortView: View {
                                        set: { asking = $0 }), onDismiss: comeBack) { ask in
             GuessPage(actions: GuessActions(
                 ask: ask, label: guess(ask), accounts: accounts, names: names,
-                onYes: { newOnes in asking = nil; yes(ask, newOnes: newOnes) },
+                onYes: { _ in },
                 onSkip: { asking = nil; left() },
-                onCategory: plain(ask) ? { name, all in
-                    asking = nil
-                    withAnimation(.easeIn(duration: 0.25)) { leaving = true }
-                    Task { await sortAs(ask, name, newOnes: all) }
-                } : nil,
                 onAnswer: { answer in
                     asking = nil
                     Task { await answered(ask, answer) }
-                }),
+                },
+                onDraft: { drafts[ask.id] = $0 },
+                draft: drafts[ask.id] ?? CardDraft()),
                       categories: categories)
         }
         .sheet(item: Binding(get: { asking.flatMap { $0.opensPage(accounts) ? nil : $0 } },
@@ -166,7 +169,12 @@ struct QuickSortView: View {
                 AnswerSheet(ask: ask, categories: categories, accounts: accounts, names: names,
                             api: app.api) { answer in
                     asking = nil
-                    Task { await answered(ask, answer) }
+                    if let label = answer.heldLabel {
+                        // Held for the card, like any other edit: Yes there saves it.
+                        drafts[ask.id] = CardDraft(label: label, answer: answer)
+                    } else {
+                        Task { await answered(ask, answer) }
+                    }
                 }
             }
         }
@@ -182,9 +190,16 @@ struct QuickSortView: View {
     /// A category guess: the cards that open What was this? and sort the rest with them.
     private func plain(_ ask: Ask) -> Bool { ask.kind == .category && ask.savedTo(accounts) == nil }
 
+    /// Whether the card has something to say Yes to: Pearl's guess, or her edit.
+    private func hasYes(_ ask: Ask) -> Bool { isGuess(ask) || drafts[ask.id]?.label != nil }
+
     private var hint: String {
         guard let ask = current else { return "" }
-        return isGuess(ask) ? ask.yesLine(accounts) : ""
+        guard let draft = drafts[ask.id] else { return isGuess(ask) ? ask.yesLine(accounts) : "" }
+        if draft.answer != nil { return "Yes saves this." }
+        if draft.category == nil && draft.always == nil { return ask.yesLine(accounts) }
+        return (draft.always ?? ask.savesRule(accounts)) ? "Yes sorts this, and always for \(ask.t.name)."
+            : "Yes sorts just this one."
     }
 
     /// "Dining out", or T-66's "Saved to TD Savings".
@@ -239,7 +254,7 @@ struct QuickSortView: View {
                     .rotationEffect(.degrees(Double(offsetX / 18)))
                     .gesture(swipe)
                     .accessibilityElement(children: .combine)
-                    .accessibilityAction(named: isGuess(ask) ? "Yes" : "Answer") { right() }
+                    .accessibilityAction(named: hasYes(ask) ? "Yes" : "Answer") { right() }
                     .accessibilityAction(named: "Skip") { left() }
                     .accessibilityAction(named: "Other answers") { asking = ask }
                     .accessibilityIdentifier("quick-sort-card")
@@ -262,7 +277,7 @@ struct QuickSortView: View {
     private func card(_ ask: Ask) -> some View {
         let t = ask.t
         return VStack(spacing: 10) {
-            Text(isGuess(ask) ? "PEARL’S GUESS" : "NEEDS A LOOK")
+            Text(drafts[ask.id]?.label != nil ? "YOUR CHOICE" : isGuess(ask) ? "PEARL’S GUESS" : "NEEDS A LOOK")
                 .font(Nacre.caption2).tracking(0.6).foregroundColor(Pearl.action)
             Initials(name: t.name, size: 64)
                 .overlay(Circle().strokeBorder(
@@ -271,26 +286,26 @@ struct QuickSortView: View {
                 .padding(.top, 4)
             Text(t.name).font(Nacre.headline).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(2)
-            Text(amount(t))
+            Text((t.inflow ? "+" : "\u{2212}") + Format.amount(amounts[ask.id] ?? t.shownAmount))
                 .font(.custom("Fraunces-SemiBold", size: 40, relativeTo: .largeTitle))
                 .foregroundColor(tone(t)).lineLimit(1).minimumScaleFactor(0.6)
-            if let note = t.shareNote {
+            if let note = amounts[ask.id].map({ abs(t.amount) - $0 > 0.005 ? "Your share of \(Format.amount(abs(t.amount)))" : "" }) ?? t.shareNote, !note.isEmpty {
                 Text(note).font(Nacre.footnote).foregroundColor(Pearl.ink)
             }
             Text([Format.relativeDay(t.date), t.accountName].compactMap { $0 }.filter { !$0.isEmpty }
                     .joined(separator: " · "))
                 .font(Nacre.footnote).foregroundColor(Pearl.ink).lineLimit(1)
-            Text(isGuess(ask) ? (ask.item.pair?.question ?? "\(guess(ask))?") : ask.chip)
+            Text(drafts[ask.id]?.label.map { "\($0)?" } ?? (isGuess(ask) ? (ask.item.pair?.question ?? "\(guess(ask))?") : ask.chip))
                 .font(Nacre.title).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7)
                 .padding(.top, 8)
-            if let evidence = ask.evidence {
+            if drafts[ask.id]?.label == nil, let evidence = ask.evidence {
                 Text(evidence).font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center).lineLimit(3)
             }
         }
         .modifier(CardFace())
-        .overlay(alignment: .topLeading) { stamp(guessing: isGuess(ask)) }
+        .overlay(alignment: .topLeading) { stamp(guessing: hasYes(ask)) }
     }
 
     /// YES or SKIP as a guess leans one way (T-64, T-65); ANSWER or SKIP for a
@@ -335,7 +350,7 @@ struct QuickSortView: View {
     }
 
     @ViewBuilder private var buttons: some View {
-        let guessing = current.map(isGuess) ?? true
+        let guessing = current.map(hasYes) ?? true
         HStack(spacing: 64) {
             roundButton(symbol: "forward", label: "Skip", filled: false) { left() }
             roundButton(symbol: guessing ? "checkmark" : "text.bubble",
@@ -399,7 +414,7 @@ struct QuickSortView: View {
     /// Yes to a guess, or open a question.
     private func right() {
         guard let ask = current, leaving == nil else { return }
-        if isGuess(ask) {
+        if hasYes(ask) {
             yes(ask)
         } else {
             withAnimation(.spring()) { drag = .zero }
@@ -409,12 +424,21 @@ struct QuickSortView: View {
 
     /// Yes on a guess (T-95): the rows on the card and the rule, with Undo. A
     /// merchant that varies answers this row alone, and the toast says why (T-97).
-    private func yes(_ ask: Ask, newOnes: Bool? = nil) {
+    private func yes(_ ask: Ask) {
         let label = guess(ask)
-        let rule = newOnes ?? ask.savesRule(accounts)
+        let draft = drafts[ask.id]
+        let rule = draft?.always ?? ask.savesRule(accounts)
         withAnimation(.easeIn(duration: 0.25)) { leaving = true }
         Task {
-            if !plain(ask) {
+            if let answer = draft?.answer {
+                await answered(ask, answer.withAlways(draft?.always))
+            } else if let name = draft?.category {
+                if plain(ask) {
+                    await sortAs(ask, name, newOnes: rule)
+                } else {
+                    await answered(ask, .mark(ask.t.id, ["case": "spending", "category": name, "remember": rule]))
+                }
+            } else if !plain(ask) {
                 await answered(ask, ask.yesAnswer(accounts, newOnes: rule))
             } else {
                 let varies = ask.varies(accounts)
@@ -442,10 +466,17 @@ struct QuickSortView: View {
         Task { await step(ask, ["action": "skip"]) }
     }
 
-    /// A sheet closed without an answer: the card comes back.
+    /// A sheet or page closed: the card comes back, with what she changed.
     private func comeBack() {
         guard !busy else { return }
         withAnimation(.spring()) { leaving = nil; drag = .zero }
+        guard let ask = current else { return }
+        // A split or a piggy bank saves on the page, and changes what's hers.
+        Task {
+            if let full: Transaction = try? await app.api.get("api/transactions/\(ask.t.id)"), !ask.t.inflow {
+                amounts[ask.id] = abs(full.amount)
+            }
+        }
     }
 
     /// The question's sheet did the work; the batch notes what it said, for
@@ -507,6 +538,7 @@ struct QuickSortView: View {
     /// Undo on T-86's toast: the ledger, the batch and the deck as they were.
     private func undo(_ sorted: Sorted) async {
         withAnimation { toast = nil }
+        drafts[sorted.ask.id] = nil
         do {
             if let body = sorted.undo?.any as? [String: Any] {
                 let _: OK = try await app.api.post("api/transactions/undo", body)
@@ -542,10 +574,6 @@ struct QuickSortView: View {
             app.changed()
         }
         onClose()
-    }
-
-    private func amount(_ t: BriefTransaction) -> String {
-        (t.inflow ? "+" : "\u{2212}") + Format.amount(t.shownAmount)
     }
 
     private func tone(_ t: BriefTransaction) -> Color { t.inflow ? Pearl.moneyIn : Pearl.moneyOut }

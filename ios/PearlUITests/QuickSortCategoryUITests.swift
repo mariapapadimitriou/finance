@@ -66,7 +66,7 @@ final class QuickSortCategoryUITests: XCTestCase {
         assertTheCategoriesShow("opened from the Quick sort card")
     }
 
-    /// Tap the card → another category comes back to the deck, on the next card.
+    /// Tap the card → another category → back → Yes comes back to the deck, on the next card.
     func testAnsweringStaysInQuickSort() {
         launch()
         openNeedsALook()
@@ -81,8 +81,17 @@ final class QuickSortCategoryUITests: XCTestCase {
         XCTAssertTrue(category.waitForExistence(timeout: 15), "T-96 has no category row")
         category.tap()
         assertTheCategoriesShow("opened from the Quick sort card")
-        // A tile answers at once: there is no Save.
+        // Held for the card, like Slack's catch up: the page has no Yes, and
+        // nothing moves until she goes back and agrees.
         app.buttons["Groceries"].tap()
+        XCTAssertTrue(app.staticTexts["Your choice"].waitForExistence(timeout: 10), "The page doesn't show the choice")
+        XCTAssertFalse(app.buttons["Yes, Groceries"].exists, "The page from a card shouldn't have Yes")
+        app.buttons["Back"].firstMatch.tap()
+        let edited = app.descendants(matching: .any)["quick-sort-card"]
+        XCTAssertTrue(edited.waitForExistence(timeout: 10), "Back didn't return to the card")
+        XCTAssertTrue(edited.label.contains("Groceries?"), "The card doesn't ask about the edit: \(edited.label)")
+        XCTAssertFalse(app.buttons["Undo"].exists, "The category was saved before Yes")
+        app.buttons["Yes"].tap()
         let tapped = Date()
         // Stays in Quick sort: the header, and an answer on the next card, for a while.
         sleep(4)
