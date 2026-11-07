@@ -47,7 +47,7 @@ final class QuickSortCategoryUITests: XCTestCase {
                       "No category tiles on the sheet \(context)")
     }
 
-    /// Needs a look → the Quick sort card → Let me choose → the category.
+    /// Needs a look → the Quick sort card → tap the card → the category.
     func testTheCategoriesShowFromTheQuickSortCard() {
         launch()
         openNeedsALook()
@@ -57,8 +57,8 @@ final class QuickSortCategoryUITests: XCTestCase {
         // has settled by the time they tap. The blank sheet needed that.
         sleep(5)
         card.tap()
-        let choose = app.buttons["Let me choose"]
-        XCTAssertTrue(choose.waitForExistence(timeout: 15), "Quick sort has no Let me choose")
+        let choose = app.descendants(matching: .any)["quick-sort-card"]
+        XCTAssertTrue(choose.waitForExistence(timeout: 15), "Quick sort has no card")
         choose.tap()
         let category = button(startingWith: "Dining")
         XCTAssertTrue(category.waitForExistence(timeout: 15), "T-96 has no category row")
@@ -66,7 +66,7 @@ final class QuickSortCategoryUITests: XCTestCase {
         assertTheCategoriesShow("opened from the Quick sort card")
     }
 
-    /// Let me choose → another category comes back to the deck, on the next card.
+    /// Tap the card → another category comes back to the deck, on the next card.
     func testAnsweringStaysInQuickSort() {
         launch()
         openNeedsALook()
@@ -74,8 +74,8 @@ final class QuickSortCategoryUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 15), "Needs a look has no Quick sort card")
         sleep(3)
         card.tap()
-        let choose = app.buttons["Let me choose"]
-        XCTAssertTrue(choose.waitForExistence(timeout: 15), "Quick sort has no Let me choose")
+        let choose = app.descendants(matching: .any)["quick-sort-card"]
+        XCTAssertTrue(choose.waitForExistence(timeout: 15), "Quick sort has no card")
         choose.tap()
         let category = button(startingWith: "Dining")
         XCTAssertTrue(category.waitForExistence(timeout: 15), "T-96 has no category row")
@@ -88,7 +88,7 @@ final class QuickSortCategoryUITests: XCTestCase {
         sleep(4)
         XCTAssertTrue(app.staticTexts["Quick sort"].waitForExistence(timeout: 10),
                       "The answer left Quick sort (\(Date().timeIntervalSince(tapped))s after tapping)")
-        XCTAssertTrue(app.buttons["Let me choose"].exists, "No card to answer after the tile")
+        XCTAssertTrue(app.buttons["Skip"].exists, "No card to answer after the tile")
         XCTAssertTrue(app.buttons["Undo"].exists, "No Undo after the tile")
     }
 
@@ -102,8 +102,8 @@ final class QuickSortCategoryUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 15), "Needs a look has no Quick sort card")
         sleep(5)
         card.tap()
-        let choose = app.buttons["Let me choose"]
-        XCTAssertTrue(choose.waitForExistence(timeout: 15), "Quick sort has no Let me choose")
+        let choose = app.descendants(matching: .any)["quick-sort-card"]
+        XCTAssertTrue(choose.waitForExistence(timeout: 15), "Quick sort has no card")
         choose.tap()
         let category = button(startingWith: "Dining")
         XCTAssertTrue(category.waitForExistence(timeout: 15), "T-96 has no category row")
