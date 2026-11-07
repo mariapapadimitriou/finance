@@ -380,14 +380,19 @@ def transaction_bill_get(txn_id: str):
     if err:
         return err
     today = date.fromisoformat(_today_iso())
-    found = _found_bill(ib.bills(st.all_transactions(), today, ib.load(st)), t.merchant)
+    rows = ib.bills(st.all_transactions(), today, ib.load(st))
+    found = _found_bill(rows, t.merchant)
+    # The bill this merchant is already on, found or added by hand: what the
+    # transaction page's Regular bill switch turns off.
+    current = next((r for r in rows if r.get("merchant") == t.merchant and r.get("counts")), None)
     cadence = found["cadence"] if found and found["cadence"] in ib.BILL_CADENCES else "monthly"
     nxt = found["next"] if found else _next_after(date.fromisoformat(t.date[:10]), cadence,
                                                    today).isoformat()
     share = round(t.my_share / t.amount * 100) if t.my_share is not None and t.amount else 100
     return jsonify({"name": t.merchant, "amount": round(t.amount, 2), "cadence": cadence,
                     "next": nxt, "share": max(1, min(100, share)), "category": t.category or "Other",
-                    "is_bill": bool(found and found["counts"])})
+                    "is_bill": bool(found and found["counts"]),
+                    "bill_key": current["key"] if current else None})
 
 
 @bp.post("/transactions/<txn_id>/bill")

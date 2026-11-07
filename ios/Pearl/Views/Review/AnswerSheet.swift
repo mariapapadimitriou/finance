@@ -27,6 +27,10 @@ struct AnswerSheet: View {
     /// Opened from the transaction's page (T-03, T-96), which has the options
     /// already: the tiles alone, as CR-04 has them.
     var fromPage = false
+    /// The page's Always switch, when it has one: this sheet doesn't ask again.
+    var pageAlways: Bool? = nil
+    /// The amount the page behind this sheet shows: her share, on a shared row.
+    var pageAmount: String? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step
@@ -79,9 +83,12 @@ struct AnswerSheet: View {
     /// `start` opens on one step, for the transaction page (THL-198):
     /// the kind of income, how often it pays, or What was this?.
     init(ask: Ask, categories: [CategoryList.Category], accounts: [AccountsOverview.Account], names: [String],
-         api: APIClient, start: Step? = nil, current: String? = nil, onCategory: ((String, Bool) -> Void)? = nil,
+         api: APIClient, start: Step? = nil, pageAlways: Bool? = nil, pageAmount: String? = nil, current: String? = nil, onCategory: ((String, Bool) -> Void)? = nil,
          confirmsGuess: Bool = true, fromPage: Bool = false, onAnswer: @escaping (ReviewAnswer) -> Void) {
         self.fromPage = fromPage
+        self.pageAlways = pageAlways
+        self.pageAmount = pageAmount
+        _rememberInto = State(initialValue: pageAlways ?? true)
         self.ask = ask
         self.categories = categories
         self.accounts = accounts
@@ -125,7 +132,7 @@ struct AnswerSheet: View {
                 CategorySheet(name: who, amount: amountText, tone: tone, categories: categories,
                               current: t.category ?? ask.item.guess?.text ?? "Other",
                               merchant: learnable ? who : nil,
-                              onRegularBill: { regularBill = $0 },
+                              onRegularBill: fromPage ? nil : { regularBill = $0 },
                               title: fromPage && ask.kind == .category ? "Category" : "What was this?",
                               preview: learnable ? CategorySheet.preview(api: api, id: t.id, merchant: who) : nil,
                               notSpending: CaseTile.notSpending, startNotSpending: ask.kind != .category,
@@ -135,7 +142,8 @@ struct AnswerSheet: View {
                               extras: fromPage ? nil : AnyView(outOptions),
                               answersAtOnce: true,
                               // Off where other rows are open or it varies: her answer here is for this row.
-                              newOnesOn: learnable && t.mixed != true && ask.item.siblings.isEmpty) { name, remember in
+                              newOnesOn: pageAlways ?? (learnable && t.mixed != true && ask.item.siblings.isEmpty),
+                              showsAlways: pageAlways == nil) { name, remember in
                     saveSpending(name, remember)
                 }
             } else if step == .into {
@@ -395,7 +403,7 @@ struct AnswerSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     QuestionHeader(name: who, amount: amountText, tone: tone, sub: ask.evidence)
-                    if learnable {
+                    if learnable && pageAlways == nil {
                         Toggle(isOn: $rememberInto) {
                             Text("Always for \(who)").font(Nacre.body).foregroundColor(Pearl.ink)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -861,7 +869,7 @@ struct AnswerSheet: View {
 
     // MARK: Money
 
-    private var amountText: String { (t.inflow ? "+" : "\u{2212}") + Format.amount(t.amount) }
+    private var amountText: String { pageAmount ?? ((t.inflow ? "+" : "\u{2212}") + Format.amount(t.amount)) }
     private var tone: Color { t.inflow ? Pearl.moneyIn : Pearl.moneyOut }
 }
 

@@ -249,6 +249,9 @@ struct TransactionDetailView: View {
     @State private var varies = false
     /// Pay from a piggy bank.
     @State private var payingFromBank = false
+    /// The bill this merchant is on, and the sheet that adds it.
+    @State private var billKey: String?
+    @State private var addingBill = false
     /// This page opened on a question, from the list; the next one waits.
     @State private var wasAsked: Bool?
     @State private var nextUp: Ask?
@@ -325,6 +328,7 @@ struct TransactionDetailView: View {
                 // T-96: the guess is wrong, so the answer is the question's. Yes is already on the page.
                 AnswerSheet(ask: ask, categories: categories, accounts: guessing.accounts, names: guessing.names,
                             api: app.api, start: ask.kind == .transfer ? .out : nil,
+                            pageAlways: offersNewOnes && newOnesOn, pageAmount: Format.money(t),
                             onCategory: guessing.onCategory.map { save in
                                 { name, remember in sorting = nil; save(name, remember) }
                             }, fromPage: true) { answer in
@@ -333,6 +337,7 @@ struct TransactionDetailView: View {
                 }
             } else {
                 AnswerSheet(ask: ask, categories: categories, accounts: [], names: recent, api: app.api,
+                            pageAlways: offersNewOnes && newOnesOn, pageAmount: Format.money(t),
                             onCategory: ask.kind == .category && !t.inflow ? { name, remember in
                                 sorting = nil
                                 Task {
@@ -403,6 +408,12 @@ struct TransactionDetailView: View {
                 }
             }
             .padding(.bottom, 8)
+        }
+        .sheet(isPresented: $addingBill) {
+            AddToBillsSheet(t: t, api: app.api, categories: categories, category: t.category) { said in
+                addingBill = false
+                Task { await run { said } }
+            }
         }
         .sheet(isPresented: $payingFromBank) {
             PiggyPaySheet(t: t, api: app.api) { said in
@@ -582,7 +593,8 @@ struct TransactionDetailView: View {
     private var newOnesOn: Bool {
         if let choice = newOnes { return choice }
         if let guessing = guessing { return guessing.ask.savesRule(guessing.accounts) }
-        return !varies
+        // A row that's already sorted makes no rule unless she asks.
+        return guessName != nil && !varies
     }
 
     /// T-96: the category, marked as a guess. Tapping it changes the answer.
@@ -611,15 +623,6 @@ struct TransactionDetailView: View {
                 }
                 .buttonStyle(NacreButtonStyle(busy: busy))
                 .disabled(busy)
-            } secondary: {
-                if offersNewOnes {
-                    Toggle(isOn: Binding(get: { newOnesOn }, set: { newOnes = $0 })) {
-                        Text("Always for \(t.merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
-                    }
-                    .tint(Pearl.action)
-                    .padding(.horizontal, 4)
-                    .disabled(busy)
-                }
             }
         }
     }
@@ -1070,7 +1073,7 @@ struct TransactionDetailView: View {
     @ViewBuilder private var options: some View {
         let unlink = t.refundOf != nil
         let canOneOff = t.canOneOff && !t.inflow
-        if canSplit || canPart || couldBePay || unlink || canOneOff || canPayFromBank {
+        if canSplit || canPart || couldBePay || unlink || canOneOff || canPayFromBank || offersNewOnes {
             section("Options")
             GlassCard {
                 if canPayFromBank {
@@ -1080,7 +1083,7 @@ struct TransactionDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
-                    if canSplit || canPart || couldBePay || unlink || canOneOff { RowSeparator() }
+                    if canSplit || canPart || couldBePay || unlink || canOneOff || offersNewOnes { RowSeparator() }
                 }
                 if canSplit || canPart {
                     Button { if canSplit { splitting = true } else { parting = deposit(rest: false) } } label: {
@@ -1135,7 +1138,45 @@ struct TransactionDetailView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                if offersNewOnes {
+                    if canSplit || canPart || couldBePay || unlink || canOneOff { RowSeparator() }
+                    Toggle(isOn: Binding(get: { newOnesOn }, set: { newOnes = $0 })) {
+                        HStack(spacing: 12) {
+                            IconBubble(symbol: "repeat")
+                            Text("Always for \(t.merchant)").font(Nacre.body).foregroundColor(Pearl.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .tint(Pearl.action)
+                    .disabled(busy)
+                    .padding(.horizontal, 16).frame(minHeight: 52)
+                    .accessibilityHint("New ones from \(t.merchant) sort the same way")
+                }
+                if canPayFromBank {
+                    RowSeparator()
+                    Toggle(isOn: Binding(get: { billKey != nil },
+                                         set: { on in if on { addingBill = true } else { Task { await removeBill() } } })) {
+                        HStack(spacing: 12) {
+                            IconBubble(symbol: "calendar")
+                            Text("Regular bill").font(Nacre.body).foregroundColor(Pearl.ink)
+                        }
+                    }
+                    .tint(Pearl.action)
+                    .disabled(busy)
+                    .padding(.horizontal, 16).frame(minHeight: 52)
+                    .accessibilityHint("Adds it to your bills")
+                }
             }
+        }
+    }
+
+    /// Off: it leaves her bills.
+    private func removeBill() async {
+        guard let key = billKey?.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return }
+        struct Removed: Decodable {}
+        await run {
+            let _: Removed = try await app.api.delete("api/income-bills/bills/\(key)")
+            return "Removed from your bills."
         }
     }
 
@@ -1330,7 +1371,13 @@ struct TransactionDetailView: View {
             oneOff = nil
         }
         if wasAsked == nil { wasAsked = t.suggested || t.asks }
-        if guessing == nil, t.suggested {
+        if canPayFromBank {
+            struct Bill: Decodable { let billKey: String?
+                enum CodingKeys: String, CodingKey { case billKey = "bill_key" } }
+            let bill: Bill? = try? await app.api.get("api/transactions/\(t.id)/bill")
+            billKey = bill?.billKey
+        }
+        if guessing == nil {
             struct Cases: Decodable { let learnable: Bool?; let mixed: Bool? }
             let cases: Cases? = try? await app.api.get("api/transactions/\(t.id)/cases")
             learnable = cases?.learnable ?? false
