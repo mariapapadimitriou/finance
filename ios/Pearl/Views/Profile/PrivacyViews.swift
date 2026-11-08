@@ -137,7 +137,7 @@ struct ConsentView: View {
             }
         }
         .refreshable { await load() }
-        .task(id: app.version) { await load() }
+        .reloads { await load() }
         .docSheet($doc)
         .alert("Turn off AI sorting?", isPresented: $askingAIOff) {
             Button("Cancel", role: .cancel) {}
@@ -282,7 +282,7 @@ struct NotificationsView: View {
             }
         }
         .refreshable { await load() }
-        .task(id: app.version) { await load() }
+        .reloads { await load() }
         .task { await readPermission() }
         // Back from iPhone Settings, the answer may have changed.
         .onChange(of: scenePhase) { phase in

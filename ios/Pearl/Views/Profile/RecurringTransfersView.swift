@@ -121,7 +121,7 @@ struct RecurringTransfersView: View {
             }
         }
         .refreshable { await load() }
-        .task(id: app.version) { await load() }
+        .reloads { await load() }
         .sheet(item: $open) { t in
             RecurringTransferSheet(transfer: t, categories: categories) { said in
                 open = nil

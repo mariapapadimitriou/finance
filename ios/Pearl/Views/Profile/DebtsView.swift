@@ -82,7 +82,7 @@ struct DebtsView: View {
             if let error = error { Hint(text: error).padding(.top, 4) }
         }
         .refreshable { await load() }
-        .task(id: app.version) { await load() }
+        .reloads { await load() }
         .sheet(item: $editing) { d in
             DebtDetailsSheet(debt: d) { reply in
                 data = reply

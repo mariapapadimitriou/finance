@@ -51,7 +51,7 @@ struct HomeView: View {
         .nacreScreen()
         .navigationBarHidden(true)
         .refreshable { await load() }
-        .task(id: app.version) { await load() }
+        .reloads { await load() }
         .navigationDestination(isPresented: $openAccounts) { AccountsView() }
         .sheet(item: $reconnecting) { c in
             ReconnectSheet(bank: c.institution ?? "your bank", label: c.institution ?? "Your bank",

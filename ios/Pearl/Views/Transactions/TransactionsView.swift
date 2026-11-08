@@ -9,7 +9,6 @@ import SwiftUI
 @MainActor
 struct TransactionsView: View {
     @EnvironmentObject private var app: AppModel
-    @State private var loadedVersion = -1
     @StateObject private var plaid = PlaidLinker()
 
     @State private var months: [String] = []
@@ -185,12 +184,7 @@ struct TransactionsView: View {
             await runSync(force: true)
             await reload()
         }
-        .task(id: app.version) { await start() }
-        // An answer given on a transaction's page changes the version while
-        // this list is off screen: come back to the rows as they are now.
-        .onAppear {
-            if loadedVersion != app.version { Task { await start() } }
-        }
+        .reloads { await start() }
         .task(id: query) { await search() }
         .sheet(isPresented: $showFilters) {
             FilterSheet(filters: filters, month: month, months: months, accounts: filterAccounts,
@@ -563,7 +557,8 @@ struct TransactionsView: View {
                                 .accessibilityAddTraits(picked.contains(t.id) ? .isSelected : [])
                             } else {
                                 NavigationLink(value: t) {
-                                    TransactionRow(t: t, paidBack: paidBack(for: t))
+                                    TransactionRow(t: t, paidBack: paidBack(for: t),
+                                                   onConfirm: { Task { await confirmGuess(t) } })
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -798,6 +793,21 @@ struct TransactionsView: View {
         }
     }
 
+    /// Tapping the dotted chip: Pearl's guess is right (2026-11-08).
+    private func confirmGuess(_ t: Transaction) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let reply: MarkReply = try await app.api.post("api/transactions/batch/confirm", ["ids": [t.id]])
+            withAnimation { toast = Toast(title: reply.title ?? "\(t.merchant) · \(t.label)", undo: reply.undo) }
+            error = nil
+            app.changed()
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+
     private func undo() async {
         guard let payload = toast?.undo, let body = payload.any as? [String: Any] else { return }
         do {
@@ -925,7 +935,6 @@ struct TransactionsView: View {
     // MARK: Loading
 
     private func start() async {
-        loadedVersion = app.version
         if let summary: Summary = try? await app.api.get("api/summary") {
             months = summary.months ?? []
             if month == nil || !months.contains(month!) { month = summary.latestMonth ?? months.last }
@@ -1052,6 +1061,8 @@ struct TransactionRow: View {
     var picked: Bool? = nil
     /// On a category's own page (T-46) the category goes without saying.
     var showsCategory = true
+    /// Tapping the dotted guess says it's right, without opening the row.
+    var onConfirm: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -1069,7 +1080,13 @@ struct TransactionRow: View {
                     Text(extra).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
                 }
                 if t.suggested {
-                    GuessChip(label: t.label, question: !t.asks).padding(.top, 4)
+                    if let onConfirm = onConfirm, !t.asks {
+                        Button(action: onConfirm) { GuessChip(label: t.label, question: true) }
+                            .buttonStyle(.plain)
+                            .padding(.top, 4)
+                    } else {
+                        GuessChip(label: t.label, question: !t.asks).padding(.top, 4)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1083,6 +1100,9 @@ struct TransactionRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint(t.suggested ? "Pearl’s guess. Opens it to check." : "")
+        .accessibilityAction(named: "Confirm \(t.label)") {
+            if t.suggested, !t.asks { onConfirm?() }
+        }
     }
 
     /// "Health · Today"; "Today · Pending" while it's a guess; "Paid back · Sushi Nami".

@@ -384,9 +384,16 @@ struct TransactionDetailView: View {
                             pageAlways: offersNewOnes && newOnesOn, pageAmount: Format.money(t),
                             pageCategory: chosenCategory,
                             onCategory: ask.kind == .category && !t.inflow ? { name, remember in
-                                // A guess waits for Yes; a row already sorted has nothing to confirm.
-                                if guessName != nil { choose(name); return }
                                 sorting = nil
+                                // Pearl's guess, picked: that's her yes.
+                                if guessName != nil, name == t.label, !remember || !canRule {
+                                    Task { await confirm(said: varies && canRule ? "\(t.merchant) varies, so no rule" : nil) }
+                                    return
+                                }
+                                if guessName != nil, name == t.label {
+                                    Task { await always() }
+                                    return
+                                }
                                 Task {
                                     if name != (t.category ?? t.label) || remember {
                                         await change(to: name, remember: remember)
@@ -650,6 +657,8 @@ struct TransactionDetailView: View {
         Button { sorting = guessing?.ask ?? sortAsk(.category) } label: {
             categoryLabel(symbol: chosenCategory ?? guessing?.ask.item.guess?.text ?? t.category ?? t.label,
                           title: label, sub: chosenCategory == nil ? "Pearl’s guess" : "Your choice")
+                .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .strokeBorder(Pearl.ink.opacity(0.7), style: StrokeStyle(lineWidth: 1.2, dash: [5, 3])))
         }
         .buttonStyle(.plain)
         .disabled(busy)
@@ -658,18 +667,16 @@ struct TransactionDetailView: View {
 
     /// T-96: Yes, with the rule stated in plain sight by the Always switch.
     @ViewBuilder private var guessActions: some View {
-        if let label = guessName, guessing?.onDraft == nil {
+        // From the Transactions tab the guess just stays a guess, dotted, until
+        // she taps it and picks (2026-11-08): no button.
+        if let label = guessName, let guessing = guessing, guessing.onDraft == nil {
             BottomActions {
                 Button("Yes, \(label)") {
                     let keep = offersNewOnes && newOnesOn
                     if let name = chosenCategory {
                         answer(with: name, always: keep)
-                    } else if let guessing = guessing {
-                        guessing.onYes(keep)
-                    } else if canRule && newOnesOn {
-                        Task { await always() }
                     } else {
-                        Task { await confirm(said: varies && canRule ? "\(t.merchant) varies, so no rule" : nil) }
+                        guessing.onYes(keep)
                     }
                 }
                 .buttonStyle(NacreButtonStyle(busy: busy))

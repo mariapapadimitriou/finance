@@ -217,6 +217,42 @@ final class AppModel: ObservableObject {
     }
 }
 
+/// Loads a screen when it first shows, when something changed (`app.version`)
+/// while it's on screen, or when it comes back after a change or after
+/// five minutes (2026-11-08). `.task(id: app.version)` ran again on every
+/// appear: every tab switch and every Back reloaded the whole screen, and
+/// every change reloaded the tabs nobody was looking at.
+struct ReloadsOnChange: ViewModifier {
+    @EnvironmentObject private var app: AppModel
+    let load: () async -> Void
+    @State private var loaded: Int?
+    @State private var loadedAt = Date.distantPast
+    @State private var visible = false
+    static let stale: TimeInterval = 300
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                visible = true
+                if loaded != app.version || Date().timeIntervalSince(loadedAt) > Self.stale { go() }
+            }
+            .onDisappear { visible = false }
+            .onChange(of: app.version) { _ in if visible { go() } }
+    }
+
+    private func go() {
+        loaded = app.version
+        loadedAt = Date()
+        Task { await load() }
+    }
+}
+
+extension View {
+    func reloads(_ load: @escaping () async -> Void) -> some View {
+        modifier(ReloadsOnChange(load: load))
+    }
+}
+
 /// What the app shows while a piece of it is held back.
 enum Features {
     /// Tags wait for THL-286: no Add tags row, no Tags tab in Categories and

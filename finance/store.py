@@ -22,6 +22,37 @@ from datetime import datetime, timezone
 from . import db
 from .models import Transaction
 
+# Bumped by every write through any store (2026-11-08), so a copy of the
+# ledger kept for one request is never read after something changed it.
+_writes = 0
+_READS = ("SELECT", "WITH", "PRAGMA")
+
+
+class _Watched:
+    """A connection that notes when it writes; everything else passes through."""
+
+    def __init__(self, c):
+        self._c = c
+
+    def execute(self, sql, *args, **kw):
+        global _writes
+        if not sql.lstrip().upper().startswith(_READS):
+            _writes += 1
+        return self._c.execute(sql, *args, **kw)
+
+    def executemany(self, sql, *args, **kw):
+        global _writes
+        _writes += 1
+        return self._c.executemany(sql, *args, **kw)
+
+    def executescript(self, *args, **kw):
+        global _writes
+        _writes += 1
+        return self._c.executescript(*args, **kw)
+
+    def __getattr__(self, name):
+        return getattr(self._c, name)
+
 
 def _people(raw) -> list[str]:
     try:
@@ -738,7 +769,7 @@ class Store:
     @contextmanager
     def conn(self):
         with db.connect(self.path, self.url, self.schema) as c:
-            yield c
+            yield _Watched(c)
 
     @property
     def is_postgres(self) -> bool:
@@ -1045,7 +1076,7 @@ class Store:
             )
             return cur.rowcount
 
-    def all_transactions(self) -> list[Transaction]:
+    def _all_transactions(self) -> list[Transaction]:
         """Every row, each carrying the piggy bank it was allocated to.
 
         The allocation is joined on here rather than left for callers to look
@@ -1077,6 +1108,29 @@ class Store:
                      LEFT JOIN txn_duplicates dpx ON dpx.txn_id = t.id
                     ORDER BY t.date DESC, t.id""").fetchall()
         return self._loaded(rows)
+
+    def all_transactions(self) -> list[Transaction]:
+        """Every row (`_all_transactions`), read once per request (2026-11-08).
+
+        A page asked for the whole ledger three times and more, each a trip
+        to the database and a few thousand rows made into transactions. Kept
+        for the request only, dropped by any write, and handed out as copies,
+        so one caller changing a row can't change it for the next.
+        """
+        try:
+            from flask import g, has_request_context
+        except ImportError:                                       # pragma: no cover
+            return self._all_transactions()
+        if not has_request_context():
+            return self._all_transactions()
+        import copy
+        cache = g.setdefault("_ledger", {})
+        key = (self.path, self.url, self.schema)
+        hit = cache.get(key)
+        if hit is None or hit[0] != _writes:
+            hit = (_writes, self._all_transactions())
+            cache[key] = hit
+        return [copy.copy(t) for t in hit[1]]
 
     def query_transactions(self, month: str | None = None, category: str | None = None,
                            account_id: str | None = None, search: str | None = None,
