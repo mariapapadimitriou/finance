@@ -519,6 +519,13 @@ struct Transaction: Decodable, Identifiable, Hashable {
     /// What the Always switch needs, from the list (2026-11-08), so the page
     /// shows it as it opens.
     var rule: RuleFacts? = nil
+    /// Always on income (2026-11-08): the payer, if one can be named, and
+    /// whether their deposits always count as this kind.
+    var incomeRule: IncomeRule? = nil
+    struct IncomeRule: Decodable, Hashable {
+        let payer: String?
+        let on: Bool?
+    }
     struct RuleFacts: Decodable, Hashable {
         let learnable: Bool?
         let mixed: Bool?
@@ -667,6 +674,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, date, description, amount, inflow, category, account, note, pending, excluded, chip
         case counts, suggested, split, repays, tags, kind, group, joint, manual, recurring, transfer, rule
+        case incomeRule = "income_rule"
         case merchantName = "merchant"
         case accountId = "account_id"
         case countsToward = "counts_toward"
@@ -718,6 +726,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         counts = opt(String.self, .counts) ?? "spending"
         chip = opt(Chip.self, .chip)
         rule = opt(RuleFacts.self, .rule)
+        incomeRule = opt(IncomeRule.self, .incomeRule)
         suggested = opt(Bool.self, .suggested) ?? (chip?.suggested ?? false)
         myNote = opt(String.self, .myNote) ?? ""
         split = opt(Bool.self, .split) ?? false

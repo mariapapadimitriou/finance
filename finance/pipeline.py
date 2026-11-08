@@ -134,3 +134,7 @@ def classify_ledger(store: Store) -> None:
     apply_pay_rules(store)
     apply_transfer_matches(store)
     apply_income_types(store)
+    # Always for a payer, on income (2026-11-08): after the guesses, which
+    # never write over it.
+    from .income_kind_rules import apply as apply_kind_rules
+    apply_kind_rules(store)
