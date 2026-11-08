@@ -373,7 +373,7 @@ struct Home: Decodable {
     /// A month with a third paycheque: a note, nothing to do.
     var paychequeNote: Review.PayMonth? = nil
     let snapshot: Snapshot?
-    let safeToSpend: SafeToSpend?
+    let safeToSpend: Allowance?
     let connections: [Connection]?
 
     enum CodingKeys: String, CodingKey {
@@ -413,23 +413,6 @@ struct Home: Decodable {
                 case usualByToday = "usual_by_today"
                 case nextPay = "next_pay"
             }
-        }
-    }
-
-    struct SafeToSpend: Decodable {
-        let state: String?
-        let amount: Double?
-        let perDay: Double?
-        let daysLeft: Int?
-        let nextPay: String?
-        let overBy: Double?
-
-        enum CodingKeys: String, CodingKey {
-            case state, amount
-            case perDay = "per_day"
-            case daysLeft = "days_left"
-            case nextPay = "next_pay"
-            case overBy = "over_by"
         }
     }
 

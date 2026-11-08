@@ -1,7 +1,8 @@
 import SwiftUI
 import UserNotifications
 
-/// Home, bare (SC-40): the greeting, what needs you, and a way to Cash flow.
+/// Home (SC-40): the Allowance ring from O-11b (2026-11-07), what needs you,
+/// and a way to Cash flow.
 @MainActor
 struct HomeView: View {
     @EnvironmentObject private var app: AppModel
@@ -21,9 +22,9 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                PageHeader(overline: home?.today.map { Format.day($0) }, title: greeting)
-
                 if let home = home {
+                    // For now (2026-11-07): O-11b's Allowance ring heads Home.
+                    allowanceHeader(home)
                     // H-02 (THL-120): every bank in trouble, worst first.
                     ForEach((home.connections ?? []).filter { ["needs_sign_in", "disconnected"].contains($0.state ?? "") }) { c in
                         BankAlertCard(connection: c, today: home.today) { openAccounts = true } reconnect: {
@@ -47,7 +48,7 @@ struct HomeView: View {
             .padding(.horizontal, Pearl.gutter)
             .padding(.vertical, 24)
         }
-        .pearlPage()
+        .nacreScreen()
         .navigationBarHidden(true)
         .refreshable { await load() }
         .task(id: app.version) { await load() }
@@ -67,9 +68,27 @@ struct HomeView: View {
         }
     }
 
-    private var greeting: String {
-        let name = app.user?.name ?? ""
-        return name.isEmpty ? Format.greeting() : "\(Format.greeting()), \(name)"
+    /// O-11b on Home: the date above "Your Allowance", the ring
+    /// with the pearl, and the line under it.
+    private func allowanceHeader(_ home: Home) -> some View {
+        VStack(spacing: 6) {
+            Text((home.today.map { Format.day($0) } ?? "").uppercased()).font(Nacre.caption2).tracking(1.4)
+                .foregroundColor(Pearl.ink)
+            Text("Your Allowance").font(Nacre.largeTitle).tracking(0.4).foregroundColor(Pearl.ink)
+                .accessibilityAddTraits(.isHeader)
+            AllowanceRing(overline: home.safeToSpend?.ringOverline(month: home.month)
+                            ?? Format.monthName(home.month).uppercased(),
+                          amount: home.safeToSpend?.ringAmount ?? "—",
+                          progress: home.safeToSpend?.ringProgress ?? 0)
+                .padding(.vertical, 12)
+            if let caption = home.safeToSpend?.ringCaption, !caption.isEmpty {
+                Text(caption).font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 8)
     }
 
     /// Got it: the note doesn't come back.
