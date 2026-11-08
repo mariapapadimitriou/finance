@@ -225,7 +225,9 @@ def step(st, transactions: list[Transaction], today: date, txn_id: str, action: 
 
     `rows` are the others printed on the card: with it, only those move, and
     the rule touches nothing else. `new_ones` says whether to save the rule
-    (the page's New ones switch); left out, `every` decides.
+    (Always for the merchant); left out, `every` decides. With it on, the
+    merchant's other open guesses are sorted the same way and come back in
+    `also`, whatever `rows` says.
     """
     from .categorize import CATEGORIES, is_generic_transfer_name
     from .impact import snapshot, undo_payload
@@ -254,6 +256,10 @@ def step(st, transactions: list[Transaction], today: date, txn_id: str, action: 
             if rows is not None:
                 printed = set(rows)
                 also = [o for o in also if o.fingerprint in printed]
+        elif new_ones and named and (action == "category" or before != "Other"):
+            # Always for the merchant (2026-11-08): the rule answers her other
+            # open cards from it too, so they leave the deck with this one.
+            also = same_merchant(st, transactions, today, t)
     # With the card's rows named, the rule files only new ones; the rows move below.
     exact = rows is not None
     wants_rule = every if new_ones is None else new_ones
