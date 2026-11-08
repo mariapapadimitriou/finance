@@ -40,7 +40,15 @@ on a confirmed device (`/api/auth/stay`): its session has no idle limit and
 ends after 30 days unused, because Face ID guards opening the app. The server
 cannot see Face ID happen, so a session cookie copied off that phone would
 last as long; removing the device from the account, signing out or changing
-the password ends it. Passwords need 10 characters. A new device must
+the password ends it. When a session does end, the iPhone can sign back in
+with Face ID: with Face ID on, the email and password she signed in with are
+kept in the Keychain on that iPhone only, readable only after Face ID
+(`biometryCurrentSet`, so adding a face clears them; `ThisDeviceOnly`, so
+they never go to backups or iCloud). Signing out, turning Face ID off, a
+password reset or the password no longer matching deletes them
+(`SavedSignIn` in `ios/Pearl/Views/Onboarding/FaceIDViews.swift`). Sign-in
+still asks for an email code if the iPhone is no longer a confirmed device.
+Passwords need 10 characters. A new device must
 be approved from a device already signed in, or with a recovery code
 (A-07, A-08, `finance/devices.py`). Too many wrong codes pause sign-in for
 15 minutes (`finance/signin_codes.py`). The reply to "send me a code" is
