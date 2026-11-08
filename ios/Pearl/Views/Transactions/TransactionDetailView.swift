@@ -271,6 +271,8 @@ struct TransactionDetailView: View {
     @State private var varies = false
     /// Pay from a piggy bank.
     @State private var payingFromBank = false
+    /// She picked Pearl's own guess on the category page (Quick sort holds it for the card).
+    @State private var pickedGuess = false
     /// A category picked for this guess, waiting for Yes.
     @State private var chosenCategory: String?
     /// The latest edits held for the Quick sort card.
@@ -365,7 +367,14 @@ struct TransactionDetailView: View {
                             api: app.api, start: ask.kind == .transfer ? .out : nil,
                             pageAlways: offersNewOnes && newOnesOn, pageAmount: Format.money(t),
                             pageCategory: chosenCategory,
-                            onCategory: { name, _ in choose(name) }, fromPage: true) { answer in
+                            onCategory: { name, remember in
+                                guard guessing.onDraft == nil else { choose(name); return }
+                                // Needs a look: picking is the answer (2026-11-08); picking
+                                // Pearl's guess is the Yes.
+                                sorting = nil
+                                if name == guessing.label { guessing.onYes(remember && offersNewOnes) }
+                                else { answer(with: name, always: remember && offersNewOnes) }
+                            }, fromPage: true) { answer in
                     sorting = nil
                     if guessing.onDraft != nil, let label = answer.heldLabel {
                         // Not saved yet: the card agrees to it.
@@ -655,10 +664,12 @@ struct TransactionDetailView: View {
     /// T-96: the category, marked as a guess. Tapping it changes the answer.
     private func guessCard(_ label: String) -> some View {
         Button { sorting = guessing?.ask ?? sortAsk(.category) } label: {
+            let still = chosenCategory == nil && !pickedGuess
             categoryLabel(symbol: chosenCategory ?? guessing?.ask.item.guess?.text ?? t.category ?? t.label,
-                          title: label, sub: chosenCategory == nil ? "Pearl’s guess" : "Your choice")
+                          title: label, sub: still ? "Pearl’s guess" : "Your choice")
                 .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .strokeBorder(Pearl.ink.opacity(0.7), style: StrokeStyle(lineWidth: 1.2, dash: [5, 3])))
+                    .strokeBorder(Pearl.ink.opacity(still ? 0.7 : 0),
+                                  style: StrokeStyle(lineWidth: 1.2, dash: [5, 3])))
         }
         .buttonStyle(.plain)
         .disabled(busy)
@@ -1240,7 +1251,9 @@ struct TransactionDetailView: View {
     /// say it. The guess itself goes back to being the guess.
     private func choose(_ name: String) {
         sorting = nil
-        chosenCategory = name == (guessing?.label ?? t.label) ? nil : name
+        // Picking Pearl's guess is still a choice: it isn't dotted any more.
+        pickedGuess = name == (guessing?.label ?? t.label)
+        chosenCategory = pickedGuess ? nil : name
         holdForCard {
             $0.answer = nil
             $0.category = chosenCategory
@@ -1476,30 +1489,39 @@ struct TransactionDetailView: View {
         await load()
     }
 
+    private struct Cases: Decodable {
+        let learnable: Bool?; let mixed: Bool?; let hasRule: Bool?
+        enum CodingKeys: String, CodingKey { case learnable, mixed; case hasRule = "has_rule" }
+    }
+    private struct Bill: Decodable {
+        let billKey: String?
+        enum CodingKeys: String, CodingKey { case billKey = "bill_key" }
+    }
+
+    /// Everything the page needs, asked for together and shown at once
+    /// (2026-11-08): one after another, the page changed four times as each
+    /// answer came in.
     private func load() async {
-        if let full: Transaction = try? await app.api.get("api/transactions/\(detail?.id ?? transaction.id)") {
+        let id = detail?.id ?? transaction.id
+        let api = app.api
+        async let fullReply: Transaction? = try? api.get("api/transactions/\(id)")
+        async let casesReply: Cases? = guessing == nil ? (try? api.get("api/transactions/\(id)/cases")) : nil
+        async let owedReply: OwedOverview? = recent.isEmpty && !transaction.inflow ? (try? api.get("api/owed")) : nil
+        async let billReply: Bill? = canPayFromBank ? (try? api.get("api/transactions/\(id)/bill")) : nil
+        let (full, cases, owed, bill) = await (fullReply, casesReply, owedReply, billReply)
+        if let full = full {
             detail = full
             oneOff = nil
         }
         if wasAsked == nil { wasAsked = t.suggested || t.asks }
-        if canPayFromBank {
-            struct Bill: Decodable { let billKey: String?
-                enum CodingKeys: String, CodingKey { case billKey = "bill_key" } }
-            let bill: Bill? = try? await app.api.get("api/transactions/\(t.id)/bill")
-            billKey = bill?.billKey
-        }
+        if canPayFromBank { billKey = bill?.billKey }
         if guessing == nil {
-            struct Cases: Decodable {
-                let learnable: Bool?; let mixed: Bool?; let hasRule: Bool?
-                enum CodingKeys: String, CodingKey { case learnable, mixed; case hasRule = "has_rule" }
-            }
-            let cases: Cases? = try? await app.api.get("api/transactions/\(t.id)/cases")
             learnable = cases?.learnable ?? false
             varies = cases?.mixed ?? false
             hasRule = cases?.hasRule ?? false
         }
         // People she's split with before, for Who was it with? (S-02).
-        if recent.isEmpty, !t.inflow, let owed: OwedOverview = try? await app.api.get("api/owed") {
+        if let owed = owed {
             var names: [String] = []
             for n in owed.owesYou.map(\.name) + owed.paidBack.compactMap(\.name) where !names.contains(n) {
                 names.append(n)

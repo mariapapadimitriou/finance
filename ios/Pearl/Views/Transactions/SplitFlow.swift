@@ -31,7 +31,8 @@ struct SplitSheet: View {
     /// S-17 Add someone: names from her contacts, and the one she picked.
     @State private var adding = false
     @State private var contacts: [String] = []
-    @State private var contact: String?
+    /// Contacts and names ticked on Add someone, added together (2026-11-08).
+    @State private var picked: [String] = []
 
     private static let me = "\u{0}me"
 
@@ -58,7 +59,7 @@ struct SplitSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             SheetTitle(title: adding ? "Add someone" : step == 0 ? "Who was it with?" : (title ?? "How to split")) {
-                if adding { adding = false; typed = "" } else { dismiss() }
+                if adding { adding = false; typed = ""; picked = [] } else { dismiss() }
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -90,6 +91,18 @@ struct SplitSheet: View {
             .padding(.horizontal, 14).frame(height: 44)
             .background(Capsule().fill(Pearl.ink.opacity(0.08)))
             let q = typed.trimmingCharacters(in: .whitespaces)
+            // Ticked ones stay ticked while she searches for the next person.
+            let ticked = picked.filter { !contacts.contains($0) }
+            if !ticked.isEmpty {
+                Text("ADDING").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                    .padding(.horizontal, 16)
+                GlassCard {
+                    ForEach(Array(ticked.enumerated()), id: \.element) { i, name in
+                        if i > 0 { RowSeparator(inset: 64) }
+                        pickRow(name, sub: nil)
+                    }
+                }
+            }
             if !contacts.isEmpty || !q.isEmpty {
                 if !contacts.isEmpty {
                     Text("FROM YOUR CONTACTS").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
@@ -98,26 +111,11 @@ struct SplitSheet: View {
                 GlassCard {
                     ForEach(Array(contacts.enumerated()), id: \.element) { i, name in
                         if i > 0 { RowSeparator(inset: 64) }
-                        Button { contact = contact == name ? nil : name } label: {
-                            HStack(spacing: 12) {
-                                Initials(name: name, size: 34)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
-                                    Text("In your contacts").font(Nacre.footnote).foregroundColor(Pearl.muted)
-                                }
-                                Spacer()
-                                Image(systemName: contact == name ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(contact == name ? Pearl.action : Pearl.muted)
-                            }
-                            .padding(.horizontal, 16).frame(minHeight: 54).contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(contact == name ? .isSelected : [])
+                        pickRow(name, sub: "In your contacts")
                     }
-                    if !q.isEmpty {
+                    if !q.isEmpty && !picked.contains(q) {
                         if !contacts.isEmpty { RowSeparator() }
-                        Button { contact = nil; add(q) } label: {
+                        Button { pick(q); typed = "" } label: {
                             HStack {
                                 Text("Add “\(q)” without a contact").font(Nacre.body).foregroundColor(Pearl.action)
                                 Spacer()
@@ -156,15 +154,52 @@ struct SplitSheet: View {
                 .filter { !$0.isEmpty }
         }.value
         contacts = Array(NSOrderedSet(array: found).array as? [String] ?? found).prefix(6).map { $0 }
-        if let c = contact, !contacts.contains(c) { contact = nil }
     }
 
-    private func add(_ name: String) {
-        if !people.contains(name) { people.append(name) }
+    private func pickRow(_ name: String, sub: String?) -> some View {
+        let on = picked.contains(name)
+        return Button { pick(name) } label: {
+            HStack(spacing: 12) {
+                Initials(name: name, size: 34)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
+                    if let sub = sub { Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted) }
+                }
+                Spacer()
+                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundColor(on ? Pearl.action : Pearl.muted)
+            }
+            .padding(.horizontal, 16).frame(minHeight: 54).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private func pick(_ name: String) {
+        if let i = picked.firstIndex(of: name) { picked.remove(at: i) } else { picked.append(name) }
+    }
+
+    /// Everyone ticked, plus a typed name nobody ticked, into the split.
+    private func addPicked() {
+        var names = picked
+        let q = typed.trimmingCharacters(in: .whitespaces)
+        if names.isEmpty && !q.isEmpty { names = [q] }
+        for name in names where !people.contains(name) { people.append(name) }
         typed = ""
         contacts = []
-        contact = nil
+        picked = []
         adding = false
+    }
+
+    private var addLabel: String {
+        let q = typed.trimmingCharacters(in: .whitespaces)
+        let names = picked.isEmpty ? (q.isEmpty ? [] : [q]) : picked
+        switch names.count {
+        case 0: return "Add"
+        case 1: return "Add \(names[0].components(separatedBy: " ").first ?? names[0])"
+        default: return "Add \(names.count) people"
+        }
     }
 
     private var withMeCard: some View {
@@ -409,10 +444,9 @@ struct SplitSheet: View {
 
     @ViewBuilder private var footer: some View {
         if adding {
-            let name = contact ?? typed.trimmingCharacters(in: .whitespaces)
-            Button(name.isEmpty ? "Add" : "Add \(name.components(separatedBy: " ").first ?? name)") { add(name) }
+            Button(addLabel) { addPicked() }
                 .buttonStyle(NacreButtonStyle())
-                .disabled(name.isEmpty)
+                .disabled(addLabel == "Add")
                 .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         } else {
         Button(step == 0 ? "Next" : saveTitle) {

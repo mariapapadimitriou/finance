@@ -425,7 +425,8 @@ struct AnswerSheet: View {
                     Text("NOT INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
                         .padding(.horizontal, 16).padding(.top, 4).accessibilityAddTraits(.isHeader)
                     CaseGrid(cases: CaseTile.notIncome, chosen: answer(income: false))
-                    inOptions
+                    // The transaction's page has Split into parts already (2026-11-08).
+                    if !fromPage { inOptions }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
