@@ -253,7 +253,7 @@ struct AccountsView: View {
             }
         }
         .refreshable { await load() }
-        .task(id: app.version) { await load() }
+        .reloads { await load() }
         .onAppear(perform: showNotice)
         .onChange(of: app.accountsNotice) { _ in showNotice() }
         .sheet(isPresented: $adding) {
@@ -614,7 +614,7 @@ struct AccountDetailView: View {
         .onAppear {
             if gone { dismiss() } else { syncState() }
         }
-        .task(id: app.version) { await refresh() }
+        .reloads { await refresh() }
         .alert("Nickname", isPresented: $renaming) {
             TextField(account.name, text: $nickname)
             Button("Cancel", role: .cancel) {}

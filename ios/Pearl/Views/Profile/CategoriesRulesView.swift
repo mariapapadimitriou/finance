@@ -63,7 +63,7 @@ struct CategoriesRulesView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .overlay(alignment: .bottom) { toastView }
-        .task(id: app.version) { await load() }
+        .reloads { await load() }
         .sheet(item: $editing) { rule in
             CategorySheet(name: rule.name, amount: rule.words, tone: Pearl.muted, categories: categories,
                           current: rule.category ?? "Other", title: "Rule",

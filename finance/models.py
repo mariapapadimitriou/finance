@@ -342,6 +342,12 @@ class Transaction:
         different days in a mid-cycle export vs. a final statement, and we do
         not want that to look like two distinct charges.
         """
+        # Asked for thousands of times a page (2026-11-08): kept, and worked
+        # out again only if one of the fields it's made from has changed.
+        parts = (self.account_id, self.date, self.amount, self.description, self.seq)
+        cached = self.__dict__.get("_fp")
+        if cached is not None and cached[0] == parts:
+            return cached[1]
         key = "|".join([
             self.account_id,
             self.date,
@@ -349,7 +355,9 @@ class Transaction:
             re.sub(r"\s+", " ", self.description.upper().strip()),
             str(self.seq),
         ])
-        return hashlib.sha1(key.encode("utf-8")).hexdigest()[:20]
+        out = hashlib.sha1(key.encode("utf-8")).hexdigest()[:20]
+        self.__dict__["_fp"] = (parts, out)
+        return out
 
     @property
     def account_label(self) -> str:

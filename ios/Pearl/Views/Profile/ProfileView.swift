@@ -127,7 +127,7 @@ struct ProfileView: View {
         .refreshable { await load() }
         .nacreScreen()
         .navigationBarHidden(true)
-        .task(id: app.version) { await load() }
+        .reloads { await load() }
         .docSheet($doc)
         .navigationDestination(isPresented: $showConsent) {
             ConsentView(goHome: {

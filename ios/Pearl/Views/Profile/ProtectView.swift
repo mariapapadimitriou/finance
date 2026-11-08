@@ -76,7 +76,7 @@ struct ProtectView: View {
             }
         }
         .refreshable { await load() }
-        .task(id: app.version) { await load() }
+        .reloads { await load() }
         .docSheet($doc)
     }
 

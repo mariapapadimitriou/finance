@@ -72,7 +72,7 @@ struct IncomeBillsView: View {
             }
         }
         .refreshable { await load() }
-        .task(id: app.version) { await load() }
+        .reloads { await load() }
         .sheet(item: $sheet) { which in
             sheetView(which)
                 .presentationDetents([.large])
