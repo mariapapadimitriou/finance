@@ -79,65 +79,18 @@ struct AllowanceView: View {
     }
 
     private var allowance: Allowance? { home?.safeToSpend }
-    private var over: Bool { allowance?.state == "over" }
+    private var month: String { home?.month ?? Allowance.thisMonth }
 
-    private var ringOverline: String {
-        if over, let left = allowance?.daysLeft { return "\(left) DAYS LEFT" }
-        if let range = midMonth { return range }
-        return Format.monthName(home?.month ?? Self.thisMonth).uppercased()
-    }
-
-    /// O-11d: "NOV 20–30", from the day history starts to the month's end.
-    private var midMonth: String? {
-        guard let from = allowance?.from, let start = Format.localDay(from) else { return nil }
-        let cal = Calendar.current
-        guard let days = cal.range(of: .day, in: .month, for: start)?.count else { return nil }
-        let f = DateFormatter()
-        f.dateFormat = "MMM d"
-        return "\(f.string(from: start))–\(days)".uppercased()
-    }
-
-    private var ringAmount: String {
-        guard !skipped, let a = allowance, a.state != "needs_income" else { return "—" }
-        if over { return "−" + Format.whole(a.overBy ?? 0) }
-        let value = Format.whole(a.shown ?? a.amount ?? 0)
-        return a.estimate == true ? "~" + value : value
-    }
-
-    private var progress: Double {
-        guard !skipped, !over, let left = allowance?.daysLeft else { return 0 }
-        var days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        // Started mid-month: of the days it covers, not the whole month.
-        if let from = allowance?.from, let start = Format.localDay(from) {
-            days -= Double(Calendar.current.component(.day, from: start) - 1)
-        }
-        return min(max(Double(left) / max(days, 1), 0.05), 1)
-    }
+    private var ringOverline: String { allowance?.ringOverline(month: month) ?? Format.monthName(month).uppercased() }
+    private var ringAmount: String { skipped ? "—" : allowance?.ringAmount ?? "—" }
+    private var progress: Double { skipped ? 0 : allowance?.ringProgress ?? 0 }
 
     private var caption: String {
         if skipped { return "Link a bank to see your Allowance." }
-        guard let a = allowance else { return "" }
-        let next = a.nextPay.map { " Next pay: \(Format.short($0))." } ?? ""
-        switch a.state {
-        case "needs_income": return "Add your income to see your Allowance."
-        case "over":
-            if (a.overBy ?? 0) < 0.5 { return "You’ve used this month’s Allowance.\(next)" }
-            return "\(Format.whole(a.overBy ?? 0)) past this month’s plan.\(next)"
-        default:
-            if midMonth != nil { return "For the rest of this month." }
-            if a.estimate == true {
-                let when = a.nextPay.map { " on \(Format.short($0))" } ?? ""
-                return "An estimate for now. It gets sharper after your next pay\(when)."
-            }
-            return "Left to spend or save on non-essentials."
-        }
+        return allowance?.ringCaption ?? ""
     }
 
-    private static var thisMonth: String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM"
-        return f.string(from: Date())
-    }
+
 
     private func step(_ n: Int, _ title: String, done: Bool, current: Bool) -> some View {
         HStack(alignment: .top, spacing: 12) {
@@ -173,6 +126,67 @@ struct AllowanceView: View {
             app.signedIn(reply.user)
         } catch {
             self.error = app.handle(error)
+        }
+    }
+}
+
+/// What the ring says about an Allowance: on O-11 and on Home.
+extension Allowance {
+    static var thisMonth: String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM"
+        return f.string(from: Date())
+    }
+
+    private var over: Bool { state == "over" }
+
+    /// "NOVEMBER", "12 DAYS LEFT" when over, or "NOV 20–30" mid-month (O-11d).
+    func ringOverline(month: String) -> String {
+        if over, let left = daysLeft { return "\(left) DAYS LEFT" }
+        if let range = midMonth { return range }
+        return Format.monthName(month).uppercased()
+    }
+
+    private var midMonth: String? {
+        guard let from = from, let start = Format.localDay(from) else { return nil }
+        guard let days = Calendar.current.range(of: .day, in: .month, for: start)?.count else { return nil }
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return "\(f.string(from: start))–\(days)".uppercased()
+    }
+
+    var ringAmount: String {
+        guard state != "needs_income" else { return "—" }
+        if over { return "−" + Format.whole(overBy ?? 0) }
+        let value = Format.whole(shown ?? amount ?? 0)
+        return estimate == true ? "~" + value : value
+    }
+
+    /// How much of the month is left, which is how far round the pearl sits.
+    var ringProgress: Double {
+        guard !over, let left = daysLeft else { return 0 }
+        var days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+        // Started mid-month: of the days it covers, not the whole month.
+        if let from = from, let start = Format.localDay(from) {
+            days -= Double(Calendar.current.component(.day, from: start) - 1)
+        }
+        return min(max(Double(left) / max(days, 1), 0.05), 1)
+    }
+
+    var ringCaption: String {
+        let next = nextPay.map { " Next pay: \(Format.short($0))." } ?? ""
+        switch state {
+        case "needs_income": return "Add your income to see your Allowance."
+        case "over":
+            if (overBy ?? 0) < 0.5 { return "You’ve used this month’s Allowance.\(next)" }
+            return "\(Format.whole(overBy ?? 0)) past this month’s plan.\(next)"
+        default:
+            if midMonth != nil { return "For the rest of this month." }
+            if estimate == true {
+                let when = nextPay.map { " on \(Format.short($0))" } ?? ""
+                return "An estimate for now. It gets sharper after your next pay\(when)."
+            }
+            return "Left to spend or save on non-essentials."
         }
     }
 }
