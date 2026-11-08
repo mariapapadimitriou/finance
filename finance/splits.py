@@ -100,8 +100,10 @@ def validate(charge: Transaction, mode: str, people: list, you=None,
 
     THL-291: evenly (any odd cent to you), by amount, by percent or by
     shares. `you` is your own amount, percent or shares; with it, the parts
-    must add up to the whole charge exactly ("$4.12 left to assign"). With
-    `include_me` off ("I had some too" off) your share is nothing."""
+    can't add up to more than the whole charge. Less is fine (2026-11-08):
+    what nobody has been given yet stays yours, so a split can be saved
+    before every part is known. With `include_me` off ("I had some too" off)
+    your share is nothing but that rest."""
     if mode not in MODES:
         return [], "Split evenly, by amount, by percent or by shares."
     if not isinstance(people, list) or not people:
@@ -140,14 +142,16 @@ def validate(charge: Transaction, mode: str, people: list, you=None,
         whole = sum(weights) + mine
         if whole <= 0:
             return [], "Give someone a part."
-        if mode == "percent" and abs(whole - 100) > 0.001:
-            left = 100 - whole
-            return [], (f"{left:g}% left to assign." if left > 0 else f"That’s {-left:g}% too much.")
-        # Theirs rounded down to the cent; what's left over is yours.
+        short = mode == "percent" and whole < 100 - 0.001
+        if mode == "percent" and whole > 100 + 0.001:
+            return [], f"That’s {whole - 100:g}% too much."
+        # Theirs rounded down to the cent; what's left over is yours. Short
+        # of 100%, each part is its percent of the whole and the rest is yours.
+        over = 100 if short else whole
         for p, w in zip(clean, weights):
-            p["amount"] = (total * w // whole) / 100 if whole else 0.0
+            p["amount"] = (total * w // over) / 100 if over else 0.0
             p[key] = w
-        if not include_me:
+        if not include_me and not short:
             gap = total - sum(_cents(p["amount"]) for p in clean)
             for i in range(gap):
                 clean[i % len(clean)]["amount"] = round(clean[i % len(clean)]["amount"] + 0.01, 2)
@@ -163,10 +167,8 @@ def validate(charge: Transaction, mode: str, people: list, you=None,
         mine = None if you is None else _cents(you) if include_me else 0
         if mine is None and not include_me:
             mine = 0
-        if mine is not None and theirs + mine != total:
-            gap = total - theirs - mine
-            return [], (f"${gap / 100:,.2f} left to assign." if gap > 0
-                        else f"That’s ${-gap / 100:,.2f} more than the charge.")
+        if mine is not None and theirs + mine > total:
+            return [], f"That’s ${(theirs + mine - total) / 100:,.2f} more than the charge."
         if theirs > total:
             return [], "Their parts add up to more than the whole charge."
     for p in clean:

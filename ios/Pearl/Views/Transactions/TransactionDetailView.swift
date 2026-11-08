@@ -1181,9 +1181,9 @@ struct TransactionDetailView: View {
                                 sub: [Format.cadence(pay.cadence ?? ""),
                                       pay.next.map { "next on \(Format.weekdayDay($0))" }]
                                     .compactMap { $0 }.joined(separator: " · "),
-                                chevron: true)
+                                chevron: true, icon: "briefcase")
                         } else {
-                            row(title: "This is my regular pay", chevron: true)
+                            row(title: "This is my regular pay", chevron: true, icon: "briefcase")
                         }
                     }
                     .buttonStyle(.plain)

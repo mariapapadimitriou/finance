@@ -49,10 +49,12 @@ struct SplitSheet: View {
         _step = State(initialValue: names == nil ? 0 : 1)
         _withMe = State(initialValue: t.splitting.map { $0.you >= 0.005 } ?? true)
         if let s = t.splitting, let m = s.mode, m != "even" {
-            _mode = State(initialValue: m == "amount" ? "amount" : m)
+            // Opened again (2026-11-08): each part as it was saved, in Amounts,
+            // so nothing has to be typed twice.
+            _mode = State(initialValue: "amount")
             var v: [String: String] = [Self.me: Self.plain(s.you)]
             for p in s.people { v[p.name] = Self.plain(p.amount) }
-            _values = State(initialValue: m == "amount" ? v : [:])
+            _values = State(initialValue: v)
         }
     }
 
@@ -287,6 +289,15 @@ struct SplitSheet: View {
         typed = ""
     }
 
+    /// Swiped away on How to split (2026-11-08).
+    private func remove(_ name: String) {
+        withAnimation {
+            people.removeAll { $0 == name }
+            values[name] = nil
+            if people.isEmpty { step = 0 }
+        }
+    }
+
     private func toggle(_ name: String) {
         if let i = people.firstIndex(of: name) { people.remove(at: i) } else { people.append(name) }
     }
@@ -308,6 +319,7 @@ struct SplitSheet: View {
             GlassCard {
                 ForEach(Array(rows.enumerated()), id: \.element) { i, key in
                     if i > 0 { RowSeparator(inset: 64) }
+                    SwipeToRemove(enabled: key != Self.me, label: label(key)) { remove(key) } content: {
                     HStack(spacing: 12) {
                         Initials(name: key == Self.me ? "Me" : key, size: 34)
                         Text(label(key)).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
@@ -328,6 +340,7 @@ struct SplitSheet: View {
                         }
                     }
                     .padding(.horizontal, 16).frame(minHeight: 56)
+                    }
                 }
             }
             Group {
@@ -335,7 +348,8 @@ struct SplitSheet: View {
                     Text(addsUp).foregroundColor(Nacre.teal)
                 } else {
                     VStack(spacing: 8) {
-                        Text(gapWords).foregroundColor(Pearl.moneyOut)
+                        Text(gapWords).foregroundColor(gapCents > 0 ? Pearl.ink : Pearl.moneyOut)
+                            .multilineTextAlignment(.center)
                         if mode == "amount" && gapCents > 0 {
                             Button("Split the rest evenly", action: splitRest)
                                 .font(Nacre.textButton).foregroundColor(Pearl.action)
@@ -419,10 +433,11 @@ struct SplitSheet: View {
     private var gapWords: String {
         if mode == "percent" {
             let g = Double(gapCents) / 100
-            return g > 0 ? "\(Self.plain(g))% left to assign" : "That’s \(Self.plain(-g))% too much"
+            return g > 0 ? "\(Self.plain(g))% isn’t anyone’s yet · it stays yours" : "That’s \(Self.plain(-g))% too much"
         }
         let g = Double(abs(gapCents)) / 100
-        return gapCents > 0 ? "\(Format.amount(g)) left to assign" : "That’s \(Format.amount(g)) too much"
+        return gapCents > 0 ? "\(Format.amount(g)) isn’t anyone’s yet · it stays yours"
+            : "That’s \(Format.amount(g)) too much"
     }
 
     /// The unassigned amount, shared by the rows still empty (or all).
@@ -454,7 +469,7 @@ struct SplitSheet: View {
         }
         .buttonStyle(NacreButtonStyle(busy: busy))
         .disabled(step == 0 ? people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
-                  : (gapCents != 0 || busy))
+                  : (gapCents < 0 || busy))
         .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         }
     }
@@ -509,7 +524,10 @@ struct SplitPeople: View {
             GlassCard {
                 ForEach(Array(split.people.enumerated()), id: \.element.id) { i, p in
                     if i > 0 { RowSeparator(inset: 64) }
-                    person(p)
+                    // Tapping someone opens the split again (2026-11-08).
+                    Button(action: onEdit) { person(p) }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Edits the split")
                 }
                 if let first = open.first {
                     RowSeparator(inset: 0)
@@ -530,22 +548,22 @@ struct SplitPeople: View {
                         .padding(.horizontal, 16).padding(.vertical, 12).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                } else {
-                    RowSeparator(inset: 0)
-                    Button(action: onEdit) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Edit split").font(Nacre.body).foregroundColor(Pearl.action)
-                                Text(editLine).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(Pearl.muted)
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 12).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
                 }
+                // Edit split, whoever still owes (2026-11-08).
+                RowSeparator(inset: 0)
+                Button(action: onEdit) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Edit split").font(Nacre.body).foregroundColor(Pearl.action)
+                            Text(editLine).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(Pearl.muted)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 12).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
             Button("See everyone who owes you", action: onOwed)
                 .font(Nacre.textButton).foregroundColor(Pearl.action)
@@ -940,5 +958,48 @@ struct LetGoSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SheetBackground())
         .presentationDetents([.height(310)])
+    }
+}
+
+
+/// A row she can swipe left to take out (2026-11-08), like Mail's.
+struct SwipeToRemove<Content: View>: View {
+    var enabled = true
+    let label: String
+    let onRemove: () -> Void
+    @ViewBuilder var content: () -> Content
+    @State private var offset: CGFloat = 0
+    private let reveal: CGFloat = 88
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            if offset < 0 {
+                Button(action: onRemove) {
+                    Text("Remove").font(Nacre.footnote.weight(.semibold)).foregroundColor(.white)
+                        .frame(width: max(-offset, 0)).frame(maxHeight: .infinity)
+                        .background(Pearl.moneyOut)
+                }
+                .buttonStyle(.plain)
+            }
+            content()
+                .offset(x: offset)
+        }
+        .clipped()
+        .contentShape(Rectangle())
+        .gesture(enabled ? DragGesture(minimumDistance: 20)
+            .onChanged { v in
+                guard abs(v.translation.width) > abs(v.translation.height) else { return }
+                let start: CGFloat = offset <= -reveal ? -reveal : 0
+                offset = min(0, max(-reveal * 1.6, start + v.translation.width))
+            }
+            .onEnded { v in
+                if offset < -reveal * 1.4 {
+                    onRemove()
+                    offset = 0
+                } else {
+                    withAnimation(.spring()) { offset = offset < -reveal / 2 ? -reveal : 0 }
+                }
+            } : nil)
+        .accessibilityAction(named: "Remove \(label)") { if enabled { onRemove() } }
     }
 }

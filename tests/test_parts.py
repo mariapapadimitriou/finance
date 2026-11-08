@@ -55,11 +55,20 @@ def split(c, tid, **body):
 
 
 class TestSplitMethods:
-    def test_amounts_must_add_up(self, client):
+    def test_amounts_can_be_short_but_not_over(self, client):
+        """2026-11-08: a split saves before every part is known; what nobody
+        has been given yet stays hers. More than the charge still can't."""
         i = add(client, tx("PAI", 85.0, "Dining"))
-        r = split(client, i["PAI"], mode="amount", you=30,
+        d = split(client, i["PAI"], mode="amount", you=30,
+                  people=[{"name": "Priya", "amount": 30}, {"name": "Sam", "amount": 20}]).get_json()
+        assert d["splitting"]["you"] == 35.0
+        assert [p["amount"] for p in d["splitting"]["people"]] == [30.0, 20.0]
+        r = split(client, i["PAI"], mode="amount", you=40,
                   people=[{"name": "Priya", "amount": 30}, {"name": "Sam", "amount": 20}])
-        assert r.status_code == 400 and r.get_json()["error"] == "$5.00 left to assign."
+        assert r.status_code == 400 and r.get_json()["error"] == "That’s $5.00 more than the charge."
+        d = split(client, i["PAI"], mode="amount", include_me=False,
+                  people=[{"name": "Priya", "amount": 30}]).get_json()
+        assert d["splitting"]["you"] == 55.0
 
     def test_evenly_gives_the_extra_cent_to_you(self, client):
         i = add(client, tx("PAI", 85.0, "Dining"))
@@ -73,8 +82,11 @@ class TestSplitMethods:
         assert d["splitting"]["you"] == 42.06 and d["splitting"]["people"][0]["amount"] == 42.06
         d = split(client, i["LOBLAWS"], mode="shares", you=2, people=[{"name": "Sam", "shares": 1}]).get_json()
         assert d["splitting"]["people"][0]["amount"] == 28.04 and d["splitting"]["you"] == 56.08
-        r = split(client, i["LOBLAWS"], mode="percent", you=40, people=[{"name": "Sam", "percent": 50}])
-        assert r.get_json()["error"] == "10% left to assign."
+        # Short of 100%: Sam's half is still half, and the rest is hers.
+        d = split(client, i["LOBLAWS"], mode="percent", you=40, people=[{"name": "Sam", "percent": 50}]).get_json()
+        assert d["splitting"]["people"][0]["amount"] == 42.06 and d["splitting"]["you"] == 42.06
+        r = split(client, i["LOBLAWS"], mode="percent", you=60, people=[{"name": "Sam", "percent": 50}])
+        assert r.get_json()["error"] == "That’s 10% too much."
 
     def test_all_for_them(self, client):
         i = add(client, tx("GIFT", 50.01, "Shopping"))
