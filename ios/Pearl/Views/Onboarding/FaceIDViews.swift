@@ -1,4 +1,5 @@
 import LocalAuthentication
+import Security
 import SwiftUI
 import UIKit
 
@@ -33,6 +34,68 @@ enum AppLock {
         } catch {
             return false
         }
+    }
+}
+
+/// Sign in with Face ID (2026-11-08): her email and password, kept in this
+/// iPhone's Keychain where only Face ID can read them back
+/// (`biometryCurrentSet`: a newly added face clears them). Saved only while
+/// Face ID is on for Pearl; cleared when she signs out, turns Face ID off, or
+/// the password stops working. With them, a session the server has ended is
+/// one Face ID away from coming back, instead of the password screen.
+enum SavedSignIn {
+    private static let service = "app.pearl.sign-in"
+    /// Which email is saved, so screens can offer Face ID without asking for it.
+    private static let emailKey = "pearl.savedSignInEmail"
+
+    static var email: String? { UserDefaults.standard.string(forKey: emailKey) }
+
+    static func save(email: String, password: String) {
+        clear()
+        guard let access = SecAccessControlCreateWithFlags(
+            nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, .biometryCurrentSet, nil),
+              let secret = password.data(using: .utf8) else { return }
+        let item: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: email,
+            kSecAttrAccessControl as String: access,
+            kSecValueData as String: secret,
+        ]
+        if SecItemAdd(item as CFDictionary, nil) == errSecSuccess {
+            UserDefaults.standard.set(email, forKey: emailKey)
+        }
+    }
+
+    /// Asks for Face ID, then gives back the password; nil if she cancels or
+    /// it's gone (a new face, or the iPhone passcode was removed).
+    static func password(reason: String = "Sign in to Pearl") async -> String? {
+        guard let email = email else { return nil }
+        return await Task.detached { () -> String? in
+            let context = LAContext()
+            context.localizedReason = reason
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: email,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne,
+                kSecUseAuthenticationContext as String: context,
+            ]
+            var out: CFTypeRef?
+            let status = SecItemCopyMatching(query as CFDictionary, &out)
+            if status == errSecItemNotFound || status == errSecAuthFailed {
+                await MainActor.run { clear() }
+            }
+            guard status == errSecSuccess, let data = out as? Data else { return nil }
+            return String(data: data, encoding: .utf8)
+        }.value
+    }
+
+    static func clear() {
+        SecItemDelete([kSecClass as String: kSecClassGenericPassword,
+                       kSecAttrService as String: service] as CFDictionary)
+        UserDefaults.standard.removeObject(forKey: emailKey)
     }
 }
 

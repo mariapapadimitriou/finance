@@ -41,6 +41,9 @@ struct AuthFlow: View {
             if let token = app.resetToken {
                 path = [.newPassword(token: token)]
                 app.resetToken = nil
+            } else if path.isEmpty, let email = SavedSignIn.email {
+                // Signed out by the server, not by her: straight to Face ID.
+                path = [.signIn(email: email)]
             }
         }
     }
@@ -308,6 +311,7 @@ struct VerifyEmailView: View {
                 path.append(.confirmDevice(choices))
             } else if reply.signedIn == true {
                 app.justCreated = reply.created ?? true
+                app.remember(email: email, password: password)
                 app.signedIn(reply.user)
             }
         } catch {
@@ -378,6 +382,8 @@ struct SignInView: View {
     @State private var password = ""
     @State private var error: String?
     @State private var busy = false
+    /// Face ID can sign her in with the password saved on this iPhone.
+    @State private var faceID = false
 
     init(path: Binding<[AuthRoute]>, email: String) {
         _path = path
@@ -403,25 +409,63 @@ struct SignInView: View {
                 .buttonStyle(NacreTextButtonStyle())
         } actions: {
             BottomActions {
-                Button("Sign in") { Task { await signIn() } }
+                if faceID && password.isEmpty {
+                    Button {
+                        Task { await signInWithFaceID() }
+                    } label: {
+                        Label("Sign in with Face ID", systemImage: "faceid")
+                    }
                     .buttonStyle(NacreButtonStyle(busy: busy))
-                    .disabled(email.isEmpty || password.isEmpty || busy)
+                    .disabled(busy)
+                } else {
+                    Button("Sign in") { Task { await signIn() } }
+                        .buttonStyle(NacreButtonStyle(busy: busy))
+                        .disabled(email.isEmpty || password.isEmpty || busy)
+                }
             } secondary: {
                 Button("New to Pearl? Create an account") { path.append(.create(email: email)) }
                     .buttonStyle(NacreTextButtonStyle())
             }
         }
-        .onChange(of: email) { _ in error = nil }
+        .onChange(of: email) { value in
+            error = nil
+            faceID = canUseFaceID(for: value)
+        }
         .onChange(of: password) { _ in error = nil }
+        .task {
+            faceID = canUseFaceID(for: email)
+            if faceID { await signInWithFaceID() }
+        }
+    }
+
+    private func canUseFaceID(for email: String) -> Bool {
+        guard let saved = SavedSignIn.email, AppLock.available else { return false }
+        return saved.caseInsensitiveCompare(email.trimmingCharacters(in: .whitespaces)) == .orderedSame
+    }
+
+    private func signInWithFaceID() async {
+        guard !busy else { return }
+        guard let saved = await SavedSignIn.password() else {
+            // Cancelled, or the saved one is gone: the password still works.
+            faceID = canUseFaceID(for: email)
+            return
+        }
+        await signIn(password: saved, fromFaceID: true)
     }
 
     private func signIn() async {
-        guard !email.isEmpty, !password.isEmpty, !busy else { return }
+        guard !password.isEmpty else { return }
+        await signIn(password: password, fromFaceID: false)
+    }
+
+    private func signIn(password: String, fromFaceID: Bool) async {
+        guard !email.isEmpty, !busy else { return }
         busy = true
         defer { busy = false }
         do {
             let reply: SignInReply = try await app.api.post("api/auth/login", [
                 "email": email.trimmingCharacters(in: .whitespaces), "password": password, "two_step": "email"])
+            if !fromFaceID { app.remember(email: email, password: password) }
             if reply.codeNeeded == true {
                 path.append(.loginCode(email: reply.sentTo ?? email, resendIn: reply.resendIn ?? 30))
             } else if reply.signedIn == true {
@@ -430,6 +474,12 @@ struct SignInView: View {
         } catch {
             if let seconds = error.serverProblem?.retryIn, error.serverProblem?.paused == true {
                 path.append(.pause(seconds: seconds))
+            } else if fromFaceID, let said = error.serverProblem?.error,
+                      said.contains("don't match") || said.contains("don’t match") {
+                // The saved password stopped working (changed somewhere else).
+                SavedSignIn.clear()
+                faceID = false
+                self.error = "Your password has changed. Sign in with the new one."
             } else {
                 self.error = app.handle(error)
             }
@@ -756,7 +806,12 @@ struct NewPasswordView: View {
         defer { busy = false }
         do {
             let reply: SignInReply = try await app.api.post("api/auth/reset", ["token": token, "password": password])
-            if reply.signedIn == true { app.signedIn(reply.user) }
+            if reply.signedIn == true {
+                // The old password is saved for Face ID no longer.
+                SavedSignIn.clear()
+                if let email = reply.user?.email { app.remember(email: email, password: password) }
+                app.signedIn(reply.user)
+            }
         } catch {
             self.error = app.handle(error)
         }

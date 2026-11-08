@@ -59,14 +59,38 @@ final class AppModel: ObservableObject {
         set {
             UserDefaults.standard.set(newValue, forKey: Self.faceIDKey)
             objectWillChange.send()
+            if newValue { saveSignIn() } else { SavedSignIn.clear() }
             Task { await tellServerAboutFaceID() }
         }
+    }
+
+    /// The email and password she just signed in with, kept only in memory
+    /// until Face ID is on to guard them (SavedSignIn).
+    private var lastSignIn: (email: String, password: String)?
+
+    /// Called with the password that just worked. Saved for Face ID sign-in
+    /// now if Face ID is on, or when she turns it on.
+    func remember(email: String, password: String) {
+        lastSignIn = (email.trimmingCharacters(in: .whitespaces), password)
+        if faceIDOn { saveSignIn() }
+    }
+
+    private func saveSignIn() {
+        guard let s = lastSignIn else { return }
+        SavedSignIn.save(email: s.email, password: s.password)
+        lastSignIn = nil
     }
 
     /// With Face ID on, this iPhone stays signed in between opens and Face ID
     /// guards the app (SECURITY.md); with it off, the server's idle limit is back.
     private func tellServerAboutFaceID() async {
-        let _: OK? = try? await api.post("api/auth/stay", ["on": faceIDOn])
+        do {
+            let _: OK = try await api.post("api/auth/stay", ["on": faceIDOn])
+        } catch {
+            // Not a confirmed iPhone (yet): the 20-minute idle limit still
+            // applies, and Face ID sign-in brings her back when it ends.
+            print("Pearl: staying signed in was refused: \(error.localizedDescription)")
+        }
     }
 
     func loadCategories() async {
@@ -143,6 +167,9 @@ final class AppModel: ObservableObject {
     func signOut() async {
         let _: OK? = try? await api.post("api/auth/logout", ["forget_device": true])
         api.clearCookies()
+        // Signing out on purpose means Face ID shouldn't sign her straight back in.
+        SavedSignIn.clear()
+        lastSignIn = nil
         justCreated = false
         locked = false
         phase = .signedOut
@@ -154,6 +181,7 @@ final class AppModel: ObservableObject {
         api.clearCookies()
         justCreated = false
         locked = false
+        lastSignIn = nil
         faceIDOn = false
         phase = .deleted(sentTo: sentTo)
     }
