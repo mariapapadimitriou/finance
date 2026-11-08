@@ -211,7 +211,8 @@ struct QuickSortView: View {
         ZStack {
             VStack(spacing: 4) {
                 Text("Quick sort").font(Nacre.headline).foregroundColor(Pearl.ink)
-                Text("\(min(index + 1, total)) of \(total)")
+                // Counts down as she answers: what's still to sort.
+                Text("\(max(total - index, 0)) left")
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
             }
             .accessibilityElement(children: .combine)
@@ -351,8 +352,12 @@ struct QuickSortView: View {
 
     @ViewBuilder private var buttons: some View {
         let guessing = current.map(hasYes) ?? true
-        HStack(spacing: 64) {
+        HStack(spacing: current?.kind == .check ? 36 : 64) {
             roundButton(symbol: "forward", label: "Skip", filled: false) { left() }
+            // Plan questions ("Is TD Savings where you save?") take a No on the card.
+            if let ask = current, ask.kind == .check {
+                roundButton(symbol: "xmark", label: "No", filled: false) { no(ask) }
+            }
             roundButton(symbol: guessing ? "checkmark" : "text.bubble",
                         label: guessing ? "Yes" : "Answer", filled: true) { right() }
         }
@@ -457,6 +462,12 @@ struct QuickSortView: View {
         await step(ask, ["action": same ? "right" : "category", "category": name, "every": false,
                          "rows": [String](), "new_ones": newOnes],
                    said: "\(ask.t.name) · \(name)")
+    }
+
+    /// No to a plan question: answered, and off the deck.
+    private func no(_ ask: Ask) {
+        guard leaving == nil, !busy else { return }
+        Task { await answered(ask, .check(ask.item.key, yes: false)) }
     }
 
     /// Skip, for a guess or a question: it stays in Needs a look.

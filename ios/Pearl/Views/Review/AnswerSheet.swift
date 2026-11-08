@@ -562,7 +562,7 @@ struct AnswerSheet: View {
                 Button("Skip") { onAnswer(.skip(ask.item.key, true)) }
                     .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             }
-            if step != .kinds {
+            if step != .kinds && step != .payback {
                 Button(primaryLabel) { primary() }
                     .buttonStyle(NacreButtonStyle())
                     .disabled(!ready)
@@ -587,7 +587,11 @@ struct AnswerSheet: View {
     }
 
     private func optionRow(_ o: Option) -> some View {
-        Button { choice = o.id } label: {
+        Button {
+            choice = o.id
+            // "Is Ben Tran paying you back?" answers at once: no Save, then Continue.
+            if step == .payback { primary() }
+        } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(o.label).font(Nacre.body).foregroundColor(Pearl.ink)
