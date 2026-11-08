@@ -274,6 +274,8 @@ struct TransactionDetailView: View {
     private var varies: Bool { cases?.mixed ?? transaction.rule?.mixed ?? false }
     /// Pay from a piggy bank.
     @State private var payingFromBank = false
+    /// The income Always switch, as she just set it, until the page reloads.
+    @State private var incomeAlwaysOn: Bool?
     /// She picked Pearl's own guess on the category page (Quick sort holds it for the card).
     @State private var pickedGuess = false
     /// A category picked for this guess, waiting for Yes.
@@ -422,7 +424,8 @@ struct TransactionDetailView: View {
             AnswerSheet(ask: a.step == .joint ? jointAsk : moneyIn, categories: categories, accounts: [],
                         names: [], api: app.api, start: a.step,
                         current: a.step == .joint ? jointChoice
-                            : a.step == .kinds ? t.incomeType : t.regularPay?.cadence) { answer in
+                            : a.step == .kinds ? t.incomeType : t.regularPay?.cadence,
+                        fromPage: a.step == .into) { answer in
                 asking = nil
                 Task { await run { try await answer.send(app.api).title ?? answer.done } }
             }
@@ -603,7 +606,8 @@ struct TransactionDetailView: View {
     private var categoryCard: some View {
         Button {
             if t.leftToSort { parting = deposit(rest: true) }
-            else if isIncome { asking = Asking(step: .kinds) } else { sorting = sortAsk(.category) }
+            // Income opens What was this?: its kinds, and what else it could be (2026-11-08).
+            else if isIncome { asking = Asking(step: .into) } else { sorting = sortAsk(.category) }
         } label: {
             // T-03: the category's icon and name; income says what kind
             // (T-37, "Salary"). The pill above says what it counts as.
@@ -612,7 +616,7 @@ struct TransactionDetailView: View {
         }
         .buttonStyle(.plain)
         .disabled(busy)
-        .accessibilityHint(isIncome ? "Changes what kind of income" : "Changes the category")
+        .accessibilityHint(isIncome ? "Changes what it was" : "Changes the category")
     }
 
     private func categoryLabel(symbol: String, title: String, sub: String?) -> some View {
@@ -1144,8 +1148,11 @@ struct TransactionDetailView: View {
     /// Unlink refund (T-41), Pay from a piggy bank and One-off purchase, each a plain row.
     @ViewBuilder private var options: some View {
         let unlink = t.refundOf != nil
-        let canOneOff = t.canOneOff && !t.inflow
-        if canSplit || canPart || couldBePay || unlink || canOneOff || canPayFromBank || offersNewOnes {
+        // Income can be left out of the usual month too (2026-11-08).
+        let canOneOff = t.canOneOff && (!t.inflow || isIncome)
+        let incomeAlways = isIncome ? t.incomeRule?.payer : nil
+        if canSplit || canPart || couldBePay || unlink || canOneOff || canPayFromBank || offersNewOnes
+            || incomeAlways != nil {
             section("Options")
             GlassCard {
                 if canPayFromBank {
@@ -1231,6 +1238,21 @@ struct TransactionDetailView: View {
                     .disabled(busy)
                     .padding(.horizontal, 16).frame(minHeight: 52)
                     .accessibilityHint("New ones from \(t.merchant) sort the same way")
+                }
+                if let payer = incomeAlways {
+                    if canSplit || canPart || couldBePay || unlink || canOneOff || offersNewOnes { RowSeparator() }
+                    Toggle(isOn: Binding(get: { incomeAlwaysOn ?? (t.incomeRule?.on == true) },
+                                         set: { on in Task { await setIncomeAlways(on) } })) {
+                        HStack(spacing: 12) {
+                            IconBubble(symbol: "repeat")
+                            Text("Always for \(payer)").font(Nacre.body).foregroundColor(Pearl.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .tint(Pearl.action)
+                    .disabled(busy)
+                    .padding(.horizontal, 16).frame(minHeight: 52)
+                    .accessibilityHint("New ones from \(payer) count as \(Self.kindName(t.incomeType))")
                 }
                 if canPayFromBank {
                     RowSeparator()
@@ -1343,7 +1365,8 @@ struct TransactionDetailView: View {
         }
     }
 
-    /// "Not income?" (T-37) under income; Delete under one added by hand.
+    /// Put it back, and Delete under one added by hand. Income's "Not income?"
+    /// is the Income category itself now (2026-11-08).
     @ViewBuilder private var footerAction: some View {
         if !t.excluded.isEmpty && t.transfer == nil {
             // Left out (T-56, T-77's Leave out): put it back in her numbers.
@@ -1352,15 +1375,10 @@ struct TransactionDetailView: View {
                 .padding(.top, 12)
                 .disabled(busy)
         }
-        if isIncome {
-            Button("Not income?") { asking = Asking(step: .into) }
-                .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
-                .padding(.top, 12)
-        }
         if t.manual {
             Button("Delete transaction") { deleting = true }
                 .buttonStyle(NacreTextButtonStyle(tone: Pearl.moneyOut))
-                .padding(.top, isIncome ? 0 : 12)
+                .padding(.top, 12)
                 .disabled(busy)
                 .confirmationDialog("Delete \(t.merchant)?", isPresented: $deleting, titleVisibility: .visible) {
                     Button("Delete", role: .destructive) { Task { await delete() } }
@@ -1635,6 +1653,17 @@ struct TransactionDetailView: View {
             let _: OK = try await app.api.put("api/merchants/name", ["merchant": bank, "name": name])
             return name.isEmpty ? "\(bank) uses the bank’s name again." : "\(bank) is \(name) now."
         }
+    }
+
+    /// Always for the payer, on income: their deposits count as this kind.
+    private func setIncomeAlways(_ on: Bool) async {
+        incomeAlwaysOn = on
+        struct Reply: Decodable { let title: String? }
+        await run {
+            let reply: Reply = try await app.api.put("api/transactions/\(t.id)/income-always", ["on": on])
+            return reply.title
+        }
+        incomeAlwaysOn = nil
     }
 
     private func setOneOff(_ on: Bool) async {

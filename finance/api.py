@@ -158,6 +158,25 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
     return [(t, txlist.describe(t, ctx)) for t in rows]
 
 
+def _splitting(t, split: dict, txns, payer) -> dict:
+    """Who a split charge is with, and what each owes (S-04)."""
+    from . import splits as sp
+    return {
+        "mode": split["mode"], "watch": split["watch"],
+        "you": round(t.my_share if t.my_share is not None else t.amount, 2),
+        "people": sp.people_status(t, split, txns, payer),
+    }
+
+
+def _income_rule(t, kind_rules: dict) -> dict:
+    """What Always needs on income (2026-11-08): who the payer is, if anyone
+    can be named, and whether Always is on for them."""
+    from .pay_rules import key_of
+    found = key_of(t)
+    return {"payer": found[1] if found else None,
+            "on": bool(found and found[0] in kind_rules)}
+
+
 def _with_rules(st, rows) -> list[dict]:
     """Each row with what its Always switch needs (2026-11-08): whether a rule
     could match the merchant, whether she sorts it more than one way, and
@@ -165,10 +184,23 @@ def _with_rules(st, rows) -> list[dict]:
     of the switch appearing a moment later (GET /transactions/<id>/cases)."""
     from .categorize import is_generic_transfer_name, merchant_key
     from .review import mixed_merchants
-    mixed = mixed_merchants(st.all_transactions(), st.confirmed_categories())
+    txns = st.all_transactions()
+    mixed = mixed_merchants(txns, st.confirmed_categories())
     rules = st.overrides()
+    # A split's people too, so they're on the page as it opens (2026-11-08).
+    splits = st.splits()
+    payer = st.payback_people() if any(t.fingerprint in splits for t, _ in rows) else {}
+    kind_rules = None
     out = []
     for t, r in rows:
+        if t.amount < 0:
+            if kind_rules is None:
+                from . import income_kind_rules
+                kind_rules = income_kind_rules.rules(st)
+            r = {**r, "income_rule": _income_rule(t, kind_rules)}
+        split = splits.get(t.fingerprint)
+        if split and t.amount > 0:
+            r = {**r, "splitting": _splitting(t, split, txns, payer)}
         out.append({**r, "rule": {
             "learnable": not is_generic_transfer_name(t.merchant),
             "mixed": merchant_key(t.merchant or "") in mixed,
@@ -347,6 +379,8 @@ def transaction_detail(txn_id: str):
                              "parts": dp.listed(st, part_of)} if whole else None)
             r["left_to_sort"] = t.excluded == dp.REST
         if t.amount < 0:
+            from . import income_kind_rules
+            r["income_rule"] = _income_rule(t, income_kind_rules.rules(st))
             # THL-198: what kind of income it is, and the regular pay it is,
             # when its payer is one of hers in Income and bills.
             from . import income_bills as ib
@@ -361,11 +395,7 @@ def transaction_detail(txn_id: str):
         r["one_off_line"] = one_off_line(st, txns, t)
         split = splits.get(txn_id)
         if split and t.amount > 0:
-            r["splitting"] = {
-                "mode": split["mode"], "watch": split["watch"],
-                "you": round(t.my_share if t.my_share is not None else t.amount, 2),
-                "people": sp.people_status(t, split, txns, payer),
-            }
+            r["splitting"] = _splitting(t, split, txns, payer)
         if t.amount > 0:
             # `paid`: how much of each went to this charge (S-26: $228 of $600).
             r["repaid_by"] = [dict(_txn_brief(x), person=payer.get(x.fingerprint),
@@ -2474,6 +2504,10 @@ def set_income_type(txn_id: str):
         # Calling something a gift or a paycheque makes it income.
         st.set_transaction_category(txn_id, "Income")
     st.set_income_type(txn_id, kind, "user")
+    # With Always on for this payer, the rule follows her new answer.
+    from . import income_kind_rules
+    if income_kind_rules.rule_for(st, t):
+        income_kind_rules.remember(st, t, kind)
     from .joint import claim_deposit
     claimed: dict = {}
     claim_deposit(st, t, claimed)
@@ -2481,6 +2515,31 @@ def set_income_type(txn_id: str):
     undo = undo_payload(before, snapshot(st, st.all_transactions()))
     undo["marks"] = {"income_type": {txn_id: was}, **claimed}
     return jsonify({"ok": True, "transaction": st.get_transaction(txn_id).to_dict(), "undo": undo})
+
+
+@bp.put("/transactions/<txn_id>/income-always")
+def set_income_always(txn_id: str):
+    """Always for the payer, on income (2026-11-08): on, every deposit from
+    them counts as this one's kind; off, the rule goes and what it sorted stays."""
+    from . import income_kind_rules
+    from .income import KINDS
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if t.amount >= 0:
+        return jsonify({"error": "Only money coming in."}), 400
+    if (request.get_json(silent=True) or {}).get("on"):
+        kind = t.income_type or "other"
+        if kind not in KINDS:
+            kind = "other"
+        if not income_kind_rules.remember(st, t, kind):
+            return jsonify({"error": "Pearl can’t tell who sent this, so it can’t remember them."}), 400
+        _reclassify(st)
+        name = (income_kind_rules.rule_for(st, t) or {}).get("name") or t.merchant
+        return jsonify({"ok": True, "on": True, "title": f"Always {KINDS[kind]} from {name}."})
+    income_kind_rules.forget(st, t)
+    return jsonify({"ok": True, "on": False, "title": "Pearl will ask about the next one."})
 
 
 # ── Review ───────────────────────────────────────────────────────────────────

@@ -477,3 +477,16 @@ def test_each_row_says_what_its_always_switch_needs(client):
     dina, etransfer = rows["DINAS TAVERN"]["rule"], rows["E-TRANSFER SENT"]["rule"]
     assert dina == {"learnable": True, "mixed": False, "has_rule": True}
     assert etransfer["learnable"] is False and etransfer["has_rule"] is False
+
+
+def test_a_split_row_carries_its_people(client):
+    """2026-11-08: a split's people come with the list row, so the page
+    doesn't add them a second after it opens."""
+    ids = load(client.st, row(120, "SUSHI NAMI", account="card", kind="credit", category="Dining"))
+    r = client.put(f"/api/transactions/{ids['SUSHI NAMI']}/split",
+                   json={"mode": "even", "people": [{"name": "Ben"}, {"name": "Priya"}]})
+    assert r.status_code == 200, r.get_json()
+    listed = by_desc(listing(client))["SUSHI NAMI"]["splitting"]
+    page = client.get(f"/api/transactions/{ids['SUSHI NAMI']}").get_json()["splitting"]
+    assert [p["name"] for p in listed["people"]] == ["Ben", "Priya"]
+    assert listed == page
