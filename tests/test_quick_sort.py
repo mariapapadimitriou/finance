@@ -191,6 +191,42 @@ class TestTheCards:
         assert set(uber) <= open_ids
         assert client.post("/api/quick-sort/done").get_json()["sorted"] == 0
 
+    def test_always_sorts_the_merchants_other_cards(self, client):
+        """2026-11-08: Always for Uber Eats on one card (the phone sends
+        rows=[] and every=False) sorts her other open Uber Eats cards too, so
+        the count drops by all of them; Loblaws and Undo are untouched."""
+        ledger(client, [unsure("2026-10-08", "Uber Eats", 24.80, "Dining"),
+                        unsure("2026-10-06", "Uber Eats", 31.10, "Dining"),
+                        unsure("2026-10-04", "UBER EATS", 18.00, "Dining"),
+                        unsure("2026-10-07", "Loblaws", 56.10, "Shopping")])
+        before = client.get("/api/review").get_json()["count"]
+        items = client.get("/api/quick-sort").get_json()["items"]
+        uber = [i["id"] for i in items if i["merchant"].lower() == "uber eats"]
+        loblaws = next(i["id"] for i in items if i["merchant"] == "Loblaws")
+        client.post("/api/quick-sort/seen", json={"ids": [i["id"] for i in items], "start": True})
+        r = client.put(f"/api/quick-sort/{uber[0]}",
+                       json={"action": "category", "category": "Groceries", "every": False,
+                             "rows": [], "new_ones": True}).get_json()
+        assert r["ok"] and r["rule_saved"] and sorted(r["also"]) == sorted(uber[1:])
+        assert client.get("/api/review").get_json()["count"] == before - 3
+        cats = {t.fingerprint: t.category for t in client.st.all_transactions()}
+        assert all(cats[i] == "Groceries" for i in uber) and cats[loblaws] == "Shopping"
+        # Yes with Always does the same.
+        undo = client.post("/api/transactions/undo", json=r["undo"])
+        assert undo.status_code == 200, undo.get_json()
+        client.put(f"/api/quick-sort/{uber[0]}", json={"action": "undo"})
+        assert client.get("/api/review").get_json()["count"] == before
+        r = client.put(f"/api/quick-sort/{uber[1]}",
+                       json={"action": "right", "every": False, "rows": [], "new_ones": True}).get_json()
+        assert sorted(r["also"]) == sorted([uber[0], uber[2]])
+        assert client.get("/api/review").get_json()["count"] == before - 3
+        # Without Always, only the one card.
+        undo = client.post("/api/transactions/undo", json=r["undo"])
+        client.put(f"/api/quick-sort/{uber[1]}", json={"action": "undo"})
+        r = client.put(f"/api/quick-sort/{uber[1]}",
+                       json={"action": "right", "every": False, "rows": [], "new_ones": False}).get_json()
+        assert r["also"] == [] and client.get("/api/review").get_json()["count"] == before - 1
+
     def test_done_counts_the_ones_sorted_together(self, client):
         ledger(client, [unsure("2026-10-08", "Uber Eats", 24.80, "Dining"),
                         unsure("2026-10-06", "Uber Eats", 31.10, "Dining")])
