@@ -119,6 +119,9 @@ struct ProfileRow<Trailing: View>: View {
     var pill: StatusPill? = nil
     var tone: Color = Pearl.ink
     var chevron = true
+    /// Still loading: the line under the title is a soft placeholder the
+    /// same size, so nothing moves when it fills in (2026-11-08).
+    var loading = false
     var trailing: Trailing
 
     var body: some View {
@@ -133,6 +136,7 @@ struct ProfileRow<Trailing: View>: View {
                         if let sub = sub, !sub.isEmpty {
                             Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .redacted(reason: loading ? .placeholder : [])
                         }
                         if let pill = pill { pill }
                     }
@@ -155,7 +159,7 @@ struct ProfileRow<Trailing: View>: View {
 
 extension ProfileRow {
     init(symbol: String? = nil, initials: String? = nil, title: String, sub: String? = nil,
-         pill: StatusPill? = nil, tone: Color = Pearl.ink, chevron: Bool = true,
+         pill: StatusPill? = nil, tone: Color = Pearl.ink, chevron: Bool = true, loading: Bool = false,
          @ViewBuilder trailing: () -> Trailing) {
         self.symbol = symbol
         self.initials = initials
@@ -164,15 +168,16 @@ extension ProfileRow {
         self.pill = pill
         self.tone = tone
         self.chevron = chevron
+        self.loading = loading
         self.trailing = trailing()
     }
 }
 
 extension ProfileRow where Trailing == EmptyView {
     init(symbol: String? = nil, initials: String? = nil, title: String, sub: String? = nil,
-         pill: StatusPill? = nil, tone: Color = Pearl.ink, chevron: Bool = true) {
+         pill: StatusPill? = nil, tone: Color = Pearl.ink, chevron: Bool = true, loading: Bool = false) {
         self.init(symbol: symbol, initials: initials, title: title, sub: sub, pill: pill, tone: tone,
-                  chevron: chevron, trailing: { EmptyView() })
+                  chevron: chevron, loading: loading, trailing: { EmptyView() })
     }
 }
 

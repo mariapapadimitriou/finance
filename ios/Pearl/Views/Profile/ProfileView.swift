@@ -12,6 +12,8 @@ struct ProfileView: View {
     /// P-01: "Every 2 weeks · 5 bills".
     @State private var incomeBills: IncomeBills?
     @State private var recurringMonthly: Double?
+    /// Everything on the page has come in once (2026-11-08).
+    @State private var loaded = false
     @State private var doc: PearlDoc?
     @State private var showYourData = false
     @State private var showConsent = false
@@ -35,30 +37,31 @@ struct ProfileView: View {
                 GlassCard {
                     NavigationLink { AccountsView() } label: {
                         ProfileRow(symbol: "building.columns", title: "Accounts", sub: accountsLine,
-                                   pill: summary?.needsYou.flatMap { $0 > 0 ? StatusPill(text: "\($0) needs you", tone: .needsALook) : nil })
+                                   pill: summary?.needsYou.flatMap { $0 > 0 ? StatusPill(text: "\($0) needs you", tone: .needsALook) : nil },
+                                   loading: !loaded)
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
                     NavigationLink { IncomeBillsView() } label: {
                         ProfileRow(symbol: "dollarsign.square", title: "Income and bills",
-                                   sub: incomeLine)
+                                   sub: incomeLine, loading: !loaded)
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
                     NavigationLink { RecurringTransfersView() } label: {
                         ProfileRow(symbol: "arrow.triangle.2.circlepath", title: "Recurring transfers",
-                                   sub: recurringLine)
+                                   sub: recurringLine, loading: !loaded)
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
                     // THL-128: Debts has its own row, not only Set Pearl up again's step.
                     NavigationLink { DebtsView() } label: {
-                        ProfileRow(symbol: "creditcard", title: "Debts", sub: debtsLine)
+                        ProfileRow(symbol: "creditcard", title: "Debts", sub: debtsLine, loading: !loaded)
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
                     NavigationLink { CategoriesRulesView() } label: {
-                        ProfileRow(symbol: "square.on.circle", title: "Categories and rules", sub: rulesLine)
+                        ProfileRow(symbol: "square.on.circle", title: "Categories and rules", sub: rulesLine, loading: !loaded)
                     }
                     .buttonStyle(.plain)
                 }
@@ -230,7 +233,7 @@ struct ProfileView: View {
     }
 
     private var accountsLine: String {
-        guard let n = summary?.accounts else { return " " }
+        guard let n = summary?.accounts else { return "Your banks and balances" }
         return n > 0 ? plural(n, "account") : "Link a bank or add a balance"
     }
 
@@ -257,7 +260,7 @@ struct ProfileView: View {
     }
 
     private var rulesLine: String {
-        guard let n = summary?.rules else { return " " }
+        guard let n = summary?.rules else { return "Your saved rules" }
         return n > 0 ? plural(n, "rule") : "No saved rules yet"
     }
 
@@ -278,16 +281,25 @@ struct ProfileView: View {
 
     // MARK: Calls
 
+    /// Everything at once (2026-11-08): asked for together, and shown
+    /// together, instead of each row changing as its answer came in.
     private func load() async {
-        do {
-            summary = try await app.api.get("api/profile")
-        } catch {
-            _ = app.handle(error)
-        }
-        debts = try? await app.api.get("api/debts")
-        incomeBills = try? await app.api.get("api/income-bills")
-        if (summary?.recurring ?? 0) > 0, let r: RecurringTransfers = try? await app.api.get("api/recurring-transfers") {
-            recurringMonthly = r.monthly
+        let api = app.api
+        async let profileReply: ProfileSummary? = {
+            do { return try await api.get("api/profile") } catch { _ = await app.handle(error); return nil }
+        }()
+        async let debtsReply: DebtList? = try? api.get("api/debts")
+        async let billsReply: IncomeBills? = try? api.get("api/income-bills")
+        async let recurringReply: RecurringTransfers? = try? api.get("api/recurring-transfers")
+        let (p, d, b, r) = await (profileReply, debtsReply, billsReply, recurringReply)
+        var none = SwiftUI.Transaction()
+        none.disablesAnimations = true
+        withTransaction(none) {
+            if let p = p { summary = p }
+            if let d = d { debts = d }
+            if let b = b { incomeBills = b }
+            recurringMonthly = (p?.recurring ?? summary?.recurring ?? 0) > 0 ? r?.monthly : nil
+            loaded = true
         }
     }
 
