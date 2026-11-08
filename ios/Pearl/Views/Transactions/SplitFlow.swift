@@ -513,6 +513,8 @@ struct SplitPeople: View {
     let onUndoLetGo: (Transaction.Splitting.Person) -> Void
     let onEdit: () -> Void
     let onOwed: () -> Void
+    /// The person she tapped, for their choices.
+    @State private var chosen: Transaction.Splitting.Person?
 
     var body: some View {
         let open = split.people.filter { $0.owes >= 0.005 }
@@ -524,57 +526,47 @@ struct SplitPeople: View {
             GlassCard {
                 ForEach(Array(split.people.enumerated()), id: \.element.id) { i, p in
                     if i > 0 { RowSeparator(inset: 64) }
-                    // Tapping someone opens the split again (2026-11-08).
-                    Button(action: onEdit) { person(p) }
+                    // What to do about someone is on them (2026-11-08): tap to
+                    // mark paid back, remind or let it go.
+                    Button { chosen = p } label: { person(p) }
                         .buttonStyle(.plain)
-                        .accessibilityHint("Edits the split")
+                        .disabled(p.owes < 0.005 && p.letGo == nil)
+                        .accessibilityHint(p.owes >= 0.005 ? "Mark paid back, remind or let it go" : "")
                 }
-                if let first = open.first {
-                    RowSeparator(inset: 0)
-                    action("Mark paid back", chevron: true) { onMarkPaid(first) }
-                    RowSeparator()
-                    action("Remind \(first.name)") { onRemind(first) }
-                    RowSeparator()
-                    action("Let it go") { onLetGo(first) }
-                } else if let gone = split.people.first(where: { $0.letGo != nil }) {
-                    RowSeparator(inset: 0)
-                    Button { onUndoLetGo(gone) } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Undo").font(Nacre.body).foregroundColor(Pearl.action)
-                            Text("\(gone.name) owes you \(Format.amount((gone.letGo?.was ?? 0) - gone.paid)) again")
-                                .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16).padding(.vertical, 12).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                // Edit split, whoever still owes (2026-11-08).
                 RowSeparator(inset: 0)
                 Button(action: onEdit) {
                     HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Edit split").font(Nacre.body).foregroundColor(Pearl.action)
-                            Text(editLine).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        }
+                        Text("Edit split").font(Nacre.body).foregroundColor(Pearl.action)
                         Spacer()
                         Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
                             .foregroundColor(Pearl.muted)
                     }
-                    .padding(.horizontal, 16).padding(.vertical, 12).contentShape(Rectangle())
+                    .padding(.horizontal, 16).frame(minHeight: 52).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+            }
+            .confirmationDialog(chosen?.name ?? "", isPresented: Binding(get: { chosen != nil },
+                                                                       set: { if !$0 { chosen = nil } }),
+                                titleVisibility: .visible, presenting: chosen) { p in
+                if p.owes >= 0.005 {
+                    Button("Mark paid back") { onMarkPaid(p) }
+                    Button("Remind \(p.name)") { onRemind(p) }
+                    Button("Let it go") { onLetGo(p) }
+                } else if p.letGo != nil {
+                    Button("Undo let it go") { onUndoLetGo(p) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { p in
+                if p.owes >= 0.005 {
+                    Text("Owes you \(Format.amount(p.owes))")
+                } else if let was = p.letGo?.was {
+                    Text("You let \(Format.amount(was - p.paid)) go")
+                }
             }
             Button("See everyone who owes you", action: onOwed)
                 .font(Nacre.textButton).foregroundColor(Pearl.action)
                 .frame(maxWidth: .infinity).padding(.top, 6)
         }
-    }
-
-    private var editLine: String {
-        let names = (split.you >= 0.005 ? ["You"] : []) + split.people.map(\.name)
-        let how = ["even": "evenly", "amount": "by amount", "percent": "by percent", "shares": "by shares"][split.mode ?? "even"] ?? ""
-        return names.joined(separator: " and ") + " · " + how
     }
 
     private func person(_ p: Transaction.Splitting.Person) -> some View {
@@ -598,8 +590,14 @@ struct SplitPeople: View {
             Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
                 .font(Nacre.headline).monospacedDigit()
                 .foregroundColor(p.owes >= 0.005 || p.letGo != nil ? Pearl.ink : Pearl.moneyIn)
+            if p.owes >= 0.005 || p.letGo != nil {
+                // Tapping them has choices.
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Pearl.muted)
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 
@@ -613,19 +611,6 @@ struct SplitPeople: View {
         return [how, p.paidOn.map { Format.short($0) }].compactMap { $0 }.joined(separator: " · ")
     }
 
-    private func action(_ title: String, chevron: Bool = false, _ run: @escaping () -> Void) -> some View {
-        Button(action: run) {
-            HStack {
-                Text(title).font(Nacre.body).foregroundColor(Pearl.action)
-                Spacer()
-                if chevron {
-                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
-                }
-            }
-            .padding(.horizontal, 16).frame(minHeight: 48).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
 }
 
 // MARK: - Mark paid back (S-06, S-29, S-30)
