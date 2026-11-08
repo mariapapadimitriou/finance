@@ -192,6 +192,8 @@ struct SplitSheet: View {
         contacts = []
         picked = []
         adding = false
+        // Straight on to How to split (2026-11-08): who it was with is settled.
+        if !people.isEmpty { step = 1 }
     }
 
     private var addLabel: String {
@@ -342,6 +344,9 @@ struct SplitSheet: View {
                     .padding(.horizontal, 16).frame(minHeight: 56)
                     }
                 }
+                // More people from here, and back to the amounts after (2026-11-08).
+                RowSeparator()
+                addNewRow
             }
             Group {
                 if gapCents == 0 {
