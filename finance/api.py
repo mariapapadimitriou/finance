@@ -127,7 +127,8 @@ def transactions():
     })
 
 
-def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bool = False):
+def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bool = False,
+                 only: str | None = None):
     """Every row of yours, described for the transactions list — or, with
     `excluded`, only the rows you left out; with `joint`, only the rows on a
     joint account that are someone else's."""
@@ -149,7 +150,25 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
         rows = txlist.theirs(txns)
     else:
         rows = txlist.visible(txns)
+    if only is not None:
+        # One transaction's page (2026-11-08): describing every row to show
+        # one was most of the time it took to open. The rest are described
+        # when asked for (the other end of a transfer).
+        return [(t, _Lazy(t, ctx) if t.fingerprint != only else txlist.describe(t, ctx)) for t in rows]
     return [(t, txlist.describe(t, ctx)) for t in rows]
+
+
+class _Lazy:
+    """A row described only if something reads it."""
+
+    def __init__(self, t, ctx):
+        self._t, self._ctx, self._r = t, ctx, None
+
+    def get(self, *a):
+        if self._r is None:
+            from . import txlist
+            self._r = txlist.describe(self._t, self._ctx)
+        return self._r.get(*a)
 
 
 def _needs_a_look(st):
@@ -292,7 +311,7 @@ def transaction_detail(txn_id: str):
     probably pays back and the others it could (S-02, S-03)."""
     from . import splits as sp
     st = store()
-    rows = _txlist_rows(st, everything=True)
+    rows = _txlist_rows(st, everything=True, only=txn_id)
     for t, r in rows:
         if t.fingerprint != txn_id:
             continue

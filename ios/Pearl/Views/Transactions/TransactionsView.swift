@@ -934,16 +934,27 @@ struct TransactionsView: View {
 
     // MARK: Loading
 
+    /// The months, the count, the accounts and the list, asked for together
+    /// (2026-11-08) instead of one after another before the list could start.
     private func start() async {
-        if let summary: Summary = try? await app.api.get("api/summary") {
+        let api = app.api
+        async let summaryReply: Summary? = try? api.get("api/summary")
+        async let reviewReply: Review? = try? api.get("api/review")
+        async let accountsReply: AccountsOverview? = try? api.get("api/accounts/overview")
+        if month != nil {
+            // Already on a month: its list needn't wait for the months.
+            await reload()
+        }
+        if let summary = await summaryReply {
+            let was = month
             months = summary.months ?? []
             if month == nil || !months.contains(month!) { month = summary.latestMonth ?? months.last }
+            if month != was || !loadedOnce { await reload() }
+        } else if !loadedOnce {
+            await reload()
         }
-        if let review: Review = try? await app.api.get("api/review") {
-            reviewCount = review.open ?? review.count
-        }
-        await loadAccounts()
-        await reload()
+        if let review = await reviewReply { reviewCount = review.open ?? review.count }
+        if let overview = await accountsReply { accounts = overview.linked }
         if !syncedOnce {
             syncedOnce = true
             await runSync(force: false)
