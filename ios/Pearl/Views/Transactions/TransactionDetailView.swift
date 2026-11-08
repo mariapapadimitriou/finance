@@ -267,8 +267,11 @@ struct TransactionDetailView: View {
     @State private var busy = false
     /// From the list: whether a rule could match this name, and whether she
     /// has sorted the merchant different ways (T-97).
-    @State private var learnable = false
-    @State private var varies = false
+    /// The page's own answer (GET …/cases); until it comes, the list's (2026-11-08),
+    /// so the Always switch is there as the page opens.
+    @State private var cases: Cases?
+    private var learnable: Bool { cases?.learnable ?? transaction.rule?.learnable ?? false }
+    private var varies: Bool { cases?.mixed ?? transaction.rule?.mixed ?? false }
     /// Pay from a piggy bank.
     @State private var payingFromBank = false
     /// She picked Pearl's own guess on the category page (Quick sort holds it for the card).
@@ -278,7 +281,7 @@ struct TransactionDetailView: View {
     /// The latest edits held for the Quick sort card.
     @State private var held: CardDraft?
     /// A rule already sorts this merchant.
-    @State private var hasRule = false
+    private var hasRule: Bool { cases?.hasRule ?? transaction.rule?.hasRule ?? false }
     /// The bill this merchant is on, and the sheet that adds it.
     @State private var billKey: String?
     @State private var addingBill = false
@@ -1516,9 +1519,7 @@ struct TransactionDetailView: View {
         if wasAsked == nil { wasAsked = t.suggested || t.asks }
         if canPayFromBank { billKey = bill?.billKey }
         if guessing == nil {
-            learnable = cases?.learnable ?? false
-            varies = cases?.mixed ?? false
-            hasRule = cases?.hasRule ?? false
+            self.cases = cases ?? Cases(learnable: false, mixed: false, hasRule: false)
         }
         // People she's split with before, for Who was it with? (S-02).
         if let owed = owed {
