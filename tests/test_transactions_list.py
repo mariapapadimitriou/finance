@@ -463,3 +463,17 @@ def test_the_months_cards_stay_whole_when_spent_or_income_filters(tmp_path):
     came = c.get("/api/transactions/list", query_string={"month": month, "counts": "income"}).get_json()
     assert [t["merchant"] for t in came["transactions"]] == ["Payroll Acme"]
     assert came["month_totals"] == spent["month_totals"]
+
+
+def test_each_row_says_what_its_always_switch_needs(client):
+    """2026-11-08: the list carries learnable, mixed and has_rule, so a
+    transaction's page shows the Always switch as it opens."""
+    load(client.st,
+         row(42, "DINAS TAVERN", account="card", kind="credit", merchant="Dina's Tavern",
+             issuer="Food and Drink", confidence="LOW"),
+         row(30, "E-TRANSFER SENT", merchant="Interac e-Transfer"))
+    client.st.set_override("Dina's Tavern", "Dining", move_rows=False)
+    rows = by_desc(listing(client))
+    dina, etransfer = rows["DINAS TAVERN"]["rule"], rows["E-TRANSFER SENT"]["rule"]
+    assert dina == {"learnable": True, "mixed": False, "has_rule": True}
+    assert etransfer["learnable"] is False and etransfer["has_rule"] is False

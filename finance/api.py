@@ -158,6 +158,24 @@ def _txlist_rows(st, excluded: bool = False, joint: bool = False, everything: bo
     return [(t, txlist.describe(t, ctx)) for t in rows]
 
 
+def _with_rules(st, rows) -> list[dict]:
+    """Each row with what its Always switch needs (2026-11-08): whether a rule
+    could match the merchant, whether she sorts it more than one way, and
+    whether a rule is there already. The page has them as it opens, instead
+    of the switch appearing a moment later (GET /transactions/<id>/cases)."""
+    from .categorize import is_generic_transfer_name, merchant_key
+    from .review import mixed_merchants
+    mixed = mixed_merchants(st.all_transactions(), st.confirmed_categories())
+    rules = st.overrides()
+    out = []
+    for t, r in rows:
+        out.append({**r, "rule": {
+            "learnable": not is_generic_transfer_name(t.merchant),
+            "mixed": merchant_key(t.merchant or "") in mixed,
+            "has_rule": " ".join((t.merchant or "").lower().split()) in rules}})
+    return out
+
+
 class _Lazy:
     """A row described only if something reads it."""
 
@@ -276,7 +294,7 @@ def transactions_list():
     if by not in ("day", "merchant", "category"):
         return jsonify({"error": "by is day, merchant or category."}), 400
     out = {
-        "transactions": [r for _, r in chosen[offset:offset + limit]] if by == "day" else [],
+        "transactions": _with_rules(st, chosen[offset:offset + limit]) if by == "day" else [],
         "owed": owed,
         "total": len(chosen),
         "totals": txlist.totals(every),
