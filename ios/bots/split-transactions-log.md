@@ -730,9 +730,36 @@ Branch `feat/split-bot-round` (PR #315, open, not merged).
   - THL-291: only the $85 AC line changed. It now reads: With "I had some too" off, $85 split as Priya $30 / Sam $20 blocks Save with "$35.00 left to assign" (85 − 50 = 35). The Evenly clause after it is unchanged.
   - Commented on THL-291 and THL-254. No ticket was moved; both stay where they were (THL-291 in Testing).
 
+### [product owner] 2026-11-09 · Finish the two small engBOT items
+Build the SPLIT-19 list line and T-08k's own error line. Leave the web token (#56d48f) alone; that question is still open.
+
+### [engBOT] 2026-11-10 00:30 · round 10 start
+Before building, I opened S-11c 1017:1309, its note 1018:1918 and T-08k 1017:715 by node with get_screenshot. Neither frame draws the list line or the error state. Both are described in designBOT's round-8 entries (SPLIT-19 point 2, SPLIT-18 "Error"), so I built them from that text. I didn't fetch any page-wide metadata, and designBOT isn't running this round.
+
+### [engBOT] 2026-11-10 00:30 · round 10 · build
+Branch `feat/split-bot-round` (PR #315, open, not merged). Commit d2dc59d.
+- **SPLIT-19 list line:**
+  - **Server:** `Store.splits()` gives each cash or app record `charges`, the purchases its payment paid back, with its own purchase first. `splits.payments()` turns these into `paid_back` (merchant names) when there's more than one. `/api/owed` lists such a payment once across splits, as the payer's row on the purchase it was recorded on. Its amount is what paid back purchases, so a gift piece isn't counted in it. Deposited amounts are summed.
+  - **Owed to you:** "Sam · Cash · Nov 13 · paid back Loblaws and Pizza Nova", with $60.00 on the right. A payment for one purchase reads as before.
+  - **S-05:** "$60.00 · paid back Loblaws and Pizza Nova" under the person. Any given-back amount is added: "$60.00, $5.00 given back · paid back …".
+  - **Long lists:** neither the frame nor the code shortens a list, and the SPLIT-16 alert already lists every name. So it reads "Loblaws, Costco and Pizza Nova", with no "and 2 more". The new `Format.andList` is shared with that alert.
+- **T-08k error line:**
+  - **Saving:** `AnswerSheet` saves an Other income kind itself (`saveOtherKind`). While it saves, the tile stays highlighted and the grid is disabled.
+  - **On failure:** the tile un-highlights, "Couldn’t save that. Try again." shows under the grid in `Pearl.caution`, and VoiceOver announces it.
+  - **On success:** the opener gets `.done(reply)`, so Transactions (`run`), Needs a look (`send`) and Quick sort (`answered`) show their usual toast and Undo. None of them sees an error, so none shows a second one.
+  - **Held answers:** the new `holds` flag is set by Quick sort's sheet and by a Quick sort card's page (`onDraft`). With it set, the answer is held for the card as before, and nothing is saved on the page.
+- **Tests:**
+  - New: TestPaymentNamesWhatItPaid (4) in `tests/test_split_round.py`.
+  - `python3 -m pytest -q`: 1772 passed.
+  - `xcodebuild … -destination 'generic/platform=iOS Simulator' build`: BUILD SUCCEEDED. Not run by hand.
+  - No `.swift` file was added.
+- **Commit:** 11 files; `git show --stat` checked. Pushed, and PR #315's body updated (both items moved out of "Not built").
+- **Jira:** commented on THL-291. Nothing was moved; THL-291 stays in Testing.
+- **Not touched:** `src/tokens/tokens.css` (#56d48f).
+
 ## Summary
 
-This is the final state after nine rounds (2026-11-09). Every issue is decided and built. Two small parts are left, listed under "Still open".
+This is the final state after ten rounds (2026-11-09 to 11-10). Every issue is decided and built. One product-owner question is left, listed under "Still open".
 
 **PR:** https://github.com/mariapapadimitriou/finance/pull/315 (open, not merged)
 **Branch:** `feat/split-bot-round`
@@ -746,10 +773,12 @@ This is the final state after nine rounds (2026-11-09). Every issue is decided a
 - 22bf661: round 7 build (SPLIT-01/04/05/06/12)
 - 1520b54, 5ebddf4: log, round 7 and dark twins
 - 8176985: round 9 build (SPLIT-18/19, dark money-in)
-- this log commit: rounds 8–9
+- 49564f4: log, rounds 8–9
+- d2dc59d: round 10 build (SPLIT-19 list line, T-08k error line)
+- this log commit: round 10
 
 **Tests:**
-- `python3 -m pytest -q`: 1768 passed (29 new in tests/test_split_round.py across rounds 7 and 9).
+- `python3 -m pytest -q`: 1772 passed (33 new in tests/test_split_round.py across rounds 7, 9 and 10).
 - iOS Simulator build: BUILD SUCCEEDED.
 - Not run by hand on a simulator or a device.
 
@@ -774,19 +803,15 @@ This is the final state after nine rounds (2026-11-09). Every issue is decided a
 | SPLIT-15 | Partly deposited cash listed twice | Built |
 | SPLIT-16 | Removing a person unlinks their whole payback | Built. The alert uses the name instead of "Her" |
 | SPLIT-17 | S-22 v2: Split into parts and Always off | Decided by the product owner: Split into parts stays removed (aa07127), Always on. Accepted round 9; the app already matched |
-| SPLIT-18 | Other income's follow-up has no frame | Accepted and built (S-11k, T-08k): "What kind of income?" on the parts page and the shared page |
-| SPLIT-19 | S-06 v2's extra for cash or an app | Accepted and built (S-11c): four outcomes, `split_cash` `extra`, shared origin, Undo by origin. The list line naming every purchase it paid isn't built |
+| SPLIT-18 | Other income's follow-up has no frame | Accepted and built (S-11k, T-08k): "What kind of income?" on the parts page and the shared page, with its own error line (round 10) |
+| SPLIT-19 | S-06 v2's extra for cash or an app | Accepted and built (S-11c): four outcomes, `split_cash` `extra`, shared origin, Undo by origin, and the list line "paid back Loblaws and Pizza Nova" (round 10) |
 
 ### Still open
-
-**For engBOT (small, nothing blocked):**
-- **SPLIT-19 list line:** "Sam · Cash · $60.00 · Nov 13 · paid back Loblaws and Pizza Nova". The server sends `whole` on a payment, but the app doesn't name the other purchases yet.
-- **T-08k error line:** "Couldn’t save that. Try again." under the grid. Today the screen that opened the shared page shows its usual error instead.
 
 **For the product owner:**
 - **Web money-in dark:** `src/tokens/tokens.css` (a separate, generated file) still has #56d48f. The iPhone app now uses #6EDB94. Say whether the web should be re-exported to match.
 
-**For designBOT:** nothing open.
+**For engBOT and designBOT:** nothing open.
 
 ### Dark twins (done in round 7 by designBOT)
 - **Dark alerts and action sheets:** the S-03f, S-24x and S-04 v2 twins are tagged "iOS system alert/action sheet — drawn by iOS, colours indicative". Build them with `.alert` / `.confirmationDialog`, with no custom colours.
@@ -805,5 +830,6 @@ This is the final state after nine rounds (2026-11-09). Every issue is decided a
 | 7 | product owner, then engBOT and designBOT | The product owner took designBOT's recommendations on SPLIT-01/05/06. engBOT checked the frames by node, built SPLIT-01, 04, 05, 06 and 12, and logged SPLIT-17, 18 and 19. THL-291's two AC lines were reworded, and THL-291 and THL-278 were commented on. designBOT bound every dark-twin green to the money-in token, tagged the system alerts and opened all 23 twins. |
 | 8 | product owner, then designBOT → engBOT | The product owner decided SPLIT-17 (Split into parts stays removed, Always on), the dark money-in green (#6EDB94) and the $85 AC rewording, and approved the round-8 frames to build. designBOT redrew S-22 v2 and drew S-11k / T-08k (SPLIT-18) and S-11c (SPLIT-19), light and dark. |
 | 9 | engBOT | Checked every round-8 frame by node and Accepted SPLIT-17, 18 and 19. Built SPLIT-18, SPLIT-19 and the dark green (8176985). Updated PR #315, reworded THL-291's $85 line, and commented on THL-291 and THL-254. |
+| 10 | product owner, then engBOT | The product owner asked for the two small engBOT items. engBOT checked S-11c, its note and T-08k by node, then built the SPLIT-19 list line (server `paid_back`, Owed to you once, S-05) and T-08k's own error line (d2dc59d). Updated PR #315 and commented on THL-291. The web token was left for the product owner. |
 
 Throughout, no ticket was moved past Testing, nothing was merged, and Figma was edited only by designBOT.
