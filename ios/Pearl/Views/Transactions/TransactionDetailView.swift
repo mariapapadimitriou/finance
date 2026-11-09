@@ -979,12 +979,6 @@ struct TransactionDetailView: View {
         !t.inflow && t.transfer == nil && t.refundOf == nil && t.splitting == nil && t.excluded.isEmpty
     }
 
-    /// Money in she can split into parts: not already sorted into some.
-    private var canPart: Bool {
-        t.inflow && t.transfer == nil && t.parts.isEmpty && t.partOf == nil && t.refundOf == nil
-            && t.repays == nil && t.excluded.isEmpty && t.jointFrom != "them"
-    }
-
     private func deposit(rest: Bool) -> PartsDeposit {
         PartsDeposit(id: t.id, name: t.merchant, amount: t.amount, date: t.date, rest: rest)
     }
@@ -1162,7 +1156,7 @@ struct TransactionDetailView: View {
         // Income can be left out of the usual month too (2026-11-08).
         let canOneOff = t.canOneOff && (!t.inflow || isIncome)
         let incomeAlways = isIncome ? t.incomeRule?.payer : nil
-        if canSplit || canPart || couldBePay || unlink || canOneOff || canPayFromBank || offersNewOnes
+        if canSplit || couldBePay || unlink || canOneOff || canPayFromBank || offersNewOnes
             || incomeAlways != nil {
             section("Options")
             GlassCard {
@@ -1173,18 +1167,19 @@ struct TransactionDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
-                    if canSplit || canPart || couldBePay || unlink || canOneOff || offersNewOnes { RowSeparator() }
+                    if canSplit || couldBePay || unlink || canOneOff || offersNewOnes { RowSeparator() }
                 }
-                if canSplit || canPart {
-                    Button { if canSplit { splitting = true } else { parting = deposit(rest: false) } } label: {
-                        row(title: canSplit ? "Split with others" : "Split into parts", chevron: true,
-                            icon: canSplit ? "person.2" : "arrow.triangle.branch")
+                // No Split into parts on money in (2026-11-09): a payback picks
+                // everything it paid back on Who paid you back?.
+                if canSplit {
+                    Button { splitting = true } label: {
+                        row(title: "Split with others", chevron: true, icon: "person.2")
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
                 }
                 if couldBePay {
-                    if canSplit || canPart { RowSeparator() }
+                    if canSplit { RowSeparator() }
                     Button { asking = Asking(step: .cadence) } label: {
                         if let pay = t.regularPay {
                             // T-37: "Every 2 weeks · next on Fri, Nov 21".
@@ -1201,7 +1196,7 @@ struct TransactionDetailView: View {
                     .disabled(busy)
                 }
                 if unlink {
-                    if canSplit || canPart || couldBePay { RowSeparator() }
+                    if canSplit || couldBePay { RowSeparator() }
                     Button { unlinkingRefund = true } label: {
                         row(title: "Unlink refund", chevron: true)
                     }
@@ -1209,7 +1204,7 @@ struct TransactionDetailView: View {
                     .disabled(busy)
                 }
                 if canOneOff {
-                    if canSplit || canPart || couldBePay || unlink { RowSeparator() }
+                    if canSplit || couldBePay || unlink { RowSeparator() }
                     Toggle(isOn: Binding(get: { oneOff ?? t.oneOff },
                                          set: { on in Task { await setOneOff(on) } })) {
                         HStack(spacing: 12) {
@@ -1229,7 +1224,7 @@ struct TransactionDetailView: View {
                     }
                 }
                 if offersNewOnes {
-                    if canSplit || canPart || couldBePay || unlink || canOneOff { RowSeparator() }
+                    if canSplit || couldBePay || unlink || canOneOff { RowSeparator() }
                     Toggle(isOn: Binding(get: { newOnesOn }, set: { on in
                         // Nothing left to answer on a sorted row, so the switch acts at once.
                         if guessName == nil {
@@ -1251,7 +1246,7 @@ struct TransactionDetailView: View {
                     .accessibilityHint("New ones from \(t.merchant) sort the same way")
                 }
                 if let payer = incomeAlways {
-                    if canSplit || canPart || couldBePay || unlink || canOneOff || offersNewOnes { RowSeparator() }
+                    if canSplit || couldBePay || unlink || canOneOff || offersNewOnes { RowSeparator() }
                     Toggle(isOn: Binding(get: { incomeAlwaysOn ?? (t.incomeRule?.on == true) },
                                          set: { on in Task { await setIncomeAlways(on) } })) {
                         HStack(spacing: 12) {

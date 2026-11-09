@@ -96,7 +96,8 @@ struct PartsSheet: View {
 
     /// A purchase someone owes on, or one she searched for.
     struct Owing: Decodable, Hashable, Identifiable {
-        let id: String
+        /// The purchase.
+        let charge: String
         let merchant: String
         let date: String
         let owes: Double
@@ -107,7 +108,14 @@ struct PartsSheet: View {
         /// S-32: the purchase hasn't posted yet.
         var pending: Bool? = nil
 
-        enum CodingKeys: String, CodingKey { case id, merchant, date, owes, person, theirs, pending }
+        enum CodingKeys: String, CodingKey {
+            case charge = "id"
+            case merchant, date, owes, person, theirs, pending
+        }
+
+        /// One row per person per purchase (2026-11-09): a dinner four people
+        /// owe on is four rows, and the purchase alone drew the first one four times.
+        var id: String { charge + "|" + (person ?? "") }
     }
 
     /// S-24: a purchase that isn't split, opened to split with the sender.
@@ -157,7 +165,7 @@ struct PartsSheet: View {
 
     private var extra: Bool {
         leftCents > 0 && !owing.isEmpty && owing.filter { $0.theirs == true }.allSatisfy { o in
-            parts.contains { $0.charge == o.id && cents($0.amount) >= cents(o.owes) }
+            parts.contains { $0.charge == o.charge && cents($0.amount) >= cents(o.owes) }
         } && parts.contains { $0.kind == "payback" }
     }
 
@@ -219,12 +227,25 @@ struct PartsSheet: View {
     private var owingList: some View {
         VStack(alignment: .leading, spacing: 8) {
             if step == .owing && !owing.isEmpty && query.isEmpty {
-                label(owing.allSatisfy { $0.pending == true } ? "Still pending"
-                      : sender.map { "\($0) owes you" } ?? "Owes you about this much")
-                GlassCard {
-                    ForEach(Array(owing.enumerated()), id: \.element.id) { i, o in
-                        if i > 0 { RowSeparator() }
-                        owingRow(o, sender == nil)
+                let theirs = owing.filter { $0.theirs == true }
+                let others = owing.filter { $0.theirs != true }
+                if !theirs.isEmpty {
+                    label(theirs.allSatisfy { $0.pending == true } ? "Still pending"
+                          : sender.map { "\($0) owes you" } ?? "Owes you")
+                    GlassCard {
+                        ForEach(Array(theirs.enumerated()), id: \.element.id) { i, o in
+                            if i > 0 { RowSeparator() }
+                            owingRow(o, false)
+                        }
+                    }
+                }
+                if !others.isEmpty {
+                    label(theirs.isEmpty ? "Owes you" : "Others who owe you")
+                    GlassCard {
+                        ForEach(Array(others.enumerated()), id: \.element.id) { i, o in
+                            if i > 0 { RowSeparator() }
+                            owingRow(o, true)
+                        }
                     }
                 }
             }
@@ -235,7 +256,7 @@ struct PartsSheet: View {
             }
             .padding(.horizontal, 14).frame(height: 44)
             .background(Capsule().fill(Pearl.ink.opacity(0.08)))
-            let more = found.filter { f in !owing.contains { $0.id == f.id } }
+            let more = found.filter { f in !owing.contains { $0.charge == f.charge } }
             if more.isEmpty && owing.isEmpty && step == .owing {
                 Text(query.isEmpty ? "Search for the purchase, or tap Next if it isn’t one."
                      : "No purchases match.")
@@ -291,7 +312,7 @@ struct PartsSheet: View {
     /// S-24: the purchase in full, to split with whoever sent this.
     private func openSplit(_ o: Owing) async {
         do {
-            splitCharge = try await api.get("api/transactions/\(o.id)")
+            splitCharge = try await api.get("api/transactions/\(o.charge)")
         } catch {
             self.error = error.localizedDescription
         }
@@ -303,7 +324,7 @@ struct PartsSheet: View {
         guard let full: Transaction = try? await api.get("api/transactions/\(t.id)"),
               let p = full.splitting?.people.first(where: { $0.name == who }) ?? full.splitting?.people.first,
               p.owes >= 0.005 else { return }
-        found.removeAll { $0.id == t.id }
+        found.removeAll { $0.charge == t.id }
         query = ""
         add(Part(kind: "payback", amount: min(p.owes, left), charge: t.id, merchant: t.merchant, person: p.name))
     }
@@ -581,11 +602,12 @@ struct PartsSheet: View {
         let all = owing + found
         for (id, amount) in picked {
             guard let o = all.first(where: { $0.id == id }) else { continue }
-            parts.removeAll { $0.charge == id && ["payback", "refund"].contains($0.kind) }
+            let person = o.person ?? sender
+            parts.removeAll { $0.charge == o.charge && $0.person == person && ["payback", "refund"].contains($0.kind) }
             // The same shop sending money back is a refund; anyone else, a payback.
             let refund = o.person == nil && o.merchant.lowercased() == deposit.name.lowercased()
-            parts.append(Part(kind: refund ? "refund" : "payback", amount: amount, charge: id, merchant: o.merchant,
-                              person: refund ? nil : (o.person ?? sender)))
+            parts.append(Part(kind: refund ? "refund" : "payback", amount: amount, charge: o.charge, merchant: o.merchant,
+                              person: refund ? nil : person))
         }
         picked = [:]
         query = ""
@@ -596,7 +618,7 @@ struct PartsSheet: View {
         guard let (id, amount) = picked.first, let o = (owing + found).first(where: { $0.id == id }) else { return }
         picked = [:]
         query = ""
-        add(Part(kind: "refund", amount: amount, charge: id, merchant: o.merchant))
+        add(Part(kind: "refund", amount: amount, charge: o.charge, merchant: o.merchant))
     }
 
     private func takeKind() {
@@ -635,21 +657,16 @@ struct PartsSheet: View {
             sender = r.from
             let items = r.items.compactMap { $0.value }
             // Theirs, or, from someone Pearl can't name, whoever's share is closest.
-            if r.from != nil {
-                owing = items.filter { $0.theirs == true }
-            } else {
-                // Who it might be: each person once, by their share closest to
-                // what came in (2026-11-08), not one friend four times over.
-                var seen = Set<String>()
-                owing = items.sorted { abs($0.owes - deposit.amount) < abs($1.owes - deposit.amount) }
-                    .filter { seen.insert(($0.person ?? $0.merchant).lowercased()).inserted }
-                    .prefix(4).map { $0 }
-            }
+            // Every share anyone owes her (2026-11-09), to tick as many as it
+            // paid back: the sender's first, then everyone else's, closest
+            // to what came in first.
+            let close: (Owing, Owing) -> Bool = { abs($0.owes - self.deposit.amount) < abs($1.owes - self.deposit.amount) }
+            owing = items.filter { $0.theirs == true } + items.filter { $0.theirs != true }.sorted(by: close)
         }
         step = !cash.isEmpty ? .cash : .owing
         if step == .owing {
             // Pearl's likeliest: their shares, up to what came in.
-            for o in owing where sender != nil { toggle(o) }
+            for o in owing where sender != nil && o.theirs == true { toggle(o) }
         }
     }
 
@@ -662,7 +679,7 @@ struct PartsSheet: View {
         guard !q.isEmpty || step == .refund else { found = []; return }
         if let r: Reply = try? await api.get("api/transactions/\(deposit.id)/charges", query: ["q": q]) {
             found = r.charges.compactMap { $0.value }.filter { ($0.left ?? 0) >= 0.01 }.map {
-                Owing(id: $0.id, merchant: $0.merchant, date: $0.date, owes: $0.left ?? 0, person: nil, theirs: nil,
+                Owing(charge: $0.id, merchant: $0.merchant, date: $0.date, owes: $0.left ?? 0, person: nil, theirs: nil,
                       notSplit: $0.split == false && step == .owing)
             }
         }
