@@ -4,7 +4,8 @@ import SwiftUI
 // THL-291, the purchase side: split it with people (S-02, S-03, S-15 to
 // S-18), see who still owes what (S-04, S-05, S-19), mark someone paid back
 // by bank deposit or in cash (S-06, S-29, S-30), remind them (S-07) or let
-// the rest go (S-08, S-20).
+// the rest go (S-08, S-20). Edit split after someone has paid (S-03e, S-03f,
+// SPLIT-02) and the odd cent (S-15 v2, S-18 v2, SPLIT-10), 2026-11-09.
 
 /// S-02 then S-03: who it was with, then how to split it.
 @MainActor
@@ -18,6 +19,10 @@ struct SplitSheet: View {
     /// split, under "Dad's share" with "Split and link".
     var title: String? = nil
     var saveTitle = "Save"
+    /// S-24 from a deposit (SPLIT-07): the split is held, not saved, and
+    /// goes with the deposit's parts in one save. Gets the split as it would
+    /// be sent and the first person's share.
+    var onHold: (([String: Any], Double) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var people: [String]
@@ -33,29 +38,57 @@ struct SplitSheet: View {
     @State private var contacts: [String] = []
     /// Contacts and names ticked on Add someone, added together (2026-11-08).
     @State private var picked: [String] = []
+    /// S-03f: someone who has paid, swiped away; asks before they go.
+    @State private var removing: String?
 
     private static let me = "\u{0}me"
 
     init(t: Transaction, api: APIClient, recent: [String], with names: [String]? = nil,
-         title: String? = nil, saveTitle: String = "Save", onSaved: @escaping (String) -> Void) {
+         title: String? = nil, saveTitle: String = "Save",
+         onHold: (([String: Any], Double) -> Void)? = nil, onSaved: @escaping (String) -> Void) {
         self.t = t
         self.api = api
         self.recent = recent
         self.onSaved = onSaved
         self.title = title
         self.saveTitle = saveTitle
+        self.onHold = onHold
         let existing = t.splitting?.people.map(\.name) ?? []
         _people = State(initialValue: names ?? existing)
         _step = State(initialValue: names == nil ? 0 : 1)
-        _withMe = State(initialValue: t.splitting.map { $0.you >= 0.005 } ?? true)
-        if let s = t.splitting, let m = s.mode, m != "even" {
-            // Opened again (2026-11-08): each part as it was saved, in Amounts,
-            // so nothing has to be typed twice.
-            _mode = State(initialValue: "amount")
-            var v: [String: String] = [Self.me: Self.plain(s.you)]
-            for p in s.people { v[p.name] = Self.plain(p.amount) }
+        // Her own share as the split was made: a let go made it bigger since.
+        let whole = t.fullAmount ?? t.amount
+        let yours = t.splitting.map { s in whole - s.people.map(\.share).reduce(0, +) }
+        _withMe = State(initialValue: yours.map { $0 >= 0.005 } ?? true)
+        if let s = t.splitting, let m = s.mode, m != "even", let yours = yours {
+            var v: [String: String] = [:]
+            if ["percent", "shares"].contains(m) && s.people.allSatisfy({ $0.weight != nil }) {
+                // S-03e (SPLIT-02): opened in the mode it was saved in, with
+                // the same numbers, not turned into Amounts.
+                _mode = State(initialValue: m)
+                for p in s.people { v[p.name] = Self.plain(p.weight ?? 0) }
+                if yours >= 0.005 {
+                    if m == "percent" {
+                        v[Self.me] = Self.plain(max(0, 100 - s.people.compactMap(\.weight).reduce(0, +)))
+                    } else if let p = s.people.first(where: { ($0.weight ?? 0) > 0 && $0.share > 0 }),
+                              let w = p.weight {
+                        v[Self.me] = Self.plain((yours / (p.share / w) * 100).rounded() / 100)
+                    }
+                }
+            } else {
+                // Opened again (2026-11-08): each share as it was saved, in
+                // Amounts, so nothing has to be typed twice.
+                _mode = State(initialValue: "amount")
+                v[Self.me] = Self.plain(yours)
+                for p in s.people { v[p.name] = Self.plain(p.share) }
+            }
             _values = State(initialValue: v)
         }
+    }
+
+    /// The person as the split was saved: what they've paid, cash, let go.
+    private func saved(_ key: String) -> Transaction.Splitting.Person? {
+        t.splitting?.people.first { $0.name == key }
     }
 
     var body: some View {
@@ -79,6 +112,49 @@ struct SplitSheet: View {
         .background(SheetBackground())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .alert(removing.map { "Remove \($0)?" } ?? "",
+               isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+               presenting: removing) { name in
+            Button(bankPaid(name) >= 0.005 ? "Unlink and remove" : "Remove", role: .destructive) { remove(name) }
+            Button("Keep \(name)", role: .cancel) {}
+        } message: { name in
+            Text(removeWords(name))
+        }
+    }
+
+    // MARK: S-03f Removing someone who has paid (SPLIT-02)
+
+    /// What they paid by bank, not in cash or another app.
+    private func bankPaid(_ name: String) -> Double {
+        guard let p = saved(name) else { return 0 }
+        return p.paid - (p.cash ?? 0) - (p.app ?? 0)
+    }
+
+    /// Someone with a payback or cash asks first (S-03f); anyone else, or
+    /// someone whose share was only let go, goes at once.
+    private func askRemove(_ name: String) {
+        if let p = saved(name), p.paid >= 0.005 { removing = name } else { remove(name) }
+    }
+
+    /// "Priya paid you $28.04 on Nov 14. Removing Priya unlinks that
+    /// payment, and it goes back to Needs a look." Cash or another app is
+    /// forgotten with them instead.
+    private func removeWords(_ name: String) -> String {
+        guard let p = saved(name) else { return "" }
+        let bank = bankPaid(name), kept = (p.cash ?? 0) + (p.app ?? 0)
+        var words: [String] = []
+        if bank >= 0.005 {
+            words.append("\(name) paid you \(Format.amount(bank))"
+                         + (p.paidOn.map { " on \(Format.short($0))" } ?? "")
+                         + ". Removing \(name) unlinks that payment, and it goes back to Needs a look.")
+        }
+        if kept >= 0.005 {
+            let how = (p.app ?? 0) >= 0.005 && (p.cash ?? 0) < 0.005 ? "through another app" : "in cash"
+            words.append(bank >= 0.005
+                         ? "The \(Format.amount(kept)) \(how) is forgotten too."
+                         : "\(name) paid you \(Format.amount(kept)) \(how). Removing \(name) forgets that payment.")
+        }
+        return words.joined(separator: " ")
     }
 
     // MARK: S-17 Add someone
@@ -321,10 +397,18 @@ struct SplitSheet: View {
             GlassCard {
                 ForEach(Array(rows.enumerated()), id: \.element) { i, key in
                     if i > 0 { RowSeparator(inset: 64) }
-                    SwipeToRemove(enabled: key != Self.me, label: label(key)) { remove(key) } content: {
+                    SwipeToRemove(enabled: key != Self.me, label: label(key)) { askRemove(key) } content: {
                     HStack(spacing: 12) {
                         Initials(name: key == Self.me ? "Me" : key, size: 34)
-                        Text(label(key)).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(label(key)).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                            if let line = caption(key) {
+                                // S-03e: what they've paid; S-15 v2 / S-18 v2: dollars and the odd cent.
+                                Text(line).font(Nacre.footnote)
+                                    .foregroundColor(overCents(key) > 0 ? Pearl.moneyOut : Pearl.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
                         Spacer(minLength: 8)
                         if mode == "even" {
                             Text(Format.amount(evenAmount(key))).font(Nacre.body).monospacedDigit()
@@ -337,7 +421,8 @@ struct SplitSheet: View {
                                 .padding(.horizontal, 8)
                                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.8)))
                                 .overlay(RoundedRectangle(cornerRadius: 10)
-                                    .strokeBorder(gapCents != 0 && mode == "amount" ? Pearl.action : Nacre.separator, lineWidth: 1))
+                                    .strokeBorder(overCents(key) > 0 || (gapCents != 0 && mode == "amount")
+                                                  ? Pearl.action : Nacre.separator, lineWidth: 1))
                                 .accessibilityLabel("\(label(key)) \(mode == "percent" ? "percent" : mode == "shares" ? "shares" : "amount")")
                         }
                     }
@@ -350,7 +435,8 @@ struct SplitSheet: View {
             }
             Group {
                 if gapCents == 0 {
-                    Text(addsUp).foregroundColor(Nacre.teal)
+                    Text(addsUp + overWords).foregroundColor(Nacre.teal)
+                        .multilineTextAlignment(.center)
                 } else {
                     VStack(spacing: 8) {
                         Text(gapWords).foregroundColor(gapCents > 0 ? Pearl.ink : Pearl.moneyOut)
@@ -391,27 +477,132 @@ struct SplitSheet: View {
 
     private var totalCents: Int { Int((t.fullAmount ?? t.amount) * 100 + 0.5) }
 
-    /// Evenly: theirs rounded down, the odd cent yours (or the first's).
-    private func evenAmount(_ key: String) -> Double {
-        let n = max(rows.count, 1)
-        let each = totalCents / n, odd = totalCents - each * n
-        guard let i = rows.firstIndex(of: key) else { return 0 }
-        return Double(each + (i == 0 ? odd : 0)) / 100
+    /// SPLIT-10, the server's rule for preview and save: leftover cents go
+    /// to you when you're in it, otherwise one each from the top of the list.
+    private func spread(_ cents: Int, over keys: [String]) -> [String: Int] {
+        guard cents > 0, !keys.isEmpty else { return [:] }
+        if withMe && keys.contains(Self.me) { return [Self.me: cents] }
+        var out: [String: Int] = [:]
+        for i in 0..<cents { out[keys[i % keys.count], default: 0] += 1 }
+        return out
     }
 
-    private var shareAmounts: [String: Double] {
-        let weights = rows.map { number($0) }
-        let whole = weights.reduce(0, +)
-        guard whole > 0 else { return [:] }
-        var out: [String: Double] = [:]
-        var given = 0
-        for (k, w) in zip(rows, weights) where k != rows.first {
-            let c = Int(Double(totalCents) * w / whole)
-            out[k] = Double(c) / 100
-            given += c
+    /// Evenly: everyone rounded down, then the odd cents by `spread` (S-18 v2).
+    private var evenCents: [String: Int] {
+        let n = max(rows.count, 1)
+        let each = totalCents / n
+        let odd = spread(totalCents - each * n, over: rows)
+        return Dictionary(uniqueKeysWithValues: rows.map { ($0, each + (odd[$0] ?? 0)) })
+    }
+
+    private func evenAmount(_ key: String) -> Double { Double(evenCents[key] ?? 0) / 100 }
+
+    /// Each one's cents for these weights: rounded down, the rest by `spread`.
+    /// `over` is what the weights are out of; with nothing to spread, what's
+    /// left isn't anyone's yet.
+    private func weighted(over whole: Double, spreading: Bool) -> [String: Int] {
+        var out = floors(over: whole)
+        if spreading {
+            for (k, c) in spread(totalCents - out.values.reduce(0, +), over: rows) { out[k, default: 0] += c }
         }
-        if let first = rows.first { out[first] = Double(totalCents - given) / 100 }
         return out
+    }
+
+    private func floors(over whole: Double) -> [String: Int] {
+        guard whole > 0 else { return [:] }
+        return Dictionary(uniqueKeysWithValues: rows.map {
+            ($0, Int((Double(totalCents) * number($0) / whole).rounded(.down)))
+        })
+    }
+
+    private var weightSum: Double { rows.map { number($0) }.reduce(0, +) }
+
+    private var shareAmounts: [String: Double] {
+        weighted(over: weightSum, spreading: true).mapValues { Double($0) / 100 }
+    }
+
+    /// S-15 v2: % works in cents. Short of 100% by less than a cent a person
+    /// is rounding (33.33 × 3), not a gap.
+    private var percentRounds: Bool {
+        let short = Int((Double(totalCents) * (100 - weightSum) / 100).rounded())
+        return weightSum < 100 && short < rows.count
+    }
+
+    /// A real % gap stays nobody's yet; otherwise every cent is placed.
+    private var percentShort: Bool { weightSum < 100 && !percentRounds }
+
+    private var percentCents: [String: Int] {
+        percentShort ? weighted(over: 100, spreading: false) : weighted(over: weightSum, spreading: true)
+    }
+
+    /// The odd cent landed on you (S-18 v2, S-15 v2).
+    private var oddToMe: Bool {
+        guard withMe, rows.count > 1 else { return false }
+        switch mode {
+        case "even": return totalCents % rows.count != 0
+        case "percent", "shares":
+            if mode == "percent" && percentShort { return false }
+            return (shareCents(Self.me) - (floors(over: weightSum)[Self.me] ?? 0)) > 0
+        default: return false
+        }
+    }
+
+    /// What this row's share comes to now, in cents, whichever way it's split.
+    private func shareCents(_ key: String) -> Int {
+        switch mode {
+        case "even": return evenCents[key] ?? 0
+        case "percent": return percentCents[key] ?? 0
+        case "shares": return Int(((shareAmounts[key] ?? 0) * 100).rounded())
+        default: return Int((number(key) * 100).rounded())
+        }
+    }
+
+    /// S-03e: how much more than this share they've already paid.
+    private func overCents(_ key: String) -> Int {
+        guard key != Self.me, let p = saved(key), p.paid >= 0.005 else { return 0 }
+        return max(0, Int((p.paid * 100).rounded()) - shareCents(key))
+    }
+
+    /// Under a name: "Paid $20.00 cash · let go $8.04", "Paid $28.04 · $8.04
+    /// more than this share" (S-03e); "$28.34 · the odd cent is yours" (S-15
+    /// v2); "Includes the odd cent" (S-18 v2).
+    private func caption(_ key: String) -> String? {
+        var bits: [String] = []
+        let cents = shareCents(key)
+        let mineOdd = key == Self.me && oddToMe
+        if mode == "percent" && gapCents == 0 {
+            bits.append(Format.amount(Double(cents) / 100) + (mineOdd ? " · the odd cent is yours" : ""))
+        } else if mode == "even" && mineOdd {
+            bits.append("Includes the odd cent")
+        }
+        if let p = saved(key), key != Self.me {
+            let over = overCents(key)
+            if p.paid >= 0.005 {
+                let how = (p.cash ?? 0) >= p.paid - 0.005 ? " cash" : ""
+                var line = "Paid \(Format.amount(p.paid))\(how)"
+                if over > 0 {
+                    line += " · \(Format.amount(Double(over) / 100)) more than this share"
+                } else if p.letGo != nil, cents - Int((p.paid * 100).rounded()) > 0 {
+                    line += " · let go \(Format.amount(Double(cents) / 100 - p.paid))"
+                } else if how.isEmpty, let day = p.paidOn {
+                    line += " · \(Format.short(day))"
+                }
+                bits.append(line)
+            } else if p.letGo != nil {
+                bits.append("Let go \(Format.amount(Double(cents) / 100))")
+            }
+        }
+        return bits.isEmpty ? nil : bits.joined(separator: " · ")
+    }
+
+    /// S-03e: " · Priya paid $8.04 more than this share, so you’ll owe Priya
+    /// $8.04 (You owe, in Owed to you)."
+    private var overWords: String {
+        let over = people.map { ($0, overCents($0)) }.filter { $0.1 > 0 }
+        guard !over.isEmpty else { return "" }
+        return over.map { name, c in
+            " · \(name) paid \(Format.amount(Double(c) / 100)) more than this share, so you’ll owe \(name) \(Format.amount(Double(c) / 100))"
+        }.joined() + " (You owe, in Owed to you)."
     }
 
     /// Cents still to give out ("$4.12 left to assign"); negative is too much.
@@ -419,6 +610,7 @@ struct SplitSheet: View {
         switch mode {
         case "even", "shares": return 0
         case "percent":
+            if percentRounds { return 0 }
             return Int(((100 - rows.map { number($0) }.reduce(0, +)) * 100).rounded())
         default:
             return totalCents - rows.map { Int((number($0) * 100).rounded()) }.reduce(0, +)
@@ -427,7 +619,6 @@ struct SplitSheet: View {
 
     private var addsUp: String {
         switch mode {
-        case "percent": return "Adds up to 100% ✓"
         case "shares":
             let n = rows.map { number($0) }.reduce(0, +)
             return "\(Self.plain(n)) shares · adds up to \(Format.amount(Double(totalCents) / 100)) ✓"
@@ -445,13 +636,15 @@ struct SplitSheet: View {
             : "That’s \(Format.amount(g)) too much"
     }
 
-    /// The unassigned amount, shared by the rows still empty (or all).
+    /// The unassigned amount, shared by the rows still empty (or all), odd
+    /// cents by the same rule as Evenly (SPLIT-10).
     private func splitRest() {
         let empty = rows.filter { (values[$0] ?? "").isEmpty }
         let targets = empty.isEmpty ? rows : empty
-        let each = gapCents / targets.count, odd = gapCents - each * targets.count
-        for (i, k) in targets.enumerated() {
-            let c = Int((number(k) * 100).rounded()) + each + (i == 0 ? odd : 0)
+        let each = gapCents / targets.count
+        let odd = spread(gapCents - each * targets.count, over: targets)
+        for k in targets {
+            let c = Int((number(k) * 100).rounded()) + each + (odd[k] ?? 0)
             values[k] = Self.plain(Double(c) / 100)
         }
     }
@@ -495,6 +688,11 @@ struct SplitSheet: View {
         default:
             body["people"] = people.map { ["name": $0, "shares": number($0)] }
             if withMe { body["you"] = number(Self.me) }
+        }
+        if let onHold = onHold, let first = people.first {
+            // S-24 (SPLIT-07): held for the deposit's one save.
+            onHold(body, Double(shareCents(first)) / 100)
+            return
         }
         do {
             let _: OK = try await api.put("api/transactions/\(t.id)/split", body)
@@ -905,8 +1103,11 @@ struct MarkPaidSheet: View {
                     error = "How much did \(person.name) pay?"
                     return
                 }
+                // SPLIT-11: another app is recorded like cash, but never
+                // offered as cash a deposit holds.
                 let _: OK = try await api.post("api/transactions/\(t.id)/split/cash",
-                                               ["name": person.name, "amount": value, "day": Format.isoDay(when)])
+                                               ["name": person.name, "amount": value, "day": Format.isoDay(when),
+                                                "via": how == "app" ? "app" : "cash"])
                 onDone("\(person.name) paid \(Format.amount(value)).")
             }
             error = nil

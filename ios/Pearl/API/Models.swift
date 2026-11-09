@@ -629,12 +629,21 @@ struct Transaction: Decodable, Identifiable, Hashable {
             let cash: Double?
             let cashIds: [Int]?
             let letGo: LetGo?
+            /// Paid back through another app (SPLIT-11), apart from cash.
+            var app: Double? = nil
+            /// Paid more than their share (S-03e): she owes them this.
+            var over: Double? = nil
+            /// Their % or shares, so Edit split opens the way it was saved (S-03e).
+            var weight: Double? = nil
             var id: String { name }
 
             struct LetGo: Decodable, Hashable { let was: Double; let day: String }
 
+            /// Their share before any let go: what Edit split shows (S-03e).
+            var share: Double { letGo?.was ?? amount }
+
             enum CodingKeys: String, CodingKey {
-                case name, amount, paid, owes, cash
+                case name, amount, paid, owes, cash, app, over, weight
                 case paidOn = "paid_on"
                 case cashIds = "cash_ids"
                 case letGo = "let_go"
@@ -805,6 +814,8 @@ struct DepositPart: Decodable, Hashable, Identifiable {
     let category: String?
     let charge: Charge?
     let sorted: Bool?
+    /// The cash records a cash part holds, to save it again (S-10e).
+    var cashIds: [Int]? = nil
 
     struct Charge: Decodable, Hashable {
         let id: String
@@ -817,6 +828,7 @@ struct DepositPart: Decodable, Hashable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, kind, amount, person, category, charge, sorted
         case incomeKind = "income_kind"
+        case cashIds = "cash_ids"
     }
 
     /// "Payback · Flight to Athens", "Gift", "Dad overpaid".
@@ -855,6 +867,13 @@ struct OwedOverview: Decodable {
             let date: String
             let owes: Double?
             let amount: Double?
+            /// The split purchase, to count splits (H-00n).
+            var chargeId: String? = nil
+
+            enum CodingKeys: String, CodingKey {
+                case merchant, date, owes, amount
+                case chargeId = "charge_id"
+            }
         }
     }
 

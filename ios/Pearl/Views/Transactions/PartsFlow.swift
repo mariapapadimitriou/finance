@@ -4,7 +4,9 @@ import SwiftUI
 // it. Cash she was paid (S-13), the purchases it pays back (S-09, S-25,
 // S-35), how far it's sorted (S-10, S-32, S-36), what the rest is (S-11,
 // S-36b) and Check and save (S-12). "Later" keeps "$x left to sort" in
-// Needs a look.
+// Needs a look. 2026-11-09: Edit the $600 (S-10e, SPLIT-03), split and link
+// as one save (S-24x, S-12c, S-12d, SPLIT-07), WHAT CHANGES (S-12 v2,
+// SPLIT-09) and cash partly deposited (S-13 v2, SPLIT-11).
 
 /// The deposit being sorted, from the transaction page or Needs a look.
 struct PartsDeposit: Identifiable, Hashable {
@@ -29,13 +31,38 @@ struct PartsDeposit: Identifiable, Hashable {
 struct PartsSheet: View {
     let deposit: PartsDeposit
     let api: APIClient
+    /// S-10e Edit the $600 (SPLIT-03): the parts it has now, filled in, to
+    /// change and save in one go. Empty when sorting it for the first time.
+    var editing: [DepositPart] = []
     let onSaved: (MarkReply) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step = .loading
     @State private var parts: [Part] = []
     @State private var cash: [Cash] = []
-    @State private var cashPicked: Set<Int> = []
+    /// Ticked in order: they fill from the top until the deposit is used (S-13 v2).
+    @State private var cashPicked: [Int] = []
+    /// S-24 (SPLIT-07): a purchase split with the sender, held until Save so
+    /// the split and the link are one save.
+    @State private var heldSplit: HeldSplit?
+    /// S-24x: Leave without saving? while a split is held.
+    @State private var leaving = false
+    /// S-12 v2 WHAT CHANGES (SPLIT-09), from the server.
+    @State private var changes: [Change] = []
+
+    struct HeldSplit {
+        let charge: String
+        let merchant: String
+        let body: [String: Any]
+    }
+
+    /// "Allowance · November +$172.00", "Travel · September $856 → $428".
+    struct Change: Decodable, Hashable {
+        let label: String
+        let before: Double?
+        let after: Double?
+        let delta: Double?
+    }
     @State private var owing: [Owing] = []
     @State private var sender: String?
     @State private var picked: [String: Double] = [:]
@@ -46,9 +73,6 @@ struct PartsSheet: View {
     @State private var partAmount = ""
     @State private var kind: String?
     @State private var busy = false
-    /// S-12: the month's leftover now, and whether the deposit counts as income.
-    @State private var leftoverWas: Double?
-    @State private var depositCounted = false
     @State private var error: String?
 
     enum Step { case loading, cash, owing, progress, kind, incomeKind, refund, review }
@@ -62,17 +86,73 @@ struct PartsSheet: View {
         var person: String? = nil
         var incomeKind: String? = nil
         var cashIds: [Int] = []
+        /// The purchase's day, for "Payback · Flight to Athens, Sep 28" (S-12 v2).
+        var date: String? = nil
+        var category: String? = nil
+        /// Their share of a purchase split in this same save (S-24, SPLIT-07).
+        var held = false
+
+        /// A part as saved, to edit (S-10e).
+        init(saved p: DepositPart) {
+            kind = p.kind
+            amount = p.amount
+            charge = p.charge?.id
+            merchant = p.charge?.merchant
+            person = p.person
+            incomeKind = p.incomeKind
+            cashIds = p.cashIds ?? []
+            date = p.charge?.date
+            category = p.category
+        }
+
+        init(kind: String, amount: Double, charge: String? = nil, merchant: String? = nil, person: String? = nil,
+             incomeKind: String? = nil, cashIds: [Int] = [], date: String? = nil, held: Bool = false) {
+            self.kind = kind
+            self.amount = amount
+            self.charge = charge
+            self.merchant = merchant
+            self.person = person
+            self.incomeKind = incomeKind
+            self.cashIds = cashIds
+            self.date = date
+            self.held = held
+        }
+
+        static func == (a: Part, b: Part) -> Bool { a.id == b.id }
+        func hash(into hasher: inout Hasher) { hasher.combine(id) }
 
         var label: String {
             switch kind {
-            case "payback": return "Payback · \(merchant ?? "a purchase")"
+            case "payback":
+                // S-12c: "Splits Costco · Dad's share"; S-12 v2: "Payback · Flight to Athens, Sep 28".
+                if held { return "Splits \(merchant ?? "a purchase") · \(person ?? "their")’s share" }
+                return "Payback · \(merchant ?? "a purchase")" + (date.map { ", \(Format.short($0))" } ?? "")
             case "refund": return "Refund · \(merchant ?? "a purchase")"
             case "gift": return "Gift"
             case "income": return TransactionDetailView.kindName(incomeKind)
             case "moved": return "From my own accounts"
+            case "savings": return "Out of savings"
+            case "category": return category ?? "Other"
             case "cash": return "\(person ?? "Their") cash"
             case "overpaid": return "\(person ?? "They") overpaid"
             default: return "Part"
+            }
+        }
+
+        /// S-10e: "Pays back Flight to Athens"; "A gift" over "Income · Gift".
+        var editTitle: String {
+            switch kind {
+            case "payback": return "Pays back \(merchant ?? "a purchase")"
+            case "gift": return "A gift"
+            default: return label
+            }
+        }
+
+        var editSub: String? {
+            switch kind {
+            case "gift": return "Income · Gift"
+            case "income": return "Income · \(TransactionDetailView.kindName(incomeKind))"
+            default: return nil
             }
         }
 
@@ -81,6 +161,7 @@ struct PartsSheet: View {
             if let charge = charge { b["charge"] = charge }
             if let person = person, kind != "cash" { b["person"] = person }
             if let k = incomeKind { b["income_kind"] = k }
+            if kind == "category", let c = category { b["category"] = c }
             if !cashIds.isEmpty { b["cash_ids"] = cashIds }
             return b
         }
@@ -130,7 +211,10 @@ struct PartsSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: title) { dismiss() }
+            SheetTitle(title: title) {
+                // S-24x: a held split would be dropped, so ask first.
+                if heldSplit != nil { leaving = true } else { dismiss() }
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     QuestionHeader(name: deposit.name, amount: Format.amount(deposit.amount), tone: Pearl.ink,
@@ -150,11 +234,22 @@ struct PartsSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task { await load() }
-        .sheet(item: $splitCharge) { t in
-            SplitSheet(t: t, api: api, recent: [], with: [who], title: "\(who)’s share",
-                       saveTitle: "Split and link") { _ in
-                Task { await linkSplit(t) }
+        // S-24x: swiping down can't drop a held split without asking; X asks.
+        .interactiveDismissDisabled(heldSplit != nil)
+        .alert("Leave without saving?", isPresented: $leaving) {
+            Button("Keep sorting", role: .cancel) {}
+            Button("Leave", role: .destructive) {
+                heldSplit = nil
+                dismiss()
             }
+        } message: {
+            Text("\(heldSplit?.merchant ?? "It") won’t be split with \(who), and the \(Format.whole(deposit.amount)) stays in Needs a look.")
+        }
+        .sheet(item: $splitCharge) { t in
+            // S-24 (SPLIT-07): "Split and link" holds the split; the deposit's
+            // Save does both in one go.
+            SplitSheet(t: t, api: api, recent: [], with: [who], title: "\(who)’s share",
+                       saveTitle: "Split and link", onHold: { body, share in hold(t, body, share) }) { _ in }
         }
         .task(id: query) {
             guard step == .owing || step == .refund else { return }
@@ -176,8 +271,10 @@ struct PartsSheet: View {
         case .owing:
             if owing.isEmpty { return "Find what it paid back" }
             return sender == nil ? "Who paid you back?" : "What did this pay back?"
-        case .refund: return "What did it refund?"
+        // T-09r's title (SPLIT-12): the same question as anywhere else.
+        case .refund: return "What was this a refund for?"
         case .progress:
+            if !editing.isEmpty { return "Edit the \(Format.whole(deposit.amount))" }
             if extra { return "\(who) sent extra" }
             return deposit.rest ? "The other \(Format.amount(deposit.amount))" : "Sort the \(Format.amount(deposit.amount))"
         case .kind:
@@ -209,17 +306,42 @@ struct PartsSheet: View {
             GlassCard {
                 ForEach(Array(cash.enumerated()), id: \.element.id) { i, c in
                     if i > 0 { RowSeparator(inset: 64) }
-                    pickRow(name: c.name, sub: [c.merchant, Format.short(c.day)].compactMap { $0 }
+                    let use = cashUse[c.id]
+                    let partly = use.map { cents($0) < cents(c.amount) } ?? false
+                    // S-13 v2: "$250.00 cash · Nov 1" when only part of it went in.
+                    pickRow(name: c.name, sub: [partly ? "\(Format.amount(c.amount)) cash" : c.merchant,
+                                                Format.short(c.day)].compactMap { $0 }
                                 .filter { !$0.isEmpty }.joined(separator: " · "),
-                            amount: c.amount, on: cashPicked.contains(c.id)) {
-                        if cashPicked.contains(c.id) { cashPicked.remove(c.id) } else { cashPicked.insert(c.id) }
+                            amount: use ?? c.amount, on: cashPicked.contains(c.id)) {
+                        if let i = cashPicked.firstIndex(of: c.id) { cashPicked.remove(at: i) } else { cashPicked.append(c.id) }
                     }
                 }
             }
+            ForEach(cash.filter { c in cashUse[c.id].map { cents($0) < cents(c.amount) } ?? false }) { c in
+                let use = cashUse[c.id] ?? 0
+                // S-13 v2: the rest stays cash in hand and can match a later deposit.
+                Text("\(Format.amount(use)) of \(c.name)’s \(Format.amount(c.amount)) cash. The other \(Format.amount(c.amount - use)) stays as cash in hand and still counts as paid back.")
+                    .font(Nacre.footnote).foregroundColor(Pearl.ink).padding(.horizontal, 16)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             let picked = cash.filter { cashPicked.contains($0.id) }
-            bar(sorted: sortedDone + picked.map(\.amount).reduce(0, +),
+            bar(sorted: sortedDone + cashUse.values.reduce(0, +),
                 first: picked.count == 1 ? "\(picked[0].name)’s cash" : "Cash", second: "Left to sort")
         }
+    }
+
+    /// What each ticked cash record puts in, from the top until the deposit
+    /// is used up (S-13 v2). One not reached puts in nothing.
+    private var cashUse: [Int: Double] {
+        var room = leftCents
+        var out: [Int: Double] = [:]
+        for id in cashPicked {
+            guard let c = cash.first(where: { $0.id == id }), room > 0 else { continue }
+            let use = min(cents(c.amount), room)
+            out[id] = Double(use) / 100
+            room -= use
+        }
+        return out
     }
 
     // MARK: S-09, S-25, S-35 What did this pay back?
@@ -320,15 +442,23 @@ struct PartsSheet: View {
         }
     }
 
-    /// Split: their share of it is a part of this deposit.
-    private func linkSplit(_ t: Transaction) async {
+    /// Split and link (S-24, SPLIT-07): nothing is saved yet. Their share is
+    /// a part of this deposit, and the split goes with the parts in one save.
+    private func hold(_ t: Transaction, _ body: [String: Any], _ share: Double) {
         splitCharge = nil
-        guard let full: Transaction = try? await api.get("api/transactions/\(t.id)"),
-              let p = full.splitting?.people.first(where: { $0.name == who }) ?? full.splitting?.people.first,
-              p.owes >= 0.005 else { return }
+        guard share >= 0.005 else { return }
+        parts.removeAll { $0.held }
+        heldSplit = HeldSplit(charge: t.id, merchant: t.merchant, body: body)
         found.removeAll { $0.charge == t.id }
         query = ""
-        add(Part(kind: "payback", amount: min(p.owes, left), charge: t.id, merchant: t.merchant, person: p.name))
+        add(Part(kind: "payback", amount: min(share, left), charge: t.id, merchant: t.merchant, person: who,
+                 date: t.date, held: true))
+    }
+
+    /// A part taken out; a held split goes with its part.
+    private func remove(_ p: Part) {
+        parts.removeAll { $0.id == p.id }
+        if p.held { heldSplit = nil }
     }
 
     private func toggle(_ o: Owing) {
@@ -347,7 +477,59 @@ struct PartsSheet: View {
 
     // MARK: S-10, S-32, S-36 How far it's sorted
 
-    private var progressView: some View {
+    @ViewBuilder private var progressView: some View {
+        if !editing.isEmpty { editView } else { sortingView }
+    }
+
+    /// S-10e Edit the $600 (SPLIT-03): the parts as saved; swipe one away and
+    /// its amount goes back to Left to sort.
+    private var editView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            let paybacks = parts.filter { $0.kind == "payback" }.map(\.amount).reduce(0, +)
+            let others = parts.filter { $0.kind != "payback" }
+            if leftCents == 0 && paybacks > 0 && !others.isEmpty {
+                // "● Paybacks $492.00   ● Gift $108.00"
+                bar(sorted: paybacks, first: "Paybacks",
+                    second: Set(others.map(\.label)).count == 1 ? others[0].label : "Other parts")
+            } else {
+                bar(sorted: sortedDone, first: "Sorted", second: "Left to sort")
+            }
+            GlassCard {
+                ForEach(Array(parts.enumerated()), id: \.element.id) { i, p in
+                    if i > 0 { RowSeparator() }
+                    SwipeToRemove(label: p.editTitle) { withAnimation { remove(p) } } content: {
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(p.editTitle).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                                if let sub = p.editSub {
+                                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                                }
+                            }
+                            Spacer(minLength: 8)
+                            Text((["gift", "income"].contains(p.kind) ? "+" : "") + Format.amount(p.amount))
+                                .font(Nacre.headline).monospacedDigit()
+                                .foregroundColor(["gift", "income"].contains(p.kind) ? Pearl.moneyIn : Pearl.ink)
+                        }
+                        .padding(.horizontal, 16).frame(minHeight: 56)
+                    }
+                }
+                if leftCents > 0 {
+                    if !parts.isEmpty { RowSeparator() }
+                    HStack {
+                        Text("Left to sort").font(Nacre.body).foregroundColor(Pearl.ink)
+                        Spacer()
+                        Text(Format.amount(left)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.action)
+                    }
+                    .padding(.horizontal, 16).frame(minHeight: 52)
+                }
+            }
+            Text("Swipe a part to remove it. Its amount goes back to Left to sort.")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+        }
+    }
+
+    private var sortingView: some View {
         VStack(alignment: .leading, spacing: 8) {
             bar(sorted: sortedDone, first: parts.count == 1 ? parts[0].label : "Sorted",
                 second: extra ? "Extra" : "Left to sort")
@@ -378,7 +560,7 @@ struct PartsSheet: View {
                 .font(Nacre.headline).monospacedDigit()
                 .foregroundColor(["gift", "income"].contains(p.kind) ? Pearl.moneyIn : Pearl.ink)
             if removable {
-                Button { parts.removeAll { $0.id == p.id } } label: {
+                Button { remove(p) } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 18)).foregroundColor(Pearl.muted)
                 }
                 .buttonStyle(.plain)
@@ -471,56 +653,62 @@ struct PartsSheet: View {
     // MARK: S-12 Check and save
 
     private var reviewList: some View {
-        GlassCard {
-            ForEach(Array(parts.enumerated()), id: \.element.id) { i, p in
-                if i > 0 { RowSeparator() }
-                partRow(p, removable: false)
-            }
-            if leftCents > 0 {
-                RowSeparator()
-                HStack {
-                    Text("Left to sort").font(Nacre.body).foregroundColor(Pearl.ink)
-                    Spacer()
-                    Text(Format.amount(left)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.action)
+        VStack(alignment: .leading, spacing: 8) {
+            GlassCard {
+                ForEach(Array(parts.enumerated()), id: \.element.id) { i, p in
+                    if i > 0 { RowSeparator() }
+                    partRow(p, removable: false)
                 }
-                .padding(.horizontal, 16).frame(minHeight: 52)
-            }
-            if let was = leftoverWas {
-                // S-12: what saving does to the month.
-                RowSeparator()
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Leftover this month").font(Nacre.body).foregroundColor(Pearl.ink)
-                        Text("Was \(Format.whole(was))").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                if leftCents > 0 {
+                    RowSeparator()
+                    HStack {
+                        Text("Left to sort").font(Nacre.body).foregroundColor(Pearl.ink)
+                        Spacer()
+                        Text(Format.amount(left)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.action)
                     }
-                    Spacer()
-                    Text(Format.whole(was + leftoverChange)).font(Nacre.headline).monospacedDigit()
-                        .foregroundColor(Pearl.moneyIn)
+                    .padding(.horizontal, 16).frame(minHeight: 52)
                 }
-                .padding(.horizontal, 16).frame(minHeight: 56)
-                .accessibilityElement(children: .combine)
+            }
+            if !changes.isEmpty {
+                // S-12 v2 WHAT CHANGES (SPLIT-09): Allowance in the deposit's
+                // month; a payback lowers its purchase's category in that purchase's month.
+                label("What changes")
+                GlassCard {
+                    ForEach(Array(changes.enumerated()), id: \.offset) { i, c in
+                        if i > 0 { RowSeparator() }
+                        HStack {
+                            Text(c.label).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                            Spacer(minLength: 8)
+                            if let delta = c.delta {
+                                Text((delta >= 0 ? "+" : "−") + Format.amount(abs(delta)))
+                                    .font(Nacre.headline).monospacedDigit()
+                                    .foregroundColor(delta >= 0 ? Pearl.moneyIn : Pearl.ink)
+                            } else if let before = c.before, let after = c.after {
+                                Text("\(Format.whole(before)) → \(Format.whole(after))")
+                                    .font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                            }
+                        }
+                        .padding(.horizontal, 16).frame(minHeight: 52)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+            if let held = heldSplit {
+                // S-12c: the split and the link are one save, and one Undo.
+                Text("Saving splits \(held.merchant) with \(who) and links this payback in one go. One Undo puts both back.")
+                    .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 16)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .task { await loadLeftover() }
+        .task(id: parts.map(\.id)) { await loadChanges() }
     }
 
-    /// Money in that counts (a gift, income) and purchases it pays back or
-    /// refunds add to the month; the deposit stops counting as itself.
-    private var leftoverChange: Double {
-        let adds = parts.filter { ["gift", "income", "payback", "refund"].contains($0.kind) }.map(\.amount).reduce(0, +)
-        return adds - (depositCounted ? deposit.amount : 0)
-    }
-
-    private func loadLeftover() async {
-        guard leftoverWas == nil else { return }
-        let month = String(deposit.date.prefix(7))
-        if let list: TransactionList = try? await api.get("api/transactions/list", query: ["month": month, "limit": "1"]),
-           let t = list.monthTotals {
-            leftoverWas = (t.income ?? 0) - (t.spent ?? 0)
-        }
-        if let d: Transaction = try? await api.get("api/transactions/\(deposit.id)") {
-            depositCounted = d.counts == "income"
-        }
+    /// What saving would change, worked out by the server without saving.
+    private func loadChanges() async {
+        struct Reply: Decodable { let changes: [Lenient<Change>] }
+        let r: Reply? = try? await api.post("api/transactions/\(deposit.id)/parts/preview",
+                                             ["parts": parts.map(\.body)])
+        changes = (r?.changes ?? []).compactMap { $0.value }
     }
 
     // MARK: Buttons
@@ -552,7 +740,10 @@ struct PartsSheet: View {
                 .buttonStyle(NacreButtonStyle()).disabled(picked.isEmpty)
                 .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         case .progress:
-            if leftCents == 0 {
+            if !editing.isEmpty && leftCents == 0 {
+                // S-10e: Save changes replaces every part in one save; Cancel changes nothing.
+                pair("Save changes", disabled: parts.isEmpty, { Task { await save(later: false) } }, "Cancel") { dismiss() }
+            } else if leftCents == 0 {
                 pair("Review", disabled: false, { step = .review }, "Add a part") { splitting = true; step = .kind }
             } else {
                 pair(extra ? "Sort the extra" : "Sort the rest", disabled: false, { step = .kind },
@@ -589,10 +780,11 @@ struct PartsSheet: View {
     }
 
     private func takeCash() {
-        let chosen = cash.filter { cashPicked.contains($0.id) }
-        let names = Set(chosen.map(\.name))
-        add(Part(kind: "cash", amount: min(chosen.map(\.amount).reduce(0, +), left),
-                 person: names.count == 1 ? names.first : nil, cashIds: chosen.map(\.id)), next: false)
+        // In the order ticked, only the ones the deposit reached (S-13 v2).
+        let used = cashPicked.filter { (cashUse[$0] ?? 0) > 0 }
+        let names = Set(cash.filter { used.contains($0.id) }.map(\.name))
+        add(Part(kind: "cash", amount: cashUse.values.reduce(0, +),
+                 person: names.count == 1 ? names.first : nil, cashIds: used), next: false)
         afterCash()
     }
 
@@ -609,7 +801,7 @@ struct PartsSheet: View {
             // The same shop sending money back is a refund; anyone else, a payback.
             let refund = o.person == nil && o.merchant.lowercased() == deposit.name.lowercased()
             parts.append(Part(kind: refund ? "refund" : "payback", amount: amount, charge: o.charge, merchant: o.merchant,
-                              person: refund ? nil : person))
+                              person: refund ? nil : person, date: o.date))
         }
         picked = [:]
         query = ""
@@ -620,13 +812,21 @@ struct PartsSheet: View {
         guard let (id, amount) = picked.first, let o = (owing + found).first(where: { $0.id == id }) else { return }
         picked = [:]
         query = ""
-        add(Part(kind: "refund", amount: amount, charge: o.charge, merchant: o.merchant))
+        add(Part(kind: "refund", amount: amount, charge: o.charge, merchant: o.merchant, date: o.date))
     }
 
     private func takeKind() {
         guard let kind = kind else { return }
         switch kind {
-        case "payback": step = .owing
+        case "payback":
+            if !editing.isEmpty {
+                // S-10e: the purchases it already pays back stay listed, ticked.
+                for p in parts where p.kind == "payback" && !p.held {
+                    if let c = p.charge { picked[c + "|" + (p.person ?? "")] = p.amount }
+                }
+                parts.removeAll { $0.kind == "payback" && !$0.held }
+            }
+            step = .owing
         case "refund":
             picked = [:]
             step = .refund
@@ -651,19 +851,42 @@ struct PartsSheet: View {
 
     private func load() async {
         struct CashReply: Decodable { let cash: [Lenient<Cash>] }
-        struct OwingReply: Decodable { let from: String?; let items: [Lenient<Owing>] }
+        struct Linked: Decodable { let id: String; let merchant: String; let date: String; let amount: Double; let person: String? }
+        struct OwingReply: Decodable { let from: String?; let items: [Lenient<Owing>]; let linked: [Lenient<Linked>]? }
+        if !editing.isEmpty && parts.isEmpty {
+            // S-10e: what it's in now; a part still to sort is Left to sort again.
+            parts = editing.filter { $0.kind != "rest" }.map { Part(saved: $0) }
+        }
         if let r: CashReply = try? await api.get("api/transactions/\(deposit.id)/cash-matches") {
             cash = r.cash.compactMap { $0.value }
         }
         if let r: OwingReply = try? await api.get("api/transactions/\(deposit.id)/owing") {
             sender = r.from
-            let items = r.items.compactMap { $0.value }
+            var items = r.items.compactMap { $0.value }
+            if !editing.isEmpty {
+                // S-10e: the purchases this deposit already pays back stay listed,
+                // with what it pays on top of anything still owed.
+                for l in (r.linked ?? []).compactMap({ $0.value }) {
+                    if let i = items.firstIndex(where: { $0.charge == l.id && $0.person == l.person }) {
+                        let o = items[i]
+                        items[i] = Owing(charge: o.charge, merchant: o.merchant, date: o.date, owes: o.owes + l.amount,
+                                         person: o.person, theirs: true, pending: o.pending)
+                    } else {
+                        items.insert(Owing(charge: l.id, merchant: l.merchant, date: l.date, owes: l.amount,
+                                           person: l.person, theirs: true), at: 0)
+                    }
+                }
+            }
             // Theirs, or, from someone Pearl can't name, whoever's share is closest.
             // Every share anyone owes her (2026-11-09), to tick as many as it
             // paid back: the sender's first, then everyone else's, closest
             // to what came in first.
             let close: (Owing, Owing) -> Bool = { abs($0.owes - self.deposit.amount) < abs($1.owes - self.deposit.amount) }
             owing = items.filter { $0.theirs == true } + items.filter { $0.theirs != true }.sorted(by: close)
+        }
+        if !editing.isEmpty {
+            step = .progress
+            return
         }
         step = !cash.isEmpty ? .cash : .owing
         if step == .owing {
@@ -690,9 +913,17 @@ struct PartsSheet: View {
     private func save(later: Bool) async {
         busy = true
         defer { busy = false }
+        var body: [String: Any] = ["parts": parts.map(\.body), "later": later]
+        // S-10e: Save changes replaces the parts it had (SPLIT-03).
+        if !editing.isEmpty { body["replace"] = true }
+        if let held = heldSplit, parts.contains(where: { $0.held }) {
+            // S-12c (SPLIT-07): the split and the link in one request.
+            body["split"] = held.body.merging(["charge": held.charge]) { _, new in new }
+        }
         do {
-            let reply: MarkReply = try await api.post("api/transactions/\(deposit.id)/parts",
-                                                      ["parts": parts.map(\.body), "later": later])
+            let reply: MarkReply = try await api.post("api/transactions/\(deposit.id)/parts", body)
+            // A failed save leaves the sheet open with nothing split or linked.
+            heldSplit = nil
             onSaved(reply)
         } catch {
             self.error = error.localizedDescription

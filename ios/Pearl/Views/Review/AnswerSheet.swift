@@ -241,7 +241,9 @@ struct AnswerSheet: View {
     /// Split with others (THL-289) and One-off (T-42), for a purchase.
     @ViewBuilder private var outOptions: some View {
         if let f = full {
+            // Not on a joint account (S-01j, SPLIT-08): the server asks Whose was it? instead.
             let canSplit = f.transfer == nil && f.refundOf == nil && f.splitting == nil && f.excluded.isEmpty
+                && f.joint.isEmpty
             if canSplit || f.canOneOff {
                 Text("OPTIONS").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
                     .padding(.horizontal, 16).padding(.top, 4)

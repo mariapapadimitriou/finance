@@ -10,6 +10,8 @@ struct HomeView: View {
 
     @State private var home: Home?
     @State private var setup: SetupAgain?
+    /// Who owes her on splits, for the owes-you card (H-00n).
+    @State private var owed: OwedOverview?
     @State private var error: String?
     /// N-01's quiet hours, while it's showing.
     @State private var askingToNotify: NotificationSettings.Quiet?
@@ -36,6 +38,10 @@ struct HomeView: View {
                     }
                     if home.reviewCount > 0 {
                         NeedsALookCard(count: home.reviewCount, pearlSorted: home.pearlSorted ?? 0)
+                    }
+                    // H-00n (SPLIT-13, THL-291): under Needs a look, once a share is a week old.
+                    if let owed = owed, let line = OwedNudgeCard.line(owed, today: home.today) {
+                        OwedNudgeCard(line: line)
                     }
                     if let note = home.paychequeNote {
                         PaychequeNoteCard(month: note) { Task { await dismissNote(note) } }
@@ -101,6 +107,7 @@ struct HomeView: View {
         do {
             home = try await app.api.get("api/home")
             setup = try? await app.api.get("api/setup-again")
+            owed = try? await app.api.get("api/owed")
             error = nil
             await offerNotifications()
         } catch {
@@ -140,6 +147,49 @@ struct NeedsALookCard: View {
             }
             .padding(.top, 4)
         }
+    }
+}
+
+/// H-00n (SPLIT-13, THL-291 "the Home owes-you nudge"): "Sam and Priya owe
+/// you $70.10, from 2 splits. The oldest is from Nov 1." It shows once the
+/// oldest share is a week old, so a split made today doesn't nag, and goes
+/// when nothing is owed. No dismiss, like Needs a look.
+struct OwedNudgeCard: View {
+    let line: String
+
+    var body: some View {
+        PearlCard(spacing: 8) {
+            Text(line).font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            NavigationLink {
+                OwedView()
+            } label: {
+                LinkLabel(text: "See who owes you")
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    /// The card's words, or nil when it shouldn't show.
+    static func line(_ owed: OwedOverview, today: String?) -> String? {
+        let items = owed.owesYou.flatMap(\.items)
+        let now = today.flatMap { Format.localDay($0) } ?? Date()
+        guard owed.total >= 0.005, let oldest = items.map(\.date).min(),
+              let first = Format.localDay(oldest),
+              let days = Calendar.current.dateComponents([.day], from: first, to: now).day, days >= 7
+        else { return nil }
+        // Up to two names, then "and N others".
+        let names = owed.owesYou.map { $0.name.components(separatedBy: " ").first ?? $0.name }
+        let who: String
+        switch names.count {
+        case 1: who = "\(names[0]) owes"
+        case 2: who = "\(names[0]) and \(names[1]) owe"
+        default:
+            let others = names.count - 2
+            who = "\(names[0]), \(names[1]) and \(others) other\(others == 1 ? "" : "s") owe"
+        }
+        let splits = Set(items.map { $0.chargeId ?? $0.date + ($0.merchant ?? "") }).count
+        return "\(who) you \(Format.amount(owed.total)), from \(splits) split\(splits == 1 ? "" : "s"). The oldest is from \(Format.short(oldest))."
     }
 }
 
