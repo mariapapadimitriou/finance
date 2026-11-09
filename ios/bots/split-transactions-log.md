@@ -757,9 +757,61 @@ Branch `feat/split-bot-round` (PR #315, open, not merged). Commit d2dc59d.
 - **Jira:** commented on THL-291. Nothing was moved; THL-291 stays in Testing.
 - **Not touched:** `src/tokens/tokens.css` (#56d48f).
 
+### [product owner] 2026-11-09 · SPLIT-06 (a) everywhere: the Quick sort sheet holds a split too
+A split made from Quick sort's sheet is held for the card, like one made on the card's page. The card shows "Groceries, split with Sam?". Yes saves the split and the category in one request with one Undo, and Skip drops it. The Summary was wrong to call SPLIT-06 fully built: the sheet still saved at once (round 7 said so under "Not changed"). Log it as SPLIT-20 and build it.
+
+### [product owner] 2026-11-09 · THL-181: Pearl asks who a payback is from
+When Pearl can't tell who a payback is from, it asks; it doesn't pick someone. designBOT is drawing it now. engBOT doesn't build it this run; log it as SPLIT-21, "Open → designBOT (approved to build)".
+
+### [product owner] 2026-11-09 · Jira edits approved
+THL-291, THL-289, THL-278 and THL-260 are brought in line with what was decided and built: Allowance wording, the part kinds, the (b′) rule, the tiles page coming back for what's left, six months, and the SPLIT-06/20 line. THL-181's AC stays; the app changes to match it. Move nothing past Testing.
+
+### [product owner] 2026-11-09 · Web money-in dark: #6EDB94
+The web's dark `--money-in` changes to #6EDB94 to match Figma. Leave the light value; designBOT is checking the Figma light value, and it comes in the next round.
+
+### [engBOT] 2026-11-09 · round 11 start
+designBOT is working in Figma only this run and isn't writing here. I didn't open Figma: SPLIT-20 builds T-98s 998:37418, which I already accepted in round 7, and SPLIT-21's frames aren't drawn yet.
+
+### [engBOT → designBOT] 2026-11-09 · SPLIT-20 · Quick sort's sheet saved a split at once
+**Severity:** Major
+**Jira:** THL-278 ("a split made from a Quick sort card's page or sheet is held for the card"), THL-291   **Figma:** T-98s 998:37418   **Code:** `ios/Pearl/Views/Review/AnswerSheet.swift` (the SplitSheet in `.sheet(isPresented: $splitting)`, formerly lines 184–188; the `holds` doc comment, formerly line 36)
+**Problem:** Quick sort opens What was this? as a sheet (with `holds: true`) for asks that don't open a page. There, Options › Split with others showed SplitSheet without `onHold`, so the split saved at once. Example: in Quick sort, a $84.12 Loblaws card opens as a sheet. Split with Sam evenly, then Skip: the split was already saved, and Skip didn't drop it. The `holds` comment said "nothing is saved here", which wasn't true for a split.
+**Ask:** None. T-98s already covers this; the product owner decided (a) everywhere. Built below.
+
+### [engBOT → designBOT] 2026-11-09 · SPLIT-21 · Ask who a payback is from (THL-181)
+**Severity:** Major
+**Jira:** THL-181 (its AC stands: Pearl asks when it can't tell who a payback is from); THL-278's "An unnamed payback counts for whoever owes that amount, otherwise the first person who still owes"   **Figma:** being drawn by designBOT   **Code:** the unnamed-payback match on the server (THL-278, PR #208)
+**Problem:** Today an unnamed payback (TD, or one picked from search) counts for whoever owes that amount. Failing that, it counts for the first person who still owes, so Pearl picks someone without asking.
+**Ask:** Draw the "Who is this from?" step (light and dark): when it shows, the people it lists, what happens on save and Undo, and how she gets out. The product owner has approved building it. engBOT builds it once the frames are in and checked. Not built this run.
+
+### [engBOT] 2026-11-09 · round 11 · build
+Branch `feat/split-bot-round` (PR #315, open, not merged).
+- **SPLIT-20 (app):**
+  - `AnswerSheet` has a new `onHeldSplit`. When `holds` is set and an opener passes it, SplitSheet gets `onHold`: the split is kept on the sheet (Split with others shows as done), and nothing is saved.
+  - The category she picks next on the same page goes with the split, "for this one", as T-98s says (no rule).
+  - Picking a different answer, such as Not mine, drops the split, as on the card's page. Closing the sheet drops it too.
+  - `QuickSortView` sets the card's draft to `CardDraft(label: "Groceries, split with Sam", category:, split:)`. The card shows YOUR CHOICE, "Groceries, split with Sam?" and "Your share $42.06 · Sam owes you $42.06".
+  - Yes sends one PUT …/split with the category, and the Sorted card's Undo puts back the split, her share and the category. Skip drops the held split. Both reuse the round-7 code.
+  - `CardSplit.held(_:mine:total:)` is new and shared with the card's page (`TransactionDetailView.holdSplit`).
+  - The `holds` doc comment now says what is and isn't saved.
+  - Opened anywhere else (Transactions, Needs a look), the sheet still saves a split at once, as before.
+- **Web token:** dark `--money-in` changed from #56d48f to #6edb94 in `src/tokens/tokens.css` (lines 98 and 130). The light value (#1e7b4c) is unchanged.
+  - The file says "generated, re-export from Figma", but the repo has no generator. `--money-in` isn't in `tokens.json` or `tokens.ts` either; it was added to the css by hand in 38aa320. So I edited `tokens.css` directly.
+- **Tests:**
+  - New: TestHeldSplitFromQuickSortSheet (2) in `tests/test_split_round.py`. These are wiring checks on the Swift source. The server half (one PUT, one Undo) is already covered by TestHeldSplitFromQuickSort.
+  - `python3 -m pytest -q`: 1774 passed, 0 failed.
+  - `npm run build`: built.
+  - `xcodebuild -project ios/Pearl.xcodeproj -scheme Pearl -destination 'generic/platform=iOS Simulator' build`: BUILD SUCCEEDED. Not run by hand in a simulator.
+  - No `.swift` file was added.
+- **Commit:** 1abc302, "Splits round 11: Quick sort's sheet holds a split for the card (SPLIT-20), web dark money-in #6edb94". 5 files; `git show --stat` checked. Pushed, and PR #315's body updated.
+- **Jira:**
+  - Descriptions edited: THL-291, THL-289, THL-278 and THL-260. Each got a comment saying what changed.
+  - THL-181: comment only; its AC is unchanged.
+  - No ticket was moved.
+
 ## Summary
 
-This is the final state after ten rounds (2026-11-09 to 11-10). Every issue is decided and built. One product-owner question is left, listed under "Still open".
+This is the state after eleven rounds (2026-11-09 to 11-10). Every issue is decided and built except SPLIT-21, which designBOT is drawing and which is approved to build. Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
 
 **PR:** https://github.com/mariapapadimitriou/finance/pull/315 (open, not merged)
 **Branch:** `feat/split-bot-round`
@@ -775,10 +827,13 @@ This is the final state after ten rounds (2026-11-09 to 11-10). Every issue is d
 - 8176985: round 9 build (SPLIT-18/19, dark money-in)
 - 49564f4: log, rounds 8–9
 - d2dc59d: round 10 build (SPLIT-19 list line, T-08k error line)
-- this log commit: round 10
+- 9dc1a2f: log, round 10
+- 1abc302: round 11 build (SPLIT-20, web dark money-in)
+- this log commit: round 11
 
 **Tests:**
-- `python3 -m pytest -q`: 1772 passed (33 new in tests/test_split_round.py across rounds 7, 9 and 10).
+- `python3 -m pytest -q`: 1774 passed (35 new in tests/test_split_round.py across rounds 7, 9, 10 and 11).
+- `npm run build`: built (round 11, after the token change).
 - iOS Simulator build: BUILD SUCCEEDED.
 - Not run by hand on a simulator or a device.
 
@@ -791,7 +846,7 @@ This is the final state after ten rounds (2026-11-09 to 11-10). Every issue is d
 | SPLIT-03 | Edit on a deposit in parts | Built (S-33 v2, S-10e) |
 | SPLIT-04 | One "What's the other $x?" | Built (S-11 v2): every tile is a part, including Dad overpaid, Out of savings and Off a category |
 | SPLIT-05 | Tabs and Continue on S-22 / S-11 | Decided (b). Built: splits use the shared tiles |
-| SPLIT-06 | Split from Quick sort: held or saved at once | Decided (a). Built (T-98s): held for the card; Yes saves split and category with one Undo; Skip drops it |
+| SPLIT-06 | Split from Quick sort: held or saved at once | Decided (a). Built from the card's page in round 7 (T-98s). The sheet was missed until SPLIT-20 |
 | SPLIT-07 | Split and link as one save | Built (S-24x, S-12c with WHAT CHANGES, S-12d) |
 | SPLIT-08 | Joint-account purchase | Built (S-01j, S-02 v2) |
 | SPLIT-09 | Effect on Allowance in Check and save | Built (S-12 v2) |
@@ -805,18 +860,21 @@ This is the final state after ten rounds (2026-11-09 to 11-10). Every issue is d
 | SPLIT-17 | S-22 v2: Split into parts and Always off | Decided by the product owner: Split into parts stays removed (aa07127), Always on. Accepted round 9; the app already matched |
 | SPLIT-18 | Other income's follow-up has no frame | Accepted and built (S-11k, T-08k): "What kind of income?" on the parts page and the shared page, with its own error line (round 10) |
 | SPLIT-19 | S-06 v2's extra for cash or an app | Accepted and built (S-11c): four outcomes, `split_cash` `extra`, shared origin, Undo by origin, and the list line "paid back Loblaws and Pizza Nova" (round 10) |
+| SPLIT-20 | Quick sort's sheet saved a split at once | Decided (SPLIT-06 (a) everywhere). Built (round 11): the sheet holds it for the card; Yes saves split and category with one Undo; Skip drops it |
+| SPLIT-21 | Ask who a payback is from (THL-181) | Open → designBOT (approved to build). Not built |
 
 ### Still open
 
-**For the product owner:**
-- **Web money-in dark:** `src/tokens/tokens.css` (a separate, generated file) still has #56d48f. The iPhone app now uses #6EDB94. Say whether the web should be re-exported to match.
+**For designBOT:**
+- **SPLIT-21:** the "who is this from?" step for THL-181. Once it's drawn, engBOT checks it by node and builds it, then updates THL-278's unnamed-payback line.
+- **Web money-in light:** designBOT is checking the Figma light value. `src/tokens/tokens.css` keeps #1e7b4c until the next round.
 
-**For engBOT and designBOT:** nothing open.
+**For the product owner:** nothing open. The web dark money-in is now #6edb94 (round 11, edited by hand: the repo has no token generator).
 
 ### Dark twins (done in round 7 by designBOT)
 - **Dark alerts and action sheets:** the S-03f, S-24x and S-04 v2 twins are tagged "iOS system alert/action sheet — drawn by iOS, colours indicative". Build them with `.alert` / `.confirmationDialog`, with no custom colours.
 - **Positive green:** every green on the twins is bound to `color/text/money-in`. The round-8 frames are too.
-- **Money-in dark (decided 2026-11-09):** #6EDB94, now in the app (`ios/Pearl/Theme/Theme.swift`, round 9).
+- **Money-in dark (decided 2026-11-09):** #6EDB94, in the app (`ios/Pearl/Theme/Theme.swift`, round 9) and on the web (`src/tokens/tokens.css`, round 11).
 
 ### How the bots communicated
 | Round | Who | What was sent |
@@ -831,5 +889,6 @@ This is the final state after ten rounds (2026-11-09 to 11-10). Every issue is d
 | 8 | product owner, then designBOT → engBOT | The product owner decided SPLIT-17 (Split into parts stays removed, Always on), the dark money-in green (#6EDB94) and the $85 AC rewording, and approved the round-8 frames to build. designBOT redrew S-22 v2 and drew S-11k / T-08k (SPLIT-18) and S-11c (SPLIT-19), light and dark. |
 | 9 | engBOT | Checked every round-8 frame by node and Accepted SPLIT-17, 18 and 19. Built SPLIT-18, SPLIT-19 and the dark green (8176985). Updated PR #315, reworded THL-291's $85 line, and commented on THL-291 and THL-254. |
 | 10 | product owner, then engBOT | The product owner asked for the two small engBOT items. engBOT checked S-11c, its note and T-08k by node, then built the SPLIT-19 list line (server `paid_back`, Owed to you once, S-05) and T-08k's own error line (d2dc59d). Updated PR #315 and commented on THL-291. The web token was left for the product owner. |
+| 11 | product owner, then engBOT | The product owner decided SPLIT-06 (a) everywhere, THL-181's ask, the Jira edits and the web dark token. engBOT logged SPLIT-20 and built it (the Quick sort sheet holds a split). engBOT also logged SPLIT-21 for designBOT (approved to build, not built) and set the web dark money-in to #6edb94. engBOT edited THL-291, 289, 278 and 260 and commented on each and on THL-181. designBOT worked in Figma only. |
 
 Throughout, no ticket was moved past Testing, nothing was merged, and Figma was edited only by designBOT.
