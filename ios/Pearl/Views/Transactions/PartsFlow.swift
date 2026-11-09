@@ -226,6 +226,15 @@ struct PartsSheet: View {
 
     private var owingList: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // On top (2026-11-09): the people who owe her, and any other
+            // purchase a search away, without scrolling past everyone first.
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted)
+                TextField("", text: $query, prompt: Text("Search other purchases").foregroundColor(Pearl.muted))
+                    .font(Nacre.body).autocorrectionDisabled().textInputAutocapitalization(.never)
+            }
+            .padding(.horizontal, 14).frame(height: 44)
+            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
             if step == .owing && !owing.isEmpty && query.isEmpty {
                 let theirs = owing.filter { $0.theirs == true }
                 let others = owing.filter { $0.theirs != true }
@@ -249,13 +258,6 @@ struct PartsSheet: View {
                     }
                 }
             }
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted)
-                TextField("", text: $query, prompt: Text("Search any purchase").foregroundColor(Pearl.muted))
-                    .font(Nacre.body).autocorrectionDisabled().textInputAutocapitalization(.never)
-            }
-            .padding(.horizontal, 14).frame(height: 44)
-            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
             let more = found.filter { f in !owing.contains { $0.charge == f.charge } }
             if more.isEmpty && owing.isEmpty && step == .owing {
                 Text(query.isEmpty ? "Search for the purchase, or tap Next if it isn’t one."
