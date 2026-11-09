@@ -1609,8 +1609,9 @@ struct TransactionDetailView: View {
         if ask.item.rest != nil { parting = deposit(rest: true) }
         // S-21u's question on its own page: S-35c, not What was this?.
         else if ask.item.credit != nil { crediting = Crediting(id: t.id) }
-        // S-21x's question on its own page: S-11x for the whole amount.
-        else if let extra = ask.item.extra { partsExtra = extra; parting = deposit(rest: false) }
+        // S-21x's question on its own page: S-11x for the whole amount;
+        // S-21xm's (THL-301): S-11xm for the extra part.
+        else if let extra = ask.item.extra { partsExtra = extra; parting = deposit(rest: false).part(of: extra) }
         else { sorting = ask }
     }
 

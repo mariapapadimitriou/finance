@@ -1249,8 +1249,23 @@ struct Review: Decodable {
             let paidBack: [String]
             /// Who has paid back on them: "Sam and Priya have both paid you back".
             let people: [String]
+            /// The extra: the whole deposit on S-21x, the part on S-21xm.
             let amount: Double
-            enum CodingKeys: String, CodingKey { case paidBack = "paid_back"; case people, amount }
+            /// S-21xm (THL-301, SPLIT-24): the whole deposit, when only part of it is extra.
+            var whole: Double? = nil
+            /// S-11xm: the purchases it still pays back, with who: "Jo paid
+            /// back $30.00 of this for Pizza Nova."
+            let credited: [Credited]?
+            enum CodingKeys: String, CodingKey { case paidBack = "paid_back"; case people, amount, whole, credited }
+
+            struct Credited: Decodable, Hashable {
+                let person: String
+                let merchant: String
+                let amount: Double
+            }
+
+            /// Only part of the deposit is extra (S-21xm / S-11xm).
+            var isPart: Bool { !(credited ?? []).isEmpty }
         }
 
         struct Credit: Decodable, Hashable {

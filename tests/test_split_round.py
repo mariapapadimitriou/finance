@@ -1278,3 +1278,187 @@ class TestNobodyLeftOwing:
         assert "case .extra? = drafts[ask.id]?.answer" in quick
         page = (self.IOS / "Views/Transactions/TransactionDetailView.swift").read_text(encoding="utf-8")
         assert "else if let extra = ask.item.extra {" in page
+
+
+class TestExtraOnSome:
+    """THL-301 (SPLIT-24; S-21xw 1043:1005, S-21xm 1043:1041, S-11xm
+    1043:1077, S-11xm over 1043:1194, notes 1044:107–110): an unnamed $60.00
+    payback, dated from ASK_FROM, linked to Loblaws (nobody owes) and Pizza
+    Nova (Jo owes $30.00). Who first (credit:<id>), then the extra
+    (extra:<id>), one row at a time; answering the extra leaves Jo's credit
+    on Pizza Nova alone, and Undo puts it back."""
+
+    def setup(self, c, kim=False, came="2026-11-16", costco=False):
+        rows = [tx("LOBLAWS", 90.0, "Groceries", when="2026-11-11"),
+                tx("PIZZA NOVA", 90.0 if kim else 60.0, "Dining", when="2026-11-12"),
+                Transaction(date="2026-11-12", description="E-TRANSFER SAM", merchant="Sam", amount=-30.0,
+                            category="", account_id="chq", account_name="TD Chequing",
+                            raw={"account_type": "depository"}),
+                Transaction(date="2026-11-13", description="E-TRANSFER PRIYA", merchant="Priya S.",
+                            amount=-30.0, category="", account_id="chq", account_name="TD Chequing",
+                            raw={"account_type": "depository"}),
+                Transaction(date=came, description="INTERAC E-TRANSFER", merchant="Interac e-Transfer",
+                            amount=-(80.0 if costco else 60.0), category="", account_id="chq",
+                            account_name="TD Chequing", raw={"account_type": "depository"})]
+        if costco:
+            rows += [tx("COSTCO", 40.0, "Groceries", when="2026-11-10"),
+                     Transaction(date="2026-11-11", description="E-TRANSFER ANN", merchant="Ann", amount=-20.0,
+                                 category="", account_id="chq", account_name="TD Chequing",
+                                 raw={"account_type": "depository"})]
+        i = add(c, *rows)
+        self.i = i
+        split(c, i["LOBLAWS"], mode="amount",
+              people=[{"name": "Sam", "amount": 30.0}, {"name": "Priya S.", "amount": 30.0}])
+        link(c, i["LOBLAWS"], i["E-TRANSFER SAM"], "Sam")
+        link(c, i["LOBLAWS"], i["E-TRANSFER PRIYA"], "Priya S.")
+        split(c, i["PIZZA NOVA"], mode="amount",
+              people=[{"name": "Jo", "amount": 30.0}] + ([{"name": "Kim", "amount": 30.0}] if kim else []))
+        more = [(i["PIZZA NOVA"], 30.0)]
+        if costco:
+            split(c, i["COSTCO"], mode="amount", people=[{"name": "Ann", "amount": 20.0}])
+            link(c, i["COSTCO"], i["E-TRANSFER ANN"], "Ann")
+            more.append((i["COSTCO"], 20.0))
+        dep = i["INTERAC E-TRANSFER"]
+        c.st.link_payback(i["LOBLAWS"], dep, None, 30.0)
+        c.st.set_payback_more(dep, more)
+        return i["LOBLAWS"], i["PIZZA NOVA"], dep
+
+    def rows(self, c, dep):
+        review = c.get("/api/review").get_json()
+        return [it for p in ("money_in", "who_sent", "income_type", "joint_in") for it in review[p]
+                if it["txn"]["id"] == dep]
+
+    def owes(self, c, charge):
+        return {n: (p["paid"], p["owes"]) for n, p in people(c, charge).items()}
+
+    def adds_up(self, c, *charges):
+        # THL-181: for each person, Paid back + Owes is their share.
+        for ch in charges:
+            for p in people(c, ch).values():
+                assert round(min(p["paid"], p["amount"]) + p["owes"], 2) == p["amount"], p
+
+    def test_credited_by_the_ask_rule_asks_the_extra_at_once(self, client):
+        lob, pizza, dep = self.setup(client)
+        rows = self.rows(client, dep)
+        assert [r["key"] for r in rows] == ["extra:" + dep]
+        assert rows[0]["extra"] == {"paid_back": ["LOBLAWS"], "people": ["Sam", "Priya S."], "amount": 30.0,
+                                    "whole": 60.0,
+                                    "credited": [{"person": "Jo", "merchant": "PIZZA NOVA", "amount": 30.0}]}
+        assert self.owes(client, pizza) == {"Jo": (30.0, 0.0)}
+        from finance import quick_sort
+        assert ("extra:" + dep, dep) in quick_sort.questions(client.get("/api/review").get_json())
+        self.adds_up(client, lob, pizza)
+
+    def test_who_first_then_the_extra_never_both(self, client):
+        lob, pizza, dep = self.setup(client, kim=True)
+        rows = self.rows(client, dep)
+        # S-21xw: "paid back Pizza Nova and Loblaws"; S-35c lists ON PIZZA NOVA only.
+        assert [r["key"] for r in rows] == ["credit:" + dep]
+        assert rows[0]["credit"] == {"paid_back": ["PIZZA NOVA", "LOBLAWS"]}
+        q = client.get(f"/api/transactions/{dep}/credit").get_json()["question"]
+        assert {s["merchant"] for s in q["shares"]} == {"PIZZA NOVA"}
+        r = client.post(f"/api/transactions/{dep}/credit", json={"person": "Jo"})
+        assert r.get_json()["title"] == "Jo paid back $30.00"
+        # S-21xm: the same deposit, one row, now about the extra.
+        rows = self.rows(client, dep)
+        assert [x["key"] for x in rows] == ["extra:" + dep]
+        assert rows[0]["extra"]["credited"] == [{"person": "Jo", "merchant": "PIZZA NOVA", "amount": 30.0}]
+        assert rows[0]["extra"]["amount"] == 30.0 and rows[0]["extra"]["whole"] == 60.0
+        assert self.owes(client, pizza) == {"Jo": (30.0, 0.0), "Kim": (0.0, 30.0)}
+        self.adds_up(client, lob, pizza)
+        # Undoing the credit turns it back into S-21xw.
+        client.post("/api/transactions/undo", json=r.get_json()["undo"])
+        assert [x["key"] for x in self.rows(client, dep)] == ["credit:" + dep]
+
+    def test_a_tile_takes_only_the_extra_and_undo_puts_it_back(self, client):
+        lob, pizza, dep = self.setup(client, kim=True)
+        client.post(f"/api/transactions/{dep}/credit", json={"person": "Jo"})
+        r = client.post(f"/api/transactions/{dep}/parts",
+                        json={"parts": [{"kind": "gift", "amount": 30.0}], "extra": True})
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json()["title"] == "Sorted into 1 part."
+        assert self.rows(client, dep) == []
+        # Jo's $30.00 on Pizza Nova is untouched; Loblaws is as it was before the extra.
+        assert self.owes(client, pizza) == {"Jo": (30.0, 0.0), "Kim": (0.0, 30.0)}
+        assert self.owes(client, lob) == {"Sam": (30.0, 0.0), "Priya S.": (30.0, 0.0)}
+        kinds = sorted((p["kind"], p["amount"], p["person"]) for p in detail(client, dep)["parts"])
+        assert kinds == [("gift", 30.0, None), ("payback", 30.0, "Jo")]
+        self.adds_up(client, lob, pizza)
+        u = client.post("/api/transactions/undo", json=r.get_json()["undo"])
+        assert u.status_code == 200, u.get_json()
+        t = client.st.get_transaction(dep)
+        assert set(t.repays_all) == {lob, pizza}
+        assert client.st.payback_people().get(dep) == "Jo"
+        assert self.owes(client, pizza) == {"Jo": (30.0, 0.0), "Kim": (0.0, 30.0)}
+        assert [x["key"] for x in self.rows(client, dep)] == ["extra:" + dep]
+
+    def test_capped_at_the_extra(self, client):
+        lob, pizza, dep = self.setup(client)
+        r = client.post(f"/api/transactions/{dep}/parts",
+                        json={"parts": [{"kind": "gift", "amount": 45.0}], "extra": True})
+        assert r.status_code == 400
+        assert r.get_json()["error"] == ("Only $30.00 of this is extra. Jo’s $30.00 for PIZZA NOVA stays as it is, "
+                                         "so make it $30.00 or less.")
+        assert set(client.st.get_transaction(dep).repays_all) == {lob, pizza}
+
+    def test_less_than_the_extra_leaves_the_rest_to_sort(self, client):
+        lob, pizza, dep = self.setup(client)
+        r = client.post(f"/api/transactions/{dep}/parts",
+                        json={"parts": [{"kind": "gift", "amount": 10.0}], "later": True, "extra": True})
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json()["rest"] == 20.0
+        assert self.owes(client, pizza) == {"Jo": (30.0, 0.0)}
+
+    def test_overpaid_names_the_sender(self, client):
+        lob, pizza, dep = self.setup(client)
+        r = client.post(f"/api/transactions/{dep}/parts",
+                        json={"parts": [{"kind": "overpaid", "amount": 30.0, "person": "Jo"}], "extra": True})
+        assert r.status_code == 200, r.get_json()
+        assert self.owes(client, pizza) == {"Jo": (30.0, 0.0)}
+
+    def test_extra_on_two_purchases_is_one_row(self, client):
+        lob, pizza, dep = self.setup(client, costco=True)
+        rows = self.rows(client, dep)
+        assert [r["key"] for r in rows] == ["extra:" + dep]
+        assert rows[0]["extra"]["paid_back"] == ["LOBLAWS", "COSTCO"]
+        assert rows[0]["extra"]["amount"] == 50.0 and rows[0]["extra"]["whole"] == 80.0
+
+    def test_old_paybacks_keep_the_old_guess(self, client):
+        lob, pizza, dep = self.setup(client, came="2026-11-09")
+        assert self.rows(client, dep) == []
+
+    def test_the_web_answer_takes_only_the_extra(self, client):
+        lob, pizza, dep = self.setup(client)
+        r = client.post(f"/api/transactions/{dep}/mark", json={"case": "pay", "income_kind": "gifts"})
+        assert r.status_code == 200, r.get_json()
+        assert self.owes(client, pizza) == {"Jo": (30.0, 0.0)}
+        assert self.rows(client, dep) == []
+        client.post("/api/transactions/undo", json=r.get_json()["undo"])
+        assert set(client.st.get_transaction(dep).repays_all) == {lob, pizza}
+        r = client.post(f"/api/transactions/{dep}/mark", json={"case": "not_mine", "reason": "x"})
+        assert r.status_code == 400
+
+    IOS = TestWhoSentThis.IOS
+
+    def test_the_app_asks_where_she_looks(self):
+        models = (self.IOS / "API/Models.swift").read_text(encoding="utf-8")
+        assert "let credited: [Credited]?" in models and "var isPart: Bool" in models
+        review = (self.IOS / "Views/Review/ReviewView.swift").read_text(encoding="utf-8")
+        # S-21xm: "Nov 16 · $30.00 extra on Loblaws", two lines; one card per deposit.
+        assert "\\(Format.amount($0.amount)) extra on \\(Format.andList($0.paidBack))" in review
+        assert ".lineLimit(ask.item.extra != nil || ask.item.credit != nil ? 2 : 1)" in review
+        assert ".part(of: extra)" in review
+        parts = (self.IOS / "Views/Transactions/PartsFlow.swift").read_text(encoding="utf-8")
+        # S-11xm: "$60.00 · Nov 16" over "The $30.00", the mixed line, the over state.
+        assert "Format.amount(deposit.whole ?? deposit.amount)" in parts
+        assert "paid back \\(Format.amount(total)) of this for \\(Format.andList(cs.map(\\.merchant)))" in parts
+        assert "so the other \\(Format.amount(deposit.amount)) is extra. Tap what it was." in parts
+        assert "Only \\(Format.amount(left)) of this is extra." in parts
+        assert ".opacity(over ? 0.4 : 1)" in parts and 'body["extra"] = true' in parts
+        assert "if senders.count == 1 { return senders[0] }" in parts
+        sheet = (self.IOS / "Views/Transactions/WhoSentSheet.swift").read_text(encoding="utf-8")
+        assert "q.purchases.allSatisfy" in sheet
+        quick = (self.IOS / "Views/Review/QuickSortView.swift").read_text(encoding="utf-8")
+        assert 'key == "extra:" + ask.t.id' in quick
+        page = (self.IOS / "Views/Transactions/TransactionDetailView.swift").read_text(encoding="utf-8")
+        assert "deposit(rest: false).part(of: extra)" in page

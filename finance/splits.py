@@ -248,7 +248,8 @@ def payments(records: list[dict], dates: dict[str, str] | None = None,
 
 def people_status(charge: Transaction, split: dict, transactions: list[Transaction],
                   payer: dict[str, str], left_out: list[Transaction] | None = None,
-                  extra_out: list[Transaction] | None = None) -> list[dict]:
+                  extra_out: list[Transaction] | None = None,
+                  credited_to: dict[str, str] | None = None) -> list[dict]:
     """Each person in a split: their part, what they've paid back and when,
     what they still owe (S-04), and what they paid over their part (`over`,
     SPLIT-02: a share lowered below what they'd paid, which she owes back).
@@ -265,6 +266,13 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
     `extra_out`, when given, gets each payback dated from ASK_FROM, with no
     name, that came when nobody on the split still owed anything (SPLIT-23
     (1), S-21x): it isn't anyone's payback, so Pearl asks what it was.
+    THL-301 (SPLIT-24, S-21xm): so does one over two or more purchases that
+    she said was from someone who isn't on this one (S-35c credited Jo on
+    Pizza Nova), when nobody here still owes: one payment has one sender,
+    so its part here is extra too.
+
+    `credited_to`, when given, maps each payback counted here to who it
+    counted for (S-11xm's "Jo paid back $30.00 of this for Pizza Nova").
     """
     names = [p["name"] for p in split["people"]]
     # A refund on the purchase is shared the way the purchase was: each
@@ -289,6 +297,7 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
     named = {c for p in split["people"] for x in p.get("cash") or [] for c in x.get("charges") or []}
     merchants = {t.fingerprint: t.merchant for t in transactions if t.fingerprint in named}
     unnamed: list[Transaction] = []
+    extras_named: list[Transaction] = []
     shared: dict[str, list[dict]] = {}
     names_of: dict[str, str] = {}
     for t in sorted(_linked(charge.fingerprint, transactions), key=lambda x: x.date):
@@ -299,6 +308,12 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
             if who is None:
                 # Someone taken out of the split: their payback is still
                 # theirs, so it counts for nobody here.
+                if (extra_out is not None and len(t.repays_all) > 1 and t.date[:10] >= ASK_FROM
+                        and t.fingerprint in payer):
+                    # THL-301: unless it's a payment over several purchases
+                    # whose sender she named for another of them. Asked
+                    # about below, once nobody here owes.
+                    extras_named.append(t)
                 continue
         if who not in paid:
             who = next((n for n in names if from_person(t, n)), None)
@@ -307,6 +322,8 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
             continue
         paid[who] = round(paid[who] + t.part_for(charge.fingerprint), 2)
         when[who] = t.date[:10]
+        if credited_to is not None:
+            credited_to[t.fingerprint] = who
         if len(t.repays_all) > 1:
             # SPLIT-16 (S-03f): a payback that also paid back other
             # purchases; removing them here unlinks only this purchase's part.
@@ -343,6 +360,10 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
             who = fits[0] if fits else owing[0]
         paid[who] = round(paid[who] + got, 2)
         when[who] = t.date[:10]
+        if credited_to is not None:
+            credited_to[t.fingerprint] = who
+    if extras_named and all(part[n] - paid[n] < 0.005 for n in names):
+        extra_out.extend(extras_named)
     out = []
     for p in split["people"]:
         owes = round(max(part[p["name"]] - paid[p["name"]], 0.0), 2)
@@ -448,20 +469,36 @@ def extra_question(inflow: Transaction, transactions: list[Transaction], splits:
     any of them still owed anything. There's no one to tick, so it isn't a
     payback at all: Needs a look asks "What was this?" about the whole
     amount. None for anything else, including a payback that pays back a
-    purchase that isn't split (that one counts for the purchase)."""
+    purchase that isn't split (that one counts for the purchase).
+
+    THL-301 (SPLIT-24, S-21xm / S-11xm): also when it's extra on only some
+    of its purchases and counted for someone on the rest. `amount` is then
+    the extra part (the deposit less what was credited), `whole` the
+    deposit, and `credited` each purchase it still pays back, with who and
+    how much ("Jo paid back $30.00 of this for Pizza Nova"). While a part is
+    still uncredited (S-35c, `credit:<id>`), this is None: who comes first,
+    so one deposit is one question at a time."""
     if inflow.amount >= 0 or not inflow.repays or inflow.date[:10] < ASK_FROM:
-        return None
-    if payer.get(inflow.fingerprint):
         return None
     by_id = {t.fingerprint: t for t in transactions}
     purchases: list[dict] = []
+    credited: list[dict] = []
     people: list[str] = []
     for cid in inflow.repays_all:
         charge, split = by_id.get(cid), splits.get(cid)
         if charge is None or split is None:
             return None
         extra: list[Transaction] = []
-        status = people_status(charge, split, transactions, payer, extra_out=extra)
+        left: list[Transaction] = []
+        got: dict[str, str] = {}
+        status = people_status(charge, split, transactions, payer, left_out=left, extra_out=extra,
+                               credited_to=got)
+        if any(t.fingerprint == inflow.fingerprint for t in left):
+            return None
+        if inflow.fingerprint in got:
+            credited.append({"id": cid, "merchant": charge.merchant, "person": got[inflow.fingerprint],
+                             "amount": inflow.part_for(cid)})
+            continue
         if not any(t.fingerprint == inflow.fingerprint for t in extra):
             return None
         purchases.append({"id": cid, "merchant": charge.merchant, "date": charge.date[:10]})
@@ -470,8 +507,14 @@ def extra_question(inflow: Transaction, transactions: list[Transaction], splits:
                 people.append(p["name"])
     if not purchases:
         return None
-    return {"id": inflow.fingerprint, "amount": round(-inflow.amount, 2), "date": inflow.date[:10],
-            "purchases": purchases, "paid_back": [p["merchant"] for p in purchases], "people": people}
+    whole = round(-inflow.amount, 2)
+    out = {"id": inflow.fingerprint, "amount": whole, "date": inflow.date[:10],
+           "purchases": purchases, "paid_back": [p["merchant"] for p in purchases], "people": people}
+    if credited:
+        out["whole"] = whole
+        out["amount"] = round((_cents(whole) - sum(_cents(c["amount"]) for c in credited)) / 100, 2)
+        out["credited"] = credited
+    return out
 
 
 def open_repayments(transactions: list[Transaction], splits: dict[str, dict],

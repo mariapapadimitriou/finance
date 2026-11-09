@@ -92,8 +92,9 @@ struct ReviewView: View {
                 }
             } else if let extra = ask.item.extra {
                 // S-21x's chip opens S-11x: a tile moves it off the purchase, with Undo.
+                // S-21xm's chip opens S-11xm for the extra part (THL-301).
                 PartsSheet(deposit: PartsDeposit(id: ask.t.id, name: ask.t.name, amount: ask.t.amount,
-                                                 date: ask.t.date), api: app.api, whole: extra) { reply in
+                                                 date: ask.t.date).part(of: extra), api: app.api, whole: extra) { reply in
                     asking = nil
                     Task { await send(.done(reply)) }
                 }
@@ -252,10 +253,16 @@ struct ReviewView: View {
                      : ask.item.rest.map { "\(Format.relativeDay(t.date)) · \(Format.amount($0.sorted)) sorted" }
                      // S-21u: "Nov 16 · paid back Loblaws".
                      ?? ask.item.credit.map { "\(Format.relativeDay(t.date)) · paid back \(Format.andList($0.paidBack))" }
-                     // S-21x: "Nov 16 · extra on Loblaws".
-                     ?? ask.item.extra.map { "\(Format.relativeDay(t.date)) · extra on \(Format.andList($0.paidBack))" }
+                     // S-21x: "Nov 16 · extra on Loblaws". S-21xm (THL-301), part of it:
+                     // "Nov 16 · $30.00 extra on Loblaws", with the whole on the right.
+                     ?? ask.item.extra.map { $0.isPart
+                         ? "\(Format.relativeDay(t.date)) · \(Format.amount($0.amount)) extra on \(Format.andList($0.paidBack))"
+                         : "\(Format.relativeDay(t.date)) · extra on \(Format.andList($0.paidBack))" }
                      ?? [Format.relativeDay(t.date), t.shareNote].compactMap { $0 }.joined(separator: " · "))
-                    .font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+                    // S-21xw / S-21xm: the meta wraps to two lines rather than truncating.
+                    .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .lineLimit(ask.item.extra != nil || ask.item.credit != nil ? 2 : 1)
+                    .fixedSize(horizontal: false, vertical: true)
                 GuessChip(label: ask.chip, question: false).padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

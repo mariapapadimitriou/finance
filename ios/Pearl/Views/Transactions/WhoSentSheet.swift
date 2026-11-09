@@ -137,10 +137,17 @@ struct WhoSentSheet: View {
         return q.shares.map(\.merchant).filter { seen.insert($0).inserted }
     }
 
+    /// What it put toward the purchases she's asked about. S-21xw (THL-301):
+    /// on a payback that's also extra on Loblaws, only Pizza Nova's $30.00.
+    private func asked(_ q: CreditQuestion) -> Double {
+        let on = Set(q.shares.map(\.charge))
+        return Double(q.purchases.filter { on.contains($0.id) }.map { cents($0.here) }.reduce(0, +)) / 100
+    }
+
     /// Why Pearl asks (S-35c note 1034:42639).
     func askText(_ q: CreditQuestion) -> String {
         let shops = Format.andList(merchants(q))
-        let amount = Format.amount(q.linked)
+        let amount = Format.amount(asked(q))
         let fits = q.shares.filter { cents($0.owes) == cents($0.here) }
         var seen = Set<String>()
         let names = fits.map { firstName($0.person) }.filter { seen.insert($0.lowercased()).inserted }
@@ -185,8 +192,8 @@ struct WhoSentSheet: View {
 
     /// "● Credited $30.00 to Sam   ● Not credited $0.00".
     private func bar(_ q: CreditQuestion) -> some View {
-        let whole = max(q.linked, 0.01)
-        let done = min(credited(q), q.linked)
+        let whole = max(asked(q), 0.01)
+        let done = min(credited(q), asked(q))
         let who = person.map { " to \(firstName($0))" } ?? ""
         return VStack(alignment: .leading, spacing: 6) {
             GeometryReader { g in
@@ -198,7 +205,7 @@ struct WhoSentSheet: View {
             .frame(height: 6)
             HStack(spacing: 14) {
                 legend(Pearl.action, "Credited \(Format.amount(done))\(who)")
-                legend(Pearl.ink.opacity(0.2), "Not credited \(Format.amount(q.linked - done))")
+                legend(Pearl.ink.opacity(0.2), "Not credited \(Format.amount(asked(q) - done))")
             }
             .font(Nacre.footnote).foregroundColor(Pearl.ink)
         }
@@ -243,7 +250,11 @@ struct WhoSentSheet: View {
 
     private func save() {
         guard let q = question, let who = person else { return }
-        if over(q) {
+        // S-21xw (THL-301): when part of it is extra on a purchase nobody owes
+        // on, Save credits and closes; the extra is its own question (S-21xm),
+        // so the credit and the extra each have their own Undo.
+        let allAsked = q.purchases.allSatisfy { p in q.shares.contains { $0.charge == p.id } }
+        if over(q) && allAsked {
             // Her share is a payback part; what's left is asked on S-11 v2,
             // and both are saved together there. Close saves nothing.
             extra = q.purchases.map { p in

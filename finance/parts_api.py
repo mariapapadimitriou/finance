@@ -347,7 +347,21 @@ def split_into_parts(txn_id: str):
     t = st.get_transaction(txn_id)
     if t is None:
         return jsonify({"error": "No such transaction."}), 404
-    body = _body()
+    return save_parts(st, t, _body())
+
+
+def save_parts(st, t, body: dict):
+    """POST …/parts, and the web's What was this? on S-21xm (THL-301)."""
+    txn_id = t.fingerprint
+    kept = 0
+    if body.get("extra"):
+        # S-11xm (THL-301): the answer is for the extra part only.
+        body = dict(body)
+        given = body.get("parts")
+        body["parts"], problem = extra_parts(st, t, given)
+        if problem:
+            return jsonify({"error": problem}), 400
+        kept = len(body["parts"]) - len(given)
     # S-24 held (SPLIT-07, 2026-11-09): the purchase to split with the
     # sender is split in this same save, so leaving halfway splits nothing.
     held, problem = _held_split(st, body.get("split"))
@@ -376,6 +390,11 @@ def split_into_parts(txn_id: str):
         return jsonify({"error": str(exc)}), 400
     core._reclassify(st)
     undo: dict = {"parts": txn_id}
+    if kept:
+        # The toast counts her answer, not the credit it kept (S-11xm).
+        n = len(out["parts"]) - kept - (1 if out["rest"] else 0)
+        out["title"] = (f"Sorted {n} part{'' if n == 1 else 's'}. {dp._money(out['rest'])} left to sort."
+                        if out["rest"] else f"Sorted into {n} part{'' if n == 1 else 's'}.")
     if held:
         # One Undo puts the parts, the link and the split back (S-12d).
         undo["marks"] = {"splits": {held[0].fingerprint: was}}
@@ -383,6 +402,41 @@ def split_into_parts(txn_id: str):
     if linked_was:
         undo["marks"] = {**(undo.get("marks") or {}), **linked_was}
     return jsonify({"ok": True, **out, "undo": undo})
+
+
+def extra_parts(st, t, given) -> tuple[list | None, str | None]:
+    """S-11xm (THL-301, SPLIT-24): a payback over several purchases that's
+    extra on only some of them. Her answer covers the extra part; what was
+    credited stays a payback, to the same purchase and person, so saving
+    takes the money off Loblaws and leaves Jo's $30.00 on Pizza Nova as it
+    was. Returns every part to save, or the problem in her words."""
+    q = sp.extra_question(t, st.all_transactions(), st.splits(), st.payback_people())
+    if q is None:
+        return None, "That’s been answered already. Pull to refresh."
+    if not isinstance(given, list):
+        return None, "Add a part."
+    kept = [{"kind": "payback", "amount": c["amount"], "charge": c["id"], "person": c["person"]}
+            for c in q.get("credited") or []]
+    try:
+        said = sum(_cents(p.get("amount")) for p in given if isinstance(p, dict))
+    except (TypeError, ValueError):
+        return None, "Give each part an amount."
+    if said > _cents(q["amount"]):
+        # S-11xm over (1043:1194): the line the app shows, in the same words.
+        return None, (f"Only ${q['amount']:,.2f} of this is extra. {_credited_line(q)} stays as it is, "
+                      f"so make it ${q['amount']:,.2f} or less.")
+    return kept + given, None
+
+
+def _credited_line(q: dict) -> str:
+    """"Jo’s $30.00 for Pizza Nova"; "Jo’s $30.00 for Pizza Nova and Costco"."""
+    by: dict[str, list[dict]] = {}
+    for c in q.get("credited") or []:
+        by.setdefault(c["person"], []).append(c)
+    return " and ".join(
+        f"{p.split()[0] if p else 'Their'}’s "
+        f"${sum(_cents(c['amount']) for c in cs) / 100:,.2f} for {sp.and_list([c['merchant'] for c in cs])}"
+        for p, cs in by.items())
 
 
 def _held_split(st, ask):

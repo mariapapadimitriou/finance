@@ -19,6 +19,9 @@ struct PartsDeposit: Identifiable, Hashable {
     let date: String
     /// The part of an earlier split still to sort: "The other $172".
     var rest = false
+    /// S-11xm (THL-301): the whole deposit, for the header ("$60.00 · Nov
+    /// 16"), when `amount` is only the extra part of it.
+    var whole: Double? = nil
 
     init(id: String, name: String, amount: Double, date: String, rest: Bool = false) {
         self.id = id
@@ -26,6 +29,15 @@ struct PartsDeposit: Identifiable, Hashable {
         self.amount = abs(amount)
         self.date = date
         self.rest = rest
+    }
+
+    /// S-11xm (THL-301, SPLIT-24): sorting only the extra part. "How much
+    /// of it?" and every part add up to the extra; the header keeps the whole.
+    func part(of extra: Review.Item.Extra) -> PartsDeposit {
+        guard extra.isPart else { return self }
+        var d = PartsDeposit(id: id, name: name, amount: extra.amount, date: date, rest: rest)
+        d.whole = amount
+        return d
     }
 }
 
@@ -247,8 +259,9 @@ struct PartsSheet: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    QuestionHeader(name: deposit.name, amount: Format.amount(deposit.amount), tone: Pearl.ink,
-                                   sub: Format.short(deposit.date))
+                    // S-11xm (THL-301): the whole deposit here, "The $30.00" in the title.
+                    QuestionHeader(name: deposit.name, amount: Format.amount(deposit.whole ?? deposit.amount),
+                                   tone: Pearl.ink, sub: Format.short(deposit.date))
                     content
                     // S-11x shows its error under the grid instead (T-08k).
                     if let error = error, whole == nil || step != .kind {
@@ -754,9 +767,48 @@ struct PartsSheet: View {
     }
 
     /// Who "overpaid" names: the sender, or on S-11x the one person who paid back.
+    /// S-11xm (THL-301): the sender credited on this deposit, "Jo overpaid"
+    /// (Jo sent $60.00 and owed $30.00), the same rule: one person known.
     private var overpaidBy: String? {
         guard let w = whole else { return who }
+        var seen = Set<String>()
+        let senders = (w.credited ?? []).map(\.person).filter { seen.insert($0.lowercased()).inserted }
+        if senders.count == 1 { return senders[0] }
+        if !senders.isEmpty { return nil }
         return w.people.count == 1 ? w.people[0] : nil
+    }
+
+    /// S-11xm over (1043:1194): she typed more than the extra.
+    private var over: Bool {
+        guard whole?.isPart == true else { return false }
+        let text = partAmount.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty, let typed = Double(text.replacingOccurrences(of: "$", with: "")
+            .replacingOccurrences(of: ",", with: "")) else { return false }
+        return cents(typed) > leftCents
+    }
+
+    /// S-11xm over: "Only $30.00 of this is extra. Jo's $30.00 for Pizza
+    /// Nova stays as it is, so make it $30.00 or less."
+    private func overLine(_ w: Review.Item.Extra) -> String {
+        let kept = creditedGroups(w).map { "\(firstName($0.person))’s \(Format.amount($0.total)) for \(Format.andList($0.items.map(\.merchant)))" }
+        return "Only \(Format.amount(left)) of this is extra. \(Format.andList(kept)) stays as it is, so make it \(Format.amount(left)) or less."
+    }
+
+    private struct CreditedGroup {
+        let person: String
+        let items: [Review.Item.Extra.Credited]
+        var total: Double { Double(items.map { Int(($0.amount * 100).rounded()) }.reduce(0, +)) / 100 }
+    }
+
+    /// Each sender with the purchases credited to them, in order.
+    private func creditedGroups(_ w: Review.Item.Extra) -> [CreditedGroup] {
+        var order: [String] = []
+        var by: [String: [Review.Item.Extra.Credited]] = [:]
+        for c in w.credited ?? [] {
+            if by[c.person] == nil { order.append(c.person) }
+            by[c.person, default: []].append(c)
+        }
+        return order.map { CreditedGroup(person: $0, items: by[$0] ?? []) }
     }
 
     /// S-11x, under How much of it?: "Sam and Priya have both paid you back
@@ -769,6 +821,17 @@ struct PartsSheet: View {
         case 1: lead = "\(names[0]) has"
         case 2: lead = "\(Format.andList(names)) have both"
         default: lead = "\(Format.andList(names)) have all"
+        }
+        if w.isPart {
+            // S-11xm (THL-301): "Jo paid back $30.00 of this for Pizza Nova. Sam
+            // and Priya have both paid you back for Loblaws, so the other
+            // $30.00 is extra. Tap what it was."
+            let credited = creditedGroups(w).map { g -> String in
+                let cs = g.items
+                let total = g.total
+                return "\(firstName(g.person)) paid back \(Format.amount(total)) of this for \(Format.andList(cs.map(\.merchant)))."
+            }.joined(separator: " ")
+            return "\(credited) \(lead) paid you back for \(Format.andList(w.paidBack)), so the other \(Format.amount(deposit.amount)) is extra. Tap what it was."
         }
         return "\(lead) paid you back for \(Format.andList(w.paidBack)), so this \(Format.amount(deposit.amount)) is extra. Tap what it was."
     }
@@ -789,13 +852,24 @@ struct PartsSheet: View {
             .padding(.horizontal, 4)
             if let w = whole {
                 // S-11x: why it's extra, in S-35c's "Why Pearl asks" style, before the tiles.
-                Text(extraLine(w)).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                // S-11xm over: more than the extra turns it into the caution line.
+                Text(over ? overLine(w) : extraLine(w)).font(Nacre.footnote)
+                    .foregroundColor(over ? Pearl.caution : Pearl.ink)
                     .padding(.horizontal, 4).fixedSize(horizontal: false, vertical: true)
             }
-            label("Income").accessibilityAddTraits(.isHeader)
-            CaseGrid(cases: CaseTile.income, chosen: tile).disabled(busy)
-            label("Not income").padding(.top, 4).accessibilityAddTraits(.isHeader)
-            CaseGrid(cases: notIncomeTiles, chosen: tile).disabled(busy)
+            // S-11xm over: the tiles dim and don't answer until it's the extra or less.
+            Group {
+                label("Income").accessibilityAddTraits(.isHeader)
+                CaseGrid(cases: CaseTile.income, chosen: tile).disabled(busy || over)
+                label("Not income").padding(.top, 4).accessibilityAddTraits(.isHeader)
+                CaseGrid(cases: notIncomeTiles, chosen: tile).disabled(busy || over)
+            }
+            .opacity(over ? 0.4 : 1)
+            .onChange(of: over) { now in
+                if now, let w = whole {
+                    UIAccessibility.post(notification: .announcement, argument: overLine(w))
+                }
+            }
             if whole != nil, let error = error {
                 // T-08k's error line: "Couldn't save that. Try again."
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 4)
@@ -1164,6 +1238,9 @@ struct PartsSheet: View {
         var body: [String: Any] = ["parts": parts.map(\.body), "later": later]
         // S-10e: Save changes replaces the parts it had (SPLIT-03).
         if !editing.isEmpty { body["replace"] = true }
+        // S-11xm (THL-301): these parts are the extra; the server keeps Jo's
+        // credit on Pizza Nova as it is, and Undo links Loblaws back.
+        if whole?.isPart == true { body["extra"] = true }
         if let held = heldSplit, parts.contains(where: { $0.held }) {
             // S-12c (SPLIT-07): the split and the link in one request.
             body["split"] = held.body.merging(["charge": held.charge]) { _, new in new }

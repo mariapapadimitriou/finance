@@ -172,7 +172,7 @@ struct QuickSortView: View {
                 // S-11x. The tile is held for the card ("A gift?"); Yes saves
                 // it with one Undo, and Skip drops it (as SPLIT-20, S-21u).
                 PartsSheet(deposit: PartsDeposit(id: ask.t.id, name: ask.t.name, amount: ask.t.amount,
-                                                 date: ask.t.date), api: app.api, whole: extra,
+                                                 date: ask.t.date).part(of: extra), api: app.api, whole: extra,
                            onHeld: { body, label in
                     asking = nil
                     let answer = ReviewAnswer.extra(ask.t.id, body, label: label)
@@ -560,6 +560,12 @@ struct QuickSortView: View {
             } else {
                 let before = deck
                 let at = index
+                if case .credit = answer, let follow = await followUp(ask) {
+                    // S-21xw → S-21xm (THL-301): Yes saved who sent it; the same
+                    // deposit comes back as the next card for its extra, so it
+                    // never has two cards at once. Undo puts the deck back.
+                    deck.insert(follow, at: index + 1)
+                }
                 await step(ask, ["action": "marked", "title": reply.title ?? answer.done], quiet: true)
                 withAnimation {
                     toast = Sorted(text: always.map { QuickSortStep.always($0, sorted: 1) } ?? reply.title ?? answer.done,
@@ -571,6 +577,13 @@ struct QuickSortView: View {
             self.error = app.handle(error)
             comeBack()
         }
+    }
+
+    /// THL-301 (S-21xm): the extra still to ask about on a deposit whose
+    /// sender was just saved, from Needs a look's list.
+    private func followUp(_ ask: Ask) async -> Ask? {
+        guard let review: Review = try? await app.api.get("api/review") else { return nil }
+        return review.asks.first { $0.item.key == "extra:" + ask.t.id && !$0.skipped }
     }
 
     private func step(_ ask: Ask, _ body: [String: Any], said: String? = nil, always: String? = nil,

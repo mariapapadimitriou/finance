@@ -351,8 +351,13 @@ def build(transactions: list[Transaction], today: str | None = None,
             key = "credit:" + t.fingerprint
             if q is None or key in dismissed:
                 continue
+            # S-21xw (THL-301): the purchases she's asked about first, so a
+            # payback that's also extra elsewhere reads "paid back Pizza Nova
+            # and Loblaws" while S-35c lists ON PIZZA NOVA.
+            asked = {s["charge"] for s in q["shares"]}
+            ordered = sorted(q["purchases"], key=lambda x: x["id"] not in asked)
             who_sent.append({"key": key, "txn": _brief(t),
-                             "credit": {"paid_back": [x["merchant"] for x in q["purchases"]]},
+                             "credit": {"paid_back": [x["merchant"] for x in ordered]},
                              "reason": "Pearl can’t tell who sent it, so it isn’t "
                                        "credited to anyone yet."})
 
@@ -371,12 +376,20 @@ def build(transactions: list[Transaction], today: str | None = None,
             key = "extra:" + t.fingerprint
             if q is None or key in dismissed:
                 continue
+            extra = {"paid_back": q["paid_back"], "people": q["people"], "amount": q["amount"]}
+            reason = (f"Everyone on {' and '.join(q['paid_back'])} has paid "
+                      "you back, so this is extra.")
+            if q.get("credited"):
+                # S-21xm (THL-301, SPLIT-24): only part of it is extra. One
+                # row for the deposit, once its sender is known: "Nov 16 ·
+                # $30.00 extra on Loblaws", +$60.00.
+                extra["whole"] = q["whole"]
+                extra["credited"] = [{"person": c["person"], "merchant": c["merchant"],
+                                      "amount": c["amount"]} for c in q["credited"]]
+                reason = (f"Everyone on {' and '.join(q['paid_back'])} has paid you back, "
+                          f"so ${q['amount']:,.2f} of this is extra.")
             money_in.append({"key": key, "txn": _brief(t), "guess": {"action": "extra"},
-                             "candidates": [],
-                             "extra": {"paid_back": q["paid_back"], "people": q["people"],
-                                       "amount": q["amount"]},
-                             "reason": f"Everyone on {' and '.join(q['paid_back'])} has paid "
-                                       "you back, so this is extra."})
+                             "candidates": [], "extra": extra, "reason": reason})
 
     # 4. Income whose type is a guess.
     income = []
