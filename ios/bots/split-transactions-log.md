@@ -809,9 +809,84 @@ Branch `feat/split-bot-round` (PR #315, open, not merged).
   - THL-181: comment only; its AC is unchanged.
   - No ticket was moved.
 
+### [designBOT → engBOT] 2026-11-09 · AUDIT-FIGMA · Superseded frames marked, decided frames retagged, tags fixed
+**Status:** Redesigned
+**Jira:** THL-291, THL-289, THL-254, THL-278   **Figma:** 1028:41057–1028:41107 (red Superseded tags), 994:36735, 994:36903, 998:37483, 999:38553, 995:37802, 1008:41633, 1018:1911, 1018:1913, 972:36148
+Product owner approved fixing every Figma mismatch from the three-way audit. I opened each old frame and checked it against its replacement before marking it. These are dimmed to 40% with a red "Superseded by …" tag, light and dark: S-03b (the "I had some too" off case keeps S-03b's blocked Save), S-11, S-11n, S-36b (bank → S-11 v2; cash or app → S-11c 1017:1309), S-22, S-12, S-02, S-04, S-06 (→ S-06 v3), S-15, S-17 and S-33. S-18 is not superseded, because an even split with no odd cent is still correct; it has a grey "Still current" tag pointing to S-18 v2. Every round-2 and round-5 frame and its dark twin now reads "Decided · Built (PR #315)", and so do S-22 v2, S-11k, T-08k and S-11c. The T-98s note states SPLIT-06 (a) only. The S-06 v2 note points to S-11c. S-22 v2 drops THL-213. S-11k is THL-291, THL-289. T-08k stays on THL-254. The T-96 note now says a split made on the Quick sort sheet is held for the card ("Groceries, split with Sam?"; Skip drops it; Undo covers it). No new build work.
+
+### [designBOT → engBOT] 2026-11-09 · SPLIT-18/19 · Frames for built behaviour
+**Status:** Redesigned
+**Jira:** THL-291, THL-289, THL-254   **Figma:** S-14p 1029:41057 (dark 1029:41156), S-05p 1029:41258 (dark 1029:41332), T-08k error 1030:41151 (dark 1030:41353)
+These draw what d2dc59d already built, so there's nothing new to build. S-14p: Owed to you › Paid back this month, "Sam · Cash · Nov 13 · paid back Loblaws and Pizza Nova" at $60.00, plus a three-purchase row ("Loblaws, Costco and Pizza Nova"). S-05p: the line under Sam, "$60.00 · paid back Loblaws and Pizza Nova". The note gives the ", $x given back" form. I didn't draw "$60.00, $17.94 given back · paid back Loblaws and Pizza Nova" because those numbers can't all be true for one $60.00 payment. T-08k error: no tile highlighted, "Couldn't save that. Try again." under the grid in color/text/caution.
+
+### [designBOT → engBOT] 2026-11-09 · THL-181 · If Pearl can't tell who, it asks
+**Status:** Redesigned · THL-181 · Approved — build
+**Jira:** THL-181 (AC: "If Pearl can't tell who, it asks"), THL-291, THL-289   **Figma:** S-35a 1030:41556 (dark 1030:41771), S-35b 1030:41984 (dark 1030:42199)
+On the shared What was this? › Paying me back, this reuses the built "Who paid you back?" sheet (S-09, aa07127/8edd375); no new page. S-35a: the payback names no one, or someone not on any split, and its amount fits more than one open share. Those shares go on top under COULD BE EITHER with nothing ticked, plus the line "Sam and Priya each owe $30.00, so Pearl won't guess. Tick who sent it." Next stays off until she ticks one, and ticking works as on S-09. This replaces S-35's pre-ticked guess. When exactly one share fits, the current "Amount matches" pre-tick stays. S-35b: nothing fits. Every open share is listed with nothing ticked, plus "Jordan isn't on any of your splits, and no one owes $45.00. Tick what it paid back, or search for the purchase." Anything left goes to S-11 v2, and Close saves nothing. VoiceOver labels are in the notes.
+
+### [designBOT → engBOT] 2026-11-09 · TOKENS · Light money-in
+**Status:** Redesigned (already approved by the product owner: web tokens follow Figma)
+**Jira:** —   **Figma:** library color/text/money-in (read on 538:15997)
+The Figma library's light money-in is #167A40, the same as iOS. The web has #1e7b4c, so the web changes to #167A40 along with the dark #6EDB94.
+
+### [engBOT] 2026-11-09 · round 12 start
+designBOT's four entries above were written in Figma while round 11 ran; I appended them as given. I checked these by node with get_screenshot and get_metadata (no page-wide metadata): the Superseded tags 1028:41057 and 1028:41073, S-14p 1029:41057, S-05p 1029:41258 (dark 1029:41332) and its note 1029:41407, T-08k error 1030:41151, S-35a 1030:41556 (dark 1030:41771) and its note 1030:42413, and S-35b 1030:41984 (dark 1030:42199) and its note 1030:42416. For the S-35 cases I also opened S-35 545:19575 and S-09 538:14642.
+
+### [engBOT → designBOT] 2026-11-09 · AUDIT-FIGMA · Accepted
+1028:41057 reads "Superseded by S-03b v2 994:36736 (dark 1008:40898) — with I had some too on, the rest stays yours (SPLIT-01 b′). With it off, Save stays off as here." 1028:41073 reads "Superseded by S-22 v2 995:37522 (dark 1008:41353)". Both point to the frames that were built. There's one leftover, listed under Still open: S-27's kind step isn't marked superseded.
+
+### [engBOT → designBOT] 2026-11-09 · SPLIT-18/19 · Frames for built behaviour · Accepted
+- **S-14p:** matches d2dc59d. Paid back this month shows "Sam · Cash · Nov 13 · paid back Loblaws and Pizza Nova" at $60.00, and the three-purchase row reads "Loblaws, Costco and Pizza Nova" with no "and 2 more".
+- **S-05p:** matches. The line under Sam is "$60.00 · paid back Loblaws and Pizza Nova". The note's pattern, "$80.00, $20.00 given back · paid back Loblaws and Pizza Nova", is what the app does: `SplitFlow.swift` `deposited(_:)` prints `whole` first, and `whole` (`Store.splits()`) adds up every piece of the payment, the returned one included. So the first amount is always the whole payment and can't contradict the given-back amount. With nothing else paid back it reads "$60.00, $17.94 given back", as the note says.
+- **T-08k error:** matches. No tile is highlighted, and "Couldn't save that. Try again." sits under the grid in the caution color.
+
+### [engBOT → designBOT] 2026-11-09 · THL-181 · S-35a / S-35b · Accepted (built)
+Both frames, their dark twins and the notes work. Each case has a way in (What was this? › Paying me back) and a way out (Close saves nothing). The server supports it once the guess is removed. Built below. Two small gaps are logged as SPLIT-22.
+
+### [engBOT → designBOT] 2026-11-09 · TOKENS · Light money-in · Accepted (built)
+The web's light `--money-in` is now #167a40, which matches iOS and the Figma library.
+
+### [engBOT → designBOT] 2026-11-09 · SPLIT-22 · Two cases S-35a and S-35b don't draw
+**Severity:** Minor
+**Jira:** THL-181 ("Every repayment linked to a split is credited to someone on the split card. If Pearl can't tell who, it asks.")   **Figma:** S-35a 1030:41556, S-35b 1030:41984   **Code:** `ios/Pearl/Views/Transactions/PartsFlow.swift` (`askText`), `finance/splits.py` (`people_status`, ASK_FROM)
+**Problem:**
+1. **One person, two fits.** Sam owes $30.00 on both Pizza Nova and Loblaws, and $30.00 comes in with no name. There's one name, so "Sam and Sam each owe $30.00" can't be right. For now the app says "Sam owes $30.00 on Pizza Nova and Loblaws, so Pearl won't guess. Tick what it paid back." That's my wording, not a drawn one.
+2. **Linked somewhere else.** A payback with no name can still be linked to a split purchase without the sheet: a purchase picked from search, the web's Paid back, or `POST …/paybacks` with no person. If it's dated from 2026-11-10 and two shares fit (or none does), it now counts for nobody, so the purchase is paid back but Sam and Priya both still owe. Nothing on S-04 or S-05 lets her say who it was afterwards.
+**Ask:** (1) Confirm or reword the one-person line. (2) Draw where an unassigned payback shows on the split card and how she answers it, or decide that those paths must go through S-35a/S-35b first.
+
+### [engBOT] 2026-11-09 · round 12 · build
+Branch `feat/split-bot-round` (PR #315, open, not merged).
+- **SPLIT-21, server (`finance/splits.py` `people_status`):**
+  - A payback that names nobody on the split, dated on or after `ASK_FROM` (2026-11-10), counts for someone only when exactly one share still owed is its amount. If two shares fit, or none does, it counts for nobody until she says who.
+  - Named paybacks are unchanged, and so is the single exact fit.
+  - **Old data:** credits are worked out each time they're read; nothing stores who a payback was given to. So with no migration, a payback dated before 2026-11-10 keeps the old rule (exact fit, else the first who still owes) and reads exactly as it did. Only paybacks dated from 2026-11-10 follow the ask rule.
+  - **Limit:** an old-dated deposit that she links for the first time now, with no person, still gets the old guess.
+  - `/owing` also returns `named`: the name on a deposit when it isn't on any of her splits (for S-35b's "Jordan isn't on any of your splits…"). It's None when the deposit names nobody or names someone who is on a split.
+- **SPLIT-21, app (`PartsFlow.swift`, the shared "Who paid you back?" sheet):**
+  - When the sender is unknown and exactly one share is the amount left, that share is now ticked, as S-35 drew it ("same amount", "It was Dad" / "None of these").
+  - **Two or more fit (S-35a):** COULD BE EITHER lists them with nothing ticked. Under it: "Sam and Priya each owe $30.00, so Pearl won't guess. Tick who sent it." (first names). Anyone else who owes her is under Others who owe you.
+  - **None fits (S-35b):** OWES YOU lists every open share with nothing ticked, then "Jordan isn't on any of your splits, and no one owes $45.00. Tick what it paid back, or search for the purchase." With no name, it reads "No one owes $45.00. …".
+  - **Rows:** "Sam" over "Pizza Nova · Nov 2 · Sam's share". Under the rows is the Linked / Not linked bar.
+  - **Next:** a single Next (or "Link these n purchases"), off until she ticks one. Whatever is left goes straight to "What's the other $x?" (S-11 v2). Close saves nothing, as before.
+  - **VoiceOver:** "Sam, Pizza Nova, November 2, $30.00, not selected" (the new `Format.monthDay`). The row speaks its own state rather than also adding the Selected trait.
+  - With no open shares at all, the page is still search only ("Search for the purchase, or tap Next if it isn't one.").
+- **Web:** light `--money-in` changed from #1e7b4c to #167a40 in `src/tokens/tokens.css` (line 66), edited by hand as in round 11. Dark stays #6edb94.
+- **Tests:**
+  - New: TestPearlAsksWhoItWas (9) in `tests/test_split_round.py`. It covers two fits, no fit, one fit after a named payback, a named payback, an old payback keeping its credit (both fits, and no fit), `named` for Jordan / no name / someone on a split, and the Swift wiring.
+  - I also ran the whole suite with ASK_FROM moved back to 0000-00-00: 1774 passed. So no existing test depends on the old guess, and the cutoff doesn't make the suite depend on the calendar.
+  - `python3 -m pytest -q`: 1783 passed, 0 failed.
+  - `npm run build`: built.
+  - `xcodebuild -project ios/Pearl.xcodeproj -scheme Pearl -destination 'generic/platform=iOS Simulator' build`: BUILD SUCCEEDED. Not run by hand in a simulator.
+  - No `.swift` file was added.
+- **Commit:** 1f5bfd4, "Splits round 12: Pearl asks who a payback is from (SPLIT-21, THL-181), web light money-in #167a40". 6 files; `git show --stat` checked. Pushed, and PR #315's body updated.
+- **Jira:**
+  - THL-278's unnamed-payback line now gives the ask rule.
+  - THL-181 and THL-278 each got a comment.
+  - Nothing was moved; both stay in Testing.
+
 ## Summary
 
-This is the state after eleven rounds (2026-11-09 to 11-10). Every issue is decided and built except SPLIT-21, which designBOT is drawing and which is approved to build. Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
+This is the state after twelve rounds (2026-11-09 to 11-10). Every issue through SPLIT-21 is decided and built. SPLIT-22 (Minor) is open with designBOT. Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
 
 **PR:** https://github.com/mariapapadimitriou/finance/pull/315 (open, not merged)
 **Branch:** `feat/split-bot-round`
@@ -829,11 +904,13 @@ This is the state after eleven rounds (2026-11-09 to 11-10). Every issue is deci
 - d2dc59d: round 10 build (SPLIT-19 list line, T-08k error line)
 - 9dc1a2f: log, round 10
 - 1abc302: round 11 build (SPLIT-20, web dark money-in)
-- this log commit: round 11
+- 4ed7916: log, round 11
+- 1f5bfd4: round 12 build (SPLIT-21, web light money-in)
+- this log commit: designBOT's Figma entries and round 12
 
 **Tests:**
-- `python3 -m pytest -q`: 1774 passed (35 new in tests/test_split_round.py across rounds 7, 9, 10 and 11).
-- `npm run build`: built (round 11, after the token change).
+- `python3 -m pytest -q`: 1783 passed (44 new in tests/test_split_round.py across rounds 7, 9, 10, 11 and 12).
+- `npm run build`: built (round 12, after the light token change).
 - iOS Simulator build: BUILD SUCCEEDED.
 - Not run by hand on a simulator or a device.
 
@@ -861,20 +938,23 @@ This is the state after eleven rounds (2026-11-09 to 11-10). Every issue is deci
 | SPLIT-18 | Other income's follow-up has no frame | Accepted and built (S-11k, T-08k): "What kind of income?" on the parts page and the shared page, with its own error line (round 10) |
 | SPLIT-19 | S-06 v2's extra for cash or an app | Accepted and built (S-11c): four outcomes, `split_cash` `extra`, shared origin, Undo by origin, and the list line "paid back Loblaws and Pizza Nova" (round 10) |
 | SPLIT-20 | Quick sort's sheet saved a split at once | Decided (SPLIT-06 (a) everywhere). Built (round 11): the sheet holds it for the card; Yes saves split and category with one Undo; Skip drops it |
-| SPLIT-21 | Ask who a payback is from (THL-181) | Open → designBOT (approved to build). Not built |
+| SPLIT-21 | Ask who a payback is from (THL-181) | Accepted and built (round 12, S-35a/S-35b): no guess when two or no shares fit; one exact fit ticked; paybacks dated before 2026-11-10 keep the old credit |
+| SPLIT-22 | Two cases S-35a/S-35b don't draw | Open → designBOT (Minor): one person with two fitting shares (engBOT's wording for now); an unassigned payback linked outside the sheet has nowhere to be answered |
 
 ### Still open
 
 **For designBOT:**
-- **SPLIT-21:** the "who is this from?" step for THL-181. Once it's drawn, engBOT checks it by node and builds it, then updates THL-278's unnamed-payback line.
-- **Web money-in light:** designBOT is checking the Figma light value. `src/tokens/tokens.css` keeps #1e7b4c until the next round.
+- **SPLIT-22 (Minor):**
+  - Confirm or reword "Sam owes $30.00 on Pizza Nova and Loblaws, so Pearl won't guess. Tick what it paid back."
+  - Draw where a payback with no name, linked outside the sheet and left unassigned, gets answered on the split card. Until then, THL-181's "Every repayment linked to a split is credited to someone" isn't fully met for search, web and API links.
+- **S-27's kind step** isn't marked superseded by S-11 v2 in Figma (the AUDIT-FIGMA pass didn't list it).
 
-**For the product owner:** nothing open. The web dark money-in is now #6edb94 (round 11, edited by hand: the repo has no token generator).
+**For the product owner:** nothing open. The web money-in tokens now follow Figma: light #167a40 (round 12), dark #6edb94 (round 11), both edited by hand because the repo has no token generator.
 
 ### Dark twins (done in round 7 by designBOT)
 - **Dark alerts and action sheets:** the S-03f, S-24x and S-04 v2 twins are tagged "iOS system alert/action sheet — drawn by iOS, colours indicative". Build them with `.alert` / `.confirmationDialog`, with no custom colours.
 - **Positive green:** every green on the twins is bound to `color/text/money-in`. The round-8 frames are too.
-- **Money-in dark (decided 2026-11-09):** #6EDB94, in the app (`ios/Pearl/Theme/Theme.swift`, round 9) and on the web (`src/tokens/tokens.css`, round 11).
+- **Money-in dark (decided 2026-11-09):** #6EDB94, in the app (`ios/Pearl/Theme/Theme.swift`, round 9) and on the web (`src/tokens/tokens.css`, round 11). Light is #167A40 in Figma, iOS and (round 12) the web.
 
 ### How the bots communicated
 | Round | Who | What was sent |
@@ -890,5 +970,6 @@ This is the state after eleven rounds (2026-11-09 to 11-10). Every issue is deci
 | 9 | engBOT | Checked every round-8 frame by node and Accepted SPLIT-17, 18 and 19. Built SPLIT-18, SPLIT-19 and the dark green (8176985). Updated PR #315, reworded THL-291's $85 line, and commented on THL-291 and THL-254. |
 | 10 | product owner, then engBOT | The product owner asked for the two small engBOT items. engBOT checked S-11c, its note and T-08k by node, then built the SPLIT-19 list line (server `paid_back`, Owed to you once, S-05) and T-08k's own error line (d2dc59d). Updated PR #315 and commented on THL-291. The web token was left for the product owner. |
 | 11 | product owner, then engBOT | The product owner decided SPLIT-06 (a) everywhere, THL-181's ask, the Jira edits and the web dark token. engBOT logged SPLIT-20 and built it (the Quick sort sheet holds a split). engBOT also logged SPLIT-21 for designBOT (approved to build, not built) and set the web dark money-in to #6edb94. engBOT edited THL-291, 289, 278 and 260 and commented on each and on THL-181. designBOT worked in Figma only. |
+| 12 | designBOT, then engBOT | designBOT (in Figma, entries appended by engBOT) marked superseded frames, drew S-14p/S-05p/T-08k error for built behaviour, drew S-35a/S-35b for THL-181, and read Figma's light money-in (#167A40). engBOT checked them by node and Accepted all four. engBOT then built SPLIT-21 (server ask rule with an ASK_FROM cutoff so old credits stay, plus the sheet) and the web light token (1f5bfd4), logged SPLIT-22, edited THL-278's unnamed-payback line, commented on THL-181 and THL-278, and updated PR #315. |
 
 Throughout, no ticket was moved past Testing, nothing was merged, and Figma was edited only by designBOT.
