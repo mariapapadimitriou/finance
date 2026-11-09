@@ -287,9 +287,6 @@ struct TransactionDetailView: View {
     /// The bill this merchant is on, and the sheet that adds it.
     @State private var billKey: String?
     @State private var addingBill = false
-    /// This page opened on a question, from the list; the next one waits.
-    @State private var wasAsked: Bool?
-    @State private var nextUp: Ask?
     /// The Always switch, once she's touched it.
     @State private var newOnes: Bool?
     /// T-38b / T-40b: "Dining out · Undo" after a guess is confirmed.
@@ -458,20 +455,9 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $unlinkingRefund) { refundUnlinkSheet }
         .overlay(alignment: .bottom) {
             VStack(spacing: 4) {
-                // After an answer from the list, on to the next without going back.
-                if nextUp != nil {
-                    Button { Task { await goToNext() } } label: {
-                        Text("Next one").font(Nacre.textButton).foregroundColor(Pearl.action)
-                            .padding(.horizontal, 20).frame(minHeight: 44)
-                            .background(Capsule().fill(.ultraThinMaterial))
-                            .overlay(Capsule().strokeBorder(Nacre.edge, lineWidth: 1))
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
                 if let toast = toast {
                     // Stays until something replaces it, so nothing moves under a finger.
-                    UndoToast(text: toast.title, undo: toast.undo, stays: nextUp != nil) {
+                    UndoToast(text: toast.title, undo: toast.undo, stays: false) {
                         withAnimation { self.toast = nil }
                     }
                 }
@@ -1486,30 +1472,6 @@ struct TransactionDetailView: View {
 
     // MARK: Changes
 
-    /// The next open question, once this page's own is answered.
-    private func lookForNext() async {
-        guard guessing == nil, wasAsked == true, !t.suggested, !t.asks, nextUp == nil else { return }
-        guard let review: Review = try? await app.api.get("api/review") else { return }
-        nextUp = review.asks.first { !$0.skipped && $0.t.id != t.id }
-    }
-
-    /// Next one: the same page, on the next transaction.
-    private func goToNext() async {
-        guard let next = nextUp,
-              let full: Transaction = try? await app.api.get("api/transactions/\(next.t.id)") else { return }
-        withAnimation {
-            toast = nil
-            message = nil
-            nextUp = nil
-            newOnes = nil
-            oneOff = nil
-            wasAsked = nil
-            chosenCategory = nil
-            detail = full
-        }
-        await load()
-    }
-
     private struct Cases: Decodable {
         let learnable: Bool?; let mixed: Bool?; let hasRule: Bool?
         enum CodingKeys: String, CodingKey { case learnable, mixed; case hasRule = "has_rule" }
@@ -1534,7 +1496,6 @@ struct TransactionDetailView: View {
             detail = full
             oneOff = nil
         }
-        if wasAsked == nil { wasAsked = t.suggested || t.asks }
         if canPayFromBank { billKey = bill?.billKey }
         if guessing == nil {
             self.cases = cases ?? Cases(learnable: false, mixed: false, hasRule: false)
@@ -1556,7 +1517,6 @@ struct TransactionDetailView: View {
             message = try await work()
             error = nil
             await load()
-            await lookForNext()
             app.changed()
         } catch {
             self.error = app.handle(error)
