@@ -39,6 +39,13 @@ struct CardSplit {
     let mine: Double
     let owed: Double
 
+    /// What SplitSheet's onHold gives, for a purchase of `total`: the card's
+    /// page and Quick sort's sheet hold the same thing (SPLIT-06, SPLIT-20).
+    static func held(_ body: [String: Any], mine: Double, total: Double) -> CardSplit {
+        let names = (body["people"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+        return CardSplit(body: body, names: names, mine: mine, owed: max(0, total - mine))
+    }
+
     /// "Sam", "Sam and Priya", "Sam, Priya and Ben".
     var who: String {
         guard names.count > 1 else { return names.first ?? "them" }
@@ -1395,9 +1402,7 @@ struct TransactionDetailView: View {
     /// T-98s (SPLIT-06): nothing is saved; the card asks "Groceries, split with Sam?".
     private func holdSplit(_ body: [String: Any], mine: Double) {
         splitting = false
-        let names = (body["people"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
-        let split = CardSplit(body: body, names: names, mine: mine,
-                              owed: max(0, (t.fullAmount ?? t.amount) - mine))
+        let split = CardSplit.held(body, mine: mine, total: t.fullAmount ?? t.amount)
         let category = cardCategory
         holdForCard {
             $0.split = split

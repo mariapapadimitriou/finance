@@ -33,9 +33,14 @@ struct AnswerSheet: View {
     var pageAmount: String? = nil
     /// A category already picked on the page behind, shown as the current one.
     var pageCategory: String? = nil
-    /// The opener holds an answer for a Quick sort card's Yes (SPLIT-06):
-    /// nothing is saved here, so there's nothing here to fail.
+    /// The opener holds an answer for a Quick sort card's Yes (SPLIT-06,
+    /// SPLIT-20): an answer with a card label isn't saved here, and Split with
+    /// others is held too, not saved, so there's nothing here to fail. A tile
+    /// that only goes on to another step still saves nothing until its answer.
     var holds = false
+    /// T-98s from Quick sort's sheet (SPLIT-20): a held split and the category
+    /// it counts toward, for the card's "Groceries, split with Sam?".
+    var onHeldSplit: ((CardSplit, String) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step
@@ -67,6 +72,8 @@ struct AnswerSheet: View {
     @State private var chargeCase: String?
     @State private var splitting = false
     @State private var splitSaid: String?
+    /// SPLIT-20: the split made here, held for the Quick sort card's Yes.
+    @State private var heldSplit: CardSplit?
     @State private var oneOff: Bool?
     /// T-04's Regular bill, then Add to your bills? (T-32), then the answer.
     @State private var regularBill = false
@@ -93,9 +100,11 @@ struct AnswerSheet: View {
     init(ask: Ask, categories: [CategoryList.Category], accounts: [AccountsOverview.Account], names: [String],
          api: APIClient, start: Step? = nil, pageAlways: Bool? = nil, pageAmount: String? = nil, pageCategory: String? = nil, current: String? = nil, onCategory: ((String, Bool) -> Void)? = nil,
          confirmsGuess: Bool = true, fromPage: Bool = false, holds: Bool = false,
+         onHeldSplit: ((CardSplit, String) -> Void)? = nil,
          onAnswer: @escaping (ReviewAnswer) -> Void) {
         self.fromPage = fromPage
         self.holds = holds
+        self.onHeldSplit = onHeldSplit
         self.pageAlways = pageAlways
         self.pageAmount = pageAmount
         self.pageCategory = pageCategory
@@ -183,7 +192,14 @@ struct AnswerSheet: View {
         .task(id: step) { await loadOptions() }
         .sheet(isPresented: $splitting) {
             if let f = full {
-                SplitSheet(t: f, api: api, recent: names) { said in
+                // T-98s (SPLIT-20): from Quick sort's sheet the split is held,
+                // as on the card's page; the category she picks next goes with it.
+                SplitSheet(t: f, api: api, recent: names,
+                           onHold: holds && onHeldSplit != nil ? { body, _, mine in
+                               splitting = false
+                               heldSplit = CardSplit.held(body, mine: mine, total: f.fullAmount ?? f.amount)
+                               splitSaid = heldSplit?.note
+                           } : nil) { said in
                     splitting = false
                     splitSaid = said
                 }
@@ -218,7 +234,10 @@ struct AnswerSheet: View {
     /// What Spending saves: the caller's way, or the answer for this question.
     private func saveSpending(_ name: String, _ remember: Bool) {
         let finish: () -> Void = {
-            if let onCategory = onCategory {
+            if let split = heldSplit, let onHeldSplit = onHeldSplit {
+                // SPLIT-20: held for the card, "for this one" (no rule), as T-98s says.
+                onHeldSplit(split, name)
+            } else if let onCategory = onCategory {
                 onCategory(name, remember)
             } else if ask.kind == .category {
                 if name == (t.category ?? ask.item.guess?.text) && !remember {

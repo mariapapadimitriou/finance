@@ -169,7 +169,14 @@ struct QuickSortView: View {
                 }
             } else {
                 AnswerSheet(ask: ask, categories: categories, accounts: accounts, names: names,
-                            api: app.api, holds: true) { answer in
+                            api: app.api, holds: true,
+                            onHeldSplit: { split, category in
+                                // T-98s (SPLIT-20): "Groceries, split with Sam?"; Yes saves
+                                // the split and the category in one request, Skip drops it.
+                                asking = nil
+                                drafts[ask.id] = CardDraft(label: split.label(category), category: category,
+                                                           split: split)
+                            }) { answer in
                     asking = nil
                     if let label = answer.heldLabel {
                         // Held for the card, like any other edit: Yes there saves it.

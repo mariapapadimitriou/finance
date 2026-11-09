@@ -541,6 +541,29 @@ class TestHeldSplitFromQuickSort:
         assert not d.get("splitting") and d["category"] == before
 
 
+class TestHeldSplitFromQuickSortSheet:
+    """SPLIT-20 (SPLIT-06 (a) everywhere): Quick sort's sheet holds a split
+    for the card, as the card's page does, instead of saving it at once."""
+
+    IOS = __import__("pathlib").Path(__file__).resolve().parents[1] / "ios" / "Pearl"
+
+    def read(self, rel):
+        return (self.IOS / rel).read_text(encoding="utf-8")
+
+    def test_the_sheet_passes_on_hold_when_it_holds(self):
+        sheet = self.read("Views/Review/AnswerSheet.swift")
+        assert "onHold: holds && onHeldSplit != nil ?" in sheet
+        assert "onHeldSplit(split, name)" in sheet
+
+    def test_quick_sort_holds_the_split_on_the_card(self):
+        quick = self.read("Views/Review/QuickSortView.swift")
+        assert "onHeldSplit: { split, category in" in quick
+        assert "split: split)" in quick
+        # Skip still forgets it, and Yes sends it with the category in one request.
+        assert "drafts[ask.id]?.split = nil" in quick
+        assert "split.answer(ask.t.id, category: splitCategory(ask, draft))" in quick
+
+
 class TestOtherIncomeKinds:
     """SPLIT-18, S-11k / T-08k: Other income asks which kind: Interest,
     Government credits, Tax refund or Other income (finance/income.py)."""
