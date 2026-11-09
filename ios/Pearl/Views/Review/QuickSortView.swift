@@ -167,6 +167,20 @@ struct QuickSortView: View {
                     asking = nil
                     Task { await answered(ask, .done(reply)) }
                 }
+            } else if let extra = ask.item.extra {
+                // S-21x: Yes/Skip can't say what it was, so the card opens
+                // S-11x. The tile is held for the card ("A gift?"); Yes saves
+                // it with one Undo, and Skip drops it (as SPLIT-20, S-21u).
+                PartsSheet(deposit: PartsDeposit(id: ask.t.id, name: ask.t.name, amount: ask.t.amount,
+                                                 date: ask.t.date), api: app.api, whole: extra,
+                           onHeld: { body, label in
+                    asking = nil
+                    let answer = ReviewAnswer.extra(ask.t.id, body, label: label)
+                    drafts[ask.id] = CardDraft(label: answer.heldLabel, answer: answer)
+                }) { reply in
+                    asking = nil
+                    Task { await answered(ask, .done(reply)) }
+                }
             } else if ask.item.credit != nil {
                 // S-21u: Yes/Skip can't say who, so the card opens S-35c. The
                 // tick is held for the card as "Paid back by Sam?"; Yes saves
@@ -515,6 +529,8 @@ struct QuickSortView: View {
         }
         // S-21u (SPLIT-22b): and a held "Paid back by Sam?".
         if case .credit? = drafts[ask.id]?.answer { drafts[ask.id] = nil }
+        // S-21x (SPLIT-23 (1)): and a held S-11x answer.
+        if case .extra? = drafts[ask.id]?.answer { drafts[ask.id] = nil }
         withAnimation(.easeIn(duration: 0.25)) { leaving = false }
         Task { await step(ask, ["action": "skip"]) }
     }

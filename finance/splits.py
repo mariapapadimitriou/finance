@@ -247,7 +247,8 @@ def payments(records: list[dict], dates: dict[str, str] | None = None,
 
 
 def people_status(charge: Transaction, split: dict, transactions: list[Transaction],
-                  payer: dict[str, str], left_out: list[Transaction] | None = None) -> list[dict]:
+                  payer: dict[str, str], left_out: list[Transaction] | None = None,
+                  extra_out: list[Transaction] | None = None) -> list[dict]:
     """Each person in a split: their part, what they've paid back and when,
     what they still owe (S-04), and what they paid over their part (`over`,
     SPLIT-02: a share lowered below what they'd paid, which she owes back).
@@ -260,6 +261,10 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
     `left_out`, when given, gets each payback the ask rule credited to no
     one while somebody still owes (SPLIT-22b, S-05u): the ones Pearl asks
     "Who sent this?" about.
+
+    `extra_out`, when given, gets each payback dated from ASK_FROM, with no
+    name, that came when nobody on the split still owed anything (SPLIT-23
+    (1), S-21x): it isn't anyone's payback, so Pearl asks what it was.
     """
     names = [p["name"] for p in split["people"]]
     # A refund on the purchase is shared the way the purchase was: each
@@ -319,6 +324,8 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
         got = t.part_for(charge.fingerprint)
         owing = [n for n in names if part[n] - paid[n] >= 0.005]
         if not owing:
+            if extra_out is not None and t.date[:10] >= ASK_FROM:
+                extra_out.append(t)
             continue
         fits = [n for n in owing if abs(part[n] - paid[n] - got) < 0.01]
         if t.date[:10] >= ASK_FROM:
@@ -432,6 +439,39 @@ def credit_question(inflow: Transaction, transactions: list[Transaction], splits
             "sender": sender_name(inflow), "word": payment_word(inflow),
             "merchant": inflow.merchant or inflow.description or "",
             "purchases": purchases, "shares": shares}
+
+
+def extra_question(inflow: Transaction, transactions: list[Transaction], splits: dict[str, dict],
+                   payer: dict[str, str]) -> dict | None:
+    """S-21x / S-11x (SPLIT-23 (1), THL-181): a payback linked to split
+    purchases, dated from ASK_FROM, with no name, that came when nobody on
+    any of them still owed anything. There's no one to tick, so it isn't a
+    payback at all: Needs a look asks "What was this?" about the whole
+    amount. None for anything else, including a payback that pays back a
+    purchase that isn't split (that one counts for the purchase)."""
+    if inflow.amount >= 0 or not inflow.repays or inflow.date[:10] < ASK_FROM:
+        return None
+    if payer.get(inflow.fingerprint):
+        return None
+    by_id = {t.fingerprint: t for t in transactions}
+    purchases: list[dict] = []
+    people: list[str] = []
+    for cid in inflow.repays_all:
+        charge, split = by_id.get(cid), splits.get(cid)
+        if charge is None or split is None:
+            return None
+        extra: list[Transaction] = []
+        status = people_status(charge, split, transactions, payer, extra_out=extra)
+        if not any(t.fingerprint == inflow.fingerprint for t in extra):
+            return None
+        purchases.append({"id": cid, "merchant": charge.merchant, "date": charge.date[:10]})
+        for p in status:
+            if p["paid"] >= 0.005 and p["owes"] < 0.005 and not any(same_person(p["name"], n) for n in people):
+                people.append(p["name"])
+    if not purchases:
+        return None
+    return {"id": inflow.fingerprint, "amount": round(-inflow.amount, 2), "date": inflow.date[:10],
+            "purchases": purchases, "paid_back": [p["merchant"] for p in purchases], "people": people}
 
 
 def open_repayments(transactions: list[Transaction], splits: dict[str, dict],

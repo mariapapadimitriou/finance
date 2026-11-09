@@ -40,6 +40,14 @@ struct PartsSheet: View {
     /// opens on "What's the other $x?" (S-11 v2) with that payback as a part.
     /// Nothing is saved until the parts are.
     var credited: [Part] = []
+    /// S-11x (SPLIT-23 (1), THL-181): a payback linked to a purchase nobody
+    /// still owed on. S-11 v2 opens for the whole amount, "The $30.00", with
+    /// why it's extra; a tile moves it off the purchase and records the
+    /// answer in one request (finance/parts.py; Undo links it back).
+    var whole: Review.Item.Extra? = nil
+    /// Quick sort (S-11x on its card): the answer is held for the card's Yes
+    /// as the parts request and a label ("A gift?"); nothing is saved here.
+    var onHeld: (([String: Any], String) -> Void)? = nil
     let onSaved: (MarkReply) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -242,7 +250,8 @@ struct PartsSheet: View {
                     QuestionHeader(name: deposit.name, amount: Format.amount(deposit.amount), tone: Pearl.ink,
                                    sub: Format.short(deposit.date))
                     content
-                    if let error = error {
+                    // S-11x shows its error under the grid instead (T-08k).
+                    if let error = error, whole == nil || step != .kind {
                         Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
                             .padding(.horizontal, 16)
                     }
@@ -256,6 +265,14 @@ struct PartsSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task { await load() }
+        // S-11x: every tile answers at once. Once nothing is left, it saves
+        // (or is held for the Quick sort card) instead of Check and save.
+        .onChange(of: step) { _ in
+            if whole != nil && step == .review {
+                step = .kind
+                Task { await save(later: false) }
+            }
+        }
         // S-24x: swiping down can't drop a held split without asking; X asks.
         .interactiveDismissDisabled(heldSplit != nil)
         .alert("Leave without saving?", isPresented: $leaving) {
@@ -312,6 +329,10 @@ struct PartsSheet: View {
             return deposit.rest ? "The other \(Format.amount(deposit.amount))" : "Sort the \(Format.amount(deposit.amount))"
         case .otherKind: return "What kind of income?"
         case .kind:
+            // S-11x: "The $30.00"; the whole of it is extra, so there's no "other".
+            if whole != nil && (parts.isEmpty || leftCents == 0) {
+                return "The \(Format.amount(deposit.amount))"
+            }
             if parts.isEmpty { return "What was the \(Format.amount(left))?" }
             return extra ? "What’s the extra \(Format.amount(left))?" : "What’s the other \(Format.amount(left))?"
         case .review: return "Check and save"
@@ -722,10 +743,34 @@ struct PartsSheet: View {
     /// T-12's tiles for a part: Not mine isn't one (SPLIT-04), and two more
     /// answer what only a part can be: "Dad overpaid" and "Off a category".
     private var notIncomeTiles: [CaseTile] {
-        CaseTile.notIncome.filter { $0.key != "not_mine" } + [
-            CaseTile(key: "overpaid", label: "\(who) overpaid", symbol: "person.crop.circle.badge.xmark"),
+        // S-11x: who overpaid is whoever paid back that purchase; with more
+        // than one of them Pearl can't name one, so that tile isn't offered.
+        let overpaid = overpaidBy.map {
+            [CaseTile(key: "overpaid", label: "\(firstName($0)) overpaid", symbol: "person.crop.circle.badge.xmark")]
+        } ?? []
+        return CaseTile.notIncome.filter { $0.key != "not_mine" } + overpaid + [
             CaseTile(key: "category", label: "Off a category", symbol: "arrow.uturn.backward"),
         ]
+    }
+
+    /// Who "overpaid" names: the sender, or on S-11x the one person who paid back.
+    private var overpaidBy: String? {
+        guard let w = whole else { return who }
+        return w.people.count == 1 ? w.people[0] : nil
+    }
+
+    /// S-11x, under How much of it?: "Sam and Priya have both paid you back
+    /// for Loblaws, so this $30.00 is extra. Tap what it was."
+    private func extraLine(_ w: Review.Item.Extra) -> String {
+        let names = w.people.map(firstName)
+        let lead: String
+        switch names.count {
+        case 0: lead = "Everyone has"
+        case 1: lead = "\(names[0]) has"
+        case 2: lead = "\(Format.andList(names)) have both"
+        default: lead = "\(Format.andList(names)) have all"
+        }
+        return "\(lead) paid you back for \(Format.andList(w.paidBack)), so this \(Format.amount(deposit.amount)) is extra. Tap what it was."
     }
 
     /// The shared What was this? page (T-08), for the rest or the extra:
@@ -742,18 +787,29 @@ struct PartsSheet: View {
                     .accessibilityHint("All \(Format.amount(left)) unless you type less")
             }
             .padding(.horizontal, 4)
+            if let w = whole {
+                // S-11x: why it's extra, in S-35c's "Why Pearl asks" style, before the tiles.
+                Text(extraLine(w)).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .padding(.horizontal, 4).fixedSize(horizontal: false, vertical: true)
+            }
             label("Income").accessibilityAddTraits(.isHeader)
-            CaseGrid(cases: CaseTile.income, chosen: tile)
+            CaseGrid(cases: CaseTile.income, chosen: tile).disabled(busy)
             label("Not income").padding(.top, 4).accessibilityAddTraits(.isHeader)
-            CaseGrid(cases: notIncomeTiles, chosen: tile)
-            if !parts.isEmpty {
-                // S-11 v2: "Sort the rest later" under Options.
+            CaseGrid(cases: notIncomeTiles, chosen: tile).disabled(busy)
+            if whole != nil, let error = error {
+                // T-08k's error line: "Couldn't save that. Try again."
+                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 4)
+            }
+            if !parts.isEmpty || whole != nil {
+                // S-11 v2: "Sort the rest later" under Options. S-11x: "Sort it
+                // later" (the whole amount) leaves the row in Needs a look.
+                let later = whole != nil && parts.isEmpty
                 label("Options").padding(.top, 4).accessibilityAddTraits(.isHeader)
                 GlassCard {
-                    Button { Task { await save(later: true) } } label: {
+                    Button { if later { dismiss() } else { Task { await save(later: true) } } } label: {
                         HStack(spacing: 12) {
                             IconBubble(symbol: "arrow.triangle.branch")
-                            Text("Sort the rest later").font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text(later ? "Sort it later" : "Sort the rest later").font(Nacre.body).foregroundColor(Pearl.ink)
                             Spacer(minLength: 4)
                             Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(Pearl.muted)
@@ -762,7 +818,7 @@ struct PartsSheet: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
-                    .accessibilityHint("\(Format.amount(left)) stays in Needs a look")
+                    .accessibilityHint(later ? "It stays in Needs a look" : "\(Format.amount(left)) stays in Needs a look")
                 }
             }
         }
@@ -976,6 +1032,7 @@ struct PartsSheet: View {
 
     /// S-11 v2: what each tile makes of "How much of it?" (SPLIT-04).
     private func take(_ key: String) {
+        error = nil
         let amount = chosenAmount
         guard amount >= 0.005 else { return }
         switch key {
@@ -1003,7 +1060,7 @@ struct PartsSheet: View {
         case "loan": add(Part(kind: "loan", amount: amount))
         case "out_of_savings": add(Part(kind: "savings", amount: amount))
         case "lent_back": add(Part(kind: "lent_back", amount: amount))
-        case "overpaid": add(Part(kind: "overpaid", amount: amount, person: who))
+        case "overpaid": add(Part(kind: "overpaid", amount: amount, person: overpaidBy ?? who))
         case "category": pickingCategory = amount
         default: break
         }
@@ -1065,6 +1122,12 @@ struct PartsSheet: View {
             let close: (Owing, Owing) -> Bool = { abs($0.owes - self.deposit.amount) < abs($1.owes - self.deposit.amount) }
             owing = items.filter { $0.theirs == true } + items.filter { $0.theirs != true }.sorted(by: close)
         }
+        if whole != nil {
+            // S-11x: straight to the tiles; Paying me back opens S-09 with
+            // these shares (the purchase it was on isn't one: nobody owes there).
+            step = .kind
+            return
+        }
         if !editing.isEmpty {
             step = .progress
             return
@@ -1105,13 +1168,26 @@ struct PartsSheet: View {
             // S-12c (SPLIT-07): the split and the link in one request.
             body["split"] = held.body.merging(["charge": held.charge]) { _, new in new }
         }
+        if whole != nil, let onHeld = onHeld {
+            // S-11x on a Quick sort card: "A gift?"; Yes sends this, Skip drops it.
+            onHeld(body, Format.andList(parts.map(\.editTitle)))
+            return
+        }
         do {
             let reply: MarkReply = try await api.post("api/transactions/\(deposit.id)/parts", body)
             // A failed save leaves the sheet open with nothing split or linked.
             heldSplit = nil
             onSaved(reply)
         } catch {
-            self.error = error.localizedDescription
+            if whole != nil {
+                // S-11x, T-08k's error: no tile chosen, the line under the grid.
+                parts = []
+                heldSplit = nil
+                self.error = "Couldn’t save that. Try again."
+                UIAccessibility.post(notification: .announcement, argument: "Couldn’t save that. Try again.")
+            } else {
+                self.error = error.localizedDescription
+            }
         }
     }
 

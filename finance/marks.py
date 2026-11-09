@@ -921,6 +921,9 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         marks.setdefault("paybacks", {})[t.fingerprint] = {
             "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
             "person": store.payback_people().get(t.fingerprint), "amount": t.repays_amount}
+        # SPLIT-23 (1): relinking a payback that paid back two purchases
+        # drops the second; Undo puts it back too.
+        marks.setdefault("payback_more", {})[t.fingerprint] = store.payback_more(t.fingerprint)
         _drop_made_split(store, t, marks)
         from .etransfers import known_people, party as etransfer_party
         people = known_people(store.all_transactions(), store.splits(), store.payback_people())

@@ -1239,6 +1239,19 @@ struct Review: Decodable {
         /// S-21u (SPLIT-22b, THL-181): a payback already linked that Pearl
         /// credited to no one. Its "Who sent this?" opens S-35c.
         var credit: Credit? = nil
+        /// S-21x (SPLIT-23 (1), THL-181): a payback linked to a purchase
+        /// nobody still owed on, so the whole amount is extra. Its "What was
+        /// this?" opens S-11x.
+        var extra: Extra? = nil
+
+        struct Extra: Decodable, Hashable {
+            /// Every purchase it was linked to: "extra on Loblaws".
+            let paidBack: [String]
+            /// Who has paid back on them: "Sam and Priya have both paid you back".
+            let people: [String]
+            let amount: Double
+            enum CodingKeys: String, CodingKey { case paidBack = "paid_back"; case people, amount }
+        }
 
         struct Credit: Decodable, Hashable {
             /// Every purchase it paid back: "paid back Loblaws".
@@ -1260,7 +1273,7 @@ struct Review: Decodable {
 
         enum CodingKeys: String, CodingKey {
             case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share, twin
-            case siblings, pair, credit
+            case siblings, pair, credit, extra
             case guessLabel = "guess_label"
         }
 
@@ -1296,6 +1309,7 @@ struct Review: Decodable {
             siblings = opt([Lenient<BriefTransaction>].self, .siblings)?.compactMap { $0.value } ?? []
             pair = opt(Pair.self, .pair)
             credit = opt(Credit.self, .credit)
+            extra = opt(Extra.self, .extra)
         }
 
         static func == (a: Item, b: Item) -> Bool {
@@ -1447,6 +1461,8 @@ struct Ask: Identifiable, Hashable {
         case .category: return "\(item.guess?.text ?? t.category ?? "Other")?"
         case .transfer: return "Saved or spent?"
         case .moneyIn:
+            // S-21x: the extra on a paid-back purchase.
+            if item.extra != nil { return "What was this?" }
             if item.rest != nil { return "\(Format.amount(t.amount)) left to sort" }
             if item.guess?.action == "refund" { return "Whose refund?" }
             // A payment network isn't a person: never "Is Interac paying you back?".

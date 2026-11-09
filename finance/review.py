@@ -356,6 +356,28 @@ def build(transactions: list[Transaction], today: str | None = None,
                              "reason": "Pearl can’t tell who sent it, so it isn’t "
                                        "credited to anyone yet."})
 
+    # 3e. What was this? on a payback nobody was left owing on (SPLIT-23 (1),
+    # THL-181; S-21x): linked with no name, dated from ASK_FROM, after
+    # everyone on its purchase(s) had paid. Not a "who sent this?" (there's
+    # no one to tick), so it's money in: "Nov 16 · extra on Loblaws", whose
+    # chip opens S-11x. Its own key, apart from credit:<id>.
+    if splits:
+        from .splits import ASK_FROM, extra_question
+        for t in live:
+            if (t.amount >= 0 or not t.repays or t.date[:10] < ASK_FROM
+                    or not any(c in splits for c in t.repays_all)):
+                continue
+            q = extra_question(t, transactions, splits, payer or {})
+            key = "extra:" + t.fingerprint
+            if q is None or key in dismissed:
+                continue
+            money_in.append({"key": key, "txn": _brief(t), "guess": {"action": "extra"},
+                             "candidates": [],
+                             "extra": {"paid_back": q["paid_back"], "people": q["people"],
+                                       "amount": q["amount"]},
+                             "reason": f"Everyone on {' and '.join(q['paid_back'])} has paid "
+                                       "you back, so this is extra."})
+
     # 4. Income whose type is a guess.
     income = []
     from .categorize import merchant_key

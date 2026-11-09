@@ -1087,3 +1087,194 @@ class TestOnePersonTwoPurchases:
         assert "seen.insert($0.lowercased()).inserted" in flow
         assert "each owe \\(amount), so Pearl won’t guess. Tick who sent it." in flow
         assert "Tick what it paid back.\"" not in flow
+
+
+class TestNobodyLeftOwing:
+    """SPLIT-23 (1), THL-181 (product owner, 2026-11-09; S-21x 1037:43551,
+    S-11x 1037:43724, notes 1037:44475/44476): an unnamed payback, dated
+    from ASK_FROM, linked to a purchase nobody still owes on, isn't a
+    payback. Needs a look asks "What was this?" about the whole amount (its
+    own row, apart from credit:<id>); a tile moves it off the purchase and
+    records the answer in one request, and Undo links it back."""
+
+    def setup(self, c, amount=30.0, came="2026-11-16", bought="2026-11-11", solo=False):
+        rows = [tx("LOBLAWS", 90.0, "Groceries", when=bought),
+                Transaction(date="2026-11-12", description="E-TRANSFER SAM", merchant="Sam", amount=-30.0,
+                            category="", account_id="chq", account_name="TD Chequing",
+                            raw={"account_type": "depository"}),
+                Transaction(date=came, description="INTERAC E-TRANSFER", merchant="Interac e-Transfer",
+                            amount=-amount, category="", account_id="chq", account_name="TD Chequing",
+                            raw={"account_type": "depository"})]
+        if not solo:
+            rows.append(Transaction(date="2026-11-13", description="E-TRANSFER PRIYA", merchant="Priya S.",
+                                    amount=-30.0, category="", account_id="chq", account_name="TD Chequing",
+                                    raw={"account_type": "depository"}))
+        i = add(c, *rows)
+        people_ = ([{"name": "Sam", "amount": 30.0}] if solo else
+                   [{"name": "Sam", "amount": 30.0}, {"name": "Priya S.", "amount": 30.0}])
+        assert split(c, i["LOBLAWS"], mode="amount", people=people_).status_code == 200
+        link(c, i["LOBLAWS"], i["E-TRANSFER SAM"], "Sam")
+        if not solo:
+            link(c, i["LOBLAWS"], i["E-TRANSFER PRIYA"], "Priya S.")
+        return i["LOBLAWS"], i["INTERAC E-TRANSFER"]
+
+    def items(self, c, prefix="extra:"):
+        review = c.get("/api/review").get_json()
+        return [it for part in ("money_in", "who_sent") for it in review[part] if it["key"].startswith(prefix)]
+
+    def test_needs_a_look_asks_what_it_was(self, client):
+        charge, deposit = self.setup(client)
+        link(client, charge, deposit, None)
+        items = self.items(client)
+        assert [it["key"] for it in items] == ["extra:" + deposit]
+        assert items[0]["extra"] == {"paid_back": ["LOBLAWS"], "people": ["Sam", "Priya S."], "amount": 30.0}
+        assert items[0]["guess"] == {"action": "extra"}
+        # Its own row, apart from credit:<id>; no "Who sent this?" for it and no S-05u row.
+        review = client.get("/api/review").get_json()
+        assert [it for it in review["money_in"] if it["key"] == "extra:" + deposit]
+        assert self.items(client, "credit:") == []
+        assert detail(client, charge)["splitting"]["uncredited"] == []
+        assert "pair" not in items[0]
+        # One row for the deposit, and Quick sort walks the same list.
+        rows = [it for p in ("money_in", "who_sent", "income_type") for it in review[p]
+                if it["txn"]["id"] == deposit]
+        assert len(rows) == 1
+        from finance import quick_sort
+        assert ("extra:" + deposit, deposit) in quick_sort.questions(review)
+
+    def test_a_tile_moves_it_off_the_purchase_with_one_undo(self, client):
+        charge, deposit = self.setup(client)
+        link(client, charge, deposit, None)
+        before = client.st.get_transaction(charge).paid_back
+        r = client.post(f"/api/transactions/{deposit}/parts", json={"parts": [{"kind": "gift", "amount": 30.0}]})
+        assert r.status_code == 200, r.get_json()
+        assert client.st.get_transaction(deposit).repays is None
+        assert self.items(client) == []
+        assert round(client.st.get_transaction(charge).paid_back or 0.0, 2) == round(before - 30.0, 2)
+        assert {n: p["owes"] for n, p in people(client, charge).items()} == {"Sam": 0.0, "Priya S.": 0.0}
+        u = client.post("/api/transactions/undo", json=r.get_json()["undo"])
+        assert u.status_code == 200, u.get_json()
+        assert client.st.get_transaction(deposit).repays == charge
+        assert [it["key"] for it in self.items(client)] == ["extra:" + deposit]
+
+    def test_paying_me_back_relinks_it_to_another_purchase(self, client):
+        charge, deposit = self.setup(client)
+        i = add(client, tx("PIZZA NOVA", 60.0, "Dining", when="2026-11-02"))
+        pizza = i["PIZZA NOVA"]
+        split(client, pizza, mode="amount", people=[{"name": "Jo", "amount": 30.0}])
+        link(client, charge, deposit, None)
+        # S-09 without Loblaws: nobody owes on it, so it isn't listed.
+        owing = client.get(f"/api/transactions/{deposit}/owing").get_json()["items"]
+        assert [(o["merchant"], o["person"]) for o in owing] == [("PIZZA NOVA", "Jo")]
+        r = client.post(f"/api/transactions/{deposit}/parts", json={"parts": [
+            {"kind": "payback", "amount": 30.0, "charge": pizza, "person": "Jo"}]})
+        assert r.status_code == 200, r.get_json()
+        assert {n: p["owes"] for n, p in people(client, pizza).items()} == {"Jo": 0.0}
+        assert self.items(client) == []
+        client.post("/api/transactions/undo", json=r.get_json()["undo"])
+        assert client.st.get_transaction(deposit).repays == charge
+        assert {n: p["owes"] for n, p in people(client, pizza).items()} == {"Jo": 30.0}
+
+    def test_the_web_answer_unlinks_and_undo_puts_back_both_purchases(self, client):
+        # The web's What was this? (POST …/mark) answers the same row; a payback
+        # over two purchases comes back on both.
+        charge, deposit = self.setup(client, amount=40.0)
+        i = add(client, tx("PIZZA NOVA", 20.0, "Dining", when="2026-11-02"))
+        pizza = i["PIZZA NOVA"]
+        split(client, pizza, mode="amount", people=[{"name": "Sam", "amount": 10.0}])
+        p = add(client, Transaction(date="2026-11-03", description="E-TRANSFER SAM 2", merchant="Sam",
+                                    amount=-10.0, category="", account_id="chq", account_name="TD Chequing",
+                                    raw={"account_type": "depository"}))
+        link(client, pizza, p["E-TRANSFER SAM 2"], "Sam")
+        client.st.link_payback(charge, deposit, None, 30.0)
+        client.st.set_payback_more(deposit, [(pizza, 10.0)])
+        item = self.items(client)[0]
+        assert item["extra"]["paid_back"] == ["LOBLAWS", "PIZZA NOVA"]
+        r = client.post(f"/api/transactions/{deposit}/mark", json={"case": "pay", "income_kind": "gifts"})
+        assert r.status_code == 200, r.get_json()
+        assert client.st.get_transaction(deposit).repays is None and self.items(client) == []
+        client.post("/api/transactions/undo", json=r.get_json()["undo"])
+        t = client.st.get_transaction(deposit)
+        assert t.repays == charge and pizza in t.repays_all
+        # Relinked as Paying me back (S-09) from the web: Undo keeps both too.
+        r = client.post(f"/api/transactions/{deposit}/mark", json={"case": "payback", "charge": charge})
+        assert r.status_code == 200, r.get_json()
+        client.post("/api/transactions/undo", json=r.get_json()["undo"])
+        assert pizza in client.st.get_transaction(deposit).repays_all
+
+    def test_one_person(self, client):
+        charge, deposit = self.setup(client, solo=True)
+        link(client, charge, deposit, None)
+        assert self.items(client)[0]["extra"]["people"] == ["Sam"]
+
+    def test_not_asked_while_someone_still_owes(self, client):
+        # Priya hasn't paid: that's S-35c's "Who sent this?", not this.
+        i = add(client, tx("LOBLAWS", 90.0, "Groceries", when="2026-11-11"),
+                Transaction(date="2026-11-16", description="INTERAC E-TRANSFER", merchant="Interac e-Transfer",
+                            amount=-30.0, category="", account_id="chq", account_name="TD Chequing",
+                            raw={"account_type": "depository"}))
+        split(client, i["LOBLAWS"], mode="amount",
+              people=[{"name": "Sam", "amount": 30.0}, {"name": "Priya S.", "amount": 30.0}])
+        link(client, i["LOBLAWS"], i["INTERAC E-TRANSFER"], None)
+        assert self.items(client) == []
+        assert [it["key"] for it in self.items(client, "credit:")] == ["credit:" + i["INTERAC E-TRANSFER"]]
+
+    def test_not_asked_for_an_old_or_named_payback(self, client):
+        charge, deposit = self.setup(client, came="2026-11-09")
+        link(client, charge, deposit, None)
+        assert self.items(client) == []
+        client.st.unlink_payback(deposit)
+        client.st.link_payback(charge, deposit, None, None)
+        client.st.set_payback_person(deposit, "Sam")
+        assert self.items(client) == []
+
+    def test_dismissed_or_skipped(self, client):
+        charge, deposit = self.setup(client)
+        link(client, charge, deposit, None)
+        client.post("/api/review/skip", json={"key": "extra:" + deposit, "skip": True})
+        items = self.items(client)
+        assert len(items) == 1 and items[0]["skipped"] is True
+
+    def test_every_repayment_is_credited_or_asked(self, client):
+        # THL-181 on every path: an unnamed payback linked to a split purchase
+        # is credited to someone, asked "Who sent this?", or asked "What was this?".
+        from finance import splits as sp
+        charge, deposit = self.setup(client)
+        link(client, charge, deposit, None)
+        st = client.st
+        txns, splits_, payer = st.all_transactions(), st.splits(), st.payback_people()
+        t = st.get_transaction(deposit)
+        left: list = []
+        sp.people_status(st.get_transaction(charge), splits_[charge], txns, payer, left_out=left)
+        assert left == []
+        assert sp.extra_question(t, txns, splits_, payer)["id"] == deposit
+        assert sp.credit_question(t, txns, splits_, payer) is None
+
+    IOS = TestWhoSentThis.IOS
+
+    def test_the_app_asks_where_she_looks(self):
+        models = (self.IOS / "API/Models.swift").read_text(encoding="utf-8")
+        assert "var extra: Extra? = nil" in models and "extra = opt(Extra.self, .extra)" in models
+        assert 'if item.extra != nil { return "What was this?" }' in models
+        review = (self.IOS / "Views/Review/ReviewView.swift").read_text(encoding="utf-8")
+        # S-21x: "Nov 16 · extra on Loblaws"; the chip opens S-11x.
+        assert "extra on \\(Format.andList($0.paidBack))" in review
+        assert "} else if let extra = ask.item.extra {" in review
+        assert "whole: extra" in review
+        parts = (self.IOS / "Views/Transactions/PartsFlow.swift").read_text(encoding="utf-8")
+        # S-11x: "The $30.00", the line, Sort it later, T-08k's error, answers at once.
+        assert 'return "The \\(Format.amount(deposit.amount))"' in parts
+        assert 'lead = "\\(Format.andList(names)) have both"' in parts
+        assert 'lead = "\\(names[0]) has"' in parts
+        assert "\\(lead) paid you back for \\(Format.andList(w.paidBack))" in parts
+        # Overpaid names the one person who paid back; with more, it isn't offered.
+        assert "return w.people.count == 1 ? w.people[0] : nil" in parts
+        assert "so this \\(Format.amount(deposit.amount)) is extra. Tap what it was." in parts
+        assert '"Sort it later"' in parts
+        assert '"Couldn’t save that. Try again."' in parts
+        assert "if whole != nil && step == .review" in parts
+        quick = (self.IOS / "Views/Review/QuickSortView.swift").read_text(encoding="utf-8")
+        assert "onHeld: { body, label in" in quick
+        assert "case .extra? = drafts[ask.id]?.answer" in quick
+        page = (self.IOS / "Views/Transactions/TransactionDetailView.swift").read_text(encoding="utf-8")
+        assert "else if let extra = ask.item.extra {" in page

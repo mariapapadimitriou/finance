@@ -283,6 +283,9 @@ struct TransactionDetailView: View {
     @State private var parting: PartsDeposit?
     /// S-35c "Who sent this?" (SPLIT-22b): the payback it asks about.
     @State private var crediting: Crediting?
+    /// S-11x (SPLIT-23 (1)): the deposit's question card opened on the
+    /// extra on a paid-back purchase.
+    @State private var partsExtra: Review.Item.Extra?
 
     struct Crediting: Identifiable { let id: String }
     /// S-10e: the parts sheet opened from S-33's Edit, with the parts filled in.
@@ -509,9 +512,10 @@ struct TransactionDetailView: View {
                 Task { await letGo(person) }
             }
         }
-        .sheet(item: $parting, onDismiss: { editingParts = false }) { deposit in
+        .sheet(item: $parting, onDismiss: { editingParts = false; partsExtra = nil }) { deposit in
             // S-33's Edit opens S-10e with the parts it has (SPLIT-03).
-            PartsSheet(deposit: deposit, api: app.api, editing: editingParts ? t.parts : []) { reply in
+            PartsSheet(deposit: deposit, api: app.api, editing: editingParts ? t.parts : [],
+                       whole: partsExtra) { reply in
                 parting = nil
                 editingParts = false
                 Task {
@@ -524,7 +528,7 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(item: $crediting) { c in
-            // S-35c from S-05u, or from the deposit itself: "Sam paid back $30.00 · Undo".
+            // S-35c from S-05u, or the deposit's Needs a look question card (S-21u; SPLIT-23 (3): no other entry on its page).
             WhoSentSheet(id: c.id, api: app.api) { reply in
                 crediting = nil
                 Task {
@@ -1605,6 +1609,8 @@ struct TransactionDetailView: View {
         if ask.item.rest != nil { parting = deposit(rest: true) }
         // S-21u's question on its own page: S-35c, not What was this?.
         else if ask.item.credit != nil { crediting = Crediting(id: t.id) }
+        // S-21x's question on its own page: S-11x for the whole amount.
+        else if let extra = ask.item.extra { partsExtra = extra; parting = deposit(rest: false) }
         else { sorting = ask }
     }
 
