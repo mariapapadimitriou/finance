@@ -25,6 +25,36 @@ struct CardDraft {
     var answer: ReviewAnswer?
     /// The Always switch, once she's touched it.
     var always: Bool?
+    /// T-98s (SPLIT-06): a split made on the card's page, held for its Yes.
+    var split: CardSplit?
+}
+
+/// A split held for a Quick sort card (T-98s, SPLIT-06): "Groceries, split
+/// with Sam?", "Your share $42.06 · Sam owes you $42.06". Yes saves it with
+/// the category in one go; Skip forgets it.
+struct CardSplit {
+    /// What SplitSheet would have saved.
+    let body: [String: Any]
+    let names: [String]
+    let mine: Double
+    let owed: Double
+
+    /// "Sam", "Sam and Priya", "Sam, Priya and Ben".
+    var who: String {
+        guard names.count > 1 else { return names.first ?? "them" }
+        return names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+    }
+
+    func label(_ category: String) -> String { "\(category), split with \(who)" }
+
+    var note: String {
+        "Your share \(Format.amount(mine)) · \(who) \(names.count == 1 ? "owes" : "owe") you \(Format.amount(owed))"
+    }
+
+    /// The answer Yes sends: the split and the category it counts toward.
+    func answer(_ id: String, category: String) -> ReviewAnswer {
+        .split(id, body.merging(["category": category, "settle": true]) { _, new in new }, label: label(category))
+    }
 }
 
 /// T-96 for a question: fetches the transaction, then shows the page a
@@ -359,7 +389,8 @@ struct TransactionDetailView: View {
         .onAppear {
             // Back on a card's page: what she'd already changed is still there.
             if let draft = guessing?.draft, chosenCategory == nil, newOnes == nil {
-                chosenCategory = draft.label
+                // A held split's label isn't a category (T-98s).
+                chosenCategory = draft.split != nil ? draft.category : draft.label
                 newOnes = draft.always
             }
         }
@@ -387,6 +418,8 @@ struct TransactionDetailView: View {
                             $0.answer = answer
                             $0.category = nil
                             $0.label = label
+                            // Another answer instead: a held split goes (SPLIT-06).
+                            $0.split = nil
                         }
                     } else {
                         guessing.onAnswer(answer)
@@ -430,7 +463,11 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $splitting) {
-            SplitSheet(t: t, api: app.api, recent: recent, onSaved: { done in
+            // T-98s (SPLIT-06): from a Quick sort card's page the split is
+            // held for the card, like every other edit here; Yes saves it.
+            SplitSheet(t: t, api: app.api, recent: recent,
+                       onHold: guessing?.onDraft == nil ? nil : { body, _, mine in holdSplit(body, mine: mine) },
+                       onSaved: { done in
                 splitting = false
                 Task { await run { done } }
             }, onRemoved: { title, undo in
@@ -1109,6 +1146,10 @@ struct TransactionDetailView: View {
         case "savings": return "Out of savings"
         case "cash": return "Cash you were paid"
         case "overpaid": return "You owe \(p.person ?? "them") this"
+        // S-11 v2 (SPLIT-04).
+        case "reimbursement": return [p.charge?.category, "Work paying me back"].compactMap { $0 }.joined(separator: " · ")
+        case "loan": return "Borrowed · Lent me this"
+        case "lent_back": return "Lent · Money I lent, back"
         case "rest": return p.sorted == true ? "Sorted" : "Left to sort"
         default: return p.category ?? p.label
         }
@@ -1329,10 +1370,33 @@ struct TransactionDetailView: View {
         // Picking Pearl's guess is still a choice: it isn't dotted any more.
         pickedGuess = name == (guessing?.label ?? t.label)
         chosenCategory = pickedGuess ? nil : name
+        let category = cardCategory
         holdForCard {
             $0.answer = nil
             $0.category = chosenCategory
-            $0.label = chosenCategory
+            // A held split keeps going with the category she picks (T-98s).
+            $0.label = $0.split.map { $0.label(category) } ?? chosenCategory
+        }
+    }
+
+    /// The category a held split counts toward: hers, or the card's guess.
+    private var cardCategory: String {
+        chosenCategory ?? (guessing?.ask.kind == .category ? guessing?.ask.item.guess?.text : nil)
+            ?? t.category ?? "Other"
+    }
+
+    /// T-98s (SPLIT-06): nothing is saved; the card asks "Groceries, split with Sam?".
+    private func holdSplit(_ body: [String: Any], mine: Double) {
+        splitting = false
+        let names = (body["people"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+        let split = CardSplit(body: body, names: names, mine: mine,
+                              owed: max(0, (t.fullAmount ?? t.amount) - mine))
+        let category = cardCategory
+        holdForCard {
+            $0.split = split
+            $0.answer = nil
+            $0.category = chosenCategory
+            $0.label = split.label(category)
         }
     }
 

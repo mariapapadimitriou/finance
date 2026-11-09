@@ -435,3 +435,107 @@ class TestRemoveOnlyHere:
         split(client, i["LOBLAWS"], mode="amount", you=56.08, people=[{"name": "Sam", "amount": 28.04}])
         t = next(x for x in client.st.all_transactions() if x.fingerprint == i["E-TRANSFER FROM PRIYA"])
         assert t.repays is None and not client.st.parts().get(t.fingerprint)
+
+
+# ── 2026-11-09, product owner decisions: SPLIT-01 (b′), SPLIT-04/05 (S-11 v2),
+#    SPLIT-06 (a, held for the Quick sort card) ─────────────────────────────
+
+class TestShortOnlyWithYou:
+    """SPLIT-01 (b′), S-03b v2: the rest stays hers only when she's in it."""
+
+    def test_short_with_you_keeps_the_rest(self, client):
+        i = add(client, tx("LOBLAWS", 84.12, "Groceries"))
+        d = split(client, i["LOBLAWS"], mode="amount", you=40, people=[{"name": "Sam", "amount": 40}]).get_json()
+        assert d["splitting"]["you"] == 44.12, "Your share $44.12 · $4.12 of it is the rest"
+
+    def test_short_without_you_is_left_to_assign(self, client):
+        i = add(client, tx("LOBLAWS", 84.12, "Groceries"))
+        r = split(client, i["LOBLAWS"], mode="amount", include_me=False, people=[{"name": "Sam", "amount": 80}])
+        assert r.status_code == 400 and r.get_json()["error"] == "$4.12 left to assign."
+        assert "splitting" not in detail(client, i["LOBLAWS"]) or not detail(client, i["LOBLAWS"])["splitting"]
+
+    def test_percent_short_without_you_is_left_to_assign(self, client):
+        i = add(client, tx("PAI", 85.0, "Dining"))
+        r = split(client, i["PAI"], mode="percent", include_me=False,
+                  people=[{"name": "Sam", "percent": 50}, {"name": "Priya", "percent": 40}])
+        assert r.status_code == 400 and r.get_json()["error"] == "10% left to assign."
+
+    def test_exact_without_you_still_saves(self, client):
+        i = add(client, tx("LOBLAWS", 84.12, "Groceries"))
+        d = split(client, i["LOBLAWS"], mode="amount", include_me=False,
+                  people=[{"name": "Sam", "amount": 84.12}]).get_json()
+        assert d["splitting"]["you"] == 0
+
+
+class TestRestTiles:
+    """SPLIT-04, S-11 v2: every tile on "What's the other $172?" is a part."""
+
+    def deposit(self, c, *more):
+        return add(c, tx("FLIGHT", 856.0, "Travel", when=day(20)),
+                   tx("E-TRANSFER FROM DAD", -600.0, when=day(1), merchant="Dad"), *more)
+
+    def save(self, c, dep, parts):
+        r = c.post(f"/api/transactions/{dep}/parts", json={"parts": parts})
+        assert r.status_code == 200, r.get_json()
+        return r.get_json()
+
+    def test_gift_and_dad_overpaid_in_two_passes(self, client):
+        """THL-291 AC: the same $172 as $100 gift + $72 they overpaid."""
+        i = self.deposit(client)
+        split(client, i["FLIGHT"], mode="even", people=[{"name": "Dad"}])
+        self.save(client, i["E-TRANSFER FROM DAD"], [
+            {"kind": "payback", "amount": 428, "charge": i["FLIGHT"], "person": "Dad"},
+            {"kind": "gift", "amount": 100}, {"kind": "overpaid", "amount": 72, "person": "Dad"}])
+        owed = client.get("/api/owed").get_json()
+        assert owed["you_owe"][0]["name"] == "Dad" and owed["you_owe"][0]["total"] == 72.0
+
+    def test_lent_me_this_and_money_i_lent_back(self, client):
+        i = self.deposit(client)
+        out = self.save(client, i["E-TRANSFER FROM DAD"], [
+            {"kind": "loan", "amount": 400}, {"kind": "lent_back", "amount": 200}])
+        cats = {p["kind"]: p["category"] for p in out["parts"]}
+        assert cats == {"loan": "Borrowed", "lent_back": "Lent"}
+
+    def test_not_mine_is_not_a_part(self, client):
+        i = self.deposit(client)
+        r = client.post(f"/api/transactions/{i['E-TRANSFER FROM DAD']}/parts",
+                        json={"parts": [{"kind": "not_mine", "amount": 600}]})
+        assert r.status_code == 400
+
+    def test_work_paying_me_back_counts_the_expense_again_and_unlink_leaves_it_out(self, client):
+        i = add(client, tx("HOTEL", 300.0, "Lodging", when=day(20)),
+                tx("ACME PAYROLL EXP", -500.0, when=day(1), merchant="Acme"))
+        r = client.post(f"/api/transactions/{i['HOTEL']}/mark", json={"case": "work"})
+        assert r.status_code == 200, r.get_json()
+        assert detail(client, i["HOTEL"])["excluded"]
+        dep = i["ACME PAYROLL EXP"]
+        out = self.save(client, dep, [{"kind": "reimbursement", "amount": 300, "charge": i["HOTEL"]},
+                                      {"kind": "income", "amount": 200, "income_kind": "other"}])
+        part = next(p for p in out["parts"] if p["kind"] == "reimbursement")
+        assert part["charge"]["id"] == i["HOTEL"]
+        assert not detail(client, i["HOTEL"])["excluded"], "reimbursed in full, so it counts, paid back"
+        assert detail(client, part["id"])["repays"] == i["HOTEL"]
+        assert client.delete(f"/api/transactions/{dep}/parts").status_code == 200
+        assert detail(client, i["HOTEL"])["excluded"], "unlinked: waiting to be reimbursed again"
+
+    def test_reimbursement_needs_the_expense(self, client):
+        i = self.deposit(client)
+        r = client.post(f"/api/transactions/{i['E-TRANSFER FROM DAD']}/parts",
+                        json={"parts": [{"kind": "reimbursement", "amount": 600}]})
+        assert r.status_code == 400 and r.get_json()["error"] == "Pick the expense it reimburses."
+
+
+class TestHeldSplitFromQuickSort:
+    """SPLIT-06 (a), T-98s: Yes on the card saves the held split and the
+    category in one request, and one Undo puts both back."""
+
+    def test_yes_saves_split_and_category_and_undo_restores_both(self, client):
+        i = add(client, tx("LOBLAWS", 84.12, ""))
+        before = detail(client, i["LOBLAWS"])["category"]
+        r = split(client, i["LOBLAWS"], mode="even", people=[{"name": "Sam"}], category="Groceries", settle=True)
+        assert r.status_code == 200, r.get_json()
+        d = detail(client, i["LOBLAWS"])
+        assert d["category"] == "Groceries" and d["splitting"]["you"] == 42.06
+        assert client.post("/api/transactions/undo", json=r.get_json()["undo"]).status_code == 200
+        d = detail(client, i["LOBLAWS"])
+        assert not d.get("splitting") and d["category"] == before

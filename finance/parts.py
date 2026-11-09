@@ -15,6 +15,12 @@ leftover itself.
 
 "They overpaid" is money she owes back: a Borrowed part with the person's
 name, listed under You owe (`owed`).
+
+S-11 v2 (SPLIT-04, 2026-11-09): what the rest is, on the shared What was
+this? tiles. Besides Jira's kinds, the tiles there are parts too: Work
+paying me back (`reimbursement`, linked to the expense as a whole deposit's
+reimbursement is), Lent me this (`loan`, Borrowed) and Money I lent, back
+(`lent_back`, Lent). Not mine is not a part.
 """
 
 from __future__ import annotations
@@ -27,7 +33,7 @@ SPLIT = "Split into parts"
 REST = "Left to sort"
 
 KINDS = ("payback", "gift", "income", "moved", "savings", "cash", "refund",
-         "category", "overpaid", "rest")
+         "category", "overpaid", "reimbursement", "loan", "lent_back", "rest")
 # The kinds income can be (finance/income.py).
 INCOME_KINDS = ("salary", "bonus", "interest", "gifts", "government", "tax_refund", "other")
 MAX_PARTS = 12
@@ -71,11 +77,12 @@ def _clean(st, deposit: Transaction, parts: list, later: bool) -> list[dict]:
             raise Problem("A part has to be more than nothing.")
         kind = p["kind"]
         detail: dict = {}
-        if kind in ("payback", "refund"):
+        if kind in ("payback", "refund", "reimbursement"):
             charge = by_id.get(str(p.get("charge") or ""))
             if charge is None or charge.amount <= 0:
-                raise Problem("Pick the purchase it pays back." if kind == "payback"
-                              else "Pick the purchase it refunds.")
+                raise Problem({"payback": "Pick the purchase it pays back.",
+                               "refund": "Pick the purchase it refunds."}.get(kind,
+                                                                             "Pick the expense it reimburses."))
             detail["charge"] = charge.fingerprint
         if kind in ("payback", "overpaid"):
             person = " ".join(str(p.get("person") or "").split())[:40]
@@ -119,9 +126,11 @@ def _category(kind: str, detail: dict, deposit: Transaction, by_id: dict) -> str
         return "Transfers"
     if kind == "savings":
         return "Saved"
-    if kind == "overpaid":
+    if kind in ("overpaid", "loan"):
         return "Borrowed"
-    if kind == "refund":
+    if kind == "lent_back":
+        return "Lent"
+    if kind in ("refund", "reimbursement"):
         return by_id[detail["charge"]].category or "Other"
     if kind == "category":
         return detail["category"]
@@ -188,6 +197,8 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
             st.link_payback(d["charge"], cid, d.get("person"))
         elif p["kind"] == "refund":
             st.link_refund(cid, d["charge"])
+        elif p["kind"] == "reimbursement":
+            _reimburse(st, by_id[d["charge"]], cid, p["amount"], d)
         elif p["kind"] == "gift":
             st.set_income_type(cid, "gifts", "user")
         elif p["kind"] == "income":
@@ -205,6 +216,20 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
     title = (f"Sorted {n} part{'' if n == 1 else 's'}. {_money(rest)} left to sort."
              if rest else f"Sorted into {n} part{'' if n == 1 else 's'}.")
     return {"parts": listed(st, deposit.fingerprint), "rest": rest, "title": title}
+
+
+def _reimburse(st, charge: Transaction, part_id: str, amount: float, detail: dict) -> None:
+    """Work paying me back, as a part (S-11 v2): linked to the expense as a
+    whole deposit's reimbursement is. An expense left out until it's
+    reimbursed counts again once this pays all that's owed on it; Unlink
+    leaves it out again (`was_excluded`)."""
+    from .marks import REIMBURSEMENT, waiting_reimbursed
+    owed = round(charge.amount - (charge.paid_back or 0.0), 2)
+    st.link_payback(charge.fingerprint, part_id, None)
+    st.set_payback_kind(part_id, REIMBURSEMENT)
+    if amount >= owed - 0.005 and waiting_reimbursed(charge.excluded):
+        detail["was_excluded"] = charge.excluded
+        st.include(charge.fingerprint)
 
 
 def _hold_cash(st, ids: list[int], amount: float, part_id: str) -> list[int]:
@@ -243,6 +268,11 @@ def undo(st, deposit_id: str) -> int:
             undo(st, p["part_id"])
         st.clear_cash_deposit(p["part_id"])
         st.link_refund(p["part_id"], None)
+        if p["kind"] == "reimbursement":
+            st.set_payback_kind(p["part_id"], None)
+            was = (p.get("detail") or {}).get("was_excluded")
+            if was and (p["detail"].get("charge")):
+                st.exclude(p["detail"]["charge"], was)
         st.delete_transaction(p["part_id"])
     st.clear_parts(deposit_id)
     # SPLIT-15: a payment cut in two by this deposit is one record again.

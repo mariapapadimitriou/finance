@@ -278,9 +278,10 @@ def parts_preview(txn_id: str):
         except (TypeError, ValueError):
             continue
         kind = p.get("kind")
-        if kind in ("payback", "refund"):
+        if kind in ("payback", "refund", "reimbursement"):
             charge = by_id.get(str(p.get("charge") or ""))
-            if charge is None:
+            # A work expense left out until it's reimbursed isn't spending.
+            if charge is None or charge.excluded:
                 continue
             key = (charge.date[:7], charge.category or "Other")
             lowers[key] = round(lowers.get(key, 0.0) + amount, 2)

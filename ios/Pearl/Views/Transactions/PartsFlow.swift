@@ -6,7 +6,9 @@ import SwiftUI
 // S-36b) and Check and save (S-12). "Later" keeps "$x left to sort" in
 // Needs a look. 2026-11-09: Edit the $600 (S-10e, SPLIT-03), split and link
 // as one save (S-24x, S-12c, S-12d, SPLIT-07), WHAT CHANGES (S-12 v2,
-// SPLIT-09) and cash partly deposited (S-13 v2, SPLIT-11).
+// SPLIT-09) and cash partly deposited (S-13 v2, SPLIT-11). What the rest
+// is, on the shared What was this? tiles (S-11 v2, SPLIT-04/05/12): tiles
+// answer at once for "How much of it?", then the page comes back for what's left.
 
 /// The deposit being sorted, from the transaction page or Needs a look.
 struct PartsDeposit: Identifiable, Hashable {
@@ -68,14 +70,15 @@ struct PartsSheet: View {
     @State private var picked: [String: Double] = [:]
     @State private var query = ""
     @State private var found: [Owing] = []
-    /// "Split into another part": how much the next kind is for.
-    @State private var splitting = false
+    /// S-11 v2 "How much of it?": all of what's left unless she types less.
     @State private var partAmount = ""
-    @State private var kind: String?
+    /// S-11 v2 Off a category: the category list, for this amount.
+    @State private var pickingCategory: Double?
     @State private var busy = false
     @State private var error: String?
 
-    enum Step { case loading, cash, owing, progress, kind, incomeKind, refund, review }
+    /// `work`: Work paying me back, the expense it pays (T-09, as on the shared page).
+    enum Step { case loading, cash, owing, progress, kind, refund, work, review }
 
     struct Part: Identifiable, Hashable {
         let id = UUID()
@@ -106,7 +109,9 @@ struct PartsSheet: View {
         }
 
         init(kind: String, amount: Double, charge: String? = nil, merchant: String? = nil, person: String? = nil,
-             incomeKind: String? = nil, cashIds: [Int] = [], date: String? = nil, held: Bool = false) {
+             incomeKind: String? = nil, cashIds: [Int] = [], date: String? = nil, held: Bool = false,
+             category: String? = nil) {
+            self.category = category
             self.kind = kind
             self.amount = amount
             self.charge = charge
@@ -135,6 +140,10 @@ struct PartsSheet: View {
             case "category": return category ?? "Other"
             case "cash": return "\(person ?? "Their") cash"
             case "overpaid": return "\(person ?? "They") overpaid"
+            // S-11 v2's other tiles, as parts.
+            case "reimbursement": return "Work paying me back · \(merchant ?? "an expense")"
+            case "loan": return "Lent me this"
+            case "lent_back": return "Money I lent, back"
             default: return "Part"
             }
         }
@@ -251,10 +260,19 @@ struct PartsSheet: View {
             // S-24 (SPLIT-07): "Split and link" holds the split; the deposit's
             // Save does both in one go.
             SplitSheet(t: t, api: api, recent: [], with: [who], title: "\(who)’s share",
-                       saveTitle: "Split and link", onHold: { body, share in hold(t, body, share) }) { _ in }
+                       saveTitle: "Split and link", onHold: { body, share, _ in hold(t, body, share) }) { _ in }
+        }
+        .sheet(item: Binding(get: { pickingCategory.map { Picking(amount: $0) } },
+                             set: { pickingCategory = $0?.amount })) { p in
+            // S-11 v2 Off a category: the spending categories, answering at once.
+            CategorySheet(name: deposit.name, amount: Format.amount(p.amount), tone: Pearl.ink, categories: [],
+                          current: "Other", spendingOnly: true, answersAtOnce: true, showsAlways: false) { name, _ in
+                pickingCategory = nil
+                add(Part(kind: "category", amount: p.amount, category: name))
+            }
         }
         .task(id: query) {
-            guard step == .owing || step == .refund else { return }
+            guard step == .owing || step == .refund || step == .work else { return }
             try? await Task.sleep(nanoseconds: 250_000_000)
             if !Task.isCancelled { await search() }
         }
@@ -275,6 +293,8 @@ struct PartsSheet: View {
             return sender == nil ? "Who paid you back?" : "What did this pay back?"
         // T-09r's title (SPLIT-12): the same question as anywhere else.
         case .refund: return "What was this a refund for?"
+        // T-09's title, as the shared page asks it for Work paying me back.
+        case .work: return "What did this pay back?"
         case .progress:
             if !editing.isEmpty { return "Edit the \(Format.whole(deposit.amount))" }
             if extra { return "\(who) sent extra" }
@@ -282,7 +302,6 @@ struct PartsSheet: View {
         case .kind:
             if parts.isEmpty { return "What was the \(Format.amount(left))?" }
             return extra ? "What’s the extra \(Format.amount(left))?" : "What’s the other \(Format.amount(left))?"
-        case .incomeKind: return "What kind of income?"
         case .review: return "Check and save"
         }
     }
@@ -292,10 +311,9 @@ struct PartsSheet: View {
         case .loading:
             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
         case .cash: cashList
-        case .owing, .refund: owingList
+        case .owing, .refund, .work: owingList
         case .progress: progressView
         case .kind: kindList
-        case .incomeKind: incomeKinds
         case .review: reviewList
         }
     }
@@ -456,7 +474,7 @@ struct PartsSheet: View {
         found.removeAll { $0.charge == t.id }
         query = ""
         add(Part(kind: "payback", amount: min(share, left), charge: t.id, merchant: t.merchant, person: who,
-                 date: t.date, held: true))
+                 date: t.date, held: true), then: .progress)
     }
 
     /// A part taken out; a held split goes with its part.
@@ -466,8 +484,8 @@ struct PartsSheet: View {
     }
 
     private func toggle(_ o: Owing) {
-        if step == .refund {
-            picked = [o.id: min(o.owes, left)]
+        if step == .refund || step == .work {
+            picked = [o.id: min(o.owes, chosenAmount)]
             return
         }
         if picked[o.id] != nil {
@@ -574,84 +592,65 @@ struct PartsSheet: View {
         .padding(.horizontal, 16).frame(minHeight: 52)
     }
 
-    // MARK: S-11, S-36b What's the rest?
+    // MARK: S-11 v2 What's the other $x? (SPLIT-04, SPLIT-05 (b), SPLIT-12)
 
-    private var kinds: [(key: String, title: String, sub: String?)] {
-        if extra {
-            // S-36b: what the extra is.
-            return [("gift", "A gift", nil),
-                    ("payback", "Pays back something else", "Another purchase \(who) owes for"),
-                    ("overpaid", "\(who) overpaid", "I’ll send the \(Format.amount(left)) back"),
-                    ("income", "Money I earned", "A tip or payment")]
-        }
-        return [("gift", "A gift", "Money in · not pay"),
-                ("payback", "Pays back something else", "Another purchase \(who) owes for"),
-                ("overpaid", "\(who) overpaid", "I owe them the difference"),
-                ("income", "Money I earned", "Pay, interest, government…"),
-                ("moved", "From my own accounts", "Not new money"),
-                ("refund", "A refund", nil)]
+    struct Picking: Identifiable {
+        let amount: Double
+        var id: Double { amount }
     }
 
+    /// T-12's tiles for a part: Not mine isn't one (SPLIT-04), and two more
+    /// answer what only a part can be: "Dad overpaid" and "Off a category".
+    private var notIncomeTiles: [CaseTile] {
+        CaseTile.notIncome.filter { $0.key != "not_mine" } + [
+            CaseTile(key: "overpaid", label: "\(who) overpaid", symbol: "person.crop.circle.badge.xmark"),
+            CaseTile(key: "category", label: "Off a category", symbol: "arrow.uturn.backward"),
+        ]
+    }
+
+    /// The shared What was this? page (T-08), for the rest or the extra:
+    /// "How much of it?" on top, then tiles that answer at once.
     private var kindList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if splitting {
-                GlassCard {
-                    HStack {
-                        Text("How much of it?").font(Nacre.body).foregroundColor(Pearl.ink)
-                        TextField("", text: $partAmount, prompt: Text(Format.amount(left)).foregroundColor(Pearl.muted))
-                            .font(Nacre.body).multilineTextAlignment(.trailing).keyboardType(.decimalPad)
-                    }
-                    .padding(.horizontal, 16).frame(minHeight: 52)
-                }
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("How much of it?").font(Nacre.body).foregroundColor(Pearl.ink)
+                Spacer(minLength: 8)
+                TextField("", text: $partAmount, prompt: Text(Format.amount(left)).foregroundColor(Pearl.ink))
+                    .font(Nacre.headline).monospacedDigit().multilineTextAlignment(.trailing)
+                    .keyboardType(.decimalPad).frame(maxWidth: 140)
+                    .accessibilityLabel("How much of it")
+                    .accessibilityHint("All \(Format.amount(left)) unless you type less")
             }
-            GlassCard {
-                ForEach(Array(kinds.enumerated()), id: \.element.key) { i, k in
-                    if i > 0 { RowSeparator() }
-                    Button { kind = k.key } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(k.title).font(Nacre.body).foregroundColor(Pearl.ink)
-                                if let sub = k.sub {
-                                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                                }
-                            }
-                            Spacer()
-                            if kind == k.key {
-                                Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(Pearl.action)
-                            }
+            .padding(.horizontal, 4)
+            label("Income").accessibilityAddTraits(.isHeader)
+            CaseGrid(cases: CaseTile.income, chosen: tile)
+            label("Not income").padding(.top, 4).accessibilityAddTraits(.isHeader)
+            CaseGrid(cases: notIncomeTiles, chosen: tile)
+            if !parts.isEmpty {
+                // S-11 v2: "Sort the rest later" under Options.
+                label("Options").padding(.top, 4).accessibilityAddTraits(.isHeader)
+                GlassCard {
+                    Button { Task { await save(later: true) } } label: {
+                        HStack(spacing: 12) {
+                            IconBubble(symbol: "arrow.triangle.branch")
+                            Text("Sort the rest later").font(Nacre.body).foregroundColor(Pearl.ink)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(Pearl.muted)
                         }
-                        .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, 4).contentShape(Rectangle())
+                        .padding(.horizontal, 16).frame(minHeight: 52).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityAddTraits(kind == k.key ? .isSelected : [])
+                    .disabled(busy)
+                    .accessibilityHint("\(Format.amount(left)) stays in Needs a look")
                 }
-            }
-            if !splitting && !extra {
-                Button("Split into another part") { splitting = true }
-                    .font(Nacre.textButton).foregroundColor(Pearl.action).frame(maxWidth: .infinity)
             }
         }
     }
 
-    private static let incomeKinds = ["salary", "bonus", "interest", "government", "tax_refund", "other"]
-
-    private var incomeKinds: some View {
-        GlassCard {
-            ForEach(Array(Self.incomeKinds.enumerated()), id: \.element) { i, k in
-                if i > 0 { RowSeparator() }
-                Button { add(Part(kind: "income", amount: chosenAmount, incomeKind: k)) } label: {
-                    HStack {
-                        Text(TransactionDetailView.kindName(k)).font(Nacre.body).foregroundColor(Pearl.ink)
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(Pearl.muted)
-                    }
-                    .padding(.horizontal, 16).frame(minHeight: 52).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
+    /// A tile answers at once.
+    private var tile: Binding<String?> {
+        Binding(get: { nil }, set: { key in if let key = key { take(key) } })
     }
 
     // MARK: S-12 Check and save
@@ -719,7 +718,8 @@ struct PartsSheet: View {
 
     @ViewBuilder private var buttons: some View {
         switch step {
-        case .loading, .incomeKind:
+        case .loading, .kind:
+            // S-11 v2: the tiles answer at once; no Review or Add part.
             EmptyView()
         case .cash:
             pair("Next", disabled: cashPicked.isEmpty, { takeCash() }, "None of these") { afterCash() }
@@ -739,7 +739,7 @@ struct PartsSheet: View {
                     .buttonStyle(NacreButtonStyle())
                     .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
             }
-        case .refund:
+        case .refund, .work:
             Button("Next") { takeRefund() }
                 .buttonStyle(NacreButtonStyle()).disabled(picked.isEmpty)
                 .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
@@ -748,15 +748,11 @@ struct PartsSheet: View {
                 // S-10e: Save changes replaces every part in one save; Cancel changes nothing.
                 pair("Save changes", disabled: parts.isEmpty, { Task { await save(later: false) } }, "Cancel") { dismiss() }
             } else if leftCents == 0 {
-                pair("Review", disabled: false, { step = .review }, "Add a part") { splitting = true; step = .kind }
+                pair("Review", disabled: false, { step = .review }, "Add a part") { step = .kind }
             } else {
                 pair(extra ? "Sort the extra" : "Sort the rest", disabled: false, { step = .kind },
                      "Later") { Task { await save(later: true) } }
             }
-        case .kind:
-            Button(splitting ? "Add part" : "Review") { takeKind() }
-                .buttonStyle(NacreButtonStyle()).disabled(kind == nil || chosenAmount <= 0)
-                .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         case .review:
             pair("Save", disabled: busy, { Task { await save(later: false) } }, "Edit") { step = .progress }
         }
@@ -777,9 +773,11 @@ struct PartsSheet: View {
 
     // MARK: Moving on
 
+    /// "How much of it?": what she typed, up to what's left; all of it when blank.
     private var chosenAmount: Double {
-        guard splitting else { return left }
-        let typed = Double(partAmount.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: ""))
+        let text = partAmount.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return left }
+        let typed = Double(text.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: ""))
         return min(typed ?? 0, left)
     }
 
@@ -816,13 +814,22 @@ struct PartsSheet: View {
         guard let (id, amount) = picked.first, let o = (owing + found).first(where: { $0.id == id }) else { return }
         picked = [:]
         query = ""
-        add(Part(kind: "refund", amount: amount, charge: o.charge, merchant: o.merchant, date: o.date))
+        add(Part(kind: step == .work ? "reimbursement" : "refund", amount: amount, charge: o.charge,
+                 merchant: o.merchant, date: o.date))
     }
 
-    private func takeKind() {
-        guard let kind = kind else { return }
-        switch kind {
-        case "payback":
+    /// S-11 v2: what each tile makes of "How much of it?" (SPLIT-04).
+    private func take(_ key: String) {
+        let amount = chosenAmount
+        guard amount >= 0.005 else { return }
+        switch key {
+        case "regular": add(Part(kind: "income", amount: amount, incomeKind: "salary"))
+        case "bonus": add(Part(kind: "income", amount: amount, incomeKind: "bonus"))
+        case "gifts": add(Part(kind: "gift", amount: amount))
+        // SPLIT-18: Other income's "which kind?" has no frame yet, so it is
+        // Other income, as the shared page saves it.
+        case "other": add(Part(kind: "income", amount: amount, incomeKind: "other"))
+        case "paid_back":
             if !editing.isEmpty {
                 // S-10e: the purchases it already pays back stay listed, ticked.
                 for p in parts where p.kind == "payback" && !p.held {
@@ -831,24 +838,27 @@ struct PartsSheet: View {
                 parts.removeAll { $0.kind == "payback" && !$0.held }
             }
             step = .owing
-        case "refund":
+        case "refund", "reimbursement":
             picked = [:]
-            step = .refund
+            step = key == "refund" ? .refund : .work
             Task { await search() }
-        case "income": step = .incomeKind
-        case "overpaid": add(Part(kind: "overpaid", amount: chosenAmount, person: who))
-        default: add(Part(kind: kind, amount: chosenAmount))
+        case "own": add(Part(kind: "moved", amount: amount))
+        case "loan": add(Part(kind: "loan", amount: amount))
+        case "out_of_savings": add(Part(kind: "savings", amount: amount))
+        case "lent_back": add(Part(kind: "lent_back", amount: amount))
+        case "overpaid": add(Part(kind: "overpaid", amount: amount, person: who))
+        case "category": pickingCategory = amount
+        default: break
         }
     }
 
-    /// Adds a part, then on to what's left: more parts, or Check and save.
-    private func add(_ part: Part, next: Bool = true) {
+    /// Adds a part, then on to what's left: S-11 v2 comes back for the new
+    /// rest, or Check and save when nothing is.
+    private func add(_ part: Part, next: Bool = true, then: Step = .kind) {
         guard part.amount > 0 else { return }
         parts.append(part)
-        kind = nil
-        splitting = false
         partAmount = ""
-        if next { step = leftCents == 0 ? .review : .progress }
+        if next { step = leftCents == 0 ? .review : then }
     }
 
     // MARK: Server
@@ -905,7 +915,7 @@ struct PartsSheet: View {
             let id: String; let date: String; let merchant: String; let left: Double?; let split: Bool?
         }
         let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty || step == .refund else { found = []; return }
+        guard !q.isEmpty || step == .refund || step == .work else { found = []; return }
         if let r: Reply = try? await api.get("api/transactions/\(deposit.id)/charges", query: ["q": q]) {
             found = r.charges.compactMap { $0.value }.filter { ($0.left ?? 0) >= 0.01 }.map {
                 Owing(charge: $0.id, merchant: $0.merchant, date: $0.date, owes: $0.left ?? 0, person: nil, theirs: nil,

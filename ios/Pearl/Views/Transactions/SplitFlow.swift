@@ -21,8 +21,9 @@ struct SplitSheet: View {
     var saveTitle = "Save"
     /// S-24 from a deposit (SPLIT-07): the split is held, not saved, and
     /// goes with the deposit's parts in one save. Gets the split as it would
-    /// be sent and the first person's share.
-    var onHold: (([String: Any], Double) -> Void)? = nil
+    /// be sent, the first person's share and hers. A Quick sort card's page
+    /// holds it the same way, for the card's Yes (T-98s, SPLIT-06).
+    var onHold: (([String: Any], Double, Double) -> Void)? = nil
     /// SPLIT-16: saved with someone who had paid taken out; the toast's
     /// title and the server's Undo.
     var onRemoved: ((String, JSONValue?) -> Void)? = nil
@@ -48,7 +49,7 @@ struct SplitSheet: View {
 
     init(t: Transaction, api: APIClient, recent: [String], with names: [String]? = nil,
          title: String? = nil, saveTitle: String = "Save",
-         onHold: (([String: Any], Double) -> Void)? = nil, onSaved: @escaping (String) -> Void,
+         onHold: (([String: Any], Double, Double) -> Void)? = nil, onSaved: @escaping (String) -> Void,
          onRemoved: ((String, JSONValue?) -> Void)? = nil) {
         self.onRemoved = onRemoved
         // S-03 Dark (designBOT round 5): the selected split method is
@@ -460,7 +461,7 @@ struct SplitSheet: View {
                         .multilineTextAlignment(.center)
                 } else {
                     VStack(spacing: 8) {
-                        Text(gapWords).foregroundColor(gapCents > 0 ? Pearl.ink : Pearl.moneyOut)
+                        Text(gapWords).foregroundColor(gapCents > 0 && !blocksShort ? Pearl.ink : Pearl.moneyOut)
                             .multilineTextAlignment(.center)
                         if mode == "amount" && gapCents > 0 {
                             Button("Split the rest evenly", action: splitRest)
@@ -591,6 +592,11 @@ struct SplitSheet: View {
         var bits: [String] = []
         let cents = shareCents(key)
         let mineOdd = key == Self.me && oddToMe
+        if key == Self.me && withMe && gapCents > 0 {
+            // S-03b v2: "Your share $44.12 · $4.12 of it is the rest", before saving.
+            let rest = mineCents - cents
+            bits.append("Your share \(Format.amount(Double(mineCents) / 100)) · \(Format.amount(Double(rest) / 100)) of it is the rest")
+        }
         if mode == "percent" && gapCents == 0 {
             bits.append(Format.amount(Double(cents) / 100) + (mineOdd ? " · the odd cent is yours" : ""))
         } else if mode == "even" && mineOdd {
@@ -650,12 +656,23 @@ struct SplitSheet: View {
     private var gapWords: String {
         if mode == "percent" {
             let g = Double(gapCents) / 100
+            if g > 0 && blocksShort { return "\(Self.plain(g))% left to assign" }
             return g > 0 ? "\(Self.plain(g))% isn’t anyone’s yet · it stays yours" : "That’s \(Self.plain(-g))% too much"
         }
         let g = Double(abs(gapCents)) / 100
+        // S-03b: with "I had some too" off there's no "you" to keep the rest.
+        if gapCents > 0 && blocksShort { return "\(Format.amount(g)) left to assign" }
         return gapCents > 0 ? "\(Format.amount(g)) isn’t anyone’s yet · it stays yours"
             : "That’s \(Format.amount(g)) too much"
     }
+
+    /// SPLIT-01 (b′), S-03b v2 (2026-11-09): short of the total saves only
+    /// when she's in it, and the rest is hers; otherwise Save waits, as the
+    /// server does.
+    private var blocksShort: Bool { gapCents > 0 && !withMe }
+
+    /// Her share as it would save: her own part plus anything nobody has yet.
+    private var mineCents: Int { totalCents - people.map { shareCents($0) }.reduce(0, +) }
 
     /// The unassigned amount, shared by the rows still empty (or all), odd
     /// cents by the same rule as Evenly (SPLIT-10).
@@ -691,7 +708,7 @@ struct SplitSheet: View {
         }
         .buttonStyle(NacreButtonStyle(busy: busy))
         .disabled(step == 0 ? people.isEmpty && typed.trimmingCharacters(in: .whitespaces).isEmpty
-                  : (gapCents < 0 || busy))
+                  : (gapCents < 0 || blocksShort || busy))
         .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
         }
     }
@@ -715,7 +732,7 @@ struct SplitSheet: View {
         }
         if let onHold = onHold, let first = people.first {
             // S-24 (SPLIT-07): held for the deposit's one save.
-            onHold(body, Double(shareCents(first)) / 100)
+            onHold(body, Double(shareCents(first)) / 100, Double(mineCents) / 100)
             return
         }
         do {

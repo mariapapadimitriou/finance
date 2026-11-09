@@ -100,10 +100,10 @@ def validate(charge: Transaction, mode: str, people: list, you=None,
 
     THL-291: evenly (any odd cent to you), by amount, by percent or by
     shares. `you` is your own amount, percent or shares; with it, the parts
-    can't add up to more than the whole charge. Less is fine (2026-11-08):
-    what nobody has been given yet stays yours, so a split can be saved
-    before every part is known. With `include_me` off ("I had some too" off)
-    your share is nothing but that rest."""
+    can't add up to more than the whole charge. Less is fine only when
+    you're in it (SPLIT-01 (b′), S-03b v2, 2026-11-09): what nobody has been
+    given yet stays yours. With `include_me` off ("I had some too" off)
+    there's no "you" to keep it, so a short split is "$x left to assign"."""
     if mode not in MODES:
         return [], "Split evenly, by amount, by percent or by shares."
     if not isinstance(people, list) or not people:
@@ -152,6 +152,9 @@ def validate(charge: Transaction, mode: str, people: list, you=None,
                 short = False
         if mode == "percent" and whole > 100 + 0.001:
             return [], f"That’s {whole - 100:g}% too much."
+        if short and not include_me:
+            # SPLIT-01 (b′): with "I had some too" off, nobody keeps the rest.
+            return [], f"{round(100 - whole, 2):g}% left to assign."
         # Theirs rounded down to the cent; what's left over is yours. Short
         # of 100%, each part is its percent of the whole and the rest is yours.
         over = 100 if short else whole
@@ -178,6 +181,9 @@ def validate(charge: Transaction, mode: str, people: list, you=None,
             return [], f"That’s ${(theirs + mine - total) / 100:,.2f} more than the charge."
         if theirs > total:
             return [], "Their parts add up to more than the whole charge."
+        if not include_me and theirs < total:
+            # SPLIT-01 (b′), S-03b: blocked in the app and here alike.
+            return [], f"${(total - theirs) / 100:,.2f} left to assign."
     for p in clean:
         p["amount"] = round(p["amount"], 2)
     return clean, None

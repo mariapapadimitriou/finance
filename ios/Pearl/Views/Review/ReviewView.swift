@@ -481,6 +481,9 @@ enum ReviewAnswer {
     case skip(String, Bool)
     /// Already sent (a deposit split into parts, THL-291): its reply.
     case done(MarkReply)
+    /// T-98s (SPLIT-06): a split held for the Quick sort card, with the
+    /// category it counts toward. Yes saves both in one request, one Undo.
+    case split(String, [String: Any], label: String)
 
     /// What a Quick sort card asks once this answer is held for its Yes. Nil is
     /// an answer that has already happened, or that isn't one to hold.
@@ -514,6 +517,7 @@ enum ReviewAnswer {
         case .duplicate(_, let same): return same ? "Same purchase" : "Both are real"
         case .recurring: return "Recurring"
         case .dismiss: return "Doesn’t repeat"
+        case .split(_, _, let label): return label
         case .confirm, .always, .varies, .pair, .check, .skip, .done: return nil
         }
     }
@@ -539,6 +543,7 @@ enum ReviewAnswer {
         case .party(_, let name): return "Sent by \(name)."
         case .duplicate(_, let same): return same ? "Counted once." : "Both counted."
         case .dismiss: return "Pearl won’t ask about it again."
+        case .split(_, _, let label): return "\(label)."
         default: return "Sorted."
         }
     }
@@ -602,6 +607,12 @@ enum ReviewAnswer {
             return try await api.post("api/review/skip", ["key": key, "skip": on])
         case .done(let reply):
             return reply
+        case .split(let id, let body, let label):
+            // The split and its category together (finance/api.py), so the
+            // Sorted card's Undo puts back the split, her share and the category.
+            struct Reply: Decodable { let undo: JSONValue? }
+            let reply: Reply = try await api.put("api/transactions/\(id)/split", body)
+            return MarkReply(title: "\(label).", detail: nil, undo: reply.undo)
         }
     }
 }
