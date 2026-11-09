@@ -339,6 +339,13 @@ struct TransactionDetailView: View {
     @State private var toast: (title: String, undo: (() -> Void)?)?
     /// T-41b: Unlink? before a refund goes back to Needs a look.
     @State private var unlinkingRefund = false
+    /// SPLIT-25: S-05o for a PAID BACK or REFUNDED BY row on a purchase that
+    /// isn't split (the split card has its own), then S-34s / S-34k.
+    @State private var linkOptions: Transaction.LinkInfo?
+    @State private var afterOptions: (() -> Void)?
+    @State private var unlinkingLink: Transaction.LinkInfo?
+    /// S-05o's View the e-Transfer / deposit / refund.
+    @State private var viewing: Transaction?
     @State private var message: String?
     @State private var error: String?
 
@@ -565,6 +572,36 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(item: $unlinkingPayback) { link in paybackUnlinkSheet(link) }
+        .sheet(item: $unlinkingLink) { link in
+            // S-34s / S-34k (SPLIT-25), then S-05t's toast with Undo.
+            UnlinkLinkSheet(link: link, charge: t.id, api: app.api, onCancel: { unlinkingLink = nil }) { title, undo in
+                unlinkingLink = nil
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                Task {
+                    await load()
+                    app.changed()
+                    withAnimation { toast = (title, relinking(undo)) }
+                }
+            }
+        }
+        .sheet(item: $linkOptions, onDismiss: {
+            // The choice runs once S-05o has gone, so its next sheet can open.
+            let next = afterOptions
+            afterOptions = nil
+            next?()
+        }) { link in
+            // S-05o (presentation to be replaced by custom design, see design refresh).
+            PaybackOptionsSheet(title: link.dialog, message: link.message,
+                                actions: linkActions(link)) { then in
+                afterOptions = then
+                linkOptions = nil
+            }
+        }
+        .navigationDestination(isPresented: Binding(get: { viewing != nil }, set: { if !$0 { viewing = nil } })) {
+            if let viewing = viewing {
+                TransactionDetailView(transaction: viewing, categories: categories)
+            }
+        }
         .sheet(isPresented: $renaming) {
             RenameSheet(title: "Rename merchant", label: "Call it", initial: t.merchant,
                         hint: "Bank: \(t.bankMerchant ?? t.merchant)", other: "Use the bank’s name",
@@ -853,29 +890,31 @@ struct TransactionDetailView: View {
     /// PAID BACK (T-39), REFUND FOR (T-41), REFUNDED BY, or the charge a
     /// payback is for.
     @ViewBuilder private var linked: some View {
-        if !t.repaidBy.isEmpty {
-            // A split shows who paid back below; this is the money that did.
-            section(t.splitting == nil ? "Paid back" : "Paid back with")
+        // SPLIT-25 (S-05v): a split purchase's card is the one place its
+        // paybacks are listed; one that isn't split keeps PAID BACK.
+        if !t.repaidBy.isEmpty && t.splitting == nil {
+            section("Paid back")
             SolidCard {
                 ForEach(Array(t.repaidBy.enumerated()), id: \.element.id) { index, b in
                     if index > 0 { RowSeparator(inset: 72) }
                     let part = b.paid.flatMap { abs($0 - abs(b.amount)) >= 0.005 ? $0 : nil }
-                    let row = linkedRow(name: b.merchant ?? b.name,
-                                        sub: [Format.short(b.date), part.map { _ in "part of \(Format.whole(abs(b.amount)))" }]
-                                            .compactMap { $0 }.joined(separator: " · "),
-                                        amount: part ?? abs(b.amount), inflow: true)
-                    if t.splitting == nil {
-                        // S-34 from the purchase: unlink the money that paid it back.
-                        Button {
+                    // S-05o from the purchase: View, then Unlink… (S-34s / S-34k).
+                    Button {
+                        if let link = b.link {
+                            linkOptions = link
+                        } else {
                             unlinkingPayback = PaybackLink(charge: t.id, inflow: b.id, who: b.person ?? b.merchant ?? b.name,
                                                            name: b.merchant ?? b.name, amount: part ?? abs(b.amount),
                                                            date: b.date)
-                        } label: { row }
-                        .buttonStyle(.plain)
-                        .accessibilityHint("Unlink it")
-                    } else {
-                        row
+                        }
+                    } label: {
+                        linkedRow(name: b.merchant ?? b.name,
+                                  sub: [Format.short(b.date), part.map { _ in "part of \(Format.whole(abs(b.amount)))" }]
+                                      .compactMap { $0 }.joined(separator: " · "),
+                                  amount: part ?? abs(b.amount), inflow: true, chevron: true)
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Shows options, including Unlink")
                 }
             }
         }
@@ -893,7 +932,17 @@ struct TransactionDetailView: View {
             SolidCard {
                 ForEach(Array(t.refundedBy.enumerated()), id: \.element.id) { index, r in
                     if index > 0 { RowSeparator(inset: 72) }
-                    linkedRow(name: r.merchant, sub: Format.short(r.date), amount: r.amount, inflow: true)
+                    if let link = r.link {
+                        // SPLIT-25: S-05o "View the refund", "Unlink refund…".
+                        Button { linkOptions = link } label: {
+                            linkedRow(name: r.merchant, sub: Format.short(r.date), amount: r.amount, inflow: true,
+                                      chevron: true)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Shows options, including Unlink")
+                    } else {
+                        linkedRow(name: r.merchant, sub: Format.short(r.date), amount: r.amount, inflow: true)
+                    }
                 }
             }
         }
@@ -941,7 +990,8 @@ struct TransactionDetailView: View {
         }
     }
 
-    private func linkedRow(name: String, sub: String, amount: Double, inflow: Bool) -> some View {
+    private func linkedRow(name: String, sub: String, amount: Double, inflow: Bool,
+                           chevron: Bool = false) -> some View {
         HStack(spacing: 14) {
             Initials(name: name)
             VStack(alignment: .leading, spacing: 2) {
@@ -952,8 +1002,13 @@ struct TransactionDetailView: View {
             Text((inflow ? "+" : "\u{2212}") + Format.amount(amount))
                 .font(Nacre.headline).monospacedDigit()
                 .foregroundColor(inflow ? Pearl.ink : Pearl.moneyOut)
+            if chevron {
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Pearl.muted)
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 
@@ -1094,7 +1149,10 @@ struct TransactionDetailView: View {
                         onUndoLetGo: { p in Task { await undoLetGo(p) } },
                         onEdit: { splitting = true },
                         onOwed: { seeingOwed = true },
-                        onCredit: { crediting = Crediting(id: $0.id) })
+                        onCredit: { crediting = Crediting(id: $0.id) },
+                        // S-05o (SPLIT-25): View, or Unlink… → S-34s / S-34k.
+                        onView: { link in if let id = link.view?.id { Task { await open(id) } } },
+                        onUnlink: { unlinkingLink = $0 })
         }
     }
 
@@ -1829,10 +1887,49 @@ struct TransactionDetailView: View {
         }
     }
 
+    /// S-05o: View the e-Transfer (none for cash or an app), then Unlink….
+    private func linkActions(_ link: Transaction.LinkInfo) -> [PaybackOptionsSheet.Action] {
+        var out: [PaybackOptionsSheet.Action] = []
+        if let view = link.view {
+            out.append(.init(title: view.label) { Task { await open(view.id) } })
+        }
+        out.append(.init(title: link.kind == "refund" ? "Unlink refund…" : "Unlink…", destructive: true) {
+            unlinkingLink = link
+        })
+        return out
+    }
+
+    /// S-05o's View: the e-Transfer, the deposit or the refund, in the app.
+    private func open(_ id: String) async {
+        do {
+            viewing = try await app.api.get("api/transactions/\(id)")
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+
+    /// S-05t's Undo: links it back exactly as it was; its toast reads "Linked again".
+    private func relinking(_ payload: JSONValue?) -> (() -> Void)? {
+        payload.map { p in {
+            Task {
+                guard let body = p.any as? [String: Any] else { return }
+                withAnimation { toast = nil }
+                await run {
+                    let _: OK = try await app.api.post("api/transactions/undo", body)
+                    return nil
+                }
+                if error == nil { withAnimation { toast = ("Linked again", nil) } }
+            }
+        } }
+    }
+
     /// A part is gone once unlinked, so the page shows the deposit it was.
+    /// From the payback's own page (S-34) this unlinks every purchase it paid
+    /// (`whole`); from a purchase, UnlinkLinkSheet unlinks only that one.
     private func unlinkPayback(_ link: PaybackLink) async {
         await run {
-            let _: OK = try await app.api.delete("api/transactions/\(link.charge)/paybacks/\(link.inflow)")
+            let _: OK = try await app.api.delete("api/transactions/\(link.charge)/paybacks/\(link.inflow)",
+                                                 query: link.inflow == t.id ? ["whole": "1"] : [:])
             return "Unlinked. \(link.who) owes you \(Format.amount(link.amount)) again."
         }
     }

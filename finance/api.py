@@ -409,10 +409,22 @@ def transaction_detail(txn_id: str):
         if split and t.amount > 0:
             r["splitting"] = _splitting(t, split, txns, payer)
         if t.amount > 0:
-            # `paid`: how much of each went to this charge (S-26: $228 of $600).
+            # `paid`: how much of each went to this charge (S-26: $228 of $600),
+            # including one that paid it as its second or third (SPLIT-25).
+            # `link`: what S-05o and the Unlink? sheet say about it.
+            from . import unlink as ul
+            by_id = {x.fingerprint: x for x in txns}
+            kinds, stored = st.payback_kinds(), st.parts()
             r["repaid_by"] = [dict(_txn_brief(x), person=payer.get(x.fingerprint),
-                                   paid=round(x.paid_part, 2))
-                              for x in txns if x.repays == txn_id]
+                                   paid=round(x.part_for(txn_id), 2),
+                                   link=ul.inflow_link(st, t, x, payer.get(x.fingerprint), by_id, kinds, stored))
+                              for x in sorted(txns, key=lambda x: x.date) if txn_id in x.repays_all]
+            if r.get("refunded_by"):
+                r["refunded_by"] = [dict(f, link=ul.refund_link(t, by_id[f["id"]])) if f.get("id") in by_id
+                                    else f for f in r["refunded_by"]]
+            if r.get("splitting"):
+                # S-05v: every PAID BACK row on the split card opens S-05o.
+                ul.add_links(st, t, r["splitting"], txns, payer)
         # The other end of a transfer between her accounts (2026-10-22).
         from .transfers import transfer_pairs
         from .txlist import _is_card_payment as txlist_card_payment
@@ -1147,38 +1159,91 @@ def add_payback(txn_id: str, inflow_id: str):
 @bp.delete("/transactions/<inflow_id>/refund")
 def unlink_refund(inflow_id: str):
     """Forget which purchase a refund is of (2026-10-24). It stays in its
-    category, so it still comes off that category's spending, in its month."""
+    category, so it still comes off that category's spending, in its month.
+    From either side (SPLIT-25): the refund or the purchase's REFUNDED BY
+    row, with an Undo that links it again."""
     st = store()
     if st.get_transaction(inflow_id) is None:
         return jsonify({"error": "No such transaction."}), 404
-    if inflow_id not in st.refunds():
+    was = st.refunds().get(inflow_id)
+    if not was:
         return jsonify({"error": "That refund isn't linked to a purchase."}), 404
     st.link_refund(inflow_id, None)
-    return transaction_detail(inflow_id)
+    out = transaction_detail(inflow_id)
+    data = out.get_json() if hasattr(out, "get_json") else None
+    if isinstance(data, dict):
+        return jsonify(dict(data, title="Refund unlinked", charge=was,
+                            undo={"rows": [], "marks": {"refunds": {inflow_id: was}}}))
+    return out
 
 
 @bp.delete("/transactions/<txn_id>/paybacks/<inflow_id>")
 def remove_payback(txn_id: str, inflow_id: str):
+    """Unlink a payback from this purchase (SPLIT-25, THL-291), from either
+    side. Only this purchase's part comes off: a payback that also paid
+    other purchases keeps those, and this part is left to sort. `?whole=1`
+    is the payback's own Unlink (S-34): every purchase it paid. Returns the
+    purchase's paybacks, the toast's `title` and its `undo`."""
+    from .impact import snapshot, undo_payload
     from .transfers import apply_transfer_matches
+    from . import unlink as ul
     st = store()
     inflow = st.get_transaction(inflow_id)
-    if inflow is None or inflow.repays != txn_id:
+    if inflow is None or txn_id not in inflow.repays_all:
         return jsonify({"error": "That money isn't linked to this charge."}), 404
-    # A payback that made its sender's place in the split takes them out
-    # again (THL-260): the charge costs what it did before.
-    from .splits import drop_payer_all
-    from .marks import REIMBURSEMENT, WORK_REASON, _remember_waiting, was_waiting
-    drop_payer_all(st, inflow)
-    reimbursed = st.payback_kinds().get(inflow_id) == REIMBURSEMENT
-    st.unlink_payback(inflow_id)
-    # A work expense that was waiting to be reimbursed waits again (gap 29).
+    whole = request.args.get("whole") in ("1", "true")
     charge = st.get_transaction(txn_id)
-    if (reimbursed and charge is not None and not charge.excluded and not st.paybacks_for(txn_id)
-            and was_waiting(st, txn_id)):
-        st.exclude(txn_id, WORK_REASON)
-        _remember_waiting(st, txn_id, False)
+    txns = st.all_transactions()
+    by_id = {t.fingerprint: t for t in txns}
+    who = _credited(st, charge, inflow, txns)
+    said = ul.inflow_link(st, charge, inflow, who, by_id, st.payback_kinds(), st.parts()) if charge else {}
+    before = snapshot(st, txns)
+    marks = ul.unlink_payback(st, txn_id, inflow, whole=whole)
     apply_transfer_matches(st)
-    return list_paybacks(txn_id)
+    _reclassify(st)
+    title = said.get("toast")
+    if not title:
+        owes = _owes_now(st, txn_id, who)
+        title = f"Unlinked · {who} owes {_money2(owes)}" if who and owes is not None else "Unlinked"
+    data = list_paybacks(txn_id).get_json()
+    after = st.all_transactions()
+    undo = undo_payload(before, snapshot(st, after))
+    # Parts taken down and saved again aren't rows to re-file.
+    here = {t.fingerprint for t in after}
+    undo["rows"] = [r for r in undo.get("rows") or [] if r.get("id") in here]
+    undo["marks"] = marks
+    return jsonify(dict(data, title=title, undo=undo))
+
+
+def _money2(x: float) -> str:
+    return f"${abs(x):,.2f}"
+
+
+def _credited(st, charge, inflow, txns) -> str | None:
+    """Who a payback counts for on this purchase: the person she said, or
+    the one the split card credits it to."""
+    payer = st.payback_people()
+    split = st.splits().get(charge.fingerprint) if charge else None
+    if split:
+        from . import splits as sp
+        credited: dict[str, str] = {}
+        sp.people_status(charge, split, txns, payer, credited_to=credited)
+        if inflow.fingerprint in credited:
+            return credited[inflow.fingerprint]
+    return payer.get(inflow.fingerprint)
+
+
+def _owes_now(st, charge_id: str, who: str | None) -> float | None:
+    """What `who` owes on the purchase now (S-05t's "Jo owes $30.00")."""
+    from . import splits as sp
+    charge = st.get_transaction(charge_id)
+    split = st.splits().get(charge_id)
+    if charge is None or not split or not who:
+        return None
+    for p in sp.people_status(charge, split, st.all_transactions(), st.payback_people()):
+        if p["name"] == who:
+            return p["owes"]
+    return None
 
 
 # Plaid's account subtypes, as a person would say them.

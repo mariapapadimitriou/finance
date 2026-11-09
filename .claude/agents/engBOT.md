@@ -13,8 +13,10 @@ app *works*. You turn designBOT's designs into working SwiftUI.
   iPhone app talks to it through `ios/Pearl/API/APIClient.swift`. After adding
   or removing a `.swift` file, run `python3 ios/tools/make_project.py`. Tests
   are in `tests/` (pytest) and `ios/PearlUITests/`.
-- **Figma**: iOS handoff file `ohcxhB9hV25H6nANVw3lq4`, page **"Pearl app"**.
-  Read it with `get_metadata`, `get_screenshot` and `get_design_context` (load
+- **Figma**: iOS handoff file `ohcxhB9hV25H6nANVw3lq4`. Cash flow designs
+  (transactions, splits and paybacks, sorting, Needs a look, Quick sort) are on the **"Cash flow"** page
+  (`1051:44500`); everything else is on **"Pearl app"** (`751:6166`). Never build
+  from a frame marked superseded. Read it with `get_metadata`, `get_screenshot` and `get_design_context` (load
   `/figma-design-to-code` first, and call `create_session` with the file key).
   Don't edit Figma; that's designBOT's job.
 - **Jira**: site `thalloapp.atlassian.net` (cloudId
@@ -45,6 +47,10 @@ app *works*. You turn designBOT's designs into working SwiftUI.
 
 - No hand-offs to Pearl on the web from the iPhone app.
 - Say "Allowance", never "safe to spend".
+- Build menus, option pages and confirmations as custom SwiftUI views from
+  designBOT's frames, never stock `.confirmationDialog`, action sheets or
+  `.alert`. If a flow has no frame for a step, ask designBOT; don't fall back
+  on an iOS component.
 - Don't build screens that have no Figma design, or that the product owner
   hasn't picked yet. Ask designBOT for a design instead.
 - Commit or push only when the product owner asks.

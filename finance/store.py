@@ -1912,6 +1912,19 @@ class Store:
         with self.conn() as c:
             return (c.execute("DELETE FROM txn_split_cash WHERE id = ?", (cash_id,)).rowcount or 0) > 0
 
+    def restore_split_cash(self, roots: list[int], rows: list[dict]) -> None:
+        """Undo (SPLIT-25): every record of these payments exactly as it was,
+        ids and the deposit holding each included (None for one a deposit's
+        parts will hold again when they're put back)."""
+        with self.conn() as c:
+            for root in roots:
+                c.execute("DELETE FROM txn_split_cash WHERE COALESCE(origin, id) = ?", (int(root),))
+            for r in rows:
+                c.execute("INSERT OR REPLACE INTO txn_split_cash (id, txn_id, name, amount, day, deposit_id, "
+                          "via, app, origin, kind) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                          (int(r["id"]), r["txn_id"], r["name"], round(float(r["amount"]), 2), r["day"],
+                           r.get("deposit_id") or None, r.get("via"), r.get("app"), r.get("origin"), r.get("kind")))
+
     def split_cash(self) -> list[dict]:
         """Every cash payback: {id, txn_id, name, amount, day, deposit_id, via}."""
         with self.conn() as c:

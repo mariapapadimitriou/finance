@@ -766,8 +766,17 @@ struct SplitPeople: View {
     let onOwed: () -> Void
     /// S-05u (SPLIT-22b): "Who sent this?" on a payback credited to no one.
     var onCredit: (Transaction.Splitting.Uncredited) -> Void = { _ in }
+    /// S-05o (SPLIT-25): View the e-Transfer, the deposit or the refund.
+    var onView: (Transaction.LinkInfo) -> Void = { _ in }
+    /// S-05o Unlink… → S-34s / S-34k.
+    var onUnlink: (Transaction.LinkInfo) -> Void = { _ in }
     /// The person she tapped, for their choices.
     @State private var chosen: Transaction.Splitting.Person?
+    /// SPLIT-25: someone with a payment here gets S-05o as a sheet, not a
+    /// stock dialog; the choice runs once it has gone.
+    @State private var options: Transaction.Splitting.Person?
+    @State private var afterOptions: (() -> Void)?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let open = split.people.filter { $0.owes >= 0.005 }
@@ -794,11 +803,15 @@ struct SplitPeople: View {
                 ForEach(Array(split.people.enumerated()), id: \.element.id) { i, p in
                     if i > 0 { RowSeparator(inset: 64) }
                     // What to do about someone is on them (2026-11-08): tap to
-                    // mark paid back, remind or let it go.
-                    Button { chosen = p } label: { person(p) }
+                    // mark paid back, remind or let it go. SPLIT-25 (S-05v): every
+                    // row taps, someone who paid in full too, for View and Unlink.
+                    Button {
+                        if (p.links ?? []).isEmpty { chosen = p } else { options = p }
+                    } label: { person(p) }
                         .buttonStyle(.plain)
-                        .disabled(p.owes < 0.005 && p.letGo == nil)
-                        .accessibilityHint(p.owes >= 0.005 ? "Mark paid back, remind or let it go" : "")
+                        .accessibilityLabel(spoken(p))
+                        .accessibilityHint(p.owes >= 0.005 ? "Mark paid back, remind or let it go"
+                                           : (p.links ?? []).isEmpty ? "" : "Shows options, including Unlink")
                 }
                 RowSeparator(inset: 0)
                 Button(action: onEdit) {
@@ -812,6 +825,10 @@ struct SplitPeople: View {
                 }
                 .buttonStyle(.plain)
             }
+            // The row's amount springs from Paid back to Owes you after Unlink (S-05t):
+            // 250 ms, a cross-fade with Reduce Motion.
+            .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.25, dampingFraction: 0.85),
+                       value: split.people.map(\.owes))
             .confirmationDialog(chosen?.name ?? "", isPresented: Binding(get: { chosen != nil },
                                                                        set: { if !$0 { chosen = nil } }),
                                 titleVisibility: .visible, presenting: chosen) { p in
@@ -828,6 +845,17 @@ struct SplitPeople: View {
                     Text("Owes you \(Format.amount(p.owes))")
                 } else if let was = p.letGo?.was {
                     Text("You let \(Format.amount(was - p.paid)) go")
+                }
+            }
+            .sheet(item: $options, onDismiss: {
+                let next = afterOptions
+                afterOptions = nil
+                next?()
+            }) { p in
+                // S-05o (presentation to be replaced by custom design, see design refresh).
+                PaybackOptionsSheet(title: dialogTitle(p), message: message(p), actions: actions(p)) { then in
+                    afterOptions = then
+                    options = nil
                 }
             }
             Button("See everyone who owes you", action: onOwed)
@@ -860,15 +888,65 @@ struct SplitPeople: View {
             Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
                 .font(Nacre.headline).monospacedDigit()
                 .foregroundColor(p.owes >= 0.005 || p.letGo != nil ? Pearl.ink : Pearl.moneyIn)
-            if p.owes >= 0.005 || p.letGo != nil {
-                // Tapping them has choices.
+            if p.owes >= 0.005 || p.letGo != nil || !(p.links ?? []).isEmpty {
+                // Tapping them has choices (S-05v: paid in full too).
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
                     .foregroundColor(Pearl.muted)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    /// S-05o's line: where the money came from, or what they still owe.
+    private func message(_ p: Transaction.Splitting.Person) -> String? {
+        if p.owes >= 0.005 { return "Owes you \(Format.amount(p.owes))" }
+        if let was = p.letGo?.was { return "You let \(Format.amount(was - p.paid)) go" }
+        return (p.links ?? []).map(\.message).joined(separator: "\n")
+    }
+
+    /// S-05o: someone who still owes keeps Mark paid back, Remind and Let it
+    /// go; then each payment's View, and one Unlink per payment.
+    private func actions(_ p: Transaction.Splitting.Person) -> [PaybackOptionsSheet.Action] {
+        var out: [PaybackOptionsSheet.Action] = []
+        if p.owes >= 0.005 {
+            out.append(.init(title: "Mark paid back") { onMarkPaid(p) })
+            out.append(.init(title: "Remind \(p.name)") { onRemind(p) })
+            out.append(.init(title: "Let it go") { onLetGo(p) })
+        } else if p.letGo != nil {
+            out.append(.init(title: "Undo let it go") { onUndoLetGo(p) })
+        }
+        let links = p.links ?? []
+        for link in links {
+            if let view = link.view { out.append(.init(title: view.label) { onView(link) }) }
+        }
+        for link in links {
+            out.append(.init(title: links.count == 1 ? "Unlink…" : "Unlink the \(Format.amount(link.amount)) \(link.noun)…",
+                             destructive: true) { onUnlink(link) })
+        }
+        return out
+    }
+
+    /// S-05o's title: "Jo paid back $30.00"; someone who still owes, their name.
+    private func dialogTitle(_ p: Transaction.Splitting.Person) -> String {
+        if p.owes < 0.005 && p.letGo == nil && !(p.links ?? []).isEmpty {
+            return "\(p.name) paid back \(Format.amount(p.paid))"
+        }
+        return p.name
+    }
+
+    /// VoiceOver (S-05v): "Jo, paid back 30 dollars, November 16, part of a
+    /// 60 dollar e-Transfer that also paid back Pizza Nova."
+    private func spoken(_ p: Transaction.Splitting.Person) -> String {
+        guard p.owes < 0.005, p.letGo == nil, let links = p.links, !links.isEmpty else {
+            return [p.name, status(p), Format.amount(p.owes >= 0.005 ? p.owes : p.paid)].joined(separator: ", ")
+        }
+        let how = links.count == 1 ? links[0].message : "\(links.count) payments"
+        let lowered = how.prefix(1).lowercased() + how.dropFirst()
+        return [p.name, "paid back \(Format.amount(p.paid))", p.paidOn.map { Format.monthDay($0) }, lowered]
+            .compactMap { $0 }.joined(separator: ", ")
     }
 
     /// S-05u: "$30.00 from an e-Transfer" / "Nov 16 · no name · paid back
@@ -913,6 +991,11 @@ struct SplitPeople: View {
     /// SPLIT-15: a cash payment a deposit holds part of, once: "$200.00
     /// deposited Nov 12 · $50.00 still cash".
     private func deposited(_ p: Transaction.Splitting.Person) -> String? {
+        // SPLIT-25 (S-05v): an e-Transfer that also paid back other purchases:
+        // "$60.00 · paid back Loblaws and Pizza Nova".
+        if let s = p.shared?.first {
+            return "\(Format.amount(s.whole)) · paid back \(Format.andList([t.merchant] + s.others))"
+        }
         // SPLIT-19 (S-11c, Paying me back): one payment that paid back other
         // purchases too: "$60.00 · paid back Loblaws and Pizza Nova".
         if let pay = p.payments?.last(where: { ($0.paidBack?.count ?? 0) > 1 }), let names = pay.paidBack {

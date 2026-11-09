@@ -1324,8 +1324,12 @@ def undo_marks(store, marks: dict) -> int:
         from . import parts as dp
         for did in unparts:
             dp.undo(store, did)
-    known = {t.fingerprint: t for t in store.all_transactions()}
     n = len(unparts)
+    # SPLIT-25: a deposit's parts and the cash they held, as before Unlink.
+    if marks.get("reparts") or marks.get("cash_rows"):
+        from . import unlink
+        n += unlink.undo(store, marks)
+    known = {t.fingerprint: t for t in store.all_transactions()}
     for tid, reason in (marks.get("exclusions") or {}).items():
         if tid not in known:
             continue
@@ -1334,6 +1338,12 @@ def undo_marks(store, marks: dict) -> int:
         else:
             store.include(tid)
         n += 1
+    # SPLIT-25: an expense that waited to be reimbursed again, remembered as
+    # waiting again once its reimbursement is linked back.
+    for tid, on in (marks.get("waiting") or {}).items():
+        if tid in known:
+            _remember_waiting(store, tid, bool(on))
+            n += 1
     for tid, aid in (marks.get("saved_to") or {}).items():
         if tid in known:
             store.set_saved_to(tid, aid or None)

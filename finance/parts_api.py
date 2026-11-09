@@ -5,7 +5,7 @@
 * POST   /api/transactions/<id>/split/cash        {name, amount, day?, via?, app?, extra?}: paid
                                                   back in cash, or `via: "app"` through another
                                                   app; `extra` says what paid over is (S-11c).
-* DELETE /api/transactions/<id>/split/cash/<cid>  forget that cash.
+* DELETE /api/transactions/<id>/split/cash/<cid>  unlink that payment from this purchase, with Undo.
 * GET    /api/split/apps                          apps she has named before (SPLIT-14).
 * GET    /api/transactions/<id>/cash-matches      cash a deposit could be holding.
 * POST   /api/transactions/<id>/parts             {parts, later, replace?, split?}: split a
@@ -274,21 +274,26 @@ def split_apps():
 
 @bp.delete("/transactions/<txn_id>/split/cash/<int:cash_id>")
 def split_cash_undo(txn_id: str, cash_id: int):
+    """Unlink a cash or app payment from this purchase (SPLIT-25, S-34k).
+    `cash_id` is the payment (any of its records). Only this purchase's
+    piece goes; cash a deposit holds comes out of the deposit, which is left
+    with "$x left to sort". Returns the toast's `title` and its `undo`."""
+    from . import unlink as ul
     st = store()
-    cash = next((c for c in st.split_cash() if c["id"] == cash_id and c["txn_id"] == txn_id), None)
+    cash = next((c for c in st.split_cash() if c["id"] == cash_id), None)
     if cash is None:
         return jsonify({"error": "No such cash."}), 404
-    if cash["deposit_id"]:
-        return jsonify({"error": "That cash is in a deposit. Unlink the deposit first."}), 400
-    if cash.get("origin"):
-        st.remove_split_cash(cash_id)
-    else:
-        # SPLIT-19: the payment itself goes with every piece of its extra.
-        problem = remove_payment(st, cash_id)
-        if problem:
-            return jsonify({"error": problem}), 400
-        core._reclassify(st)
-    return jsonify({"ok": True, "detail": core.transaction_detail(txn_id).get_json()})
+    root = int(cash.get("origin") or cash["id"])
+    name = next((c["name"] for c in st.split_cash() if int(c.get("origin") or c["id"]) == root
+                 and c["txn_id"] == txn_id and c.get("kind") is None), None)
+    marks, problem = ul.unlink_cash(st, txn_id, root)
+    if problem:
+        return jsonify({"error": problem}), 404
+    core._reclassify(st)
+    owes = core._owes_now(st, txn_id, name)
+    title = f"Unlinked · {name} owes ${owes:,.2f}" if name and owes is not None else "Unlinked"
+    return jsonify({"ok": True, "title": title, "undo": {"rows": [], "marks": marks},
+                    "detail": core.transaction_detail(txn_id).get_json()})
 
 
 @bp.get("/transactions/<txn_id>/cash-matches")

@@ -79,7 +79,9 @@ def test_even_split_counts_only_her_share(client):
                                          "owes": 42.5, "paid_on": None, "cash": 0.0,
                                          "cash_ids": [], "let_go": None,
                                          "over": 0.0, "weight": None, "app": 0.0,
-                                         "app_name": None, "payments": [], "shared": []}]
+                                         "app_name": None, "payments": [], "shared": [],
+                                         # SPLIT-25: what each PAID BACK row's options say.
+                                         "links": []}]
     data = listing(client)
     assert data["totals"]["spent"] == 42.5
     assert data["transactions"][0]["note"] == "Your share of $85.00 · split with Priya"  # nobody paid yet
@@ -256,7 +258,10 @@ class TestTwoETransfersFromOnePerson:
         assert res["title"] == "Anna Lee has now paid you back $60.00 for Sushi Nami."
         d = detail(client, sushi)
         assert d["splitting"]["you"] == 60
-        assert d["splitting"]["people"] == [{"name": "Anna Lee", "amount": 60.0, "paid": 60.0,
+        # SPLIT-25: `links` (each payment's S-05o and Unlink? sheet) is tested
+        # in test_unlink_from_purchase.py.
+        assert [{k: v for k, v in p.items() if k != "links"} for p in d["splitting"]["people"]] \
+            == [{"name": "Anna Lee", "amount": 60.0, "paid": 60.0,
                                              "owes": 0.0, "paid_on": d["splitting"]["people"][0]["paid_on"],
                                              "cash": 0.0, "cash_ids": [], "let_go": None,
                                          "over": 0.0, "weight": None, "app": 0.0,

@@ -591,6 +591,52 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let merchant: String
         let date: String
         let amount: Double
+        /// On the purchase's REFUNDED BY row: its S-05o and Unlink refund? (SPLIT-25).
+        var link: LinkInfo? = nil
+    }
+
+    /// SPLIT-25 (THL-291): one payment that paid back this purchase, as
+    /// S-05o's options and the Unlink? sheet (S-34s, S-34k) say it. The
+    /// server words it, so the line always says what Unlink does.
+    struct LinkInfo: Decodable, Hashable, Identifiable {
+        let id: String
+        /// The money in to unlink (`DELETE …/paybacks/<inflow>` or `…/refund`),
+        /// or the cash or app payment (`DELETE …/split/cash/<cash_id>`).
+        let inflow: String?
+        let cashId: Int?
+        /// What it put toward this purchase.
+        let amount: Double
+        let date: String
+        /// bank, part, cash, app, reimbursement or refund.
+        let kind: String
+        /// "e-Transfer", "cash", "PayPal payment": "Unlink the $10.00 cash…".
+        let noun: String
+        /// S-05o: "Jo paid back $30.00" over "Part of a $60.00 e-Transfer on Nov 16…".
+        let dialog: String
+        let message: String
+        /// "View the e-Transfer", "View the deposit", "View the refund"; none for cash.
+        let view: Target?
+        let sheet: Sheet
+        /// S-05t's toast, when the server knows it before unlinking.
+        let toast: String?
+
+        struct Target: Decodable, Hashable { let id: String; let label: String }
+        struct Sheet: Decodable, Hashable {
+            let title: String
+            let name: String
+            /// Whose initials the sheet shows: "JO", "LO" for a Loblaws refund.
+            let face: String
+            let sub: String
+            /// S-34s: "This $60.00 also paid back Pizza Nova. Unlink only Loblaws’ $30.00?"
+            let ask: String?
+            let line: String
+            let button: String
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case id, inflow, amount, date, kind, noun, dialog, message, view, sheet, toast
+            case cashId = "cash_id"
+        }
     }
 
     /// Another transaction, briefly: a payback, or the charge one repays.
@@ -606,9 +652,11 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let paid: Double?
         /// The purchase's split, when it was split (2026-11-08).
         var split: Splitting? = nil
+        /// On the purchase's PAID BACK row: its S-05o and Unlink? (SPLIT-25).
+        var link: LinkInfo? = nil
 
         enum CodingKeys: String, CodingKey {
-            case id, date, merchant, description, amount, person, paid, split
+            case id, date, merchant, description, amount, person, paid, split, link
             case accountName = "account_name"
         }
 
@@ -664,6 +712,9 @@ struct Transaction: Decodable, Identifiable, Hashable {
             var payments: [Payment]? = nil
             /// Paybacks of theirs that also paid back other purchases (SPLIT-16).
             var shared: [Shared]? = nil
+            /// Every payment that paid them back here, each with its S-05o
+            /// options and Unlink? sheet (SPLIT-25, S-05v).
+            var links: [LinkInfo]? = nil
             var id: String { name }
 
             struct LetGo: Decodable, Hashable { let was: Double; let day: String }
@@ -705,7 +756,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
             var share: Double { letGo?.was ?? amount }
 
             enum CodingKeys: String, CodingKey {
-                case name, amount, paid, owes, cash, app, over, weight, payments, shared
+                case name, amount, paid, owes, cash, app, over, weight, payments, shared, links
                 case appName = "app_name"
                 case paidOn = "paid_on"
                 case cashIds = "cash_ids"
