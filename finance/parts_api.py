@@ -2,9 +2,10 @@
 
 * POST   /api/transactions/<id>/split/let-go      {name}: let the rest of their part go.
 * DELETE /api/transactions/<id>/split/let-go      {name}: put it back.
-* POST   /api/transactions/<id>/split/cash        {name, amount, day?, via?}: paid back in
+* POST   /api/transactions/<id>/split/cash        {name, amount, day?, via?, app?}: paid back in
                                                   cash, or `via: "app"` through another app.
 * DELETE /api/transactions/<id>/split/cash/<cid>  forget that cash.
+* GET    /api/split/apps                          apps she has named before (SPLIT-14).
 * GET    /api/transactions/<id>/cash-matches      cash a deposit could be holding.
 * POST   /api/transactions/<id>/parts             {parts, later, replace?, split?}: split a
                                                   deposit into parts.
@@ -121,11 +122,20 @@ def split_cash(txn_id: str):
         return jsonify({"error": "When did they pay?"}), 400
     # Another app (SPLIT-11): paid, but no deposit ever holds it.
     via = "app" if body.get("via") == "app" else None
-    cid = st.add_split_cash(txn_id, p["name"], amount, day, via)
-    title = (f"{p['name']} paid ${amount:,.2f} through another app." if via
+    # SPLIT-14 (S-06 v3): which app, typed; optional, trimmed, up to 30.
+    app = " ".join(str(body.get("app") or "").split())[:30] or None if via else None
+    cid = st.add_split_cash(txn_id, p["name"], amount, day, via, app)
+    title = (f"{p['name']} paid ${amount:,.2f} through {app or 'another app'}." if via
              else f"{p['name']} paid ${amount:,.2f} in cash.")
     return jsonify({"ok": True, "id": cid, "title": title,
                     "detail": core.transaction_detail(txn_id).get_json()}), 201
+
+
+@bp.get("/split/apps")
+def split_apps():
+    """S-06 v3 "Used before" (SPLIT-14): the apps she has named, newest
+    first, up to 4. Her own data; no app names are built in."""
+    return jsonify({"apps": store().split_apps()})
 
 
 @bp.delete("/transactions/<txn_id>/split/cash/<int:cash_id>")
@@ -150,12 +160,25 @@ def cash_matches(txn_id: str):
         return jsonify({"cash": []})
     by_id = {x.fingerprint: x for x in st.all_transactions()}
     got = -t.amount
-    rows = [c for c in st.split_cash() if not c["deposit_id"] and c["day"] <= t.date[:10]
+    every = st.split_cash()
+    # SPLIT-15: what the whole payment was, so a remainder reads "$50.00
+    # left of $250.00 cash", never as a payment of its own.
+    whole: dict[int, float] = {}
+    for c in every:
+        root = c.get("origin") or c["id"]
+        whole[root] = round(whole.get(root, 0.0) + c["amount"], 2)
+    rows = [c for c in every if not c["deposit_id"] and c["day"] <= t.date[:10]
             and c.get("via") != "app"]
     rows.sort(key=lambda c: (c["amount"] > got + 0.005, abs(c["amount"] - got), c["day"]))
-    return jsonify({"cash": [{"id": c["id"], "name": c["name"], "amount": c["amount"], "day": c["day"],
-                              "merchant": (by_id.get(c["txn_id"]).merchant if by_id.get(c["txn_id"]) else "")}
-                             for c in rows]})
+    out = []
+    for c in rows:
+        row = {"id": c["id"], "name": c["name"], "amount": c["amount"], "day": c["day"],
+               "merchant": (by_id.get(c["txn_id"]).merchant if by_id.get(c["txn_id"]) else "")}
+        of = whole.get(c.get("origin") or c["id"], c["amount"])
+        if of > c["amount"] + 0.005:
+            row["of"] = of
+        out.append(row)
+    return jsonify({"cash": out})
 
 
 @bp.post("/transactions/<txn_id>/parts")

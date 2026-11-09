@@ -222,7 +222,10 @@ def _hold_cash(st, ids: list[int], amount: float, part_id: str) -> list[int]:
         have = _cents(c["amount"])
         if have > left:
             st.set_split_cash_amount(i, left / 100)
-            st.add_split_cash(c["txn_id"], c["name"], (have - left) / 100, c["day"], c.get("via"))
+            # SPLIT-15: the rest keeps the payment's origin, so it is still
+            # listed and counted as the one payment she recorded.
+            st.add_split_cash(c["txn_id"], c["name"], (have - left) / 100, c["day"], c.get("via"),
+                              c.get("app"), c.get("origin") or c["id"])
             have = left
         held.append(i)
         left -= have
@@ -242,6 +245,8 @@ def undo(st, deposit_id: str) -> int:
         st.link_refund(p["part_id"], None)
         st.delete_transaction(p["part_id"])
     st.clear_parts(deposit_id)
+    # SPLIT-15: a payment cut in two by this deposit is one record again.
+    st.rejoin_split_cash()
     t = st.get_transaction(deposit_id)
     if t is not None and t.excluded == SPLIT:
         st.include(deposit_id)
@@ -339,15 +344,24 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
         back.append({"name": payer.get(t.fingerprint) or t.party or t.merchant,
                      "merchant": charge.merchant if charge else "",
                      "date": t.date[:10], "amount": round(t.paid_part, 2)})
+    from .splits import payments
+    dates = {t.fingerprint: t.date[:10] for t in transactions if (t.raw or {}).get("part_of")}
     for cid, split in splits.items():
         charge = by_id.get(cid)
         for p in split["people"]:
-            for c in p.get("cash") or []:
+            # SPLIT-15: one payment as she recorded it, however much of it a
+            # deposit holds: "$200.00 deposited Nov 12 · $50.00 still cash".
+            for c in payments(p.get("cash") or [], dates):
                 if c["day"].startswith(month):
-                    # Another app (SPLIT-11) says so; only real cash says Cash.
-                    how = {"app": True} if c.get("via") == "app" else {"cash": True}
-                    back.append({"name": p["name"], "merchant": charge.merchant if charge else "",
-                                 "date": c["day"], "amount": c["amount"], **how})
+                    # Another app (SPLIT-11) says so, by name (SPLIT-14);
+                    # only real cash says Cash.
+                    how = ({"app": True, "app_name": c["app"]} if c["via"] == "app" else {"cash": True})
+                    row = {"name": p["name"], "merchant": charge.merchant if charge else "",
+                           "date": c["day"], "amount": c["amount"], **how}
+                    if c["deposited"] >= 0.005:
+                        row.update(deposited=c["deposited"], deposited_on=c["deposited_on"],
+                                   still=c["still"])
+                    back.append(row)
     back.sort(key=lambda r: r["date"], reverse=True)
     people = sorted(owes.values(), key=lambda r: -r["total"])
     return {"total": round(sum(r["total"] for r in people), 2), "people": len(people),

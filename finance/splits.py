@@ -192,6 +192,30 @@ def _linked(charge_id: str, transactions: list[Transaction]) -> list[Transaction
     return sorted((t for t in transactions if charge_id in t.repays_all), key=lambda t: t.date)
 
 
+def payments(records: list[dict], dates: dict[str, str] | None = None) -> list[dict]:
+    """SPLIT-15: cash or app records as the payments she recorded. A payment
+    only partly deposited is cut into pieces (`origin`), but she always
+    sees one: "$250.00 cash · Nov 3", and under it "$200.00 deposited
+    Nov 12 · $50.00 still cash". `dates` maps a deposit part to its day."""
+    dates = dates or {}
+    groups: dict[int, list[dict]] = {}
+    for c in records:
+        groups.setdefault(c.get("origin") or c["id"], []).append(c)
+    out = []
+    for root, pieces in groups.items():
+        first = min(pieces, key=lambda c: c["id"])
+        total = round(sum(c["amount"] for c in pieces), 2)
+        held = [c for c in pieces if c.get("deposit_id")]
+        deposited = round(sum(c["amount"] for c in held), 2)
+        days = sorted(dates.get(c["deposit_id"], "") for c in held if dates.get(c["deposit_id"]))
+        out.append({"id": root, "ids": sorted(c["id"] for c in pieces), "amount": total,
+                    "day": first["day"], "via": first.get("via") or "cash", "app": first.get("app"),
+                    "deposited": deposited, "deposited_on": days[-1] if days else None,
+                    "still": round(total - deposited, 2)})
+    out.sort(key=lambda p: (p["day"], p["id"]))
+    return out
+
+
 def people_status(charge: Transaction, split: dict, transactions: list[Transaction],
                   payer: dict[str, str]) -> list[dict]:
     """Each person in a split: their part, what they've paid back and when,
@@ -221,7 +245,11 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
         for c in p.get("cash") or []:
             paid[p["name"]] = round(paid[p["name"]] + c["amount"], 2)
             when[p["name"]] = max(when.get(p["name"], ""), c["day"])
+    # Deposits holding cash are parts; their day is the deposit's (SPLIT-15).
+    dates = {t.fingerprint: t.date[:10] for t in transactions if (t.raw or {}).get("part_of")}
     unnamed: list[Transaction] = []
+    shared: dict[str, list[dict]] = {}
+    names_of: dict[str, str] = {}
     for t in sorted(_linked(charge.fingerprint, transactions), key=lambda x: x.date):
         who = payer.get(t.fingerprint)
         if who not in paid and who:
@@ -238,6 +266,16 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
             continue
         paid[who] = round(paid[who] + t.part_for(charge.fingerprint), 2)
         when[who] = t.date[:10]
+        if len(t.repays_all) > 1:
+            # SPLIT-16 (S-03f): a payback that also paid back other
+            # purchases; removing them here unlinks only this purchase's part.
+            names_of = names_of or {x.fingerprint: x.merchant for x in transactions}
+            text = f"{t.description or ''} {t.merchant or ''}".lower().replace("-", "")
+            shared.setdefault(who, []).append({
+                "whole": round(t.paid_part, 2), "here": t.part_for(charge.fingerprint),
+                "others": [names_of.get(c) or "another purchase" for c in t.repays_all
+                           if c != charge.fingerprint],
+                "word": "e-Transfer" if "etransfer" in text or "interac" in text else "payment"})
     # A payback nobody's name is on (a bank that leaves the sender off, or
     # one linked from search) still counts (2026-10-24): to whoever owes
     # exactly that much, else the first who still owes anything. Only these:
@@ -260,6 +298,13 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
                     "cash": cash.get(p["name"], 0.0),
                     "app": app.get(p["name"], 0.0),
                     "cash_ids": [c["id"] for c in p.get("cash") or []],
+                    # SPLIT-15: each cash or app payment once, as recorded.
+                    "payments": payments(p.get("cash") or [], dates),
+                    # SPLIT-14: "Paid back · PayPal · Nov 13"; the newest named app.
+                    "app_name": next((c["app"] for c in sorted(p.get("cash") or [], key=lambda c: (c["day"], c["id"]),
+                                                               reverse=True)
+                                      if c.get("via") == "app" and c.get("app")), None),
+                    "shared": shared.get(p["name"], []),
                     "let_go": p.get("let_go")})
     return out
 

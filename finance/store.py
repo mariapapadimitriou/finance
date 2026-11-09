@@ -529,7 +529,9 @@ CREATE TABLE IF NOT EXISTS txn_split_cash (
     amount     REAL NOT NULL,
     day        TEXT NOT NULL,
     deposit_id TEXT,
-    via        TEXT
+    via        TEXT,
+    app        TEXT,
+    origin     INTEGER
 );
 -- Let the rest go (THL-291): what someone's part was before she let the
 -- rest of it go, so it can be put back.
@@ -793,6 +795,7 @@ class Store:
         self._migrate_joint_share()
         self._migrate_split_weight()
         self._migrate_split_cash_via()
+        self._migrate_split_cash_app_origin()
         self._migrate_joint_people()
         self._migrate_travel_ownership()
         self._drop_bank_funded_budgets()
@@ -1064,6 +1067,17 @@ class Store:
                 c.execute("ALTER TABLE txn_split_cash ADD COLUMN via TEXT")
         except Exception:                                        # noqa: BLE001
             return
+
+    def _migrate_split_cash_app_origin(self) -> None:
+        """Add `txn_split_cash.app`, the app's name she typed (SPLIT-14,
+        S-06 v3), and `origin`, the record a partly deposited payment was
+        cut from (SPLIT-15), so it is listed and counted as one payment."""
+        for col in ("app TEXT", "origin INTEGER"):
+            try:
+                with self.conn() as c:
+                    c.execute(f"ALTER TABLE txn_split_cash ADD COLUMN {col}")
+            except Exception:                                    # noqa: BLE001
+                continue
 
     def _migrate_joint_people(self) -> None:
         """Who a joint account is shared with (`joint_accounts.people`, a JSON
@@ -1780,8 +1794,8 @@ class Store:
             heads = c.execute("SELECT txn_id, mode, watch FROM txn_splits").fetchall()
             people = c.execute("SELECT txn_id, pos, name, amount, weight FROM txn_split_people "
                                "ORDER BY txn_id, pos").fetchall()
-            cash = c.execute("SELECT id, txn_id, name, amount, day, deposit_id, via FROM txn_split_cash "
-                             "ORDER BY id").fetchall()
+            cash = c.execute("SELECT id, txn_id, name, amount, day, deposit_id, via, app, origin "
+                             "FROM txn_split_cash ORDER BY id").fetchall()
             gone = c.execute("SELECT txn_id, name, was, day FROM txn_split_let_go").fetchall()
         out = {r["txn_id"]: {"mode": r["mode"], "watch": bool(r["watch"]), "people": []}
                for r in heads}
@@ -1796,7 +1810,8 @@ class Store:
                 if p["name"] == r["name"]:
                     p.setdefault("cash", []).append(
                         {"id": r["id"], "amount": round(float(r["amount"]), 2), "day": r["day"],
-                         "deposit_id": r["deposit_id"], "via": r["via"] or "cash"})
+                         "deposit_id": r["deposit_id"], "via": r["via"] or "cash",
+                         "app": r["app"], "origin": r["origin"] or r["id"]})
         for r in gone:
             for p in (out.get(r["txn_id"]) or {}).get("people", []):
                 if p["name"] == r["name"]:
@@ -1805,12 +1820,49 @@ class Store:
 
     # Cash in hand and Let the rest go (THL-291).
     def add_split_cash(self, txn_id: str, name: str, amount: float, day: str,
-                       via: str | None = None) -> int:
-        """Cash in hand, or `via="app"` for another app (SPLIT-11)."""
+                       via: str | None = None, app: str | None = None,
+                       origin: int | None = None) -> int:
+        """Cash in hand, or `via="app"` for another app (SPLIT-11), named
+        `app` when she said which (SPLIT-14). `origin` is the payment a
+        partly deposited piece was cut from (SPLIT-15)."""
+        app = (" ".join(str(app).split())[:30] or None) if via == "app" and app else None
         with self.conn() as c:
-            cur = c.execute("INSERT INTO txn_split_cash (txn_id, name, amount, day, via) VALUES (?,?,?,?,?)",
-                            (txn_id, name, round(amount, 2), day, via if via == "app" else None))
+            cur = c.execute("INSERT INTO txn_split_cash (txn_id, name, amount, day, via, app, origin) "
+                            "VALUES (?,?,?,?,?,?,?)",
+                            (txn_id, name, round(amount, 2), day, via if via == "app" else None, app, origin))
             return int(cur.lastrowid)
+
+    def split_apps(self, limit: int = 4) -> list[str]:
+        """S-06 v3 "Used before": the app names she has typed, newest
+        first, one per name whatever its case (SPLIT-14)."""
+        with self.conn() as c:
+            rows = c.execute("SELECT app FROM txn_split_cash WHERE app IS NOT NULL AND app != '' "
+                             "ORDER BY day DESC, id DESC").fetchall()
+        out: list[str] = []
+        for r in rows:
+            if r["app"].casefold() not in {a.casefold() for a in out}:
+                out.append(r["app"])
+            if len(out) >= limit:
+                break
+        return out
+
+    def rejoin_split_cash(self) -> None:
+        """SPLIT-15: pieces of one cash payment that no deposit holds any
+        more join back into one record, the first of them."""
+        with self.conn() as c:
+            rows = c.execute("SELECT id, amount, COALESCE(origin, id) AS root FROM txn_split_cash "
+                             "WHERE deposit_id IS NULL ORDER BY id").fetchall()
+            groups: dict[int, list] = {}
+            for r in rows:
+                groups.setdefault(r["root"], []).append(r)
+            for pieces in groups.values():
+                if len(pieces) < 2:
+                    continue
+                keep, rest = pieces[0], pieces[1:]
+                total = round(sum(float(p["amount"]) for p in pieces), 2)
+                c.execute("UPDATE txn_split_cash SET amount = ? WHERE id = ?", (total, keep["id"]))
+                for p in rest:
+                    c.execute("DELETE FROM txn_split_cash WHERE id = ?", (p["id"],))
 
     def set_split_cash_amount(self, cash_id: int, amount: float) -> None:
         """Cash partly deposited (S-13 v2): what this record still holds."""

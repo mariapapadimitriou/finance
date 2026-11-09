@@ -430,10 +430,17 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $splitting) {
-            SplitSheet(t: t, api: app.api, recent: recent) { done in
+            SplitSheet(t: t, api: app.api, recent: recent, onSaved: { done in
                 splitting = false
                 Task { await run { done } }
-            }
+            }, onRemoved: { title, undo in
+                // SPLIT-16: "Priya removed · Undo" puts the link back.
+                splitting = false
+                Task {
+                    await run { nil }
+                    withAnimation { toast = (title, undoing(undo)) }
+                }
+            })
         }
         .sheet(item: $marking) { person in
             MarkPaidSheet(t: t, person: person, api: app.api) { done in

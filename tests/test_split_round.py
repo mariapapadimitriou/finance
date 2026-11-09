@@ -288,4 +288,150 @@ class TestAnotherAppAndPartlyDeposited:
         assert r.status_code == 200, r.get_json()
         assert people(client, i["AIRBNB"])["Priya"]["cash"] == 250
         left = client.get(f"/api/transactions/{i['DEPOSIT 2']}/cash-matches").get_json()["cash"]
-        assert sorted(c["amount"] for c in left) == [50.0, 50.0]
+        # SPLIT-15: the replaced part rejoined the payment first, so the
+        # rest is one $100 remainder of the $250, not two $50 records.
+        assert [(c["amount"], c.get("of")) for c in left] == [(100.0, 250.0)]
+
+
+class TestWhichApp:
+    """SPLIT-14, S-06 v3 / v3a: Another app, named."""
+
+    def test_the_app_name_is_kept_trimmed_and_capped(self, client):
+        i = add(client, tx("LOBLAWS", 84.12, "Groceries"))
+        split(client, i["LOBLAWS"], mode="even", people=[{"name": "Sam"}])
+        r = client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash",
+                        json={"name": "Sam", "amount": 42.06, "day": day(1), "via": "app", "app": "  PayPal  "})
+        assert r.status_code == 201 and r.get_json()["title"] == "Sam paid $42.06 through PayPal."
+        sam = people(client, i["LOBLAWS"])["Sam"]
+        assert sam["app_name"] == "PayPal" and sam["app"] == 42.06 and sam["owes"] == 0
+        long = "A" * 45
+        client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash",
+                    json={"name": "Sam", "amount": 1, "day": day(0), "via": "app", "app": long})
+        assert people(client, i["LOBLAWS"])["Sam"]["app_name"] == "A" * 30
+
+    def test_blank_is_another_app_and_cash_never_keeps_a_name(self, client):
+        i = add(client, tx("LOBLAWS", 84.12, "Groceries"))
+        split(client, i["LOBLAWS"], mode="even", people=[{"name": "Sam"}, {"name": "Priya"}])
+        r = client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash",
+                        json={"name": "Sam", "amount": 28.04, "via": "app", "app": "   "})
+        assert r.get_json()["title"] == "Sam paid $28.04 through another app."
+        client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash",
+                    json={"name": "Priya", "amount": 28.04, "via": "cash", "app": "PayPal"})
+        p = people(client, i["LOBLAWS"])
+        assert p["Sam"]["app_name"] is None and p["Priya"]["app_name"] is None
+        assert client.get("/api/split/apps").get_json()["apps"] == []
+
+    def test_used_before_newest_first_one_per_name(self, client):
+        i = add(client, tx("LOBLAWS", 84.12, "Groceries"))
+        split(client, i["LOBLAWS"], mode="even", people=[{"name": "Sam"}])
+        for n, app in enumerate(["Wise", "paypal", "PayPal", "Revolut", "Cash App", "Zelle"]):
+            client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash",
+                        json={"name": "Sam", "amount": 1, "day": day(10 - n), "via": "app", "app": app})
+        assert client.get("/api/split/apps").get_json()["apps"] == ["Zelle", "Cash App", "Revolut", "PayPal"]
+
+    def test_owed_to_you_says_which_app(self, client):
+        when = TODAY.replace(day=1).isoformat()
+        i = add(client, tx("LOBLAWS", 84.12, "Groceries"))
+        split(client, i["LOBLAWS"], mode="even", people=[{"name": "Sam"}])
+        client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash",
+                    json={"name": "Sam", "amount": 42.06, "day": when, "via": "app", "app": "PayPal"})
+        back = client.get("/api/owed").get_json()["paid_back"]
+        assert [(b["name"], b.get("app"), b.get("app_name")) for b in back] == [("Sam", True, "PayPal")]
+
+
+class TestCashOnePayment:
+    """SPLIT-15: a partly deposited cash payment is one payment."""
+
+    def setup(self, c, when):
+        i = add(c, tx("AIRBNB", 500.0, "Travel"),
+                tx("DEPOSIT", -200.0, when=when, merchant="Deposit at branch"),
+                tx("DEPOSIT 2", -50.0, when=when, merchant="Deposit at branch"))
+        split(c, i["AIRBNB"], mode="even", people=[{"name": "Priya"}])
+        c.post(f"/api/transactions/{i['AIRBNB']}/split/cash", json={"name": "Priya", "amount": 250, "day": when})
+        cid = c.get(f"/api/transactions/{i['DEPOSIT']}/cash-matches").get_json()["cash"][0]["id"]
+        r = c.post(f"/api/transactions/{i['DEPOSIT']}/parts",
+                   json={"parts": [{"kind": "cash", "amount": 200, "cash_ids": [cid]}]})
+        assert r.status_code == 200, r.get_json()
+        return i
+
+    def test_listed_once_with_what_was_deposited(self, client):
+        when = TODAY.replace(day=1).isoformat()
+        i = self.setup(client, when)
+        priya = people(client, i["AIRBNB"])["Priya"]
+        assert priya["cash"] == 250 and priya["paid"] == 250 and priya["owes"] == 0
+        assert [(p["amount"], p["deposited"], p["still"], p["deposited_on"]) for p in priya["payments"]] \
+            == [(250.0, 200.0, 50.0, when)]
+        back = client.get("/api/owed").get_json()["paid_back"]
+        assert [(b["amount"], b["deposited"], b["still"]) for b in back] == [(250.0, 200.0, 50.0)]
+
+    def test_the_rest_is_a_remainder_not_a_payment(self, client):
+        i = self.setup(client, TODAY.replace(day=1).isoformat())
+        left = client.get(f"/api/transactions/{i['DEPOSIT 2']}/cash-matches").get_json()["cash"]
+        assert [(c["name"], c["amount"], c["of"]) for c in left] == [("Priya", 50.0, 250.0)]
+
+    def test_unlinking_the_deposit_joins_it_back(self, client):
+        i = self.setup(client, TODAY.replace(day=1).isoformat())
+        assert len(client.st.split_cash()) == 2
+        r = client.delete(f"/api/transactions/{i['DEPOSIT']}/parts")
+        assert r.status_code == 200, r.get_json()
+        rows = client.st.split_cash()
+        assert [(c["amount"], c["deposit_id"]) for c in rows] == [(250.0, None)]
+        priya = people(client, i["AIRBNB"])["Priya"]
+        assert [(p["amount"], p["deposited"]) for p in priya["payments"]] == [(250.0, 0.0)]
+        left = client.get(f"/api/transactions/{i['DEPOSIT 2']}/cash-matches").get_json()["cash"]
+        assert [(c["amount"], c.get("of")) for c in left] == [(250.0, None)]
+
+
+class TestRemoveOnlyHere:
+    """SPLIT-16: removing someone unlinks only this purchase's part."""
+
+    def setup(self, c):
+        i = add(c, tx("LOBLAWS", 84.12, "Groceries"), tx("COSTCO", 63.92, "Shopping"),
+                tx("E-TRANSFER FROM PRIYA", -60.0, when=day(1), merchant="Priya"))
+        split(c, i["LOBLAWS"], mode="even", people=[{"name": "Sam"}, {"name": "Priya"}])
+        split(c, i["COSTCO"], mode="even", people=[{"name": "Priya"}])
+        c.st.link_payback(i["LOBLAWS"], i["E-TRANSFER FROM PRIYA"], "Priya", 28.04)
+        c.st.set_payback_more(i["E-TRANSFER FROM PRIYA"], [(i["COSTCO"], 31.96)])
+        return i
+
+    def test_the_alert_knows_it_paid_other_purchases(self, client):
+        i = self.setup(client)
+        priya = people(client, i["LOBLAWS"])["Priya"]
+        assert priya["shared"] == [{"whole": 60.0, "here": 28.04, "others": ["COSTCO"], "word": "e-Transfer"}]
+        assert people(client, i["LOBLAWS"])["Sam"]["shared"] == []
+
+    def test_costco_stays_paid_and_the_rest_is_left_to_sort(self, client):
+        i = self.setup(client)
+        r = split(client, i["LOBLAWS"], mode="amount", you=56.08, people=[{"name": "Sam", "amount": 28.04}])
+        assert r.status_code == 200, r.get_json()
+        assert list(people(client, i["LOBLAWS"])) == ["Sam"]
+        costco = people(client, i["COSTCO"])["Priya"]
+        assert costco["paid"] == 31.96 and costco["owes"] == 0
+        rest = next(q for q in client.get("/api/review").get_json()["money_in"] if q.get("rest"))
+        assert rest["txn"]["amount"] == -28.04 and rest["rest"]["whole"] == 60.0
+        assert "$28.04 left to sort from a $60.00 deposit." == rest["reason"]
+        parts = detail(client, i["E-TRANSFER FROM PRIYA"])["parts"]
+        assert sorted(p["kind"] for p in parts) == ["payback", "rest"]
+
+    def test_undo_puts_the_link_back_on_loblaws(self, client):
+        i = self.setup(client)
+        r = split(client, i["LOBLAWS"], mode="amount", you=56.08, people=[{"name": "Sam", "amount": 28.04}])
+        undo = r.get_json()["undo"]
+        r = client.post("/api/transactions/undo", json=undo)
+        assert r.status_code == 200, r.get_json()
+        priya = people(client, i["LOBLAWS"])["Priya"]
+        assert priya["paid"] == 28.04 and priya["owes"] == 0
+        assert people(client, i["COSTCO"])["Priya"]["paid"] == 31.96
+        t = next(x for x in client.st.all_transactions() if x.fingerprint == i["E-TRANSFER FROM PRIYA"])
+        assert t.repays == i["LOBLAWS"] and t.also_repays == {i["COSTCO"]: 31.96} and not t.excluded
+        assert not client.st.parts().get(i["E-TRANSFER FROM PRIYA"])
+        assert not any(q.get("rest") for q in client.get("/api/review").get_json()["money_in"])
+
+    def test_a_payback_for_only_this_purchase_goes_back_whole(self, client):
+        i = add(client, tx("LOBLAWS", 84.12, "Groceries"),
+                tx("E-TRANSFER FROM PRIYA", -28.04, when=day(1), merchant="Priya"))
+        split(client, i["LOBLAWS"], mode="even", people=[{"name": "Sam"}, {"name": "Priya"}])
+        link(client, i["LOBLAWS"], i["E-TRANSFER FROM PRIYA"], "Priya")
+        split(client, i["LOBLAWS"], mode="amount", you=56.08, people=[{"name": "Sam", "amount": 28.04}])
+        t = next(x for x in client.st.all_transactions() if x.fingerprint == i["E-TRANSFER FROM PRIYA"])
+        assert t.repays is None and not client.st.parts().get(t.fingerprint)

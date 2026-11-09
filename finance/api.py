@@ -524,19 +524,27 @@ def _edit_split(st, t, old: dict | None, people: list[dict]) -> tuple[dict, str 
                 theirs.append(x)
     marks: dict = {}
     kinds = st.payback_kinds()
+    from . import parts as dp
     for x in theirs:
         more = st.payback_more(x.fingerprint)
-        if x.repays != t.fingerprint:
-            # One payback, several purchases: only this one comes off it.
-            marks.setdefault("payback_more", {})[x.fingerprint] = more
-            st.set_payback_more(x.fingerprint, [(c, a) for c, a in more if c != t.fingerprint])
-            continue
         marks.setdefault("paybacks", {})[x.fingerprint] = {
             "charge": x.repays, "kind": kinds.get(x.fingerprint),
             "person": payer.get(x.fingerprint), "amount": x.repays_amount}
         if more:
             marks.setdefault("payback_more", {})[x.fingerprint] = more
+        # SPLIT-16 (2026-11-09): only the part that pays back this purchase
+        # comes off. A payback that also paid back other purchases keeps
+        # those links, as parts of the deposit, and what paid this one is
+        # "$28.04 left to sort" in Needs a look. Undo puts it back whole.
+        others = [(c, x.part_for(c)) for c in x.repays_all if c != t.fingerprint]
         st.unlink_payback(x.fingerprint)
+        if not others:
+            continue
+        who = payer.get(x.fingerprint)
+        fresh = st.get_transaction(x.fingerprint) or x
+        dp.apply(st, fresh, [{"kind": "payback", "charge": c, "amount": a, **({"person": who} if who else {})}
+                             for c, a in others], later=True)
+        marks.setdefault("unparts", []).append(x.fingerprint)
     for p in gone:
         for c in p.get("cash") or []:
             st.remove_split_cash(c["id"])

@@ -635,15 +635,46 @@ struct Transaction: Decodable, Identifiable, Hashable {
             var over: Double? = nil
             /// Their % or shares, so Edit split opens the way it was saved (S-03e).
             var weight: Double? = nil
+            /// The app she named for their newest app payment (SPLIT-14, S-06 v3).
+            var appName: String? = nil
+            /// Each cash or app payment once, as recorded (SPLIT-15).
+            var payments: [Payment]? = nil
+            /// Paybacks of theirs that also paid back other purchases (SPLIT-16).
+            var shared: [Shared]? = nil
             var id: String { name }
 
             struct LetGo: Decodable, Hashable { let was: Double; let day: String }
+
+            /// "$250.00 cash · Nov 3", and "$200.00 deposited Nov 12 · $50.00 still cash".
+            struct Payment: Decodable, Hashable {
+                let amount: Double
+                let day: String
+                let via: String?
+                let app: String?
+                let deposited: Double
+                let depositedOn: String?
+                let still: Double
+
+                enum CodingKeys: String, CodingKey {
+                    case amount, day, via, app, deposited, still
+                    case depositedOn = "deposited_on"
+                }
+            }
+
+            /// "Her $60.00 e-Transfer also paid back Costco" (S-03f, SPLIT-16).
+            struct Shared: Decodable, Hashable {
+                let whole: Double
+                let here: Double
+                let others: [String]
+                let word: String
+            }
 
             /// Their share before any let go: what Edit split shows (S-03e).
             var share: Double { letGo?.was ?? amount }
 
             enum CodingKeys: String, CodingKey {
-                case name, amount, paid, owes, cash, app, over, weight
+                case name, amount, paid, owes, cash, app, over, weight, payments, shared
+                case appName = "app_name"
                 case paidOn = "paid_on"
                 case cashIds = "cash_ids"
                 case letGo = "let_go"
@@ -883,6 +914,19 @@ struct OwedOverview: Decodable {
         let date: String
         let amount: Double
         let cash: Bool?
+        /// Through another app, and which (SPLIT-14).
+        var app: Bool? = nil
+        var appName: String? = nil
+        /// SPLIT-15: how much of a cash payment a deposit holds, and when.
+        var deposited: Double? = nil
+        var depositedOn: String? = nil
+        var still: Double? = nil
+
+        enum CodingKeys: String, CodingKey {
+            case name, merchant, date, amount, cash, app, deposited, still
+            case appName = "app_name"
+            case depositedOn = "deposited_on"
+        }
     }
 
     enum CodingKeys: String, CodingKey {

@@ -173,6 +173,8 @@ struct PartsSheet: View {
         let amount: Double
         let day: String
         let merchant: String?
+        /// SPLIT-15: the whole payment this is what's left of.
+        var of: Double? = nil
     }
 
     /// A purchase someone owes on, or one she searched for.
@@ -309,7 +311,9 @@ struct PartsSheet: View {
                     let use = cashUse[c.id]
                     let partly = use.map { cents($0) < cents(c.amount) } ?? false
                     // S-13 v2: "$250.00 cash · Nov 1" when only part of it went in.
-                    pickRow(name: c.name, sub: [partly ? "\(Format.amount(c.amount)) cash" : c.merchant,
+                    // SPLIT-15: a remainder reads "$50.00 left of $250.00 cash · Nov 3".
+                    pickRow(name: c.name, sub: [c.of.map { "\(Format.amount(c.amount)) left of \(Format.amount($0)) cash" }
+                                                ?? (partly ? "\(Format.amount(c.amount)) cash" : c.merchant),
                                                 Format.short(c.day)].compactMap { $0 }
                                 .filter { !$0.isEmpty }.joined(separator: " · "),
                             amount: use ?? c.amount, on: cashPicked.contains(c.id)) {
@@ -1035,10 +1039,16 @@ struct OwedView: View {
                         GlassCard {
                             ForEach(Array(owed.paidBack.enumerated()), id: \.offset) { i, b in
                                 if i > 0 { RowSeparator(inset: 64) }
+                                // SPLIT-14: "PayPal" or "Another app"; SPLIT-15: one cash
+                                // payment, with what a deposit holds under it.
                                 personRow(b.name ?? "Someone",
-                                          sub: [b.merchant, Format.short(b.date), b.cash == true ? "Cash" : nil]
+                                          sub: [b.merchant, Format.short(b.date),
+                                                b.cash == true ? "Cash" : b.app == true ? (b.appName ?? "Another app") : nil]
                                             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "),
-                                          amount: b.amount, tone: Pearl.moneyIn)
+                                          amount: b.amount, tone: Pearl.moneyIn,
+                                          note: b.deposited.map { d in
+                                              "\(Format.amount(d)) deposited" + (b.depositedOn.map { " \(Format.short($0))" } ?? "")
+                                                  + " · \(Format.amount(b.still ?? 0)) still cash" })
                             }
                         }
                     }
@@ -1082,12 +1092,16 @@ struct OwedView: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    private func personRow(_ name: String, sub: String, amount: Double, tone: Color) -> some View {
+    private func personRow(_ name: String, sub: String, amount: Double, tone: Color,
+                           note: String? = nil) -> some View {
         HStack(spacing: 12) {
             Initials(name: name, size: 34)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
                 Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
+                if let note = note {
+                    Text(note).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                }
             }
             Spacer(minLength: 8)
             Text(Format.amount(amount)).font(Nacre.headline).monospacedDigit().foregroundColor(tone)

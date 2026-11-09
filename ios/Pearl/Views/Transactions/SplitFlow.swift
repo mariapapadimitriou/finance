@@ -23,6 +23,9 @@ struct SplitSheet: View {
     /// goes with the deposit's parts in one save. Gets the split as it would
     /// be sent and the first person's share.
     var onHold: (([String: Any], Double) -> Void)? = nil
+    /// SPLIT-16: saved with someone who had paid taken out; the toast's
+    /// title and the server's Undo.
+    var onRemoved: ((String, JSONValue?) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var people: [String]
@@ -45,7 +48,13 @@ struct SplitSheet: View {
 
     init(t: Transaction, api: APIClient, recent: [String], with names: [String]? = nil,
          title: String? = nil, saveTitle: String = "Save",
-         onHold: (([String: Any], Double) -> Void)? = nil, onSaved: @escaping (String) -> Void) {
+         onHold: (([String: Any], Double) -> Void)? = nil, onSaved: @escaping (String) -> Void,
+         onRemoved: ((String, JSONValue?) -> Void)? = nil) {
+        self.onRemoved = onRemoved
+        // S-03 Dark (designBOT round 5): the selected split method is
+        // rgb(0.30, 0.33, 0.58), not a token; light keeps the system white.
+        // Set before the picker is made, and put back when the sheet goes.
+        UISegmentedControl.appearance().selectedSegmentTintColor = Self.segment
         self.t = t
         self.api = api
         self.recent = recent
@@ -112,6 +121,7 @@ struct SplitSheet: View {
         .background(SheetBackground())
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .onDisappear { UISegmentedControl.appearance().selectedSegmentTintColor = nil }
         .alert(removing.map { "Remove \($0)?" } ?? "",
                isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
                presenting: removing) { name in
@@ -141,8 +151,19 @@ struct SplitSheet: View {
     /// forgotten with them instead.
     private func removeWords(_ name: String) -> String {
         guard let p = saved(name) else { return "" }
-        let bank = bankPaid(name), kept = (p.cash ?? 0) + (p.app ?? 0)
+        let shared = p.shared ?? []
+        let bank = bankPaid(name) - shared.map(\.here).reduce(0, +), kept = (p.cash ?? 0) + (p.app ?? 0)
         var words: [String] = []
+        // SPLIT-16: a payback that also paid back other purchases loses only
+        // this purchase's part. (designBOT's copy says "Her"; Pearl doesn't
+        // know anyone's pronouns, so it says their name.)
+        for s in shared {
+            let others = s.others.count <= 2 ? s.others.joined(separator: " and ")
+                : s.others.dropLast().joined(separator: ", ") + " and " + (s.others.last ?? "")
+            words.append("\(name)’s \(Format.amount(s.whole)) \(s.word) also paid back \(others). "
+                         + "Removing \(name) here unlinks only the \(Format.amount(s.here)) for \(t.merchant); "
+                         + "\(others) \(s.others.count == 1 ? "stays" : "stay") paid back.")
+        }
         if bank >= 0.005 {
             words.append("\(name) paid you \(Format.amount(bank))"
                          + (p.paidOn.map { " on \(Format.short($0))" } ?? "")
@@ -649,6 +670,9 @@ struct SplitSheet: View {
         }
     }
 
+    static let segment = UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 0.30, green: 0.33, blue: 0.58, alpha: 1) : .white }
+
     static func plain(_ x: Double) -> String {
         x.rounded() == x ? String(Int(x)) : String(format: "%.2f", x)
     }
@@ -695,8 +719,16 @@ struct SplitSheet: View {
             return
         }
         do {
-            let _: OK = try await api.put("api/transactions/\(t.id)/split", body)
+            struct Reply: Decodable { let undo: JSONValue? }
+            let reply: Reply = try await api.put("api/transactions/\(t.id)/split", body)
             let n = people.count + (withMe ? 1 : 0)
+            // SPLIT-16: someone who had paid was removed: "Priya removed ·
+            // Undo" puts their payback back on this purchase.
+            let gone = (t.splitting?.people ?? []).filter { p in p.paid >= 0.005 && !people.contains(p.name) }
+            if let onRemoved = onRemoved, let first = gone.first {
+                onRemoved(gone.count == 1 ? "\(first.name) removed" : "\(gone.count) people removed", reply.undo)
+                return
+            }
             onSaved(n == 2 ? "Split with \(people[0])." : "Split \(n) ways.")
         } catch {
             self.error = error.localizedDescription
@@ -778,6 +810,9 @@ struct SplitPeople: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(p.name).font(Nacre.body).foregroundColor(Pearl.ink)
                 Text(status(p)).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                if let line = deposited(p) {
+                    Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
+                }
                 if p.paid >= 0.005 && p.owes >= 0.005 {
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
@@ -811,7 +846,18 @@ struct SplitPeople: View {
             return p.paid >= 0.005 ? "Paid \(Format.amount(p.paid)) of \(Format.amount(p.amount))" : "Owes you"
         }
         let how = (p.cash ?? 0) >= p.paid - 0.005 && (p.cash ?? 0) > 0 ? "Cash" : "Paid back"
-        return [how, p.paidOn.map { Format.short($0) }].compactMap { $0 }.joined(separator: " · ")
+        // SPLIT-14 (S-06 v3): "Paid back · PayPal · Nov 13", or "Another app" when unnamed.
+        let app: String? = (p.app ?? 0) >= p.paid - 0.005 && (p.app ?? 0) > 0 ? (p.appName ?? "Another app") : nil
+        return [how, app, p.paidOn.map { Format.short($0) }].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// SPLIT-15: a cash payment a deposit holds part of, once: "$200.00
+    /// deposited Nov 12 · $50.00 still cash".
+    private func deposited(_ p: Transaction.Splitting.Person) -> String? {
+        guard let pay = p.payments?.last(where: { $0.deposited >= 0.005 && $0.still >= 0.005 }) else { return nil }
+        return "\(Format.amount(pay.deposited)) deposited"
+            + (pay.depositedOn.map { " \(Format.short($0))" } ?? "")
+            + " · \(Format.amount(pay.still)) still cash"
     }
 
 }
@@ -836,6 +882,9 @@ struct MarkPaidSheet: View {
     /// S-29: "Search any purchase" past the likely ones.
     @State private var query = ""
     @State private var found: [Candidate] = []
+    /// S-06 v3 (SPLIT-14): which app, typed; and the ones she named before.
+    @State private var appName = ""
+    @State private var usedApps: [String] = []
 
     /// A deposit that could pay it back, and how much of it could.
     struct Candidate: Decodable, Identifiable, Hashable {
@@ -912,10 +961,23 @@ struct MarkPaidSheet: View {
                 RowSeparator()
                 option("cash", "Cash in hand", "Pearl will match it if you deposit it")
                 RowSeparator()
-                option("app", "Another app", "PayPal, Wise, Apple Cash…")
+                option("app", "Another app", "Pearl won’t look for it in your bank")
             }
             if how != "bank" {
                 GlassCard {
+                    if how == "app" {
+                        // S-06 v3: App on top, only for Another app. Optional.
+                        HStack {
+                            Text("App").font(Nacre.body).foregroundColor(Pearl.ink)
+                            TextField("", text: $appName, prompt: Text("Which app?").foregroundColor(Pearl.muted))
+                                .font(Nacre.body).multilineTextAlignment(.trailing)
+                                .textInputAutocapitalization(.words).autocorrectionDisabled()
+                                .foregroundColor(Pearl.muted)
+                                .onChange(of: appName) { v in if v.count > 30 { appName = String(v.prefix(30)) } }
+                        }
+                        .padding(.horizontal, 16).frame(minHeight: 52)
+                        RowSeparator()
+                    }
                     HStack {
                         Text("Amount").font(Nacre.body).foregroundColor(Pearl.ink)
                         TextField("", text: $amount).font(Nacre.body).multilineTextAlignment(.trailing)
@@ -928,8 +990,47 @@ struct MarkPaidSheet: View {
                     }
                     .tint(Pearl.action).padding(.horizontal, 16).frame(minHeight: 52)
                 }
+                if how == "app" { appHelp }
             }
         }
+        .task { await loadApps() }
+    }
+
+    /// S-06 v3: "Used before" chips (S-06 v3a: none yet), and what the
+    /// split will say.
+    @ViewBuilder private var appHelp: some View {
+        if !usedApps.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Text("Used before").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    ForEach(usedApps, id: \.self) { a in
+                        let on = a.caseInsensitiveCompare(appName.trimmingCharacters(in: .whitespaces)) == .orderedSame
+                        Button(a) { appName = a }
+                            .font(Nacre.subheadline).foregroundColor(Pearl.ink)
+                            .padding(.horizontal, 14).frame(minHeight: 36)
+                            .background(Capsule().fill(on ? Pearl.answered : Pearl.card))
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(on ? .isSelected : [])
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            Text("Shows on the split as “Paid back · \(appLabel) · \(Format.short(Format.isoDay(when)))”. Apps you’ve named before appear here.")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 16)
+        } else {
+            Text("Name the app so the split shows where it came from. You can leave it blank: it then reads “Paid back · Another app”.")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 16)
+        }
+    }
+
+    private var appLabel: String {
+        let a = appName.trimmingCharacters(in: .whitespaces)
+        return a.isEmpty ? "Another app" : a
+    }
+
+    private func loadApps() async {
+        struct Reply: Decodable { let apps: [String] }
+        if let r: Reply = try? await api.get("api/split/apps") { usedApps = r.apps }
     }
 
     private func option(_ key: String, _ title: String, _ sub: String) -> some View {
@@ -1105,9 +1206,12 @@ struct MarkPaidSheet: View {
                 }
                 // SPLIT-11: another app is recorded like cash, but never
                 // offered as cash a deposit holds.
-                let _: OK = try await api.post("api/transactions/\(t.id)/split/cash",
-                                               ["name": person.name, "amount": value, "day": Format.isoDay(when),
-                                                "via": how == "app" ? "app" : "cash"])
+                var body: [String: Any] = ["name": person.name, "amount": value, "day": Format.isoDay(when),
+                                           "via": how == "app" ? "app" : "cash"]
+                // SPLIT-14: the app's name, when she gave one.
+                let named = appName.trimmingCharacters(in: .whitespaces)
+                if how == "app" && !named.isEmpty { body["app"] = named }
+                let _: OK = try await api.post("api/transactions/\(t.id)/split/cash", body)
                 onDone("\(person.name) paid \(Format.amount(value)).")
             }
             error = nil

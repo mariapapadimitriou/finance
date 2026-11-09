@@ -1314,8 +1314,15 @@ def undo_marks(store, marks: dict) -> int:
     """Put back what `apply` recorded in `marks`. Returns how many."""
     if not isinstance(marks, dict):
         raise Problem("Nothing to undo.")
+    # SPLIT-16: a payback cut into parts when its person left a split is
+    # one payback again before its links are put back.
+    unparts = [str(d) for d in marks.get("unparts") or [] if isinstance(d, str)]
+    if unparts:
+        from . import parts as dp
+        for did in unparts:
+            dp.undo(store, did)
     known = {t.fingerprint: t for t in store.all_transactions()}
-    n = 0
+    n = len(unparts)
     for tid, reason in (marks.get("exclusions") or {}).items():
         if tid not in known:
             continue
