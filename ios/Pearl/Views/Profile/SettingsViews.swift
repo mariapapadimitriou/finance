@@ -183,6 +183,9 @@ struct SignInSecurityView: View {
             if let error = error {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 16)
             }
+
+            // At the bottom of Sign-in & security, not on Profile (2026-11-08).
+            ResetPearlCard().padding(.top, 16)
         }
         .task {
             faceID = app.faceIDOn
@@ -425,5 +428,54 @@ struct RecoveryCodesSheet: View {
         .padding(.horizontal, 16).padding(.bottom, 8)
         .background(SheetBackground())
         .interactiveDismissDisabled(!copied)
+    }
+}
+
+
+/// Reset Pearl: unlinks her banks and clears her transactions and setup,
+/// then starts setup again (POST /api/account/reset). She stays signed in.
+@MainActor
+struct ResetPearlCard: View {
+    @EnvironmentObject private var app: AppModel
+    @State private var confirming = false
+    @State private var resetting = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            GlassCard {
+                Button(role: .destructive) { confirming = true } label: {
+                    ProfileRow(symbol: "arrow.counterclockwise", title: resetting ? "Resetting…" : "Reset Pearl",
+                               tone: Pearl.moneyOut, chevron: false) {
+                        if resetting { ProgressView() }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(resetting)
+            }
+            ProfileNote("Unlinks your banks and clears your transactions and setup, then starts setup again. You stay signed in.")
+            if let error = error {
+                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 16)
+            }
+        }
+        .confirmationDialog("Reset Pearl?", isPresented: $confirming, titleVisibility: .visible) {
+            Button("Reset", role: .destructive) { Task { await reset() } }
+        } message: {
+            Text("Your banks are unlinked and your transactions and setup are cleared. Your email, password and Face ID stay. This can't be undone.")
+        }
+    }
+
+    private func reset() async {
+        resetting = true
+        defer { resetting = false }
+        do {
+            struct Reply: Decodable { let user: PearlUser? }
+            let reply: Reply = try await app.api.post("api/account/reset", ["confirm": "reset"])
+            error = nil
+            app.justCreated = false
+            app.signedIn(reply.user)
+        } catch {
+            self.error = app.handle(error)
+        }
     }
 }
