@@ -97,6 +97,8 @@ def _clean(st, deposit: Transaction, parts: list, later: bool) -> list[dict]:
                 raise Problem("Pick the cash you were paid.")
             if any(cash[i]["deposit_id"] for i in ids):
                 raise Problem("That cash is already in another deposit.")
+            # Ticked cash can come to more than the part (S-13 v2): it fills
+            # from the top until the part is used up; the rest stays cash.
             detail["cash_ids"] = ids
         out.append({"kind": kind, "amount": amount, "detail": detail})
     whole = _cents(-deposit.amount)
@@ -128,14 +130,35 @@ def _category(kind: str, detail: dict, deposit: Transaction, by_id: dict) -> str
     return deposit.category or "Other"
 
 
-def apply(st, deposit: Transaction, parts: list, later: bool = False) -> dict:
-    """Split `deposit` into `parts`. Returns {parts, rest, title}."""
+def as_asked(stored: list[dict]) -> tuple[list[dict], bool]:
+    """A deposit's stored parts as they'd be asked for again: (parts, later)."""
+    asked = [{"kind": p["kind"], "amount": p["amount"], **(p.get("detail") or {})}
+             for p in stored if p["kind"] != "rest"]
+    return asked, any(p["kind"] == "rest" for p in stored)
+
+
+def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: bool = False) -> dict:
+    """Split `deposit` into `parts`. Returns {parts, rest, title}.
+
+    With `replace` (S-10e Edit the $600, SPLIT-03, 2026-11-09), a deposit
+    already in parts has them replaced in one save; if the new ones can't
+    be saved, the old ones are put back exactly as they were."""
     if deposit.amount >= 0:
         raise Problem("Only money coming in can be split into parts.")
+    old = st.parts().get(deposit.fingerprint)
+    if old and replace:
+        asked, had_rest = as_asked(old)
+        undo(st, deposit.fingerprint)
+        fresh = st.get_transaction(deposit.fingerprint) or deposit
+        try:
+            return apply(st, fresh, parts, later)
+        except Problem:
+            apply(st, st.get_transaction(deposit.fingerprint) or fresh, asked, had_rest)
+            raise
+    if old:
+        raise Problem("This deposit is already in parts. Unlink them first.")
     if deposit.excluded and deposit.excluded != REST:
         raise Problem("This deposit is left out. Put it back first.")
-    if st.parts().get(deposit.fingerprint):
-        raise Problem("This deposit is already in parts. Unlink them first.")
     clean = _clean(st, deposit, parts, later)
     by_id = {t.fingerprint: t for t in st.all_transactions()}
     raw = deposit.raw or {}
@@ -170,7 +193,7 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False) -> dict:
         elif p["kind"] == "income":
             st.set_income_type(cid, d["income_kind"], "user")
         elif p["kind"] == "cash":
-            st.set_cash_deposit(d["cash_ids"], cid)
+            d["cash_ids"] = _hold_cash(st, d["cash_ids"], p["amount"], cid)
         elif p["kind"] == "overpaid":
             st.set_party(cid, d["person"])
         elif p["kind"] == "rest":
@@ -182,6 +205,29 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False) -> dict:
     title = (f"Sorted {n} part{'' if n == 1 else 's'}. {_money(rest)} left to sort."
              if rest else f"Sorted into {n} part{'' if n == 1 else 's'}.")
     return {"parts": listed(st, deposit.fingerprint), "rest": rest, "title": title}
+
+
+def _hold_cash(st, ids: list[int], amount: float, part_id: str) -> list[int]:
+    """S-13 v2: the ticked cash, top first, until `amount` is used up. A
+    record only partly deposited is split in two: what went in is held by
+    this part; the rest stays cash in hand, free to match a later deposit.
+    Returns the records this part holds."""
+    cash = {c["id"]: c for c in st.split_cash()}
+    left = _cents(amount)
+    held = []
+    for i in ids:
+        if left <= 0:
+            break
+        c = cash[i]
+        have = _cents(c["amount"])
+        if have > left:
+            st.set_split_cash_amount(i, left / 100)
+            st.add_split_cash(c["txn_id"], c["name"], (have - left) / 100, c["day"], c.get("via"))
+            have = left
+        held.append(i)
+        left -= have
+    st.set_cash_deposit(held, part_id)
+    return held
 
 
 def undo(st, deposit_id: str) -> int:
@@ -219,6 +265,8 @@ def listed(st, deposit_id: str) -> list[dict]:
                     "charge": ({"id": charge.fingerprint, "merchant": charge.merchant,
                                 "date": charge.date[:10], "amount": charge.amount,
                                 "category": charge.category} if charge else None),
+                    # S-10e: a cash part goes back with the same cash (SPLIT-03).
+                    "cash_ids": d.get("cash_ids") or [],
                     "sorted": not (row is not None and row.excluded == REST)})
     return out
 
@@ -248,11 +296,17 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
         return next((n for n in names if same_person(n, name)), name)
 
     owes: dict[str, dict] = {}
+    # A share lowered below what they'd paid (SPLIT-02, S-03e): she owes
+    # them the difference, under You owe.
+    over: list[tuple[str, dict]] = []
     for cid, split in splits.items():
         charge = by_id.get(cid)
         if charge is None or charge.excluded:
             continue
         for p in people_status(charge, split, transactions, payer):
+            if p.get("over", 0.0) >= 0.005:
+                over.append((p["name"], {"charge_id": cid, "merchant": charge.merchant,
+                                         "date": charge.date[:10], "amount": p["over"], "split": True}))
             if p["owes"] < 0.005:
                 continue
             key = person_key(p["name"], list(owes))
@@ -271,6 +325,11 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
         row["total"] = round(row["total"] + -t.amount, 2)
         row["items"].append({"id": t.fingerprint, "date": t.date[:10], "amount": round(-t.amount, 2),
                              "merchant": t.merchant})
+    for name, item in over:
+        key = person_key(name, list(you_owe))
+        row = you_owe.setdefault(key, {"name": key, "total": 0.0, "items": []})
+        row["total"] = round(row["total"] + item["amount"], 2)
+        row["items"].append(item)
     month = today.strftime("%Y-%m")
     back = []
     for t in transactions:
@@ -285,8 +344,10 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
         for p in split["people"]:
             for c in p.get("cash") or []:
                 if c["day"].startswith(month):
+                    # Another app (SPLIT-11) says so; only real cash says Cash.
+                    how = {"app": True} if c.get("via") == "app" else {"cash": True}
                     back.append({"name": p["name"], "merchant": charge.merchant if charge else "",
-                                 "date": c["day"], "amount": c["amount"], "cash": True})
+                                 "date": c["day"], "amount": c["amount"], **how})
     back.sort(key=lambda r: r["date"], reverse=True)
     people = sorted(owes.values(), key=lambda r: -r["total"])
     return {"total": round(sum(r["total"] for r in people), 2), "people": len(people),

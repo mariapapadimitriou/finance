@@ -143,6 +143,13 @@ def validate(charge: Transaction, mode: str, people: list, you=None,
         if whole <= 0:
             return [], "Give someone a part."
         short = mode == "percent" and whole < 100 - 0.001
+        if short:
+            # SPLIT-10 (2026-11-09): % works in cents. A shortfall smaller
+            # than one cent per row (33.33% three ways) is rounding, not a
+            # gap: it adds up, and the odd cent goes by the usual rule.
+            rows = len(clean) + (1 if include_me else 0)
+            if total * (100 - whole) / 100 < rows:
+                short = False
         if mode == "percent" and whole > 100 + 0.001:
             return [], f"That’s {whole - 100:g}% too much."
         # Theirs rounded down to the cent; what's left over is yours. Short
@@ -188,10 +195,13 @@ def _linked(charge_id: str, transactions: list[Transaction]) -> list[Transaction
 def people_status(charge: Transaction, split: dict, transactions: list[Transaction],
                   payer: dict[str, str]) -> list[dict]:
     """Each person in a split: their part, what they've paid back and when,
-    and what they still owe (S-04).
+    what they still owe (S-04), and what they paid over their part (`over`,
+    SPLIT-02: a share lowered below what they'd paid, which she owes back).
 
     A repayment counts for the person you linked it to; one linked before
-    people had names counts for whoever it came from by name.
+    people had names counts for whoever it came from by name. A payback that
+    names someone no longer in the split counts for nobody (SPLIT-02,
+    2026-11-09): it is theirs, never "the first who still owes".
     """
     names = [p["name"] for p in split["people"]]
     # A refund on the purchase is shared the way the purchase was: each
@@ -202,8 +212,11 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
     paid = {n: 0.0 for n in names}
     when: dict[str, str] = {}
     # Cash in hand (THL-291) counts as paid the day she marked it.
-    cash = {p["name"]: round(sum(c["amount"] for c in p.get("cash") or []), 2)
+    # Another app (SPLIT-11) counts as paid like cash, but isn't cash.
+    cash = {p["name"]: round(sum(c["amount"] for c in p.get("cash") or [] if c.get("via", "cash") != "app"), 2)
             for p in split["people"]}
+    app = {p["name"]: round(sum(c["amount"] for c in p.get("cash") or [] if c.get("via") == "app"), 2)
+           for p in split["people"]}
     for p in split["people"]:
         for c in p.get("cash") or []:
             paid[p["name"]] = round(paid[p["name"]] + c["amount"], 2)
@@ -214,6 +227,10 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
         if who not in paid and who:
             # "Sam Lee" paying back the Sam in the split.
             who = next((n for n in names if same_person(n, who)), None)
+            if who is None:
+                # Someone taken out of the split: their payback is still
+                # theirs, so it counts for nobody here.
+                continue
         if who not in paid:
             who = next((n for n in names if from_person(t, n)), None)
         if who is None:
@@ -223,7 +240,8 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
         when[who] = t.date[:10]
     # A payback nobody's name is on (a bank that leaves the sender off, or
     # one linked from search) still counts (2026-10-24): to whoever owes
-    # exactly that much, else the first who still owes anything.
+    # exactly that much, else the first who still owes anything. Only these:
+    # one with a name is never moved to someone else (2026-11-09).
     for t in unnamed:
         got = t.part_for(charge.fingerprint)
         owing = [n for n in names if part[n] - paid[n] >= 0.005]
@@ -237,7 +255,10 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
         owes = round(max(part[p["name"]] - paid[p["name"]], 0.0), 2)
         out.append({"name": p["name"], "amount": part[p["name"]], "paid": paid[p["name"]],
                     "owes": owes, "paid_on": when.get(p["name"]) if owes < 0.005 else None,
+                    "over": round(max(paid[p["name"]] - part[p["name"]], 0.0), 2),
+                    "weight": p.get("weight"),
                     "cash": cash.get(p["name"], 0.0),
+                    "app": app.get(p["name"], 0.0),
                     "cash_ids": [c["id"] for c in p.get("cash") or []],
                     "let_go": p.get("let_go")})
     return out

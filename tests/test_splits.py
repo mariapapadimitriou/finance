@@ -77,7 +77,8 @@ def test_even_split_counts_only_her_share(client):
     assert r["splitting"]["you"] == 42.5
     assert r["splitting"]["people"] == [{"name": "Priya", "amount": 42.5, "paid": 0.0,
                                          "owes": 42.5, "paid_on": None, "cash": 0.0,
-                                         "cash_ids": [], "let_go": None}]
+                                         "cash_ids": [], "let_go": None,
+                                         "over": 0.0, "weight": None, "app": 0.0}]
     data = listing(client)
     assert data["totals"]["spent"] == 42.5
     assert data["transactions"][0]["note"] == "Your share of $85.00 · split with Priya"  # nobody paid yet
@@ -256,7 +257,8 @@ class TestTwoETransfersFromOnePerson:
         assert d["splitting"]["you"] == 60
         assert d["splitting"]["people"] == [{"name": "Anna Lee", "amount": 60.0, "paid": 60.0,
                                              "owes": 0.0, "paid_on": d["splitting"]["people"][0]["paid_on"],
-                                             "cash": 0.0, "cash_ids": [], "let_go": None}]
+                                             "cash": 0.0, "cash_ids": [], "let_go": None,
+                                         "over": 0.0, "weight": None, "app": 0.0}]
         # Undo the second: back to one e-Transfer's worth.
         client.post("/api/transactions/undo", json=res["undo"])
         d = detail(client, sushi)
