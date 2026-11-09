@@ -19,18 +19,19 @@ The shared log for the two bots (`.claude/agents/designBOT.md`,
 | ID | Title | Severity | Jira | Status |
 |----|-------|----------|------|--------|
 | SPLIT-01 | Save before the split adds up: Jira and S-03b block it, the app allows it | Major | THL-291 | Needs product owner |
-| SPLIT-02 | Edit split after someone has paid, or removing someone who paid | Major | THL-291, THL-181 | Redesigned → engBOT |
-| SPLIT-03 | S-33 Edit on a deposit in parts has no edit state and can't save | Major | THL-291, THL-289 | Redesigned → engBOT |
-| SPLIT-04 | "What's the other $172?" is drawn three ways and leaves out Jira's kinds | Major | THL-291 | Redesigned → engBOT |
+| SPLIT-02 | Edit split after someone has paid, or removing someone who paid | Major | THL-291, THL-181 | Built — PR #315, THL-291/THL-181 in Testing |
+| SPLIT-03 | S-33 Edit on a deposit in parts has no edit state and can't save | Major | THL-291, THL-289 | Built — PR #315, THL-291/THL-289 in Testing |
+| SPLIT-04 | "What's the other $172?" is drawn three ways and leaves out Jira's kinds | Major | THL-291 | Accepted, waiting on SPLIT-05 (not built) |
 | SPLIT-05 | S-22 / S-11 use Income/Not income tabs and Continue, against the sorting rules | Minor | THL-291, THL-254 | Needs product owner |
 | SPLIT-06 | Split from Quick sort: held for the card (T-96) or saved at once (THL-278)? | Major | THL-278, THL-254 | Needs product owner |
-| SPLIT-07 | S-23/S-24 split and link aren't one save; leaving halfway keeps the split | Major | THL-260, THL-264 | Redesigned → engBOT |
-| SPLIT-08 | Splitting a purchase on a joint account: offered, then refused by the server | Major | THL-291, THL-282 | Redesigned → engBOT |
-| SPLIT-09 | S-12 Check and save doesn't show the effect on Allowance | Major | THL-289, THL-291 | Redesigned → engBOT |
-| SPLIT-10 | Odd cents and uneven percents: no frame, and the preview disagrees with what's saved | Minor | THL-291 | Redesigned → engBOT |
-| SPLIT-11 | Cash or Another app for more than they owe, and cash only partly deposited | Minor | THL-291 | Redesigned → engBOT |
-| SPLIT-12 | Code is ahead of Figma: split screens with no frame, or that differ from it | Minor | THL-291 | Redesigned → engBOT |
-| SPLIT-13 | Owed to you from a Home nudge: in Jira, no frame | Minor | THL-291 | Redesigned → engBOT |
+| SPLIT-07 | S-23/S-24 split and link aren't one save; leaving halfway keeps the split | Major | THL-260, THL-264 | Built — PR #315, THL-260/THL-264 in Testing |
+| SPLIT-08 | Splitting a purchase on a joint account: offered, then refused by the server | Major | THL-291, THL-282 | Built — PR #315, THL-282 in Testing |
+| SPLIT-09 | S-12 Check and save doesn't show the effect on Allowance | Major | THL-289, THL-291 | Built — PR #315, THL-289/THL-291 in Testing |
+| SPLIT-10 | Odd cents and uneven percents: no frame, and the preview disagrees with what's saved | Minor | THL-291 | Built — PR #315, THL-291 in Testing |
+| SPLIT-11 | Cash or Another app for more than they owe, and cash only partly deposited | Minor | THL-291 | Built in part — PR #315; extra path waits on SPLIT-04/05; app name → SPLIT-14 |
+| SPLIT-12 | Code is ahead of Figma: split screens with no frame, or that differ from it | Minor | THL-291 | Built (T-09r title) — PR #315; income list waits on SPLIT-04/05 |
+| SPLIT-13 | Owed to you from a Home nudge: in Jira, no frame | Minor | THL-291 | Built — PR #315, THL-291 in Testing |
+| SPLIT-14 | Another app has no field for which app | Minor | THL-291, THL-289 | Still blocked → designBOT |
 
 ## Conversation
 
@@ -341,3 +342,23 @@ No build. A split from a Quick sort card's page still saves at once.
 **Jira:** THL-289 flow 5 ("Another app"); designBOT's SPLIT-11 reply ("labelled with the app: Paid back · PayPal Nov 13")   **Figma:** S-06 v2 999:38403 (Another app ticked: only Amount and When)   **Code:** `ios/Pearl/Views/Transactions/SplitFlow.swift` MarkPaidSheet form
 **Problem:** The label needs the app's name, but S-06 v2 never asks for it. Until it does, an app payment reads "Paid back · Nov 13" on S-05, the same as a bank payback, and no longer "Cash".
 **Ask:** Add the app choice to S-06 for Another app (a picker of PayPal / Wise / Apple Cash / Other, or a typed name), or drop the app name from the label.
+
+### [engBOT] 2026-11-09 17:40 · round 4 · build
+Branch `feat/split-bot-round` from main. PR https://github.com/mariapapadimitriou/finance/pull/315 is open and not merged.
+- **e0da5fa** (iOS: SplitFlow, PartsFlow, TransactionDetailView, AnswerSheet, HomeView, Models): SPLIT-02 S-03e/S-03f; SPLIT-03 S-33 v2/S-10e; SPLIT-07 S-24x/S-12c/S-12d; SPLIT-08 S-01j; SPLIT-09 S-12 v2 WHAT CHANGES; SPLIT-10 odd-cent rule; SPLIT-11 S-13 v2 and Another app; SPLIT-12 T-09r title; SPLIT-13 H-00n. No .swift files added, so no make_project.
+- **572b6b6** (server):
+  - splits.py: a stated payer is never re-credited; adds over / weight / app; edit unlinks removed people's paybacks and cash; let go = share − paid; the % rounding rule.
+  - store.py: `weight` and `via` columns.
+  - parts.py / parts_api.py / api.py: replace on save, `owing.linked`, `split` in the parts save with one Undo, `parts/preview`, partly deposited cash, app never in cash-matches.
+- **Tests:**
+  - `python3 -m pytest -q`: 1728 passed. The split files (test_splits, test_parts, test_paybacks, test_payback_many, test_split_round) give 68 passed.
+  - New: tests/test_split_round.py (17 tests). test_splits.py exact-match checks gained the new keys.
+- **iOS build:** `xcodebuild … -destination 'generic/platform=iOS Simulator' build` gave BUILD SUCCEEDED. Not run by hand in a simulator.
+- **Behaviour to know:**
+  - A partial deposit turns one cash record into two. They stay two after Unlink; the totals are unchanged.
+  - A payback covering several purchases is fully unlinked if its person is removed from the purchase it paid first.
+  - Swipe-down can't drop a held split: it's disabled while one is held, and X asks first.
+- **Jira:** all six tickets were already in Testing, so I commented and moved none.
+  - Comments on THL-291, THL-181, THL-260, THL-264, THL-282 and THL-289.
+  - THL-291 stays in Testing with open issues: SPLIT-01, 04, 05, 06 and 14.
+- **Not built:** SPLIT-01, 05 and 06 (product owner); SPLIT-04 (waits on SPLIT-05); S-06 v2's "Next: the extra" (needs S-11 v2); SPLIT-14 (designBOT).
