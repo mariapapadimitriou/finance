@@ -921,6 +921,9 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         marks.setdefault("paybacks", {})[t.fingerprint] = {
             "charge": t.repays, "kind": store.payback_kinds().get(t.fingerprint),
             "person": store.payback_people().get(t.fingerprint), "amount": t.repays_amount}
+        # SPLIT-23 (1): relinking a payback that paid back two purchases
+        # drops the second; Undo puts it back too.
+        marks.setdefault("payback_more", {})[t.fingerprint] = store.payback_more(t.fingerprint)
         _drop_made_split(store, t, marks)
         from .etransfers import known_people, party as etransfer_party
         people = known_people(store.all_transactions(), store.splits(), store.payback_people())
@@ -1314,8 +1317,15 @@ def undo_marks(store, marks: dict) -> int:
     """Put back what `apply` recorded in `marks`. Returns how many."""
     if not isinstance(marks, dict):
         raise Problem("Nothing to undo.")
+    # SPLIT-16: a payback cut into parts when its person left a split is
+    # one payback again before its links are put back.
+    unparts = [str(d) for d in marks.get("unparts") or [] if isinstance(d, str)]
+    if unparts:
+        from . import parts as dp
+        for did in unparts:
+            dp.undo(store, did)
     known = {t.fingerprint: t for t in store.all_transactions()}
-    n = 0
+    n = len(unparts)
     for tid, reason in (marks.get("exclusions") or {}).items():
         if tid not in known:
             continue
@@ -1341,6 +1351,11 @@ def undo_marks(store, marks: dict) -> int:
         else:
             store.unlink_payback(tid)
         n += 1
+    # SPLIT-22b (S-35c): who sent a linked payback, as it was.
+    for tid, person in (marks.get("payback_person") or {}).items():
+        if tid in known and (person is None or isinstance(person, str)):
+            store.set_payback_person(tid, person)
+            n += 1
     # One payback, several purchases (2026-10-28): the others as they were.
     for tid, parts in (marks.get("payback_more") or {}).items():
         if tid in known and isinstance(parts, list):

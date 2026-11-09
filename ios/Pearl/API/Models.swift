@@ -619,6 +619,29 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let mode: String?
         let you: Double
         let people: [Person]
+        /// SPLIT-22b (S-05u, THL-181): paybacks linked here that Pearl
+        /// credited to no one, newest first. Each asks "Who sent this?".
+        var uncredited: [Uncredited]? = nil
+
+        /// "$30.00 from an e-Transfer" over "Nov 16 · no name · paid back Loblaws".
+        struct Uncredited: Decodable, Hashable, Identifiable {
+            let id: String
+            /// What it put toward this purchase.
+            let amount: Double
+            let date: String
+            /// The name the bank put on it, if any.
+            let sender: String?
+            /// "e-Transfer" or "payment".
+            let word: String
+            /// The deposit's own name, for its initials ("Interac e-Transfer").
+            let name: String?
+            let paidBack: [String]
+
+            enum CodingKeys: String, CodingKey {
+                case id, amount, date, sender, word, name
+                case paidBack = "paid_back"
+            }
+        }
 
         struct Person: Decodable, Hashable, Identifiable {
             let name: String
@@ -629,12 +652,61 @@ struct Transaction: Decodable, Identifiable, Hashable {
             let cash: Double?
             let cashIds: [Int]?
             let letGo: LetGo?
+            /// Paid back through another app (SPLIT-11), apart from cash.
+            var app: Double? = nil
+            /// Paid more than their share (S-03e): she owes them this.
+            var over: Double? = nil
+            /// Their % or shares, so Edit split opens the way it was saved (S-03e).
+            var weight: Double? = nil
+            /// The app she named for their newest app payment (SPLIT-14, S-06 v3).
+            var appName: String? = nil
+            /// Each cash or app payment once, as recorded (SPLIT-15).
+            var payments: [Payment]? = nil
+            /// Paybacks of theirs that also paid back other purchases (SPLIT-16).
+            var shared: [Shared]? = nil
             var id: String { name }
 
             struct LetGo: Decodable, Hashable { let was: Double; let day: String }
 
+            /// "$250.00 cash · Nov 3", and "$200.00 deposited Nov 12 · $50.00 still cash".
+            struct Payment: Decodable, Hashable {
+                let amount: Double
+                let day: String
+                let via: String?
+                let app: String?
+                let deposited: Double
+                let depositedOn: String?
+                let still: Double
+                /// SPLIT-19 (S-11c): the whole payment, when its extra went
+                /// elsewhere too, and what of it she gave back.
+                var whole: Double? = nil
+                var givenBack: Double? = nil
+                /// SPLIT-19 (S-11c, Paying me back): every purchase it paid
+                /// back, this payment's own first, when it paid more than one.
+                var paidBack: [String]? = nil
+
+                enum CodingKeys: String, CodingKey {
+                    case amount, day, via, app, deposited, still, whole
+                    case depositedOn = "deposited_on"
+                    case givenBack = "given_back"
+                    case paidBack = "paid_back"
+                }
+            }
+
+            /// "Her $60.00 e-Transfer also paid back Costco" (S-03f, SPLIT-16).
+            struct Shared: Decodable, Hashable {
+                let whole: Double
+                let here: Double
+                let others: [String]
+                let word: String
+            }
+
+            /// Their share before any let go: what Edit split shows (S-03e).
+            var share: Double { letGo?.was ?? amount }
+
             enum CodingKeys: String, CodingKey {
-                case name, amount, paid, owes, cash
+                case name, amount, paid, owes, cash, app, over, weight, payments, shared
+                case appName = "app_name"
                 case paidOn = "paid_on"
                 case cashIds = "cash_ids"
                 case letGo = "let_go"
@@ -805,6 +877,8 @@ struct DepositPart: Decodable, Hashable, Identifiable {
     let category: String?
     let charge: Charge?
     let sorted: Bool?
+    /// The cash records a cash part holds, to save it again (S-10e).
+    var cashIds: [Int]? = nil
 
     struct Charge: Decodable, Hashable {
         let id: String
@@ -817,6 +891,7 @@ struct DepositPart: Decodable, Hashable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, kind, amount, person, category, charge, sorted
         case incomeKind = "income_kind"
+        case cashIds = "cash_ids"
     }
 
     /// "Payback · Flight to Athens", "Gift", "Dad overpaid".
@@ -831,6 +906,10 @@ struct DepositPart: Decodable, Hashable, Identifiable {
         case "cash": return "Cash you were paid"
         case "overpaid": return "\(person ?? "They") overpaid"
         case "category": return category ?? "Other"
+        // S-11 v2 (SPLIT-04).
+        case "reimbursement": return "Work paying me back" + (charge.map { " · \($0.merchant)" } ?? "")
+        case "loan": return "Lent me this"
+        case "lent_back": return "Money I lent, back"
         default: return "Left to sort"
         }
     }
@@ -855,6 +934,13 @@ struct OwedOverview: Decodable {
             let date: String
             let owes: Double?
             let amount: Double?
+            /// The split purchase, to count splits (H-00n).
+            var chargeId: String? = nil
+
+            enum CodingKeys: String, CodingKey {
+                case merchant, date, owes, amount
+                case chargeId = "charge_id"
+            }
         }
     }
 
@@ -864,6 +950,22 @@ struct OwedOverview: Decodable {
         let date: String
         let amount: Double
         let cash: Bool?
+        /// Through another app, and which (SPLIT-14).
+        var app: Bool? = nil
+        var appName: String? = nil
+        /// SPLIT-15: how much of a cash payment a deposit holds, and when.
+        var deposited: Double? = nil
+        var depositedOn: String? = nil
+        var still: Double? = nil
+        /// SPLIT-19: one payment that paid back several purchases, named.
+        var paidBack: [String]? = nil
+
+        enum CodingKeys: String, CodingKey {
+            case name, merchant, date, amount, cash, app, deposited, still
+            case appName = "app_name"
+            case depositedOn = "deposited_on"
+            case paidBack = "paid_back"
+        }
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1134,6 +1236,43 @@ struct Review: Decodable {
         let rest: Rest?
         /// T-15: the other copy of a possible duplicate.
         var twin: BriefTransaction? = nil
+        /// S-21u (SPLIT-22b, THL-181): a payback already linked that Pearl
+        /// credited to no one. Its "Who sent this?" opens S-35c.
+        var credit: Credit? = nil
+        /// S-21x (SPLIT-23 (1), THL-181): a payback linked to a purchase
+        /// nobody still owed on, so the whole amount is extra. Its "What was
+        /// this?" opens S-11x.
+        var extra: Extra? = nil
+
+        struct Extra: Decodable, Hashable {
+            /// Every purchase it was linked to: "extra on Loblaws".
+            let paidBack: [String]
+            /// Who has paid back on them: "Sam and Priya have both paid you back".
+            let people: [String]
+            /// The extra: the whole deposit on S-21x, the part on S-21xm.
+            let amount: Double
+            /// S-21xm (THL-301, SPLIT-24): the whole deposit, when only part of it is extra.
+            var whole: Double? = nil
+            /// S-11xm: the purchases it still pays back, with who: "Jo paid
+            /// back $30.00 of this for Pizza Nova."
+            let credited: [Credited]?
+            enum CodingKeys: String, CodingKey { case paidBack = "paid_back"; case people, amount, whole, credited }
+
+            struct Credited: Decodable, Hashable {
+                let person: String
+                let merchant: String
+                let amount: Double
+            }
+
+            /// Only part of the deposit is extra (S-21xm / S-11xm).
+            var isPart: Bool { !(credited ?? []).isEmpty }
+        }
+
+        struct Credit: Decodable, Hashable {
+            /// Every purchase it paid back: "paid back Loblaws".
+            let paidBack: [String]
+            enum CodingKeys: String, CodingKey { case paidBack = "paid_back" }
+        }
 
         var id: String { key }
 
@@ -1149,7 +1288,7 @@ struct Review: Decodable {
 
         enum CodingKeys: String, CodingKey {
             case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share, twin
-            case siblings, pair
+            case siblings, pair, credit, extra
             case guessLabel = "guess_label"
         }
 
@@ -1184,6 +1323,8 @@ struct Review: Decodable {
             twin = opt(BriefTransaction.self, .twin)
             siblings = opt([Lenient<BriefTransaction>].self, .siblings)?.compactMap { $0.value } ?? []
             pair = opt(Pair.self, .pair)
+            credit = opt(Credit.self, .credit)
+            extra = opt(Extra.self, .extra)
         }
 
         static func == (a: Item, b: Item) -> Bool {
@@ -1335,6 +1476,8 @@ struct Ask: Identifiable, Hashable {
         case .category: return "\(item.guess?.text ?? t.category ?? "Other")?"
         case .transfer: return "Saved or spent?"
         case .moneyIn:
+            // S-21x: the extra on a paid-back purchase.
+            if item.extra != nil { return "What was this?" }
             if item.rest != nil { return "\(Format.amount(t.amount)) left to sort" }
             if item.guess?.action == "refund" { return "Whose refund?" }
             // A payment network isn't a person: never "Is Interac paying you back?".

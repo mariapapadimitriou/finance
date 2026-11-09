@@ -33,6 +33,14 @@ struct AnswerSheet: View {
     var pageAmount: String? = nil
     /// A category already picked on the page behind, shown as the current one.
     var pageCategory: String? = nil
+    /// The opener holds an answer for a Quick sort card's Yes (SPLIT-06,
+    /// SPLIT-20): an answer with a card label isn't saved here, and Split with
+    /// others is held too, not saved, so there's nothing here to fail. A tile
+    /// that only goes on to another step still saves nothing until its answer.
+    var holds = false
+    /// T-98s from Quick sort's sheet (SPLIT-20): a held split and the category
+    /// it counts toward, for the card's "Groceries, split with Sam?".
+    var onHeldSplit: ((CardSplit, String) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step
@@ -64,11 +72,16 @@ struct AnswerSheet: View {
     @State private var chargeCase: String?
     @State private var splitting = false
     @State private var splitSaid: String?
+    /// SPLIT-20: the split made here, held for the Quick sort card's Yes.
+    @State private var heldSplit: CardSplit?
     @State private var oneOff: Bool?
     /// T-04's Regular bill, then Add to your bills? (T-32), then the answer.
     @State private var regularBill = false
     @State private var billing: BillStart?
     @State private var pending: (() -> Void)?
+    /// T-08k (SPLIT-18): the kind being saved from this page, and what went wrong.
+    @State private var savingKind: String?
+    @State private var kindError: String?
 
     struct BillStart: Identifiable {
         let t: Transaction
@@ -77,7 +90,7 @@ struct AnswerSheet: View {
     }
 
     enum Step: Hashable {
-        case guess, out, into, accounts, charges, kinds, cadence, joint, sender, recurring, payback, category
+        case guess, out, into, accounts, charges, kinds, otherKinds, cadence, joint, sender, recurring, payback, category
     }
 
     enum Then { case category, spending, recurring }
@@ -86,8 +99,12 @@ struct AnswerSheet: View {
     /// the kind of income, how often it pays, or What was this?.
     init(ask: Ask, categories: [CategoryList.Category], accounts: [AccountsOverview.Account], names: [String],
          api: APIClient, start: Step? = nil, pageAlways: Bool? = nil, pageAmount: String? = nil, pageCategory: String? = nil, current: String? = nil, onCategory: ((String, Bool) -> Void)? = nil,
-         confirmsGuess: Bool = true, fromPage: Bool = false, onAnswer: @escaping (ReviewAnswer) -> Void) {
+         confirmsGuess: Bool = true, fromPage: Bool = false, holds: Bool = false,
+         onHeldSplit: ((CardSplit, String) -> Void)? = nil,
+         onAnswer: @escaping (ReviewAnswer) -> Void) {
         self.fromPage = fromPage
+        self.holds = holds
+        self.onHeldSplit = onHeldSplit
         self.pageAlways = pageAlways
         self.pageAmount = pageAmount
         self.pageCategory = pageCategory
@@ -175,7 +192,14 @@ struct AnswerSheet: View {
         .task(id: step) { await loadOptions() }
         .sheet(isPresented: $splitting) {
             if let f = full {
-                SplitSheet(t: f, api: api, recent: names) { said in
+                // T-98s (SPLIT-20): from Quick sort's sheet the split is held,
+                // as on the card's page; the category she picks next goes with it.
+                SplitSheet(t: f, api: api, recent: names,
+                           onHold: holds && onHeldSplit != nil ? { body, _, mine in
+                               splitting = false
+                               heldSplit = CardSplit.held(body, mine: mine, total: f.fullAmount ?? f.amount)
+                               splitSaid = heldSplit?.note
+                           } : nil) { said in
                     splitting = false
                     splitSaid = said
                 }
@@ -210,7 +234,10 @@ struct AnswerSheet: View {
     /// What Spending saves: the caller's way, or the answer for this question.
     private func saveSpending(_ name: String, _ remember: Bool) {
         let finish: () -> Void = {
-            if let onCategory = onCategory {
+            if let split = heldSplit, let onHeldSplit = onHeldSplit {
+                // SPLIT-20: held for the card, "for this one" (no rule), as T-98s says.
+                onHeldSplit(split, name)
+            } else if let onCategory = onCategory {
                 onCategory(name, remember)
             } else if ask.kind == .category {
                 if name == (t.category ?? ask.item.guess?.text) && !remember {
@@ -241,7 +268,9 @@ struct AnswerSheet: View {
     /// Split with others (THL-289) and One-off (T-42), for a purchase.
     @ViewBuilder private var outOptions: some View {
         if let f = full {
+            // Not on a joint account (S-01j, SPLIT-08): the server asks Whose was it? instead.
             let canSplit = f.transfer == nil && f.refundOf == nil && f.splitting == nil && f.excluded.isEmpty
+                && f.joint.isEmpty
             if canSplit || f.canOneOff {
                 Text("OPTIONS").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
                     .padding(.horizontal, 16).padding(.top, 4)
@@ -460,6 +489,8 @@ struct AnswerSheet: View {
         guard let key = intoChoice else { return }
         if incomeSide {
             if key == "regular" { go(.cadence); return }
+            // T-08k (SPLIT-18): Other income asks which kind, not saves "other".
+            if key == "other" { go(.otherKinds); return }
             if ask.kind == .incomeType {
                 onAnswer(.incomeType(t.id, kind: key))
             } else {
@@ -506,6 +537,8 @@ struct AnswerSheet: View {
                     }
                     if step == .kinds {
                         kindTiles
+                    } else if step == .otherKinds {
+                        otherKindTiles
                     } else {
                         if step == .charges && !options.isEmpty {
                             Text("LIKELY").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
@@ -551,7 +584,7 @@ struct AnswerSheet: View {
                 Button("Skip") { onAnswer(.skip(ask.item.key, true)) }
                     .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             }
-            if step != .kinds && step != .payback {
+            if step != .kinds && step != .otherKinds && step != .payback {
                 Button(primaryLabel) { primary() }
                     .buttonStyle(NacreButtonStyle())
                     .disabled(!ready)
@@ -644,6 +677,64 @@ struct AnswerSheet: View {
         }
     }
 
+    /// T-08k (SPLIT-18): "What kind of income?" after Other income: the
+    /// other four of finance/income.py's kinds. A tile saves at once, with
+    /// the page's Always as it was (not asked again). If the save fails, the
+    /// tile un-highlights and "Couldn’t save that. Try again." shows under
+    /// the grid, here and not on the screen behind.
+    private var otherKindTiles: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("WHICH KIND?").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                .padding(.horizontal, 16).accessibilityAddTraits(.isHeader)
+            CaseGrid(cases: CaseTile.otherIncome, chosen: Binding(get: { savingKind }, set: { key in
+                guard let key = key else { return }
+                choice = key
+                saveOtherKind(key)
+            }), role: "income kind")
+            .disabled(savingKind != nil)
+            if let kindError = kindError {
+                Text(kindError).font(Nacre.footnote).foregroundColor(Pearl.caution)
+                    .padding(.horizontal, 16).fixedSize(horizontal: false, vertical: true)
+            }
+            if learnable {
+                Text("Always for \(who) was set on the page before, so it isn’t asked again here.")
+                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// An income kind, saved as T-08 saves it.
+    private func saveIncome(_ kind: String) {
+        onAnswer(incomeAnswer(kind))
+    }
+
+    private func incomeAnswer(_ kind: String) -> ReviewAnswer {
+        ask.kind == .incomeType ? .incomeType(t.id, kind: kind) : .mark(t.id, ["case": "pay", "income_kind": kind])
+    }
+
+    /// T-08k: the page saves the kind itself, so a failure is said under its
+    /// grid; the opener gets the reply (`.done`) for its toast and Undo, and
+    /// shows no error of its own. Held for a Quick sort card: nothing to save.
+    private func saveOtherKind(_ kind: String) {
+        guard savingKind == nil else { return }
+        let answer = incomeAnswer(kind)
+        if holds && answer.heldLabel != nil { onAnswer(answer); return }
+        savingKind = kind
+        kindError = nil
+        Task {
+            do {
+                let reply = try await answer.send(api)
+                onAnswer(.done(reply))
+            } catch {
+                savingKind = nil
+                choice = nil
+                kindError = "Couldn’t save that. Try again."
+                UIAccessibility.post(notification: .announcement, argument: "Couldn’t save that. Try again.")
+            }
+        }
+    }
+
     /// The app's income kinds (Income and bills), plus "My regular pay".
     private static let kinds: [(key: String, name: String, symbol: String)] = [
         ("regular", "My pay", "briefcase"), ("bonus", "Bonus", "sparkle"),
@@ -662,7 +753,7 @@ struct AnswerSheet: View {
         case .out, .into: return "What was this?"
         case .accounts: return "Where did it go?"
         case .charges: return "What did this pay back?"
-        case .kinds: return "What kind of income?"
+        case .kinds, .otherKinds: return "What kind of income?"
         case .cadence: return "How often is this pay?"
         case .joint: return "Whose pay is this?"
         case .sender: return "Who sent this?"
@@ -742,7 +833,7 @@ struct AnswerSheet: View {
                            detail: c.map { "\(Format.amount($0.amount)) on \($0.accountName ?? "your card")" }),
                     Option(id: "other", label: "Yes, for something else", detail: "Pick the purchase"),
                     Option(id: "no", label: "No, it isn’t a payback", detail: "Then we’ll ask if it’s income")]
-        case .kinds, .guess, .category:
+        case .kinds, .otherKinds, .guess, .category:
             return []
         }
     }
@@ -807,11 +898,11 @@ struct AnswerSheet: View {
             }
         case .kinds:
             if choice == "regular" { go(.cadence); return }
-            if ask.kind == .incomeType {
-                onAnswer(.incomeType(t.id, kind: choice))
-            } else {
-                onAnswer(.mark(t.id, ["case": "pay", "income_kind": choice]))
-            }
+            // T-08k (SPLIT-18): Other income asks which kind.
+            if choice == "other" { go(.otherKinds); return }
+            saveIncome(choice)
+        case .otherKinds:
+            saveIncome(choice)
         case .cadence:
             // Her answer is the schedule in Income and bills, not Pearl's guess.
             if choice == "once" {

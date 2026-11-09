@@ -118,7 +118,9 @@ struct QuickSortView: View {
                     .multilineTextAlignment(.center).padding(.horizontal, 32)
                     .accessibilityHidden(true)
                 if current.map(hasYes) == true {
-                    Text("Tap the card for other answers.")
+                    // T-98s: a held split says what Skip does to it.
+                    Text(current.flatMap { drafts[$0.id]?.split } != nil
+                         ? "Skip forgets the split. Tap the card to change it." : "Tap the card for other answers.")
                         .font(Nacre.footnote).foregroundColor(Pearl.muted)
                         .padding(.top, 2)
                         .accessibilityHidden(true)
@@ -165,9 +167,42 @@ struct QuickSortView: View {
                     asking = nil
                     Task { await answered(ask, .done(reply)) }
                 }
+            } else if let extra = ask.item.extra {
+                // S-21x: Yes/Skip can't say what it was, so the card opens
+                // S-11x. The tile is held for the card ("A gift?"); Yes saves
+                // it with one Undo, and Skip drops it (as SPLIT-20, S-21u).
+                PartsSheet(deposit: PartsDeposit(id: ask.t.id, name: ask.t.name, amount: ask.t.amount,
+                                                 date: ask.t.date).part(of: extra), api: app.api, whole: extra,
+                           onHeld: { body, label in
+                    asking = nil
+                    let answer = ReviewAnswer.extra(ask.t.id, body, label: label)
+                    drafts[ask.id] = CardDraft(label: answer.heldLabel, answer: answer)
+                }) { reply in
+                    asking = nil
+                    Task { await answered(ask, .done(reply)) }
+                }
+            } else if ask.item.credit != nil {
+                // S-21u: Yes/Skip can't say who, so the card opens S-35c. The
+                // tick is held for the card as "Paid back by Sam?"; Yes saves
+                // it with one Undo, and Skip drops it (as SPLIT-20). Over the
+                // share, S-11 v2 saves the parts there, as S-28's sheet does.
+                WhoSentSheet(id: ask.t.id, api: app.api, onHeld: { answer in
+                    asking = nil
+                    drafts[ask.id] = CardDraft(label: answer.heldLabel, answer: answer)
+                }) { reply in
+                    asking = nil
+                    Task { await answered(ask, .done(reply)) }
+                }
             } else {
                 AnswerSheet(ask: ask, categories: categories, accounts: accounts, names: names,
-                            api: app.api) { answer in
+                            api: app.api, holds: true,
+                            onHeldSplit: { split, category in
+                                // T-98s (SPLIT-20): "Groceries, split with Sam?"; Yes saves
+                                // the split and the category in one request, Skip drops it.
+                                asking = nil
+                                drafts[ask.id] = CardDraft(label: split.label(category), category: category,
+                                                           split: split)
+                            }) { answer in
                     asking = nil
                     if let label = answer.heldLabel {
                         // Held for the card, like any other edit: Yes there saves it.
@@ -196,10 +231,17 @@ struct QuickSortView: View {
     private var hint: String {
         guard let ask = current else { return "" }
         guard let draft = drafts[ask.id] else { return isGuess(ask) ? ask.yesLine(accounts) : "" }
+        // T-98s (SPLIT-06): "Yes saves the split and Groceries, for this one."
+        if draft.split != nil { return "Yes saves the split and \(splitCategory(ask, draft)), for this one." }
         if draft.answer != nil { return "Yes saves this." }
         if draft.category == nil && draft.always == nil { return ask.yesLine(accounts) }
         return (draft.always ?? ask.savesRule(accounts)) ? "Yes sorts this, and always for \(ask.t.name)."
             : "Yes sorts just this one."
+    }
+
+    /// The category a held split counts toward: the one she picked, or the guess.
+    private func splitCategory(_ ask: Ask, _ draft: CardDraft) -> String {
+        draft.category ?? (ask.kind == .category ? ask.item.guess?.text : nil) ?? ask.t.category ?? "Other"
     }
 
     /// "Dining out", or T-66's "Saved to TD Savings".
@@ -300,7 +342,11 @@ struct QuickSortView: View {
                 .font(Nacre.title).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7)
                 .padding(.top, 8)
-            if drafts[ask.id]?.label == nil, let evidence = ask.evidence {
+            if let split = drafts[ask.id]?.split {
+                // T-98s: "Your share $42.06 · Sam owes you $42.06".
+                Text(split.note).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .multilineTextAlignment(.center).lineLimit(3)
+            } else if drafts[ask.id]?.label == nil, let evidence = ask.evidence {
                 Text(evidence).font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center).lineLimit(3)
             }
@@ -435,7 +481,10 @@ struct QuickSortView: View {
         let rule = draft?.always ?? ask.savesRule(accounts)
         withAnimation(.easeIn(duration: 0.25)) { leaving = true }
         Task {
-            if let answer = draft?.answer {
+            if let draft = draft, let split = draft.split {
+                // T-98s (SPLIT-06): the split and the category in one save, one Undo.
+                await answered(ask, split.answer(ask.t.id, category: splitCategory(ask, draft)))
+            } else if let answer = draft?.answer {
                 await answered(ask, answer.withAlways(draft?.always))
             } else if let name = draft?.category {
                 if plain(ask) {
@@ -473,6 +522,15 @@ struct QuickSortView: View {
     /// Skip, for a guess or a question: it stays in Needs a look.
     private func left() {
         guard let ask = current, leaving == nil else { return }
+        // T-98s: Skip forgets a held split.
+        if drafts[ask.id]?.split != nil {
+            drafts[ask.id]?.split = nil
+            drafts[ask.id]?.label = drafts[ask.id]?.category
+        }
+        // S-21u (SPLIT-22b): and a held "Paid back by Sam?".
+        if case .credit? = drafts[ask.id]?.answer { drafts[ask.id] = nil }
+        // S-21x (SPLIT-23 (1)): and a held S-11x answer.
+        if case .extra? = drafts[ask.id]?.answer { drafts[ask.id] = nil }
         withAnimation(.easeIn(duration: 0.25)) { leaving = false }
         Task { await step(ask, ["action": "skip"]) }
     }
@@ -502,6 +560,12 @@ struct QuickSortView: View {
             } else {
                 let before = deck
                 let at = index
+                if case .credit = answer, let follow = await followUp(ask) {
+                    // S-21xw → S-21xm (THL-301): Yes saved who sent it; the same
+                    // deposit comes back as the next card for its extra, so it
+                    // never has two cards at once. Undo puts the deck back.
+                    deck.insert(follow, at: index + 1)
+                }
                 await step(ask, ["action": "marked", "title": reply.title ?? answer.done], quiet: true)
                 withAnimation {
                     toast = Sorted(text: always.map { QuickSortStep.always($0, sorted: 1) } ?? reply.title ?? answer.done,
@@ -513,6 +577,13 @@ struct QuickSortView: View {
             self.error = app.handle(error)
             comeBack()
         }
+    }
+
+    /// THL-301 (S-21xm): the extra still to ask about on a deposit whose
+    /// sender was just saved, from Needs a look's list.
+    private func followUp(_ ask: Ask) async -> Ask? {
+        guard let review: Review = try? await app.api.get("api/review") else { return nil }
+        return review.asks.first { $0.item.key == "extra:" + ask.t.id && !$0.skipped }
     }
 
     private func step(_ ask: Ask, _ body: [String: Any], said: String? = nil, always: String? = nil,

@@ -165,6 +165,8 @@ def _splitting(t, split: dict, txns, payer) -> dict:
         "mode": split["mode"], "watch": split["watch"],
         "you": round(t.my_share if t.my_share is not None else t.amount, 2),
         "people": sp.people_status(t, split, txns, payer),
+        # SPLIT-22b (S-05u): paybacks here credited to no one yet.
+        "uncredited": sp.uncredited_rows(t, split, txns, payer),
     }
 
 
@@ -470,6 +472,9 @@ def set_transaction_split(txn_id: str):
         return jsonify({"error": "Choose a category."}), 400
     before = snapshot(st, st.all_transactions())
     was = {"split": st.splits().get(txn_id), "share": t.my_share if t.share_set else None}
+    edited, problem = _edit_split(st, t, was["split"], people)
+    if problem:
+        return jsonify({"error": problem}), 400
     st.set_split(txn_id, mode, people, bool(body.get("watch", True)))
     st.set_share(txn_id, sp.your_part(t, people))
     # Split from the sort card (2026-10-23): a split is an answer, so the
@@ -481,9 +486,83 @@ def set_transaction_split(txn_id: str):
     data = out.get_json() if hasattr(out, "get_json") else None
     if isinstance(data, dict):
         undo = undo_payload(before, snapshot(st, st.all_transactions()))
-        undo["marks"] = {"splits": {txn_id: was}}
+        undo["marks"] = {"splits": {txn_id: was}, **edited}
         return jsonify(dict(data, undo=undo))
     return out
+
+
+def _edit_split(st, t, old: dict | None, people: list[dict]) -> tuple[dict, str | None]:
+    """Edit split once people have paid or been let go (SPLIT-02, S-03e,
+    S-03f, 2026-11-09). Returns undo marks for what it unlinked, or a
+    problem in words, before anything changes.
+
+    * Someone taken out: their e-Transfers on this purchase are unlinked
+      (back to Needs a look), their cash or app records go, and so does
+      what was let go. Cash a deposit holds has to be unlinked there first.
+    * Someone kept who was let go: what she typed is their share. Above what
+      they've paid, the let go grows or shrinks with it; at or below it,
+      the let go goes and anything paid over the share is "they overpaid".
+    * Changing `people` in place: the stored amount of a let-go person is
+      what they paid, as Let it go writes it."""
+    from . import splits as sp
+    if not old:
+        return {}, None
+    txns = st.all_transactions()
+    payer = st.payback_people()
+    status = {p["name"]: p for p in sp.people_status(t, old, txns, payer)}
+    kept = {p["name"] for p in people}
+    gone = [p for p in old["people"] if p["name"] not in kept]
+    linked = [x for x in txns if t.fingerprint in x.repays_all]
+    theirs: list = []
+    for p in gone:
+        if any(c.get("deposit_id") for c in p.get("cash") or []):
+            return {}, "That cash is in a deposit. Unlink the deposit first."
+        for x in linked:
+            who = payer.get(x.fingerprint)
+            if (who and (who == p["name"] or sp.same_person(who, p["name"]))) or \
+                    (not who and sp.from_person(x, p["name"])):
+                if (x.raw or {}).get("part_of"):
+                    return {}, f"{p['name']}’s payback is part of a deposit. Unlink the deposit first."
+                theirs.append(x)
+    marks: dict = {}
+    kinds = st.payback_kinds()
+    from . import parts as dp
+    for x in theirs:
+        more = st.payback_more(x.fingerprint)
+        marks.setdefault("paybacks", {})[x.fingerprint] = {
+            "charge": x.repays, "kind": kinds.get(x.fingerprint),
+            "person": payer.get(x.fingerprint), "amount": x.repays_amount}
+        if more:
+            marks.setdefault("payback_more", {})[x.fingerprint] = more
+        # SPLIT-16 (2026-11-09): only the part that pays back this purchase
+        # comes off. A payback that also paid back other purchases keeps
+        # those links, as parts of the deposit, and what paid this one is
+        # "$28.04 left to sort" in Needs a look. Undo puts it back whole.
+        others = [(c, x.part_for(c)) for c in x.repays_all if c != t.fingerprint]
+        st.unlink_payback(x.fingerprint)
+        if not others:
+            continue
+        who = payer.get(x.fingerprint)
+        fresh = st.get_transaction(x.fingerprint) or x
+        dp.apply(st, fresh, [{"kind": "payback", "charge": c, "amount": a, **({"person": who} if who else {})}
+                             for c, a in others], later=True)
+        marks.setdefault("unparts", []).append(x.fingerprint)
+    for p in gone:
+        for c in p.get("cash") or []:
+            st.remove_split_cash(c["id"])
+        if p.get("let_go"):
+            st.clear_let_go(t.fingerprint, p["name"])
+    for p in people:
+        before = next((q for q in old["people"] if q["name"] == p["name"]), None)
+        if not before or not before.get("let_go"):
+            continue
+        paid = status[p["name"]]["paid"]
+        if p["amount"] > paid + 0.005:
+            st.set_let_go(t.fingerprint, p["name"], p["amount"], before["let_go"]["day"])
+            p["amount"] = round(paid, 2)
+        else:
+            st.clear_let_go(t.fingerprint, p["name"])
+    return marks, None
 
 
 @bp.delete("/transactions/<txn_id>/split")
@@ -642,12 +721,26 @@ def undo_change():
     from .impact import SOURCE
     from .transfers import apply_transfer_matches
     body = request.get_json(silent=True) or {}
+    if isinstance(body.get("cash_payment"), int):
+        # A cash or app payment and every piece of its extra (SPLIT-19).
+        from .parts_api import remove_payment
+        st = store()
+        problem = remove_payment(st, body["cash_payment"])
+        if problem:
+            return jsonify({"error": problem}), 400
+        _reclassify(st)
+        return jsonify({"ok": True})
     if isinstance(body.get("parts"), str):
         # A deposit split into parts (THL-291): one deposit again.
         from . import parts as dp
         st = store()
         if not dp.undo(st, body["parts"]):
             return jsonify({"error": "Nothing to undo."}), 400
+        if isinstance(body.get("marks"), dict):
+            # A purchase split in the same save (SPLIT-07, S-12d): one Undo
+            # puts the parts, the link and the split back.
+            from .marks import undo_marks
+            undo_marks(st, body["marks"])
         _reclassify(st)
         return jsonify({"ok": True})
     rows = body.get("rows") or []

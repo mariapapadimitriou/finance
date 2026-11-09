@@ -17,7 +17,7 @@ enum Pearl {
     static let onAction = dynamic(light: 0xFFFFFF, dark: 0x1C1A33)  // --on-action
     static let blush = Color(hex: 0xFFE4EC)                         // --blush
     static let answered = dynamic(light: 0xF1E9EE, dark: 0x252C5E)  // answered rows
-    static let moneyIn = dynamic(light: 0x167A40, dark: 0x56D48F)   // color/text/money-in
+    static let moneyIn = dynamic(light: 0x167A40, dark: 0x6EDB94)   // color/text/money-in (dark #6EDB94, Figma library; product owner 2026-11-09)
     static let caution = dynamic(light: 0x8A5A12, dark: 0xF3D9A4)   // --caution
     static let cautionBackground = dynamic(light: 0xFBECC8, dark: 0x3A2E14)
 

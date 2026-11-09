@@ -166,7 +166,9 @@ def annotate(st, review: dict, txns: list[Transaction], today: str | None) -> No
     claimed: set[str] = set()
     for it in review.get("money_in") or []:
         t = by_id.get(it["txn"]["id"])
-        if t is None or it.get("skipped"):
+        # S-21x (SPLIT-23 (1)): the extra on a paid-back purchase asks only
+        # "What was this?"; no evidence question rides on it.
+        if t is None or it.get("skipped") or it.get("extra"):
             continue
         pair = pair_for(it, t, txns, outs, names)
         if not pair or pair["other"] in claimed:

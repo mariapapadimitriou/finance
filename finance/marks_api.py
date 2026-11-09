@@ -96,6 +96,30 @@ def _impact_for(st, before_txns, after_txns, t, res: dict) -> dict:
     return core._impact(st, before_txns, after_txns, res["from"], res["to"], t.date[:7])
 
 
+def _extra_part(case: str, body: dict, amount: float) -> tuple[dict | None, str | None]:
+    """A web answer to S-21xm (THL-301) as the one part it is: the extra."""
+    from .parts import INCOME_KINDS
+    simple = {"regular_pay": ("income", "salary"), "own": ("moved", None),
+              "out_of_savings": ("savings", None), "borrowed": ("loan", None),
+              "lent_back": ("lent_back", None)}
+    if case == "pay":
+        k = body.get("income_kind")
+        if k == "gifts":
+            return {"kind": "gift", "amount": amount}, None
+        if k not in INCOME_KINDS:
+            return None, "Choose what kind of income it is."
+        return {"kind": "income", "amount": amount, "income_kind": k}, None
+    if case in simple:
+        kind, k = simple[case]
+        return {"kind": kind, "amount": amount, **({"income_kind": k} if k else {})}, None
+    if case in ("payback", "refund", "reimbursement"):
+        part = {"kind": case, "amount": amount, "charge": body.get("charge")}
+        if body.get("person"):
+            part["person"] = body["person"]
+        return part, None
+    return None, f"Only ${amount:,.2f} of this is extra, so it can’t be that. Pick what the extra was."
+
+
 @bp.post("/transactions/<txn_id>/mark")
 def mark_transaction(txn_id: str):
     from .impact import snapshot, undo_payload
@@ -121,6 +145,17 @@ def mark_transaction(txn_id: str):
         return jsonify({"line": line, "case": case, **impact})
     if case == "shared":
         return jsonify({"error": "Split it from the transaction instead."}), 400
+    if t.repays and t.amount < 0:
+        # S-21xm (THL-301, SPLIT-24): the web answers the same Needs a look
+        # row. When only part of this payback is extra, the answer is for
+        # that part: the purchases it was credited on keep their credit.
+        from . import parts_api, splits as sp
+        q = sp.extra_question(t, txns, st.splits(), st.payback_people())
+        if q and q.get("credited"):
+            part, problem = _extra_part(case, body, q["amount"])
+            if problem:
+                return jsonify({"error": problem}), 400
+            return parts_api.save_parts(st, t, {"parts": [part], "extra": True})
     before = snapshot(st, txns)
     try:
         res = marks.apply(st, t, body, _today())

@@ -516,6 +516,7 @@ CREATE TABLE IF NOT EXISTS txn_split_people (
     pos    INTEGER NOT NULL,
     name   TEXT NOT NULL,
     amount REAL NOT NULL,
+    weight REAL,
     PRIMARY KEY (txn_id, pos)
 );
 -- Cash in hand (THL-291): someone in a split paid her back in cash, with no
@@ -527,7 +528,11 @@ CREATE TABLE IF NOT EXISTS txn_split_cash (
     name       TEXT NOT NULL,
     amount     REAL NOT NULL,
     day        TEXT NOT NULL,
-    deposit_id TEXT
+    deposit_id TEXT,
+    via        TEXT,
+    app        TEXT,
+    origin     INTEGER,
+    kind       TEXT
 );
 -- Let the rest go (THL-291): what someone's part was before she let the
 -- rest of it go, so it can be put back.
@@ -789,6 +794,9 @@ class Store:
         self._migrate_plaid_error_code()
         self._migrate_plaid_logo()
         self._migrate_joint_share()
+        self._migrate_split_weight()
+        self._migrate_split_cash_via()
+        self._migrate_split_cash_app_origin()
         self._migrate_joint_people()
         self._migrate_travel_ownership()
         self._drop_bank_funded_budgets()
@@ -1040,6 +1048,40 @@ class Store:
         except Exception:                                        # noqa: BLE001
             return
 
+    def _migrate_split_weight(self) -> None:
+        """Add `txn_split_people.weight`: the percent or shares a split was
+        made with, so Edit split opens in the mode it was saved in, with the
+        same numbers (SPLIT-02, S-03e, 2026-11-09). Tried, and a failure read
+        as "already there", as above."""
+        try:
+            with self.conn() as c:
+                c.execute("ALTER TABLE txn_split_people ADD COLUMN weight REAL")
+        except Exception:                                        # noqa: BLE001
+            return
+
+    def _migrate_split_cash_via(self) -> None:
+        """Add `txn_split_cash.via`: "app" for a payback through another app
+        (PayPal, Wise…), which no deposit ever holds; null is cash in hand
+        (SPLIT-11, 2026-11-09). Tried, and a failure read as "already there"."""
+        try:
+            with self.conn() as c:
+                c.execute("ALTER TABLE txn_split_cash ADD COLUMN via TEXT")
+        except Exception:                                        # noqa: BLE001
+            return
+
+    def _migrate_split_cash_app_origin(self) -> None:
+        """Add `txn_split_cash.app`, the app's name she typed (SPLIT-14,
+        S-06 v3), and `origin`, the record a partly deposited payment was
+        cut from (SPLIT-15), so it is listed and counted as one payment."""
+        # `kind` (SPLIT-19, S-11c): null is a payback; "gift" and "returned"
+        # are pieces of a payment's extra that pay back nobody.
+        for col in ("app TEXT", "origin INTEGER", "kind TEXT"):
+            try:
+                with self.conn() as c:
+                    c.execute(f"ALTER TABLE txn_split_cash ADD COLUMN {col}")
+            except Exception:                                    # noqa: BLE001
+                continue
+
     def _migrate_joint_people(self) -> None:
         """Who a joint account is shared with (`joint_accounts.people`, a JSON
         list of names), and which of them put money in (`person` on a deposit
@@ -1156,6 +1198,9 @@ class Store:
         if search:
             where.append("(t.merchant LIKE ? OR t.description LIKE ?)")
             params += [f"%{search}%", f"%{search}%"]
+        # SPLIT-19 (S-11c): a cash or app gift counts as income, but it is
+        # no bank transaction, so Transactions doesn't list it.
+        where.append("COALESCE(t.source, '') != 'split_gift'")
 
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         with self.conn() as c:
@@ -1554,6 +1599,15 @@ class Store:
             rows = c.execute("SELECT inflow_id, person FROM txn_payback_person").fetchall()
         return {r["inflow_id"]: r["person"] for r in rows}
 
+    def set_payback_person(self, inflow_id: str, person: str | None) -> None:
+        """Say who sent a payback already linked (SPLIT-22b, S-35c); None
+        forgets it. The link and how much went to each purchase stay."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_payback_person WHERE inflow_id = ?", (inflow_id,))
+            if person:
+                c.execute("INSERT INTO txn_payback_person (inflow_id, person) VALUES (?, ?)",
+                          (inflow_id, person))
+
     # ── What was this? (2026-10-14) ──────────────────────────────────────
     def payback_kinds(self) -> dict[str, str]:
         """inflow id → "reimbursement" where a repayment was one (work,
@@ -1753,23 +1807,45 @@ class Store:
         she let the rest go (`let_go`)."""
         with self.conn() as c:
             heads = c.execute("SELECT txn_id, mode, watch FROM txn_splits").fetchall()
-            people = c.execute("SELECT txn_id, pos, name, amount FROM txn_split_people "
+            people = c.execute("SELECT txn_id, pos, name, amount, weight FROM txn_split_people "
                                "ORDER BY txn_id, pos").fetchall()
-            cash = c.execute("SELECT id, txn_id, name, amount, day, deposit_id FROM txn_split_cash "
-                             "ORDER BY id").fetchall()
+            every = c.execute("SELECT id, txn_id, name, amount, day, deposit_id, via, app, origin, kind "
+                              "FROM txn_split_cash ORDER BY id").fetchall()
             gone = c.execute("SELECT txn_id, name, was, day FROM txn_split_let_go").fetchall()
         out = {r["txn_id"]: {"mode": r["mode"], "watch": bool(r["watch"]), "people": []}
                for r in heads}
         for r in people:
             if r["txn_id"] in out:
-                out[r["txn_id"]]["people"].append(
-                    {"name": r["name"], "amount": round(float(r["amount"]), 2)})
+                person = {"name": r["name"], "amount": round(float(r["amount"]), 2)}
+                if r["weight"] is not None:
+                    person["weight"] = float(r["weight"])
+                out[r["txn_id"]]["people"].append(person)
+        # SPLIT-19 (S-11c): what the whole payment was, and what of its extra
+        # she gave back, so S-05 reads "$60.00, $17.94 given back".
+        whole: dict[int, float] = {}
+        back: dict[int, float] = {}
+        # SPLIT-19 (S-11c, Paying me back): every purchase the payment paid
+        # back, its own first, so a list reads "paid back Loblaws and Pizza Nova".
+        paid_for: dict[int, list[str]] = {}
+        for r in every:
+            root = r["origin"] or r["id"]
+            whole[root] = round(whole.get(root, 0.0) + float(r["amount"]), 2)
+            if r["kind"] == "returned":
+                back[root] = round(back.get(root, 0.0) + float(r["amount"]), 2)
+            if r["kind"] is None and r["txn_id"] not in paid_for.setdefault(root, []):
+                paid_for[root].append(r["txn_id"])
+        # A gift or a returned piece of the extra pays back nobody.
+        cash = [r for r in every if r["kind"] is None]
         for r in cash:
             for p in (out.get(r["txn_id"]) or {}).get("people", []):
                 if p["name"] == r["name"]:
+                    root = r["origin"] or r["id"]
                     p.setdefault("cash", []).append(
                         {"id": r["id"], "amount": round(float(r["amount"]), 2), "day": r["day"],
-                         "deposit_id": r["deposit_id"]})
+                         "deposit_id": r["deposit_id"], "via": r["via"] or "cash",
+                         "app": r["app"], "origin": root,
+                         "whole": whole.get(root), "given_back": back.get(root, 0.0),
+                         "charges": paid_for.get(root, [])})
         for r in gone:
             for p in (out.get(r["txn_id"]) or {}).get("people", []):
                 if p["name"] == r["name"]:
@@ -1777,18 +1853,67 @@ class Store:
         return out
 
     # Cash in hand and Let the rest go (THL-291).
-    def add_split_cash(self, txn_id: str, name: str, amount: float, day: str) -> int:
+    def add_split_cash(self, txn_id: str, name: str, amount: float, day: str,
+                       via: str | None = None, app: str | None = None,
+                       origin: int | None = None, kind: str | None = None) -> int:
+        """Cash in hand, or `via="app"` for another app (SPLIT-11), named
+        `app` when she said which (SPLIT-14). `origin` is the payment a
+        partly deposited piece was cut from (SPLIT-15), or whose extra this
+        piece is (SPLIT-19); `kind` "gift" or "returned" for an extra that
+        pays back nobody."""
+        app = (" ".join(str(app).split())[:30] or None) if via == "app" and app else None
         with self.conn() as c:
-            cur = c.execute("INSERT INTO txn_split_cash (txn_id, name, amount, day) VALUES (?,?,?,?)",
-                            (txn_id, name, round(amount, 2), day))
+            cur = c.execute("INSERT INTO txn_split_cash (txn_id, name, amount, day, via, app, origin, kind) "
+                            "VALUES (?,?,?,?,?,?,?,?)",
+                            (txn_id, name, round(amount, 2), day, via if via == "app" else None, app, origin,
+                             kind if kind in ("gift", "returned") else None))
             return int(cur.lastrowid)
+
+    def split_apps(self, limit: int = 4) -> list[str]:
+        """S-06 v3 "Used before": the app names she has typed, newest
+        first, one per name whatever its case (SPLIT-14)."""
+        with self.conn() as c:
+            rows = c.execute("SELECT app FROM txn_split_cash WHERE app IS NOT NULL AND app != '' "
+                             "ORDER BY day DESC, id DESC").fetchall()
+        out: list[str] = []
+        for r in rows:
+            if r["app"].casefold() not in {a.casefold() for a in out}:
+                out.append(r["app"])
+            if len(out) >= limit:
+                break
+        return out
+
+    def rejoin_split_cash(self) -> None:
+        """SPLIT-15: pieces of one cash payment that no deposit holds any
+        more join back into one record, the first of them."""
+        with self.conn() as c:
+            rows = c.execute("SELECT id, amount, txn_id, name, kind, COALESCE(origin, id) AS root "
+                             "FROM txn_split_cash WHERE deposit_id IS NULL ORDER BY id").fetchall()
+            groups: dict[tuple, list] = {}
+            for r in rows:
+                # SPLIT-19: the pieces of one payment's extra pay back other
+                # shares, or nobody; only pieces of the same record rejoin.
+                groups.setdefault((r["root"], r["txn_id"], r["name"], r["kind"]), []).append(r)
+            for pieces in groups.values():
+                if len(pieces) < 2:
+                    continue
+                keep, rest = pieces[0], pieces[1:]
+                total = round(sum(float(p["amount"]) for p in pieces), 2)
+                c.execute("UPDATE txn_split_cash SET amount = ? WHERE id = ?", (total, keep["id"]))
+                for p in rest:
+                    c.execute("DELETE FROM txn_split_cash WHERE id = ?", (p["id"],))
+
+    def set_split_cash_amount(self, cash_id: int, amount: float) -> None:
+        """Cash partly deposited (S-13 v2): what this record still holds."""
+        with self.conn() as c:
+            c.execute("UPDATE txn_split_cash SET amount = ? WHERE id = ?", (round(amount, 2), cash_id))
 
     def remove_split_cash(self, cash_id: int) -> bool:
         with self.conn() as c:
             return (c.execute("DELETE FROM txn_split_cash WHERE id = ?", (cash_id,)).rowcount or 0) > 0
 
     def split_cash(self) -> list[dict]:
-        """Every cash payback: {id, txn_id, name, amount, day, deposit_id}."""
+        """Every cash payback: {id, txn_id, name, amount, day, deposit_id, via}."""
         with self.conn() as c:
             return [dict(r) for r in c.execute("SELECT * FROM txn_split_cash ORDER BY id").fetchall()]
 
@@ -1842,8 +1967,13 @@ class Store:
             c.execute("INSERT INTO txn_splits (txn_id, mode, watch) VALUES (?, ?, ?)",
                       (txn_id, mode, 1 if watch else 0))
             for pos, p in enumerate(people):
-                c.execute("INSERT INTO txn_split_people (txn_id, pos, name, amount) "
-                          "VALUES (?, ?, ?, ?)", (txn_id, pos, p["name"], p["amount"]))
+                # The percent or shares it was made with (SPLIT-02), when it was.
+                weight = p.get(mode) if mode in ("percent", "shares") else None
+                if weight is None and mode in ("percent", "shares"):
+                    weight = p.get("weight")
+                c.execute("INSERT INTO txn_split_people (txn_id, pos, name, amount, weight) "
+                          "VALUES (?, ?, ?, ?, ?)", (txn_id, pos, p["name"], p["amount"],
+                                                     None if weight is None else float(weight)))
 
     def clear_split(self, txn_id: str) -> bool:
         with self.conn() as c:

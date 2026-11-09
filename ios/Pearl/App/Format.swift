@@ -56,6 +56,7 @@ enum Format {
 
     private static let longDay = formatter("EEEE, MMMM d")
     private static let shortDay = formatter("MMM d")
+    private static let monthDayFormat = formatter("MMMM d")
     private static let monthYear = formatter("MMMM yyyy")
     private static let monthOnly = formatter("MMMM")
 
@@ -84,6 +85,11 @@ enum Format {
     /// "Oct 14".
     static func short(_ iso: String) -> String {
         date(iso).map { shortDay.string(from: $0) } ?? iso
+    }
+
+    /// "November 2", for VoiceOver (S-35a).
+    static func monthDay(_ iso: String) -> String {
+        date(iso).map { monthDayFormat.string(from: $0) } ?? iso
     }
 
     /// "October 2026" from "2026-10".
@@ -131,6 +137,12 @@ enum Format {
     /// "−$24.80" out, "+$40.00" in: signed even when it doesn't count.
     static func money(_ t: Transaction) -> String {
         (t.inflow ? "+" : "\u{2212}") + amount(t.amount)
+    }
+
+    /// "Loblaws", "Loblaws and Pizza Nova", "Loblaws, Costco and Pizza Nova".
+    static func andList(_ names: [String]) -> String {
+        names.count <= 2 ? names.joined(separator: " and ")
+            : names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
     }
 
     /// "$86" when whole, "$86.50" when not.

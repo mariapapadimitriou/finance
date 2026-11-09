@@ -15,6 +15,12 @@ leftover itself.
 
 "They overpaid" is money she owes back: a Borrowed part with the person's
 name, listed under You owe (`owed`).
+
+S-11 v2 (SPLIT-04, 2026-11-09): what the rest is, on the shared What was
+this? tiles. Besides Jira's kinds, the tiles there are parts too: Work
+paying me back (`reimbursement`, linked to the expense as a whole deposit's
+reimbursement is), Lent me this (`loan`, Borrowed) and Money I lent, back
+(`lent_back`, Lent). Not mine is not a part.
 """
 
 from __future__ import annotations
@@ -27,7 +33,7 @@ SPLIT = "Split into parts"
 REST = "Left to sort"
 
 KINDS = ("payback", "gift", "income", "moved", "savings", "cash", "refund",
-         "category", "overpaid", "rest")
+         "category", "overpaid", "reimbursement", "loan", "lent_back", "rest")
 # The kinds income can be (finance/income.py).
 INCOME_KINDS = ("salary", "bonus", "interest", "gifts", "government", "tax_refund", "other")
 MAX_PARTS = 12
@@ -71,11 +77,12 @@ def _clean(st, deposit: Transaction, parts: list, later: bool) -> list[dict]:
             raise Problem("A part has to be more than nothing.")
         kind = p["kind"]
         detail: dict = {}
-        if kind in ("payback", "refund"):
+        if kind in ("payback", "refund", "reimbursement"):
             charge = by_id.get(str(p.get("charge") or ""))
             if charge is None or charge.amount <= 0:
-                raise Problem("Pick the purchase it pays back." if kind == "payback"
-                              else "Pick the purchase it refunds.")
+                raise Problem({"payback": "Pick the purchase it pays back.",
+                               "refund": "Pick the purchase it refunds."}.get(kind,
+                                                                             "Pick the expense it reimburses."))
             detail["charge"] = charge.fingerprint
         if kind in ("payback", "overpaid"):
             person = " ".join(str(p.get("person") or "").split())[:40]
@@ -97,6 +104,8 @@ def _clean(st, deposit: Transaction, parts: list, later: bool) -> list[dict]:
                 raise Problem("Pick the cash you were paid.")
             if any(cash[i]["deposit_id"] for i in ids):
                 raise Problem("That cash is already in another deposit.")
+            # Ticked cash can come to more than the part (S-13 v2): it fills
+            # from the top until the part is used up; the rest stays cash.
             detail["cash_ids"] = ids
         out.append({"kind": kind, "amount": amount, "detail": detail})
     whole = _cents(-deposit.amount)
@@ -117,9 +126,11 @@ def _category(kind: str, detail: dict, deposit: Transaction, by_id: dict) -> str
         return "Transfers"
     if kind == "savings":
         return "Saved"
-    if kind == "overpaid":
+    if kind in ("overpaid", "loan"):
         return "Borrowed"
-    if kind == "refund":
+    if kind == "lent_back":
+        return "Lent"
+    if kind in ("refund", "reimbursement"):
         return by_id[detail["charge"]].category or "Other"
     if kind == "category":
         return detail["category"]
@@ -128,14 +139,35 @@ def _category(kind: str, detail: dict, deposit: Transaction, by_id: dict) -> str
     return deposit.category or "Other"
 
 
-def apply(st, deposit: Transaction, parts: list, later: bool = False) -> dict:
-    """Split `deposit` into `parts`. Returns {parts, rest, title}."""
+def as_asked(stored: list[dict]) -> tuple[list[dict], bool]:
+    """A deposit's stored parts as they'd be asked for again: (parts, later)."""
+    asked = [{"kind": p["kind"], "amount": p["amount"], **(p.get("detail") or {})}
+             for p in stored if p["kind"] != "rest"]
+    return asked, any(p["kind"] == "rest" for p in stored)
+
+
+def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: bool = False) -> dict:
+    """Split `deposit` into `parts`. Returns {parts, rest, title}.
+
+    With `replace` (S-10e Edit the $600, SPLIT-03, 2026-11-09), a deposit
+    already in parts has them replaced in one save; if the new ones can't
+    be saved, the old ones are put back exactly as they were."""
     if deposit.amount >= 0:
         raise Problem("Only money coming in can be split into parts.")
+    old = st.parts().get(deposit.fingerprint)
+    if old and replace:
+        asked, had_rest = as_asked(old)
+        undo(st, deposit.fingerprint)
+        fresh = st.get_transaction(deposit.fingerprint) or deposit
+        try:
+            return apply(st, fresh, parts, later)
+        except Problem:
+            apply(st, st.get_transaction(deposit.fingerprint) or fresh, asked, had_rest)
+            raise
+    if old:
+        raise Problem("This deposit is already in parts. Unlink them first.")
     if deposit.excluded and deposit.excluded != REST:
         raise Problem("This deposit is left out. Put it back first.")
-    if st.parts().get(deposit.fingerprint):
-        raise Problem("This deposit is already in parts. Unlink them first.")
     clean = _clean(st, deposit, parts, later)
     by_id = {t.fingerprint: t for t in st.all_transactions()}
     raw = deposit.raw or {}
@@ -165,12 +197,14 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False) -> dict:
             st.link_payback(d["charge"], cid, d.get("person"))
         elif p["kind"] == "refund":
             st.link_refund(cid, d["charge"])
+        elif p["kind"] == "reimbursement":
+            _reimburse(st, by_id[d["charge"]], cid, p["amount"], d)
         elif p["kind"] == "gift":
             st.set_income_type(cid, "gifts", "user")
         elif p["kind"] == "income":
             st.set_income_type(cid, d["income_kind"], "user")
         elif p["kind"] == "cash":
-            st.set_cash_deposit(d["cash_ids"], cid)
+            d["cash_ids"] = _hold_cash(st, d["cash_ids"], p["amount"], cid)
         elif p["kind"] == "overpaid":
             st.set_party(cid, d["person"])
         elif p["kind"] == "rest":
@@ -184,6 +218,46 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False) -> dict:
     return {"parts": listed(st, deposit.fingerprint), "rest": rest, "title": title}
 
 
+def _reimburse(st, charge: Transaction, part_id: str, amount: float, detail: dict) -> None:
+    """Work paying me back, as a part (S-11 v2): linked to the expense as a
+    whole deposit's reimbursement is. An expense left out until it's
+    reimbursed counts again once this pays all that's owed on it; Unlink
+    leaves it out again (`was_excluded`)."""
+    from .marks import REIMBURSEMENT, waiting_reimbursed
+    owed = round(charge.amount - (charge.paid_back or 0.0), 2)
+    st.link_payback(charge.fingerprint, part_id, None)
+    st.set_payback_kind(part_id, REIMBURSEMENT)
+    if amount >= owed - 0.005 and waiting_reimbursed(charge.excluded):
+        detail["was_excluded"] = charge.excluded
+        st.include(charge.fingerprint)
+
+
+def _hold_cash(st, ids: list[int], amount: float, part_id: str) -> list[int]:
+    """S-13 v2: the ticked cash, top first, until `amount` is used up. A
+    record only partly deposited is split in two: what went in is held by
+    this part; the rest stays cash in hand, free to match a later deposit.
+    Returns the records this part holds."""
+    cash = {c["id"]: c for c in st.split_cash()}
+    left = _cents(amount)
+    held = []
+    for i in ids:
+        if left <= 0:
+            break
+        c = cash[i]
+        have = _cents(c["amount"])
+        if have > left:
+            st.set_split_cash_amount(i, left / 100)
+            # SPLIT-15: the rest keeps the payment's origin, so it is still
+            # listed and counted as the one payment she recorded.
+            st.add_split_cash(c["txn_id"], c["name"], (have - left) / 100, c["day"], c.get("via"),
+                              c.get("app"), c.get("origin") or c["id"], c.get("kind"))
+            have = left
+        held.append(i)
+        left -= have
+    st.set_cash_deposit(held, part_id)
+    return held
+
+
 def undo(st, deposit_id: str) -> int:
     """Unlink every part: each part's links go with it, the cash it held is
     free again, and the deposit counts as it did. Returns how many."""
@@ -194,8 +268,15 @@ def undo(st, deposit_id: str) -> int:
             undo(st, p["part_id"])
         st.clear_cash_deposit(p["part_id"])
         st.link_refund(p["part_id"], None)
+        if p["kind"] == "reimbursement":
+            st.set_payback_kind(p["part_id"], None)
+            was = (p.get("detail") or {}).get("was_excluded")
+            if was and (p["detail"].get("charge")):
+                st.exclude(p["detail"]["charge"], was)
         st.delete_transaction(p["part_id"])
     st.clear_parts(deposit_id)
+    # SPLIT-15: a payment cut in two by this deposit is one record again.
+    st.rejoin_split_cash()
     t = st.get_transaction(deposit_id)
     if t is not None and t.excluded == SPLIT:
         st.include(deposit_id)
@@ -219,6 +300,8 @@ def listed(st, deposit_id: str) -> list[dict]:
                     "charge": ({"id": charge.fingerprint, "merchant": charge.merchant,
                                 "date": charge.date[:10], "amount": charge.amount,
                                 "category": charge.category} if charge else None),
+                    # S-10e: a cash part goes back with the same cash (SPLIT-03).
+                    "cash_ids": d.get("cash_ids") or [],
                     "sorted": not (row is not None and row.excluded == REST)})
     return out
 
@@ -248,11 +331,17 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
         return next((n for n in names if same_person(n, name)), name)
 
     owes: dict[str, dict] = {}
+    # A share lowered below what they'd paid (SPLIT-02, S-03e): she owes
+    # them the difference, under You owe.
+    over: list[tuple[str, dict]] = []
     for cid, split in splits.items():
         charge = by_id.get(cid)
         if charge is None or charge.excluded:
             continue
         for p in people_status(charge, split, transactions, payer):
+            if p.get("over", 0.0) >= 0.005:
+                over.append((p["name"], {"charge_id": cid, "merchant": charge.merchant,
+                                         "date": charge.date[:10], "amount": p["over"], "split": True}))
             if p["owes"] < 0.005:
                 continue
             key = person_key(p["name"], list(owes))
@@ -271,6 +360,11 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
         row["total"] = round(row["total"] + -t.amount, 2)
         row["items"].append({"id": t.fingerprint, "date": t.date[:10], "amount": round(-t.amount, 2),
                              "merchant": t.merchant})
+    for name, item in over:
+        key = person_key(name, list(you_owe))
+        row = you_owe.setdefault(key, {"name": key, "total": 0.0, "items": []})
+        row["total"] = round(row["total"] + item["amount"], 2)
+        row["items"].append(item)
     month = today.strftime("%Y-%m")
     back = []
     for t in transactions:
@@ -280,13 +374,46 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
         back.append({"name": payer.get(t.fingerprint) or t.party or t.merchant,
                      "merchant": charge.merchant if charge else "",
                      "date": t.date[:10], "amount": round(t.paid_part, 2)})
+    from .splits import payments
+    dates = {t.fingerprint: t.date[:10] for t in transactions if (t.raw or {}).get("part_of")}
+    merchants = {cid: by_id[cid].merchant for cid in splits if cid in by_id}
+    # SPLIT-19: a payment that paid back several shares is one row, however
+    # many splits hold a piece of it: "Sam · Cash · $60.00 · Nov 13 · paid
+    # back Loblaws and Pizza Nova". The row is the payer's, on the purchase
+    # the payment was recorded on; the other pieces add to it.
+    pieces: dict[int, list[tuple[bool, dict]]] = {}
     for cid, split in splits.items():
         charge = by_id.get(cid)
         for p in split["people"]:
-            for c in p.get("cash") or []:
+            # SPLIT-15: one payment as she recorded it, however much of it a
+            # deposit holds: "$200.00 deposited Nov 12 · $50.00 still cash".
+            for c in payments(p.get("cash") or [], dates, merchants):
                 if c["day"].startswith(month):
-                    back.append({"name": p["name"], "merchant": charge.merchant if charge else "",
-                                 "date": c["day"], "amount": c["amount"], "cash": True})
+                    # Another app (SPLIT-11) says so, by name (SPLIT-14);
+                    # only real cash says Cash.
+                    how = ({"app": True, "app_name": c["app"]} if c["via"] == "app" else {"cash": True})
+                    row = {"name": p["name"], "merchant": charge.merchant if charge else "",
+                           "date": c["day"], "amount": c["amount"], **how}
+                    if c["deposited"] >= 0.005:
+                        row.update(deposited=c["deposited"], deposited_on=c["deposited_on"],
+                                   still=c["still"])
+                    if c.get("paid_back"):
+                        row["paid_back"] = c["paid_back"]
+                        pieces.setdefault(c["id"], []).append((c["id"] in c["ids"], row))
+                    else:
+                        back.append(row)
+    for group in pieces.values():
+        group.sort(key=lambda g: not g[0])
+        row = dict(group[0][1])
+        for _, other in group[1:]:
+            row["amount"] = round(row["amount"] + other["amount"], 2)
+            if other.get("deposited"):
+                row["deposited"] = round(row.get("deposited", 0.0) + other["deposited"], 2)
+                row["deposited_on"] = max(filter(None, (row.get("deposited_on"), other["deposited_on"])),
+                                          default=None)
+        if row.get("deposited"):
+            row["still"] = round(row["amount"] - row["deposited"], 2)
+        back.append(row)
     back.sort(key=lambda r: r["date"], reverse=True)
     people = sorted(owes.values(), key=lambda r: -r["total"])
     return {"total": round(sum(r["total"] for r in people), 2), "people": len(people),

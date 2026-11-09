@@ -90,6 +90,20 @@ struct ReviewView: View {
                     asking = nil
                     Task { await send(.done(reply)) }
                 }
+            } else if let extra = ask.item.extra {
+                // S-21x's chip opens S-11x: a tile moves it off the purchase, with Undo.
+                // S-21xm's chip opens S-11xm for the extra part (THL-301).
+                PartsSheet(deposit: PartsDeposit(id: ask.t.id, name: ask.t.name, amount: ask.t.amount,
+                                                 date: ask.t.date).part(of: extra), api: app.api, whole: extra) { reply in
+                    asking = nil
+                    Task { await send(.done(reply)) }
+                }
+            } else if ask.item.credit != nil {
+                // S-21u's chip opens S-35c: "Sam paid back $30.00 · Undo".
+                WhoSentSheet(id: ask.t.id, api: app.api) { reply in
+                    asking = nil
+                    Task { await send(.done(reply)) }
+                }
             } else {
                 AnswerSheet(ask: ask, categories: categories, accounts: accounts,
                             names: recentNames, api: app.api) { answer in
@@ -237,8 +251,18 @@ struct ReviewView: View {
                 Text(t.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                 Text(ask.kind == .joint ? "Joint · \(Format.relativeDay(t.date))"
                      : ask.item.rest.map { "\(Format.relativeDay(t.date)) · \(Format.amount($0.sorted)) sorted" }
+                     // S-21u: "Nov 16 · paid back Loblaws".
+                     ?? ask.item.credit.map { "\(Format.relativeDay(t.date)) · paid back \(Format.andList($0.paidBack))" }
+                     // S-21x: "Nov 16 · extra on Loblaws". S-21xm (THL-301), part of it:
+                     // "Nov 16 · $30.00 extra on Loblaws", with the whole on the right.
+                     ?? ask.item.extra.map { $0.isPart
+                         ? "\(Format.relativeDay(t.date)) · \(Format.amount($0.amount)) extra on \(Format.andList($0.paidBack))"
+                         : "\(Format.relativeDay(t.date)) · extra on \(Format.andList($0.paidBack))" }
                      ?? [Format.relativeDay(t.date), t.shareNote].compactMap { $0 }.joined(separator: " · "))
-                    .font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+                    // S-21xw / S-21xm: the meta wraps to two lines rather than truncating.
+                    .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                    .lineLimit(ask.item.extra != nil || ask.item.credit != nil ? 2 : 1)
+                    .fixedSize(horizontal: false, vertical: true)
                 GuessChip(label: ask.chip, question: false).padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -481,6 +505,16 @@ enum ReviewAnswer {
     case skip(String, Bool)
     /// Already sent (a deposit split into parts, THL-291): its reply.
     case done(MarkReply)
+    /// T-98s (SPLIT-06): a split held for the Quick sort card, with the
+    /// category it counts toward. Yes saves both in one request, one Undo.
+    case split(String, [String: Any], label: String)
+    /// S-35c (SPLIT-22b, THL-181): who sent a payback already linked. Held
+    /// for a Quick sort card as "Paid back by Sam?" (S-21u).
+    case credit(String, person: String, label: String)
+    /// S-11x (SPLIT-23 (1)): the extra on a paid-back purchase, answered on
+    /// the tiles and held for a Quick sort card ("A gift?"). Yes sends the
+    /// parts in one request; its Undo links it back.
+    case extra(String, [String: Any], label: String)
 
     /// What a Quick sort card asks once this answer is held for its Yes. Nil is
     /// an answer that has already happened, or that isn't one to hold.
@@ -514,6 +548,9 @@ enum ReviewAnswer {
         case .duplicate(_, let same): return same ? "Same purchase" : "Both are real"
         case .recurring: return "Recurring"
         case .dismiss: return "Doesn’t repeat"
+        case .split(_, _, let label): return label
+        case .credit(_, _, let label): return label
+        case .extra(_, _, let label): return label
         case .confirm, .always, .varies, .pair, .check, .skip, .done: return nil
         }
     }
@@ -539,6 +576,7 @@ enum ReviewAnswer {
         case .party(_, let name): return "Sent by \(name)."
         case .duplicate(_, let same): return same ? "Counted once." : "Both counted."
         case .dismiss: return "Pearl won’t ask about it again."
+        case .split(_, _, let label): return "\(label)."
         default: return "Sorted."
         }
     }
@@ -602,6 +640,17 @@ enum ReviewAnswer {
             return try await api.post("api/review/skip", ["key": key, "skip": on])
         case .done(let reply):
             return reply
+        case .credit(let id, let person, _):
+            // One request; its Undo forgets who it was (finance/parts_api.py).
+            return try await api.post("api/transactions/\(id)/credit", ["person": person])
+        case .extra(let id, let body, _):
+            return try await api.post("api/transactions/\(id)/parts", body)
+        case .split(let id, let body, let label):
+            // The split and its category together (finance/api.py), so the
+            // Sorted card's Undo puts back the split, her share and the category.
+            struct Reply: Decodable { let undo: JSONValue? }
+            let reply: Reply = try await api.put("api/transactions/\(id)/split", body)
+            return MarkReply(title: "\(label).", detail: nil, undo: reply.undo)
         }
     }
 }

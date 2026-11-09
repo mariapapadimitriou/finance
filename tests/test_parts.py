@@ -57,7 +57,8 @@ def split(c, tid, **body):
 class TestSplitMethods:
     def test_amounts_can_be_short_but_not_over(self, client):
         """2026-11-08: a split saves before every part is known; what nobody
-        has been given yet stays hers. More than the charge still can't."""
+        has been given yet stays hers. More than the charge still can't.
+        SPLIT-01 (b′), 2026-11-09: only when she's in it."""
         i = add(client, tx("PAI", 85.0, "Dining"))
         d = split(client, i["PAI"], mode="amount", you=30,
                   people=[{"name": "Priya", "amount": 30}, {"name": "Sam", "amount": 20}]).get_json()
@@ -66,9 +67,9 @@ class TestSplitMethods:
         r = split(client, i["PAI"], mode="amount", you=40,
                   people=[{"name": "Priya", "amount": 30}, {"name": "Sam", "amount": 20}])
         assert r.status_code == 400 and r.get_json()["error"] == "That’s $5.00 more than the charge."
-        d = split(client, i["PAI"], mode="amount", include_me=False,
-                  people=[{"name": "Priya", "amount": 30}]).get_json()
-        assert d["splitting"]["you"] == 55.0
+        r = split(client, i["PAI"], mode="amount", include_me=False,
+                  people=[{"name": "Priya", "amount": 30}])
+        assert r.status_code == 400 and r.get_json()["error"] == "$55.00 left to assign."
 
     def test_evenly_gives_the_extra_cent_to_you(self, client):
         i = add(client, tx("PAI", 85.0, "Dining"))

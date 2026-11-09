@@ -336,6 +336,61 @@ def build(transactions: list[Transaction], today: str | None = None,
                          "reason": "Your bank didn’t say who sent it. A name helps Pearl match "
                                    "paybacks and makes it easy to find."})
 
+    # 3d. Who sent this? on a payback already linked (SPLIT-22b, THL-181;
+    # S-21u): linked from search, the web or the API, and credited to no one
+    # because two shares, or none, are its amount. One row per payback, with
+    # the chip above; it opens S-35c. Asked until answered, however old.
+    if splits:
+        from .splits import ASK_FROM, credit_question
+        for t in live:
+            # Only a payback dated from ASK_FROM can be credited to no one.
+            if (t.amount >= 0 or not t.repays or t.date[:10] < ASK_FROM
+                    or not any(c in splits for c in t.repays_all)):
+                continue
+            q = credit_question(t, transactions, splits, payer or {})
+            key = "credit:" + t.fingerprint
+            if q is None or key in dismissed:
+                continue
+            # S-21xw (THL-301): the purchases she's asked about first, so a
+            # payback that's also extra elsewhere reads "paid back Pizza Nova
+            # and Loblaws" while S-35c lists ON PIZZA NOVA.
+            asked = {s["charge"] for s in q["shares"]}
+            ordered = sorted(q["purchases"], key=lambda x: x["id"] not in asked)
+            who_sent.append({"key": key, "txn": _brief(t),
+                             "credit": {"paid_back": [x["merchant"] for x in ordered]},
+                             "reason": "Pearl can’t tell who sent it, so it isn’t "
+                                       "credited to anyone yet."})
+
+    # 3e. What was this? on a payback nobody was left owing on (SPLIT-23 (1),
+    # THL-181; S-21x): linked with no name, dated from ASK_FROM, after
+    # everyone on its purchase(s) had paid. Not a "who sent this?" (there's
+    # no one to tick), so it's money in: "Nov 16 · extra on Loblaws", whose
+    # chip opens S-11x. Its own key, apart from credit:<id>.
+    if splits:
+        from .splits import ASK_FROM, extra_question
+        for t in live:
+            if (t.amount >= 0 or not t.repays or t.date[:10] < ASK_FROM
+                    or not any(c in splits for c in t.repays_all)):
+                continue
+            q = extra_question(t, transactions, splits, payer or {})
+            key = "extra:" + t.fingerprint
+            if q is None or key in dismissed:
+                continue
+            extra = {"paid_back": q["paid_back"], "people": q["people"], "amount": q["amount"]}
+            reason = (f"Everyone on {' and '.join(q['paid_back'])} has paid "
+                      "you back, so this is extra.")
+            if q.get("credited"):
+                # S-21xm (THL-301, SPLIT-24): only part of it is extra. One
+                # row for the deposit, once its sender is known: "Nov 16 ·
+                # $30.00 extra on Loblaws", +$60.00.
+                extra["whole"] = q["whole"]
+                extra["credited"] = [{"person": c["person"], "merchant": c["merchant"],
+                                      "amount": c["amount"]} for c in q["credited"]]
+                reason = (f"Everyone on {' and '.join(q['paid_back'])} has paid you back, "
+                          f"so ${q['amount']:,.2f} of this is extra.")
+            money_in.append({"key": key, "txn": _brief(t), "guess": {"action": "extra"},
+                             "candidates": [], "extra": extra, "reason": reason})
+
     # 4. Income whose type is a guess.
     income = []
     from .categorize import merchant_key

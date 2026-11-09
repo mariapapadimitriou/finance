@@ -25,6 +25,43 @@ struct CardDraft {
     var answer: ReviewAnswer?
     /// The Always switch, once she's touched it.
     var always: Bool?
+    /// T-98s (SPLIT-06): a split made on the card's page, held for its Yes.
+    var split: CardSplit?
+}
+
+/// A split held for a Quick sort card (T-98s, SPLIT-06): "Groceries, split
+/// with Sam?", "Your share $42.06 · Sam owes you $42.06". Yes saves it with
+/// the category in one go; Skip forgets it.
+struct CardSplit {
+    /// What SplitSheet would have saved.
+    let body: [String: Any]
+    let names: [String]
+    let mine: Double
+    let owed: Double
+
+    /// What SplitSheet's onHold gives, for a purchase of `total`: the card's
+    /// page and Quick sort's sheet hold the same thing (SPLIT-06, SPLIT-20).
+    static func held(_ body: [String: Any], mine: Double, total: Double) -> CardSplit {
+        let names = (body["people"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+        return CardSplit(body: body, names: names, mine: mine, owed: max(0, total - mine))
+    }
+
+    /// "Sam", "Sam and Priya", "Sam, Priya and Ben".
+    var who: String {
+        guard names.count > 1 else { return names.first ?? "them" }
+        return names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+    }
+
+    func label(_ category: String) -> String { "\(category), split with \(who)" }
+
+    var note: String {
+        "Your share \(Format.amount(mine)) · \(who) \(names.count == 1 ? "owes" : "owe") you \(Format.amount(owed))"
+    }
+
+    /// The answer Yes sends: the split and the category it counts toward.
+    func answer(_ id: String, category: String) -> ReviewAnswer {
+        .split(id, body.merging(["category": category, "settle": true]) { _, new in new }, label: label(category))
+    }
 }
 
 /// T-96 for a question: fetches the transaction, then shows the page a
@@ -244,6 +281,15 @@ struct TransactionDetailView: View {
     @State private var lettingGo: Transaction.Splitting.Person?
     @State private var seeingOwed = false
     @State private var parting: PartsDeposit?
+    /// S-35c "Who sent this?" (SPLIT-22b): the payback it asks about.
+    @State private var crediting: Crediting?
+    /// S-11x (SPLIT-23 (1)): the deposit's question card opened on the
+    /// extra on a paid-back purchase.
+    @State private var partsExtra: Review.Item.Extra?
+
+    struct Crediting: Identifiable { let id: String }
+    /// S-10e: the parts sheet opened from S-33's Edit, with the parts filled in.
+    @State private var editingParts = false
     @State private var unlinking = false
     /// S-34 for a payback linked to one purchase, from either side.
     @State private var unlinkingPayback: PaybackLink?
@@ -357,7 +403,8 @@ struct TransactionDetailView: View {
         .onAppear {
             // Back on a card's page: what she'd already changed is still there.
             if let draft = guessing?.draft, chosenCategory == nil, newOnes == nil {
-                chosenCategory = draft.label
+                // A held split's label isn't a category (T-98s).
+                chosenCategory = draft.split != nil ? draft.category : draft.label
                 newOnes = draft.always
             }
         }
@@ -376,7 +423,7 @@ struct TransactionDetailView: View {
                                 sorting = nil
                                 if name == guessing.label { guessing.onYes(remember && offersNewOnes) }
                                 else { answer(with: name, always: remember && offersNewOnes) }
-                            }, fromPage: true) { answer in
+                            }, fromPage: true, holds: guessing.onDraft != nil) { answer in
                     sorting = nil
                     if guessing.onDraft != nil, let label = answer.heldLabel {
                         // Not saved yet: the card agrees to it.
@@ -385,6 +432,8 @@ struct TransactionDetailView: View {
                             $0.answer = answer
                             $0.category = nil
                             $0.label = label
+                            // Another answer instead: a held split goes (SPLIT-06).
+                            $0.split = nil
                         }
                     } else {
                         guessing.onAnswer(answer)
@@ -428,13 +477,31 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $splitting) {
-            SplitSheet(t: t, api: app.api, recent: recent) { done in
+            // T-98s (SPLIT-06): from a Quick sort card's page the split is
+            // held for the card, like every other edit here; Yes saves it.
+            SplitSheet(t: t, api: app.api, recent: recent,
+                       onHold: guessing?.onDraft == nil ? nil : { body, _, mine in holdSplit(body, mine: mine) },
+                       onSaved: { done in
                 splitting = false
                 Task { await run { done } }
-            }
+            }, onRemoved: { title, undo in
+                // SPLIT-16: "Priya removed · Undo" puts the link back.
+                splitting = false
+                Task {
+                    await run { nil }
+                    withAnimation { toast = (title, undoing(undo)) }
+                }
+            })
         }
         .sheet(item: $marking) { person in
-            MarkPaidSheet(t: t, person: person, api: app.api) { done in
+            MarkPaidSheet(t: t, person: person, api: app.api, onUndoable: { title, undo in
+                // SPLIT-19 (S-11c): Undo takes back the whole payment and its extra.
+                marking = nil
+                Task {
+                    await run { nil }
+                    withAnimation { toast = (title, undoing(undo)) }
+                }
+            }) { done in
                 marking = nil
                 Task { await run { done } }
             }
@@ -445,10 +512,31 @@ struct TransactionDetailView: View {
                 Task { await letGo(person) }
             }
         }
-        .sheet(item: $parting) { deposit in
-            PartsSheet(deposit: deposit, api: app.api) { reply in
+        .sheet(item: $parting, onDismiss: { editingParts = false; partsExtra = nil }) { deposit in
+            // S-33's Edit opens S-10e with the parts it has (SPLIT-03).
+            PartsSheet(deposit: deposit, api: app.api, editing: editingParts ? t.parts : [],
+                       whole: partsExtra) { reply in
                 parting = nil
-                Task { await run { reply.title ?? "Sorted." } }
+                editingParts = false
+                Task {
+                    await run {
+                        // S-12d: "Costco split and $600 sorted · Undo" puts it all back.
+                        withAnimation { toast = (reply.title ?? "Sorted.", undoing(reply.undo)) }
+                        return nil
+                    }
+                }
+            }
+        }
+        .sheet(item: $crediting) { c in
+            // S-35c from S-05u, or the deposit's Needs a look question card (S-21u; SPLIT-23 (3): no other entry on its page).
+            WhoSentSheet(id: c.id, api: app.api) { reply in
+                crediting = nil
+                Task {
+                    await run {
+                        withAnimation { toast = (reply.title ?? "Sorted.", undoing(reply.undo)) }
+                        return nil
+                    }
+                }
             }
         }
         .sheet(isPresented: $unlinking) { unlinkSheet }
@@ -975,8 +1063,21 @@ struct TransactionDetailView: View {
     // MARK: Splits and parts (THL-291)
 
     /// A purchase she can split: hers, counted, not a refund or split yet.
+    /// Not on a joint account (S-01j, SPLIT-08): that's Whose was it?.
     private var canSplit: Bool {
         !t.inflow && t.transfer == nil && t.refundOf == nil && t.splitting == nil && t.excluded.isEmpty
+            && t.joint.isEmpty
+    }
+
+    /// S-01j: a joint-account purchase, asked Whose was it? in Options.
+    private var jointCharge: Bool { !t.inflow && !t.joint.isEmpty && t.transfer == nil }
+
+    /// "Joint with Sam · yours, Sam’s or shared", or what she said.
+    private var whoseSub: String {
+        if t.shareSet { return spendWhose }
+        let them = t.jointPeople.isEmpty ? "theirs" : t.jointPeople.map { "\($0)’s" }.joined(separator: ", ")
+        let who = t.jointPeople.isEmpty ? t.joint : "Joint with " + t.jointPeople.joined(separator: " and ")
+        return "\(who) · yours, \(them) or shared"
     }
 
     private func deposit(rest: Bool) -> PartsDeposit {
@@ -992,7 +1093,8 @@ struct TransactionDetailView: View {
                         onLetGo: { lettingGo = $0 },
                         onUndoLetGo: { p in Task { await undoLetGo(p) } },
                         onEdit: { splitting = true },
-                        onOwed: { seeingOwed = true })
+                        onOwed: { seeingOwed = true },
+                        onCredit: { crediting = Crediting(id: $0.id) })
         }
     }
 
@@ -1017,8 +1119,8 @@ struct TransactionDetailView: View {
     @ViewBuilder private var depositParts: some View {
         let parts = !t.parts.isEmpty ? t.parts : (t.partOf?.parts ?? [])
         if !parts.isEmpty {
-            section(t.partOf.map { "Part of a \(Format.amount($0.amount)) deposit" }
-                    ?? (parts.contains { $0.kind == "payback" } ? "Pays back" : "Parts"))
+            // S-33 v2: PARTS, every one of them, so they add up to the deposit.
+            section(t.partOf.map { "Part of a \(Format.amount($0.amount)) deposit" } ?? "Parts")
             SolidCard {
                 ForEach(Array(parts.enumerated()), id: \.element.id) { index, p in
                     if index > 0 { RowSeparator(inset: 72) }
@@ -1028,9 +1130,12 @@ struct TransactionDetailView: View {
             section("Options")
             GlassCard {
                 if t.partOf == nil {
-                    // S-33's Edit: the parts sheet again, to change amounts or purchases.
-                    Button { parting = deposit(rest: false) } label: {
-                        row(title: "Edit", sub: "Change amounts or purchases", chevron: true)
+                    // S-33 v2's Edit: S-10e, the parts filled in (SPLIT-03).
+                    Button {
+                        editingParts = true
+                        parting = deposit(rest: false)
+                    } label: {
+                        row(title: "Edit", sub: "Change the parts or what they pay back", chevron: true)
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
@@ -1069,12 +1174,17 @@ struct TransactionDetailView: View {
         case "payback":
             return [p.charge?.category, p.person.map { "\($0)’s share" }].compactMap { $0 }.joined(separator: " · ")
         case "refund": return [p.charge?.category, "Refund"].compactMap { $0 }.joined(separator: " · ")
-        case "gift": return "Counts as income"
-        case "income": return "\(Self.kindName(p.incomeKind)) · counts as income"
+        // S-33 v2: "Income · Gift".
+        case "gift": return "Income · Gift"
+        case "income": return "Income · \(Self.kindName(p.incomeKind))"
         case "moved": return "Not new money"
         case "savings": return "Out of savings"
         case "cash": return "Cash you were paid"
         case "overpaid": return "You owe \(p.person ?? "them") this"
+        // S-11 v2 (SPLIT-04).
+        case "reimbursement": return [p.charge?.category, "Work paying me back"].compactMap { $0 }.joined(separator: " · ")
+        case "loan": return "Borrowed · Lent me this"
+        case "lent_back": return "Lent · Money I lent, back"
         case "rest": return p.sorted == true ? "Sorted" : "Left to sort"
         default: return p.category ?? p.label
         }
@@ -1157,9 +1267,19 @@ struct TransactionDetailView: View {
         let canOneOff = t.canOneOff && (!t.inflow || isIncome)
         let incomeAlways = isIncome ? t.incomeRule?.payer : nil
         if canSplit || couldBePay || unlink || canOneOff || canPayFromBank || offersNewOnes
-            || incomeAlways != nil {
+            || incomeAlways != nil || jointCharge {
             section("Options")
             GlassCard {
+                if jointCharge {
+                    // S-01j (SPLIT-08): a joint purchase is Whose was it?, not Split with others.
+                    Button { whose = true } label: {
+                        row(title: "Whose was it?", sub: whoseSub, chevron: true, icon: "person.2")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                    if canPayFromBank || canSplit || couldBePay || unlink || canOneOff || offersNewOnes
+                        || incomeAlways != nil { RowSeparator() }
+                }
                 if canPayFromBank {
                     Button { payingFromBank = true } label: {
                         row(title: t.bankId == nil ? "Pay from a piggy bank" : "Paid from a piggy bank",
@@ -1285,10 +1405,31 @@ struct TransactionDetailView: View {
         // Picking Pearl's guess is still a choice: it isn't dotted any more.
         pickedGuess = name == (guessing?.label ?? t.label)
         chosenCategory = pickedGuess ? nil : name
+        let category = cardCategory
         holdForCard {
             $0.answer = nil
             $0.category = chosenCategory
-            $0.label = chosenCategory
+            // A held split keeps going with the category she picks (T-98s).
+            $0.label = $0.split.map { $0.label(category) } ?? chosenCategory
+        }
+    }
+
+    /// The category a held split counts toward: hers, or the card's guess.
+    private var cardCategory: String {
+        chosenCategory ?? (guessing?.ask.kind == .category ? guessing?.ask.item.guess?.text : nil)
+            ?? t.category ?? "Other"
+    }
+
+    /// T-98s (SPLIT-06): nothing is saved; the card asks "Groceries, split with Sam?".
+    private func holdSplit(_ body: [String: Any], mine: Double) {
+        splitting = false
+        let split = CardSplit.held(body, mine: mine, total: t.fullAmount ?? t.amount)
+        let category = cardCategory
+        holdForCard {
+            $0.split = split
+            $0.answer = nil
+            $0.category = chosenCategory
+            $0.label = split.label(category)
         }
     }
 
@@ -1339,15 +1480,7 @@ struct TransactionDetailView: View {
     @ViewBuilder private var details: some View {
         section("Details")
         GlassCard {
-            // T-75: whose a joint charge was, first in Details.
-            if !t.inflow && !t.joint.isEmpty && t.transfer == nil {
-                Button { whose = true } label: {
-                    row(title: "Whose was it?", sub: nil, chevron: true, value: spendWhose)
-                }
-                .buttonStyle(.plain)
-                .disabled(busy)
-                RowSeparator()
-            }
+            // T-75's Whose was it? is in Options now (S-01j, SPLIT-08).
             Button { editingNote = true } label: {
                 if t.myNote.isEmpty {
                     row(title: "Add a note", placeholder: true, chevron: true, icon: "square.and.pencil")
@@ -1473,7 +1606,13 @@ struct TransactionDetailView: View {
             sorting = sortAsk(t.inflow ? .moneyIn : .transfer)
             return
         }
-        if ask.item.rest != nil { parting = deposit(rest: true) } else { sorting = ask }
+        if ask.item.rest != nil { parting = deposit(rest: true) }
+        // S-21u's question on its own page: S-35c, not What was this?.
+        else if ask.item.credit != nil { crediting = Crediting(id: t.id) }
+        // S-21x's question on its own page: S-11x for the whole amount;
+        // S-21xm's (THL-301): S-11xm for the extra part.
+        else if let extra = ask.item.extra { partsExtra = extra; parting = deposit(rest: false).part(of: extra) }
+        else { sorting = ask }
     }
 
     /// This deposit as a money-in question, for AnswerSheet.
