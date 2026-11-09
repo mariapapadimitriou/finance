@@ -80,7 +80,9 @@ def split_let_go(txn_id: str):
     p["amount"] = round(status["paid"], 2)
     _reshare(st, t, split)
     core._reclassify(st)
+    # REFRESH-02 (S-44c): the toast, whose Undo is the DELETE below.
     return jsonify({"ok": True, "title": f"Let it go. {p['name']}’s ${status['owes']:,.2f} is yours now.",
+                    "toast": f"Let go · the ${status['owes']:,.2f} is your spending now",
                     "detail": core.transaction_detail(txn_id).get_json()})
 
 
@@ -93,11 +95,16 @@ def split_let_go_undo(txn_id: str):
     p = _person(split, str(_body().get("name") or request.args.get("name") or ""))
     if p is None or not p.get("let_go"):
         return jsonify({"error": "Nothing was let go."}), 404
+    paid = next((s["paid"] for s in sp.people_status(t, split, st.all_transactions(), st.payback_people())
+                 if s["name"] == p["name"]), 0.0)
+    owes = max(0.0, p["let_go"]["was"] - paid)
     p["amount"] = p["let_go"]["was"]
     st.clear_let_go(txn_id, p["name"])
     _reshare(st, t, split)
     core._reclassify(st)
+    # REFRESH-02 (S-44e): "Alex owes you $30.00 again"; its Undo is the POST.
     return jsonify({"ok": True, "title": f"{p['name']} owes you again.",
+                    "toast": f"{p['name']} owes you ${owes:,.2f} again",
                     "detail": core.transaction_detail(txn_id).get_json()})
 
 

@@ -499,7 +499,17 @@ def set_transaction_split(txn_id: str):
     if isinstance(data, dict):
         undo = undo_payload(before, snapshot(st, st.all_transactions()))
         undo["marks"] = {"splits": {txn_id: was}, **edited}
-        return jsonify(dict(data, undo=undo))
+        # REFRESH-02 (S-44d): someone taken off, whether or not they had
+        # paid: "Priya removed · $30.00 back to your share", with this Undo.
+        kept = {p["name"] for p in people}
+        gone = [p for p in (was["split"] or {}).get("people", []) if p["name"] not in kept]
+        toast = None
+        if len(gone) == 1:
+            share = (gone[0].get("let_go") or {}).get("was", gone[0].get("amount") or 0)
+            toast = f"{gone[0]['name']} removed · {_money2(share)} back to your share"
+        elif gone:
+            toast = f"{len(gone)} people removed"
+        return jsonify(dict(data, undo=undo, **({"toast": toast} if toast else {})))
     return out
 
 
@@ -1152,7 +1162,9 @@ def add_payback(txn_id: str, inflow_id: str):
     if isinstance(data, dict):
         undo = undo_payload(before, snapshot(st, st.all_transactions()))
         undo["marks"] = {"paybacks": {inflow_id: was}, **({"splits": split_was} if split_was else {})}
-        return jsonify(dict(data, undo=undo))
+        # REFRESH-02 (S-44b): "Priya paid back $30.00", with this Undo.
+        toast = f"{person} paid back {_money2(paying)}" if person else f"Linked · {_money2(paying)} paid back"
+        return jsonify(dict(data, undo=undo, toast=toast))
     return out
 
 

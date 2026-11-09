@@ -1,80 +1,60 @@
 import SwiftUI
 
-// SPLIT-25 (THL-291): a payment's options from the purchase it paid back
-// (S-05o) and its Unlink? sheet (S-34s / S-34k).
-//
-// Presentation to be replaced by custom design, see design refresh: the
-// product owner asked for custom Pearl pages and sheets (and a ••• menu on
-// each person's row) instead of stock iOS dialogs, and designBOT is drawing
-// them. Everything the screens do lives in the server's `LinkInfo` and in
-// these two views, so swapping the look touches only this file.
+// SPLIT-25 (THL-291), restyled by REFRESH-02 (Design refresh section 11):
+// a payment's options from the purchase it paid back (S-05or, 1090:2457)
+// and its Unlink? sheet (S-34sr 1092:2716, S-34kr1–10 1092:2890–3332), as
+// Pearl sheets on pearl paper. Everything they say comes from the server's
+// `LinkInfo`; the split card's people use S-40 (SplitMenus.swift) instead.
 
-/// S-05o: "Jo paid back $30.00", where the money came from, then View,
-/// Unlink… and Cancel. Not a stock iOS dialog (product owner,
-/// 2026-11-09). `actions` run after the sheet has gone, so the next sheet
-/// can open.
+/// S-05or: a PAID BACK row on a purchase that isn't split, or a REFUNDED
+/// BY row. "Jo paid back $30.00", where the money came from, then View…
+/// (opens it here in Pearl, never the web) and Unlink….
 struct PaybackOptionsSheet: View {
-    struct Action: Identifiable {
-        let id = UUID()
-        let title: String
-        var destructive = false
-        let run: () -> Void
-    }
-
-    let title: String
-    let message: String?
-    let actions: [Action]
-    /// Closes the sheet; `then` runs once it's gone.
-    let onClose: (_ then: (() -> Void)?) -> Void
+    let link: Transaction.LinkInfo
+    /// "PAID BACK" or "REFUNDED BY".
+    let overline: String
+    let onClose: () -> Void
+    let onView: () -> Void
+    let onUnlink: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                SheetTitle(title: title) { onClose(nil) }
-                if let message = message, !message.isEmpty {
-                    Text(message).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                        .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+        PearlSheet {
+            HStack(alignment: .top, spacing: 12) {
+                PearlBubble(symbol: PersonOptionsSheet.symbol(link.kind), size: 44)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(overline).font(Pearl.text(.footnote, .medium)).tracking(0.78).foregroundColor(Pearl.muted)
+                    Text(link.dialog).font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(link.message).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 16)
                 }
-                GlassCard {
-                    ForEach(Array(actions.enumerated()), id: \.element.id) { i, a in
-                        if i > 0 { RowSeparator(inset: 16) }
-                        Button { onClose(a.run) } label: {
-                            HStack {
-                                Text(a.title).font(Nacre.body)
-                                    .foregroundColor(a.destructive ? Pearl.action : Pearl.ink)
-                                Spacer()
-                                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(Pearl.muted)
-                            }
-                            .padding(.horizontal, 16).frame(minHeight: 52).contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 16)
-                Button("Cancel") { onClose(nil) }
-                    .font(Nacre.headline).foregroundColor(Pearl.ink)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Pearl.card))
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                PearlCloseButton(action: onClose)
             }
-            .padding(.bottom, 16)
+            PearlOptionCard {
+                if let view = link.view {
+                    PearlOptionRow(symbol: "eye", title: view.label, sub: "Opens it here in Pearl", action: onView)
+                    PearlDivider()
+                }
+                PearlOptionRow(symbol: "xmark", title: link.kind == "refund" ? "Unlink refund…" : "Unlink…",
+                               sub: Self.firstSentence(link.sheet.line), action: onUnlink)
+            }
         }
-        .background(SheetBackground())
-        .presentationDetents([.medium, .large])
+    }
+
+    /// "Jo will owe you $30.00 again on Pizza Nova" from the sheet's line.
+    static func firstSentence(_ line: String) -> String {
+        guard let r = line.range(of: ". ") else { return line.hasSuffix(".") ? String(line.dropLast()) : line }
+        return String(line[..<r.lowerBound])
     }
 }
 
-// MARK: - Unlink? from the purchase (SPLIT-25, THL-291)
+// MARK: - Unlink? from the purchase (S-34sr, S-34kr)
 
-/// S-34s / S-34k: Unlink? for one payment, from the purchase it paid back.
-/// The server words the sheet (`LinkInfo.sheet`), so its line says what
-/// Unlink does for that kind of payback. Unlink shows a spinner and the
-/// sheet stays open until the server answers (S-34s); a failure keeps
-/// everything as it was and says so (S-34s error).
+/// S-34sr / S-34kr1–10: Unlink? for one payment, from the purchase it paid
+/// back. Title, line, card and buttons come from `LinkInfo.sheet`. While it
+/// waits: a spinner in Unlink, both buttons off, no swipe-dismiss; a failure
+/// keeps everything as it was and says so on the champagne banner.
 @MainActor
 struct UnlinkLinkSheet: View {
     let link: Transaction.LinkInfo
@@ -82,7 +62,7 @@ struct UnlinkLinkSheet: View {
     let charge: String
     let api: APIClient
     let onCancel: () -> Void
-    /// S-05t: the toast's title and its Undo.
+    /// S-44a: the toast's title and its Undo.
     let onDone: (String, JSONValue?) -> Void
     @State private var busy = false
     @State private var failed = false
@@ -92,59 +72,58 @@ struct UnlinkLinkSheet: View {
         let undo: JSONValue?
     }
 
+    private static let error = "Couldn’t unlink that. Nothing changed. Try again."
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                SheetTitle(title: link.sheet.title) { onCancel() }
-                HStack(spacing: 12) {
-                    Initials(name: link.sheet.face, size: 48)
-                        .overlay(Circle().strokeBorder(
-                            AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose],
-                                            center: .center), lineWidth: 1.2))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(link.sheet.name).font(Nacre.title2).foregroundColor(Pearl.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(link.sheet.sub).font(Nacre.subheadline).foregroundColor(Pearl.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 0)
+        let s = link.sheet
+        PearlSheet(dismissDisabled: busy) {
+            HStack(alignment: .top, spacing: 12) {
+                if link.kind == "refund" || link.kind == "reimbursement" {
+                    PearlBubble(symbol: PersonOptionsSheet.symbol(link.kind), size: 44)
+                } else {
+                    PearlFace(name: s.face)
                 }
-                .accessibilityElement(children: .combine)
-                .padding(.horizontal, 16)
-                VStack(spacing: 12) {
-                    if let ask = link.sheet.ask {
-                        Text(ask)
-                    }
-                    Text(link.sheet.line)
-                    if failed {
-                        // S-34s error: color/text/caution, announced by VoiceOver.
-                        Text("Couldn’t unlink that. Nothing changed. Try again.")
-                            .foregroundColor(Pearl.caution)
-                    }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(s.overline ?? "UNLINK").font(Pearl.text(.footnote, .medium)).tracking(0.78)
+                        .foregroundColor(Pearl.muted)
+                    Text(link.sheet.heading ?? s.ask ?? s.title).font(Pearl.heading(22, relativeTo: .title2))
+                        .foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
                 }
-                .font(Nacre.body).foregroundColor(Pearl.ink)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 16)
-                HStack(spacing: 10) {
-                    Button(failed ? "Try again" : link.sheet.button) { Task { await unlink() } }
-                        .buttonStyle(NacreButtonStyle(busy: busy))
-                    Button("Keep linked", action: onCancel)
-                        .font(Nacre.headline).foregroundColor(Pearl.ink)
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                        .background(Capsule().fill(Pearl.card))
-                        .buttonStyle(.plain)
-                }
-                .disabled(busy)
-                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                PearlCloseButton(action: onCancel).disabled(busy)
             }
-            .padding(.bottom, 16)
+            Text(s.line).font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            if let card = s.card {
+                HStack(spacing: 12) {
+                    PearlBubble(symbol: PersonOptionsSheet.symbol(link.kind), tone: Pearl.moneyIn, size: 36)
+                    Text(card.label).font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Text(Format.amount(card.amount)).font(Pearl.text(.callout, .semibold)).monospacedDigit()
+                        .foregroundColor(Pearl.moneyIn)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous).fill(Pearl.card))
+                .overlay(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous).stroke(Pearl.border, lineWidth: 1))
+                .accessibilityElement(children: .combine)
+            }
+            if failed { CautionBanner(text: Self.error) }
+        } footer: {
+            VStack(spacing: 0) {
+                PearlSheetButtons(primary: failed ? "Try again" : (s.confirm ?? s.button), busy: busy,
+                                  busyLabel: "Unlinking…", secondary: s.keep ?? "Keep linked",
+                                  onPrimary: { Task { await unlink() } }, onSecondary: onCancel)
+                if let note = s.note {
+                    Text(note).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 16).padding(.bottom, 12)
+                }
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(SheetBackground())
-        // It grows with the text for Dynamic Type and never cuts it off.
-        .presentationDetents(link.sheet.ask == nil ? [.height(320), .large] : [.height(400), .large])
-        .interactiveDismissDisabled(busy)
     }
 
     private func unlink() async {
@@ -164,7 +143,6 @@ struct UnlinkLinkSheet: View {
             onDone(reply.title ?? link.toast ?? "Unlinked", reply.undo)
         } catch {
             failed = true
-            UIAccessibility.post(notification: .announcement, argument: "Couldn’t unlink that. Nothing changed. Try again.")
         }
     }
 }

@@ -335,7 +335,8 @@ class TestSwiftWiring:
     def test_every_paid_back_row_opens_the_options(self):
         s = self.src("ios/Pearl/Views/Transactions/SplitFlow.swift")
         assert ".disabled(p.owes < 0.005 && p.letGo == nil)" not in s
-        assert "Shows options, including Unlink" in s
+        # REFRESH-02: every row and its ••• open S-40, whose hint is "Shows options."
+        assert "Shows options." in s and "PersonOptionsSheet(" in s
 
     def test_the_sheet_and_toast(self):
         s = self.src("ios/Pearl/Views/Transactions/TransactionDetailView.swift")
@@ -344,12 +345,12 @@ class TestSwiftWiring:
 
     def test_no_stock_dialog_for_the_options(self):
         """Product owner, 2026-11-09: S-05o and S-34s aren't stock iOS
-        dialogs; they live in one small view until designBOT's custom design."""
+        dialogs. REFRESH-02 drew them (S-05or, S-34sr/kr); the split card's
+        people open S-40 instead (tests/test_split_menus.py)."""
         opts = self.src("ios/Pearl/Views/Transactions/PaybackOptions.swift")
         assert "struct PaybackOptionsSheet" in opts and "struct UnlinkLinkSheet" in opts
         assert ".confirmationDialog" not in opts and ".alert" not in opts
-        assert "Presentation to be replaced by custom design, see design refresh" in opts
         detail = self.src("ios/Pearl/Views/Transactions/TransactionDetailView.swift")
         split = self.src("ios/Pearl/Views/Transactions/SplitFlow.swift")
-        assert "PaybackOptionsSheet(" in detail and "PaybackOptionsSheet(" in split
+        assert "PaybackOptionsSheet(" in detail and "PersonOptionsSheet(" in split
         assert "confirmationDialog(linkOptions" not in detail and "Unlink…\", role: .destructive" not in split

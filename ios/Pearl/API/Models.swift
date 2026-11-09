@@ -619,8 +619,14 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let sheet: Sheet
         /// S-05t's toast, when the server knows it before unlinking.
         let toast: String?
+        /// The whole payment, the other purchases it paid back, and the
+        /// deposit that holds it (REFRESH-02's payment cards on S-40).
+        var whole: Double? = nil
+        var others: [String]? = nil
+        var deposit: Deposit? = nil
 
         struct Target: Decodable, Hashable { let id: String; let label: String }
+        struct Deposit: Decodable, Hashable { let id: String; let amount: Double; let date: String }
         struct Sheet: Decodable, Hashable {
             let title: String
             let name: String
@@ -631,10 +637,20 @@ struct Transaction: Decodable, Identifiable, Hashable {
             let ask: String?
             let line: String
             let button: String
+            /// REFRESH-02 (S-34sr, S-34kr): "Unlink Sam’s e-Transfer?" (or the ask),
+            /// the payment card, "Unlink $30.00" / "Keep linked", the footnote.
+            var heading: String? = nil
+            var overline: String? = nil
+            var card: Card? = nil
+            var confirm: String? = nil
+            var keep: String? = nil
+            var note: String? = nil
+
+            struct Card: Decodable, Hashable { let label: String; let amount: Double }
         }
 
         enum CodingKeys: String, CodingKey {
-            case id, inflow, amount, date, kind, noun, dialog, message, view, sheet, toast
+            case id, inflow, amount, date, kind, noun, dialog, message, view, sheet, toast, whole, others, deposit
             case cashId = "cash_id"
         }
     }

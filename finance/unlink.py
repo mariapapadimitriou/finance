@@ -55,6 +55,22 @@ def _of(name: str) -> str:
     return f"{name}’" if name.lower().endswith("s") else f"{name}’s"
 
 
+def _look(out: dict, heading: str, card: str, card_amount: float, confirm: str | None = None,
+          keep: str = "Keep linked", note: str | None = None, overline: str = "UNLINK") -> dict:
+    """REFRESH-02 (S-34sr, S-34kr1–10): the custom Unlink? sheet's words on
+    top of SPLIT-25's: its title, the payment card, the two buttons and the
+    shared payment's footnote."""
+    out["sheet"].update(heading=heading, card={"label": card, "amount": round(card_amount, 2)},
+                        confirm=confirm or f"Unlink {_money(out['amount'])}", keep=keep, note=note,
+                        overline=overline)
+    return out
+
+
+def _whose(name: str | None) -> str:
+    """"Sam’s", or "this" when Pearl doesn't know who sent it."""
+    return _of(name) if name and name != "They" else "this"
+
+
 def _root(c: dict) -> int:
     return int(c.get("origin") or c["id"])
 
@@ -111,7 +127,7 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
                           "button": "Unlink"},
                    toast=(f"Unlinked · {charge.merchant} is waiting to be reimbursed" if waits
                           else f"Unlinked · {charge.merchant} counts as your spending again"))
-        return out
+        return _look(out, "Unlink the reimbursement?", f"{payer} · {_day(x.date)}", here)
     if parent is not None:
         # S-26: "Part of Dad’s $600.00".
         total = round(-parent.amount, 2)
@@ -130,7 +146,10 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
                                 f"{_money(here)} goes back to Needs a look as left to sort.",
                         "button": "Unlink"}
         out["toast"] = f"Unlinked · {name} taken off the split" if made else None
-        return out
+        card = (f"Part of {_money(total)} from {sender} · {_day(x.date)}" if sender
+                else f"Part of a {_money(total)} deposit · {_day(x.date)}")
+        return _look(out, f"Unlink {_whose(name)} {_money(here)}?", card, here,
+                     confirm=f"Unlink and take {name} off" if made else None)
     # An e-Transfer or another bank payment.
     title = word if word == "e-Transfer" else word.capitalize()
     out.update(kind="bank", noun=word, view={"id": x.fingerprint, "label": f"View the {word}"},
@@ -156,7 +175,12 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
                         "sub": f"{_money(here)} · {_day(x.date)}", "ask": None,
                         "line": f"{owe} The {word} goes back to Needs a look.", "button": "Unlink"}
     out["toast"] = f"Unlinked · {name} taken off the split" if made else None
-    return out
+    card = f"{word} from {sender} · {_day(x.date)}" if sender else f"{x.merchant} · {_day(x.date)}"
+    confirm = f"Unlink and take {name} off" if made else None
+    if others:
+        return _look(out, out["sheet"]["ask"], card, whole, confirm=confirm,
+                     note=f"To unlink the whole {_money(whole)}, open the {word} and unlink it there.")
+    return _look(out, f"Unlink {_whose(name)} {word}?", card, whole, confirm=confirm)
 
 
 def cash_link(st, charge: Transaction, name: str, pay: dict, by_id: dict) -> dict:
@@ -215,13 +239,19 @@ def cash_link(st, charge: Transaction, name: str, pay: dict, by_id: dict) -> dic
                                 f"Needs a look.",
                         "button": "Unlink"}
     out["sheet"]["face"] = name
-    return out
+    label = app_name if app else "Cash"
+    if others:
+        return _look(out, out["sheet"]["ask"], f"{label} · {_day(pay['day'])}", whole)
+    if deposit:
+        return _look(out, f"Unlink {_of(name)} cash?", f"Cash, deposited {_day(deposit['date'])}", here)
+    what_here = ("app payment" if app_name == "Another app" else f"{app_name} payment") if app else "cash"
+    return _look(out, f"Unlink {_of(name)} {what_here}?", f"{label} · {_day(pay['day'])}", here)
 
 
 def refund_link(charge: Transaction, x: Transaction) -> dict:
     """A refund of this purchase (S-34k "Unlink refund?")."""
     amount = round(-x.amount, 2)
-    return {"id": x.fingerprint, "inflow": x.fingerprint, "cash_id": None, "amount": amount, "whole": amount,
+    out = {"id": x.fingerprint, "inflow": x.fingerprint, "cash_id": None, "amount": amount, "whole": amount,
             "date": x.date[:10], "person": None, "others": [], "made_split": False, "was_waiting": False,
             "deposit": None, "kind": "refund", "goes": "needs_a_look", "noun": "refund",
             "message": f"Refund · {_day(x.date)}", "view": {"id": x.fingerprint, "label": "View the refund"},
@@ -232,6 +262,8 @@ def refund_link(charge: Transaction, x: Transaction) -> dict:
                               f"{x.category or 'its category'} and goes back to Needs a look.",
                       "button": "Unlink"},
             "toast": "Refund unlinked"}
+    return _look(out, "Unlink refund?", f"{x.merchant} refund · {_day(x.date)}", out["amount"],
+                 confirm="Unlink refund", keep="Keep it", overline="REFUND")
 
 
 def add_links(st, charge: Transaction, splitting: dict, txns: list[Transaction], payer: dict) -> None:

@@ -27,6 +27,11 @@ struct SplitSheet: View {
     /// SPLIT-16: saved with someone who had paid taken out; the toast's
     /// title and the server's Undo.
     var onRemoved: ((String, JSONValue?) -> Void)? = nil
+    /// S-03re (REFRESH-02): opened from S-40's Change their share, on
+    /// Amounts with that person's field focused; saving says "Split
+    /// updated" with the server's Undo (S-44i).
+    var focus: String? = nil
+    var onUpdated: ((String, JSONValue?) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var people: [String]
@@ -42,16 +47,21 @@ struct SplitSheet: View {
     @State private var contacts: [String] = []
     /// Contacts and names ticked on Add someone, added together (2026-11-08).
     @State private var picked: [String] = []
-    /// S-03f: someone who has paid, swiped away; asks before they go.
-    @State private var removing: String?
+    /// S-03fr (REFRESH-02): someone who has paid, swiped away; a Pearl
+    /// sheet asks before they go (it replaced the stock alert).
+    @State private var removing: Transaction.Splitting.Person?
+    @FocusState private var focused: String?
 
     private static let me = "\u{0}me"
 
     init(t: Transaction, api: APIClient, recent: [String], with names: [String]? = nil,
          title: String? = nil, saveTitle: String = "Save",
          onHold: (([String: Any], Double, Double) -> Void)? = nil, onSaved: @escaping (String) -> Void,
-         onRemoved: ((String, JSONValue?) -> Void)? = nil) {
+         onRemoved: ((String, JSONValue?) -> Void)? = nil,
+         focus: String? = nil, onUpdated: ((String, JSONValue?) -> Void)? = nil) {
         self.onRemoved = onRemoved
+        self.focus = focus
+        self.onUpdated = onUpdated
         // S-03 Dark (designBOT round 5): the selected split method is
         // rgb(0.30, 0.33, 0.58), not a token; light keeps the system white.
         // Set before the picker is made, and put back when the sheet goes.
@@ -65,14 +75,14 @@ struct SplitSheet: View {
         self.onHold = onHold
         let existing = t.splitting?.people.map(\.name) ?? []
         _people = State(initialValue: names ?? existing)
-        _step = State(initialValue: names == nil ? 0 : 1)
+        _step = State(initialValue: names == nil && focus == nil ? 0 : 1)
         // Her own share as the split was made: a let go made it bigger since.
         let whole = t.fullAmount ?? t.amount
         let yours = t.splitting.map { s in whole - s.people.map(\.share).reduce(0, +) }
         _withMe = State(initialValue: yours.map { $0 >= 0.005 } ?? true)
-        if let s = t.splitting, let m = s.mode, m != "even", let yours = yours {
+        if let s = t.splitting, let m = s.mode, m != "even" || focus != nil, let yours = yours {
             var v: [String: String] = [:]
-            if ["percent", "shares"].contains(m) && s.people.allSatisfy({ $0.weight != nil }) {
+            if focus == nil && ["percent", "shares"].contains(m) && s.people.allSatisfy({ $0.weight != nil }) {
                 // S-03e (SPLIT-02): opened in the mode it was saved in, with
                 // the same numbers, not turned into Amounts.
                 _mode = State(initialValue: m)
@@ -103,7 +113,8 @@ struct SplitSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetTitle(title: adding ? "Add someone" : step == 0 ? "Who was it with?" : (title ?? "How to split")) {
+            SheetTitle(title: adding ? "Add someone" : step == 0 ? "Who was it with?"
+                       : (title ?? focus.map { "Change \(possessive($0)) share" } ?? "How to split")) {
                 if adding { adding = false; typed = ""; picked = [] } else { dismiss() }
             }
             ScrollView {
@@ -123,59 +134,27 @@ struct SplitSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onDisappear { UISegmentedControl.appearance().selectedSegmentTintColor = nil }
-        .alert(removing.map { "Remove \($0)?" } ?? "",
-               isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-               presenting: removing) { name in
-            Button(bankPaid(name) >= 0.005 ? "Unlink and remove" : "Remove", role: .destructive) { remove(name) }
-            Button("Keep \(name)", role: .cancel) {}
-        } message: { name in
-            Text(removeWords(name))
+        .onAppear {
+            // S-03re: that person's field, ready to type.
+            if let focus = focus {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { focused = focus }
+            }
+        }
+        .sheet(item: $removing) { p in
+            // S-03fr / S-03fr2: here it only takes them off the list; Save sends it.
+            RemovePersonSheet(p: p, merchant: t.merchant, onClose: { removing = nil }) {
+                removing = nil
+                remove(p.name)
+            }
         }
     }
 
-    // MARK: S-03f Removing someone who has paid (SPLIT-02)
+    // MARK: S-03fr Removing someone who has paid (SPLIT-02, REFRESH-02)
 
-    /// What they paid by bank, not in cash or another app.
-    private func bankPaid(_ name: String) -> Double {
-        guard let p = saved(name) else { return 0 }
-        return p.paid - (p.cash ?? 0) - (p.app ?? 0)
-    }
-
-    /// Someone with a payback or cash asks first (S-03f); anyone else, or
+    /// Someone with a payback or cash asks first (S-03fr); anyone else, or
     /// someone whose share was only let go, goes at once.
     private func askRemove(_ name: String) {
-        if let p = saved(name), p.paid >= 0.005 { removing = name } else { remove(name) }
-    }
-
-    /// "Priya paid you $28.04 on Nov 14. Removing Priya unlinks that
-    /// payment, and it goes back to Needs a look." Cash or another app is
-    /// forgotten with them instead.
-    private func removeWords(_ name: String) -> String {
-        guard let p = saved(name) else { return "" }
-        let shared = p.shared ?? []
-        let bank = bankPaid(name) - shared.map(\.here).reduce(0, +), kept = (p.cash ?? 0) + (p.app ?? 0)
-        var words: [String] = []
-        // SPLIT-16: a payback that also paid back other purchases loses only
-        // this purchase's part. (designBOT's copy says "Her"; Pearl doesn't
-        // know anyone's pronouns, so it says their name.)
-        for s in shared {
-            let others = Format.andList(s.others)
-            words.append("\(name)’s \(Format.amount(s.whole)) \(s.word) also paid back \(others). "
-                         + "Removing \(name) here unlinks only the \(Format.amount(s.here)) for \(t.merchant); "
-                         + "\(others) \(s.others.count == 1 ? "stays" : "stay") paid back.")
-        }
-        if bank >= 0.005 {
-            words.append("\(name) paid you \(Format.amount(bank))"
-                         + (p.paidOn.map { " on \(Format.short($0))" } ?? "")
-                         + ". Removing \(name) unlinks that payment, and it goes back to Needs a look.")
-        }
-        if kept >= 0.005 {
-            let how = (p.app ?? 0) >= 0.005 && (p.cash ?? 0) < 0.005 ? "through another app" : "in cash"
-            words.append(bank >= 0.005
-                         ? "The \(Format.amount(kept)) \(how) is forgotten too."
-                         : "\(name) paid you \(Format.amount(kept)) \(how). Removing \(name) forgets that payment.")
-        }
-        return words.joined(separator: " ")
+        if let p = saved(name), p.paid >= 0.005 { removing = p } else { remove(name) }
     }
 
     // MARK: S-17 Add someone
@@ -438,6 +417,7 @@ struct SplitSheet: View {
                             TextField("", text: binding(key), prompt: Text(placeholder(key)).foregroundColor(Pearl.muted))
                                 .font(Nacre.body).monospacedDigit().multilineTextAlignment(.trailing)
                                 .keyboardType(mode == "shares" ? .numberPad : .decimalPad)
+                                .focused($focused, equals: key)
                                 .frame(width: 92, height: 36)
                                 .padding(.horizontal, 8)
                                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.8)))
@@ -735,14 +715,20 @@ struct SplitSheet: View {
             return
         }
         do {
-            struct Reply: Decodable { let undo: JSONValue? }
+            struct Reply: Decodable { let undo: JSONValue?; let toast: String? }
             let reply: Reply = try await api.put("api/transactions/\(t.id)/split", body)
             let n = people.count + (withMe ? 1 : 0)
             // SPLIT-16: someone who had paid was removed: "Priya removed ·
             // Undo" puts their payback back on this purchase.
             let gone = (t.splitting?.people ?? []).filter { p in p.paid >= 0.005 && !people.contains(p.name) }
             if let onRemoved = onRemoved, let first = gone.first {
-                onRemoved(gone.count == 1 ? "\(first.name) removed" : "\(gone.count) people removed", reply.undo)
+                onRemoved(reply.toast ?? (gone.count == 1 ? "\(first.name) removed" : "\(gone.count) people removed"),
+                          reply.undo)
+                return
+            }
+            if let onUpdated = onUpdated {
+                // S-44i: "Split updated · Undo".
+                onUpdated(reply.toast ?? "Split updated", reply.undo)
                 return
             }
             onSaved(n == 2 ? "Split with \(people[0])." : "Split \(n) ways.")
@@ -755,25 +741,19 @@ struct SplitSheet: View {
 // MARK: - Who owes what (S-04, S-05, S-19, S-20)
 
 /// The people in a split: what each owes or has paid, and what to do next.
+/// REFRESH-02 (S-04r v2 1090:1743): each person has a 44 pt ••• and a
+/// paid-back bar; the ••• and the row both open S-40, the one sheet of
+/// options for every state (no stock dialog, product owner 2026-11-09).
 struct SplitPeople: View {
     let t: Transaction
     let split: Transaction.Splitting
-    let onMarkPaid: (Transaction.Splitting.Person) -> Void
-    let onRemind: (Transaction.Splitting.Person) -> Void
-    let onLetGo: (Transaction.Splitting.Person) -> Void
-    let onUndoLetGo: (Transaction.Splitting.Person) -> Void
+    /// S-40's choice, run once the sheet has gone so the next one can open.
+    let onChoose: (Transaction.Splitting.Person, PersonChoice) -> Void
     let onEdit: () -> Void
     let onOwed: () -> Void
     /// S-05u (SPLIT-22b): "Who sent this?" on a payback credited to no one.
     var onCredit: (Transaction.Splitting.Uncredited) -> Void = { _ in }
-    /// S-05o (SPLIT-25): View the e-Transfer, the deposit or the refund.
-    var onView: (Transaction.LinkInfo) -> Void = { _ in }
-    /// S-05o Unlink… → S-34s / S-34k.
-    var onUnlink: (Transaction.LinkInfo) -> Void = { _ in }
-    /// The person she tapped, for their choices.
-    @State private var chosen: Transaction.Splitting.Person?
-    /// SPLIT-25: someone with a payment here gets S-05o as a sheet, not a
-    /// stock dialog; the choice runs once it has gone.
+    /// S-40 for this person.
     @State private var options: Transaction.Splitting.Person?
     @State private var afterOptions: (() -> Void)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -793,153 +773,92 @@ struct SplitPeople: View {
                     }
                 }
             }
-            // S-05u: Sam and Priya stay under OWED TO YOU.
-            Text(!unsure.isEmpty && !open.isEmpty ? "OWED TO YOU"
-                 : split.people.count > 1 ? "SPLIT \(split.people.count + (split.you >= 0.005 ? 1 : 0)) WAYS"
-                 : open.isEmpty ? "PAID BACK" : "OWED TO YOU")
-                .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                .padding(.horizontal, 16).padding(.top, 12)
-            GlassCard {
+            VStack(alignment: .leading, spacing: 0) {
+                // S-04r v2: "Split 5 ways" with Edit split beside it.
+                HStack {
+                    Text(!unsure.isEmpty && !open.isEmpty ? "Owed to you"
+                         : split.people.count > 1 ? "Split \(split.people.count + (split.you >= 0.005 ? 1 : 0)) ways"
+                         : open.isEmpty ? "Paid back" : "Owed to you")
+                        .font(Pearl.text(.headline, .semibold)).foregroundColor(Pearl.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer()
+                    Button("Edit split", action: onEdit)
+                        .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.action)
+                        .frame(minHeight: 44).buttonStyle(.plain)
+                }
                 ForEach(Array(split.people.enumerated()), id: \.element.id) { i, p in
-                    if i > 0 { RowSeparator(inset: 64) }
-                    // What to do about someone is on them (2026-11-08): tap to
-                    // mark paid back, remind or let it go. SPLIT-25 (S-05v): every
-                    // row taps, someone who paid in full too, for View and Unlink.
-                    Button {
-                        if (p.links ?? []).isEmpty { chosen = p } else { options = p }
-                    } label: { person(p) }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(spoken(p))
-                        .accessibilityHint(p.owes >= 0.005 ? "Mark paid back, remind or let it go"
-                                           : (p.links ?? []).isEmpty ? "" : "Shows options, including Unlink")
+                    if i > 0 { PearlDivider() }
+                    person(p)
                 }
-                RowSeparator(inset: 0)
-                Button(action: onEdit) {
-                    HStack {
-                        Text("Edit split").font(Nacre.body).foregroundColor(Pearl.action)
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(Pearl.muted)
-                    }
-                    .padding(.horizontal, 16).frame(minHeight: 52).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
             }
-            // The row's amount springs from Paid back to Owes you after Unlink (S-05t):
-            // 250 ms, a cross-fade with Reduce Motion.
+            .padding(.horizontal, 16).padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).fill(Pearl.card))
+            .overlay(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).stroke(Pearl.border, lineWidth: 1))
+            .padding(.top, 12)
+            // A row's amount springs when it changes (S-44): 250 ms, a cross-fade with Reduce Motion.
             .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.25, dampingFraction: 0.85),
                        value: split.people.map(\.owes))
-            .confirmationDialog(chosen?.name ?? "", isPresented: Binding(get: { chosen != nil },
-                                                                       set: { if !$0 { chosen = nil } }),
-                                titleVisibility: .visible, presenting: chosen) { p in
-                if p.owes >= 0.005 {
-                    Button("Mark paid back") { onMarkPaid(p) }
-                    Button("Remind \(p.name)") { onRemind(p) }
-                    Button("Let it go") { onLetGo(p) }
-                } else if p.letGo != nil {
-                    Button("Undo let it go") { onUndoLetGo(p) }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: { p in
-                if p.owes >= 0.005 {
-                    Text("Owes you \(Format.amount(p.owes))")
-                } else if let was = p.letGo?.was {
-                    Text("You let \(Format.amount(was - p.paid)) go")
-                }
-            }
             .sheet(item: $options, onDismiss: {
                 let next = afterOptions
                 afterOptions = nil
                 next?()
             }) { p in
-                // S-05o (presentation to be replaced by custom design, see design refresh).
-                PaybackOptionsSheet(title: dialogTitle(p), message: message(p), actions: actions(p)) { then in
-                    afterOptions = then
+                PersonOptionsSheet(t: t, split: split, p: p, onClose: { options = nil }) { choice in
+                    afterOptions = { onChoose(p, choice) }
                     options = nil
                 }
             }
             Button("See everyone who owes you", action: onOwed)
                 .font(Nacre.textButton).foregroundColor(Pearl.action)
-                .frame(maxWidth: .infinity).padding(.top, 6)
+                .frame(maxWidth: .infinity, minHeight: 44).padding(.top, 6)
         }
     }
 
     private func person(_ p: Transaction.Splitting.Person) -> some View {
-        HStack(spacing: 12) {
-            Initials(name: p.name, size: 34)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(p.name).font(Nacre.body).foregroundColor(Pearl.ink)
-                Text(status(p)).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                if let line = deposited(p) {
-                    Text(line).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                }
-                if p.paid >= 0.005 && p.owes >= 0.005 {
-                    GeometryReader { g in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Pearl.ink.opacity(0.1))
-                            Capsule().fill(Pearl.action).frame(width: g.size.width * min(1, p.paid / max(p.amount, 0.01)))
+        let full = p.owes < 0.005 && p.letGo == nil && p.paid >= 0.005
+        return VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Button { options = p } label: {
+                    HStack(spacing: 12) {
+                        PearlFace(name: p.name, size: 40)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(p.name).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
+                            Text((full ? "✓ " : "") + status(p)).font(Pearl.text(.callout))
+                                .foregroundColor(full ? Pearl.moneyIn : Pearl.muted)
+                            if let line = deposited(p) {
+                                Text(line).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
+                            }
                         }
+                        .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        // What they still owe (ink); what they paid (money in); what she let go (muted).
+                        Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
+                            .font(Pearl.text(.headline, .semibold)).monospacedDigit()
+                            .foregroundColor(p.letGo != nil ? Pearl.muted : p.owes >= 0.005 ? Pearl.ink : Pearl.moneyIn)
                     }
-                    .frame(height: 4)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(spoken(p))
+                .accessibilityHint("Shows options.")
+                .accessibilityAddTraits(.isButton)
+                PearlMoreButton(label: "Options for \(p.name)") { options = p }
             }
-            Spacer(minLength: 8)
-            // What they still owe; what they paid; or what she let go.
-            Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
-                .font(Nacre.headline).monospacedDigit()
-                .foregroundColor(p.owes >= 0.005 || p.letGo != nil ? Pearl.ink : Pearl.moneyIn)
-            if p.owes >= 0.005 || p.letGo != nil || !(p.links ?? []).isEmpty {
-                // Tapping them has choices (S-05v: paid in full too).
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(Pearl.muted)
+            if p.paid >= 0.005 && p.letGo == nil {
+                PaidBar(paid: p.paid, of: p.amount, tone: full ? Pearl.moneyIn : Pearl.action)
+                    .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .frame(minHeight: 44)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-    }
-
-    /// S-05o's line: where the money came from, or what they still owe.
-    private func message(_ p: Transaction.Splitting.Person) -> String? {
-        if p.owes >= 0.005 { return "Owes you \(Format.amount(p.owes))" }
-        if let was = p.letGo?.was { return "You let \(Format.amount(was - p.paid)) go" }
-        return (p.links ?? []).map(\.message).joined(separator: "\n")
-    }
-
-    /// S-05o: someone who still owes keeps Mark paid back, Remind and Let it
-    /// go; then each payment's View, and one Unlink per payment.
-    private func actions(_ p: Transaction.Splitting.Person) -> [PaybackOptionsSheet.Action] {
-        var out: [PaybackOptionsSheet.Action] = []
-        if p.owes >= 0.005 {
-            out.append(.init(title: "Mark paid back") { onMarkPaid(p) })
-            out.append(.init(title: "Remind \(p.name)") { onRemind(p) })
-            out.append(.init(title: "Let it go") { onLetGo(p) })
-        } else if p.letGo != nil {
-            out.append(.init(title: "Undo let it go") { onUndoLetGo(p) })
-        }
-        let links = p.links ?? []
-        for link in links {
-            if let view = link.view { out.append(.init(title: view.label) { onView(link) }) }
-        }
-        for link in links {
-            out.append(.init(title: links.count == 1 ? "Unlink…" : "Unlink the \(Format.amount(link.amount)) \(link.noun)…",
-                             destructive: true) { onUnlink(link) })
-        }
-        return out
-    }
-
-    /// S-05o's title: "Jo paid back $30.00"; someone who still owes, their name.
-    private func dialogTitle(_ p: Transaction.Splitting.Person) -> String {
-        if p.owes < 0.005 && p.letGo == nil && !(p.links ?? []).isEmpty {
-            return "\(p.name) paid back \(Format.amount(p.paid))"
-        }
-        return p.name
+        .padding(.vertical, 10)
     }
 
     /// VoiceOver (S-05v): "Jo, paid back 30 dollars, November 16, part of a
     /// 60 dollar e-Transfer that also paid back Pizza Nova."
     private func spoken(_ p: Transaction.Splitting.Person) -> String {
+        // Note 1096:4483: "Priya, owes you 30 dollars."
+        if p.owes >= 0.005 && p.paid < 0.005 { return "\(p.name), owes you \(Format.amount(p.owes))" }
         guard p.owes < 0.005, p.letGo == nil, let links = p.links, !links.isEmpty else {
             return [p.name, status(p), Format.amount(p.owes >= 0.005 ? p.owes : p.paid)].joined(separator: ", ")
         }
@@ -1024,9 +943,16 @@ struct MarkPaidSheet: View {
     let onDone: (String) -> Void
     /// SPLIT-19: a payment with its extra said, and the Sorted toast's Undo.
     var onUndoable: ((String, JSONValue?) -> Void)? = nil
+    /// S-44b (REFRESH-02): "Priya paid back $30.00" and the Undo of every
+    /// link or payment it saved, newest last.
+    var onLinked: ((String, [JSONValue]) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var how = "bank"
+    /// S-06ra answered: on to S-06rb, S-06rc or S-06rd.
+    @State private var chosen = false
+    /// S-06rd's Other…: she types the app.
+    @State private var typingApp = false
     /// S-11c (SPLIT-19): "What’s the extra $17.94?", for cash or an app.
     @State private var extraPage = false
     /// What the extra is so far; nothing is saved until all of it is said.
@@ -1098,7 +1024,9 @@ struct MarkPaidSheet: View {
     @State private var error: String?
 
     init(t: Transaction, person: Transaction.Splitting.Person, api: APIClient,
-         onUndoable: ((String, JSONValue?) -> Void)? = nil, onDone: @escaping (String) -> Void) {
+         onUndoable: ((String, JSONValue?) -> Void)? = nil,
+         onLinked: ((String, [JSONValue]) -> Void)? = nil, onDone: @escaping (String) -> Void) {
+        self.onLinked = onLinked
         self.t = t
         self.person = person
         self.api = api
@@ -1111,40 +1039,195 @@ struct MarkPaidSheet: View {
         if extraPage { extraSheet } else { markSheet }
     }
 
-    private var markSheet: some View {
-        VStack(spacing: 0) {
-            SheetTitle(title: finding ? (inParts ? "What paid this back?" : "Find \(person.name)’s payment")
-                       : "Mark paid back") { dismiss() }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    if finding && inParts {
-                        QuestionHeader(name: t.merchant, amount: Format.money(t), tone: t.tone,
-                                       sub: Format.short(t.date))
-                    } else {
-                        HStack(spacing: 12) {
-                            Initials(name: person.name, size: 48)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(person.name).font(Nacre.title2).foregroundColor(Pearl.ink)
-                                Text("Owes \(Format.amount(person.owes))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                            }
-                        }
-                    }
-                    if finding { depositList } else { form }
-                    if !finding && overBy >= 0.005 {
-                        // S-06 v2 (SPLIT-11): more than they owe; S-11c says what.
-                        Text("That’s \(Format.amount(overBy)) more than \(person.name) owes. Next you’ll say what the extra is.")
-                            .font(Nacre.footnote).foregroundColor(Pearl.moneyOut)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if let error = error {
-                        Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
+    // MARK: S-06ra–rd (REFRESH-02): how did they pay, then which payment,
+    // cash in hand or another app. Each step has Back and Close.
+
+    @ViewBuilder private var markSheet: some View {
+        if !chosen {
+            howSheet
+        } else if how == "bank" {
+            bankSheet
+        } else {
+            handSheet
+        }
+    }
+
+    /// S-06ra: "How did Priya pay?"
+    private var howSheet: some View {
+        PearlSheet(dismissDisabled: busy) {
+            PearlSheetHeader(face: person.name, overline: "Mark paid back", title: "How did \(person.name) pay?",
+                             sub: "\(Format.amount(person.owes)) owed on \(t.merchant)") { dismiss() }
+            PearlOptionCard {
+                PearlOptionRow(symbol: "creditcard", title: "Bank or e-Transfer", sub: "Pick it from your money in",
+                               prominent: true) {
+                    how = "bank"
+                    Task { await primary() }
+                }
+                PearlDivider()
+                PearlOptionRow(symbol: "banknote", title: "Cash in hand",
+                               sub: "No bank record. It comes off \(t.merchant) now") {
+                    how = "cash"; error = nil; chosen = true
+                }
+                PearlDivider()
+                PearlOptionRow(symbol: "iphone", title: "Another app", sub: "Name the app. Pearl remembers it next time") {
+                    how = "app"; error = nil; chosen = true
+                }
+            }
+            .disabled(busy)
+            if busy { ProgressView().frame(maxWidth: .infinity) }
+            if let error = error { CautionBanner(text: error) }
+        }
+    }
+
+    private func back() {
+        chosen = false
+        finding = false
+        error = nil
+        query = ""
+    }
+
+    /// S-06rb: "Which payment was it?", the likely ones first. More than
+    /// one can be ticked when it took several (S-26).
+    private var bankSheet: some View {
+        PearlSheet(dismissDisabled: busy) {
+            PearlSheetHeader(overline: "Bank or e-Transfer", title: "Which payment was it?",
+                             sub: "From \(person.name), \(Format.amount(person.owes))", back: back) { dismiss() }
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted).accessibilityHidden(true)
+                TextField("", text: $query, prompt: Text("Search by name or amount").foregroundColor(Pearl.muted))
+                    .font(Pearl.text(.headline)).foregroundColor(Pearl.ink).autocorrectionDisabled()
+                    .accessibilityLabel("Search by name or amount")
+            }
+            .padding(.horizontal, 14).frame(minHeight: 44)
+            .background(RoundedRectangle(cornerRadius: Pearl.radiusChoice, style: .continuous).fill(Pearl.control))
+            .task(id: query) {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                if !Task.isCancelled { await search() }
+            }
+            let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty
+            let likely = shown.filter { $0.likely == true }
+            let rest = shown.filter { $0.likely != true }
+            if shown.isEmpty {
+                Text(searching ? "Nothing matches that yet." : "No money in looks like it yet. Search for it above.")
+                    .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+            } else if searching {
+                depositSection("Found", shown)
+            } else {
+                if !likely.isEmpty { depositSection("Suggested", likely) }
+                if !rest.isEmpty { depositSection("Other money in", rest) }
+            }
+            if inParts && !picked.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    PaidBar(paid: person.paid + paying, of: person.amount)
+                    Text("Paid back \(Format.amount(person.paid + paying)) of \(possessive(person.name)) \(Format.amount(person.amount))")
+                        .font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            if let error = error { CautionBanner(text: error) }
+        } footer: {
+            PearlSheetButtons(primary: error != nil ? "Try again" : "Link \(Format.amount(paying))", busy: busy,
+                              busyLabel: "Linking…") { Task { await primary() } }
+                .disabled(picked.isEmpty)
+        }
+    }
+
+    private func depositSection(_ title: String, _ rows: [Candidate]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PearlSectionLabel(text: title)
+            PearlOptionCard {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { i, d in
+                    if i > 0 { PearlDivider() }
+                    depositRow(d)
+                }
+            }
+        }
+    }
+
+    /// "e-Transfer · Nov 18 / Priya S. · part of $600   +$30.00  ◉".
+    private func depositRow(_ d: Candidate) -> some View {
+        let on = picked.contains(d.id)
+        let use = uses[d.id]
+        let how: String? = use.map { abs($0 - d.whole) < 0.005 ? nil : "part of \(Format.whole(d.whole))" } ?? nil
+        let full = !on && person.owes - paying < 0.005
+        return Button {
+            if let i = picked.firstIndex(of: d.id) { picked.remove(at: i) } else { picked.append(d.id) }
+        } label: {
+            HStack(spacing: 12) {
+                PearlBubble(symbol: "creditcard", tone: Pearl.moneyIn)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(d.name) · \(Format.short(d.date))").font(Pearl.text(.headline, .medium))
+                        .foregroundColor(Pearl.ink)
+                    let sub = [d.likely == true ? "Amount matches" : d.accountName, how].compactMap { $0 }
+                    if !sub.isEmpty {
+                        Text(sub.joined(separator: " · ")).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
                     }
                 }
-                .padding(.horizontal, 16).padding(.bottom, 12)
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Text("+" + Format.amount(use ?? d.whole)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
+                    .foregroundColor(Pearl.moneyIn)
+                ZStack {
+                    Circle().strokeBorder(on ? Pearl.action : Pearl.borderStrong, lineWidth: 1.5)
+                    if on {
+                        Circle().fill(Pearl.action)
+                        Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(Pearl.onAction)
+                    }
+                }
+                .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
             }
-            Button(finding ? (inParts ? "Save" : "Link payment") : how == "bank" ? "Find it"
-                   : overBy >= 0.005 ? "Next: the extra \(Format.amount(overBy))" : "Mark paid back") {
-                if !finding && overBy >= 0.005 {
+            .padding(.vertical, 10).frame(minHeight: 60).contentShape(Rectangle())
+            .opacity(full ? 0.5 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(full || busy)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    /// S-06rc cash in hand / S-06rd another app: the amount, when, then Mark
+    /// paid back (or the extra, SPLIT-19).
+    private var handSheet: some View {
+        PearlSheet(dismissDisabled: busy) {
+            PearlSheetHeader(overline: how == "app" ? "Another app" : "Cash in hand",
+                             title: how == "app" ? "Which app did \(person.name) use?" : "Cash from \(person.name)",
+                             back: back) { dismiss() }
+            if how == "app" { appChips }
+            VStack(spacing: 4) {
+                TextField("", text: $amount, prompt: Text(Format.amount(person.owes)).foregroundColor(Pearl.muted))
+                    .font(Pearl.display(.largeTitle)).foregroundColor(Pearl.ink)
+                    .multilineTextAlignment(.center).keyboardType(.decimalPad)
+                    .accessibilityLabel("Amount")
+                Text("\(person.name) owes \(Format.amount(person.owes))").font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+            }
+            .padding(.vertical, 18).padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).fill(Pearl.card))
+            .overlay(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).stroke(Pearl.action, lineWidth: 1.5))
+            HStack {
+                Text("Received").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
+                Spacer()
+                DatePicker("Received", selection: $when, in: ...Date(), displayedComponents: .date)
+                    .labelsHidden().tint(Pearl.action)
+            }
+            .padding(.horizontal, 16).frame(minHeight: 56)
+            .background(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous).fill(Pearl.card))
+            .overlay(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous).stroke(Pearl.border, lineWidth: 1))
+            if how == "cash" {
+                InfoNote(text: "If you deposit this cash later, Pearl asks if it’s this payment, so it’s never counted twice.")
+            }
+            if overBy >= 0.005 {
+                // S-06 v2 (SPLIT-11): more than they owe; S-11c says what. Ink, not red.
+                Text("That’s \(Format.amount(overBy)) more than \(person.name) owes. Next you’ll say what the extra is.")
+                    .font(Pearl.text(.callout)).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let error = error { CautionBanner(text: error) }
+        } footer: {
+            PearlSheetButtons(primary: overBy >= 0.005 ? "Next: the extra \(Format.amount(overBy))"
+                                       : "Mark \(Format.amount(typed ?? person.owes)) paid back",
+                              busy: busy, busyLabel: "Saving…") {
+                if overBy >= 0.005 {
                     pieces = []
                     extraAmount = ""
                     error = nil
@@ -1153,111 +1236,56 @@ struct MarkPaidSheet: View {
                     Task { await primary() }
                 }
             }
-            .buttonStyle(NacreButtonStyle(busy: busy))
-            .disabled(busy || (finding && picked.isEmpty))
-            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
-        }
-        .background(SheetBackground())
-        .presentationDetents([.large])
-    }
-
-    private var form: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("HOW DID \(person.name.uppercased()) PAY?").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                .padding(.horizontal, 16)
-            GlassCard {
-                option("bank", "Bank deposit or e-Transfer", "Find it in your transactions")
-                RowSeparator()
-                option("cash", "Cash in hand", "Pearl will match it if you deposit it")
-                RowSeparator()
-                option("app", "Another app", "Pearl won’t look for it in your bank")
-            }
-            if how != "bank" {
-                GlassCard {
-                    if how == "app" {
-                        // S-06 v3: App on top, only for Another app. Optional.
-                        HStack {
-                            Text("App").font(Nacre.body).foregroundColor(Pearl.ink)
-                            TextField("", text: $appName, prompt: Text("Which app?").foregroundColor(Pearl.muted))
-                                .font(Nacre.body).multilineTextAlignment(.trailing)
-                                .textInputAutocapitalization(.words).autocorrectionDisabled()
-                                .foregroundColor(Pearl.muted)
-                                .onChange(of: appName) { v in if v.count > 30 { appName = String(v.prefix(30)) } }
-                        }
-                        .padding(.horizontal, 16).frame(minHeight: 52)
-                        RowSeparator()
-                    }
-                    HStack {
-                        Text("Amount").font(Nacre.body).foregroundColor(Pearl.ink)
-                        TextField("", text: $amount).font(Nacre.body).multilineTextAlignment(.trailing)
-                            .keyboardType(.decimalPad).foregroundColor(Pearl.muted)
-                    }
-                    .padding(.horizontal, 16).frame(minHeight: 52)
-                    RowSeparator()
-                    DatePicker(selection: $when, in: ...Date(), displayedComponents: .date) {
-                        Text("When").font(Nacre.body).foregroundColor(Pearl.ink)
-                    }
-                    .tint(Pearl.action).padding(.horizontal, 16).frame(minHeight: 52)
-                }
-                if how == "app" { appHelp }
-            }
         }
         .task { await loadApps() }
     }
 
-    /// S-06 v3: "Used before" chips (S-06 v3a: none yet), and what the
-    /// split will say.
-    @ViewBuilder private var appHelp: some View {
-        if !usedApps.isEmpty {
+    /// S-06rd: the apps she named before, then Other… to type one.
+    private var appChips: some View {
+        VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    Text("Used before").font(Nacre.footnote).foregroundColor(Pearl.muted)
                     ForEach(usedApps, id: \.self) { a in
-                        let on = a.caseInsensitiveCompare(appName.trimmingCharacters(in: .whitespaces)) == .orderedSame
-                        Button(a) { appName = a }
-                            .font(Nacre.subheadline).foregroundColor(Pearl.ink)
-                            .padding(.horizontal, 14).frame(minHeight: 36)
-                            .background(Capsule().fill(on ? Pearl.answered : Pearl.card))
-                            .buttonStyle(.plain)
-                            .accessibilityAddTraits(on ? .isSelected : [])
+                        chip(a, on: !typingApp && a.caseInsensitiveCompare(appName) == .orderedSame) {
+                            typingApp = false
+                            appName = a
+                        }
+                    }
+                    chip("Other…", on: typingApp || usedApps.isEmpty) {
+                        typingApp = true
+                        appName = ""
                     }
                 }
-                .padding(.horizontal, 16)
             }
-            Text("Shows on the split as “Paid back · \(appLabel) · \(Format.short(Format.isoDay(when)))”. Apps you’ve named before appear here.")
-                .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 16)
-        } else {
-            Text("Name the app so the split shows where it came from. You can leave it blank: it then reads “Paid back · Another app”.")
-                .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 16)
+            if typingApp || usedApps.isEmpty {
+                TextField("", text: $appName, prompt: Text("Which app? (optional)").foregroundColor(Pearl.muted))
+                    .font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
+                    .textInputAutocapitalization(.words).autocorrectionDisabled()
+                    .padding(.horizontal, 14).frame(minHeight: 44)
+                    .background(RoundedRectangle(cornerRadius: Pearl.radiusChoice, style: .continuous).fill(Pearl.card))
+                    .overlay(RoundedRectangle(cornerRadius: Pearl.radiusChoice, style: .continuous).stroke(Pearl.border, lineWidth: 1))
+                    .onChange(of: appName) { v in if v.count > 30 { appName = String(v.prefix(30)) } }
+                    .accessibilityLabel("Which app")
+            }
         }
     }
 
-    private var appLabel: String {
-        let a = appName.trimmingCharacters(in: .whitespaces)
-        return a.isEmpty ? "Another app" : a
+    private func chip(_ title: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.ink)
+            .padding(.horizontal, 16).frame(minHeight: 44)
+            .background(Capsule().fill(on ? Pearl.bubble : Pearl.control))
+            .overlay(Capsule().stroke(on ? Pearl.action : .clear, lineWidth: 1.5))
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     private func loadApps() async {
         struct Reply: Decodable { let apps: [String] }
-        if let r: Reply = try? await api.get("api/split/apps") { usedApps = r.apps }
-    }
-
-    private func option(_ key: String, _ title: String, _ sub: String) -> some View {
-        Button { how = key } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(Nacre.body).foregroundColor(Pearl.ink)
-                    Text(sub).font(Nacre.footnote).foregroundColor(Pearl.muted)
-                }
-                Spacer()
-                if how == key {
-                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundColor(Pearl.action)
-                }
-            }
-            .padding(.horizontal, 16).frame(minHeight: 56).contentShape(Rectangle())
+        if let r: Reply = try? await api.get("api/split/apps") {
+            usedApps = r.apps
+            if appName.isEmpty, let first = r.apps.first { appName = first }
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(how == key ? .isSelected : [])
     }
 
     /// What each ticked deposit pays of what they owe, in the order ticked:
@@ -1296,90 +1324,6 @@ struct MarkPaidSheet: View {
         let more = (r?.deposits ?? []).compactMap { $0.value }
         found = more
         for d in more where !deposits.contains(where: { $0.id == d.id }) { deposits.append(d) }
-    }
-
-    /// S-26: "DAD'S SHARE · $428.00", their deposits to tick, and how far
-    /// they go towards it.
-    private var depositList: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(shown.isEmpty ? "NO DEPOSITS LOOK LIKE IT YET"
-                 : !query.isEmpty ? "FOUND"
-                 : inParts ? "\(person.name.uppercased())’S SHARE · \(Format.amount(person.amount))" : "LOOKS LIKE THIS ONE")
-                .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted).padding(.horizontal, 16)
-            if !shown.isEmpty {
-                GlassCard {
-                    ForEach(Array(shown.enumerated()), id: \.element.id) { i, d in
-                        if i > 0 { RowSeparator() }
-                        depositRow(d)
-                    }
-                }
-            }
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundColor(Pearl.muted)
-                TextField("", text: $query, prompt: Text("Search any purchase").foregroundColor(Pearl.muted))
-                    .font(Nacre.body).autocorrectionDisabled()
-            }
-            .padding(.horizontal, 14).frame(height: 44)
-            .background(Capsule().fill(Pearl.ink.opacity(0.08)))
-            .task(id: query) {
-                try? await Task.sleep(nanoseconds: 250_000_000)
-                if !Task.isCancelled { await search() }
-            }
-            if !deposits.isEmpty && inParts {
-                let paid = person.paid + paying
-                VStack(alignment: .leading, spacing: 6) {
-                    GeometryReader { g in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Pearl.ink.opacity(0.1))
-                            Capsule().fill(Pearl.action)
-                                .frame(width: g.size.width * min(1, paid / max(person.amount, 0.01)))
-                        }
-                    }
-                    .frame(height: 6)
-                    HStack(spacing: 14) {
-                        HStack(spacing: 5) {
-                            Circle().fill(Pearl.action).frame(width: 7, height: 7)
-                            Text("Paid back \(Format.amount(paid))")
-                        }
-                        HStack(spacing: 5) {
-                            Circle().fill(Pearl.ink.opacity(0.2)).frame(width: 7, height: 7)
-                            Text("\(person.name)’s share \(Format.amount(person.amount))")
-                        }
-                    }
-                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                }
-                .padding(.top, 4)
-                .accessibilityElement(children: .combine)
-            }
-        }
-    }
-
-    /// "e-Transfer from Dad · Nov 9 · part of $600 · $228.00 ✓".
-    private func depositRow(_ d: Candidate) -> some View {
-        let on = picked.contains(d.id)
-        let use = uses[d.id]
-        let how: String? = use.map { abs($0 - d.whole) < 0.005 ? "all of it" : "part of \(Format.whole(d.whole))" }
-        let full = !on && person.owes - paying < 0.005
-        return Button {
-            if let i = picked.firstIndex(of: d.id) { picked.remove(at: i) } else { picked.append(d.id) }
-        } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(d.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                    Text([Format.short(d.date), how].compactMap { $0 }.joined(separator: " · "))
-                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                }
-                Spacer()
-                Text(Format.amount(use ?? d.whole)).font(Nacre.headline).monospacedDigit()
-                Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22)).foregroundColor(on ? Pearl.action : Pearl.muted)
-            }
-            .padding(.horizontal, 16).frame(minHeight: 56).contentShape(Rectangle())
-            .opacity(full ? 0.5 : 1)
-        }
-        .buttonStyle(.plain)
-        .disabled(full)
-        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     // MARK: S-11c What's the extra? (SPLIT-19)
@@ -1607,18 +1551,25 @@ struct MarkPaidSheet: View {
     private func primary() async {
         busy = true
         defer { busy = false }
+        struct Saved: Decodable { let undo: JSONValue?; let toast: String? }
         do {
             if finding {
                 let linking = uses
+                var undos: [JSONValue] = []
+                var said: String?
                 for id in picked {
                     guard let use = linking[id], let d = deposits.first(where: { $0.id == id }) else { continue }
                     var body: [String: Any] = ["person": person.name]
                     if use < d.whole - 0.005 { body["amount"] = use }
-                    let _: OK = try await api.post("api/transactions/\(t.id)/paybacks/\(id)", body)
+                    let r: Saved = try await api.post("api/transactions/\(t.id)/paybacks/\(id)", body)
+                    if let u = r.undo { undos.append(u) }
+                    said = r.toast
                 }
                 let total = linking.values.reduce(0, +)
-                onDone(total >= person.owes - 0.005 ? "Linked. \(person.name) paid you back."
-                       : "Linked. \(person.name) paid \(Format.amount(total)) of \(Format.amount(person.owes)).")
+                // S-44b: "Priya paid back $30.00".
+                let title = picked.count == 1 ? (said ?? "\(person.name) paid back \(Format.amount(total))")
+                    : "\(person.name) paid back \(Format.amount(total))"
+                if let onLinked = onLinked { onLinked(title, undos) } else { onDone(title) }
             } else if how == "bank" {
                 struct Reply: Decodable { let candidates: [Lenient<Candidate>]? }
                 let r: Reply = try await api.get("api/transactions/\(t.id)/paybacks")
@@ -1630,8 +1581,10 @@ struct MarkPaidSheet: View {
                 }.map(\.element)
                 picked = deposits.first(where: { $0.likely == true }).map { [$0.id] } ?? []
                 finding = true
+                chosen = true
             } else {
-                guard let value = Double(amount.replacingOccurrences(of: "$", with: "")), value > 0 else {
+                guard let value = Double(amount.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")),
+                      value > 0 else {
                     error = "How much did \(person.name) pay?"
                     return
                 }
@@ -1642,48 +1595,66 @@ struct MarkPaidSheet: View {
                 // SPLIT-14: the app's name, when she gave one.
                 let named = appName.trimmingCharacters(in: .whitespaces)
                 if how == "app" && !named.isEmpty { body["app"] = named }
-                let _: OK = try await api.post("api/transactions/\(t.id)/split/cash", body)
-                onDone("\(person.name) paid \(Format.amount(value)).")
+                let r: Saved = try await api.post("api/transactions/\(t.id)/split/cash", body)
+                let title = "\(person.name) paid back \(Format.amount(value))"
+                if let onLinked = onLinked { onLinked(title, r.undo.map { [$0] } ?? []) } else { onDone(title) }
             }
             error = nil
         } catch {
-            self.error = error.localizedDescription
+            // S-06r: the champagne banner; nothing was saved past what the server said.
+            self.error = how == "bank" && !finding ? "Couldn’t load your money in. Try again."
+                : finding ? "Couldn’t link that. Nothing changed. Try again."
+                : "Couldn’t save that. Nothing changed. Try again."
         }
     }
 }
 
-/// S-08 Let it go? — what they owe becomes yours.
+/// S-08ra "Let Priya’s $30.00 go?" / S-08rb "Let the rest go?" (REFRESH-02,
+/// 1091:2527–2686): what they owe becomes hers. While it waits a spinner in
+/// the button, both off, no swipe-dismiss (S-08rc); a failure keeps it as it
+/// was on the champagne banner (S-08rd).
 struct LetGoSheet: View {
+    let t: Transaction
     let person: Transaction.Splitting.Person
-    let onLetGo: () -> Void
-    @Environment(\.dismiss) private var dismiss
+    let onClose: () -> Void
+    let run: () async throws -> Void
+    @State private var busy = false
+    @State private var failed = false
+
+    private static let error = "Couldn’t let that go. Nothing changed. Try again."
 
     var body: some View {
-        VStack(spacing: 16) {
-            SheetTitle(title: "Let it go?") { dismiss() }
-            HStack(spacing: 12) {
-                Initials(name: person.name, size: 48)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(person.name).font(Nacre.title2).foregroundColor(Pearl.ink)
-                    Text("Owes \(Format.amount(person.owes))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            HStack(spacing: 10) {
-                Button("Let it go", action: onLetGo).buttonStyle(NacreButtonStyle())
-                Button("Keep waiting") { dismiss() }
-                    .font(Nacre.headline).foregroundColor(Pearl.ink)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Color.white.opacity(0.85)))
-                    .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 16)
-            Spacer(minLength: 0)
+        let rest = person.paid >= 0.005
+        let owes = Format.amount(person.owes)
+        let into = (t.category ?? "").isEmpty ? "your spending" : "your spending in \(t.category ?? "")"
+        PearlSheet(dismissDisabled: busy) {
+            PearlSheetHeader(face: person.name, overline: "Let it go",
+                             title: rest ? "Let the rest go?" : "Let \(possessive(person.name)) \(owes) go?",
+                             close: onClose)
+                .disabled(busy)
+            Text(rest ? "\(person.name) paid \(Format.amount(person.paid)). The other \(owes) becomes \(into)."
+                      : "\(person.name) won’t owe you anymore. The \(owes) becomes \(into).")
+                .font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            // Product owner, 2026-11-09 (REFRESH-02 copy, the payback rule).
+            InfoNote(text: "\(t.merchant) already counts in full until it’s paid back, so your Allowance doesn’t change.")
+            if failed { CautionBanner(text: Self.error) }
+        } footer: {
+            PearlSheetButtons(primary: failed ? "Try again" : "Let \(owes) go", busy: busy, busyLabel: "Letting go…",
+                              secondary: "Keep waiting", onPrimary: { Task { await letGo() } }, onSecondary: onClose)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(SheetBackground())
-        .presentationDetents([.height(310)])
+        .interactiveDismissDisabled(busy)
+    }
+
+    private func letGo() async {
+        busy = true
+        defer { busy = false }
+        do {
+            try await run()
+            failed = false
+        } catch {
+            failed = true
+        }
     }
 }
 

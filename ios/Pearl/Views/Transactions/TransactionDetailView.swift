@@ -279,6 +279,12 @@ struct TransactionDetailView: View {
     @State private var splitting = false
     @State private var marking: Transaction.Splitting.Person?
     @State private var lettingGo: Transaction.Splitting.Person?
+    /// REFRESH-02: S-07r Remind, S-03re Change their share, S-03fr Remove.
+    @State private var reminding: Transaction.Splitting.Person?
+    @State private var changingShare: Transaction.Splitting.Person?
+    @State private var removingPerson: Transaction.Splitting.Person?
+    /// S-44a–i: the split flow's ink toast, with Undo (or Try again, S-44h).
+    @State private var splitToast: PearlToast.Model?
     @State private var seeingOwed = false
     @State private var parting: PartsDeposit?
     /// S-35c "Who sent this?" (SPLIT-22b): the payback it asks about.
@@ -506,7 +512,18 @@ struct TransactionDetailView: View {
                 marking = nil
                 Task {
                     await run { nil }
-                    withAnimation { toast = (title, undoing(undo)) }
+                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return nil } })
+                }
+            }, onLinked: { title, undos in
+                // S-44b: "Priya paid back $30.00 · Undo" takes back every link it made.
+                marking = nil
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                Task {
+                    await run { nil }
+                    showSplit(title, undo: undos.isEmpty ? nil : {
+                        for u in undos.reversed() { try await postUndo(u) }
+                        return nil
+                    })
                 }
             }) { done in
                 marking = nil
@@ -514,9 +531,47 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(item: $lettingGo) { person in
-            LetGoSheet(person: person) {
+            // S-08r → S-44c, whose Undo puts it back.
+            LetGoSheet(t: t, person: person, onClose: { lettingGo = nil }) {
+                let said = try await letGo(person)
                 lettingGo = nil
-                Task { await letGo(person) }
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                await load()
+                app.changed()
+                showSplit(said, undo: { try await undoLetGo(person) })
+            }
+        }
+        .sheet(item: $reminding) { person in
+            // S-07r → S-44f; Undo empties the clipboard again. No haptic on Remind.
+            RemindSheet(t: t, p: person, onClose: { reminding = nil }) {
+                reminding = nil
+                showSplit("Copied · paste it to \(person.name)", undo: {
+                    UIPasteboard.general.string = ""
+                    return nil
+                })
+            }
+        }
+        .sheet(item: $changingShare) { person in
+            // S-03re: How to split on Amounts, their field focused → S-44i.
+            SplitSheet(t: t, api: app.api, recent: recent, onSaved: { done in
+                changingShare = nil
+                Task { await run { done } }
+            }, focus: person.name, onUpdated: { title, undo in
+                changingShare = nil
+                Task {
+                    await run { nil }
+                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return nil } })
+                }
+            })
+        }
+        .sheet(item: $removingPerson) { person in
+            // S-03fr / S-03fr2 from S-40: saves at once, with loading and error.
+            RemovePersonSheet(p: person, merchant: t.merchant, onClose: { removingPerson = nil }) {
+                let (title, undo) = try await removeFromSplit(person)
+                removingPerson = nil
+                await load()
+                app.changed()
+                showSplit(title, undo: undo)
             }
         }
         .sheet(item: $parting, onDismiss: { editingParts = false; partsExtra = nil }) { deposit in
@@ -550,7 +605,9 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $unlinkingRefund) { refundUnlinkSheet }
         .overlay(alignment: .bottom) {
             VStack(spacing: 4) {
-                if let toast = toast {
+                if let model = splitToast {
+                    PearlToast(model: model) { withAnimation { if splitToast == model { splitToast = nil } } }
+                } else if let toast = toast {
                     // Stays until something replaces it, so nothing moves under a finger.
                     UndoToast(text: toast.title, undo: toast.undo, stays: false) {
                         withAnimation { self.toast = nil }
@@ -580,7 +637,8 @@ struct TransactionDetailView: View {
                 Task {
                     await load()
                     app.changed()
-                    withAnimation { toast = (title, relinking(undo)) }
+                    // S-44a; its Undo links it back (S-44g "Linked again").
+                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Linked again" } })
                 }
             }
         }
@@ -590,12 +648,17 @@ struct TransactionDetailView: View {
             afterOptions = nil
             next?()
         }) { link in
-            // S-05o (presentation to be replaced by custom design, see design refresh).
-            PaybackOptionsSheet(title: link.dialog, message: link.message,
-                                actions: linkActions(link)) { then in
-                afterOptions = then
-                linkOptions = nil
-            }
+            // S-05or (REFRESH-02): View… opens it here in Pearl; Unlink… → S-34kr.
+            PaybackOptionsSheet(link: link, overline: link.kind == "refund" ? "REFUNDED BY" : "PAID BACK",
+                                onClose: { linkOptions = nil },
+                                onView: {
+                                    afterOptions = { if let id = link.view?.id { Task { await open(id) } } }
+                                    linkOptions = nil
+                                },
+                                onUnlink: {
+                                    afterOptions = { unlinkingLink = link }
+                                    linkOptions = nil
+                                })
         }
         .navigationDestination(isPresented: Binding(get: { viewing != nil }, set: { if !$0 { viewing = nil } })) {
             if let viewing = viewing {
@@ -1142,17 +1205,10 @@ struct TransactionDetailView: View {
     /// OWED TO YOU or SPLIT 3 WAYS (S-04, S-05, S-19, S-20).
     @ViewBuilder private var splitPeople: some View {
         if let split = t.splitting, !split.people.isEmpty, !t.inflow {
-            SplitPeople(t: t, split: split,
-                        onMarkPaid: { marking = $0 },
-                        onRemind: remind,
-                        onLetGo: { lettingGo = $0 },
-                        onUndoLetGo: { p in Task { await undoLetGo(p) } },
+            SplitPeople(t: t, split: split, onChoose: choose,
                         onEdit: { splitting = true },
                         onOwed: { seeingOwed = true },
-                        onCredit: { crediting = Crediting(id: $0.id) },
-                        // S-05o (SPLIT-25): View, or Unlink… → S-34s / S-34k.
-                        onView: { link in if let id = link.view?.id { Task { await open(id) } } },
-                        onUnlink: { unlinkingLink = $0 })
+                        onCredit: { crediting = Crediting(id: $0.id) })
         }
     }
 
@@ -1862,41 +1918,128 @@ struct TransactionDetailView: View {
     /// transaction, which load() fetches anyway.)
     private struct Titled: Decodable { let title: String? }
 
-    /// S-07: a reminder she can paste into a message.
-    private func remind(_ p: Transaction.Splitting.Person) {
-        UIPasteboard.general.string = "Hey \(p.name)! Your share of \(t.merchant) on \(Format.short(t.date)) "
-            + "is \(Format.amount(p.owes)). Thanks!"
-        // S-07: "Copied · paste it to Sam", with Undo.
+    // MARK: REFRESH-02 — S-40's choices, and the S-44 toasts
+
+    /// What she picked on a person's S-40 (it has gone by now).
+    private func choose(_ p: Transaction.Splitting.Person, _ choice: PersonChoice) {
+        switch choice {
+        case .markPaid: marking = p
+        case .remind: reminding = p
+        case .letGo: lettingGo = p
+        case .changeShare: changingShare = p
+        case .view(let link): if let id = link.view?.id { Task { await open(id) } }
+        case .unlink(let link): unlinkingLink = link
+        case .undoLetGo:
+            // S-40d → S-44e at once; its Undo lets it go again.
+            Task {
+                do {
+                    let said = try await undoLetGo(p)
+                    await load()
+                    app.changed()
+                    showSplit(said ?? "\(p.name) owes you again", undo: { _ = try await letGo(p); return nil })
+                } catch {
+                    showFailed("Couldn’t undo that. Nothing changed.") { choose(p, .undoLetGo) }
+                }
+            }
+        case .remove:
+            // Someone who paid is asked first (S-03fr); anyone else goes at once (S-44d).
+            if p.paid >= 0.005 { removingPerson = p; return }
+            Task {
+                do {
+                    let (title, undo) = try await removeFromSplit(p)
+                    await load()
+                    app.changed()
+                    showSplit(title, undo: undo)
+                } catch {
+                    showFailed("Couldn’t remove \(p.name). Nothing changed.") { choose(p, .remove) }
+                }
+            }
+        }
+    }
+
+    /// An S-44 toast; Undo runs `undo`, then says what it returns (S-44g
+    /// "Linked again"), or S-44h if it fails, with Try again.
+    private func showSplit(_ text: String, undo: (() async throws -> String?)?) {
         withAnimation {
-            toast = ("Copied · paste it to \(p.name)", { UIPasteboard.general.string = "" })
+            toast = nil
+            splitToast = PearlToast.Model(text: text, action: undo == nil ? nil : "Undo",
+                                          run: undo.map { work in { Task { await runUndo(work) } } })
         }
     }
 
-    private func letGo(_ p: Transaction.Splitting.Person) async {
-        await run {
-            let reply: Titled = try await app.api.post("api/transactions/\(t.id)/split/let-go", ["name": p.name])
-            return reply.title
+    private func runUndo(_ work: @escaping () async throws -> String?) async {
+        withAnimation { splitToast = nil }
+        do {
+            let said = try await work()
+            await load()
+            app.changed()
+            if let said = said { withAnimation { splitToast = PearlToast.Model(text: said) } }
+        } catch {
+            // S-44h: "Couldn’t undo that. Nothing changed." · Try again.
+            showFailed("Couldn’t undo that. Nothing changed.") { Task { await runUndo(work) } }
         }
     }
 
-    private func undoLetGo(_ p: Transaction.Splitting.Person) async {
-        await run {
-            let reply: Titled = try await app.api.delete("api/transactions/\(t.id)/split/let-go",
-                                                            query: ["name": p.name])
-            return reply.title
+    private func showFailed(_ text: String, retry: @escaping () -> Void) {
+        withAnimation {
+            toast = nil
+            splitToast = PearlToast.Model(text: text, action: "Try again", failed: true, run: retry)
         }
     }
 
-    /// S-05o: View the e-Transfer (none for cash or an app), then Unlink….
-    private func linkActions(_ link: Transaction.LinkInfo) -> [PaybackOptionsSheet.Action] {
-        var out: [PaybackOptionsSheet.Action] = []
-        if let view = link.view {
-            out.append(.init(title: view.label) { Task { await open(view.id) } })
+    private func postUndo(_ payload: JSONValue) async throws {
+        guard let body = payload.any as? [String: Any] else { return }
+        let _: OK = try await app.api.post("api/transactions/undo", body)
+    }
+
+    /// A split change's toast (S-44c, S-44e).
+    private struct Toasted: Decodable { let title: String?; let toast: String?; let undo: JSONValue? }
+
+    @discardableResult
+    private func letGo(_ p: Transaction.Splitting.Person) async throws -> String {
+        let reply: Toasted = try await app.api.post("api/transactions/\(t.id)/split/let-go", ["name": p.name])
+        return reply.toast ?? reply.title ?? "Let go"
+    }
+
+    private func undoLetGo(_ p: Transaction.Splitting.Person) async throws -> String? {
+        let reply: Toasted = try await app.api.delete("api/transactions/\(t.id)/split/let-go", query: ["name": p.name])
+        return reply.toast ?? reply.title
+    }
+
+    /// S-40's Remove (handoff 1096:4498): PUT …/split without them, their
+    /// share hers (SPLIT-16 rules on the server). Gives S-44d's toast and
+    /// its Undo. The only person on it: the split goes, and Undo puts it back.
+    private func removeFromSplit(_ p: Transaction.Splitting.Person) async throws -> (String, () async throws -> String?) {
+        guard let split = t.splitting else { throw SplitMenuError(words: "That isn’t split anymore.") }
+        let whole = t.fullAmount ?? t.amount
+        func body(_ people: [Transaction.Splitting.Person]) -> [String: Any] {
+            let shares = people.map { ["name": $0.name, "amount": $0.share] as [String: Any] }
+            let you = ((whole - people.map(\.share).reduce(0, +)) * 100).rounded() / 100
+            return ["mode": "amount", "include_me": you >= 0.005, "you": max(0, you), "people": shares]
         }
-        out.append(.init(title: link.kind == "refund" ? "Unlink refund…" : "Unlink…", destructive: true) {
-            unlinkingLink = link
-        })
-        return out
+        let kept = split.people.filter { $0.name != p.name }
+        let title = "\(p.name) removed · \(Format.amount(p.share)) back to your share"
+        do {
+            if kept.isEmpty {
+                let _: OK = try await app.api.delete("api/transactions/\(t.id)/split")
+                let old = body(split.people)
+                let id = t.id
+                return (title, {
+                    let _: OK = try await app.api.put("api/transactions/\(id)/split", old)
+                    return nil
+                })
+            }
+            struct Reply: Decodable { let toast: String?; let undo: JSONValue? }
+            let reply: Reply = try await app.api.put("api/transactions/\(t.id)/split", body(kept))
+            let undo = reply.undo
+            return (reply.toast ?? title, {
+                if let undo = undo { try await postUndo(undo) }
+                return nil
+            })
+        } catch let e as APIError {
+            if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
+            throw e
+        }
     }
 
     /// S-05o's View: the e-Transfer, the deposit or the refund, in the app.
@@ -1906,21 +2049,6 @@ struct TransactionDetailView: View {
         } catch {
             self.error = app.handle(error)
         }
-    }
-
-    /// S-05t's Undo: links it back exactly as it was; its toast reads "Linked again".
-    private func relinking(_ payload: JSONValue?) -> (() -> Void)? {
-        payload.map { p in {
-            Task {
-                guard let body = p.any as? [String: Any] else { return }
-                withAnimation { toast = nil }
-                await run {
-                    let _: OK = try await app.api.post("api/transactions/undo", body)
-                    return nil
-                }
-                if error == nil { withAnimation { toast = ("Linked again", nil) } }
-            }
-        } }
     }
 
     /// A part is gone once unlinked, so the page shows the deposit it was.
