@@ -270,20 +270,6 @@ struct AnswerSheet: View {
         }
     }
 
-    /// Split into parts, for a deposit that's more than one thing.
-    @ViewBuilder private var inOptions: some View {
-        if let f = full, f.transfer == nil, f.parts.isEmpty, f.partOf == nil, f.refundOf == nil, f.repays == nil,
-           f.excluded.isEmpty, f.jointFrom != "them" {
-            Text("OPTIONS").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
-                .padding(.horizontal, 16).padding(.top, 4)
-                .accessibilityAddTraits(.isHeader)
-            GlassCard {
-                Button { parting = true } label: { optionLabel("Split into parts", done: false, icon: "arrow.triangle.branch") }
-                    .buttonStyle(.plain)
-            }
-        }
-    }
-
     private func optionLabel(_ title: String, done: Bool, icon: String? = nil) -> some View {
         HStack(spacing: 12) {
             if let icon = icon { IconBubble(symbol: icon) }
@@ -425,8 +411,6 @@ struct AnswerSheet: View {
                     Text("NOT INCOME").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
                         .padding(.horizontal, 16).padding(.top, 4).accessibilityAddTraits(.isHeader)
                     CaseGrid(cases: CaseTile.notIncome, chosen: answer(income: false))
-                    // The transaction's page has Split into parts already (2026-11-08).
-                    if !fromPage { inOptions }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
