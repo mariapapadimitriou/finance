@@ -619,6 +619,29 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let mode: String?
         let you: Double
         let people: [Person]
+        /// SPLIT-22b (S-05u, THL-181): paybacks linked here that Pearl
+        /// credited to no one, newest first. Each asks "Who sent this?".
+        var uncredited: [Uncredited]? = nil
+
+        /// "$30.00 from an e-Transfer" over "Nov 16 · no name · paid back Loblaws".
+        struct Uncredited: Decodable, Hashable, Identifiable {
+            let id: String
+            /// What it put toward this purchase.
+            let amount: Double
+            let date: String
+            /// The name the bank put on it, if any.
+            let sender: String?
+            /// "e-Transfer" or "payment".
+            let word: String
+            /// The deposit's own name, for its initials ("Interac e-Transfer").
+            let name: String?
+            let paidBack: [String]
+
+            enum CodingKeys: String, CodingKey {
+                case id, amount, date, sender, word, name
+                case paidBack = "paid_back"
+            }
+        }
 
         struct Person: Decodable, Hashable, Identifiable {
             let name: String
@@ -1213,6 +1236,15 @@ struct Review: Decodable {
         let rest: Rest?
         /// T-15: the other copy of a possible duplicate.
         var twin: BriefTransaction? = nil
+        /// S-21u (SPLIT-22b, THL-181): a payback already linked that Pearl
+        /// credited to no one. Its "Who sent this?" opens S-35c.
+        var credit: Credit? = nil
+
+        struct Credit: Decodable, Hashable {
+            /// Every purchase it paid back: "paid back Loblaws".
+            let paidBack: [String]
+            enum CodingKeys: String, CodingKey { case paidBack = "paid_back" }
+        }
 
         var id: String { key }
 
@@ -1228,7 +1260,7 @@ struct Review: Decodable {
 
         enum CodingKeys: String, CodingKey {
             case key, txn, reason, skipped, from, guess, label, people, candidates, series, rest, share, twin
-            case siblings, pair
+            case siblings, pair, credit
             case guessLabel = "guess_label"
         }
 
@@ -1263,6 +1295,7 @@ struct Review: Decodable {
             twin = opt(BriefTransaction.self, .twin)
             siblings = opt([Lenient<BriefTransaction>].self, .siblings)?.compactMap { $0.value } ?? []
             pair = opt(Pair.self, .pair)
+            credit = opt(Credit.self, .credit)
         }
 
         static func == (a: Item, b: Item) -> Bool {

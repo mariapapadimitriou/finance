@@ -165,6 +165,8 @@ def _splitting(t, split: dict, txns, payer) -> dict:
         "mode": split["mode"], "watch": split["watch"],
         "you": round(t.my_share if t.my_share is not None else t.amount, 2),
         "people": sp.people_status(t, split, txns, payer),
+        # SPLIT-22b (S-05u): paybacks here credited to no one yet.
+        "uncredited": sp.uncredited_rows(t, split, txns, payer),
     }
 
 

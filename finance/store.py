@@ -1599,6 +1599,15 @@ class Store:
             rows = c.execute("SELECT inflow_id, person FROM txn_payback_person").fetchall()
         return {r["inflow_id"]: r["person"] for r in rows}
 
+    def set_payback_person(self, inflow_id: str, person: str | None) -> None:
+        """Say who sent a payback already linked (SPLIT-22b, S-35c); None
+        forgets it. The link and how much went to each purchase stay."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_payback_person WHERE inflow_id = ?", (inflow_id,))
+            if person:
+                c.execute("INSERT INTO txn_payback_person (inflow_id, person) VALUES (?, ?)",
+                          (inflow_id, person))
+
     # ── What was this? (2026-10-14) ──────────────────────────────────────
     def payback_kinds(self) -> dict[str, str]:
         """inflow id → "reimbursement" where a repayment was one (work,

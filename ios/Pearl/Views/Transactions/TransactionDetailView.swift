@@ -281,6 +281,10 @@ struct TransactionDetailView: View {
     @State private var lettingGo: Transaction.Splitting.Person?
     @State private var seeingOwed = false
     @State private var parting: PartsDeposit?
+    /// S-35c "Who sent this?" (SPLIT-22b): the payback it asks about.
+    @State private var crediting: Crediting?
+
+    struct Crediting: Identifiable { let id: String }
     /// S-10e: the parts sheet opened from S-33's Edit, with the parts filled in.
     @State private var editingParts = false
     @State private var unlinking = false
@@ -513,6 +517,18 @@ struct TransactionDetailView: View {
                 Task {
                     await run {
                         // S-12d: "Costco split and $600 sorted · Undo" puts it all back.
+                        withAnimation { toast = (reply.title ?? "Sorted.", undoing(reply.undo)) }
+                        return nil
+                    }
+                }
+            }
+        }
+        .sheet(item: $crediting) { c in
+            // S-35c from S-05u, or from the deposit itself: "Sam paid back $30.00 · Undo".
+            WhoSentSheet(id: c.id, api: app.api) { reply in
+                crediting = nil
+                Task {
+                    await run {
                         withAnimation { toast = (reply.title ?? "Sorted.", undoing(reply.undo)) }
                         return nil
                     }
@@ -1073,7 +1089,8 @@ struct TransactionDetailView: View {
                         onLetGo: { lettingGo = $0 },
                         onUndoLetGo: { p in Task { await undoLetGo(p) } },
                         onEdit: { splitting = true },
-                        onOwed: { seeingOwed = true })
+                        onOwed: { seeingOwed = true },
+                        onCredit: { crediting = Crediting(id: $0.id) })
         }
     }
 
@@ -1585,7 +1602,10 @@ struct TransactionDetailView: View {
             sorting = sortAsk(t.inflow ? .moneyIn : .transfer)
             return
         }
-        if ask.item.rest != nil { parting = deposit(rest: true) } else { sorting = ask }
+        if ask.item.rest != nil { parting = deposit(rest: true) }
+        // S-21u's question on its own page: S-35c, not What was this?.
+        else if ask.item.credit != nil { crediting = Crediting(id: t.id) }
+        else { sorting = ask }
     }
 
     /// This deposit as a money-in question, for AnswerSheet.

@@ -336,6 +336,26 @@ def build(transactions: list[Transaction], today: str | None = None,
                          "reason": "Your bank didn’t say who sent it. A name helps Pearl match "
                                    "paybacks and makes it easy to find."})
 
+    # 3d. Who sent this? on a payback already linked (SPLIT-22b, THL-181;
+    # S-21u): linked from search, the web or the API, and credited to no one
+    # because two shares, or none, are its amount. One row per payback, with
+    # the chip above; it opens S-35c. Asked until answered, however old.
+    if splits:
+        from .splits import ASK_FROM, credit_question
+        for t in live:
+            # Only a payback dated from ASK_FROM can be credited to no one.
+            if (t.amount >= 0 or not t.repays or t.date[:10] < ASK_FROM
+                    or not any(c in splits for c in t.repays_all)):
+                continue
+            q = credit_question(t, transactions, splits, payer or {})
+            key = "credit:" + t.fingerprint
+            if q is None or key in dismissed:
+                continue
+            who_sent.append({"key": key, "txn": _brief(t),
+                             "credit": {"paid_back": [x["merchant"] for x in q["purchases"]]},
+                             "reason": "Pearl can’t tell who sent it, so it isn’t "
+                                       "credited to anyone yet."})
+
     # 4. Income whose type is a guess.
     income = []
     from .categorize import merchant_key

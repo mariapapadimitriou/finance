@@ -764,13 +764,29 @@ struct SplitPeople: View {
     let onUndoLetGo: (Transaction.Splitting.Person) -> Void
     let onEdit: () -> Void
     let onOwed: () -> Void
+    /// S-05u (SPLIT-22b): "Who sent this?" on a payback credited to no one.
+    var onCredit: (Transaction.Splitting.Uncredited) -> Void = { _ in }
     /// The person she tapped, for their choices.
     @State private var chosen: Transaction.Splitting.Person?
 
     var body: some View {
         let open = split.people.filter { $0.owes >= 0.005 }
+        let unsure = split.uncredited ?? []
         VStack(alignment: .leading, spacing: 8) {
-            Text(split.people.count > 1 ? "SPLIT \(split.people.count + (split.you >= 0.005 ? 1 : 0)) WAYS"
+            if !unsure.isEmpty {
+                // S-05u 1033:42367 (THL-181): PAID BACK, one row each, newest first.
+                Text("PAID BACK").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                    .padding(.horizontal, 16).padding(.top, 12)
+                GlassCard {
+                    ForEach(Array(unsure.enumerated()), id: \.element.id) { i, u in
+                        if i > 0 { RowSeparator(inset: 64) }
+                        uncreditedRow(u)
+                    }
+                }
+            }
+            // S-05u: Sam and Priya stay under OWED TO YOU.
+            Text(!unsure.isEmpty && !open.isEmpty ? "OWED TO YOU"
+                 : split.people.count > 1 ? "SPLIT \(split.people.count + (split.you >= 0.005 ? 1 : 0)) WAYS"
                  : open.isEmpty ? "PAID BACK" : "OWED TO YOU")
                 .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
                 .padding(.horizontal, 16).padding(.top, 12)
@@ -853,6 +869,33 @@ struct SplitPeople: View {
         .padding(.horizontal, 16).padding(.vertical, 12)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    /// S-05u: "$30.00 from an e-Transfer" / "Nov 16 · no name · paid back
+    /// Loblaws" / "Who sent this?", with no amount column. Opens S-35c.
+    private func uncreditedRow(_ u: Transaction.Splitting.Uncredited) -> some View {
+        let from = u.word == "e-Transfer" ? "an e-Transfer" : "a payment"
+        return Button { onCredit(u) } label: {
+            HStack(spacing: 12) {
+                Initials(name: u.name ?? u.word, size: 34)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(Format.amount(u.amount)) from \(from)").font(Nacre.body).foregroundColor(Pearl.ink)
+                    Text("\(Format.short(u.date)) · \(u.sender ?? "no name") · paid back \(Format.andList(u.paidBack))")
+                        .font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(2)
+                    Text("Who sent this?").font(Nacre.footnote).foregroundColor(Pearl.action)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Pearl.muted)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // "30 dollars from an e-Transfer, November 16, not credited to anyone yet. Who sent this? Button."
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(Format.amount(u.amount)) from \(from), \(Format.monthDay(u.date)), not credited to anyone yet. Who sent this?")
+        .accessibilityAddTraits(.isButton)
     }
 
     /// "Owes you", "Paid $20.00 of $28.04", "Cash · Nov 13", "Let go · Nov 20".

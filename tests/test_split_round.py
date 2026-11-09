@@ -864,3 +864,226 @@ class TestPearlAsksWhoItWas:
         assert '.accessibilityValue(on ? "selected" : "not selected")' in flow
         assert "Format.monthDay(o.date)" in flow
         assert "named = r.named" in flow
+
+
+class TestWhoSentThis:
+    """SPLIT-22b, THL-181 "Every repayment linked to a split is credited to
+    someone on the split card. If Pearl can't tell who, it asks." A payback
+    linked outside the sheet (search, the web's Paid back, the API) that the
+    ask rule credits to no one shows on the split card (S-05u) and in Needs a
+    look (S-21u), and S-35c says who sent it, with Undo."""
+
+    IOS = __import__("pathlib").Path(__file__).resolve().parents[1] / "ios" / "Pearl"
+
+    def setup(self, c, amount=30.0, came="2026-11-16", bought="2026-11-11", who=None, solo=False):
+        deposit = Transaction(date=came, description="INTERAC E-TRANSFER", merchant="Interac e-Transfer",
+                              amount=-amount, category="", account_id="chq", account_name="TD Chequing",
+                              raw={"account_type": "depository", **({"counterparty": who} if who else {})})
+        i = add(c, tx("LOBLAWS", 90.0, "Groceries", when=bought), deposit)
+        people_ = ([{"name": "Sam", "amount": 42.06}] if solo else
+                   [{"name": "Sam", "amount": 30.0}, {"name": "Priya S.", "amount": 30.0}])
+        r = split(c, i["LOBLAWS"], mode="amount", people=people_)
+        assert r.status_code == 200, r.get_json()
+        return i["LOBLAWS"], i["INTERAC E-TRANSFER"]
+
+    def owes(self, c, charge):
+        return {n: p["owes"] for n, p in people(c, charge).items()}
+
+    def uncredited(self, c, charge):
+        return detail(c, charge)["splitting"]["uncredited"]
+
+    def credit_items(self, c):
+        return [it for it in c.get("/api/review").get_json()["who_sent"] if it["key"].startswith("credit:")]
+
+    def test_the_split_card_shows_it_credited_to_no_one(self, client):
+        charge, deposit = self.setup(client)
+        link(client, charge, deposit, None)
+        rows = self.uncredited(client, charge)
+        assert rows == [{"id": deposit, "amount": 30.0, "whole": 30.0, "date": "2026-11-16", "sender": None,
+                         "word": "e-Transfer", "name": "Interac e-Transfer",
+                         "paid_back": ["LOBLAWS"]}]
+        assert self.owes(client, charge) == {"Sam": 30.0, "Priya S.": 30.0}
+
+    def test_the_question_lists_the_open_shares_on_its_purchase(self, client):
+        charge, deposit = self.setup(client)
+        link(client, charge, deposit, None)
+        q = client.get(f"/api/transactions/{deposit}/credit").get_json()["question"]
+        assert q["sender"] is None and q["linked"] == 30.0
+        assert q["purchases"] == [{"id": charge, "merchant": "LOBLAWS", "date": "2026-11-11", "here": 30.0}]
+        assert sorted((s["person"], s["owes"]) for s in q["shares"]) == [("Priya S.", 30.0), ("Sam", 30.0)]
+
+    def test_saying_who_credits_them_with_undo(self, client):
+        charge, deposit = self.setup(client)
+        link(client, charge, deposit, None)
+        r = client.post(f"/api/transactions/{deposit}/credit", json={"person": "Sam"})
+        assert r.status_code == 200, r.get_json()
+        out = r.get_json()
+        assert out["title"] == "Sam paid back $30.00"
+        assert self.owes(client, charge) == {"Sam": 0.0, "Priya S.": 30.0}
+        assert self.uncredited(client, charge) == []
+        assert client.get(f"/api/transactions/{deposit}/credit").get_json()["question"] is None
+        # The link itself didn't change.
+        assert client.st.get_transaction(deposit).repays == charge
+        u = client.post("/api/transactions/undo", json=out["undo"])
+        assert u.status_code == 200, u.get_json()
+        assert self.owes(client, charge) == {"Sam": 30.0, "Priya S.": 30.0}
+        assert [x["id"] for x in self.uncredited(client, charge)] == [deposit]
+        assert client.st.get_transaction(deposit).repays == charge
+
+    def test_only_someone_on_the_purchase_and_only_a_linked_payback(self, client):
+        charge, deposit = self.setup(client)
+        assert client.post(f"/api/transactions/{deposit}/credit", json={"person": "Sam"}).status_code == 400
+        link(client, charge, deposit, None)
+        r = client.post(f"/api/transactions/{deposit}/credit", json={"person": "Jordan"})
+        assert r.status_code == 400
+        assert client.post(f"/api/transactions/{deposit}/credit", json={}).status_code == 400
+        assert client.post(f"/api/transactions/{deposit}/credit",
+                           json={"person": "Sam", "charge": "nope"}).status_code == 400
+        # "Priya" is Priya S.
+        r = client.post(f"/api/transactions/{deposit}/credit", json={"person": "Priya"})
+        assert r.get_json()["title"] == "Priya S. paid back $30.00"
+
+    def test_needs_a_look_asks_once_and_stops_when_answered(self, client):
+        charge, deposit = self.setup(client)
+        link(client, charge, deposit, None)
+        items = self.credit_items(client)
+        assert [it["key"] for it in items] == ["credit:" + deposit]
+        assert items[0]["credit"] == {"paid_back": ["LOBLAWS"]}
+        # One row: the bank-name "Who sent this?" never lists a linked payback too.
+        whos = [it for it in client.get("/api/review").get_json()["who_sent"] if it["txn"]["id"] == deposit]
+        assert len(whos) == 1
+        # Quick sort walks the same list.
+        from finance import quick_sort
+        review = client.get("/api/review").get_json()
+        assert ("credit:" + deposit, deposit) in quick_sort.questions(review)
+        client.post(f"/api/transactions/{deposit}/credit", json={"person": "Sam"})
+        assert self.credit_items(client) == []
+
+    def test_the_webs_who_sent_this_answers_it_too(self, client):
+        # The web lists the same who_sent row; naming the sender there credits them.
+        charge, deposit = self.setup(client)
+        link(client, charge, deposit, None)
+        assert client.put(f"/api/transactions/{deposit}/party", json={"name": "Sam"}).status_code == 200
+        assert self.owes(client, charge) == {"Sam": 0.0, "Priya S.": 30.0}
+        assert self.credit_items(client) == [] and self.uncredited(client, charge) == []
+
+    def test_skip_keeps_it_skipped(self, client):
+        charge, deposit = self.setup(client)
+        link(client, charge, deposit, None)
+        client.post("/api/review/skip", json={"key": "credit:" + deposit, "skip": True})
+        items = self.credit_items(client)
+        assert len(items) == 1 and items[0]["skipped"] is True
+
+    def test_none_fits_and_one_person_ask_too(self, client):
+        charge, deposit = self.setup(client, amount=45.0)
+        link(client, charge, deposit, None)
+        assert [x["amount"] for x in self.uncredited(client, charge)] == [45.0]
+
+    def test_one_person_split_with_a_different_amount(self, client):
+        charge, deposit = self.setup(client, solo=True)
+        link(client, charge, deposit, None)
+        q = client.get(f"/api/transactions/{deposit}/credit").get_json()["question"]
+        assert [(s["person"], s["owes"], s["people"]) for s in q["shares"]] == [("Sam", 42.06, 1)]
+
+    def test_no_row_when_pearl_can_tell(self, client):
+        # The one share that fits: credited, nothing to ask.
+        charge, deposit = self.setup(client)
+        client.put(f"/api/transactions/{charge}/split", json={
+            "mode": "amount", "people": [{"name": "Sam", "amount": 30.0}, {"name": "Priya S.", "amount": 20.0}]})
+        link(client, charge, deposit, None)
+        assert self.uncredited(client, charge) == [] and self.credit_items(client) == []
+
+    def test_no_row_when_it_names_someone(self, client):
+        charge, deposit = self.setup(client)
+        link(client, charge, deposit, "Sam")
+        assert self.uncredited(client, charge) == []
+
+    def test_no_row_for_an_old_payback(self, client):
+        charge, deposit = self.setup(client, came="2026-10-25", bought="2026-10-20")
+        link(client, charge, deposit, None)
+        assert self.uncredited(client, charge) == [] and self.credit_items(client) == []
+
+    def test_a_payback_over_two_purchases_lists_both(self, client):
+        charge, deposit = self.setup(client, amount=60.0)
+        i = add(client, tx("PIZZA NOVA", 60.0, "Dining", when="2026-11-02"))
+        pizza = i["PIZZA NOVA"]
+        split(client, pizza, mode="amount", people=[{"name": "Sam", "amount": 30.0}])
+        client.st.link_payback(charge, deposit, None, 30.0)
+        client.st.set_payback_more(deposit, [(pizza, 30.0)])
+        q = client.get(f"/api/transactions/{deposit}/credit").get_json()["question"]
+        assert [p["merchant"] for p in q["purchases"]] == ["LOBLAWS", "PIZZA NOVA"]
+        assert self.uncredited(client, charge)[0]["paid_back"] == ["LOBLAWS", "PIZZA NOVA"]
+        # On Pizza Nova only Sam's share fits, so it already counts for Sam there.
+        assert self.owes(client, pizza) == {"Sam": 0.0}
+        out = client.post(f"/api/transactions/{deposit}/credit", json={"person": "Sam"}).get_json()
+        # The toast says what's newly credited: Loblaws' $30.00.
+        assert out["title"] == "Sam paid back $30.00"
+        assert self.owes(client, charge) == {"Sam": 0.0, "Priya S.": 30.0}
+        assert self.owes(client, pizza) == {"Sam": 0.0}
+
+    def test_the_extra_goes_to_parts_and_undo_links_it_back(self, client):
+        # S-35c over the share: Sam's $30.00, and "What's the other $15.00?".
+        charge, deposit = self.setup(client, amount=45.0)
+        link(client, charge, deposit, None)
+        r = client.post(f"/api/transactions/{deposit}/parts", json={"parts": [
+            {"kind": "payback", "amount": 30.0, "charge": charge, "person": "Sam"},
+            {"kind": "gift", "amount": 15.0}]})
+        assert r.status_code == 200, r.get_json()
+        assert self.owes(client, charge) == {"Sam": 0.0, "Priya S.": 30.0}
+        assert self.uncredited(client, charge) == []
+        u = client.post("/api/transactions/undo", json=r.get_json()["undo"])
+        assert u.status_code == 200, u.get_json()
+        assert client.st.get_transaction(deposit).repays == charge
+        assert [x["id"] for x in self.uncredited(client, charge)] == [deposit]
+
+    def test_the_app_asks_where_she_looks(self):
+        sheet = (self.IOS / "Views/Transactions/WhoSentSheet.swift").read_text(encoding="utf-8")
+        # S-35c: titled "Who sent this?", no search, Save off until a tick, a spinner while saving.
+        assert 'SheetTitle(title: "Who sent this?")' in sheet
+        assert "TextField" not in sheet
+        assert ".disabled(picked.isEmpty || busy)" in sheet and "NacreButtonStyle(busy: busy)" in sheet
+        assert 'Text("ON \\(Format.andList(shops).uppercased())")' in sheet
+        assert "each owe \\(amount) on \\(shops), so Pearl won’t guess. Tick who sent it." in sheet
+        assert "and this is \\(amount), so Pearl won’t guess. Tick \\(name) if it was them." in sheet
+        assert '"No one on \\(shops) owes \\(amount), so Pearl won’t guess. Tick who sent it."' in sheet
+        assert '"Credited \\(Format.amount(done))\\(who)"' in sheet and '"Not credited ' in sheet
+        # Error: the tick stays, Save stays on, the line says so and VoiceOver hears it.
+        assert 'Text("Couldn’t save that. Try again.")' in sheet and "failed = true" in sheet
+        assert "UIAccessibility.post(notification: .announcement" in sheet
+        # Over the share: S-11 v2 with the credit as a part; Quick sort holds the tick.
+        assert "credited: e.parts" in sheet
+        assert 'label: "Paid back by \\(firstName(who))"' in sheet
+        assert '.accessibilityValue(on ? "selected" : "not selected")' in sheet
+        parts = (self.IOS / "Views/Transactions/PartsFlow.swift").read_text(encoding="utf-8")
+        assert "var credited: [Part] = []" in parts and "if parts.isEmpty { parts = credited }" in parts
+        # S-05u on the split card.
+        flow = (self.IOS / "Views/Transactions/SplitFlow.swift").read_text(encoding="utf-8")
+        assert 'Text("PAID BACK")' in flow and 'Text("Who sent this?")' in flow
+        assert '\\(u.sender ?? "no name") · paid back \\(Format.andList(u.paidBack))' in flow
+        assert "not credited to anyone yet. Who sent this?" in flow
+        page = (self.IOS / "Views/Transactions/TransactionDetailView.swift").read_text(encoding="utf-8")
+        assert "onCredit: { crediting = Crediting(id: $0.id) }" in page
+        assert "else if ask.item.credit != nil { crediting = Crediting(id: t.id) }" in page
+        # S-21u: Needs a look's chip opens it; Quick sort holds it; Skip drops it.
+        review = (self.IOS / "Views/Review/ReviewView.swift").read_text(encoding="utf-8")
+        assert "} else if ask.item.credit != nil {" in review
+        assert 'return try await api.post("api/transactions/\\(id)/credit", ["person": person])' in review
+        assert "paid back \\(Format.andList($0.paidBack))" in review
+        quick = (self.IOS / "Views/Review/QuickSortView.swift").read_text(encoding="utf-8")
+        assert "drafts[ask.id] = CardDraft(label: answer.heldLabel, answer: answer)" in quick
+        assert "if case .credit? = drafts[ask.id]?.answer { drafts[ask.id] = nil }" in quick
+
+
+class TestOnePersonTwoPurchases:
+    """SPLIT-22a (S-35a1 1033:41943, note 1034:42633): one person owes the
+    same amount on two or more purchases, so the question is which one."""
+
+    def test_the_line_names_the_purchases(self):
+        flow = (TestWhoSentThis.IOS / "Views/Transactions/PartsFlow.swift").read_text(encoding="utf-8")
+        assert 'merchants.count == 2 ? "on \\(merchants[0]) and on \\(merchants[1])"' in flow
+        assert ': "on \\(Format.andList(merchants))"' in flow
+        assert "owes \\(amount) \\(on), so Pearl won’t guess. Tick which one this paid back." in flow
+        # Two or more people: S-35a's line, each name once.
+        assert "seen.insert($0.lowercased()).inserted" in flow
+        assert "each owe \\(amount), so Pearl won’t guess. Tick who sent it." in flow
+        assert "Tick what it paid back.\"" not in flow

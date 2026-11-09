@@ -247,7 +247,7 @@ def payments(records: list[dict], dates: dict[str, str] | None = None,
 
 
 def people_status(charge: Transaction, split: dict, transactions: list[Transaction],
-                  payer: dict[str, str]) -> list[dict]:
+                  payer: dict[str, str], left_out: list[Transaction] | None = None) -> list[dict]:
     """Each person in a split: their part, what they've paid back and when,
     what they still owe (S-04), and what they paid over their part (`over`,
     SPLIT-02: a share lowered below what they'd paid, which she owes back).
@@ -256,6 +256,10 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
     people had names counts for whoever it came from by name. A payback that
     names someone no longer in the split counts for nobody (SPLIT-02,
     2026-11-09): it is theirs, never "the first who still owes".
+
+    `left_out`, when given, gets each payback the ask rule credited to no
+    one while somebody still owes (SPLIT-22b, S-05u): the ones Pearl asks
+    "Who sent this?" about.
     """
     names = [p["name"] for p in split["people"]]
     # A refund on the purchase is shared the way the purchase was: each
@@ -321,6 +325,8 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
             # THL-181 "If Pearl can't tell who, it asks" (SPLIT-21): the one
             # share that is its amount, or nobody until she says (S-35a, S-35b).
             if len(fits) != 1:
+                if left_out is not None:
+                    left_out.append(t)
                 continue
             who = fits[0]
         else:
@@ -349,6 +355,83 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
                     "shared": shared.get(p["name"], []),
                     "let_go": p.get("let_go")})
     return out
+
+
+def uncredited(charge: Transaction, split: dict, transactions: list[Transaction],
+                payer: dict[str, str]) -> list[Transaction]:
+    """SPLIT-22b (THL-181, S-05u): paybacks linked to this split purchase
+    that the ask rule credited to no one, newest first. Only ones dated from
+    ASK_FROM can be here; an older one keeps its old credit."""
+    out: list[Transaction] = []
+    people_status(charge, split, transactions, payer, left_out=out)
+    return sorted(out, key=lambda t: (t.date, t.fingerprint), reverse=True)
+
+
+def payment_word(t: Transaction) -> str:
+    """"e-Transfer" for an Interac e-Transfer, else "payment" (S-03f, S-05u)."""
+    text = f"{t.description or ''} {t.merchant or ''}".lower().replace("-", "")
+    return "e-Transfer" if "etransfer" in text or "interac" in text else "payment"
+
+
+def sender_name(t: Transaction) -> str | None:
+    """The name the bank put on money in, if any (S-05u's "no name" if not)."""
+    raw = t.raw or {}
+    return t.party or raw.get("counterparty") or None
+
+
+def uncredited_rows(charge: Transaction, split: dict, transactions: list[Transaction],
+                    payer: dict[str, str]) -> list[dict]:
+    """S-05u: each uncredited payback on the split card, as "$30.00 from an
+    e-Transfer" over "Nov 16 · no name · paid back Loblaws". Shown only
+    while someone on one of its purchases still owes, since S-35c can only
+    credit someone who does (SPLIT-23 asks about the rest)."""
+    by_id = {t.fingerprint: t for t in transactions}
+    out = []
+    for t in uncredited(charge, split, transactions, payer):
+        out.append({"id": t.fingerprint, "amount": t.part_for(charge.fingerprint),
+                    "whole": round(-t.amount, 2), "date": t.date[:10],
+                    "sender": sender_name(t), "word": payment_word(t),
+                    "name": t.merchant or t.description or "",
+                    "paid_back": [(by_id.get(c).merchant if by_id.get(c) else "another purchase")
+                                  for c in t.repays_all]})
+    return out
+
+
+def credit_question(inflow: Transaction, transactions: list[Transaction], splits: dict[str, dict],
+                    payer: dict[str, str]) -> dict | None:
+    """S-35c "Who sent this?" (SPLIT-22b, THL-181): for a payback already
+    linked that the ask rule credited to no one, the open shares on the
+    purchases it pays back, to tick who sent it. None when Pearl already
+    knows who it was, or nobody on those purchases still owes anything."""
+    if inflow.amount >= 0 or not inflow.repays:
+        return None
+    by_id = {t.fingerprint: t for t in transactions}
+    asking = False
+    purchases, shares = [], []
+    for cid in inflow.repays_all:
+        charge, split = by_id.get(cid), splits.get(cid)
+        if charge is None:
+            continue
+        here = inflow.part_for(cid)
+        purchases.append({"id": cid, "merchant": charge.merchant, "date": charge.date[:10], "here": here})
+        if split is None:
+            continue
+        left: list[Transaction] = []
+        status = people_status(charge, split, transactions, payer, left_out=left)
+        if any(t.fingerprint == inflow.fingerprint for t in left):
+            asking = True
+        for p in status:
+            if p["owes"] >= 0.005:
+                shares.append({"charge": cid, "merchant": charge.merchant, "date": charge.date[:10],
+                               "person": p["name"], "owes": p["owes"], "share": p["amount"],
+                               "here": here, "people": len(status)})
+    if not asking or not shares:
+        return None
+    return {"id": inflow.fingerprint, "amount": round(-inflow.amount, 2),
+            "linked": round(sum(p["here"] for p in purchases), 2), "date": inflow.date[:10],
+            "sender": sender_name(inflow), "word": payment_word(inflow),
+            "merchant": inflow.merchant or inflow.description or "",
+            "purchases": purchases, "shares": shares}
 
 
 def open_repayments(transactions: list[Transaction], splits: dict[str, dict],

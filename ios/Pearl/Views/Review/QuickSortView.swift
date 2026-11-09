@@ -167,6 +167,18 @@ struct QuickSortView: View {
                     asking = nil
                     Task { await answered(ask, .done(reply)) }
                 }
+            } else if ask.item.credit != nil {
+                // S-21u: Yes/Skip can't say who, so the card opens S-35c. The
+                // tick is held for the card as "Paid back by Sam?"; Yes saves
+                // it with one Undo, and Skip drops it (as SPLIT-20). Over the
+                // share, S-11 v2 saves the parts there, as S-28's sheet does.
+                WhoSentSheet(id: ask.t.id, api: app.api, onHeld: { answer in
+                    asking = nil
+                    drafts[ask.id] = CardDraft(label: answer.heldLabel, answer: answer)
+                }) { reply in
+                    asking = nil
+                    Task { await answered(ask, .done(reply)) }
+                }
             } else {
                 AnswerSheet(ask: ask, categories: categories, accounts: accounts, names: names,
                             api: app.api, holds: true,
@@ -501,6 +513,8 @@ struct QuickSortView: View {
             drafts[ask.id]?.split = nil
             drafts[ask.id]?.label = drafts[ask.id]?.category
         }
+        // S-21u (SPLIT-22b): and a held "Paid back by Sam?".
+        if case .credit? = drafts[ask.id]?.answer { drafts[ask.id] = nil }
         withAnimation(.easeIn(duration: 0.25)) { leaving = false }
         Task { await step(ask, ["action": "skip"]) }
     }

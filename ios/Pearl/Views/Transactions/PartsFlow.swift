@@ -36,6 +36,10 @@ struct PartsSheet: View {
     /// S-10e Edit the $600 (SPLIT-03): the parts it has now, filled in, to
     /// change and save in one go. Empty when sorting it for the first time.
     var editing: [DepositPart] = []
+    /// S-35c over the share (SPLIT-22b): who sent it is ticked, and this
+    /// opens on "What's the other $x?" (S-11 v2) with that payback as a part.
+    /// Nothing is saved until the parts are.
+    var credited: [Part] = []
     let onSaved: (MarkReply) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -506,11 +510,14 @@ struct PartsSheet: View {
                 // S-35a: "Sam and Priya each owe $30.00, so Pearl won't guess. Tick who sent it."
                 return "\(Format.andList(names)) each owe \(amount), so Pearl won’t guess. Tick who sent it."
             }
-            // One person owing that much on more than one purchase (not drawn;
-            // SPLIT-22 asks designBOT): which purchase is the question.
+            // S-35a1 (SPLIT-22a): one person owing that much on more than one
+            // purchase, so which purchase is the question. "on Pizza Nova and
+            // on Loblaws"; three or more, "on Pizza Nova, Loblaws and Costco".
             var shops = Set<String>()
             let merchants = either.map(\.merchant).filter { shops.insert($0.lowercased()).inserted }
-            return "\(names.first ?? "Someone") owes \(amount) on \(Format.andList(merchants)), so Pearl won’t guess. Tick what it paid back."
+            let on = merchants.count == 2 ? "on \(merchants[0]) and on \(merchants[1])"
+                : "on \(Format.andList(merchants))"
+            return "\(names.first ?? "Someone") owes \(amount) \(on), so Pearl won’t guess. Tick which one this paid back."
         }
         // S-35b: "Jordan isn't on any of your splits, and no one owes $45.00. …"
         let tail = "Tick what it paid back, or search for the purchase."
@@ -1018,6 +1025,13 @@ struct PartsSheet: View {
         struct Linked: Decodable { let id: String; let merchant: String; let date: String; let amount: Double; let person: String? }
         struct OwingReply: Decodable {
             let from: String?; let named: String?; let items: [Lenient<Owing>]; let linked: [Lenient<Linked>]?
+        }
+        if !credited.isEmpty {
+            // S-35c's extra: straight to S-11 v2 for what's left.
+            if parts.isEmpty { parts = credited }
+            sender = credited.compactMap(\.person).first
+            step = .kind
+            return
         }
         if !editing.isEmpty && parts.isEmpty {
             // S-10e: what it's in now; a part still to sort is Left to sort again.

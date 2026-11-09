@@ -90,6 +90,12 @@ struct ReviewView: View {
                     asking = nil
                     Task { await send(.done(reply)) }
                 }
+            } else if ask.item.credit != nil {
+                // S-21u's chip opens S-35c: "Sam paid back $30.00 · Undo".
+                WhoSentSheet(id: ask.t.id, api: app.api) { reply in
+                    asking = nil
+                    Task { await send(.done(reply)) }
+                }
             } else {
                 AnswerSheet(ask: ask, categories: categories, accounts: accounts,
                             names: recentNames, api: app.api) { answer in
@@ -237,6 +243,8 @@ struct ReviewView: View {
                 Text(t.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                 Text(ask.kind == .joint ? "Joint · \(Format.relativeDay(t.date))"
                      : ask.item.rest.map { "\(Format.relativeDay(t.date)) · \(Format.amount($0.sorted)) sorted" }
+                     // S-21u: "Nov 16 · paid back Loblaws".
+                     ?? ask.item.credit.map { "\(Format.relativeDay(t.date)) · paid back \(Format.andList($0.paidBack))" }
                      ?? [Format.relativeDay(t.date), t.shareNote].compactMap { $0 }.joined(separator: " · "))
                     .font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
                 GuessChip(label: ask.chip, question: false).padding(.top, 4)
@@ -484,6 +492,9 @@ enum ReviewAnswer {
     /// T-98s (SPLIT-06): a split held for the Quick sort card, with the
     /// category it counts toward. Yes saves both in one request, one Undo.
     case split(String, [String: Any], label: String)
+    /// S-35c (SPLIT-22b, THL-181): who sent a payback already linked. Held
+    /// for a Quick sort card as "Paid back by Sam?" (S-21u).
+    case credit(String, person: String, label: String)
 
     /// What a Quick sort card asks once this answer is held for its Yes. Nil is
     /// an answer that has already happened, or that isn't one to hold.
@@ -518,6 +529,7 @@ enum ReviewAnswer {
         case .recurring: return "Recurring"
         case .dismiss: return "Doesn’t repeat"
         case .split(_, _, let label): return label
+        case .credit(_, _, let label): return label
         case .confirm, .always, .varies, .pair, .check, .skip, .done: return nil
         }
     }
@@ -607,6 +619,9 @@ enum ReviewAnswer {
             return try await api.post("api/review/skip", ["key": key, "skip": on])
         case .done(let reply):
             return reply
+        case .credit(let id, let person, _):
+            // One request; its Undo forgets who it was (finance/parts_api.py).
+            return try await api.post("api/transactions/\(id)/credit", ["person": person])
         case .split(let id, let body, let label):
             // The split and its category together (finance/api.py), so the
             // Sorted card's Undo puts back the split, her share and the category.

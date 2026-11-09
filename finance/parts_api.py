@@ -15,6 +15,9 @@
 * GET    /api/transactions/<id>/owing             what the sender still owes, for a deposit's
                                                   parts, and what its parts already pay back.
 * GET    /api/owed                                Owed to you, You owe, paid back this month.
+* GET    /api/transactions/<id>/credit            S-35c: a linked payback credited to no one, and
+                                                  the open shares it could be (SPLIT-22b).
+* POST   /api/transactions/<id>/credit            {person, charge?}: who sent it, with Undo.
 """
 
 from __future__ import annotations
@@ -351,6 +354,13 @@ def split_into_parts(txn_id: str):
     if problem:
         return jsonify({"error": problem}), 400
     was = None
+    # SPLIT-22b (S-35c, extra to S-11 v2): a payback already linked becomes
+    # parts, so its Undo links it back as it was, not just unlinked.
+    linked_was = ({"paybacks": {txn_id: {"charge": t.repays, "kind": st.payback_kinds().get(txn_id),
+                                         "person": st.payback_people().get(txn_id),
+                                         "amount": t.repays_amount}},
+                   "payback_more": {txn_id: st.payback_more(txn_id)}}
+                  if t.repays and not st.parts().get(txn_id) else None)
     if held:
         charge, mode, people, watch = held
         was = {"split": st.splits().get(charge.fingerprint),
@@ -370,6 +380,8 @@ def split_into_parts(txn_id: str):
         # One Undo puts the parts, the link and the split back (S-12d).
         undo["marks"] = {"splits": {held[0].fingerprint: was}}
         out["title"] = f"{held[0].merchant} split and ${round(-t.amount):,} sorted"
+    if linked_was:
+        undo["marks"] = {**(undo.get("marks") or {}), **linked_was}
     return jsonify({"ok": True, **out, "undo": undo})
 
 
@@ -521,3 +533,66 @@ def owing(txn_id: str):
             named = name
     return jsonify({"from": mine[0]["name"] if mine else None, "named": named, "items": items,
                     "linked": linked})
+
+
+# ── Who sent this? (SPLIT-22b, THL-181; S-05u, S-35c, S-21u) ─────────────
+
+@bp.get("/transactions/<txn_id>/credit")
+def credit_question(txn_id: str):
+    """S-35c: a payback already linked (from search, the web's Paid back or
+    the API) that the ask rule credited to no one, with the open shares on
+    the purchases it pays back. `question` is None when there's nothing to ask."""
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    return jsonify({"question": sp.credit_question(t, st.all_transactions(), st.splits(),
+                                                   st.payback_people())})
+
+
+@bp.post("/transactions/<txn_id>/credit")
+def credit_payback(txn_id: str):
+    """S-35c Save: say who sent a payback already linked. Only who it was
+    changes; the link and how much went to each purchase stay. One request,
+    with Undo ("Sam paid back $30.00 · Undo")."""
+    st = store()
+    t = st.get_transaction(txn_id)
+    if t is None:
+        return jsonify({"error": "No such transaction."}), 404
+    if t.amount >= 0 or not t.repays:
+        return jsonify({"error": "That money isn’t linked to a purchase."}), 400
+    body = _body()
+    asked = " ".join(str(body.get("person") or "").split())
+    if not asked:
+        return jsonify({"error": "Tick who sent it."}), 400
+    charges = t.repays_all
+    if body.get("charge") is not None:
+        if body["charge"] not in charges:
+            return jsonify({"error": "That money didn’t pay back that purchase."}), 400
+        charges = [body["charge"]]
+    splits = st.splits()
+    name = next((p["name"] for cid in charges for p in (splits.get(cid) or {}).get("people", [])
+                 if p["name"] == asked), None) or next(
+        (p["name"] for cid in charges for p in (splits.get(cid) or {}).get("people", [])
+         if sp.same_person(p["name"], asked)), None)
+    if name is None:
+        return jsonify({"error": "That person isn’t on a purchase this paid back."}), 400
+    txns = st.all_transactions()
+    by_id = {x.fingerprint: x for x in txns}
+
+    def paid() -> float:
+        payer = st.payback_people()
+        total = 0.0
+        for cid in t.repays_all:
+            if cid in splits and cid in by_id:
+                total += sum(p["paid"] for p in sp.people_status(by_id[cid], splits[cid], txns, payer)
+                             if p["name"] == name)
+        return round(total, 2)
+
+    before = paid()
+    was = st.payback_people().get(txn_id)
+    st.set_payback_person(txn_id, name)
+    got = round(paid() - before, 2)
+    title = f"{name} paid back ${got:,.2f}" if got >= 0.005 else f"Sent by {name}."
+    return jsonify({"ok": True, "title": title, "credited": got,
+                    "undo": {"marks": {"payback_person": {txn_id: was}}}})

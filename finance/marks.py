@@ -1348,6 +1348,11 @@ def undo_marks(store, marks: dict) -> int:
         else:
             store.unlink_payback(tid)
         n += 1
+    # SPLIT-22b (S-35c): who sent a linked payback, as it was.
+    for tid, person in (marks.get("payback_person") or {}).items():
+        if tid in known and (person is None or isinstance(person, str)):
+            store.set_payback_person(tid, person)
+            n += 1
     # One payback, several purchases (2026-10-28): the others as they were.
     for tid, parts in (marks.get("payback_more") or {}).items():
         if tid in known and isinstance(parts, list):
