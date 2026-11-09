@@ -1815,11 +1815,16 @@ class Store:
         # she gave back, so S-05 reads "$60.00, $17.94 given back".
         whole: dict[int, float] = {}
         back: dict[int, float] = {}
+        # SPLIT-19 (S-11c, Paying me back): every purchase the payment paid
+        # back, its own first, so a list reads "paid back Loblaws and Pizza Nova".
+        paid_for: dict[int, list[str]] = {}
         for r in every:
             root = r["origin"] or r["id"]
             whole[root] = round(whole.get(root, 0.0) + float(r["amount"]), 2)
             if r["kind"] == "returned":
                 back[root] = round(back.get(root, 0.0) + float(r["amount"]), 2)
+            if r["kind"] is None and r["txn_id"] not in paid_for.setdefault(root, []):
+                paid_for[root].append(r["txn_id"])
         # A gift or a returned piece of the extra pays back nobody.
         cash = [r for r in every if r["kind"] is None]
         for r in cash:
@@ -1830,7 +1835,8 @@ class Store:
                         {"id": r["id"], "amount": round(float(r["amount"]), 2), "day": r["day"],
                          "deposit_id": r["deposit_id"], "via": r["via"] or "cash",
                          "app": r["app"], "origin": root,
-                         "whole": whole.get(root), "given_back": back.get(root, 0.0)})
+                         "whole": whole.get(root), "given_back": back.get(root, 0.0),
+                         "charges": paid_for.get(root, [])})
         for r in gone:
             for p in (out.get(r["txn_id"]) or {}).get("people", []):
                 if p["name"] == r["name"]:

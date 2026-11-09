@@ -1087,10 +1087,13 @@ struct OwedView: View {
                             ForEach(Array(owed.paidBack.enumerated()), id: \.offset) { i, b in
                                 if i > 0 { RowSeparator(inset: 64) }
                                 // SPLIT-14: "PayPal" or "Another app"; SPLIT-15: one cash
-                                // payment, with what a deposit holds under it.
+                                // payment, with what a deposit holds under it. SPLIT-19
+                                // (S-11c): one payment that paid back several purchases
+                                // reads "Cash · Nov 13 · paid back Loblaws and Pizza Nova".
+                                let how = b.cash == true ? "Cash" : b.app == true ? (b.appName ?? "Another app") : nil
                                 personRow(b.name ?? "Someone",
-                                          sub: [b.merchant, Format.short(b.date),
-                                                b.cash == true ? "Cash" : b.app == true ? (b.appName ?? "Another app") : nil]
+                                          sub: (b.paidBack.map { [how, Format.short(b.date), "paid back \(Format.andList($0))"] }
+                                                ?? [b.merchant, Format.short(b.date), how])
                                             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "),
                                           amount: b.amount, tone: Pearl.moneyIn,
                                           note: b.deposited.map { d in

@@ -169,7 +169,7 @@ struct QuickSortView: View {
                 }
             } else {
                 AnswerSheet(ask: ask, categories: categories, accounts: accounts, names: names,
-                            api: app.api) { answer in
+                            api: app.api, holds: true) { answer in
                     asking = nil
                     if let label = answer.heldLabel {
                         // Held for the card, like any other edit: Yes there saves it.

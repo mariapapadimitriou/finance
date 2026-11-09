@@ -409,7 +409,7 @@ struct TransactionDetailView: View {
                                 sorting = nil
                                 if name == guessing.label { guessing.onYes(remember && offersNewOnes) }
                                 else { answer(with: name, always: remember && offersNewOnes) }
-                            }, fromPage: true) { answer in
+                            }, fromPage: true, holds: guessing.onDraft != nil) { answer in
                     sorting = nil
                     if guessing.onDraft != nil, let label = answer.heldLabel {
                         // Not saved yet: the card agrees to it.

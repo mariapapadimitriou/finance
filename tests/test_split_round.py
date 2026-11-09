@@ -680,3 +680,64 @@ class TestCashExtra:
         r = client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash", json={"name": "Sam", "amount": 60})
         assert r.status_code == 201
         assert people(client, i["LOBLAWS"])["Sam"]["over"] == 17.94
+
+
+class TestPaymentNamesWhatItPaid:
+    """SPLIT-19 list line (round 10): a cash or app payment whose extra paid
+    back other shares is one payment that names every purchase it paid:
+    "Sam · Cash · $60.00 · Nov 13 · paid back Loblaws and Pizza Nova"."""
+
+    def setup(self, c, when):
+        i = add(c, tx("LOBLAWS", 84.12, "Groceries", when=day(6)),
+                tx("PIZZA NOVA", 30.0, "Dining", when=day(7)),
+                tx("COSTCO", 40.0, "Groceries", when=day(8)))
+        split(c, i["LOBLAWS"], mode="even", people=[{"name": "Sam"}])
+        split(c, i["PIZZA NOVA"], mode="amount", people=[{"name": "Sam", "amount": 10.0},
+                                                         {"name": "Priya", "amount": 10.0}])
+        split(c, i["COSTCO"], mode="even", people=[{"name": "Sam"}])
+        return i
+
+    def pay(self, c, i, when, extra, **more):
+        r = c.post(f"/api/transactions/{i['LOBLAWS']}/split/cash",
+                   json={"name": "Sam", "amount": 60, "day": when, "extra": extra, **more})
+        assert r.status_code == 201, r.get_json()
+        return r
+
+    def test_the_payment_names_every_purchase_its_own_first(self, client):
+        when = TODAY.replace(day=1).isoformat()
+        i = self.setup(client, when)
+        self.pay(client, i, when, [{"kind": "payback", "amount": 10, "charge": i["PIZZA NOVA"]},
+                                   {"kind": "gift", "amount": 7.94}])
+        pay = people(client, i["LOBLAWS"])["Sam"]["payments"][0]
+        assert pay["paid_back"] == ["LOBLAWS", "PIZZA NOVA"]
+        # The other purchase's share sees the same payment, its first purchase first.
+        other = people(client, i["PIZZA NOVA"])["Sam"]["payments"][0]
+        assert other["paid_back"] == ["LOBLAWS", "PIZZA NOVA"]
+
+    def test_owed_to_you_lists_it_once_for_what_paid_back(self, client):
+        when = TODAY.replace(day=1).isoformat()
+        i = self.setup(client, when)
+        self.pay(client, i, when, [{"kind": "payback", "amount": 10, "charge": i["PIZZA NOVA"]},
+                                   {"kind": "payback", "amount": 7.94, "charge": i["PIZZA NOVA"],
+                                    "person": "Priya"}])
+        back = client.get("/api/owed").get_json()["paid_back"]
+        assert [(b["name"], b["merchant"], b["amount"], b.get("cash"), b["paid_back"]) for b in back] \
+            == [("Sam", "LOBLAWS", 60.0, True, ["LOBLAWS", "PIZZA NOVA"])]
+
+    def test_three_purchases_are_all_named(self, client):
+        when = TODAY.replace(day=1).isoformat()
+        i = self.setup(client, when)
+        self.pay(client, i, when, [{"kind": "payback", "amount": 10, "charge": i["PIZZA NOVA"]},
+                                   {"kind": "payback", "amount": 7.94, "charge": i["COSTCO"]}],
+                 via="app", app="PayPal")
+        back = client.get("/api/owed").get_json()["paid_back"]
+        assert [(b["amount"], b.get("app_name"), b["paid_back"]) for b in back] \
+            == [(60.0, "PayPal", ["LOBLAWS", "PIZZA NOVA", "COSTCO"])]
+
+    def test_a_payment_for_one_purchase_names_nothing(self, client):
+        when = TODAY.replace(day=1).isoformat()
+        i = self.setup(client, when)
+        self.pay(client, i, when, [{"kind": "gift", "amount": 17.94}])
+        assert "paid_back" not in people(client, i["LOBLAWS"])["Sam"]["payments"][0]
+        back = client.get("/api/owed").get_json()["paid_back"]
+        assert [(b["amount"], "paid_back" in b) for b in back] == [(42.06, False)]

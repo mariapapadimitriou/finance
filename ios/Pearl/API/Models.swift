@@ -658,11 +658,15 @@ struct Transaction: Decodable, Identifiable, Hashable {
                 /// elsewhere too, and what of it she gave back.
                 var whole: Double? = nil
                 var givenBack: Double? = nil
+                /// SPLIT-19 (S-11c, Paying me back): every purchase it paid
+                /// back, this payment's own first, when it paid more than one.
+                var paidBack: [String]? = nil
 
                 enum CodingKeys: String, CodingKey {
                     case amount, day, via, app, deposited, still, whole
                     case depositedOn = "deposited_on"
                     case givenBack = "given_back"
+                    case paidBack = "paid_back"
                 }
             }
 
@@ -930,11 +934,14 @@ struct OwedOverview: Decodable {
         var deposited: Double? = nil
         var depositedOn: String? = nil
         var still: Double? = nil
+        /// SPLIT-19: one payment that paid back several purchases, named.
+        var paidBack: [String]? = nil
 
         enum CodingKeys: String, CodingKey {
             case name, merchant, date, amount, cash, app, deposited, still
             case appName = "app_name"
             case depositedOn = "deposited_on"
+            case paidBack = "paid_back"
         }
     }
 

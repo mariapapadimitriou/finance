@@ -133,6 +133,12 @@ enum Format {
         (t.inflow ? "+" : "\u{2212}") + amount(t.amount)
     }
 
+    /// "Loblaws", "Loblaws and Pizza Nova", "Loblaws, Costco and Pizza Nova".
+    static func andList(_ names: [String]) -> String {
+        names.count <= 2 ? names.joined(separator: " and ")
+            : names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
+    }
+
     /// "$86" when whole, "$86.50" when not.
     static func compact(_ value: Double) -> String {
         abs(value.rounded() - value) < 0.005 ? whole(value) : amount(value)

@@ -159,8 +159,7 @@ struct SplitSheet: View {
         // this purchase's part. (designBOT's copy says "Her"; Pearl doesn't
         // know anyone's pronouns, so it says their name.)
         for s in shared {
-            let others = s.others.count <= 2 ? s.others.joined(separator: " and ")
-                : s.others.dropLast().joined(separator: ", ") + " and " + (s.others.last ?? "")
+            let others = Format.andList(s.others)
             words.append("\(name)’s \(Format.amount(s.whole)) \(s.word) also paid back \(others). "
                          + "Removing \(name) here unlinks only the \(Format.amount(s.here)) for \(t.merchant); "
                          + "\(others) \(s.others.count == 1 ? "stays" : "stay") paid back.")
@@ -871,6 +870,12 @@ struct SplitPeople: View {
     /// SPLIT-15: a cash payment a deposit holds part of, once: "$200.00
     /// deposited Nov 12 · $50.00 still cash".
     private func deposited(_ p: Transaction.Splitting.Person) -> String? {
+        // SPLIT-19 (S-11c, Paying me back): one payment that paid back other
+        // purchases too: "$60.00 · paid back Loblaws and Pizza Nova".
+        if let pay = p.payments?.last(where: { ($0.paidBack?.count ?? 0) > 1 }), let names = pay.paidBack {
+            let back = (pay.givenBack ?? 0) >= 0.005 ? ", \(Format.amount(pay.givenBack ?? 0)) given back" : ""
+            return "\(Format.amount(pay.whole ?? pay.amount))\(back) · paid back \(Format.andList(names))"
+        }
         // SPLIT-19 (S-11c, I gave it back): "$60.00, $17.94 given back".
         if let pay = p.payments?.last(where: { ($0.givenBack ?? 0) >= 0.005 }), let back = pay.givenBack {
             return "\(Format.amount(pay.whole ?? pay.amount + back)), \(Format.amount(back)) given back"

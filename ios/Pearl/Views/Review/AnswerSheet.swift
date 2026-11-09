@@ -33,6 +33,9 @@ struct AnswerSheet: View {
     var pageAmount: String? = nil
     /// A category already picked on the page behind, shown as the current one.
     var pageCategory: String? = nil
+    /// The opener holds an answer for a Quick sort card's Yes (SPLIT-06):
+    /// nothing is saved here, so there's nothing here to fail.
+    var holds = false
 
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step
@@ -69,6 +72,9 @@ struct AnswerSheet: View {
     @State private var regularBill = false
     @State private var billing: BillStart?
     @State private var pending: (() -> Void)?
+    /// T-08k (SPLIT-18): the kind being saved from this page, and what went wrong.
+    @State private var savingKind: String?
+    @State private var kindError: String?
 
     struct BillStart: Identifiable {
         let t: Transaction
@@ -86,8 +92,10 @@ struct AnswerSheet: View {
     /// the kind of income, how often it pays, or What was this?.
     init(ask: Ask, categories: [CategoryList.Category], accounts: [AccountsOverview.Account], names: [String],
          api: APIClient, start: Step? = nil, pageAlways: Bool? = nil, pageAmount: String? = nil, pageCategory: String? = nil, current: String? = nil, onCategory: ((String, Bool) -> Void)? = nil,
-         confirmsGuess: Bool = true, fromPage: Bool = false, onAnswer: @escaping (ReviewAnswer) -> Void) {
+         confirmsGuess: Bool = true, fromPage: Bool = false, holds: Bool = false,
+         onAnswer: @escaping (ReviewAnswer) -> Void) {
         self.fromPage = fromPage
+        self.holds = holds
         self.pageAlways = pageAlways
         self.pageAmount = pageAmount
         self.pageCategory = pageCategory
@@ -652,16 +660,23 @@ struct AnswerSheet: View {
 
     /// T-08k (SPLIT-18): "What kind of income?" after Other income: the
     /// other four of finance/income.py's kinds. A tile saves at once, with
-    /// the page's Always as it was (not asked again).
+    /// the page's Always as it was (not asked again). If the save fails, the
+    /// tile un-highlights and "Couldn’t save that. Try again." shows under
+    /// the grid, here and not on the screen behind.
     private var otherKindTiles: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("WHICH KIND?").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
                 .padding(.horizontal, 16).accessibilityAddTraits(.isHeader)
-            CaseGrid(cases: CaseTile.otherIncome, chosen: Binding(get: { nil }, set: { key in
+            CaseGrid(cases: CaseTile.otherIncome, chosen: Binding(get: { savingKind }, set: { key in
                 guard let key = key else { return }
                 choice = key
-                saveIncome(key)
+                saveOtherKind(key)
             }), role: "income kind")
+            .disabled(savingKind != nil)
+            if let kindError = kindError {
+                Text(kindError).font(Nacre.footnote).foregroundColor(Pearl.caution)
+                    .padding(.horizontal, 16).fixedSize(horizontal: false, vertical: true)
+            }
             if learnable {
                 Text("Always for \(who) was set on the page before, so it isn’t asked again here.")
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
@@ -672,10 +687,32 @@ struct AnswerSheet: View {
 
     /// An income kind, saved as T-08 saves it.
     private func saveIncome(_ kind: String) {
-        if ask.kind == .incomeType {
-            onAnswer(.incomeType(t.id, kind: kind))
-        } else {
-            onAnswer(.mark(t.id, ["case": "pay", "income_kind": kind]))
+        onAnswer(incomeAnswer(kind))
+    }
+
+    private func incomeAnswer(_ kind: String) -> ReviewAnswer {
+        ask.kind == .incomeType ? .incomeType(t.id, kind: kind) : .mark(t.id, ["case": "pay", "income_kind": kind])
+    }
+
+    /// T-08k: the page saves the kind itself, so a failure is said under its
+    /// grid; the opener gets the reply (`.done`) for its toast and Undo, and
+    /// shows no error of its own. Held for a Quick sort card: nothing to save.
+    private func saveOtherKind(_ kind: String) {
+        guard savingKind == nil else { return }
+        let answer = incomeAnswer(kind)
+        if holds && answer.heldLabel != nil { onAnswer(answer); return }
+        savingKind = kind
+        kindError = nil
+        Task {
+            do {
+                let reply = try await answer.send(api)
+                onAnswer(.done(reply))
+            } catch {
+                savingKind = nil
+                choice = nil
+                kindError = "Couldn’t save that. Try again."
+                UIAccessibility.post(notification: .announcement, argument: "Couldn’t save that. Try again.")
+            }
         }
     }
 

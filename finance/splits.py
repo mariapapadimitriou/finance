@@ -198,12 +198,23 @@ def _linked(charge_id: str, transactions: list[Transaction]) -> list[Transaction
     return sorted((t for t in transactions if charge_id in t.repays_all), key=lambda t: t.date)
 
 
-def payments(records: list[dict], dates: dict[str, str] | None = None) -> list[dict]:
+def and_list(names: list[str]) -> str:
+    """"Loblaws", "Loblaws and Pizza Nova", "Loblaws, Costco and Pizza Nova"."""
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def payments(records: list[dict], dates: dict[str, str] | None = None,
+             merchants: dict[str, str] | None = None) -> list[dict]:
     """SPLIT-15: cash or app records as the payments she recorded. A payment
     only partly deposited is cut into pieces (`origin`), but she always
     sees one: "$250.00 cash · Nov 3", and under it "$200.00 deposited
-    Nov 12 · $50.00 still cash". `dates` maps a deposit part to its day."""
+    Nov 12 · $50.00 still cash". `dates` maps a deposit part to its day.
+
+    SPLIT-19: a payment whose extra paid back other shares names every
+    purchase it paid (`paid_back`, its own first), from `merchants`
+    (charge id → merchant)."""
     dates = dates or {}
+    merchants = merchants or {}
     groups: dict[int, list[dict]] = {}
     for c in records:
         groups.setdefault(c.get("origin") or c["id"], []).append(c)
@@ -220,6 +231,8 @@ def payments(records: list[dict], dates: dict[str, str] | None = None) -> list[d
             extra["whole"] = first["whole"]
         if (first.get("given_back") or 0.0) >= 0.005:
             extra["given_back"] = first["given_back"]
+        if len(first.get("charges") or []) > 1:
+            extra["paid_back"] = [merchants.get(c) or "another purchase" for c in first["charges"]]
         out.append({**extra, "id": root, "ids": sorted(c["id"] for c in pieces), "amount": total,
                     "day": first["day"], "via": first.get("via") or "cash", "app": first.get("app"),
                     "deposited": deposited, "deposited_on": days[-1] if days else None,
@@ -259,6 +272,8 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
             when[p["name"]] = max(when.get(p["name"], ""), c["day"])
     # Deposits holding cash are parts; their day is the deposit's (SPLIT-15).
     dates = {t.fingerprint: t.date[:10] for t in transactions if (t.raw or {}).get("part_of")}
+    named = {c for p in split["people"] for x in p.get("cash") or [] for c in x.get("charges") or []}
+    merchants = {t.fingerprint: t.merchant for t in transactions if t.fingerprint in named}
     unnamed: list[Transaction] = []
     shared: dict[str, list[dict]] = {}
     names_of: dict[str, str] = {}
@@ -311,7 +326,7 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
                     "app": app.get(p["name"], 0.0),
                     "cash_ids": [c["id"] for c in p.get("cash") or []],
                     # SPLIT-15: each cash or app payment once, as recorded.
-                    "payments": payments(p.get("cash") or [], dates),
+                    "payments": payments(p.get("cash") or [], dates, merchants),
                     # SPLIT-14: "Paid back · PayPal · Nov 13"; the newest named app.
                     "app_name": next((c["app"] for c in sorted(p.get("cash") or [], key=lambda c: (c["day"], c["id"]),
                                                                reverse=True)

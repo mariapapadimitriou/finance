@@ -376,12 +376,18 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
                      "date": t.date[:10], "amount": round(t.paid_part, 2)})
     from .splits import payments
     dates = {t.fingerprint: t.date[:10] for t in transactions if (t.raw or {}).get("part_of")}
+    merchants = {cid: by_id[cid].merchant for cid in splits if cid in by_id}
+    # SPLIT-19: a payment that paid back several shares is one row, however
+    # many splits hold a piece of it: "Sam · Cash · $60.00 · Nov 13 · paid
+    # back Loblaws and Pizza Nova". The row is the payer's, on the purchase
+    # the payment was recorded on; the other pieces add to it.
+    pieces: dict[int, list[tuple[bool, dict]]] = {}
     for cid, split in splits.items():
         charge = by_id.get(cid)
         for p in split["people"]:
             # SPLIT-15: one payment as she recorded it, however much of it a
             # deposit holds: "$200.00 deposited Nov 12 · $50.00 still cash".
-            for c in payments(p.get("cash") or [], dates):
+            for c in payments(p.get("cash") or [], dates, merchants):
                 if c["day"].startswith(month):
                     # Another app (SPLIT-11) says so, by name (SPLIT-14);
                     # only real cash says Cash.
@@ -391,7 +397,23 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
                     if c["deposited"] >= 0.005:
                         row.update(deposited=c["deposited"], deposited_on=c["deposited_on"],
                                    still=c["still"])
-                    back.append(row)
+                    if c.get("paid_back"):
+                        row["paid_back"] = c["paid_back"]
+                        pieces.setdefault(c["id"], []).append((c["id"] in c["ids"], row))
+                    else:
+                        back.append(row)
+    for group in pieces.values():
+        group.sort(key=lambda g: not g[0])
+        row = dict(group[0][1])
+        for _, other in group[1:]:
+            row["amount"] = round(row["amount"] + other["amount"], 2)
+            if other.get("deposited"):
+                row["deposited"] = round(row.get("deposited", 0.0) + other["deposited"], 2)
+                row["deposited_on"] = max(filter(None, (row.get("deposited_on"), other["deposited_on"])),
+                                          default=None)
+        if row.get("deposited"):
+            row["still"] = round(row["amount"] - row["deposited"], 2)
+        back.append(row)
     back.sort(key=lambda r: r["date"], reverse=True)
     people = sorted(owes.values(), key=lambda r: -r["total"])
     return {"total": round(sum(r["total"] for r in people), 2), "people": len(people),
