@@ -56,6 +56,7 @@ enum Format {
 
     private static let longDay = formatter("EEEE, MMMM d")
     private static let shortDay = formatter("MMM d")
+    private static let monthDayFormat = formatter("MMMM d")
     private static let monthYear = formatter("MMMM yyyy")
     private static let monthOnly = formatter("MMMM")
 
@@ -84,6 +85,11 @@ enum Format {
     /// "Oct 14".
     static func short(_ iso: String) -> String {
         date(iso).map { shortDay.string(from: $0) } ?? iso
+    }
+
+    /// "November 2", for VoiceOver (S-35a).
+    static func monthDay(_ iso: String) -> String {
+        date(iso).map { monthDayFormat.string(from: $0) } ?? iso
     }
 
     /// "October 2026" from "2026-10".

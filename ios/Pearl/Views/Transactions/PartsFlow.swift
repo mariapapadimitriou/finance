@@ -67,6 +67,8 @@ struct PartsSheet: View {
     }
     @State private var owing: [Owing] = []
     @State private var sender: String?
+    /// S-35b (THL-181): the name on a deposit from someone on none of her splits.
+    @State private var named: String?
     @State private var picked: [String: Double] = [:]
     @State private var query = ""
     @State private var found: [Owing] = []
@@ -386,7 +388,9 @@ struct PartsSheet: View {
             }
             .padding(.horizontal, 14).frame(height: 44)
             .background(Capsule().fill(Pearl.ink.opacity(0.08)))
-            if step == .owing && !owing.isEmpty && query.isEmpty {
+            if asking && query.isEmpty {
+                askList
+            } else if step == .owing && !owing.isEmpty && query.isEmpty {
                 let theirs = owing.filter { $0.theirs == true }
                 let others = owing.filter { $0.theirs != true }
                 if !theirs.isEmpty {
@@ -431,6 +435,108 @@ struct PartsSheet: View {
                     second: "\(Format.amount(max(0, deposit.amount - sortedDone - picked.values.reduce(0, +)))) left")
             }
         }
+    }
+
+    // MARK: S-35a, S-35b If Pearl can't tell who, it asks (THL-181, SPLIT-21)
+
+    /// The shares still owed that are exactly what's left of a deposit Pearl
+    /// can't put a name to.
+    private var fits: [Owing] {
+        guard sender == nil else { return [] }
+        return owing.filter { $0.theirs != true && $0.person != nil && cents($0.owes) == leftCents }
+    }
+
+    /// Who it was isn't for Pearl to guess: more than one share is its
+    /// amount (S-35a), or none is (S-35b). With exactly one, S-09/S-35 tick
+    /// it as before ("same amount").
+    private var asking: Bool {
+        step == .owing && sender == nil && editing.isEmpty && !owing.isEmpty && fits.count != 1
+    }
+
+    @ViewBuilder private var askList: some View {
+        let either = fits
+        let rest = owing.filter { o in !either.contains(o) }
+        if either.count >= 2 {
+            // S-35a: the shares it could be on top, nothing ticked.
+            label("Could be either")
+            GlassCard {
+                ForEach(Array(either.enumerated()), id: \.element.id) { i, o in
+                    if i > 0 { RowSeparator() }
+                    askRow(o)
+                }
+            }
+            askLine
+            if !rest.isEmpty {
+                label("Others who owe you")
+                GlassCard {
+                    ForEach(Array(rest.enumerated()), id: \.element.id) { i, o in
+                        if i > 0 { RowSeparator() }
+                        askRow(o)
+                    }
+                }
+            }
+        } else {
+            // S-35b: nothing fits; every open share, nothing ticked.
+            label("Owes you")
+            GlassCard {
+                ForEach(Array(owing.enumerated()), id: \.element.id) { i, o in
+                    if i > 0 { RowSeparator() }
+                    askRow(o)
+                }
+            }
+            askLine
+        }
+        // S-35a/S-35b: "● Linked $0.00   ● Not linked $30.00".
+        bar(sorted: sortedDone + picked.values.reduce(0, +), first: "Linked", second: "Not linked")
+    }
+
+    /// Why Pearl asks (S-35a, S-35b).
+    private var askLine: some View {
+        Text(askText).font(Nacre.footnote).foregroundColor(Pearl.ink)
+            .padding(.horizontal, 16).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var askText: String {
+        let amount = Format.amount(left)
+        let either = fits
+        if either.count >= 2 {
+            var seen = Set<String>()
+            let names = either.compactMap { $0.person.map(firstName) }.filter { seen.insert($0.lowercased()).inserted }
+            if names.count >= 2 {
+                // S-35a: "Sam and Priya each owe $30.00, so Pearl won't guess. Tick who sent it."
+                return "\(Format.andList(names)) each owe \(amount), so Pearl won’t guess. Tick who sent it."
+            }
+            // One person owing that much on more than one purchase (not drawn;
+            // SPLIT-22 asks designBOT): which purchase is the question.
+            var shops = Set<String>()
+            let merchants = either.map(\.merchant).filter { shops.insert($0.lowercased()).inserted }
+            return "\(names.first ?? "Someone") owes \(amount) on \(Format.andList(merchants)), so Pearl won’t guess. Tick what it paid back."
+        }
+        // S-35b: "Jordan isn't on any of your splits, and no one owes $45.00. …"
+        let tail = "Tick what it paid back, or search for the purchase."
+        if let name = named {
+            return "\(name) isn’t on any of your splits, and no one owes \(amount). \(tail)"
+        }
+        return "No one owes \(amount). \(tail)"
+    }
+
+    /// S-35a/S-35b row: "Sam" over "Pizza Nova · Nov 2 · Sam's share". VoiceOver
+    /// (S-35a note): "Sam, Pizza Nova, November 2, 30 dollars, not selected".
+    private func askRow(_ o: Owing) -> some View {
+        let name = o.person ?? o.merchant
+        let sub = [o.merchant, o.pending == true ? "Pending" : Format.short(o.date),
+                   o.person.map { "\(firstName($0))’s share" }].compactMap { $0 }.joined(separator: " · ")
+        let on = picked[o.id] != nil
+        return pickRow(name: name, sub: sub, amount: o.owes, on: on, trait: false) { toggle(o) }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(name), \(o.merchant), \(Format.monthDay(o.date)), \(Format.amount(o.owes))")
+            .accessibilityValue(on ? "selected" : "not selected")
+            .accessibilityAddTraits(.isButton)
+    }
+
+    /// "Priya" from "Priya S.", as S-35a's line and "Priya's share" say it.
+    private func firstName(_ name: String) -> String {
+        name.split(separator: " ").first.map(String.init) ?? name
     }
 
     private func owingRow(_ o: Owing, _ byName: Bool) -> some View {
@@ -761,7 +867,12 @@ struct PartsSheet: View {
             pair("Next", disabled: cashPicked.isEmpty, { takeCash() }, "None of these") { afterCash() }
         case .owing:
             let n = picked.count
-            if sender == nil && !owing.isEmpty && query.isEmpty {
+            if asking && query.isEmpty {
+                // S-35a/S-35b: Next stays off until she ticks one; Close saves nothing.
+                Button(n >= 2 ? "Link these \(n) purchases" : "Next") { takeOwing() }
+                    .buttonStyle(NacreButtonStyle()).disabled(picked.isEmpty)
+                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
+            } else if sender == nil && !owing.isEmpty && query.isEmpty {
                 // S-35: who it was, or none of them.
                 let who = owing.first { picked[$0.id] != nil }?.person
                 pair(who.map { "It was \($0)" } ?? "Next", disabled: picked.isEmpty, { takeOwing() },
@@ -831,6 +942,8 @@ struct PartsSheet: View {
     }
 
     private func takeOwing() {
+        // S-35b: what it didn't pay back goes on to "What's the other $x?" (S-11 v2).
+        let asked = asking
         let all = owing + found
         for (id, amount) in picked {
             guard let o = all.first(where: { $0.id == id }) else { continue }
@@ -843,7 +956,7 @@ struct PartsSheet: View {
         }
         picked = [:]
         query = ""
-        step = leftCents == 0 ? .review : (parts.isEmpty ? .kind : .progress)
+        step = leftCents == 0 ? .review : (parts.isEmpty || asked ? .kind : .progress)
     }
 
     private func takeRefund() {
@@ -903,7 +1016,9 @@ struct PartsSheet: View {
     private func load() async {
         struct CashReply: Decodable { let cash: [Lenient<Cash>] }
         struct Linked: Decodable { let id: String; let merchant: String; let date: String; let amount: Double; let person: String? }
-        struct OwingReply: Decodable { let from: String?; let items: [Lenient<Owing>]; let linked: [Lenient<Linked>]? }
+        struct OwingReply: Decodable {
+            let from: String?; let named: String?; let items: [Lenient<Owing>]; let linked: [Lenient<Linked>]?
+        }
         if !editing.isEmpty && parts.isEmpty {
             // S-10e: what it's in now; a part still to sort is Left to sort again.
             parts = editing.filter { $0.kind != "rest" }.map { Part(saved: $0) }
@@ -913,6 +1028,7 @@ struct PartsSheet: View {
         }
         if let r: OwingReply = try? await api.get("api/transactions/\(deposit.id)/owing") {
             sender = r.from
+            named = r.named
             var items = r.items.compactMap { $0.value }
             if !editing.isEmpty {
                 // S-10e: the purchases this deposit already pays back stay listed,
@@ -943,6 +1059,10 @@ struct PartsSheet: View {
         if step == .owing {
             // Pearl's likeliest: their shares, up to what came in.
             for o in owing where sender != nil && o.theirs == true { toggle(o) }
+            // THL-181 (SPLIT-21): from someone Pearl can't name, only the one
+            // share that is exactly its amount is ticked (S-35, "same amount");
+            // two or none, and she's asked (S-35a, S-35b).
+            if sender == nil, fits.count == 1 { toggle(fits[0]) }
         }
     }
 
@@ -1019,7 +1139,9 @@ struct PartsSheet: View {
         }
     }
 
-    private func pickRow(name: String, sub: String, amount: Double, on: Bool, _ run: @escaping () -> Void) -> some View {
+    /// `trait` off when the caller speaks the state itself (S-35a's "not selected").
+    private func pickRow(name: String, sub: String, amount: Double, on: Bool, trait: Bool = true,
+                         _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -1034,7 +1156,7 @@ struct PartsSheet: View {
             .padding(.horizontal, 16).frame(minHeight: 56).padding(.vertical, 2).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(on ? .isSelected : [])
+        .accessibilityAddTraits(on && trait ? .isSelected : [])
     }
 }
 

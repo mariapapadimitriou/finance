@@ -764,3 +764,103 @@ class TestPaymentNamesWhatItPaid:
         assert "paid_back" not in people(client, i["LOBLAWS"])["Sam"]["payments"][0]
         back = client.get("/api/owed").get_json()["paid_back"]
         assert [(b["amount"], "paid_back" in b) for b in back] == [(42.06, False)]
+
+
+class TestPearlAsksWhoItWas:
+    """SPLIT-21, THL-181 "If Pearl can't tell who, it asks" (S-35a 1030:41556,
+    S-35b 1030:41984): a payback that names nobody on the split counts for
+    someone only when exactly one share still owed is its amount. Two, or
+    none, and it waits for her to say who. Paybacks dated before ASK_FROM
+    keep the old guess, so nothing she has already seen changes."""
+
+    IOS = __import__("pathlib").Path(__file__).resolve().parents[1] / "ios" / "Pearl"
+
+    def setup(self, c, bought, came, amount, who=None, merchant="Interac e-Transfer"):
+        deposit = Transaction(date=came, description="INTERAC E-TRANSFER", merchant=merchant,
+                              amount=-amount, category="", account_id="chq", account_name="TD Chequing",
+                              raw={"account_type": "depository", **({"counterparty": who} if who else {})})
+        i = add(c, tx("PIZZA NOVA", 90.0, "Dining", when=bought), deposit)
+        r = split(c, i["PIZZA NOVA"], mode="amount", people=[{"name": "Sam", "amount": 30.0},
+                                                             {"name": "Priya S.", "amount": 30.0}])
+        assert r.status_code == 200, r.get_json()
+        return i["PIZZA NOVA"], i["INTERAC E-TRANSFER"]
+
+    def owes(self, c, charge):
+        return {n: p["owes"] for n, p in people(c, charge).items()}
+
+    def test_two_shares_fit_so_it_counts_for_nobody(self, client):
+        charge, deposit = self.setup(client, "2026-11-02", "2026-11-16", 30.0)
+        link(client, charge, deposit, None)
+        assert self.owes(client, charge) == {"Sam": 30.0, "Priya S.": 30.0}
+
+    def test_none_fits_so_it_counts_for_nobody(self, client):
+        charge, deposit = self.setup(client, "2026-11-02", "2026-11-16", 25.0)
+        link(client, charge, deposit, None)
+        # Before THL-181 this went to Sam, the first who still owed.
+        assert self.owes(client, charge) == {"Sam": 30.0, "Priya S.": 30.0}
+
+    def test_exactly_one_share_fits_so_it_counts_for_them(self, client):
+        charge, deposit = self.setup(client, "2026-11-02", "2026-11-16", 30.0)
+        link(client, charge, deposit, None)
+        # Sam pays by name; now only Priya's $30.00 is the unnamed one's amount.
+        named = Transaction(date="2026-11-17", description="E-TRANSFER FROM SAM", merchant="Sam",
+                            amount=-30.0, category="", account_id="chq", account_name="TD Chequing",
+                            raw={"account_type": "depository", "counterparty": "Sam"})
+        i = add(client, named)
+        link(client, charge, i["E-TRANSFER FROM SAM"], "Sam")
+        assert self.owes(client, charge) == {"Sam": 0.0, "Priya S.": 0.0}
+
+    def test_one_that_names_someone_on_the_split_is_theirs(self, client):
+        charge, deposit = self.setup(client, "2026-11-02", "2026-11-16", 30.0)
+        link(client, charge, deposit, "Priya S.")
+        assert self.owes(client, charge) == {"Sam": 30.0, "Priya S.": 0.0}
+
+    def test_an_old_payback_keeps_what_it_showed(self, client):
+        from finance.splits import ASK_FROM
+        assert ASK_FROM == "2026-11-10"
+        # Both fit, and before ASK_FROM it went to the first who owed, as it always had.
+        charge, deposit = self.setup(client, "2026-10-20", "2026-10-25", 30.0)
+        link(client, charge, deposit, None)
+        assert self.owes(client, charge) == {"Sam": 0.0, "Priya S.": 30.0}
+        # And one that fit nobody still went to the first who owed.
+        other = Transaction(date="2026-10-26", description="DEPOSIT 25", merchant="Deposit", amount=-25.0,
+                            category="", account_id="chq", account_name="TD Chequing",
+                            raw={"account_type": "depository"})
+        i = add(client, other)
+        link(client, charge, i["DEPOSIT 25"], None)
+        assert self.owes(client, charge) == {"Sam": 0.0, "Priya S.": 5.0}
+
+    def test_owing_names_someone_who_is_on_no_split(self, client):
+        charge, deposit = self.setup(client, "2026-11-02", "2026-11-16", 45.0, who="Jordan")
+        r = client.get(f"/api/transactions/{deposit}/owing").get_json()
+        assert r["from"] is None and r["named"] == "Jordan"
+        assert sorted((x["person"], x["owes"]) for x in r["items"]) == [("Priya S.", 30.0), ("Sam", 30.0)]
+
+    def test_owing_names_nobody_when_the_bank_left_the_name_off(self, client):
+        charge, deposit = self.setup(client, "2026-11-02", "2026-11-16", 30.0)
+        r = client.get(f"/api/transactions/{deposit}/owing").get_json()
+        assert r["from"] is None and r["named"] is None
+
+    def test_owing_from_someone_on_a_split_is_theirs(self, client):
+        charge, deposit = self.setup(client, "2026-11-02", "2026-11-16", 30.0, who="Sam", merchant="Sam")
+        r = client.get(f"/api/transactions/{deposit}/owing").get_json()
+        assert r["from"] == "Sam" and r["named"] is None
+
+    def test_the_sheet_asks_instead_of_ticking(self):
+        flow = (self.IOS / "Views/Transactions/PartsFlow.swift").read_text(encoding="utf-8")
+        # S-35a / S-35b sections and lines.
+        assert 'label("Could be either")' in flow
+        assert "each owe \\(amount), so Pearl won’t guess. Tick who sent it." in flow
+        assert "isn’t on any of your splits, and no one owes \\(amount)." in flow
+        assert '"No one owes \\(amount). \\(tail)"' in flow
+        assert 'let tail = "Tick what it paid back, or search for the purchase."' in flow
+        # Only the one exact fit is ticked; two or none, nothing is.
+        assert "if sender == nil, fits.count == 1 { toggle(fits[0]) }" in flow
+        assert "fits.count != 1" in flow
+        # Next stays off until she ticks one; what's left goes to S-11 v2.
+        assert '.buttonStyle(NacreButtonStyle()).disabled(picked.isEmpty)' in flow
+        assert "parts.isEmpty || asked ? .kind : .progress" in flow
+        # VoiceOver: "Sam, Pizza Nova, November 2, 30 dollars, not selected".
+        assert '.accessibilityValue(on ? "selected" : "not selected")' in flow
+        assert "Format.monthDay(o.date)" in flow
+        assert "named = r.named" in flow

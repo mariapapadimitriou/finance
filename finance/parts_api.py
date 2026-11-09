@@ -508,4 +508,16 @@ def owing(txn_id: str):
                       if person and sp.same_person(q["name"], person)), None)
         linked.append({"id": charge.fingerprint, "merchant": charge.merchant, "date": charge.date[:10],
                        "amount": p["amount"], "person": person, "share": share})
-    return jsonify({"from": mine[0]["name"] if mine else None, "items": items, "linked": linked})
+    # S-35b (THL-181, SPLIT-21): the name on a deposit from someone who isn't
+    # on any of her splits, for "Jordan isn't on any of your splits, and no
+    # one owes $45.00."; None when it names no one, or someone who is.
+    named = None
+    if not mine:
+        from .etransfers import known_people, party as etransfer_party
+        everyone = [q["name"] for s in splits.values() for q in s.get("people") or []]
+        name = t.party or (etransfer_party(t, known_people(list(txns.values()), splits,
+                                                           st.payback_people())) or {}).get("name")
+        if name and not any(sp.same_person(n, name) for n in everyone):
+            named = name
+    return jsonify({"from": mine[0]["name"] if mine else None, "named": named, "items": items,
+                    "linked": linked})

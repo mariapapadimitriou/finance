@@ -29,6 +29,11 @@ MATCH_WITHIN = 1.00        # dollars
 MATCH_DAYS = 60
 # Money that arrived this long before the purchase can still be paying it back.
 EARLY_DAYS = 7
+# THL-181 (SPLIT-21, S-35a/S-35b): a payback that names nobody on the split,
+# dated from this day on, counts for someone only when exactly one share
+# still owed is its amount; otherwise she's asked who it was. One dated
+# before keeps the old guess, so nothing she has already seen changes.
+ASK_FROM = "2026-11-10"
 
 _WORD = re.compile(r"[a-zà-ÿ0-9']+")
 
@@ -304,15 +309,25 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
                            if c != charge.fingerprint],
                 "word": "e-Transfer" if "etransfer" in text or "interac" in text else "payment"})
     # A payback nobody's name is on (a bank that leaves the sender off, or
-    # one linked from search) still counts (2026-10-24): to whoever owes
-    # exactly that much, else the first who still owes anything. Only these:
-    # one with a name is never moved to someone else (2026-11-09).
+    # one linked from search). Only these: one with a name is never moved to
+    # someone else (2026-11-09).
     for t in unnamed:
         got = t.part_for(charge.fingerprint)
         owing = [n for n in names if part[n] - paid[n] >= 0.005]
         if not owing:
             continue
-        who = next((n for n in owing if abs(part[n] - paid[n] - got) < 0.01), owing[0])
+        fits = [n for n in owing if abs(part[n] - paid[n] - got) < 0.01]
+        if t.date[:10] >= ASK_FROM:
+            # THL-181 "If Pearl can't tell who, it asks" (SPLIT-21): the one
+            # share that is its amount, or nobody until she says (S-35a, S-35b).
+            if len(fits) != 1:
+                continue
+            who = fits[0]
+        else:
+            # Before ASK_FROM (2026-10-24 rule, kept so old paybacks read as
+            # they did): whoever owes exactly that much, else the first who
+            # still owes anything.
+            who = fits[0] if fits else owing[0]
         paid[who] = round(paid[who] + got, 2)
         when[who] = t.date[:10]
     out = []
