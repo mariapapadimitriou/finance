@@ -719,6 +719,15 @@ def undo_change():
     from .impact import SOURCE
     from .transfers import apply_transfer_matches
     body = request.get_json(silent=True) or {}
+    if isinstance(body.get("cash_payment"), int):
+        # A cash or app payment and every piece of its extra (SPLIT-19).
+        from .parts_api import remove_payment
+        st = store()
+        problem = remove_payment(st, body["cash_payment"])
+        if problem:
+            return jsonify({"error": problem}), 400
+        _reclassify(st)
+        return jsonify({"ok": True})
     if isinstance(body.get("parts"), str):
         # A deposit split into parts (THL-291): one deposit again.
         from . import parts as dp

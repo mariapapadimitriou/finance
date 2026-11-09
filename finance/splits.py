@@ -214,7 +214,13 @@ def payments(records: list[dict], dates: dict[str, str] | None = None) -> list[d
         held = [c for c in pieces if c.get("deposit_id")]
         deposited = round(sum(c["amount"] for c in held), 2)
         days = sorted(dates.get(c["deposit_id"], "") for c in held if dates.get(c["deposit_id"]))
-        out.append({"id": root, "ids": sorted(c["id"] for c in pieces), "amount": total,
+        # SPLIT-19: the whole payment, when its extra went elsewhere too.
+        extra = {}
+        if (first.get("whole") or total) > total + 0.005:
+            extra["whole"] = first["whole"]
+        if (first.get("given_back") or 0.0) >= 0.005:
+            extra["given_back"] = first["given_back"]
+        out.append({**extra, "id": root, "ids": sorted(c["id"] for c in pieces), "amount": total,
                     "day": first["day"], "via": first.get("via") or "cash", "app": first.get("app"),
                     "deposited": deposited, "deposited_on": days[-1] if days else None,
                     "still": round(total - deposited, 2)})

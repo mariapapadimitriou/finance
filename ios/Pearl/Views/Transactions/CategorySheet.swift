@@ -405,12 +405,31 @@ struct CaseTile: Identifiable, Hashable {
         CaseTile(key: "gifts", label: "A gift", symbol: "gift"),
         CaseTile(key: "other", label: "Other income", symbol: "ellipsis"),
     ]
+
+    /// S-11k / T-08k (SPLIT-18): what Other income asks next, "What kind of
+    /// income?", with finance/income.py's other four kinds as their keys.
+    static let otherIncome: [CaseTile] = [
+        CaseTile(key: "interest", label: "Interest", symbol: "percent"),
+        CaseTile(key: "government", label: "Government credits", symbol: "building.columns"),
+        CaseTile(key: "tax_refund", label: "Tax refund", symbol: "arrow.uturn.backward"),
+        CaseTile(key: "other", label: "Other income", symbol: "ellipsis"),
+    ]
+
+    /// S-11c (SPLIT-19): what the extra from cash or another app can be.
+    static func cashExtra(who: String, app: Bool) -> [CaseTile] {
+        [CaseTile(key: "overpaid", label: "\(who) overpaid", symbol: "person.crop.circle.badge.xmark"),
+         CaseTile(key: "payback", label: "Paying me back", symbol: "person.2"),
+         CaseTile(key: "gift", label: "A gift", symbol: "gift"),
+         CaseTile(key: "returned", label: app ? "I sent it back" : "I gave it back", symbol: "arrow.uturn.backward")]
+    }
 }
 
 /// Three across, the category sheet's tile look.
 struct CaseGrid: View {
     let cases: [CaseTile]
     @Binding var chosen: String?
+    /// What VoiceOver says after the label: "Interest, income kind, button" (T-08k).
+    var role: String? = nil
 
     var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
@@ -434,7 +453,7 @@ struct CaseGrid: View {
                     .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(c.label)
+                .accessibilityLabel(role.map { "\(c.label), \($0)" } ?? c.label)
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }

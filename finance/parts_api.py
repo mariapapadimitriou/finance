@@ -2,8 +2,9 @@
 
 * POST   /api/transactions/<id>/split/let-go      {name}: let the rest of their part go.
 * DELETE /api/transactions/<id>/split/let-go      {name}: put it back.
-* POST   /api/transactions/<id>/split/cash        {name, amount, day?, via?, app?}: paid back in
-                                                  cash, or `via: "app"` through another app.
+* POST   /api/transactions/<id>/split/cash        {name, amount, day?, via?, app?, extra?}: paid
+                                                  back in cash, or `via: "app"` through another
+                                                  app; `extra` says what paid over is (S-11c).
 * DELETE /api/transactions/<id>/split/cash/<cid>  forget that cash.
 * GET    /api/split/apps                          apps she has named before (SPLIT-14).
 * GET    /api/transactions/<id>/cash-matches      cash a deposit could be holding.
@@ -100,7 +101,14 @@ def split_let_go_undo(txn_id: str):
 @bp.post("/transactions/<txn_id>/split/cash")
 def split_cash(txn_id: str):
     """S-06 Cash in hand: paid back with no bank transaction. It counts as
-    paid now; a cash deposit later asks whether it holds this."""
+    paid now; a cash deposit later asks whether it holds this.
+
+    S-11c (SPLIT-19, 2026-11-09): when they paid more than they owe, `extra`
+    says what the rest is, in pieces that add up to it: `overpaid` (she owes
+    it back), `payback` (another open share, `charge` and `person`), `gift`
+    (money in, once, that day) and `returned` (she gave it back). Every
+    record shares the payment's origin, so it is listed, deposited and
+    undone as the one payment she recorded."""
     st = store()
     t, split, err = _split_or_error(st, txn_id)
     if err:
@@ -124,11 +132,134 @@ def split_cash(txn_id: str):
     via = "app" if body.get("via") == "app" else None
     # SPLIT-14 (S-06 v3): which app, typed; optional, trimmed, up to 30.
     app = " ".join(str(body.get("app") or "").split())[:30] or None if via else None
-    cid = st.add_split_cash(txn_id, p["name"], amount, day, via, app)
+    pieces = None
+    if body.get("extra") is not None:
+        pieces, problem = _extra_pieces(st, t, split, p, amount, body.get("extra"))
+        if problem:
+            return jsonify({"error": problem}), 400
+    if pieces is None:
+        cid = st.add_split_cash(txn_id, p["name"], amount, day, via, app)
+    else:
+        cid = _record_extra(st, t, p["name"], amount, day, via, app, pieces)
     title = (f"{p['name']} paid ${amount:,.2f} through {app or 'another app'}." if via
              else f"{p['name']} paid ${amount:,.2f} in cash.")
     return jsonify({"ok": True, "id": cid, "title": title,
+                    # The Sorted toast's Undo takes the whole payment back.
+                    "undo": {"cash_payment": cid},
                     "detail": core.transaction_detail(txn_id).get_json()}), 201
+
+
+EXTRA_KINDS = ("overpaid", "payback", "gift", "returned")
+
+
+def _cents(x) -> int:
+    return int(round(float(x) * 100))
+
+
+def _extra_pieces(st, t, split: dict, p: dict, amount: float, extra) -> tuple[list | None, str | None]:
+    """S-11c: the pieces of what they paid over what they owe, checked
+    before anything is saved. (pieces, None) or (None, the problem)."""
+    txns = st.all_transactions()
+    payer = st.payback_people()
+    status = next(s for s in sp.people_status(t, split, txns, payer) if s["name"] == p["name"])
+    over = _cents(amount) - _cents(status["owes"])
+    if over < 1:
+        return None, f"{p['name']} didn’t pay more than they owe."
+    if not isinstance(extra, list) or not extra or len(extra) > dp.MAX_PARTS:
+        return None, f"${over / 100:,.2f} of the extra isn’t said yet."
+    by_id = {x.fingerprint: x for x in txns}
+    splits = st.splits()
+    out, given = [], 0
+    for e in extra:
+        if not isinstance(e, dict) or e.get("kind") not in EXTRA_KINDS:
+            return None, "Say what each piece of the extra is."
+        try:
+            cents = _cents(e.get("amount"))
+        except (TypeError, ValueError):
+            return None, "Give each piece of the extra an amount."
+        if cents < 1:
+            return None, "A piece of the extra has to be more than nothing."
+        piece = {"kind": e["kind"], "amount": cents / 100}
+        if e["kind"] == "payback":
+            # Paying me back: another open share, theirs or anyone's (S-09).
+            cid = str(e.get("charge") or "")
+            charge, other = by_id.get(cid), splits.get(cid)
+            if charge is None or other is None or cid == t.fingerprint:
+                return None, "Pick the share it pays back."
+            who = _person(other, str(e.get("person") or p["name"]))
+            if who is None:
+                return None, "They aren’t in that split."
+            owes = next((s["owes"] for s in sp.people_status(charge, other, txns, payer)
+                         if s["name"] == who["name"]), 0.0)
+            if cents > _cents(owes):
+                return None, f"That’s more than {who['name']} owes on {charge.merchant}."
+            piece.update(charge=cid, person=who["name"])
+        given += cents
+        out.append(piece)
+    if given < over:
+        return None, f"${(over - given) / 100:,.2f} of the extra isn’t said yet."
+    if given > over:
+        return None, f"That’s ${(given - over) / 100:,.2f} more than the extra."
+    for kind in ("returned",):
+        if sum(1 for x in out if x["kind"] == kind) > 1:
+            return None, "Say what each piece of the extra is."
+    return out, None
+
+
+def _record_extra(st, t, name: str, amount: float, day: str, via, app, pieces: list) -> int:
+    """The payment and its extra, as records sharing one origin (the first).
+    What they owed, plus any they overpaid, stays on this split; a payback
+    goes to the share it pays; a gift is money in that day; given back pays
+    nobody. Returns the payment's id."""
+    over = sum(_cents(x["amount"]) for x in pieces)
+    kept = _cents(amount) - over + sum(_cents(x["amount"]) for x in pieces if x["kind"] == "overpaid")
+    root = st.add_split_cash(t.fingerprint, name, kept / 100, day, via, app)
+    for x in pieces:
+        if x["kind"] == "payback":
+            st.add_split_cash(x["charge"], x["person"], x["amount"], day, via, app, root)
+        elif x["kind"] in ("gift", "returned"):
+            cid = st.add_split_cash(t.fingerprint, name, x["amount"], day, via, app, root, x["kind"])
+            if x["kind"] == "gift":
+                _gift_row(st, cid, root, name, x["amount"], day, via, app)
+    core._reclassify(st)
+    return root
+
+
+GIFT_SOURCE = "split_gift"
+
+
+def _gift_row(st, cash_id: int, root: int, name: str, amount: float, day: str, via, app) -> None:
+    """A gift from a cash or app payment's extra (S-11c): money in of kind
+    Gift, once, on the payment's day, so income and Allowance count it.
+    It is no bank transaction, so Transactions doesn't list it."""
+    from .models import Transaction
+    how = (app or "Another app") if via == "app" else "Cash"
+    row = Transaction(date=day, description=f"A gift · {name} · {how}", merchant=name, amount=-round(amount, 2),
+                      account_id="split-cash", account_name=how, category="Income", category_source="user",
+                      source=GIFT_SOURCE, seq=cash_id,
+                      raw={"split_gift": cash_id, "origin": root, "counterparty": name,
+                           "via": via or "cash", "app": app})
+    st.add_transactions([row])
+    st.set_income_type(row.fingerprint, "gifts", "user")
+    st.set_party(row.fingerprint, name)
+
+
+def remove_payment(st, root: int) -> str | None:
+    """Undo (SPLIT-19): the whole payment, by origin: what stayed on the
+    split, the paybacks on other shares, the gift and what was given back.
+    Returns a problem in words, or None."""
+    pieces = [c for c in st.split_cash() if (c.get("origin") or c["id"]) == root]
+    if not pieces:
+        return "No such cash."
+    if any(c["deposit_id"] for c in pieces):
+        return "That cash is in a deposit. Unlink the deposit first."
+    ids = {c["id"] for c in pieces}
+    for x in st.all_transactions():
+        if x.source == GIFT_SOURCE and (x.raw or {}).get("split_gift") in ids:
+            st.delete_transaction(x.fingerprint)
+    for i in ids:
+        st.remove_split_cash(i)
+    return None
 
 
 @bp.get("/split/apps")
@@ -146,7 +277,14 @@ def split_cash_undo(txn_id: str, cash_id: int):
         return jsonify({"error": "No such cash."}), 404
     if cash["deposit_id"]:
         return jsonify({"error": "That cash is in a deposit. Unlink the deposit first."}), 400
-    st.remove_split_cash(cash_id)
+    if cash.get("origin"):
+        st.remove_split_cash(cash_id)
+    else:
+        # SPLIT-19: the payment itself goes with every piece of its extra.
+        problem = remove_payment(st, cash_id)
+        if problem:
+            return jsonify({"error": problem}), 400
+        core._reclassify(st)
     return jsonify({"ok": True, "detail": core.transaction_detail(txn_id).get_json()})
 
 
@@ -167,15 +305,33 @@ def cash_matches(txn_id: str):
     for c in every:
         root = c.get("origin") or c["id"]
         whole[root] = round(whole.get(root, 0.0) + c["amount"], 2)
-    rows = [c for c in every if not c["deposit_id"] and c["day"] <= t.date[:10]
-            and c.get("via") != "app"]
-    rows.sort(key=lambda c: (c["amount"] > got + 0.005, abs(c["amount"] - got), c["day"]))
+    # What was given back (SPLIT-19) was never hers to deposit.
+    whole = {k: round(v - sum(c["amount"] for c in every
+                              if (c.get("origin") or c["id"]) == k and c.get("kind") == "returned"), 2)
+             for k, v in whole.items()}
+    free = [c for c in every if not c["deposit_id"] and c["day"] <= t.date[:10]
+            and c.get("via") != "app" and c.get("kind") != "returned"]
+    # SPLIT-19 (S-11c): one payment is one row, "Sam · $60.00 cash · Nov 13",
+    # whatever its extra paid: every piece no deposit holds yet, first one first.
+    groups: dict[int, list[dict]] = {}
+    for c in free:
+        groups.setdefault(c.get("origin") or c["id"], []).append(c)
+    rows = []
+    for root, pieces in groups.items():
+        pieces.sort(key=lambda c: (c.get("kind") is not None, c["id"]))
+        first = pieces[0]
+        rows.append({"first": first, "ids": [c["id"] for c in pieces], "root": root,
+                     "amount": round(sum(c["amount"] for c in pieces), 2)})
+    rows.sort(key=lambda r: (r["amount"] > got + 0.005, abs(r["amount"] - got), r["first"]["day"]))
     out = []
-    for c in rows:
-        row = {"id": c["id"], "name": c["name"], "amount": c["amount"], "day": c["day"],
-               "merchant": (by_id.get(c["txn_id"]).merchant if by_id.get(c["txn_id"]) else "")}
-        of = whole.get(c.get("origin") or c["id"], c["amount"])
-        if of > c["amount"] + 0.005:
+    for r in rows:
+        c = by_id.get(r["first"]["txn_id"])
+        row = {"id": r["first"]["id"], "name": r["first"]["name"], "amount": r["amount"],
+               "day": r["first"]["day"], "merchant": c.merchant if c else ""}
+        if len(r["ids"]) > 1:
+            row["ids"] = r["ids"]
+        of = whole.get(r["root"], r["amount"])
+        if of > r["amount"] + 0.005:
             row["of"] = of
         out.append(row)
     return jsonify({"cash": out})

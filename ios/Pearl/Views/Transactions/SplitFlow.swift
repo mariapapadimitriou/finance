@@ -871,6 +871,10 @@ struct SplitPeople: View {
     /// SPLIT-15: a cash payment a deposit holds part of, once: "$200.00
     /// deposited Nov 12 · $50.00 still cash".
     private func deposited(_ p: Transaction.Splitting.Person) -> String? {
+        // SPLIT-19 (S-11c, I gave it back): "$60.00, $17.94 given back".
+        if let pay = p.payments?.last(where: { ($0.givenBack ?? 0) >= 0.005 }), let back = pay.givenBack {
+            return "\(Format.amount(pay.whole ?? pay.amount + back)), \(Format.amount(back)) given back"
+        }
         guard let pay = p.payments?.last(where: { $0.deposited >= 0.005 && $0.still >= 0.005 }) else { return nil }
         return "\(Format.amount(pay.deposited)) deposited"
             + (pay.depositedOn.map { " \(Format.short($0))" } ?? "")
@@ -887,9 +891,46 @@ struct MarkPaidSheet: View {
     let person: Transaction.Splitting.Person
     let api: APIClient
     let onDone: (String) -> Void
+    /// SPLIT-19: a payment with its extra said, and the Sorted toast's Undo.
+    var onUndoable: ((String, JSONValue?) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var how = "bank"
+    /// S-11c (SPLIT-19): "What’s the extra $17.94?", for cash or an app.
+    @State private var extraPage = false
+    /// What the extra is so far; nothing is saved until all of it is said.
+    @State private var pieces: [ExtraPiece] = []
+    /// S-11c "How much of it?": all of what's left unless she types less.
+    @State private var extraAmount = ""
+    /// S-11c Paying me back: the open shares to tick (S-09).
+    @State private var choosingShares = false
+    @State private var shares: [OpenShare] = []
+    @State private var ticked: [String: Double] = [:]
+
+    struct ExtraPiece: Hashable {
+        let kind: String
+        let amount: Double
+        var charge: String? = nil
+        var person: String? = nil
+
+        var body: [String: Any] {
+            var b: [String: Any] = ["kind": kind, "amount": amount]
+            if let charge = charge { b["charge"] = charge }
+            if let person = person { b["person"] = person }
+            return b
+        }
+    }
+
+    /// Someone's open share on another split, from Owed to you.
+    struct OpenShare: Identifiable, Hashable {
+        let charge: String
+        let merchant: String
+        let date: String
+        let person: String
+        let owes: Double
+        let theirs: Bool
+        var id: String { charge + "|" + person }
+    }
     @State private var amount: String
     @State private var when = Date()
     @State private var finding = false
@@ -925,15 +966,21 @@ struct MarkPaidSheet: View {
     @State private var busy = false
     @State private var error: String?
 
-    init(t: Transaction, person: Transaction.Splitting.Person, api: APIClient, onDone: @escaping (String) -> Void) {
+    init(t: Transaction, person: Transaction.Splitting.Person, api: APIClient,
+         onUndoable: ((String, JSONValue?) -> Void)? = nil, onDone: @escaping (String) -> Void) {
         self.t = t
         self.person = person
         self.api = api
         self.onDone = onDone
+        self.onUndoable = onUndoable
         _amount = State(initialValue: SplitSheet.plain(person.owes))
     }
 
     var body: some View {
+        if extraPage { extraSheet } else { markSheet }
+    }
+
+    private var markSheet: some View {
         VStack(spacing: 0) {
             SheetTitle(title: finding ? (inParts ? "What paid this back?" : "Find \(person.name)’s payment")
                        : "Mark paid back") { dismiss() }
@@ -952,14 +999,28 @@ struct MarkPaidSheet: View {
                         }
                     }
                     if finding { depositList } else { form }
+                    if !finding && overBy >= 0.005 {
+                        // S-06 v2 (SPLIT-11): more than they owe; S-11c says what.
+                        Text("That’s \(Format.amount(overBy)) more than \(person.name) owes. Next you’ll say what the extra is.")
+                            .font(Nacre.footnote).foregroundColor(Pearl.moneyOut)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if let error = error {
                         Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
-            Button(finding ? (inParts ? "Save" : "Link payment") : how == "bank" ? "Find it" : "Mark paid back") {
-                Task { await primary() }
+            Button(finding ? (inParts ? "Save" : "Link payment") : how == "bank" ? "Find it"
+                   : overBy >= 0.005 ? "Next: the extra \(Format.amount(overBy))" : "Mark paid back") {
+                if !finding && overBy >= 0.005 {
+                    pieces = []
+                    extraAmount = ""
+                    error = nil
+                    extraPage = true
+                } else {
+                    Task { await primary() }
+                }
             }
             .buttonStyle(NacreButtonStyle(busy: busy))
             .disabled(busy || (finding && picked.isEmpty))
@@ -1189,6 +1250,228 @@ struct MarkPaidSheet: View {
         .disabled(full)
         .accessibilityAddTraits(on ? .isSelected : [])
     }
+
+    // MARK: S-11c What's the extra? (SPLIT-19)
+
+    /// What she typed, for cash or an app.
+    private var typed: Double? {
+        Double(amount.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: ""))
+    }
+
+    /// What they paid over what they owe, for cash or an app.
+    private var overBy: Double {
+        guard how != "bank", let value = typed else { return 0 }
+        return max(0, Double(cents(value) - cents(person.owes)) / 100)
+    }
+
+    private var extraLeft: Double {
+        Double(max(0, cents(overBy) - pieces.map { cents($0.amount) }.reduce(0, +))) / 100
+    }
+
+    private var extraChosen: Double {
+        let text = extraAmount.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return extraLeft }
+        let v = Double(text.replacingOccurrences(of: "$", with: "").replacingOccurrences(of: ",", with: "")) ?? 0
+        return min(v, extraLeft)
+    }
+
+    /// "Sam · Cash", "Sam · PayPal".
+    private var paidHow: String {
+        how == "app" ? (appName.trimmingCharacters(in: .whitespaces).isEmpty ? "Another app"
+                        : appName.trimmingCharacters(in: .whitespaces)) : "Cash"
+    }
+
+    private var extraSheet: some View {
+        VStack(spacing: 0) {
+            SheetTitle(title: choosingShares ? "Who paid you back?" : "What’s the extra \(Format.amount(extraLeft))?") {
+                // Close goes back to S-06 v2 with the amount still typed.
+                if choosingShares { choosingShares = false; return }
+                pieces = []
+                extraPage = false
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Initials(name: person.name, size: 48)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(person.name) · \(paidHow)").font(Nacre.title2).foregroundColor(Pearl.ink)
+                            Text("\(Format.amount(typed ?? 0)) · \(Format.short(Format.isoDay(when)))")
+                                .font(Nacre.subheadline).foregroundColor(Pearl.moneyIn)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    if choosingShares { shareList } else { extraTiles }
+                    if let error = error {
+                        Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.bottom, 12)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            if choosingShares {
+                Button("Next") { takeShares() }
+                    .buttonStyle(NacreButtonStyle(busy: busy)).disabled(busy || ticked.isEmpty)
+                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
+            }
+        }
+        .background(SheetBackground())
+        .presentationDetents([.large])
+    }
+
+    private var extraTiles: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("How much of it?").font(Nacre.body).foregroundColor(Pearl.ink)
+                Spacer(minLength: 8)
+                TextField("", text: $extraAmount, prompt: Text(Format.amount(extraLeft)).foregroundColor(Pearl.ink))
+                    .font(Nacre.headline).monospacedDigit().multilineTextAlignment(.trailing)
+                    .keyboardType(.decimalPad).frame(maxWidth: 140)
+                    .accessibilityLabel("How much of it")
+                    .accessibilityHint("All \(Format.amount(extraLeft)) unless you type less")
+            }
+            .padding(.horizontal, 4)
+            Text("THE EXTRA").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                .padding(.horizontal, 16).accessibilityAddTraits(.isHeader)
+            CaseGrid(cases: CaseTile.cashExtra(who: person.name, app: how == "app"),
+                     chosen: Binding(get: { nil }, set: { key in if let key = key { takeExtra(key) } }))
+                .disabled(busy)
+            Text("\(person.name) owes \(Format.amount(person.owes)) for \(t.merchant). Nothing is saved until you say what the other \(Format.amount(extraLeft)) is.")
+                .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// S-09 for the extra: their other open shares first, ticked, then
+    /// everyone else's. A tick takes what it owes, up to "How much of it?".
+    private var shareList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(shares.isEmpty ? "NOBODY ELSE OWES YOU" : "OPEN SHARES · \(Format.amount(extraChosen))")
+                .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted).padding(.horizontal, 16)
+            if !shares.isEmpty {
+                GlassCard {
+                    ForEach(Array(shares.enumerated()), id: \.element.id) { i, s in
+                        if i > 0 { RowSeparator() }
+                        let on = ticked[s.id] != nil
+                        let room = cents(extraChosen) - ticked.values.map { cents($0) }.reduce(0, +)
+                        Button {
+                            if on { ticked[s.id] = nil }
+                            else if room > 0 { ticked[s.id] = Double(min(cents(s.owes), room)) / 100 }
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(s.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                                    Text("\(s.person) · owes \(Format.amount(s.owes)) · \(Format.short(s.date))")
+                                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                                }
+                                Spacer()
+                                Text(Format.amount(ticked[s.id] ?? s.owes)).font(Nacre.headline).monospacedDigit()
+                                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 22)).foregroundColor(on ? Pearl.action : Pearl.muted)
+                            }
+                            .padding(.horizontal, 16).frame(minHeight: 56).contentShape(Rectangle())
+                            .opacity(!on && room <= 0 ? 0.5 : 1)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!on && room <= 0)
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                    }
+                }
+            }
+        }
+    }
+
+    private func takeExtra(_ key: String) {
+        let chosen = extraChosen
+        guard chosen >= 0.005 else { return }
+        error = nil
+        if key == "payback" {
+            Task { await loadShares() }
+            return
+        }
+        pieces.append(ExtraPiece(kind: key, amount: chosen))
+        afterPiece()
+    }
+
+    private func takeShares() {
+        for s in shares {
+            guard let use = ticked[s.id], use >= 0.005 else { continue }
+            pieces.append(ExtraPiece(kind: "payback", amount: use, charge: s.charge, person: s.person))
+        }
+        ticked = [:]
+        choosingShares = false
+        afterPiece()
+    }
+
+    /// Back for what's left of the extra, or save when all of it is said.
+    private func afterPiece() {
+        extraAmount = ""
+        if cents(extraLeft) == 0 { Task { await saveExtra() } }
+    }
+
+    private func loadShares() async {
+        struct Item: Decodable {
+            let chargeId: String
+            let merchant: String
+            let date: String
+            let owes: Double
+            enum CodingKeys: String, CodingKey {
+                case chargeId = "charge_id"
+                case merchant, date, owes
+            }
+        }
+        struct Row: Decodable { let name: String; let items: [Lenient<Item>] }
+        struct Reply: Decodable { let owesYou: [Lenient<Row>]
+            enum CodingKeys: String, CodingKey { case owesYou = "owes_you" } }
+        do {
+            let r: Reply = try await api.get("api/owed")
+            let taken = Set(pieces.compactMap { p in p.charge.map { $0 + "|" + (p.person ?? "") } })
+            var out: [OpenShare] = []
+            for row in r.owesYou.compactMap({ $0.value }) {
+                let theirs = row.name.caseInsensitiveCompare(person.name) == .orderedSame
+                for i in row.items.compactMap({ $0.value }) where i.chargeId != t.id {
+                    let s = OpenShare(charge: i.chargeId, merchant: i.merchant, date: i.date,
+                                      person: row.name, owes: i.owes, theirs: theirs)
+                    if !taken.contains(s.id) { out.append(s) }
+                }
+            }
+            // Theirs first, then everyone else's (S-09, aa07127).
+            shares = out.enumerated().sorted { a, b in
+                a.element.theirs != b.element.theirs ? a.element.theirs : a.offset < b.offset
+            }.map(\.element)
+            var room = cents(extraChosen)
+            ticked = [:]
+            for s in shares where s.theirs && room > 0 {
+                let use = min(cents(s.owes), room)
+                ticked[s.id] = Double(use) / 100
+                room -= use
+            }
+            choosingShares = true
+        } catch {
+            self.error = "Couldn’t load who owes you. Try again."
+        }
+    }
+
+    private func saveExtra() async {
+        guard let value = typed else { return }
+        busy = true
+        defer { busy = false }
+        var body: [String: Any] = ["name": person.name, "amount": value, "day": Format.isoDay(when),
+                                   "via": how == "app" ? "app" : "cash", "extra": pieces.map(\.body)]
+        let named = appName.trimmingCharacters(in: .whitespaces)
+        if how == "app" && !named.isEmpty { body["app"] = named }
+        do {
+            struct Reply: Decodable { let undo: JSONValue? }
+            let r: Reply = try await api.post("api/transactions/\(t.id)/split/cash", body)
+            let title = "\(person.name) paid \(Format.amount(value))."
+            if let onUndoable = onUndoable { onUndoable(title, r.undo) } else { onDone(title) }
+        } catch {
+            // Nothing was saved: start the extra again.
+            pieces = []
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func cents(_ x: Double) -> Int { Int((x * 100).rounded()) }
 
     private func primary() async {
         busy = true

@@ -250,7 +250,7 @@ def _hold_cash(st, ids: list[int], amount: float, part_id: str) -> list[int]:
             # SPLIT-15: the rest keeps the payment's origin, so it is still
             # listed and counted as the one payment she recorded.
             st.add_split_cash(c["txn_id"], c["name"], (have - left) / 100, c["day"], c.get("via"),
-                              c.get("app"), c.get("origin") or c["id"])
+                              c.get("app"), c.get("origin") or c["id"], c.get("kind"))
             have = left
         held.append(i)
         left -= have

@@ -480,7 +480,14 @@ struct TransactionDetailView: View {
             })
         }
         .sheet(item: $marking) { person in
-            MarkPaidSheet(t: t, person: person, api: app.api) { done in
+            MarkPaidSheet(t: t, person: person, api: app.api, onUndoable: { title, undo in
+                // SPLIT-19 (S-11c): Undo takes back the whole payment and its extra.
+                marking = nil
+                Task {
+                    await run { nil }
+                    withAnimation { toast = (title, undoing(undo)) }
+                }
+            }) { done in
                 marking = nil
                 Task { await run { done } }
             }

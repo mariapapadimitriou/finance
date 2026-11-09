@@ -654,10 +654,15 @@ struct Transaction: Decodable, Identifiable, Hashable {
                 let deposited: Double
                 let depositedOn: String?
                 let still: Double
+                /// SPLIT-19 (S-11c): the whole payment, when its extra went
+                /// elsewhere too, and what of it she gave back.
+                var whole: Double? = nil
+                var givenBack: Double? = nil
 
                 enum CodingKeys: String, CodingKey {
-                    case amount, day, via, app, deposited, still
+                    case amount, day, via, app, deposited, still, whole
                     case depositedOn = "deposited_on"
+                    case givenBack = "given_back"
                 }
             }
 

@@ -539,3 +539,144 @@ class TestHeldSplitFromQuickSort:
         assert client.post("/api/transactions/undo", json=r.get_json()["undo"]).status_code == 200
         d = detail(client, i["LOBLAWS"])
         assert not d.get("splitting") and d["category"] == before
+
+
+class TestOtherIncomeKinds:
+    """SPLIT-18, S-11k / T-08k: Other income asks which kind: Interest,
+    Government credits, Tax refund or Other income (finance/income.py)."""
+
+    @pytest.mark.parametrize("kind", ["interest", "government", "tax_refund", "other"])
+    def test_a_part_can_be_each_kind(self, client, kind):
+        i = add(client, tx("E-TRANSFER FROM DAD", -600.0, when=day(1), merchant="Dad"))
+        r = client.post(f"/api/transactions/{i['E-TRANSFER FROM DAD']}/parts", json={"parts": [
+            {"kind": "gift", "amount": 428}, {"kind": "income", "amount": 172, "income_kind": kind}]})
+        assert r.status_code == 200, r.get_json()
+        part = next(p for p in r.get_json()["parts"] if p["kind"] == "income")
+        assert part["income_kind"] == kind
+
+    @pytest.mark.parametrize("kind", ["interest", "government", "tax_refund", "other"])
+    def test_the_shared_page_saves_each_kind(self, client, kind):
+        i = add(client, tx("NORTHWIND LTD", -85.0, when=day(1), merchant="Northwind Ltd"))
+        tid = i["NORTHWIND LTD"]
+        r = client.post(f"/api/transactions/{tid}/mark", json={"case": "pay", "income_kind": kind})
+        assert r.status_code == 200, r.get_json()
+        d = detail(client, tid)
+        assert d["category"] == "Income" and d["income_type"] == kind
+
+
+class TestCashExtra:
+    """SPLIT-19, S-11c: what the extra from cash or another app is. Sam
+    owes $42.06 on Loblaws and pays $60.00 cash: the $17.94 is said in
+    pieces, every record shares the payment's origin, and Undo takes it all."""
+
+    def setup(self, c, **pay):
+        i = add(c, tx("LOBLAWS", 84.12, "Groceries", when=day(6)),
+                tx("PIZZA NOVA", 30.0, "Dining", when=day(7)),
+                tx("DEPOSIT", -60.0, when=day(0), merchant="Deposit at branch"))
+        split(c, i["LOBLAWS"], mode="even", people=[{"name": "Sam"}])
+        split(c, i["PIZZA NOVA"], mode="amount", people=[{"name": "Sam", "amount": 10.0},
+                                                         {"name": "Priya", "amount": 10.0}])
+        return i
+
+    def pay(self, c, i, extra, **more):
+        return c.post(f"/api/transactions/{i['LOBLAWS']}/split/cash",
+                      json={"name": "Sam", "amount": 60, "day": day(4), "extra": extra, **more})
+
+    def test_the_extra_has_to_add_up(self, client):
+        i = self.setup(client)
+        r = self.pay(client, i, [{"kind": "gift", "amount": 10}])
+        assert r.status_code == 400 and r.get_json()["error"] == "$7.94 of the extra isn’t said yet."
+        r = self.pay(client, i, [{"kind": "gift", "amount": 20}])
+        assert r.status_code == 400 and r.get_json()["error"] == "That’s $2.06 more than the extra."
+        assert client.st.split_cash() == []
+
+    def test_only_when_they_paid_more(self, client):
+        i = self.setup(client)
+        r = client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash",
+                        json={"name": "Sam", "amount": 42.06, "extra": [{"kind": "gift", "amount": 1}]})
+        assert r.status_code == 400 and r.get_json()["error"] == "Sam didn’t pay more than they owe."
+
+    def test_overpaid_stays_under_you_owe(self, client):
+        i = self.setup(client)
+        assert self.pay(client, i, [{"kind": "overpaid", "amount": 17.94}]).status_code == 201
+        sam = people(client, i["LOBLAWS"])["Sam"]
+        assert (sam["paid"], sam["owes"], sam["over"]) == (60.0, 0.0, 17.94)
+
+    def test_paying_me_back_pays_other_shares(self, client):
+        i = self.setup(client)
+        r = self.pay(client, i, [{"kind": "payback", "amount": 10, "charge": i["PIZZA NOVA"]},
+                                 {"kind": "payback", "amount": 7.94, "charge": i["PIZZA NOVA"],
+                                  "person": "Priya"}])
+        assert r.status_code == 201, r.get_json()
+        assert people(client, i["LOBLAWS"])["Sam"]["paid"] == 42.06
+        pizza = people(client, i["PIZZA NOVA"])
+        assert (pizza["Sam"]["owes"], pizza["Priya"]["owes"]) == (0.0, 2.06)
+        root = r.get_json()["id"]
+        assert {c.get("origin") or c["id"] for c in client.st.split_cash()} == {root}
+
+    def test_a_payback_cant_be_more_than_the_share(self, client):
+        i = self.setup(client)
+        r = self.pay(client, i, [{"kind": "payback", "amount": 17.94, "charge": i["PIZZA NOVA"]}])
+        assert r.status_code == 400 and r.get_json()["error"] == "That’s more than Sam owes on PIZZA NOVA."
+
+    def test_a_gift_is_money_in_once_and_not_a_bank_row(self, client):
+        from finance.analytics import monthly_totals
+        i = self.setup(client)
+        before = next(m for m in monthly_totals(client.st.all_transactions()) if m["month"] == MONTH)["income"]
+        r = self.pay(client, i, [{"kind": "gift", "amount": 17.94}])
+        assert r.status_code == 201, r.get_json()
+        after = next(m for m in monthly_totals(client.st.all_transactions()) if m["month"] == MONTH)["income"]
+        assert round(after - before, 2) == 17.94
+        listed = client.get("/api/transactions").get_json()["transactions"]
+        assert not any(t["description"].startswith("A gift · Sam") for t in listed)
+        assert people(client, i["LOBLAWS"])["Sam"]["paid"] == 42.06
+
+    def test_gave_it_back_keeps_what_was_owed(self, client):
+        i = self.setup(client)
+        assert self.pay(client, i, [{"kind": "returned", "amount": 17.94}]).status_code == 201
+        sam = people(client, i["LOBLAWS"])["Sam"]
+        assert (sam["paid"], sam["owes"], sam.get("over", 0.0)) == (42.06, 0.0, 0.0)
+        pay = sam["payments"][0]
+        assert (pay["amount"], pay["whole"], pay["given_back"]) == (42.06, 60.0, 17.94)
+        # A later deposit is offered only what she kept.
+        cash = client.get(f"/api/transactions/{i['DEPOSIT']}/cash-matches").get_json()["cash"]
+        assert [c["amount"] for c in cash] == [42.06]
+
+    def test_a_later_deposit_takes_every_piece_and_the_gift_counts_once(self, client):
+        from finance.analytics import monthly_totals
+        i = self.setup(client)
+        before = next(m for m in monthly_totals(client.st.all_transactions()) if m["month"] == MONTH)["income"]
+        self.pay(client, i, [{"kind": "gift", "amount": 10}, {"kind": "overpaid", "amount": 7.94}])
+        cash = client.get(f"/api/transactions/{i['DEPOSIT']}/cash-matches").get_json()["cash"]
+        assert [(c["name"], c["amount"], len(c["ids"])) for c in cash] == [("Sam", 60.0, 2)]
+        r = client.post(f"/api/transactions/{i['DEPOSIT']}/parts",
+                        json={"parts": [{"kind": "cash", "amount": 60, "cash_ids": cash[0]["ids"]}]})
+        assert r.status_code == 200, r.get_json()
+        after = next(m for m in monthly_totals(client.st.all_transactions()) if m["month"] == MONTH)["income"]
+        assert round(after - before, 2) == 10.0, "the deposit is moving money; the gift counted once"
+        assert all(c["deposit_id"] for c in client.st.split_cash())
+
+    def test_undo_removes_the_whole_payment(self, client):
+        i = self.setup(client)
+        r = self.pay(client, i, [{"kind": "gift", "amount": 5},
+                                 {"kind": "payback", "amount": 10, "charge": i["PIZZA NOVA"]},
+                                 {"kind": "returned", "amount": 2.94}])
+        assert r.status_code == 201, r.get_json()
+        assert r.get_json()["undo"]["cash_payment"] == r.get_json()["id"]
+        assert client.post("/api/transactions/undo", json=r.get_json()["undo"]).status_code == 200
+        assert client.st.split_cash() == []
+        assert not any(t.source == "split_gift" for t in client.st.all_transactions())
+        assert people(client, i["PIZZA NOVA"])["Sam"]["owes"] == 10.0
+        assert people(client, i["LOBLAWS"])["Sam"]["owes"] == 42.06
+
+    def test_another_app_extra_is_never_offered_to_a_deposit(self, client):
+        i = self.setup(client)
+        r = self.pay(client, i, [{"kind": "gift", "amount": 17.94}], via="app", app="PayPal")
+        assert r.status_code == 201
+        assert client.get(f"/api/transactions/{i['DEPOSIT']}/cash-matches").get_json()["cash"] == []
+
+    def test_without_extra_it_is_recorded_whole_as_before(self, client):
+        i = self.setup(client)
+        r = client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash", json={"name": "Sam", "amount": 60})
+        assert r.status_code == 201
+        assert people(client, i["LOBLAWS"])["Sam"]["over"] == 17.94

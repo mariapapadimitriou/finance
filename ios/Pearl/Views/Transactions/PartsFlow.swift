@@ -74,11 +74,14 @@ struct PartsSheet: View {
     @State private var partAmount = ""
     /// S-11 v2 Off a category: the category list, for this amount.
     @State private var pickingCategory: Double?
+    /// S-11k: the amount Other income took on S-11 v2, waiting for its kind.
+    @State private var otherAmount: Double?
     @State private var busy = false
     @State private var error: String?
 
     /// `work`: Work paying me back, the expense it pays (T-09, as on the shared page).
-    enum Step { case loading, cash, owing, progress, kind, refund, work, review }
+    /// `otherKind`: S-11k (SPLIT-18), which kind Other income is.
+    enum Step { case loading, cash, owing, progress, kind, otherKind, refund, work, review }
 
     struct Part: Identifiable, Hashable {
         let id = UUID()
@@ -223,6 +226,8 @@ struct PartsSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             SheetTitle(title: title) {
+                // S-11k: Close goes back to S-11 v2 with nothing added.
+                if step == .otherKind { otherAmount = nil; step = .kind; return }
                 // S-24x: a held split would be dropped, so ask first.
                 if heldSplit != nil { leaving = true } else { dismiss() }
             }
@@ -299,6 +304,7 @@ struct PartsSheet: View {
             if !editing.isEmpty { return "Edit the \(Format.whole(deposit.amount))" }
             if extra { return "\(who) sent extra" }
             return deposit.rest ? "The other \(Format.amount(deposit.amount))" : "Sort the \(Format.amount(deposit.amount))"
+        case .otherKind: return "What kind of income?"
         case .kind:
             if parts.isEmpty { return "What was the \(Format.amount(left))?" }
             return extra ? "What’s the extra \(Format.amount(left))?" : "What’s the other \(Format.amount(left))?"
@@ -314,6 +320,7 @@ struct PartsSheet: View {
         case .owing, .refund, .work: owingList
         case .progress: progressView
         case .kind: kindList
+        case .otherKind: otherKindList
         case .review: reviewList
         }
     }
@@ -648,6 +655,35 @@ struct PartsSheet: View {
         }
     }
 
+    /// S-11k (SPLIT-18): "Other income · $172.00", then the four kinds; a
+    /// tile adds the part at once and the flow goes on as S-11 v2 does.
+    private var otherKindList: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Other income").font(Nacre.body).foregroundColor(Pearl.ink)
+                Spacer(minLength: 8)
+                Text(Format.amount(otherAmount ?? 0)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+            }
+            .padding(.horizontal, 4)
+            .accessibilityElement(children: .combine)
+            label("Which kind?").accessibilityAddTraits(.isHeader)
+            CaseGrid(cases: CaseTile.otherIncome, chosen: Binding(get: { nil }, set: { key in
+                guard let key = key, let amount = otherAmount else { return }
+                otherAmount = nil
+                add(Part(kind: "income", amount: amount, incomeKind: key))
+            }), role: "income kind")
+            Text("Tap one and it’s saved as that kind. Back goes to “\(otherBack)”.")
+                .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// The S-11 v2 page Close goes back to.
+    private var otherBack: String {
+        if parts.isEmpty { return "What was the \(Format.amount(left))?" }
+        return extra ? "What’s the extra \(Format.amount(left))?" : "What’s the other \(Format.amount(left))?"
+    }
+
     /// A tile answers at once.
     private var tile: Binding<String?> {
         Binding(get: { nil }, set: { key in if let key = key { take(key) } })
@@ -718,8 +754,8 @@ struct PartsSheet: View {
 
     @ViewBuilder private var buttons: some View {
         switch step {
-        case .loading, .kind:
-            // S-11 v2: the tiles answer at once; no Review or Add part.
+        case .loading, .kind, .otherKind:
+            // S-11 v2 / S-11k: the tiles answer at once; no Review or Add part.
             EmptyView()
         case .cash:
             pair("Next", disabled: cashPicked.isEmpty, { takeCash() }, "None of these") { afterCash() }
@@ -826,9 +862,10 @@ struct PartsSheet: View {
         case "regular": add(Part(kind: "income", amount: amount, incomeKind: "salary"))
         case "bonus": add(Part(kind: "income", amount: amount, incomeKind: "bonus"))
         case "gifts": add(Part(kind: "gift", amount: amount))
-        // SPLIT-18: Other income's "which kind?" has no frame yet, so it is
-        // Other income, as the shared page saves it.
-        case "other": add(Part(kind: "income", amount: amount, incomeKind: "other"))
+        // S-11k (SPLIT-18): Other income asks which kind first.
+        case "other":
+            otherAmount = amount
+            step = .otherKind
         case "paid_back":
             if !editing.isEmpty {
                 // S-10e: the purchases it already pays back stay listed, ticked.

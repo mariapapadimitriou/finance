@@ -77,7 +77,7 @@ struct AnswerSheet: View {
     }
 
     enum Step: Hashable {
-        case guess, out, into, accounts, charges, kinds, cadence, joint, sender, recurring, payback, category
+        case guess, out, into, accounts, charges, kinds, otherKinds, cadence, joint, sender, recurring, payback, category
     }
 
     enum Then { case category, spending, recurring }
@@ -462,6 +462,8 @@ struct AnswerSheet: View {
         guard let key = intoChoice else { return }
         if incomeSide {
             if key == "regular" { go(.cadence); return }
+            // T-08k (SPLIT-18): Other income asks which kind, not saves "other".
+            if key == "other" { go(.otherKinds); return }
             if ask.kind == .incomeType {
                 onAnswer(.incomeType(t.id, kind: key))
             } else {
@@ -508,6 +510,8 @@ struct AnswerSheet: View {
                     }
                     if step == .kinds {
                         kindTiles
+                    } else if step == .otherKinds {
+                        otherKindTiles
                     } else {
                         if step == .charges && !options.isEmpty {
                             Text("LIKELY").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
@@ -553,7 +557,7 @@ struct AnswerSheet: View {
                 Button("Skip") { onAnswer(.skip(ask.item.key, true)) }
                     .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
             }
-            if step != .kinds && step != .payback {
+            if step != .kinds && step != .otherKinds && step != .payback {
                 Button(primaryLabel) { primary() }
                     .buttonStyle(NacreButtonStyle())
                     .disabled(!ready)
@@ -646,6 +650,35 @@ struct AnswerSheet: View {
         }
     }
 
+    /// T-08k (SPLIT-18): "What kind of income?" after Other income: the
+    /// other four of finance/income.py's kinds. A tile saves at once, with
+    /// the page's Always as it was (not asked again).
+    private var otherKindTiles: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("WHICH KIND?").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+                .padding(.horizontal, 16).accessibilityAddTraits(.isHeader)
+            CaseGrid(cases: CaseTile.otherIncome, chosen: Binding(get: { nil }, set: { key in
+                guard let key = key else { return }
+                choice = key
+                saveIncome(key)
+            }), role: "income kind")
+            if learnable {
+                Text("Always for \(who) was set on the page before, so it isn’t asked again here.")
+                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// An income kind, saved as T-08 saves it.
+    private func saveIncome(_ kind: String) {
+        if ask.kind == .incomeType {
+            onAnswer(.incomeType(t.id, kind: kind))
+        } else {
+            onAnswer(.mark(t.id, ["case": "pay", "income_kind": kind]))
+        }
+    }
+
     /// The app's income kinds (Income and bills), plus "My regular pay".
     private static let kinds: [(key: String, name: String, symbol: String)] = [
         ("regular", "My pay", "briefcase"), ("bonus", "Bonus", "sparkle"),
@@ -664,7 +697,7 @@ struct AnswerSheet: View {
         case .out, .into: return "What was this?"
         case .accounts: return "Where did it go?"
         case .charges: return "What did this pay back?"
-        case .kinds: return "What kind of income?"
+        case .kinds, .otherKinds: return "What kind of income?"
         case .cadence: return "How often is this pay?"
         case .joint: return "Whose pay is this?"
         case .sender: return "Who sent this?"
@@ -744,7 +777,7 @@ struct AnswerSheet: View {
                            detail: c.map { "\(Format.amount($0.amount)) on \($0.accountName ?? "your card")" }),
                     Option(id: "other", label: "Yes, for something else", detail: "Pick the purchase"),
                     Option(id: "no", label: "No, it isn’t a payback", detail: "Then we’ll ask if it’s income")]
-        case .kinds, .guess, .category:
+        case .kinds, .otherKinds, .guess, .category:
             return []
         }
     }
@@ -809,11 +842,11 @@ struct AnswerSheet: View {
             }
         case .kinds:
             if choice == "regular" { go(.cadence); return }
-            if ask.kind == .incomeType {
-                onAnswer(.incomeType(t.id, kind: choice))
-            } else {
-                onAnswer(.mark(t.id, ["case": "pay", "income_kind": choice]))
-            }
+            // T-08k (SPLIT-18): Other income asks which kind.
+            if choice == "other" { go(.otherKinds); return }
+            saveIncome(choice)
+        case .otherKinds:
+            saveIncome(choice)
         case .cadence:
             // Her answer is the schedule in Income and bills, not Pearl's guess.
             if choice == "once" {
