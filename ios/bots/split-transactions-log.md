@@ -612,6 +612,13 @@ Branch `feat/split-bot-round` (PR #315, open, not merged).
 - **Commit:** 22bf661, "Splits round 7: save short only with you, S-11 v2 tiles for parts, held split on the Quick sort card". 11 files; `git show --stat` checked. Pushed to `feat/split-bot-round`; PR #315's body updated.
 - **Jira:** THL-291's two approved AC lines were reworded (Split methods: the (b′) rule; parts: "income (any income kind)"). Nothing else in the description changed. I commented on THL-291 and THL-278. No ticket was moved; both stay in Testing.
 
+### [designBOT → engBOT] 2026-11-09 21:40 · Dark twins · Notes 1 and 2
+**Status:** Redesigned
+**Jira:** THL-291, THL-181   **Figma:** 1008:41110, 1008:41398 (green); tags 1007:38830, 1007:39513, 1008:40303; layers 1007:38770, 1007:38769, 1007:39453, 1007:39452, 1008:40267, 1008:40266
+- **Positive green:** the last two hand-set greens (S-11 v2 Dark "$600.00 · Nov 9", S-22 v2 Dark "+$600.00") are now bound to color/text/money-in. All 13 green fills across the 23 twins use the token; none are hand-set. The round-5 "hand-set positive green rgb(0.47, 0.85, 0.62)" value no longer applies. Keep the token. One thing to check: in the Figma library, money-in dark resolves to #6EDB94, not the #56D48F in code. The frames follow the token either way, but the library and Swift values should match. Needs product owner to say which is right.
+- **Alerts and action sheets:** S-03f Dark, S-24x Dark (alert) and S-04 v2 Dark (action sheet) are now tagged "iOS system alert/action sheet — drawn by iOS, colours indicative", with ".alert" or ".confirmationDialog" and "don't set custom colours". Their layers are renamed to match. The round-5 panel colour rgb(0.16, 0.17, 0.36) at 97% and the 55% scrim are only an illustration, not values to build. Use the system dark material, as you did.
+- **The other 19 dark twins:** I opened each one. I found no unflipped light colours, no unreadable text and no leftover nacre band. S-12d's neutral incoming amounts match the light frame (those rows aren't sorted yet). There's nothing to change in code.
+
 ## Summary
 
 The final state after seven rounds (2026-11-09). The product owner decided SPLIT-01, SPLIT-05 and SPLIT-06 in round 7.
@@ -667,10 +674,11 @@ The final state after seven rounds (2026-11-09). The product owner decided SPLIT
 **For the product owner:**
 - **THL-291's AC example still says the old rule.** "$85 split as You $30 / Priya $30 / Sam $20 blocks Save with "$5.00 left to assign"" no longer holds under (b′): with You in the split, it saves and You get $35.00. Only the two approved lines were reworded. This AC line needs the same change, for example "with "I had some too" off, Priya $30 / Sam $20 blocks Save…".
 
-### Notes left with designBOT (not blocking)
-- **Dark alerts and action sheets** (S-03f, S-04 v2 twins): the hand-set panel colour and the 55% scrim can't be applied to iOS system alerts. The suggestion is to mark the twins "system alert".
-- **Positive green:** the hand-set #78D99E on the dark twins should be bound to the money-in token, #56D48F, which the app uses.
-- **Dark twins:** only 4 of the 23 were opened. designBOT is still on them this round.
+### Dark twins (done in round 7 by designBOT)
+- **Dark alerts and action sheets:** S-03f, S-24x and S-04 v2 twins are tagged "iOS system alert/action sheet — drawn by iOS, colours indicative". Build with `.alert` / `.confirmationDialog`, no custom colours.
+- **Positive green:** every green on the 23 twins is now bound to `color/text/money-in`.
+- **All 23 twins opened:** nothing else wrong.
+- **For the product owner:** the Figma library's `money-in` dark is #6EDB94, the app's is #56D48F. Pick one so they match.
 
 ### How the bots communicated
 | Round | Who | What was sent |
@@ -681,6 +689,6 @@ The final state after seven rounds (2026-11-09). The product owner decided SPLIT
 | 4 | engBOT | Built the accepted work (e0da5fa iOS, 572b6b6 server) and opened PR #315. Commented on six Jira tickets. Noted two server side effects. |
 | 5 | designBOT → engBOT | SPLIT-14 redesign (S-06 v3 / v3a), the S-12c card, 23 dark twins with the hand-set values, and SPLIT-15/16 for the two side effects (behaviour and copy). |
 | 6 | engBOT → designBOT | Accepted SPLIT-14, the S-12c card, SPLIT-15 and SPLIT-16 (one copy change), and the dark twins with two notes. Built SPLIT-14/15/16 and the dark segment (f067b04), updated PR #315, and commented on THL-291/181/289. |
-| 7 | product owner, then engBOT | The product owner took designBOT's recommendations on SPLIT-01/05/06. engBOT checked the frames by node, built SPLIT-01, 04, 05, 06 and 12, and logged SPLIT-17, 18 and 19. THL-291's two AC lines were reworded, and THL-291 and THL-278 were commented on. |
+| 7 | product owner, then engBOT and designBOT | The product owner took designBOT's recommendations on SPLIT-01/05/06. engBOT checked the frames by node, built SPLIT-01, 04, 05, 06 and 12, and logged SPLIT-17, 18 and 19. THL-291's two AC lines were reworded, and THL-291 and THL-278 were commented on. designBOT bound every dark-twin green to the money-in token, tagged the system alerts and opened all 23 twins. |
 
 Throughout, no ticket was moved past Testing, nothing was merged, and Figma was edited only by designBOT.
