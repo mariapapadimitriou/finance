@@ -641,6 +641,8 @@ struct TransactionDetailView: View {
 
     /// Whether the Always switch shows: a rule could match this merchant.
     private var offersNewOnes: Bool {
+        // Income has its own Always, for the kind of income (2026-11-08): one switch, not two.
+        if isIncome && t.incomeRule?.payer != nil { return false }
         if let guessing = guessing { return guessing.ask.canSaveRule(guessing.accounts) }
         // Already sorted: only for spending, where a rule means something.
         return canRule && (guessName != nil || (!t.inflow && t.transfer == nil && t.excluded.isEmpty))
