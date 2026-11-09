@@ -430,6 +430,11 @@ def transaction_detail(txn_id: str):
             if charge is not None:
                 r["repays_charge"] = dict(_txn_brief(charge),
                                           person=payer.get(txn_id))
+                # A split purchase shows its split (2026-11-08): whose share
+                # this paid, beside everyone else's, not the whole charge.
+                split = splits.get(charge.fingerprint)
+                if split and charge.amount > 0:
+                    r["repays_charge"]["split"] = _splitting(charge, split, txns, payer)
         elif t.amount < 0 and not t.excluded:
             options, by_name = sp.for_inflow(t, txns, splits, payer)
             r["repayment"] = {"suggestion": sp.suggest(t, txns, splits, payer),

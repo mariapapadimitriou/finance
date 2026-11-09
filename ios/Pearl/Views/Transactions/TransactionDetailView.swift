@@ -811,9 +811,32 @@ struct TransactionDetailView: View {
         }
         if let charge = t.repaysCharge {
             section("Pays back")
-            SolidCard {
-                linkedRow(name: charge.merchant ?? charge.name, sub: Format.short(charge.date),
-                          amount: abs(charge.amount), inflow: false)
+            if let split = charge.split {
+                // The split, not the whole purchase (2026-11-08): who it paid
+                // for first, then everyone else's part.
+                let who = charge.person
+                let people = split.people.sorted { a, _ in a.name == who }
+                SolidCard {
+                    linkedRow(name: charge.merchant ?? charge.name,
+                              sub: "\(Format.short(charge.date)) · split \(split.people.count + (split.you >= 0.005 ? 1 : 0)) ways",
+                              amount: abs(charge.amount), inflow: false)
+                    ForEach(people) { p in
+                        RowSeparator(inset: 64)
+                        linkedRow(name: p.name,
+                                  sub: p.owes >= 0.005 ? "Owes \(Format.amount(p.owes))"
+                                      : p.letGo != nil ? "Let go" : "Paid back",
+                                  amount: p.amount, inflow: false)
+                    }
+                    if split.you >= 0.005 {
+                        RowSeparator(inset: 64)
+                        linkedRow(name: "You", sub: "Your share", amount: split.you, inflow: false)
+                    }
+                }
+            } else {
+                SolidCard {
+                    linkedRow(name: charge.merchant ?? charge.name, sub: Format.short(charge.date),
+                              amount: abs(charge.amount), inflow: false)
+                }
             }
             // S-33: the money that paid it back can be unlinked (S-34).
             section("Options")
