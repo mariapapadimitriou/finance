@@ -468,7 +468,11 @@ struct AnswerSheet: View {
             return
         }
         switch key {
-        case "paid_back", "refund":                    // T-09: what it paid back
+        case "paid_back":
+            // Who paid you back? (2026-11-09): every share she split with
+            // someone, tick as many as it paid back, not one purchase searched for.
+            parting = true
+        case "refund":                                 // T-09: what it paid back
             chargeCase = nil
             go(.charges)
         case "reimbursement":
