@@ -1105,6 +1105,11 @@ Branch `feat/split-bot-round` (PR #315, open, not merged). Commit 68579a1.
 - **Commit:** 68579a1, 11 files; `git show --stat` checked. Pushed, and PR #315's body updated.
 - **Jira:** commented on THL-301 and moved it to Testing. THL-181 wasn't commented on, because one edge (below) means its "credited to someone" isn't met on every path yet.
 
+### [product owner] 2026-11-09 · THL-301 notes decided, bot loop stopped
+- **Named sender not on one of the purchases:** made a low-priority ticket, THL-302 (Bug, To Do). No bot round now.
+- **Split plus unsplit purchase, S-35c over the share in the mixed case, web refusals on a partly-extra payback:** accepted as they are.
+- **Bot loop:** stopped here. Next: test PR #315 by hand on a device, then merge.
+
 ## Summary
 
 This is the final state after sixteen rounds plus the THL-301 follow-up (2026-11-09 to 11-10); the bot loop has ended. Every issue, SPLIT-01 to SPLIT-24, is decided and built. Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
@@ -1174,18 +1179,14 @@ This is the final state after sixteen rounds plus the THL-301 follow-up (2026-11
 
 ### Still open
 
-**For the product owner (notes, no new design loop):**
-- **A named sender who isn't on one of the purchases, while someone there still owes.** Example: an unnamed $60.00 linked to Loblaws (Sam still owes $30.00) and Pizza Nova (Jo and Kim each owe $30.00). S-35c lists both purchases. If she ticks Jo, Loblaws' $30.00 counts for no one and isn't asked about. Pearl doesn't ask "What was this?" because someone there still owes, and it doesn't ask "Who sent this?" because the payment already has its one sender. This is the one edge left where THL-181's "credited to someone" isn't met for paybacks from 2026-11-10, so THL-181 wasn't commented on as met.
-- **A payback over a split purchase and one that isn't split:** neither `credit:<id>` nor `extra:<id>` asks about it (as before). The unsplit purchase just counts it as paid back.
-- **Over the share on S-35c in the mixed case:** S-35c credits and closes (SPLIT-24), so if Jo owed less than Pizza Nova's part, the difference shows as Jo's overpaid on Pizza Nova's card rather than on "What's the other $x?".
-- **Web answers to a partly-extra payback:** Cash, joint and Not mine are refused there with "Only $30.00 of this is extra, so it can’t be that. Pick what the extra was." The other answers save only the extra.
-
 **Decided by the product owner (2026-11-09):**
 - **Before merging:** test it by hand on a device (see above).
 - **Two purchases, extra on only one:** made a ticket, THL-301, drawn as SPLIT-24 and built. THL-301 is in Testing.
+- **Named sender not on one of the purchases** (an unnamed $60.00 over Loblaws, where Sam owes, and Pizza Nova; she ticks Jo; Loblaws' $30.00 counts for no one): made a low-priority ticket, [THL-302](https://thalloapp.atlassian.net/browse/THL-302), To Do. No bot round.
+- **Also accepted as they are:** a payback over a split and an unsplit purchase isn't asked about; in the mixed case, over the share on S-35c shows as overpaid on that purchase's card; the web refuses Cash, joint and Not mine for a partly-extra payback.
 - **Accepted as they are:** paybacks before 2026-11-10 keep the old guess; S-11x's overpaid tile names the one person who paid back and is hidden when there are several (S-11xm follows the same rule, naming the one credited sender, "Jo overpaid"); an S-11x answer is stored as one part; less than the whole on S-11x carries on as S-11 v2 does.
 
-**THL-181:** "Every repayment linked to a split is credited to someone on the split card. If Pearl can't tell who, it asks." This is met on every linking path (the sheet, search, the web's Paid back, the API) for paybacks dated from 2026-11-10, including the mixed two-purchase case (THL-301). The one exception is the named-sender edge above. Paybacks dated before then keep the old guess. THL-181 stays in Testing.
+**THL-181:** "Every repayment linked to a split is credited to someone on the split card. If Pearl can't tell who, it asks." This is met on every linking path (the sheet, search, the web's Paid back, the API) for paybacks dated from 2026-11-10, including the mixed two-purchase case (THL-301). The one exception is the named-sender edge (THL-302). Paybacks dated before then keep the old guess. THL-181 stays in Testing.
 
 **Web tokens:** money-in follows Figma: light #167a40 (round 12) and dark #6edb94 (round 11). Both were edited by hand, because the repo has no token generator.
 
