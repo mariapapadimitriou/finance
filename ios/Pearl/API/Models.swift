@@ -604,9 +604,11 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let person: String?
         /// The part of it that paid this back, when that's less than all.
         let paid: Double?
+        /// The purchase's split, when it was split (2026-11-08).
+        var split: Splitting? = nil
 
         enum CodingKeys: String, CodingKey {
-            case id, date, merchant, description, amount, person, paid
+            case id, date, merchant, description, amount, person, paid, split
             case accountName = "account_name"
         }
 

@@ -261,3 +261,24 @@ class TestFindingPayments:
             {"kind": "payback", "amount": owes, "charge": i["COSTCO"], "person": "Dad"}], "later": True})
         assert r.status_code == 200, r.get_json()
         assert detail(client, i["COSTCO"])["splitting"]["people"][0]["owes"] == 0
+
+
+class TestPaybackShowsTheSplit:
+    def test_the_payback_page_shows_whose_share_it_paid(self, client):
+        """2026-11-08: money paying back a split purchase shows the split,
+        each person's part, not just the whole charge."""
+        i = add(client, tx("SUSHI", 90.0, "Dining"), tx("E-TRANSFER FROM SAM", -30.0, when=day(1)))
+        split(client, i["SUSHI"], mode="even", people=[{"name": "Sam"}, {"name": "Priya"}])
+        r = client.post(f"/api/transactions/{i['SUSHI']}/paybacks/{i['E-TRANSFER FROM SAM']}", json={"person": "Sam"})
+        assert r.status_code == 200, r.get_json()
+        charge = detail(client, i["E-TRANSFER FROM SAM"])["repays_charge"]
+        assert charge["amount"] == 90.0 and charge["person"] == "Sam"
+        people = {p["name"]: p for p in charge["split"]["people"]}
+        assert people["Sam"]["amount"] == 30.0 and people["Sam"]["owes"] == 0
+        assert people["Priya"]["owes"] == 30.0 and charge["split"]["you"] == 30.0
+
+    def test_an_unsplit_purchase_has_no_split(self, client):
+        i = add(client, tx("FLIGHT", 400.0, "Travel"), tx("E-TRANSFER FROM DAD", -400.0, when=day(1)))
+        r = client.post(f"/api/transactions/{i['FLIGHT']}/paybacks/{i['E-TRANSFER FROM DAD']}", json={})
+        assert r.status_code == 200, r.get_json()
+        assert "split" not in detail(client, i["E-TRANSFER FROM DAD"])["repays_charge"]
