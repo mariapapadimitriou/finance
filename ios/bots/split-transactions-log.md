@@ -1041,6 +1041,13 @@ Branch `feat/split-bot-round` (PR #315, open, not merged). Commit 34af59b.
 - **Commit:** 34af59b, 10 files; `git show --stat` checked. Pushed, and PR #315's body updated.
 - **Jira:** commented on THL-181 (whether its AC is now met on every path). Nothing was moved; it stays in Testing.
 
+### [product owner] 2026-11-09 · Round 16 notes decided
+- **Two purchases, extra on one:** made a ticket, THL-301 (Bug, To Do). It's the one place THL-181's "credited to someone" isn't met yet.
+- **Paybacks dated before 2026-11-10:** accepted. They keep the old guess on purpose, so past numbers don't change.
+- **S-11x overpaid tile:** accepted as built. It names the one person who paid back ("Sam overpaid") and is hidden when more than one did.
+- **S-11x answer stored as one part:** accepted as built.
+- **Less than the whole on S-11x:** accepted. It carries on as S-11 v2 does.
+
 ## Summary
 
 This is the final state after sixteen rounds (2026-11-09 to 11-10); the bot loop has ended. Every issue, SPLIT-01 to SPLIT-23, is decided and built. Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
@@ -1109,15 +1116,12 @@ This is the final state after sixteen rounds (2026-11-09 to 11-10); the bot loop
 
 **For designBOT and engBOT:** nothing. The loop is closed.
 
-**Notes for the product owner.** These gaps turned up in round 16. None of them is a new design loop; decide whether any is worth a ticket.
+**Decided by the product owner (2026-11-09):**
 - **Before merging:** test it by hand on a device (see above).
-- **A payback over two purchases, extra on only one.** Example: an unnamed $60.00 is linked to Loblaws, where nobody owes, and to Pizza Nova, where Jo still owes. Pizza Nova's part is credited to Jo or asked about on S-35c, as before. Loblaws' $30.00 is credited to no one, and no S-21x row is shown, because S-21x only asks when the payback is extra on every purchase it pays back. THL-181's "credited to someone" isn't met for that part.
-- **Paybacks dated before 2026-11-10 (ASK_FROM).** They keep the old guess (round 12). One linked where nobody owes is credited to no one and isn't asked about, as before.
-- **S-11x's overpaid tile.** The frame draws "Dad overpaid", carried over from S-11 v2. The app names the one person who paid back ("Sam overpaid"). With two or more, Pearl can't say who, so the tile isn't offered. Confirm, or say who it should name.
-- **An S-11x answer stores the deposit as one part.** It saves through the parts request, the route designBOT named for Undo. So a gift answered there shows as PARTS ("Gift") on the deposit's page, not as a plain answer. The web's What was this? answers the same row as a plain answer (`/mark`).
-- **Less than the whole on S-11x.** Typing a smaller amount continues as S-11 v2 does ("What's the other $x?", then save). It isn't drawn for S-11x.
+- **Two purchases, extra on only one:** made a ticket, [THL-301](https://thalloapp.atlassian.net/browse/THL-301). Loblaws' extra $30.00 on an unnamed $60.00 also linked to Pizza Nova is credited to no one and not asked about.
+- **Accepted as they are:** paybacks before 2026-11-10 keep the old guess; S-11x's overpaid tile names the one person who paid back and is hidden when there are several; an S-11x answer is stored as one part; less than the whole on S-11x carries on as S-11 v2 does.
 
-**THL-181:** "Every repayment linked to a split is credited to someone on the split card. If Pearl can't tell who, it asks." This is met on every linking path (the sheet, search, the web's Paid back, the API) for paybacks dated from 2026-11-10, except the mixed two-purchase case above. Paybacks dated before then keep the old guess. THL-181 stays in Testing.
+**THL-181:** "Every repayment linked to a split is credited to someone on the split card. If Pearl can't tell who, it asks." This is met on every linking path (the sheet, search, the web's Paid back, the API) for paybacks dated from 2026-11-10, except the mixed two-purchase case above (THL-301). Paybacks dated before then keep the old guess. THL-181 stays in Testing.
 
 **Web tokens:** money-in follows Figma: light #167a40 (round 12) and dark #6edb94 (round 11). Both were edited by hand, because the repo has no token generator.
 
