@@ -964,9 +964,88 @@ Branch `feat/split-bot-round` (PR #315, open, not merged). Commit 1ca13a6.
 - **Commit:** 1ca13a6, 15 files; `git show --stat` checked. Pushed, and PR #315's body updated.
 - **Jira:** commented on THL-181. Nothing was moved; it stays in Testing.
 
+### [product owner] 2026-11-09 · SPLIT-23 (1): nobody left owing → "What's the other $x?"
+An unnamed payback linked to a purchase where nobody still owes isn't left uncredited. It goes to "What's the other $x?" (S-11 v2 995:37232) as extra money, like any other leftover, and Pearl asks there.
+
+### [product owner] 2026-11-09 · SPLIT-23 (2): one sender per payment
+One sender per payment stays. One transfer comes from one person, so picking someone else replaces the tick.
+
+### [product owner] 2026-11-09 · SPLIT-23 (3): no entry on the deposit's own page
+There's no "Who sent this?" entry on the linked deposit's own page; S-05u and S-21u are enough. Remove that entry point from the S-35c note 1034:42639.
+
+### [designBOT] 2026-11-09 · round 15 start
+engBOT isn't running this round, so I'm keeping the log. I read SPLIT-23 and THL-181 (its AC and all six comments, including round 14's "one edge left"). In Figma I opened S-21u 1033:43183, S-11 v2 995:37232, S-35c 1033:42573 and its note 1034:42639 by node. The product owner approved all three answers, so the new frames are tagged "THL-181 · Approved — build".
+
+### [designBOT → engBOT] 2026-11-09 · SPLIT-23 (1) · Nobody left owing: Needs a look asks "What was this?"
+**Status:** Redesigned · THL-181 · Approved — build
+**Jira:** THL-181 ("Every repayment linked to a split is credited to someone on the split card. If Pearl can't tell who, it asks."), THL-291 (S-11 v2), THL-278   **Figma:** S-21x 1037:43551 (dark 1037:44012), S-11x 1037:43724 (dark 1037:44185); tags 1037:44471–1037:44474; notes 1037:44475, 1037:44476
+**Where she meets it: the Needs a look row, not the split card.** Once nobody owes, the question is no longer "who sent this?" about Loblaws. It's "what was this money?" about the deposit, and that's a sorting answer. Sorting answers live on the one What was this? page, which has to be reachable from Transactions, Needs a look and Quick sort. A Needs a look row covers all three: Quick sort walks the same list, and opening the deposit from the row shows its question card (as built). A row on the Loblaws split card would only exist in Transactions, and it would put a question about a different transaction on a purchase that is fully paid back. So the split card shows nothing new and gets no S-05u row.
+- **S-21x, Needs a look › To sort:** one row for that one deposit, "Interac e-Transfer" / "Nov 16 · extra on Loblaws" / +$30.00, with the existing "What was this?" chip. It's S-21u's row with new copy; the row component is unchanged. Answering removes it. Only paybacks dated from ASK_FROM get the row, as with S-05u. VoiceOver: "Interac e-Transfer, November 16, extra on Loblaws, plus 30 dollars. What was this? Button."
+- **S-11x, the chip's page:** this is S-11 v2 (the shared tiles), opened for the whole payback. The title is "The $30.00", because there is no "other": the whole amount is extra. "How much of it?" reads $30.00. Under it, in S-35c's "Why Pearl asks" style: "Sam and Priya have both paid you back for Loblaws, so this $30.00 is extra. Tap what it was." For one person it reads "Sam has paid you back for Loblaws, so …", and for two purchases "… for Loblaws and Pizza Nova, so …". Every tile answers at once, as on S-11 v2. Paying me back opens S-09 so she can pick another purchase or person; Loblaws isn't listed because nobody owes on it. "Sort the rest later" reads "Sort it later" here and leaves the row in place. The error is T-08k's "Couldn't save that. Try again." under the grid. Close saves nothing.
+- **Quick sort:** it's one card. Yes or Skip can't answer it, so the card opens S-11x as a sheet. The tile she taps is held for the card (for example "A gift?"). Yes saves it with one Undo, and Skip drops it, the same as SPLIT-20 and S-21u.
+- **Server needs:**
+  - List these paybacks (linked, dated from ASK_FROM, no name, and no open share on any purchase they pay back) as Needs a look rows, separate from `credit:<id>` because the question is different.
+  - Saving a tile moves the $30.00 off Loblaws, where it changed nothing, and records the answer in one request. Its Undo links it back as it was (the round-14 `paybacks` marks).
+  - After that, `left_out` is empty for it, so THL-181's "credited to someone" holds on every path: either a person is ticked (S-35c), or the money is no longer a payback.
+
+### [designBOT → engBOT] 2026-11-09 · SPLIT-23 (2) and (3) · S-35c note: one sender, two ways in
+**Status:** Redesigned · THL-181 · Approved — build
+**Jira:** THL-181   **Figma:** note 1034:42639 (rewritten, now 560 wide so it clears the dark twin), tags 1034:42637 and 1034:42638
+- **(2) One sender per payment:** the note now says it. One transfer comes from one person, so ticking someone else replaces the tick instead of adding to it, even across ON LOBLAWS AND PIZZA NOVA. That's unlike S-09, where ticks add up. `WhoSentSheet` already does this, so there's nothing to change.
+- **(3) Ways in:** the note now reads "Opened from S-05u (the split card) or S-21u's chip (Needs a look, and its Quick sort card)". It says the linked deposit's own page has no "Who sent this?" entry, and the "or the deposit in Transactions" clause is gone. Both tags now read "(from the split card or Needs a look)" instead of "(from the split card, Needs a look or Transactions)". Opening the deposit from its Needs a look question still shows S-35c, as built. That's still the S-21u way in, not a separate entry.
+- The note also points the nobody-left-owing case to S-21x › S-11x.
+
+### [engBOT] 2026-11-09 · round 16 start
+This is the last round of the bot loop. designBOT's round-15 entries and its Summary edits above were left uncommitted; I've committed them with mine, unchanged. I checked these by node only (get_screenshot, plus get_metadata on the notes and the first tag): S-21x 1037:43551 (dark 1037:44012), S-11x 1037:43724 (dark 1037:44185), the tags 1037:44471–1037:44474, the notes 1037:44475 and 1037:44476, the S-35c note 1034:42639 and its tags 1034:42637 and 1034:42638.
+
+### [engBOT → designBOT] 2026-11-09 · SPLIT-23 (1) · Accepted (built)
+- **S-21x:** the light and dark frames draw the To sort row "Interac e-Transfer" / "Nov 16 · extra on Loblaws" / +$30.00 with the dashed "What was this?" chip. Note 1037:44475 gives the VoiceOver line and says the Loblaws split card shows nothing new.
+- **S-11x:** titled "The $30.00", "How much of it?" $30.00, then "Sam and Priya have both paid you back for Loblaws, so this $30.00 is extra. Tap what it was." over the S-11 v2 tiles, with Options › "Sort it later". The dark twin matches. Note 1037:44476 covers one person, two purchases, Paying me back → S-09 without Loblaws, T-08k's error, Close and Sort it later.
+- **Tags:** 1037:44471–44474 read "THL-181 · THL-278 · S-21x · Needs a look: a payback with nobody left owing" and "THL-181 · THL-291 · THL-278 · S-11x · The $30.00 (S-11 v2, nobody left owing)", light and dark, each "THL-181 · Approved — build".
+
+Every case has a way in (Needs a look, its Quick sort card, and the deposit's own question card) and a way out (Close or Sort it later saves nothing). The server already supported the save. Built below. One drawing detail is listed under Still open for the product owner: the frame's "Dad overpaid" tile.
+
+### [engBOT → designBOT] 2026-11-09 · SPLIT-23 (2) and (3) · Accepted
+- **Note 1034:42639** now says one sender per payment ("ticking someone else replaces the tick instead of adding to it, even across two purchases (unlike S-09…)"), names only S-05u and S-21u's chip as ways in, says the linked deposit's own page has no "Who sent this?" entry, and sends nobody-left-owing to S-21x › S-11x.
+- **Tags** 1034:42637 and 1034:42638 read "(from the split card or Needs a look)", light and dark.
+- **Code, (2):** `WhoSentSheet.toggle` clears the ticks when she ticks a different person (`if let who = person, who != s.person { picked = [] }`). It matches; no change.
+- **Code, (3):** the deposit's page opens S-35c only from its Needs a look question card (`openQuestion`, the S-21u way in) and from S-05u on the split card. It matches; the only change is a stale comment in `TransactionDetailView.swift` that still said "or from the deposit itself".
+
+### [engBOT] 2026-11-09 · round 16 · build
+Branch `feat/split-bot-round` (PR #315, open, not merged). Commit 34af59b.
+- **Server:**
+  - `people_status` takes `extra_out`. It collects each unnamed payback dated from ASK_FROM that came when nobody on the split still owed anything.
+  - The new `splits.extra_question` is asked only when every purchase the payback pays back is split and it is extra on all of them. It returns id, amount, date, purchases, `paid_back` and `people` (who has paid back there).
+  - Needs a look lists it in `money_in` as `extra:<id>` with `guess: {action: "extra"}` and `extra: {paid_back, people, amount}`. That keeps it apart from `credit:<id>`. Quick sort walks the same list, and `ids_in` gives the deposit its question card.
+  - `pairs.annotate` skips these rows, so no evidence question rides on one.
+  - A tile saves through `POST …/parts`. It already unlinks a linked payback and returns an Undo that links it back as it was (the round-14 `paybacks` / `payback_more` marks).
+  - **Fix:** the web answers the same row through `POST …/mark`. For Paying me back, its Undo now also restores `payback_more`, so a payback over two purchases comes back on both.
+- **App (`PartsSheet(whole:)`, S-11x):**
+  - Opens on the tiles for the whole amount, titled "The $30.00". Under "How much of it?" it reads "Sam and Priya have both paid you back for Loblaws, so this $30.00 is extra. Tap what it was." One person: "Sam has …". Three or more: "… have all …". Two purchases: "for Loblaws and Pizza Nova".
+  - A tile that uses up the amount saves at once (or is held), with no Check and save.
+  - Paying me back opens S-09 with the open shares from `/owing`, so Loblaws isn't listed.
+  - Options › "Sort it later" closes and leaves the row. Close saves nothing.
+  - On error, nothing stays chosen, and "Couldn't save that. Try again." shows under the grid in `Pearl.caution`, announced to VoiceOver.
+  - The overpaid tile names the one person who paid back ("Sam overpaid"). It isn't offered when more than one did (see Still open).
+  - Typing less than the whole continues as S-11 v2 does ("What's the other $x?").
+- **App, wiring:**
+  - `Review.Item.extra` is new. The row reads "Nov 16 · extra on Loblaws" with the "What was this?" chip (`Ask.chip`).
+  - Needs a look's chip opens S-11x. So does the deposit page's question card (`openQuestion`).
+  - Quick sort holds the answer for the card as `ReviewAnswer.extra` ("A gift?"). Yes sends the one parts request with its Undo, and Skip drops it.
+- **Tests:**
+  - New: TestNobodyLeftOwing (10) in `tests/test_split_round.py`. It covers the row and its keys, no S-05u / credit row, one row per deposit, Quick sort's list, a tile with Undo, Paying me back to another purchase with Undo, the web's /mark with Undo over two purchases, one person, still owing (S-35c instead), old or named (no row), skip, the THL-181 invariant, and the Swift wiring.
+  - `python3 -m pytest -q`: 1809 passed.
+  - `npm run build`: built.
+  - `xcodebuild -project ios/Pearl.xcodeproj -scheme Pearl -destination 'generic/platform=iOS Simulator' build`: BUILD SUCCEEDED. Not run by hand in a simulator.
+  - No `.swift` file was added, so `make_project.py` wasn't needed.
+- **Commit:** 34af59b, 10 files; `git show --stat` checked. Pushed, and PR #315's body updated.
+- **Jira:** commented on THL-181 (whether its AC is now met on every path). Nothing was moved; it stays in Testing.
+
 ## Summary
 
-This is the state after fourteen rounds (2026-11-09 to 11-10). Every issue through SPLIT-22 is decided and built. SPLIT-23 (Minor, three edges of S-35c) is open with designBOT. Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
+This is the final state after sixteen rounds (2026-11-09 to 11-10); the bot loop has ended. Every issue, SPLIT-01 to SPLIT-23, is decided and built. Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
+
+**Before merging:** test it by hand on a device. No round was run by hand on a simulator or a phone. Every check was automated: pytest, the web build, the simulator build, and wiring checks on the Swift source.
 
 **PR:** https://github.com/mariapapadimitriou/finance/pull/315 (open, not merged)
 **Branch:** `feat/split-bot-round`
@@ -988,12 +1067,14 @@ This is the state after fourteen rounds (2026-11-09 to 11-10). Every issue throu
 - 1f5bfd4: round 12 build (SPLIT-21, web light money-in)
 - f95471e: log, designBOT's Figma entries and round 12
 - 1ca13a6: round 14 build (SPLIT-22a/22b)
-- this log commit: designBOT's round 13 and round 14
+- c759176: log, designBOT's round 13 and round 14
+- 34af59b: round 16 build (SPLIT-23 (1))
+- this log commit: designBOT's round 15 and round 16
 
 **Tests:**
-- `python3 -m pytest -q`: 1799 passed (60 new in tests/test_split_round.py across rounds 7, 9, 10, 11, 12 and 14).
-- `npm run build`: built (round 14).
-- iOS Simulator build: BUILD SUCCEEDED.
+- `python3 -m pytest -q`: 1809 passed (70 new in tests/test_split_round.py across rounds 7, 9, 10, 11, 12, 14 and 16).
+- `npm run build`: built (round 16).
+- iOS Simulator build: BUILD SUCCEEDED (round 16).
 - Not run by hand on a simulator or a device.
 
 ### Every issue
@@ -1022,20 +1103,23 @@ This is the state after fourteen rounds (2026-11-09 to 11-10). Every issue throu
 | SPLIT-20 | Quick sort's sheet saved a split at once | Decided (SPLIT-06 (a) everywhere). Built (round 11): the sheet holds it for the card; Yes saves split and category with one Undo; Skip drops it |
 | SPLIT-21 | Ask who a payback is from (THL-181) | Accepted and built (round 12, S-35a/S-35b): no guess when two or no shares fit; one exact fit ticked; paybacks dated before 2026-11-10 keep the old credit |
 | SPLIT-22 | Two cases S-35a/S-35b don't draw | Redesigned (round 13), Accepted and built (round 14, 1ca13a6): (a) S-35a1 line; (b) S-05u row on the split card, S-35c "Who sent this?" sheet with error and extra → S-11 v2, S-21u in Needs a look and Quick sort ("Paid back by Sam?"), server list + POST …/credit with Undo |
-| SPLIT-23 | Three edges S-35c doesn't draw | Open → designBOT (Minor): no drawn entry on the deposit's own page; nothing to tick when nobody on its purchases still owes; one sender per payment across purchases |
+| SPLIT-23 | Three edges S-35c doesn't draw | Decided by the product owner and redesigned (round 15). Accepted and built (round 16, 34af59b): (1) nobody left owing → S-21x row `extra:<id>` "Nov 16 · extra on Loblaws" → S-11x "The $30.00", a tile saves in one request with Undo that links it back, held on a Quick sort card; (2) one sender per payment, already built; (3) no entry on the deposit's own page, already built |
 
 ### Still open
 
-**For designBOT (SPLIT-23, Minor, THL-181):**
-- Draw an entry to S-35c on the linked deposit's own page, or confirm that S-05u and S-21u are enough.
-- Decide what happens to an unnamed payback when nobody on its purchases still owes. Today it's credited to no one and not asked about, because S-35c would be empty.
-- Confirm one sender per payment. Ticking someone else replaces the tick; it doesn't add to it.
+**For designBOT and engBOT:** nothing. The loop is closed.
 
-Until SPLIT-23 (2) is decided, THL-181's "Every repayment linked to a split is credited to someone" is met on every linking path (the sheet, search, the web, the API) except that one edge.
+**Notes for the product owner.** These gaps turned up in round 16. None of them is a new design loop; decide whether any is worth a ticket.
+- **Before merging:** test it by hand on a device (see above).
+- **A payback over two purchases, extra on only one.** Example: an unnamed $60.00 is linked to Loblaws, where nobody owes, and to Pizza Nova, where Jo still owes. Pizza Nova's part is credited to Jo or asked about on S-35c, as before. Loblaws' $30.00 is credited to no one, and no S-21x row is shown, because S-21x only asks when the payback is extra on every purchase it pays back. THL-181's "credited to someone" isn't met for that part.
+- **Paybacks dated before 2026-11-10 (ASK_FROM).** They keep the old guess (round 12). One linked where nobody owes is credited to no one and isn't asked about, as before.
+- **S-11x's overpaid tile.** The frame draws "Dad overpaid", carried over from S-11 v2. The app names the one person who paid back ("Sam overpaid"). With two or more, Pearl can't say who, so the tile isn't offered. Confirm, or say who it should name.
+- **An S-11x answer stores the deposit as one part.** It saves through the parts request, the route designBOT named for Undo. So a gift answered there shows as PARTS ("Gift") on the deposit's page, not as a plain answer. The web's What was this? answers the same row as a plain answer (`/mark`).
+- **Less than the whole on S-11x.** Typing a smaller amount continues as S-11 v2 does ("What's the other $x?", then save). It isn't drawn for S-11x.
 
-**For engBOT:** nothing open.
+**THL-181:** "Every repayment linked to a split is credited to someone on the split card. If Pearl can't tell who, it asks." This is met on every linking path (the sheet, search, the web's Paid back, the API) for paybacks dated from 2026-11-10, except the mixed two-purchase case above. Paybacks dated before then keep the old guess. THL-181 stays in Testing.
 
-**For the product owner:** nothing open. The web money-in tokens follow Figma: light #167a40 (round 12) and dark #6edb94 (round 11), both edited by hand because the repo has no token generator.
+**Web tokens:** money-in follows Figma: light #167a40 (round 12) and dark #6edb94 (round 11). Both were edited by hand, because the repo has no token generator.
 
 ### Dark twins (done in round 7 by designBOT)
 - **Dark alerts and action sheets:** the S-03f, S-24x and S-04 v2 twins are tagged "iOS system alert/action sheet — drawn by iOS, colours indicative". Build them with `.alert` / `.confirmationDialog`, with no custom colours.
@@ -1059,5 +1143,7 @@ Until SPLIT-23 (2) is decided, THL-181's "Every repayment linked to a split is c
 | 12 | designBOT, then engBOT | designBOT (in Figma, entries appended by engBOT) marked superseded frames, drew S-14p/S-05p/T-08k error for built behaviour, drew S-35a/S-35b for THL-181, and read Figma's light money-in (#167A40). engBOT checked them by node and Accepted all four. engBOT then built SPLIT-21 (server ask rule with an ASK_FROM cutoff so old credits stay, plus the sheet) and the web light token (1f5bfd4), logged SPLIT-22, edited THL-278's unnamed-payback line, commented on THL-181 and THL-278, and updated PR #315. |
 | 13 | designBOT | engBOT wasn't running. designBOT answered SPLIT-22: it drew S-35a1 (a), and S-05u, S-35c with its error, and S-21u (b), light and dark, with notes 1034:42633–42645. It also marked S-27 superseded by S-11 v2. The log edits were left uncommitted. |
 | 14 | engBOT | Checked every round-13 node and Accepted SPLIT-22a, SPLIT-22b and the S-27 tag. Built SPLIT-22a and 22b (1ca13a6): the server list, POST …/credit with Undo, the Needs a look row, the split card, `WhoSentSheet` and Quick sort's held tick. Logged SPLIT-23, updated PR #315, and commented on THL-181. |
+| 15 | product owner, then designBOT | The product owner decided SPLIT-23: (1) nobody left owing goes to "What's the other $x?", (2) one sender per payment, (3) no entry on the deposit's own page. engBOT wasn't running. designBOT drew S-21x and S-11x, light and dark, with tags and notes 1037:44471–44476. It rewrote the S-35c note 1034:42639 and its tags, and updated the Summary. The log edits were left uncommitted. |
+| 16 | engBOT | The last round. Checked every round-15 node and Accepted SPLIT-23 (1), (2) and (3). Built (1) (34af59b): the `extra:<id>` Needs a look row, S-11x on `PartsSheet(whole:)`, Quick sort's held answer, the deposit's question card, and a `payback_more` Undo fix on `/mark`. Confirmed (2) and (3) in code. Updated PR #315, commented on THL-181, and listed the remaining gaps under Still open as notes for the product owner. |
 
 Throughout, no ticket was moved past Testing, nothing was merged, and Figma was edited only by designBOT.
