@@ -1241,13 +1241,62 @@ The product owner asked, mid-build, that S-05o and S-34s not be stock iOS compon
 - **Commit:** the build commit on `fix/unlink-from-purchase`, 17 files; `git show --stat` checked. **PR:** https://github.com/mariapapadimitriou/finance/pull/316 (open, not merged).
 - **Jira:** commented on THL-291, which stays in Testing.
 
+### [product owner] 2026-11-09 · Design refresh decisions
+From the design refresh (ios/bots/design-refresh-log.md, REFRESH-00 to REFRESH-02):
+- **Ink spending:** spending amounts are ink, not red; red means only "over". Approved.
+- **Sort now → Quick sort:** Home's "Sort now" opens Quick sort directly; "See the list" opens Needs a look. Approved.
+- **••• menus with custom pages:** each person on the split card gets a ••• menu. "I need a new design for those option pages, and everything presented after them should have a design as well — don't just use iOS components." The product owner then went with designBOT's reading: the ••• replaces the inline Mark paid back / Remind buttons for every person state, and the new copy is approved as written ("Hey Sam! Thanks for the $10.00. Your share of Loblaws on Nov 11 was $30.00, so $20.00 to go." and "Loblaws already counts in full until it's paid back, so your Allowance doesn't change.").
+- **Pearl paper background:** the calm "pearl paper" for in-app pages, iridescent kept for onboarding and celebrations; used on the new split menu and confirmation screens now, the rest of the app last.
+- **Look before animation:** look and functionality first; motion comes later and nothing depends on it.
+
+### [designBOT → engBOT] 2026-11-09 · REFRESH-02 · Person options (•••) and every screen after them (relayed by engBOT)
+designBOT logged this in ios/bots/design-refresh-log.md (it doesn't write here); relayed unchanged in substance.
+**Status:** Redesigned · Design refresh · Approved — build
+**Jira:** THL-289 (flow 2, flow 7), THL-291 ("Unlinking any part from either side restores both sides", Undo), THL-181 (Paid back + Owes = share), THL-301, THL-260, THL-279, THL-282   **Figma:** "Design refresh" page 1070:30063, section 11 1088:1695; kit 1088:1696; notes 1096:4466 (options per state), 1096:4483 (accessibility, colour, motion), 1096:4498 (handoff)
+- **Screens:** S-04r v2 1090:1743 (split card, ••• on each person); S-40a–d 1090:1846, 1090:1979, 1090:2130, 1090:2235 (c2), 1090:2355 (options for owes, paid part, paid in full, two payments, let go); S-05or 1090:2457; S-06ra–rd 1091:2131, 2219, 2312, 2372 (Mark paid back); S-07ra/rb 1091:2433/2480 (Remind); S-08ra–rd 1091:2527–2686 (Let it go, with loading and error); S-03re 1092:2360 (Change share); S-03fr/fr2 with loading and error 1092:2464–2648; S-34sr with loading and error 1092:2716–2829; S-34kr1, 3–10 1092:2890–3332; S-44a–i 1093:2719–3576 (toasts, including Undo failed). Dark twins 1093:3991–5839.
+- **Rule:** no `.alert`, no `.confirmationDialog`, no action sheet in these flows; every menu, confirmation, error, loading and success state is a Pearl sheet or toast, on pearl paper, colours bound to the Pearl Color variables; no red (errors use the champagne Banner at 22%).
+- **Options per state:** Owes: Mark paid back · Remind · Let it go · Change their share · Remove (at once, with Undo). Part-paid: PAID SO FAR with each payment's View (bank or deposit) and Unlink · Mark the rest paid back · Remind (for what's left) · Let the rest go · Change their share · Remove (asks first). Paid in full: PAID WITH, one card per payment with View and Unlink · Change their share · Remove (asks first). Let go: Undo let it go (at once, with Undo) · Change their share · Remove (at once, with Undo).
+- **Handoff (1096:4498):** S-40/S-05or from `Splitting.Person` + `links`, one sheet view replacing SplitPeople's `.confirmationDialog` and the stop-gap `PaybackOptionsSheet`; S-06r: the bank POST should return undo marks + a title (S-44b); S-07r no server call, editable, clipboard; S-08r POST/DELETE …/split/let-go, each the other's Undo; S-03re the existing SplitSheet with that person's field focused; Remove from S-40 saves at once with PUT …/split (undo + title for an unpaid person too), S-03fr replaces SplitSheet's `.alert`; S-34sr/kr same calls as SPLIT-25, new look; View opens the transaction in the app, never the web. Out of scope: TransactionDetailView's Delete `.confirmationDialog`, PartsFlow's and TransactionsView's `.alert`, CalendarView's `.confirmationDialog`.
+- **Copy for engBOT to check:** S-07rb's part-paid reminder; S-08's Allowance line; the remove-at-once toast "Priya removed · $30.00 back to your share".
+
+### [engBOT] 2026-11-09 · REFRESH-02 start
+Branch `fix/unlink-from-purchase` (PR #316), as asked. I read the role file again (custom SwiftUI views, never stock dialogs), design-refresh-log.md (REFRESH-00 to REFRESH-02 and the product owner's decisions) and THL-291 (in Testing). In Figma I opened, by node only (create_session first): the kit 1088:1696; notes 1096:4466, 1096:4483 and 1096:4498 (get_design_context); S-04r v2 1090:1743 and dark 1093:3991; S-40a 1090:1846 (get_design_context), S-40b 1090:1979 and dark 1093:4099, S-40c 1090:2130, S-40c2 1090:2235, S-40d 1090:2355; S-05or 1090:2457; S-06ra–rd 1091:2131, 2219, 2312, 2372; S-07ra/rb 1091:2433/2480; S-08ra, rb, rd 1091:2527, 2579, 2686 and dark 1093:4640; S-03re 1092:2360; S-03fr, fr2, loading, error 1092:2464, 2526, 2583, 2648; S-34sr, its error 1092:2716, 2829; S-34kr1, 3, 4, 5, 6, 7, 8, 9, 10 1092:2890, 2944, 2999, 3054, 3109, 3163, 3220, 3278, 3332; S-44a, b, c (metadata), d, e, f, g, h, i 1093:2719–3576. get_variable_defs on 1093:4099 and 1091:2686 for the dark blush (#4E2238), the control fill and champagne (#F3D9A4).
+
+### [engBOT → designBOT] 2026-11-09 · REFRESH-02 · Accepted (built)
+- **S-04r v2 / dark:** each person has a 44 pt ••• and a paid-back bar (rose part-paid, money-in in full), the amount in ink, money-in or muted for let go; Edit split beside "Split 5 ways". Dark matches.
+- **S-40a–d:** one sheet, sections by state, exactly as note 1096:4466; the subtitles ("By bank or e-Transfer, cash, or another app", "Copy a message for the $20.00 left", "Asks first: the $10.00 cash is forgotten", "Goes at once, with Undo"…) and S-40b's PAID SO FAR card with "Unlink $10.00…". S-40c's View the e-Transfer + Unlink…; S-40c2's two cards. Dark S-40b matches.
+- **S-05or:** "PAID BACK / Jo paid back $30.00", View the e-Transfer "Opens it here in Pearl", Unlink… "Jo will owe you $30.00 again on Pizza Nova".
+- **S-06ra–rd:** How did Priya pay? (three rows), Which payment was it? (search, SUGGESTED, OTHER MONEY IN, Link $30.00), Cash from Priya (amount card, Received, the never-counted-twice note), Which app did Priya use? (chips, Other…), each with Back and Close.
+- **S-07ra/rb, S-08ra–rd, S-03re, S-03fr/fr2 with loading and error, S-34sr with error, S-34kr1–10, S-44a–i:** every line, button and toast as drawn; the loading states put a spinner in the main button with both buttons off.
+- **Copy:** the S-07rb reminder and the S-08 Allowance line, both approved by the product owner; "Allowance" everywhere, never the other phrase.
+- Every option has a frame and a way out (Close, Back, Keep…, Undo). The server needed small additions (build entry). Two handoff details were already true or slightly off, noted rather than sent back: the bank POST already returned an Undo (it lacked only the toast's words), and S-44f's Undo for Remind empties the clipboard, as the app did before.
+
+### [engBOT] 2026-11-09 · REFRESH-02 · build
+- **Server:**
+  - `POST …/paybacks/<inflow>` returns `toast` ("Priya paid back $30.00") next to its existing `undo` (S-44b).
+  - `PUT …/split` returns `toast` when someone comes off, including someone who paid nothing or was let go: "Priya removed · $30.00 back to your share" (S-44d); `undo` as before.
+  - `POST` / `DELETE …/split/let-go` return `toast` ("Let go · the $30.00 is your spending now", "Priya owes you $30.00 again", S-44c / S-44e). `title` is unchanged, so the web is untouched.
+  - `finance/unlink.py`: each `LinkInfo.sheet` also carries S-34sr/kr's `heading` ("Unlink Sam’s e-Transfer?", or the ask), `overline`, `card` {label, amount}, `confirm` ("Unlink $30.00", "Unlink refund", "Unlink and take Priya off"), `keep` ("Keep linked", "Keep it") and `note` ("To unlink the whole $60.00, open the e-Transfer and unlink it there.").
+- **App (`ios/Pearl/Views/Transactions/SplitMenus.swift`, new):** the kit (Close and ••• 44 pt, Primary / Secondary / pill buttons, Option row ≥ 60 pt, champagne `CautionBanner` announced by VoiceOver, `InfoNote`, `PearlSheet` on pearl paper sized to content with the grabber, `PearlToast`), `PersonOptionsSheet` (S-40a–d), `RemindSheet` (S-07r, editable, `UIPasteboard`), `RemovePersonSheet` + `RemoveWords` (S-03fr/fr2 with loading and error).
+  - `SplitFlow.swift`: `SplitPeople` (S-04r v2) opens S-40 from the row and the ••• (".confirmationDialog" gone); `SplitSheet`'s `.alert("Remove …?")` is now S-03fr, and it takes `focus` for S-03re (Amounts, that field focused, "Split updated" with Undo); `MarkPaidSheet` is S-06ra–rd (S-11c's extra page is unchanged); `LetGoSheet` is S-08ra–rd.
+  - `PaybackOptions.swift`: `PaybackOptionsSheet` is S-05or; `UnlinkLinkSheet` is S-34sr/kr.
+  - `TransactionDetailView.swift`: S-40's choices, Remove at once (S-44d) or after S-03fr, the ink S-44 toasts with Undo, "Linked again" (S-44g), and S-44h "Couldn’t undo that. Nothing changed." with Try again. View opens the transaction in the app. Success haptic on Mark paid back, Unlink and Let go; none on Remind. The toast stays 6 s, 15 s with VoiceOver.
+  - Tokens (`Theme.swift`): `bubble` (blush, dark #4E2238), `control`, `champagne`, `borderStrong`. Spending is ink on these screens; red appears nowhere in them.
+- **Left for a later pass (not split flows):** TransactionDetailView's Delete `.confirmationDialog`, PartsFlow's `.alert("Leave without saving?")`, TransactionsView's `.alert("Leave out …?")`, CalendarView's `.confirmationDialog`; and in Profile: IncomeBillsView, ProfileView, JointMergeViews, CategoriesRulesView, AccountsViews, SettingsViews, PrivacyViews.
+
+### [engBOT] 2026-11-09 · REFRESH-02 · tests, PR and Jira
+- **Tests:** `tests/test_split_menus.py` (22): S-44b's toast and Undo for a bank link (whole and part) and cash; Remove from S-40 for someone who paid nothing, someone let go and someone who paid, each with Undo and Paid back + Owes = share (THL-181); Change share's Undo with no removed toast; Let go and Undo let it go toasts (whole and the rest); S-34sr/kr's heading, card, buttons and footnote for an e-Transfer, a shared e-Transfer, cash, an app, a refund and the payback that made the split; and Swift wiring: no `.confirmationDialog`, `.alert` or action sheet in SplitFlow, PaybackOptions or SplitMenus, only the Delete dialog left on the detail page, S-40 from the row and the •••, each screen's words, the S-07rb copy, "Allowance", S-44h, and no web hand-off. Two SPLIT-25 wiring checks were updated for S-40.
+- `python3 -m pytest -q`: 1858 passed. `npm run build`: built. `xcodebuild … 'generic/platform=iOS Simulator' build`: BUILD SUCCEEDED, no warnings in the changed files. `make_project.py` run for the new `SplitMenus.swift`. Not run by hand on a simulator or device.
+- **Commit:** c90ff92 on `fix/unlink-from-purchase`, 13 files (with designBOT's design-refresh-log.md, unchanged); `git show --stat` checked. **PR:** https://github.com/mariapapadimitriou/finance/pull/316 (open, not merged), body updated.
+- **Jira:** commented on THL-291, which stays in Testing. Nothing moved.
+
 ## Summary
 
-This is the state after sixteen rounds, the THL-301 follow-up and SPLIT-25 (2026-11-09 to 11-10). Every issue, SPLIT-01 to SPLIT-25, is decided and built. SPLIT-25 is on its own branch and PR (below); its S-05o and Unlink? presentation is to be replaced by designBOT's custom design (see design refresh). Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
+This is the state after sixteen rounds, the THL-301 follow-up, SPLIT-25 and SPLIT-26 (REFRESH-02, the custom split menus) (2026-11-09 to 11-10). Every issue, SPLIT-01 to SPLIT-26, is decided and built. SPLIT-25 and SPLIT-26 are on their own branch and PR (below). SPLIT-26 replaced every stock iOS menu, alert and action sheet in the split flow with designBOT's Pearl sheets and toasts. Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
 
 **Before merging:** test it by hand on a device. No round was run by hand on a simulator or a phone. Every check was automated: pytest, the web build, the simulator build, and wiring checks on the Swift source.
 
-**PR:** https://github.com/mariapapadimitriou/finance/pull/315 (merged). SPLIT-25: https://github.com/mariapapadimitriou/finance/pull/316 (open, not merged), branch `fix/unlink-from-purchase`.
+**PR:** https://github.com/mariapapadimitriou/finance/pull/315 (merged). SPLIT-25 and SPLIT-26: https://github.com/mariapapadimitriou/finance/pull/316 (open, not merged), branch `fix/unlink-from-purchase`.
 **Branch:** `feat/split-bot-round` (rounds 1–16, THL-301)
 **Commits:**
 - e0da5fa: iOS, round 4
@@ -1272,11 +1321,12 @@ This is the state after sixteen rounds, the THL-301 follow-up and SPLIT-25 (2026
 - a738225, 4dc8b2d: log, designBOT's round 15, round 16, and the product owner's round-16 decisions
 - 68579a1: THL-301 build (SPLIT-24)
 - this log commit: designBOT's SPLIT-24 entry and the THL-301 round
+- on `fix/unlink-from-purchase`: bcd8fbd SPLIT-25 build, e1df1d4 SPLIT-25 log; c90ff92 SPLIT-26 (REFRESH-02) build, then its log commit
 
 **Tests:**
-- `python3 -m pytest -q`: 1835 passed (SPLIT-25). That's 80 new in tests/test_split_round.py across rounds 7, 9, 10, 11, 12, 14, 16 and THL-301, and 17 in tests/test_unlink_from_purchase.py for SPLIT-25.
-- `npm run build`: built (SPLIT-25).
-- iOS Simulator build: BUILD SUCCEEDED (SPLIT-25).
+- `python3 -m pytest -q`: 1858 passed (SPLIT-26). That's 80 new in tests/test_split_round.py across rounds 7, 9, 10, 11, 12, 14, 16 and THL-301, 17 in tests/test_unlink_from_purchase.py for SPLIT-25, and 22 in tests/test_split_menus.py for SPLIT-26.
+- `npm run build`: built (SPLIT-26).
+- iOS Simulator build: BUILD SUCCEEDED (SPLIT-26), no warnings in the files it touched.
 - Not run by hand on a simulator or a device.
 
 ### Every issue
@@ -1307,11 +1357,22 @@ This is the state after sixteen rounds, the THL-301 follow-up and SPLIT-25 (2026
 | SPLIT-22 | Two cases S-35a/S-35b don't draw | Redesigned (round 13), Accepted and built (round 14, 1ca13a6): (a) S-35a1 line; (b) S-05u row on the split card, S-35c "Who sent this?" sheet with error and extra → S-11 v2, S-21u in Needs a look and Quick sort ("Paid back by Sam?"), server list + POST …/credit with Undo |
 | SPLIT-23 | Three edges S-35c doesn't draw | Decided by the product owner and redesigned (round 15). Accepted and built (round 16, 34af59b): (1) nobody left owing → S-21x row `extra:<id>` "Nov 16 · extra on Loblaws" → S-11x "The $30.00", a tile saves in one request with Undo that links it back, held on a Quick sort card; (2) one sender per payment, already built; (3) no entry on the deposit's own page, already built |
 | SPLIT-24 | A payback over two purchases that's extra on only one (THL-301) | Redesigned (designBOT), Accepted and built (68579a1): one row per deposit, `credit:<id>` (S-21xw) then `extra:<id>` (S-21xm "Nov 16 · $30.00 extra on Loblaws", +$60.00); S-35c credits and closes; S-11xm "The $30.00" under "$60.00 · Nov 16" with the mixed line, capped (S-11xm over), "Jo overpaid"; the save keeps the credited parts, with Undo; Quick sort brings the deposit back as the next card. THL-301 in Testing |
-| SPLIT-25 | Unlink a payback from the purchase it paid back (product owner, hand test; THL-291, THL-289 flow 7) | Redesigned (designBOT), Accepted and built (PR #316): every PAID BACK / REFUNDED BY row → S-05o → S-34s / S-34k → S-05t with Undo; purchase-scoped server unlink for every kind. S-05o and S-34s are Pearl sheets in `PaybackOptions.swift`, presentation to be replaced by custom design, see design refresh. THL-291 in Testing |
+| SPLIT-25 | Unlink a payback from the purchase it paid back (product owner, hand test; THL-291, THL-289 flow 7) | Redesigned (designBOT), Accepted and built (PR #316): every PAID BACK / REFUNDED BY row → S-05o → S-34s / S-34k → S-05t with Undo; purchase-scoped server unlink for every kind. Restyled by SPLIT-26. THL-291 in Testing |
+| SPLIT-26 | Custom split menus (REFRESH-02) | Decided by the product owner (••• for every state, the new copy) and drawn by designBOT on "Design refresh" section 11. Accepted and built (PR #316): S-04r v2 ••• → S-40a–d; S-05or; S-06ra–rd; S-07r; S-08r with loading/error; S-03re; S-03fr/fr2 with loading/error; S-34sr/kr; S-44a–i toasts incl. Undo failed. No stock dialog left in the split flow. THL-291 in Testing |
 
 ### Still open
 
-**SPLIT-25, built (2026-11-09), PR #316, not merged:** unlinking a payback from the purchase it paid back, for every payback kind, with Undo. The product owner asked mid-build for no stock iOS dialogs. S-05o and S-34s are plain Pearl sheets in `ios/Pearl/Views/Transactions/PaybackOptions.swift`, and that presentation is to be replaced by custom design, see design refresh (designBOT is drawing custom pages and a ••• menu on each person's row). Notes for the product owner, not a design loop:
+**SPLIT-26 (REFRESH-02), built (2026-11-09), PR #316, not merged.** Notes for the product owner, not a design loop:
+- **Remove the only person who paid:** a split needs someone on it, so the server refuses, and S-03fr's banner shows "Add someone to split it with." Removing the only person who paid nothing works (the split goes; Undo puts it back). No frame says what removing the last payer should do.
+- **Remove someone whose payback is part of a deposit, or whose cash a deposit holds:** the server still refuses ("Unlink the deposit first"), and S-03fr's banner shows those words instead of the general error. Unlinking that payment from S-40 first works (SPLIT-25).
+- **Mark paid back with several deposits ticked (S-26):** each is linked in turn. If a later one fails, the earlier ones stay linked although the banner says nothing changed.
+- **Not restyled, because they aren't approved yet:** How to split itself (S-03r; Change share opens it with the field focused), S-11c "What's the extra?" after cash or an app over the share, and the detail page around the split card (still iridescent until pearl paper reaches every page, last in the build order).
+- **Icons:** SF Symbols stand in for the Option and Category icon sets on these sheets.
+- **S-06rb rows:** the line under a suggested payment says "Amount matches" or the account; Pearl doesn't know whether the name matched.
+- **Stock dialogs left outside the split flow** (a later pass): TransactionDetailView's Delete, PartsFlow's "Leave without saving?", TransactionsView's "Leave out …?", CalendarView's band dialog, and Profile's (IncomeBillsView, ProfileView, JointMergeViews, CategoriesRulesView, AccountsViews, SettingsViews, PrivacyViews).
+- Test SPLIT-25 and SPLIT-26 by hand on a device before merging.
+
+**SPLIT-25, built (2026-11-09), PR #316, not merged:** unlinking a payback from the purchase it paid back, for every payback kind, with Undo. Its S-05o and S-34s are now designBOT's custom S-05or and S-34sr/kr (SPLIT-26). Notes for the product owner, not a design loop:
 - The made-the-split line names the person ("so Priya comes off the split too"), since Pearl doesn't know pronouns.
 - A Work-paying-me-back unlink where the purchase wasn't waiting toasts "Unlinked · Hotel counts as your spending again". Only the waiting toast was drawn.
 - A payback on the split card credited to no one (S-05u) still opens "Who sent this?", not Unlink. It can be unlinked from its own page.
@@ -1330,7 +1391,7 @@ This is the state after sixteen rounds, the THL-301 follow-up and SPLIT-25 (2026
 **Web tokens:** money-in follows Figma: light #167a40 (round 12) and dark #6edb94 (round 11). Both were edited by hand, because the repo has no token generator.
 
 ### Dark twins (done in round 7 by designBOT)
-- **Dark alerts and action sheets:** the S-03f, S-24x and S-04 v2 twins are tagged "iOS system alert/action sheet — drawn by iOS, colours indicative". Build them with `.alert` / `.confirmationDialog`, with no custom colours.
+- **Dark alerts and action sheets:** the S-03f, S-24x and S-04 v2 twins are tagged "iOS system alert/action sheet — drawn by iOS, colours indicative". S-03f and S-04 v2 are now Pearl sheets (SPLIT-26, product owner's no-stock-dialogs rule), with the REFRESH-02 dark twins.
 - **Positive green:** every green on the twins is bound to `color/text/money-in`. The round-8 frames are too.
 - **Money-in dark (decided 2026-11-09):** #6EDB94, in the app (`ios/Pearl/Theme/Theme.swift`, round 9) and on the web (`src/tokens/tokens.css`, round 11). Light is #167A40 in Figma, iOS and (round 12) the web.
 
@@ -1356,5 +1417,6 @@ This is the state after sixteen rounds, the THL-301 follow-up and SPLIT-25 (2026
 | THL-301 | product owner, then designBOT | The product owner made THL-301 from the round-16 note and approved work on it. engBOT wasn't running. designBOT drew S-21xw, S-21xm, S-11xm and S-11xm over, light and dark, with tags 1044:99–106 and notes 1044:107–110, and logged SPLIT-24. The log edits were left uncommitted. |
 | THL-301 | engBOT | Checked every SPLIT-24 node and Accepted it. Built it (68579a1): partly-extra `extra_question`, one item per deposit (credit, then extra), the save that keeps the credited parts with Undo (app and web), the S-21xm row, S-11xm and its over state, S-35c's mixed-case line, and Quick sort's follow-up card. Updated PR #315, commented on THL-301 and moved it to Testing. Listed the remaining gaps under Still open as notes for the product owner. |
 | SPLIT-25 | designBOT, then engBOT | designBOT (engBOT not running) logged SPLIT-25 from the product owner's hand test and drew S-05v, S-05o, S-34s and its error, S-05t and nine S-34k sheets, light and dark. engBOT checked them by node, Accepted, and built the server and app (PR #316). After the product owner's mid-build change, S-05o and S-34s became Pearl sheets in one view, to be replaced by the custom design. engBOT commented on THL-291. |
+| SPLIT-26 | product owner, designBOT, then engBOT | The product owner decided the design refresh (ink spending, Sort now → Quick sort, ••• menus with custom pages, pearl paper, look before animation). designBOT drew REFRESH-02 on "Design refresh" section 11 and logged it in design-refresh-log.md; engBOT relayed it here, checked it by node, Accepted, built the server toasts and Unlink? words and the app's Pearl sheets (PR #316), and commented on THL-291. |
 
 Throughout, no ticket was moved past Testing, no bot merged anything (the product owner merged PR #315), and Figma was edited only by designBOT.
