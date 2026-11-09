@@ -490,3 +490,14 @@ def test_a_split_row_carries_its_people(client):
     page = client.get(f"/api/transactions/{ids['SUSHI NAMI']}").get_json()["splitting"]
     assert [p["name"] for p in listed["people"]] == ["Ben", "Priya"]
     assert listed == page
+
+
+def test_income_rows_carry_their_kind(client):
+    """2026-11-08: the list says what kind of income a deposit is, the same
+    as its page, so the page doesn't open on "Income" and turn into "Salary"."""
+    ids = load(client.st, row(-2000, "ACME PAYROLL", category="Income"))
+    client.put(f"/api/transactions/{ids['ACME PAYROLL']}/income-type", json={"kind": "salary"})
+    listed = by_desc(listing(client))["ACME PAYROLL"]
+    page = client.get(f"/api/transactions/{ids['ACME PAYROLL']}").get_json()
+    assert listed["income_type"] == page["income_type"] == "salary"
+    assert listed["regular_pay"] == page["regular_pay"]

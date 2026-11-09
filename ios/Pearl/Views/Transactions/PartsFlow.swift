@@ -278,7 +278,9 @@ struct PartsSheet: View {
             .accessibilityHint("Splits it with \(who), then links it"))
         }
         // S-35: "Owes $64.00 · same amount"; S-32: "Pending · Sam's share".
-        let sub = byName ? "Owes \(Format.amount(o.owes))" + (abs(o.owes - deposit.amount) < 0.005 ? " · same amount" : "")
+        // By name, the purchase says which of theirs it is.
+        let sub = byName ? "Owes \(Format.amount(o.owes))" + (abs(o.owes - deposit.amount) < 0.005 ? " · same amount"
+                                                                : " · \(o.merchant), \(Format.short(o.date))")
             : [o.pending == true ? "Pending" : Format.short(o.date),
                o.person.map { "\($0)’s share" } ?? "\(Format.amount(o.owes)) left"]
                 .joined(separator: " · ")
@@ -633,8 +635,16 @@ struct PartsSheet: View {
             sender = r.from
             let items = r.items.compactMap { $0.value }
             // Theirs, or, from someone Pearl can't name, whoever's share is closest.
-            owing = r.from != nil ? items.filter { $0.theirs == true }
-                : items.sorted { abs($0.owes - deposit.amount) < abs($1.owes - deposit.amount) }.prefix(4).map { $0 }
+            if r.from != nil {
+                owing = items.filter { $0.theirs == true }
+            } else {
+                // Who it might be: each person once, by their share closest to
+                // what came in (2026-11-08), not one friend four times over.
+                var seen = Set<String>()
+                owing = items.sorted { abs($0.owes - deposit.amount) < abs($1.owes - deposit.amount) }
+                    .filter { seen.insert(($0.person ?? $0.merchant).lowercased()).inserted }
+                    .prefix(4).map { $0 }
+            }
         }
         step = !cash.isEmpty ? .cash : .owing
         if step == .owing {

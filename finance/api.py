@@ -168,6 +168,17 @@ def _splitting(t, split: dict, txns, payer) -> dict:
     }
 
 
+def _income_facts(t, pays: list) -> dict:
+    """THL-198: what kind of income it is, and the regular pay it is, when
+    its payer is one of hers in Income and bills."""
+    from . import income_bills as ib
+    payer_name = ib.clean_name(t.merchant)
+    pay = next((p for p in pays if payer_name and p.get("payer") == payer_name), None)
+    return {"income_type": t.income_type,
+            "regular_pay": ({k: pay.get(k) for k in ("id", "name", "amount", "cadence", "next")}
+                            if pay else None)}
+
+
 def _income_rule(t, kind_rules: dict) -> dict:
     """What Always needs on income (2026-11-08): who the payer is, if anyone
     can be named, and whether Always is on for them."""
@@ -190,14 +201,18 @@ def _with_rules(st, rows) -> list[dict]:
     # A split's people too, so they're on the page as it opens (2026-11-08).
     splits = st.splits()
     payer = st.payback_people() if any(t.fingerprint in splits for t, _ in rows) else {}
-    kind_rules = None
+    kind_rules = pays = None
     out = []
     for t, r in rows:
         if t.amount < 0:
             if kind_rules is None:
+                from . import income_bills as ib
                 from . import income_kind_rules
                 kind_rules = income_kind_rules.rules(st)
-            r = {**r, "income_rule": _income_rule(t, kind_rules)}
+                pays = ib.load(st)["pays"]
+            # Its kind and regular pay too (2026-11-08): the page opened on
+            # "Income" and turned into "Salary" when its own answer came.
+            r = {**r, "income_rule": _income_rule(t, kind_rules), **_income_facts(t, pays)}
         split = splits.get(t.fingerprint)
         if split and t.amount > 0:
             r = {**r, "splitting": _splitting(t, split, txns, payer)}
@@ -384,12 +399,7 @@ def transaction_detail(txn_id: str):
             # THL-198: what kind of income it is, and the regular pay it is,
             # when its payer is one of hers in Income and bills.
             from . import income_bills as ib
-            r["income_type"] = t.income_type
-            payer_name = ib.clean_name(t.merchant)
-            pay = next((p for p in ib.load(st)["pays"]
-                        if payer_name and p.get("payer") == payer_name), None)
-            r["regular_pay"] = ({k: pay.get(k) for k in ("id", "name", "amount", "cadence", "next")}
-                                if pay else None)
+            r.update(_income_facts(t, ib.load(st)["pays"]))
         # U-03: when it was left out, and a usual month of its group.
         from .transactions_extras_api import one_off_line
         r["one_off_line"] = one_off_line(st, txns, t)
