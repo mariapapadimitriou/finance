@@ -8,20 +8,12 @@ struct ProfileView: View {
     @EnvironmentObject private var app: AppModel
     @Binding var tab: MainTabs.Tab
     @State private var summary: ProfileSummary?
-    @State private var debts: DebtList?
     /// P-01: "Every 2 weeks · 5 bills".
-    @State private var incomeBills: IncomeBills?
-    @State private var recurringMonthly: Double?
-    /// Everything on the page has come in once (2026-11-08).
-    @State private var loaded = false
     @State private var doc: PearlDoc?
     @State private var showYourData = false
     @State private var showConsent = false
     @AppStorage(Appearance.key) private var appearance = Appearance.automatic.rawValue
     @State private var confirmSignOut = false
-    @State private var confirmReset = false
-    @State private var resetting = false
-    @State private var error: String?
 
     var body: some View {
         ScrollView {
@@ -36,32 +28,29 @@ struct ProfileView: View {
                 ProfileSection("Money")
                 GlassCard {
                     NavigationLink { AccountsView() } label: {
-                        ProfileRow(symbol: "building.columns", title: "Accounts", sub: accountsLine,
-                                   pill: summary?.needsYou.flatMap { $0 > 0 ? StatusPill(text: "\($0) needs you", tone: .needsALook) : nil },
-                                   loading: !loaded)
+                        ProfileRow(symbol: "building.columns", title: "Accounts",
+                                   pill: summary?.needsYou.flatMap { $0 > 0 ? StatusPill(text: "\($0) needs you", tone: .needsALook) : nil })
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
                     NavigationLink { IncomeBillsView() } label: {
-                        ProfileRow(symbol: "dollarsign.square", title: "Income and bills",
-                                   sub: incomeLine, loading: !loaded)
+                        ProfileRow(symbol: "dollarsign.square", title: "Income and bills")
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
                     NavigationLink { RecurringTransfersView() } label: {
-                        ProfileRow(symbol: "arrow.triangle.2.circlepath", title: "Recurring transfers",
-                                   sub: recurringLine, loading: !loaded)
+                        ProfileRow(symbol: "arrow.triangle.2.circlepath", title: "Recurring transfers")
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
                     // THL-128: Debts has its own row, not only Set Pearl up again's step.
                     NavigationLink { DebtsView() } label: {
-                        ProfileRow(symbol: "creditcard", title: "Debts", sub: debtsLine, loading: !loaded)
+                        ProfileRow(symbol: "creditcard", title: "Debts")
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
                     NavigationLink { CategoriesRulesView() } label: {
-                        ProfileRow(symbol: "square.on.circle", title: "Categories and rules", sub: rulesLine, loading: !loaded)
+                        ProfileRow(symbol: "square.on.circle", title: "Categories and rules")
                     }
                     .buttonStyle(.plain)
                 }
@@ -69,12 +58,12 @@ struct ProfileView: View {
                 ProfileSection("You")
                 GlassCard {
                     NavigationLink { SignInSecurityView() } label: {
-                        ProfileRow(symbol: "lock", title: "Sign-in and security", sub: securityLine)
+                        ProfileRow(symbol: "lock", title: "Sign-in and security")
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
                     NavigationLink { NotificationsView() } label: {
-                        ProfileRow(symbol: "bell", title: "Notifications", sub: "Payday · weekly check-in")
+                        ProfileRow(symbol: "bell", title: "Notifications")
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
@@ -89,8 +78,7 @@ struct ProfileView: View {
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
                     Button { showYourData = true } label: {
-                        ProfileRow(symbol: "tray.and.arrow.down", title: "Your data",
-                                   sub: "Download, start over or delete")
+                        ProfileRow(symbol: "tray.and.arrow.down", title: "Your data")
                     }
                     .buttonStyle(.plain)
                     RowSeparator(inset: 62)
@@ -119,7 +107,6 @@ struct ProfileView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 8)
 
-                resetCard.padding(.top, 8)
 
                 ProfileNote("Pearl for iPhone · \(version)", centred: true)
                     .padding(.top, 12)
@@ -147,11 +134,6 @@ struct ProfileView: View {
         .confirmationDialog("Sign out of Pearl on this iPhone?", isPresented: $confirmSignOut,
                             titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { Task { await app.signOut() } }
-        }
-        .confirmationDialog("Reset Pearl?", isPresented: $confirmReset, titleVisibility: .visible) {
-            Button("Reset", role: .destructive) { Task { await reset() } }
-        } message: {
-            Text("Your banks are unlinked and your transactions and setup are cleared. Your email, password and Face ID stay. This can't be undone.")
         }
     }
 
@@ -197,25 +179,6 @@ struct ProfileView: View {
     }
 
     /// Reset Pearl: back to the start of setup, keeping the sign-in.
-    private var resetCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            GlassCard {
-                Button(role: .destructive) { confirmReset = true } label: {
-                    ProfileRow(symbol: "arrow.counterclockwise", title: resetting ? "Resetting…" : "Reset Pearl",
-                               tone: Pearl.moneyOut, chevron: false) {
-                        if resetting { ProgressView() }
-                    }
-                }
-                .buttonStyle(.plain)
-                .disabled(resetting)
-            }
-            ProfileNote("Unlinks your banks and clears your transactions and setup, then starts setup again. You stay signed in.")
-            if let error = error {
-                Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 16)
-            }
-        }
-    }
-
     // MARK: Words
 
     private var name: String {
@@ -232,91 +195,22 @@ struct ProfileView: View {
         return out.isEmpty ? "P" : out
     }
 
-    private var accountsLine: String {
-        guard let n = summary?.accounts else { return "Your banks and balances" }
-        return n > 0 ? plural(n, "account") : "Link a bank or add a balance"
-    }
-
-    private var incomeLine: String {
-        guard let d = incomeBills else { return "Your pay and regular bills" }
-        let bills = d.bills.filter { $0.ticked == true }.count
-        let pay = d.pays.first.map { cadence($0.cadence) }
-        let parts = [pay, bills > 0 ? "\(bills) bill\(bills == 1 ? "" : "s")" : nil].compactMap { $0 }
-        return parts.isEmpty ? "Your pay and regular bills" : parts.joined(separator: " · ")
-    }
-
-    /// "3 recurring · $2,050 a month" once the page has been loaded.
-    private var recurringLine: String {
-        guard let n = summary?.recurring, n > 0 else { return "Rent, savings and others on a schedule" }
-        return "\(n) recurring" + (recurringMonthly.map { " · \(Format.whole($0)) a month" } ?? "")
-    }
-
-    /// "$9,409 owed · add 1 card’s details".
-    private var debtsLine: String {
-        guard let d = debts else { return "Cards and loans you carry" }
-        if d.debts.isEmpty { return "Nothing carried over" }
-        let missing = d.debts.filter { $0.action != nil }.count
-        return "\(Format.whole(d.total)) owed" + (missing > 0 ? " · add \(missing) \(missing == 1 ? "card’s" : "debts’") details" : "")
-    }
-
-    private var rulesLine: String {
-        guard let n = summary?.rules else { return "Your saved rules" }
-        return n > 0 ? plural(n, "rule") : "No saved rules yet"
-    }
-
-    /// "Face ID · passkey", or "Email codes" before she's added either.
-    private var securityLine: String {
-        let passkeys = app.user?.passkeys ?? 0
-        let words = [app.faceIDOn ? "Face ID" : nil,
-                     passkeys == 1 ? "passkey" : passkeys > 1 ? plural(passkeys, "passkey") : nil]
-            .compactMap { $0 }
-        return words.isEmpty ? "Email codes" : words.joined(separator: " · ")
-    }
-
     private var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     }
 
-    private func plural(_ n: Int, _ one: String) -> String { "\(n) \(one)\(n == 1 ? "" : "s")" }
-
     // MARK: Calls
 
-    /// Everything at once (2026-11-08): asked for together, and shown
-    /// together, instead of each row changing as its answer came in.
+    /// Only the Accounts row's "needs you" needs the server now (2026-11-08):
+    /// the rows have no second lines.
     private func load() async {
-        let api = app.api
-        async let profileReply: ProfileSummary? = {
-            do { return try await api.get("api/profile") } catch { _ = await app.handle(error); return nil }
-        }()
-        async let debtsReply: DebtList? = try? api.get("api/debts")
-        async let billsReply: IncomeBills? = try? api.get("api/income-bills")
-        async let recurringReply: RecurringTransfers? = try? api.get("api/recurring-transfers")
-        let (p, d, b, r) = await (profileReply, debtsReply, billsReply, recurringReply)
-        var none = SwiftUI.Transaction()
-        none.disablesAnimations = true
-        withTransaction(none) {
-            if let p = p { summary = p }
-            if let d = d { debts = d }
-            if let b = b { incomeBills = b }
-            recurringMonthly = (p?.recurring ?? summary?.recurring ?? 0) > 0 ? r?.monthly : nil
-            loaded = true
+        do {
+            summary = try await app.api.get("api/profile")
+        } catch {
+            _ = app.handle(error)
         }
     }
 
-    /// Back to the start of setup, as a new account (POST /api/account/reset).
-    private func reset() async {
-        resetting = true
-        defer { resetting = false }
-        do {
-            struct Reply: Decodable { let user: PearlUser? }
-            let reply: Reply = try await app.api.post("api/account/reset", ["confirm": "reset"])
-            error = nil
-            app.justCreated = false
-            app.signedIn(reply.user)
-        } catch {
-            self.error = app.handle(error)
-        }
-    }
 }
 
 /// Light or dark, or whichever the iPhone is set to (P-01's Appearance).
