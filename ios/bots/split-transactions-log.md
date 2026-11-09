@@ -28,10 +28,12 @@ The shared log for the two bots (`.claude/agents/designBOT.md`,
 | SPLIT-08 | Splitting a purchase on a joint account: offered, then refused by the server | Major | THL-291, THL-282 | Built — PR #315, THL-282 in Testing |
 | SPLIT-09 | S-12 Check and save doesn't show the effect on Allowance | Major | THL-289, THL-291 | Built — PR #315, THL-289/THL-291 in Testing |
 | SPLIT-10 | Odd cents and uneven percents: no frame, and the preview disagrees with what's saved | Minor | THL-291 | Built — PR #315, THL-291 in Testing |
-| SPLIT-11 | Cash or Another app for more than they owe, and cash only partly deposited | Minor | THL-291 | Built in part — PR #315; extra path waits on SPLIT-04/05; app name → SPLIT-14 |
+| SPLIT-11 | Cash or Another app for more than they owe, and cash only partly deposited | Minor | THL-291 | Built in part — PR #315; extra path waits on SPLIT-04/05; app name built (SPLIT-14) |
 | SPLIT-12 | Code is ahead of Figma: split screens with no frame, or that differ from it | Minor | THL-291 | Built (T-09r title) — PR #315; income list waits on SPLIT-04/05 |
 | SPLIT-13 | Owed to you from a Home nudge: in Jira, no frame | Minor | THL-291 | Built — PR #315, THL-291 in Testing |
-| SPLIT-14 | Another app has no field for which app | Minor | THL-291, THL-289 | Still blocked → designBOT |
+| SPLIT-14 | Another app has no field for which app | Minor | THL-291, THL-289 | Built — PR #315, THL-291 in Testing |
+| SPLIT-15 | A partly deposited cash payment is listed twice | Minor | THL-291 | Built — PR #315, THL-291 in Testing |
+| SPLIT-16 | Removing a person unlinks her whole payback, from other purchases too | Major | THL-291, THL-181, THL-289 | Built — PR #315, THL-291/THL-181 in Testing |
 
 ## Conversation
 
@@ -362,3 +364,237 @@ Branch `feat/split-bot-round` from main. PR https://github.com/mariapapadimitrio
   - Comments on THL-291, THL-181, THL-260, THL-264, THL-282 and THL-289.
   - THL-291 stays in Testing with open issues: SPLIT-01, 04, 05, 06 and 14.
 - **Not built:** SPLIT-01, 05 and 06 (product owner); SPLIT-04 (waits on SPLIT-05); S-06 v2's "Next: the extra" (needs S-11 v2); SPLIT-14 (designBOT).
+
+### [designBOT] 2026-11-09 19:00 · round 5 start
+This round covers SPLIT-14, the missing WHAT CHANGES card on S-12c, dark twins for every frame from round 2 and this round, and the two server side effects engBOT noted in round 4. Everything is on Pearl app in section 536:14142. The section is now 28460 × 2270 so the new rows fit. No old frame was redrawn.
+- **Dark twins:** each light frame in the round-2 column now has a twin below it at y = 1340, named "<frame> · Dark". They're built the same way as the existing twins: the frame's explicit mode on the colour collection is switched from 2:1 to 2:2, so every bound colour flips. Raw paints are copied from the matching paints on the existing twins (S-06 Dark 536:16064 for the background, auras, scrim and sheet). The nacre band and band fade are removed from sheets, as on the old twins. A few hand-set paints had no existing twin to copy from (alert and action-sheet panels, T-98s card, H-00n links). Those use the dark sheet navy and light ink. Each twin has its own ticket tag under it, ending in "· Dark".
+- **Not done:** nothing from the list is left out. I didn't draw new frames for the two server side effects (see the SPLIT-15/16 entry below); they're copy and behaviour on frames that already exist.
+
+### [designBOT → engBOT] 2026-11-09 19:00 · SPLIT-14 · Another app: which app
+**Status:** Redesigned
+**Jira:** THL-291, THL-289 flow 5   **Figma:** S-06 v3 1004:38392 (app named, with apps she's used before), S-06 v3a 1004:38576 (first time); dark 1008:40584, 1008:40744
+- **App row:** ticking Another app adds an **App** row at the top of the Amount / When card. Bank deposit and Cash in hand don't show it. The Another app choice's description now reads "Pearl won’t look for it in your bank", which is the SPLIT-11 rule.
+- **A typed name, not a fixed list.** A curated list (PayPal / Venmo / Wise / Apple Cash…) depends on the region: Venmo and Apple Cash don't exist in Canada, where Pearl's users bank. It also goes stale, and it's a hard-coded list of brands, which is the thing the house rules keep out of the app. A plain text field covers every app, with no brand names hard-coded.
+- **"Used before" chips:** under the card, as one-tap chips, are the app names she has typed before (her own data, newest first, up to 4). The second time is one tap. They're hidden when she hasn't named any yet (S-06 v3a).
+- **Optional:** Mark paid back works with the App field blank. Placeholder: "Which app?". Blank falls back to "Paid back · Another app · Nov 13". The name is a label only, so it shouldn't block saving.
+- **Label:** saved with the payback (the `via` column already added in 572b6b6 can hold it). S-05, S-04 v2 and Owed to you read "Paid back · PayPal · Nov 13". Trim the name, cap it at 30 characters, and match "paypal" and "PayPal" without regard to case for the chips. Like Cash, it's never offered in "Is this cash you were paid?".
+- S-06 v3 supersedes the form part of S-06 v2. The "more than owed → Next: the extra" behaviour from S-06 v2 is unchanged and still waits on SPLIT-04/05.
+This completes S-06 v2, which you already accepted, so I'm sending it straight to you. The product owner can still change it.
+
+### [designBOT → engBOT] 2026-11-09 19:00 · SPLIT-07 / SPLIT-09 · WHAT CHANGES on S-12c
+**Status:** Redesigned
+**Jira:** THL-260, THL-289 flow 4, THL-291   **Figma:** S-12c 998:37605 (added: caption 1004:38752, card 1004:38754); dark 1007:39514
+The card is the same as on S-12 v2, using S-12c's numbers:
+- **Allowance · November +$493.80:** the gift lands in the deposit's month.
+- **Shopping · October $212.40 → $106.20:** Dad's share comes off Costco's own month and category (Sat, Oct 11, Shopping). That's the same month rule as the payback row on S-12 v2.
+The card sits between the parts and the "Saving splits Costco…" note, and the sheet grew to fit. The S-12c note says what was added.
+
+### [designBOT → engBOT] 2026-11-09 19:00 · Dark twins · round-2 and round-5 frames
+**Status:** Redesigned
+**Jira:** THL-291 ("Light and dark match the frames")   **Figma (light → dark):**
+- S-03b v2 994:36736 → 1008:40898
+- S-03e 994:36904 → 1007:38831
+- S-03f 994:37078 → 1007:38650
+- S-33 v2 995:36892 → 1007:39004
+- S-10e 995:37021 → 1007:39132
+- S-11 v2 995:37232 → 1008:41065
+- S-22 v2 995:37522 → 1008:41353
+- T-98s 998:37418 → 1008:41634
+- S-24x 998:37484 → 1007:39342
+- S-12c 998:37605 → 1007:39514
+- S-12d 998:37799 → 1007:39719
+- S-01j 998:37841 → 1008:39146
+- S-02 v2 998:38004 → 1008:39262
+- S-12 v2 999:37852 → 1008:39446
+- S-18 v2 999:38055 → 1008:39650
+- S-15 v2 999:38228 → 1008:39822
+- S-06 v2 999:38403 → 1007:38500
+- S-13 v2 999:38554 → 1008:39996
+- S-04 v2 1001:38264 → 1008:40213
+- S-17 v2 1001:38361 → 1008:40304
+- H-00n 1001:38563 → 1008:40494
+- S-06 v3 1004:38392 → 1008:40584
+- S-06 v3a 1004:38576 → 1008:40744
+**Values you'll need in code, because they aren't tokens:**
+- **Split-method segment, selected:** rgb(0.30, 0.33, 0.58), the same as the old S-03 Dark.
+- **Alert and action-sheet panel:** rgb(0.16, 0.17, 0.36) at 97%, with no tinted header band.
+- **Scrim behind an alert:** 55%, not 32%.
+- **Hand-set positive green:** rgb(0.47, 0.85, 0.62).
+Everything else is a bound token and follows the theme.
+
+### [designBOT → engBOT] 2026-11-09 19:00 · Server side effects from round 4 · what she should see
+**Status:** Redesigned (behaviour and copy; no new frames)
+**Jira:** THL-291 (Cash in hand: "never counted twice"), THL-181 ("Paid back" and "Owes" agree with the repayments linked), THL-289 flow 7   **Figma:** S-13 v2 999:38554, S-03f 994:37078, S-05 536:14816
+I'm logging these as **SPLIT-15** and **SPLIT-16** so they can be tracked. engBOT, please add them to the tracker.
+
+**SPLIT-15 · A partly deposited cash payment is listed twice.** She should always see **one payment, as she recorded it**. The split into two records is bookkeeping and must not show.
+- **"Paid back this month" / S-05 / Owed to you:** one row, "Priya · Cash · $250.00 · Nov 3". When part of it has been deposited, add a second line under it: "$200.00 deposited Nov 12 · $50.00 still cash". Totals count $250 once.
+- **"Is this cash you were paid?" (S-13 v2):** the remainder shows as one row, "Priya · $50.00 left of $250.00 cash · Nov 3". It never shows as a separate $50 payment.
+- **Unlink the deposit:** the two records join back into one $250 cash record. Nothing changes on screen except the "deposited" line going away.
+- **For the server:** keep a shared origin id on both pieces, and group by it everywhere a payment is listed or counted. The cleaner alternative is one cash record with a `deposited` amount.
+
+**SPLIT-16 · Removing a person unlinks her whole payback, from other purchases too.** Removing Priya from one split should only touch **that** split. A purchase she isn't being removed from must never change without being asked.
+- **S-03f alert, when her payback also covers other purchases:** "Remove Priya? Her $60.00 e-Transfer also paid back Costco. Removing her here unlinks only the $28.04 for Loblaws; Costco stays paid back." The buttons don't change: "Unlink and remove" and "Keep Priya".
+- **After removing:** Loblaws no longer lists Priya. Costco still shows "Priya · Paid back". The e-Transfer goes back to Needs a look with "$28.04 left to sort", not the whole $60. Opening it shows the Costco part still linked, and the $28.04 rest on the shared What was this? page.
+- **Undo** (toast "Priya removed · Undo"): puts the $28.04 link back on Loblaws.
+- **If her payback covers only this purchase:** S-03f stays as drawn, and the whole e-Transfer goes back to Needs a look.
+- **For the server:** on edit, unlink only the parts of a payback that point at the purchase being edited. Don't drop the payback record.
+
+### [engBOT] 2026-11-09 20:30 · round 6 start
+Final round; the product owner said to run every round without stopping. I checked designBOT's round-5 frames with get_screenshot on the given node IDs only: S-06 v3 1004:38392, S-06 v3a 1004:38576, S-12c 998:37605, and four dark twins (S-03f Dark 1007:38650, S-04 v2 Dark 1008:40213, S-06 v3 Dark 1008:40584, S-12c Dark 1007:39514). I compared the twins with the app's dark tokens in `ios/Pearl/Theme/Theme.swift` and `Nacre.swift`. I added SPLIT-15 and SPLIT-16 to the tracker.
+
+### [engBOT → designBOT] 2026-11-09 20:30 · SPLIT-14 · Accepted
+**Figma:** S-06 v3 1004:38392, S-06 v3a 1004:38576; dark 1008:40584
+- The App row shows only for Another app, at the top of the Amount / When card. It's optional, with the placeholder "Which app?".
+- The chips are her own app names, newest first, up to 4. They're hidden the first time (v3a).
+- Blank shows "Another app". The name is trimmed, capped at 30 characters, and matched without regard to case.
+- A typed name, not a brand list, is right: nothing hard-coded, and nothing that's wrong for a region.
+- S-06 v2's "Next: the extra" still waits on SPLIT-04/05, as you said.
+
+### [engBOT → designBOT] 2026-11-09 20:30 · SPLIT-07 / SPLIT-09 · S-12c WHAT CHANGES · Accepted
+**Figma:** S-12c 998:37605 (card 1004:38754); dark 1007:39514
+The card matches what the app already shows on S-12c. Since round 4, the app has run Check and save's WHAT CHANGES through `parts/preview` with the held split, so you get "Allowance · November +$493.80" and "Shopping · October $212.40 → $106.20". No code change was needed.
+
+### [engBOT → designBOT] 2026-11-09 20:30 · Dark twins · Accepted, with two notes
+**Figma:** 1007:38650, 1008:40213, 1008:40584, 1007:39514 (spot-checked); the other 19 in your list were not opened.
+- **Tokens match the app.** Bound colours flip to the same dark values the app uses: page #0B1030, card #151B44, ink #FBF8F6, muted #B4B1CC, action #FF8FB1, and rule #252C5E.
+- **Split-method segment, selected (rgb 0.30, 0.33, 0.58):** the app had no value for this, so it's built. It's set on the split sheet only and reset when the sheet closes.
+- **Note 1, alerts and action sheets:** S-03f's alert and S-04 v2's action sheet are the system `.alert` and `.confirmationDialog`, which iOS draws in its own dark material. The panel rgb(0.16, 0.17, 0.36) at 97% and the 55% scrim can't be applied without swapping in custom alert views, and that isn't designed. Not built. I suggest the twins say "system alert, iOS draws it", so a later "match the frames" pass doesn't flag them. This doesn't block anything.
+- **Note 2, positive green:** the hand-set rgb(0.47, 0.85, 0.62) (#78D99E) differs from the token color/text/money-in dark #56D48F, which the app uses for every positive amount. I kept the token. Please bind those fills to money-in rather than hand-setting them. Not blocking.
+
+### [engBOT → designBOT] 2026-11-09 20:30 · SPLIT-15 · Accepted
+**Jira:** THL-291 Cash in hand ("never counted twice")   **Figma:** S-13 v2 999:38554, S-05 536:14816
+- I followed your first option, a shared origin id, because it keeps the round-4 rule that a later deposit can take what's left.
+- Every list groups pieces by that origin, and Unlink rejoins them into one record.
+
+### [engBOT → designBOT] 2026-11-09 20:30 · SPLIT-16 · Accepted, one copy change
+**Jira:** THL-181 ("Paid back" and "Owes" agree with the repayments linked), THL-289 flow 7   **Figma:** S-03f 994:37078
+- **Behaviour:** built as written.
+- **Copy change:** the alert says "Priya’s $60.00 e-Transfer also paid back Costco. Removing Priya here unlinks only the $28.04 for Loblaws; Costco stays paid back." It doesn't say "Her … her", because Pearl doesn't know anyone's pronouns.
+- **Payment word:** "e-Transfer" appears only when the deposit reads as one (e-Transfer or Interac). Otherwise the alert says "payment".
+
+### [engBOT] 2026-11-09 21:10 · round 6 · build
+Branch `feat/split-bot-round` (PR #315, open, not merged).
+
+**SPLIT-14 (S-06 v3 / v3a):**
+- **Server:** the `txn_split_cash.app` column, migrated. `POST …/split/cash` takes `app`: optional, trimmed, up to 30 characters, and kept only for `via: "app"`. The toast reads "Sam paid $42.06 through PayPal." New `GET /api/split/apps` lists her names newest first, one per name whatever its case, up to 4. `people_status` gains `app_name`, and Owed to you's paid back gains `app_name`.
+- **App:**
+  - MarkPaidSheet has the App row, the Used before chips and the v3 / v3a footnotes. The Another app subtitle is now "Pearl won’t look for it in your bank".
+  - S-05 reads "Paid back · PayPal · Nov 13", or "Paid back · Another app · Nov 13" when no app was named.
+  - Owed to you's paid back says the app's name, or "Another app".
+
+**SPLIT-15:**
+- **Server:**
+  - A `txn_split_cash.origin` column. A record cut in two by a partial deposit keeps its origin.
+  - `splits.payments()` groups the pieces into one payment, with `deposited`, `deposited_on` and `still`. It's used by `people_status` (`payments`) and by Owed to you's paid back.
+  - cash-matches marks a remainder with `of`, the whole payment.
+  - Unlinking a deposit (`parts.undo`, which Save changes also runs) rejoins free pieces into one record.
+- **App:** S-05 and Paid back this month show one row with "$200.00 deposited Nov 12 · $50.00 still cash" under it. S-13 shows "$50.00 left of $250.00 cash · Nov 3". Totals count $250 once, as before.
+
+**SPLIT-16:**
+- **Server, `_edit_split`:** a removed person's payback that also covers other purchases is unlinked, then saved again as parts of the deposit:
+  - one payback part per remaining purchase, with the same person and amounts;
+  - plus a rest, so the e-Transfer is "$28.04 left to sort from a $60.00 deposit." in Needs a look;
+  - Costco stays paid back;
+  - Undo (a new `unparts` mark, run first) puts the deposit back whole, then restores the Loblaws link, the other links and the split.
+  - A payback that covers only this purchase goes back whole, as before.
+  - `people_status` gains `shared` for the alert copy.
+- **App:**
+  - S-03f's alert copy, as above.
+  - Saving an edit that removed someone who had paid shows "Priya removed" with Undo, using the server's undo.
+
+**Dark:** the split-method segment colour, as above. Nothing else was missing from the app.
+
+**Tests:**
+- New in `tests/test_split_round.py`: TestWhichApp (4), TestCashOnePayment (3), TestRemoveOnlyHere (4).
+- Two existing tests changed:
+  - test_splits.py's exact-match dicts gained the new keys.
+  - test_cash_partly_deposited_keeps_the_rest now expects one $100 remainder of $250 after Save changes, not two $50 records. That's the SPLIT-15 rule.
+- **Results:**
+  - `python3 -m pytest -q`: 1739 passed, 0 failed. The split files give 28 in test_split_round.py.
+  - `xcodebuild -project ios/Pearl.xcodeproj -scheme Pearl -destination 'generic/platform=iOS Simulator' build`: BUILD SUCCEEDED. Not run by hand in a simulator.
+  - No `.swift` files were added, so `make_project` wasn't needed.
+- **Commit:** f067b04, "Splits round 6: which app, one cash payment, remove only here". 12 files; `git show --stat` checked. Pushed to `feat/split-bot-round`.
+- **PR #315:** the body now covers SPLIT-14/15/16, the S-12c card, the dark segment, and the system-alert note. It's still open and not merged.
+- **Jira:** comments on THL-291, THL-181 and THL-289. All three stay in Testing, and I moved no ticket.
+
+## Summary
+
+The final state after six rounds (2026-11-09).
+
+**PR:** https://github.com/mariapapadimitriou/finance/pull/315 (open, not merged)
+**Branch:** `feat/split-bot-round`
+**Commits:**
+- e0da5fa: iOS, round 4
+- 572b6b6: server, round 4
+- 6bb6713: log, rounds 1–3
+- f465bc3: log, round 4
+- f067b04: round 6 build
+- this log commit
+
+**Tests:**
+- `python3 -m pytest -q`: 1739 passed.
+- iOS Simulator build: BUILD SUCCEEDED.
+- Not run by hand on a simulator or a device.
+
+### Every issue
+
+| ID | Title | Final status |
+|----|-------|--------------|
+| SPLIT-01 | Save before the split adds up | **Needs product owner**. Not built; Save is still allowed while short and blocked when too much |
+| SPLIT-02 | Edit split after someone has paid | Built (S-03e, S-03f) |
+| SPLIT-03 | Edit on a deposit in parts | Built (S-33 v2, S-10e) |
+| SPLIT-04 | One "What's the other $x?" | Accepted, **not built**: waits on SPLIT-05 |
+| SPLIT-05 | Tabs and Continue on S-22 / S-11 | **Needs product owner** |
+| SPLIT-06 | Split from Quick sort: held or saved at once | **Needs product owner**. As built, it saves at once |
+| SPLIT-07 | Split and link as one save | Built (S-24x, S-12c with WHAT CHANGES, S-12d) |
+| SPLIT-08 | Joint-account purchase | Built (S-01j, S-02 v2) |
+| SPLIT-09 | Effect on Allowance in Check and save | Built (S-12 v2) |
+| SPLIT-10 | Odd cents and thirds | Built (S-18 v2, S-15 v2) |
+| SPLIT-11 | Cash or app above what's owed, cash partly deposited | Built in part. **S-06 v2 "Next: the extra" waits on SPLIT-04/05** |
+| SPLIT-12 | Code ahead of Figma | Built (T-09r title). **The income-kinds list is replaced only when S-11 v2 is built (SPLIT-04/05)** |
+| SPLIT-13 | Home owes-you nudge | Built (H-00n) |
+| SPLIT-14 | Another app: which app | Built (S-06 v3 / v3a) |
+| SPLIT-15 | Partly deposited cash listed twice | Built |
+| SPLIT-16 | Removing a person unlinks their whole payback | Built. The alert uses the name instead of "Her" |
+
+### Open product-owner decisions
+
+**SPLIT-01: may she save before the split adds up?**
+- (a) Block Save until it adds up exactly. This is THL-291's AC and S-03b as drawn.
+- **(b′) designBOT recommends this:** the rest stays hers, but only when "I had some too" is on. Her row shows it before saving: "Your share $44.12 · $4.12 of it is the rest". With it off, Save stays blocked with "$4.12 left to assign". The server must block that case too.
+- If (b′) is picked, THL-291's "Save only when shares add up exactly" needs rewording.
+- Figma: S-03b v2 994:36736. Until this is decided, the app allows saving short, even with "I had some too" off. That's the $44.12 bug in SPLIT-01.
+
+**SPLIT-05: what does the split's What was this? page look like?**
+- (a) Splits keep their own tabs, Continue and 7 income tiles.
+- **(b) designBOT recommends this:** splits use the shared What was this? page, where tiles answer at once and there are four income tiles. Other income asks for the other kinds.
+- If (b) is picked, THL-291's "7 kinds" becomes "any income kind".
+- Figma: S-22 v2 995:37522, S-11 v2 995:37232.
+
+**SPLIT-06: is a split from a Quick sort card's page held or saved at once?**
+- **(a) designBOT recommends this:** held for the card, as the T-96 note says. The card reads "Groceries, split with Sam?". Yes saves the split and the category, with one Undo, and Skip drops it.
+- (b) Saved at once, as built. Then the T-96 note drops "split".
+- Figma: T-98s 998:37418.
+
+**Blocked behind these decisions:**
+- **SPLIT-04 (S-11 v2):** one "What's the other $x?" page, with every Jira kind as a tile (including Dad overpaid, Out of savings and Off a category). Built once SPLIT-05 (b) is picked.
+- **S-06 extra path (SPLIT-11):** "Next: the extra $17.94" when cash or an app pays above what's owed. It opens S-11 v2, so it waits on SPLIT-04/05.
+- **Income-list replacement (SPLIT-12):** the "What kind of income?" list in PartsFlow, which designBOT flagged as a second income picker. It's replaced by S-11 v2's tiles in the same build.
+
+### Notes left with designBOT (not blocking)
+- **Dark alerts and action sheets** (S-03f, S-04 v2 twins): the hand-set panel colour and the 55% scrim can't be applied to iOS system alerts. The suggestion is to mark the twins "system alert".
+- **Positive green:** the hand-set #78D99E on the dark twins should be bound to the money-in token, #56D48F, which the app uses.
+- **Dark twins:** only 4 of the 23 were opened this round.
+
+### How the bots communicated
+| Round | Who | What was sent |
+|-------|-----|---------------|
+| 1 | engBOT → designBOT | An audit of Jira (THL-291, THL-289 and related), the 37 S-frames and the code. Logged SPLIT-01 to SPLIT-13, each with a Jira quote, Figma nodes, code lines and an ask. No changes. |
+| 2 | designBOT → engBOT | Replies to all 13 and new light frames in column 994:36735. Three were put to the product owner (SPLIT-01, 05, 06), with recommended options. |
+| 3 | engBOT → designBOT | Checked every new frame by node: SPLIT-02/03/07–13 Accepted; SPLIT-04 Accepted but waiting on SPLIT-05. Raised SPLIT-14 (no field to name the app), and asked for WHAT CHANGES on S-12c. |
+| 4 | engBOT | Built the accepted work (e0da5fa iOS, 572b6b6 server) and opened PR #315. Commented on six Jira tickets. Noted two server side effects. |
+| 5 | designBOT → engBOT | SPLIT-14 redesign (S-06 v3 / v3a), the S-12c card, 23 dark twins with the hand-set values, and SPLIT-15/16 for the two side effects (behaviour and copy). |
+| 6 | engBOT → designBOT | Accepted SPLIT-14, the S-12c card, SPLIT-15 and SPLIT-16 (one copy change), and the dark twins with two notes. Built SPLIT-14/15/16 and the dark segment (f067b04), updated PR #315, commented on THL-291/181/289, and wrote this summary. |
+
+Throughout, no ticket was moved past Testing, nothing was merged, and Figma was edited only by designBOT.
