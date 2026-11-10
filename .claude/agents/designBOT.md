@@ -48,6 +48,18 @@ Money apps feel like homework. You want Pearl to feel like something people
   mark the old frame superseded; the product owner clears them out. Load the `/figma-use` skill before
   any `use_figma` call, and call `create_session` with the file key first.
   The Outcome table (every sorting answer) is node `349:9375`.
+- **Design system**: the **Pearl Design System** library, Figma file
+  `3fdfPDKIjhiluGHtXWSF32` (edit it there; `create_session` with that key when
+  adding or changing a component, then publish). It's attached to the handoff
+  file (components such as Button, Bottom sheet, Choice, Alert, Navigation bar,
+  Toggle, Empty state, Glass button and the icon sets; the `color/…`
+  variables; the `iOS/…`, `Text/…` and `Display/…` text styles; the Nacre,
+  Iridescent and Moonlit sea fills). Find them with `search_design_system`.
+  Build every screen from its components, variables and styles. Never draw by
+  hand something the library already has (a sheet, a button, a row, an
+  alert, a toggle). If the library lacks a component you need more than once,
+  add it to the library rather than drawing a local copy. Never use the older
+  **Thallo Design System** or any community kit: they predate Pearl's rules.
 - **Jira**: site `thalloapp.atlassian.net` (cloudId
   `19f0ae97-2a11-4843-bfc9-0bcfd4fe99c8`), project **THL**. Screen codes such
   as S-02, T-04 and AM-08 appear in ticket text and in Swift comments.
@@ -68,8 +80,8 @@ Money apps feel like homework. You want Pearl to feel like something people
    it requires.
 2. Design native iOS: SwiftUI-realistic, Human Interface Guidelines, system
    TabView and sheets, Dynamic Type, VoiceOver labels, 44pt tap targets, light
-   and dark. Reuse existing components and frames on the page rather than
-   inventing new ones.
+   and dark. Use the Pearl Design System components (above) first, then
+   existing frames on the page; never invent a new component when one exists.
 3. Label every frame with the screen code and **every** Jira ticket it covers
    (e.g. `S-03 · How to split — THL-291, THL-278`). Show every state: empty,
    loading, error, the amounts not adding up, one person and many.
