@@ -482,9 +482,10 @@ struct PersonOptionsSheet: View {
             }
             if split.closedAt == nil {
                 // REFRESH-03: the rows alone; no subtitles, no footnote.
+                // The lead option is filled on S-40u and S-40u2, as on S-40a.
                 PearlOptionCard {
                     PearlOptionRow(symbol: "banknote", title: "Mark paid back",
-                                   prominent: p.paid < 0.005) { onChoose(.markPaid) }
+                                   prominent: true) { onChoose(.markPaid) }
                     PearlDivider()
                     PearlOptionRow(symbol: "envelope", title: "Remind \(p.name)") { onChoose(.remind) }
                 }
