@@ -268,12 +268,14 @@ struct JointAccountView: View {
             NacreAvatar(text: account.bankLetters, size: 56)
             Text(account.name).font(Nacre.title2).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center)
-            Text(Format.amount(abs(account.balance ?? 0)))
+            // TEST-13: the same hero as AM-08: "—" with no balance, not
+            // $0.00, and "Owing" for a card.
+            Text(account.balance.map { Format.amount(abs($0)) } ?? "—")
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
                 .tracking(-0.88)
                 .foregroundColor(Pearl.ink)
                 .lineLimit(1).minimumScaleFactor(0.6)
-            Text([account.kindWord, (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)"]
+            Text([account.owing == true ? "Owing" : account.kindWord, (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)"]
                 .compactMap { $0 }.joined(separator: " · "))
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
             StatusPill(text: "Joint", tone: .joint)
