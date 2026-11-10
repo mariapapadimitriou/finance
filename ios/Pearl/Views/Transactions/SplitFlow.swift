@@ -170,7 +170,9 @@ struct SplitSheet: View {
         }
         .sheet(item: $removing) { p in
             // S-03fr / S-03fr2: here it only takes them off the list; Save sends it.
-            RemovePersonSheet(p: p, merchant: t.merchant, onClose: { removing = nil }) {
+            RemovePersonSheet(p: p, merchant: t.merchant,
+                              countsAgain: t.splitting.flatMap { $0.unsure ? ($0.still ?? $0.you) + p.paid : nil },
+                              onClose: { removing = nil }) {
                 removing = nil
                 remove(p.name)
             }
@@ -180,8 +182,9 @@ struct SplitSheet: View {
             // name. S-17j: on a joint purchase its holders are left out.
             PeoplePicker(api: api, overline: (t.splitsMyPart ? "Split my part · " : "Split · ") + t.merchant,
                          title: "Add someone",
+                         // S-17j (REFRESH-03): "Sam Lee’s part is already off."
                          sub: t.joint.isEmpty || t.jointPeople.isEmpty ? nil
-                             : "\(t.jointWho) \(t.jointPeople.count == 1 ? "isn’t" : "aren’t") listed: they’re on this joint account, and their part is already off.",
+                             : "\(possessive(t.jointWho)) part\(t.jointPeople.count == 1 ? " is" : "s are") already off.",
                          txn: t.joint.isEmpty ? nil : t.id, already: people, refused: t.jointPeople,
                          onClose: { adding = false }) { names in
                 for name in names where !people.contains(name) { people.append(name) }
@@ -368,8 +371,9 @@ struct SplitSheet: View {
 
     // MARK: S-03u Not sure yet (SPLIT-C)
 
+    /// REFRESH-03 (S-03u): the info card's one line.
     private var unsureWords: String {
-        "No amounts for now. Each payback comes off what \(t.merchant) costs you. Until then, all \(Format.amount(t.splitBase)) counts as yours."
+        "No amounts yet. Paybacks come off as they arrive."
     }
 
     private var unsureHow: some View {
@@ -412,9 +416,6 @@ struct SplitSheet: View {
                 if !people.isEmpty { RowSeparator() }
                 addNewRow
             }
-            Text("“I had some too” isn’t needed here. Whatever isn’t paid back stays yours.")
-                .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -464,8 +465,12 @@ struct SplitSheet: View {
             }
             Group {
                 if gapCents == 0 {
-                    Text(addsUp + (settling ? "" : overWords)).foregroundColor(Nacre.teal)
+                    // S-03e (REFRESH-03): "Adds up ✓ · you owe Priya $8.04"; the
+                    // why is a VoiceOver hint. Otherwise S-03's "Adds up to $84.12 ✓".
+                    let over = settling ? "" : overWords
+                    Text(over.isEmpty ? addsUp : "Adds up ✓ · \(over)").foregroundColor(Nacre.teal)
                         .multilineTextAlignment(.center)
+                        .accessibilityHint(over.isEmpty ? "" : overHint)
                 } else {
                     VStack(spacing: 8) {
                         Text(gapWords).foregroundColor(gapCents > 0 && !blocksShort ? Pearl.ink : Pearl.moneyOut)
@@ -497,9 +502,10 @@ struct SplitSheet: View {
     private var overTotal: Double { overList.map(\.amount).reduce(0, +) }
 
     private var extraNote: String? {
-        guard let first = overList.first, let p = saved(first.name) else { return nil }
+        guard let first = overList.first, saved(first.name) != nil else { return nil }
         let more = overList.count > 1 ? " The others too." : ""
-        return "\(first.name) already paid you \(Format.amount(p.paid)), which is \(Format.amount(first.amount)) more than their share. Next, you’ll say what the extra \(Format.amount(first.amount)) was.\(more)"
+        // REFRESH-03: "Sam paid $10.00 more than this. You’ll sort the extra next."
+        return "\(first.name) paid \(Format.amount(first.amount)) more than this. You’ll sort the extra next.\(more)"
     }
 
     private func label(_ key: String) -> String {
@@ -622,9 +628,9 @@ struct SplitSheet: View {
         let cents = shareCents(key)
         let mineOdd = key == Self.me && oddToMe
         if key == Self.me && withMe && gapCents > 0 {
-            // S-03b v2: "Your share $44.12 · $4.12 of it is the rest", before saving.
-            let rest = mineCents - cents
-            bits.append("Your share \(Format.amount(Double(mineCents) / 100)) · \(Format.amount(Double(rest) / 100)) of it is the rest")
+            // S-03b v2 (REFRESH-03): "Your share $44.12", before saving; the
+            // rest is said once, under the total.
+            bits.append("Your share \(Format.amount(Double(mineCents) / 100))")
         }
         if mode == "percent" && gapCents == 0 {
             bits.append(Format.amount(Double(cents) / 100) + (mineOdd ? " · the odd cent is yours" : ""))
@@ -657,14 +663,21 @@ struct SplitSheet: View {
         return bits.isEmpty ? nil : bits.joined(separator: " · ")
     }
 
-    /// S-03e: " · Priya paid $8.04 more than this share, so you’ll owe Priya
-    /// $8.04 (You owe, in Owed to you)."
+    /// S-03e (REFRESH-03): "you owe Priya $8.04", after "Adds up ✓ ·".
     private var overWords: String {
         let over = people.map { ($0, overCents($0)) }.filter { $0.1 > 0 }
         guard !over.isEmpty else { return "" }
-        return over.map { name, c in
-            " · \(name) paid \(Format.amount(Double(c) / 100)) more than this share, so you’ll owe \(name) \(Format.amount(Double(c) / 100))"
-        }.joined() + " (You owe, in Owed to you)."
+        return over.map { name, c in "you owe \(name) \(Format.amount(Double(c) / 100))" }.joined(separator: " · ")
+    }
+
+    /// What the S-03e line used to spell out, for VoiceOver (names, not
+    /// pronouns): "Priya paid $8.04 more than Priya’s share. It shows under
+    /// You owe in Owed to you."
+    private var overHint: String {
+        let over = people.map { ($0, overCents($0)) }.filter { $0.1 > 0 }
+        guard !over.isEmpty else { return "" }
+        return over.map { name, c in "\(name) paid \(Format.amount(Double(c) / 100)) more than \(possessive(name)) share." }
+            .joined(separator: " ") + " It shows under You owe in Owed to you."
     }
 
     /// Cents still to give out ("$4.12 left to assign"); negative is too much.
@@ -692,12 +705,13 @@ struct SplitSheet: View {
         if mode == "percent" {
             let g = Double(gapCents) / 100
             if g > 0 && blocksShort { return "\(Self.plain(g))% left to assign" }
-            return g > 0 ? "\(Self.plain(g))% isn’t anyone’s yet · it stays yours" : "That’s \(Self.plain(-g))% too much"
+            return g > 0 ? "\(Self.plain(g))% left · stays yours" : "That’s \(Self.plain(-g))% too much"
         }
         let g = Double(abs(gapCents)) / 100
         // S-03b: with "I had some too" off there's no "you" to keep the rest.
         if gapCents > 0 && blocksShort { return "\(Format.amount(g)) left to assign" }
-        return gapCents > 0 ? "\(Format.amount(g)) isn’t anyone’s yet · it stays yours"
+        // S-03b v2 / S-03r / S-03re (REFRESH-03): "$4.12 left · stays yours".
+        return gapCents > 0 ? "\(Format.amount(g)) left · stays yours"
             : "That’s \(Format.amount(g)) too much"
     }
 
@@ -847,7 +861,9 @@ struct SplitSheet: View {
         do {
             let reply: Reply = try await api.put("api/transactions/\(t.id)/split", body)
             error = nil
-            onSettled?(reply.toast ?? "Settled · \(t.merchant) is a set split now", reply.undo)
+            // S-45f (REFRESH-03): "Settled · $46.66 owed"; nothing owed, "Settled up".
+            let owed = people.reduce(0.0) { $0 + max(0, Double(shareCents($1)) / 100 - (saved($1)?.paid ?? 0)) }
+            onSettled?(reply.toast ?? (owed >= 0.005 ? "Settled · \(Format.amount(owed)) owed" : "Settled up"), reply.undo)
         } catch let e as APIError {
             if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
             throw e
@@ -945,25 +961,19 @@ struct SplitPeople: View {
             }
             if split.unsure {
                 // S-04u: Settle up and That's everything; S-46c Reopen split.
+                // REFRESH-03: titles alone; what each does is a VoiceOver hint.
                 PearlOptionCard {
                     if split.closedAt == nil {
-                        PearlOptionRow(symbol: "person.2", title: "Settle up", sub: "Set what each person owes now",
-                                       action: onSettle)
+                        PearlOptionRow(symbol: "person.2", title: "Settle up", action: onSettle)
+                            .accessibilityHint("Set what each person owes.")
                         PearlDivider()
-                        PearlOptionRow(symbol: "checkmark", title: "That’s everything",
-                                       sub: "Keep the rest as yours and close it", action: onClose)
+                        PearlOptionRow(symbol: "checkmark", title: "That’s everything", action: onClose)
+                            .accessibilityHint("Keeps the rest as yours and closes the split.")
                     } else {
-                        PearlOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Reopen split",
-                                       sub: "Track paybacks for \(t.merchant) again", action: onReopen)
+                        PearlOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Reopen split", action: onReopen)
                     }
                 }
                 .padding(.top, 8)
-            }
-            if t.splitsMyPart, let joint = split.joint {
-                Text("\(possessive(joint.people.isEmpty ? joint.label : Format.andList(joint.people))) part stays theirs. Only the people in your split owe you.")
-                    .font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4).padding(.top, 6)
             }
             if split.closedAt == nil {
                 Button("See everyone who owes you", action: onOwed)
@@ -987,14 +997,11 @@ struct SplitPeople: View {
         return open.isEmpty ? "Paid back" : "Owed to you"
     }
 
-    /// S-04u: "Amounts not set · $80.00 still counts as yours", "all
-    /// $100.00" with nothing linked; S-46c "You kept $80.00 · nobody owes you".
+    /// S-46c "You kept $80.00 · nobody owes you". Open (S-04u), nothing: the
+    /// hero's "Counts as $80.00 so far" already says it (REFRESH-03).
     private var unsureLine: String? {
-        guard split.unsure else { return nil }
-        let still = split.still ?? split.you
-        if split.closedAt != nil { return "You kept \(Format.amount(still)) · nobody owes you" }
-        if (split.paid ?? 0) < 0.005 { return "Amounts not set · all \(Format.amount(still)) counts as yours" }
-        return "Amounts not set · \(Format.amount(still)) still counts as yours"
+        guard split.unsure, split.closedAt != nil else { return nil }
+        return "You kept \(Format.amount(split.still ?? split.you)) · nobody owes you"
     }
 
     /// S-04u / S-46c: what someone has paid, or "Nothing yet"; never "owes".
@@ -1288,19 +1295,18 @@ struct MarkPaidSheet: View {
             PearlSheetHeader(face: person.name, overline: "Mark paid back", title: "How did \(person.name) pay?",
                              sub: unsure ? "Any amount · \(Format.amount(limit)) still counts as yours"
                                  : "\(Format.amount(person.owes)) owed on \(t.merchant)") { dismiss() }
+            // REFRESH-03 (S-06ra): three titles; only Cash keeps a line.
             PearlOptionCard {
-                PearlOptionRow(symbol: "creditcard", title: "Bank or e-Transfer", sub: "Pick it from your money in",
-                               prominent: true) {
+                PearlOptionRow(symbol: "creditcard", title: "Bank or e-Transfer", prominent: true) {
                     how = "bank"
                     Task { await primary() }
                 }
                 PearlDivider()
-                PearlOptionRow(symbol: "banknote", title: "Cash in hand",
-                               sub: "No bank record. It comes off \(t.merchant) now") {
+                PearlOptionRow(symbol: "banknote", title: "Cash in hand", sub: "Comes off \(t.merchant) now") {
                     how = "cash"; error = nil; chosen = true
                 }
                 PearlDivider()
-                PearlOptionRow(symbol: "iphone", title: "Another app", sub: "Name the app. Pearl remembers it next time") {
+                PearlOptionRow(symbol: "iphone", title: "Another app") {
                     how = "app"; error = nil; chosen = true
                 }
             }
@@ -1447,11 +1453,12 @@ struct MarkPaidSheet: View {
             .background(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous).fill(Pearl.card))
             .overlay(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous).stroke(Pearl.border, lineWidth: 1))
             if how == "cash" {
-                InfoNote(text: "If you deposit this cash later, Pearl asks if it’s this payment, so it’s never counted twice.")
+                // S-06rc (REFRESH-03).
+                InfoNote(text: "Deposit it later? Pearl won’t count it twice.")
             }
             if overBy >= 0.005 {
                 // S-06 v2 (SPLIT-11): more than they owe; S-11c says what. Ink, not red.
-                Text("That’s \(Format.amount(overBy)) more than \(person.name) owes. Next you’ll say what the extra is.")
+                Text("\(Format.amount(overBy)) more than \(person.name) owes. You’ll sort the extra next.")
                     .font(Pearl.text(.callout)).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1499,6 +1506,8 @@ struct MarkPaidSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: Pearl.radiusChoice, style: .continuous).stroke(Pearl.border, lineWidth: 1))
                     .onChange(of: appName) { v in if v.count > 30 { appName = String(v.prefix(30)) } }
                     .accessibilityLabel("Which app")
+                    // S-06 v3a (REFRESH-03): the field says "optional"; VoiceOver hears why.
+                    .accessibilityHint("Leave it blank and the split reads Paid back · Another app.")
             }
         }
     }
@@ -1643,7 +1652,8 @@ struct MarkPaidSheet: View {
             CaseGrid(cases: CaseTile.cashExtra(who: person.name, app: how == "app"),
                      chosen: Binding(get: { nil }, set: { key in if let key = key { takeExtra(key) } }))
                 .disabled(busy)
-            Text("\(person.name) owes \(Format.amount(person.owes)) for \(t.merchant). Nothing is saved until you say what the other \(Format.amount(extraLeft)) is.")
+            // S-11c (REFRESH-03): the one fact; the tiles say the rest.
+            Text("\(person.name) owes \(Format.amount(person.owes)) for \(t.merchant).")
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1874,8 +1884,8 @@ struct LetGoSheet: View {
                       : "\(person.name) won’t owe you anymore. The \(owes) becomes \(into).")
                 .font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            // Product owner, 2026-11-09 (REFRESH-02 copy, the payback rule).
-            InfoNote(text: "\(t.merchant) already counts in full until it’s paid back, so your Allowance doesn’t change.")
+            // Product owner, 2026-11-09 (the payback rule); REFRESH-03 words.
+            InfoNote(text: "Your Allowance doesn’t change.")
             if failed { CautionBanner(text: Self.error) }
         } footer: {
             PearlSheetButtons(primary: failed ? "Try again" : "Let \(owes) go", busy: busy, busyLabel: "Letting go…",

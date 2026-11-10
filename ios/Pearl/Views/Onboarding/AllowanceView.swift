@@ -186,9 +186,13 @@ extension Allowance {
                 let when = nextPay.map { " on \(Format.short($0))" } ?? ""
                 return "An estimate for now. It gets sharper after your next pay\(when)."
             }
-            return "Left to spend or save on non-essentials."
+            return Self.restCaption
         }
     }
+
+    /// The usual line under the ring. Home hides it (REFRESH-03, H-00n: the
+    /// ring already says Allowance) and reads it as the ring's VoiceOver hint.
+    static let restCaption = "Left to spend or save on non-essentials."
 }
 
 /// The mother-of-pearl ring with a frosted centre, and the amount in it.

@@ -33,7 +33,8 @@ struct PaybackOptionsSheet: View {
             }
             PearlOptionCard {
                 if let view = link.view {
-                    PearlOptionRow(symbol: "eye", title: view.label, sub: "Opens it here in Pearl", action: onView)
+                    // REFRESH-03 (S-05or): the title alone; it still opens here, never the web.
+                    PearlOptionRow(symbol: "eye", title: view.label, action: onView)
                     PearlDivider()
                 }
                 PearlOptionRow(symbol: "xmark", title: link.kind == "refund" ? "Unlink refund…" : "Unlink…",
@@ -74,6 +75,13 @@ struct UnlinkLinkSheet: View {
 
     private static let error = "Couldn’t unlink that. Nothing changed. Try again."
 
+    /// "To unlink the whole $60.00, open the e-Transfer." for a payment that
+    /// also paid back other purchases.
+    private var wholeHint: String? {
+        guard let others = link.others, !others.isEmpty, let whole = link.whole else { return nil }
+        return "To unlink the whole \(Format.amount(whole)), open the \(link.noun)."
+    }
+
     var body: some View {
         let s = link.sheet
         PearlSheet(dismissDisabled: busy) {
@@ -109,6 +117,9 @@ struct UnlinkLinkSheet: View {
                 .background(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous).fill(Pearl.card))
                 .overlay(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous).stroke(Pearl.border, lineWidth: 1))
                 .accessibilityElement(children: .combine)
+                // S-34sr (REFRESH-03): the footnote about the whole payment is
+                // gone from the sheet; VoiceOver keeps it on the payment row.
+                .accessibilityHint(wholeHint ?? "")
             }
             if failed { CautionBanner(text: Self.error) }
         } footer: {

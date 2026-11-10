@@ -306,10 +306,10 @@ struct AnswerSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 optionLabel(joint && f.splitsMyPart ? "Split my part" : "Split with others",
                                             done: splitSaid != nil, icon: "person.2")
-                                if joint {
-                                    Text(none ? "Nothing here is yours to split. Say it was partly yours first."
-                                         : f.splitsMyPart ? "Split your \(Format.amount(f.splitBase)) with friends"
-                                         : "Split it with friends")
+                                // T-06jr / T-06jr1 (REFRESH-03): Split my part has no
+                                // subtitle; none of it hers says so in five words.
+                                if joint && (none || !f.splitsMyPart) {
+                                    Text(none ? "None of it is yours to split." : "Split it with friends")
                                         .font(Nacre.footnote).foregroundColor(Pearl.muted)
                                         .padding(.leading, 64).padding(.bottom, 8)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -734,11 +734,6 @@ struct AnswerSheet: View {
             if let kindError = kindError {
                 Text(kindError).font(Nacre.footnote).foregroundColor(Pearl.caution)
                     .padding(.horizontal, 16).fixedSize(horizontal: false, vertical: true)
-            }
-            if learnable {
-                Text("Always for \(who) was set on the page before, so it isn’t asked again here.")
-                    .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

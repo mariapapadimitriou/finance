@@ -86,8 +86,12 @@ struct HomeView: View {
                             ?? Format.monthName(home.month).uppercased(),
                           amount: home.safeToSpend?.ringAmount ?? "—",
                           progress: home.safeToSpend?.ringProgress ?? 0)
+                .accessibilityHint(home.safeToSpend?.ringCaption == Allowance.restCaption ? Allowance.restCaption : "")
                 .padding(.vertical, 12)
-            if let caption = home.safeToSpend?.ringCaption, !caption.isEmpty {
+            // REFRESH-03 (H-00n, H-00u): the usual "Left to spend or save…" line
+            // is gone, since the ring says Allowance; it stays as the ring's
+            // VoiceOver hint. The other states (estimate, over, no income) keep theirs.
+            if let caption = home.safeToSpend?.ringCaption, !caption.isEmpty, caption != Allowance.restCaption {
                 Text(caption).font(Nacre.subheadline).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -128,18 +132,19 @@ struct HomeView: View {
     }
 }
 
-/// "N transactions need a look", opening Needs a look.
+/// "54 to sort" (REFRESH-03, H-00n), opening Needs a look.
 struct NeedsALookCard: View {
     let count: Int
     var pearlSorted = 0
 
     var body: some View {
         PearlCard(spacing: 8) {
-            Text(count == 1 ? "1 transaction needs a look" : "\(count) transactions need a look")
+            Text("\(count) to sort")
                 .font(Pearl.cardTitle).foregroundColor(Pearl.ink)
-            Text("We weren't sure how to sort these. Sorting them keeps your numbers right."
-                 + (pearlSorted > 0 ? " Pearl sorted \(pearlSorted) more by itself." : ""))
-                .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
+            if pearlSorted > 0 {
+                Text("Pearl sorted \(pearlSorted) by itself.")
+                    .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
+            }
             NavigationLink {
                 ReviewView()
             } label: {
@@ -150,10 +155,10 @@ struct NeedsALookCard: View {
     }
 }
 
-/// H-00n (SPLIT-13, THL-291 "the Home owes-you nudge"): "Sam and Priya owe
-/// you $70.10, from 2 splits. The oldest is from Nov 1." It shows once the
-/// oldest share is a week old, so a split made today doesn't nag, and goes
-/// when nothing is owed. No dismiss, like Needs a look.
+/// H-00n (SPLIT-13, THL-291 "the Home owes-you nudge"; REFRESH-03 words):
+/// "Sam and Priya owe you $70.10". It shows once the oldest share is a week
+/// old, so a split made today doesn't nag, and goes when nothing is owed.
+/// No dismiss, like Needs a look.
 struct OwedNudgeCard: View {
     let line: String
 
@@ -181,20 +186,13 @@ struct OwedNudgeCard: View {
         }
         // H-00u (SPLIT-C decision 5): a Not sure yet split is never money
         // owed, so it adds no amount; once it's a week old, the same timing
-        // as owes-you, a quiet "isn't settled yet" joins the line.
+        // as owes-you, a quiet "· 1 not settled" joins the line (REFRESH-03).
         let unsettled = (owed.notSettled ?? []).filter { aWeek($0.date) }
-        let tail: String? = unsettled.isEmpty ? nil
-            : unsettled.count == 1 ? "\(unsettled[0].merchant) isn’t settled yet."
-            : "\(unsettled.count) splits aren’t settled yet."
         guard owed.total >= 0.005, let oldest = items.map(\.date).min(), aWeek(oldest) else {
-            // H-00u0: only a Not sure yet split: no amount owed.
-            guard let tail = tail else { return nil }
-            if unsettled.count == 1, unsettled[0].paid >= 0.005 {
-                let by = unsettled[0].paidBy ?? []
-                let who = by.count == 1 ? by[0] : Format.andList(by)
-                return "\(tail) \(who) \(by.count == 1 ? "has" : "have") paid you \(Format.amount(unsettled[0].paid)) so far."
-            }
-            return tail
+            // H-00u0: only a Not sure yet split: "Pizza Nova isn’t settled yet".
+            guard !unsettled.isEmpty else { return nil }
+            return unsettled.count == 1 ? "\(unsettled[0].merchant) isn’t settled yet"
+                : "\(unsettled.count) splits aren’t settled yet"
         }
         // Up to two names, then "and N others".
         let names = owed.owesYou.map { $0.name.components(separatedBy: " ").first ?? $0.name }
@@ -206,9 +204,9 @@ struct OwedNudgeCard: View {
             let others = names.count - 2
             who = "\(names[0]), \(names[1]) and \(others) other\(others == 1 ? "" : "s") owe"
         }
-        let splits = Set(items.map { $0.chargeId ?? $0.date + ($0.merchant ?? "") }).count
-        let line = "\(who) you \(Format.amount(owed.total)), from \(splits) split\(splits == 1 ? "" : "s")."
-        return tail.map { "\(line) \($0)" } ?? "\(line) The oldest is from \(Format.short(oldest))."
+        // "Sam and Priya owe you $70.10"; H-00u adds " · 1 not settled".
+        let line = "\(who) you \(Format.amount(owed.total))"
+        return unsettled.isEmpty ? line : "\(line) · \(unsettled.count) not settled"
     }
 }
 
@@ -219,7 +217,8 @@ struct PaychequeNoteCard: View {
 
     var body: some View {
         PearlCard(spacing: 8) {
-            Text("\(Format.monthName(month.month)) had three paycheques, so it looks bigger. Nothing to do.")
+            // REFRESH-03 (H-00n): "October had 3 paycheques."
+            Text("\(Format.monthName(month.month)) had 3 paycheques.")
                 .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Got it", action: onDismiss)
@@ -229,7 +228,7 @@ struct PaychequeNoteCard: View {
     }
 }
 
-/// "October so far": everything else about the month is on Cash flow.
+/// "October so far", a way to Cash flow (REFRESH-03 took its footnote out).
 struct MonthCard: View {
     let month: String
     let onTransactions: () -> Void
@@ -238,9 +237,6 @@ struct MonthCard: View {
         Button(action: onTransactions) {
             PearlCard(spacing: 8) {
                 Text("\(Format.monthName(month)) so far").font(Pearl.cardTitle).foregroundColor(Pearl.ink)
-                Text("Every transaction, what needs a look, and your month in pictures are on Cash flow.")
-                    .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
-                    .multilineTextAlignment(.leading)
                 LinkLabel(text: "Transactions").padding(.top, 4)
             }
         }

@@ -77,7 +77,7 @@ struct PeoplePicker: View {
     var body: some View {
         PearlSheet(dismissDisabled: busy) {
             PearlSheetHeader(overline: overline, title: title,
-                             sub: full && limit != nil ? "That’s six, the most for one account." : sub,
+                             sub: full && limit != nil ? "Six is the most." : sub,
                              close: onClose)
                 .disabled(busy)
             searchField
@@ -130,10 +130,10 @@ struct PeoplePicker: View {
         .background(RoundedRectangle(cornerRadius: Pearl.radiusChoice, style: .continuous).fill(Pearl.control))
     }
 
-    /// S-17j: "Sam Lee is on this joint account. Their part is already off."
+    /// S-17j (REFRESH-03): "Sam Lee’s part is already off."
     private var refusal: String? {
         guard !q.isEmpty, let who = refused.first(where: { samePerson($0, q) }) else { return nil }
-        return "\(who) is on this joint account. Their part is already off."
+        return "\(possessive(who)) part is already off."
     }
 
     private func isRefused(_ name: String) -> Bool { refused.contains { samePerson($0, name) } }
@@ -153,7 +153,7 @@ struct PeoplePicker: View {
                     PearlBubble(symbol: "info.circle")
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Contacts are off for Pearl").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                        Text("You can still pick people you’ve split with, or type a name.")
+                        Text("Pick from your splits, or type a name.")
                             .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
                     }
                     .fixedSize(horizontal: false, vertical: true)
@@ -405,6 +405,8 @@ struct JointPartCard: View {
                     if i > 0 { PearlDivider() }
                     line(face: h.name, title: h.name, sub: "On this account · their part", amount: h.amount)
                         .accessibilityLabel("\(h.name), on this account, their part, \(Format.amount(h.amount)), not owed to you")
+                        // REFRESH-03 (S-04j): the footnote under the card is gone; this row says it.
+                        .accessibilityHint("Only the people in your split owe you.")
                 }
                 PearlDivider()
                 line(face: "Me", title: "Your part", sub: "Split below", amount: joint.part)
@@ -458,17 +460,13 @@ struct RemoveSplitSheet: View {
                              sub: "Your part \(Format.amount(split.base ?? t.splitBase)) counts as yours again.",
                              close: onClose)
                 .disabled(busy)
+            // REFRESH-03 (S-41j): only the people; the joint share row and the
+            // divider under it are gone, since the joint share doesn't change.
             PearlOptionCard {
-                if let joint = split.joint, joint.theirs >= 0.005 {
-                    row(symbol: "person.2", title: "\(possessive(t.jointWho)) \(Format.amount(joint.theirs)) stays theirs",
-                        sub: "The joint share doesn’t change")
-                    PearlDivider()
-                }
                 ForEach(Array(split.people.enumerated()), id: \.element.id) { i, p in
                     if i > 0 { PearlDivider() }
                     if p.paid >= 0.005 {
-                        row(face: p.name, title: "\(possessive(p.name)) \(Format.amount(p.paid)) goes back to sort",
-                            sub: "Their payment shows in Needs a look")
+                        row(face: p.name, title: "\(possessive(p.name)) \(Format.amount(p.paid)) goes back to sort", sub: nil)
                     } else if split.unsure {
                         row(face: p.name, title: "\(p.name) is off the split", sub: nil)
                     } else {
@@ -619,9 +617,10 @@ struct JointChangeSheet: View {
                     .accessibilityElement(children: .combine)
                 }
             }
+            // REFRESH-03 (AM-08n, AM-21j).
             Text(share == nil && !purchase
-                 ? "\(holders.isEmpty ? "No one" : Format.andList(holders)) \(holders.count > 1 ? "come" : "comes") off this account. Nothing is sent to them."
-                 : "Splits made evenly, by % or by shares are worked out again. Amounts you typed stay the same, and the rest is yours.")
+                 ? "\(holders.isEmpty ? "No one" : Format.andList(holders)) \(holders.count > 1 ? "come" : "comes") off this account."
+                 : "Typed amounts stay. Even, % and shares update.")
                 .font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
                 .fixedSize(horizontal: false, vertical: true)
             if let failed = failed { CautionBanner(text: failed) }
@@ -636,25 +635,17 @@ struct JointChangeSheet: View {
         }
     }
 
-    /// "Your part $50.00 → $60.00 · Jo paid you $16.66 · Jo’s share becomes
-    /// $20.00, so Jo owes $3.34 more", "Your share $16.68 → $66.68 · Priya
-    /// and Jo still owe the same".
+    /// REFRESH-03 (AM-21j, AM-08n): "Your part $50.00 → $60.00 · Jo owes
+    /// $3.34 more", "Your part $20.00 → $24.00", "Your share $16.68 → $66.68".
     private func line(_ c: JointChange) -> String {
         if share == nil && !purchase {
-            let names = c.people.map(\.name)
-            let same = names.isEmpty ? "" : " · \(Format.andList(names)) still \(names.count == 1 ? "owes" : "owe") the same"
-            return "Your share \(Format.amount(c.yoursWas)) → \(Format.amount(c.yoursNow))\(same)"
+            return "Your share \(Format.amount(c.yoursWas)) → \(Format.amount(c.yoursNow))"
         }
         var bits = ["Your part \(Format.amount(c.partWas)) → \(Format.amount(c.partNow))"]
-        let paid = c.people.filter { $0.paid >= 0.005 }
-        if paid.isEmpty {
-            bits.append("no one has paid yet")
-        }
-        for p in paid {
+        for p in c.people where p.paid >= 0.005 {
             let more = p.shareNow - p.paid
-            let tail = more >= 0.005 ? ", so \(p.name) owes \(Format.amount(more)) more"
-                : more <= -0.005 ? ", so you owe \(p.name) \(Format.amount(-more))" : ""
-            bits.append("\(p.name) paid you \(Format.amount(p.paid)) · \(possessive(p.name)) share becomes \(Format.amount(p.shareNow))\(tail)")
+            if more >= 0.005 { bits.append("\(p.name) owes \(Format.amount(more)) more") }
+            else if more <= -0.005 { bits.append("you owe \(p.name) \(Format.amount(-more))") }
         }
         return bits.joined(separator: " · ")
     }
@@ -694,11 +685,12 @@ struct RemoveJointPersonSheet: View {
             PearlSheetHeader(face: name, overline: "Shared with · \(accountName)", title: "Remove \(name)?",
                              sub: "\(first) won’t be on this account any more.", close: onClose)
                 .disabled(busy)
+            // REFRESH-03 (AM-08x): two facts, each once.
             PearlOptionCard {
                 row("person.2", share.map { "Your share stays \(JointChangeSheet.pct($0))" } ?? "Your purchases count as they do now",
-                    others.isEmpty ? "The account stays joint, with no one named" : "\(Format.andList(others)) \(others.count == 1 ? "is" : "are") still on this account")
+                    others.isEmpty ? "The account stays joint, with no one named" : nil)
                 PearlDivider()
-                row("checkmark", "Earlier answers stay", "Purchases and deposits you said were \(possessive(first)) keep that answer")
+                row("checkmark", "Earlier answers stay", nil)
             }
             Text("Nothing is sent to \(first).").font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
                 .frame(maxWidth: .infinity)
@@ -709,12 +701,12 @@ struct RemoveJointPersonSheet: View {
         }
     }
 
-    private func row(_ symbol: String, _ title: String, _ sub: String) -> some View {
+    private func row(_ symbol: String, _ title: String, _ sub: String?) -> some View {
         HStack(spacing: 12) {
             PearlBubble(symbol: symbol)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                Text(sub).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                if let sub = sub { Text(sub).font(Pearl.text(.callout)).foregroundColor(Pearl.muted) }
             }
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -765,7 +757,7 @@ struct SettleUpSheet: View {
     }
 
     @ViewBuilder private var choose: some View {
-        PearlSheetHeader(face: t.merchant, overline: "Settle up · \(t.merchant)", title: "How do you want to settle?",
+        PearlSheetHeader(face: t.merchant, overline: "Settle up · \(t.merchant)", title: "How to settle?",
                          close: onClose)
         PearlSectionLabel(text: "Paid so far")
         PearlOptionCard {
@@ -777,16 +769,13 @@ struct SettleUpSheet: View {
             amountRow("You", sub: "What still counts as yours", amount: still, tone: Pearl.ink)
         }
         PearlOptionCard {
-            PearlOptionRow(symbol: "checkmark", title: "Use what each paid",
-                           sub: "Shares become " + split.people.map { "\($0.name) \(Format.amount($0.paid))" }.joined(separator: ", ")
-                               + ", you \(Format.amount(still)). Nobody owes after this.") {
+            // REFRESH-03 (S-45a): the amounts are in Paid so far above.
+            PearlOptionRow(symbol: "checkmark", title: "Use what each paid", sub: "Nobody owes after this.") {
                 confirming = true
             }
             PearlDivider()
             PearlOptionRow(symbol: "person.2", title: "Type amounts", sub: "Evenly, amounts, % or shares", action: onType)
         }
-        Text("Payments already linked stay linked either way.")
-            .font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
     }
 
     /// S-45b: WHAT CHANGES, and Allowance doesn't.
@@ -893,12 +882,9 @@ struct ThatsEverythingSheet: View {
         }
     }
 
-    /// "Sam’s $20.00 stays linked. The other $80.00 stays yours, and nobody
-    /// shows as owing for Pizza Nova."
+    /// S-46a (REFRESH-03): "$80.00 stays yours. Nobody owes for Pizza Nova."
     private func lead(_ paid: [Transaction.Splitting.Person]) -> String {
-        let linked = paid.map { "\(possessive($0.name)) \(Format.amount($0.paid))" }
-        let first = linked.isEmpty ? "" : "\(Format.andList(linked)) \(linked.count == 1 ? "stays" : "stay") linked. "
-        return first + "The \(linked.isEmpty ? "whole" : "other") \(Format.amount(still)) stays yours, and nobody shows as owing for \(t.merchant)."
+        "\(Format.amount(still)) stays yours. Nobody owes for \(t.merchant)."
     }
 
     private func row(_ title: String, _ sub: String, _ value: String, _ tone: Color) -> some View {

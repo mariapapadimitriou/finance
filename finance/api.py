@@ -495,13 +495,14 @@ def set_transaction_split(txn_id: str):
         # part is split. None of it hers leaves nothing to split.
         base = sp.split_base(t)
         if base < 0.005:
-            return jsonify({"error": "Nothing here is yours to split. Say it was partly yours first."}), 400
+            return jsonify({"error": "None of it is yours to split."}), 400
         from .joint import holder
         for p in body.get("people") or []:
             who = holder(t, str((p or {}).get("name") or "") if isinstance(p, dict) else "")
             if who:
                 # PO 2026-11-09 (3): a joint account holder's part is already off.
-                return jsonify({"error": f"{who} is on this joint account. Their part is already off."}), 400
+                # S-17j (REFRESH-03): "Sam Lee’s part is already off."
+                return jsonify({"error": f"{who}{'’' if who.lower().endswith('s') else '’s'} part is already off."}), 400
     mode = body.get("mode")
     people, problem = sp.validate(t, mode, body.get("people"), body.get("you"),
                                   body.get("include_me", True) is not False, base=base)
@@ -550,13 +551,12 @@ def set_transaction_split(txn_id: str):
         undo = undo_payload(before, snapshot(st, st.all_transactions()))
         undo["marks"] = {"splits": {txn_id: was}, **edited}
         # REFRESH-02 (S-44d): someone taken off, whether or not they had
-        # paid: "Priya removed · $30.00 back to your share", with this Undo.
+        # paid: "Priya removed" (REFRESH-03 words), with this Undo.
         kept = {p["name"] for p in people}
         gone = [p for p in (was["split"] or {}).get("people", []) if p["name"] not in kept]
         toast = None
         if len(gone) == 1:
-            share = (gone[0].get("let_go") or {}).get("was", gone[0].get("amount") or 0)
-            toast = f"{gone[0]['name']} removed · {_money2(share)} back to your share"
+            toast = f"{gone[0]['name']} removed"
         elif gone:
             toast = f"{len(gone)} people removed"
         return jsonify(dict(data, undo=undo, **({"toast": toast} if toast else {})))
@@ -869,8 +869,8 @@ def clear_transaction_split(txn_id: str):
     if isinstance(data, dict) and split:
         _reclassify(st)
         undo = {"rows": [], "marks": _merge_marks({"splits": {txn_id: was}}, marks)}
-        mine = round(sp.split_base(st.get_transaction(txn_id)), 2) if t.joint else round(t.amount, 2)
-        return jsonify(dict(data, undo=undo, toast=f"Split removed · {_money2(mine)} counts as yours"))
+        # S-41j1 (REFRESH-03): "Split removed", with Undo.
+        return jsonify(dict(data, undo=undo, toast="Split removed"))
     return out
 
 
@@ -925,9 +925,9 @@ def close_transaction_split(txn_id: str):
     if split.get("closed_at"):
         return jsonify({"error": "That split is closed already."}), 400
     st.set_split_closed(txn_id, _today_iso())
-    kept = sp.still_yours(st.get_transaction(txn_id))
     data = transaction_detail(txn_id).get_json()
-    return jsonify(dict(data, toast=f"Closed · {_money2(kept)} stays yours",
+    # S-46b (REFRESH-03): "Split closed", with Undo.
+    return jsonify(dict(data, toast="Split closed",
                         undo={"rows": [], "marks": {"split_closed": {txn_id: None}}}))
 
 
@@ -943,7 +943,8 @@ def reopen_transaction_split(txn_id: str):
     day = split["closed_at"]
     st.set_split_closed(txn_id, None)
     data = transaction_detail(txn_id).get_json()
-    return jsonify(dict(data, toast="Open again · paybacks come off as they arrive",
+    # S-46d (REFRESH-03).
+    return jsonify(dict(data, toast="Split reopened",
                         undo={"rows": [], "marks": {"split_closed": {txn_id: day}}}))
 
 

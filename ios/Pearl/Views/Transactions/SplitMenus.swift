@@ -480,24 +480,19 @@ struct PersonOptionsSheet: View {
                 ForEach(links) { link in paymentCard(link) }
             }
             if split.closedAt == nil {
+                // REFRESH-03: the rows alone; no subtitles, no footnote.
                 PearlOptionCard {
                     PearlOptionRow(symbol: "banknote", title: "Mark paid back",
-                                   sub: p.paid >= 0.005 ? "Add another payment: bank, cash or app"
-                                       : "By bank or e-Transfer, cash, or another app",
                                    prominent: p.paid < 0.005) { onChoose(.markPaid) }
                     PearlDivider()
-                    PearlOptionRow(symbol: "envelope", title: "Remind \(p.name)",
-                                   sub: "Copy a friendly message, no amount in it") { onChoose(.remind) }
+                    PearlOptionRow(symbol: "envelope", title: "Remind \(p.name)") { onChoose(.remind) }
                 }
                 PearlSectionLabel(text: "Change the split")
                 PearlOptionCard {
-                    PearlOptionRow(symbol: "person", title: "Remove \(p.name) from the split", sub: removeSub) {
+                    PearlOptionRow(symbol: "person", title: "Remove \(p.name)", sub: removeSub) {
                         onChoose(.remove)
                     }
                 }
-                Text("Nobody owes a set amount yet, so there’s nothing to let go. Settle up when you know.")
-                    .font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -522,15 +517,17 @@ struct PersonOptionsSheet: View {
                 }
             } else if p.owes >= 0.005 {
                 let part = p.paid >= 0.005
+                // REFRESH-03 (S-40a, S-40b): subtitles that only described the
+                // row are gone; VoiceOver keeps them as hints. The one that
+                // costs money ("becomes your spending") stays.
                 PearlOptionCard {
                     PearlOptionRow(symbol: "arrow.uturn.backward", title: part ? "Mark the rest paid back" : "Mark paid back",
-                                   sub: part ? "\(Format.amount(p.owes)) · by bank, cash, or another app"
-                                             : "By bank or e-Transfer, cash, or another app",
                                    prominent: true) { onChoose(.markPaid) }
+                        .accessibilityHint("By bank, cash or another app")
                     PearlDivider()
-                    PearlOptionRow(symbol: "envelope", title: "Remind \(p.name)",
-                                   sub: part ? "Copy a message for the \(Format.amount(p.owes)) left"
-                                             : "Copy a friendly message to send") { onChoose(.remind) }
+                    PearlOptionRow(symbol: "envelope", title: "Remind \(p.name)") { onChoose(.remind) }
+                        .accessibilityHint(part ? "Copies a message for the \(Format.amount(p.owes)) left"
+                                                : "Copies a message for you to send")
                     PearlDivider()
                     PearlOptionRow(symbol: "forward", title: part ? "Let the rest go" : "Let it go",
                                    sub: "The \(Format.amount(p.owes)) becomes your spending") { onChoose(.letGo) }
@@ -538,11 +535,9 @@ struct PersonOptionsSheet: View {
             }
             PearlSectionLabel(text: "Change the split")
             PearlOptionCard {
-                PearlOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share",
-                               sub: "Opens How to split") { onChoose(.changeShare) }
+                PearlOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeShare) }
                 PearlDivider()
-                PearlOptionRow(symbol: "person", title: "Remove \(p.name) from the split",
-                               sub: removeSub) { onChoose(.remove) }
+                PearlOptionRow(symbol: "person", title: "Remove \(p.name)", sub: removeSub) { onChoose(.remove) }
             }
         }
     }
@@ -561,10 +556,11 @@ struct PersonOptionsSheet: View {
         return "✓ Paid back in full" + (p.paidOn.map { " · \(Format.short($0))" } ?? "")
     }
 
-    /// Remove's line: at once, or what asking first will say.
-    private var removeSub: String {
+    /// Remove's line: what it costs, or what asking first will say. None
+    /// for someone let go (REFRESH-03, S-40d): it goes at once, with Undo.
+    private var removeSub: String? {
         if p.paid < 0.005 {
-            return p.letGo != nil ? "Goes at once, with Undo" : "The \(Format.amount(p.share)) goes back to your share"
+            return p.letGo != nil ? nil : "The \(Format.amount(p.share)) goes back to your share"
         }
         if links.count > 1 { return links.count == 2 ? "Asks first: unlinks both payments" : "Asks first: unlinks \(links.count) payments" }
         guard let link = links.first else { return "Asks first" }
@@ -615,8 +611,8 @@ struct PersonOptionsSheet: View {
         .buttonStyle(PearlPillButtonStyle())
     }
 
-    /// "You marked this as cash", "$30.00 of a $60.00 e-Transfer that also
-    /// paid back Pizza Nova", "From Dana Lee".
+    /// "You marked this as cash", "Part of $60.00 · also paid back Pizza
+    /// Nova" (S-40c, REFRESH-03), "From Dana Lee".
     private func detail(_ link: Transaction.LinkInfo) -> String {
         switch link.kind {
         case "cash":
@@ -625,7 +621,7 @@ struct PersonOptionsSheet: View {
         case "part": return link.message
         default:
             if let others = link.others, !others.isEmpty, let whole = link.whole {
-                return "\(Format.amount(link.amount)) of a \(Format.amount(whole)) \(link.noun) that also paid back \(Format.andList(others))"
+                return "Part of \(Format.amount(whole)) · also paid back \(Format.andList(others))"
             }
             if let r = link.sheet.name.range(of: " from ") { return "From " + link.sheet.name[r.upperBound...] }
             return link.message
@@ -726,9 +722,9 @@ struct RemindSheet: View {
                 .padding(16)
                 .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Pearl.bubble))
                 .accessibilityLabel("Message to \(p.name)")
-                .accessibilityHint("Change it before you copy it")
-            Text(unsure ? "No amount, because you haven’t set one. You can edit it. Pearl doesn’t send anything: paste it wherever you two talk."
-                 : "Tap the message to change it. Pearl doesn’t send anything; you paste it where you talk to \(p.name).")
+                .accessibilityHint("Tap to change the message.")
+            // REFRESH-03 (S-07ra, S-07rb, S-07u): one line under the message.
+            Text("Pearl doesn’t send it. You paste it.")
                 .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
                 .fixedSize(horizontal: false, vertical: true)
         } footer: {
@@ -750,33 +746,41 @@ struct RemoveWords {
     /// A bank payment comes off: "Unlink and remove", else "Remove Sam".
     let unlinks: Bool
 
-    init(_ p: Transaction.Splitting.Person, merchant: String) {
+    /// `countsAgain` (S-03fu, a Not sure yet split): what the purchase counts
+    /// as once their paybacks are unlinked, said instead of a share.
+    init(_ p: Transaction.Splitting.Person, merchant: String, countsAgain: Double? = nil) {
         let name = p.name
         let shared = p.shared ?? []
         let kept = (p.cash ?? 0) + (p.app ?? 0)
         let bank = p.paid - kept - shared.map(\.here).reduce(0, +)
         let on = p.paidOn.map { " on \(Format.short($0))" } ?? ""
         var lead: [String] = [], changes: [String] = []
+        // REFRESH-03: each consequence once, in a few words.
         for s in shared {
             let others = Format.andList(s.others)
-            lead.append("\(name) paid you \(Format.amount(s.here))\(on), part of a \(Format.amount(s.whole)) \(s.word) "
-                        + "that also paid back \(others).")
+            // S-03fr: "Jo paid $30.00 of a $60.00 e-Transfer."
+            lead.append("\(name) paid \(Format.amount(s.here)) of a \(Format.amount(s.whole)) \(s.word).")
             changes.append("Only \(possessive(merchant)) \(Format.amount(s.here)) is unlinked. \(others) "
                            + "\(s.others.count == 1 ? "stays" : "stay") paid back.")
-            changes.append("This \(Format.amount(s.here)) goes back to Needs a look as left to sort.")
+            changes.append("The \(Format.amount(s.here)) goes back to Needs a look.")
         }
         if bank >= 0.005 {
-            lead.append("\(name) paid you \(Format.amount(bank))\(on).")
-            changes.append("That payment is unlinked and goes back to Needs a look.")
+            // S-03f / S-03fu: "Priya’s $28.04 goes back to Needs a look."
+            changes.append("\(possessive(name)) \(Format.amount(bank)) goes back to Needs a look.")
         }
         if kept >= 0.005 {
             let app = (p.app ?? 0) >= 0.005 && (p.cash ?? 0) < 0.005
             let day = p.payments?.last.map { " on \(Format.short($0.day))" } ?? on
             lead.append("\(name) paid you \(Format.amount(kept)) \(app ? "through another app" : "in cash")\(day).")
-            changes.append("The \(Format.amount(kept)) \(app ? "app payment" : "cash") you marked is forgotten, "
-                           + "so nothing goes to Needs a look.")
+            // S-03fr2: "The $10.00 cash is forgotten."
+            changes.append("The \(Format.amount(kept)) \(app ? "app payment" : "cash") is forgotten.")
         }
-        changes.append("\(possessive(name)) \(Format.amount(p.share)) share becomes yours.")
+        if let counts = countsAgain {
+            // S-03fu: "Pizza Nova counts as $100.00 again."
+            changes.append("\(merchant) counts as \(Format.amount(counts)) again.")
+        } else {
+            changes.append("\(possessive(name)) \(Format.amount(p.share)) share becomes yours.")
+        }
         self.lead = lead.joined(separator: " ")
         self.changes = changes
         self.unlinks = bank >= 0.005 || !shared.isEmpty
@@ -790,6 +794,8 @@ struct RemoveWords {
 struct RemovePersonSheet: View {
     let p: Transaction.Splitting.Person
     let merchant: String
+    /// S-03fu (a Not sure yet split): what the purchase counts as after.
+    var countsAgain: Double? = nil
     let onClose: () -> Void
     /// Throws a message to show, or nothing went wrong.
     let run: () async throws -> Void
@@ -797,7 +803,7 @@ struct RemovePersonSheet: View {
     @State private var failed: String?
 
     var body: some View {
-        let words = RemoveWords(p, merchant: merchant)
+        let words = RemoveWords(p, merchant: merchant, countsAgain: countsAgain)
         PearlSheet(dismissDisabled: busy) {
             PearlSheetHeader(face: p.name, overline: "Remove from split", title: "Remove \(p.name) from the split?",
                              close: onClose)

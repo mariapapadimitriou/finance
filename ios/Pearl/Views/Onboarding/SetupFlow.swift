@@ -661,7 +661,8 @@ struct JointSheet: View {
                         .keyboardType(.numberPad)
                     }
                     .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Pearl.card))
-                    Text("Pick from people you’ve split with or your contacts, or type a name. Only you can see this. Nothing is sent to them.")
+                    // O-09cr (REFRESH-03).
+                    Text("Only you see this. Nothing is sent.")
                         .font(Nacre.footnote)
                     if let error = error { Hint(text: error) }
                 }
@@ -683,8 +684,8 @@ struct JointSheet: View {
         }
         .sheet(isPresented: $picking) {
             // AM-08p from setup: the same picker. Nothing saves until Save.
-            PeoplePicker(api: app.api, overline: "\(account.name) · Joint", title: "Who do you share it with?",
-                         sub: "Pick up to six. Only you can see this.", already: [], limit: 6,
+            PeoplePicker(api: app.api, overline: "\(account.name) · Joint", title: "Shared with",
+                         sub: "Up to six. Only you see this.", already: [], limit: 6,
                          onClose: { picking = false }) { picked in
                 names = Array((names + picked.filter { !names.contains($0) }).prefix(6))
                 picking = false

@@ -155,14 +155,15 @@ struct WhoSentSheet: View {
             // S-35u: no amounts, so no amount can say who.
             var seen = Set<String>()
             let names = q.shares.map { firstName($0.person) }.filter { seen.insert($0.lowercased()).inserted }
-            return "\(Format.andList(names)) \(names.count == 1 ? "is" : "are") on \(shops) with no amounts set, so \(names.count == 2 ? "either" : "any of them") could have sent it. Pearl won’t guess. Tick who sent it."
+            // S-35u (REFRESH-03): "Either could have sent it. Tick who did."
+            return "\(names.count == 2 ? "Either" : "Any of them") could have sent it. Tick who did."
         }
         let fits = q.shares.filter { $0.unknown != true && cents($0.owes) == cents($0.here) }
         var seen = Set<String>()
         let names = fits.map { firstName($0.person) }.filter { seen.insert($0.lowercased()).inserted }
         if names.count >= 2 {
-            // "Sam and Priya each owe $30.00 on Loblaws, so Pearl won't guess. Tick who sent it."
-            return "\(Format.andList(names)) each owe \(amount) on \(shops), so Pearl won’t guess. Tick who sent it."
+            // S-35c (REFRESH-03): "Sam and Priya each owe $30.00. Tick who sent it."
+            return "\(Format.andList(names)) each owe \(amount). Tick who sent it."
         }
         if q.shares.count == 1, let s = q.shares.first, s.people == 1 {
             // "Sam owes $42.06 on Loblaws and this is $30.00, so Pearl won't guess. Tick Sam if it was them."

@@ -82,7 +82,7 @@ def split_let_go(txn_id: str):
     core._reclassify(st)
     # REFRESH-02 (S-44c): the toast, whose Undo is the DELETE below.
     return jsonify({"ok": True, "title": f"Let it go. {p['name']}’s ${status['owes']:,.2f} is yours now.",
-                    "toast": f"Let go · the ${status['owes']:,.2f} is your spending now",
+                    "toast": f"Let go · ${status['owes']:,.2f}",
                     "detail": core.transaction_detail(txn_id).get_json()})
 
 
@@ -442,9 +442,8 @@ def extra_parts(st, t, given) -> tuple[list | None, str | None]:
     except (TypeError, ValueError):
         return None, "Give each part an amount."
     if said > _cents(q["amount"]):
-        # S-11xm over (1043:1194): the line the app shows, in the same words.
-        return None, (f"Only ${q['amount']:,.2f} of this is extra. {_credited_line(q)} stays as it is, "
-                      f"so make it ${q['amount']:,.2f} or less.")
+        # S-11xm over (1043:1194): the line the app shows, in the same words (REFRESH-03).
+        return None, f"Only ${q['amount']:,.2f} is extra. Make it ${q['amount']:,.2f} or less."
     return kept + given, None
 
 
@@ -476,12 +475,12 @@ def _held_split(st, ask):
         # JOINT-B: Split my part from a deposit, as from the purchase.
         base = sp.split_base(charge)
         if base < 0.005:
-            return None, "Nothing here is yours to split. Say it was partly yours first."
+            return None, "None of it is yours to split."
         from .joint import holder
         for p in ask.get("people") or []:
             who = holder(charge, str(p.get("name") or "")) if isinstance(p, dict) else None
             if who:
-                return None, f"{who} is on this joint account. Their part is already off."
+                return None, f"{who}{'’' if who.lower().endswith('s') else '’s'} part is already off."
     mode = ask.get("mode")
     people, problem = sp.validate(charge, mode, ask.get("people"), ask.get("you"),
                                   ask.get("include_me", True) is not False, base=base)
