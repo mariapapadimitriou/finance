@@ -117,10 +117,9 @@ struct QuickSortView: View {
                     .font(Nacre.footnote).foregroundColor(Pearl.ink)
                     .multilineTextAlignment(.center).padding(.horizontal, 32)
                     .accessibilityHidden(true)
-                if current.map(hasYes) == true {
-                    // T-98s: a held split says what Skip does to it.
-                    Text(current.flatMap { drafts[$0.id]?.split } != nil
-                         ? "Skip forgets the split. Tap the card to change it." : "Tap the card for other answers.")
+                if current.map(hasYes) == true, current.flatMap({ drafts[$0.id]?.split }) == nil {
+                    // T-98s (REFRESH-03): a held split's one line is `hint`; no second line.
+                    Text("Tap the card for other answers.")
                         .font(Nacre.footnote).foregroundColor(Pearl.muted)
                         .padding(.top, 2)
                         .accessibilityHidden(true)
@@ -231,8 +230,9 @@ struct QuickSortView: View {
     private var hint: String {
         guard let ask = current else { return "" }
         guard let draft = drafts[ask.id] else { return isGuess(ask) ? ask.yesLine(accounts) : "" }
-        // T-98s (SPLIT-06): "Yes saves the split and Groceries, for this one."
-        if draft.split != nil { return "Yes saves the split and \(splitCategory(ask, draft)), for this one." }
+        // T-98s (SPLIT-06, REFRESH-03): "Skip forgets the split."; what Yes
+        // saves is the Yes button's VoiceOver hint.
+        if draft.split != nil { return "Skip forgets the split." }
         if draft.answer != nil { return "Yes saves this." }
         if draft.category == nil && draft.always == nil { return ask.yesLine(accounts) }
         return (draft.always ?? ask.savesRule(accounts)) ? "Yes sorts this, and always for \(ask.t.name)."
@@ -300,6 +300,8 @@ struct QuickSortView: View {
                     .accessibilityAction(named: hasYes(ask) ? "Yes" : "Answer") { right() }
                     .accessibilityAction(named: "Skip") { left() }
                     .accessibilityAction(named: "Other answers") { asking = ask }
+                    // T-98s (REFRESH-03): a held split's card.
+                    .accessibilityHint(drafts[ask.id]?.split != nil ? "Opens the page to change it." : "")
                     .accessibilityIdentifier("quick-sort-card")
                     .id(ask.id)
             }
@@ -406,6 +408,9 @@ struct QuickSortView: View {
             }
             roundButton(symbol: guessing ? "checkmark" : "text.bubble",
                         label: guessing ? "Yes" : "Answer", filled: true) { right() }
+                // T-98s (REFRESH-03): "Saves the split and Groceries, for this one."
+                .accessibilityHint(current.flatMap { ask in drafts[ask.id].flatMap { d in
+                    d.split != nil ? "Saves the split and \(splitCategory(ask, d)), for this one." : nil } } ?? "")
         }
         .disabled(current == nil || leaving != nil)
     }
@@ -661,7 +666,7 @@ struct QuickSortView: View {
     private func tone(_ t: BriefTransaction) -> Color { t.inflow ? Pearl.moneyIn : Pearl.moneyOut }
 }
 
-/// "Quick sort · 11 to sort, one at a time" at the top of Needs a look (T-10).
+/// "Quick sort · 11 to sort" at the top of Needs a look (T-10; REFRESH-03's P1).
 struct QuickSortCard: View {
     let count: Int
     let action: () -> Void
@@ -674,7 +679,7 @@ struct QuickSortCard: View {
                     .frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Quick sort").font(Nacre.headline).foregroundColor(Pearl.ink)
-                    Text("\(count) to sort, one at a time")
+                    Text("\(count) to sort")
                         .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 }
                 Spacer()

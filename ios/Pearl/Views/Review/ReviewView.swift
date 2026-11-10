@@ -200,9 +200,8 @@ struct ReviewView: View {
                 }
             }
             if !showingSkipped && !showingSorted && !quick.isEmpty {
+                // T-10; REFRESH-03's P1 took "Tap one to sort it." out.
                 QuickSortCard(count: quick.count) { sorting = true }
-                // T-10.
-                Text("Tap one to sort it.").font(Nacre.footnote).foregroundColor(Pearl.ink)
             }
             if let error = error, review != nil {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution)

@@ -181,7 +181,7 @@ struct JointAccountView: View {
                     }
                 }
             }
-            Text("Only you can see these names. Pearl never contacts them.")
+            Text("Only you see these names.")
                 .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
             ProfileSection("Your share")
             GlassCard {
@@ -227,8 +227,8 @@ struct JointAccountView: View {
         .onAppear(perform: syncShare)
         .sheet(isPresented: $adding) {
             // AM-08p: up to six, counting who's on it already (ticked, dimmed).
-            PeoplePicker(api: app.api, overline: "\(account.name) · Joint", title: "Who do you share it with?",
-                         sub: "Pick up to six. Only you can see this.", already: people, limit: 6,
+            PeoplePicker(api: app.api, overline: "\(account.name) · Joint", title: "Shared with",
+                         sub: "Up to six. Only you see this.", already: people, limit: 6,
                          onClose: { adding = false }) { names in
                 let reply = try await put(["joint_people": people + names])
                 adding = false
@@ -254,7 +254,7 @@ struct JointAccountView: View {
                 let reply = try await put(body)
                 asking = nil
                 if a.share == nil {
-                    show("\(account.name) isn’t joint any more", undo: reply?.undo)
+                    show("Not joint now", undo: reply?.undo)  // AM-08n1 (REFRESH-03)
                 } else {
                     syncShare()
                     show(reply?.toast ?? "Your share is changed", undo: reply?.undo)

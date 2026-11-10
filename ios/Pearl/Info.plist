@@ -26,7 +26,7 @@
 	<!-- S-17 v2 / AM-08p (JOINT-A handoff 1110:6520): names from her contacts,
 	     asked for only when the picker opens. Contacts never leave the phone. -->
 	<key>NSContactsUsageDescription</key>
-	<string>So you can pick who you split with or share an account with. Pearl keeps only the name you pick.</string>
+	<string>To pick people faster. Pearl keeps only the name.</string>
 	<!-- pearl://reset?token=… opens A-07 "Choose a new password". -->
 	<key>CFBundleURLTypes</key>
 	<array>

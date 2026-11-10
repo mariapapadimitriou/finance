@@ -392,7 +392,7 @@ struct PartsSheet: View {
             ForEach(cash.filter { c in cashUse[c.id].map { cents($0) < cents(c.amount) } ?? false }) { c in
                 let use = cashUse[c.id] ?? 0
                 // S-13 v2: the rest stays cash in hand and can match a later deposit.
-                Text("\(Format.amount(use)) of \(c.name)’s \(Format.amount(c.amount)) cash. The other \(Format.amount(c.amount - use)) stays as cash in hand and still counts as paid back.")
+                Text("\(Format.amount(use)) of \(c.name)’s \(Format.amount(c.amount)). The other \(Format.amount(c.amount - use)) stays cash in hand.")
                     .font(Nacre.footnote).foregroundColor(Pearl.ink).padding(.horizontal, 16)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -459,7 +459,7 @@ struct PartsSheet: View {
             if let capped = owing.first(where: { $0.unknown == true && picked[$0.id] != nil && cents($0.owes) < wholeCents - sortedCents }) {
                 // S-09u2 (decision 2): the most a Not sure yet purchase can take.
                 let rest = Double(wholeCents - sortedCents - cents(capped.owes)) / 100
-                InfoNote(text: "Only \(Format.amount(capped.owes)) of \(capped.merchant) still counts as yours, so that’s the most it can take. You’ll say what the other \(Format.amount(rest)) was next.")
+                InfoNote(text: "\(Format.amount(capped.owes)) is the most. You’ll sort the other \(Format.amount(rest)) next.")
             }
             let more = found.filter { f in !owing.contains { $0.charge == f.charge } }
             if more.isEmpty && owing.isEmpty && step == .owing {
@@ -577,36 +577,34 @@ struct PartsSheet: View {
     private var askText: String {
         let amount = Format.amount(left)
         let unsure = owing.filter { $0.unknown == true }
+        // REFRESH-03: the question in a few words; the rows carry the detail.
         if !unsure.isEmpty && fits.isEmpty {
-            // S-35u: "Sam and Priya are on Pizza Nova with no amounts set, so
-            // either could have sent it. Pearl won't guess. Tick who sent it."
+            // S-35u: "Either could have sent it. Tick who did."
             var seen = Set<String>()
             let names = unsure.compactMap { $0.person.map(firstName) }.filter { seen.insert($0.lowercased()).inserted }
-            var shops = Set<String>()
-            let merchants = unsure.map(\.merchant).filter { shops.insert($0.lowercased()).inserted }
-            return "\(Format.andList(names)) \(names.count == 1 ? "is" : "are") on \(Format.andList(merchants)) with no amounts set, so \(names.count == 2 ? "either" : "any of them") could have sent it. Pearl won’t guess. Tick who sent it."
+            return "\(names.count == 2 ? "Either" : "Any of them") could have sent it. Tick who did."
         }
         let either = fits
         if either.count >= 2 {
             var seen = Set<String>()
             let names = either.compactMap { $0.person.map(firstName) }.filter { seen.insert($0.lowercased()).inserted }
             if names.count >= 2 {
-                // S-35a: "Sam and Priya each owe $30.00, so Pearl won't guess. Tick who sent it."
-                return "\(Format.andList(names)) each owe \(amount), so Pearl won’t guess. Tick who sent it."
+                // S-35a: "Sam and Priya each owe $30.00. Tick who sent it."
+                return "\(Format.andList(names)) each owe \(amount). Tick who sent it."
             }
             // S-35a1 (SPLIT-22a): one person owing that much on more than one
-            // purchase, so which purchase is the question. "on Pizza Nova and
-            // on Loblaws"; three or more, "on Pizza Nova, Loblaws and Costco".
+            // purchase, so which purchase is the question: "Sam owes $30.00
+            // on both. Tick which one."
             var shops = Set<String>()
             let merchants = either.map(\.merchant).filter { shops.insert($0.lowercased()).inserted }
-            let on = merchants.count == 2 ? "on \(merchants[0]) and on \(merchants[1])"
-                : "on \(Format.andList(merchants))"
-            return "\(names.first ?? "Someone") owes \(amount) \(on), so Pearl won’t guess. Tick which one this paid back."
+            let on = merchants.count == 2 ? "on both" : "on all \(merchants.count)"
+            return "\(names.first ?? "Someone") owes \(amount) \(on). Tick which one."
         }
-        // S-35b: "Jordan isn't on any of your splits, and no one owes $45.00. …"
-        let tail = "Tick what it paid back, or search for the purchase."
+        // S-35b: "Jordan isn’t on a split. Tick what it paid back." (the Search
+        // row below already offers search).
+        let tail = "Tick what it paid back."
         if let name = named {
-            return "\(name) isn’t on any of your splits, and no one owes \(amount). \(tail)"
+            return "\(name) isn’t on a split. \(tail)"
         }
         return "No one owes \(amount). \(tail)"
     }
@@ -730,6 +728,8 @@ struct PartsSheet: View {
             GlassCard {
                 ForEach(Array(parts.enumerated()), id: \.element.id) { i, p in
                     if i > 0 { RowSeparator() }
+                    // REFRESH-03 (S-10e): the swipe hint under the list is gone;
+                    // VoiceOver's "Remove …" action carries it.
                     SwipeToRemove(label: p.editTitle) { withAnimation { remove(p) } } content: {
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
@@ -745,6 +745,7 @@ struct PartsSheet: View {
                         }
                         .padding(.horizontal, 16).frame(minHeight: 56)
                     }
+                    .accessibilityHint("Its amount goes back to Left to sort.")
                 }
                 if leftCents > 0 {
                     if !parts.isEmpty { RowSeparator() }
@@ -756,9 +757,6 @@ struct PartsSheet: View {
                     .padding(.horizontal, 16).frame(minHeight: 52)
                 }
             }
-            Text("Swipe a part to remove it. Its amount goes back to Left to sort.")
-                .font(Nacre.footnote).foregroundColor(Pearl.muted)
-                .frame(maxWidth: .infinity).multilineTextAlignment(.center)
         }
     }
 
@@ -777,7 +775,8 @@ struct PartsSheet: View {
                         Spacer()
                         Text(Format.amount(left)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.action)
                     }
-                    Text(extra ? "\(who) paid more than they owed" : "Pearl won’t guess this part")
+                    // S-36 (REFRESH-03): the title already names them.
+                    Text(extra ? "Paid more than owed" : "Pearl won’t guess this part")
                         .font(Nacre.footnote).foregroundColor(Pearl.muted)
                 }
                 .padding(.horizontal, 16).padding(.vertical, 12)
@@ -844,11 +843,9 @@ struct PartsSheet: View {
         return cents(typed) > leftCents
     }
 
-    /// S-11xm over: "Only $30.00 of this is extra. Jo's $30.00 for Pizza
-    /// Nova stays as it is, so make it $30.00 or less."
+    /// S-11xm over (REFRESH-03): "Only $30.00 is extra. Make it $30.00 or less."
     private func overLine(_ w: Review.Item.Extra) -> String {
-        let kept = creditedGroups(w).map { "\(firstName($0.person))’s \(Format.amount($0.total)) for \(Format.andList($0.items.map(\.merchant)))" }
-        return "Only \(Format.amount(left)) of this is extra. \(Format.andList(kept)) stays as it is, so make it \(Format.amount(left)) or less."
+        "Only \(Format.amount(left)) is extra. Make it \(Format.amount(left)) or less."
     }
 
     private struct CreditedGroup {
@@ -868,29 +865,19 @@ struct PartsSheet: View {
         return order.map { CreditedGroup(person: $0, items: by[$0] ?? []) }
     }
 
-    /// S-11x, under How much of it?: "Sam and Priya have both paid you back
-    /// for Loblaws, so this $30.00 is extra. Tap what it was."
+    /// S-11x, under How much of it? (REFRESH-03): "Loblaws is paid back, so
+    /// this $30.00 is extra."
     private func extraLine(_ w: Review.Item.Extra) -> String {
-        let names = w.people.map(firstName)
-        let lead: String
-        switch names.count {
-        case 0: lead = "Everyone has"
-        case 1: lead = "\(names[0]) has"
-        case 2: lead = "\(Format.andList(names)) have both"
-        default: lead = "\(Format.andList(names)) have all"
-        }
+        let shops = Format.andList(w.paidBack)
+        let are = w.paidBack.count == 1 ? "is" : "are"
         if w.isPart {
-            // S-11xm (THL-301): "Jo paid back $30.00 of this for Pizza Nova. Sam
-            // and Priya have both paid you back for Loblaws, so the other
-            // $30.00 is extra. Tap what it was."
-            let credited = creditedGroups(w).map { g -> String in
-                let cs = g.items
-                let total = g.total
-                return "\(firstName(g.person)) paid back \(Format.amount(total)) of this for \(Format.andList(cs.map(\.merchant)))."
+            // S-11xm (THL-301): "$30.00 paid back Pizza Nova. The other $30.00 is extra."
+            let credited = creditedGroups(w).map { g in
+                "\(Format.amount(g.total)) paid back \(Format.andList(g.items.map(\.merchant)))."
             }.joined(separator: " ")
-            return "\(credited) \(lead) paid you back for \(Format.andList(w.paidBack)), so the other \(Format.amount(deposit.amount)) is extra. Tap what it was."
+            return "\(credited) The other \(Format.amount(deposit.amount)) is extra."
         }
-        return "\(lead) paid you back for \(Format.andList(w.paidBack)), so this \(Format.amount(deposit.amount)) is extra. Tap what it was."
+        return "\(shops) \(are) paid back, so this \(Format.amount(deposit.amount)) is extra."
     }
 
     /// The shared What was this? page (T-08), for the rest or the extra:
@@ -972,9 +959,6 @@ struct PartsSheet: View {
                 otherAmount = nil
                 add(Part(kind: "income", amount: amount, incomeKind: key))
             }), role: "income kind")
-            Text("Tap one and it’s saved as that kind. Back goes to “\(otherBack)”.")
-                .font(Nacre.footnote).foregroundColor(Pearl.ink)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -1032,9 +1016,9 @@ struct PartsSheet: View {
                     }
                 }
             }
-            if let held = heldSplit {
-                // S-12c: the split and the link are one save, and one Undo.
-                Text("Saving splits \(held.merchant) with \(who) and links this payback in one go. One Undo puts both back.")
+            if heldSplit != nil {
+                // S-12c (REFRESH-03): the split and the link are one save, and one Undo.
+                Text("One Undo puts both back.")
                     .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 16)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1428,7 +1412,7 @@ struct OwedView: View {
                                 .buttonStyle(.plain)
                             }
                         }
-                        Text("Not counted in the total: no amounts are set. Settle up on the purchase when you know.")
+                        Text("Not in the total until settled.")
                             .font(Nacre.footnote).foregroundColor(Pearl.muted)
                             .padding(.horizontal, 16)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1490,13 +1474,11 @@ struct OwedView: View {
         .task { await load() }
     }
 
-    /// "owed to you by 2 people"; S-14u0 "Nobody owes you a set amount · 1
-    /// split not settled".
+    /// "owed to you by 2 people"; S-14u0 (REFRESH-03) "1 split not settled".
     private func owedLine(_ owed: OwedOverview) -> String {
         let n = owed.notSettled?.count ?? 0
         if owed.people == 0 {
-            return n == 0 ? "Nobody owes you anything"
-                : "Nobody owes you a set amount · \(n) split\(n == 1 ? "" : "s") not settled"
+            return n == 0 ? "Nobody owes you anything" : "\(n) split\(n == 1 ? "" : "s") not settled"
         }
         return "owed to you by \(owed.people) \(owed.people == 1 ? "person" : "people")"
     }

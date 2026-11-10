@@ -121,9 +121,11 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
                    dialog=f"{payer} paid back {_money(here)}",
                    sheet={"title": "Unlink?", "name": payer,
                           "sub": f"{_money(here)} · {_day(x.date)} · Work paying me back", "ask": None,
-                          "line": (f"{charge.merchant} goes back to waiting to be reimbursed. "
+                          # REFRESH-03 (S-34kr7): "Loblaws waits to be reimbursed again.
+                          # The $84.12 goes back to Needs a look."
+                          "line": (f"{charge.merchant} waits to be reimbursed again. "
                                    if waits else f"{charge.merchant} counts as your spending again. ")
-                          + f"The {_money(here)} from {payer} goes back to Needs a look.",
+                          + f"The {_money(here)} goes back to Needs a look.",
                           "button": "Unlink"},
                    toast=(f"Unlinked · {charge.merchant} is waiting to be reimbursed" if waits
                           else f"Unlinked · {charge.merchant} counts as your spending again"))
@@ -138,48 +140,48 @@ def _inflow_link(st, charge: Transaction, x: Transaction, who: str | None, by_id
                    else f"Part of a {_money(total)} deposit",
                    view={"id": parent.fingerprint, "label": "View the deposit"},
                    dialog=f"{name} paid back {_money(here)}")
-        owe = (f"{name} joined this split when you linked this deposit, so {name} comes off the split too."
-               if made else f"{name} will owe you {_money(here)} again.")
+        # REFRESH-03 (S-34kr9): "Dad will owe you $228.00 again. This $228.00
+        # goes back to Needs a look."
+        owe = f"{name} comes off the split too." if made else f"{name} will owe you {_money(here)} again."
         out["sheet"] = {"title": "Unlink?", "name": f"Part of {of}", "sub": f"{_money(here)} · {_day(x.date)}",
                         "ask": None,
-                        "line": f"{owe} Your {_money(total)} deposit keeps its other parts, and this "
-                                f"{_money(here)} goes back to Needs a look as left to sort.",
+                        "line": f"{owe} This {_money(here)} goes back to Needs a look.",
                         "button": "Unlink"}
         out["toast"] = f"Unlinked · {name} taken off the split" if made else None
         card = (f"Part of {_money(total)} from {sender} · {_day(x.date)}" if sender
                 else f"Part of a {_money(total)} deposit · {_day(x.date)}")
         return _look(out, f"Unlink {_whose(name)} {_money(here)}?", card, here,
-                     confirm=f"Unlink and take {name} off" if made else None)
+                     confirm="Unlink and remove" if made else None)
     # An e-Transfer or another bank payment.
     title = word if word == "e-Transfer" else word.capitalize()
     out.update(kind="bank", noun=word, view={"id": x.fingerprint, "label": f"View the {word}"},
                dialog=f"{name} paid back {_money(here)}")
+    # REFRESH-03: each consequence once (who owes again; what goes back to
+    # Needs a look), and "Priya comes off the split too." for THL-260's case.
+    owe = f"{name} comes off the split too." if made else f"{name} will owe you {_money(here)} again."
     if others:
+        # S-05o / S-05or: "Part of $60.00 · also paid back Pizza Nova".
         out.update(goes="left_to_sort",
-                   message=f"Part of a {_money(whole)} {word} on {_day(x.date)} that also paid back "
-                           f"{sp.and_list(others)}")
-        owe = (f"{name} joined this split when you linked this {word}, so {name} comes off this split too."
-               if made else f"{name} will owe you {_money(here)} again on {charge.merchant}.")
+                   message=f"Part of {_money(whole)} · also paid back {sp.and_list(others)}")
+        # S-34s / S-34sr: "Unlink only Loblaws’ $30.00?" over "Jo will owe you
+        # $30.00 again. The $30.00 goes back to Needs a look."
         out["sheet"] = {"title": "Unlink?", "name": f"{word} from {sender}" if sender else x.merchant,
                         "sub": f"{_money(whole)} · {_day(x.date)}",
-                        "ask": f"This {_money(whole)} also paid back {sp.and_list(others)}. "
-                               f"Unlink only {_of(charge.merchant)} {_money(here)}?",
-                        "line": f"{owe} {_stay(others)}, and this {_money(here)} goes back to Needs a look "
-                                f"as left to sort.",
+                        "ask": f"Unlink only {_of(charge.merchant)} {_money(here)}?",
+                        "line": f"{owe} The {_money(here)} goes back to Needs a look.",
                         "button": f"Unlink {_money(here)}"}
     else:
         out.update(goes="needs_a_look", message=f"{title} · {_day(x.date)}")
-        owe = (f"{name} joined this split when you linked this {word}, so {name} comes off the split too."
-               if made else f"{name} will owe you {_money(here)} again.")
         out["sheet"] = {"title": "Unlink?", "name": f"{word} from {sender}" if sender else x.merchant,
                         "sub": f"{_money(here)} · {_day(x.date)}", "ask": None,
                         "line": f"{owe} The {word} goes back to Needs a look.", "button": "Unlink"}
     out["toast"] = f"Unlinked · {name} taken off the split" if made else None
     card = f"{word} from {sender} · {_day(x.date)}" if sender else f"{x.merchant} · {_day(x.date)}"
-    confirm = f"Unlink and take {name} off" if made else None
+    confirm = "Unlink and remove" if made else None
     if others:
-        return _look(out, out["sheet"]["ask"], card, whole, confirm=confirm,
-                     note=f"To unlink the whole {_money(whole)}, open the {word} and unlink it there.")
+        # The footnote about the whole payment is gone (S-34sr); the app reads
+        # it as a VoiceOver hint on the payment row.
+        return _look(out, out["sheet"]["ask"], card, whole, confirm=confirm)
     return _look(out, f"Unlink {_whose(name)} {word}?", card, whole, confirm=confirm)
 
 
@@ -212,31 +214,27 @@ def cash_link(st, charge: Transaction, name: str, pay: dict, by_id: dict) -> dic
     sub = f"{_money(whole if others else here)} · {_day(pay['day'])}"
     if deposit:
         sub += f" · deposited {_day(deposit['date'])}"
+    # REFRESH-03 (S-34kr3–6): each consequence once.
     if others:
         out.update(goes="forgotten",
-                   message=f"Part of {_money(whole)} {what} on {_day(pay['day'])} that also paid back "
-                           f"{sp.and_list(others)}")
+                   message=f"Part of {_money(whole)} · also paid back {sp.and_list(others)}")
         out["sheet"] = {"title": "Unlink?", "name": head, "sub": sub,
-                        "ask": f"This {_money(whole)} {what} also paid back {sp.and_list(others)}. "
-                               f"Unlink only {_of(charge.merchant)} {_money(here)}?",
-                        "line": f"{name} will owe you {_money(here)} again on {charge.merchant}. "
-                                f"{_stay(others)}.",
+                        "ask": f"Unlink only {_of(charge.merchant)} {_money(here)}?",
+                        "line": f"{name} will owe you {_money(here)} again. {_stay(others)}.",
                         "button": f"Unlink {_money(here)}"}
     elif deposit:
         out.update(goes="left_to_sort",
                    message=f"Cash · {_day(pay['day'])} · deposited {_day(deposit['date'])}")
         out["sheet"] = {"title": "Unlink?", "name": head, "sub": sub, "ask": None,
-                        "line": f"{name} will owe you {_money(here)} again. Your {_money(deposit['amount'])} "
-                                f"deposit on {_day(deposit['date'])} keeps its other parts, and this "
-                                f"{_money(held_amount)} goes back to Needs a look as left to sort.",
+                        "line": f"{name} will owe you {_money(here)} again. This {_money(held_amount)} "
+                                f"goes back to Needs a look.",
                         "button": "Unlink"}
     else:
         out.update(goes="forgotten", message=f"{app_name if app else 'Cash'} · {_day(pay['day'])}")
         gone = (f"The {app_name if app_name != 'Another app' else 'app'} payment is forgotten"
-                if app else "The cash you marked is forgotten")
+                if app else "The cash is forgotten")
         out["sheet"] = {"title": "Unlink?", "name": head, "sub": sub, "ask": None,
-                        "line": f"{name} will owe you {_money(here)} again. {gone}, so nothing goes to "
-                                f"Needs a look.",
+                        "line": f"{name} will owe you {_money(here)} again. {gone}.",
                         "button": "Unlink"}
     out["sheet"]["face"] = name
     label = app_name if app else "Cash"
@@ -258,8 +256,9 @@ def refund_link(charge: Transaction, x: Transaction) -> dict:
             "dialog": f"{x.merchant} refunded {_money(amount)}",
             "sheet": {"title": "Unlink refund?", "name": f"Refund from {x.merchant}", "face": x.merchant,
                       "sub": f"{_money(amount)} · {_day(x.date)}", "ask": None,
-                      "line": f"The {_money(amount)} stops coming off {charge.merchant}. It stays in "
-                              f"{x.category or 'its category'} and goes back to Needs a look.",
+                      # REFRESH-03 (S-34kr8).
+                      "line": f"The {_money(amount)} stops coming off {charge.merchant} and goes back to "
+                              f"Needs a look.",
                       "button": "Unlink"},
             "toast": "Refund unlinked"}
     return _look(out, "Unlink refund?", f"{x.merchant} refund · {_day(x.date)}", out["amount"],

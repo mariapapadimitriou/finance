@@ -317,9 +317,15 @@ def account_settings(account_id: str):
                     "split": st.splits().get(t.fingerprint), "share": t.my_share if t.share_set else None,
                     "joint_part": None})
                 st.set_joint_part(t.fingerprint, t.joint_part)
-        toast = (f"{account['name']} isn’t joint any more" if share is None
-                 else "Your share is changed · split purchases worked out again" if plan and plan["save"]
-                 else None)
+        # REFRESH-03: AM-08n1 "Not joint now"; AM-21j1 "Share 60% · 2 splits updated".
+        if share is None:
+            toast = "Not joint now"
+        elif plan and plan["save"]:
+            n = len(plan["save"])
+            pct = f"{int(share)}%" if share == int(share) else f"{share:g}%"
+            toast = f"Share {pct} · {n} split{'' if n == 1 else 's'} updated"
+        else:
+            toast = None
 
     if "joint_people" in body:
         if hand:

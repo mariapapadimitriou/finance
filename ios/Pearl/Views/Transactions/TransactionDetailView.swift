@@ -619,7 +619,7 @@ struct TransactionDetailView: View {
             // S-07r → S-44f; Undo empties the clipboard again. No haptic on Remind.
             RemindSheet(t: t, p: person, onClose: { reminding = nil }) {
                 reminding = nil
-                showSplit("Copied · paste it to \(person.name)", undo: {
+                showSplit("Copied", undo: {
                     UIPasteboard.general.string = ""
                     return nil
                 })
@@ -640,7 +640,9 @@ struct TransactionDetailView: View {
         }
         .sheet(item: $removingPerson) { person in
             // S-03fr / S-03fr2 from S-40: saves at once, with loading and error.
-            RemovePersonSheet(p: person, merchant: t.merchant, onClose: { removingPerson = nil }) {
+            RemovePersonSheet(p: person, merchant: t.merchant,
+                              countsAgain: t.splitting.flatMap { $0.unsure ? ($0.still ?? $0.you) + person.paid : nil },
+                              onClose: { removingPerson = nil }) {
                 let (title, undo) = try await removeFromSplit(person)
                 removingPerson = nil
                 await load()
@@ -1291,15 +1293,16 @@ struct TransactionDetailView: View {
         return "\(who) · yours, \(them) or shared"
     }
 
-    /// S-01jr "Split my part · Split your $50.00 with friends"; S-01jr2 on
-    /// "All mine unless I mark it" the usual "Split with others"; T-06jr1
-    /// dimmed with why when none of it is hers (VoiceOver reads the reason).
+    /// S-01jr "Split my part" (REFRESH-03: no subtitle; the hero says the
+    /// part); S-01jr2 on "All mine unless I mark it" the usual "Split with
+    /// others"; T-06jr1 dimmed with why when none of it is hers (VoiceOver
+    /// reads the reason).
     private var jointSplitRow: some View {
         let none = t.splitBase < 0.005
         return Button { splitting = true } label: {
             row(title: t.splitsMyPart ? "Split my part" : "Split with others",
-                sub: none ? "Nothing here is yours to split. Say it was partly yours first."
-                    : t.splitsMyPart ? "Split your \(Format.amount(t.splitBase)) with friends" : "Split it with friends",
+                sub: none ? "None of it is yours to split."
+                    : t.splitsMyPart ? nil : "Split it with friends",
                 chevron: !none, icon: "person.2")
                 .opacity(none ? 0.45 : 1)
         }
@@ -2139,7 +2142,8 @@ struct TransactionDetailView: View {
             return ["mode": "amount", "include_me": you >= 0.005, "you": max(0, you), "people": shares]
         }
         let kept = split.people.filter { $0.name != p.name }
-        let title = split.unsure ? "\(p.name) removed" : "\(p.name) removed · \(Format.amount(p.share)) back to your share"
+        // S-44d (REFRESH-03): "Priya removed", with Undo.
+        let title = "\(p.name) removed"
         do {
             if kept.isEmpty {
                 struct Gone: Decodable { let undo: JSONValue? }
@@ -2177,7 +2181,8 @@ struct TransactionDetailView: View {
             let r: Reply = try await app.api.put("api/transactions/\(t.id)/split",
                                                  ["mode": "amount", "include_me": true, "you": you, "people": people])
             let undo = r.undo
-            return ("Settled · nobody owes you for \(t.merchant)", {
+            // S-45g (REFRESH-03).
+            return ("Settled up", {
                 if let undo = undo { try await postUndo(undo) }
                 return "Not sure yet again"
             })
@@ -2194,7 +2199,7 @@ struct TransactionDetailView: View {
             let r: Reply = try await app.api.delete("api/transactions/\(t.id)/split/close")
             await load()
             app.changed()
-            showSplit(r.toast ?? "Open again", undo: r.undo.map { u in { try await postUndo(u); return "Closed again" } })
+            showSplit(r.toast ?? "Split reopened", undo: r.undo.map { u in { try await postUndo(u); return "Closed again" } })
         } catch {
             showFailed("Couldn’t reopen it. Nothing changed.") { Task { await reopenSplit() } }
         }

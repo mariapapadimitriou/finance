@@ -616,7 +616,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let kind: String
         /// "e-Transfer", "cash", "PayPal payment": "Unlink the $10.00 cash…".
         let noun: String
-        /// S-05o: "Jo paid back $30.00" over "Part of a $60.00 e-Transfer on Nov 16…".
+        /// S-05o: "Jo paid back $30.00" over "Part of $60.00 · also paid back Pizza Nova".
         let dialog: String
         let message: String
         /// "View the e-Transfer", "View the deposit", "View the refund"; none for cash.
