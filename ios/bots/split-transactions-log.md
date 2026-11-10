@@ -37,6 +37,9 @@ The shared log for the two bots (`.claude/agents/designBOT.md`,
 | SPLIT-17 | S-22 v2 brings back Split into parts (reverses aa07127) and turns Always off | Minor | THL-291, THL-254 | Accepted (round 9): Split into parts removed, aa07127 stands; Always on by default. S-22 v2 995:37522 / 1008:41353. App already matched; no code change |
 | SPLIT-18 | Other income's follow-up (Interest, Government, Tax refund) has no frame | Minor | THL-291 | Accepted and built (round 9) — PR #315 (8176985): S-11k 1017:103 / 1017:419, T-08k 1017:715 / 1017:1013. THL-291 in Testing; THL-254 commented |
 | SPLIT-19 | S-06 v2's extra has nowhere to go for cash or an app | Major | THL-291 | Accepted and built (round 9) — PR #315 (8176985): S-11c 1017:1309 / 1017:1607. THL-291 in Testing. List line "paid back Loblaws and Pizza Nova" not built yet |
+| SPLIT-27 | Shared with picker (JOINT-A) | Major | JOINT-A (Jira pending), THL-172, THL-282, THL-291 | Accepted and built — branch feat/joint-and-not-sure-splits (base fix/unlink-from-purchase) |
+| SPLIT-28 | Split my part (JOINT-B) | Major | JOINT-B (Jira pending), THL-172, THL-282, THL-291, THL-201, THL-203, THL-181 | Accepted and built — branch feat/joint-and-not-sure-splits |
+| SPLIT-29 | Not sure yet (SPLIT-C) | Major | SPLIT-C (Jira pending), THL-291, THL-181, THL-289 | Accepted and built — branch feat/joint-and-not-sure-splits |
 
 ## Conversation
 
@@ -1290,13 +1293,136 @@ Branch `fix/unlink-from-purchase` (PR #316), as asked. I read the role file agai
 - **Commit:** c90ff92 on `fix/unlink-from-purchase`, 13 files (with designBOT's design-refresh-log.md, unchanged); `git show --stat` checked. **PR:** https://github.com/mariapapadimitriou/finance/pull/316 (open, not merged), body updated.
 - **Jira:** commented on THL-291, which stays in Testing. Nothing moved.
 
+### [designBOT → engBOT] 2026-11-09 · JOINT-A · Shared with: pick people from splits and contacts
+**Status:** Redesigned (new design · Approved — build, stories approved by the product owner 2026-11-09)
+**Jira:** JOINT-A (Jira pending), THL-172, THL-282, THL-291, THL-119   **Figma:** Design refresh › section 12 1102:4466 · AM-08p 1102:4469/1102:4581, AM-08p1 1102:4694/1102:4810, AM-08p2 1102:4927/1102:5032, AM-08p3 1103:4628/1103:4725, AM-08p4 1103:4823/1103:4950, AM-08p5 1103:5078/1103:5152, AM-08p6 1103:5227/1103:5323, AM-08p7 1103:5420/1103:5525, AM-08r 1104:4898/1104:4984, AM-08r1 1104:5071/1104:5129, AM-08x 1104:5188/1104:5307, AM-08x1 1104:5427/1104:5502, O-09cr 1104:5578/1104:5655 · notes 1110:6476, 1110:6492, handoff 1110:6520
+"Shared with" (O-09c, AM-04/AM-08) now opens the S-17 v2 picker with a joint header: people she's split with (newest first), then contacts, search, and Type a name. Tick up to six. Contacts are asked for only when the picker opens, and the denied state keeps splits and Type a name working. Stored by name like split names; nothing is sent to anyone. Remove is a Pearl sheet, then a toast with Undo. Server: GET /api/people/recent and name matching on joint_people; see the handoff note.
+
+### [designBOT → engBOT] 2026-11-09 · JOINT-B · Split my part on a joint-account purchase
+**Status:** Redesigned (new design · Approved — build, stories approved by the product owner 2026-11-09)
+**Jira:** JOINT-B (Jira pending), THL-172, THL-282, THL-291, THL-201, THL-203, THL-181   **Figma:** Design refresh › section 12 1102:4466 · S-01jr 1105:5190/1105:5303, T-06jr 1105:5417/1105:5537, T-06jr1 1105:5658/1105:5775, S-03j 1105:5893/1105:6049, S-03j1 1105:6206/1105:6350, S-03j2 1106:5676/1106:5830, S-03j3 1106:5985/1106:6145, S-04j 1106:6306/1106:6388, S-04j1 1106:6471/1106:6560, AM-21j 1107:5954/1107:6060, AM-21j1 1107:6167/1107:6241, S-41j 1107:6316/1107:6441, S-41j1 1107:6567/1107:6656, S-41j2 1107:6746/1107:6877, AM-08n 1107:7009/1107:7115, AM-08n1 1107:7222/1107:7275 · notes 1110:6504, 1110:6492, handoff 1110:6520
+This supersedes SPLIT-08 for the joint case: S-01j's "no split on a joint purchase" is replaced by Split my part next to Whose was it?, on the transaction page and on the shared What was this? page. The joint share comes off first, then her part is split ($100 at 50/50 → You $16.68 / Priya $16.66 / Jo $16.66). How to split keeps every SPLIT-01 rule. The split card shows who's on the account apart from who owes her. A share change asks first if someone has paid; removing the split or the account no longer being joint both have Undo. Server: lift the `if t.joint` refusal in the split PUT, keep the joint part separate from my_share, and recalculate with needs_confirm; see the handoff note. Product owner questions are open on the not-joint behaviour and on typed amounts.
+
+### [designBOT → engBOT] 2026-11-09 · JOINT-A / JOINT-B · Product owner decisions recorded
+**Status:** Redesigned
+**Jira:** JOINT-A (Jira pending), JOINT-B (Jira pending), THL-172, THL-282, THL-291, THL-181   **Figma:** S-17j 1114:7077/1114:7187, S-01jr2 1114:7298/1114:7380, S-03j4 1114:7463/1114:7609, notes 1110:6504 and 1110:6520; superseded S-01j 998:37841/1008:39146 (tags 1113:30028/1113:30029)
+The product owner took all six recommendations (2026-11-09):
+(1) Not a joint account keeps the splits: people owe the same and her share takes the rest (AM-08n, as drawn).
+(2) After a share change, typed amounts stay; her share absorbs the difference; refuse if they're over her part.
+(3) Joint account holders are hidden from Split my part › Add someone (new S-17j). Server: filter joint_people from /api/people/recent and refuse a split person who matches a holder.
+(4) On "All mine unless I mark it" accounts it's the usual "Split with others" and the usual How to split header (new S-01jr2 and S-03j4; T-06jr reads the same).
+(5) Removing the last person leaves the account joint with no names (AM-08r1, as drawn).
+(6) People already on the account stay ticked and dimmed in the picker and are removed from the account page (AM-08p4, as drawn).
+S-01j on Cash flow is superseded by S-01jr 1105:5190.
+
+### [designBOT → engBOT] 2026-11-09 · SPLIT-C · Not sure yet: a fifth split method with no amounts
+**Status:** Redesigned
+**Jira:** SPLIT-C (Jira pending), THL-291, THL-181, THL-289   **Figma:** Design refresh › section 13 1112:6476 — S-03u 1112:6477/6834, S-03u1 1112:6553/6910, S-03u0 1112:6618/6975, S-03us 1112:6676/7033, S-03ue 1112:6752/7109; S-04u 1113:36572/36661, S-04u0 1113:36755/36842, S-04u5 1113:36934/37063, S-04ul 1113:37197/37244, S-04ue 1113:37294/37340; S-40u 1114:7756/7849, S-40u2 1114:7949/8025, S-07u 1114:8108/8152, S-06uc 1114:8199/8251, S-03fu 1114:8306/8354, S-03fu1 1114:8405/8447
+How to split gets a fifth segment, "Not sure": people only, no amounts, no "I had some too", at least one person. The split card never says "owes". Each person shows what they've paid or "Nothing yet", under "Amounts not set · $80.00 still counts as yours" (purchase minus linked paybacks). The ••• options are Mark paid back (any amount), Remind (no amount), Remove, and See/Unlink payment (reusing S-05or and S-34kr). There's no Let it go or Change share, because nothing is owed. Data model: mode "unknown", people with no amounts, no my_share, still_yours on the split; THL-181 never matches by amount here and asks instead (S-35u). Product owner approved the story on 2026-11-09; approved to build once SPLIT-C is in Jira.
+
+### [designBOT → engBOT] 2026-11-09 · SPLIT-C · Settle up, That's everything, linking, Owed to you
+**Status:** Redesigned
+**Jira:** SPLIT-C (Jira pending), THL-291, THL-181, THL-289   **Figma:** S-45a 1115:7654/7735, S-45b 1115:7821/7887, S-45bs 1115:7956/8022, S-45bx 1115:8091/8163, S-45c 1116:7844/7922, S-45d 1116:8000/8069, S-45e 1116:8138/8222, S-45f 1116:8306/8383, S-45g 1116:8463/8538; S-46a 1117:8058/8128, S-46as 1117:8201/8271, S-46ax 1117:8344/8420, S-46b 1117:8499/8574, S-46c 1117:8652/8720, S-46d 1117:8791/8888, S-46e 1117:8986/9061; S-09u 1118:8512/8573, S-09u2 1118:8634/8694, S-35u 1118:8754/8809, S-35u2 1118:8864/8922, S-35ux 1118:8980/9044, S-44u1–4 1118:9108/9178, 1118:9251/9320, 1118:9391/9459, 1118:9530/9599; S-14u 1119:8954/9622, S-14u0 1119:9076/9674, S-14ul 1119:9156/9178, S-14ux 1119:9190/9217, H-00u 1119:9230/9707, H-00u0 1119:9309/9742
+Settle up converts the split with a PUT in a normal mode, keeping its links: either "Use what each paid" (amounts = what each paid, the rest is hers) or typed amounts with the (b′) save rules. A share below what someone paid goes to the SPLIT-19 extra step, and Undo goes back to unknown. That's everything sets closed_at: the rest stays hers, nobody owes, and Undo or Reopen puts it back. A link can take at most still_yours; anything over that is "left to sort". Owed to you lists the split under NOT SETTLED with no amount and leaves it out of the total; the Home nudge counts set splits only. Allowance never moves on settling or closing.
+
+### [designBOT → product owner] 2026-11-09 · SPLIT-C · Seven open questions
+**Status:** Needs product owner
+**Jira:** SPLIT-C (Jira pending)   **Figma:** S-09u2 1118:8634, S-45b 1115:7821, S-45e 1116:8138, S-46c 1117:8652, H-00u0 1119:9309
+(1) Keep "Not sure yet", with the segment labelled "Not sure"? (2) Cap a payback at what the purchase still costs her and send the rest to "What's the other $x?"? (3) With "Use what each paid", does someone who paid nothing stay at $0.00 or get removed? (4) Can a later payback link to a closed split: reopen it, or refuse? (5) Show the Home nudge when the only open split is a Not sure yet one? (6) A settled share below what someone paid: the SPLIT-19 extra step, or "they overpaid" by default? (7) Offer Not sure yet on Quick sort's held split (SPLIT-20) and on JOINT-B's "Split my part"?
+
+### [product owner] 2026-11-09 · JOINT-A, JOINT-B and SPLIT-C decisions
+The three stories (JOINT-A, JOINT-B, SPLIT-C) are approved. They aren't in Jira yet because creating tickets was blocked, so this log and the commits call them by these names.
+- **JOINT, all six:** (1) an account that's no longer joint keeps its splits; (2) typed amounts stay after a share change, her share takes the difference, and the change is refused if they're more than her part; (3) joint account holders are hidden from Split my part's picker and refused by name; (4) "Split with others" and the usual header on "All mine unless I mark it" accounts; (5) removing the last person leaves the account joint with no names; (6) people already on the account stay ticked and dimmed in the picker.
+- **SPLIT-C, all seven:** (1) the name is "Not sure yet", with the segment labelled "Not sure"; (2) a payback is capped at what the purchase still costs her, and the rest goes to "What's the other $x?" (left to sort); (3) with "Use what each paid", someone who paid nothing stays on the split at $0.00 ("Nothing to pay"); (4) a payback linked from search to a closed split reopens it, with Undo, and closed splits aren't suggested; (5) the Home nudge shows the quiet "not settled" line only after 7 days, the same timing as owes-you; (6) a settled share below what someone paid goes to the SPLIT-19 extra step, as drawn; (7) Not sure yet is offered in Quick sort's held split (SPLIT-20) and in JOINT-B's Split my part.
+
+### [engBOT] 2026-11-09 21:32 · JOINT-A / JOINT-B / SPLIT-C start
+Branch `feat/joint-and-not-sure-splits`, made from `fix/unlink-from-purchase` (PR #316) at ecd5f3d, in its own worktree. I re-read the role file, the three story drafts, designBOT's entries above, and the code. In Figma (create_session first, by node only) I read the handoff note 1110:6520 and notes 1110:6476, 1110:6492 and 1110:6504 with get_design_context, and the SPLIT-C notes 1120:9270, 9273, 9276, 9279, 9282 and 9285. I checked these frames by screenshot: AM-08p 1102:4469, AM-08p2 1102:4927, AM-08r 1104:4898, AM-08r1 1104:5071, AM-08x 1104:5188, O-09cr 1104:5578, S-01jr 1105:5190, T-06jr 1105:5417, T-06jr1 1105:5658, S-03j 1105:5893, S-04j 1106:6306, AM-21j 1107:5954, S-41j 1107:6316, AM-08n 1107:7009, S-17j 1114:7077, S-01jr2 1114:7298, S-03j4 1114:7463, S-03u 1112:6477, S-04u 1113:36572, S-40u 1114:7756, S-07u 1114:8108, S-03fu 1114:8306, S-45a 1115:7654, S-45b 1115:7821, S-45e 1116:8138 (get_design_context), S-46a 1117:8058, S-46c 1117:8652, S-09u2 1118:8634, S-35u 1118:8754, S-14u 1119:8954, H-00u 1119:9230 and H-00u0 1119:9309.
+
+### [engBOT → designBOT] 2026-11-09 21:32 · SPLIT-27 · Accepted
+Shared with picker (JOINT-A). Every acceptance criterion has a frame and a way in: AM-08p opens from AM-08r's Add someone, from AM-08r1's "Add who it's shared with", from O-09cr's Shared with, and (as S-17j) from Split my part. The states are all drawn: contacts asked for on open (AM-08p1), off (AM-08p2), search and Type a name (AM-08p3), six (AM-08p4), empty (AM-08p5), loading (AM-08p6) and couldn't save (AM-08p7). Remove (AM-08x) and its toast with Undo (AM-08x1) give a way out. Decisions 5 and 6 match AM-08r1 and AM-08p4 as drawn. The handoff's server needs (`GET /api/people/recent`, name matching, the contacts reason) were clear. Nothing sent back.
+
+### [engBOT → designBOT] 2026-11-09 21:32 · SPLIT-28 · Accepted
+Split my part (JOINT-B). The rule ($100.00 at 50/50 three ways: You $16.68, Priya $16.66, Jo $16.66) and where her part comes from (note 1110:6504) work with the server. S-01jr, T-06jr and T-06jr1 reach it from Transactions, Needs a look and Quick sort. S-03j keeps every SPLIT-01 rule. S-04j splits who's on the account from who owes. AM-21j asks first, S-41j and AM-08n each have Undo, and S-17j, S-01jr2 and S-03j4 cover the decisions. Accepted as drawn. One small adjustment: "All mine unless I mark it" with someone already paid has no frame of its own, so it uses AM-21j's sheet, reading as 100%.
+
+### [engBOT → designBOT] 2026-11-09 21:32 · SPLIT-29 · Accepted
+Not sure yet (SPLIT-C). Every acceptance criterion has a screen. How to split is S-03u to S-03ue, the card and its ••• are S-04u and S-40u, Remind with no amount is S-07u, Remove is S-03fu and S-03fu1, Settle up is S-45a to S-45g, That's everything with Undo and Reopen is S-46a to S-46e, linking is S-09u, S-09u2, S-35u and S-44u, and Owed to you and Home are S-14u and H-00u. The seven questions were answered by the product owner (above), and each answer matches a drawn frame. Accepted.
+
+### [engBOT] 2026-11-09 21:32 · JOINT-A / JOINT-B / SPLIT-C · build
+- **Server** (7ec75bb, then the app commit):
+  - **Data:**
+    - `txn_joint_parts` keeps her part of a split joint purchase when it was her own answer (Whose was it?, or a share held "from today"). `txn_shares` keeps what the split leaves her, so Allowance and spending count only that.
+    - `Transaction.joint_part` is her answer, else the name's rule, else the account's share, or all of it. `split_mode` is set on every split purchase.
+    - `txn_splits.closed_at` records That's everything.
+    - A Not sure yet purchase's share is worked out as it loads (`Store._unsure_shares`): her part less every linked payback and every cash or app payment, never below $0.00.
+  - **Split my part:**
+    - `PUT …/split` splits `split_base` (her part).
+    - It refuses "Nothing here is yours to split. Say it was partly yours first." and "Sam Lee is on this joint account. Their part is already off." (decision 3).
+  - **Share changes:**
+    - Changing the account's share (`PUT /accounts/<id>/settings`) or Whose was it? on a split purchase re-works the split. Evenly, % and shares rescale; typed amounts stay and her share takes the rest (decision 2).
+    - If someone has paid, the server answers `needs_confirm` with each change, unless `confirm` is sent. Amounts over her new part are refused with "That's more than your part now. Change the split first."
+    - "Starting today" holds earlier purchases at their part.
+  - **Not joint any more:** the server always asks first when there are split purchases. On confirm the splits stay, people owe the same, and they become Amounts (decision 1).
+  - **Remove the split:** `DELETE …/split` on a joint purchase puts her part back, sends each payback to Needs a look as left to sort, and forgets cash and app payments.
+  - **Undo** covers every one of these: the `joint_accounts`, `split_closed`, `joint_part` and `settle_cash` marks, and let-go records.
+  - **People you've split with:** `GET /api/people/recent` lists them newest first, once each (the split name matcher), with "Split Pizza Nova · Nov 13". `?txn=` hides that purchase's joint holders.
+  - **Last person:** `joint_people: []` leaves the account joint with no names (decision 5); a list of blanks is still refused.
+  - **Not sure yet:**
+    - `mode: "unknown"`, at least one person, no amounts.
+    - Nobody owes and nobody is "over", so there's no "What's the extra?" step.
+    - A payback with no name is always asked about (S-35u).
+    - `cap_problem` caps a payback at what the purchase still costs her, everywhere a payback is linked (parts, `/mark`, `POST …/paybacks`). The app sends the rest to "What's the other $x?" (decision 2).
+    - `POST` / `DELETE …/split/close` are That's everything and Reopen, each with Undo. A payback linked to a closed split reopens it, and Undo closes it again (decision 4).
+    - Closed splits aren't suggested. Open ones are suggested to their sender with "takes any amount".
+    - `/owed` gains `not_settled` (with `paid_by`) and leaves those splits out of the total. `/owing` and `/credit` list Not sure yet shares.
+  - **Settle up** is the usual `PUT …/split`, links kept. A share below what someone paid takes `extra` per person (overpaid, payback, gift or given back; decision 6). A bank payback becomes parts of its deposit, and a cash or app payment gives up the piece. It's refused if the extra can't come off their payments here.
+  - **Fix found on the way:** the detail page counted a payback twice on a joint account, because "everything" lists a row that's someone else's both as listed and as theirs. The rows are now de-duplicated.
+- **App:** `JointSplitViews.swift` is new, and `make_project.py` was run.
+  - `PeoplePicker` (AM-08p / S-17 v2 / S-17j) is now used everywhere Add someone was. It lists people you've split with, then contacts A to Z (asked for only on open, never sent anywhere), with search, Type a name, six at most, already-shared rows ticked and dimmed, the contacts-off card with Turn on in Settings (iOS Settings, never the web), loading, and couldn't save with ticks kept.
+  - New sheets: `JointStrip`, `JointPartCard` (S-04j), `RemoveSplitSheet` (S-41j), `JointChangeSheet` (AM-21j, AM-08n, and the one-purchase version for Whose was it?), `RemoveJointPersonSheet` (AM-08x), `SettleUpSheet` (S-45a/b), `ThatsEverythingSheet` (S-46a), `SettleExtraSheet` (S-45e → the SPLIT-19 tiles) and `SplitMethodSheet` (the method list at accessibility sizes).
+  - `SplitSheet`: "Not sure" is the fifth segment with S-03u's explainer, × to remove (44 pt) and Save split. For joint purchases it shows the Split my part header, "Your part $50.00 of $100.00" and the strip. Settling mode hides Not sure, shows "Paid $20.00 so far", and offers "Next: the extra $10.00". Edit split › Remove the split appears on joint purchases.
+  - `SplitPeople`: S-04u lines and rows (never "owes"), Settle up / That's everything, S-46c closed with Reopen, S-04j's two cards, and "Your part, split 3 ways".
+  - `PersonOptionsSheet` S-40u, `RemindSheet` S-07u, and `MarkPaidSheet` any amount up to what it still costs (the server's candidates too).
+  - `TransactionDetailView`: Split my part / Split with others beside Whose was it?, dimmed with why (T-06jr1), and the hero "Your share $16.68" / "Counts as $80.00 so far". `WhoseSheet` reads her part and asks first on a split.
+  - `AnswerSheet` (T-06jr): Whose was it? and Split my part. Quick sort holds Not sure yet (decision 7).
+  - `PartsFlow`: S-09u "SAM IS ON", S-09u2's cap note, and S-35u COULD BE EITHER. `WhoSentSheet` shows Not sure yet shares.
+  - `OwedView` S-14u / S-14u0, and Home H-00u / H-00u0 after 7 days (decision 5).
+  - `JointAccountView` AM-08r / r1 / x / x1 with the ink toast and Undo. Its `.alert` and `.confirmationDialog` are gone. The account page's Joint switch asks first (AM-08n). Setup's joint sheet uses the picker (O-09cr).
+  - `NSContactsUsageDescription` is now the handoff's words.
+- **Tests:** `tests/test_joint_and_unsure_splits.py` has 43.
+  - $100 at 50/50 three ways is 16.68 / 16.66 / 16.66, and Allowance counts only 16.68 (Home's spent moves by 33.32). A holder is refused by name, and nothing of hers refuses the split.
+  - On "All mine" the whole purchase is split. Her Whose was it? answer is her part, and changing it later rescales, with Undo.
+  - Paybacks link and unlink with Paid back + Owes = share.
+  - 50 → 60 with Jo paid asks first, then Jo owes 3.34, with Undo. Nobody paid means no ask. Typed amounts stay, and over her part is refused. "Starting today" changes nothing earlier.
+  - Remove the split puts her part back and sends the payback to sort, with Undo. Not joint any more keeps the splits, with Undo.
+  - People you've split with come newest first, once each, with holders hidden. The last person can go, and removing someone has Undo.
+  - Not sure yet: all hers until paid; needs someone; a payback comes off with Undo; cash any amount with Undo; Σ paid ≤ amount (capped, then parts with the rest left to sort); no-name asks and credits with Undo.
+  - Owed to you's not_settled, out of the total. Suggestions and /owing for the sender.
+  - Settle up: use what each paid (Priya at $0.00, Allowance unchanged, Paid back + Owes = share, Undo back to Not sure yet with links); typed amounts' save rules; the extra as a gift with Undo; the extra must add up; overpaid is You owe.
+  - That's everything (spending unchanged, out of not_settled, Undo reopens), Reopen with Undo, only Not sure yet closes, and closed isn't suggested while a link reopens it with Undo.
+  - Not sure yet on Split my part (her part less paybacks). Quick sort's held split.
+  - Source checks: no stock dialogs in the new views or AM-08, the contacts reason, the words, and "Allowance".
+- **Gaps, as notes for the product owner (no new design loop):**
+  1. Not run by hand on a simulator or a phone; every check was automated.
+  2. A Not sure yet or joint split purchase that a piggy bank paid for: the bank's SQL charge still uses the purchase less linked bank paybacks. It ignores cash payments and the joint part. This is rare, and Allowance and spending outside piggy banks are right.
+  3. Removing someone who paid from a Not sure yet split reuses S-03fr's lines ("Sam's $20.00 share becomes yours"). S-03fu's exact note ("Pizza Nova will count as $100.00 again, all yours, until Priya pays you back") isn't used.
+  4. Remove the split is offered only on joint purchases (S-41j). Other splits keep their old remove, where linked paybacks stay linked.
+  5. Setup's "Not a joint account" doesn't ask first if the account already has split purchases (unlikely in setup). The server refuses to change it until the account page confirms.
+  6. Dynamic Type: rows wrap and sheets scroll. "Amounts drop under the name from AX3" isn't built. Motion is not built, as asked.
+  7. Whose was it? (WhoseSheet) is still the older sheet style. It wasn't part of these designs.
+
+### [engBOT] 2026-11-09 · JOINT-A / JOINT-B / SPLIT-C · tests, PR and Jira
+- `python3 -m pytest -q`: 1901 passed (43 new in tests/test_joint_and_unsure_splits.py). `npm run build`: built. `xcodebuild … 'generic/platform=iOS Simulator' build`: BUILD SUCCEEDED, no warnings in the changed files. `make_project.py` was run for the new `JointSplitViews.swift`. Not run by hand on a simulator or device.
+- **Commits:** 7ec75bb (server and tests) and b2dc643 (app and server fixes) on `feat/joint-and-not-sure-splits`; `git show --stat` checked for each. Then this log commit.
+- **PR:** https://github.com/mariapapadimitriou/finance/pull/317, base `fix/unlink-from-purchase` (PR #316). Open, not merged.
+- **Jira:** commented on THL-172 (JOINT-A, JOINT-B) and THL-291 (JOINT-B, SPLIT-C), saying the stories still need tickets. Nothing moved.
+
 ## Summary
 
-This is the state after sixteen rounds, the THL-301 follow-up, SPLIT-25 and SPLIT-26 (REFRESH-02, the custom split menus) (2026-11-09 to 11-10). Every issue, SPLIT-01 to SPLIT-26, is decided and built. SPLIT-25 and SPLIT-26 are on their own branch and PR (below). SPLIT-26 replaced every stock iOS menu, alert and action sheet in the split flow with designBOT's Pearl sheets and toasts. Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
+This is the state after sixteen rounds, the THL-301 follow-up, SPLIT-25 and SPLIT-26 (REFRESH-02, the custom split menus), and the three product-owner-approved stories JOINT-A, JOINT-B and SPLIT-C (SPLIT-27 to SPLIT-29), 2026-11-09 to 11-10. Every issue, SPLIT-01 to SPLIT-29, is decided and built. SPLIT-25 and SPLIT-26 are on their own branch and PR. SPLIT-27 to SPLIT-29 are on a third branch and PR, based on that one (below). JOINT-A, JOINT-B and SPLIT-C still need Jira tickets: creating them was blocked, so they were commented on THL-172 and THL-291. SPLIT-26 replaced every stock iOS menu, alert and action sheet in the split flow with designBOT's Pearl sheets and toasts. Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
 
 **Before merging:** test it by hand on a device. No round was run by hand on a simulator or a phone. Every check was automated: pytest, the web build, the simulator build, and wiring checks on the Swift source.
 
-**PR:** https://github.com/mariapapadimitriou/finance/pull/315 (merged). SPLIT-25 and SPLIT-26: https://github.com/mariapapadimitriou/finance/pull/316 (open, not merged), branch `fix/unlink-from-purchase`.
+**PR:** https://github.com/mariapapadimitriou/finance/pull/315 (merged). SPLIT-25 and SPLIT-26: https://github.com/mariapapadimitriou/finance/pull/316 (open, not merged), branch `fix/unlink-from-purchase`. SPLIT-27 to SPLIT-29: https://github.com/mariapapadimitriou/finance/pull/317 (open, not merged), branch `feat/joint-and-not-sure-splits`, base `fix/unlink-from-purchase`.
 **Branch:** `feat/split-bot-round` (rounds 1–16, THL-301)
 **Commits:**
 - e0da5fa: iOS, round 4
@@ -1322,11 +1448,12 @@ This is the state after sixteen rounds, the THL-301 follow-up, SPLIT-25 and SPLI
 - 68579a1: THL-301 build (SPLIT-24)
 - this log commit: designBOT's SPLIT-24 entry and the THL-301 round
 - on `fix/unlink-from-purchase`: bcd8fbd SPLIT-25 build, e1df1d4 SPLIT-25 log; c90ff92 SPLIT-26 (REFRESH-02) build, then its log commit
+- on `feat/joint-and-not-sure-splits`: 7ec75bb JOINT-A/B and SPLIT-C server and tests, b2dc643 the app, then the log commit
 
 **Tests:**
-- `python3 -m pytest -q`: 1858 passed (SPLIT-26). That's 80 new in tests/test_split_round.py across rounds 7, 9, 10, 11, 12, 14, 16 and THL-301, 17 in tests/test_unlink_from_purchase.py for SPLIT-25, and 22 in tests/test_split_menus.py for SPLIT-26.
-- `npm run build`: built (SPLIT-26).
-- iOS Simulator build: BUILD SUCCEEDED (SPLIT-26), no warnings in the files it touched.
+- `python3 -m pytest -q`: 1901 passed (SPLIT-27 to SPLIT-29; 1858 at SPLIT-26). That includes 43 new in tests/test_joint_and_unsure_splits.py. That's 80 new in tests/test_split_round.py across rounds 7, 9, 10, 11, 12, 14, 16 and THL-301, 17 in tests/test_unlink_from_purchase.py for SPLIT-25, and 22 in tests/test_split_menus.py for SPLIT-26.
+- `npm run build`: built (SPLIT-29).
+- iOS Simulator build: BUILD SUCCEEDED (SPLIT-29), no warnings in the files it touched.
 - Not run by hand on a simulator or a device.
 
 ### Every issue
@@ -1359,6 +1486,9 @@ This is the state after sixteen rounds, the THL-301 follow-up, SPLIT-25 and SPLI
 | SPLIT-24 | A payback over two purchases that's extra on only one (THL-301) | Redesigned (designBOT), Accepted and built (68579a1): one row per deposit, `credit:<id>` (S-21xw) then `extra:<id>` (S-21xm "Nov 16 · $30.00 extra on Loblaws", +$60.00); S-35c credits and closes; S-11xm "The $30.00" under "$60.00 · Nov 16" with the mixed line, capped (S-11xm over), "Jo overpaid"; the save keeps the credited parts, with Undo; Quick sort brings the deposit back as the next card. THL-301 in Testing |
 | SPLIT-25 | Unlink a payback from the purchase it paid back (product owner, hand test; THL-291, THL-289 flow 7) | Redesigned (designBOT), Accepted and built (PR #316): every PAID BACK / REFUNDED BY row → S-05o → S-34s / S-34k → S-05t with Undo; purchase-scoped server unlink for every kind. Restyled by SPLIT-26. THL-291 in Testing |
 | SPLIT-26 | Custom split menus (REFRESH-02) | Decided by the product owner (••• for every state, the new copy) and drawn by designBOT on "Design refresh" section 11. Accepted and built (PR #316): S-04r v2 ••• → S-40a–d; S-05or; S-06ra–rd; S-07r; S-08r with loading/error; S-03re; S-03fr/fr2 with loading/error; S-34sr/kr; S-44a–i toasts incl. Undo failed. No stock dialog left in the split flow. THL-291 in Testing |
+| SPLIT-27 | Shared with picker (JOINT-A) | Accepted and built (PR #317): `GET /api/people/recent`; the people picker (AM-08p–p7, S-17 v2, S-17j) on the joint account page, in setup and in Add someone; AM-08r/r1/x/x1 with Undo; the last person can go (decision 5); already-shared ticked and dimmed (decision 6) |
+| SPLIT-28 | Split my part (JOINT-B) | Accepted and built (PR #317): her part is split ($16.68 / $16.66 / $16.66), holders refused (decision 3), "Split with others" on all-mine accounts (decision 4), share changes rescale or keep typed amounts and ask first (AM-21j, decision 2), Remove the split (S-41j), not joint keeps splits (AM-08n, decision 1), all with Undo |
+| SPLIT-29 | Not sure yet (SPLIT-C) | Accepted and built (PR #317): the fifth method "Not sure", the card that never says owes, the payback cap (decision 2), Settle up with $0.00 kept (decision 3) and the extra step (decision 6), That's everything / Reopen and reopening on link (decision 4), NOT SETTLED and Home after 7 days (decision 5), Quick sort and Split my part (decision 7) |
 
 ### Still open
 
@@ -1418,5 +1548,6 @@ This is the state after sixteen rounds, the THL-301 follow-up, SPLIT-25 and SPLI
 | THL-301 | engBOT | Checked every SPLIT-24 node and Accepted it. Built it (68579a1): partly-extra `extra_question`, one item per deposit (credit, then extra), the save that keeps the credited parts with Undo (app and web), the S-21xm row, S-11xm and its over state, S-35c's mixed-case line, and Quick sort's follow-up card. Updated PR #315, commented on THL-301 and moved it to Testing. Listed the remaining gaps under Still open as notes for the product owner. |
 | SPLIT-25 | designBOT, then engBOT | designBOT (engBOT not running) logged SPLIT-25 from the product owner's hand test and drew S-05v, S-05o, S-34s and its error, S-05t and nine S-34k sheets, light and dark. engBOT checked them by node, Accepted, and built the server and app (PR #316). After the product owner's mid-build change, S-05o and S-34s became Pearl sheets in one view, to be replaced by the custom design. engBOT commented on THL-291. |
 | SPLIT-26 | product owner, designBOT, then engBOT | The product owner decided the design refresh (ink spending, Sort now → Quick sort, ••• menus with custom pages, pearl paper, look before animation). designBOT drew REFRESH-02 on "Design refresh" section 11 and logged it in design-refresh-log.md; engBOT relayed it here, checked it by node, Accepted, built the server toasts and Unlink? words and the app's Pearl sheets (PR #316), and commented on THL-291. |
+| SPLIT-27–29 | product owner, designBOT, then engBOT | The product owner approved JOINT-A, JOINT-B and SPLIT-C, then decided designBOT's six JOINT and seven SPLIT-C questions. designBOT drew sections 12 and 13 of "Design refresh" with a server handoff. engBOT appended designBOT's entries, checked the frames by node and screenshot, Accepted all three, built the server and app (PR #317), and commented on THL-172 and THL-291. The gaps are notes for the product owner, with no new design loop. |
 
 Throughout, no ticket was moved past Testing, no bot merged anything (the product owner merged PR #315), and Figma was edited only by designBOT.
