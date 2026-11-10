@@ -363,7 +363,9 @@ def transactions_list():
         "owed": owed,
         "total": len(chosen),
         "totals": txlist.totals(every),
-        "month_totals": txlist.totals(whole),
+        # T-01r (TEST-05): Spent / Saved / Leftover under the month's bar.
+        "month_totals": {**txlist.totals(whole),
+                         **({"saved": round(_invested_in(st.all_transactions(), month), 2)} if month else {})},
         # ALT-04: the Outflows and Inflows cards.
         "flows": txlist.flows(rows, filters, _date_today()),
         "focus": txlist.focus(rows, month=month, account=filters["account"],
@@ -1442,6 +1444,11 @@ _PAYBACK_BEFORE_DAYS = 7
 _PAYBACK_AFTER_DAYS = 45
 _PAYBACK_NAMES = ("e-transfer", "etransfer", "e-tfr", "etfr", "interac",
                   "transfer", "venmo", "zelle", "wise")
+
+
+def _invested_in(txns, month: str) -> float:
+    from .analytics import invested_in
+    return invested_in(txns, month[:7])
 
 
 def _payback_candidates(charge, txns) -> list[dict]:

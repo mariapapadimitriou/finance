@@ -494,6 +494,8 @@ struct TransactionList: Decodable {
         let income: Double?
         let spent: Double?
         let count: Int?
+        /// T-01r: what was put away this month (month totals only).
+        let saved: Double?
     }
 }
 

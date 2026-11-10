@@ -340,52 +340,89 @@ struct TransactionsView: View {
 
     // MARK: The month
 
+    /// T-01r (TEST-05, REFRESH-00 decision 1): Leftover is the one headline,
+    /// a bar of Spent / Saved / Leftover, Came in on the right, and "8 need a
+    /// look · Sort". Spending is ink; red is only for over.
     private var summaryCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Button { showMonths = true } label: {
-                    HStack(spacing: 6) {
-                        Text(month.map { Format.monthName($0) } ?? "This month").font(Nacre.headline)
-                        Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
+        // T-45, T-53: a search or a filter shows its own totals.
+        let narrowed = inSearch || filters.isActive
+        let spent = narrowed ? shown.filter { !$0.inflow && $0.counts == "spending" }.reduce(0) { $0 + $1.amount }
+            : (monthTotals?.spent ?? 0)
+        let income = narrowed ? shown.filter { $0.inflow && $0.counts == "income" }.reduce(0) { $0 + $1.amount }
+            : (monthTotals?.income ?? 0)
+        let saved = narrowed ? 0 : (monthTotals?.saved ?? 0)
+        let left = income - spent - saved
+        let over = left < -0.5 && !narrowed
+        return GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Button { showMonths = true } label: {
+                        HStack(spacing: 6) {
+                            Text(month.map { Format.monthName($0) } ?? "This month").font(Nacre.headline)
+                            Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundColor(Pearl.ink)
+                        .frame(minHeight: 44).contentShape(Rectangle())
                     }
-                    .foregroundColor(Pearl.ink)
+                    .buttonStyle(.plain)
+                    .disabled(months.isEmpty)
+                    .accessibilityLabel("Month, \(month.map { Format.month($0) } ?? "")")
+                    Spacer(minLength: 8)
+                    // T-67: Came in narrows the list to money in.
+                    Button { counts = counts == "income" ? nil : "income" } label: {
+                        Text("Came in \(Format.whole(income))").font(Nacre.subheadline).foregroundColor(Pearl.moneyIn)
+                            .frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(counts == "income" ? "Shows everything again" : "Shows only these")
+                    .accessibilityAddTraits(counts == "income" ? .isSelected : [])
                 }
-                .buttonStyle(.plain)
-                .disabled(months.isEmpty)
-                .accessibilityLabel("Month, \(month.map { Format.month($0) } ?? "")")
-
-                HStack(spacing: 0) {
-                    // T-45, T-53: a search or a filter shows its own totals.
-                    let narrowed = inSearch || filters.isActive
-                    let spent = narrowed ? shown.filter { !$0.inflow && $0.counts == "spending" }.reduce(0) { $0 + $1.amount }
-                        : (monthTotals?.spent ?? 0)
-                    let income = narrowed ? shown.filter { $0.inflow && $0.counts == "income" }.reduce(0) { $0 + $1.amount }
-                        : (monthTotals?.income ?? 0)
-                    let left = income - spent
-                    stat("Spent", Format.whole(spent), Pearl.moneyOut, filter: "spending")
-                    divider
-                    stat("Came in", Format.whole(income), Pearl.moneyIn, filter: "income")
-                    divider
-                    stat(left < -0.5 ? "Over" : "Leftover", narrowed ? "—" : Format.whole(left),
-                         left < -0.5 && !narrowed ? Pearl.moneyOut : (narrowed ? Pearl.muted : Pearl.moneyIn), filter: nil)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(over ? "Over" : "Leftover").font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    Text(narrowed ? "—" : Format.whole(abs(left)))
+                        .font(Pearl.display(.largeTitle)).foregroundColor(over ? Pearl.moneyOut : Pearl.ink)
+                        .lineLimit(1).minimumScaleFactor(0.6)
                 }
+                .accessibilityElement(children: .combine)
+                MonthBar(spent: spent, saved: saved, income: income)
+                HStack(spacing: 14) {
+                    // T-67: Spent narrows the list to spending.
+                    Button { counts = counts == "spending" ? nil : "spending" } label: {
+                        Text("Spent \(Format.whole(spent))").foregroundColor(Pearl.ink)
+                            .frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(counts == "spending" ? "Shows everything again" : "Shows only these")
+                    .accessibilityAddTraits(counts == "spending" ? .isSelected : [])
+                    Text("Saved \(Format.whole(saved))").foregroundColor(Pearl.moneyIn)
+                    Text(over ? "Over \(Format.whole(-left))" : "Leftover \(Format.whole(max(left, 0)))")
+                        .foregroundColor(over ? Pearl.moneyOut : Pearl.muted)
+                    Spacer(minLength: 0)
+                }
+                .font(Nacre.footnote).lineLimit(1).minimumScaleFactor(0.8)
+                .padding(.vertical, -8)
             }
             .padding(16)
             RowSeparator(inset: 0)
             if reviewCount > 0 {
                 NavigationLink { ReviewView() } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: "questionmark.circle").font(.system(size: 18))
-                        Text("\(reviewCount) need\(reviewCount == 1 ? "s" : "") a look").font(Nacre.body)
+                        Text("\(reviewCount)").font(Nacre.label).foregroundColor(Pearl.onAction)
+                            .padding(.horizontal, 7).frame(minWidth: 22, minHeight: 22)
+                            .background(Capsule().fill(Pearl.action))
+                        Text("need\(reviewCount == 1 ? "s" : "") a look").font(Nacre.body)
                         Spacer()
+                        Text("Sort").font(Nacre.textButton).foregroundColor(Pearl.action)
                         Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(Pearl.muted)
+                            .foregroundColor(Pearl.ink)
                     }
                     .foregroundColor(Pearl.ink)
                     .padding(.horizontal, 16).frame(height: 48)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(reviewCount) need\(reviewCount == 1 ? "s" : "") a look, Sort")
             } else {
                 Label("All sorted", systemImage: "checkmark")
                     .font(Nacre.body).foregroundColor(Nacre.teal)
@@ -745,7 +782,7 @@ struct TransactionsView: View {
     }
 
     private var pickedTone: Color {
-        pickedRows.reduce(0) { $0 + ($1.inflow ? -$1.amount : $1.amount) } < 0 ? Pearl.moneyIn : Pearl.moneyOut
+        pickedRows.reduce(0) { $0 + ($1.inflow ? -$1.amount : $1.amount) } < 0 ? Pearl.moneyIn : Pearl.ink
     }
 
     /// Their category when they all share one, so Save waits for a change.
@@ -1784,5 +1821,29 @@ struct SheetBackground: View {
 
 extension Transaction {
     /// Red going out, green coming in, grey when it doesn't count.
-    var tone: Color { notCounted ? Pearl.muted : (inflow ? Pearl.moneyIn : Pearl.moneyOut) }
+    var tone: Color { notCounted ? Pearl.muted : (inflow ? Pearl.moneyIn : Pearl.ink) }
+}
+
+
+/// T-01r's month bar: Spent in ink, Saved in money-in green, what's left on
+/// the track, as parts of what came in (or of what went out, if more).
+struct MonthBar: View {
+    let spent: Double
+    let saved: Double
+    let income: Double
+
+    var body: some View {
+        GeometryReader { g in
+            let whole = max(income, spent + saved, 1)
+            let a = min(max(spent, 0) / whole, 1)
+            let b = min(max(saved, 0) / whole, 1 - a)
+            HStack(spacing: 3) {
+                if a > 0 { Capsule().fill(Pearl.ink).frame(width: max(g.size.width * a - 3, 4)) }
+                if b > 0 { Capsule().fill(Pearl.moneyIn).frame(width: max(g.size.width * b - 3, 4)) }
+                Capsule().fill(Pearl.track)
+            }
+        }
+        .frame(height: 8)
+        .accessibilityHidden(true)
+    }
 }

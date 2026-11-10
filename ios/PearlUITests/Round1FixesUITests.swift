@@ -179,7 +179,7 @@ final class Round1FixesUITests: XCTestCase {
     /// near-white words on them read (they were white on white).
     func testQuickSortReadsInDarkMode() {
         launch("dark")
-        tap(app.buttons["Review one by one"], "Review one by one")
+        tap(app.buttons["See the list"], "See the list")
         let all = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'All'")).firstMatch
         XCTAssertTrue(all.waitForExistence(timeout: 15), "Needs a look has no All chip")
         sleep(1)
@@ -194,7 +194,7 @@ final class Round1FixesUITests: XCTestCase {
         XCTAssertLessThan(lightness(of: skip, inset: 0.35), 0.4, "Skip's circle should be dark in dark")
         // And light mode keeps its light card.
         launch("light")
-        tap(app.buttons["Review one by one"], "Review one by one")
+        tap(app.buttons["See the list"], "See the list")
         tap(button("Quick sort"), "Quick sort card")
         XCTAssertTrue(card.waitForExistence(timeout: 15), "No Quick sort card")
         sleep(1)
@@ -309,7 +309,7 @@ final class Round1FixesUITests: XCTestCase {
         audit()
         openCashFlow()
         audit()
-        for label in ["Review one by one", "Calendar"] {
+        for label in ["See the list", "Sort now", "Calendar"] {
             XCTAssertFalse(small.contains(label), "\(label) is still under 44 pt: \(small)")
         }
         XCTAssertGreaterThanOrEqual(app.buttons["Calendar"].frame.height, 44)
@@ -399,7 +399,7 @@ final class Round1FixesUITests: XCTestCase {
     /// T-93n: a card whose best guess is Other asks, with Answer.
     func testAnOtherGuessIsAQuestion() {
         launch()
-        tap(app.buttons["Review one by one"], "Review one by one")
+        tap(app.buttons["See the list"], "See the list")
         XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Other?'")).firstMatch
                         .waitForExistence(timeout: 6), "Needs a look still shows an Other? chip")
         tap(button("Quick sort"), "Quick sort card")
@@ -410,5 +410,32 @@ final class Round1FixesUITests: XCTestCase {
         XCTAssertTrue(text(containing: "What was this?").exists, "No card asks What was this?")
         XCTAssertTrue(app.buttons["Answer"].exists, "Its round button should be Answer")
         XCTAssertTrue(text(containing: "NEEDS A LOOK").exists)
+    }
+    // MARK: TEST-04 / TEST-05 (REFRESH-00 decisions 1 and 2)
+
+    /// H-00r: Sort now opens Quick sort straight from Home.
+    func testSortNowOpensQuickSortFromHome() {
+        launch()
+        XCTAssertFalse(app.buttons["Review one by one"].exists, "Home still says Review one by one")
+        XCTAssertTrue(text(containing: "About").waitForExistence(timeout: 10), "No \"About a minute\" line")
+        tap(app.buttons["Sort now"], "Sort now")
+        XCTAssertTrue(app.descendants(matching: .any)["quick-sort-card"].waitForExistence(timeout: 15),
+                      "Sort now should open Quick sort")
+        XCTAssertFalse(app.staticTexts["Needs a look"].exists, "It opened Needs a look instead")
+    }
+
+    /// T-01r: Leftover leads, then Spent / Saved / Leftover, Came in, and
+    /// "need a look · Sort"; spending amounts in ink.
+    func testCashFlowLeadsWithLeftover() {
+        launch()
+        openCashFlow()
+        // The demo month has spent more than came in, so the headline is Over.
+        let lead = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Leftover' OR label CONTAINS 'Over'")).firstMatch
+        XCTAssertTrue(lead.waitForExistence(timeout: 8), "No Leftover / Over headline")
+        for words in ["Came in", "Spent", "Saved", "need a look"] {
+            let e = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
+            XCTAssertTrue(e.waitForExistence(timeout: 8), "No \(words) on Cash flow")
+        }
+        XCTAssertFalse(text(containing: "Over $").exists && text(containing: "Leftover $").exists)
     }
 }

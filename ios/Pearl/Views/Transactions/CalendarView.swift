@@ -382,7 +382,7 @@ struct CalendarCard: View {
                         Text(item.1.label).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                         Spacer(minLength: 8)
                         Text((pay ? "+" : "\u{2212}") + Format.amount(item.1.amount)).font(Nacre.body).monospacedDigit()
-                            .foregroundColor(pay ? Pearl.moneyIn : (item.1.kind == "chest" ? Pearl.muted : Pearl.moneyOut))
+                            .foregroundColor(pay ? Pearl.moneyIn : (item.1.kind == "chest" ? Pearl.muted : Pearl.ink))
                     }
                     .padding(.horizontal, 16).frame(minHeight: 48)
                     .accessibilityElement(children: .combine)
@@ -413,7 +413,7 @@ struct CalendarCard: View {
                             }
                             Spacer(minLength: 8)
                             Text("\u{2212}" + Format.amount(sp.amount)).font(Nacre.body).monospacedDigit()
-                                .foregroundColor(Pearl.moneyOut)
+                                .foregroundColor(Pearl.ink)
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .accessibilityElement(children: .combine)
@@ -640,7 +640,7 @@ struct DaySheet: View {
                                     if i > 0 { RowSeparator() }
                                     line(s.merchant, sub: [s.category, s.unusual == true ? "unusual" : nil]
                                             .compactMap { $0 }.joined(separator: " · "),
-                                         amount: "\u{2212}" + Format.amount(s.amount), tone: Pearl.moneyOut)
+                                         amount: "\u{2212}" + Format.amount(s.amount), tone: Pearl.ink)
                                 }
                             }
                         }
@@ -652,7 +652,7 @@ struct DaySheet: View {
                                     let pay = d.kind == "pay"
                                     line(d.label, sub: nil,
                                          amount: (pay ? "+" : "\u{2212}") + Format.amount(d.amount),
-                                         tone: pay ? Pearl.moneyIn : (d.kind == "chest" ? Pearl.muted : Pearl.moneyOut))
+                                         tone: pay ? Pearl.moneyIn : (d.kind == "chest" ? Pearl.muted : Pearl.ink))
                                 }
                             }
                         }
@@ -785,7 +785,7 @@ struct SortDaysSheet: View {
         .task(id: "\(first)\(last)\(category ?? "")") { await loadPreview() }
         .sheet(isPresented: $picking) {
             CategorySheet(name: name.isEmpty ? "These days" : name, amount: preview.map { Format.amount($0.total) } ?? "",
-                          tone: Pearl.moneyOut, categories: categories, current: category ?? "",
+                          tone: Pearl.ink, categories: categories, current: category ?? "",
                           spendingOnly: true) { picked, _ in
                 category = picked
                 picking = false
