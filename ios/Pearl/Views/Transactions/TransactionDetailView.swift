@@ -283,6 +283,8 @@ struct TransactionDetailView: View {
     @State private var splitting = false
     /// SPLIT-C: S-45a Settle up, its Type amounts, S-46a That's everything.
     @State private var settlingUp = false
+    /// TEST-18 (S-47): What was your share?
+    @State private var settingShare = false
     @State private var typingSettle = false
     @State private var closingSplit = false
     /// JOINT-B: S-41j Remove the split?
@@ -520,19 +522,52 @@ struct TransactionDetailView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { removingSplit = true }
             })
         }
+        .sheet(isPresented: $settingShare) {
+            if let split = t.splitting {
+                // S-47a–e → S-04u7: a set split, "Alex owes you $28.00" with
+                // Undo back to Not sure yet.
+                YourShareSheet(t: t, split: split, api: app.api, onClose: { settingShare = false }) { title, undo in
+                    settingShare = false
+                    Task {
+                        await load()
+                        app.changed()
+                        showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $settlingUp) {
             if let split = t.splitting {
                 // S-45a / S-45b → S-45g.
                 SettleUpSheet(t: t, split: split, onClose: { settlingUp = false }, onType: {
                     settlingUp = false
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { typingSettle = true }
-                }) {
+                }, run: {
                     let (title, undo) = try await settleWithWhatEachPaid(split)
                     settlingUp = false
                     await load()
                     app.changed()
                     showSplit(title, undo: undo)
-                }
+                }, onLeftTo: { last, left in
+                    // S-45a2 (TEST-18): payers at what they paid, the last one the rest.
+                    var people: [[String: Any]] = split.people.filter { $0.paid >= 0.005 }
+                        .map { ["name": $0.name, "amount": $0.paid] }
+                    people.append(["name": last.name, "amount": left])
+                    struct Reply: Decodable { let undo: JSONValue? }
+                    do {
+                        let reply: Reply = try await app.api.put("api/transactions/\(t.id)/split",
+                                                                 ["mode": "amount", "include_me": false, "watch": true,
+                                                                  "people": people])
+                        settlingUp = false
+                        await load()
+                        app.changed()
+                        showSplit("\(last.name) owes you \(Format.amount(left))",
+                                  undo: reply.undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
+                    } catch let e as APIError {
+                        if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
+                        throw e
+                    }
+                })
             }
         }
         .sheet(isPresented: $typingSettle) {
@@ -1337,7 +1372,8 @@ struct TransactionDetailView: View {
                         onCredit: { crediting = Crediting(id: $0.id) },
                         onSettle: { settlingUp = true },
                         onClose: { closingSplit = true },
-                        onReopen: { Task { await reopenSplit() } })
+                        onReopen: { Task { await reopenSplit() } },
+                        onSetShare: { settingShare = true })
         }
     }
 

@@ -701,9 +701,13 @@ struct Transaction: Decodable, Identifiable, Hashable {
         var closedAt: String? = nil
         /// JOINT-B (S-04j): who else is on the joint account, and their part.
         var joint: Joint? = nil
+        /// TEST-18 (THL-303): she's in it ("I had some too"); nil is yes.
+        var me: Bool? = nil
 
         /// SPLIT-C: Not sure yet, with no amounts.
         var unsure: Bool { mode == "unknown" }
+        /// TEST-18: she's in it.
+        var withMe: Bool { me ?? true }
 
         struct Joint: Decodable, Hashable {
             let label: String
@@ -714,7 +718,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case mode, you, people, uncredited, base, still, paid, joint
+            case mode, you, people, uncredited, base, still, paid, joint, me
             case closedAt = "closed_at"
         }
 
@@ -1082,10 +1086,12 @@ struct OwedOverview: Decodable {
         let still: Double
         /// Who has paid something so far (H-00u0).
         var paidBy: [String]? = nil
+        /// TEST-18 (S-14u4): she's in it.
+        var me: Bool? = nil
         var id: String { chargeId }
 
         enum CodingKeys: String, CodingKey {
-            case merchant, date, people, paid, still
+            case merchant, date, people, paid, still, me
             case chargeId = "charge_id"
             case paidBy = "paid_by"
         }

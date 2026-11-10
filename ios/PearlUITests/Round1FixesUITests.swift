@@ -212,11 +212,12 @@ final class Round1FixesUITests: XCTestCase {
                       "Type amounts should open on S-45c, Settle up · type amounts")
         XCTAssertFalse(text(containing: "Who was it with").exists, "It opened on Who was it with? again")
         XCTAssertTrue(text(containing: "127.50").exists, "The header should show the whole purchase, $127.50")
-        let paid = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Paid $42.50 so far'")).firstMatch
+        // THL-303 (TEST-18): Priya is locked at what she paid.
+        let paid = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'locked'")).firstMatch
         if !paid.exists, let dir = ProcessInfo.processInfo.environment["PEARL_SHOTS"] {
             try? app.debugDescription.write(toFile: dir + "/settle-type-amounts.txt", atomically: true, encoding: .utf8)
         }
-        XCTAssertTrue(paid.exists, "Priya's row should say what she's paid")
+        XCTAssertTrue(paid.exists, "Priya's row should say she's paid back, locked")
     }
 
     // MARK: TEST-07 Leave out without a reason
@@ -317,5 +318,44 @@ final class Round1FixesUITests: XCTestCase {
         XCTAssertTrue(text(containing: "Your share $40.00").exists, "\"Your share $40.00\" should be under it")
         let after = ((server("home") as? [String: Any])?["safe_to_spend"] as? [String: Any])?["amount"] as? Double
         XCTAssertEqual(before ?? 0, after ?? -1, accuracy: 0.01, "Splitting shouldn't move the Allowance under Rule A")
+    }
+    // MARK: TEST-18 Not sure yet with you in it (THL-303)
+
+    /// S-03u2, S-04u6, S-40y, S-47c → S-04u7: a You row, Set your share,
+    /// and what's left split between the two who haven't paid.
+    func testSetYourShareOnNotSureYet() {
+        launch()
+        let home = { ((self.server("home") as? [String: Any])?["safe_to_spend"] as? [String: Any])?["amount"] as? Double }
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam", "Jo"])
+        let unsure = app.buttons["Not sure yet, split method"].exists ? app.buttons["Not sure yet, split method"] : app.buttons["Not sure"]
+        tap(unsure, "Not sure")
+        XCTAssertTrue(text(containing: "Your share · set it any time").waitForExistence(timeout: 4),
+                      "S-03u2: no You row on Not sure")
+        press("Save split")
+        sleep(2)
+        tap(app.buttons["Options for Priya"], "Options for Priya")
+        tap(button("Mark paid back"), "Mark paid back")
+        tap(button("Bank or e-Transfer"), "Bank or e-Transfer")
+        let priya = button("Priya Shah")
+        XCTAssertTrue(priya.waitForExistence(timeout: 10))
+        if !priya.isSelected { priya.tap() }
+        press("Link", prefix: true)
+        sleep(5)
+        let before = home()
+        tap(app.buttons["Options for you"], "S-04u6: your •••")
+        tap(button("Set your share"), "S-40y: Set your share")
+        let field = app.textFields["your-share"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "No S-47 field")
+        field.tap()
+        field.typeText("40")
+        XCTAssertTrue(text(containing: "Adds up to $127.50").waitForExistence(timeout: 4), "S-47c should add up")
+        press("Save")
+        XCTAssertTrue(text(containing: "Sam and Jo owe you $45.00").waitForExistence(timeout: 8), "S-04u7 toast")
+        let split = (server("transactions?q=Gusto") as? [String: Any]).flatMap { $0["transactions"] as? [[String: Any]] }?
+            .first { ($0["merchant"] as? String) == "Gusto" }
+        XCTAssertNotNil(split)
+        XCTAssertEqual(before ?? 0, home() ?? -1, accuracy: 0.01, "Setting your share doesn't move the Allowance")
     }
 }
