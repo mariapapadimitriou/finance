@@ -28,7 +28,7 @@ from datetime import date
 _PROCESSOR_PREFIXES = [
     r"^SQ\s*\*",            # Square
     r"^TST[\*\-]\s*",       # Toast — both the TST* and TST- spellings
-    r"^SP\s+",              # Shopify / Shop Pay
+    r"^SP(?:\s*\*\s*|\s+)",   # Shopify / Shop Pay: "SP NORTHSHOP", "SP * NORTHSHOP"
     r"^PY\s*\*",            # Paysafe
     r"^PAYPAL\s*\*",
     r"^PP\s*\*",
@@ -111,6 +111,13 @@ _CITY_LEAD = {
     "PRINCE", "RED", "MOOSE", "CHESTNUT", "BAY", "WHITE", "LONG", "HIGH",
 }
 
+# The payment processors whose descriptor carries the seller's own name, as
+# the seller typed it: "SQ *CORNER STORE" is a shop called Corner Store, not a
+# Corner with "STORE" as noise (TEST-10).
+_SELLER_PREFIX = re.compile(
+    r"^(?:SQ\s*\*|TST[\*\-]|SP(?:\s*\*|\s)|PY\s*\*|PAYPAL\s*\*|PP\s*\*|IC\*|EIG\*|WPY\*|CKO\*|EB\s*\*)"
+)
+
 _AMAZON_KEY = re.compile(r"\bAM(?:AZ)?ON\b|\bAMZN\b")
 
 
@@ -135,6 +142,7 @@ def normalize_merchant(description: str) -> str:
             return "Amazon Web Services"
         return "Amazon"
 
+    seller = bool(_SELLER_PREFIX.match(s))
     for pat in _PROCESSOR_PREFIXES:
         s = re.sub(pat, " ", s)
 
@@ -159,7 +167,8 @@ def normalize_merchant(description: str) -> str:
     # eat the whole name -- "CO" alone is a merchant, "PEET'S CO" is not two
     # words worth keeping.
     while len(parts) > 1 and (
-        parts[-1] in _STATES or parts[-1] in _SUFFIX_NOISE or parts[-1].isdigit()
+        parts[-1] in _STATES or parts[-1].isdigit()
+        or (parts[-1] in _SUFFIX_NOISE and not (seller and parts[-1] == "STORE"))
     ):
         parts.pop()
 
@@ -199,6 +208,10 @@ def _strip_location_tail(s: str) -> str:
     word off a merchant.
     """
     short = _LOCATION_TAIL_SHORT.sub("", s).strip()
+    # Only punctuation left ("SP * NORTHSHOP CA" once SP is off): the "city"
+    # was the name, so the name is what was left (TEST-10).
+    if not re.search(r"\w", short):
+        short = ""
     if short:
         if short.split()[-1].rstrip(".") in _CITY_LEAD:
             longer = _LOCATION_TAIL.sub("", s).strip()
@@ -208,7 +221,8 @@ def _strip_location_tail(s: str) -> str:
 
     # The one-word form consumed everything, so the name itself must be inside
     # what looked like the city.
-    return _LOCATION_TAIL.sub("", s).strip() or s
+    longer = _LOCATION_TAIL.sub("", s).strip()
+    return longer if re.search(r"\w", longer) else s
 
 
 def _titlecase(s: str) -> str:
