@@ -226,10 +226,15 @@ struct QuickSortView: View {
     private func plain(_ ask: Ask) -> Bool { ask.kind == .category && ask.savedTo(accounts) == nil }
 
     /// Whether the card has something to say Yes to: Pearl's guess, or her edit.
-    private func hasYes(_ ask: Ask) -> Bool { isGuess(ask) || drafts[ask.id]?.label != nil }
+    private func hasYes(_ ask: Ask) -> Bool { (isGuess(ask) && !ask.otherGuess) || drafts[ask.id]?.label != nil }
+
+    /// T-93n (TEST-12): a card whose best guess is Other is a question.
+    private func asksWhat(_ ask: Ask) -> Bool { ask.otherGuess && drafts[ask.id]?.label == nil }
 
     private var hint: String {
         guard let ask = current else { return "" }
+        // T-93n: "Pearl couldn’t place this one. Answer opens What was this?"
+        if asksWhat(ask) { return "Pearl couldn’t place this one.\nAnswer opens What was this?" }
         guard let draft = drafts[ask.id] else { return isGuess(ask) ? ask.yesLine(accounts) : "" }
         // T-98s (SPLIT-06, REFRESH-03): "Skip forgets the split."; what Yes
         // saves is the Yes button's VoiceOver hint.
@@ -326,7 +331,7 @@ struct QuickSortView: View {
     private func card(_ ask: Ask) -> some View {
         let t = ask.t
         return VStack(spacing: 10) {
-            Text(drafts[ask.id]?.label != nil ? "YOUR CHOICE" : isGuess(ask) ? "PEARL’S GUESS" : "NEEDS A LOOK")
+            Text(drafts[ask.id]?.label != nil ? "YOUR CHOICE" : isGuess(ask) && !asksWhat(ask) ? "PEARL’S GUESS" : "NEEDS A LOOK")
                 .font(Nacre.caption2).tracking(0.6).foregroundColor(Pearl.action)
             Initials(name: t.name, size: 64)
                 .overlay(Circle().strokeBorder(
@@ -344,7 +349,8 @@ struct QuickSortView: View {
             Text([Format.relativeDay(t.date), t.accountName].compactMap { $0 }.filter { !$0.isEmpty }
                     .joined(separator: " · "))
                 .font(Nacre.footnote).foregroundColor(Pearl.ink).lineLimit(1)
-            Text(drafts[ask.id]?.label.map { "\($0)?" } ?? (isGuess(ask) ? (ask.item.pair?.question ?? "\(guess(ask))?") : ask.chip))
+            Text(drafts[ask.id]?.label.map { "\($0)?" } ?? (asksWhat(ask) ? "What was this?"
+                 : isGuess(ask) ? (ask.item.pair?.question ?? "\(guess(ask))?") : ask.chip))
                 .font(Nacre.title).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7)
                 .padding(.top, 8)
@@ -410,7 +416,8 @@ struct QuickSortView: View {
             if let ask = current, ask.kind == .check {
                 roundButton(symbol: "xmark", label: "No", filled: false) { no(ask) }
             }
-            roundButton(symbol: guessing ? "checkmark" : "text.bubble",
+            // T-93n: Answer, with a chevron, when the card is a question.
+            roundButton(symbol: guessing ? "checkmark" : current.map(asksWhat) == true ? "chevron.right" : "text.bubble",
                         label: guessing ? "Yes" : "Answer", filled: true) { right() }
                 // T-98s (REFRESH-03): "Saves the split and Groceries, for this one."
                 .accessibilityHint(current.flatMap { ask in drafts[ask.id].flatMap { d in

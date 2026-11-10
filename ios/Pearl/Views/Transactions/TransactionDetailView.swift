@@ -364,6 +364,8 @@ struct TransactionDetailView: View {
     @State private var viewing: Transaction?
     @State private var message: String?
     @State private var error: String?
+    /// S-04r v2s: the hero has scrolled under the bar.
+    @State private var heroGone = false
 
     private var t: Transaction { detail ?? transaction }
 
@@ -371,6 +373,13 @@ struct TransactionDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 header.padding(.bottom, 16)
+                    // S-04r v2s (TEST-09): once the hero scrolls under the bar,
+                    // the bar takes the merchant's name.
+                    .background(GeometryReader { g in
+                        Color.clear
+                            .onAppear { heroGone = g.frame(in: .global).maxY < 120 }
+                            .onChange(of: g.frame(in: .global).maxY) { heroGone = $0 < 120 }
+                    })
                 if let transfer = t.transfer, guessing == nil {
                     transferLegs(transfer)
                 } else {
@@ -418,9 +427,10 @@ struct TransactionDetailView: View {
                 }
             }
         }
-        .toolbarBackground(.hidden, for: .navigationBar)
+        // S-04r v2s (TEST-09): a real inline bar; iOS draws its scroll-edge
+        // material behind Back and the clock once the page scrolls under it.
         .navigationBarHidden(false)
-        .navigationTitle("")
+        .navigationTitle(heroGone ? t.merchant : "")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .onAppear {
@@ -949,8 +959,11 @@ struct TransactionDetailView: View {
     private func guessCard(_ label: String) -> some View {
         Button { sorting = guessing?.ask ?? sortAsk(.category) } label: {
             let still = chosenCategory == nil && !pickedGuess
-            categoryLabel(symbol: chosenCategory ?? guessing?.ask.item.guess?.text ?? t.category ?? t.label,
-                          title: label, sub: still ? "Pearl’s guess" : "Your choice")
+            let symbol = chosenCategory ?? guessing?.ask.item.guess?.text ?? t.category ?? t.label
+            // T-93n (TEST-12): Other isn't a guess, so the row asks.
+            let asks = still && symbol == "Other"
+            categoryLabel(symbol: symbol, title: asks ? "What was this?" : label,
+                          sub: asks ? nil : still ? "Pearl’s guess" : "Your choice")
                 .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .strokeBorder(Pearl.ink.opacity(still ? 0.7 : 0),
                                   style: StrokeStyle(lineWidth: 1.2, dash: [5, 3])))

@@ -1008,18 +1008,26 @@ struct QuestionHeader: View {
     let amount: String
     let tone: Color
     let sub: String?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        // S-03ax (TEST-17): at accessibility sizes the circle goes, so the
+        // initials are never cut, and the name wraps to two lines.
+        let big = typeSize.isAccessibilitySize
         HStack(spacing: 12) {
-            Initials(name: name, size: 48)
-                .overlay(Circle().strokeBorder(
-                    AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
-                    lineWidth: 1.2))
+            if !big {
+                Initials(name: name, size: 48)
+                    .overlay(Circle().strokeBorder(
+                        AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
+                        lineWidth: 1.2))
+            }
             VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(big ? 2 : 1)
+                    .fixedSize(horizontal: false, vertical: big)
                 (Text(amount).foregroundColor(tone)
                  + Text(sub.map { $0.isEmpty ? "" : " · " + $0 } ?? "").foregroundColor(Pearl.ink))
-                    .font(Nacre.subheadline).lineLimit(1)
+                    .font(Nacre.subheadline).lineLimit(big ? 3 : 1)
+                    .fixedSize(horizontal: false, vertical: big)
             }
             Spacer(minLength: 0)
         }

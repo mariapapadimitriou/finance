@@ -232,7 +232,8 @@ final class Round1FixesUITests: XCTestCase {
         XCTAssertTrue(text(containing: "Leave out 1 transaction?").waitForExistence(timeout: 5), "No T-77c sheet")
         XCTAssertTrue(text(containing: "Say why, so you can tell later.").exists,
                       "The sheet should say a reason is needed")
-        let leave = app.buttons.matching(NSPredicate(format: "label == 'Leave out'")).allElementsBoundByIndex.last!
+        // The sheet's Leave out, not the Select bar's behind it.
+        let leave = app.buttons["sheet-primary"]
         XCTAssertFalse(leave.isEnabled, "Leave out should wait for a reason")
         let why = app.textFields["leave-out-reason"]
         tap(why, "the Why? field")
@@ -273,6 +274,10 @@ final class Round1FixesUITests: XCTestCase {
         XCTAssertTrue(status.waitForExistence(timeout: 4), "No status line")
         sleep(1)
         XCTAssertTrue(status.isHittable, "The status line is under the number pad or Save")
+        if !app.buttons["Split the rest evenly"].isHittable, let dir = ProcessInfo.processInfo.environment["PEARL_SHOTS"] {
+            try? app.debugDescription.write(toFile: dir + "/numberpad.txt", atomically: true, encoding: .utf8)
+            FileManager.default.createFile(atPath: dir + "/numberpad.png", contents: XCUIScreen.main.screenshot().pngRepresentation)
+        }
         XCTAssertTrue(app.buttons["Split the rest evenly"].isHittable, "Split the rest evenly is hidden")
         // A tap on the sheet's title puts the pad away.
         app.staticTexts["How to split"].firstMatch.tap()
@@ -332,5 +337,78 @@ final class Round1FixesUITests: XCTestCase {
         XCTAssertTrue(text(containing: "Your share $40.00").exists, "\"Your share $40.00\" should be under it")
         let after = ((server("home") as? [String: Any])?["safe_to_spend"] as? [String: Any])?["amount"] as? Double
         XCTAssertEqual(before ?? 0, after ?? -1, accuracy: 0.01, "Splitting shouldn't move the Allowance under Rule A")
+    }
+    // MARK: Section 17 (TEST-08, 09, 11, 12, 16)
+
+    /// S-03r2 / S-03r2b: "I had some too" on How to split; off, your row
+    /// goes, the rest is left to assign and Save is off. The Done bar too.
+    func testIHadSomeTooOnHowToSplit() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        tap(app.buttons["Amounts"], "Amounts")
+        let priya = amountField("Priya")
+        tap(priya, "Priya's amount")
+        priya.typeText("40")
+        XCTAssertTrue(app.toolbars.buttons["Done"].exists || app.buttons["Done"].exists, "No Done over the number pad")
+        (app.toolbars.buttons["Done"].exists ? app.toolbars.buttons["Done"] : app.buttons["Done"]).tap()
+        XCTAssertTrue(text(containing: "of $127.50").waitForExistence(timeout: 4), "No \"… of $127.50\" by the bar")
+        let toggle = app.switches.matching(NSPredicate(format: "label BEGINSWITH 'I had some too'")).firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 4), "No I had some too on How to split")
+        if !toggle.isHittable { app.swipeUp() }
+        toggle.switches.firstMatch.exists ? toggle.switches.firstMatch.tap() : toggle.tap()
+        XCTAssertTrue(text(containing: "left to assign").waitForExistence(timeout: 4), "Off should leave the rest to assign")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label == 'Save'")).allElementsBoundByIndex.last!.isEnabled,
+                       "Save should be off while it's short")
+    }
+
+    /// S-04r v2s: once the hero scrolls away, the bar says the merchant.
+    func testTheBarTakesTheMerchantOnceItScrolls() {
+        launch()
+        openTransaction("Gusto")
+        // A split makes the page long enough to scroll.
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        press("Save")
+        sleep(3)
+        app.swipeUp(); app.swipeUp(); app.swipeUp()
+        let title = app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label == 'Gusto'")).firstMatch
+        if !title.waitForExistence(timeout: 4), let dir = ProcessInfo.processInfo.environment["PEARL_SHOTS"] {
+            try? app.debugDescription.write(toFile: dir + "/inline-bar.txt", atomically: true, encoding: .utf8)
+        }
+        XCTAssertTrue(title.exists, "The inline bar should show Gusto once the hero is gone")
+    }
+
+    /// S-40u2: on a Not sure yet split nobody has a share to give back.
+    func testRemoveOnNotSureYetSaysNothingToUnlink() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        let unsure = app.buttons["Not sure yet, split method"].exists ? app.buttons["Not sure yet, split method"] : app.buttons["Not sure"]
+        tap(unsure, "Not sure")
+        press("Save split")
+        sleep(2)
+        tap(app.buttons["Options for Priya"], "Options for Priya")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Nothing to unlink'")).firstMatch
+                        .waitForExistence(timeout: 5), "Remove should say Nothing to unlink")
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '$0.00 goes back'")).firstMatch.exists)
+    }
+
+    /// T-93n: a card whose best guess is Other asks, with Answer.
+    func testAnOtherGuessIsAQuestion() {
+        launch()
+        tap(app.buttons["Review one by one"], "Review one by one")
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Other?'")).firstMatch
+                        .waitForExistence(timeout: 6), "Needs a look still shows an Other? chip")
+        tap(button("Quick sort"), "Quick sort card")
+        var n = 0
+        while !text(containing: "What was this?").exists && n < 6 {
+            app.buttons["Skip"].tap(); sleep(1); n += 1
+        }
+        XCTAssertTrue(text(containing: "What was this?").exists, "No card asks What was this?")
+        XCTAssertTrue(app.buttons["Answer"].exists, "Its round button should be Answer")
+        XCTAssertTrue(text(containing: "NEEDS A LOOK").exists)
     }
 }
