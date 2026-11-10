@@ -13,9 +13,11 @@ enum Nacre {
         : UIColor(white: 1, alpha: 0.72) })
     static let glassEdge = Color(UIColor { $0.userInterfaceStyle == .dark
         ? UIColor(white: 1, alpha: 0.14) : UIColor(white: 1, alpha: 0.8) })
-    /// The pink hairline round a glass card.
+    /// The pink hairline round a glass card (dark mode; light uses `horizontal`).
     static let edge = Color(hex: 0xFFC2D4)
-    static let separator = Pearl.dynamic(light: 0xEEDFE6, dark: 0x252C5E)
+    /// The line between rows in a card: glass/edge-light in light (REFRESH-05,
+    /// color/border/subtle), unchanged in dark.
+    static let separator = Pearl.border
     /// The strength meter and "Synced": seaglass teal.
     static let teal = Pearl.dynamic(light: 0x1F7A72, dark: 0x8FE3D6)
     static let mint = Color(UIColor { $0.userInterfaceStyle == .dark
@@ -62,7 +64,10 @@ enum Nacre {
 
 // MARK: - Background
 
-/// The iridescent background, its auras and its bubbles, behind a whole screen.
+/// The iridescent background, its auras and its bubbles, behind a whole
+/// screen. In light it is Iridescent/Light with the Pearl dust on top
+/// (REFRESH-05: every light screen and sheet, as H-00 had it). Dark is
+/// "Moonlit sea" with its own auras and bubbles, unchanged.
 struct NacreBackground: View {
     @Environment(\.colorScheme) private var scheme
 
@@ -74,18 +79,20 @@ struct NacreBackground: View {
                     // "Moonlit sea": an indigo night fading into moonlit blue.
                     LinearGradient(colors: [Color(hex: 0x12163F), Color(hex: 0x1C2F73), Color(hex: 0x245B8F)],
                                    startPoint: .top, endPoint: .bottom)
+                    aura(size: 0.92 * w).offset(x: -0.15 * w, y: 0.05 * geo.size.height)
+                    aura(size: 0.71 * w).offset(x: 0.41 * w, y: 0.49 * geo.size.height)
+                    Image("Bubbles")
+                        .resizable()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .allowsHitTesting(false)
                 } else {
-                    // "Iridescent pearl": rose → lilac → seaglass, at 114.76°.
+                    // Iridescent/Light: rose → lilac → seaglass, at 114.76°
+                    // (the as-built Home gradient, unchanged).
                     LinearGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass],
                                    startPoint: UnitPoint(x: -0.325, y: 0.324),
                                    endPoint: UnitPoint(x: 1.325, y: 0.676))
+                    PearlDust(width: w)
                 }
-                aura(size: 0.92 * w).offset(x: -0.15 * w, y: 0.05 * geo.size.height)
-                aura(size: 0.71 * w).offset(x: 0.41 * w, y: 0.49 * geo.size.height)
-                Image("Bubbles")
-                    .resizable()
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .allowsHitTesting(false)
             }
         }
         .ignoresSafeArea()
@@ -94,7 +101,7 @@ struct NacreBackground: View {
 
     private func aura(size: CGFloat) -> some View {
         Circle()
-            .fill(scheme == .dark ? Color(hex: 0xD9C6FF).opacity(0.22) : Color.white.opacity(0.55))
+            .fill(Color(hex: 0xD9C6FF).opacity(0.22))
             .frame(width: size, height: size)
             .blur(radius: size / 8)
     }
@@ -198,7 +205,32 @@ struct IconOrb: View {
 
 // MARK: - Cards and rows
 
-/// A frosted-glass card with the pink nacre edge (the "List section").
+/// The glass a card is made of (REFRESH-05, C‴; the as-built H-00 card):
+/// color/surface/card (white @72%) over one background blur, the
+/// Nacre/Horizontal 1.2 pt edge and a #664D99 @10% shadow (y 8, blur 20).
+/// Dark keeps what GlassCard drew before: ocean glass, the pink edge and the
+/// softer shadow. One material per card; rows inside it never blur again.
+struct GlassSurface: View {
+    var radius: CGFloat = 26
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        shape.fill(Nacre.glass)
+            .background(.ultraThinMaterial, in: shape)
+            .overlay {
+                if scheme == .dark {
+                    shape.strokeBorder(Nacre.edge, lineWidth: 1.2)
+                } else {
+                    shape.strokeBorder(Nacre.horizontal, lineWidth: 1.2)
+                }
+            }
+            .shadow(color: Pearl.cardShadow.opacity(scheme == .dark ? 0.12 : 0.10),
+                    radius: scheme == .dark ? 12 : 20, y: 8)
+    }
+}
+
+/// A frosted-glass card with the nacre edge (the "List section").
 struct GlassCard<Content: View>: View {
     var spacing: CGFloat = 0
     var radius: CGFloat = 26
@@ -207,11 +239,40 @@ struct GlassCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: spacing, content: content)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(.ultraThinMaterial))
-            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Nacre.glass))
-            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1.2))
-            .shadow(color: Color(red: 0.4, green: 0.3, blue: 0.6).opacity(0.12), radius: 12, y: 8)
+            .glassCard(radius: radius)
+    }
+}
+
+extension View {
+    /// Puts this content on a glass card: clipped to the card's shape, the
+    /// glass (with its edge and shadow) behind it.
+    func glassCard(radius: CGFloat = 26) -> some View {
+        clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .background(GlassSurface(radius: radius))
+    }
+
+    /// A card that was solid white with a 1 pt border before REFRESH-05: in
+    /// light it is now a glass card (S-03*, S-04*, S-40*, S-06r*, S-07r*,
+    /// S-34*, H-00 and the rest); in dark it stays as it was.
+    func pearlCard(radius: CGFloat = Pearl.radiusCard) -> some View {
+        modifier(PearlCardStyle(radius: radius))
+    }
+}
+
+private struct PearlCardStyle: ViewModifier {
+    let radius: CGFloat
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        if scheme == .dark {
+            content
+                .background(shape.fill(Pearl.card))
+                .clipShape(shape)
+                .overlay(shape.stroke(Pearl.border, lineWidth: 1))
+        } else {
+            content.glassCard(radius: radius)
+        }
     }
 }
 

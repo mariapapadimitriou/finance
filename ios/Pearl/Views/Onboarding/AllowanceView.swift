@@ -21,7 +21,9 @@ struct AllowanceView: View {
                     .accessibilityAddTraits(.isHeader)
             }
             .frame(maxWidth: .infinity)
-            AllowanceRing(overline: ringOverline, amount: ringAmount, progress: progress)
+            // REFRESH-05: the shared Allowance orb, with O-11b's own words
+            // (the month, or "12 DAYS LEFT", over the amount).
+            AllowanceOrb(progress: progress, label: ringOverline, amount: ringAmount)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
             Text(caption).font(Nacre.subheadline).multilineTextAlignment(.center)
@@ -193,59 +195,19 @@ extension Allowance {
     /// The usual line under the ring. Home hides it (REFRESH-03, H-00n: the
     /// ring already says Allowance) and reads it as the ring's VoiceOver hint.
     static let restCaption = "Left to spend or save on non-essentials."
-}
 
-/// The mother-of-pearl ring with a frosted centre, and the amount in it.
-struct AllowanceRing: View {
-    let overline: String
-    let amount: String
-    let progress: Double
-
-    var body: some View {
-        ZStack {
-            Circle().stroke(Color.white.opacity(0.45), lineWidth: 14)
-            if progress > 0 {
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose],
-                                            center: .center),
-                            style: StrokeStyle(lineWidth: 14, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 18, height: 18)
-                    .shadow(color: Nacre.lilac.opacity(0.8), radius: 6)
-                    .offset(y: -130)
-                    .rotationEffect(.degrees(360 * progress))
-            }
-            Circle()
-                .fill(.ultraThinMaterial)
-                .overlay(Circle().fill(Nacre.glass))
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.8), lineWidth: 1))
-                .frame(width: 214, height: 214)
-                .shadow(color: Color(red: 0.4, green: 0.3, blue: 0.6).opacity(0.15), radius: 14, y: 6)
-            VStack(spacing: 6) {
-                Text(overline).font(Nacre.caption2).tracking(1.4)
-                styled
-                    .minimumScaleFactor(0.6).lineLimit(1)
-            }
-            .padding(.horizontal, 24)
-        }
-        .frame(width: 260, height: 260)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(overline.capitalized): \(amount)")
+    /// The line under the amount inside Home's orb (REFRESH-05, H-00r):
+    /// "left in November"; the overline's words when the month is over or
+    /// started part-way ("12 days left", "Nov 20–30"); nothing without income.
+    func orbSub(month: String) -> String? {
+        if state == "needs_income" { return nil }
+        if over, let left = daysLeft { return "\(left) days left" }
+        if let range = midMonth { return range.capitalized }
+        return Self.orbSub(forMonth: month)
     }
-}
 
-extension AllowanceRing {
-    /// "$642" with a small raised dollar sign, as the ring draws it.
-    var styled: Text {
-        let big = Font.custom("Fraunces-SemiBold", size: 52, relativeTo: .largeTitle)
-        guard let i = amount.firstIndex(of: "$") else { return Text(amount).font(big) }
-        let small = Font.custom("Fraunces-SemiBold", size: 30, relativeTo: .title)
-        return Text(String(amount[..<i])).font(big)
-            + Text("$").font(small).baselineOffset(16)
-            + Text(String(amount[amount.index(after: i)...])).font(big)
+    static func orbSub(forMonth month: String) -> String {
+        "left in \(Format.monthName(month))"
     }
 }
 

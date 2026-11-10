@@ -687,8 +687,7 @@ struct SheetFrame<Content: View, Actions: View>: View {
             VStack(spacing: 6, content: actions).padding(.horizontal, 16).padding(.bottom, 8)
         }
         .foregroundColor(Pearl.ink)
-        .background(NacreBackground().opacity(0.35))
-        .background(Pearl.page)
+        .background(SheetBackground())  // REFRESH-05: the sheet surface is the page's
     }
 }
 

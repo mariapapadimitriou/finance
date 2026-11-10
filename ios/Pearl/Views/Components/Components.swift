@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// A white card with Pearl's soft border.
+/// A card with padding: glass with the nacre edge in light (REFRESH-05,
+/// the as-built H-00 card), a solid card with Pearl's soft border in dark.
 struct PearlCard<Content: View>: View {
     var padding: CGFloat = 20
     var spacing: CGFloat = 12
@@ -11,10 +12,7 @@ struct PearlCard<Content: View>: View {
         VStack(alignment: .leading, spacing: spacing, content: content)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(padding)
-            .background(Pearl.card)
-            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .stroke(Pearl.border, lineWidth: 1))
+            .pearlCard(radius: radius)
     }
 }
 
@@ -215,12 +213,5 @@ struct LoadState: View {
         }
         .frame(maxWidth: .infinity, minHeight: 200)
         .padding()
-    }
-}
-
-extension View {
-    /// Pearl's page background behind a scrolling screen.
-    func pearlPage() -> some View {
-        self.background(Pearl.page.ignoresSafeArea())
     }
 }

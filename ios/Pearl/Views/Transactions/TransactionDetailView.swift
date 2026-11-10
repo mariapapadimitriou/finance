@@ -2261,16 +2261,23 @@ struct TransactionDetailView: View {
     }
 }
 
-/// The white card a linked transaction sits on (T-39, T-41, T-05).
+/// The card a linked transaction sits on (T-39, T-41, T-05): glass in light
+/// (REFRESH-05, T-03r), the solid card with the pink edge in dark as before.
 struct SolidCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0, content: content)
+        let stack = VStack(alignment: .leading, spacing: 0, content: content)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Pearl.card))
-            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1.2))
-            .shadow(color: Color(red: 0.4, green: 0.3, blue: 0.6).opacity(0.1), radius: 10, y: 6)
+        if scheme == .dark {
+            stack
+                .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Pearl.card))
+                .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Nacre.edge, lineWidth: 1.2))
+                .shadow(color: Color(red: 0.4, green: 0.3, blue: 0.6).opacity(0.1), radius: 10, y: 6)
+        } else {
+            stack.glassCard(radius: 26)
+        }
     }
 }
 

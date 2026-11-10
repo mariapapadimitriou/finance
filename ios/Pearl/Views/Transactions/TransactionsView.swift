@@ -1758,19 +1758,19 @@ struct SheetTitle: View {
     }
 }
 
-/// A sheet's pale nacre wash.
+/// A sheet's surface: in light, Iridescent/Light with the Pearl dust, like
+/// every page (REFRESH-05: the sheet surface is color/surface/page; it was a
+/// pale wash); in dark, the moonlit gradient as before.
 struct SheetBackground: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        Group {
-            if scheme == .dark {
-                LinearGradient(colors: [Color(hex: 0x1C2F73), Color(hex: 0x12163F)], startPoint: .top, endPoint: .bottom)
-            } else {
-                LinearGradient(colors: [Color(hex: 0xFFF1F5), Color(hex: 0xFBF8FB)], startPoint: .top, endPoint: .bottom)
-            }
+        if scheme == .dark {
+            LinearGradient(colors: [Color(hex: 0x1C2F73), Color(hex: 0x12163F)], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+        } else {
+            NacreBackground()
         }
-        .ignoresSafeArea()
     }
 }
 

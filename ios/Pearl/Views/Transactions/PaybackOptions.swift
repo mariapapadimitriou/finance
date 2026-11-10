@@ -3,7 +3,7 @@ import SwiftUI
 // SPLIT-25 (THL-291), restyled by REFRESH-02 (Design refresh section 11):
 // a payment's options from the purchase it paid back (S-05or, 1090:2457)
 // and its Unlink? sheet (S-34sr 1092:2716, S-34kr1–10 1092:2890–3332), as
-// Pearl sheets on pearl paper. Everything they say comes from the server's
+// Pearl sheets on the iridescent background. Everything they say comes from the server's
 // `LinkInfo`; the split card's people use S-40 (SplitMenus.swift) instead.
 
 /// S-05or: a PAID BACK row on a purchase that isn't split, or a REFUNDED
@@ -114,8 +114,7 @@ struct UnlinkLinkSheet: View {
                         .foregroundColor(Pearl.moneyIn)
                 }
                 .padding(12)
-                .background(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous).fill(Pearl.card))
-                .overlay(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous).stroke(Pearl.border, lineWidth: 1))
+                .pearlCard(radius: Pearl.radiusRow)
                 .accessibilityElement(children: .combine)
                 // S-34sr (REFRESH-03): the footnote about the whole payment is
                 // gone from the sheet; VoiceOver keeps it on the payment row.
