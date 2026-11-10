@@ -203,7 +203,7 @@ def accounts_overview():
     })
 
 
-def _apply_share_change(st, account_id: str, apply: str) -> dict:
+def _apply_share_change(st, account_id: str, apply: str, marks: dict | None = None) -> dict:
     """Before the account's share changes: "from_today" fixes each earlier
     purchase at what it counts now, so only today's and later ones change;
     "all" clears a purchase marked just "Mine" (the old default said out
@@ -218,10 +218,16 @@ def _apply_share_change(st, account_id: str, apply: str) -> dict:
             continue
         if apply == "from_today":
             # A name always split her way isn't moved by the account's share.
+            if t.split_mode is not None:
+                continue
             if t.date[:10] < today and not t.share_set and (t.joint_split is None):
+                if marks is not None:
+                    marks.setdefault("shares", {}).setdefault(t.fingerprint, None)
                 st.keep_joint_share(t.fingerprint, t.my_share if t.my_share is not None else t.amount)
                 kept += 1
-        elif t.fingerprint in held or (t.share_set and abs((t.my_share or 0.0) - t.amount) < 0.005):
+        elif t.split_mode is None and (t.fingerprint in held or (t.share_set and abs((t.my_share or 0.0) - t.amount) < 0.005)):
+            if marks is not None:
+                marks.setdefault("shares", {}).setdefault(t.fingerprint, t.my_share)
             st.set_share(t.fingerprint, None)
             changed += 1
     return {"apply": apply, "kept": kept, "cleared": changed}
@@ -264,10 +270,22 @@ def account_settings(account_id: str):
         reclassify = True
 
     applied = None
+    undo_marks: dict = {}
+    toast = None
     if "joint_share" in body:
         if hand:
             return jsonify({"error": "Only a linked account can be joint."}), 400
         share = body.get("joint_share")
+        # JOINT-B (AM-21j, AM-08n): split purchases on this account are
+        # splits of her part, so a change of her share changes them. Asked
+        # first when someone has paid her back on one (or, for not joint,
+        # whenever there's one); refused when people would be over her part.
+        plan, problem, asking = _joint_split_plan(st, account_id, share, body)
+        if problem:
+            return jsonify({"error": problem}), 400
+        if asking is not None:
+            return jsonify(asking)
+        undo_marks["joint_accounts"] = {account_id: _joint_state(st, account_id)}
         # How a change of how purchases count applies (2026-10-26): to every
         # purchase on the account, or to purchases from today on, earlier
         # ones counting as they do now.
@@ -276,7 +294,7 @@ def account_settings(account_id: str):
             return jsonify({"error": "Apply it to every purchase, or from today."}), 400
         if share == "auto":
             # AM-08: joint, every purchase hers unless she marks it.
-            applied = _apply_share_change(st, account_id, apply)
+            applied = _apply_share_change(st, account_id, apply, undo_marks)
             st.clear_joint_share(account_id)
             reclassify = True
         else:
@@ -288,9 +306,20 @@ def account_settings(account_id: str):
                 if not (SHARE_MIN <= share <= SHARE_MAX):
                     return jsonify({"error": "Enter a share between 1% and 99%."}), 400
                 share = round(share, 2)
-                applied = _apply_share_change(st, account_id, apply)
+                applied = _apply_share_change(st, account_id, apply, undo_marks)
             st.set_joint_share(account_id, share)
             reclassify = True
+        if plan:
+            from .joint import save_plan
+            save_plan(st, plan["save"], undo_marks, joint=share is not None)
+            for t in plan["hold"]:
+                undo_marks.setdefault("splits", {}).setdefault(t.fingerprint, {
+                    "split": st.splits().get(t.fingerprint), "share": t.my_share if t.share_set else None,
+                    "joint_part": None})
+                st.set_joint_part(t.fingerprint, t.joint_part)
+        toast = (f"{account['name']} isn’t joint any more" if share is None
+                 else "Your share is changed · split purchases worked out again" if plan and plan["save"]
+                 else None)
 
     if "joint_people" in body:
         if hand:
@@ -303,8 +332,12 @@ def account_settings(account_id: str):
             name = " ".join(str(p or "").split())[:40]
             if name and name.lower() not in {x.lower() for x in people}:
                 people.append(name)
-        if not people:
+        if not people and raw:
+            # Names that are only spaces are a mistake, not "nobody".
             return jsonify({"error": "Name at least one person you share it with."}), 400
+        # PO 2026-11-09 (5): taking the last person off leaves it joint, with
+        # no names (AM-08r1). Earlier answers keep the name (marks.py).
+        undo_marks.setdefault("joint_accounts", {}).setdefault(account_id, _joint_state(st, account_id))
         st.set_joint_people(account_id, people[:6])
         reclassify = True
 
@@ -337,9 +370,65 @@ def account_settings(account_id: str):
 
     if reclassify:
         _reclassify(st)
-    return jsonify({"ok": True, "account": _find(st, account_id),
-                    "safe_to_spend": _safe_to_spend(st), "resync": resync,
-                    **({"applied": applied} if applied else {})})
+    out = {"ok": True, "account": _find(st, account_id),
+           "safe_to_spend": _safe_to_spend(st), "resync": resync,
+           **({"applied": applied} if applied else {})}
+    if undo_marks:
+        # AM-08x1, AM-21j1, AM-08n1: one Undo for the change.
+        out["undo"] = {"rows": [], "marks": undo_marks}
+    if toast:
+        out["toast"] = toast
+    return jsonify(out)
+
+
+def _joint_state(st, account_id: str):
+    from .joint import account_state
+    return account_state(st, account_id)
+
+
+def _joint_split_plan(st, account_id: str, share, body: dict):
+    """JOINT-B: what a change of the account's share does to the split
+    purchases on it. Returns (plan, problem, asking): `plan` holds what to
+    save ({"save": preview's plan, "hold": purchases whose part stays as it
+    is now}), `asking` the needs_confirm answer to send instead."""
+    from datetime import date as _date
+    from .joint import account_part, preview
+    txns = [t for t in st.all_transactions()
+            if t.account_id == account_id and t.joint and t.split_mode is not None
+            and t.amount > 0 and not t.excluded]
+    if not txns:
+        return None, None, None
+    apply = body.get("apply") or "all"
+    today = _date.today().isoformat()
+    held = st.joint_parts()
+    hold = []
+    if share is None:
+        def part(t):
+            return round(t.amount, 2)
+    else:
+        new_share = None
+        if share != "auto":
+            try:
+                new_share = float(share)
+            except (TypeError, ValueError):
+                return None, None, None
+        if apply == "from_today":
+            hold = [t for t in txns if t.fingerprint not in held and t.date[:10] < today]
+
+        def part(t):
+            if t.fingerprint in held:
+                return held[t.fingerprint]
+            if apply == "from_today" and t.date[:10] < today:
+                return t.joint_part if t.joint_part is not None else t.amount
+            return account_part(t, new_share)
+    changes, problem, plan = preview(st, txns, part, keep=share is None)
+    if problem:
+        return None, problem, None
+    ask = (bool(changes) and share is None) or any(c["paid"] for c in changes)
+    if ask and body.get("confirm") is not True:
+        return None, None, {"ok": False, "needs_confirm": True, "not_joint": share is None,
+                            "share": share, "changes": changes}
+    return {"save": plan, "hold": hold}, None, None
 
 
 def _parse_balance(value) -> float | None:

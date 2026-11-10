@@ -108,6 +108,17 @@ def _clean(st, deposit: Transaction, parts: list, later: bool) -> list[dict]:
             # from the top until the part is used up; the rest stays cash.
             detail["cash_ids"] = ids
         out.append({"kind": kind, "amount": amount, "detail": detail})
+    # SPLIT-C decision 2 (S-09u2): a Not sure yet purchase takes at most what
+    # it still costs her; the rest of the deposit is sorted another way.
+    from .splits import cap_problem
+    per: dict[str, float] = {}
+    for p in out:
+        if p["kind"] == "payback":
+            per[p["detail"]["charge"]] = round(per.get(p["detail"]["charge"], 0.0) + p["amount"], 2)
+    for cid, amount in per.items():
+        problem = cap_problem(st, cid, amount, deposit.fingerprint)
+        if problem:
+            raise Problem(problem)
     whole = _cents(-deposit.amount)
     given = sum(_cents(p["amount"]) for p in out)
     if given > whole:
@@ -170,6 +181,7 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
         raise Problem("This deposit is left out. Put it back first.")
     clean = _clean(st, deposit, parts, later)
     by_id = {t.fingerprint: t for t in st.all_transactions()}
+    reopened: dict = {}
     raw = deposit.raw or {}
     rows, stored = [], []
     for pos, p in enumerate(clean):
@@ -195,6 +207,9 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
             st.set_party(cid, deposit.party)
         if p["kind"] == "payback":
             st.link_payback(d["charge"], cid, d.get("person"))
+            # SPLIT-C decision 4: linking to a closed split opens it again.
+            from .splits import reopen_closed
+            reopen_closed(st, d["charge"], reopened)
         elif p["kind"] == "refund":
             st.link_refund(cid, d["charge"])
         elif p["kind"] == "reimbursement":
@@ -215,7 +230,10 @@ def apply(st, deposit: Transaction, parts: list, later: bool = False, replace: b
     n = len(stored) - (1 if rest else 0)
     title = (f"Sorted {n} part{'' if n == 1 else 's'}. {_money(rest)} left to sort."
              if rest else f"Sorted into {n} part{'' if n == 1 else 's'}.")
-    return {"parts": listed(st, deposit.fingerprint), "rest": rest, "title": title}
+    out = {"parts": listed(st, deposit.fingerprint), "rest": rest, "title": title}
+    if reopened:
+        out["reopened"] = reopened["split_closed"]
+    return out
 
 
 def _reimburse(st, charge: Transaction, part_id: str, amount: float, detail: dict) -> None:
@@ -416,6 +434,17 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
         back.append(row)
     back.sort(key=lambda r: r["date"], reverse=True)
     people = sorted(owes.values(), key=lambda r: -r["total"])
+    # SPLIT-C (S-14u, H-00u): Not sure yet splits are never money owed. Each
+    # is listed under NOT SETTLED with what's been paid so far, no amount,
+    # and left out of the total. Closed ones (That's everything) aren't.
+    from .splits import unsure_rows
+    unsettled: dict[str, dict] = {}
+    for r in unsure_rows(transactions, splits, payer):
+        c = r["charge"]
+        unsettled.setdefault(c.fingerprint, {"charge_id": c.fingerprint, "merchant": c.merchant,
+                                             "date": c.date[:10], "people": r["people"],
+                                             "paid": r["paid_total"], "still": r["still"]})
     return {"total": round(sum(r["total"] for r in people), 2), "people": len(people),
             "owes_you": people, "you_owe": sorted(you_owe.values(), key=lambda r: -r["total"]),
-            "paid_back": back}
+            "paid_back": back,
+            "not_settled": sorted(unsettled.values(), key=lambda r: r["date"], reverse=True)}
