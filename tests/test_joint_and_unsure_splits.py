@@ -561,3 +561,53 @@ class TestNotSureYetOnSplitMyPart:
                                "settle": True})
         t = client.st.get_transaction(pn)
         assert t.category == "Dining" and t.split_mode == "unknown"
+
+
+# ── The iPhone app (JOINT-A, JOINT-B, SPLIT-C) ──────────────────────────
+
+ROOT = __import__("pathlib").Path(__file__).resolve().parents[1]
+
+
+def src(path: str) -> str:
+    return (ROOT / path).read_text()
+
+
+class TestTheApp:
+    """Pearl views only (no stock dialogs), the words the designs use, and
+    contacts asked for with the handoff's reason (note 1110:6520)."""
+
+    NEW = ("ios/Pearl/Views/Transactions/JointSplitViews.swift",
+           "ios/Pearl/Views/Transactions/SplitFlow.swift",
+           "ios/Pearl/Views/Transactions/SplitMenus.swift")
+
+    def test_no_stock_dialogs(self):
+        for path in self.NEW:
+            for stock in (".confirmationDialog(", ".alert(", ".actionSheet(", "ActionSheet("):
+                assert stock not in src(path), (path, stock)
+        joint = src("ios/Pearl/Views/Profile/JointMergeViews.swift")
+        page = joint[joint.index("struct JointAccountView"):joint.index("// MARK: - AM-09")]
+        assert ".alert(" not in page and ".confirmationDialog(" not in page
+
+    def test_contacts_reason(self):
+        plist = src("ios/Pearl/Info.plist")
+        assert ("So you can pick who you split with or share an account with. "
+                "Pearl keeps only the name you pick.") in plist
+
+    def test_not_sure_is_the_fifth_method(self):
+        split = src("ios/Pearl/Views/Transactions/SplitFlow.swift")
+        assert '("unknown", "Not sure")' in split and "Not sure yet" in split
+        assert "Any amount they send you" in split and "Save split" in split
+
+    def test_split_my_part_words(self):
+        detail = src("ios/Pearl/Views/Transactions/TransactionDetailView.swift")
+        assert "Split my part" in detail and "Split with others" in detail
+        assert "Nothing here is yours to split. Say it was partly yours first." in detail
+        views = src("ios/Pearl/Views/Transactions/JointSplitViews.swift")
+        for words in ("Remove the split?", "Keep the split", "Not a joint account?", "Keep it joint",
+                      "How do you want to settle?", "Use what each paid?", "That’s everything?", "Keep it open",
+                      "Nothing to pay", "Contacts are off for Pearl", "Turn on in Settings", "Type a name"):
+            assert words in views, words
+
+    def test_allowance_never_safe_to_spend(self):
+        for path in self.NEW + ("ios/Pearl/Views/Profile/JointMergeViews.swift",):
+            assert "safe to spend" not in src(path).lower(), path

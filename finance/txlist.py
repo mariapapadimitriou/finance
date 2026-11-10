@@ -436,6 +436,10 @@ def describe(t: Transaction, ctx: Context) -> dict:
         "joint_from": t.joint_from or "",
         "joint_person": t.joint_person or "",
         "joint_people": list(t.joint_people or []),
+        # JOINT-B (S-01jr, T-06jr): her part before any split, for "Split
+        # your $50.00 with friends"; SPLIT-C: how it's split, if it is.
+        "joint_part": round(t.joint_part, 2) if t.joint and t.joint_part is not None else None,
+        "split_mode": t.split_mode,
         "bank_id": t.bank_id,
         "bank_auto": bool(t.bank_auto),
     }

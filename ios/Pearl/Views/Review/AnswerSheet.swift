@@ -71,6 +71,9 @@ struct AnswerSheet: View {
     /// What "What did this pay back?" is answering: nil works it out.
     @State private var chargeCase: String?
     @State private var splitting = false
+    /// T-06jr (JOINT-B): Whose was it? on a joint purchase, beside Split my part.
+    @State private var whosing = false
+    @State private var whoseSaid: String?
     @State private var splitSaid: String?
     /// SPLIT-20: the split made here, held for the Quick sort card's Yes.
     @State private var heldSplit: CardSplit?
@@ -190,6 +193,18 @@ struct AnswerSheet: View {
         }
         .presentationDragIndicator(.visible)
         .task(id: step) { await loadOptions() }
+        .sheet(isPresented: $whosing) {
+            if let f = full {
+                WhoseSheet(t: f, api: api) { said in
+                    whosing = false
+                    whoseSaid = said
+                    // Her part may have changed, so Split my part says so.
+                    Task { full = try? await api.get("api/transactions/\(f.id)") }
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+        }
         .sheet(isPresented: $splitting) {
             if let f = full {
                 // T-98s (SPLIT-20): from Quick sort's sheet the split is held,
@@ -197,7 +212,7 @@ struct AnswerSheet: View {
                 SplitSheet(t: f, api: api, recent: names,
                            onHold: holds && onHeldSplit != nil ? { body, _, mine in
                                splitting = false
-                               heldSplit = CardSplit.held(body, mine: mine, total: f.fullAmount ?? f.amount)
+                               heldSplit = CardSplit.held(body, mine: mine, total: f.splitBase)
                                splitSaid = heldSplit?.note
                            } : nil) { said in
                     splitting = false
@@ -268,19 +283,43 @@ struct AnswerSheet: View {
     /// Split with others (THL-289) and One-off (T-42), for a purchase.
     @ViewBuilder private var outOptions: some View {
         if let f = full {
-            // Not on a joint account (S-01j, SPLIT-08): the server asks Whose was it? instead.
+            // T-06jr (JOINT-B, supersedes S-01j): on a joint purchase, Whose was
+            // it? and Split my part; "Split with others" on "All mine unless I
+            // mark it" (S-01jr2); dimmed with why when none of it is hers (T-06jr1).
+            let joint = !f.joint.isEmpty && f.transfer == nil
             let canSplit = f.transfer == nil && f.refundOf == nil && f.splitting == nil && f.excluded.isEmpty
-                && f.joint.isEmpty
-            if canSplit || f.canOneOff {
+            if canSplit || f.canOneOff || joint {
                 Text("OPTIONS").font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
                     .padding(.horizontal, 16).padding(.top, 4)
                     .accessibilityAddTraits(.isHeader)
                 GlassCard {
-                    if canSplit {
-                        Button { splitting = true } label: {
-                            optionLabel("Split with others", done: splitSaid != nil, icon: "person.2")
+                    if joint {
+                        Button { whosing = true } label: {
+                            optionLabel("Whose was it?", done: whoseSaid != nil, icon: "person.2")
                         }
                         .buttonStyle(.plain)
+                        if canSplit || f.canOneOff { RowSeparator() }
+                    }
+                    if canSplit {
+                        let none = joint && f.splitBase < 0.005
+                        Button { splitting = true } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                optionLabel(joint && f.splitsMyPart ? "Split my part" : "Split with others",
+                                            done: splitSaid != nil, icon: "person.2")
+                                if joint {
+                                    Text(none ? "Nothing here is yours to split. Say it was partly yours first."
+                                         : f.splitsMyPart ? "Split your \(Format.amount(f.splitBase)) with friends"
+                                         : "Split it with friends")
+                                        .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                                        .padding(.leading, 64).padding(.bottom, 8)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .opacity(none ? 0.45 : 1)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(none)
+                        .accessibilityElement(children: .combine)
                     }
                     if canSplit && f.canOneOff { RowSeparator() }
                     if f.canOneOff {

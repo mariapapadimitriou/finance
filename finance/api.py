@@ -637,6 +637,18 @@ def _settle_extra_check(st, t, old: dict | None, people: list[dict], extra) -> t
         if given != over:
             return None, (f"${(over - given) / 100:,.2f} of {possessive_name(p['name'])} extra isn’t said yet."
                           if given < over else f"That’s ${(given - over) / 100:,.2f} more than the extra.")
+        # What can give up the extra here: their cash and app payments, and
+        # bank paybacks of this purchase alone that aren't part of a deposit.
+        person = next((q for q in old["people"] if q["name"] == p["name"]), {})
+        room = sum(sp._cents(c["amount"]) for c in person.get("cash") or [] if not c.get("deposit_id"))
+        room += sum(sp._cents(x.part_for(t.fingerprint)) for x in txns
+                    if t.fingerprint in x.repays_all and len(x.repays_all) == 1 and not (x.raw or {}).get("part_of")
+                    and (sp.same_person(payer.get(x.fingerprint) or "", p["name"])
+                         or (not payer.get(x.fingerprint) and sp.from_person(x, p["name"]))))
+        moving = sum(sp._cents(x["amount"]) for x in clean if x["kind"] != "overpaid")
+        if moving > room:
+            return None, (f"Part of what {p['name']} paid is in a deposit or paid back other purchases too. "
+                          f"Say {p['name']} overpaid, or change it there first.")
         out[p["name"]] = clean
     return out, None
 
@@ -1438,6 +1450,10 @@ def _payback_candidates(charge, txns) -> list[dict]:
     # What can still be paid back: the others' part of a split, else all of it.
     theirs = charge.amount - charge.my_share if charge.my_share is not None else charge.amount
     remaining = round(theirs - (charge.paid_back or 0.0), 2)
+    if charge.split_mode == "unknown":
+        # SPLIT-C: any amount, up to what it still costs her (decision 2).
+        from .splits import still_yours
+        remaining = still_yours(charge)
     out = []
     for t in txns:
         if t.amount >= 0 or t.repays or t.fingerprint == charge.fingerprint:

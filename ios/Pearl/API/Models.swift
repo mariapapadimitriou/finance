@@ -561,6 +561,11 @@ struct Transaction: Decodable, Identifiable, Hashable {
     let shareSet: Bool
     /// The joint account's fixed share, when it splits every purchase (AM-08).
     let accountShare: Double?
+    /// JOINT-B (S-01jr, T-06jr): her part of a joint purchase before any
+    /// split ("Split your $50.00 with friends"); nil off a joint account.
+    var jointPart: Double? = nil
+    /// SPLIT-C: "unknown" for Not sure yet, or how it's split; nil unsplit.
+    var splitMode: String? = nil
     let manual: Bool
     let recurring: String?
 
@@ -686,6 +691,32 @@ struct Transaction: Decodable, Identifiable, Hashable {
         /// SPLIT-22b (S-05u, THL-181): paybacks linked here that Pearl
         /// credited to no one, newest first. Each asks "Who sent this?".
         var uncredited: [Uncredited]? = nil
+        /// JOINT-B: what was split (her part of a joint purchase, or all of it).
+        var base: Double? = nil
+        /// SPLIT-C (S-04u): what a Not sure yet split still costs her, and
+        /// what's come back so far.
+        var still: Double? = nil
+        var paid: Double? = nil
+        /// SPLIT-C (S-46c): the day she said That's everything.
+        var closedAt: String? = nil
+        /// JOINT-B (S-04j): who else is on the joint account, and their part.
+        var joint: Joint? = nil
+
+        /// SPLIT-C: Not sure yet, with no amounts.
+        var unsure: Bool { mode == "unknown" }
+
+        struct Joint: Decodable, Hashable {
+            let label: String
+            let people: [String]
+            let share: Double?
+            let part: Double
+            let theirs: Double
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case mode, you, people, uncredited, base, still, paid, joint
+            case closedAt = "closed_at"
+        }
 
         /// "$30.00 from an e-Transfer" over "Nov 16 · no name · paid back Loblaws".
         struct Uncredited: Decodable, Hashable, Identifiable {
@@ -834,6 +865,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case jointSplit = "joint_split"
         case bankMerchant = "bank_merchant"
         case shareSet = "share_set"
+        case jointPart = "joint_part"
+        case splitMode = "split_mode"
         case oneOffLine = "one_off_line"
         case incomeType = "income_type"
         case regularPay = "regular_pay"
@@ -890,6 +923,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         bankMerchant = opt(String.self, .bankMerchant)
         shareSet = opt(Bool.self, .shareSet) ?? false
         accountShare = opt(Double.self, .jointShare)
+        jointPart = opt(Double.self, .jointPart)
+        splitMode = opt(String.self, .splitMode)
         manual = opt(Bool.self, .manual) ?? false
         recurring = opt(String.self, .recurring)
         oneOffLine = opt(OneOffLine.self, .oneOffLine)
@@ -1035,11 +1070,33 @@ struct OwedOverview: Decodable {
         }
     }
 
+    /// SPLIT-C (S-14u): Not sure yet splits, never in the total.
+    var notSettled: [NotSettled]? = nil
+
+    struct NotSettled: Decodable, Hashable, Identifiable {
+        let chargeId: String
+        let merchant: String
+        let date: String
+        let people: [String]
+        let paid: Double
+        let still: Double
+        /// Who has paid something so far (H-00u0).
+        var paidBy: [String]? = nil
+        var id: String { chargeId }
+
+        enum CodingKeys: String, CodingKey {
+            case merchant, date, people, paid, still
+            case chargeId = "charge_id"
+            case paidBy = "paid_by"
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case total, people
         case owesYou = "owes_you"
         case youOwe = "you_owe"
         case paidBack = "paid_back"
+        case notSettled = "not_settled"
     }
 }
 

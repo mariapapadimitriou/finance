@@ -441,9 +441,12 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
     unsettled: dict[str, dict] = {}
     for r in unsure_rows(transactions, splits, payer):
         c = r["charge"]
-        unsettled.setdefault(c.fingerprint, {"charge_id": c.fingerprint, "merchant": c.merchant,
-                                             "date": c.date[:10], "people": r["people"],
-                                             "paid": r["paid_total"], "still": r["still"]})
+        row = unsettled.setdefault(c.fingerprint, {"charge_id": c.fingerprint, "merchant": c.merchant,
+                                                   "date": c.date[:10], "people": r["people"],
+                                                   "paid": r["paid_total"], "still": r["still"], "paid_by": []})
+        if r["paid"] >= 0.005:
+            # H-00u0: "Sam has paid you $20.00 so far."
+            row["paid_by"].append(r["name"])
     return {"total": round(sum(r["total"] for r in people), 2), "people": len(people),
             "owes_you": people, "you_owe": sorted(you_owe.values(), key=lambda r: -r["total"]),
             "paid_back": back,
