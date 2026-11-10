@@ -48,6 +48,7 @@
 		C85A9FB515E2B60838612A9A /* CalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 482C54893F5AFD82B6CA7430 /* CalendarView.swift */; };
 		4887016EBE5C811B5754C433 /* CategoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04FB8BCBA07E255A096C7C58 /* CategoryPage.swift */; };
 		B1FFE2B19D12A9AD736E9FBE /* CategorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F3819F3BB3A338B035DE02 /* CategorySheet.swift */; };
+		1F259E54F43C7759992A1C07 /* JointSplitViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 319C3C645D45ACBE1863750E /* JointSplitViews.swift */; };
 		8AF9A0C07760B9758CC9F76D /* PartsFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */; };
 		2196B0F0FEDADFDC6ADD6BF2 /* PaybackOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21096CABE6FEE63719E2FBE5 /* PaybackOptions.swift */; };
 		00E8B2945E5B9C6B0391813A /* SplitFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A5D39D9874E14925943286 /* SplitFlow.swift */; };
@@ -121,6 +122,7 @@
 		482C54893F5AFD82B6CA7430 /* CalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarView.swift; sourceTree = "<group>"; };
 		04FB8BCBA07E255A096C7C58 /* CategoryPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryPage.swift; sourceTree = "<group>"; };
 		56F3819F3BB3A338B035DE02 /* CategorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorySheet.swift; sourceTree = "<group>"; };
+		319C3C645D45ACBE1863750E /* JointSplitViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JointSplitViews.swift; sourceTree = "<group>"; };
 		96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartsFlow.swift; sourceTree = "<group>"; };
 		21096CABE6FEE63719E2FBE5 /* PaybackOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaybackOptions.swift; sourceTree = "<group>"; };
 		53A5D39D9874E14925943286 /* SplitFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitFlow.swift; sourceTree = "<group>"; };
@@ -323,6 +325,7 @@
 				482C54893F5AFD82B6CA7430 /* CalendarView.swift */,
 				04FB8BCBA07E255A096C7C58 /* CategoryPage.swift */,
 				56F3819F3BB3A338B035DE02 /* CategorySheet.swift */,
+				319C3C645D45ACBE1863750E /* JointSplitViews.swift */,
 				96396C8A0D0A1C86E81686D9 /* PartsFlow.swift */,
 				21096CABE6FEE63719E2FBE5 /* PaybackOptions.swift */,
 				53A5D39D9874E14925943286 /* SplitFlow.swift */,
@@ -478,6 +481,7 @@
 				C85A9FB515E2B60838612A9A /* CalendarView.swift in Sources */,
 				4887016EBE5C811B5754C433 /* CategoryPage.swift in Sources */,
 				B1FFE2B19D12A9AD736E9FBE /* CategorySheet.swift in Sources */,
+				1F259E54F43C7759992A1C07 /* JointSplitViews.swift in Sources */,
 				8AF9A0C07760B9758CC9F76D /* PartsFlow.swift in Sources */,
 				2196B0F0FEDADFDC6ADD6BF2 /* PaybackOptions.swift in Sources */,
 				00E8B2945E5B9C6B0391813A /* SplitFlow.swift in Sources */,

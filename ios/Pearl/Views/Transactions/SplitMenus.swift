@@ -464,6 +464,45 @@ struct PersonOptionsSheet: View {
     private var ways: Int { split.people.count + (split.you >= 0.005 ? 1 : 0) }
 
     var body: some View {
+        if split.unsure { unsureBody } else { setBody }
+    }
+
+    /// S-40u (paid) / S-40u2 (nothing yet), SPLIT-C: PAID SO FAR, Mark paid
+    /// back (any amount), Remind (no amount), Remove. No Let it go and no
+    /// Change share: nothing is owed. Closed (S-46): only the links.
+    private var unsureBody: some View {
+        PearlSheet {
+            PearlSheetHeader(face: p.name, overline: "\(t.merchant) · Not sure yet", title: p.name,
+                             sub: p.paid >= 0.005 ? "Paid you \(Format.amount(p.paid)) so far" : "Nothing yet",
+                             subTone: p.paid >= 0.005 ? Pearl.moneyIn : Pearl.muted, close: onClose)
+            if !links.isEmpty {
+                PearlSectionLabel(text: "Paid so far")
+                ForEach(links) { link in paymentCard(link) }
+            }
+            if split.closedAt == nil {
+                PearlOptionCard {
+                    PearlOptionRow(symbol: "banknote", title: "Mark paid back",
+                                   sub: p.paid >= 0.005 ? "Add another payment: bank, cash or app"
+                                       : "By bank or e-Transfer, cash, or another app",
+                                   prominent: p.paid < 0.005) { onChoose(.markPaid) }
+                    PearlDivider()
+                    PearlOptionRow(symbol: "envelope", title: "Remind \(p.name)",
+                                   sub: "Copy a friendly message, no amount in it") { onChoose(.remind) }
+                }
+                PearlSectionLabel(text: "Change the split")
+                PearlOptionCard {
+                    PearlOptionRow(symbol: "person", title: "Remove \(p.name) from the split", sub: removeSub) {
+                        onChoose(.remove)
+                    }
+                }
+                Text("Nobody owes a set amount yet, so there’s nothing to let go. Settle up when you know.")
+                    .font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var setBody: some View {
         PearlSheet {
             PearlSheetHeader(face: p.name, overline: "\(t.merchant) · split \(ways) ways", title: p.name,
                              sub: headline, subTone: paidInFull ? Pearl.moneyIn : Pearl.muted, close: onClose)
@@ -646,6 +685,7 @@ struct RemindSheet: View {
     let onClose: () -> Void
     let onCopied: () -> Void
     @State private var text: String
+    private var unsure: Bool { t.splitting?.unsure == true }
 
     init(t: Transaction, p: Transaction.Splitting.Person, onClose: @escaping () -> Void,
          onCopied: @escaping () -> Void) {
@@ -660,6 +700,10 @@ struct RemindSheet: View {
     /// S-07rb (product owner, 2026-11-09): "Hey Sam! Thanks for the $10.00.
     /// Your share of Loblaws on Nov 11 was $30.00, so $20.00 to go."
     static func message(t: Transaction, p: Transaction.Splitting.Person) -> String {
+        if t.splitting?.unsure == true {
+            // S-07u (SPLIT-C): no amount, because she hasn't set one.
+            return "Hi \(p.name)! When you get a chance, could you send me your part of \(t.merchant) from \(Format.short(t.date))? Thanks!"
+        }
         let on = "\(t.merchant) on \(Format.short(t.date))"
         if p.paid >= 0.005 {
             return "Hey \(p.name)! Thanks for the \(Format.amount(p.paid)). Your share of \(on) was "
@@ -670,8 +714,9 @@ struct RemindSheet: View {
 
     var body: some View {
         PearlSheet {
-            PearlSheetHeader(face: p.name, overline: "Remind", title: "Remind \(p.name)",
-                             sub: p.paid >= 0.005 ? "Owes you \(Format.amount(p.owes)) of \(Format.amount(p.amount))"
+            PearlSheetHeader(face: p.name, overline: unsure ? "Remind \(p.name)" : "Remind",
+                             title: unsure ? "A friendly nudge" : "Remind \(p.name)",
+                             sub: unsure ? nil : p.paid >= 0.005 ? "Owes you \(Format.amount(p.owes)) of \(Format.amount(p.amount))"
                                                   : "Owes you \(Format.amount(p.owes))",
                              close: onClose)
             TextField("", text: $text, axis: .vertical)
@@ -682,7 +727,8 @@ struct RemindSheet: View {
                 .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Pearl.bubble))
                 .accessibilityLabel("Message to \(p.name)")
                 .accessibilityHint("Change it before you copy it")
-            Text("Tap the message to change it. Pearl doesn’t send anything; you paste it where you talk to \(p.name).")
+            Text(unsure ? "No amount, because you haven’t set one. You can edit it. Pearl doesn’t send anything: paste it wherever you two talk."
+                 : "Tap the message to change it. Pearl doesn’t send anything; you paste it where you talk to \(p.name).")
                 .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
                 .fixedSize(horizontal: false, vertical: true)
         } footer: {

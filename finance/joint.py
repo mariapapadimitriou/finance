@@ -108,3 +108,167 @@ def claim_deposit(store, t, marks: dict) -> bool:
     marks.setdefault("joint_from", {})[t.fingerprint] = {"who": t.joint_from, "person": t.joint_person}
     store.set_joint_deposit(t.fingerprint, ME, None)
     return True
+
+
+# ── JOINT-A / JOINT-B (2026-11-09): splits of her part, and Undo ──────────
+
+def account_state(store, account_id: str) -> dict | None:
+    """A joint account as it is (label, share, people), for an Undo; None
+    when it isn't joint."""
+    with store.conn() as c:
+        row = c.execute("SELECT label, share, people FROM joint_accounts WHERE account_id = ?",
+                        (account_id,)).fetchone()
+    if row is None:
+        return None
+    from .store import _people
+    return {"label": row["label"], "share": None if row["share"] is None else float(row["share"]),
+            "people": _people(row["people"])}
+
+
+def restore_account(store, account_id: str, was: dict | None) -> None:
+    """Put a joint account back as `account_state` saw it (AM-08x1,
+    AM-08n1, AM-21j1). None: not joint."""
+    import json
+    with store.conn() as c:
+        c.execute("DELETE FROM joint_accounts WHERE account_id = ?", (account_id,))
+        if was is not None:
+            c.execute("INSERT INTO joint_accounts (account_id, label, share, people) VALUES (?, ?, ?, ?)",
+                      (account_id, was.get("label") or "Joint",
+                       None if was.get("share") is None else float(was["share"]),
+                       json.dumps(list(was.get("people") or []))))
+
+
+def account_part(t, share: float | None) -> float:
+    """Her part of a joint charge by the account alone (no answer of hers):
+    a name always hers, the name's rule, the account's share, or all of it
+    ("All mine unless I mark it")."""
+    if t.joint_mine:
+        return round(t.amount, 2)
+    if t.joint_split is not None:
+        return round(t.amount * float(t.joint_split) / 100.0, 2)
+    if share is not None:
+        return round(t.amount * float(share) / 100.0, 2)
+    return round(t.amount, 2)
+
+
+def holder(t, name: str) -> str | None:
+    """The joint account holder this name is ("Sam" is Sam Lee), if any."""
+    from .splits import same_person
+    return next((p for p in (t.joint_people or []) if same_person(p, name)), None)
+
+
+def rescale(t, split: dict, old_base: float, new_base: float) -> tuple[list[dict] | None, str | None, str]:
+    """A split of her part when her part changes (JOINT-B, PO 2026-11-09):
+    evenly, % and shares are worked out again on the new part; amounts she
+    typed stay, and her share takes the rest. Someone she let go keeps what
+    they paid. Returns (people, problem, mode)."""
+    from . import splits as sp
+    mode = split["mode"]
+    people = [dict(p) for p in split["people"]]
+    if mode == sp.UNSURE:
+        return people, None, mode
+    theirs = sum(sp._cents(p["amount"]) for p in people)
+    had_me = sp._cents(old_base) - theirs >= 1
+    if mode == "amount":
+        out = people
+    elif mode == "even" and not any(p.get("let_go") for p in people):
+        proxy = _with_amount(t, new_base)
+        out, problem = sp.validate(proxy, "even", [{"name": p["name"]} for p in people], None, had_me)
+        if problem:
+            return None, problem, mode
+        out = [dict(q, **{k: v for k, v in p.items() if k not in ("amount",)}) for p, q in zip(people, out)]
+    else:
+        # % and shares (and an even split with someone let go): each part
+        # in proportion, rounded down; the odd cents are hers, or the first
+        # person's when she isn't in it.
+        new = sp._cents(new_base)
+        old = sp._cents(old_base) or 1
+        out = []
+        for p in people:
+            if p.get("let_go"):
+                out.append(p)
+                continue
+            out.append(dict(p, amount=(sp._cents(p["amount"]) * new // old) / 100))
+        if not had_me:
+            gap = new - sum(sp._cents(p["amount"]) for p in out)
+            for i in range(max(gap, 0)):
+                q = out[i % len(out)]
+                q["amount"] = round(q["amount"] + 0.01, 2)
+    total = sum(sp._cents(p["amount"]) for p in out)
+    if total > sp._cents(new_base):
+        return None, "That’s more than your part now. Change the split first.", mode
+    return out, None, mode
+
+
+def _with_amount(t, amount: float):
+    import copy
+    proxy = copy.copy(t)
+    proxy.amount = round(amount, 2)
+    return proxy
+
+
+def preview(store, charges: list, new_part, keep: bool = False) -> tuple[list[dict], str | None, list[tuple]]:
+    """What a change of her part does to the split joint purchases in
+    `charges` (AM-21j, AM-08n): each one's part before and after, and each
+    person's share before and after with what they've paid. `new_part`
+    maps a charge to its new part. Returns (changes, problem, plan) where
+    plan is [(charge, split, people, mode, part)] to save."""
+    from . import splits as sp
+    splits = store.splits()
+    txns = store.all_transactions()
+    payer = store.payback_people()
+    changes, plan = [], []
+    for t in charges:
+        split = splits.get(t.fingerprint)
+        if not split:
+            continue
+        old = sp.split_base(t)
+        new = round(new_part(t), 2)
+        if abs(new - old) < 0.005:
+            continue
+        if keep:
+            # Not joint any more (decision 1): people owe the same.
+            people, mode = [dict(p) for p in split["people"]], split["mode"]
+            problem = (None if sum(sp._cents(p["amount"]) for p in people) <= sp._cents(new)
+                       else "That’s more than your part now. Change the split first.")
+        else:
+            people, problem, mode = rescale(t, split, old, new)
+        if problem:
+            return [], f"{t.merchant} on {t.date[:10]}: {problem}" if len(charges) > 1 else problem, []
+        status = {p["name"]: p for p in sp.people_status(t, split, txns, payer)}
+        rows = []
+        for p, q in zip(split["people"], people):
+            st = status.get(p["name"]) or {}
+            rows.append({"name": p["name"], "paid": st.get("paid", 0.0),
+                         "share_was": round(p["amount"], 2), "share_now": round(q["amount"], 2)})
+        theirs = sum(q["amount"] for q in people)
+        changes.append({"charge_id": t.fingerprint, "merchant": t.merchant, "date": t.date[:10],
+                        "mode": mode, "part_was": old, "part_now": new,
+                        "yours_was": round(t.my_share if t.my_share is not None else old, 2),
+                        "yours_now": round(new - theirs, 2) if mode != sp.UNSURE
+                        else round(max(new - (t.unsure_paid or 0.0), 0.0), 2),
+                        "people": rows, "paid": any(r["paid"] >= 0.005 for r in rows)})
+        plan.append((t, split, people, mode, new))
+    return changes, None, plan
+
+
+def save_plan(store, plan: list[tuple], marks: dict, joint: bool = True) -> None:
+    """Save what `preview` worked out, noting each split for Undo. With
+    `joint` off the account isn't joint any more: the split is of the whole
+    purchase, people keep their amounts and her share takes the rest
+    (decision 1), as Amounts."""
+    from . import splits as sp
+    parts = store.joint_parts()
+    for t, split, people, mode, part in plan:
+        marks.setdefault("splits", {}).setdefault(t.fingerprint, {
+            "split": split, "share": t.my_share if t.share_set else None,
+            "joint_part": parts.get(t.fingerprint)})
+        if not joint:
+            store.set_joint_part(t.fingerprint, None)
+            if mode != sp.UNSURE:
+                mode = "amount"
+        store.set_split(t.fingerprint, mode, people, split["watch"], split.get("closed_at"))
+        if mode == sp.UNSURE:
+            store.set_share(t.fingerprint, None)
+        else:
+            store.set_share(t.fingerprint, round(part - sum(p["amount"] for p in people), 2))

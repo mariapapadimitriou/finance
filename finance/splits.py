@@ -92,7 +92,10 @@ def even_amounts(total: float, n_people: int) -> tuple[float, list[float]]:
     return round(total - sum(theirs), 2), theirs
 
 
-MODES = ("even", "amount", "percent", "shares")
+MODES = ("even", "amount", "percent", "shares", "unknown")
+# SPLIT-C (2026-11-09): "Not sure yet", the fifth method: who it was with,
+# no amounts. Each payback linked to it comes off what it costs her.
+UNSURE = "unknown"
 
 
 def _cents(x) -> int:
@@ -100,7 +103,7 @@ def _cents(x) -> int:
 
 
 def validate(charge: Transaction, mode: str, people: list, you=None,
-             include_me: bool = True) -> tuple[list[dict], str | None]:
+             include_me: bool = True, base: float | None = None) -> tuple[list[dict], str | None]:
     """Clean the people of a split, or say what is wrong with them.
 
     THL-291: evenly (any odd cent to you), by amount, by percent or by
@@ -108,9 +111,14 @@ def validate(charge: Transaction, mode: str, people: list, you=None,
     can't add up to more than the whole charge. Less is fine only when
     you're in it (SPLIT-01 (b′), S-03b v2, 2026-11-09): what nobody has been
     given yet stays yours. With `include_me` off ("I had some too" off)
-    there's no "you" to keep it, so a short split is "$x left to assign"."""
+    there's no "you" to keep it, so a short split is "$x left to assign".
+
+    JOINT-B: `base` is her part of a joint-account purchase, and the split
+    is of that, not the whole charge. SPLIT-C: Not sure yet takes names
+    only; whatever isn't paid back is hers, so "I had some too" is moot."""
     if mode not in MODES:
         return [], "Split evenly, by amount, by percent or by shares."
+    whole = round(float(base if base is not None else charge.amount), 2)
     if not isinstance(people, list) or not people:
         return [], "Add someone to split it with."
     if len(people) > MAX_PEOPLE:
@@ -123,10 +131,14 @@ def validate(charge: Transaction, mode: str, people: list, you=None,
         if not name:
             return [], "Give everyone a name."
         clean.append({"name": name, "amount": p.get("amount")})
-    total = _cents(charge.amount)
+    if mode == UNSURE:
+        for p in clean:
+            p["amount"] = 0.0
+        return clean, None
+    total = _cents(whole)
     if mode == "even":
         if include_me:
-            _, theirs = even_amounts(charge.amount, len(clean))
+            _, theirs = even_amounts(whole, len(clean))
         else:
             # All theirs: split among them, the odd cents to the first.
             each, odd = divmod(total, len(clean))
@@ -194,8 +206,37 @@ def validate(charge: Transaction, mode: str, people: list, you=None,
     return clean, None
 
 
-def your_part(charge: Transaction, people: list[dict]) -> float:
-    return round(charge.amount - sum(p["amount"] for p in people), 2)
+def same_name(a: str, b: str) -> bool:
+    """The same name typed twice ("Sam" and "sam")."""
+    return " ".join(a.lower().split()) == " ".join(b.lower().split())
+
+
+def your_part(charge: Transaction, people: list[dict], base: float | None = None) -> float:
+    whole = base if base is not None else charge.amount
+    return round(whole - sum(p["amount"] for p in people), 2)
+
+
+def split_base(charge: Transaction) -> float:
+    """What a split of this charge splits (JOINT-B): her part of a joint
+    purchase, or the whole charge."""
+    if charge.joint and charge.joint_part is not None:
+        return round(charge.joint_part, 2)
+    return round(charge.amount, 2)
+
+
+def still_yours(charge: Transaction) -> float:
+    """SPLIT-C: what a Not sure yet split still costs her (S-04u's "$80.00
+    still counts as yours"): her part less every payback so far. It's
+    also the most one more payback can take (decision 2)."""
+    if charge.split_mode == UNSURE and charge.my_share is not None:
+        return round(max(charge.my_share, 0.0), 2)
+    return round(max(split_base(charge) - (charge.paid_back or 0.0), 0.0), 2)
+
+
+def is_open(split: dict | None) -> bool:
+    """A split still watching for paybacks: not one she said That's
+    everything on (SPLIT-C, S-46)."""
+    return bool(split) and not split.get("closed_at")
 
 
 def _linked(charge_id: str, transactions: list[Transaction]) -> list[Transaction]:
@@ -275,6 +316,7 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
     counted for (S-11xm's "Jo paid back $30.00 of this for Pizza Nova").
     """
     names = [p["name"] for p in split["people"]]
+    unsure = split.get("mode") == UNSURE
     # A refund on the purchase is shared the way the purchase was: each
     # person's part shrinks by the same fraction (decision 6).
     back = getattr(charge, "refunded", 0.0) or 0.0
@@ -339,6 +381,12 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
     # someone else (2026-11-09).
     for t in unnamed:
         got = t.part_for(charge.fingerprint)
+        if unsure:
+            # SPLIT-C (S-35u): no amounts, so no amount can say who sent it.
+            # Pearl never guesses; it asks, whatever the payback's date.
+            if left_out is not None:
+                left_out.append(t)
+            continue
         owing = [n for n in names if part[n] - paid[n] >= 0.005]
         if not owing:
             if extra_out is not None and t.date[:10] >= ASK_FROM:
@@ -364,6 +412,12 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
             credited_to[t.fingerprint] = who
     if extras_named and all(part[n] - paid[n] < 0.005 for n in names):
         extra_out.extend(extras_named)
+    if unsure or split.get("closed_at"):
+        # SPLIT-C: Not sure yet has no shares, so nobody owes and nobody
+        # paid over; each person's part so far is what they've paid. A
+        # closed split (That's everything) has nobody owing either.
+        for n in names:
+            part[n] = paid[n] if unsure else min(part[n], paid[n])
     out = []
     for p in split["people"]:
         owes = round(max(part[p["name"]] - paid[p["name"]], 0.0), 2)
@@ -382,6 +436,26 @@ def people_status(charge: Transaction, split: dict, transactions: list[Transacti
                                       if c.get("via") == "app" and c.get("app")), None),
                     "shared": shared.get(p["name"], []),
                     "let_go": p.get("let_go")})
+    return out
+
+
+def unsure_rows(transactions: list[Transaction], splits: dict[str, dict],
+                payer: dict[str, str]) -> list[dict]:
+    """SPLIT-C: every open Not sure yet split, one row a person, with what
+    the purchase still costs her (`still`). S-09u lists a sender's first,
+    S-35u everyone's under COULD BE EITHER; S-14u lists them NOT SETTLED."""
+    by_id = {t.fingerprint: t for t in transactions}
+    out = []
+    for cid, split in splits.items():
+        charge = by_id.get(cid)
+        if (charge is None or charge.excluded or split.get("mode") != UNSURE
+                or not is_open(split) or not split.get("watch", True)):
+            continue
+        status = people_status(charge, split, transactions, payer)
+        for p in status:
+            out.append({"charge": charge, "name": p["name"], "paid": p["paid"],
+                        "still": still_yours(charge), "people": [q["name"] for q in status],
+                        "paid_total": round(sum(q["paid"] for q in status), 2)})
     return out
 
 
@@ -449,7 +523,12 @@ def credit_question(inflow: Transaction, transactions: list[Transaction], splits
         if any(t.fingerprint == inflow.fingerprint for t in left):
             asking = True
         for p in status:
-            if p["owes"] >= 0.005:
+            if split.get("mode") == UNSURE:
+                # S-35u: everyone on a Not sure yet split could have sent it.
+                shares.append({"charge": cid, "merchant": charge.merchant, "date": charge.date[:10],
+                               "person": p["name"], "owes": still_yours(charge), "share": None,
+                               "here": here, "people": len(status), "unknown": True})
+            elif p["owes"] >= 0.005:
                 shares.append({"charge": cid, "merchant": charge.merchant, "date": charge.date[:10],
                                "person": p["name"], "owes": p["owes"], "share": p["amount"],
                                "here": here, "people": len(status)})
@@ -524,7 +603,7 @@ def open_repayments(transactions: list[Transaction], splits: dict[str, dict],
     out = []
     for cid, split in splits.items():
         charge = by_id.get(cid)
-        if charge is None or charge.excluded or not split.get("watch", True):
+        if charge is None or charge.excluded or not split.get("watch", True) or not is_open(split):
             continue
         for p in people_status(charge, split, transactions, payer):
             if p["owes"] >= 0.005:
@@ -553,7 +632,15 @@ def suggest(inflow: Transaction, transactions: list[Transaction], splits: dict[s
         key = (diff, abs(gap))
         if best is None or key < best[0]:
             best = (key, r)
-    return None if best is None else brief(best[1], exact=best[0][0] < 0.005)
+    if best is not None and best[0][0] < 0.005:
+        return brief(best[1], exact=True)
+    # SPLIT-C (S-09u): a Not sure yet split the sender is on comes next,
+    # since it takes any amount; it's never matched by amount.
+    for r in sorted(unsure_rows(transactions, splits, payer), key=lambda r: r["charge"].date, reverse=True):
+        gap = (when - bought_on(r["charge"])).days
+        if -EARLY_DAYS <= gap <= MATCH_DAYS and r["still"] >= 0.005 and from_person(inflow, r["name"]):
+            return unsure_brief(r)
+    return None if best is None else brief(best[1], exact=False)
 
 
 def for_inflow(inflow: Transaction, transactions: list[Transaction], splits: dict[str, dict],
@@ -566,7 +653,25 @@ def for_inflow(inflow: Transaction, transactions: list[Transaction], splits: dic
     theirs = [r for r in open_ if from_person(inflow, r["name"])]
     rows = theirs or open_
     rows.sort(key=lambda r: r["charge"].date, reverse=True)
-    return [brief(r) for r in rows[:12]], bool(theirs)
+    # SPLIT-C (S-09u): Not sure yet splits, theirs first, "takes any amount".
+    unsure = [r for r in unsure_rows(transactions, splits, payer)
+              if r["still"] >= 0.005 and (when - bought_on(r["charge"])).days >= -EARLY_DAYS]
+    mine = [r for r in unsure if from_person(inflow, r["name"])]
+    if not mine:
+        # One row a purchase when nobody on it is the sender.
+        seen: set[str] = set()
+        unsure = [r for r in unsure if not (r["charge"].fingerprint in seen or seen.add(r["charge"].fingerprint))]
+    listed = [unsure_brief(r) for r in (mine or ([] if theirs else unsure))]
+    return (listed + [brief(r) for r in rows[:12]])[:12], bool(theirs or mine)
+
+
+def unsure_brief(r: dict) -> dict:
+    """A Not sure yet split as a choice for money in: no share, and it can
+    take up to what the purchase still costs her (S-09u)."""
+    c = r["charge"]
+    return {"charge_id": c.fingerprint, "merchant": c.merchant, "date": c.date[:10],
+            "amount": round(c.amount, 2), "name": r["name"], "owes": r["still"],
+            "share": None, "exact": False, "unknown": True, "still": r["still"]}
 
 
 def brief(r: dict, exact: bool = False) -> dict:
@@ -597,6 +702,16 @@ def add_payer(store, charge: Transaction, inflow: Transaction, person: str | Non
     current = store.splits().get(charge.fingerprint)
     if current is None and charge.share_set:
         return None
+    if current is not None and current.get("mode") == UNSURE:
+        # SPLIT-C: a Not sure yet split takes any amount from anyone on it;
+        # someone new joins it with no amount, and their payback is theirs.
+        if any(same_person(p["name"], person) for p in current["people"]):
+            return None
+        was = {"split": current, "share": None}
+        store.set_split(charge.fingerprint, UNSURE, list(current["people"]) + [{"name": person, "amount": 0.0}],
+                        current["watch"], current.get("closed_at"))
+        store.set_payback_kind(inflow.fingerprint, MADE_SPLIT)
+        return was
     people = list(current["people"]) if current else []
     # What this payback put toward this purchase: all of it, or its part of
     # a payback that covered several (2026-10-28).
@@ -663,6 +778,19 @@ def drop_payer(store, inflow: Transaction, charge_id: str | None = None,
         return None
     person = store.payback_people().get(inflow.fingerprint)
     got = inflow.part_for(cid)
+    if current.get("mode") == UNSURE:
+        # SPLIT-C: the person this payback put on a Not sure yet split leaves
+        # it with it, unless another payback of theirs is still here.
+        idx = next((i for i, p in enumerate(current["people"]) if same_person(p["name"], person or "")), None)
+        if idx is None or _made_by_paybacks(store, charge, current["people"][idx]["name"], inflow):
+            return None
+        was = {"split": current, "share": None}
+        people = [p for i, p in enumerate(current["people"]) if i != idx]
+        if people:
+            store.set_split(charge.fingerprint, UNSURE, people, current["watch"], current.get("closed_at"))
+        else:
+            store.clear_split(charge.fingerprint)
+        return was
     idx = next((i for i, p in enumerate(current["people"])
                 if p["name"] == person and p["amount"] - got > -0.01), None)
     if idx is None:
@@ -695,3 +823,38 @@ def drop_payer_all(store, inflow: Transaction) -> dict[str, dict]:
         if was is not None:
             out[cid] = was
     return out
+
+
+# ── SPLIT-C decisions 2 and 4 (2026-11-09): linking to Not sure yet ──────
+
+def cap_problem(store, charge_id: str, amount: float, inflow_id: str | None = None) -> str | None:
+    """Decision 2 (S-09u2): a payback can take at most what a Not sure yet
+    purchase still costs her; the rest is sorted next ("What's the other
+    $40.00?", left to sort). The problem in her words, or None. What
+    `inflow_id` already puts toward it is counted back first."""
+    charge = store.get_transaction(charge_id)
+    split = store.splits().get(charge_id)
+    if charge is None or not split or split.get("mode") != UNSURE:
+        return None
+    room = still_yours(charge)
+    if inflow_id:
+        inflow = store.get_transaction(inflow_id)
+        if inflow is not None and charge_id in inflow.repays_all:
+            room = round(room + inflow.part_for(charge_id), 2)
+    if _cents(amount) > _cents(room):
+        return (f"Only ${room:,.2f} of {charge.merchant} still counts as yours, so that’s the most it "
+                f"can take. Say what the other ${amount - room:,.2f} was.")
+    return None
+
+
+def reopen_closed(store, charge_id: str, marks: dict | None = None) -> bool:
+    """Decision 4: a payback linked to a closed split (from search; closed
+    ones aren't suggested) opens it again. The day it was closed goes in
+    `marks` so Undo closes it again."""
+    split = store.splits().get(charge_id)
+    if not split or not split.get("closed_at"):
+        return False
+    if marks is not None:
+        marks.setdefault("split_closed", {}).setdefault(charge_id, split["closed_at"])
+    store.set_split_closed(charge_id, None)
+    return True

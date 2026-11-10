@@ -509,7 +509,17 @@ CREATE TABLE IF NOT EXISTS account_sync (
 CREATE TABLE IF NOT EXISTS txn_splits (
     txn_id TEXT PRIMARY KEY,
     mode   TEXT NOT NULL,
-    watch  INTEGER NOT NULL DEFAULT 1
+    watch  INTEGER NOT NULL DEFAULT 1,
+    closed_at TEXT
+);
+-- JOINT-B (2026-11-09): her part of a joint-account purchase she split,
+-- when it was an answer of hers (Whose was it?, or a share held at what it
+-- was). The split is of this part; without a row the part is the account's
+-- (its share, the name's rule, or all of it). `txn_shares` holds what the
+-- split leaves her, so Allowance and spending count only that.
+CREATE TABLE IF NOT EXISTS txn_joint_parts (
+    txn_id TEXT PRIMARY KEY,
+    part   REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS txn_split_people (
     txn_id TEXT NOT NULL,
@@ -695,11 +705,14 @@ _CHARGES = """(
 )"""
 
 # Tables of what she said about one row, keyed by its id (`txn_id`).
+# SPLIT-C: a split made with Not sure yet (no amounts).
+UNSURE = "unknown"
+
 _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts",
                "txn_exclusions", "txn_income_type", "txn_confirmed", "txn_notes",
                "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
                "joint_deposits", "txn_party", "txn_tags", "txn_saved_to", "sorted_range_rows",
-               "txn_split_cash", "txn_split_let_go", "txn_parts")
+               "txn_split_cash", "txn_split_let_go", "txn_parts", "txn_joint_parts")
 
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
@@ -756,7 +769,9 @@ _CHARGE_COLUMNS = """sh.my_share AS my_share,
                           oox.since AS one_off_since,
                           dpx.twin_id AS duplicate_of,
                           dpx.state AS duplicate_state,
-                          acs.nickname AS account_nickname"""
+                          acs.nickname AS account_nickname,
+                          jpx.part AS joint_part_set,
+                          spx.mode AS split_mode"""
 
 
 class Store:
@@ -795,6 +810,7 @@ class Store:
         self._migrate_plaid_logo()
         self._migrate_joint_share()
         self._migrate_split_weight()
+        self._migrate_split_closed()
         self._migrate_split_cash_via()
         self._migrate_split_cash_app_origin()
         self._migrate_joint_people()
@@ -1059,6 +1075,17 @@ class Store:
         except Exception:                                        # noqa: BLE001
             return
 
+    def _migrate_split_closed(self) -> None:
+        """Add `txn_splits.closed_at`: the day she said That's everything on
+        a Not sure yet split (SPLIT-C, S-46): the rest stays hers and nobody
+        owes. Null while it's open. Tried, and a failure read as "already
+        there", as above."""
+        try:
+            with self.conn() as c:
+                c.execute("ALTER TABLE txn_splits ADD COLUMN closed_at TEXT")
+        except Exception:                                        # noqa: BLE001
+            return
+
     def _migrate_split_cash_via(self) -> None:
         """Add `txn_split_cash.via`: "app" for a payback through another app
         (PayPal, Wise…), which no deposit ever holds; null is cash in hand
@@ -1148,6 +1175,8 @@ class Store:
                      LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
                      LEFT JOIN txn_oneoff oox ON oox.txn_id = t.id
                      LEFT JOIN txn_duplicates dpx ON dpx.txn_id = t.id
+                     LEFT JOIN txn_joint_parts jpx ON jpx.txn_id = t.id
+                     LEFT JOIN txn_splits spx ON spx.txn_id = t.id
                     ORDER BY t.date DESC, t.id""").fetchall()
         return self._loaded(rows)
 
@@ -1231,6 +1260,8 @@ class Store:
                      LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
                      LEFT JOIN txn_oneoff oox ON oox.txn_id = t.id
                      LEFT JOIN txn_duplicates dpx ON dpx.txn_id = t.id
+                     LEFT JOIN txn_joint_parts jpx ON jpx.txn_id = t.id
+                     LEFT JOIN txn_splits spx ON spx.txn_id = t.id
                     {clause}
                     ORDER BY t.date DESC, t.id LIMIT ? OFFSET ?""",
                 params + [limit, offset],
@@ -1274,6 +1305,8 @@ class Store:
                      LEFT JOIN txn_income_type itx ON itx.txn_id = t.id
                      LEFT JOIN txn_oneoff oox ON oox.txn_id = t.id
                      LEFT JOIN txn_duplicates dpx ON dpx.txn_id = t.id
+                     LEFT JOIN txn_joint_parts jpx ON jpx.txn_id = t.id
+                     LEFT JOIN txn_splits spx ON spx.txn_id = t.id
                     WHERE t.id = ?""", (txn_id,)).fetchone()
         return self._loaded([row])[0] if row else None
 
@@ -1315,7 +1348,30 @@ class Store:
                         d["paid_back"] = float(d.get("paid_back") or 0.0) + extra[d["id"]]
                     if d.get("id") in also:
                         d["also_repays"] = also[d["id"]]
-        return [Transaction.from_row(d) for d in dicts]
+        out = [Transaction.from_row(d) for d in dicts]
+        if any(t.split_mode == UNSURE for t in out):
+            self._unsure_shares(out)
+        return out
+
+    def _unsure_shares(self, rows: list[Transaction]) -> None:
+        """SPLIT-C (2026-11-09): a Not sure yet split has no shares, so what
+        it costs her is what she paid less what's come back: every payback
+        linked to it and every cash or app payment marked on it. On a joint
+        account it's her part less those (JOINT-B, decision 7). Never below
+        nothing; a payback can't take more than this (decision 2)."""
+        with self.conn() as c:
+            cash = c.execute("SELECT x.txn_id AS txn_id, SUM(x.amount) AS total FROM txn_split_cash x "
+                             "JOIN txn_splits s ON s.txn_id = x.txn_id AND s.mode = ? "
+                             "WHERE x.kind IS NULL GROUP BY x.txn_id", (UNSURE,)).fetchall()
+        held = {r["txn_id"]: float(r["total"] or 0.0) for r in cash}
+        for t in rows:
+            if t.split_mode != UNSURE or t.amount <= 0:
+                continue
+            base = t.joint_part if t.joint and t.joint_part is not None else t.amount
+            back = (t.paid_back or 0.0) + held.get(t.fingerprint, 0.0)
+            t.unsure_paid = round(back, 2)
+            t.my_share = round(max(base - back, 0.0), 2)
+
     def delete_transaction(self, txn_id: str) -> bool:
         with self.conn() as c:
             cur = c.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
@@ -1333,6 +1389,7 @@ class Store:
             c.execute("DELETE FROM txn_notes WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_splits WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_split_people WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_joint_parts WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_payback_person WHERE inflow_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_oneoff WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_duplicates WHERE txn_id = ? OR twin_id = ?",
@@ -1806,13 +1863,15 @@ class Store:
         with any cash they paid her (`cash`) and what their part was before
         she let the rest go (`let_go`)."""
         with self.conn() as c:
-            heads = c.execute("SELECT txn_id, mode, watch FROM txn_splits").fetchall()
+            heads = c.execute("SELECT txn_id, mode, watch, closed_at FROM txn_splits").fetchall()
             people = c.execute("SELECT txn_id, pos, name, amount, weight FROM txn_split_people "
                                "ORDER BY txn_id, pos").fetchall()
             every = c.execute("SELECT id, txn_id, name, amount, day, deposit_id, via, app, origin, kind "
                               "FROM txn_split_cash ORDER BY id").fetchall()
             gone = c.execute("SELECT txn_id, name, was, day FROM txn_split_let_go").fetchall()
-        out = {r["txn_id"]: {"mode": r["mode"], "watch": bool(r["watch"]), "people": []}
+        out = {r["txn_id"]: {"mode": r["mode"], "watch": bool(r["watch"]), "people": [],
+                             # SPLIT-C (S-46): That's everything, on this day.
+                             "closed_at": r["closed_at"] or None}
                for r in heads}
         for r in people:
             if r["txn_id"] in out:
@@ -1973,12 +2032,15 @@ class Store:
         with self.conn() as c:
             c.execute("DELETE FROM txn_parts WHERE txn_id = ?", (txn_id,))
 
-    def set_split(self, txn_id: str, mode: str, people: list[dict], watch: bool) -> None:
+    def set_split(self, txn_id: str, mode: str, people: list[dict], watch: bool,
+                  closed_at: str | None = None) -> None:
+        """A split as given. Saving one opens it again unless `closed_at`
+        says it's closed (SPLIT-C, S-46: Undo puts a closed one back)."""
         with self.conn() as c:
             c.execute("DELETE FROM txn_split_people WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_splits WHERE txn_id = ?", (txn_id,))
-            c.execute("INSERT INTO txn_splits (txn_id, mode, watch) VALUES (?, ?, ?)",
-                      (txn_id, mode, 1 if watch else 0))
+            c.execute("INSERT INTO txn_splits (txn_id, mode, watch, closed_at) VALUES (?, ?, ?, ?)",
+                      (txn_id, mode, 1 if watch else 0, closed_at or None))
             for pos, p in enumerate(people):
                 # The percent or shares it was made with (SPLIT-02), when it was.
                 weight = p.get(mode) if mode in ("percent", "shares") else None
@@ -1987,6 +2049,26 @@ class Store:
                 c.execute("INSERT INTO txn_split_people (txn_id, pos, name, amount, weight) "
                           "VALUES (?, ?, ?, ?, ?)", (txn_id, pos, p["name"], p["amount"],
                                                      None if weight is None else float(weight)))
+
+    def set_split_closed(self, txn_id: str, day: str | None) -> None:
+        """SPLIT-C (S-46): That's everything on `day`, or open again (None)."""
+        with self.conn() as c:
+            c.execute("UPDATE txn_splits SET closed_at = ? WHERE txn_id = ?", (day or None, txn_id))
+
+    def joint_parts(self) -> dict[str, float]:
+        """JOINT-B: {charge id: her part} for split joint purchases whose part
+        was her own answer (Whose was it?, or a share held at what it was)."""
+        with self.conn() as c:
+            rows = c.execute("SELECT txn_id, part FROM txn_joint_parts").fetchall()
+        return {r["txn_id"]: round(float(r["part"]), 2) for r in rows}
+
+    def set_joint_part(self, txn_id: str, part: float | None) -> None:
+        """JOINT-B: keep her part of a split joint purchase (None: the account's)."""
+        with self.conn() as c:
+            c.execute("DELETE FROM txn_joint_parts WHERE txn_id = ?", (txn_id,))
+            if part is not None:
+                c.execute("INSERT INTO txn_joint_parts (txn_id, part) VALUES (?, ?)",
+                          (txn_id, round(float(part), 2)))
 
     def clear_split(self, txn_id: str) -> bool:
         with self.conn() as c:

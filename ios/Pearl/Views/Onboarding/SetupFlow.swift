@@ -610,7 +610,9 @@ struct JointSheet: View {
     @Environment(\.dismiss) private var dismiss
     let account: AccountsOverview.Account
     let saved: () async -> Void
-    @State private var name = ""
+    /// O-09cr (JOINT-A): who it's shared with, picked, not typed.
+    @State private var names: [String] = []
+    @State private var picking = false
     @State private var share = 50
     @State private var error: String?
     @State private var busy = false
@@ -632,7 +634,23 @@ struct JointSheet: View {
                         Text(account.mask.map { "••\($0)" } ?? "").font(Nacre.subheadline)
                     }
                     VStack(spacing: 0) {
-                        FieldRow(label: "Shared with", text: $name, prompt: "Their name")
+                        Button { picking = true } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Shared with").font(Nacre.body).foregroundColor(Pearl.ink)
+                                    Text(names.isEmpty ? "Pick who" : names.joined(separator: ", "))
+                                        .font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(Pearl.muted).accessibilityHidden(true)
+                            }
+                            .padding(.horizontal, 16).frame(minHeight: 56).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityHint("Opens the people you’ve split with and your contacts")
                         RowSeparator()
                         // The percentage is its own text and the stepper has no
                         // label, so the − / + sits on the row's line.
@@ -643,7 +661,8 @@ struct JointSheet: View {
                         .keyboardType(.numberPad)
                     }
                     .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Pearl.card))
-                    Text("Type their name, or leave it blank. Only you can see this.").font(Nacre.footnote)
+                    Text("Pick from people you’ve split with or your contacts, or type a name. Only you can see this. Nothing is sent to them.")
+                        .font(Nacre.footnote)
                     if let error = error { Hint(text: error) }
                 }
                 .padding(16)
@@ -659,8 +678,17 @@ struct JointSheet: View {
         }
         .foregroundColor(Pearl.ink)
         .onAppear {
-            name = account.jointPeople?.first ?? ""
+            names = account.jointPeople ?? []
             share = Int((account.jointShare ?? 50).rounded())
+        }
+        .sheet(isPresented: $picking) {
+            // AM-08p from setup: the same picker. Nothing saves until Save.
+            PeoplePicker(api: app.api, overline: "\(account.name) · Joint", title: "Who do you share it with?",
+                         sub: "Pick up to six. Only you can see this.", already: [], limit: 6,
+                         onClose: { picking = false }) { picked in
+                names = Array((names + picked.filter { !names.contains($0) }).prefix(6))
+                picking = false
+            }
         }
     }
 
@@ -668,12 +696,10 @@ struct JointSheet: View {
         busy = true
         defer { busy = false }
         do {
-            let trimmed = name.trimmingCharacters(in: .whitespaces)
-            // The server refuses an empty list of people, so a blank name and
-            // "Not a joint account" send none. Anyone after the first stays.
+            // "Not a joint account" sends no people.
             var body: [String: Any] = ["joint_share": joint ? share as Any : NSNull()]
-            if joint && !trimmed.isEmpty {
-                body["joint_people"] = [trimmed] + (account.jointPeople ?? []).dropFirst()
+            if joint && names != (account.jointPeople ?? []) {
+                body["joint_people"] = names
             }
             let _: OK = try await app.api.put("api/accounts/\(account.id)/settings", body)
             await saved()

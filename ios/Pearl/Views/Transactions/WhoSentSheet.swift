@@ -39,6 +39,9 @@ struct CreditQuestion: Decodable {
         let here: Double
         /// How many people are on that purchase's split.
         let people: Int
+        /// SPLIT-C (S-35u): on a Not sure yet split; `owes` is what it still
+        /// costs her, and nobody owes a set amount.
+        var unknown: Bool? = nil
         var id: String { charge + "|" + person }
     }
 }
@@ -148,7 +151,13 @@ struct WhoSentSheet: View {
     func askText(_ q: CreditQuestion) -> String {
         let shops = Format.andList(merchants(q))
         let amount = Format.amount(asked(q))
-        let fits = q.shares.filter { cents($0.owes) == cents($0.here) }
+        if !q.shares.isEmpty && q.shares.allSatisfy({ $0.unknown == true }) {
+            // S-35u: no amounts, so no amount can say who.
+            var seen = Set<String>()
+            let names = q.shares.map { firstName($0.person) }.filter { seen.insert($0.lowercased()).inserted }
+            return "\(Format.andList(names)) \(names.count == 1 ? "is" : "are") on \(shops) with no amounts set, so \(names.count == 2 ? "either" : "any of them") could have sent it. Pearl won’t guess. Tick who sent it."
+        }
+        let fits = q.shares.filter { $0.unknown != true && cents($0.owes) == cents($0.here) }
         var seen = Set<String>()
         let names = fits.map { firstName($0.person) }.filter { seen.insert($0.lowercased()).inserted }
         if names.count >= 2 {
@@ -172,11 +181,13 @@ struct WhoSentSheet: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(s.person).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                    Text("\(s.merchant) · \(Format.short(s.date)) · \(firstName(s.person))’s share")
+                    Text("\(s.merchant) · \(Format.short(s.date)) · " + (s.unknown == true ? "Not sure yet" : "\(firstName(s.person))’s share"))
                         .font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
                 }
                 Spacer(minLength: 8)
-                Text(Format.amount(s.owes)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                if s.unknown != true {
+                    Text(Format.amount(s.owes)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                }
                 Image(systemName: on ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 22)).foregroundColor(on ? Pearl.action : Pearl.muted)
             }
@@ -185,7 +196,7 @@ struct WhoSentSheet: View {
         .buttonStyle(.plain)
         .disabled(busy)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(s.person), \(s.merchant), \(Format.monthDay(s.date)), \(Format.amount(s.owes))")
+        .accessibilityLabel("\(s.person), \(s.merchant), \(Format.monthDay(s.date)), " + (s.unknown == true ? "not sure yet" : Format.amount(s.owes)))
         .accessibilityValue(on ? "selected" : "not selected")
         .accessibilityAddTraits(.isButton)
     }

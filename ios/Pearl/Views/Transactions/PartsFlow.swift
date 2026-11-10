@@ -228,10 +228,13 @@ struct PartsSheet: View {
         var notSplit: Bool? = nil
         /// S-32: the purchase hasn't posted yet.
         var pending: Bool? = nil
+        /// SPLIT-C (S-09u): a Not sure yet split; `owes` is what it still
+        /// costs her, the most this can take (decision 2).
+        var unknown: Bool? = nil
 
         enum CodingKeys: String, CodingKey {
             case charge = "id"
-            case merchant, date, owes, person, theirs, pending
+            case merchant, date, owes, person, theirs, pending, unknown
         }
 
         /// One row per person per purchase (2026-11-09): a dinner four people
@@ -432,7 +435,9 @@ struct PartsSheet: View {
                 let theirs = owing.filter { $0.theirs == true }
                 let others = owing.filter { $0.theirs != true }
                 if !theirs.isEmpty {
+                    // S-09u: "SAM IS ON" a Not sure yet split; nothing is owed.
                     label(theirs.allSatisfy { $0.pending == true } ? "Still pending"
+                          : theirs.allSatisfy { $0.unknown == true } ? sender.map { "\($0) is on" } ?? "You split"
                           : sender.map { "\($0) owes you" } ?? "Owes you")
                     GlassCard {
                         ForEach(Array(theirs.enumerated()), id: \.element.id) { i, o in
@@ -450,6 +455,11 @@ struct PartsSheet: View {
                         }
                     }
                 }
+            }
+            if let capped = owing.first(where: { $0.unknown == true && picked[$0.id] != nil && cents($0.owes) < wholeCents - sortedCents }) {
+                // S-09u2 (decision 2): the most a Not sure yet purchase can take.
+                let rest = Double(wholeCents - sortedCents - cents(capped.owes)) / 100
+                InfoNote(text: "Only \(Format.amount(capped.owes)) of \(capped.merchant) still counts as yours, so that’s the most it can take. You’ll say what the other \(Format.amount(rest)) was next.")
             }
             let more = found.filter { f in !owing.contains { $0.charge == f.charge } }
             if more.isEmpty && owing.isEmpty && step == .owing {
@@ -481,7 +491,8 @@ struct PartsSheet: View {
     /// can't put a name to.
     private var fits: [Owing] {
         guard sender == nil else { return [] }
-        return owing.filter { $0.theirs != true && $0.person != nil && cents($0.owes) == leftCents }
+        // A Not sure yet split has no amount for one to match (S-35u).
+        return owing.filter { $0.theirs != true && $0.person != nil && $0.unknown != true && cents($0.owes) == leftCents }
     }
 
     /// Who it was isn't for Pearl to guess: more than one share is its
@@ -492,6 +503,35 @@ struct PartsSheet: View {
     }
 
     @ViewBuilder private var askList: some View {
+        let unsure = owing.filter { $0.unknown == true }
+        if !unsure.isEmpty && fits.isEmpty {
+            // S-35u: everyone on a Not sure yet split could have sent it;
+            // nothing ticked, and Pearl never guesses.
+            label("Could be either")
+            GlassCard {
+                ForEach(Array(unsure.enumerated()), id: \.element.id) { i, o in
+                    if i > 0 { RowSeparator() }
+                    askRow(o)
+                }
+            }
+            askLine
+            let rest = owing.filter { $0.unknown != true }
+            if !rest.isEmpty {
+                label("Others who owe you")
+                GlassCard {
+                    ForEach(Array(rest.enumerated()), id: \.element.id) { i, o in
+                        if i > 0 { RowSeparator() }
+                        askRow(o)
+                    }
+                }
+            }
+            bar(sorted: sortedDone + picked.values.reduce(0, +), first: "Linked", second: "Not linked")
+        } else {
+            setAskList
+        }
+    }
+
+    @ViewBuilder private var setAskList: some View {
         let either = fits
         let rest = owing.filter { o in !either.contains(o) }
         if either.count >= 2 {
@@ -536,6 +576,16 @@ struct PartsSheet: View {
 
     private var askText: String {
         let amount = Format.amount(left)
+        let unsure = owing.filter { $0.unknown == true }
+        if !unsure.isEmpty && fits.isEmpty {
+            // S-35u: "Sam and Priya are on Pizza Nova with no amounts set, so
+            // either could have sent it. Pearl won't guess. Tick who sent it."
+            var seen = Set<String>()
+            let names = unsure.compactMap { $0.person.map(firstName) }.filter { seen.insert($0.lowercased()).inserted }
+            var shops = Set<String>()
+            let merchants = unsure.map(\.merchant).filter { shops.insert($0.lowercased()).inserted }
+            return "\(Format.andList(names)) \(names.count == 1 ? "is" : "are") on \(Format.andList(merchants)) with no amounts set, so \(names.count == 2 ? "either" : "any of them") could have sent it. Pearl won’t guess. Tick who sent it."
+        }
         let either = fits
         if either.count >= 2 {
             var seen = Set<String>()
@@ -566,7 +616,8 @@ struct PartsSheet: View {
     private func askRow(_ o: Owing) -> some View {
         let name = o.person ?? o.merchant
         let sub = [o.merchant, o.pending == true ? "Pending" : Format.short(o.date),
-                   o.person.map { "\(firstName($0))’s share" }].compactMap { $0 }.joined(separator: " · ")
+                   o.unknown == true ? "Not sure yet" : o.person.map { "\(firstName($0))’s share" }]
+            .compactMap { $0 }.joined(separator: " · ")
         let on = picked[o.id] != nil
         return pickRow(name: name, sub: sub, amount: o.owes, on: on, trait: false) { toggle(o) }
             .accessibilityElement(children: .ignore)
@@ -600,6 +651,12 @@ struct PartsSheet: View {
         }
         // S-35: "Owes $64.00 · same amount"; S-32: "Pending · Sam's share".
         // By name, the purchase says which of theirs it is.
+        if o.unknown == true {
+            // S-09u: "Nov 13 · Not sure yet · $80.00 still counts as yours", any amount.
+            let sub = "\(o.pending == true ? "Pending" : Format.short(o.date)) · Not sure yet · \(Format.amount(o.owes)) still counts as yours"
+            return AnyView(pickRow(name: o.merchant, sub: sub, amount: picked[o.id] ?? min(o.owes, left),
+                                   on: picked[o.id] != nil) { toggle(o) })
+        }
         let sub = byName ? "Owes \(Format.amount(o.owes))" + (abs(o.owes - deposit.amount) < 0.005 ? " · same amount"
                                                                 : " · \(o.merchant), \(Format.short(o.date))")
             : [o.pending == true ? "Pending" : Format.short(o.date),
@@ -1345,8 +1402,7 @@ struct OwedView: View {
                             Text(Format.amount(owed.total))
                                 .font(.custom("Fraunces-SemiBold", size: 34, relativeTo: .largeTitle))
                                 .foregroundColor(Pearl.ink)
-                            Text(owed.people == 0 ? "Nobody owes you anything"
-                                 : "owed to you by \(owed.people) \(owed.people == 1 ? "person" : "people")")
+                            Text(owedLine(owed))
                                 .font(Nacre.footnote).foregroundColor(Pearl.muted)
                         }
                         .padding(16)
@@ -1359,6 +1415,23 @@ struct OwedView: View {
                                 personRow(r.name, sub: line(r), amount: r.total, tone: Pearl.ink)
                             }
                         }
+                    }
+                    if let unsettled = owed.notSettled, !unsettled.isEmpty {
+                        // S-14u (SPLIT-C): Not sure yet splits, never in the total.
+                        section("Not settled")
+                        GlassCard {
+                            ForEach(Array(unsettled.enumerated()), id: \.element.id) { i, n in
+                                if i > 0 { RowSeparator(inset: 64) }
+                                NavigationLink {
+                                    TransactionByID(id: n.chargeId, categories: app.categories)
+                                } label: { unsettledRow(n) }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        Text("Not counted in the total: no amounts are set. Settle up on the purchase when you know.")
+                            .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                            .padding(.horizontal, 16)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     if !owed.youOwe.isEmpty {
                         section("You owe")
@@ -1415,6 +1488,42 @@ struct OwedView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+    }
+
+    /// "owed to you by 2 people"; S-14u0 "Nobody owes you a set amount · 1
+    /// split not settled".
+    private func owedLine(_ owed: OwedOverview) -> String {
+        let n = owed.notSettled?.count ?? 0
+        if owed.people == 0 {
+            return n == 0 ? "Nobody owes you anything"
+                : "Nobody owes you a set amount · \(n) split\(n == 1 ? "" : "s") not settled"
+        }
+        return "owed to you by \(owed.people) \(owed.people == 1 ? "person" : "people")"
+    }
+
+    /// S-14u: "Pizza Nova" over "Sam, Priya · $20.00 paid so far", a "Not
+    /// settled" chip and no amount. VoiceOver: "Pizza Nova, November 13, Sam
+    /// and Priya, $20.00 paid so far, not settled."
+    private func unsettledRow(_ n: OwedOverview.NotSettled) -> some View {
+        HStack(spacing: 12) {
+            Initials(name: n.merchant, size: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(n.merchant).font(Nacre.body).foregroundColor(Pearl.ink)
+                Text("\(n.people.joined(separator: ", ")) · \(Format.amount(n.paid)) paid so far")
+                    .font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Text("Not settled").font(Nacre.footnote).foregroundColor(Pearl.ink)
+                .padding(.horizontal, 10).frame(minHeight: 26)
+                .background(Capsule().fill(Pearl.bubble))
+            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 16).frame(minHeight: 56).contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(n.merchant), \(Format.monthDay(n.date)), \(Format.andList(n.people)), \(Format.amount(n.paid)) paid so far, not settled")
+        .accessibilityAddTraits(.isButton)
     }
 
     /// "Loblaws · Nov 11", or "2 purchases".

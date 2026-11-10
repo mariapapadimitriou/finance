@@ -513,6 +513,8 @@ struct AccountDetailView: View {
     @State private var busy = false
     @State private var toast: (text: String, undo: (() -> Void)?)?
     @State private var error: String?
+    /// AM-08n (JOINT-B): turning Joint off with split purchases on it asks first.
+    @State private var notJoint: [JointChange]?
 
     private var isInvestment: Bool { account.kind == "investment" }
 
@@ -594,6 +596,30 @@ struct AccountDetailView: View {
             }
             .padding(.top, 12)
             if let error = error { Hint(text: error).padding(.top, 4) }
+        }
+        .sheet(isPresented: Binding(get: { notJoint != nil }, set: { if !$0 { notJoint = nil; syncState() } })) {
+            if let changes = notJoint {
+                JointChangeSheet(accountName: account.name, share: nil, was: nil, holders: account.jointPeople ?? [],
+                                 changes: changes, onClose: { notJoint = nil; syncState() }) {
+                    let reply: JointReply = try await app.api.put("api/accounts/\(account.id)/settings",
+                                                                  ["joint_share": NSNull(), "confirm": true])
+                    if let a = reply.account { account = a }
+                    notJoint = nil
+                    syncState()
+                    app.changed()
+                    let undo = reply.undo
+                    withAnimation {
+                        toast = ("\(account.name) isn’t joint any more. Your splits stay.", undo.map { u in {
+                            Task {
+                                guard let body = u.any as? [String: Any] else { return }
+                                let _: OK? = try? await app.api.post("api/transactions/undo", body)
+                                await refresh()
+                                app.changed()
+                            }
+                        } })
+                    }
+                }
+            }
         }
         .sheet(isPresented: $removingBank) {
             RemoveBankSheet(bank: AccountWords.bank(account), itemId: account.itemId ?? "", accounts: sameBank) { removed in
@@ -737,7 +763,22 @@ struct AccountDetailView: View {
         if on {
             await save(["joint_share": 50], saying: "Only your share of \(account.name) counts now: 50%.")
         } else {
-            await save(["joint_share": NSNull()], saying: "\(account.name) is just yours again.")
+            // AM-08n: split purchases on it are asked about first.
+            do {
+                let reply: JointReply = try await app.api.put("api/accounts/\(account.id)/settings", ["joint_share": NSNull()])
+                if reply.needsConfirm == true {
+                    notJoint = reply.changes ?? []
+                    return
+                }
+                if let a = reply.account { account = a }
+                syncState()
+                error = nil
+                app.changed()
+                withAnimation { toast = ("\(account.name) is just yours again.", nil) }
+            } catch {
+                self.error = app.handle(error)
+                syncState()
+            }
         }
     }
 

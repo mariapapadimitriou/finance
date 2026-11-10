@@ -916,6 +916,10 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
         # It can't pay back more than is left of the charge: the rest of the
         # money counts as money in, on whichever route linked it (gap 31).
         left = round(charge.amount - (charge.paid_back or 0.0) + t.part_for(charge.fingerprint), 2)
+        from .splits import cap_problem, reopen_closed
+        problem = cap_problem(store, charge_id, part if part is not None else -t.amount, t.fingerprint)
+        if problem:
+            raise Problem(problem)
         if left > 0.005 and (part if part is not None else -t.amount) > left + 0.005:
             part = left
         marks.setdefault("paybacks", {})[t.fingerprint] = {
@@ -931,6 +935,7 @@ def apply(store, t: Transaction, body: dict, today: date) -> dict:
                   or (etransfer_party(t, people) or {}).get("name") or None)
         store.link_payback(charge_id, t.fingerprint, person, part)
         store.set_payback_kind(t.fingerprint, None)
+        reopen_closed(store, charge_id, marks)
         title = f"Linked to {charge.merchant}. Not income."
         if part is not None:
             detail = (f"${part:,.2f} of it comes off {charge.merchant}. The other "
@@ -1171,6 +1176,10 @@ def _payback_many(store, t: Transaction, body: dict, marks: dict,
                 raise Problem(f"{charge.merchant} only has ${room:,.2f} left to pay back.")
             if use > left_over + 0.005:
                 raise Problem("Those add up to more than they sent.")
+        from .splits import cap_problem
+        problem = cap_problem(store, charge.fingerprint, use, t.fingerprint)
+        if problem:
+            raise Problem(problem)
         parts.append((charge, use))
         left_over = round(left_over - use, 2)
     marks.setdefault("paybacks", {})[t.fingerprint] = {
@@ -1186,6 +1195,9 @@ def _payback_many(store, t: Transaction, body: dict, marks: dict,
     store.link_payback(first.fingerprint, t.fingerprint, person, first_use)
     store.set_payback_more(t.fingerprint, [(c.fingerprint, use) for c, use in rest])
     store.set_payback_kind(t.fingerprint, kind)
+    from .splits import reopen_closed
+    for c, _ in parts:
+        reopen_closed(store, c.fingerprint, marks)
     used = round(sum(use for _, use in parts), 2)
     names = sorted({c.merchant for c, _ in parts})
     what = names[0] if len(names) == 1 else ", ".join(names[:-1]) + f" and {names[-1]}"
@@ -1388,16 +1400,52 @@ def undo_marks(store, marks: dict) -> int:
         if tid in known and isinstance(was, dict):
             store.set_joint_deposit(tid, was.get("who"), was.get("person"))
             n += 1
+    # SPLIT-C / JOINT-B: settle up's changes to cash and app records.
+    settle = marks.get("settle_cash") or {}
+    if isinstance(settle, dict) and settle:
+        from .parts_api import GIFT_SOURCE
+        gone = {int(i) for i in settle.get("remove") or [] if str(i).isdigit()}
+        for x in store.all_transactions():
+            if x.source == GIFT_SOURCE and (x.raw or {}).get("split_gift") in gone:
+                store.delete_transaction(x.fingerprint)
+        for i in gone:
+            store.remove_split_cash(i)
+        for cid, amount in (settle.get("restore") or {}).items():
+            if str(cid).isdigit():
+                store.set_split_cash_amount(int(cid), float(amount))
+        n += 1
     for tid, was in (marks.get("splits") or {}).items():
         if tid in known and isinstance(was, dict):
             split = was.get("split")
             if split:
-                store.set_split(tid, split["mode"], split["people"], bool(split.get("watch", True)))
+                store.set_split(tid, split["mode"], split["people"], bool(split.get("watch", True)),
+                                split.get("closed_at"))
+                for q in split["people"]:
+                    gone = q.get("let_go")
+                    if isinstance(gone, dict) and gone.get("day"):
+                        store.set_let_go(tid, q["name"], float(gone.get("was") or 0), gone["day"])
             else:
                 store.clear_split(tid)
             share = was.get("share")
             store.set_share(tid, None if share is None else float(share))
+            if "joint_part" in was:
+                # JOINT-B: her part of the joint purchase, as it was.
+                part = was.get("joint_part")
+                store.set_joint_part(tid, None if part is None else float(part))
             n += 1
+    # SPLIT-C (S-46): That's everything, or a payback that reopened it.
+    for tid, day in (marks.get("split_closed") or {}).items():
+        if tid in known and (day is None or isinstance(day, str)):
+            store.set_split_closed(tid, day)
+            n += 1
+    # JOINT-A / JOINT-B: a joint account's people, share and label as they
+    # were (AM-08x1, AM-08n1, AM-21j1). None: it wasn't joint.
+    for aid, was in (marks.get("joint_accounts") or {}).items():
+        if not isinstance(aid, str):
+            continue
+        from .joint import restore_account
+        restore_account(store, aid, was if isinstance(was, dict) else None)
+        n += 1
     for tid, tags in (marks.get("tags") or {}).items():
         if tid in known and isinstance(tags, list):
             store.set_tags(tid, clean_tags(tags))
