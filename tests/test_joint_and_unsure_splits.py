@@ -139,13 +139,13 @@ class TestSplitMyPart:
     def test_a_joint_holder_is_refused_by_name(self, client):
         pn = joint_dinner(client)["PIZZA NOVA"]
         r = put_split(client, pn, {"mode": "even", "people": [{"name": "Sam"}]}, ok=False)
-        assert r["error"] == "Sam Lee is on this joint account. Their part is already off."
+        assert r["error"] == "Sam Lee’s part is already off."
 
     def test_none_of_it_hers_leaves_nothing_to_split(self, client):
         pn = joint_dinner(client)["PIZZA NOVA"]
         client.put(f"/api/transactions/{pn}/share", json={"my_share": 0})
         r = put_split(client, pn, {"mode": "even", "people": [{"name": "Priya"}]}, ok=False)
-        assert r["error"] == "Nothing here is yours to split. Say it was partly yours first."
+        assert r["error"] == "None of it is yours to split."
 
     def test_all_mine_unless_i_mark_it_splits_the_whole_purchase(self, client):
         pn = joint_dinner(client, share=None)["PIZZA NOVA"]
@@ -252,7 +252,7 @@ class TestRemoveAndNotJoint:
         r = client.delete(f"/api/transactions/{pn}/split")
         assert r.status_code == 200
         reply = r.get_json()
-        assert reply["toast"] == "Split removed · $50.00 counts as yours"
+        assert reply["toast"] == "Split removed"
         assert counted(client, pn) == 50.0
         assert client.st.get_transaction(jo).repays is None
         undo(client, reply)
@@ -504,7 +504,7 @@ class TestThatsEverything:
         r = client.post(f"/api/transactions/{pn}/split/close")
         assert r.status_code == 200
         reply = r.get_json()
-        assert reply["toast"] == "Closed · $80.00 stays yours"
+        assert reply["toast"] == "Split closed"
         s = detail(client, pn)["splitting"]
         assert s["closed_at"] and all(p["owes"] == 0.0 for p in s["people"])
         assert counted(client, pn) == 80.0 and spent(client) == before
@@ -590,8 +590,8 @@ class TestTheApp:
 
     def test_contacts_reason(self):
         plist = src("ios/Pearl/Info.plist")
-        assert ("So you can pick who you split with or share an account with. "
-                "Pearl keeps only the name you pick.") in plist
+        # REFRESH-03 (AM-08p1).
+        assert "To pick people faster. Pearl keeps only the name." in plist
 
     def test_not_sure_is_the_fifth_method(self):
         split = src("ios/Pearl/Views/Transactions/SplitFlow.swift")
@@ -601,10 +601,10 @@ class TestTheApp:
     def test_split_my_part_words(self):
         detail = src("ios/Pearl/Views/Transactions/TransactionDetailView.swift")
         assert "Split my part" in detail and "Split with others" in detail
-        assert "Nothing here is yours to split. Say it was partly yours first." in detail
+        assert "None of it is yours to split." in detail
         views = src("ios/Pearl/Views/Transactions/JointSplitViews.swift")
         for words in ("Remove the split?", "Keep the split", "Not a joint account?", "Keep it joint",
-                      "How do you want to settle?", "Use what each paid?", "That’s everything?", "Keep it open",
+                      "How to settle?", "Use what each paid?", "That’s everything?", "Keep it open",
                       "Nothing to pay", "Contacts are off for Pearl", "Turn on in Settings", "Type a name"):
             assert words in views, words
 

@@ -850,10 +850,11 @@ class TestPearlAsksWhoItWas:
         flow = (self.IOS / "Views/Transactions/PartsFlow.swift").read_text(encoding="utf-8")
         # S-35a / S-35b sections and lines.
         assert 'label("Could be either")' in flow
-        assert "each owe \\(amount), so Pearl won’t guess. Tick who sent it." in flow
-        assert "isn’t on any of your splits, and no one owes \\(amount)." in flow
+        # REFRESH-03 words.
+        assert "each owe \\(amount). Tick who sent it." in flow
+        assert "isn’t on a split. \\(tail)" in flow
         assert '"No one owes \\(amount). \\(tail)"' in flow
-        assert 'let tail = "Tick what it paid back, or search for the purchase."' in flow
+        assert 'let tail = "Tick what it paid back."' in flow
         # Only the one exact fit is ticked; two or none, nothing is.
         assert "if sender == nil, fits.count == 1 { toggle(fits[0]) }" in flow
         assert "fits.count != 1" in flow
@@ -1043,7 +1044,7 @@ class TestWhoSentThis:
         assert "TextField" not in sheet
         assert ".disabled(picked.isEmpty || busy)" in sheet and "NacreButtonStyle(busy: busy)" in sheet
         assert 'Text("ON \\(Format.andList(shops).uppercased())")' in sheet
-        assert "each owe \\(amount) on \\(shops), so Pearl won’t guess. Tick who sent it." in sheet
+        assert "each owe \\(amount). Tick who sent it." in sheet
         assert "and this is \\(amount), so Pearl won’t guess. Tick \\(name) if it was them." in sheet
         assert '"No one on \\(shops) owes \\(amount), so Pearl won’t guess. Tick who sent it."' in sheet
         assert '"Credited \\(Format.amount(done))\\(who)"' in sheet and '"Not credited ' in sheet
@@ -1080,13 +1081,12 @@ class TestOnePersonTwoPurchases:
 
     def test_the_line_names_the_purchases(self):
         flow = (TestWhoSentThis.IOS / "Views/Transactions/PartsFlow.swift").read_text(encoding="utf-8")
-        assert 'merchants.count == 2 ? "on \\(merchants[0]) and on \\(merchants[1])"' in flow
-        assert ': "on \\(Format.andList(merchants))"' in flow
-        assert "owes \\(amount) \\(on), so Pearl won’t guess. Tick which one this paid back." in flow
+        # REFRESH-03 (S-35a1): "Sam owes $30.00 on both. Tick which one."
+        assert 'merchants.count == 2 ? "on both" : "on all \\(merchants.count)"' in flow
+        assert "owes \\(amount) \\(on). Tick which one." in flow
         # Two or more people: S-35a's line, each name once.
         assert "seen.insert($0.lowercased()).inserted" in flow
-        assert "each owe \\(amount), so Pearl won’t guess. Tick who sent it." in flow
-        assert "Tick what it paid back.\"" not in flow
+        assert "each owe \\(amount). Tick who sent it." in flow
 
 
 class TestNobodyLeftOwing:
@@ -1264,12 +1264,12 @@ class TestNobodyLeftOwing:
         parts = (self.IOS / "Views/Transactions/PartsFlow.swift").read_text(encoding="utf-8")
         # S-11x: "The $30.00", the line, Sort it later, T-08k's error, answers at once.
         assert 'return "The \\(Format.amount(deposit.amount))"' in parts
-        assert 'lead = "\\(Format.andList(names)) have both"' in parts
-        assert 'lead = "\\(names[0]) has"' in parts
-        assert "\\(lead) paid you back for \\(Format.andList(w.paidBack))" in parts
+        # REFRESH-03: "Loblaws is paid back, so this $30.00 is extra."
+        assert 'let shops = Format.andList(w.paidBack)' in parts
+        assert '"\\(shops) \\(are) paid back, so this \\(Format.amount(deposit.amount)) is extra."' in parts
         # Overpaid names the one person who paid back; with more, it isn't offered.
         assert "return w.people.count == 1 ? w.people[0] : nil" in parts
-        assert "so this \\(Format.amount(deposit.amount)) is extra. Tap what it was." in parts
+        assert "paid back, so this \\(Format.amount(deposit.amount)) is extra." in parts
         assert '"Sort it later"' in parts
         assert '"Couldn’t save that. Try again."' in parts
         assert "if whole != nil && step == .review" in parts
@@ -1397,8 +1397,8 @@ class TestExtraOnSome:
         r = client.post(f"/api/transactions/{dep}/parts",
                         json={"parts": [{"kind": "gift", "amount": 45.0}], "extra": True})
         assert r.status_code == 400
-        assert r.get_json()["error"] == ("Only $30.00 of this is extra. Jo’s $30.00 for PIZZA NOVA stays as it is, "
-                                         "so make it $30.00 or less.")
+        # REFRESH-03 (S-11xm over).
+        assert r.get_json()["error"] == "Only $30.00 is extra. Make it $30.00 or less."
         assert set(client.st.get_transaction(dep).repays_all) == {lob, pizza}
 
     def test_less_than_the_extra_leaves_the_rest_to_sort(self, client):
@@ -1451,9 +1451,10 @@ class TestExtraOnSome:
         parts = (self.IOS / "Views/Transactions/PartsFlow.swift").read_text(encoding="utf-8")
         # S-11xm: "$60.00 · Nov 16" over "The $30.00", the mixed line, the over state.
         assert "Format.amount(deposit.whole ?? deposit.amount)" in parts
-        assert "paid back \\(Format.amount(total)) of this for \\(Format.andList(cs.map(\\.merchant)))" in parts
-        assert "so the other \\(Format.amount(deposit.amount)) is extra. Tap what it was." in parts
-        assert "Only \\(Format.amount(left)) of this is extra." in parts
+        # REFRESH-03 (S-11xm): "$30.00 paid back Pizza Nova. The other $30.00 is extra."
+        assert "\\(Format.amount(g.total)) paid back \\(Format.andList(g.items.map(\\.merchant)))." in parts
+        assert "The other \\(Format.amount(deposit.amount)) is extra." in parts
+        assert "Only \\(Format.amount(left)) is extra. Make it \\(Format.amount(left)) or less." in parts
         assert ".opacity(over ? 0.4 : 1)" in parts and 'body["extra"] = true' in parts
         assert "if senders.count == 1 { return senders[0] }" in parts
         sheet = (self.IOS / "Views/Transactions/WhoSentSheet.swift").read_text(encoding="utf-8")

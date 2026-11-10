@@ -119,7 +119,7 @@ class TestRemoveFromS40:
         r = client.put(f"/api/transactions/{i['LOBLAWS']}/split", json=without(client, i["LOBLAWS"], "Priya"))
         reply = r.get_json()
         assert r.status_code == 200, reply
-        assert reply["toast"] == "Priya removed · $30.00 back to your share"
+        assert reply["toast"] == "Priya removed"
         assert "Priya" not in people(client, i["LOBLAWS"])
         assert reply["splitting"]["you"] == 60.0
         undo(client, reply)
@@ -131,14 +131,14 @@ class TestRemoveFromS40:
         client.post(f"/api/transactions/{i['LOBLAWS']}/split/let-go", json={"name": "Alex"})
         reply = client.put(f"/api/transactions/{i['LOBLAWS']}/split",
                            json=without(client, i["LOBLAWS"], "Alex")).get_json()
-        assert reply["toast"] == "Alex removed · $30.00 back to your share"
+        assert reply["toast"] == "Alex removed"
 
     def test_someone_who_paid_unlinks_with_undo(self, client):
         i = loblaws(client, tx("E-TRANSFER FROM JO", -30.0, when=day(3), merchant="Jo"))
         client.post(f"/api/transactions/{i['LOBLAWS']}/paybacks/{i['E-TRANSFER FROM JO']}", json={"person": "Jo"})
         reply = client.put(f"/api/transactions/{i['LOBLAWS']}/split",
                            json=without(client, i["LOBLAWS"], "Jo")).get_json()
-        assert reply["toast"] == "Jo removed · $30.00 back to your share"
+        assert reply["toast"] == "Jo removed"
         assert client.st.get_transaction(i["E-TRANSFER FROM JO"]).repays is None
         undo(client, reply)
         assert people(client, i["LOBLAWS"])["Jo"]["paid"] == 30.0
@@ -164,7 +164,7 @@ class TestLetGo:
     def test_let_go_and_back(self, client):
         i = loblaws(client)
         r = client.post(f"/api/transactions/{i['LOBLAWS']}/split/let-go", json={"name": "Priya"}).get_json()
-        assert r["toast"] == "Let go · the $30.00 is your spending now"
+        assert r["toast"] == "Let go · $30.00"
         back = client.delete(f"/api/transactions/{i['LOBLAWS']}/split/let-go",
                              query_string={"name": "Priya"}).get_json()
         assert back["toast"] == "Priya owes you $30.00 again"
@@ -175,7 +175,7 @@ class TestLetGo:
         i = loblaws(client)
         client.post(f"/api/transactions/{i['LOBLAWS']}/split/cash", json={"name": "Sam", "amount": 10, "day": day(2)})
         r = client.post(f"/api/transactions/{i['LOBLAWS']}/split/let-go", json={"name": "Sam"}).get_json()
-        assert r["toast"] == "Let go · the $20.00 is your spending now"
+        assert r["toast"] == "Let go · $20.00"
         back = client.delete(f"/api/transactions/{i['LOBLAWS']}/split/let-go",
                              query_string={"name": "Sam"}).get_json()
         assert back["toast"] == "Sam owes you $20.00 again"
@@ -203,9 +203,12 @@ class TestUnlinkSheetWords:
         client.st.link_payback(i["LOBLAWS"], i["E-TRANSFER FROM JO"], "Jo", 30.0)
         client.st.set_payback_more(i["E-TRANSFER FROM JO"], [(i["PIZZA NOVA"], 30.0)])
         s = self.link(client, i["LOBLAWS"], "Jo")
-        assert s["heading"] == "This $60.00 also paid back PIZZA NOVA. Unlink only LOBLAWS’ $30.00?"
+        # REFRESH-03 (S-34sr): the title is the question; the footnote is gone
+        # (the app reads it as a VoiceOver hint on the payment row).
+        assert s["heading"] == "Unlink only LOBLAWS’ $30.00?"
+        assert s["line"] == "Jo will owe you $30.00 again. The $30.00 goes back to Needs a look."
         assert s["card"]["amount"] == 60.0 and s["confirm"] == "Unlink $30.00"
-        assert s["note"] == "To unlink the whole $60.00, open the e-Transfer and unlink it there."
+        assert s["note"] is None
 
     def test_cash_and_app(self, client):
         i = loblaws(client)
@@ -231,7 +234,8 @@ class TestUnlinkSheetWords:
         client.post(f"/api/transactions/{i['E-TRANSFER FROM PRIYA']}/mark",
                     json={"case": "payback", "charge": i["SUSHI"], "person": "Priya"})
         s = self.link(client, i["SUSHI"], "Priya")
-        assert s["heading"] == "Unlink Priya’s e-Transfer?" and s["confirm"] == "Unlink and take Priya off"
+        assert s["heading"] == "Unlink Priya’s e-Transfer?" and s["confirm"] == "Unlink and remove"
+        assert s["line"] == "Priya comes off the split too. The e-Transfer goes back to Needs a look."
 
 
 class TestSwiftWiring:
@@ -263,7 +267,7 @@ class TestSwiftWiring:
         assert "PersonOptionsSheet(" in split and "Options for \\(p.name)" in split
         assert "Shows options." in split
         for words in ("Mark paid back", "Mark the rest paid back", "Let the rest go", "Undo let it go",
-                      "Change the split", "Paid so far", "Paid with", "Opens How to split"):
+                      "Change the split", "Paid so far", "Paid with"):
             assert words in menus, words
 
     def test_each_screen_exists(self):
@@ -276,7 +280,7 @@ class TestSwiftWiring:
         assert "struct LetGoSheet" in flow and "interactiveDismissDisabled(busy)" in flow
         assert "Couldn’t let that go. Nothing changed. Try again." in flow
         assert "How did \\(person.name) pay?" in flow and "Which payment was it?" in flow
-        assert "struct PaybackOptionsSheet" in opts and "Opens it here in Pearl" in opts
+        assert "struct PaybackOptionsSheet" in opts and "never the web" in opts
         assert "link.sheet.heading" in opts and "dismissDisabled: busy" in opts
 
     def test_remind_copy(self):
@@ -287,7 +291,7 @@ class TestSwiftWiring:
 
     def test_let_go_copy_says_allowance(self):
         flow = self.src("ios/Pearl/Views/Transactions/SplitFlow.swift")
-        assert "already counts in full until it’s paid back, so your Allowance doesn’t change." in flow
+        assert 'InfoNote(text: "Your Allowance doesn’t change.")' in flow
         for path in self.SPLIT_FILES:
             assert "safe to spend" not in self.src(path).lower()
 
@@ -299,3 +303,166 @@ class TestSwiftWiring:
         for path in self.SPLIT_FILES + ["ios/Pearl/Views/Transactions/TransactionDetailView.swift"]:
             s = self.src(path)
             assert "openURL" not in s and "UIApplication.shared.open" not in s, path
+
+
+class TestLessWords:
+    """REFRESH-03 (THL-291, "Less words, less clutter"): by source, the
+    explainer lines, row subtitles and footnotes the pass removed are gone
+    from the split screens, a sample of the new words is there, and what a
+    removed line said is kept for VoiceOver as a hint."""
+
+    FILES = ["ios/Pearl/Views/Transactions/SplitFlow.swift",
+             "ios/Pearl/Views/Transactions/SplitMenus.swift",
+             "ios/Pearl/Views/Transactions/PaybackOptions.swift",
+             "ios/Pearl/Views/Transactions/PartsFlow.swift",
+             "ios/Pearl/Views/Transactions/JointSplitViews.swift",
+             "ios/Pearl/Views/Transactions/TransactionDetailView.swift",
+             "ios/Pearl/Views/Transactions/WhoSentSheet.swift",
+             "ios/Pearl/Views/Review/QuickSortView.swift",
+             "ios/Pearl/Views/Review/ReviewView.swift",
+             "ios/Pearl/Views/Review/AnswerSheet.swift",
+             "ios/Pearl/Views/Home/HomeView.swift",
+             "ios/Pearl/Views/Onboarding/SetupFlow.swift",
+             "ios/Pearl/Views/Profile/JointMergeViews.swift",
+             "ios/Pearl/Info.plist",
+             "finance/unlink.py", "finance/api.py", "finance/parts_api.py", "finance/profile_api.py"]
+
+    GONE = ("to sort, one at a time", "Tap one to sort it.", "Copied · paste it to",
+            "each owe \\(amount), so Pearl", "isn’t anyone’s yet", "of it is the rest", "(You owe, in Owed to you)",
+            "Swipe a part to remove it", "Skip forgets the split. Tap the card", "in one go. One Undo",
+            "Next you’ll say what the extra is", "still counts as paid back", "transactions need a look\"",
+            "weren’t sure how to sort these", "The oldest is from", "so it looks bigger",
+            "month in pictures are on Cash flow", "Back goes to", "so it isn’t asked again here",
+            "Nothing is saved until you say", "have both paid you back", "stays as it is, so make it",
+            "that also paid back", "as left to sort.\"", "keeps its other parts", "you marked is forgotten",
+            "so nothing goes to Needs a look", "goes back to waiting to be reimbursed", "It stays in \"\n",
+            "joined this split when you linked", "Unlink and take", "is your spending now",
+            "removed · ", "By bank or e-Transfer, cash, or another app", "Copy a friendly message",
+            "Opens How to split", "by bank, cash, or another app", "Copy a message for the",
+            "Goes at once, with Undo", "Pick it from your money in", "No bank record.",
+            "Pearl remembers it next time", "never counted twice", "Tap the message to change it",
+            "already counts in full", "open the e-Transfer and unlink it there", "Who do you share it with?",
+            "Pick up to six. Only you can see this.", "share an account with. Pearl keeps only the name you pick",
+            "You can still pick people", "the most for one account", "Pearl never contacts them",
+            "keep that answer", "is still on this account", "Say it was partly yours first",
+            "Split your \\(Format.amount", "part stays theirs. Only the people", "stays theirs\",\n", "shows in Needs a look",
+            "share becomes \\(Format.amount(p.shareNow))", "still owe the same", "no one has paid yet",
+            "are worked out again", "Nothing is sent to them", "isn’t joint any more\"",
+            "No amounts for now", "isn’t needed here", "Amounts not set", "Set what each person owes now",
+            "Keep the rest as yours and close it", "Track paybacks for", "Add another payment",
+            "no amount in it", "nothing to let go", "because you haven’t set one", "How do you want to settle?",
+            "Shares become", "stay linked either way", "more than their share. Next, you’ll say",
+            "stays linked. The other", "nobody shows as owing", "so that’s the most it can take. You’ll say",
+            "with no amounts set", "Not counted in the total", "Nobody owes you a set amount",
+            "isn’t settled yet.", "has paid you \\(Format.amount(unsettled", "Amounts not set · ",
+            "Closed · ", "Open again · ", "worked out again\"", "is on this joint account. Their part")
+
+    NEW = {
+        "ios/Pearl/Views/Review/QuickSortView.swift": ['"\\(count) to sort"', '"Skip forgets the split."'],
+        "ios/Pearl/Views/Transactions/SplitMenus.swift": [
+            'title: "Remove \\(p.name)"', '"Pearl doesn’t send it. You paste it."',
+            '"Part of \\(Format.amount(whole)) · also paid back \\(Format.andList(others))"',
+            'goes back to Needs a look.")', 'is forgotten.")', 'counts as \\(Format.amount(counts)) again.'],
+        "ios/Pearl/Views/Transactions/SplitFlow.swift": [
+            '"No amounts yet. Paybacks come off as they arrive."', 'left · stays yours"', '"Adds up ✓ · \\(over)"',
+            '"Comes off \\(t.merchant) now"', '"Deposit it later? Pearl won’t count it twice."',
+            'more than \\(person.name) owes. You’ll sort the extra next.', '"Your Allowance doesn’t change."',
+            'more than this. You’ll sort the extra next.', '"Settled · \\(Format.amount(owed)) owed" : "Settled up"',
+            'part\\(t.jointPeople.count == 1 ? " is" : "s are") already off.'],
+        "ios/Pearl/Views/Transactions/PartsFlow.swift": [
+            'each owe \\(amount). Tick who sent it.', 'isn’t on a split. \\(tail)', 'could have sent it. Tick who did.',
+            '"Paid more than owed"', 'is extra. Make it \\(Format.amount(left)) or less.',
+            '"One Undo puts both back."', '"Not in the total until settled."', 'stays cash in hand.',
+            'is the most. You’ll sort the other'],
+        "ios/Pearl/Views/Transactions/JointSplitViews.swift": [
+            '"How to settle?"', 'sub: "Nobody owes after this."', 'stays yours. Nobody owes for \\(t.merchant).',
+            '"Typed amounts stay. Even, % and shares update."', '"Six is the most."',
+            '"Pick from your splits, or type a name."', 'part is already off.'],
+        "ios/Pearl/Views/Transactions/TransactionDetailView.swift": [
+            'showSplit("Copied"', '"None of it is yours to split."', 'let title = "\\(p.name) removed"',
+            '("Settled up", {', '"Split reopened"'],
+        "ios/Pearl/Views/Home/HomeView.swift": [
+            '"\\(count) to sort"', '"Pearl sorted \\(pearlSorted) by itself."', 'had 3 paycheques.',
+            '"\\(who) you \\(Format.amount(owed.total))"', '· \\(unsettled.count) not settled', 'Allowance.restCaption'],
+        "ios/Pearl/Views/Onboarding/SetupFlow.swift": ['"Only you see this. Nothing is sent."', 'title: "Shared with"',
+                                                     '"Up to six. Only you see this."'],
+        "ios/Pearl/Views/Profile/JointMergeViews.swift": ['"Only you see these names."', '"Not joint now"'],
+        "ios/Pearl/Info.plist": ["To pick people faster. Pearl keeps only the name."],
+        "finance/unlink.py": ['"Unlink and remove"', 'comes off the split too."', "The cash is forgotten",
+                              'Part of {_money(whole)} · also paid back', 'waits to be reimbursed again.'],
+        "finance/api.py": ['toast="Split removed"', 'toast="Split closed"', 'toast="Split reopened"',
+                           '"None of it is yours to split."', "removed\""],
+        "finance/parts_api.py": ['"Let go · ${status[\'owes\']:,.2f}"', "is extra. Make it $"],
+        "finance/profile_api.py": ['"Not joint now"', 'split{\'\' if n == 1 else \'s\'} updated'],
+    }
+
+    HINTS = {
+        "ios/Pearl/Views/Transactions/SplitMenus.swift": [
+            '.accessibilityHint("By bank, cash or another app")', '"Copies a message for you to send"',
+            '.accessibilityHint("Tap to change the message.")'],
+        "ios/Pearl/Views/Transactions/SplitFlow.swift": [
+            '.accessibilityHint("Set what each person owes.")',
+            '.accessibilityHint("Keeps the rest as yours and closes the split.")',
+            'It shows under You owe in Owed to you.', "more than \\(possessive(name)) share.",
+            '.accessibilityHint("Leave it blank and the split reads Paid back · Another app.")'],
+        "ios/Pearl/Views/Transactions/PartsFlow.swift": ['.accessibilityHint("Its amount goes back to Left to sort.")'],
+        "ios/Pearl/Views/Transactions/JointSplitViews.swift": ['.accessibilityHint("Only the people in your split owe you.")'],
+        "ios/Pearl/Views/Transactions/PaybackOptions.swift": ['"To unlink the whole \\(Format.amount(whole)), open the \\(link.noun)."'],
+        "ios/Pearl/Views/Review/QuickSortView.swift": ['"Opens the page to change it."',
+                                                     'Saves the split and \\(splitCategory(ask, d)), for this one.'],
+        "ios/Pearl/Views/Home/HomeView.swift": ['.accessibilityHint(home.safeToSpend?.ringCaption == Allowance.restCaption'],
+    }
+
+    def src(self, path):
+        return (ROOT / path).read_text(encoding="utf-8")
+
+    def code(self, path):
+        """The source without its comment lines (they may quote old words)."""
+        return "\n".join(line for line in self.src(path).splitlines()
+                         if not line.strip().startswith(("//", "#", "<!--")))
+
+    def test_removed_phrases_are_gone(self):
+        for path in self.FILES:
+            s = self.code(path)
+            for words in self.GONE:
+                assert words not in s, (path, words)
+
+    def test_new_words_are_there(self):
+        for path, lines in self.NEW.items():
+            s = self.src(path)
+            for words in lines:
+                assert words in s, (path, words)
+
+    def test_removed_lines_live_on_as_voiceover_hints(self):
+        for path, lines in self.HINTS.items():
+            s = self.src(path)
+            for words in lines:
+                assert words in s, (path, words)
+
+    def test_pronouns_do_not_stand_in_for_names(self):
+        # Names, not pronouns, for other people (product owner): no "her share",
+        # "his share", "she overpaid" in the split screens' strings.
+        import re
+        for path in self.FILES:
+            if not path.endswith(".swift"):
+                continue
+            for line in self.src(path).splitlines():
+                if line.strip().startswith("//"):
+                    continue
+                for s in re.findall(r'"((?:[^"\\]|\\.)*)"', line):
+                    assert not re.search(r"\b(her|his) share\b", s), (path, s)
+                    assert not re.search(r"\b[Ss]he (overpaid|paid)\b", s), (path, s)
+
+    def test_still_says_allowance(self):
+        for path in self.FILES:
+            if path.endswith(".swift"):
+                assert "safe to spend" not in self.src(path).lower(), path
+
+    def test_server_lines_match(self, client):
+        """The server's Unlink? words, as the sheets show them."""
+        i = loblaws(client, tx("E-TRANSFER FROM SAM", -30.0, when=day(3), merchant="Sam"))
+        client.post(f"/api/transactions/{i['LOBLAWS']}/paybacks/{i['E-TRANSFER FROM SAM']}", json={"person": "Sam"})
+        s = people(client, i["LOBLAWS"])["Sam"]["links"][0]["sheet"]
+        assert s["line"] == "Sam will owe you $30.00 again. The e-Transfer goes back to Needs a look."
+        r = client.post(f"/api/transactions/{i['LOBLAWS']}/split/let-go", json={"name": "Priya"}).get_json()
+        assert r["toast"] == "Let go · $30.00"
