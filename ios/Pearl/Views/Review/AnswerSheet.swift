@@ -12,6 +12,7 @@ import SwiftUI
 /// (a rule, Regular bill, Split with others, One-off) is reachable from each.
 @MainActor
 struct AnswerSheet: View {
+    @Environment(\.colorScheme) private var scheme
     let ask: Ask
     let categories: [CategoryList.Category]
     let accounts: [AccountsOverview.Account]
@@ -387,7 +388,8 @@ struct AnswerSheet: View {
                 Button(noLabel) { no() }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Color.white.opacity(0.85)))
+                    // Dark: the control fill, so the ink word reads (TEST-01).
+                    .background(Capsule().fill(scheme == .dark ? Pearl.control : Color.white.opacity(0.85)))
                     .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
