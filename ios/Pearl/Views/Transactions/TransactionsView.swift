@@ -173,9 +173,12 @@ struct TransactionsView: View {
         .alert("Leave out \(pickedTitle)?", isPresented: $leavingOut) {
             TextField("Why? For example, a friend’s purchase", text: $leaveReason)
             Button("Cancel", role: .cancel) { leaveReason = "" }
+            // TEST-07: the server needs a reason, so Leave out waits for one
+            // and the alert says why (it used to close and do nothing).
             Button("Leave out") { Task { await leaveOut() } }
+                .disabled(leaveReason.trimmingCharacters(in: .whitespaces).isEmpty)
         } message: {
-            Text("They’re left out of all your numbers. Put any back from its transaction.")
+            Text("They’re left out of all your numbers. Put any back from its transaction. Say why, so you can tell later.")
         }
         .navigationDestination(for: Transaction.self) { t in
             TransactionDetailView(transaction: t, categories: categories, siblings: rows)
@@ -289,13 +292,16 @@ struct TransactionsView: View {
                         .frame(maxWidth: .infinity).frame(height: 32)
                         .background(Capsule().fill(on ? Color.white.opacity(0.9) : .clear))
                         .shadow(color: .black.opacity(on ? 0.06 : 0), radius: 3, y: 1)
+                        // TEST-14: 44 pt to tap; the pill still draws at 32.
+                        .frame(height: 44).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
-        .padding(3)
-        .background(Capsule().fill(Pearl.ink.opacity(0.08)))
+        .padding(.horizontal, 3)
+        .background(Capsule().fill(Pearl.ink.opacity(0.08)).frame(height: 38))
+        .padding(.vertical, -3)
     }
 
     /// "TD Visa ••9021 ×": each filter that's on, to take it off in one tap.
