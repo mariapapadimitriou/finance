@@ -389,8 +389,7 @@ struct SplitSheet: View {
                 Spacer(minLength: 0)
             }
             .padding(14)
-            .background(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).fill(Pearl.card))
-            .overlay(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).stroke(Pearl.border, lineWidth: 1))
+            .pearlCard(radius: Pearl.radiusTile)
             .accessibilityElement(children: .combine)
             GlassCard {
                 ForEach(Array(people.enumerated()), id: \.element) { i, name in
@@ -943,8 +942,7 @@ struct SplitPeople: View {
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).fill(Pearl.card))
-            .overlay(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).stroke(Pearl.border, lineWidth: 1))
+            .pearlCard(radius: Pearl.radiusTile)
             .padding(.top, 12)
             // A row's amount springs when it changes (S-44): 250 ms, a cross-fade with Reduce Motion.
             .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.25, dampingFraction: 0.85),
@@ -1450,8 +1448,7 @@ struct MarkPaidSheet: View {
                     .labelsHidden().tint(Pearl.action)
             }
             .padding(.horizontal, 16).frame(minHeight: 56)
-            .background(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous).fill(Pearl.card))
-            .overlay(RoundedRectangle(cornerRadius: Pearl.radiusRow, style: .continuous).stroke(Pearl.border, lineWidth: 1))
+            .pearlCard(radius: Pearl.radiusRow)
             if how == "cash" {
                 // S-06rc (REFRESH-03).
                 InfoNote(text: "Deposit it later? Pearl won’t count it twice.")

@@ -6,7 +6,8 @@ import UIKit
 // views. Product owner, 2026-11-09: no `.alert`, `.confirmationDialog` or
 // action sheet anywhere in these flows. Built from designBOT's kit 1088:1696
 // (Option row, Primary / Secondary buttons, 44 pt Close and •••, Toast with
-// Undo), on pearl paper, with ink amounts and no red (decisions 1 and 4).
+// Undo), on the iridescent background (REFRESH-05; pearl paper before), with
+// ink amounts and no red (decisions 1 and 4).
 // Motion comes later (note 1096:4483); nothing here depends on it.
 
 // MARK: - The kit (1088:1696)
@@ -181,7 +182,8 @@ struct PearlOptionRow: View {
     }
 }
 
-/// A card of option rows, with the divider between them.
+/// A card of option rows, with the divider between them (glass in light,
+/// REFRESH-05: S-40a–d, S-04u, S-05or, S-06r*).
 struct PearlOptionCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
@@ -189,9 +191,7 @@ struct PearlOptionCard<Content: View>: View {
         VStack(spacing: 0, content: content)
             .padding(.horizontal, 16).padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).fill(Pearl.card))
-            .overlay(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous)
-                .stroke(Pearl.border, lineWidth: 1))
+            .pearlCard(radius: Pearl.radiusTile)
     }
 }
 
@@ -250,9 +250,7 @@ struct InfoNote: View {
         .font(Pearl.text(.callout))
         .foregroundColor(Pearl.muted)
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: Pearl.radiusChoice, style: .continuous).fill(Pearl.card))
-        .overlay(RoundedRectangle(cornerRadius: Pearl.radiusChoice, style: .continuous)
-            .stroke(Pearl.border, lineWidth: 1))
+        .pearlCard(radius: Pearl.radiusChoice)
         .accessibilityElement(children: .combine)
     }
 }
@@ -310,8 +308,10 @@ private struct HeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
-/// A Pearl sheet: on pearl paper (decision 4), sized to its content and
-/// scrolling past the large detent (note 1096:4483), with the grabber.
+/// A Pearl sheet: a Pearl view, not a stock dialog (decision 4), on the
+/// iridescent background with the Pearl dust (REFRESH-05: the sheet surface
+/// is color/surface/page), sized to its content and scrolling past the large
+/// detent (note 1096:4483), with the grabber.
 struct PearlSheet<Content: View, Footer: View>: View {
     var dismissDisabled = false
     @ViewBuilder var content: () -> Content
@@ -334,7 +334,7 @@ struct PearlSheet<Content: View, Footer: View>: View {
                         .onChange(of: g.size.height) { footerHeight = $0 }
                 })
         }
-        .background(Pearl.page.ignoresSafeArea())
+        .background(SheetBackground())
         .onPreferenceChange(HeightKey.self) { h in height = h }
         .presentationDetents([.height(min(height + footerHeight + 16, UIScreen.main.bounds.height * 0.92)), .large])
         .presentationDragIndicator(.visible)
@@ -351,11 +351,12 @@ extension PearlSheet where Footer == EmptyView {
     }
 }
 
-/// The sheet itself on pearl paper where iOS lets us say so (16.4+).
+/// The sheet itself on the iridescent background where iOS lets us say so
+/// (16.4+), so nothing white shows past the content.
 private struct PaperBackground: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 16.4, *) {
-            content.presentationBackground(Pearl.page)
+            content.presentationBackground { SheetBackground() }
         } else {
             content
         }
@@ -420,7 +421,7 @@ struct PearlToast: View {
                     .buttonStyle(.plain)
             }
         }
-        .foregroundColor(Pearl.page)
+        .foregroundColor(Pearl.onInk)
         .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 6)
         .frame(minHeight: 56)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Pearl.ink))
@@ -596,8 +597,7 @@ struct PersonOptionsSheet: View {
             }
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).fill(Pearl.card))
-        .overlay(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).stroke(Pearl.border, lineWidth: 1))
+        .pearlCard(radius: Pearl.radiusTile)
     }
 
     @ViewBuilder private func pills(_ link: Transaction.LinkInfo) -> some View {

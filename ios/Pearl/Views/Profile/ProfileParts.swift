@@ -230,7 +230,7 @@ struct StatusPill: View {
         case .attention: return Pearl.cautionBackground
         case .needsALook: return Pearl.dynamic(light: 0xFFE4EC, dark: 0x4E2238)
         case .info, .joint: return Nacre.lilac.opacity(0.35)
-        case .neutral: return Pearl.page
+        case .neutral: return Nacre.glass  // REFRESH-05: no flat page colour; glass on the gradient
         }
     }
 }

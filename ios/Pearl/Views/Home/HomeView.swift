@@ -1,8 +1,8 @@
 import SwiftUI
 import UserNotifications
 
-/// Home (SC-40): the Allowance ring from O-11b (2026-11-07), what needs you,
-/// and a way to Cash flow.
+/// Home (SC-40, H-00r): the Allowance orb (REFRESH-05), what needs you, and
+/// a way to Cash flow.
 @MainActor
 struct HomeView: View {
     @EnvironmentObject private var app: AppModel
@@ -74,18 +74,19 @@ struct HomeView: View {
         }
     }
 
-    /// O-11b on Home: the date above "Your Allowance", the ring
-    /// with the pearl, and the line under it.
+    /// H-00 / H-00r (REFRESH-05): the date, then the Allowance orb with
+    /// "Allowance" / the amount / "left in November" inside it (the orb's
+    /// label is the heading, so there is no title above it), and the line
+    /// under it when there is one.
     private func allowanceHeader(_ home: Home) -> some View {
         VStack(spacing: 6) {
             Text((home.today.map { Format.day($0) } ?? "").uppercased()).font(Nacre.caption2).tracking(1.4)
                 .foregroundColor(Pearl.ink)
-            Text("Your Allowance").font(Nacre.largeTitle).tracking(0.4).foregroundColor(Pearl.ink)
+            AllowanceOrb(progress: home.safeToSpend?.ringProgress ?? 0,
+                         label: "Allowance",
+                         amount: home.safeToSpend?.ringAmount ?? "—",
+                         sub: home.safeToSpend?.orbSub(month: home.month) ?? Allowance.orbSub(forMonth: home.month))
                 .accessibilityAddTraits(.isHeader)
-            AllowanceRing(overline: home.safeToSpend?.ringOverline(month: home.month)
-                            ?? Format.monthName(home.month).uppercased(),
-                          amount: home.safeToSpend?.ringAmount ?? "—",
-                          progress: home.safeToSpend?.ringProgress ?? 0)
                 .accessibilityHint(home.safeToSpend?.ringCaption == Allowance.restCaption ? Allowance.restCaption : "")
                 .padding(.vertical, 12)
             // REFRESH-03 (H-00n, H-00u): the usual "Left to spend or save…" line

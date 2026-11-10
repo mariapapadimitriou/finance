@@ -580,8 +580,7 @@ struct JointAccountsView: View {
             JointSheet(account: account) { await load() }
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
-                .background(NacreBackground().opacity(0.35))
-                .background(Pearl.page)
+                .background(SheetBackground())  // REFRESH-05: the sheet surface is the page's
         }
     }
 

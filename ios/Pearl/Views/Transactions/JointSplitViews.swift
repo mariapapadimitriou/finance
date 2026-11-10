@@ -13,7 +13,7 @@ import UIKit
 // SPLIT-C  S-03u's explainer, S-04u's card lines, S-45 Settle up, S-46
 //          That's everything.
 //
-// Every sheet is a Pearl view on pearl paper (no .alert, .confirmationDialog
+// Every sheet is a Pearl view on the iridescent background (no .alert, .confirmationDialog
 // or action sheet); spending is ink; 44 pt targets; no new motion yet.
 
 // MARK: - S-17 v2 / AM-08p People picker (JOINT-A)
@@ -164,8 +164,7 @@ struct PeoplePicker: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).fill(Pearl.card))
-            .overlay(RoundedRectangle(cornerRadius: Pearl.radiusTile, style: .continuous).stroke(Pearl.border, lineWidth: 1))
+            .pearlCard(radius: Pearl.radiusTile)
             .accessibilityElement(children: .combine)
             .accessibilityAction(named: "Turn on in Settings", openSettings)
         case .on:

@@ -5,14 +5,24 @@ import UIKit
 enum Pearl {
     // MARK: Colours
 
-    static let page = dynamic(light: 0xFBF8F6, dark: 0x0B1030)      // --surface-page
-    static let card = dynamic(light: 0xFFFFFF, dark: 0x151B44)      // --surface-card
-    static let border = dynamic(light: 0xEEDFE6, dark: 0x252C5E)    // --border
+    // REFRESH-05 (2026-11-10, C‴): there is no flat light page colour any
+    // more. Every light screen and sheet sits on Iridescent/Light with the
+    // Pearl dust (NacreBackground / SheetBackground); color/surface/card is
+    // glass/light (white @72%) and color/border/subtle is glass/edge-light
+    // (white @80%). Dark values are unchanged.
+    static let card = Color(UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(hex: 0x151B44) : UIColor(white: 1, alpha: 0.72) })      // color/surface/card
+    static let border = Color(UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(hex: 0x252C5E) : UIColor(white: 1, alpha: 0.8) })       // color/border/subtle
+    /// A toast's words on its ink fill (what the page colour used to be).
+    static let onInk = dynamic(light: 0xFBF8F6, dark: 0x0B1030)
     static let track = dynamic(light: 0xF1E9EE, dark: 0x252C5E)     // --track
     // Text and the one pink, from the Pearl Design System iOS library (Oct 31:
     // text is plum #2E2547 in light mode, the action rose #B22757).
     static let ink = dynamic(light: 0x2E2547, dark: 0xFBF8F6)       // color/text/primary
-    static let muted = dynamic(light: 0x605D76, dark: 0xB4B1CC)     // color/text/secondary
+    /// color/text/muted: mist/600 #514D67 in light (REFRESH-05; was mist/500
+    /// #605D76, too faint on the gradient), mist/300 in dark.
+    static let muted = dynamic(light: 0x514D67, dark: 0xB4B1CC)
     static let action = dynamic(light: 0xB22757, dark: 0xFF8FB1)    // --action
     static let onAction = dynamic(light: 0xFFFFFF, dark: 0x1C1A33)  // --on-action
     static let blush = Color(hex: 0xFFE4EC)                         // --blush
@@ -28,7 +38,10 @@ enum Pearl {
     static let moneyOut = dynamic(light: 0xBE2634, dark: 0xFF7B72)  // color/text/money-out
     static let rose = Color(hex: 0xE2557F)                          // --rose-500 (icons, badges)
     static let suggested = Color(hex: 0xFF8FB1)                     // --rose-300, a guess's dashed outline
-    static let rule = dynamic(light: 0xE5DEE4, dark: 0x252C5E)      // lines between rows in a card
+    static let rule = Color(UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(hex: 0x252C5E) : UIColor(white: 1, alpha: 0.8) })       // lines between rows in a card (REFRESH-05)
+    /// The glass card's shadow colour, #664D99 (REFRESH-05: @10%, y 8, blur 20).
+    static let cardShadow = Color(hex: 0x664D99)
     static let onBlush = Color(hex: 0x1C1A33)                       // --on-nacre
     static let bar = dynamic(light: 0xFFFFFF, dark: 0x151B44)       // --surface-card, the tab bar
     // REFRESH-02 (Design refresh kit 1088:1696), from the Pearl Design System
