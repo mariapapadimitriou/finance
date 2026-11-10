@@ -536,8 +536,10 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(isPresented: $typingSettle) {
-            // S-45c–e → S-45f.
-            SplitSheet(t: t, api: app.api, recent: recent, onSaved: { done in
+            // S-45c–e → S-45f. Opens on How to split with the split's
+            // people: who it was with is already said (TEST-02).
+            SplitSheet(t: t, api: app.api, recent: recent, with: t.splitting?.people.map(\.name),
+                       onSaved: { done in
                 typingSettle = false
                 Task { await run { done } }
             }, settling: true, onSettled: { title, undo in
