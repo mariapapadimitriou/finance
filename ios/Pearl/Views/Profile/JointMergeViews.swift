@@ -115,6 +115,12 @@ private struct InlineField: View {
 
 // MARK: - AM-08 Joint: who you share it with
 
+/// AM-08r (JOINT-A, 2026-11-09): SHARED WITH lists the people she picked,
+/// each with a 44 pt ••• (AM-08x Remove), then Add someone, which opens the
+/// people picker (AM-08p). No one yet: AM-08r1. Every change is a toast with
+/// Undo; a change of share that reaches a split someone paid on asks first
+/// (AM-21j), and Not a joint account says what happens to splits (AM-08n).
+/// No stock alert or dialog (product owner, 2026-11-09).
 @MainActor
 struct JointAccountView: View {
     @EnvironmentObject private var app: AppModel
@@ -125,12 +131,20 @@ struct JointAccountView: View {
     /// "all" or "from_today": which purchases a change of share reaches.
     @State private var apply = "all"
     @State private var adding = false
-    @State private var newName = ""
-    @State private var removing: String?
+    @State private var removing: Removing?
+    /// AM-21j / AM-08n: the server's needs_confirm, and what to send again.
+    @State private var asking: Asking?
     @State private var busy = false
     @State private var error: String?
+    @State private var toast: PearlToast.Model?
 
-    private struct Saved: Decodable { let account: AccountsOverview.Account? }
+    struct Removing: Identifiable { let name: String; var id: String { name } }
+    struct Asking: Identifiable {
+        let body: [String: Any]
+        let share: Double?
+        let changes: [JointChange]
+        let id = UUID()
+    }
 
     private var people: [String] { account.jointPeople ?? [] }
     private var enteredShare: Double? {
@@ -148,27 +162,27 @@ struct JointAccountView: View {
         ProfilePage {
             hero
             ProfileSection("Shared with")
-            GlassCard {
-                ForEach(Array(people.enumerated()), id: \.element) { i, name in
-                    personRow(name)
-                    if i < people.count - 1 || people.count < 6 { RowSeparator() }
-                }
-                // The server keeps six at most.
-                if people.count < 6 {
-                    Button { newName = ""; adding = true } label: {
-                        HStack(spacing: 12) {
-                            Text("Add someone").font(Nacre.body).foregroundColor(Pearl.action)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(Pearl.muted)
-                        }
-                        .padding(.horizontal, 16).frame(minHeight: 50)
-                        .contentShape(Rectangle())
+            PearlOptionCard {
+                if people.isEmpty {
+                    // AM-08r1: nobody named yet (or the last one removed, decision 5).
+                    PearlOptionRow(symbol: "person.2", title: "Add who it’s shared with",
+                                   sub: "People you’ve split with, or your contacts") { adding = true }
+                        .disabled(busy)
+                } else {
+                    ForEach(Array(people.enumerated()), id: \.element) { i, name in
+                        if i > 0 { PearlDivider() }
+                        personRow(name)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
+                    // The server keeps six at most.
+                    if people.count < 6 {
+                        PearlDivider()
+                        PearlOptionRow(symbol: "person.2", title: "Add someone") { adding = true }
+                            .disabled(busy)
+                    }
                 }
             }
+            Text("Only you can see these names. Pearl never contacts them.")
+                .font(Nacre.footnote).foregroundColor(Pearl.muted).padding(.horizontal, 4)
             ProfileSection("Your share")
             GlassCard {
                 PickRow(title: "All mine unless I mark it",
@@ -204,20 +218,47 @@ struct JointAccountView: View {
                 .buttonStyle(NacreTextButtonStyle(tone: Pearl.action))
                 .disabled(busy)
         }
-        .onAppear(perform: syncShare)
-        .alert("Add someone", isPresented: $adding) {
-            TextField("Their name", text: $newName)
-                .textInputAutocapitalization(.words)
-            Button("Cancel", role: .cancel) {}
-            Button("Add") { Task { await addPerson() } }
-        } message: {
-            Text("Pearl offers their name when it asks “Who put this in?”. Only you can see this.")
+        .overlay(alignment: .bottom) {
+            if let toast = toast {
+                PearlToast(model: toast) { withAnimation { self.toast = nil } }
+                    .padding(.bottom, 8)
+            }
         }
-        .confirmationDialog("Remove \(removing ?? "them") from \(account.name)?",
-                            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-                            titleVisibility: .visible) {
-            Button("Remove", role: .destructive) {
-                if let name = removing { Task { await save(people: people.filter { $0 != name }) } }
+        .onAppear(perform: syncShare)
+        .sheet(isPresented: $adding) {
+            // AM-08p: up to six, counting who's on it already (ticked, dimmed).
+            PeoplePicker(api: app.api, overline: "\(account.name) · Joint", title: "Who do you share it with?",
+                         sub: "Pick up to six. Only you can see this.", already: people, limit: 6,
+                         onClose: { adding = false }) { names in
+                let reply = try await put(["joint_people": people + names])
+                adding = false
+                let said = names.count == 1 ? "\(names[0]) added" : names.count == 2
+                    ? "\(names[0]) and \(names[1]) added" : "\(names.count) people added"
+                show(said, undo: reply?.undo)
+            }
+        }
+        .sheet(item: $removing) { r in
+            // AM-08x → AM-08x1.
+            RemoveJointPersonSheet(name: r.name, accountName: account.name, others: people.filter { $0 != r.name },
+                                   share: account.jointShare, onClose: { removing = nil }) {
+                let reply = try await put(["joint_people": people.filter { $0 != r.name }])
+                removing = nil
+                show("\(r.name) removed", undo: reply?.undo)
+            }
+        }
+        .sheet(item: $asking) { a in
+            JointChangeSheet(accountName: account.name, share: a.share, was: account.jointShare, holders: people,
+                             changes: a.changes, onClose: { asking = nil }) {
+                var body = a.body
+                body["confirm"] = true
+                let reply = try await put(body)
+                asking = nil
+                if a.share == nil {
+                    show("\(account.name) isn’t joint any more", undo: reply?.undo)
+                } else {
+                    syncShare()
+                    show(reply?.toast ?? "Your share is changed", undo: reply?.undo)
+                }
             }
         }
     }
@@ -241,24 +282,17 @@ struct JointAccountView: View {
         .padding(.vertical, 4)
     }
 
-    /// "SA  Sam". The server needs one person named, so the last one stays.
-    @ViewBuilder
+    /// "SL  Sam Lee  •••". Anyone can go, the last one too (decision 5).
     private func personRow(_ name: String) -> some View {
-        let row = HStack(spacing: 12) {
-            NacreAvatar(text: Self.letters(name))
-            Text(name).font(Nacre.body).foregroundColor(Pearl.ink)
+        HStack(spacing: 12) {
+            PearlFace(name: name, size: 40)
+            Text(name).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .contentShape(Rectangle())
-        if people.count < 2 {
-            row
-        } else {
-            Button { removing = name } label: { row }
-                .buttonStyle(.plain)
+                .fixedSize(horizontal: false, vertical: true)
+            PearlMoreButton(label: "Options for \(name)") { removing = Removing(name: name) }
                 .disabled(busy)
-                .accessibilityHint("Removes them from this account")
         }
+        .padding(.vertical, 10)
     }
 
     /// "SA" for Sam, "SL" for Sam Lee.
@@ -273,39 +307,85 @@ struct JointAccountView: View {
         shareText = account.jointShare.map { $0 == $0.rounded() ? "\(Int($0))" : "\($0)" } ?? ""
     }
 
-    private func addPerson() async {
-        let name = newName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
-        await save(people: people + [name])
-    }
-
-    private func save(people: [String]) async {
-        removing = nil
-        await put(["joint_people": people])
-    }
-
     private func saveShare() async {
         // "auto" keeps it joint with no set share (finance/joint.py).
         let share: Any = fixed ? (enteredShare ?? 0) : "auto"
-        await put(["joint_share": share, "apply": apply])
-        if error == nil { syncShare() }
+        let body: [String: Any] = ["joint_share": share, "apply": apply]
+        guard let reply = await send(body) else { return }
+        if reply.needsConfirm == true {
+            // AM-21j: "All mine unless I mark it" is all of each purchase.
+            asking = Asking(body: body, share: fixed ? (enteredShare ?? 0) : 100, changes: reply.changes ?? [])
+            return
+        }
+        syncShare()
+        show(reply.toast ?? "Saved", undo: reply.undo)
     }
 
     private func stopSharing() async {
-        await put(["joint_share": NSNull()])
-        if error == nil { dismiss() }
+        let body: [String: Any] = ["joint_share": NSNull()]
+        guard let reply = await send(body) else { return }
+        if reply.needsConfirm == true {
+            // AM-08n: splits stay, people owe the same, her share takes the rest.
+            asking = Asking(body: body, share: nil, changes: reply.changes ?? [])
+            return
+        }
+        dismiss()
     }
 
-    private func put(_ body: [String: Any]) async {
+    /// The PUT, with its error on the page.
+    private func send(_ body: [String: Any]) async -> JointReply? {
+        do {
+            let reply = try await put(body)
+            error = nil
+            return reply
+        } catch {
+            self.error = app.handle(error)
+            return nil
+        }
+    }
+
+    /// The PUT; throws the server's words for a sheet to show.
+    @discardableResult
+    private func put(_ body: [String: Any]) async throws -> JointReply? {
         busy = true
         defer { busy = false }
         do {
-            let reply: Saved = try await app.api.put("api/accounts/\(account.id)/settings", body)
+            let reply: JointReply = try await app.api.put("api/accounts/\(account.id)/settings", body)
             if let a = reply.account { account = a }
-            error = nil
+            if reply.needsConfirm != true { app.changed() }
+            return reply
+        } catch let e as APIError {
+            if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
+            throw e
+        }
+    }
+
+    /// AM-08x1, AM-21j1, AM-08n1: the ink toast with Undo.
+    private func show(_ text: String, undo: JSONValue?, then: (() -> Void)? = nil) {
+        withAnimation {
+            toast = PearlToast.Model(text: text, action: undo == nil ? nil : "Undo",
+                                     run: undo.map { u in { Task { await runUndo(u) } } })
+        }
+        then?()
+    }
+
+    private func runUndo(_ payload: JSONValue) async {
+        withAnimation { toast = nil }
+        guard let body = payload.any as? [String: Any] else { return }
+        do {
+            let _: OK = try await app.api.post("api/transactions/undo", body)
+            if let overview: AccountsOverview = try? await app.api.get("api/accounts/overview"),
+               let now = (overview.linked + (overview.added ?? [])).first(where: { $0.id == account.id }) {
+                account = now
+                syncShare()
+            }
             app.changed()
+            withAnimation { toast = PearlToast.Model(text: "Undone") }
         } catch {
-            self.error = app.handle(error)
+            withAnimation {
+                toast = PearlToast.Model(text: "Couldn’t undo that. Nothing changed.", action: "Try again", failed: true,
+                                         run: { Task { await runUndo(payload) } })
+            }
         }
     }
 }

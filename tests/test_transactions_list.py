@@ -489,6 +489,9 @@ def test_a_split_row_carries_its_people(client):
     listed = by_desc(listing(client))["SUSHI NAMI"]["splitting"]
     page = client.get(f"/api/transactions/{ids['SUSHI NAMI']}").get_json()["splitting"]
     assert [p["name"] for p in listed["people"]] == ["Ben", "Priya"]
+    # SPLIT-25: only the page has each payment's Unlink words (`links`); the
+    # row draws the same card without them.
+    page = dict(page, people=[{k: v for k, v in p.items() if k != "links"} for p in page["people"]])
     assert listed == page
 
 

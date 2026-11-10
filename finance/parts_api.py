@@ -5,7 +5,7 @@
 * POST   /api/transactions/<id>/split/cash        {name, amount, day?, via?, app?, extra?}: paid
                                                   back in cash, or `via: "app"` through another
                                                   app; `extra` says what paid over is (S-11c).
-* DELETE /api/transactions/<id>/split/cash/<cid>  forget that cash.
+* DELETE /api/transactions/<id>/split/cash/<cid>  unlink that payment from this purchase, with Undo.
 * GET    /api/split/apps                          apps she has named before (SPLIT-14).
 * GET    /api/transactions/<id>/cash-matches      cash a deposit could be holding.
 * POST   /api/transactions/<id>/parts             {parts, later, replace?, split?}: split a
@@ -80,7 +80,9 @@ def split_let_go(txn_id: str):
     p["amount"] = round(status["paid"], 2)
     _reshare(st, t, split)
     core._reclassify(st)
+    # REFRESH-02 (S-44c): the toast, whose Undo is the DELETE below.
     return jsonify({"ok": True, "title": f"Let it go. {p['name']}’s ${status['owes']:,.2f} is yours now.",
+                    "toast": f"Let go · the ${status['owes']:,.2f} is your spending now",
                     "detail": core.transaction_detail(txn_id).get_json()})
 
 
@@ -93,11 +95,16 @@ def split_let_go_undo(txn_id: str):
     p = _person(split, str(_body().get("name") or request.args.get("name") or ""))
     if p is None or not p.get("let_go"):
         return jsonify({"error": "Nothing was let go."}), 404
+    paid = next((s["paid"] for s in sp.people_status(t, split, st.all_transactions(), st.payback_people())
+                 if s["name"] == p["name"]), 0.0)
+    owes = max(0.0, p["let_go"]["was"] - paid)
     p["amount"] = p["let_go"]["was"]
     st.clear_let_go(txn_id, p["name"])
     _reshare(st, t, split)
     core._reclassify(st)
+    # REFRESH-02 (S-44e): "Alex owes you $30.00 again"; its Undo is the POST.
     return jsonify({"ok": True, "title": f"{p['name']} owes you again.",
+                    "toast": f"{p['name']} owes you ${owes:,.2f} again",
                     "detail": core.transaction_detail(txn_id).get_json()})
 
 
@@ -274,21 +281,26 @@ def split_apps():
 
 @bp.delete("/transactions/<txn_id>/split/cash/<int:cash_id>")
 def split_cash_undo(txn_id: str, cash_id: int):
+    """Unlink a cash or app payment from this purchase (SPLIT-25, S-34k).
+    `cash_id` is the payment (any of its records). Only this purchase's
+    piece goes; cash a deposit holds comes out of the deposit, which is left
+    with "$x left to sort". Returns the toast's `title` and its `undo`."""
+    from . import unlink as ul
     st = store()
-    cash = next((c for c in st.split_cash() if c["id"] == cash_id and c["txn_id"] == txn_id), None)
+    cash = next((c for c in st.split_cash() if c["id"] == cash_id), None)
     if cash is None:
         return jsonify({"error": "No such cash."}), 404
-    if cash["deposit_id"]:
-        return jsonify({"error": "That cash is in a deposit. Unlink the deposit first."}), 400
-    if cash.get("origin"):
-        st.remove_split_cash(cash_id)
-    else:
-        # SPLIT-19: the payment itself goes with every piece of its extra.
-        problem = remove_payment(st, cash_id)
-        if problem:
-            return jsonify({"error": problem}), 400
-        core._reclassify(st)
-    return jsonify({"ok": True, "detail": core.transaction_detail(txn_id).get_json()})
+    root = int(cash.get("origin") or cash["id"])
+    name = next((c["name"] for c in st.split_cash() if int(c.get("origin") or c["id"]) == root
+                 and c["txn_id"] == txn_id and c.get("kind") is None), None)
+    marks, problem = ul.unlink_cash(st, txn_id, root)
+    if problem:
+        return jsonify({"error": problem}), 404
+    core._reclassify(st)
+    owes = core._owes_now(st, txn_id, name)
+    title = f"Unlinked · {name} owes ${owes:,.2f}" if name and owes is not None else "Unlinked"
+    return jsonify({"ok": True, "title": title, "undo": {"rows": [], "marks": marks},
+                    "detail": core.transaction_detail(txn_id).get_json()})
 
 
 @bp.get("/transactions/<txn_id>/cash-matches")
@@ -379,8 +391,13 @@ def save_parts(st, t, body: dict):
         charge, mode, people, watch = held
         was = {"split": st.splits().get(charge.fingerprint),
                "share": charge.my_share if charge.share_set else None}
+        if charge.joint:
+            was["joint_part"] = st.joint_parts().get(charge.fingerprint)
+            if was["split"] is None and charge.share_set:
+                st.set_joint_part(charge.fingerprint, charge.joint_part)
         st.set_split(charge.fingerprint, mode, people, watch)
-        st.set_share(charge.fingerprint, sp.your_part(charge, people))
+        st.set_share(charge.fingerprint, None if mode == sp.UNSURE
+                     else sp.your_part(charge, people, sp.split_base(charge) if charge.joint else None))
     try:
         out = dp.apply(st, t, body.get("parts"), bool(body.get("later")), bool(body.get("replace")))
     except dp.Problem as exc:
@@ -401,6 +418,9 @@ def save_parts(st, t, body: dict):
         out["title"] = f"{held[0].merchant} split and ${round(-t.amount):,} sorted"
     if linked_was:
         undo["marks"] = {**(undo.get("marks") or {}), **linked_was}
+    if out.get("reopened"):
+        # SPLIT-C decision 4: Undo closes the split it opened again.
+        undo["marks"] = {**(undo.get("marks") or {}), "split_closed": out.pop("reopened")}
     return jsonify({"ok": True, **out, "undo": undo})
 
 
@@ -451,11 +471,20 @@ def _held_split(st, ask):
         return None, "No such transaction."
     if charge.amount <= 0 or charge.repays:
         return None, "Only a charge can be split."
+    base = None
     if charge.joint:
-        return None, "On a joint account, say whose it was instead."
+        # JOINT-B: Split my part from a deposit, as from the purchase.
+        base = sp.split_base(charge)
+        if base < 0.005:
+            return None, "Nothing here is yours to split. Say it was partly yours first."
+        from .joint import holder
+        for p in ask.get("people") or []:
+            who = holder(charge, str(p.get("name") or "")) if isinstance(p, dict) else None
+            if who:
+                return None, f"{who} is on this joint account. Their part is already off."
     mode = ask.get("mode")
     people, problem = sp.validate(charge, mode, ask.get("people"), ask.get("you"),
-                                  ask.get("include_me", True) is not False)
+                                  ask.get("include_me", True) is not False, base=base)
     if problem:
         return None, problem
     return (charge, mode, people, bool(ask.get("watch", True))), None
@@ -559,6 +588,18 @@ def owing(txn_id: str):
               "share": i["amount"], "paid": i["paid"], "person": r["name"], "theirs": r in mine,
               "pending": bool(((getattr(txns.get(i["charge_id"]), "raw", None)) or {}).get("pending"))}
              for r in mine + rest for i in r["items"]]
+    # SPLIT-C (S-09u, S-35u): Not sure yet splits take any amount, up to what
+    # the purchase still costs her (`owes`). The sender's come first; with
+    # no name, everyone on one could have sent it.
+    unsure = [r for r in sp.unsure_rows(list(txns.values()), st.splits(), st.payback_people())
+              if r["still"] >= 0.005]
+    theirs_u = [r for r in unsure if sender and sp.same_person(r["name"], sender)]
+    for r in (theirs_u or ([] if mine else unsure)):
+        c = r["charge"]
+        items.insert(len([i for i in items if i["theirs"]]) if theirs_u else len(items),
+                     {"id": c.fingerprint, "merchant": c.merchant, "date": c.date[:10], "owes": r["still"],
+                      "share": None, "paid": r["paid"], "person": r["name"], "theirs": bool(theirs_u),
+                      "unknown": True, "pending": bool((c.raw or {}).get("pending"))})
     # S-10e (SPLIT-03): what this deposit's parts already pay back, so
     # Edit lists them ticked even though nobody owes on them any more.
     splits = st.splits()
@@ -585,7 +626,8 @@ def owing(txn_id: str):
                                                            st.payback_people())) or {}).get("name")
         if name and not any(sp.same_person(n, name) for n in everyone):
             named = name
-    return jsonify({"from": mine[0]["name"] if mine else None, "named": named, "items": items,
+    frm = mine[0]["name"] if mine else (theirs_u[0]["name"] if theirs_u else None)
+    return jsonify({"from": frm, "named": named if not theirs_u else None, "items": items,
                     "linked": linked})
 
 

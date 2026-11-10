@@ -302,6 +302,18 @@ class Transaction:
     # of them put this money in.
     joint_people: list = field(default_factory=list)
     joint_person: str | None = None
+    # JOINT-B (2026-11-09): on a joint-account charge, her part of it before
+    # any split: her Whose was it? answer, else the name's rule, else the
+    # account's share or all of it. A split of a joint charge splits this.
+    joint_part: float | None = None
+    # How a split charge was split ("even", "amount", "percent", "shares",
+    # or "unknown" for Not sure yet, SPLIT-C); None when it isn't split.
+    split_mode: str | None = None
+    # On a joint account: a name she said is always hers (joint_mine).
+    joint_mine: bool = False
+    # SPLIT-C: on a Not sure yet split, what's come back so far (paybacks
+    # linked to it, and cash or app payments marked on it).
+    unsure_paid: float | None = None
     # Why you left this row out, if you did: one transaction, or every row a
     # rule of yours matches. An excluded row counts as nothing — not spending,
     # not income, not savings — and never pairs with another as a transfer.
@@ -455,16 +467,28 @@ class Transaction:
             joint_person=row.get("joint_person") or None,
             account_nickname=row.get("account_nickname") or None,
         )
+        t.split_mode = row.get("split_mode") or None
+        t.joint_mine = bool(row.get("joint_mine"))
+        if t.joint:
+            from .joint import my_share
+            # What the account says is hers, before any answer of hers.
+            formula = my_share(t.amount, category=t.category,
+                               mine=bool(row.get("joint_mine")),
+                               share=(row.get("joint_split") if row.get("joint_split") is not None
+                                      else row.get("joint_share")),
+                               who=row.get("joint_from"),
+                               ratio=row.get("joint_ratio"))
+            if t.split_mode is not None:
+                # JOINT-B: split, so `txn_shares` is what the split left her;
+                # her part is the one she said, or the account's.
+                held = row.get("joint_part_set")
+                t.joint_part = round(float(held), 2) if held is not None else formula
+            else:
+                t.joint_part = t.my_share if t.share_set else formula
         if t.joint and t.my_share is None:
             # Hers, less what the other person put in that month; money in
             # only once she says whose it was. See finance/joint.py.
-            from .joint import my_share
-            t.my_share = my_share(t.amount, category=t.category,
-                                  mine=bool(row.get("joint_mine")),
-                                  share=(row.get("joint_split") if row.get("joint_split") is not None
-                                         else row.get("joint_share")),
-                                  who=row.get("joint_from"),
-                                  ratio=row.get("joint_ratio"))
+            t.my_share = t.joint_part
             t.joint_from = row.get("joint_from") or None
         return t
 

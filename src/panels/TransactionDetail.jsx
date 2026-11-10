@@ -442,7 +442,7 @@ export default function TransactionDetail({ id, initial, categories, onClose, on
           <div className="txd-more">
             {tx.repays_charge && (
               <button type="button" className="txd-link"
-                      onClick={() => save(() => unlinkPayback(tx.repays_charge.id, tx.id))}>
+                      onClick={() => save(() => unlinkPayback(tx.repays_charge.id, tx.id, true))}>
                 <PIcon name="x" size={18} /> Unlink repayment
               </button>
             )}

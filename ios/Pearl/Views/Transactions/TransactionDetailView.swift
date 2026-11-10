@@ -55,7 +55,11 @@ struct CardSplit {
     func label(_ category: String) -> String { "\(category), split with \(who)" }
 
     var note: String {
-        "Your share \(Format.amount(mine)) · \(who) \(names.count == 1 ? "owes" : "owe") you \(Format.amount(owed))"
+        if body["mode"] as? String == "unknown" {
+            // SPLIT-C decision 7 (SPLIT-20): Not sure yet, held for the card.
+            return "Not sure yet · each payback from \(who) comes off"
+        }
+        return "Your share \(Format.amount(mine)) · \(who) \(names.count == 1 ? "owes" : "owe") you \(Format.amount(owed))"
     }
 
     /// The answer Yes sends: the split and the category it counts toward.
@@ -277,8 +281,20 @@ struct TransactionDetailView: View {
     @State private var oneOff: Bool?
     /// Splits and parts (THL-291).
     @State private var splitting = false
+    /// SPLIT-C: S-45a Settle up, its Type amounts, S-46a That's everything.
+    @State private var settlingUp = false
+    @State private var typingSettle = false
+    @State private var closingSplit = false
+    /// JOINT-B: S-41j Remove the split?
+    @State private var removingSplit = false
     @State private var marking: Transaction.Splitting.Person?
     @State private var lettingGo: Transaction.Splitting.Person?
+    /// REFRESH-02: S-07r Remind, S-03re Change their share, S-03fr Remove.
+    @State private var reminding: Transaction.Splitting.Person?
+    @State private var changingShare: Transaction.Splitting.Person?
+    @State private var removingPerson: Transaction.Splitting.Person?
+    /// S-44a–i: the split flow's ink toast, with Undo (or Try again, S-44h).
+    @State private var splitToast: PearlToast.Model?
     @State private var seeingOwed = false
     @State private var parting: PartsDeposit?
     /// S-35c "Who sent this?" (SPLIT-22b): the payback it asks about.
@@ -339,6 +355,13 @@ struct TransactionDetailView: View {
     @State private var toast: (title: String, undo: (() -> Void)?)?
     /// T-41b: Unlink? before a refund goes back to Needs a look.
     @State private var unlinkingRefund = false
+    /// SPLIT-25: S-05o for a PAID BACK or REFUNDED BY row on a purchase that
+    /// isn't split (the split card has its own), then S-34s / S-34k.
+    @State private var linkOptions: Transaction.LinkInfo?
+    @State private var afterOptions: (() -> Void)?
+    @State private var unlinkingLink: Transaction.LinkInfo?
+    /// S-05o's View the e-Transfer / deposit / refund.
+    @State private var viewing: Transaction?
     @State private var message: String?
     @State private var error: String?
 
@@ -491,7 +514,71 @@ struct TransactionDetailView: View {
                     await run { nil }
                     withAnimation { toast = (title, undoing(undo)) }
                 }
+            }, onRemoveSplit: t.joint.isEmpty ? nil : {
+                // S-41j: from Edit split.
+                splitting = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { removingSplit = true }
             })
+        }
+        .sheet(isPresented: $settlingUp) {
+            if let split = t.splitting {
+                // S-45a / S-45b → S-45g.
+                SettleUpSheet(t: t, split: split, onClose: { settlingUp = false }, onType: {
+                    settlingUp = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { typingSettle = true }
+                }) {
+                    let (title, undo) = try await settleWithWhatEachPaid(split)
+                    settlingUp = false
+                    await load()
+                    app.changed()
+                    showSplit(title, undo: undo)
+                }
+            }
+        }
+        .sheet(isPresented: $typingSettle) {
+            // S-45c–e → S-45f.
+            SplitSheet(t: t, api: app.api, recent: recent, onSaved: { done in
+                typingSettle = false
+                Task { await run { done } }
+            }, settling: true, onSettled: { title, undo in
+                typingSettle = false
+                Task {
+                    await run { nil }
+                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
+                }
+            })
+        }
+        .sheet(isPresented: $closingSplit) {
+            if let split = t.splitting {
+                // S-46a → S-46b, whose Undo puts it back (S-46d).
+                ThatsEverythingSheet(t: t, split: split, onClose: { closingSplit = false }) {
+                    struct Reply: Decodable { let toast: String?; let undo: JSONValue? }
+                    let r: Reply = try await app.api.post("api/transactions/\(t.id)/split/close")
+                    closingSplit = false
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    await load()
+                    app.changed()
+                    showSplit(r.toast ?? "Closed", undo: r.undo.map { u in { try await postUndo(u); return "Open again" } })
+                }
+            }
+        }
+        .sheet(isPresented: $removingSplit) {
+            if let split = t.splitting {
+                // S-41j → S-41j1; S-41j2 on the sheet if it fails.
+                RemoveSplitSheet(t: t, split: split, onClose: { removingSplit = false }) {
+                    struct Reply: Decodable { let toast: String?; let undo: JSONValue? }
+                    do {
+                        let r: Reply = try await app.api.delete("api/transactions/\(t.id)/split")
+                        removingSplit = false
+                        await load()
+                        app.changed()
+                        showSplit(r.toast ?? "Split removed", undo: r.undo.map { u in { try await postUndo(u); return nil } })
+                    } catch let e as APIError {
+                        if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
+                        throw e
+                    }
+                }
+            }
         }
         .sheet(item: $marking) { person in
             MarkPaidSheet(t: t, person: person, api: app.api, onUndoable: { title, undo in
@@ -499,7 +586,18 @@ struct TransactionDetailView: View {
                 marking = nil
                 Task {
                     await run { nil }
-                    withAnimation { toast = (title, undoing(undo)) }
+                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return nil } })
+                }
+            }, onLinked: { title, undos in
+                // S-44b: "Priya paid back $30.00 · Undo" takes back every link it made.
+                marking = nil
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                Task {
+                    await run { nil }
+                    showSplit(title, undo: undos.isEmpty ? nil : {
+                        for u in undos.reversed() { try await postUndo(u) }
+                        return nil
+                    })
                 }
             }) { done in
                 marking = nil
@@ -507,9 +605,47 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(item: $lettingGo) { person in
-            LetGoSheet(person: person) {
+            // S-08r → S-44c, whose Undo puts it back.
+            LetGoSheet(t: t, person: person, onClose: { lettingGo = nil }) {
+                let said = try await letGo(person)
                 lettingGo = nil
-                Task { await letGo(person) }
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                await load()
+                app.changed()
+                showSplit(said, undo: { try await undoLetGo(person) })
+            }
+        }
+        .sheet(item: $reminding) { person in
+            // S-07r → S-44f; Undo empties the clipboard again. No haptic on Remind.
+            RemindSheet(t: t, p: person, onClose: { reminding = nil }) {
+                reminding = nil
+                showSplit("Copied · paste it to \(person.name)", undo: {
+                    UIPasteboard.general.string = ""
+                    return nil
+                })
+            }
+        }
+        .sheet(item: $changingShare) { person in
+            // S-03re: How to split on Amounts, their field focused → S-44i.
+            SplitSheet(t: t, api: app.api, recent: recent, onSaved: { done in
+                changingShare = nil
+                Task { await run { done } }
+            }, focus: person.name, onUpdated: { title, undo in
+                changingShare = nil
+                Task {
+                    await run { nil }
+                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return nil } })
+                }
+            })
+        }
+        .sheet(item: $removingPerson) { person in
+            // S-03fr / S-03fr2 from S-40: saves at once, with loading and error.
+            RemovePersonSheet(p: person, merchant: t.merchant, onClose: { removingPerson = nil }) {
+                let (title, undo) = try await removeFromSplit(person)
+                removingPerson = nil
+                await load()
+                app.changed()
+                showSplit(title, undo: undo)
             }
         }
         .sheet(item: $parting, onDismiss: { editingParts = false; partsExtra = nil }) { deposit in
@@ -543,7 +679,9 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $unlinkingRefund) { refundUnlinkSheet }
         .overlay(alignment: .bottom) {
             VStack(spacing: 4) {
-                if let toast = toast {
+                if let model = splitToast {
+                    PearlToast(model: model) { withAnimation { if splitToast == model { splitToast = nil } } }
+                } else if let toast = toast {
                     // Stays until something replaces it, so nothing moves under a finger.
                     UndoToast(text: toast.title, undo: toast.undo, stays: false) {
                         withAnimation { self.toast = nil }
@@ -565,6 +703,42 @@ struct TransactionDetailView: View {
             }
         }
         .sheet(item: $unlinkingPayback) { link in paybackUnlinkSheet(link) }
+        .sheet(item: $unlinkingLink) { link in
+            // S-34s / S-34k (SPLIT-25), then S-05t's toast with Undo.
+            UnlinkLinkSheet(link: link, charge: t.id, api: app.api, onCancel: { unlinkingLink = nil }) { title, undo in
+                unlinkingLink = nil
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                Task {
+                    await load()
+                    app.changed()
+                    // S-44a; its Undo links it back (S-44g "Linked again").
+                    showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Linked again" } })
+                }
+            }
+        }
+        .sheet(item: $linkOptions, onDismiss: {
+            // The choice runs once S-05o has gone, so its next sheet can open.
+            let next = afterOptions
+            afterOptions = nil
+            next?()
+        }) { link in
+            // S-05or (REFRESH-02): View… opens it here in Pearl; Unlink… → S-34kr.
+            PaybackOptionsSheet(link: link, overline: link.kind == "refund" ? "REFUNDED BY" : "PAID BACK",
+                                onClose: { linkOptions = nil },
+                                onView: {
+                                    afterOptions = { if let id = link.view?.id { Task { await open(id) } } }
+                                    linkOptions = nil
+                                },
+                                onUnlink: {
+                                    afterOptions = { unlinkingLink = link }
+                                    linkOptions = nil
+                                })
+        }
+        .navigationDestination(isPresented: Binding(get: { viewing != nil }, set: { if !$0 { viewing = nil } })) {
+            if let viewing = viewing {
+                TransactionDetailView(transaction: viewing, categories: categories)
+            }
+        }
         .sheet(isPresented: $renaming) {
             RenameSheet(title: "Rename merchant", label: "Call it", initial: t.merchant,
                         hint: "Bank: \(t.bankMerchant ?? t.merchant)", other: "Use the bank’s name",
@@ -672,7 +846,19 @@ struct TransactionDetailView: View {
     /// "Wed, Nov 11 · TD Chequing ••4417".
     private var dateLine: String {
         let when = Format.relativeDay(t.date) == "Today" ? "Today" : Format.weekdayDay(t.date)
-        return [when, t.account].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        // S-04u: "Counts as $80.00 so far"; S-46c "Counts as $80.00"; S-04j
+        // "Your share $16.68"; S-01jr "Your part $50.00".
+        var lead: String? = nil
+        if let s = t.splitting, !t.inflow {
+            if s.unsure {
+                lead = "Counts as \(Format.amount(s.still ?? s.you))" + (s.closedAt == nil ? " so far" : "")
+            } else if s.joint != nil {
+                lead = "Your share \(Format.amount(s.you))"
+            }
+        } else if !t.inflow && t.splitsMyPart {
+            lead = "Your part \(Format.amount(t.splitBase))"
+        }
+        return [lead, when, t.account].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     // MARK: What it counts as
@@ -853,29 +1039,31 @@ struct TransactionDetailView: View {
     /// PAID BACK (T-39), REFUND FOR (T-41), REFUNDED BY, or the charge a
     /// payback is for.
     @ViewBuilder private var linked: some View {
-        if !t.repaidBy.isEmpty {
-            // A split shows who paid back below; this is the money that did.
-            section(t.splitting == nil ? "Paid back" : "Paid back with")
+        // SPLIT-25 (S-05v): a split purchase's card is the one place its
+        // paybacks are listed; one that isn't split keeps PAID BACK.
+        if !t.repaidBy.isEmpty && t.splitting == nil {
+            section("Paid back")
             SolidCard {
                 ForEach(Array(t.repaidBy.enumerated()), id: \.element.id) { index, b in
                     if index > 0 { RowSeparator(inset: 72) }
                     let part = b.paid.flatMap { abs($0 - abs(b.amount)) >= 0.005 ? $0 : nil }
-                    let row = linkedRow(name: b.merchant ?? b.name,
-                                        sub: [Format.short(b.date), part.map { _ in "part of \(Format.whole(abs(b.amount)))" }]
-                                            .compactMap { $0 }.joined(separator: " · "),
-                                        amount: part ?? abs(b.amount), inflow: true)
-                    if t.splitting == nil {
-                        // S-34 from the purchase: unlink the money that paid it back.
-                        Button {
+                    // S-05o from the purchase: View, then Unlink… (S-34s / S-34k).
+                    Button {
+                        if let link = b.link {
+                            linkOptions = link
+                        } else {
                             unlinkingPayback = PaybackLink(charge: t.id, inflow: b.id, who: b.person ?? b.merchant ?? b.name,
                                                            name: b.merchant ?? b.name, amount: part ?? abs(b.amount),
                                                            date: b.date)
-                        } label: { row }
-                        .buttonStyle(.plain)
-                        .accessibilityHint("Unlink it")
-                    } else {
-                        row
+                        }
+                    } label: {
+                        linkedRow(name: b.merchant ?? b.name,
+                                  sub: [Format.short(b.date), part.map { _ in "part of \(Format.whole(abs(b.amount)))" }]
+                                      .compactMap { $0 }.joined(separator: " · "),
+                                  amount: part ?? abs(b.amount), inflow: true, chevron: true)
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Shows options, including Unlink")
                 }
             }
         }
@@ -893,7 +1081,17 @@ struct TransactionDetailView: View {
             SolidCard {
                 ForEach(Array(t.refundedBy.enumerated()), id: \.element.id) { index, r in
                     if index > 0 { RowSeparator(inset: 72) }
-                    linkedRow(name: r.merchant, sub: Format.short(r.date), amount: r.amount, inflow: true)
+                    if let link = r.link {
+                        // SPLIT-25: S-05o "View the refund", "Unlink refund…".
+                        Button { linkOptions = link } label: {
+                            linkedRow(name: r.merchant, sub: Format.short(r.date), amount: r.amount, inflow: true,
+                                      chevron: true)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Shows options, including Unlink")
+                    } else {
+                        linkedRow(name: r.merchant, sub: Format.short(r.date), amount: r.amount, inflow: true)
+                    }
                 }
             }
         }
@@ -941,7 +1139,8 @@ struct TransactionDetailView: View {
         }
     }
 
-    private func linkedRow(name: String, sub: String, amount: Double, inflow: Bool) -> some View {
+    private func linkedRow(name: String, sub: String, amount: Double, inflow: Bool,
+                           chevron: Bool = false) -> some View {
         HStack(spacing: 14) {
             Initials(name: name)
             VStack(alignment: .leading, spacing: 2) {
@@ -952,8 +1151,13 @@ struct TransactionDetailView: View {
             Text((inflow ? "+" : "\u{2212}") + Format.amount(amount))
                 .font(Nacre.headline).monospacedDigit()
                 .foregroundColor(inflow ? Pearl.ink : Pearl.moneyOut)
+            if chevron {
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Pearl.muted)
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 
@@ -1064,9 +1268,16 @@ struct TransactionDetailView: View {
 
     /// A purchase she can split: hers, counted, not a refund or split yet.
     /// Not on a joint account (S-01j, SPLIT-08): that's Whose was it?.
+    /// JOINT-B (S-01jr): a joint-account purchase is split from its own row,
+    /// "Split my part", next to Whose was it?.
     private var canSplit: Bool {
         !t.inflow && t.transfer == nil && t.refundOf == nil && t.splitting == nil && t.excluded.isEmpty
             && t.joint.isEmpty
+    }
+
+    /// JOINT-B: a joint purchase not split yet. Dimmed when none of it is hers (T-06jr1).
+    private var canSplitJoint: Bool {
+        jointCharge && t.refundOf == nil && t.splitting == nil && t.excluded.isEmpty
     }
 
     /// S-01j: a joint-account purchase, asked Whose was it? in Options.
@@ -1080,6 +1291,22 @@ struct TransactionDetailView: View {
         return "\(who) · yours, \(them) or shared"
     }
 
+    /// S-01jr "Split my part · Split your $50.00 with friends"; S-01jr2 on
+    /// "All mine unless I mark it" the usual "Split with others"; T-06jr1
+    /// dimmed with why when none of it is hers (VoiceOver reads the reason).
+    private var jointSplitRow: some View {
+        let none = t.splitBase < 0.005
+        return Button { splitting = true } label: {
+            row(title: t.splitsMyPart ? "Split my part" : "Split with others",
+                sub: none ? "Nothing here is yours to split. Say it was partly yours first."
+                    : t.splitsMyPart ? "Split your \(Format.amount(t.splitBase)) with friends" : "Split it with friends",
+                chevron: !none, icon: "person.2")
+                .opacity(none ? 0.45 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(busy || none)
+    }
+
     private func deposit(rest: Bool) -> PartsDeposit {
         PartsDeposit(id: t.id, name: t.merchant, amount: t.amount, date: t.date, rest: rest)
     }
@@ -1087,14 +1314,13 @@ struct TransactionDetailView: View {
     /// OWED TO YOU or SPLIT 3 WAYS (S-04, S-05, S-19, S-20).
     @ViewBuilder private var splitPeople: some View {
         if let split = t.splitting, !split.people.isEmpty, !t.inflow {
-            SplitPeople(t: t, split: split,
-                        onMarkPaid: { marking = $0 },
-                        onRemind: remind,
-                        onLetGo: { lettingGo = $0 },
-                        onUndoLetGo: { p in Task { await undoLetGo(p) } },
+            SplitPeople(t: t, split: split, onChoose: choose,
                         onEdit: { splitting = true },
                         onOwed: { seeingOwed = true },
-                        onCredit: { crediting = Crediting(id: $0.id) })
+                        onCredit: { crediting = Crediting(id: $0.id) },
+                        onSettle: { settlingUp = true },
+                        onClose: { closingSplit = true },
+                        onReopen: { Task { await reopenSplit() } })
         }
     }
 
@@ -1271,12 +1497,16 @@ struct TransactionDetailView: View {
             section("Options")
             GlassCard {
                 if jointCharge {
-                    // S-01j (SPLIT-08): a joint purchase is Whose was it?, not Split with others.
+                    // S-01jr (JOINT-B, supersedes S-01j): Whose was it?, then Split my part.
                     Button { whose = true } label: {
                         row(title: "Whose was it?", sub: whoseSub, chevron: true, icon: "person.2")
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
+                    if canSplitJoint {
+                        RowSeparator()
+                        jointSplitRow
+                    }
                     if canPayFromBank || canSplit || couldBePay || unlink || canOneOff || offersNewOnes
                         || incomeAlways != nil { RowSeparator() }
                 }
@@ -1423,7 +1653,7 @@ struct TransactionDetailView: View {
     /// T-98s (SPLIT-06): nothing is saved; the card asks "Groceries, split with Sam?".
     private func holdSplit(_ body: [String: Any], mine: Double) {
         splitting = false
-        let split = CardSplit.held(body, mine: mine, total: t.fullAmount ?? t.amount)
+        let split = CardSplit.held(body, mine: mine, total: t.splitBase)
         let category = cardCategory
         holdForCard {
             $0.split = split
@@ -1804,35 +2034,188 @@ struct TransactionDetailView: View {
     /// transaction, which load() fetches anyway.)
     private struct Titled: Decodable { let title: String? }
 
-    /// S-07: a reminder she can paste into a message.
-    private func remind(_ p: Transaction.Splitting.Person) {
-        UIPasteboard.general.string = "Hey \(p.name)! Your share of \(t.merchant) on \(Format.short(t.date)) "
-            + "is \(Format.amount(p.owes)). Thanks!"
-        // S-07: "Copied · paste it to Sam", with Undo.
+    // MARK: REFRESH-02 — S-40's choices, and the S-44 toasts
+
+    /// What she picked on a person's S-40 (it has gone by now).
+    private func choose(_ p: Transaction.Splitting.Person, _ choice: PersonChoice) {
+        switch choice {
+        case .markPaid: marking = p
+        case .remind: reminding = p
+        case .letGo: lettingGo = p
+        case .changeShare: changingShare = p
+        case .view(let link): if let id = link.view?.id { Task { await open(id) } }
+        case .unlink(let link): unlinkingLink = link
+        case .undoLetGo:
+            // S-40d → S-44e at once; its Undo lets it go again.
+            Task {
+                do {
+                    let said = try await undoLetGo(p)
+                    await load()
+                    app.changed()
+                    showSplit(said ?? "\(p.name) owes you again", undo: { _ = try await letGo(p); return nil })
+                } catch {
+                    showFailed("Couldn’t undo that. Nothing changed.") { choose(p, .undoLetGo) }
+                }
+            }
+        case .remove:
+            // Someone who paid is asked first (S-03fr); anyone else goes at once (S-44d).
+            if p.paid >= 0.005 { removingPerson = p; return }
+            Task {
+                do {
+                    let (title, undo) = try await removeFromSplit(p)
+                    await load()
+                    app.changed()
+                    showSplit(title, undo: undo)
+                } catch {
+                    showFailed("Couldn’t remove \(p.name). Nothing changed.") { choose(p, .remove) }
+                }
+            }
+        }
+    }
+
+    /// An S-44 toast; Undo runs `undo`, then says what it returns (S-44g
+    /// "Linked again"), or S-44h if it fails, with Try again.
+    private func showSplit(_ text: String, undo: (() async throws -> String?)?) {
         withAnimation {
-            toast = ("Copied · paste it to \(p.name)", { UIPasteboard.general.string = "" })
+            toast = nil
+            splitToast = PearlToast.Model(text: text, action: undo == nil ? nil : "Undo",
+                                          run: undo.map { work in { Task { await runUndo(work) } } })
         }
     }
 
-    private func letGo(_ p: Transaction.Splitting.Person) async {
-        await run {
-            let reply: Titled = try await app.api.post("api/transactions/\(t.id)/split/let-go", ["name": p.name])
-            return reply.title
+    private func runUndo(_ work: @escaping () async throws -> String?) async {
+        withAnimation { splitToast = nil }
+        do {
+            let said = try await work()
+            await load()
+            app.changed()
+            if let said = said { withAnimation { splitToast = PearlToast.Model(text: said) } }
+        } catch {
+            // S-44h: "Couldn’t undo that. Nothing changed." · Try again.
+            showFailed("Couldn’t undo that. Nothing changed.") { Task { await runUndo(work) } }
         }
     }
 
-    private func undoLetGo(_ p: Transaction.Splitting.Person) async {
-        await run {
-            let reply: Titled = try await app.api.delete("api/transactions/\(t.id)/split/let-go",
-                                                            query: ["name": p.name])
-            return reply.title
+    private func showFailed(_ text: String, retry: @escaping () -> Void) {
+        withAnimation {
+            toast = nil
+            splitToast = PearlToast.Model(text: text, action: "Try again", failed: true, run: retry)
+        }
+    }
+
+    private func postUndo(_ payload: JSONValue) async throws {
+        guard let body = payload.any as? [String: Any] else { return }
+        let _: OK = try await app.api.post("api/transactions/undo", body)
+    }
+
+    /// A split change's toast (S-44c, S-44e).
+    private struct Toasted: Decodable { let title: String?; let toast: String?; let undo: JSONValue? }
+
+    @discardableResult
+    private func letGo(_ p: Transaction.Splitting.Person) async throws -> String {
+        let reply: Toasted = try await app.api.post("api/transactions/\(t.id)/split/let-go", ["name": p.name])
+        return reply.toast ?? reply.title ?? "Let go"
+    }
+
+    private func undoLetGo(_ p: Transaction.Splitting.Person) async throws -> String? {
+        let reply: Toasted = try await app.api.delete("api/transactions/\(t.id)/split/let-go", query: ["name": p.name])
+        return reply.toast ?? reply.title
+    }
+
+    /// S-40's Remove (handoff 1096:4498): PUT …/split without them, their
+    /// share hers (SPLIT-16 rules on the server). Gives S-44d's toast and
+    /// its Undo. The only person on it: the split goes, and Undo puts it back.
+    private func removeFromSplit(_ p: Transaction.Splitting.Person) async throws -> (String, () async throws -> String?) {
+        guard let split = t.splitting else { throw SplitMenuError(words: "That isn’t split anymore.") }
+        // JOINT-B: of her part of a joint purchase.
+        let whole = t.splitBase
+        func body(_ people: [Transaction.Splitting.Person]) -> [String: Any] {
+            if split.unsure {
+                // SPLIT-C (S-03fu): still Not sure yet, without them.
+                return ["mode": "unknown", "people": people.map { ["name": $0.name] }]
+            }
+            let shares = people.map { ["name": $0.name, "amount": $0.share] as [String: Any] }
+            let you = ((whole - people.map(\.share).reduce(0, +)) * 100).rounded() / 100
+            return ["mode": "amount", "include_me": you >= 0.005, "you": max(0, you), "people": shares]
+        }
+        let kept = split.people.filter { $0.name != p.name }
+        let title = split.unsure ? "\(p.name) removed" : "\(p.name) removed · \(Format.amount(p.share)) back to your share"
+        do {
+            if kept.isEmpty {
+                struct Gone: Decodable { let undo: JSONValue? }
+                let gone: Gone = try await app.api.delete("api/transactions/\(t.id)/split")
+                let old = body(split.people)
+                let id = t.id
+                return (title, {
+                    // The server's Undo when it sent one (JOINT-B), else the split again.
+                    if let undo = gone.undo { try await postUndo(undo) } else {
+                        let _: OK = try await app.api.put("api/transactions/\(id)/split", old)
+                    }
+                    return nil
+                })
+            }
+            struct Reply: Decodable { let toast: String?; let undo: JSONValue? }
+            let reply: Reply = try await app.api.put("api/transactions/\(t.id)/split", body(kept))
+            let undo = reply.undo
+            return (reply.toast ?? title, {
+                if let undo = undo { try await postUndo(undo) }
+                return nil
+            })
+        } catch let e as APIError {
+            if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
+            throw e
+        }
+    }
+
+    /// S-45b: each share is what that person paid; hers is the rest. Nobody
+    /// owes after. Undo puts it back to Not sure yet with the same links.
+    private func settleWithWhatEachPaid(_ split: Transaction.Splitting) async throws -> (String, () async throws -> String?) {
+        let people = split.people.map { ["name": $0.name, "amount": $0.paid] as [String: Any] }
+        let you = max(0, ((t.splitBase - split.people.map(\.paid).reduce(0, +)) * 100).rounded() / 100)
+        struct Reply: Decodable { let undo: JSONValue? }
+        do {
+            let r: Reply = try await app.api.put("api/transactions/\(t.id)/split",
+                                                 ["mode": "amount", "include_me": true, "you": you, "people": people])
+            let undo = r.undo
+            return ("Settled · nobody owes you for \(t.merchant)", {
+                if let undo = undo { try await postUndo(undo) }
+                return "Not sure yet again"
+            })
+        } catch let e as APIError {
+            if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
+            throw e
+        }
+    }
+
+    /// S-46c Reopen split → S-46d, with Undo.
+    private func reopenSplit() async {
+        struct Reply: Decodable { let toast: String?; let undo: JSONValue? }
+        do {
+            let r: Reply = try await app.api.delete("api/transactions/\(t.id)/split/close")
+            await load()
+            app.changed()
+            showSplit(r.toast ?? "Open again", undo: r.undo.map { u in { try await postUndo(u); return "Closed again" } })
+        } catch {
+            showFailed("Couldn’t reopen it. Nothing changed.") { Task { await reopenSplit() } }
+        }
+    }
+
+    /// S-05o's View: the e-Transfer, the deposit or the refund, in the app.
+    private func open(_ id: String) async {
+        do {
+            viewing = try await app.api.get("api/transactions/\(id)")
+        } catch {
+            self.error = app.handle(error)
         }
     }
 
     /// A part is gone once unlinked, so the page shows the deposit it was.
+    /// From the payback's own page (S-34) this unlinks every purchase it paid
+    /// (`whole`); from a purchase, UnlinkLinkSheet unlinks only that one.
     private func unlinkPayback(_ link: PaybackLink) async {
         await run {
-            let _: OK = try await app.api.delete("api/transactions/\(link.charge)/paybacks/\(link.inflow)")
+            let _: OK = try await app.api.delete("api/transactions/\(link.charge)/paybacks/\(link.inflow)",
+                                                 query: link.inflow == t.id ? ["whole": "1"] : [:])
             return "Unlinked. \(link.who) owes you \(Format.amount(link.amount)) again."
         }
     }
@@ -1979,16 +2362,21 @@ struct WhoseSheet: View {
     @State private var mineAlways = false
     @State private var busy = false
     @State private var error: String?
+    /// AM-21j for this one purchase (JOINT-B): someone has paid on its split.
+    @State private var asking: [JointChange]?
 
     init(t: Transaction, api: APIClient, done: @escaping (String) -> Void) {
         self.t = t
         self.api = api
         self.done = done
         let full = t.fullAmount ?? t.amount
-        let theirs = t.shareSet && t.amount < 0.005
-        let isPart = !theirs && abs(t.amount - full) >= 0.005
+        // JOINT-B: on a split purchase the row's amount is her share of the
+        // split; her answer here is her part, before the split.
+        let mine = t.splitting != nil ? (t.jointPart ?? t.amount) : t.amount
+        let theirs = t.shareSet && mine < 0.005
+        let isPart = !theirs && abs(mine - full) >= 0.005
         _mode = State(initialValue: theirs ? "theirs" : isPart ? "part" : "mine")
-        _part = State(initialValue: isPart ? String(format: "%.2f", t.amount) : "")
+        _part = State(initialValue: isPart ? String(format: "%.2f", mine) : "")
         _splitAlways = State(initialValue: t.jointShare != nil || !isPart)
     }
 
@@ -2058,14 +2446,39 @@ struct WhoseSheet: View {
         }
         .padding(.horizontal, 16).padding(.bottom, 8)
         .background(SheetBackground())
+        .sheet(isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
+            if let changes = asking {
+                JointChangeSheet(accountName: t.merchant, share: nil, was: nil, holders: [], changes: changes,
+                                 purchase: true, onClose: { asking = nil }) {
+                    try await send(confirm: true)
+                    asking = nil
+                }
+            }
+        }
     }
 
-    private struct Reply: Decodable { let rule: String? }
+    private struct Reply: Decodable {
+        let rule: String?
+        let needsConfirm: Bool?
+        let changes: [JointChange]?
+        enum CodingKeys: String, CodingKey {
+            case rule, changes
+            case needsConfirm = "needs_confirm"
+        }
+    }
 
     private func save() async {
         busy = true
         defer { busy = false }
-        var body: [String: Any] = [:]
+        do {
+            try await send(confirm: false)
+        } catch {
+            self.error = (error as? LocalizedError)?.errorDescription ?? "That didn’t save. Try again."
+        }
+    }
+
+    private func send(confirm: Bool) async throws {
+        var body: [String: Any] = confirm ? ["confirm": true] : [:]
         switch mode {
         case "theirs": body["my_share"] = 0
         case "part":
@@ -2075,6 +2488,10 @@ struct WhoseSheet: View {
         }
         do {
             let reply: Reply = try await api.put("api/transactions/\(t.id)/share", body)
+            if reply.needsConfirm == true {
+                asking = reply.changes ?? []
+                return
+            }
             if mode == "mine" && mineAlways {
                 let _: OK = try await api.put("api/transactions/\(t.id)/mine-always", ["on": true])
             }
@@ -2085,8 +2502,9 @@ struct WhoseSheet: View {
             default: said = mineAlways ? "Yours, and every \(t.merchant) on this account from now on." : "Yours."
             }
             done(said)
-        } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? "That didn’t save. Try again."
+        } catch let e as APIError {
+            if case .server = e, confirm { throw SplitMenuError(words: e.localizedDescription) }
+            throw e
         }
     }
 }

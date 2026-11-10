@@ -305,8 +305,10 @@ export const clearSplit    = (id) =>
   req(`/api/transactions/${id}/split`, { method: 'DELETE' });
 export const unlinkRefund = (inflowId) =>
   req(`/api/transactions/${inflowId}/refund`, { method: 'DELETE' });
-export const unlinkPayback = (id, inflowId) =>
-  req(`/api/transactions/${id}/paybacks/${inflowId}`, { method: 'DELETE' });
+// From a purchase, only that purchase's part comes off (SPLIT-25); `whole`
+// is the payback's own Unlink, from every purchase it paid.
+export const unlinkPayback = (id, inflowId, whole = false) =>
+  req(`/api/transactions/${id}/paybacks/${inflowId}${whole ? '?whole=1' : ''}`, { method: 'DELETE' });
 export const setCategory   = (id, category, applyToMerchant = false) =>
   json('PATCH', `/api/transactions/${id}`, {
     category, apply_to_merchant: applyToMerchant,

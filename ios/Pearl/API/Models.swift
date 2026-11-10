@@ -561,6 +561,11 @@ struct Transaction: Decodable, Identifiable, Hashable {
     let shareSet: Bool
     /// The joint account's fixed share, when it splits every purchase (AM-08).
     let accountShare: Double?
+    /// JOINT-B (S-01jr, T-06jr): her part of a joint purchase before any
+    /// split ("Split your $50.00 with friends"); nil off a joint account.
+    var jointPart: Double? = nil
+    /// SPLIT-C: "unknown" for Not sure yet, or how it's split; nil unsplit.
+    var splitMode: String? = nil
     let manual: Bool
     let recurring: String?
 
@@ -591,6 +596,68 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let merchant: String
         let date: String
         let amount: Double
+        /// On the purchase's REFUNDED BY row: its S-05o and Unlink refund? (SPLIT-25).
+        var link: LinkInfo? = nil
+    }
+
+    /// SPLIT-25 (THL-291): one payment that paid back this purchase, as
+    /// S-05o's options and the Unlink? sheet (S-34s, S-34k) say it. The
+    /// server words it, so the line always says what Unlink does.
+    struct LinkInfo: Decodable, Hashable, Identifiable {
+        let id: String
+        /// The money in to unlink (`DELETE …/paybacks/<inflow>` or `…/refund`),
+        /// or the cash or app payment (`DELETE …/split/cash/<cash_id>`).
+        let inflow: String?
+        let cashId: Int?
+        /// What it put toward this purchase.
+        let amount: Double
+        let date: String
+        /// bank, part, cash, app, reimbursement or refund.
+        let kind: String
+        /// "e-Transfer", "cash", "PayPal payment": "Unlink the $10.00 cash…".
+        let noun: String
+        /// S-05o: "Jo paid back $30.00" over "Part of a $60.00 e-Transfer on Nov 16…".
+        let dialog: String
+        let message: String
+        /// "View the e-Transfer", "View the deposit", "View the refund"; none for cash.
+        let view: Target?
+        let sheet: Sheet
+        /// S-05t's toast, when the server knows it before unlinking.
+        let toast: String?
+        /// The whole payment, the other purchases it paid back, and the
+        /// deposit that holds it (REFRESH-02's payment cards on S-40).
+        var whole: Double? = nil
+        var others: [String]? = nil
+        var deposit: Deposit? = nil
+
+        struct Target: Decodable, Hashable { let id: String; let label: String }
+        struct Deposit: Decodable, Hashable { let id: String; let amount: Double; let date: String }
+        struct Sheet: Decodable, Hashable {
+            let title: String
+            let name: String
+            /// Whose initials the sheet shows: "JO", "LO" for a Loblaws refund.
+            let face: String
+            let sub: String
+            /// S-34s: "This $60.00 also paid back Pizza Nova. Unlink only Loblaws’ $30.00?"
+            let ask: String?
+            let line: String
+            let button: String
+            /// REFRESH-02 (S-34sr, S-34kr): "Unlink Sam’s e-Transfer?" (or the ask),
+            /// the payment card, "Unlink $30.00" / "Keep linked", the footnote.
+            var heading: String? = nil
+            var overline: String? = nil
+            var card: Card? = nil
+            var confirm: String? = nil
+            var keep: String? = nil
+            var note: String? = nil
+
+            struct Card: Decodable, Hashable { let label: String; let amount: Double }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case id, inflow, amount, date, kind, noun, dialog, message, view, sheet, toast, whole, others, deposit
+            case cashId = "cash_id"
+        }
     }
 
     /// Another transaction, briefly: a payback, or the charge one repays.
@@ -606,9 +673,11 @@ struct Transaction: Decodable, Identifiable, Hashable {
         let paid: Double?
         /// The purchase's split, when it was split (2026-11-08).
         var split: Splitting? = nil
+        /// On the purchase's PAID BACK row: its S-05o and Unlink? (SPLIT-25).
+        var link: LinkInfo? = nil
 
         enum CodingKeys: String, CodingKey {
-            case id, date, merchant, description, amount, person, paid, split
+            case id, date, merchant, description, amount, person, paid, split, link
             case accountName = "account_name"
         }
 
@@ -622,6 +691,32 @@ struct Transaction: Decodable, Identifiable, Hashable {
         /// SPLIT-22b (S-05u, THL-181): paybacks linked here that Pearl
         /// credited to no one, newest first. Each asks "Who sent this?".
         var uncredited: [Uncredited]? = nil
+        /// JOINT-B: what was split (her part of a joint purchase, or all of it).
+        var base: Double? = nil
+        /// SPLIT-C (S-04u): what a Not sure yet split still costs her, and
+        /// what's come back so far.
+        var still: Double? = nil
+        var paid: Double? = nil
+        /// SPLIT-C (S-46c): the day she said That's everything.
+        var closedAt: String? = nil
+        /// JOINT-B (S-04j): who else is on the joint account, and their part.
+        var joint: Joint? = nil
+
+        /// SPLIT-C: Not sure yet, with no amounts.
+        var unsure: Bool { mode == "unknown" }
+
+        struct Joint: Decodable, Hashable {
+            let label: String
+            let people: [String]
+            let share: Double?
+            let part: Double
+            let theirs: Double
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case mode, you, people, uncredited, base, still, paid, joint
+            case closedAt = "closed_at"
+        }
 
         /// "$30.00 from an e-Transfer" over "Nov 16 · no name · paid back Loblaws".
         struct Uncredited: Decodable, Hashable, Identifiable {
@@ -664,6 +759,9 @@ struct Transaction: Decodable, Identifiable, Hashable {
             var payments: [Payment]? = nil
             /// Paybacks of theirs that also paid back other purchases (SPLIT-16).
             var shared: [Shared]? = nil
+            /// Every payment that paid them back here, each with its S-05o
+            /// options and Unlink? sheet (SPLIT-25, S-05v).
+            var links: [LinkInfo]? = nil
             var id: String { name }
 
             struct LetGo: Decodable, Hashable { let was: Double; let day: String }
@@ -705,7 +803,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
             var share: Double { letGo?.was ?? amount }
 
             enum CodingKeys: String, CodingKey {
-                case name, amount, paid, owes, cash, app, over, weight, payments, shared
+                case name, amount, paid, owes, cash, app, over, weight, payments, shared, links
                 case appName = "app_name"
                 case paidOn = "paid_on"
                 case cashIds = "cash_ids"
@@ -767,6 +865,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         case jointSplit = "joint_split"
         case bankMerchant = "bank_merchant"
         case shareSet = "share_set"
+        case jointPart = "joint_part"
+        case splitMode = "split_mode"
         case oneOffLine = "one_off_line"
         case incomeType = "income_type"
         case regularPay = "regular_pay"
@@ -823,6 +923,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         bankMerchant = opt(String.self, .bankMerchant)
         shareSet = opt(Bool.self, .shareSet) ?? false
         accountShare = opt(Double.self, .jointShare)
+        jointPart = opt(Double.self, .jointPart)
+        splitMode = opt(String.self, .splitMode)
         manual = opt(Bool.self, .manual) ?? false
         recurring = opt(String.self, .recurring)
         oneOffLine = opt(OneOffLine.self, .oneOffLine)
@@ -968,11 +1070,33 @@ struct OwedOverview: Decodable {
         }
     }
 
+    /// SPLIT-C (S-14u): Not sure yet splits, never in the total.
+    var notSettled: [NotSettled]? = nil
+
+    struct NotSettled: Decodable, Hashable, Identifiable {
+        let chargeId: String
+        let merchant: String
+        let date: String
+        let people: [String]
+        let paid: Double
+        let still: Double
+        /// Who has paid something so far (H-00u0).
+        var paidBy: [String]? = nil
+        var id: String { chargeId }
+
+        enum CodingKeys: String, CodingKey {
+            case merchant, date, people, paid, still
+            case chargeId = "charge_id"
+            case paidBy = "paid_by"
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case total, people
         case owesYou = "owes_you"
         case youOwe = "you_owe"
         case paidBack = "paid_back"
+        case notSettled = "not_settled"
     }
 }
 

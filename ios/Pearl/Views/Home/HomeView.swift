@@ -174,10 +174,28 @@ struct OwedNudgeCard: View {
     static func line(_ owed: OwedOverview, today: String?) -> String? {
         let items = owed.owesYou.flatMap(\.items)
         let now = today.flatMap { Format.localDay($0) } ?? Date()
-        guard owed.total >= 0.005, let oldest = items.map(\.date).min(),
-              let first = Format.localDay(oldest),
-              let days = Calendar.current.dateComponents([.day], from: first, to: now).day, days >= 7
-        else { return nil }
+        func aWeek(_ day: String) -> Bool {
+            guard let first = Format.localDay(day),
+                  let days = Calendar.current.dateComponents([.day], from: first, to: now).day else { return false }
+            return days >= 7
+        }
+        // H-00u (SPLIT-C decision 5): a Not sure yet split is never money
+        // owed, so it adds no amount; once it's a week old, the same timing
+        // as owes-you, a quiet "isn't settled yet" joins the line.
+        let unsettled = (owed.notSettled ?? []).filter { aWeek($0.date) }
+        let tail: String? = unsettled.isEmpty ? nil
+            : unsettled.count == 1 ? "\(unsettled[0].merchant) isn’t settled yet."
+            : "\(unsettled.count) splits aren’t settled yet."
+        guard owed.total >= 0.005, let oldest = items.map(\.date).min(), aWeek(oldest) else {
+            // H-00u0: only a Not sure yet split: no amount owed.
+            guard let tail = tail else { return nil }
+            if unsettled.count == 1, unsettled[0].paid >= 0.005 {
+                let by = unsettled[0].paidBy ?? []
+                let who = by.count == 1 ? by[0] : Format.andList(by)
+                return "\(tail) \(who) \(by.count == 1 ? "has" : "have") paid you \(Format.amount(unsettled[0].paid)) so far."
+            }
+            return tail
+        }
         // Up to two names, then "and N others".
         let names = owed.owesYou.map { $0.name.components(separatedBy: " ").first ?? $0.name }
         let who: String
@@ -189,7 +207,8 @@ struct OwedNudgeCard: View {
             who = "\(names[0]), \(names[1]) and \(others) other\(others == 1 ? "" : "s") owe"
         }
         let splits = Set(items.map { $0.chargeId ?? $0.date + ($0.merchant ?? "") }).count
-        return "\(who) you \(Format.amount(owed.total)), from \(splits) split\(splits == 1 ? "" : "s"). The oldest is from \(Format.short(oldest))."
+        let line = "\(who) you \(Format.amount(owed.total)), from \(splits) split\(splits == 1 ? "" : "s")."
+        return tail.map { "\(line) \($0)" } ?? "\(line) The oldest is from \(Format.short(oldest))."
     }
 }
 

@@ -31,6 +31,15 @@ enum Pearl {
     static let rule = dynamic(light: 0xE5DEE4, dark: 0x252C5E)      // lines between rows in a card
     static let onBlush = Color(hex: 0x1C1A33)                       // --on-nacre
     static let bar = dynamic(light: 0xFFFFFF, dark: 0x151B44)       // --surface-card, the tab bar
+    // REFRESH-02 (Design refresh kit 1088:1696), from the Pearl Design System
+    // Color variables in Light and Dark mode.
+    static let bubble = dynamic(light: 0xFFE4EC, dark: 0x4E2238)    // --blush, both modes
+    static let champagne = Color(hex: 0xF3D9A4)                     // --champagne (Banner, 22% fill)
+    static let borderStrong = Color(hex: 0x8A87A3)                  // --border-strong (the grabber)
+    /// color/fill/control: the Close and ••• circles and the secondary button.
+    static let control = Color(UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 120 / 255, green: 120 / 255, blue: 128 / 255, alpha: 0.36)
+        : UIColor(red: 120 / 255, green: 120 / 255, blue: 128 / 255, alpha: 0.16) })
 
     // MARK: Type
     // Fraunces (display) and Figtree (text), as on the web, bundled in Fonts/.
