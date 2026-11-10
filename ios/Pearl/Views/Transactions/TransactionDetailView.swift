@@ -285,6 +285,8 @@ struct TransactionDetailView: View {
     @State private var settlingUp = false
     /// TEST-18 (S-47): What was your share?
     @State private var settingShare = false
+    /// S-47f: whose S-40u to open once the sheet over the page has gone.
+    @State private var optionsFor: String?
     @State private var typingSettle = false
     @State private var closingSplit = false
     /// JOINT-B: S-41j Remove the split?
@@ -526,7 +528,11 @@ struct TransactionDetailView: View {
             if let split = t.splitting {
                 // S-47a–e → S-04u7: a set split, "Alex owes you $28.00" with
                 // Undo back to Not sure yet.
-                YourShareSheet(t: t, split: split, api: app.api, onClose: { settingShare = false }) { title, undo in
+                YourShareSheet(t: t, split: split, api: app.api, onClose: { settingShare = false },
+                               onPersonOptions: { name in
+                                   settingShare = false
+                                   DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { optionsFor = name }
+                               }) { title, undo in
                     settingShare = false
                     Task {
                         await load()
@@ -583,6 +589,10 @@ struct TransactionDetailView: View {
                     await run { nil }
                     showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
                 }
+            }, onPersonOptions: { name in
+                // S-47f: Options on the lock toast opens that person's S-40u.
+                typingSettle = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { optionsFor = name }
             })
         }
         .sheet(isPresented: $closingSplit) {
@@ -1373,7 +1383,8 @@ struct TransactionDetailView: View {
                         onSettle: { settlingUp = true },
                         onClose: { closingSplit = true },
                         onReopen: { Task { await reopenSplit() } },
-                        onSetShare: { settingShare = true })
+                        onSetShare: { settingShare = true },
+                        optionsFor: $optionsFor)
         }
     }
 

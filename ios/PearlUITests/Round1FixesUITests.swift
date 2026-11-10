@@ -350,6 +350,7 @@ final class Round1FixesUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5), "No S-47 field")
         field.tap()
         field.typeText("40")
+        XCTAssertTrue(app.toolbars.buttons["Done"].exists || app.buttons["Done"].exists, "No Done bar on S-47")
         XCTAssertTrue(text(containing: "Adds up to $127.50").waitForExistence(timeout: 4), "S-47c should add up")
         press("Save")
         XCTAssertTrue(text(containing: "Sam and Jo owe you $45.00").waitForExistence(timeout: 8), "S-04u7 toast")
@@ -357,5 +358,41 @@ final class Round1FixesUITests: XCTestCase {
             .first { ($0["merchant"] as? String) == "Gusto" }
         XCTAssertNotNil(split)
         XCTAssertEqual(before ?? 0, home() ?? -1, accuracy: 0.01, "Setting your share doesn't move the Allowance")
+    }
+    /// S-04r v3: You first on a split with amounts; tapping it opens Edit split.
+    func testASplitWithAmountsListsYouFirst() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        press("Save")
+        sleep(3)
+        let you = app.buttons["split-you-row"]
+        XCTAssertTrue(you.waitForExistence(timeout: 8), "No You row on the split card")
+        XCTAssertTrue(you.label.contains("42.50"), "You row should show your share: \(you.label)")
+        XCTAssertFalse(app.buttons["Options for you"].exists, "S-04r v3's You row has no •••")
+        tap(you, "the You row")
+        // The same sheet Edit split opens.
+        let sheet = app.staticTexts.matching(NSPredicate(format: "label == 'How to split' OR label == 'Who was it with?'")).firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5), "Tapping You should open Edit split")
+    }
+
+    /// S-45c4 and S-47f: Shares on Type amounts with a locked payer, and the
+    /// lock toast's Options opening that person's S-40u.
+    func testSharesWithALockedPayerAndTheLockToast() {
+        launch()
+        gustoNotSureWithPriyaPaid()
+        tap(button("Settle up"), "Settle up")
+        tap(button("Type amounts"), "Type amounts")
+        tap(app.buttons["Shares"], "the Shares segment")
+        let note = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'not in the shares'")).firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "A locked row should say it's not in the shares")
+        let amount = app.staticTexts["$42.50"].firstMatch
+        XCTAssertTrue(amount.exists, "Priya's locked amount should show as text")
+        amount.tap()
+        XCTAssertTrue(text(containing: "is linked. Unlink the payback").waitForExistence(timeout: 4), "No lock toast")
+        tap(app.buttons["Options"], "Options on the toast")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'Unlink'")).firstMatch
+                        .waitForExistence(timeout: 8), "Options should open Priya's S-40u")
     }
 }

@@ -34,9 +34,12 @@ struct YourShareSheet: View {
     let split: Transaction.Splitting
     let api: APIClient
     let onClose: () -> Void
+    /// S-47f: Options on the lock toast; the page opens that person's S-40u.
+    var onPersonOptions: ((String) -> Void)? = nil
     /// The toast ("Alex owes you $28.00") and the server's Undo.
     let onSaved: (String, JSONValue?) -> Void
 
+    @State private var lockToast: PearlToast.Model?
     @State private var mine = ""
     @State private var theirs: [String: String] = [:]
     @State private var busy = false
@@ -86,6 +89,35 @@ struct YourShareSheet: View {
     private var ready: Bool { mineCents != nil && !tooMuch && gapCents == 0 && !busy }
 
     var body: some View {
+        // TEST-16: the number pad's Done bar needs a navigation stack.
+        NavigationStack {
+            sheet
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") { typing = nil }.tint(Pearl.action).foregroundColor(Pearl.action)
+                    }
+                }
+                .toolbar(.hidden, for: .navigationBar)
+                // S-47f: "Priya’s $25.00 is linked…", with Options.
+                .overlay(alignment: .top) {
+                    if let m = lockToast {
+                        PearlToast(model: m) { withAnimation { lockToast = nil } }.padding(.top, 8)
+                    }
+                }
+        }
+    }
+
+    /// S-47f: why a locked row can't change, and Options to unlink it.
+    private func showLock(_ p: Transaction.Splitting.Person) {
+        let words = "\(possessive(p.name)) \(Format.amount(p.paid)) is linked. Unlink the payback to change \(possessive(p.name)) share."
+        withAnimation {
+            lockToast = PearlToast.Model(text: words, action: onPersonOptions == nil ? nil : "Options", failed: true,
+                                         run: onPersonOptions.map { open in { lockToast = nil; open(p.name) } })
+        }
+    }
+
+    private var sheet: some View {
         PearlSheet(dismissDisabled: busy) {
             PearlSheetHeader(face: "Me", overline: "Your share · \(t.merchant)", title: "What was your share?",
                              close: onClose)
@@ -99,10 +131,27 @@ struct YourShareSheet: View {
             PearlSectionLabel(text: "What’s left")
             PearlOptionCard {
                 line(t.merchant, "The whole purchase", Format.amount(base))
-                if !paidPeople.isEmpty {
+                if !paidPeople.isEmpty && unpaid.count > 1 {
+                    // S-47c / S-47f: each payer, locked; a tap says how to change it.
+                    ForEach(paidPeople) { p in
+                        PearlDivider()
+                        Button { showLock(p) } label: {
+                            line(p.name, ["Paid back", p.paidOn.map { Format.short($0) }, "locked"]
+                                    .compactMap { $0 }.joined(separator: " · "),
+                                 "\u{2212}" + Format.amount(p.paid))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Says how to change it")
+                    }
+                } else if !paidPeople.isEmpty {
                     PearlDivider()
-                    line("Paid back", "\(Format.andList(paidPeople.map(\.name))) · linked, locked",
-                         "\u{2212}" + Format.amount(Double(paidCents) / 100))
+                    Button { if paidPeople.count == 1 { showLock(paidPeople[0]) } } label: {
+                        line("Paid back", "\(Format.andList(paidPeople.map(\.name))) · linked, locked",
+                             "\u{2212}" + Format.amount(Double(paidCents) / 100))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
                 PearlDivider()
                 line("Your share", "What you had",
