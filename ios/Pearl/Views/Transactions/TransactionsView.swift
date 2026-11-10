@@ -170,15 +170,23 @@ struct TransactionsView: View {
                 }
             }
         }
-        .alert("Leave out \(pickedTitle)?", isPresented: $leavingOut) {
-            TextField("Why? For example, a friend’s purchase", text: $leaveReason)
-            Button("Cancel", role: .cancel) { leaveReason = "" }
-            // TEST-07: the server needs a reason, so Leave out waits for one
-            // and the alert says why (it used to close and do nothing).
-            Button("Leave out") { Task { await leaveOut() } }
-                .disabled(leaveReason.trimmingCharacters(in: .whitespaces).isEmpty)
-        } message: {
-            Text("They’re left out of all your numbers. Put any back from its transaction. Say why, so you can tell later.")
+        .sheet(isPresented: $leavingOut) {
+            // T-77c / T-77c2 (TEST-06, TEST-07): Leave out stays off until
+            // there's a reason, and the sheet says why under the field.
+            let n = picked.count
+            PearlConfirmSheet(overline: "Leave out · \(n) selected",
+                              title: n == 1 ? "Leave out 1 transaction?" : "Leave out \(n) transactions?",
+                              message: n == 1 ? "It’s left out of all your numbers. You can put it back from its page."
+                                              : "They’re left out of all your numbers. You can put any back from its page.",
+                              field: .init(label: "Why?", prompt: "For example, a friend’s purchase",
+                                           note: "Say why, so you can tell later.", identifier: "leave-out-reason"),
+                              text: $leaveReason,
+                              primary: n == 1 ? "Leave out" : "Leave out \(n)", busyLabel: "Leaving out…",
+                              failure: "Couldn’t leave \(n == 1 ? "it" : "them") out. Nothing changed. Try again.",
+                              onClose: { leavingOut = false; leaveReason = "" }) {
+                try await leaveOut()
+                leavingOut = false
+            }
         }
         .navigationDestination(for: Transaction.self) { t in
             TransactionDetailView(transaction: t, categories: categories, siblings: rows)
@@ -750,28 +758,22 @@ struct TransactionsView: View {
         if picked.contains(t.id) { picked.remove(t.id) } else { picked.insert(t.id) }
     }
 
-    /// Leave out every picked row, with her reason.
-    private func leaveOut() async {
+    /// Leave out every picked row, with her reason (T-77c). Throws so the
+    /// sheet stays up with its Banner.
+    private func leaveOut() async throws {
         let reason = leaveReason.trimmingCharacters(in: .whitespaces)
-        leaveReason = ""
-        guard !reason.isEmpty else {
-            error = "Say why, so you can tell later."
-            return
-        }
+        guard !reason.isEmpty else { throw SplitMenuError(words: "Say why, so you can tell later.") }
         busy = true
         defer { busy = false }
         let ids = Array(picked)
-        do {
-            for id in ids {
-                let _: OK = try await app.api.put("api/transactions/\(id)/exclude", ["reason": reason])
-            }
-            endSelecting()
-            withAnimation { toast = Toast(title: ids.count == 1 ? "Left out." : "\(ids.count) left out.", undo: nil) }
-            app.changed()
-            await reload()
-        } catch {
-            self.error = app.handle(error)
+        for id in ids {
+            let _: OK = try await app.api.put("api/transactions/\(id)/exclude", ["reason": reason])
         }
+        leaveReason = ""
+        endSelecting()
+        withAnimation { toast = Toast(title: ids.count == 1 ? "Left out." : "\(ids.count) left out.", undo: nil) }
+        app.changed()
+        await reload()
     }
 
     private func endSelecting() {

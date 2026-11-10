@@ -130,20 +130,31 @@ struct CategoriesRulesView: View {
                             renamingTag = nil
                         })
         }
-        .confirmationDialog(removingRule.map { "Remove the rule for \($0.name)?" } ?? "",
-                            isPresented: present($removingRule), titleVisibility: .visible,
-                            presenting: removingRule) { rule in
-            Button("Remove this rule", role: .destructive) { remove(rule) }
-        } message: { rule in
-            Text(rule.removing)
+        .sheet(item: $removingRule) { rule in
+            // CR-00x (TEST-06): a Pearl sheet, not an action sheet.
+            PearlConfirmSheet(overline: "Rules", title: "Remove the rule for \(rule.name)?", message: rule.removing,
+                              primary: "Remove the rule", busyLabel: "Removing…", secondary: "Keep it",
+                              failure: "Couldn’t remove the rule. Nothing changed. Try again.",
+                              onClose: { removingRule = nil }) {
+                let _: OK = try await app.api.delete("api/rules/\(rule.id)")
+                removingRule = nil
+                withAnimation { toast = Toast(text: "Rule deleted.") }
+                app.changed()
+                await load()
+            }
         }
-        .confirmationDialog(removingTag.map { "Take \($0.tag) off \(transactions($0.count))?" } ?? "",
-                            isPresented: present($removingTag), titleVisibility: .visible,
-                            presenting: removingTag) { tag in
-            Button("Remove this tag", role: .destructive) {
-                run("\(tag.tag) removed.") {
-                    let _: OK = try await app.api.put("api/tags/\(tag.tag)", ["name": NSNull()])
-                }
+        .sheet(item: $removingTag) { tag in
+            // CR-10x (TEST-06).
+            PearlConfirmSheet(overline: "Tags", title: "Take \(tag.tag) off \(transactions(tag.count))?",
+                              message: "The transactions stay as they are. Only the tag comes off.",
+                              primary: "Remove the tag", busyLabel: "Removing…", secondary: "Keep it",
+                              failure: "Couldn’t remove the tag. Nothing changed. Try again.",
+                              onClose: { removingTag = nil }) {
+                let _: OK = try await app.api.put("api/tags/\(tag.tag)", ["name": NSNull()])
+                removingTag = nil
+                withAnimation { toast = Toast(text: "\(tag.tag) removed.") }
+                app.changed()
+                await load()
             }
         }
     }
@@ -386,15 +397,15 @@ struct CategoriesRulesView: View {
         if rule.isSorting { editing = rule } else { explaining = rule }
     }
 
-    /// Removing pay or leave-out rule changes what's counted, so it asks first.
-    private func delete(_ rule: RulesBook.Rule) {
-        if rule.isSorting { remove(rule) } else { removingRule = rule }
-    }
-
     private func remove(_ rule: RulesBook.Rule) {
         run("Rule deleted.") {
             let _: OK = try await app.api.delete("api/rules/\(rule.id)")
         }
+    }
+
+    /// Removing pay or leave-out rule changes what's counted, so it asks first.
+    private func delete(_ rule: RulesBook.Rule) {
+        if rule.isSorting { remove(rule) } else { removingRule = rule }
     }
 
     private func setKind(_ category: String, _ kind: String?) {

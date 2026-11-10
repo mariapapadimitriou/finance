@@ -1766,10 +1766,18 @@ struct TransactionDetailView: View {
                 .buttonStyle(NacreTextButtonStyle(tone: Pearl.moneyOut))
                 .padding(.top, 12)
                 .disabled(busy)
-                .confirmationDialog("Delete \(t.merchant)?", isPresented: $deleting, titleVisibility: .visible) {
-                    Button("Delete", role: .destructive) { Task { await delete() } }
-                } message: {
-                    Text("You added it by hand. It comes out of your numbers.")
+                .sheet(isPresented: $deleting) {
+                    // T-03x (TEST-06): a Pearl sheet; T-03x2 if it fails.
+                    PearlConfirmSheet(face: t.merchant, overline: "Added by hand", title: "Delete \(t.merchant)?",
+                                      message: "You added it by hand, so it comes out of your numbers. This can’t be undone.",
+                                      primary: "Delete", busyLabel: "Deleting…", secondary: "Keep it",
+                                      failure: "Couldn’t delete \(t.merchant). Nothing changed. Try again.",
+                                      onClose: { deleting = false }) {
+                        let _: OK = try await app.api.delete("api/transactions/\(t.id)")
+                        deleting = false
+                        app.changed()
+                        dismiss()
+                    }
                 }
         }
     }
@@ -2245,18 +2253,6 @@ struct TransactionDetailView: View {
             let reply: Reply = try await app.api.delete("api/transactions/\(t.id)/parts")
             detail = try await app.api.get("api/transactions/\(reply.id)")
             return reply.title
-        }
-    }
-
-    private func delete() async {
-        busy = true
-        defer { busy = false }
-        do {
-            let _: OK = try await app.api.delete("api/transactions/\(t.id)")
-            app.changed()
-            dismiss()
-        } catch {
-            self.error = app.handle(error)
         }
     }
 

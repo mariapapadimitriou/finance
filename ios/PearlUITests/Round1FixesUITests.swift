@@ -227,20 +227,35 @@ final class Round1FixesUITests: XCTestCase {
         tap(app.buttons["Select"], "Select")
         tap(button("Spotify"), "Spotify in Select")
         tap(app.buttons["Leave out"], "Leave out in the bar")
-        let alert = app.alerts.firstMatch
-        XCTAssertTrue(alert.waitForExistence(timeout: 5), "No Leave out confirmation")
-        XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Say why'")).firstMatch.exists,
-                      "The confirmation should say a reason is needed")
-        let leave = alert.buttons["Leave out"]
+        // TEST-06: T-77c is a Pearl sheet, not a stock alert.
+        XCTAssertEqual(app.alerts.count, 0, "Leave out is still a stock alert")
+        XCTAssertTrue(text(containing: "Leave out 1 transaction?").waitForExistence(timeout: 5), "No T-77c sheet")
+        XCTAssertTrue(text(containing: "Say why, so you can tell later.").exists,
+                      "The sheet should say a reason is needed")
+        let leave = app.buttons.matching(NSPredicate(format: "label == 'Leave out'")).allElementsBoundByIndex.last!
         XCTAssertFalse(leave.isEnabled, "Leave out should wait for a reason")
-        alert.textFields.firstMatch.tap()
-        alert.textFields.firstMatch.typeText("A friend's")
+        let why = app.textFields["leave-out-reason"]
+        tap(why, "the Why? field")
+        why.typeText("A friend's")
         XCTAssertTrue(leave.isEnabled, "Leave out should be on once there's a reason")
         leave.tap()
         sleep(3)
         let list = server("transactions?q=Spotify") as? [String: Any]
         let rows = (list?["transactions"] as? [[String: Any]]) ?? []
         XCTAssertTrue(rows.contains { !(($0["excluded"] as? String) ?? "").isEmpty }, "Spotify wasn't left out")
+    }
+
+    /// TEST-06: P-05, a Pearl sheet; Stay signed in keeps her signed in.
+    func testSignOutAsksOnAPearlSheet() {
+        launch()
+        app.tabBars.buttons["Profile"].tap()
+        let signOut = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Sign out'")).firstMatch
+        tap(signOut, "Sign out on Profile")
+        XCTAssertEqual(app.sheets.count + app.alerts.count, 0, "Sign out is still a stock dialog")
+        XCTAssertTrue(text(containing: "Sign out on this iPhone?").waitForExistence(timeout: 5), "No P-05 sheet")
+        tap(app.buttons["Stay signed in"], "Stay signed in")
+        sleep(1)
+        XCTAssertTrue(app.tabBars.buttons["Profile"].exists, "Stay signed in should keep her signed in")
     }
 
     // MARK: TEST-16 The number pad on Amounts
