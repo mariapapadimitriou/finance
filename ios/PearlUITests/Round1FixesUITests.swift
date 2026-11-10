@@ -294,4 +294,28 @@ final class Round1FixesUITests: XCTestCase {
         }
         XCTAssertGreaterThanOrEqual(app.buttons["Calendar"].frame.height, 44)
     }
+    // MARK: TEST-03 Rule A: the whole purchase until it's paid back
+
+    /// S-04r v2: the page's big amount is the whole purchase, with "Your
+    /// share" under it, and the Allowance doesn't drop by only your share.
+    func testASplitShowsTheWholePurchaseAndYourShare() {
+        launch()
+        let before = ((server("home") as? [String: Any])?["safe_to_spend"] as? [String: Any])?["amount"] as? Double
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam", "Jo"])
+        tap(app.buttons["Amounts"], "Amounts")
+        for (who, amount) in [("Priya", "42.50"), ("Sam", "30"), ("Jo", "15")] {
+            let f = amountField(who)
+            tap(f, "\(who)'s amount")
+            f.typeText(amount)
+        }
+        app.staticTexts["How to split"].firstMatch.tap()
+        press("Save")
+        sleep(3)
+        XCTAssertTrue(text(containing: "127.50").waitForExistence(timeout: 8), "The hero should be the whole purchase")
+        XCTAssertTrue(text(containing: "Your share $40.00").exists, "\"Your share $40.00\" should be under it")
+        let after = ((server("home") as? [String: Any])?["safe_to_spend"] as? [String: Any])?["amount"] as? Double
+        XCTAssertEqual(before ?? 0, after ?? -1, accuracy: 0.01, "Splitting shouldn't move the Allowance under Rule A")
+    }
 }
