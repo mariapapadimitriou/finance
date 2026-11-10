@@ -40,6 +40,7 @@ The shared log for the two bots (`.claude/agents/designBOT.md`,
 | SPLIT-27 | Shared with picker (JOINT-A) | Major | JOINT-A (Jira pending), THL-172, THL-282, THL-291 | Accepted and built — branch feat/joint-and-not-sure-splits (base fix/unlink-from-purchase) |
 | SPLIT-28 | Split my part (JOINT-B) | Major | JOINT-B (Jira pending), THL-172, THL-282, THL-291, THL-201, THL-203, THL-181 | Accepted and built — branch feat/joint-and-not-sure-splits |
 | SPLIT-29 | Not sure yet (SPLIT-C) | Major | SPLIT-C (Jira pending), THL-291, THL-181, THL-289 | Accepted and built — branch feat/joint-and-not-sure-splits |
+| REFRESH-03 | Less words, less clutter (split screens; designBOT's pass, logged in design-refresh-log.md) | Minor | THL-291, THL-289, THL-181, THL-301, THL-260, THL-282, THL-172 | Accepted and built — branch refresh/split-less-words, PR against main |
 
 ## Conversation
 
@@ -1416,13 +1417,16 @@ Not sure yet (SPLIT-C). Every acceptance criterion has a screen. How to split is
 - **PR:** https://github.com/mariapapadimitriou/finance/pull/317, base `fix/unlink-from-purchase` (PR #316). Open, not merged.
 - **Jira:** commented on THL-172 (JOINT-A, JOINT-B) and THL-291 (JOINT-B, SPLIT-C), saying the stories still need tickets. Nothing moved.
 
+### [engBOT] 2026-11-09 · REFRESH-03 · Less words, less clutter (cross-reference)
+The product owner ordered a declutter pass on the split screens ("less wordy and less cluttered on the screen, like their intended inspiration"). designBOT edited 158 split frames in place (316 with dark twins) and wrote the spec; the entries live in `ios/bots/design-refresh-log.md` (designBOT's REFRESH-03 entry, then engBOT's Start, Accepted, Build and Tests/PR entries). Copy and clutter only: no new flow, screen, state or server behaviour, and no animation. Every confirmation, Undo, Try again, loading and error state from SPLIT-01 to SPLIT-29 stays. Built on branch `refresh/split-less-words` from `origin/main` (df880d5). Where a removed line carried meaning, it stays as a VoiceOver `accessibilityHint`; names, never pronouns, for other people.
+
 ## Summary
 
-This is the state after sixteen rounds, the THL-301 follow-up, SPLIT-25 and SPLIT-26 (REFRESH-02, the custom split menus), and the three product-owner-approved stories JOINT-A, JOINT-B and SPLIT-C (SPLIT-27 to SPLIT-29), 2026-11-09 to 11-10. Every issue, SPLIT-01 to SPLIT-29, is decided and built. SPLIT-25 and SPLIT-26 are on their own branch and PR. SPLIT-27 to SPLIT-29 are on a third branch and PR, based on that one (below). JOINT-A, JOINT-B and SPLIT-C still need Jira tickets: creating them was blocked, so they were commented on THL-172 and THL-291. SPLIT-26 replaced every stock iOS menu, alert and action sheet in the split flow with designBOT's Pearl sheets and toasts. Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
+This is the state after sixteen rounds, the THL-301 follow-up, SPLIT-25 and SPLIT-26 (REFRESH-02, the custom split menus), the three product-owner-approved stories JOINT-A, JOINT-B and SPLIT-C (SPLIT-27 to SPLIT-29), and designBOT's REFRESH-03 copy pass ("Less words, less clutter") on the split screens, 2026-11-09 to 11-10. Every issue, SPLIT-01 to SPLIT-29, is decided and built. SPLIT-25 and SPLIT-26 are on their own branch and PR. SPLIT-27 to SPLIT-29 are on a third branch and PR, based on that one (below). REFRESH-03 is on a fourth branch and PR from `main` (after PR #316 and #317 merged): copy and clutter only, no new flow or server behaviour, every confirmation, Undo, Try again, loading and error state kept; its entries are in `ios/bots/design-refresh-log.md`. JOINT-A, JOINT-B and SPLIT-C still need Jira tickets: creating them was blocked, so they were commented on THL-172 and THL-291. SPLIT-26 replaced every stock iOS menu, alert and action sheet in the split flow with designBOT's Pearl sheets and toasts. Correction: earlier versions of this Summary called SPLIT-06 fully built. It wasn't. A split made from Quick sort's sheet still saved at once, and that is now built as SPLIT-20 (round 11).
 
 **Before merging:** test it by hand on a device. No round was run by hand on a simulator or a phone. Every check was automated: pytest, the web build, the simulator build, and wiring checks on the Swift source.
 
-**PR:** https://github.com/mariapapadimitriou/finance/pull/315 (merged). SPLIT-25 and SPLIT-26: https://github.com/mariapapadimitriou/finance/pull/316 (open, not merged), branch `fix/unlink-from-purchase`. SPLIT-27 to SPLIT-29: https://github.com/mariapapadimitriou/finance/pull/317 (open, not merged), branch `feat/joint-and-not-sure-splits`, base `fix/unlink-from-purchase`.
+**PR:** https://github.com/mariapapadimitriou/finance/pull/315 (merged). SPLIT-25 and SPLIT-26: https://github.com/mariapapadimitriou/finance/pull/316 (merged), branch `fix/unlink-from-purchase`. SPLIT-27 to SPLIT-29: https://github.com/mariapapadimitriou/finance/pull/317 (merged), branch `feat/joint-and-not-sure-splits`. REFRESH-03: https://github.com/mariapapadimitriou/finance/pull/318 (open, not merged), branch `refresh/split-less-words`, base `main`.
 **Branch:** `feat/split-bot-round` (rounds 1–16, THL-301)
 **Commits:**
 - e0da5fa: iOS, round 4
@@ -1449,11 +1453,12 @@ This is the state after sixteen rounds, the THL-301 follow-up, SPLIT-25 and SPLI
 - this log commit: designBOT's SPLIT-24 entry and the THL-301 round
 - on `fix/unlink-from-purchase`: bcd8fbd SPLIT-25 build, e1df1d4 SPLIT-25 log; c90ff92 SPLIT-26 (REFRESH-02) build, then its log commit
 - on `feat/joint-and-not-sure-splits`: 7ec75bb JOINT-A/B and SPLIT-C server and tests, b2dc643 the app, then the log commit
+- on `refresh/split-less-words` (REFRESH-03): 73c3337 app and server, then tests, then the log commit
 
 **Tests:**
-- `python3 -m pytest -q`: 1901 passed (SPLIT-27 to SPLIT-29; 1858 at SPLIT-26). That includes 43 new in tests/test_joint_and_unsure_splits.py. That's 80 new in tests/test_split_round.py across rounds 7, 9, 10, 11, 12, 14, 16 and THL-301, 17 in tests/test_unlink_from_purchase.py for SPLIT-25, and 22 in tests/test_split_menus.py for SPLIT-26.
-- `npm run build`: built (SPLIT-29).
-- iOS Simulator build: BUILD SUCCEEDED (SPLIT-29), no warnings in the files it touched.
+- `python3 -m pytest -q`: 1907 passed (REFRESH-03; 1901 at SPLIT-29, 1858 at SPLIT-26). REFRESH-03 added 6 in tests/test_split_menus.py (TestLessWords). That includes 43 new in tests/test_joint_and_unsure_splits.py. That's 80 new in tests/test_split_round.py across rounds 7, 9, 10, 11, 12, 14, 16 and THL-301, 17 in tests/test_unlink_from_purchase.py for SPLIT-25, and 22 in tests/test_split_menus.py for SPLIT-26.
+- `npm run build`: built (REFRESH-03).
+- iOS Simulator build: BUILD SUCCEEDED (REFRESH-03), no warnings in the files it touched.
 - Not run by hand on a simulator or a device.
 
 ### Every issue
@@ -1489,6 +1494,7 @@ This is the state after sixteen rounds, the THL-301 follow-up, SPLIT-25 and SPLI
 | SPLIT-27 | Shared with picker (JOINT-A) | Accepted and built (PR #317): `GET /api/people/recent`; the people picker (AM-08p–p7, S-17 v2, S-17j) on the joint account page, in setup and in Add someone; AM-08r/r1/x/x1 with Undo; the last person can go (decision 5); already-shared ticked and dimmed (decision 6) |
 | SPLIT-28 | Split my part (JOINT-B) | Accepted and built (PR #317): her part is split ($16.68 / $16.66 / $16.66), holders refused (decision 3), "Split with others" on all-mine accounts (decision 4), share changes rescale or keep typed amounts and ask first (AM-21j, decision 2), Remove the split (S-41j), not joint keeps splits (AM-08n, decision 1), all with Undo |
 | SPLIT-29 | Not sure yet (SPLIT-C) | Accepted and built (PR #317): the fifth method "Not sure", the card that never says owes, the payback cap (decision 2), Settle up with $0.00 kept (decision 3) and the extra step (decision 6), That's everything / Reopen and reopening on link (decision 4), NOT SETTLED and Home after 7 days (decision 5), Quick sort and Split my part (decision 7) |
+| REFRESH-03 | Less words, less clutter (designBOT's copy pass on every split screen; product owner 2026-11-09) | Accepted and built (PR #318): about 95 strings shortened and 30 explainer lines, row subtitles and footnotes removed across the split sheets, pages, toasts and the server's Unlink? words; 14 VoiceOver hints keep the meaning; S-41j loses its joint-share row. No flow, state, confirmation, Undo or Try again changed. Details in design-refresh-log.md |
 
 ### Still open
 
@@ -1548,6 +1554,7 @@ This is the state after sixteen rounds, the THL-301 follow-up, SPLIT-25 and SPLI
 | THL-301 | engBOT | Checked every SPLIT-24 node and Accepted it. Built it (68579a1): partly-extra `extra_question`, one item per deposit (credit, then extra), the save that keeps the credited parts with Undo (app and web), the S-21xm row, S-11xm and its over state, S-35c's mixed-case line, and Quick sort's follow-up card. Updated PR #315, commented on THL-301 and moved it to Testing. Listed the remaining gaps under Still open as notes for the product owner. |
 | SPLIT-25 | designBOT, then engBOT | designBOT (engBOT not running) logged SPLIT-25 from the product owner's hand test and drew S-05v, S-05o, S-34s and its error, S-05t and nine S-34k sheets, light and dark. engBOT checked them by node, Accepted, and built the server and app (PR #316). After the product owner's mid-build change, S-05o and S-34s became Pearl sheets in one view, to be replaced by the custom design. engBOT commented on THL-291. |
 | SPLIT-26 | product owner, designBOT, then engBOT | The product owner decided the design refresh (ink spending, Sort now → Quick sort, ••• menus with custom pages, pearl paper, look before animation). designBOT drew REFRESH-02 on "Design refresh" section 11 and logged it in design-refresh-log.md; engBOT relayed it here, checked it by node, Accepted, built the server toasts and Unlink? words and the app's Pearl sheets (PR #316), and commented on THL-291. |
+| REFRESH-03 | product owner, designBOT, then engBOT | The product owner ordered the declutter pass and narrowed it to the split screens. designBOT edited 158 frames in place (316 with dark twins), added section 14 (rules 1138:9247, before/after pairs, handoff 1138:9769) and wrote the spec. engBOT appended designBOT's entry to design-refresh-log.md, spot-checked S-41j and the notes by node, Accepted, built the app and server (PR #318), updated the tests, and commented on THL-291. Four items were left as notes for the product owner. |
 | SPLIT-27–29 | product owner, designBOT, then engBOT | The product owner approved JOINT-A, JOINT-B and SPLIT-C, then decided designBOT's six JOINT and seven SPLIT-C questions. designBOT drew sections 12 and 13 of "Design refresh" with a server handoff. engBOT appended designBOT's entries, checked the frames by node and screenshot, Accepted all three, built the server and app (PR #317), and commented on THL-172 and THL-291. The gaps are notes for the product owner, with no new design loop. |
 
 Throughout, no ticket was moved past Testing, no bot merged anything (the product owner merged PR #315), and Figma was edited only by designBOT.
