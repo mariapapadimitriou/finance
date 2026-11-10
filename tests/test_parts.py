@@ -107,7 +107,8 @@ class TestPartialAndLetGo:
         spent = month_totals(client)["spent"]
         r = client.post(f"/api/transactions/{i['SUSHI']}/split/let-go", json={"name": "Sam"})
         assert r.status_code == 200
-        assert month_totals(client)["spent"] == spent + 15
+        # Rule A (TEST-03): Sam's $15 counted all along, so nothing moves.
+        assert month_totals(client)["spent"] == spent
         sam = detail(client, i["SUSHI"])["splitting"]["people"][0]
         assert sam["owes"] == 0 and sam["let_go"]["was"] == 25
         client.delete(f"/api/transactions/{i['SUSHI']}/split/let-go", json={"name": "Sam"})

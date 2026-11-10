@@ -307,10 +307,13 @@ def describe(t: Transaction, ctx: Context) -> dict:
 
     # A split is a charge that is partly hers: not one that is wholly someone
     # else's, and not one left out.
+    # Rule A (TEST-03): a split nobody has paid yet counts in full, so it's
+    # still a split when its amount is the whole purchase.
+    owed = getattr(t, "split_owed", 0.0) or 0.0
     split = ((t.my_share is not None or bool(t.paid_back)) and counts == "spending"
              and cat not in ("Transfers", "Unsorted transfers", "Income")
-             and abs(abs(share_amount(t)) - abs(t.amount)) >= 0.005)
-    if split and counts == "spending" and abs(amount - abs(t.amount)) >= 0.005:
+             and (abs(abs(share_amount(t)) - abs(t.amount)) >= 0.005 or owed >= 0.005))
+    if split and counts == "spending" and (abs(amount - abs(t.amount)) >= 0.005 or owed >= 0.005):
         paid = ctx.paid_by.get(t.fingerprint) or []
         names = ctx.split_with.get(t.fingerprint) or paid
         # Who paid back, by the names in her split (2026-10-24), not the
@@ -322,7 +325,10 @@ def describe(t: Transaction, ctx: Context) -> dict:
         with_whom = (f" · {', '.join(paid)} paid you back" if paid
                      else " · split with " + ", ".join(names) if names
                      else f" · {t.joint} paid the rest" if t.joint else "")
-        note = f"Your share of {money(t.amount)}{with_whom}"
+        # Until everyone has paid, the row isn't her share yet: it says who
+        # it's split with, or who has paid (Rule A).
+        note = (f"Your share of {money(t.amount)}{with_whom}" if owed < 0.005
+                else (with_whom[3:4].upper() + with_whom[4:]) if with_whom else "")
 
     # A purchase she linked a refund to says so, the way the refund names it.
     refunds_in = sorted(ctx.refunded_by.get(t.fingerprint, []), key=lambda r: r.date)

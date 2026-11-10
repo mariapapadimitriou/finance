@@ -799,7 +799,7 @@ struct TransactionDetailView: View {
             .disabled(t.transfer != nil)
             .accessibilityAddTraits(.isHeader)
             .accessibilityHint(t.transfer == nil ? "Rename the merchant" : "")
-            Text(Format.money(t))
+            Text(heroAmount)
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
                 .foregroundColor(t.tone)
                 .lineLimit(1).minimumScaleFactor(0.5)
@@ -847,6 +847,16 @@ struct TransactionDetailView: View {
         .padding(.top, 4)
     }
 
+    /// S-04r v2 (Rule A, TEST-03): a split with shares shows the whole
+    /// purchase, as on the card statement, with "Your share" under it. Not
+    /// sure yet keeps what it counts as so far (S-04u).
+    private var heroAmount: String {
+        if let s = t.splitting, !s.unsure, !t.inflow, let full = t.fullAmount {
+            return "\u{2212}" + Format.amount(full)
+        }
+        return Format.money(t)
+    }
+
     /// "Wed, Nov 11 · TD Chequing ••4417".
     private var dateLine: String {
         let when = Format.relativeDay(t.date) == "Today" ? "Today" : Format.weekdayDay(t.date)
@@ -856,7 +866,8 @@ struct TransactionDetailView: View {
         if let s = t.splitting, !t.inflow {
             if s.unsure {
                 lead = "Counts as \(Format.amount(s.still ?? s.you))" + (s.closedAt == nil ? " so far" : "")
-            } else if s.joint != nil {
+            } else {
+                // S-04r v2: "Your share $30.00 · Wed, Nov 11"; S-04j the same.
                 lead = "Your share \(Format.amount(s.you))"
             }
         } else if !t.inflow && t.splitsMyPart {
@@ -1010,8 +1021,9 @@ struct TransactionDetailView: View {
         if !t.excluded.isEmpty { return "Left out · \(t.excluded)" }
         if t.refundOf != nil { return nil }
         if t.split, let full = t.fullAmount {
-            // S-05: "Your share · $42.06 of $84.12".
-            return "Your share · \(Format.amount(t.amount)) of \(Format.amount(full))"
+            // S-05: "Your share · $42.06 of $84.12". Rule A: the share as
+            // split, not what counts until they pay.
+            return "Your share · \(Format.amount(t.splitting.map { $0.you } ?? t.amount)) of \(Format.amount(full))"
         }
         switch t.counts {
         case "income" where t.jointFrom == "both":
