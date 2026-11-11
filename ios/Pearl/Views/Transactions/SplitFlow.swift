@@ -169,9 +169,6 @@ struct SplitSheet: View {
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
             .scrollDismissesKeyboard(.interactively)
-            // Save rides on the scroll view, so what's scrolled to sits above
-            // it, not under it, with the number pad up (TEST-16).
-            .safeAreaInset(edge: .bottom, spacing: 0) { footer }
             // TEST-16 (S-03re): with the number pad up, the status line and
             // "Split the rest evenly" stay in view right above Save.
             .onChange(of: focused) { now in
@@ -183,7 +180,29 @@ struct SplitSheet: View {
                     }
                 }
             }
+            // TEST-16 (round 2): typing changes the status line and what's
+            // under it ("Split the rest evenly"), which pushed it below the
+            // view; keep it in sight while she types.
+            .onChange(of: values) { _ in
+                guard focused != nil else { return }
+                for wait in [0.1, 0.5] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
+                        withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
+                    }
+                }
             }
+            // Once the pad has finished coming up, and the sheet has made room.
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                guard focused != nil else { return }
+                withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
+            }
+            }
+            // TEST-16 / TEST-22 (round 2): Save is the scroll view's sibling,
+            // not an inset on it. As an inset, the content under it didn't
+            // make room with the number pad up or at AX sizes, so Save sat on
+            // "I had some too" and the meter. Here the scroll view ends where
+            // Save begins, and the meter and status line scroll above it.
+            footer
         }
         .background(SheetBackground())
         // TEST-16 (designBOT's answer): Done over every number pad here; a

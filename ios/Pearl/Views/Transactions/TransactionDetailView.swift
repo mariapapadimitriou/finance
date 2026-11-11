@@ -429,6 +429,12 @@ struct TransactionDetailView: View {
         }
         // S-04r v2s (TEST-09): a real inline bar; iOS draws its scroll-edge
         // material behind Back and the clock once the page scrolls under it.
+        // TEST-09 (round 2): the app's bars are see-through (PearlApp), so
+        // iOS drew no scroll-edge material. Once the hero is under the bar,
+        // S-04r v2s's --surface-page bar sits behind Back, the title and
+        // the clock, and nothing scrolls under them.
+        .toolbarBackground(Pearl.scrolledBar, for: .navigationBar)
+        .toolbarBackground(heroGone ? .visible : .hidden, for: .navigationBar)
         .navigationBarHidden(false)
         .navigationTitle(heroGone ? t.merchant : "")
         .navigationBarTitleDisplayMode(.inline)
@@ -813,6 +819,7 @@ struct TransactionDetailView: View {
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
                 .foregroundColor(t.tone)
                 .lineLimit(1).minimumScaleFactor(0.5)
+                .accessibilityLabel(Format.spoken(heroAmount))
             Text(t.transfer != nil ? "Doesn’t count · Between your accounts" : dateLine)
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center)
@@ -1828,10 +1835,12 @@ struct TransactionDetailView: View {
     // MARK: Parts
 
     private func section(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+        // TEST-14 (round 2): the 11 pt caption didn't grow with Dynamic Type
+        // ("partially unsupported"); the overline is the sheets' section
+        // label, which does, and wraps rather than clips.
+        PearlSectionLabel(text: text)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 16).padding(.top, 12)
-            .accessibilityAddTraits(.isHeader)
     }
 
     private func row(title: String, sub: String? = nil, placeholder: Bool = false, chevron: Bool,

@@ -208,6 +208,7 @@ struct PearlSectionLabel: View {
         Text(text.uppercased())
             .font(Pearl.text(.footnote, .medium)).tracking(0.78)
             .foregroundColor(Pearl.muted)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
     }
@@ -289,8 +290,10 @@ struct PearlSheetHeader: View {
                 PearlFace(name: face)
             }
             VStack(alignment: .leading, spacing: 1) {
+                // TEST-14: the overline wraps, never clipped ("PIZZA NOVA · NOT SURE YET").
                 Text(overline.uppercased())
                     .font(Pearl.text(.footnote, .medium)).tracking(0.78).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(title)
                     .font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)

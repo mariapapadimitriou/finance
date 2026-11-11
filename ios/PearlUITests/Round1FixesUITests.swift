@@ -266,19 +266,38 @@ final class Round1FixesUITests: XCTestCase {
         openTransaction("Gusto")
         tap(app.buttons["Split with others"], "Split with others")
         addPeople(["Priya", "Sam"])
-        tap(app.buttons["Amounts"], "Amounts")
+        // At AX sizes the methods sit behind "How to split · Evenly ›" (S-03u).
+        let methods = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'How to split'")).firstMatch
+        let ax = !app.buttons["Amounts"].waitForExistence(timeout: 3) && methods.exists
+        if ax {
+            methods.tap()
+            tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Amounts, split method'")).firstMatch, "Amounts")
+        } else {
+            tap(app.buttons["Amounts"].firstMatch, "Amounts")
+        }
         let priya = amountField("Priya")
         tap(priya, "Priya's amount")
         priya.typeText("40")
         let status = text(containing: "stays yours")
         XCTAssertTrue(status.waitForExistence(timeout: 4), "No status line")
         sleep(1)
-        XCTAssertTrue(status.isHittable, "The status line is under the number pad or Save")
+        let saveButton = app.buttons.matching(NSPredicate(format: "label == 'Save'")).allElementsBoundByIndex.last
+        XCTAssertTrue(status.isHittable, "The status line is under the number pad or Save: status \(status.frame), "
+                      + "Save \(saveButton?.frame ?? .zero), pad \(app.keyboards.firstMatch.frame), window \(app.windows.firstMatch.frame)")
         if !app.buttons["Split the rest evenly"].isHittable, let dir = ProcessInfo.processInfo.environment["PEARL_SHOTS"] {
             try? app.debugDescription.write(toFile: dir + "/numberpad.txt", atomically: true, encoding: .utf8)
             FileManager.default.createFile(atPath: dir + "/numberpad.png", contents: XCUIScreen.main.screenshot().pngRepresentation)
         }
-        XCTAssertTrue(app.buttons["Split the rest evenly"].isHittable, "Split the rest evenly is hidden")
+        // At AX sizes the pad leaves room for the status line; the button
+        // under it is a scroll away.
+        if !ax { XCTAssertTrue(app.buttons["Split the rest evenly"].isHittable, "Split the rest evenly is hidden") }
+        // TEST-16 (round 2): Save sits below the content, never on it.
+        let save = app.buttons.matching(NSPredicate(format: "label == 'Save'")).allElementsBoundByIndex.last!
+        XCTAssertLessThanOrEqual(status.frame.maxY, save.frame.minY + 1, "TEST-16: Save covers the status line")
+        let had = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'I had some too'")).firstMatch
+        if had.exists && had.isHittable {
+            XCTAssertFalse(had.frame.intersects(save.frame), "TEST-16: Save is drawn on I had some too")
+        }
         // A tap on the sheet's title puts the pad away.
         app.staticTexts["How to split"].firstMatch.tap()
         sleep(1)
@@ -378,6 +397,44 @@ final class Round1FixesUITests: XCTestCase {
             try? app.debugDescription.write(toFile: dir + "/inline-bar.txt", atomically: true, encoding: .utf8)
         }
         XCTAssertTrue(title.exists, "The inline bar should show Gusto once the hero is gone")
+        // TEST-09 (round 2): a solid bar behind Back and the title, so the
+        // scrolled content doesn't show through. The strip right of Back
+        // is one flat colour, not words passing under it.
+        let bar = app.navigationBars.firstMatch
+        let f = bar.frame
+        let shot = XCUIScreen.main.screenshot().image
+        if let cg = shot.cgImage {
+            let scale = CGFloat(cg.width) / shot.size.width
+            let r = CGRect(x: (f.minX + f.width * 0.16) * scale, y: (f.minY + 4) * scale,
+                           width: f.width * 0.18 * scale, height: (f.height - 8) * scale).integral
+            if let crop = cg.cropping(to: r) {
+                let w = crop.width, h = crop.height
+                var px = [UInt8](repeating: 0, count: w * h * 4)
+                let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                ctx?.draw(crop, in: CGRect(x: 0, y: 0, width: w, height: h))
+                var lum: [Double] = []
+                for i in stride(from: 0, to: px.count, by: 4) {
+                    lum.append((0.2126 * Double(px[i]) + 0.7152 * Double(px[i + 1]) + 0.0722 * Double(px[i + 2])) / 255)
+                }
+                lum.sort()
+                let spread = lum[Int(Double(lum.count - 1) * 0.98)] - lum[Int(Double(lum.count - 1) * 0.02)]
+                XCTAssertLessThan(spread, 0.2, "TEST-09: the content shows through the bar (spread \(spread))")
+            }
+        }
+        // TEST-14: the hero's amount reads as words, not an unread U+2212.
+        app.swipeDown(); app.swipeDown(); app.swipeDown()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'spent $'")).firstMatch
+                        .waitForExistence(timeout: 4), "TEST-14: the hero amount should say spent $127.50")
+    }
+
+    /// TEST-12 (T-93n): Cash flow's rows ask "What was this?" too; never "Other?".
+    func testCashFlowRowsHaveNoOtherGuess() {
+        launch()
+        openCashFlow()
+        sleep(2)
+        let other = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Other?' OR label CONTAINS 'guess: Other'"))
+        XCTAssertFalse(other.firstMatch.exists, "TEST-12: Cash flow still shows an Other? guess")
     }
 
     /// S-40u2: on a Not sure yet split nobody has a share to give back.

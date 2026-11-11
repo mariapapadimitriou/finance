@@ -48,6 +48,10 @@ enum Pearl {
     static let cardShadow = Color(hex: 0x664D99)
     static let onBlush = Color(hex: 0x1C1A33)                       // --on-nacre
     static let bar = dynamic(light: 0xFFFFFF, dark: 0x151B44)       // --surface-card, the tab bar
+    /// S-04r v2s's top bar once the page scrolls under it (TEST-09): Figma's
+    /// --surface-page, the same two values as onInk. Only the bar uses it;
+    /// pages stay on the iridescent background.
+    static let scrolledBar = onInk
     // REFRESH-02 (Design refresh kit 1088:1696), from the Pearl Design System
     // Color variables in Light and Dark mode.
     static let bubble = dynamic(light: 0xFFE4EC, dark: 0x4E2238)    // --blush, both modes

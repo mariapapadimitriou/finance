@@ -1031,6 +1031,9 @@ struct QuestionHeader: View {
             }
             Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        // TEST-14: "Gusto, spent $127.50", not the unread U+2212 minus.
+        .accessibilityLabel([name, Format.spoken(amount), sub].compactMap { $0?.isEmpty == false ? $0 : nil }
+            .joined(separator: ", "))
     }
 }
