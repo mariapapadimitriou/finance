@@ -23,6 +23,8 @@ final class Round1FixesUITests: XCTestCase {
         let notNow = app.buttons["Not now"]
         if notNow.waitForExistence(timeout: 5) { notNow.tap() }
         XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 20), "No tab bar")
+        // On a busy machine N-01 can come after the tab bar: put it away too.
+        if notNow.waitForExistence(timeout: 8) { notNow.tap() }
     }
 
     private func button(_ text: String) -> XCUIElement {
@@ -352,6 +354,12 @@ final class Round1FixesUITests: XCTestCase {
         field.typeText("40")
         XCTAssertTrue(app.toolbars.buttons["Done"].exists || app.buttons["Done"].exists, "No Done bar on S-47")
         XCTAssertTrue(text(containing: "Adds up to $127.50").waitForExistence(timeout: 4), "S-47c should add up")
+        // S-47c: all four methods of what's left; % and Shares divide it too.
+        if app.keyboards.count > 0 { (app.toolbars.buttons["Done"].exists ? app.toolbars.buttons["Done"] : app.buttons["Done"]).tap() }
+        for method in ["Shares", "%", "Amounts", "Evenly"] {
+            tap(app.buttons[method].firstMatch, "the \(method) method")
+            XCTAssertTrue(text(containing: "Adds up to $127.50").waitForExistence(timeout: 4), "\(method) should add up")
+        }
         press("Save")
         XCTAssertTrue(text(containing: "Sam and Jo owe you $45.00").waitForExistence(timeout: 8), "S-04u7 toast")
         let split = (server("transactions?q=Gusto") as? [String: Any]).flatMap { $0["transactions"] as? [[String: Any]] }?
@@ -385,14 +393,42 @@ final class Round1FixesUITests: XCTestCase {
         tap(button("Settle up"), "Settle up")
         tap(button("Type amounts"), "Type amounts")
         tap(app.buttons["Shares"], "the Shares segment")
-        let note = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'not in the shares'")).firstMatch
-        XCTAssertTrue(note.waitForExistence(timeout: 5), "A locked row should say it's not in the shares")
+        // TEST-18b: Shares runs over everyone; a payer shows what they paid.
         let amount = app.staticTexts["$42.50"].firstMatch
-        XCTAssertTrue(amount.exists, "Priya's locked amount should show as text")
+        XCTAssertTrue(amount.waitForExistence(timeout: 5), "Priya's payment should show as text")
         amount.tap()
-        XCTAssertTrue(text(containing: "is linked. Unlink the payback").waitForExistence(timeout: 4), "No lock toast")
+        XCTAssertTrue(text(containing: "is linked, so it stays").waitForExistence(timeout: 4), "No S-47f2 toast")
         tap(app.buttons["Options"], "Options on the toast")
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'Unlink'")).firstMatch
                         .waitForExistence(timeout: 8), "Options should open Priya's S-40u")
+    }
+    // MARK: TEST-18b Pearl asks when a payer's share differs (option C)
+
+    /// S-48c → S-48a → S-48d: Evenly gives Sam $42.50 but he paid $20.00
+    /// cash; Pearl asks, "Ask Sam for $22.50" saves with Settle up.
+    func testSettleUpAsksWhenAPayersShareDiffers() {
+        launch()
+        gustoNotSureWithPriyaPaid()
+        tap(app.buttons["Options for Sam"], "Options for Sam")
+        tap(button("Mark paid back"), "Mark paid back")
+        tap(button("Cash in hand"), "Cash in hand")
+        let amount = app.textFields["Amount"]
+        XCTAssertTrue(amount.waitForExistence(timeout: 5))
+        amount.tap()
+        amount.typeText("20")
+        press("Mark $", prefix: true)
+        sleep(4)
+        tap(button("Settle up"), "Settle up")
+        tap(button("Type amounts"), "Type amounts")
+        tap(app.buttons["Evenly"].firstMatch, "Evenly")
+        let next = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Next · check'")).firstMatch
+        XCTAssertTrue(next.waitForExistence(timeout: 5), "S-48c: Settle up should say who it checks")
+        XCTAssertTrue(next.label.contains("Sam") && !next.label.contains("Priya"), "Priya's $42.50 matches: \(next.label)")
+        next.tap()
+        XCTAssertTrue(text(containing: "Sam paid $20.00").waitForExistence(timeout: 5), "No S-48a")
+        tap(button("Ask Sam for $22.50"), "Ask Sam for $22.50")
+        sleep(1)
+        press("Settle up")
+        XCTAssertTrue(text(containing: "Sam owes $22.50").waitForExistence(timeout: 8), "S-48d toast")
     }
 }

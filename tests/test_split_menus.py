@@ -367,7 +367,7 @@ class TestLessWords:
             '"No amounts yet. Paybacks come off as they arrive."', 'left · stays yours"', '"Adds up ✓ · \\(over)"',
             '"Comes off \\(t.merchant) now"', '"Deposit it later? Pearl won’t count it twice."',
             'more than \\(person.name) owes. You’ll sort the extra next.', '"Your Allowance doesn’t change."',
-            'more than this. You’ll sort the extra next.', '"Settled · \\(Format.amount(owed)) owed" : "Settled up"',
+            '"Settled · " + bits.joined(separator: " · ")', 'Next · check',
             'part\\(t.jointPeople.count == 1 ? " is" : "s are") already off.'],
         "ios/Pearl/Views/Transactions/PartsFlow.swift": [
             'each owe \\(amount). Tick who sent it.', 'isn’t on a split. \\(tail)', 'could have sent it. Tick who did.',
