@@ -140,3 +140,53 @@ def test_use_what_each_paid_never_asks(client):
     tid = dinner(client)
     settle(client, tid, 40.00, 20.00, 40.00)
     assert all(p["owes"] == 0.0 for p in people(client, tid).values())
+
+
+class TestChangeLater:
+    """S-48e: the answer can be changed later from that person's •••."""
+
+    def answer(self, c, tid, name, answer, ok=True):
+        r = c.post(f"/api/transactions/{tid}/split/answer", json={"name": name, "answer": answer})
+        assert (r.status_code == 200) is ok, r.get_json()
+        return r.get_json()
+
+    def test_i_owe_priya_then_a_gift_then_back(self, client):
+        tid = dinner(client)
+        settle(client, tid, 33.34, 33.33, 33.33, ask=["Sam"], extra={"Priya": [{"kind": "overpaid", "amount": 6.67}]})
+        owed = allowance(client)
+        r = self.answer(client, tid, "Priya", "gift")
+        assert r["toast"] == "$6.67 from Priya is a gift"
+        ps = people(client, tid)
+        assert ps["Priya"]["paid"] == pytest.approx(33.33) and ps["Priya"].get("gift") == pytest.approx(6.67)
+        assert not client.get("/api/owed").get_json()["you_owe"]
+        # And back: the gift comes off, so you owe Priya again.
+        self.answer(client, tid, "Priya", "owe")
+        ps = people(client, tid)
+        assert ps["Priya"]["over"] == pytest.approx(6.67) and not ps["Priya"].get("gift")
+        assert allowance(client) == pytest.approx(owed)
+
+    def test_priyas_share_is_what_she_sent(self, client):
+        tid = dinner(client)
+        settle(client, tid, 33.34, 33.33, 33.33, ask=["Sam"], extra={"Priya": [{"kind": "overpaid", "amount": 6.67}]})
+        r = self.answer(client, tid, "Priya", "share")
+        assert r["toast"] == "Priya’s share is $40.00"
+        ps = people(client, tid)
+        assert ps["Priya"]["amount"] == pytest.approx(40.00) and ps["Priya"]["over"] == 0.0
+        # The $6.67 comes off you and Sam.
+        assert ps["Sam"]["amount"] == pytest.approx(30.00)
+        d = client.get(f"/api/transactions/{tid}").get_json()
+        assert d.get("transaction", d)["splitting"]["you"] == pytest.approx(30.00)
+
+    def test_sams_share_is_20_after_asking(self, client):
+        tid = dinner(client)
+        settle(client, tid, 33.34, 33.33, 33.33, ask=["Sam"], extra={"Priya": [{"kind": "overpaid", "amount": 6.67}]})
+        self.answer(client, tid, "Sam", "share")
+        ps = people(client, tid)
+        assert ps["Sam"]["amount"] == pytest.approx(20.00) and ps["Sam"]["owes"] == 0.0
+        assert ps["Priya"]["amount"] == pytest.approx(40.00)   # $33.33 + half of $13.33, rounded
+
+    def test_answers_that_dont_fit_are_refused(self, client):
+        tid = dinner(client)
+        settle(client, tid, 33.34, 33.33, 33.33, ask=["Sam"], extra={"Priya": [{"kind": "overpaid", "amount": 6.67}]})
+        assert self.answer(client, tid, "Sam", "gift", ok=False)["error"] == "Sam didn’t pay more than their share."
+        assert self.answer(client, tid, "Priya", "ask", ok=False)["error"] == "Priya didn’t pay less than their share."

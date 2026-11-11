@@ -296,6 +296,8 @@ struct TransactionDetailView: View {
     /// REFRESH-02: S-07r Remind, S-03re Change their share, S-03fr Remove.
     @State private var reminding: Transaction.Splitting.Person?
     @State private var changingShare: Transaction.Splitting.Person?
+    /// S-48e (TEST-18b): S-48a / S-48b again for someone, after settling.
+    @State private var changingAnswer: Transaction.Splitting.Person?
     @State private var removingPerson: Transaction.Splitting.Person?
     /// S-44a–i: the split flow's ink toast, with Undo (or Try again, S-44h).
     @State private var splitToast: PearlToast.Model?
@@ -670,6 +672,18 @@ struct TransactionDetailView: View {
                     UIPasteboard.general.string = ""
                     return nil
                 })
+            }
+        }
+        .sheet(item: $changingAnswer) { p in
+            // S-48e: the same question, answered again; the server swaps a
+            // gift or "you owe" and spreads a changed share.
+            let others = (t.splitting?.people ?? []).map(\.name).filter { $0 != p.name }
+            MismatchSheet(name: p.name, paid: p.paid + (p.gift ?? 0), share: p.amount, even: false, step: 1, of: 1,
+                          others: ((t.splitting?.withMe ?? true) ? ["you"] : []) + others,
+                          onBack: { changingAnswer = nil },
+                          overline: "\(t.merchant) · \(p.name)") { answer in
+                changingAnswer = nil
+                Task { await answerAgain(p, answer) }
             }
         }
         .sheet(item: $changingShare) { person in
@@ -2101,12 +2115,34 @@ struct TransactionDetailView: View {
     // MARK: REFRESH-02 — S-40's choices, and the S-44 toasts
 
     /// What she picked on a person's S-40 (it has gone by now).
+    /// S-48e: POST the new answer; the toast says what it is now.
+    private func answerAgain(_ p: Transaction.Splitting.Person, _ answer: SplitSheet.Answer) async {
+        let word: String
+        switch answer {
+        case .ask: word = "ask"
+        case .theirShare: word = "share"
+        case .iOwe: word = "owe"
+        case .gift: word = "gift"
+        }
+        struct Reply: Decodable { let toast: String? }
+        do {
+            let reply: Reply = try await app.api.post("api/transactions/\(t.id)/split/answer",
+                                                       ["name": p.name, "answer": word])
+            await load()
+            app.changed()
+            showSplit(reply.toast ?? "Changed", undo: nil)
+        } catch {
+            showFailed(app.handle(error) ?? "Couldn’t change that. Nothing changed.") { Task { await answerAgain(p, answer) } }
+        }
+    }
+
     private func choose(_ p: Transaction.Splitting.Person, _ choice: PersonChoice) {
         switch choice {
         case .markPaid: marking = p
         case .remind: reminding = p
         case .letGo: lettingGo = p
         case .changeShare: changingShare = p
+        case .changeAnswer: changingAnswer = p
         case .view(let link): if let id = link.view?.id { Task { await open(id) } }
         case .unlink(let link): unlinkingLink = link
         case .undoLetGo:

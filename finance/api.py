@@ -178,6 +178,13 @@ def _splitting(t, split: dict, txns, payer) -> dict:
         # TEST-18 (THL-303): is she in it ("I had some too")?
         "me": split.get("me", True),
     }
+    # TEST-18b (S-48e): what of each payer's money she called a gift, so
+    # their ••• can offer to change it.
+    from .parts_api import extra_gift
+    for person in out["people"]:
+        gift = extra_gift(store(), t.fingerprint, person["name"]) if person.get("paid") else 0.0
+        if gift >= 0.005:
+            person["gift"] = round(gift, 2)
     if split["mode"] == sp.UNSURE:
         out["still"] = sp.still_yours(t)
         out["paid"] = round(t.unsure_paid or 0.0, 2)

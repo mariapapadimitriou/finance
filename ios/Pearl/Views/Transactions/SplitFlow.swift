@@ -2274,6 +2274,8 @@ struct MismatchSheet: View {
     /// Who carries the difference if their share is what they paid.
     let others: [String]
     let onBack: () -> Void
+    /// S-48e: "Pizza Nova · Priya" when it's asked again after settling.
+    var overline: String? = nil
     let onAnswer: (SplitSheet.Answer) -> Void
 
     private var diff: String { Format.amount(abs(share - paid)) }
@@ -2281,7 +2283,7 @@ struct MismatchSheet: View {
 
     var body: some View {
         PearlSheet {
-            PearlSheetHeader(face: name, overline: "Settle up · \(step) of \(of)",
+            PearlSheetHeader(face: name, overline: overline ?? "Settle up · \(step) of \(of)",
                              title: share > paid ? "\(name) paid \(Format.amount(paid))" : "\(name) paid \(diff) more",
                              close: onBack)
             Text(share > paid
@@ -2312,7 +2314,8 @@ struct MismatchSheet: View {
             InfoNote(text: share > paid ? "Either way, your Allowance doesn’t change now."
                      : "Only “I owe \(name)” changes your Allowance: down \(diff), the money you’ll send back.")
         } footer: {
-            Button("Back to amounts", action: onBack).buttonStyle(PearlSecondaryButtonStyle())
+            Button(overline == nil ? "Back to amounts" : "Keep it as it is", action: onBack)
+                .buttonStyle(PearlSecondaryButtonStyle())
                 .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
         }
     }

@@ -430,5 +430,19 @@ final class Round1FixesUITests: XCTestCase {
         sleep(1)
         press("Settle up")
         XCTAssertTrue(text(containing: "Sam owes $22.50").waitForExistence(timeout: 8), "S-48d toast")
+        // S-48e: change it later from Sam's •••: his share is what he paid.
+        sleep(7)
+        tap(app.buttons["Options for Sam"], "Options for Sam")
+        tap(button("Change Sam’s share"), "Change Sam's share")
+        XCTAssertTrue(text(containing: "Sam paid $20.00").waitForExistence(timeout: 5), "S-48e should reopen S-48a")
+        tap(button("Sam’s share is $20.00"), "Sam's share is $20.00")
+        XCTAssertTrue(text(containing: "Sam’s share is $20.00").waitForExistence(timeout: 8), "No toast for the change")
+        let id = ((server("transactions?q=Gusto") as? [String: Any])?["transactions"] as? [[String: Any]])?
+            .first { ($0["merchant"] as? String) == "Gusto" }?["id"] as? String
+        let detail = id.flatMap { server("transactions/\($0)") as? [String: Any] }
+        let t = (detail?["transaction"] as? [String: Any]) ?? detail
+        let people = ((t?["splitting"] as? [String: Any])?["people"] as? [[String: Any]]) ?? []
+        let owes = people.first { ($0["name"] as? String) == "Sam" }?["owes"] as? Double
+        XCTAssertEqual(owes ?? -1, 0, accuracy: 0.001, "Sam shouldn't owe anything once his share is $20.00")
     }
 }
