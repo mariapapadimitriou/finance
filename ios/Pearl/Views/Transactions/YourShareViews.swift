@@ -42,6 +42,10 @@ struct YourShareSheet: View {
     @State private var lockToast: PearlToast.Model?
     @State private var mine = ""
     @State private var theirs: [String: String] = [:]
+    /// S-47c (product owner 2026-11-10, S-47c2 rejected): Evenly, Amounts,
+    /// % or Shares, each of what's left, across the people who haven't paid.
+    @State private var method = "even"
+    @State private var weights: [String: String] = [:]
     @State private var busy = false
     @State private var failed: String?
     @FocusState private var typing: String?
@@ -76,10 +80,56 @@ struct YourShareSheet: View {
         return out
     }
 
-    private func theirCents(_ name: String) -> Int {
-        if unpaid.count == 1 { return leftCents }
-        if let typed = theirs[name], let v = parse(typed) { return cents(v) }
-        return evenly()[name] ?? 0
+    private func number(_ name: String, default d: Double) -> Double {
+        weights["\(method)\u{0}\(name)"].flatMap(parse) ?? d
+    }
+
+    /// Each unpaid person's cents of what's left, by the method chosen.
+    private var allotted: [String: Int] {
+        guard unpaid.count > 1 else { return Dictionary(uniqueKeysWithValues: unpaid.map { ($0.name, leftCents) }) }
+        switch method {
+        case "amount":
+            return Dictionary(uniqueKeysWithValues: unpaid.map { p in
+                (p.name, theirs[p.name].flatMap(parse).map(cents) ?? (evenly()[p.name] ?? 0)) })
+        case "percent":
+            // % is of the whole purchase (designBOT, 2026-11-10): her share and
+            // the payers are fixed; the unpaid type theirs.
+            var out: [String: Int] = [:]
+            for p in unpaid {
+                let pct = number(p.name, default: defaultPercent)
+                out[p.name] = Int((Double(cents(base)) * pct / 100).rounded(.down))
+            }
+            // Within a cent a person of adding up is rounding: the odd cents
+            // go one each from the top.
+            // (0.01% of the whole can be more than a cent.)
+            var odd = leftCents - out.values.reduce(0, +)
+            if odd > 0 && odd <= unpaid.count * (cents(base) / 10000 + 1) {
+                var i = 0
+                while odd > 0 { out[unpaid[i % unpaid.count].name, default: 0] += 1; odd -= 1; i += 1 }
+            }
+            return out
+        case "shares":
+            // Shares divide only what's left, across the unpaid.
+            let w = unpaid.map { number($0.name, default: 1) }
+            let whole = w.reduce(0, +)
+            guard whole > 0 else { return [:] }
+            var out: [String: Int] = [:]
+            for (p, x) in zip(unpaid, w) { out[p.name] = Int((Double(leftCents) * x / whole).rounded(.down)) }
+            var odd = leftCents - out.values.reduce(0, +)
+            var i = 0
+            while odd > 0 { out[unpaid[i % unpaid.count].name, default: 0] += 1; odd -= 1; i += 1 }
+            return out
+        default:
+            return evenly()
+        }
+    }
+
+    private func theirCents(_ name: String) -> Int { allotted[name] ?? 0 }
+
+    /// An even part of what's left, as a percent of the whole purchase.
+    private var defaultPercent: Double {
+        guard !unpaid.isEmpty, cents(base) > 0 else { return 0 }
+        return (Double(leftCents) / Double(unpaid.count) / Double(cents(base)) * 10000).rounded(.down) / 100
     }
 
     private var gapCents: Int {
@@ -156,6 +206,18 @@ struct YourShareSheet: View {
                 PearlDivider()
                 line("Your share", "What you had",
                      mineCents.map { "\u{2212}" + Format.amount(Double($0) / 100) } ?? "—")
+                if unpaid.count > 1 {
+                    PearlDivider()
+                    // S-47c: the method for what's left.
+                    Picker("How to split what’s left", selection: $method) {
+                        Text("Evenly").tag("even")
+                        Text("Amounts").tag("amount")
+                        Text("%").tag("percent")
+                        Text("Shares").tag("shares")
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.vertical, 8)
+                }
                 ForEach(unpaid) { p in
                     PearlDivider()
                     if unpaid.count == 1 {
@@ -230,21 +292,45 @@ struct YourShareSheet: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(p.name).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                Text("Nothing paid yet").font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                Text(method == "percent" || method == "shares"
+                     ? "Nothing paid yet · owes \(Format.amount(Double(theirCents(p.name)) / 100))" : "Nothing paid yet")
+                    .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
             }
             Spacer(minLength: 8)
-            TextField("", text: Binding(get: { theirs[p.name] ?? "" }, set: { theirs[p.name] = $0 }),
-                      prompt: Text(Format.amount(Double(evenly()[p.name] ?? 0) / 100)).foregroundColor(Pearl.ink))
+            if method == "even" {
+                Text(Format.amount(Double(theirCents(p.name)) / 100))
+                    .font(Pearl.text(.headline)).monospacedDigit().foregroundColor(Pearl.ink)
+            } else {
+            TextField("", text: fieldBinding(p.name), prompt: Text(prompt(p.name)).foregroundColor(Pearl.ink))
                 .font(Pearl.text(.headline)).monospacedDigit().multilineTextAlignment(.trailing)
-                .keyboardType(.decimalPad)
+                .keyboardType(method == "shares" ? .numberPad : .decimalPad)
                 .focused($typing, equals: p.name)
                 .frame(width: 92, height: 36).padding(.horizontal, 8)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Pearl.card))
                 .overlay(RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(typing == p.name ? Pearl.action : Pearl.border, lineWidth: typing == p.name ? 1.5 : 1))
-                .accessibilityLabel("\(p.name) amount")
+                .accessibilityLabel("\(p.name) \(method == "percent" ? "percent" : method == "shares" ? "shares" : "amount")")
+            }
         }
         .padding(.vertical, 8)
+    }
+
+    private func fieldBinding(_ name: String) -> Binding<String> {
+        if method == "amount" { return Binding(get: { theirs[name] ?? "" }, set: { theirs[name] = $0 }) }
+        let key = "\(method)\u{0}\(name)"
+        return Binding(get: { weights[key] ?? "" }, set: { weights[key] = $0 })
+    }
+
+    private func prompt(_ name: String) -> String {
+        switch method {
+        case "percent": return Self.plain(defaultPercent) + "%"
+        case "shares": return "1"
+        default: return Format.amount(Double(evenly()[name] ?? 0) / 100)
+        }
+    }
+
+    private static func plain(_ d: Double) -> String {
+        d == d.rounded() ? String(Int(d)) : String(format: "%.2f", d)
     }
 
     private func save() async {
