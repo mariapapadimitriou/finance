@@ -151,10 +151,10 @@ final class Round1FixesUITests: XCTestCase {
 
     /// A Not sure yet split of Gusto with Priya and Sam, and Priya's
     /// e-Transfer linked to it from her •••.
-    private func gustoNotSureWithPriyaPaid() {
+    private func gustoNotSureWithPriyaPaid(_ others: [String] = ["Sam"]) {
         openTransaction("Gusto")
         tap(app.buttons["Split with others"], "Split with others")
-        addPeople(["Priya", "Sam"])
+        addPeople(["Priya"] + others)
         let unsure = app.buttons["Not sure yet, split method"].exists ? app.buttons["Not sure yet, split method"] : app.buttons["Not sure"]
         tap(unsure, "Not sure")
         press("Save split")
@@ -396,6 +396,9 @@ final class Round1FixesUITests: XCTestCase {
         // TEST-18b: Shares runs over everyone; a payer shows what they paid.
         let amount = app.staticTexts["$42.50"].firstMatch
         XCTAssertTrue(amount.waitForExistence(timeout: 5), "Priya's payment should show as text")
+        // TEST-23: you, Priya and Sam, one share each; not Priya's dollars counted as shares.
+        XCTAssertTrue(text(containing: "3 shares · adds up to").waitForExistence(timeout: 4),
+                      "TEST-23: the shares count should be 3")
         amount.tap()
         XCTAssertTrue(text(containing: "is linked, so it stays").waitForExistence(timeout: 4), "No S-47f2 toast")
         tap(app.buttons["Options"], "Options on the toast")
@@ -444,5 +447,83 @@ final class Round1FixesUITests: XCTestCase {
         let people = ((t?["splitting"] as? [String: Any])?["people"] as? [[String: Any]]) ?? []
         let owes = people.first { ($0["name"] as? String) == "Sam" }?["owes"] as? Double
         XCTAssertEqual(owes ?? -1, 0, accuracy: 0.001, "Sam shouldn't owe anything once his share is $20.00")
+    }
+
+    // MARK: Round 2 (testingBOT, ios/bots/testing-log.md)
+
+    /// TEST-19: right after Save split on Not sure yet the page is S-04u6
+    /// (the card and each •••), without reopening it. TEST-20: Jo's "Which
+    /// payment was it?" ticks nobody's money, since none of it is Jo's.
+    func testNotSureYetCardRightAfterSaveAndNoOneElsesMoneyTicked() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam", "Jo"])
+        let unsure = app.buttons["Not sure yet, split method"].exists ? app.buttons["Not sure yet, split method"] : app.buttons["Not sure"]
+        tap(unsure, "Not sure")
+        press("Save split")
+        XCTAssertTrue(app.buttons["Options for Priya"].waitForExistence(timeout: 4),
+                      "TEST-19: the card should show right after Save split")
+        XCTAssertFalse(app.buttons["Split with others"].exists, "TEST-19: the page still offers Split with others")
+        tap(app.buttons["Options for Jo"], "Options for Jo")
+        tap(button("Mark paid back"), "Mark paid back")
+        tap(button("Bank or e-Transfer"), "Bank or e-Transfer")
+        XCTAssertTrue(button("Priya Shah").waitForExistence(timeout: 10), "The money in should be listed")
+        XCTAssertFalse(button("Priya Shah").isSelected || button("Sam Lee").isSelected,
+                       "TEST-20: someone else's payment is ticked for Jo")
+        XCTAssertFalse(text(containing: "Amount matches").exists, "TEST-20: no amount to match on Not sure yet")
+        XCTAssertFalse(text(containing: "Suggested").exists, "TEST-20: nothing of Jo's to suggest")
+        let link = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Link'")).allElementsBoundByIndex.last
+        XCTAssertFalse(link?.isEnabled ?? false, "TEST-20: Link should wait for a pick")
+    }
+
+    /// TEST-19: after That's everything the page is S-46b at once (Reopen
+    /// split), not still Settle up.
+    func testThatsEverythingClosesTheCardAtOnce() {
+        launch()
+        gustoNotSureWithPriyaPaid()
+        tap(button("That’s everything"), "That's everything")
+        press("That’s everything")
+        let reopen = button("Reopen split").waitForExistence(timeout: 4)
+        let seen = reopen ? "" : (app.buttons.allElementsBoundByIndex + app.staticTexts.allElementsBoundByIndex)
+            .map(\.label).filter { !$0.isEmpty }.joined(separator: " | ")
+        XCTAssertTrue(reopen, "TEST-19: the card should close at once. On screen: \(seen)")
+        XCTAssertFalse(button("Settle up").exists, "TEST-19: Settle up is still offered after closing")
+    }
+
+    /// TEST-18 (S-47e): a share that's too big shows only what's left for
+    /// her; no "Sam owes you" row and no Allowance note.
+    func testYourShareTooBigShowsOnlyWhatsLeft() {
+        launch()
+        gustoNotSureWithPriyaPaid()
+        tap(app.buttons["Options for you"], "S-04u6: your •••")
+        tap(button("Set your share"), "S-40y: Set your share")
+        let field = app.textFields["your-share"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "No S-47 field")
+        field.tap()
+        field.typeText("100")
+        XCTAssertTrue(text(containing: "Paybacks cover $42.50, so your share can be up to $85.00").waitForExistence(timeout: 4),
+                      "S-47e's words")
+        XCTAssertTrue(text(containing: "Left for you and Sam").exists, "S-47e: Left for you and Sam")
+        XCTAssertFalse(text(containing: "Sam owes you").exists, "S-47e: no owes-you row while it's too big")
+        XCTAssertFalse(text(containing: "Allowance doesn’t change").exists, "S-47e: no Rule A note while it's too big")
+    }
+
+    /// TEST-18 (S-04u8): once Priya and Sam have both paid and her share
+    /// was never set, her row is what's left and That's everything says so.
+    func testEveryoneHasPaidShowsWhatStaysYours() {
+        launch()
+        gustoNotSureWithPriyaPaid()
+        tap(app.buttons["Options for Sam"], "Options for Sam")
+        tap(button("Mark paid back"), "Mark paid back")
+        tap(button("Cash in hand"), "Cash in hand")
+        let amount = app.textFields["Amount"]
+        XCTAssertTrue(amount.waitForExistence(timeout: 5))
+        amount.tap()
+        amount.typeText("30")
+        press("Mark $", prefix: true)
+        sleep(5)
+        XCTAssertTrue(text(containing: "what’s left after paybacks").waitForExistence(timeout: 8), "S-04u8: your row")
+        XCTAssertTrue(text(containing: "Everyone has paid. $55.00 stays yours.").exists, "S-04u8: That's everything's line")
     }
 }

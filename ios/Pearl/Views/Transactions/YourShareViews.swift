@@ -204,9 +204,16 @@ struct YourShareSheet: View {
                     .buttonStyle(.plain)
                 }
                 PearlDivider()
+                if tooMuch {
+                    // S-47e (note 1238:25742): while the share is too big, only
+                    // what she can have; no Your share or "owes you" rows.
+                    line(unpaid.isEmpty ? "Left for you" : "Left for you and \(Format.andList(unpaid.map(\.name)))", "Your share can be up to this",
+                         Format.amount(Double(roomCents) / 100))
+                } else {
                 line("Your share", "What you had",
                      mineCents.map { "\u{2212}" + Format.amount(Double($0) / 100) } ?? "—")
-                if unpaid.count > 1 {
+                }
+                if unpaid.count > 1 && !tooMuch {
                     PearlDivider()
                     // S-47c: the method for what's left.
                     Picker("How to split what’s left", selection: $method) {
@@ -218,7 +225,7 @@ struct YourShareSheet: View {
                     .pickerStyle(.segmented)
                     .padding(.vertical, 8)
                 }
-                ForEach(unpaid) { p in
+                ForEach(tooMuch ? [] : unpaid) { p in
                     PearlDivider()
                     if unpaid.count == 1 {
                         line("\(p.name) owes you", "Hasn’t paid · gets what’s left",
@@ -236,9 +243,11 @@ struct YourShareSheet: View {
                     .font(Nacre.footnote).foregroundColor(gapCents == 0 ? Nacre.teal : Pearl.ink)
                     .frame(maxWidth: .infinity)
             }
+            if !tooMuch {
             InfoNote(text: unpaid.count == 1
                      ? "Your Allowance doesn’t change now. When \(unpaid[0].name) pays, your \(mineCents.map { Format.amount(Double($0) / 100) } ?? "share") is what stays counted."
                      : "Your Allowance doesn’t change now. As they pay, it goes up; your share is what stays counted.")
+            }
             if let failed = failed { CautionBanner(text: failed) }
         } footer: {
             PearlSheetButtons(primary: failed != nil ? "Try again"
@@ -266,7 +275,7 @@ struct YourShareSheet: View {
                 .accessibilityIdentifier("your-share")
                 .disabled(busy)
             // S-47e: more than what's left; S-47a: not typed yet.
-            Text(tooMuch ? "Your share can be up to \(Format.amount(Double(roomCents) / 100))"
+            Text(tooMuch ? "That’s more than what’s left. Paybacks cover \(Format.amount(Double(paidCents) / 100)), so your share can be up to \(Format.amount(Double(roomCents) / 100))."
                  : mineCents == nil ? "You can leave it and set it later." : "")
                 .font(Pearl.text(.footnote)).foregroundColor(tooMuch ? Pearl.action : Pearl.muted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -355,3 +364,4 @@ struct YourShareSheet: View {
         }
     }
 }
+

@@ -891,7 +891,9 @@ struct SplitSheet: View {
     private var addsUp: String {
         switch mode {
         case "shares":
-            let n = rows.map { number($0) }.reduce(0, +)
+            // TEST-23: a locked payer is "not in the shares"; their row's
+            // number is the dollars they paid, so it isn't counted.
+            let n = rows.filter { !locked($0) }.map { number($0) }.reduce(0, +)
             return "\(Self.plain(n)) shares · adds up to \(Format.amount(Double(totalCents) / 100)) ✓"
         default: return "Adds up to \(Format.amount(Double(totalCents) / 100)) ✓"
         }
@@ -1118,6 +1120,9 @@ struct SplitPeople: View {
     @State private var options: Transaction.Splitting.Person?
     @State private var afterOptions: (() -> Void)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// TEST-22: at AX sizes a row's amount goes under the name (S-03ax).
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var amountsUnder: Bool { typeSize.isAccessibilitySize }
 
     var body: some View {
         let open = split.people.filter { $0.owes >= 0.005 }
@@ -1209,7 +1214,10 @@ struct SplitPeople: View {
                         PearlOptionRow(symbol: "person.2", title: "Settle up", action: onSettle)
                             .accessibilityHint("Set what each person owes.")
                         PearlDivider()
-                        PearlOptionRow(symbol: "checkmark", title: "That’s everything", action: onClose)
+                        // S-04u8 (TEST-18, note 1238:25742): once everyone has paid.
+                        PearlOptionRow(symbol: "checkmark", title: "That’s everything",
+                                       sub: everyonePaid ? "Everyone has paid. \(Format.amount(split.still ?? split.you)) stays yours." : nil,
+                                       action: onClose)
                             .accessibilityHint("Keeps the rest as yours and closes the split.")
                     } else {
                         PearlOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Reopen split", action: onReopen)
@@ -1237,10 +1245,10 @@ struct SplitPeople: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("You").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
                     Text("Your share").font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                    if amountsUnder { youAmount }
                 }
                 Spacer(minLength: 8)
-                Text(Format.amount(split.you)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                    .foregroundColor(Pearl.ink)
+                if !amountsUnder { youAmount }
             }
             .padding(.vertical, 10).frame(minHeight: 56).contentShape(Rectangle())
         }
@@ -1252,23 +1260,40 @@ struct SplitPeople: View {
         .accessibilityIdentifier("split-you-row")
     }
 
+    private var youAmount: some View {
+        Text(Format.amount(split.you)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
+            .foregroundColor(Pearl.ink).pearlAmountFit()
+    }
+
+    /// S-04u8 (note 1238:25742): everyone but you has a linked or cash
+    /// payment, and your share was never set.
+    private var everyonePaid: Bool {
+        split.unsure && split.closedAt == nil && !split.people.isEmpty && split.people.allSatisfy { $0.paid >= 0.005 }
+    }
+
+    private var leftAmount: some View {
+        Text(Format.amount(split.still ?? split.you)).font(Pearl.text(.headline, .semibold))
+            .monospacedDigit().foregroundColor(Pearl.ink).pearlAmountFit()
+    }
+
     /// S-04u6: "You · Your share · not set yet", and S-40y from its •••.
+    /// S-04u8: "Your share · what's left after paybacks · $17.00".
     private var youRow: some View {
         let closed = split.closedAt != nil
+        let left = closed || everyonePaid
         return HStack(spacing: 12) {
             Button { if !closed { youOptions = true } } label: {
                 HStack(spacing: 12) {
                     PearlFace(name: "Me", size: 40)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("You").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                        Text(closed ? "Your share · what was left" : "Your share · not set yet")
+                        Text(closed ? "Your share · what was left"
+                             : everyonePaid ? "Your share · what’s left after paybacks" : "Your share · not set yet")
                             .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                        if left && amountsUnder { leftAmount }
                     }
                     Spacer(minLength: 8)
-                    if closed {
-                        Text(Format.amount(split.still ?? split.you)).font(Pearl.text(.headline, .semibold))
-                            .monospacedDigit().foregroundColor(Pearl.ink)
-                    }
+                    if left && !amountsUnder { leftAmount }
                 }
                 .frame(minHeight: 44).contentShape(Rectangle())
             }
@@ -1329,13 +1354,11 @@ struct SplitPeople: View {
                         if paid, let how = how, p.links?.count == 1 {
                             Text(how).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
                         }
+                        if paid && amountsUnder { paidAmount(p) }
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
-                    if paid {
-                        Text(Format.amount(p.paid)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                            .foregroundColor(Pearl.moneyIn)
-                    }
+                    if paid && !amountsUnder { paidAmount(p) }
                 }
                 .frame(minHeight: 44).contentShape(Rectangle())
             }
@@ -1349,6 +1372,19 @@ struct SplitPeople: View {
             }
         }
         .padding(.vertical, 10)
+    }
+
+    private func paidAmount(_ p: Transaction.Splitting.Person) -> some View {
+        Text(Format.amount(p.paid)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
+            .foregroundColor(Pearl.moneyIn).pearlAmountFit()
+    }
+
+    /// What they still owe (ink); what they paid (money in); what she let go (muted).
+    private func owedAmount(_ p: Transaction.Splitting.Person) -> some View {
+        Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
+            .font(Pearl.text(.headline, .semibold)).monospacedDigit()
+            .foregroundColor(p.letGo != nil ? Pearl.muted : p.owes >= 0.005 ? Pearl.ink : Pearl.moneyIn)
+            .pearlAmountFit()
     }
 
     private func person(_ p: Transaction.Splitting.Person) -> some View {
@@ -1365,13 +1401,11 @@ struct SplitPeople: View {
                             if let line = deposited(p) {
                                 Text(line).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
                             }
+                            if amountsUnder { owedAmount(p) }
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 8)
-                        // What they still owe (ink); what they paid (money in); what she let go (muted).
-                        Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
-                            .font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                            .foregroundColor(p.letGo != nil ? Pearl.muted : p.owes >= 0.005 ? Pearl.ink : Pearl.moneyIn)
+                        if !amountsUnder { owedAmount(p) }
                     }
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
@@ -1550,9 +1584,12 @@ struct MarkPaidSheet: View {
         let part: Double?
         /// Who sent an e-Transfer, as Cash flow names them (TEST-13).
         let party: String?
+        /// TEST-20: "amount" when it's theirs and what they owe, so the
+        /// row can say "Amount matches"; nil otherwise.
+        var match: String? = nil
 
         enum CodingKeys: String, CodingKey {
-            case id, date, merchant, description, amount, likely, part, party
+            case id, date, merchant, description, amount, likely, part, party, match
             case accountName = "account_name"
         }
 
@@ -1707,7 +1744,8 @@ struct MarkPaidSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(d.name) · \(Format.short(d.date))").font(Pearl.text(.headline, .medium))
                         .foregroundColor(Pearl.ink)
-                    let sub = [d.likely == true ? "Amount matches" : d.accountName, how].compactMap { $0 }
+                    // TEST-20: "Amount matches" only when it's theirs and it does.
+                    let sub = [d.match == "amount" ? "Amount matches" : d.accountName, how].compactMap { $0 }
                     if !sub.isEmpty {
                         Text(sub.joined(separator: " · ")).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
                     }
@@ -1855,6 +1893,15 @@ struct MarkPaidSheet: View {
     }
 
     private var paying: Double { uses.values.reduce(0, +) }
+
+    /// TEST-20: an e-Transfer that names this person ("Priya Shah" for Priya).
+    private func theirs(_ d: Candidate) -> Bool {
+        guard let party = d.party?.lowercased(), !party.isEmpty else { return false }
+        let name = person.name.lowercased()
+        let first = name.split(separator: " ").first.map(String.init) ?? name
+        return party == name || party.hasPrefix(name)
+            || party.replacingOccurrences(of: ".", with: " ").split(separator: " ").map(String.init).contains(first)
+    }
 
     /// S-26 when it takes more than one deposit (or part of one); S-29,
     /// one payment that looks like theirs, otherwise.
@@ -2125,14 +2172,17 @@ struct MarkPaidSheet: View {
                 if let onLinked = onLinked { onLinked(title, undos) } else { onDone(title) }
             } else if how == "bank" {
                 struct Reply: Decodable { let candidates: [Lenient<Candidate>]? }
-                let r: Reply = try await api.get("api/transactions/\(t.id)/paybacks")
+                // TEST-20: for this person, so their own money leads and
+                // nobody else's is suggested or ticked.
+                let r: Reply = try await api.get("api/transactions/\(t.id)/paybacks", query: ["person": person.name])
                 // Theirs first: deposits that name them, then the rest.
                 let first = person.name.split(separator: " ").first.map(String.init)?.lowercased() ?? ""
                 deposits = (r.candidates ?? []).compactMap { $0.value }.enumerated().sorted { a, b in
                     let x = a.element.name.lowercased().contains(first), y = b.element.name.lowercased().contains(first)
                     return x != y ? x : a.offset < b.offset
                 }.map(\.element)
-                picked = deposits.first(where: { $0.likely == true }).map { [$0.id] } ?? []
+                // TEST-20: pre-tick only one of theirs that fits.
+                picked = deposits.first(where: { $0.likely == true && theirs($0) }).map { [$0.id] } ?? []
                 finding = true
                 chosen = true
             } else {
