@@ -257,15 +257,63 @@ final class Round1FixesUITests: XCTestCase {
         let priya = amountField("Priya")
         tap(priya, "Priya's amount")
         priya.typeText("40")
-        let status = text(containing: "stays yours")
+        // S-03rg (TEST-21): your share gives way, so it adds up.
+        let status = text(containing: "Adds up to $127.50")
         XCTAssertTrue(status.waitForExistence(timeout: 4), "No status line")
         sleep(1)
         XCTAssertTrue(status.isHittable, "The status line is under the number pad or Save")
-        XCTAssertTrue(app.buttons["Split the rest evenly"].isHittable, "Split the rest evenly is hidden")
         // A tap on the sheet's title puts the pad away.
         app.staticTexts["How to split"].firstMatch.tap()
         sleep(1)
         XCTAssertEqual(app.keyboards.count, 0, "The number pad didn't go away")
+    }
+
+    // MARK: TEST-21 Your share gives way (S-03rg / S-03rh / S-03ri)
+
+    func testYourShareGivesWayUntilYouTypeIt() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        tap(app.buttons["Amounts"], "Amounts")
+        let save = { self.app.buttons.matching(NSPredicate(format: "label == 'Save'")).allElementsBoundByIndex.last! }
+        func type(_ who: String, _ value: String) {
+            let f = amountField(who)
+            tap(f, "\(who)'s amount")
+            if let old = f.value as? String, !old.isEmpty, old != f.placeholderValue {
+                // What's there is selected, so typing replaces it.
+                f.doubleTap()
+            }
+            f.typeText(value)
+        }
+        type("Priya", "40")
+        type("Sam", "80")
+        // S-03rg: raising Sam is enough; you're what's left, $7.50.
+        XCTAssertTrue(text(containing: "Adds up to $127.50").waitForExistence(timeout: 4), "S-03rg: it should add up")
+        XCTAssertTrue(text(containing: "gives way").exists, "S-03rg: Your share · gives way · what's left")
+        XCTAssertEqual(amountField("You").placeholderValue, "$7.50", "S-03rg: your share should be what's left")
+        XCTAssertTrue(save().isEnabled, "S-03rg: Save should be on")
+        // S-03rh: more than the whole, even with yours at $0.00.
+        type("Sam", "90")
+        XCTAssertTrue(text(containing: "too much, even with your share at $0.00").waitForExistence(timeout: 4), "S-03rh")
+        XCTAssertFalse(save().isEnabled, "S-03rh: Save should be off")
+        // S-03ri: typed, your share is pinned; Take $x from your share unpins it.
+        type("Sam", "80")
+        type("You", "20")
+        XCTAssertTrue(text(containing: "you typed it").waitForExistence(timeout: 4), "S-03ri: pinned")
+        let take = button("Take $12.50 from your share")
+        if !take.waitForExistence(timeout: 4) {
+            let seen = app.staticTexts.allElementsBoundByIndex.map(\.label).filter { $0.contains("$") || $0.contains("much") }
+            XCTFail("S-03ri: no Take $12.50. Fields: \(["Priya", "Sam", "You"].map { amountField($0).value as? String ?? "?" }), \(seen)")
+        }
+        tap(take, "Take $12.50 from your share")
+        XCTAssertTrue(text(containing: "Adds up to $127.50").waitForExistence(timeout: 4), "S-03ri: it should add up after Take")
+        XCTAssertTrue(save().isEnabled)
+        app.staticTexts["How to split"].firstMatch.tap()
+        press("Save")
+        sleep(3)
+        let you = app.buttons["split-you-row"]
+        XCTAssertTrue(you.waitForExistence(timeout: 8) && you.label.contains("7.50"), "Your share should save as $7.50")
     }
 
     // MARK: TEST-14 Tap areas and the tab's badge
@@ -525,5 +573,30 @@ final class Round1FixesUITests: XCTestCase {
         sleep(5)
         XCTAssertTrue(text(containing: "what’s left after paybacks").waitForExistence(timeout: 8), "S-04u8: your row")
         XCTAssertTrue(text(containing: "Everyone has paid. $55.00 stays yours.").exists, "S-04u8: That's everything's line")
+    }
+
+    /// S-47g (section 20): with two payers the folded Paid back line opens
+    /// "Who paid you back"; a row opens that person's options, with Unlink.
+    func testWhoPaidYouBackOpensTheirOptions() {
+        launch()
+        gustoNotSureWithPriyaPaid(["Sam", "Jo"])
+        tap(app.buttons["Options for Sam"], "Options for Sam")
+        tap(button("Mark paid back"), "Mark paid back")
+        tap(button("Cash in hand"), "Cash in hand")
+        let amount = app.textFields["Amount"]
+        XCTAssertTrue(amount.waitForExistence(timeout: 5))
+        amount.tap()
+        amount.typeText("30")
+        press("Mark $", prefix: true)
+        sleep(5)
+        tap(app.buttons["Options for you"], "your •••")
+        tap(button("Set your share"), "Set your share")
+        XCTAssertTrue(app.textFields["your-share"].waitForExistence(timeout: 5))
+        let folded = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Priya and Sam'")).firstMatch
+        tap(folded, "the folded Paid back line")
+        XCTAssertTrue(text(containing: "Who paid you back").waitForExistence(timeout: 5), "S-47g didn't open")
+        tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Sam,'")).firstMatch, "Sam's row")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'Unlink'")).firstMatch
+                        .waitForExistence(timeout: 8), "Sam's row should open his S-40u, with Unlink")
     }
 }

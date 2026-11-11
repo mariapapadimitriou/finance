@@ -131,7 +131,8 @@ struct SplitSheet: View {
                 // Opened again (2026-11-08): each share as it was saved, in
                 // Amounts, so nothing has to be typed twice.
                 _mode = State(initialValue: "amount")
-                v[Self.me] = Self.plain(yours)
+                // S-03rg (TEST-21): her share isn't filled in, so it gives way
+                // (what's left, which is what she saved) until she types it.
                 for p in s.people { v[p.name] = Self.plain(p.share) }
             }
             _values = State(initialValue: v)
@@ -604,6 +605,10 @@ struct SplitSheet: View {
                         if mode == "amount" && gapCents > 0 {
                             Button("Split the rest evenly", action: splitRest)
                                 .font(Nacre.textButton).foregroundColor(Pearl.action)
+                        } else if let take = takeFromMine {
+                            // S-03ri: one tap unpins her share; it gives way again.
+                            Button("Take \(Format.amount(Double(take) / 100)) from your share") { values[Self.me] = nil }
+                                .font(Nacre.textButton).foregroundColor(Pearl.action)
                         }
                     }
                 }
@@ -815,7 +820,11 @@ struct SplitSheet: View {
         var bits: [String] = []
         let cents = shareCents(key)
         let mineOdd = key == Self.me && oddToMe
-        if key == Self.me && withMe && gapCents > 0 {
+        if key == Self.me && withMe && mode == "amount" {
+            // S-03rg / S-03rh / S-03ri (TEST-21).
+            bits.append(givesWay ? (restCents < 0 ? "Your share · can’t go below $0.00" : "Your share · gives way · what’s left")
+                        : "Your share · you typed it")
+        } else if key == Self.me && withMe && gapCents > 0 {
             // S-03b v2 (REFRESH-03): "Your share $44.12", before saving; the
             // rest is said once, under the total.
             bits.append("Your share \(Format.amount(Double(mineCents) / 100))")
@@ -884,8 +893,32 @@ struct SplitSheet: View {
             if percentRounds { return 0 }
             return Int(((100 - rows.map { number($0) }.reduce(0, +)) * 100).rounded())
         default:
-            return totalCents - rows.map { Int((number($0) * 100).rounded()) }.reduce(0, +)
+            // S-03rg / S-03rh (TEST-21, section 20): until she types her own
+            // share it is what's left, so raising someone else adds up; it's
+            // only too much once her share would go below $0.00.
+            if givesWay { return min(restCents, 0) }
+            return restCents
         }
+    }
+
+    /// The amounts as typed against the total; an empty row is $0.00.
+    private var restCents: Int {
+        totalCents - rows.map { Int((number($0) * 100).rounded()) }.reduce(0, +)
+    }
+
+    /// S-03ri: she typed her own share, so it's pinned.
+    private var mineTyped: Bool {
+        !(values[Self.me] ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// S-03rg: on Amounts, her row gives way until she types in it. With
+    /// "I had some too" off there's no row of hers to give way.
+    private var givesWay: Bool { mode == "amount" && withMe && !mineTyped }
+
+    /// S-03ri: "Take $15.88 from your share", when taking it makes it add up.
+    private var takeFromMine: Int? {
+        guard mode == "amount", withMe, mineTyped, gapCents < 0 else { return nil }
+        return Int((number(Self.me) * 100).rounded()) >= -gapCents ? -gapCents : nil
     }
 
     private var addsUp: String {
@@ -908,6 +941,8 @@ struct SplitSheet: View {
         let g = Double(abs(gapCents)) / 100
         // S-03b: with "I had some too" off there's no "you" to keep the rest.
         if gapCents > 0 && blocksShort { return "\(Format.amount(g)) left to assign" }
+        // S-03rh: her share is already at $0.00.
+        if gapCents < 0 && givesWay { return "That’s \(Format.amount(g)) too much, even with your share at $0.00" }
         // S-03b v2 / S-03r / S-03re (REFRESH-03): "$4.12 left · stays yours".
         return gapCents > 0 ? "\(Format.amount(g)) left · stays yours"
             : "That’s \(Format.amount(g)) too much"
@@ -981,7 +1016,7 @@ struct SplitSheet: View {
             body["people"] = people.map { ["name": $0] }
         case "amount":
             body["people"] = people.map { ["name": $0, "amount": number($0)] }
-            body["you"] = withMe ? number(Self.me) : 0
+            body["you"] = withMe ? (givesWay ? Double(max(mineCents, 0)) / 100 : number(Self.me)) : 0
         case "percent":
             body["people"] = people.map { ["name": $0, "percent": number($0)] }
             if withMe { body["you"] = number(Self.me) }
@@ -1054,7 +1089,7 @@ struct SplitSheet: View {
         case "even": body["people"] = people.map { ["name": $0] }
         case "amount":
             body["people"] = people.map { ["name": $0, "amount": number($0)] }
-            body["you"] = withMe ? number(Self.me) : 0
+            body["you"] = withMe ? (givesWay ? Double(max(mineCents, 0)) / 100 : number(Self.me)) : 0
         case "percent":
             body["people"] = people.map { ["name": $0, "percent": number($0)] }
             if withMe { body["you"] = number(Self.me) }
