@@ -166,6 +166,13 @@ class TestLocked:
             "people": [{"name": "Priya", "amount": 20}, {"name": "Sam", "amount": 25},
                        {"name": "Jo", "amount": 25}, {"name": "Alex", "amount": 28}]})
         assert r.status_code == 400
+        # TEST-18b: on Settle up, Pearl asks what Priya's extra is (S-48b).
+        assert r.get_json()["error"] == "Say what Priya’s extra $5.00 is."
+        # S-47 (your_share) never asks: a payer stays exactly as paid.
+        r = client.put(f"/api/transactions/{tid}/split", json={
+            "mode": "amount", "watch": True, "include_me": True, "you": 22, "your_share": True,
+            "people": [{"name": "Priya", "amount": 20}, {"name": "Sam", "amount": 25},
+                       {"name": "Jo", "amount": 25}, {"name": "Alex", "amount": 28}]})
         assert r.get_json()["error"] == "Priya’s $25.00 is linked. Unlink the payback to change Priya’s share."
 
     def test_s45a2_not_in_it_alex_owes_whats_left(self, client):
