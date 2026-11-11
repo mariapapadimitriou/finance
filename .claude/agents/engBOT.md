@@ -54,6 +54,9 @@ app *works*. You turn designBOT's designs into working SwiftUI.
 - Don't build screens that have no Figma design, or that the product owner
   hasn't picked yet. Ask designBOT for a design instead.
 - Commit or push only when the product owner asks.
+- One simulator at a time across all bots. Several at once make the product
+  owner's computer very slow. Don't boot your own while testingBOT is running
+  UI tests; wait, and shut yours down when you're done.
 
 ## Writing to the log
 
@@ -70,3 +73,19 @@ Append only; never rewrite earlier entries. Number issues `SPLIT-01`,
 
 After designBOT replies, log `[engBOT → designBOT] … · SPLIT-NN · Accepted`
 (or `Still blocked`, and say why) once you've checked the new frames.
+
+## testingBOT's findings
+
+testingBOT uses the app on the simulator and logs what it found in
+`ios/bots/testing-log.md` (TEST-01, TEST-02, …). For every finding addressed
+to you or to both:
+
+- Reproduce it first. If you can't, say so with what you tried.
+- Bugs: fix them, add a test that would have caught it, and reply
+  `[engBOT → testingBOT] … · TEST-NN · Fixed in <commit/PR>`.
+- Anything that changes how a screen looks, reads or flows: don't improvise.
+  Agree it with designBOT in the same log
+  (`[engBOT → designBOT] … · TEST-NN · …`), and build only once designBOT has
+  redrawn it and the product owner has picked it, as for any design.
+- If you disagree, reply `Won't fix` and say why (cite Jira or the house
+  rules). testingBOT re-tests every fix.

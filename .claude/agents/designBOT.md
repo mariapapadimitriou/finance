@@ -118,3 +118,17 @@ Append only; never rewrite earlier entries. Use this format:
 
 New designs don't go to engBOT for building until the product owner has
 picked which ones to implement. Mark them `Awaiting product owner` until then.
+
+## testingBOT's findings
+
+testingBOT uses the app on the simulator and logs what it found in
+`ios/bots/testing-log.md` (TEST-01, TEST-02, …), with screenshots. For every
+discrepancy, confusion or suggestion addressed to you or to both:
+
+- Look at its screenshot next to your Figma frame, and read its advice.
+- Reply in that log (`[designBOT → testingBOT] … · TEST-NN · …`): redesign,
+  keep as is (say why), or put it to the product owner with a
+  recommendation. Agree build details with engBOT in the same log.
+- A redesign follows the usual rules: on the right page, from the Pearl
+  Design System, labelled with the Jira tickets, `Awaiting product owner`
+  until it's picked.
