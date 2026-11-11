@@ -482,11 +482,25 @@ final class Round1FixesUITests: XCTestCase {
     }
 
     /// T-01r: Leftover leads, then Spent / Saved / Leftover, Came in, and
-    /// "need a look · Sort"; spending amounts in ink.
+    /// "need a look · Sort"; spending amounts in ink. T-01r3 (TEST-05):
+    /// while this month's pay is still to come, "Spent so far", "Pay
+    /// expected <day>" and "Pay to come", and never a red Over.
     func testCashFlowLeadsWithLeftover() {
         launch()
+        let month = String(ISO8601DateFormatter().string(from: Date()).prefix(7))
+        let totals = (server("transactions/list?month=\(month)") as? [String: Any])?["month_totals"] as? [String: Any]
+        let waiting = totals?["pay"] is [String: Any]
         openCashFlow()
-        // The demo month has spent more than came in, so the headline is Over.
+        if waiting {
+            XCTAssertTrue(text(containing: "Spent so far").waitForExistence(timeout: 8), "T-01r3: no Spent so far")
+            for words in ["Pay expected", "Pay to come", "Spent $", "Saved", "need a look"] {
+                let e = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
+                XCTAssertTrue(e.waitForExistence(timeout: 8), "T-01r3: no \(words) on Cash flow")
+            }
+            XCTAssertFalse(text(containing: "Over").exists, "T-01r3: no Over before the pay is in")
+            XCTAssertFalse(text(containing: "Came in").exists, "T-01r3: Pay expected takes Came in's place")
+            return
+        }
         let lead = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Leftover' OR label CONTAINS 'Over'")).firstMatch
         XCTAssertTrue(lead.waitForExistence(timeout: 8), "No Leftover / Over headline")
         for words in ["Came in", "Spent", "Saved", "need a look"] {

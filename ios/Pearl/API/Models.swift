@@ -496,6 +496,17 @@ struct TransactionList: Decodable {
         let count: Int?
         /// T-01r: what was put away this month (month totals only).
         let saved: Double?
+        /// T-01r3 (TEST-05): this month's pay still to come, until it's in.
+        var pay: Pay? = nil
+
+        struct Pay: Decodable, Hashable {
+            let toCome: Double
+            let expected: String?
+            enum CodingKeys: String, CodingKey {
+                case toCome = "to_come"
+                case expected
+            }
+        }
     }
 }
 

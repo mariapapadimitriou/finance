@@ -352,7 +352,11 @@ struct TransactionsView: View {
             : (monthTotals?.income ?? 0)
         let saved = narrowed ? 0 : (monthTotals?.saved ?? 0)
         let left = income - spent - saved
-        let over = left < -0.5 && !narrowed
+        // T-01r3 (TEST-05, section 20): before this month's pay is in, the
+        // headline is "Spent so far" in ink and the pay still to come shows,
+        // not a red Over measured against money that hasn't come yet.
+        let pay = narrowed ? nil : monthTotals?.pay
+        let over = left < -0.5 && !narrowed && pay == nil
         return GlassCard {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
@@ -368,6 +372,12 @@ struct TransactionsView: View {
                     .disabled(months.isEmpty)
                     .accessibilityLabel("Month, \(month.map { Format.month($0) } ?? "")")
                     Spacer(minLength: 8)
+                    if let day = pay?.expected {
+                        // T-01r3: "Pay expected Nov 15".
+                        Text("Pay expected \(Format.short(day))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            .frame(minHeight: 44)
+                            .accessibilityLabel("Pay expected \(Format.monthDay(day))")
+                    } else {
                     // T-67: Came in narrows the list to money in.
                     Button { counts = counts == "income" ? nil : "income" } label: {
                         Text("Came in \(Format.whole(income))").font(Nacre.subheadline).foregroundColor(Pearl.moneyIn)
@@ -376,15 +386,18 @@ struct TransactionsView: View {
                     .buttonStyle(.plain)
                     .accessibilityHint(counts == "income" ? "Shows everything again" : "Shows only these")
                     .accessibilityAddTraits(counts == "income" ? .isSelected : [])
+                    }
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(over ? "Over" : "Leftover").font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    Text(narrowed ? "—" : Format.whole(abs(left)))
+                    Text(pay != nil ? "Spent so far" : over ? "Over" : "Leftover").font(Nacre.footnote)
+                        .foregroundColor(pay != nil ? Pearl.muted : Pearl.ink)
+                    Text(narrowed ? "—" : Format.whole(pay != nil ? spent : abs(left)))
                         .font(Pearl.display(.largeTitle)).foregroundColor(over ? Pearl.moneyOut : Pearl.ink)
                         .lineLimit(1).minimumScaleFactor(0.6)
                 }
                 .accessibilityElement(children: .combine)
-                MonthBar(spent: spent, saved: saved, income: income)
+                // T-01r3: the bar runs to what will have come in by month's end.
+                MonthBar(spent: spent, saved: saved, income: income + (pay?.toCome ?? 0))
                 HStack(spacing: 14) {
                     // T-67: Spent narrows the list to spending.
                     Button { counts = counts == "spending" ? nil : "spending" } label: {
@@ -395,8 +408,12 @@ struct TransactionsView: View {
                     .accessibilityHint(counts == "spending" ? "Shows everything again" : "Shows only these")
                     .accessibilityAddTraits(counts == "spending" ? .isSelected : [])
                     Text("Saved \(Format.whole(saved))").foregroundColor(Pearl.moneyIn)
+                    if let pay = pay {
+                        Text("Pay to come \(Format.whole(pay.toCome))").foregroundColor(Pearl.muted)
+                    } else {
                     Text(over ? "Over \(Format.whole(-left))" : "Leftover \(Format.whole(max(left, 0)))")
                         .foregroundColor(over ? Pearl.moneyOut : Pearl.muted)
+                    }
                     Spacer(minLength: 0)
                 }
                 .font(Nacre.footnote).lineLimit(1).minimumScaleFactor(0.8)
