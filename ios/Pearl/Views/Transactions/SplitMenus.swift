@@ -267,8 +267,12 @@ struct PearlSheetHeader: View {
     var subTone: Color = Pearl.muted
     var back: (() -> Void)? = nil
     let close: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        // S-03ax (TEST-17): at accessibility sizes a Sheet header drops its
+        // avatar instead of shrinking the initials.
+        let face = typeSize.isAccessibilitySize ? nil : self.face
         HStack(alignment: .top, spacing: 12) {
             if let back = back {
                 Button(action: back) {
@@ -379,6 +383,7 @@ struct PearlSheetButtons: View {
         VStack(spacing: 12) {
             Button(primary, action: onPrimary)
                 .buttonStyle(PearlPrimaryButtonStyle(busy: busy, busyLabel: busyLabel))
+                .accessibilityIdentifier("sheet-primary")
             if let secondary = secondary {
                 Button(secondary, action: onSecondary).buttonStyle(PearlSecondaryButtonStyle())
             }
@@ -619,7 +624,11 @@ struct PersonOptionsSheet: View {
     /// for someone let go (REFRESH-03, S-40d): it goes at once, with Undo.
     private var removeSub: String? {
         if p.paid < 0.005 {
-            return p.letGo != nil ? nil : "The \(Format.amount(p.share)) goes back to your share"
+            // S-40u2 (TEST-11): on Not sure yet nobody has a share, so
+            // there's nothing to give back: "Nothing to unlink".
+            if p.letGo != nil { return nil }
+            return t.splitting?.unsure == true || p.share < 0.005 ? "Nothing to unlink"
+                : "The \(Format.amount(p.share)) goes back to your share"
         }
         if links.count > 1 { return links.count == 2 ? "Asks first: unlinks both payments" : "Asks first: unlinks \(links.count) payments" }
         guard let link = links.first else { return "Asks first" }

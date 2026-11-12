@@ -188,7 +188,7 @@ struct TransactionHeader: View {
             Spacer(minLength: 8)
             Text((inflow ? "+" : "-") + Format.amount(amount))
                 .font(Pearl.display(.title3)).tracking(-0.44)
-                .foregroundColor(inflow ? Pearl.moneyIn : Pearl.moneyOut)
+                .foregroundColor(inflow ? Pearl.moneyIn : Pearl.ink)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
         .padding(16)

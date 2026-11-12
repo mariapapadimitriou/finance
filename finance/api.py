@@ -372,7 +372,11 @@ def transactions_list():
         "owed": owed,
         "total": len(chosen),
         "totals": txlist.totals(every),
-        "month_totals": txlist.totals(whole),
+        # T-01r (TEST-05): Spent / Saved / Leftover under the month's bar.
+        "month_totals": {**txlist.totals(whole),
+                         **({"saved": round(_invested_in(st.all_transactions(), month), 2)} if month else {}),
+                         # T-01r3 (TEST-05): before this month's pay is in.
+                         **({"pay": _pay_to_come(st)} if month and month[:7] == _today_iso()[:7] else {})},
         # ALT-04: the Outflows and Inflows cards.
         "flows": txlist.flows(rows, filters, _date_today()),
         "focus": txlist.focus(rows, month=month, account=filters["account"],
@@ -1533,6 +1537,29 @@ _PAYBACK_BEFORE_DAYS = 7
 _PAYBACK_AFTER_DAYS = 45
 _PAYBACK_NAMES = ("e-transfer", "etransfer", "e-tfr", "etfr", "interac",
                   "transfer", "venmo", "zelle", "wise")
+
+
+def _pay_to_come(st) -> dict | None:
+    """T-01r3 (TEST-05, section 20): this month's pay still to come, as the
+    Allowance counts it (THL-127): `to_come` and the day it's `expected`
+    (the next unpaid payday; None when what she told Pearl has no day).
+    None once it has all come in, so Cash flow goes back to T-01r."""
+    today = _date_today()
+    sts = _home_sts(st, st.all_transactions(), today)
+    income = next((r for r in sts.get("rows") or [] if r.get("key") == "income"), None)
+    if not income:
+        return None
+    waiting = [ln for ln in income.get("lines") or [] if not ln.get("arrived")]
+    to_come = round(sum(ln.get("amount") or 0.0 for ln in waiting), 2)
+    if to_come < 0.5:
+        return None
+    days = sorted(ln["date"] for ln in waiting if ln.get("date") and ln["date"] >= today.isoformat())
+    return {"to_come": to_come, "expected": days[0] if days else sts.get("next_pay")}
+
+
+def _invested_in(txns, month: str) -> float:
+    from .analytics import invested_in
+    return invested_in(txns, month[:7])
 
 
 def _names_person(sender: str | None, person: str | None) -> bool:

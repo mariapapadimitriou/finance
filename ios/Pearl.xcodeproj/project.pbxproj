@@ -17,6 +17,7 @@
 		B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97809C6135186A3BD204F423 /* Theme.swift */; };
 		5C5C23B160087A9704B706BB /* AllowanceOrb.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */; };
 		D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = C497270FF4823ED50730E0BC /* Components.swift */; };
+		E220B67B8BD59918DBDF7B25 /* PearlConfirmSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE07E1F41699A26A45FCC30C /* PearlConfirmSheet.swift */; };
 		F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F7C177E913CEBE0B53FA5 /* HomeView.swift */; };
 		7579BBE295A41A951C73B4E3 /* AllowanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49B60D0B387295A6F5633F43 /* AllowanceView.swift */; };
 		3E714132CCE10921CFECCE51 /* AuthFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE32207A5401B96AA021225 /* AuthFlow.swift */; };
@@ -96,6 +97,7 @@
 		97809C6135186A3BD204F423 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowanceOrb.swift; sourceTree = "<group>"; };
 		C497270FF4823ED50730E0BC /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		EE07E1F41699A26A45FCC30C /* PearlConfirmSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PearlConfirmSheet.swift; sourceTree = "<group>"; };
 		663F7C177E913CEBE0B53FA5 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		49B60D0B387295A6F5633F43 /* AllowanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowanceView.swift; sourceTree = "<group>"; };
 		DBE32207A5401B96AA021225 /* AuthFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFlow.swift; sourceTree = "<group>"; };
@@ -268,6 +270,7 @@
 			children = (
 				E21AE2F637B8AF4630212950 /* AllowanceOrb.swift */,
 				C497270FF4823ED50730E0BC /* Components.swift */,
+				EE07E1F41699A26A45FCC30C /* PearlConfirmSheet.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -462,6 +465,7 @@
 				B4F50BD8435DEB237F51EFD7 /* Theme.swift in Sources */,
 				5C5C23B160087A9704B706BB /* AllowanceOrb.swift in Sources */,
 				D02B27EB92A7DFD6D51C0DA8 /* Components.swift in Sources */,
+				E220B67B8BD59918DBDF7B25 /* PearlConfirmSheet.swift in Sources */,
 				F2D60DB16AD29DE5F442BC38 /* HomeView.swift in Sources */,
 				7579BBE295A41A951C73B4E3 /* AllowanceView.swift in Sources */,
 				3E714132CCE10921CFECCE51 /* AuthFlow.swift in Sources */,

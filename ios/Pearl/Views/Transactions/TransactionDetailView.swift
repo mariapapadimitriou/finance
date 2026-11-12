@@ -143,7 +143,7 @@ struct PiggyPaySheet: View {
             SheetTitle(title: "Pay from a piggy bank") { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    QuestionHeader(name: t.merchant, amount: Format.amount(charge), tone: Pearl.moneyOut, sub: nil)
+                    QuestionHeader(name: t.merchant, amount: Format.amount(charge), tone: Pearl.ink, sub: nil)
                     if let banks = banks {
                         if banks.isEmpty {
                             Text("You don’t have a piggy bank yet.").font(Nacre.body).foregroundColor(Pearl.muted)
@@ -370,7 +370,6 @@ struct TransactionDetailView: View {
     @State private var viewing: Transaction?
     @State private var message: String?
     @State private var error: String?
-
     /// S-04r v2s: the hero has scrolled under the bar.
     @State private var heroGone = false
 
@@ -1024,8 +1023,11 @@ struct TransactionDetailView: View {
     private func guessCard(_ label: String) -> some View {
         Button { sorting = guessing?.ask ?? sortAsk(.category) } label: {
             let still = chosenCategory == nil && !pickedGuess
-            categoryLabel(symbol: chosenCategory ?? guessing?.ask.item.guess?.text ?? t.category ?? t.label,
-                          title: label, sub: still ? "Pearl’s guess" : "Your choice")
+            let symbol = chosenCategory ?? guessing?.ask.item.guess?.text ?? t.category ?? t.label
+            // T-93n (TEST-12): Other isn't a guess, so the row asks.
+            let asks = still && symbol == "Other"
+            categoryLabel(symbol: symbol, title: asks ? "What was this?" : label,
+                          sub: asks ? nil : still ? "Pearl’s guess" : "Your choice")
                 .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .strokeBorder(Pearl.ink.opacity(still ? 0.7 : 0),
                                   style: StrokeStyle(lineWidth: 1.2, dash: [5, 3])))
@@ -1085,7 +1087,7 @@ struct TransactionDetailView: View {
         if t.refundOf != nil { return ("Refund", true, Pearl.moneyIn) }
         switch t.counts {
         case "income": return ("Income", true, Pearl.moneyIn)
-        case "spending": return ("Spending", t.inflow, t.inflow ? Pearl.moneyIn : Pearl.moneyOut)
+        case "spending": return ("Spending", t.inflow, t.inflow ? Pearl.moneyIn : Pearl.ink)
         default: return ("Not counted", t.inflow, Pearl.muted)
         }
     }
@@ -1241,7 +1243,7 @@ struct TransactionDetailView: View {
             Spacer(minLength: 8)
             Text((inflow ? "+" : "\u{2212}") + Format.amount(amount))
                 .font(Nacre.headline).monospacedDigit()
-                .foregroundColor(inflow ? Pearl.ink : Pearl.moneyOut)
+                .foregroundColor(Pearl.ink)
             if chevron {
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
                     .foregroundColor(Pearl.muted)
@@ -1843,10 +1845,18 @@ struct TransactionDetailView: View {
                 .buttonStyle(NacreTextButtonStyle(tone: Pearl.moneyOut))
                 .padding(.top, 12)
                 .disabled(busy)
-                .confirmationDialog("Delete \(t.merchant)?", isPresented: $deleting, titleVisibility: .visible) {
-                    Button("Delete", role: .destructive) { Task { await delete() } }
-                } message: {
-                    Text("You added it by hand. It comes out of your numbers.")
+                .sheet(isPresented: $deleting) {
+                    // T-03x (TEST-06): a Pearl sheet; T-03x2 if it fails.
+                    PearlConfirmSheet(face: t.merchant, overline: "Added by hand", title: "Delete \(t.merchant)?",
+                                      message: "You added it by hand, so it comes out of your numbers. This can’t be undone.",
+                                      primary: "Delete", busyLabel: "Deleting…", secondary: "Keep it",
+                                      failure: "Couldn’t delete \(t.merchant). Nothing changed. Try again.",
+                                      onClose: { deleting = false }) {
+                        let _: OK = try await app.api.delete("api/transactions/\(t.id)")
+                        deleting = false
+                        app.changed()
+                        dismiss()
+                    }
                 }
         }
     }
@@ -2346,18 +2356,6 @@ struct TransactionDetailView: View {
             let reply: Reply = try await app.api.delete("api/transactions/\(t.id)/parts")
             detail = try await app.api.get("api/transactions/\(reply.id)")
             return reply.title
-        }
-    }
-
-    private func delete() async {
-        busy = true
-        defer { busy = false }
-        do {
-            let _: OK = try await app.api.delete("api/transactions/\(t.id)")
-            app.changed()
-            dismiss()
-        } catch {
-            self.error = app.handle(error)
         }
     }
 

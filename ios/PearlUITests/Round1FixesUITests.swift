@@ -181,7 +181,7 @@ final class Round1FixesUITests: XCTestCase {
     /// near-white words on them read (they were white on white).
     func testQuickSortReadsInDarkMode() {
         launch("dark")
-        tap(app.buttons["Review one by one"], "Review one by one")
+        tap(app.buttons["See the list"], "See the list")
         let all = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'All'")).firstMatch
         XCTAssertTrue(all.waitForExistence(timeout: 15), "Needs a look has no All chip")
         sleep(1)
@@ -196,7 +196,7 @@ final class Round1FixesUITests: XCTestCase {
         XCTAssertLessThan(lightness(of: skip, inset: 0.35), 0.4, "Skip's circle should be dark in dark")
         // And light mode keeps its light card.
         launch("light")
-        tap(app.buttons["Review one by one"], "Review one by one")
+        tap(app.buttons["See the list"], "See the list")
         tap(button("Quick sort"), "Quick sort card")
         XCTAssertTrue(card.waitForExistence(timeout: 15), "No Quick sort card")
         sleep(1)
@@ -230,14 +230,17 @@ final class Round1FixesUITests: XCTestCase {
         tap(app.buttons["Select"], "Select")
         tap(button("Spotify"), "Spotify in Select")
         tap(app.buttons["Leave out"], "Leave out in the bar")
-        let alert = app.alerts.firstMatch
-        XCTAssertTrue(alert.waitForExistence(timeout: 5), "No Leave out confirmation")
-        XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Say why'")).firstMatch.exists,
-                      "The confirmation should say a reason is needed")
-        let leave = alert.buttons["Leave out"]
+        // TEST-06: T-77c is a Pearl sheet, not a stock alert.
+        XCTAssertEqual(app.alerts.count, 0, "Leave out is still a stock alert")
+        XCTAssertTrue(text(containing: "Leave out 1 transaction?").waitForExistence(timeout: 5), "No T-77c sheet")
+        XCTAssertTrue(text(containing: "Say why, so you can tell later.").exists,
+                      "The sheet should say a reason is needed")
+        // The sheet's Leave out, not the Select bar's behind it.
+        let leave = app.buttons["sheet-primary"]
         XCTAssertFalse(leave.isEnabled, "Leave out should wait for a reason")
-        alert.textFields.firstMatch.tap()
-        alert.textFields.firstMatch.typeText("A friend's")
+        let why = app.textFields["leave-out-reason"]
+        tap(why, "the Why? field")
+        why.typeText("A friend's")
         XCTAssertTrue(leave.isEnabled, "Leave out should be on once there's a reason")
         leave.tap()
         sleep(3)
@@ -253,15 +256,35 @@ final class Round1FixesUITests: XCTestCase {
         openTransaction("Gusto")
         tap(app.buttons["Split with others"], "Split with others")
         addPeople(["Priya", "Sam"])
-        tap(app.buttons["Amounts"], "Amounts")
+        // At AX sizes the methods sit behind "How to split · Evenly ›" (S-03u).
+        let methods = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'How to split'")).firstMatch
+        let ax = !app.buttons["Amounts"].waitForExistence(timeout: 3) && methods.exists
+        if ax {
+            methods.tap()
+            tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Amounts, split method'")).firstMatch, "Amounts")
+        } else {
+            tap(app.buttons["Amounts"].firstMatch, "Amounts")
+        }
         let priya = amountField("Priya")
         tap(priya, "Priya's amount")
         priya.typeText("40")
-        // S-03rg (TEST-21): your share gives way, so it adds up.
+        // S-03rg (TEST-21): her share gives way, so it adds up.
         let status = text(containing: "Adds up to $127.50")
         XCTAssertTrue(status.waitForExistence(timeout: 4), "No status line")
         sleep(1)
-        XCTAssertTrue(status.isHittable, "The status line is under the number pad or Save")
+        let saveButton = app.buttons.matching(NSPredicate(format: "label == 'Save'")).allElementsBoundByIndex.last
+        XCTAssertTrue(status.isHittable, "The status line is under the number pad or Save: status \(status.frame), "
+                      + "Save \(saveButton?.frame ?? .zero), pad \(app.keyboards.firstMatch.frame), window \(app.windows.firstMatch.frame)")
+        // S-03rg: with her share giving way there's nothing left to split,
+        // so "Split the rest evenly" isn't offered.
+        _ = ax
+        // TEST-16 (round 2): Save sits below the content, never on it.
+        let save = app.buttons.matching(NSPredicate(format: "label == 'Save'")).allElementsBoundByIndex.last!
+        XCTAssertLessThanOrEqual(status.frame.maxY, save.frame.minY + 1, "TEST-16: Save covers the status line")
+        let had = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'I had some too'")).firstMatch
+        if had.exists && had.isHittable {
+            XCTAssertFalse(had.frame.intersects(save.frame), "TEST-16: Save is drawn on I had some too")
+        }
         // A tap on the sheet's title puts the pad away.
         app.staticTexts["How to split"].firstMatch.tap()
         sleep(1)
@@ -340,7 +363,7 @@ final class Round1FixesUITests: XCTestCase {
         audit()
         openCashFlow()
         audit()
-        for label in ["Review one by one", "Calendar"] {
+        for label in ["See the list", "Sort now", "Calendar"] {
             XCTAssertFalse(small.contains(label), "\(label) is still under 44 pt: \(small)")
         }
         XCTAssertGreaterThanOrEqual(app.buttons["Calendar"].frame.height, 44)
@@ -798,5 +821,139 @@ final class Round1FixesUITests: XCTestCase {
             return true
         }
         XCTAssertFalse(clipped.contains { $0.contains("NOT SURE YET") }, "TEST-14: S-40y's overline is clipped: \(clipped)")
+    }
+
+    // MARK: From the redesign line (sections 16 and 17, Sort now, T-01r / T-01r3, TEST-12, TEST-22)
+
+    /// T-93n: a card whose best guess is Other asks, with Answer.
+    func testAnOtherGuessIsAQuestion() {
+        launch()
+        tap(app.buttons["See the list"], "See the list")
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Other?'")).firstMatch
+                        .waitForExistence(timeout: 6), "Needs a look still shows an Other? chip")
+        tap(button("Quick sort"), "Quick sort card")
+        var n = 0
+        while !text(containing: "What was this?").exists && n < 6 {
+            app.buttons["Skip"].tap(); sleep(1); n += 1
+        }
+        XCTAssertTrue(text(containing: "What was this?").exists, "No card asks What was this?")
+        XCTAssertTrue(app.buttons["Answer"].exists, "Its round button should be Answer")
+        XCTAssertTrue(text(containing: "NEEDS A LOOK").exists)
+    }
+
+    /// T-01r: Leftover leads, then Spent / Saved / Leftover, Came in, and
+    /// "need a look · Sort"; spending amounts in ink. T-01r3 (TEST-05):
+    /// while this month's pay is still to come, "Spent so far", "Pay
+    /// expected <day>" and "Pay to come", and never a red Over.
+    func testCashFlowLeadsWithLeftover() {
+        launch()
+        let month = String(ISO8601DateFormatter().string(from: Date()).prefix(7))
+        let totals = (server("transactions/list?month=\(month)") as? [String: Any])?["month_totals"] as? [String: Any]
+        let waiting = totals?["pay"] is [String: Any]
+        openCashFlow()
+        if waiting {
+            XCTAssertTrue(text(containing: "Spent so far").waitForExistence(timeout: 8), "T-01r3: no Spent so far")
+            for words in ["Pay expected", "Pay to come", "Spent $", "Saved", "need a look"] {
+                let e = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
+                XCTAssertTrue(e.waitForExistence(timeout: 8), "T-01r3: no \(words) on Cash flow")
+            }
+            XCTAssertFalse(text(containing: "Over").exists, "T-01r3: no Over before the pay is in")
+            XCTAssertFalse(text(containing: "Came in").exists, "T-01r3: Pay expected takes Came in's place")
+            return
+        }
+        let lead = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Leftover' OR label CONTAINS 'Over'")).firstMatch
+        XCTAssertTrue(lead.waitForExistence(timeout: 8), "No Leftover / Over headline")
+        for words in ["Came in", "Spent", "Saved", "need a look"] {
+            let e = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
+            XCTAssertTrue(e.waitForExistence(timeout: 8), "No \(words) on Cash flow")
+        }
+        XCTAssertFalse(text(containing: "Over $").exists && text(containing: "Leftover $").exists)
+    }
+
+    /// TEST-12 (T-93n): Cash flow's rows ask "What was this?" too; never "Other?".
+    func testCashFlowRowsHaveNoOtherGuess() {
+        launch()
+        openCashFlow()
+        sleep(2)
+        let other = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Other?' OR label CONTAINS 'guess: Other'"))
+        XCTAssertFalse(other.firstMatch.exists, "TEST-12: Cash flow still shows an Other? guess")
+    }
+
+    /// S-03r2 / S-03r2b: "I had some too" on How to split; off, your row
+    /// goes, the rest is left to assign and Save is off. The Done bar too.
+    func testIHadSomeTooOnHowToSplit() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        tap(app.buttons["Amounts"], "Amounts")
+        let priya = amountField("Priya")
+        tap(priya, "Priya's amount")
+        priya.typeText("40")
+        XCTAssertTrue(app.toolbars.buttons["Done"].exists || app.buttons["Done"].exists, "No Done over the number pad")
+        (app.toolbars.buttons["Done"].exists ? app.toolbars.buttons["Done"] : app.buttons["Done"]).tap()
+        XCTAssertTrue(text(containing: "of $127.50").waitForExistence(timeout: 4), "No \"… of $127.50\" by the bar")
+        let toggle = app.switches.matching(NSPredicate(format: "label BEGINSWITH 'I had some too'")).firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 4), "No I had some too on How to split")
+        if !toggle.isHittable { app.swipeUp() }
+        toggle.switches.firstMatch.exists ? toggle.switches.firstMatch.tap() : toggle.tap()
+        XCTAssertTrue(text(containing: "left to assign").waitForExistence(timeout: 4), "Off should leave the rest to assign")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label == 'Save'")).allElementsBoundByIndex.last!.isEnabled,
+                       "Save should be off while it's short")
+    }
+
+    /// S-40u2: on a Not sure yet split nobody has a share to give back.
+    func testRemoveOnNotSureYetSaysNothingToUnlink() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        let unsure = app.buttons["Not sure yet, split method"].exists ? app.buttons["Not sure yet, split method"] : app.buttons["Not sure"]
+        tap(unsure, "Not sure")
+        press("Save split")
+        sleep(2)
+        tap(app.buttons["Options for Priya"], "Options for Priya")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Nothing to unlink'")).firstMatch
+                        .waitForExistence(timeout: 5), "Remove should say Nothing to unlink")
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '$0.00 goes back'")).firstMatch.exists)
+    }
+
+    /// TEST-06: P-05, a Pearl sheet; Stay signed in keeps her signed in.
+    func testSignOutAsksOnAPearlSheet() {
+        launch()
+        app.tabBars.buttons["Profile"].tap()
+        let signOut = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Sign out'")).firstMatch
+        tap(signOut, "Sign out on Profile")
+        XCTAssertEqual(app.sheets.count + app.alerts.count, 0, "Sign out is still a stock dialog")
+        XCTAssertTrue(text(containing: "Sign out on this iPhone?").waitForExistence(timeout: 5), "No P-05 sheet")
+        tap(app.buttons["Stay signed in"], "Stay signed in")
+        sleep(1)
+        XCTAssertTrue(app.tabBars.buttons["Profile"].exists, "Stay signed in should keep her signed in")
+    }
+
+    /// H-00r: Sort now opens Quick sort straight from Home.
+    func testSortNowOpensQuickSortFromHome() {
+        launch()
+        XCTAssertFalse(app.buttons["Review one by one"].exists, "Home still says Review one by one")
+        XCTAssertTrue(text(containing: "About").waitForExistence(timeout: 10), "No \"About a minute\" line")
+        tap(app.buttons["Sort now"], "Sort now")
+        XCTAssertTrue(app.descendants(matching: .any)["quick-sort-card"].waitForExistence(timeout: 15),
+                      "Sort now should open Quick sort")
+        XCTAssertFalse(app.staticTexts["Needs a look"].exists, "It opened Needs a look instead")
+    }
+
+    /// TEST-22: at the largest text size the card's amounts never break
+    /// inside the number. Held on screen for the host to capture.
+    func testSplitCardAmountsAtTheLargestSize() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        press("Save")
+        sleep(3)
+        let card = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Priya'")).firstMatch
+        tap(card, "Priya's row")
+        app.buttons["Close"].firstMatch.tap()
+        sleep(12)
     }
 }

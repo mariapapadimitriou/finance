@@ -257,9 +257,17 @@ class TestSwiftWiring:
 
     def test_detail_page_split_dialogs_are_gone(self):
         s = self.src("ios/Pearl/Views/Transactions/TransactionDetailView.swift")
-        # Only the Delete dialog stays (not a split flow; a later pass).
-        assert len(re.findall(r"\.confirmationDialog\(", s)) == 1
-        assert ".confirmationDialog(\"Delete" in s and ".alert(" not in s
+        # TEST-06: Delete is a Pearl sheet now too (T-03x).
+        assert not re.findall(r"\.confirmationDialog\(", s) and ".alert(" not in s
+        assert "PearlConfirmSheet(" in s
+
+    def test_no_stock_dialog_anywhere_in_the_app(self):
+        """TEST-06 (house rule): every confirmation is a Pearl sheet."""
+        import glob
+        for path in glob.glob("ios/Pearl/**/*.swift", recursive=True):
+            s = open(path).read()
+            for stock in (".confirmationDialog(", ".alert(", ".actionSheet(", "ActionSheet("):
+                assert stock not in s, (path, stock)
 
     def test_s40_from_the_card(self):
         split = self.src("ios/Pearl/Views/Transactions/SplitFlow.swift")
@@ -382,7 +390,7 @@ class TestLessWords:
             'showSplit("Copied"', '"None of it is yours to split."', 'let title = "\\(p.name) removed"',
             '("Settled up", {', '"Split reopened"'],
         "ios/Pearl/Views/Home/HomeView.swift": [
-            '"\\(count) to sort"', '"Pearl sorted \\(pearlSorted) by itself."', 'had 3 paycheques.',
+            '"\\(count) to sort"', '" Pearl sorted \\(pearlSorted) by itself."', 'had 3 paycheques.',
             '"\\(who) you \\(Format.amount(owed.total))"', '· \\(unsettled.count) not settled', 'Allowance.restCaption'],
         "ios/Pearl/Views/Onboarding/SetupFlow.swift": ['"Only you see this. Nothing is sent."', 'title: "Shared with"',
                                                      '"Up to six. Only you see this."'],

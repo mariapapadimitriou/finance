@@ -170,15 +170,23 @@ struct TransactionsView: View {
                 }
             }
         }
-        .alert("Leave out \(pickedTitle)?", isPresented: $leavingOut) {
-            TextField("Why? For example, a friend’s purchase", text: $leaveReason)
-            Button("Cancel", role: .cancel) { leaveReason = "" }
-            // TEST-07: the server needs a reason, so Leave out waits for one
-            // and the alert says why (it used to close and do nothing).
-            Button("Leave out") { Task { await leaveOut() } }
-                .disabled(leaveReason.trimmingCharacters(in: .whitespaces).isEmpty)
-        } message: {
-            Text("They’re left out of all your numbers. Put any back from its transaction. Say why, so you can tell later.")
+        .sheet(isPresented: $leavingOut) {
+            // T-77c / T-77c2 (TEST-06, TEST-07): Leave out stays off until
+            // there's a reason, and the sheet says why under the field.
+            let n = picked.count
+            PearlConfirmSheet(overline: "Leave out · \(n) selected",
+                              title: n == 1 ? "Leave out 1 transaction?" : "Leave out \(n) transactions?",
+                              message: n == 1 ? "It’s left out of all your numbers. You can put it back from its page."
+                                              : "They’re left out of all your numbers. You can put any back from its page.",
+                              field: .init(label: "Why?", prompt: "For example, a friend’s purchase",
+                                           note: "Say why, so you can tell later.", identifier: "leave-out-reason"),
+                              text: $leaveReason,
+                              primary: n == 1 ? "Leave out" : "Leave out \(n)", busyLabel: "Leaving out…",
+                              failure: "Couldn’t leave \(n == 1 ? "it" : "them") out. Nothing changed. Try again.",
+                              onClose: { leavingOut = false; leaveReason = "" }) {
+                try await leaveOut()
+                leavingOut = false
+            }
         }
         .navigationDestination(for: Transaction.self) { t in
             TransactionDetailView(transaction: t, categories: categories, siblings: rows)
@@ -332,52 +340,106 @@ struct TransactionsView: View {
 
     // MARK: The month
 
+    /// T-01r (TEST-05, REFRESH-00 decision 1): Leftover is the one headline,
+    /// a bar of Spent / Saved / Leftover, Came in on the right, and "8 need a
+    /// look · Sort". Spending is ink; red is only for over.
     private var summaryCard: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Button { showMonths = true } label: {
-                    HStack(spacing: 6) {
-                        Text(month.map { Format.monthName($0) } ?? "This month").font(Nacre.headline)
-                        Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
+        // T-45, T-53: a search or a filter shows its own totals.
+        let narrowed = inSearch || filters.isActive
+        let spent = narrowed ? shown.filter { !$0.inflow && $0.counts == "spending" }.reduce(0) { $0 + $1.amount }
+            : (monthTotals?.spent ?? 0)
+        let income = narrowed ? shown.filter { $0.inflow && $0.counts == "income" }.reduce(0) { $0 + $1.amount }
+            : (monthTotals?.income ?? 0)
+        let saved = narrowed ? 0 : (monthTotals?.saved ?? 0)
+        let left = income - spent - saved
+        // T-01r3 (TEST-05, section 20): before this month's pay is in, the
+        // headline is "Spent so far" in ink and the pay still to come shows,
+        // not a red Over measured against money that hasn't come yet.
+        let pay = narrowed ? nil : monthTotals?.pay
+        let over = left < -0.5 && !narrowed && pay == nil
+        return GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Button { showMonths = true } label: {
+                        HStack(spacing: 6) {
+                            Text(month.map { Format.monthName($0) } ?? "This month").font(Nacre.headline)
+                            Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundColor(Pearl.ink)
+                        .frame(minHeight: 44).contentShape(Rectangle())
                     }
-                    .foregroundColor(Pearl.ink)
+                    .buttonStyle(.plain)
+                    .disabled(months.isEmpty)
+                    .accessibilityLabel("Month, \(month.map { Format.month($0) } ?? "")")
+                    Spacer(minLength: 8)
+                    if let day = pay?.expected {
+                        // T-01r3: "Pay expected Nov 15".
+                        Text("Pay expected \(Format.short(day))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            .frame(minHeight: 44)
+                            .accessibilityLabel("Pay expected \(Format.monthDay(day))")
+                    } else {
+                    // T-67: Came in narrows the list to money in.
+                    Button { counts = counts == "income" ? nil : "income" } label: {
+                        Text("Came in \(Format.whole(income))").font(Nacre.subheadline).foregroundColor(Pearl.moneyIn)
+                            .frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(counts == "income" ? "Shows everything again" : "Shows only these")
+                    .accessibilityAddTraits(counts == "income" ? .isSelected : [])
+                    }
                 }
-                .buttonStyle(.plain)
-                .disabled(months.isEmpty)
-                .accessibilityLabel("Month, \(month.map { Format.month($0) } ?? "")")
-
-                HStack(spacing: 0) {
-                    // T-45, T-53: a search or a filter shows its own totals.
-                    let narrowed = inSearch || filters.isActive
-                    let spent = narrowed ? shown.filter { !$0.inflow && $0.counts == "spending" }.reduce(0) { $0 + $1.amount }
-                        : (monthTotals?.spent ?? 0)
-                    let income = narrowed ? shown.filter { $0.inflow && $0.counts == "income" }.reduce(0) { $0 + $1.amount }
-                        : (monthTotals?.income ?? 0)
-                    let left = income - spent
-                    stat("Spent", Format.whole(spent), Pearl.moneyOut, filter: "spending")
-                    divider
-                    stat("Came in", Format.whole(income), Pearl.moneyIn, filter: "income")
-                    divider
-                    stat(left < -0.5 ? "Over" : "Leftover", narrowed ? "—" : Format.whole(left),
-                         left < -0.5 && !narrowed ? Pearl.moneyOut : (narrowed ? Pearl.muted : Pearl.moneyIn), filter: nil)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(pay != nil ? "Spent so far" : over ? "Over" : "Leftover").font(Nacre.footnote)
+                        .foregroundColor(pay != nil ? Pearl.muted : Pearl.ink)
+                    Text(narrowed ? "—" : Format.whole(pay != nil ? spent : abs(left)))
+                        .font(Pearl.display(.largeTitle)).foregroundColor(over ? Pearl.moneyOut : Pearl.ink)
+                        .lineLimit(1).minimumScaleFactor(0.6)
                 }
+                .accessibilityElement(children: .combine)
+                // T-01r3: the bar runs to what will have come in by month's end.
+                MonthBar(spent: spent, saved: saved, income: income + (pay?.toCome ?? 0))
+                HStack(spacing: 14) {
+                    // T-67: Spent narrows the list to spending.
+                    Button { counts = counts == "spending" ? nil : "spending" } label: {
+                        Text("Spent \(Format.whole(spent))").foregroundColor(Pearl.ink)
+                            .frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(counts == "spending" ? "Shows everything again" : "Shows only these")
+                    .accessibilityAddTraits(counts == "spending" ? .isSelected : [])
+                    Text("Saved \(Format.whole(saved))").foregroundColor(Pearl.moneyIn)
+                    if let pay = pay {
+                        Text("Pay to come \(Format.whole(pay.toCome))").foregroundColor(Pearl.muted)
+                    } else {
+                    Text(over ? "Over \(Format.whole(-left))" : "Leftover \(Format.whole(max(left, 0)))")
+                        .foregroundColor(over ? Pearl.moneyOut : Pearl.muted)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .font(Nacre.footnote).lineLimit(1).minimumScaleFactor(0.8)
+                .padding(.vertical, -8)
             }
             .padding(16)
             RowSeparator(inset: 0)
             if reviewCount > 0 {
                 NavigationLink { ReviewView() } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: "questionmark.circle").font(.system(size: 18))
-                        Text("\(reviewCount) need\(reviewCount == 1 ? "s" : "") a look").font(Nacre.body)
+                        Text("\(reviewCount)").font(Nacre.label).foregroundColor(Pearl.onAction)
+                            .padding(.horizontal, 7).frame(minWidth: 22, minHeight: 22)
+                            .background(Capsule().fill(Pearl.action))
+                        Text("need\(reviewCount == 1 ? "s" : "") a look").font(Nacre.body)
                         Spacer()
+                        Text("Sort").font(Nacre.textButton).foregroundColor(Pearl.link)
                         Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(Pearl.muted)
+                            .foregroundColor(Pearl.ink)
                     }
                     .foregroundColor(Pearl.ink)
                     .padding(.horizontal, 16).frame(height: 48)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(reviewCount) need\(reviewCount == 1 ? "s" : "") a look, Sort")
             } else {
                 Label("All sorted", systemImage: "checkmark")
                     .font(Nacre.body).foregroundColor(Nacre.teal)
@@ -737,7 +799,7 @@ struct TransactionsView: View {
     }
 
     private var pickedTone: Color {
-        pickedRows.reduce(0) { $0 + ($1.inflow ? -$1.amount : $1.amount) } < 0 ? Pearl.moneyIn : Pearl.moneyOut
+        pickedRows.reduce(0) { $0 + ($1.inflow ? -$1.amount : $1.amount) } < 0 ? Pearl.moneyIn : Pearl.ink
     }
 
     /// Their category when they all share one, so Save waits for a change.
@@ -750,28 +812,22 @@ struct TransactionsView: View {
         if picked.contains(t.id) { picked.remove(t.id) } else { picked.insert(t.id) }
     }
 
-    /// Leave out every picked row, with her reason.
-    private func leaveOut() async {
+    /// Leave out every picked row, with her reason (T-77c). Throws so the
+    /// sheet stays up with its Banner.
+    private func leaveOut() async throws {
         let reason = leaveReason.trimmingCharacters(in: .whitespaces)
-        leaveReason = ""
-        guard !reason.isEmpty else {
-            error = "Say why, so you can tell later."
-            return
-        }
+        guard !reason.isEmpty else { throw SplitMenuError(words: "Say why, so you can tell later.") }
         busy = true
         defer { busy = false }
         let ids = Array(picked)
-        do {
-            for id in ids {
-                let _: OK = try await app.api.put("api/transactions/\(id)/exclude", ["reason": reason])
-            }
-            endSelecting()
-            withAnimation { toast = Toast(title: ids.count == 1 ? "Left out." : "\(ids.count) left out.", undo: nil) }
-            app.changed()
-            await reload()
-        } catch {
-            self.error = app.handle(error)
+        for id in ids {
+            let _: OK = try await app.api.put("api/transactions/\(id)/exclude", ["reason": reason])
         }
+        leaveReason = ""
+        endSelecting()
+        withAnimation { toast = Toast(title: ids.count == 1 ? "Left out." : "\(ids.count) left out.", undo: nil) }
+        app.changed()
+        await reload()
     }
 
     private func endSelecting() {
@@ -1096,7 +1152,11 @@ struct TransactionRow: View {
                 if let extra = extra {
                     Text(extra).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
                 }
-                if t.suggested {
+                if otherGuess {
+                    // T-93n (TEST-12): Other isn't a guess, so the row asks,
+                    // as Needs a look and Quick sort do; there's nothing to confirm.
+                    GuessChip(label: "What was this?", question: false, asking: true).padding(.top, 4)
+                } else if t.suggested {
                     if let onConfirm = onConfirm, !t.asks {
                         Button(action: onConfirm) { GuessChip(label: t.label, question: true) }
                             .buttonStyle(.plain)
@@ -1116,11 +1176,15 @@ struct TransactionRow: View {
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityHint(t.suggested ? "Pearl’s guess. Opens it to check." : "")
+        .accessibilityHint(otherGuess ? "Pearl couldn’t place this one. Opens it to answer."
+                           : t.suggested ? "Pearl’s guess. Opens it to check." : "")
         .accessibilityAction(named: "Confirm \(t.label)") {
-            if t.suggested, !t.asks { onConfirm?() }
+            if t.suggested, !t.asks, !otherGuess { onConfirm?() }
         }
     }
+
+    /// T-93n (TEST-12): a best guess of Other is a question, not a guess.
+    private var otherGuess: Bool { t.suggested && !t.asks && t.label == "Other" }
 
     /// "Health · Today"; "Today · Pending" while it's a guess; "Paid back · Sushi Nami".
     private var meta: String {
@@ -1195,6 +1259,8 @@ struct GuessChip: View {
     let label: String
     /// "Dining out?" for a guess; "Not sorted yet" already says it's waiting.
     var question = true
+    /// T-93n (TEST-12): "What was this?" asks; it isn't Pearl's guess.
+    var asking = false
 
     var body: some View {
         HStack(spacing: 4) {
@@ -1205,7 +1271,7 @@ struct GuessChip: View {
         .foregroundColor(Pearl.ink)
         .padding(.horizontal, 10).frame(height: 24)
         .overlay(Capsule().strokeBorder(Pearl.ink.opacity(0.7), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
-        .accessibilityLabel("Pearl’s guess: \(label)")
+        .accessibilityLabel(asking ? label : "Pearl’s guess: \(label)")
     }
 }
 
@@ -1802,5 +1868,29 @@ struct SheetBackground: View {
 
 extension Transaction {
     /// Red going out, green coming in, grey when it doesn't count.
-    var tone: Color { notCounted ? Pearl.muted : (inflow ? Pearl.moneyIn : Pearl.moneyOut) }
+    var tone: Color { notCounted ? Pearl.muted : (inflow ? Pearl.moneyIn : Pearl.ink) }
+}
+
+
+/// T-01r's month bar: Spent in ink, Saved in money-in green, what's left on
+/// the track, as parts of what came in (or of what went out, if more).
+struct MonthBar: View {
+    let spent: Double
+    let saved: Double
+    let income: Double
+
+    var body: some View {
+        GeometryReader { g in
+            let whole = max(income, spent + saved, 1)
+            let a = min(max(spent, 0) / whole, 1)
+            let b = min(max(saved, 0) / whole, 1 - a)
+            HStack(spacing: 3) {
+                if a > 0 { Capsule().fill(Pearl.ink).frame(width: max(g.size.width * a - 3, 4)) }
+                if b > 0 { Capsule().fill(Pearl.moneyIn).frame(width: max(g.size.width * b - 3, 4)) }
+                Capsule().fill(Pearl.track)
+            }
+        }
+        .frame(height: 8)
+        .accessibilityHidden(true)
+    }
 }
