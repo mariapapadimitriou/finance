@@ -869,7 +869,8 @@ struct ThatsEverythingSheet: View {
                 row(t.label, "Stays your spending", Format.amount(still), Pearl.ink)
                 ForEach(none) { p in
                     PearlDivider()
-                    row(p.name, "Won’t show as owing", "Done", Pearl.muted)
+                    // S-46a v2 (TEST-11): nothing on the right; a status isn't an action.
+                    row(p.name, "Won’t show as owing", nil, Pearl.muted)
                 }
                 PearlDivider()
                 row("Allowance", "Already counts the \(Format.amount(still))", "No change", Pearl.muted)
@@ -886,7 +887,7 @@ struct ThatsEverythingSheet: View {
         "\(Format.amount(still)) stays yours. Nobody owes for \(t.merchant)."
     }
 
-    private func row(_ title: String, _ sub: String, _ value: String, _ tone: Color) -> some View {
+    private func row(_ title: String, _ sub: String, _ value: String?, _ tone: Color) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
@@ -894,7 +895,9 @@ struct ThatsEverythingSheet: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            Text(value).font(Pearl.text(.headline, .medium)).monospacedDigit().foregroundColor(tone)
+            if let value = value {
+                Text(value).font(Pearl.text(.headline, .medium)).monospacedDigit().foregroundColor(tone)
+            }
         }
         .padding(.vertical, 10)
         .accessibilityElement(children: .combine)

@@ -208,6 +208,7 @@ struct PearlSectionLabel: View {
         Text(text.uppercased())
             .font(Pearl.text(.footnote, .medium)).tracking(0.78)
             .foregroundColor(Pearl.muted)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
     }
@@ -266,8 +267,12 @@ struct PearlSheetHeader: View {
     var subTone: Color = Pearl.muted
     var back: (() -> Void)? = nil
     let close: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        // S-03ax (TEST-17): at accessibility sizes a Sheet header drops its
+        // avatar instead of shrinking the initials.
+        let face = typeSize.isAccessibilitySize ? nil : self.face
         HStack(alignment: .top, spacing: 12) {
             if let back = back {
                 Button(action: back) {
@@ -285,8 +290,10 @@ struct PearlSheetHeader: View {
                 PearlFace(name: face)
             }
             VStack(alignment: .leading, spacing: 1) {
+                // TEST-14: the overline wraps, never clipped ("PIZZA NOVA · NOT SURE YET").
                 Text(overline.uppercased())
                     .font(Pearl.text(.footnote, .medium)).tracking(0.78).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(title)
                     .font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -376,6 +383,7 @@ struct PearlSheetButtons: View {
         VStack(spacing: 12) {
             Button(primary, action: onPrimary)
                 .buttonStyle(PearlPrimaryButtonStyle(busy: busy, busyLabel: busyLabel))
+                .accessibilityIdentifier("sheet-primary")
             if let secondary = secondary {
                 Button(secondary, action: onSecondary).buttonStyle(PearlSecondaryButtonStyle())
             }
@@ -390,6 +398,14 @@ struct PearlSheetButtons: View {
 /// "Pearl/Toast with Undo" (S-44a–i): ink, with a 44-high action. It stays
 /// 6 s, longer while VoiceOver is on; it's announced, and its action is an
 /// accessibility action too (note 1096:4483).
+extension View {
+    /// TEST-22 (designBOT 2026-11-11): an amount never wraps inside the
+    /// number; it shrinks to fit, and rows move it under the name at AX sizes.
+    func pearlAmountFit() -> some View {
+        lineLimit(1).minimumScaleFactor(0.7).allowsTightening(true)
+    }
+}
+
 struct PearlToast: View {
     struct Model: Equatable {
         let id = UUID()
@@ -562,7 +578,11 @@ struct PersonOptionsSheet: View {
     /// for someone let go (REFRESH-03, S-40d): it goes at once, with Undo.
     private var removeSub: String? {
         if p.paid < 0.005 {
-            return p.letGo != nil ? nil : "The \(Format.amount(p.share)) goes back to your share"
+            // S-40u2 (TEST-11): on Not sure yet nobody has a share, so
+            // there's nothing to give back: "Nothing to unlink".
+            if p.letGo != nil { return nil }
+            return t.splitting?.unsure == true || p.share < 0.005 ? "Nothing to unlink"
+                : "The \(Format.amount(p.share)) goes back to your share"
         }
         if links.count > 1 { return links.count == 2 ? "Asks first: unlinks both payments" : "Asks first: unlinks \(links.count) payments" }
         guard let link = links.first else { return "Asks first" }

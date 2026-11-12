@@ -142,6 +142,9 @@ struct SplitSheet: View {
     }
 
     var body: some View {
+        // The keyboard's Done bar (TEST-16) needs a navigation stack to
+        // live in; its own bar stays hidden.
+        NavigationStack {
         VStack(spacing: 0) {
             SheetTitle(title: sheetTitle) { dismiss() }
                 // TEST-16: a tap off the fields puts the number pad away.
@@ -170,14 +173,48 @@ struct SplitSheet: View {
             // "Split the rest evenly" stay in view right above Save.
             .onChange(of: focused) { now in
                 guard now != nil else { return }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
+                // Once the pad and its Done bar are up, and again as she types.
+                for wait in [0.35, 0.8] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
+                        withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
+                    }
                 }
             }
+            // TEST-16 (round 2): typing changes the status line and what's
+            // under it ("Split the rest evenly"), which pushed it below the
+            // view; keep it in sight while she types.
+            .onChange(of: values) { _ in
+                guard focused != nil else { return }
+                for wait in [0.1, 0.5] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
+                        withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
+                    }
+                }
             }
+            // Once the pad has finished coming up, and the sheet has made room.
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                guard focused != nil else { return }
+                withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
+            }
+            }
+            // TEST-16 / TEST-22 (round 2): Save is the scroll view's sibling,
+            // not an inset on it. As an inset, the content under it didn't
+            // make room with the number pad up or at AX sizes, so Save sat on
+            // "I had some too" and the meter. Here the scroll view ends where
+            // Save begins, and the meter and status line scroll above it.
             footer
         }
         .background(SheetBackground())
+        // TEST-16 (designBOT's answer): Done over every number pad here; a
+        // tap on the title closes it too.
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { focused = nil }.tint(Pearl.action).foregroundColor(Pearl.action)
+            }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onDisappear { UISegmentedControl.appearance().selectedSegmentTintColor = nil }
@@ -241,12 +278,15 @@ struct SplitSheet: View {
 
     // MARK: S-17 Add someone: PeoplePicker (JointSplitViews.swift), JOINT-A.
 
-    private var withMeCard: some View {
+    /// S-02's card has its line; S-03r2's is the toggle alone (`compact`).
+    private func withMeCard(compact: Bool = false) -> some View {
         GlassCard {
             Toggle(isOn: $withMe) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("I had some too").font(Nacre.body).foregroundColor(Pearl.ink)
-                    Text("Turn off if it was all for them").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    if !compact {
+                        Text("Turn off if it was all for them").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                    }
                 }
             }
             .tint(Pearl.action)
@@ -264,7 +304,7 @@ struct SplitSheet: View {
                     .font(Nacre.body).textInputAutocapitalization(.words).autocorrectionDisabled()
                     .submitLabel(.done).onSubmit(addTyped)
                 if !typed.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Button("Add", action: addTyped).font(Nacre.textButton).foregroundColor(Pearl.action)
+                    Button("Add", action: addTyped).font(Nacre.textButton).foregroundColor(Pearl.link)
                 }
             }
             .padding(.horizontal, 14).frame(height: 44)
@@ -296,14 +336,14 @@ struct SplitSheet: View {
             } else {
                 GlassCard { addNewRow }
             }
-            withMeCard
+            withMeCard()
         }
     }
 
     private var addNewRow: some View {
         Button { adding = true } label: {
             HStack {
-                Text("Add someone new").font(Nacre.body).foregroundColor(Pearl.action)
+                Text("Add someone new").font(Nacre.body).foregroundColor(Pearl.link)
                 Spacer()
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
             }
@@ -382,7 +422,7 @@ struct SplitSheet: View {
             if let onRemoveSplit = onRemoveSplit, t.splitting != nil, !settling, focus == nil {
                 // S-41j: Edit split › Remove the split.
                 Button("Remove the split", action: onRemoveSplit)
-                    .font(Nacre.textButton).foregroundColor(Pearl.action)
+                    .font(Nacre.textButton).foregroundColor(Pearl.link)
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
         }
@@ -439,7 +479,7 @@ struct SplitSheet: View {
 
     private var amountsHow: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if settling { withMeCard }
+            if settling { withMeCard() }
             GlassCard {
                 ForEach(Array(rows.enumerated()), id: \.element) { i, key in
                     if i > 0 { RowSeparator(inset: 64) }
@@ -460,6 +500,8 @@ struct SplitSheet: View {
                         if mode == "even" {
                             Text(Format.amount(evenAmount(key))).font(Nacre.body).monospacedDigit()
                                 .foregroundColor(Pearl.ink)
+                                // TEST-14: "Priya, $42.50", not a bare amount.
+                                .accessibilityLabel("\(label(key)), \(Format.amount(evenAmount(key)))")
                         } else {
                             TextField("", text: binding(key), prompt: Text(placeholder(key)).foregroundColor(Pearl.muted))
                                 .font(Nacre.body).monospacedDigit().multilineTextAlignment(.trailing)
@@ -484,23 +526,33 @@ struct SplitSheet: View {
                 RowSeparator()
                 addNewRow
             }
-            Group {
-                if gapCents == 0 {
-                    // S-03e (REFRESH-03): "Adds up ✓ · you owe Priya $8.04"; the
-                    // why is a VoiceOver hint. Otherwise S-03's "Adds up to $84.12 ✓".
-                    let over = settling ? "" : overWords
-                    Text(over.isEmpty ? addsUp : "Adds up ✓ · \(over)").foregroundColor(Nacre.teal)
-                        .multilineTextAlignment(.center)
-                        .accessibilityHint(over.isEmpty ? "" : overHint)
-                } else {
-                    VStack(spacing: 8) {
-                        Text(gapWords).foregroundColor(gapCents > 0 && !blocksShort ? Pearl.ink : Pearl.moneyOut)
-                            .multilineTextAlignment(.center)
-                        if mode == "amount" && gapCents > 0 {
-                            Button("Split the rest evenly", action: splitRest)
-                                .font(Nacre.textButton).foregroundColor(Pearl.action)
-                        }
+            // S-03r2 / S-03r2b / S-03j v2 (TEST-08): "I had some too" under
+            // the people, where its effect is: on, the rest stays yours; off,
+            // your row goes and the rest is left to assign.
+            if !settling { withMeCard(compact: true) }
+            VStack(spacing: 8) {
+                // S-03r2: the bar, with what's assigned of the whole.
+                SplitBar(assigned: assignedCents, total: totalCents)
+                HStack(alignment: .firstTextBaseline) {
+                    if gapCents == 0 {
+                        // S-03e (REFRESH-03): "Adds up ✓ · you owe Priya $8.04"; the
+                        // why is a VoiceOver hint. S-03j v2: "✓ Adds up".
+                        let over = settling ? "" : overWords
+                        Text(over.isEmpty ? "\u{2713} Adds up" : "Adds up ✓ · \(over)").foregroundColor(Nacre.teal)
+                            .accessibilityHint(over.isEmpty ? "" : overHint)
+                    } else {
+                        // TEST-16: the line is plain ink, never red.
+                        Text(gapWords).foregroundColor(Pearl.ink)
                     }
+                    Spacer(minLength: 8)
+                    Text("\(Format.amount(Double(assignedCents) / 100)) of \(Format.amount(Double(totalCents) / 100))")
+                        .foregroundColor(Pearl.muted).monospacedDigit()
+                }
+                .accessibilityElement(children: .combine)
+                if mode == "amount" && gapCents > 0 {
+                    Button("Split the rest evenly", action: splitRest)
+                        .font(Nacre.textButton).foregroundColor(Pearl.link)
+                        .frame(minHeight: 44)
                 }
             }
             .font(Nacre.footnote).frame(maxWidth: .infinity)
@@ -673,7 +725,12 @@ struct SplitSheet: View {
             let over = overCents(key)
             if p.paid >= 0.005 {
                 let how = (p.cash ?? 0) >= p.paid - 0.005 ? " cash" : ""
-                var line = "Paid \(Format.amount(p.paid))\(how)"
+                // TEST-16 (THL-289): "Paid back $30.00" for a share paid in
+                // full, "Paid $10.00 of $30.00" for part of it.
+                let share = Double(cents) / 100
+                var line = over == 0 && p.paid >= share - 0.005 ? "Paid back \(Format.amount(p.paid))\(how)"
+                    : over == 0 ? "Paid \(Format.amount(p.paid)) of \(Format.amount(share))\(how)"
+                    : "Paid \(Format.amount(p.paid))\(how)"
                 if over > 0 {
                     line += " · \(Format.amount(Double(over) / 100)) more than this share"
                 } else if p.letGo != nil, cents - Int((p.paid * 100).rounded()) > 0 {
@@ -748,6 +805,15 @@ struct SplitSheet: View {
     /// when she's in it, and the rest is hers; otherwise Save waits, as the
     /// server does.
     private var blocksShort: Bool { gapCents > 0 && !withMe }
+
+    /// S-03r2's bar: what's assigned of the whole, in cents.
+    private var assignedCents: Int {
+        switch mode {
+        case "amount": return totalCents - gapCents
+        case "percent": return percentRounds ? totalCents : min(Int((Double(totalCents) * weightSum / 100).rounded()), totalCents * 10)
+        default: return totalCents
+        }
+    }
 
     /// Her share as it would save: her own part plus anything nobody has yet.
     private var mineCents: Int { totalCents - people.map { shareCents($0) }.reduce(0, +) }
@@ -923,6 +989,9 @@ struct SplitPeople: View {
     @State private var options: Transaction.Splitting.Person?
     @State private var afterOptions: (() -> Void)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// TEST-22: at AX sizes a row's amount goes under the name (S-03ax).
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var amountsUnder: Bool { typeSize.isAccessibilitySize }
 
     var body: some View {
         let open = split.people.filter { $0.owes >= 0.005 }
@@ -964,7 +1033,7 @@ struct SplitPeople: View {
                         Button(action: onEdit) {
                             Text("Edit split").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                         }
-                        .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.action)
+                        .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.link)
                         .buttonStyle(.plain)
                     }
                 }
@@ -1012,7 +1081,7 @@ struct SplitPeople: View {
                     Text("See everyone who owes you")
                         .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
                 }
-                .font(Nacre.textButton).foregroundColor(Pearl.action).buttonStyle(.plain)
+                .font(Nacre.textButton).foregroundColor(Pearl.link).buttonStyle(.plain)
                 .padding(.top, 6)
             }
         }
@@ -1058,13 +1127,11 @@ struct SplitPeople: View {
                         if paid, let how = how, p.links?.count == 1 {
                             Text(how).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
                         }
+                        if paid && amountsUnder { paidAmount(p) }
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
-                    if paid {
-                        Text(Format.amount(p.paid)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                            .foregroundColor(Pearl.moneyIn)
-                    }
+                    if paid && !amountsUnder { paidAmount(p) }
                 }
                 .frame(minHeight: 44).contentShape(Rectangle())
             }
@@ -1078,6 +1145,19 @@ struct SplitPeople: View {
             }
         }
         .padding(.vertical, 10)
+    }
+
+    private func paidAmount(_ p: Transaction.Splitting.Person) -> some View {
+        Text(Format.amount(p.paid)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
+            .foregroundColor(Pearl.moneyIn).pearlAmountFit()
+    }
+
+    /// What they still owe (ink); what they paid (money in); what she let go (muted).
+    private func owedAmount(_ p: Transaction.Splitting.Person) -> some View {
+        Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
+            .font(Pearl.text(.headline, .semibold)).monospacedDigit()
+            .foregroundColor(p.letGo != nil ? Pearl.muted : p.owes >= 0.005 ? Pearl.ink : Pearl.moneyIn)
+            .pearlAmountFit()
     }
 
     private func person(_ p: Transaction.Splitting.Person) -> some View {
@@ -1094,13 +1174,11 @@ struct SplitPeople: View {
                             if let line = deposited(p) {
                                 Text(line).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
                             }
+                            if amountsUnder { owedAmount(p) }
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 8)
-                        // What they still owe (ink); what they paid (money in); what she let go (muted).
-                        Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
-                            .font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                            .foregroundColor(p.letGo != nil ? Pearl.muted : p.owes >= 0.005 ? Pearl.ink : Pearl.moneyIn)
+                        if !amountsUnder { owedAmount(p) }
                     }
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
@@ -1985,5 +2063,26 @@ struct SwipeToRemove<Content: View>: View {
                 }
             } : nil)
         .accessibilityAction(named: "Remove \(label)") { if enabled { onRemove() } }
+    }
+}
+
+/// S-03r2 / S-03re (TEST-08, TEST-16, `split.meter`): the assigned part in
+/// color/action/primary, then what's left on color/fill/control; over the
+/// total, the whole bar is the action colour.
+struct SplitBar: View {
+    let assigned: Int
+    let total: Int
+
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width
+            let part = min(Double(max(assigned, 0)) / max(Double(total), 1), 1)
+            ZStack(alignment: .leading) {
+                Capsule().fill(Pearl.control)
+                Capsule().fill(Pearl.action).frame(width: w * part)
+            }
+        }
+        .frame(height: 8)
+        .accessibilityHidden(true)
     }
 }

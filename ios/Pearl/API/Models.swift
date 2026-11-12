@@ -494,6 +494,19 @@ struct TransactionList: Decodable {
         let income: Double?
         let spent: Double?
         let count: Int?
+        /// T-01r: what was put away this month (month totals only).
+        let saved: Double?
+        /// T-01r3 (TEST-05): this month's pay still to come, until it's in.
+        var pay: Pay? = nil
+
+        struct Pay: Decodable, Hashable {
+            let toCome: Double
+            let expected: String?
+            enum CodingKeys: String, CodingKey {
+                case toCome = "to_come"
+                case expected
+            }
+        }
     }
 }
 
@@ -964,6 +977,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
             && a.amount == b.amount && a.fullAmount == b.fullAmount && a.note == b.note && a.counts == b.counts
             && a.excluded == b.excluded && a.pending == b.pending && a.oneOff == b.oneOff && a.tags == b.tags
             && a.jointFrom == b.jointFrom && a.bankId == b.bankId && a.merchant == b.merchant
+            // TEST-19 (round 2): the page holds its Transaction in @State,
+            // and SwiftUI skips a redraw when the new value compares equal.
+            // A split saved, closed or paid back changes only these.
+            && a.split == b.split && a.splitting == b.splitting
     }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
@@ -1520,6 +1537,12 @@ struct Ask: Identifiable, Hashable {
 
     /// A guess Pearl can be told yes to (T-90, T-92): a category, "Saved to",
     /// or a question the evidence asks.
+    /// T-93n (TEST-12, THL-275 "no best-guess card"): Pearl's best for a
+    /// category is Other, which is no guess at all.
+    var otherGuess: Bool {
+        kind == .category && item.pair == nil && (item.guess?.text ?? t.category ?? "Other") == "Other"
+    }
+
     func isGuess(_ accounts: [AccountsOverview.Account]) -> Bool {
         kind == .category || savedTo(accounts) != nil || item.pair != nil || incomeGuess != nil
     }
@@ -1597,7 +1620,8 @@ struct Ask: Identifiable, Hashable {
     var chip: String {
         if let pair = item.pair { return pair.question }
         switch kind {
-        case .category: return "\(item.guess?.text ?? t.category ?? "Other")?"
+        // T-93n (TEST-12): Other isn't a guess; the chip asks instead.
+        case .category: return otherGuess ? "What was this?" : "\(item.guess?.text ?? t.category ?? "Other")?"
         case .transfer: return "Saved or spent?"
         case .moneyIn:
             // S-21x: the extra on a paid-back purchase.
