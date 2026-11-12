@@ -766,6 +766,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
             /// Every payment that paid them back here, each with its S-05o
             /// options and Unlink? sheet (SPLIT-25, S-05v).
             var links: [LinkInfo]? = nil
+            /// TEST-18b (S-48e): what of their money she called a gift.
+            var gift: Double? = nil
             var id: String { name }
 
             struct LetGo: Decodable, Hashable { let was: Double; let day: String }
@@ -807,7 +809,7 @@ struct Transaction: Decodable, Identifiable, Hashable {
             var share: Double { letGo?.was ?? amount }
 
             enum CodingKeys: String, CodingKey {
-                case name, amount, paid, owes, cash, app, over, weight, payments, shared, links
+                case name, amount, paid, owes, cash, app, over, weight, payments, shared, links, gift
                 case appName = "app_name"
                 case paidOn = "paid_on"
                 case cashIds = "cash_ids"

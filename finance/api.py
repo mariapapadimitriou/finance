@@ -178,6 +178,13 @@ def _splitting(t, split: dict, txns, payer) -> dict:
         # TEST-18 (THL-303): is she in it ("I had some too")?
         "me": split.get("me", True),
     }
+    # TEST-18b (S-48e): what of each payer's money she called a gift, so
+    # their ••• can offer to change it.
+    from .parts_api import extra_gift
+    for person in out["people"]:
+        gift = extra_gift(store(), t.fingerprint, person["name"]) if person.get("paid") else 0.0
+        if gift >= 0.005:
+            person["gift"] = round(gift, 2)
     if split["mode"] == sp.UNSURE:
         out["still"] = sp.still_yours(t)
         out["paid"] = round(t.unsure_paid or 0.0, 2)
@@ -587,14 +594,29 @@ def _locked_problem(st, t, old: dict | None, mode: str, people: list[dict], body
     status = {p["name"]: p for p in sp.people_status(t, old, st.all_transactions(), st.payback_people())}
     whole = sp._cents(base if base is not None else t.amount)
     locked = 0
+    # TEST-18b (option C, product owner 2026-11-10): on Settle up a payer's
+    # share may differ from what they paid, but only as she answered when
+    # Pearl asked (S-48a/b): "Ask Sam for $13.33" (`ask`), or for money
+    # over the share, what the extra is (`extra`: they overpaid, a gift).
+    # S-47 (`your_share`) never asks, so there payers stay exactly as paid.
+    asked = {str(n) for n in (body.get("ask") or []) if isinstance(n, str)}
+    extra = body.get("extra") if isinstance(body.get("extra"), dict) else {}
     for p in people:
         paid = sp._cents((status.get(p["name"]) or {}).get("paid", 0.0))
         if paid >= 1:
             locked += paid
-            if sp._cents(p["amount"]) != paid:
-                name = p["name"]
+            share = sp._cents(p["amount"])
+            if share == paid:
+                continue
+            name = p["name"]
+            if body.get("your_share"):
                 return (f"{possessive_name(name)} ${paid / 100:,.2f} is linked. "
                         f"Unlink the payback to change {possessive_name(name)} share.")
+            if share > paid and name not in asked:
+                return (f"{name} paid ${paid / 100:,.2f}. Ask {name} for ${(share - paid) / 100:,.2f}, "
+                        f"or make {possessive_name(name)} share ${paid / 100:,.2f}.")
+            if share < paid and not extra.get(name):
+                return f"Say what {possessive_name(name)} extra ${(paid - share) / 100:,.2f} is."
     if body.get("your_share"):
         given = sum(sp._cents(p["amount"]) for p in people) + sp._cents(float(body.get("you")))
         if given < whole:

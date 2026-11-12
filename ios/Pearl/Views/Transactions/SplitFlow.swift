@@ -61,6 +61,9 @@ struct SplitSheet: View {
     @State private var choosingMethod = false
     /// S-45e: the extra step before a settled split saves.
     @State private var sayingExtra = false
+    /// TEST-18b: her answers, and who Pearl is asking about now (S-48a/b).
+    @State private var answers: [String: Answer] = [:]
+    @State private var asking: String?
     /// S-47f (TEST-18): the locked row she tapped, as a toast whose Options
     /// opens that person's S-40u.
     @State private var lockNote: String?
@@ -231,6 +234,24 @@ struct SplitSheet: View {
             SplitMethodSheet(modes: modes, chosen: mode, onPick: { m in mode = m; choosingMethod = false },
                              onClose: { choosingMethod = false })
         }
+        .sheet(isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
+            if let key = asking {
+                // S-48a / S-48b: one person at a time.
+                let all = people.filter { payer($0) && shareCents($0) != lockedCents($0) && answers[$0] == nil }
+                    + people.filter { answers[$0] != nil && answers[$0] != .theirShare }
+                MismatchSheet(name: key, paid: Double(lockedCents(key)) / 100, share: Double(shareCents(key)) / 100,
+                              even: mode == "even", step: answers.count + 1, of: max(all.count, answers.count + 1),
+                              others: rows.filter { $0 != key && !locked($0) }.map { $0 == Self.me ? "you" : $0 },
+                              onBack: { asking = nil; answers = [:] }) { answer in
+                    answers[key] = answer
+                    // Each answer can change the others: ask the next, or settle.
+                    asking = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                        if let next = toCheck.first { asking = next }
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $sayingExtra) {
             SettleExtraSheet(api: api, merchant: t.merchant, chargeId: t.id, over: overList,
                              onClose: { sayingExtra = false }) { extra in
@@ -248,15 +269,31 @@ struct SplitSheet: View {
             + (settling ? [] : [("unknown", "Not sure")])
     }
 
-    /// THL-303 (TEST-18): when settling, anyone who has paid is locked at
-    /// exactly what they paid; only she and the unpaid change.
-    private func locked(_ key: String) -> Bool {
+    /// TEST-18b (option C): on Settle up a payer stays at what they paid
+    /// while she types amounts, and when she answers "Sam's share is
+    /// $20.00"; on Evenly, % and Shares the method runs over everyone and
+    /// Pearl asks about any payer whose share comes out different.
+    private func payer(_ key: String) -> Bool {
         settling && key != Self.me && (saved(key)?.paid ?? 0) >= 0.005
+    }
+    private func locked(_ key: String) -> Bool {
+        // On % a payer's percent is what they paid of the whole (S-45c3),
+        // so like Amounts it can't differ.
+        payer(key) && (mode == "amount" || mode == "percent" || answers[key] == .theirShare)
     }
     private var anyLocked: Bool { people.contains { locked($0) } }
 
     private func lockWords(_ key: String) -> String {
-        "\(possessive(key)) \(Format.amount(Double(lockedCents(key)) / 100)) is linked. Unlink the payback to change \(possessive(key)) share."
+        // S-47f2: on Settle up a payment stays; Pearl asks if the share differs.
+        "\(possessive(key)) \(Format.amount(Double(lockedCents(key)) / 100)) is linked, so it stays. If \(possessive(key)) share comes out different, Pearl asks you."
+    }
+
+    /// S-48a/b: how she answered for each payer whose share differs.
+    enum Answer: Equatable { case ask, theirShare, iOwe, gift }
+
+    /// Payers whose share differs from what they paid, not yet answered.
+    private var toCheck: [String] {
+        people.filter { payer($0) && !locked($0) && shareCents($0) != lockedCents($0) && answers[$0] == nil }
     }
 
     /// S-47f: the toast, with Options when the page can open S-40u.
@@ -412,6 +449,7 @@ struct SplitSheet: View {
             methodControl
                 .onChange(of: mode) { m in
                     values = [:]
+                    answers = [:]
                     // S-03u: the explainer is read once after the method changes.
                     if m == "unknown" {
                         UIAccessibility.post(notification: .announcement, argument: unsureWords)
@@ -512,8 +550,12 @@ struct SplitSheet: View {
                             }
                         }
                         Spacer(minLength: 8)
-                        if locked(key) {
-                            // S-45c2 / S-45c3: a locked row's amount (or %) as text.
+                        if payer(key) {
+                            // S-48c: a payer shows what they paid (on %, as a percent); a tap says why.
+                            Text(mode == "percent" ? Self.plain(number(key)) + "%" : Format.amount(Double(lockedCents(key)) / 100))
+                                .font(Nacre.body).monospacedDigit().foregroundColor(Pearl.ink)
+                                .onTapGesture { showLock(key) }
+                        } else if locked(key) {
                             Text(mode == "percent" ? Self.plain(number(key)) + "%" : Format.amount(Double(lockedCents(key)) / 100))
                                 .font(Nacre.body).monospacedDigit().foregroundColor(Pearl.ink)
                                 .onTapGesture { showLock(key) }
@@ -545,7 +587,10 @@ struct SplitSheet: View {
                 addNewRow
             }
             Group {
-                if gapCents == 0 {
+                if gapCents == 0 && settling && !toCheck.isEmpty {
+                    // S-48c: "2 to check: Sam and Priya".
+                    Text("\(toCheck.count) to check: \(Format.andList(toCheck))").foregroundColor(Nacre.teal)
+                } else if gapCents == 0 {
                     // S-03e (REFRESH-03): "Adds up ✓ · you owe Priya $8.04"; the
                     // why is a VoiceOver hint. Otherwise S-03's "Adds up to $84.12 ✓".
                     let over = settling ? "" : overWords
@@ -569,11 +614,6 @@ struct SplitSheet: View {
                 // Where there's no S-40u to open, the note says why.
                 InfoNote(text: lockWords(key))
             }
-            if settling, let line = extraNote {
-                // S-45e: "Sam already paid you $20.00, which is $10.00 more than
-                // his share. Next, you’ll say what the extra $10.00 was."
-                InfoNote(text: line)
-            }
         }
     }
 
@@ -586,6 +626,24 @@ struct SplitSheet: View {
     }
 
     private var overTotal: Double { overList.map(\.amount).reduce(0, +) }
+
+    /// S-48c: "Paid $20.00 · locked · even share $33.33, Pearl asks next",
+    /// then what she answered.
+    private func payerLine(_ key: String, paid: Double) -> String {
+        let share = Double(shareCents(key)) / 100
+        let diff = Format.amount(abs(share - paid))
+        if locked(key) || shareCents(key) == lockedCents(key) {
+            return ["Paid \(Format.amount(paid))", "locked",
+                    mode == "shares" && locked(key) ? "not in the shares" : nil].compactMap { $0 }.joined(separator: " · ")
+        }
+        let kind = mode == "even" ? "even share" : "share"
+        switch answers[key] {
+        case .ask?: return "Paid \(Format.amount(paid)) · ask \(key) for \(diff)"
+        case .iOwe?: return "Paid \(Format.amount(paid)) · you owe \(key) \(diff)"
+        case .gift?: return "Paid \(Format.amount(paid)) · \(diff) is a gift"
+        default: return "Paid \(Format.amount(paid)) · locked · \(kind) \(Format.amount(share)), Pearl asks next"
+        }
+    }
 
     private var extraNote: String? {
         guard let first = overList.first, saved(first.name) != nil else { return nil }
@@ -775,10 +833,7 @@ struct SplitSheet: View {
         if settling, key != Self.me {
             // S-45c–e: what each person has paid so far; THL-303: locked.
             let paid = saved(key)?.paid ?? 0
-            bits.append(paid >= 0.005 ? (["Paid back", saved(key)?.paidOn.map { Format.short($0) }, "locked",
-                                          mode == "shares" ? "not in the shares" : nil]
-                                            .compactMap { $0 }.joined(separator: " · "))
-                        : "Nothing paid yet")
+            bits.append(paid >= 0.005 ? payerLine(key, paid: paid) : "Nothing paid yet")
             return bits.joined(separator: " · ")
         }
         if let p = saved(key), key != Self.me {
@@ -891,7 +946,8 @@ struct SplitSheet: View {
         if step == 0 { return "Next" }
         if busy { return "Saving…" }
         if error != nil { return "Try again" }
-        if settling && overTotal >= 0.005 { return "Next: the extra \(Format.amount(overTotal))" }
+        // S-48c: "Next · check Sam and Priya".
+        if settling && !toCheck.isEmpty { return "Next · check \(Format.andList(toCheck))" }
         if settling { return "Settle up" }
         if mode == "unknown" && saveTitle == "Save" { return "Save split" }
         return saveTitle
@@ -900,7 +956,7 @@ struct SplitSheet: View {
     @ViewBuilder private var footer: some View {
         Button(primaryTitle) {
             if step == 0 { addTyped(); step = 1 }
-            else if settling && overTotal >= 0.005 { sayingExtra = true }
+            else if settling, let first = toCheck.first { asking = first }
             else { Task { await save() } }
         }
         .buttonStyle(NacreButtonStyle(busy: busy))
@@ -975,11 +1031,21 @@ struct SplitSheet: View {
 
     /// What Save would send for the method she's on (S-45c–e reuse it).
     private var settleBody: [String: Any] {
-        if anyLocked {
-            // THL-303: the cents each row comes to, so a locked row is
-            // exactly what they paid, whichever method made the rest.
+        if people.contains(where: payer) {
+            // TEST-18b: the cents each row comes to, with her answers: "Ask
+            // Sam" (`ask`), and what a payer's extra is (`extra`).
+            var extra: [String: [[String: Any]]] = [:]
+            var ask: [String] = []
+            for k in people where payer(k) {
+                let diff = shareCents(k) - lockedCents(k)
+                if diff > 0, answers[k] == .ask { ask.append(k) }
+                if diff < 0, let a = answers[k], a == .iOwe || a == .gift {
+                    extra[k] = [["kind": a == .iOwe ? "overpaid" : "gift", "amount": Double(-diff) / 100]]
+                }
+            }
             return ["mode": "amount", "include_me": withMe, "you": withMe ? Double(mineCents) / 100 : 0,
-                    "people": people.map { ["name": $0, "amount": Double(shareCents($0)) / 100] }]
+                    "people": people.map { ["name": $0, "amount": Double(shareCents($0)) / 100] },
+                    "ask": ask, "extra": extra]
         }
         var body: [String: Any] = ["mode": mode, "include_me": withMe]
         switch mode {
@@ -1008,9 +1074,15 @@ struct SplitSheet: View {
         do {
             let reply: Reply = try await api.put("api/transactions/\(t.id)/split", body)
             error = nil
-            // S-45f (REFRESH-03): "Settled · $46.66 owed"; nothing owed, "Settled up".
-            let owed = people.reduce(0.0) { $0 + max(0, Double(shareCents($1)) / 100 - (saved($1)?.paid ?? 0)) }
-            onSettled?(reply.toast ?? (owed >= 0.005 ? "Settled · \(Format.amount(owed)) owed" : "Settled up"), reply.undo)
+            // S-48d: "Settled · Sam owes $13.33 · you owe Priya $6.67";
+            // nothing owed either way, "Settled up".
+            var bits: [String] = []
+            for k in people {
+                let diff = shareCents(k) - (saved(k).map { Int(($0.paid * 100).rounded()) } ?? 0)
+                if diff > 0 { bits.append("\(k) owes \(Format.amount(Double(diff) / 100))") }
+                if diff < 0 && answers[k] == .iOwe { bits.append("you owe \(k) \(Format.amount(Double(-diff) / 100))") }
+            }
+            onSettled?(reply.toast ?? (bits.isEmpty ? "Settled up" : "Settled · " + bits.joined(separator: " · ")), reply.undo)
         } catch let e as APIError {
             if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
             throw e
@@ -2184,5 +2256,67 @@ struct SwipeToRemove<Content: View>: View {
                 }
             } : nil)
         .accessibilityAction(named: "Remove \(label)") { if enabled { onRemove() } }
+    }
+}
+
+
+// MARK: - S-48a / S-48b A payer's share differs (TEST-18b)
+
+/// "Sam paid $20.00 · An even share is $33.33" (S-48a) or "Priya paid
+/// $6.67 more" (S-48b): one question, answered with a tap.
+struct MismatchSheet: View {
+    let name: String
+    let paid: Double
+    let share: Double
+    let even: Bool
+    let step: Int
+    let of: Int
+    /// Who carries the difference if their share is what they paid.
+    let others: [String]
+    let onBack: () -> Void
+    /// S-48e: "Pizza Nova · Priya" when it's asked again after settling.
+    var overline: String? = nil
+    let onAnswer: (SplitSheet.Answer) -> Void
+
+    private var diff: String { Format.amount(abs(share - paid)) }
+    private var kind: String { even ? "An even share" : "Their share" }
+
+    var body: some View {
+        PearlSheet {
+            PearlSheetHeader(face: name, overline: overline ?? "Settle up · \(step) of \(of)",
+                             title: share > paid ? "\(name) paid \(Format.amount(paid))" : "\(name) paid \(diff) more",
+                             close: onBack)
+            Text(share > paid
+                 ? "\(kind) is \(Format.amount(share)). What should \(possessive(name)) share be?"
+                 : "\(name) sent \(Format.amount(paid)). \(kind) is \(Format.amount(share)). What’s the extra \(diff)?")
+                .font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            PearlOptionCard {
+                if share > paid {
+                    PearlOptionRow(symbol: "envelope", title: "Ask \(name) for \(diff)",
+                                   sub: "\(possessive(name)) share is \(Format.amount(share)) · \(name) owes \(diff)",
+                                   prominent: true) { onAnswer(.ask) }
+                    PearlDivider()
+                    PearlOptionRow(symbol: "person", title: "\(possessive(name)) share is \(Format.amount(paid))",
+                                   sub: "The \(diff) is spread over \(Format.andList(others))") { onAnswer(.theirShare) }
+                } else {
+                    PearlOptionRow(symbol: "arrow.uturn.left", title: "I owe \(name) \(diff)",
+                                   sub: "\(possessive(name)) share is \(Format.amount(share)) · shows under You owe",
+                                   prominent: true) { onAnswer(.iOwe) }
+                    PearlDivider()
+                    PearlOptionRow(symbol: "person", title: "\(possessive(name)) share is \(Format.amount(paid))",
+                                   sub: "\(Format.andList(others).prefix(1).uppercased() + Format.andList(others).dropFirst()) carry \(diff) less") { onAnswer(.theirShare) }
+                    PearlDivider()
+                    PearlOptionRow(symbol: "banknote", title: "It’s a gift",
+                                   sub: "\(possessive(name)) share is \(Format.amount(share)) · \(diff) is a gift to you") { onAnswer(.gift) }
+                }
+            }
+            InfoNote(text: share > paid ? "Either way, your Allowance doesn’t change now."
+                     : "Only “I owe \(name)” changes your Allowance: down \(diff), the money you’ll send back.")
+        } footer: {
+            Button(overline == nil ? "Back to amounts" : "Keep it as it is", action: onBack)
+                .buttonStyle(PearlSecondaryButtonStyle())
+                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
+        }
     }
 }
