@@ -149,9 +149,11 @@ struct NeedsALookCard: View {
             NavigationLink {
                 ReviewView()
             } label: {
+                // TEST-14: a 44 pt tap area, without moving the words.
                 LinkLabel(text: "Review one by one")
+                    .frame(minHeight: 44, alignment: .leading).contentShape(Rectangle())
             }
-            .padding(.top, 4)
+            .padding(.vertical, -12).padding(.top, 4)
         }
     }
 }

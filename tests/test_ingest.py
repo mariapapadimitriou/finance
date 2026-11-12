@@ -385,6 +385,22 @@ class TestWalletTags:
         assert normalize_merchant("PAGE ONE CAFE TORONTO ON") == "Page One Cafe"
         assert normalize_merchant("BAR POMPETTE TORONTO ON") == "Bar Pompette"
 
+    @pytest.mark.parametrize("raw, expected", [
+        # TEST-10: the shop's name was read as the city, leaving "Unknown".
+        ("SP * NORTHSHOP CA", "Northshop"),
+        ("SP*NORTHSHOP", "Northshop"),
+        ("SP NORTHSHOP CA", "Northshop"),
+        # A Square seller's name is what the seller typed; STORE is part of it.
+        ("SQ *CORNER STORE 22", "Corner Store"),
+    ])
+    def test_a_processor_sellers_name_is_kept(self, raw, expected):
+        assert normalize_merchant(raw) == expected
+
+    def test_a_chains_store_number_still_comes_off(self):
+        assert normalize_merchant("STARBUCKS STORE 08812 SAN FRANCISCO CA") == "Starbucks"
+        assert normalize_merchant("SQ *BALZACS TORONTO ON") == "Balzacs"
+        assert normalize_merchant("SPOTIFY P1234") != "Otify P1234"
+
 
 class TestLoyaltyRedemptions:
     """A credit booked as negative spending makes the month look cheaper."""

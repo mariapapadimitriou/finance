@@ -56,6 +56,7 @@ extension Review {
 @MainActor
 struct QuickSortView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.colorScheme) private var scheme
     let asks: [Ask]
     let categories: [CategoryList.Category]
     var names: [String] = []
@@ -263,7 +264,9 @@ struct QuickSortView: View {
                     Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
                         .foregroundColor(Pearl.ink)
                         .frame(width: 44, height: 44)
-                        .background(Circle().fill(Color.white.opacity(0.85)))
+                        // T-93r dark (1077:1468): the Glass button, glass fill and edge (TEST-01).
+                        .background(Circle().fill(scheme == .dark ? Nacre.glass : Color.white.opacity(0.85)))
+                        .overlay(Circle().strokeBorder(scheme == .dark ? Nacre.glassEdge : .clear, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Later")
@@ -279,10 +282,11 @@ struct QuickSortView: View {
             // The cards still to come, peeking out underneath.
             ForEach((1...2).reversed(), id: \.self) { depth in
                 if index + depth < total {
+                    // T-93r dark (1077:1477): --surface-card with a --border edge (TEST-01).
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(Color.white.opacity(0.55))
+                        .fill(scheme == .dark ? Pearl.card : Color.white.opacity(0.55))
                         .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.8), lineWidth: 1))
+                            .strokeBorder(scheme == .dark ? Pearl.border : Color.white.opacity(0.8), lineWidth: 1))
                         .padding(.horizontal, CGFloat(depth) * 8)
                         .offset(y: CGFloat(depth) * 10)
                 }
@@ -423,7 +427,10 @@ struct QuickSortView: View {
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundColor(filled ? .white : Pearl.ink)
                     .frame(width: 68, height: 68)
-                    .background(Circle().fill(filled ? Pearl.action : Color.white.opacity(0.9)))
+                    // T-93r dark (1077:1490): Skip is --surface-card with a --border edge (TEST-01).
+                    .background(Circle().fill(filled ? Pearl.action
+                                              : scheme == .dark ? Pearl.card : Color.white.opacity(0.9)))
+                    .overlay(Circle().strokeBorder(!filled && scheme == .dark ? Pearl.border : .clear, lineWidth: 1))
                     .shadow(color: (filled ? Pearl.action : Color.black).opacity(0.18), radius: 8, y: 4)
                 Text(label).font(Nacre.footnote).foregroundColor(filled ? Pearl.action : Pearl.ink)
             }
@@ -668,6 +675,7 @@ struct QuickSortView: View {
 
 /// "Quick sort · 11 to sort" at the top of Needs a look (T-10; REFRESH-03's P1).
 struct QuickSortCard: View {
+    @Environment(\.colorScheme) private var scheme
     let count: Int
     let action: () -> Void
 
@@ -688,8 +696,11 @@ struct QuickSortCard: View {
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
             .background(RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(LinearGradient(colors: [Color.white.opacity(0.75), Nacre.seaglass.opacity(0.35)],
-                                     startPoint: .leading, endPoint: .trailing)))
+                // T-83r dark (1076:1277): --surface-card, so the ink words read (TEST-01).
+                .fill(scheme == .dark
+                      ? LinearGradient(colors: [Pearl.card], startPoint: .leading, endPoint: .trailing)
+                      : LinearGradient(colors: [Color.white.opacity(0.75), Nacre.seaglass.opacity(0.35)],
+                                       startPoint: .leading, endPoint: .trailing)))
             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Nacre.glassEdge, lineWidth: 1))
             .contentShape(Rectangle())
         }
@@ -697,15 +708,20 @@ struct QuickSortCard: View {
     }
 }
 
-/// The card itself: soft nacre, a pearly edge.
+/// The card itself: soft nacre, a pearly edge. In dark it is --surface-card
+/// (T-93r dark, 1077:1478), so the ink text on it reads (TEST-01).
 private struct CardFace: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+
     func body(content: Content) -> some View {
         content
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(LinearGradient(colors: [Color(hex: 0xFFF1F6), Color(hex: 0xF7F3FF), Color(hex: 0xEFFBF8)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing)))
+                .fill(scheme == .dark
+                      ? LinearGradient(colors: [Pearl.card], startPoint: .top, endPoint: .bottom)
+                      : LinearGradient(colors: [Color(hex: 0xFFF1F6), Color(hex: 0xF7F3FF), Color(hex: 0xEFFBF8)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)))
             .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .strokeBorder(LinearGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass],
                                              startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2))

@@ -62,6 +62,8 @@ struct SplitSheet: View {
     @FocusState private var focused: String?
 
     private static let me = "\u{0}me"
+    /// The "left · stays yours" line, scrolled to while typing (TEST-16).
+    private static let statusID = "split-status"
 
     init(t: Transaction, api: APIClient, recent: [String], with names: [String]? = nil,
          title: String? = nil, saveTitle: String = "Save",
@@ -142,11 +144,19 @@ struct SplitSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             SheetTitle(title: sheetTitle) { dismiss() }
+                // TEST-16: a tap off the fields puts the number pad away.
+                .contentShape(Rectangle()).onTapGesture { focused = nil }
+            ScrollViewReader { scroller in
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    QuestionHeader(name: t.merchant, amount: Format.money(t), tone: t.tone,
+                    // S-45c (TEST-02): settling shows the whole purchase, not
+                    // the part still counting as hers.
+                    QuestionHeader(name: t.merchant,
+                                   amount: settling ? (t.inflow ? "+" : "\u{2212}") + Format.amount(t.splitBase) : Format.money(t),
+                                   tone: t.tone,
                                    sub: t.splitsMyPart ? "Your part \(Format.amount(t.splitBase)) of \(Format.amount(t.fullAmount ?? t.amount))" : nil)
                         .accessibilityElement(children: .combine)
+                        .contentShape(Rectangle()).onTapGesture { focused = nil }
                     if t.splitsMyPart { JointStrip(t: t) }
                     if step == 0 { who } else { how }
                     if let error = error {
@@ -156,6 +166,15 @@ struct SplitSheet: View {
                 .padding(.horizontal, 16).padding(.bottom, 12)
             }
             .scrollDismissesKeyboard(.interactively)
+            // TEST-16 (S-03re): with the number pad up, the status line and
+            // "Split the rest evenly" stay in view right above Save.
+            .onChange(of: focused) { now in
+                guard now != nil else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    withAnimation { scroller.scrollTo(Self.statusID, anchor: .bottom) }
+                }
+            }
+            }
             footer
         }
         .background(SheetBackground())
@@ -449,9 +468,12 @@ struct SplitSheet: View {
                                 .frame(width: 92, height: 36)
                                 .padding(.horizontal, 8)
                                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.8)))
+                                // S-03re (TEST-16): the outline is on the field
+                                // being typed in, or on someone already over.
                                 .overlay(RoundedRectangle(cornerRadius: 10)
-                                    .strokeBorder(overCents(key) > 0 || (gapCents != 0 && mode == "amount")
-                                                  ? Pearl.action : Nacre.separator, lineWidth: 1))
+                                    .strokeBorder(overCents(key) > 0 || focused == key
+                                                  ? Pearl.action : Nacre.separator,
+                                                  lineWidth: focused == key ? 1.5 : 1))
                                 .accessibilityLabel("\(label(key)) \(mode == "percent" ? "percent" : mode == "shares" ? "shares" : "amount")")
                         }
                     }
@@ -482,6 +504,7 @@ struct SplitSheet: View {
                 }
             }
             .font(Nacre.footnote).frame(maxWidth: .infinity)
+            .id(Self.statusID)
             if settling, let line = extraNote {
                 // S-45e: "Sam already paid you $20.00, which is $10.00 more than
                 // his share. Next, you’ll say what the extra $10.00 was."
@@ -517,7 +540,11 @@ struct SplitSheet: View {
         switch mode {
         case "percent": return "0%"
         case "shares": return "1"
-        default: return "$0.00"
+        default:
+            // TEST-16: left empty, your field shows what it saves as, the
+            // "Your share" under your name, not $0.00.
+            if key == Self.me && withMe && mineCents > 0 { return Format.amount(Double(mineCents) / 100) }
+            return "$0.00"
         }
     }
 
@@ -657,6 +684,9 @@ struct SplitSheet: View {
                 bits.append(line)
             } else if p.letGo != nil {
                 bits.append("Let go \(Format.amount(Double(cents) / 100))")
+            } else if focus != nil {
+                // S-03re: each row's status, "Owes you" for nothing paid yet.
+                bits.append("Owes you")
             }
         }
         return bits.isEmpty ? nil : bits.joined(separator: " · ")
@@ -930,9 +960,12 @@ struct SplitPeople: View {
                     .accessibilityLabel(split.unsure ? "Split with \(split.people.count), not sure yet. \(unsureLine ?? "")" : heading(open: open, unsure: unsure))
                     Spacer()
                     if split.closedAt == nil {
-                        Button("Edit split", action: onEdit)
-                            .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.action)
-                            .frame(minHeight: 44).buttonStyle(.plain)
+                        // TEST-14: the 44 pt frame is the tap area, not only the words.
+                        Button(action: onEdit) {
+                            Text("Edit split").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                        }
+                        .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.action)
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.top, 8)
@@ -974,9 +1007,13 @@ struct SplitPeople: View {
                 .padding(.top, 8)
             }
             if split.closedAt == nil {
-                Button("See everyone who owes you", action: onOwed)
-                    .font(Nacre.textButton).foregroundColor(Pearl.action)
-                    .frame(maxWidth: .infinity, minHeight: 44).padding(.top, 6)
+                // TEST-14: the whole 44 pt row taps, not only the words.
+                Button(action: onOwed) {
+                    Text("See everyone who owes you")
+                        .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+                }
+                .font(Nacre.textButton).foregroundColor(Pearl.action).buttonStyle(.plain)
+                .padding(.top, 6)
             }
         }
     }
@@ -1240,13 +1277,18 @@ struct MarkPaidSheet: View {
         let accountName: String?
         let likely: Bool?
         let part: Double?
+        /// Who sent an e-Transfer, as Cash flow names them (TEST-13).
+        let party: String?
 
         enum CodingKeys: String, CodingKey {
-            case id, date, merchant, description, amount, likely, part
+            case id, date, merchant, description, amount, likely, part, party
             case accountName = "account_name"
         }
 
-        var name: String { (merchant?.isEmpty == false ? merchant : description) ?? "Deposit" }
+        var name: String {
+            if let party = party, !party.isEmpty { return party }
+            return (merchant?.isEmpty == false ? merchant : description) ?? "Deposit"
+        }
         var whole: Double { abs(amount) }
     }
     @State private var busy = false

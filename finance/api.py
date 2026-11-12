@@ -1475,8 +1475,16 @@ def _payback_candidates(charge, txns) -> list[dict]:
         even = any(abs(charge.amount / n - amount) < 0.51 for n in range(2, 11))
         out.append((0 if by_name else 1, 0 if even else 1, abs(gap), t))
     out.sort(key=lambda r: r[:3])
+    from .etransfers import party
+
+    def who(t) -> str | None:
+        # TEST-13: the sender, as Cash flow names them ("Priya Shah", not
+        # "E-transfer From Priya Shah").
+        p = party(t)
+        return (p or {}).get("name") or None
+
     return [dict(_txn_brief(t), likely=(a == 0 and b == 0 and -t.amount <= remaining + 0.005),
-                 part=round(min(-t.amount, remaining), 2))
+                 part=round(min(-t.amount, remaining), 2), party=who(t))
             for a, b, _, t in out[:12]]
 
 

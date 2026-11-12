@@ -212,7 +212,11 @@ struct MainTabs: View {
             content().toolbar(app.hidesTabBar ? .hidden : .visible, for: .tabBar)
                 .accessibilityHidden(!quickSort.isEmpty)
         }
-        .tabItem { Label(which.label, image: which.icon) }
+        .tabItem {
+            // TEST-14: VoiceOver hears the badge's count ("6 to sort").
+            Label(which.label, image: which.icon)
+                .accessibilityValue(which == .cashFlow && reviewCount > 0 ? "\(reviewCount) to sort" : "")
+        }
         .tag(which)
     }
 
