@@ -174,10 +174,10 @@ struct CalendarCard: View {
                     Spacer(minLength: 8)
                     if let id = toast.undo {
                         Button("Undo") { Task { await remove(id, undo: true) } }
-                            .font(Nacre.textButton).foregroundColor(Pearl.action)
+                            .font(Nacre.textButton).foregroundColor(Pearl.link)
                     } else if let band = toast.putBack {
                         Button("Undo") { Task { await putBack(band) } }
-                            .font(Nacre.textButton).foregroundColor(Pearl.action)
+                            .font(Nacre.textButton).foregroundColor(Pearl.link)
                     }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 12)
@@ -506,7 +506,7 @@ struct CalendarCard: View {
                         .buttonStyle(NacreButtonStyle())
                         .disabled(range.count == 0)
                         Button("Clear") { clear() }
-                            .font(Nacre.textButton).foregroundColor(Pearl.action)
+                            .font(Nacre.textButton).foregroundColor(Pearl.link)
                             .padding(.horizontal, 16)
                     }
                     .padding(.top, 4)
@@ -627,7 +627,7 @@ struct DaySheet: View {
                                     Button("Change") { onChange(band) }
                                     Button("Remove") { onRemove(band) }
                                 }
-                                .font(Nacre.textButton).foregroundColor(Pearl.action).padding(.top, 4)
+                                .font(Nacre.textButton).foregroundColor(Pearl.link).padding(.top, 4)
                             }
                             .padding(16)
                         }

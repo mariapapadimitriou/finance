@@ -101,7 +101,7 @@ struct TransactionsView: View {
                         list.padding(.top, 10)
                         if !inSearch && !selecting && loadedOnce {
                             Button("Add a transaction") { adding = true }
-                                .font(Nacre.textButton).foregroundColor(Pearl.action)
+                                .font(Nacre.textButton).foregroundColor(Pearl.link)
                                 .padding(.horizontal, 4).frame(minHeight: 44).padding(.top, 8)
                         }
                     }
@@ -352,7 +352,11 @@ struct TransactionsView: View {
             : (monthTotals?.income ?? 0)
         let saved = narrowed ? 0 : (monthTotals?.saved ?? 0)
         let left = income - spent - saved
-        let over = left < -0.5 && !narrowed
+        // T-01r3 (TEST-05, section 20): before this month's pay is in, the
+        // headline is "Spent so far" in ink and the pay still to come shows,
+        // not a red Over measured against money that hasn't come yet.
+        let pay = narrowed ? nil : monthTotals?.pay
+        let over = left < -0.5 && !narrowed && pay == nil
         return GlassCard {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
@@ -368,6 +372,12 @@ struct TransactionsView: View {
                     .disabled(months.isEmpty)
                     .accessibilityLabel("Month, \(month.map { Format.month($0) } ?? "")")
                     Spacer(minLength: 8)
+                    if let day = pay?.expected {
+                        // T-01r3: "Pay expected Nov 15".
+                        Text("Pay expected \(Format.short(day))").font(Nacre.subheadline).foregroundColor(Pearl.muted)
+                            .frame(minHeight: 44)
+                            .accessibilityLabel("Pay expected \(Format.monthDay(day))")
+                    } else {
                     // T-67: Came in narrows the list to money in.
                     Button { counts = counts == "income" ? nil : "income" } label: {
                         Text("Came in \(Format.whole(income))").font(Nacre.subheadline).foregroundColor(Pearl.moneyIn)
@@ -376,15 +386,18 @@ struct TransactionsView: View {
                     .buttonStyle(.plain)
                     .accessibilityHint(counts == "income" ? "Shows everything again" : "Shows only these")
                     .accessibilityAddTraits(counts == "income" ? .isSelected : [])
+                    }
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(over ? "Over" : "Leftover").font(Nacre.footnote).foregroundColor(Pearl.ink)
-                    Text(narrowed ? "—" : Format.whole(abs(left)))
+                    Text(pay != nil ? "Spent so far" : over ? "Over" : "Leftover").font(Nacre.footnote)
+                        .foregroundColor(pay != nil ? Pearl.muted : Pearl.ink)
+                    Text(narrowed ? "—" : Format.whole(pay != nil ? spent : abs(left)))
                         .font(Pearl.display(.largeTitle)).foregroundColor(over ? Pearl.moneyOut : Pearl.ink)
                         .lineLimit(1).minimumScaleFactor(0.6)
                 }
                 .accessibilityElement(children: .combine)
-                MonthBar(spent: spent, saved: saved, income: income)
+                // T-01r3: the bar runs to what will have come in by month's end.
+                MonthBar(spent: spent, saved: saved, income: income + (pay?.toCome ?? 0))
                 HStack(spacing: 14) {
                     // T-67: Spent narrows the list to spending.
                     Button { counts = counts == "spending" ? nil : "spending" } label: {
@@ -395,8 +408,12 @@ struct TransactionsView: View {
                     .accessibilityHint(counts == "spending" ? "Shows everything again" : "Shows only these")
                     .accessibilityAddTraits(counts == "spending" ? .isSelected : [])
                     Text("Saved \(Format.whole(saved))").foregroundColor(Pearl.moneyIn)
+                    if let pay = pay {
+                        Text("Pay to come \(Format.whole(pay.toCome))").foregroundColor(Pearl.muted)
+                    } else {
                     Text(over ? "Over \(Format.whole(-left))" : "Leftover \(Format.whole(max(left, 0)))")
                         .foregroundColor(over ? Pearl.moneyOut : Pearl.muted)
+                    }
                     Spacer(minLength: 0)
                 }
                 .font(Nacre.footnote).lineLimit(1).minimumScaleFactor(0.8)
@@ -412,7 +429,7 @@ struct TransactionsView: View {
                             .background(Capsule().fill(Pearl.action))
                         Text("need\(reviewCount == 1 ? "s" : "") a look").font(Nacre.body)
                         Spacer()
-                        Text("Sort").font(Nacre.textButton).foregroundColor(Pearl.action)
+                        Text("Sort").font(Nacre.textButton).foregroundColor(Pearl.link)
                         Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
                             .foregroundColor(Pearl.ink)
                     }
@@ -490,7 +507,7 @@ struct TransactionsView: View {
         case .failed:
             banner(symbol: "exclamationmark.triangle", text: "Couldn’t update just now.") {
                 Button("Try again") { Task { await runSync(force: true) } }
-                    .font(Nacre.textButton).foregroundColor(Pearl.action)
+                    .font(Nacre.textButton).foregroundColor(Pearl.link)
             }
         case .idle:
             EmptyView()
@@ -728,7 +745,7 @@ struct TransactionsView: View {
 
     private func barButton(_ title: String, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
-            Text(title).font(Nacre.textButton).foregroundColor(Pearl.action)
+            Text(title).font(Nacre.textButton).foregroundColor(Pearl.link)
                 .lineLimit(1).minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
         }
@@ -747,7 +764,7 @@ struct TransactionsView: View {
                 Spacer(minLength: 8)
                 if toast.undo != nil {
                     Button("Undo") { Task { await undo() } }
-                        .font(Nacre.textButton).foregroundColor(Pearl.action)
+                        .font(Nacre.textButton).foregroundColor(Pearl.link)
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
@@ -869,7 +886,7 @@ struct TransactionsView: View {
             Text(title).font(Nacre.title2).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
             Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
             if let action = action {
-                Button(action, action: run).font(Nacre.textButton).foregroundColor(Pearl.action).padding(.top, 4)
+                Button(action, action: run).font(Nacre.textButton).foregroundColor(Pearl.link).padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity)
@@ -1131,11 +1148,15 @@ struct TransactionRow: View {
             Initials(name: t.merchant)
             VStack(alignment: .leading, spacing: 3) {
                 Text(t.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                Text(meta).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+                Text(meta).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(splitNote == nil ? 1 : 2)
                 if let extra = extra {
                     Text(extra).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
                 }
-                if t.suggested {
+                if otherGuess {
+                    // T-93n (TEST-12): Other isn't a guess, so the row asks,
+                    // as Needs a look and Quick sort do; there's nothing to confirm.
+                    GuessChip(label: "What was this?", question: false, asking: true).padding(.top, 4)
+                } else if t.suggested {
                     if let onConfirm = onConfirm, !t.asks {
                         Button(action: onConfirm) { GuessChip(label: t.label, question: true) }
                             .buttonStyle(.plain)
@@ -1146,7 +1167,7 @@ struct TransactionRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text(Format.money(t))
+            Text(shownMoney)
                 .font(Nacre.headline).monospacedDigit()
                 .foregroundColor(t.tone)
                 .lineLimit(1).fixedSize()
@@ -1155,17 +1176,23 @@ struct TransactionRow: View {
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityHint(t.suggested ? "Pearl’s guess. Opens it to check." : "")
+        .accessibilityHint(otherGuess ? "Pearl couldn’t place this one. Opens it to answer."
+                           : t.suggested ? "Pearl’s guess. Opens it to check." : "")
         .accessibilityAction(named: "Confirm \(t.label)") {
-            if t.suggested, !t.asks { onConfirm?() }
+            if t.suggested, !t.asks, !otherGuess { onConfirm?() }
         }
     }
+
+    /// T-93n (TEST-12): a best guess of Other is a question, not a guess.
+    private var otherGuess: Bool { t.suggested && !t.asks && t.label == "Other" }
 
     /// "Health · Today"; "Today · Pending" while it's a guess; "Paid back · Sushi Nami".
     private var meta: String {
         let when = Format.relativeDay(t.date)
         if let paidBack = paidBack { return "Paid back · \(paidBack)" }
         if let charge = t.refundOf { return "Refund · \(charge.merchant)" }
+        // T-01r2 (TEST-25): a split says what the server says.
+        if let note = splitNote { return note }
         // T-82 (THL-292): a transfer a recurring rule sorted says so.
         if t.recurring != nil, let note = t.note, note.hasPrefix("Recurring") { return note }
         if t.suggested { return t.pending ? "\(when) · Pending" : when }
@@ -1173,9 +1200,27 @@ struct TransactionRow: View {
             .joined(separator: " · ")
     }
 
+    /// T-01r2 (TEST-25): the server's note on a split row, "Split with Priya
+    /// +2 · $87.50 to come back", "Split 5 ways · not sure yet · $45.00 still
+    /// counts" or "Your share of $59.33 · all paid back". The app used to make
+    /// its own "Your share of …" and showed only what still counts.
+    private var splitNote: String? {
+        guard t.split, !t.inflow, let note = t.note, !note.isEmpty else { return nil }
+        return note
+    }
+
+    /// T-01r2 and Rule A: the whole purchase while some is still to come
+    /// back or not settled ("Split …"); her share once it's all paid back.
+    private var shownMoney: String {
+        if let note = splitNote, note.hasPrefix("Split "), let full = t.fullAmount {
+            return "\u{2212}" + Format.amount(full)
+        }
+        return Format.money(t)
+    }
+
     /// "Your share of $86", "Refunded in full · Nov 10".
     private var extra: String? {
-        if t.split, let full = t.fullAmount, abs(full - t.amount) >= 0.005 {
+        if splitNote == nil, t.split, let full = t.fullAmount, abs(full - t.amount) >= 0.005 {
             return "Your share of \(Format.compact(full))"
         }
         if !t.refundedBy.isEmpty {
@@ -1214,6 +1259,8 @@ struct GuessChip: View {
     let label: String
     /// "Dining out?" for a guess; "Not sorted yet" already says it's waiting.
     var question = true
+    /// T-93n (TEST-12): "What was this?" asks; it isn't Pearl's guess.
+    var asking = false
 
     var body: some View {
         HStack(spacing: 4) {
@@ -1224,7 +1271,7 @@ struct GuessChip: View {
         .foregroundColor(Pearl.ink)
         .padding(.horizontal, 10).frame(height: 24)
         .overlay(Capsule().strokeBorder(Pearl.ink.opacity(0.7), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
-        .accessibilityLabel("Pearl’s guess: \(label)")
+        .accessibilityLabel(asking ? label : "Pearl’s guess: \(label)")
     }
 }
 
