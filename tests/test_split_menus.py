@@ -390,7 +390,7 @@ class TestLessWords:
             'showSplit("Copied"', '"None of it is yours to split."', 'let title = "\\(p.name) removed"',
             '("Settled up", {', '"Split reopened"'],
         "ios/Pearl/Views/Home/HomeView.swift": [
-            '"\\(count) to sort"', '"Pearl sorted \\(pearlSorted) by itself."', 'had 3 paycheques.',
+            '"\\(count) to sort"', '" Pearl sorted \\(pearlSorted) by itself."', 'had 3 paycheques.',
             '"\\(who) you \\(Format.amount(owed.total))"', '· \\(unsettled.count) not settled', 'Allowance.restCaption'],
         "ios/Pearl/Views/Onboarding/SetupFlow.swift": ['"Only you see this. Nothing is sent."', 'title: "Shared with"',
                                                      '"Up to six. Only you see this."'],

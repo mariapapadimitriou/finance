@@ -143,7 +143,7 @@ struct PiggyPaySheet: View {
             SheetTitle(title: "Pay from a piggy bank") { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    QuestionHeader(name: t.merchant, amount: Format.amount(charge), tone: Pearl.moneyOut, sub: nil)
+                    QuestionHeader(name: t.merchant, amount: Format.amount(charge), tone: Pearl.ink, sub: nil)
                     if let banks = banks {
                         if banks.isEmpty {
                             Text("You don’t have a piggy bank yet.").font(Nacre.body).foregroundColor(Pearl.muted)
@@ -429,6 +429,12 @@ struct TransactionDetailView: View {
         }
         // S-04r v2s (TEST-09): a real inline bar; iOS draws its scroll-edge
         // material behind Back and the clock once the page scrolls under it.
+        // TEST-09 (round 2): the app's bars are see-through (PearlApp), so
+        // iOS drew no scroll-edge material. Once the hero is under the bar,
+        // S-04r v2s's --surface-page bar sits behind Back, the title and
+        // the clock, and nothing scrolls under them.
+        .toolbarBackground(Pearl.scrolledBar, for: .navigationBar)
+        .toolbarBackground(heroGone ? .visible : .hidden, for: .navigationBar)
         .navigationBarHidden(false)
         .navigationTitle(heroGone ? t.merchant : "")
         .navigationBarTitleDisplayMode(.inline)
@@ -813,6 +819,7 @@ struct TransactionDetailView: View {
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
                 .foregroundColor(t.tone)
                 .lineLimit(1).minimumScaleFactor(0.5)
+                .accessibilityLabel(Format.spoken(heroAmount))
             Text(t.transfer != nil ? "Doesn’t count · Between your accounts" : dateLine)
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center)
@@ -1023,7 +1030,7 @@ struct TransactionDetailView: View {
         if t.refundOf != nil { return ("Refund", true, Pearl.moneyIn) }
         switch t.counts {
         case "income": return ("Income", true, Pearl.moneyIn)
-        case "spending": return ("Spending", t.inflow, t.inflow ? Pearl.moneyIn : Pearl.moneyOut)
+        case "spending": return ("Spending", t.inflow, t.inflow ? Pearl.moneyIn : Pearl.ink)
         default: return ("Not counted", t.inflow, Pearl.muted)
         }
     }
@@ -1179,7 +1186,7 @@ struct TransactionDetailView: View {
             Spacer(minLength: 8)
             Text((inflow ? "+" : "\u{2212}") + Format.amount(amount))
                 .font(Nacre.headline).monospacedDigit()
-                .foregroundColor(inflow ? Pearl.ink : Pearl.moneyOut)
+                .foregroundColor(Pearl.ink)
             if chevron {
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
                     .foregroundColor(Pearl.muted)
@@ -1828,10 +1835,12 @@ struct TransactionDetailView: View {
     // MARK: Parts
 
     private func section(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+        // TEST-14 (round 2): the 11 pt caption didn't grow with Dynamic Type
+        // ("partially unsupported"); the overline is the sheets' section
+        // label, which does, and wraps rather than clips.
+        PearlSectionLabel(text: text)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 16).padding(.top, 12)
-            .accessibilityAddTraits(.isHeader)
     }
 
     private func row(title: String, sub: String? = nil, placeholder: Bool = false, chevron: Bool,
@@ -2348,7 +2357,7 @@ struct TagsSheet: View {
                     .font(Nacre.body).autocorrectionDisabled()
                     .submitLabel(.done)
                     .onSubmit(add)
-                Button("Add", action: add).font(Nacre.textButton).foregroundColor(Pearl.action)
+                Button("Add", action: add).font(Nacre.textButton).foregroundColor(Pearl.link)
                     .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 16).frame(height: 48)

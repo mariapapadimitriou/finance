@@ -122,7 +122,7 @@ struct UndoToast: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             if let undo = undo {
-                Button("Undo", action: undo).font(Nacre.textButton).foregroundColor(Pearl.action)
+                Button("Undo", action: undo).font(Nacre.textButton).foregroundColor(Pearl.link)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)

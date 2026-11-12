@@ -415,7 +415,7 @@ struct AnswerSheet: View {
             }
             Spacer(minLength: 8)
             Text((b.inflow ? "+" : "\u{2212}") + Format.amount(abs(b.amount))).font(Nacre.headline).monospacedDigit()
-                .foregroundColor(b.inflow ? Pearl.ink : Pearl.moneyOut)
+                .foregroundColor(Pearl.ink)
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .accessibilityElement(children: .combine)
@@ -999,7 +999,7 @@ struct AnswerSheet: View {
     // MARK: Money
 
     private var amountText: String { pageAmount ?? ((t.inflow ? "+" : "\u{2212}") + Format.amount(t.shownAmount)) }
-    private var tone: Color { t.inflow ? Pearl.moneyIn : Pearl.moneyOut }
+    private var tone: Color { t.inflow ? Pearl.moneyIn : Pearl.ink }
 }
 
 /// "MP  e-Transfer to M. Papas  −$200.00": the transaction a question is about.
@@ -1031,6 +1031,9 @@ struct QuestionHeader: View {
             }
             Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        // TEST-14: "Gusto, spent $127.50", not the unread U+2212 minus.
+        .accessibilityLabel([name, Format.spoken(amount), sub].compactMap { $0?.isEmpty == false ? $0 : nil }
+            .joined(separator: ", "))
     }
 }

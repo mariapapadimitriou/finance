@@ -270,7 +270,7 @@ struct ReviewView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Text((t.inflow ? "+" : "\u{2212}") + Format.amount(t.shownAmount))
                 .font(Nacre.headline).monospacedDigit()
-                .foregroundColor(t.inflow ? Pearl.ink : Pearl.moneyOut)
+                .foregroundColor(Pearl.ink)
                 .fixedSize()
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
@@ -336,7 +336,7 @@ struct ReviewView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Text((row.amount < 0 ? "+" : "\u{2212}") + Format.amount(abs(row.amount)))
                 .font(Nacre.headline).monospacedDigit()
-                .foregroundColor(row.amount < 0 ? Pearl.ink : Pearl.moneyOut)
+                .foregroundColor(Pearl.ink)
                 .fixedSize()
         }
         .padding(.vertical, 4)
@@ -407,7 +407,7 @@ struct ReviewView: View {
                 Spacer(minLength: 8)
                 if toast.undo != nil {
                     Button("Undo") { Task { await undo() } }
-                        .font(Nacre.textButton).foregroundColor(Pearl.action)
+                        .font(Nacre.textButton).foregroundColor(Pearl.link)
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 12)

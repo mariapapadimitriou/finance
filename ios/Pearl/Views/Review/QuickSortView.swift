@@ -677,7 +677,7 @@ struct QuickSortView: View {
         onClose()
     }
 
-    private func tone(_ t: BriefTransaction) -> Color { t.inflow ? Pearl.moneyIn : Pearl.moneyOut }
+    private func tone(_ t: BriefTransaction) -> Color { t.inflow ? Pearl.moneyIn : Pearl.ink }
 }
 
 /// "Quick sort · 11 to sort" at the top of Needs a look (T-10; REFRESH-03's P1).

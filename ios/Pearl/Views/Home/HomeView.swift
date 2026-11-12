@@ -20,6 +20,10 @@ struct HomeView: View {
     @State private var reconnecting: Home.Connection?
     /// H-01's "See accounts" for a disconnected bank.
     @State private var openAccounts = false
+    /// H-00r's Sort now: Quick sort, straight from Home (TEST-04).
+    @State private var quickSort: [Ask] = []
+    @State private var quickSortNames: [String] = []
+    @State private var opening = false
 
     var body: some View {
         ScrollView {
@@ -37,7 +41,8 @@ struct HomeView: View {
                         SetupAgainCard(setup: setup, onChanged: { Task { await load() } })
                     }
                     if home.reviewCount > 0 {
-                        NeedsALookCard(count: home.reviewCount, pearlSorted: home.pearlSorted ?? 0)
+                        NeedsALookCard(count: home.reviewCount, pearlSorted: home.pearlSorted ?? 0,
+                                       busy: opening) { Task { await sortNow() } }
                     }
                     // H-00n (SPLIT-13, THL-291): under Needs a look, once a share is a week old.
                     if let owed = owed, let line = OwedNudgeCard.line(owed, today: home.today) {
@@ -71,6 +76,27 @@ struct HomeView: View {
         }
         .fullScreenCover(item: $askingToNotify) { quiet in
             TurnOnNotificationsView(quiet: quiet)
+        }
+        .fullScreenCover(isPresented: Binding(get: { !quickSort.isEmpty }, set: { if !$0 { quickSort = [] } })) {
+            QuickSortView(asks: quickSort, categories: app.categories, names: quickSortNames) {
+                quickSort = []
+                Task { await load() }
+            }
+        }
+    }
+
+    /// H-00r (REFRESH-00 decision 2): Sort now opens Quick sort with every
+    /// open question, not only today's new ones.
+    private func sortNow() async {
+        guard !opening else { return }
+        opening = true
+        defer { opening = false }
+        do {
+            let prompt: QuickSortPrompt = try await app.api.get("api/quick-sort", query: ["all": "1"])
+            quickSortNames = prompt.review?.people ?? []
+            quickSort = prompt.asks
+        } catch {
+            self.error = app.handle(error)
         }
     }
 
@@ -133,27 +159,51 @@ struct HomeView: View {
     }
 }
 
-/// "54 to sort" (REFRESH-03, H-00n), opening Needs a look.
+/// H-00r (TEST-04, REFRESH-00 decision 2): "8 to sort", about how long,
+/// what Pearl sorted itself and a bar of how far along; Sort now opens Quick
+/// sort, See the list opens Needs a look.
 struct NeedsALookCard: View {
     let count: Int
     var pearlSorted = 0
+    var busy = false
+    let onSort: () -> Void
+
+    /// About ten seconds a card.
+    private var howLong: String {
+        let minutes = Int((Double(count) * 10 / 60).rounded())
+        return minutes <= 1 ? "About a minute." : "About \(minutes) minutes."
+    }
 
     var body: some View {
-        PearlCard(spacing: 8) {
-            Text("\(count) to sort")
-                .font(Pearl.cardTitle).foregroundColor(Pearl.ink)
-            if pearlSorted > 0 {
-                Text("Pearl sorted \(pearlSorted) by itself.")
-                    .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.muted)
+        PearlCard(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "rectangle.stack").font(.system(size: 20)).foregroundColor(Pearl.action)
+                    .frame(width: 44, height: 44)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Pearl.bubble))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(count) to sort").font(Pearl.text(.headline, .semibold)).foregroundColor(Pearl.ink)
+                    Text(howLong + (pearlSorted > 0 ? " Pearl sorted \(pearlSorted) by itself." : ""))
+                        .font(Pearl.text(.subheadline)).foregroundColor(Pearl.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
             }
+            .accessibilityElement(children: .combine)
+            if pearlSorted > 0 {
+                PaidBar(paid: Double(pearlSorted), of: Double(pearlSorted + count))
+                    .accessibilityHidden(true)
+            }
+            Button("Sort now", action: onSort)
+                .buttonStyle(PearlPrimaryButtonStyle(busy: busy, busyLabel: "Opening…"))
+                .disabled(busy)
             NavigationLink {
                 ReviewView()
             } label: {
-                // TEST-14: a 44 pt tap area, without moving the words.
-                LinkLabel(text: "Review one by one")
-                    .frame(minHeight: 44, alignment: .leading).contentShape(Rectangle())
+                Text("See the list").font(Nacre.textButton).foregroundColor(Pearl.link)
+                    .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
             }
-            .padding(.vertical, -12).padding(.top, 4)
+            .buttonStyle(.plain)
         }
     }
 }
@@ -225,7 +275,7 @@ struct PaychequeNoteCard: View {
                 .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Got it", action: onDismiss)
-                .font(Nacre.textButton).foregroundColor(Pearl.action)
+                .font(Nacre.textButton).foregroundColor(Pearl.link)
                 .padding(.top, 4)
         }
     }

@@ -98,9 +98,13 @@ def seed(db_path: str) -> None:
 
 
 def simulator(runtime: str, text: str) -> str:
-    out = subprocess.run(["xcrun", "simctl", "list", "devices"], capture_output=True, text=True).stdout
-    udid = next((line.split("(")[1].split(")")[0] for line in out.splitlines()
-                 if line.strip().startswith(SIM_NAME + " (")), None)
+    # One simulator at a time (product owner): PEARL_SIM_UDID reuses one
+    # that is already booted instead of booting "Pearl journeys" as well.
+    udid = os.environ.get("PEARL_SIM_UDID") or None
+    if udid is None:
+        out = subprocess.run(["xcrun", "simctl", "list", "devices"], capture_output=True, text=True).stdout
+        udid = next((line.split("(")[1].split(")")[0] for line in out.splitlines()
+                     if line.strip().startswith(SIM_NAME + " (")), None)
     if udid is None:
         udid = subprocess.run(["xcrun", "simctl", "create", SIM_NAME, DEVICE, runtime],
                               capture_output=True, text=True, check=True).stdout.strip()

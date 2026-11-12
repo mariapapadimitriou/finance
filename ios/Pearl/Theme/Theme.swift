@@ -24,9 +24,9 @@ enum Pearl {
     /// #605D76, too faint on the gradient), mist/300 in dark.
     static let muted = dynamic(light: 0x514D67, dark: 0xB4B1CC)
     static let action = dynamic(light: 0xB22757, dark: 0xFF8FB1)    // --action
-    /// color/text/link (TEST-14): rose/800 #9C1F4B in light, rose/300 in dark,
-    /// for text links on the bare background. Added ahead of the library
-    /// publish; links move to it once designBOT confirms it's published.
+    /// color/text/link (TEST-14, Pearl Design System, published 2026-11-11):
+    /// text links and text buttons. Light rose/800 #9C1F4B, dark rose/300
+    /// #FF8FB1. Filled buttons keep `action` (color/action/primary).
     static let link = dynamic(light: 0x9C1F4B, dark: 0xFF8FB1)
     static let onAction = dynamic(light: 0xFFFFFF, dark: 0x1C1A33)  // --on-action
     static let blush = Color(hex: 0xFFE4EC)                         // --blush
@@ -48,6 +48,10 @@ enum Pearl {
     static let cardShadow = Color(hex: 0x664D99)
     static let onBlush = Color(hex: 0x1C1A33)                       // --on-nacre
     static let bar = dynamic(light: 0xFFFFFF, dark: 0x151B44)       // --surface-card, the tab bar
+    /// S-04r v2s's top bar once the page scrolls under it (TEST-09): Figma's
+    /// --surface-page, the same two values as onInk. Only the bar uses it;
+    /// pages stay on the iridescent background.
+    static let scrolledBar = onInk
     // REFRESH-02 (Design refresh kit 1088:1696), from the Pearl Design System
     // Color variables in Light and Dark mode.
     static let bubble = dynamic(light: 0xFFE4EC, dark: 0x4E2238)    // --blush, both modes

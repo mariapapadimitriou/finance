@@ -103,7 +103,7 @@ struct AddTransactionSheet: View {
                 kindSheet
             } else {
                 CategorySheet(name: name.isEmpty ? "New transaction" : name, amount: amountText,
-                              tone: Pearl.moneyOut, categories: categories, current: category ?? "",
+                              tone: Pearl.ink, categories: categories, current: category ?? "",
                               spendingOnly: true) { chosen, _ in
                     category = chosen
                     similar = nil

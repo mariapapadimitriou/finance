@@ -208,6 +208,7 @@ struct PearlSectionLabel: View {
         Text(text.uppercased())
             .font(Pearl.text(.footnote, .medium)).tracking(0.78)
             .foregroundColor(Pearl.muted)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
     }
@@ -289,8 +290,10 @@ struct PearlSheetHeader: View {
                 PearlFace(name: face)
             }
             VStack(alignment: .leading, spacing: 1) {
+                // TEST-14: the overline wraps, never clipped ("PIZZA NOVA · NOT SURE YET").
                 Text(overline.uppercased())
                     .font(Pearl.text(.footnote, .medium)).tracking(0.78).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(title)
                     .font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -395,6 +398,14 @@ struct PearlSheetButtons: View {
 /// "Pearl/Toast with Undo" (S-44a–i): ink, with a 44-high action. It stays
 /// 6 s, longer while VoiceOver is on; it's announced, and its action is an
 /// accessibility action too (note 1096:4483).
+extension View {
+    /// TEST-22 (designBOT 2026-11-11): an amount never wraps inside the
+    /// number; it shrinks to fit, and rows move it under the name at AX sizes.
+    func pearlAmountFit() -> some View {
+        lineLimit(1).minimumScaleFactor(0.7).allowsTightening(true)
+    }
+}
+
 struct PearlToast: View {
     struct Model: Equatable {
         let id = UUID()
