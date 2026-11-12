@@ -691,7 +691,8 @@ def test_both_people_in_a_split_show_paid_back(client):
     assert people["Sam"]["owes"] == 0 and people["Sam"]["paid_on"]
     assert people["Priya"]["owes"] == 0 and people["Priya"]["paid_on"]
     row_ = next(r for r in listing(client)["transactions"] if r["id"] == sushi)
-    assert row_["note"] == "Your share of $90.00 · Priya, Sam paid you back"
+    # T-01r2: "all paid back" once everyone has.
+    assert row_["note"] == "Your share of $90.00 · all paid back"
 
 
 def test_link_unlink_and_relink_net_every_time(client):

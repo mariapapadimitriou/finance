@@ -456,43 +456,23 @@ class TestSettleUp:
         assert counted(client, pn) == 100.0
         adds_up(client, pn)
 
-    def test_a_share_below_what_they_paid_says_what_the_extra_was(self, client):
-        """Decision 6 (S-45e): the SPLIT-19 extra step, here a gift."""
+    def test_a_payer_is_locked_at_what_they_paid(self, client):
+        """THL-303 (TEST-18, product owner 2026-11-10): settling can't set a
+        share below or above what someone paid; that replaces S-45e's extra
+        step when settling. Unlink first to change it."""
         i = unsure_dinner(client, more=[sam_paid(client)])
-        pn, sam = i["PIZZA NOVA"], i["E-TRANSFER FROM SAM"]
-        link(client, pn, sam, "Sam")
-        body = {"mode": "amount", "you": 50, "people": [{"name": "Sam", "amount": 10},
-                                                        {"name": "Priya", "amount": 40}],
-                "extra": {"Sam": [{"kind": "gift", "amount": 10}]}}
-        r = put_split(client, pn, body)
-        ps = people(client, pn)
-        assert ps["Sam"]["paid"] == 10.0 and ps["Sam"]["over"] == 0.0 and ps["Sam"]["owes"] == 0.0
-        assert ps["Priya"]["owes"] == 40.0
-        adds_up(client, pn)
-        undo(client, r)
+        pn = i["PIZZA NOVA"]
+        link(client, pn, i["E-TRANSFER FROM SAM"], "Sam")
+        for sam in (10, 30):
+            r = put_split(client, pn, {"mode": "amount", "you": 50,
+                                       "people": [{"name": "Sam", "amount": sam},
+                                                  {"name": "Priya", "amount": 50 - sam}],
+                                       "extra": {"Sam": [{"kind": "gift", "amount": 10}]}}, ok=False)
+            assert r["error"] == "Sam’s $20.00 is linked. Unlink the payback to change Sam’s share."
         assert detail(client, pn)["splitting"]["mode"] == "unknown"
-        assert client.st.get_transaction(sam).repays == pn
-        assert people(client, pn)["Sam"]["paid"] == 20.0
-
-    def test_the_extra_has_to_add_up(self, client):
-        i = unsure_dinner(client, more=[sam_paid(client)])
-        pn = i["PIZZA NOVA"]
-        link(client, pn, i["E-TRANSFER FROM SAM"], "Sam")
         r = put_split(client, pn, {"mode": "amount", "you": 50,
-                                   "people": [{"name": "Sam", "amount": 10}, {"name": "Priya", "amount": 40}],
-                                   "extra": {"Sam": [{"kind": "gift", "amount": 4}]}}, ok=False)
-        assert r["error"] == "$6.00 of Sam’s extra isn’t said yet."
-
-    def test_they_overpaid_is_you_owe(self, client):
-        i = unsure_dinner(client, more=[sam_paid(client)])
-        pn = i["PIZZA NOVA"]
-        link(client, pn, i["E-TRANSFER FROM SAM"], "Sam")
-        put_split(client, pn, {"mode": "amount", "you": 50,
-                               "people": [{"name": "Sam", "amount": 10}, {"name": "Priya", "amount": 40}],
-                               "extra": {"Sam": [{"kind": "overpaid", "amount": 10}]}})
-        assert people(client, pn)["Sam"]["over"] == 10.0
-        you_owe = client.get("/api/owed").get_json()["you_owe"]
-        assert you_owe[0]["name"] == "Sam" and you_owe[0]["total"] == 10.0
+                                   "people": [{"name": "Sam", "amount": 20}, {"name": "Priya", "amount": 30}]})
+        assert people(client, pn)["Sam"]["owes"] == 0.0 and people(client, pn)["Priya"]["owes"] == 30.0
 
 
 class TestThatsEverything:

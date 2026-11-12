@@ -1491,7 +1491,9 @@ struct OwedView: View {
             Initials(name: n.merchant, size: 34)
             VStack(alignment: .leading, spacing: 2) {
                 Text(n.merchant).font(Nacre.body).foregroundColor(Pearl.ink)
-                Text("\(n.people.joined(separator: ", ")) · \(Format.amount(n.paid)) paid so far")
+                // S-14u4 (TEST-18): "You and 4 · $75.00 paid · your share not set".
+                Text(n.me ?? true ? "You and \(n.people.count) · \(Format.amount(n.paid)) paid · your share not set"
+                     : "\(n.people.joined(separator: ", ")) · \(Format.amount(n.paid)) paid so far")
                     .font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }

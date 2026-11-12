@@ -737,6 +737,9 @@ struct SettleUpSheet: View {
     let onType: () -> Void
     /// S-45b's Settle up; throws to show S-45bx.
     let run: () async throws -> Void
+    /// S-45a2 (TEST-18): she isn't in it and one person hasn't paid: that
+    /// person owes what's left. Throws to show the Banner.
+    var onLeftTo: ((Transaction.Splitting.Person, Double) async throws -> Void)? = nil
     @State private var confirming = false
     @State private var busy = false
     @State private var failed: String?
@@ -764,12 +767,33 @@ struct SettleUpSheet: View {
                 if i > 0 { PearlDivider() }
                 amountRow(p.name, sub: paidSub(p), amount: p.paid, tone: p.paid >= 0.005 ? Pearl.moneyIn : Pearl.muted)
             }
-            PearlDivider()
-            amountRow("You", sub: "What still counts as yours", amount: still, tone: Pearl.ink)
+            if split.withMe {
+                PearlDivider()
+                amountRow("You", sub: "What still counts as yours", amount: still, tone: Pearl.ink)
+            }
         }
+        if let failed = failed, !confirming { CautionBanner(text: failed) }
         PearlOptionCard {
+            if let last = leftTo, let onLeftTo = onLeftTo {
+                // S-45a2 (TEST-18): "Alex owes what's left · $45.00 · the
+                // purchase less what's been paid back".
+                PearlOptionRow(symbol: "person", title: "\(last.name) owes what’s left",
+                               sub: "\(Format.amount(still)) · the purchase less what’s been paid back") {
+                    Task {
+                        busy = true
+                        defer { busy = false }
+                        do { try await onLeftTo(last, still); failed = nil }
+                        catch let e as SplitMenuError { failed = e.words }
+                        catch { failed = "Couldn’t settle it. Nothing changed. Try again." }
+                    }
+                }
+                .disabled(busy)
+                PearlDivider()
+            }
             // REFRESH-03 (S-45a): the amounts are in Paid so far above.
-            PearlOptionRow(symbol: "checkmark", title: "Use what each paid", sub: "Nobody owes after this.") {
+            PearlOptionRow(symbol: "checkmark", title: "Use what each paid",
+                           sub: leftTo.map { "\($0.name) pays nothing; the \(Format.amount(still)) stays yours" }
+                            ?? "Nobody owes after this.") {
                 confirming = true
             }
             PearlDivider()
@@ -809,10 +833,17 @@ struct SettleUpSheet: View {
         if let failed = failed { CautionBanner(text: failed) }
     }
 
+    /// S-45a2: the one person left, when she isn't in it.
+    private var leftTo: Transaction.Splitting.Person? {
+        let unpaid = split.people.filter { $0.paid < 0.005 }
+        return !split.withMe && unpaid.count == 1 && still >= 0.005 ? unpaid[0] : nil
+    }
+
     private func paidSub(_ p: Transaction.Splitting.Person) -> String {
         guard p.paid >= 0.005 else { return "Nothing yet" }
         let how = p.links?.last.map { PersonOptionsSheet.word($0) } ?? "Paid"
-        return [how, p.paidOn.map { Format.short($0) }].compactMap { $0 }.joined(separator: " · ")
+        // TEST-18: a payer is locked at what they paid.
+        return [how, p.paidOn.map { Format.short($0) }, "locked"].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func amountRow(_ title: String, sub: String, amount: Double, tone: Color) -> some View {
@@ -866,6 +897,16 @@ struct ThatsEverythingSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             PearlSectionLabel(text: "What changes")
             PearlOptionCard {
+                if split.withMe {
+                    // S-46a3 (TEST-18): your own line, and who paid back.
+                    row("You", "Your share · what’s left", Format.amount(still), Pearl.ink)
+                    if !paid.isEmpty {
+                        PearlDivider()
+                        row(Format.andList(paid.map(\.name)), "Paid back \(Format.amount(paid.reduce(0) { $0 + $1.paid }))",
+                            "", Pearl.muted)
+                    }
+                    PearlDivider()
+                }
                 row(t.label, "Stays your spending", Format.amount(still), Pearl.ink)
                 ForEach(none) { p in
                     PearlDivider()
@@ -883,7 +924,11 @@ struct ThatsEverythingSheet: View {
 
     /// S-46a (REFRESH-03): "$80.00 stays yours. Nobody owes for Pizza Nova."
     private func lead(_ paid: [Transaction.Splitting.Person]) -> String {
-        "\(Format.amount(still)) stays yours. Nobody owes for \(t.merchant)."
+        // S-04u8 / S-46a3 (TEST-18): everyone has paid.
+        if !split.people.isEmpty && paid.count == split.people.count {
+            return "Everyone has paid. \(Format.amount(still)) stays yours."
+        }
+        return "\(Format.amount(still)) stays yours. Nobody owes for \(t.merchant)."
     }
 
     private func row(_ title: String, _ sub: String, _ value: String, _ tone: Color) -> some View {

@@ -175,6 +175,8 @@ def _splitting(t, split: dict, txns, payer) -> dict:
         "uncredited": sp.uncredited_rows(t, split, txns, payer),
         "base": sp.split_base(t),
         "closed_at": split.get("closed_at"),
+        # TEST-18 (THL-303): is she in it ("I had some too")?
+        "me": split.get("me", True),
     }
     if split["mode"] == sp.UNSURE:
         out["still"] = sp.still_yours(t)
@@ -504,8 +506,16 @@ def set_transaction_split(txn_id: str):
                 # S-17j (REFRESH-03): "Sam Lee’s part is already off."
                 return jsonify({"error": f"{who}{'’' if who.lower().endswith('s') else '’s'} part is already off."}), 400
     mode = body.get("mode")
-    people, problem = sp.validate(t, mode, body.get("people"), body.get("you"),
-                                  body.get("include_me", True) is not False, base=base)
+    include_me = body.get("include_me", True) is not False
+    # S-47e first: "Your share can be up to $45.00" says more than "That's
+    # $1.00 more than the charge".
+    problem = _your_share_room(st, t, st.splits().get(txn_id), body, base)
+    if problem:
+        return jsonify({"error": problem}), 400
+    people, problem = sp.validate(t, mode, body.get("people"), body.get("you"), include_me, base=base)
+    if problem:
+        return jsonify({"error": problem}), 400
+    problem = _locked_problem(st, t, st.splits().get(txn_id), mode, people, body, include_me, base)
     if problem:
         return jsonify({"error": problem}), 400
     from .categorize import CATEGORIES, is_unsure
@@ -531,7 +541,7 @@ def set_transaction_split(txn_id: str):
         # Her Whose was it? answer is her part now; the split's result
         # takes its place in txn_shares (JOINT-B handoff).
         st.set_joint_part(txn_id, t.joint_part)
-    st.set_split(txn_id, mode, people, bool(body.get("watch", True)))
+    st.set_split(txn_id, mode, people, bool(body.get("watch", True)), me=include_me)
     if mode == sp.UNSURE:
         # SPLIT-C: no shares, so nothing is typed as hers; what it costs her
         # is what's left after paybacks (Store._unsure_shares).
@@ -561,6 +571,65 @@ def set_transaction_split(txn_id: str):
             toast = f"{len(gone)} people removed"
         return jsonify(dict(data, undo=undo, **({"toast": toast} if toast else {})))
     return out
+
+
+def _locked_problem(st, t, old: dict | None, mode: str, people: list[dict], body: dict,
+                    include_me: bool, base: float | None) -> str | None:
+    """THL-303 (TEST-18), product owner 2026-11-10: when a Not sure yet split
+    is settled (Settle up, or Set your share), anyone with a linked payback
+    or cash marked paid is locked at exactly what they paid; only she and
+    the people who haven't paid change. With `your_share` (S-47) her share
+    is what she typed: it can't be more than the purchase less the locked
+    paybacks, and the rest has to be given out in full."""
+    from . import splits as sp
+    if not old or old.get("mode") != sp.UNSURE or mode == sp.UNSURE:
+        return None
+    status = {p["name"]: p for p in sp.people_status(t, old, st.all_transactions(), st.payback_people())}
+    whole = sp._cents(base if base is not None else t.amount)
+    locked = 0
+    for p in people:
+        paid = sp._cents((status.get(p["name"]) or {}).get("paid", 0.0))
+        if paid >= 1:
+            locked += paid
+            if sp._cents(p["amount"]) != paid:
+                name = p["name"]
+                return (f"{possessive_name(name)} ${paid / 100:,.2f} is linked. "
+                        f"Unlink the payback to change {possessive_name(name)} share.")
+    if body.get("your_share"):
+        given = sum(sp._cents(p["amount"]) for p in people) + sp._cents(float(body.get("you")))
+        if given < whole:
+            return f"${(whole - given) / 100:,.2f} left to assign."
+    return None
+
+
+def _your_share_room(st, t, old: dict | None, body: dict, base: float | None) -> str | None:
+    """S-47 (TEST-18): her typed share against what's left, the purchase
+    less what's been paid back (S-47e)."""
+    from . import splits as sp
+    if not body.get("your_share"):
+        return None
+    if body.get("include_me", True) is False or body.get("you") is None:
+        return "What was your share?"
+    try:
+        mine = sp._cents(float(body.get("you")))
+    except (TypeError, ValueError):
+        return "What was your share?"
+    if mine < 0:
+        return "Your share can’t be less than nothing."
+    whole = sp._cents(base if base is not None else t.amount)
+    paid = 0
+    if old:
+        paid = sum(sp._cents(p["paid"]) for p in
+                   sp.people_status(t, old, st.all_transactions(), st.payback_people()))
+    room = max(whole - paid, 0)
+    if mine > room:
+        return f"Your share can be up to ${room / 100:,.2f}."
+    return None
+
+
+def possessive_name(name: str) -> str:
+    """"Priya’s", "James’"."""
+    return f"{name}’" if name.lower().endswith("s") else f"{name}’s"
 
 
 def _merge_marks(a: dict, b: dict) -> dict:

@@ -375,7 +375,7 @@ class TestLessWords:
             '"One Undo puts both back."', '"Not in the total until settled."', 'stays cash in hand.',
             'is the most. You’ll sort the other'],
         "ios/Pearl/Views/Transactions/JointSplitViews.swift": [
-            '"How to settle?"', 'sub: "Nobody owes after this."', 'stays yours. Nobody owes for \\(t.merchant).',
+            '"How to settle?"', '?? "Nobody owes after this."', 'stays yours. Nobody owes for \\(t.merchant).',
             '"Typed amounts stay. Even, % and shares update."', '"Six is the most."',
             '"Pick from your splits, or type a name."', 'part is already off.'],
         "ios/Pearl/Views/Transactions/TransactionDetailView.swift": [

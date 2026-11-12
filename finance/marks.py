@@ -1419,7 +1419,7 @@ def undo_marks(store, marks: dict) -> int:
             split = was.get("split")
             if split:
                 store.set_split(tid, split["mode"], split["people"], bool(split.get("watch", True)),
-                                split.get("closed_at"))
+                                split.get("closed_at"), me=split.get("me", True))
                 for q in split["people"]:
                     gone = q.get("let_go")
                     if isinstance(gone, dict) and gone.get("day"):

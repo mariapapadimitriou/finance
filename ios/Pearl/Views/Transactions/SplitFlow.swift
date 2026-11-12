@@ -39,6 +39,8 @@ struct SplitSheet: View {
     var onSettled: ((String, JSONValue?) -> Void)? = nil
     /// S-41j (JOINT-B): Edit split › Remove the split, on a joint purchase.
     var onRemoveSplit: (() -> Void)? = nil
+    /// S-47f: Options on the lock toast; the page opens that person's S-40u.
+    var onPersonOptions: ((String) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -59,6 +61,10 @@ struct SplitSheet: View {
     @State private var choosingMethod = false
     /// S-45e: the extra step before a settled split saves.
     @State private var sayingExtra = false
+    /// S-47f (TEST-18): the locked row she tapped, as a toast whose Options
+    /// opens that person's S-40u.
+    @State private var lockNote: String?
+    @State private var lockToast: PearlToast.Model?
     @FocusState private var focused: String?
 
     private static let me = "\u{0}me"
@@ -71,8 +77,9 @@ struct SplitSheet: View {
          onRemoved: ((String, JSONValue?) -> Void)? = nil,
          focus: String? = nil, onUpdated: ((String, JSONValue?) -> Void)? = nil,
          settling: Bool = false, onSettled: ((String, JSONValue?) -> Void)? = nil,
-         onRemoveSplit: (() -> Void)? = nil) {
+         onRemoveSplit: (() -> Void)? = nil, onPersonOptions: ((String) -> Void)? = nil) {
         self.settling = settling
+        self.onPersonOptions = onPersonOptions
         self.onSettled = onSettled
         self.onRemoveSplit = onRemoveSplit
         self.onRemoved = onRemoved
@@ -96,7 +103,9 @@ struct SplitSheet: View {
         // JOINT-B: of her part of a joint purchase.
         let whole = t.splitBase
         let yours = t.splitting.map { s in whole - s.people.map(\.share).reduce(0, +) }
-        _withMe = State(initialValue: yours.map { $0 >= 0.005 } ?? true)
+        // TEST-18: a Not sure yet split says whether she's in it.
+        let unsureMe: Bool? = t.splitting.flatMap { $0.unsure ? $0.withMe : nil }
+        _withMe = State(initialValue: unsureMe ?? yours.map { $0 >= 0.005 } ?? true)
         if let s = t.splitting, s.unsure {
             // SPLIT-C: Edit split opens on Not sure; Settle up on Evenly (S-45c).
             _mode = State(initialValue: settling ? "even" : "unknown")
@@ -178,6 +187,12 @@ struct SplitSheet: View {
             footer
         }
         .background(SheetBackground())
+        // S-47f (TEST-18): "Priya’s $25.00 is linked…", with Options.
+        .overlay(alignment: .top) {
+            if let m = lockToast {
+                PearlToast(model: m) { withAnimation { lockToast = nil } }.padding(.top, 52)
+            }
+        }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onDisappear { UISegmentedControl.appearance().selectedSegmentTintColor = nil }
@@ -227,9 +242,33 @@ struct SplitSheet: View {
 
     /// The methods (S-03u): Not sure is the fifth, hidden while settling (S-45c).
     private var modes: [(tag: String, label: String)] {
+        // THL-303 lock (TEST-18): a locked row is its amount on every
+        // method; on Shares it isn't in the shares (S-45c4).
         [("even", "Evenly"), ("amount", "Amounts"), ("percent", "%"), ("shares", "Shares")]
             + (settling ? [] : [("unknown", "Not sure")])
     }
+
+    /// THL-303 (TEST-18): when settling, anyone who has paid is locked at
+    /// exactly what they paid; only she and the unpaid change.
+    private func locked(_ key: String) -> Bool {
+        settling && key != Self.me && (saved(key)?.paid ?? 0) >= 0.005
+    }
+    private var anyLocked: Bool { people.contains { locked($0) } }
+
+    private func lockWords(_ key: String) -> String {
+        "\(possessive(key)) \(Format.amount(Double(lockedCents(key)) / 100)) is linked. Unlink the payback to change \(possessive(key)) share."
+    }
+
+    /// S-47f: the toast, with Options when the page can open S-40u.
+    private func showLock(_ key: String) {
+        lockNote = key
+        guard let open = onPersonOptions else { return }
+        withAnimation {
+            lockToast = PearlToast.Model(text: lockWords(key), action: "Options", failed: true,
+                                         run: { lockToast = nil; open(key) })
+        }
+    }
+    private func lockedCents(_ key: String) -> Int { Int(((saved(key)?.paid ?? 0) * 100).rounded()) }
 
     // MARK: S-03fr Removing someone who has paid (SPLIT-02, REFRESH-02)
 
@@ -410,7 +449,23 @@ struct SplitSheet: View {
             .padding(14)
             .pearlCard(radius: Pearl.radiusTile)
             .accessibilityElement(children: .combine)
+            // S-03u2 / S-03u3 (TEST-18): "I had some too", on by default.
+            withMeCard
             GlassCard {
+                if withMe {
+                    // S-03u2: her own row, with no amount.
+                    HStack(spacing: 12) {
+                        Initials(name: "Me", size: 34)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("You").font(Nacre.body).foregroundColor(Pearl.ink)
+                            Text("Your share · set it any time, or never").font(Nacre.footnote).foregroundColor(Pearl.muted)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 16).frame(minHeight: 56)
+                    .accessibilityElement(children: .combine)
+                    if !people.isEmpty { RowSeparator(inset: 64) }
+                }
                 ForEach(Array(people.enumerated()), id: \.element) { i, name in
                     if i > 0 { RowSeparator(inset: 64) }
                     HStack(spacing: 12) {
@@ -457,7 +512,12 @@ struct SplitSheet: View {
                             }
                         }
                         Spacer(minLength: 8)
-                        if mode == "even" {
+                        if locked(key) {
+                            // S-45c2 / S-45c3: a locked row's amount (or %) as text.
+                            Text(mode == "percent" ? Self.plain(number(key)) + "%" : Format.amount(Double(lockedCents(key)) / 100))
+                                .font(Nacre.body).monospacedDigit().foregroundColor(Pearl.ink)
+                                .onTapGesture { showLock(key) }
+                        } else if mode == "even" {
                             Text(Format.amount(evenAmount(key))).font(Nacre.body).monospacedDigit()
                                 .foregroundColor(Pearl.ink)
                         } else {
@@ -505,6 +565,10 @@ struct SplitSheet: View {
             }
             .font(Nacre.footnote).frame(maxWidth: .infinity)
             .id(Self.statusID)
+            if let key = lockNote, onPersonOptions == nil {
+                // Where there's no S-40u to open, the note says why.
+                InfoNote(text: lockWords(key))
+            }
             if settling, let line = extraNote {
                 // S-45e: "Sam already paid you $20.00, which is $10.00 more than
                 // his share. Next, you’ll say what the extra $10.00 was."
@@ -553,6 +617,15 @@ struct SplitSheet: View {
     }
 
     private func number(_ key: String) -> Double {
+        if locked(key) {
+            // A locked row is what they paid: dollars, or that as a percent.
+            let cents = Double(lockedCents(key))
+            return mode == "percent" ? (cents / Double(max(totalCents, 1)) * 10000).rounded() / 100 : cents / 100
+        }
+        return typedNumber(key)
+    }
+
+    private func typedNumber(_ key: String) -> Double {
         Double((values[key] ?? "").replacingOccurrences(of: "$", with: "").replacingOccurrences(of: "%", with: "")
             .replacingOccurrences(of: ",", with: "")) ?? (mode == "shares" ? 1 : 0)
     }
@@ -571,7 +644,23 @@ struct SplitSheet: View {
     }
 
     /// Evenly: everyone rounded down, then the odd cents by `spread` (S-18 v2).
+    /// THL-303: with locked rows, only what's left is split, between the rest.
     private var evenCents: [String: Int] {
+        if anyLocked {
+            let fixed = rows.filter { locked($0) }
+            let free = rows.filter { !locked($0) }
+            let left = max(totalCents - fixed.reduce(0) { $0 + lockedCents($1) }, 0)
+            var out = Dictionary(uniqueKeysWithValues: fixed.map { ($0, lockedCents($0)) })
+            guard !free.isEmpty else { return out }
+            let each = left / free.count
+            let odd = spread(left - each * free.count, over: free)
+            for k in free { out[k] = each + (odd[k] ?? 0) }
+            return out
+        }
+        return plainEvenCents
+    }
+
+    private var plainEvenCents: [String: Int] {
         let n = max(rows.count, 1)
         let each = totalCents / n
         let odd = spread(totalCents - each * n, over: rows)
@@ -601,7 +690,21 @@ struct SplitSheet: View {
     private var weightSum: Double { rows.map { number($0) }.reduce(0, +) }
 
     private var shareAmounts: [String: Double] {
-        weighted(over: weightSum, spreading: true).mapValues { Double($0) / 100 }
+        if anyLocked {
+            // S-45c4: the shares divide only what's left, across the rows
+            // that aren't locked; a locked row is what they paid.
+            let fixed = rows.filter { locked($0) }
+            let free = rows.filter { !locked($0) }
+            let left = max(totalCents - fixed.reduce(0) { $0 + lockedCents($1) }, 0)
+            let sum = free.map { typedNumber($0) }.reduce(0, +)
+            var out = Dictionary(uniqueKeysWithValues: fixed.map { ($0, lockedCents($0)) })
+            guard sum > 0 else { return out.mapValues { Double($0) / 100 } }
+            for k in free { out[k] = Int((Double(left) * typedNumber(k) / sum).rounded(.down)) }
+            let odd = spread(left - free.reduce(0) { $0 + (out[$1] ?? 0) }, over: free)
+            for (k, c) in odd { out[k, default: 0] += c }
+            return out.mapValues { Double($0) / 100 }
+        }
+        return weighted(over: weightSum, spreading: true).mapValues { Double($0) / 100 }
     }
 
     /// S-15 v2: % works in cents. Short of 100% by less than a cent a person
@@ -632,6 +735,7 @@ struct SplitSheet: View {
 
     /// What this row's share comes to now, in cents, whichever way it's split.
     private func shareCents(_ key: String) -> Int {
+        if locked(key) { return lockedCents(key) }
         switch mode {
         case "even": return evenCents[key] ?? 0
         case "percent": return percentCents[key] ?? 0
@@ -658,15 +762,23 @@ struct SplitSheet: View {
             // rest is said once, under the total.
             bits.append("Your share \(Format.amount(Double(mineCents) / 100))")
         }
+        if mode == "shares" && anyLocked && !locked(key) {
+            // S-45c4: "1 share · $20.00".
+            let n = typedNumber(key)
+            bits.append("\(Self.plain(n)) share\(abs(n - 1) < 0.001 ? "" : "s") · \(Format.amount(Double(cents) / 100))")
+        }
         if mode == "percent" && gapCents == 0 {
             bits.append(Format.amount(Double(cents) / 100) + (mineOdd ? " · the odd cent is yours" : ""))
         } else if mode == "even" && mineOdd {
             bits.append("Includes the odd cent")
         }
         if settling, key != Self.me {
-            // S-45c–e: what each person has paid so far.
+            // S-45c–e: what each person has paid so far; THL-303: locked.
             let paid = saved(key)?.paid ?? 0
-            bits.append(paid >= 0.005 ? "Paid \(Format.amount(paid)) so far" : "Nothing paid yet")
+            bits.append(paid >= 0.005 ? (["Paid back", saved(key)?.paidOn.map { Format.short($0) }, "locked",
+                                          mode == "shares" ? "not in the shares" : nil]
+                                            .compactMap { $0 }.joined(separator: " · "))
+                        : "Nothing paid yet")
             return bits.joined(separator: " · ")
         }
         if let p = saved(key), key != Self.me {
@@ -804,9 +916,9 @@ struct SplitSheet: View {
         var body: [String: Any] = ["mode": mode, "include_me": withMe]
         switch mode {
         case "unknown":
-            // SPLIT-C: the people only, no amounts.
+            // SPLIT-C: the people only, no amounts. TEST-18: whether she's
+            // in it is kept ("I had some too").
             body["people"] = people.map { ["name": $0] }
-            body["include_me"] = true
         case "even":
             body["people"] = people.map { ["name": $0] }
         case "amount":
@@ -863,6 +975,12 @@ struct SplitSheet: View {
 
     /// What Save would send for the method she's on (S-45c–e reuse it).
     private var settleBody: [String: Any] {
+        if anyLocked {
+            // THL-303: the cents each row comes to, so a locked row is
+            // exactly what they paid, whichever method made the rest.
+            return ["mode": "amount", "include_me": withMe, "you": withMe ? Double(mineCents) / 100 : 0,
+                    "people": people.map { ["name": $0, "amount": Double(shareCents($0)) / 100] }]
+        }
         var body: [String: Any] = ["mode": mode, "include_me": withMe]
         switch mode {
         case "even": body["people"] = people.map { ["name": $0] }
@@ -919,6 +1037,11 @@ struct SplitPeople: View {
     var onSettle: () -> Void = {}
     var onClose: () -> Void = {}
     var onReopen: () -> Void = {}
+    /// TEST-18 (S-40y → S-47): Set your share.
+    var onSetShare: () -> Void = {}
+    /// S-47f's Options: open this person's S-40u from outside the card.
+    var optionsFor: Binding<String?> = .constant(nil)
+    @State private var youOptions = false
     /// S-40 for this person.
     @State private var options: Transaction.Splitting.Person?
     @State private var afterOptions: (() -> Void)?
@@ -969,6 +1092,16 @@ struct SplitPeople: View {
                     }
                 }
                 .padding(.top, 8)
+                if split.unsure && split.withMe {
+                    // S-04u6 (TEST-18): her own row first, with its •••.
+                    youRow
+                    if !split.people.isEmpty { PearlDivider() }
+                } else if !split.unsure && split.withMe && split.you >= 0.005 {
+                    // S-04r v3 (TEST-18): "You · Your share · $30.00", no •••;
+                    // tapping it opens Edit split.
+                    setYouRow
+                    if !split.people.isEmpty { PearlDivider() }
+                }
                 ForEach(Array(split.people.enumerated()), id: \.element.id) { i, p in
                     if i > 0 { PearlDivider() }
                     if split.unsure { unsurePerson(p) } else { person(p) }
@@ -980,6 +1113,12 @@ struct SplitPeople: View {
             // A row's amount springs when it changes (S-44): 250 ms, a cross-fade with Reduce Motion.
             .animation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.25, dampingFraction: 0.85),
                        value: split.people.map(\.owes))
+            .onChange(of: optionsFor.wrappedValue) { name in
+                // S-47f: Options on a lock toast, from a sheet over the page.
+                guard let name = name, let p = split.people.first(where: { $0.name == name }) else { return }
+                optionsFor.wrappedValue = nil
+                options = p
+            }
             .sheet(item: $options, onDismiss: {
                 let next = afterOptions
                 afterOptions = nil
@@ -1018,11 +1157,71 @@ struct SplitPeople: View {
         }
     }
 
+    /// S-04r v3: her share on a split with amounts.
+    private var setYouRow: some View {
+        Button(action: onEdit) {
+            HStack(spacing: 12) {
+                PearlFace(name: "Me", size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("You").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
+                    Text("Your share").font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                }
+                Spacer(minLength: 8)
+                Text(Format.amount(split.you)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
+                    .foregroundColor(Pearl.ink)
+            }
+            .padding(.vertical, 10).frame(minHeight: 56).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(split.closedAt != nil)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("You, your share, \(Format.amount(split.you))")
+        .accessibilityHint("Opens Edit split")
+        .accessibilityIdentifier("split-you-row")
+    }
+
+    /// S-04u6: "You · Your share · not set yet", and S-40y from its •••.
+    private var youRow: some View {
+        let closed = split.closedAt != nil
+        return HStack(spacing: 12) {
+            Button { if !closed { youOptions = true } } label: {
+                HStack(spacing: 12) {
+                    PearlFace(name: "Me", size: 40)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("You").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
+                        Text(closed ? "Your share · what was left" : "Your share · not set yet")
+                            .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                    }
+                    Spacer(minLength: 8)
+                    if closed {
+                        Text(Format.amount(split.still ?? split.you)).font(Pearl.text(.headline, .semibold))
+                            .monospacedDigit().foregroundColor(Pearl.ink)
+                    }
+                }
+                .frame(minHeight: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            if !closed {
+                PearlMoreButton(label: "Options for you") { youOptions = true }
+            }
+        }
+        .padding(.vertical, 10)
+        .sheet(isPresented: $youOptions) {
+            YouOptionsSheet(t: t, onClose: { youOptions = false }) {
+                youOptions = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onSetShare() }
+            }
+        }
+    }
+
     /// "Split 5 ways", "Your part, split 3 ways" (S-04j), "Split with 2 ·
     /// Not sure yet" (S-04u), "Split with 2 · Closed Nov 20" (S-46c).
     private func heading(open: [Transaction.Splitting.Person], unsure: [Transaction.Splitting.Uncredited]) -> String {
         if split.unsure {
-            return "Split with \(split.people.count) · " + (split.closedAt.map { "Closed \(Format.short($0))" } ?? "Not sure yet")
+            // S-04u6: "Split 5 ways · Not sure yet" when she's in it.
+            let who = split.withMe ? "Split \(split.people.count + 1) ways · " : "Split with \(split.people.count) · "
+            return who + (split.closedAt.map { "Closed \(Format.short($0))" } ?? "Not sure yet")
         }
         if !unsure.isEmpty && !open.isEmpty { return "Owed to you" }
         if split.people.count > 1 || t.splitsMyPart {
