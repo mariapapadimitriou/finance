@@ -56,6 +56,13 @@ struct SortedRange: Decodable, Identifiable, Hashable {
     let category: String
     let count: Int?
     let total: Double?
+    /// The piggy bank that paid for them, if one did (T-49b's Undo keeps it).
+    let bankId: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, first, last, category, count, total
+        case bankId = "bank_id"
+    }
 
     func contains(_ day: String) -> Bool { day >= first && day <= last }
 }
@@ -133,7 +140,7 @@ struct CalendarCard: View {
     @State private var range: CalendarRange?
     @State private var day: DayPick?
     @State private var sorting: SortPick?
-    @State private var toast: (title: String, undo: Int?)?
+    @State private var toast: (title: String, undo: Int?, putBack: SortedRange?)?
     @State private var error: String?
     /// T-49: the day tapped, shown under the grid (today to start with).
     @State private var shownDay: String?
@@ -167,7 +174,10 @@ struct CalendarCard: View {
                     Spacer(minLength: 8)
                     if let id = toast.undo {
                         Button("Undo") { Task { await remove(id, undo: true) } }
-                            .font(Nacre.textButton).foregroundColor(Pearl.action)
+                            .font(Nacre.textButton).foregroundColor(Pearl.link)
+                    } else if let band = toast.putBack {
+                        Button("Undo") { Task { await putBack(band) } }
+                            .font(Nacre.textButton).foregroundColor(Pearl.link)
                     }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 12)
@@ -184,18 +194,32 @@ struct CalendarCard: View {
         }
         .task(id: month) { await load() }
         .task(id: shownDay) { await loadDay() }
-        .confirmationDialog(bandAction.map { $0.name.flatMap { $0.isEmpty ? nil : $0 } ?? $0.category } ?? "",
-                            isPresented: Binding(get: { bandAction != nil }, set: { if !$0 { bandAction = nil } }),
-                            titleVisibility: .visible, presenting: bandAction) { band in
-            Button("Change") { sorting = SortPick(first: band.first, last: band.last, existing: band) }
-            Button("Remove", role: .destructive) { Task { await remove(band.id, undo: false) } }
-        } message: { band in
-            Text("\(Format.short(band.first)) – \(Format.short(band.last)) · \(band.category)")
+        .sheet(item: $bandAction) { band in
+            // T-49b (TEST-06): Change and Remove as Option rows. Remove acts
+            // at once; the toast's Undo puts the days back as they were.
+            PearlOptionsSheet(overline: "Sorted together",
+                              title: band.name.flatMap { $0.isEmpty ? nil : $0 } ?? band.category,
+                              sub: "\(Format.short(band.first)) – \(Format.short(band.last)) · \(band.category)",
+                              options: [
+                                .init(symbol: "arrow.triangle.2.circlepath", title: "Change",
+                                      sub: "Other days or another category") {
+                                    bandAction = nil
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                        sorting = SortPick(first: band.first, last: band.last, existing: band)
+                                    }
+                                },
+                                .init(symbol: "xmark", title: "Remove",
+                                      sub: "Each day goes back to how it was sorted") {
+                                    bandAction = nil
+                                    Task { await remove(band.id, undo: false, putBack: band) }
+                                },
+                              ],
+                              onClose: { bandAction = nil })
         }
         .sheet(item: $day) { pick in
             DaySheet(date: pick.date, band: pick.band, api: app.api,
                      onChange: { band in day = nil; sorting = SortPick(first: band.first, last: band.last, existing: band) },
-                     onRemove: { band in day = nil; Task { await remove(band.id, undo: false) } })
+                     onRemove: { band in day = nil; Task { await remove(band.id, undo: false, putBack: band) } })
                 .presentationDetents([.medium, .large])
         }
         .sheet(item: $sorting) { pick in
@@ -204,7 +228,7 @@ struct CalendarCard: View {
                 sorting = nil
                 clear()
                 selecting = false
-                toast = (saved.title ?? "Sorted.", pick.existing == nil ? saved.range?.id : nil)
+                toast = (saved.title ?? "Sorted.", pick.existing == nil ? saved.range?.id : nil, nil)
                 Task { await load() }
                 app.changed()
             }
@@ -358,7 +382,7 @@ struct CalendarCard: View {
                         Text(item.1.label).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
                         Spacer(minLength: 8)
                         Text((pay ? "+" : "\u{2212}") + Format.amount(item.1.amount)).font(Nacre.body).monospacedDigit()
-                            .foregroundColor(pay ? Pearl.moneyIn : (item.1.kind == "chest" ? Pearl.muted : Pearl.moneyOut))
+                            .foregroundColor(pay ? Pearl.moneyIn : (item.1.kind == "chest" ? Pearl.muted : Pearl.ink))
                     }
                     .padding(.horizontal, 16).frame(minHeight: 48)
                     .accessibilityElement(children: .combine)
@@ -389,7 +413,7 @@ struct CalendarCard: View {
                             }
                             Spacer(minLength: 8)
                             Text("\u{2212}" + Format.amount(sp.amount)).font(Nacre.body).monospacedDigit()
-                                .foregroundColor(Pearl.moneyOut)
+                                .foregroundColor(Pearl.ink)
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .accessibilityElement(children: .combine)
@@ -482,7 +506,7 @@ struct CalendarCard: View {
                         .buttonStyle(NacreButtonStyle())
                         .disabled(range.count == 0)
                         Button("Clear") { clear() }
-                            .font(Nacre.textButton).foregroundColor(Pearl.action)
+                            .font(Nacre.textButton).foregroundColor(Pearl.link)
                             .padding(.horizontal, 16)
                     }
                     .padding(.top, 4)
@@ -539,11 +563,27 @@ struct CalendarCard: View {
         range = try? await app.api.get("api/calendar/range", query: ["first": a, "last": b])
     }
 
-    private func remove(_ id: Int, undo: Bool) async {
+    private func remove(_ id: Int, undo: Bool, putBack band: SortedRange? = nil) async {
         do {
             struct Reply: Decodable { let title: String? }
             let reply: Reply = try await app.api.delete("api/ranges/\(id)")
-            toast = (undo ? "Undone." : (reply.title ?? "Removed."), nil)
+            toast = (undo ? "Undone." : (reply.title ?? "Removed."), nil, band)
+            await load()
+            app.changed()
+        } catch {
+            self.error = app.handle(error)
+        }
+    }
+
+    /// T-49b's Undo: the days sorted together again, as they were.
+    private func putBack(_ band: SortedRange) async {
+        do {
+            var body: [String: Any] = ["first": band.first, "last": band.last, "category": band.category]
+            if let name = band.name { body["name"] = name }
+            if let bank = band.bankId { body["bank_id"] = bank }
+            struct Reply: Decodable { let title: String? }
+            let _: Reply = try await app.api.post("api/ranges", body)
+            toast = ("Undone.", nil, nil)
             await load()
             app.changed()
         } catch {
@@ -587,7 +627,7 @@ struct DaySheet: View {
                                     Button("Change") { onChange(band) }
                                     Button("Remove") { onRemove(band) }
                                 }
-                                .font(Nacre.textButton).foregroundColor(Pearl.action).padding(.top, 4)
+                                .font(Nacre.textButton).foregroundColor(Pearl.link).padding(.top, 4)
                             }
                             .padding(16)
                         }
@@ -600,7 +640,7 @@ struct DaySheet: View {
                                     if i > 0 { RowSeparator() }
                                     line(s.merchant, sub: [s.category, s.unusual == true ? "unusual" : nil]
                                             .compactMap { $0 }.joined(separator: " · "),
-                                         amount: "\u{2212}" + Format.amount(s.amount), tone: Pearl.moneyOut)
+                                         amount: "\u{2212}" + Format.amount(s.amount), tone: Pearl.ink)
                                 }
                             }
                         }
@@ -612,7 +652,7 @@ struct DaySheet: View {
                                     let pay = d.kind == "pay"
                                     line(d.label, sub: nil,
                                          amount: (pay ? "+" : "\u{2212}") + Format.amount(d.amount),
-                                         tone: pay ? Pearl.moneyIn : (d.kind == "chest" ? Pearl.muted : Pearl.moneyOut))
+                                         tone: pay ? Pearl.moneyIn : (d.kind == "chest" ? Pearl.muted : Pearl.ink))
                                 }
                             }
                         }
@@ -745,7 +785,7 @@ struct SortDaysSheet: View {
         .task(id: "\(first)\(last)\(category ?? "")") { await loadPreview() }
         .sheet(isPresented: $picking) {
             CategorySheet(name: name.isEmpty ? "These days" : name, amount: preview.map { Format.amount($0.total) } ?? "",
-                          tone: Pearl.moneyOut, categories: categories, current: category ?? "",
+                          tone: Pearl.ink, categories: categories, current: category ?? "",
                           spendingOnly: true) { picked, _ in
                 category = picked
                 picking = false

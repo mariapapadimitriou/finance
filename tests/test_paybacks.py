@@ -117,6 +117,14 @@ class TestPaidBack:
         assert "PAYROLL DEPOSIT" not in names[:3]
         assert body["candidates"][0]["likely"]
 
+    def test_candidates_name_the_sender_as_cash_flow_does(self, client, dinner):
+        """TEST-13: S-06rb said "E-transfer From Anna" where Cash flow says "Anna"."""
+        body = client.get(f"/api/transactions/{dinner['UBER EATS TORONTO']}/paybacks").get_json()
+        party = {c["description"]: c.get("party") for c in body["candidates"]}
+        assert party["E-TRANSFER FROM ANNA"] == "Anna"
+        assert party["E-TRANSFER FROM BEN"] == "Ben"
+        assert party.get("PAYROLL DEPOSIT") is None
+
     def test_a_paid_back_inflow_is_never_a_transfers_other_end(self, client, dinner):
         st = client.application.config["STORE"]
         charge = dinner["UBER EATS TORONTO"]

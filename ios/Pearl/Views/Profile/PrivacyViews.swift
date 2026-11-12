@@ -139,11 +139,16 @@ struct ConsentView: View {
         .refreshable { await load() }
         .reloads { await load() }
         .docSheet($doc)
-        .alert("Turn off AI sorting?", isPresented: $askingAIOff) {
-            Button("Cancel", role: .cancel) {}
-            Button("Turn off") { Task { await change("ai_sort", to: false) } }
-        } message: {
-            Text("Pearl will use your bank’s categories and your rules.")
+        .sheet(isPresented: $askingAIOff) {
+            // CN-05r (TEST-06): a Pearl sheet, not a stock alert.
+            PearlConfirmSheet(overline: "Sort with AI", title: "Turn off AI sorting?",
+                              message: "Pearl will use your bank’s categories and your rules. You can turn it back on any time.",
+                              primary: "Turn off", busyLabel: "Turning off…", secondary: "Keep it on",
+                              failure: "Couldn’t turn it off. Nothing changed. Try again.",
+                              onClose: { askingAIOff = false }) {
+                privacy = try await app.api.put("api/privacy/consents", ["key": "ai_sort", "value": false])
+                askingAIOff = false
+            }
         }
     }
 

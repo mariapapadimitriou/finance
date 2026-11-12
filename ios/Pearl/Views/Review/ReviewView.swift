@@ -9,6 +9,7 @@ import SwiftUI
 struct ReviewView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
 
     @State private var review: Review?
     private var categories: [CategoryList.Category] { app.categories }
@@ -232,9 +233,11 @@ struct ReviewView: View {
         Button(action: action) {
             Text(label)
                 .font(Nacre.footnote)
-                .foregroundColor(Pearl.ink)
+                // T-83r dark (1076:1293): the chosen chip is --ink with
+                // --surface-page words, so it reads in dark (TEST-01).
+                .foregroundColor(on && scheme == .dark ? Pearl.onInk : Pearl.ink)
                 .padding(.horizontal, 14).frame(height: 34)
-                .background(Capsule().fill(on ? Color.white.opacity(0.9) : Nacre.glass))
+                .background(Capsule().fill(on ? (scheme == .dark ? Pearl.ink : Color.white.opacity(0.9)) : Nacre.glass))
                 .overlay(Capsule().strokeBorder(Nacre.glassEdge, lineWidth: 1))
         }
         .buttonStyle(.plain)
@@ -267,7 +270,7 @@ struct ReviewView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Text((t.inflow ? "+" : "\u{2212}") + Format.amount(t.shownAmount))
                 .font(Nacre.headline).monospacedDigit()
-                .foregroundColor(t.inflow ? Pearl.ink : Pearl.moneyOut)
+                .foregroundColor(Pearl.ink)
                 .fixedSize()
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
@@ -333,7 +336,7 @@ struct ReviewView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Text((row.amount < 0 ? "+" : "\u{2212}") + Format.amount(abs(row.amount)))
                 .font(Nacre.headline).monospacedDigit()
-                .foregroundColor(row.amount < 0 ? Pearl.ink : Pearl.moneyOut)
+                .foregroundColor(Pearl.ink)
                 .fixedSize()
         }
         .padding(.vertical, 4)
@@ -404,7 +407,7 @@ struct ReviewView: View {
                 Spacer(minLength: 8)
                 if toast.undo != nil {
                     Button("Undo") { Task { await undo() } }
-                        .font(Nacre.textButton).foregroundColor(Pearl.action)
+                        .font(Nacre.textButton).foregroundColor(Pearl.link)
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 12)

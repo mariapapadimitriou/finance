@@ -83,8 +83,9 @@ def test_even_split_counts_only_her_share(client):
                                          # SPLIT-25: what each PAID BACK row's options say.
                                          "links": []}]
     data = listing(client)
-    assert data["totals"]["spent"] == 42.5
-    assert data["transactions"][0]["note"] == "Your share of $85.00 · split with Priya"  # nobody paid yet
+    # Rule A (TEST-03): the whole purchase counts until Priya pays.
+    assert data["totals"]["spent"] == 85.0
+    assert data["transactions"][0]["note"] == "Split with Priya · $42.50 to come back"  # nobody paid yet (T-01r2)
 
 
 def test_an_odd_cent_stays_with_her(client):

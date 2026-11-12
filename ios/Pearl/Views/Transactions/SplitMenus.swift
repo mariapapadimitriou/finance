@@ -208,6 +208,7 @@ struct PearlSectionLabel: View {
         Text(text.uppercased())
             .font(Pearl.text(.footnote, .medium)).tracking(0.78)
             .foregroundColor(Pearl.muted)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
     }
@@ -266,8 +267,12 @@ struct PearlSheetHeader: View {
     var subTone: Color = Pearl.muted
     var back: (() -> Void)? = nil
     let close: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        // S-03ax (TEST-17): at accessibility sizes a Sheet header drops its
+        // avatar instead of shrinking the initials.
+        let face = typeSize.isAccessibilitySize ? nil : self.face
         HStack(alignment: .top, spacing: 12) {
             if let back = back {
                 Button(action: back) {
@@ -285,8 +290,10 @@ struct PearlSheetHeader: View {
                 PearlFace(name: face)
             }
             VStack(alignment: .leading, spacing: 1) {
+                // TEST-14: the overline wraps, never clipped ("PIZZA NOVA · NOT SURE YET").
                 Text(overline.uppercased())
                     .font(Pearl.text(.footnote, .medium)).tracking(0.78).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(title)
                     .font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -376,6 +383,7 @@ struct PearlSheetButtons: View {
         VStack(spacing: 12) {
             Button(primary, action: onPrimary)
                 .buttonStyle(PearlPrimaryButtonStyle(busy: busy, busyLabel: busyLabel))
+                .accessibilityIdentifier("sheet-primary")
             if let secondary = secondary {
                 Button(secondary, action: onSecondary).buttonStyle(PearlSecondaryButtonStyle())
             }
@@ -390,6 +398,14 @@ struct PearlSheetButtons: View {
 /// "Pearl/Toast with Undo" (S-44a–i): ink, with a 44-high action. It stays
 /// 6 s, longer while VoiceOver is on; it's announced, and its action is an
 /// accessibility action too (note 1096:4483).
+extension View {
+    /// TEST-22 (designBOT 2026-11-11): an amount never wraps inside the
+    /// number; it shrinks to fit, and rows move it under the name at AX sizes.
+    func pearlAmountFit() -> some View {
+        lineLimit(1).minimumScaleFactor(0.7).allowsTightening(true)
+    }
+}
+
 struct PearlToast: View {
     struct Model: Equatable {
         let id = UUID()
@@ -404,23 +420,26 @@ struct PearlToast: View {
 
     let model: Model
     let done: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: model.failed ? "info.circle" : "checkmark")
-                .font(.system(size: 17, weight: .semibold))
-                .accessibilityHidden(true)
-            Text(model.text).font(Pearl.text(.callout, .medium))
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            if let action = model.action, let run = model.run {
-                Button(action) { run() }
-                    .font(Pearl.text(.callout, .semibold))
-                    .padding(.horizontal, 14).frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                    .buttonStyle(.plain)
+        // TEST-22 (designBOT 2026-11-11): at AX sizes the words wrap to two
+        // or three lines and Undo goes on its own line under them.
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    words.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                    actionButton.padding(.leading, -14)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    words
+                    Spacer(minLength: 8)
+                    actionButton
+                }
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .foregroundColor(Pearl.onInk)
         .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 6)
         .frame(minHeight: 56)
@@ -440,6 +459,26 @@ struct PearlToast: View {
             if !Task.isCancelled { done() }
         }
     }
+
+    private var words: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: model.failed ? "info.circle" : "checkmark")
+                .font(.system(size: 17, weight: .semibold))
+                .accessibilityHidden(true)
+            Text(model.text).font(Pearl.text(.callout, .medium))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder private var actionButton: some View {
+        if let action = model.action, let run = model.run {
+            Button(action) { run() }
+                .font(Pearl.text(.callout, .semibold))
+                .padding(.horizontal, 14).frame(minHeight: 44)
+                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+        }
+    }
 }
 
 // MARK: - S-40 Person options (one sheet, sections by state)
@@ -448,6 +487,8 @@ struct PearlToast: View {
 /// sheet can open (handoff note 1096:4498).
 enum PersonChoice {
     case markPaid, remind, letGo, undoLetGo, changeShare, remove
+    /// S-48e (TEST-18b): change what she answered for a payer.
+    case changeAnswer
     case view(Transaction.LinkInfo), unlink(Transaction.LinkInfo)
 }
 
@@ -535,9 +576,24 @@ struct PersonOptionsSheet: View {
                                    sub: "The \(Format.amount(p.owes)) becomes your spending") { onChoose(.letGo) }
                 }
             }
+            if let extra = answerExtra {
+                // S-48e: "Change what the extra $6.67 is".
+                PearlOptionCard {
+                    PearlOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Change what the extra \(Format.amount(extra)) is",
+                                   sub: (p.gift ?? 0) >= 0.005 ? "Now: a gift · or you owe \(p.name), or \(possessive(p.name)) share"
+                                       : "Now: you owe \(p.name) · or \(possessive(p.name)) share, or a gift") {
+                        onChoose(.changeAnswer)
+                    }
+                }
+            }
             PearlSectionLabel(text: "Change the split")
             PearlOptionCard {
-                PearlOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeShare) }
+                if p.paid >= 0.005 && p.owes >= 0.005 && p.letGo == nil {
+                    // S-48e: Sam paid less; his share reopens S-48a.
+                    PearlOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeAnswer) }
+                } else {
+                    PearlOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeShare) }
+                }
                 PearlDivider()
                 PearlOptionRow(symbol: "person", title: "Remove \(p.name)", sub: removeSub) { onChoose(.remove) }
             }
@@ -545,6 +601,12 @@ struct PersonOptionsSheet: View {
     }
 
     private var paidInFull: Bool { p.owes < 0.005 && p.letGo == nil && p.paid >= 0.005 }
+
+    /// S-48e: the extra a payer sent, whether she owes it back or it's a gift.
+    private var answerExtra: Double? {
+        let extra = (p.over ?? 0) + (p.gift ?? 0)
+        return extra >= 0.005 ? extra : nil
+    }
 
     /// "Owes you $30.00 of $30.00", "Paid $10.00 of $30.00 · owes $20.00",
     /// "✓ Paid back in full · Nov 16", "You let $30.00 go · Nov 20".
@@ -562,7 +624,11 @@ struct PersonOptionsSheet: View {
     /// for someone let go (REFRESH-03, S-40d): it goes at once, with Undo.
     private var removeSub: String? {
         if p.paid < 0.005 {
-            return p.letGo != nil ? nil : "The \(Format.amount(p.share)) goes back to your share"
+            // S-40u2 (TEST-11): on Not sure yet nobody has a share, so
+            // there's nothing to give back: "Nothing to unlink".
+            if p.letGo != nil { return nil }
+            return t.splitting?.unsure == true || p.share < 0.005 ? "Nothing to unlink"
+                : "The \(Format.amount(p.share)) goes back to your share"
         }
         if links.count > 1 { return links.count == 2 ? "Asks first: unlinks both payments" : "Asks first: unlinks \(links.count) payments" }
         guard let link = links.first else { return "Asks first" }

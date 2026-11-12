@@ -143,7 +143,7 @@ struct PiggyPaySheet: View {
             SheetTitle(title: "Pay from a piggy bank") { dismiss() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    QuestionHeader(name: t.merchant, amount: Format.amount(charge), tone: Pearl.moneyOut, sub: nil)
+                    QuestionHeader(name: t.merchant, amount: Format.amount(charge), tone: Pearl.ink, sub: nil)
                     if let banks = banks {
                         if banks.isEmpty {
                             Text("You don’t have a piggy bank yet.").font(Nacre.body).foregroundColor(Pearl.muted)
@@ -283,6 +283,10 @@ struct TransactionDetailView: View {
     @State private var splitting = false
     /// SPLIT-C: S-45a Settle up, its Type amounts, S-46a That's everything.
     @State private var settlingUp = false
+    /// TEST-18 (S-47): What was your share?
+    @State private var settingShare = false
+    /// S-47f: whose S-40u to open once the sheet over the page has gone.
+    @State private var optionsFor: String?
     @State private var typingSettle = false
     @State private var closingSplit = false
     /// JOINT-B: S-41j Remove the split?
@@ -292,6 +296,8 @@ struct TransactionDetailView: View {
     /// REFRESH-02: S-07r Remind, S-03re Change their share, S-03fr Remove.
     @State private var reminding: Transaction.Splitting.Person?
     @State private var changingShare: Transaction.Splitting.Person?
+    /// S-48e (TEST-18b): S-48a / S-48b again for someone, after settling.
+    @State private var changingAnswer: Transaction.Splitting.Person?
     @State private var removingPerson: Transaction.Splitting.Person?
     /// S-44a–i: the split flow's ink toast, with Undo (or Try again, S-44h).
     @State private var splitToast: PearlToast.Model?
@@ -364,6 +370,8 @@ struct TransactionDetailView: View {
     @State private var viewing: Transaction?
     @State private var message: String?
     @State private var error: String?
+    /// S-04r v2s: the hero has scrolled under the bar.
+    @State private var heroGone = false
 
     private var t: Transaction { detail ?? transaction }
 
@@ -371,6 +379,13 @@ struct TransactionDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 header.padding(.bottom, 16)
+                    // S-04r v2s (TEST-09): once the hero scrolls under the bar,
+                    // the bar takes the merchant's name.
+                    .background(GeometryReader { g in
+                        Color.clear
+                            .onAppear { heroGone = g.frame(in: .global).maxY < 120 }
+                            .onChange(of: g.frame(in: .global).maxY) { heroGone = $0 < 120 }
+                    })
                 if let transfer = t.transfer, guessing == nil {
                     transferLegs(transfer)
                 } else {
@@ -418,9 +433,14 @@ struct TransactionDetailView: View {
                 }
             }
         }
-        .toolbarBackground(.hidden, for: .navigationBar)
+        // S-04r v2s (TEST-09, TEST-26): a real inline bar with the merchant's
+        // name once the hero has gone. The app's bars are see-through
+        // (PearlApp), so the page draws S-04r v2s's --surface-page bar itself
+        // then, behind Back, the title and the clock.
+        .toolbarBackground(Pearl.scrolledBar, for: .navigationBar)
+        .toolbarBackground(heroGone ? .visible : .hidden, for: .navigationBar)
         .navigationBarHidden(false)
-        .navigationTitle("")
+        .navigationTitle(heroGone ? t.merchant : "")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .onAppear {
@@ -520,24 +540,63 @@ struct TransactionDetailView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { removingSplit = true }
             })
         }
+        .sheet(isPresented: $settingShare) {
+            if let split = t.splitting {
+                // S-47a–e → S-04u7: a set split, "Alex owes you $28.00" with
+                // Undo back to Not sure yet.
+                YourShareSheet(t: t, split: split, api: app.api, onClose: { settingShare = false },
+                               onPersonOptions: { name in
+                                   settingShare = false
+                                   DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { optionsFor = name }
+                               }) { title, undo in
+                    settingShare = false
+                    Task {
+                        await load()
+                        app.changed()
+                        showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $settlingUp) {
             if let split = t.splitting {
                 // S-45a / S-45b → S-45g.
                 SettleUpSheet(t: t, split: split, onClose: { settlingUp = false }, onType: {
                     settlingUp = false
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { typingSettle = true }
-                }) {
+                }, run: {
                     let (title, undo) = try await settleWithWhatEachPaid(split)
                     settlingUp = false
                     await load()
                     app.changed()
                     showSplit(title, undo: undo)
-                }
+                }, onLeftTo: { last, left in
+                    // S-45a2 (TEST-18): payers at what they paid, the last one the rest.
+                    var people: [[String: Any]] = split.people.filter { $0.paid >= 0.005 }
+                        .map { ["name": $0.name, "amount": $0.paid] }
+                    people.append(["name": last.name, "amount": left])
+                    struct Reply: Decodable { let undo: JSONValue? }
+                    do {
+                        let reply: Reply = try await app.api.put("api/transactions/\(t.id)/split",
+                                                                 ["mode": "amount", "include_me": false, "watch": true,
+                                                                  "people": people])
+                        settlingUp = false
+                        await load()
+                        app.changed()
+                        showSplit("\(last.name) owes you \(Format.amount(left))",
+                                  undo: reply.undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
+                    } catch let e as APIError {
+                        if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
+                        throw e
+                    }
+                })
             }
         }
         .sheet(isPresented: $typingSettle) {
-            // S-45c–e → S-45f.
-            SplitSheet(t: t, api: app.api, recent: recent, onSaved: { done in
+            // S-45c–e → S-45f. Opens on How to split with the split's
+            // people: who it was with is already said (TEST-02).
+            SplitSheet(t: t, api: app.api, recent: recent, with: t.splitting?.people.map(\.name),
+                       onSaved: { done in
                 typingSettle = false
                 Task { await run { done } }
             }, settling: true, onSettled: { title, undo in
@@ -546,6 +605,10 @@ struct TransactionDetailView: View {
                     await run { nil }
                     showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
                 }
+            }, onPersonOptions: { name in
+                // S-47f: Options on the lock toast opens that person's S-40u.
+                typingSettle = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { optionsFor = name }
             })
         }
         .sheet(isPresented: $closingSplit) {
@@ -623,6 +686,18 @@ struct TransactionDetailView: View {
                     UIPasteboard.general.string = ""
                     return nil
                 })
+            }
+        }
+        .sheet(item: $changingAnswer) { p in
+            // S-48e: the same question, answered again; the server swaps a
+            // gift or "you owe" and spreads a changed share.
+            let others = (t.splitting?.people ?? []).map(\.name).filter { $0 != p.name }
+            MismatchSheet(name: p.name, paid: p.paid + (p.gift ?? 0), share: p.amount, even: false, step: 1, of: 1,
+                          others: ((t.splitting?.withMe ?? true) ? ["you"] : []) + others,
+                          onBack: { changingAnswer = nil },
+                          overline: "\(t.merchant) · \(p.name)") { answer in
+                changingAnswer = nil
+                Task { await answerAgain(p, answer) }
             }
         }
         .sheet(item: $changingShare) { person in
@@ -797,10 +872,11 @@ struct TransactionDetailView: View {
             .disabled(t.transfer != nil)
             .accessibilityAddTraits(.isHeader)
             .accessibilityHint(t.transfer == nil ? "Rename the merchant" : "")
-            Text(Format.money(t))
+            Text(heroAmount)
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
                 .foregroundColor(t.tone)
                 .lineLimit(1).minimumScaleFactor(0.5)
+                .accessibilityLabel(Format.spoken(heroAmount))
             Text(t.transfer != nil ? "Doesn’t count · Between your accounts" : dateLine)
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center)
@@ -845,6 +921,16 @@ struct TransactionDetailView: View {
         .padding(.top, 4)
     }
 
+    /// S-04r v2 (Rule A, TEST-03): a split with shares shows the whole
+    /// purchase, as on the card statement, with "Your share" under it. Not
+    /// sure yet keeps what it counts as so far (S-04u).
+    private var heroAmount: String {
+        if let s = t.splitting, !s.unsure, !t.inflow, let full = t.fullAmount {
+            return "\u{2212}" + Format.amount(full)
+        }
+        return Format.money(t)
+    }
+
     /// "Wed, Nov 11 · TD Chequing ••4417".
     private var dateLine: String {
         let when = Format.relativeDay(t.date) == "Today" ? "Today" : Format.weekdayDay(t.date)
@@ -854,7 +940,8 @@ struct TransactionDetailView: View {
         if let s = t.splitting, !t.inflow {
             if s.unsure {
                 lead = "Counts as \(Format.amount(s.still ?? s.you))" + (s.closedAt == nil ? " so far" : "")
-            } else if s.joint != nil {
+            } else {
+                // S-04r v2: "Your share $30.00 · Wed, Nov 11"; S-04j the same.
                 lead = "Your share \(Format.amount(s.you))"
             }
         } else if !t.inflow && t.splitsMyPart {
@@ -936,8 +1023,11 @@ struct TransactionDetailView: View {
     private func guessCard(_ label: String) -> some View {
         Button { sorting = guessing?.ask ?? sortAsk(.category) } label: {
             let still = chosenCategory == nil && !pickedGuess
-            categoryLabel(symbol: chosenCategory ?? guessing?.ask.item.guess?.text ?? t.category ?? t.label,
-                          title: label, sub: still ? "Pearl’s guess" : "Your choice")
+            let symbol = chosenCategory ?? guessing?.ask.item.guess?.text ?? t.category ?? t.label
+            // T-93n (TEST-12): Other isn't a guess, so the row asks.
+            let asks = still && symbol == "Other"
+            categoryLabel(symbol: symbol, title: asks ? "What was this?" : label,
+                          sub: asks ? nil : still ? "Pearl’s guess" : "Your choice")
                 .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .strokeBorder(Pearl.ink.opacity(still ? 0.7 : 0),
                                   style: StrokeStyle(lineWidth: 1.2, dash: [5, 3])))
@@ -997,7 +1087,7 @@ struct TransactionDetailView: View {
         if t.refundOf != nil { return ("Refund", true, Pearl.moneyIn) }
         switch t.counts {
         case "income": return ("Income", true, Pearl.moneyIn)
-        case "spending": return ("Spending", t.inflow, t.inflow ? Pearl.moneyIn : Pearl.moneyOut)
+        case "spending": return ("Spending", t.inflow, t.inflow ? Pearl.moneyIn : Pearl.ink)
         default: return ("Not counted", t.inflow, Pearl.muted)
         }
     }
@@ -1008,8 +1098,9 @@ struct TransactionDetailView: View {
         if !t.excluded.isEmpty { return "Left out · \(t.excluded)" }
         if t.refundOf != nil { return nil }
         if t.split, let full = t.fullAmount {
-            // S-05: "Your share · $42.06 of $84.12".
-            return "Your share · \(Format.amount(t.amount)) of \(Format.amount(full))"
+            // S-05: "Your share · $42.06 of $84.12". Rule A: the share as
+            // split, not what counts until they pay.
+            return "Your share · \(Format.amount(t.splitting.map { $0.you } ?? t.amount)) of \(Format.amount(full))"
         }
         switch t.counts {
         case "income" where t.jointFrom == "both":
@@ -1152,7 +1243,7 @@ struct TransactionDetailView: View {
             Spacer(minLength: 8)
             Text((inflow ? "+" : "\u{2212}") + Format.amount(amount))
                 .font(Nacre.headline).monospacedDigit()
-                .foregroundColor(inflow ? Pearl.ink : Pearl.moneyOut)
+                .foregroundColor(Pearl.ink)
             if chevron {
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
                     .foregroundColor(Pearl.muted)
@@ -1323,7 +1414,9 @@ struct TransactionDetailView: View {
                         onCredit: { crediting = Crediting(id: $0.id) },
                         onSettle: { settlingUp = true },
                         onClose: { closingSplit = true },
-                        onReopen: { Task { await reopenSplit() } })
+                        onReopen: { Task { await reopenSplit() } },
+                        onSetShare: { settingShare = true },
+                        optionsFor: $optionsFor)
         }
     }
 
@@ -1752,10 +1845,18 @@ struct TransactionDetailView: View {
                 .buttonStyle(NacreTextButtonStyle(tone: Pearl.moneyOut))
                 .padding(.top, 12)
                 .disabled(busy)
-                .confirmationDialog("Delete \(t.merchant)?", isPresented: $deleting, titleVisibility: .visible) {
-                    Button("Delete", role: .destructive) { Task { await delete() } }
-                } message: {
-                    Text("You added it by hand. It comes out of your numbers.")
+                .sheet(isPresented: $deleting) {
+                    // T-03x (TEST-06): a Pearl sheet; T-03x2 if it fails.
+                    PearlConfirmSheet(face: t.merchant, overline: "Added by hand", title: "Delete \(t.merchant)?",
+                                      message: "You added it by hand, so it comes out of your numbers. This can’t be undone.",
+                                      primary: "Delete", busyLabel: "Deleting…", secondary: "Keep it",
+                                      failure: "Couldn’t delete \(t.merchant). Nothing changed. Try again.",
+                                      onClose: { deleting = false }) {
+                        let _: OK = try await app.api.delete("api/transactions/\(t.id)")
+                        deleting = false
+                        app.changed()
+                        dismiss()
+                    }
                 }
         }
     }
@@ -1793,10 +1894,12 @@ struct TransactionDetailView: View {
     // MARK: Parts
 
     private func section(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+        // TEST-14 (round 2): the 11 pt caption didn't grow with Dynamic Type
+        // ("partially unsupported"); the overline is the sheets' section
+        // label, which does, and wraps rather than clips.
+        PearlSectionLabel(text: text)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 16).padding(.top, 12)
-            .accessibilityAddTraits(.isHeader)
     }
 
     private func row(title: String, sub: String? = nil, placeholder: Bool = false, chevron: Bool,
@@ -2040,12 +2143,34 @@ struct TransactionDetailView: View {
     // MARK: REFRESH-02 — S-40's choices, and the S-44 toasts
 
     /// What she picked on a person's S-40 (it has gone by now).
+    /// S-48e: POST the new answer; the toast says what it is now.
+    private func answerAgain(_ p: Transaction.Splitting.Person, _ answer: SplitSheet.Answer) async {
+        let word: String
+        switch answer {
+        case .ask: word = "ask"
+        case .theirShare: word = "share"
+        case .iOwe: word = "owe"
+        case .gift: word = "gift"
+        }
+        struct Reply: Decodable { let toast: String? }
+        do {
+            let reply: Reply = try await app.api.post("api/transactions/\(t.id)/split/answer",
+                                                       ["name": p.name, "answer": word])
+            await load()
+            app.changed()
+            showSplit(reply.toast ?? "Changed", undo: nil)
+        } catch {
+            showFailed(app.handle(error) ?? "Couldn’t change that. Nothing changed.") { Task { await answerAgain(p, answer) } }
+        }
+    }
+
     private func choose(_ p: Transaction.Splitting.Person, _ choice: PersonChoice) {
         switch choice {
         case .markPaid: marking = p
         case .remind: reminding = p
         case .letGo: lettingGo = p
         case .changeShare: changingShare = p
+        case .changeAnswer: changingAnswer = p
         case .view(let link): if let id = link.view?.id { Task { await open(id) } }
         case .unlink(let link): unlinkingLink = link
         case .undoLetGo:
@@ -2234,18 +2359,6 @@ struct TransactionDetailView: View {
         }
     }
 
-    private func delete() async {
-        busy = true
-        defer { busy = false }
-        do {
-            let _: OK = try await app.api.delete("api/transactions/\(t.id)")
-            app.changed()
-            dismiss()
-        } catch {
-            self.error = app.handle(error)
-        }
-    }
-
     private func save(note: String) async {
         await run {
             let _: OK = try await app.api.put("api/transactions/\(t.id)/note", ["note": note])
@@ -2325,7 +2438,7 @@ struct TagsSheet: View {
                     .font(Nacre.body).autocorrectionDisabled()
                     .submitLabel(.done)
                     .onSubmit(add)
-                Button("Add", action: add).font(Nacre.textButton).foregroundColor(Pearl.action)
+                Button("Add", action: add).font(Nacre.textButton).foregroundColor(Pearl.link)
                     .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 16).frame(height: 48)

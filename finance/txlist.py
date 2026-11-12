@@ -307,10 +307,15 @@ def describe(t: Transaction, ctx: Context) -> dict:
 
     # A split is a charge that is partly hers: not one that is wholly someone
     # else's, and not one left out.
+    # Rule A (TEST-03): a split nobody has paid yet counts in full, so it's
+    # still a split when its amount is the whole purchase.
+    owed = getattr(t, "split_owed", 0.0) or 0.0
     split = ((t.my_share is not None or bool(t.paid_back)) and counts == "spending"
              and cat not in ("Transfers", "Unsorted transfers", "Income")
-             and abs(abs(share_amount(t)) - abs(t.amount)) >= 0.005)
-    if split and counts == "spending" and abs(amount - abs(t.amount)) >= 0.005:
+             and (abs(abs(share_amount(t)) - abs(t.amount)) >= 0.005 or owed >= 0.005
+                  or t.split_mode == "unknown"))
+    if split and counts == "spending" and (abs(amount - abs(t.amount)) >= 0.005 or owed >= 0.005
+                                           or t.split_mode == "unknown"):
         paid = ctx.paid_by.get(t.fingerprint) or []
         names = ctx.split_with.get(t.fingerprint) or paid
         # Who paid back, by the names in her split (2026-10-24), not the
@@ -323,6 +328,18 @@ def describe(t: Transaction, ctx: Context) -> dict:
                      else " · split with " + ", ".join(names) if names
                      else f" · {t.joint} paid the rest" if t.joint else "")
         note = f"Your share of {money(t.amount)}{with_whom}"
+        split_info = ctx.splits.get(t.fingerprint)
+        if split_info:
+            # T-01r2 (TEST-03, product owner 2026-11-10): under Rule A the row
+            # says how much is still to come back, or that it all has.
+            people = [p["name"] for p in split_info.get("people") or []]
+            if split_info.get("mode") == "unknown":
+                ways = len(people) + (1 if split_info.get("me", True) else 0)
+                note = f"Split {ways} ways · not sure yet · {money(share_amount(t))} still counts"
+            elif owed >= 0.005:
+                note = f"Split with {_short_names(people)} · {money(owed)} to come back"
+            else:
+                note = f"Your share of {money(t.amount)} · all paid back"
 
     # A purchase she linked a refund to says so, the way the refund names it.
     refunds_in = sorted(ctx.refunded_by.get(t.fingerprint, []), key=lambda r: r.date)
@@ -728,6 +745,13 @@ def collapse_transfers(rows: list[tuple[Transaction, dict]],
                 r["note"] = "Transfer between your accounts · not counted"
         kept.append((t, r))
     return kept
+
+
+def _short_names(names: list[str]) -> str:
+    """T-01r2: "Priya", "Priya and Sam", "Priya +2"."""
+    if len(names) <= 2:
+        return " and ".join(names)
+    return f"{names[0]} +{len(names) - 1}"
 
 
 def totals(rows: list[tuple[Transaction, dict]]) -> dict:

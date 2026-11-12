@@ -12,6 +12,7 @@ import SwiftUI
 /// (a rule, Regular bill, Split with others, One-off) is reachable from each.
 @MainActor
 struct AnswerSheet: View {
+    @Environment(\.colorScheme) private var scheme
     let ask: Ask
     let categories: [CategoryList.Category]
     let accounts: [AccountsOverview.Account]
@@ -387,7 +388,8 @@ struct AnswerSheet: View {
                 Button(noLabel) { no() }
                     .font(Nacre.headline).foregroundColor(Pearl.ink)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Capsule().fill(Color.white.opacity(0.85)))
+                    // Dark: the control fill, so the ink word reads (TEST-01).
+                    .background(Capsule().fill(scheme == .dark ? Pearl.control : Color.white.opacity(0.85)))
                     .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
@@ -413,7 +415,7 @@ struct AnswerSheet: View {
             }
             Spacer(minLength: 8)
             Text((b.inflow ? "+" : "\u{2212}") + Format.amount(abs(b.amount))).font(Nacre.headline).monospacedDigit()
-                .foregroundColor(b.inflow ? Pearl.ink : Pearl.moneyOut)
+                .foregroundColor(Pearl.ink)
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .accessibilityElement(children: .combine)
@@ -997,7 +999,7 @@ struct AnswerSheet: View {
     // MARK: Money
 
     private var amountText: String { pageAmount ?? ((t.inflow ? "+" : "\u{2212}") + Format.amount(t.shownAmount)) }
-    private var tone: Color { t.inflow ? Pearl.moneyIn : Pearl.moneyOut }
+    private var tone: Color { t.inflow ? Pearl.moneyIn : Pearl.ink }
 }
 
 /// "MP  e-Transfer to M. Papas  −$200.00": the transaction a question is about.
@@ -1006,21 +1008,32 @@ struct QuestionHeader: View {
     let amount: String
     let tone: Color
     let sub: String?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        // S-03ax (TEST-17): at accessibility sizes the circle goes, so the
+        // initials are never cut, and the name wraps to two lines.
+        let big = typeSize.isAccessibilitySize
         HStack(spacing: 12) {
-            Initials(name: name, size: 48)
-                .overlay(Circle().strokeBorder(
-                    AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
-                    lineWidth: 1.2))
+            if !big {
+                Initials(name: name, size: 48)
+                    .overlay(Circle().strokeBorder(
+                        AngularGradient(colors: [Nacre.rose, Nacre.lilac, Nacre.seaglass, Nacre.rose], center: .center),
+                        lineWidth: 1.2))
+            }
             VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(1)
+                Text(name).font(Nacre.title2).foregroundColor(Pearl.ink).lineLimit(big ? 2 : 1)
+                    .fixedSize(horizontal: false, vertical: big)
                 (Text(amount).foregroundColor(tone)
                  + Text(sub.map { $0.isEmpty ? "" : " · " + $0 } ?? "").foregroundColor(Pearl.ink))
-                    .font(Nacre.subheadline).lineLimit(1)
+                    .font(Nacre.subheadline).lineLimit(big ? 3 : 1)
+                    .fixedSize(horizontal: false, vertical: big)
             }
             Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        // TEST-14: "Gusto, spent $127.50", not the unread U+2212 minus.
+        .accessibilityLabel([name, Format.spoken(amount), sub].compactMap { $0?.isEmpty == false ? $0 : nil }
+            .joined(separator: ", "))
     }
 }

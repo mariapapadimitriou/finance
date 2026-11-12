@@ -291,14 +291,18 @@ struct PartsSheet: View {
         }
         // S-24x: swiping down can't drop a held split without asking; X asks.
         .interactiveDismissDisabled(heldSplit != nil)
-        .alert("Leave without saving?", isPresented: $leaving) {
-            Button("Keep sorting", role: .cancel) {}
-            Button("Leave", role: .destructive) {
+        .sheet(isPresented: $leaving) {
+            // S-24xr (TEST-06): a Pearl sheet, not a stock alert.
+            let merchant = heldSplit?.merchant ?? "It"
+            PearlConfirmSheet(face: heldSplit?.merchant, overline: "\(possessive(who)) share · \(merchant)",
+                              title: "Leave without saving?",
+                              message: "\(merchant) won’t be split with \(who), and the \(Format.whole(deposit.amount)) stays in Needs a look.",
+                              primary: "Leave without saving", secondary: "Keep sorting",
+                              onClose: { leaving = false }) {
+                leaving = false
                 heldSplit = nil
                 dismiss()
             }
-        } message: {
-            Text("\(heldSplit?.merchant ?? "It") won’t be split with \(who), and the \(Format.whole(deposit.amount)) stays in Needs a look.")
         }
         .sheet(item: $splitCharge) { t in
             // S-24 (SPLIT-07): "Split and link" holds the split; the deposit's
@@ -1491,7 +1495,9 @@ struct OwedView: View {
             Initials(name: n.merchant, size: 34)
             VStack(alignment: .leading, spacing: 2) {
                 Text(n.merchant).font(Nacre.body).foregroundColor(Pearl.ink)
-                Text("\(n.people.joined(separator: ", ")) · \(Format.amount(n.paid)) paid so far")
+                // S-14u4 (TEST-18): "You and 4 · $75.00 paid · your share not set".
+                Text(n.me ?? true ? "You and \(n.people.count) · \(Format.amount(n.paid)) paid · your share not set"
+                     : "\(n.people.joined(separator: ", ")) · \(Format.amount(n.paid)) paid so far")
                     .font(Nacre.footnote).foregroundColor(Pearl.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }

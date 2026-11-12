@@ -78,13 +78,18 @@ struct IncomeBillsView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        .confirmationDialog(rent.map { "Are your e-Transfers to \($0.recipient ?? "them") your rent?" } ?? "",
-                            isPresented: Binding(get: { rent != nil }, set: { if !$0 { rent = nil } }),
-                            titleVisibility: .visible, presenting: rent) { q in
-            Button("Yes, it’s my rent") { Task { await answerRent(q) } }
-            Button("No", role: .cancel) {}
-        } message: { q in
-            Text("They’ll count as Rent from now on, and \(Format.whole(q.amount)) a month is set aside.")
+        .sheet(item: $rent) { q in
+            // IB-03 (TEST-06): a Pearl sheet, not an action sheet.
+            let who = q.recipient ?? "them"
+            PearlConfirmSheet(face: q.recipient, overline: "A question", title: "Are these your rent?",
+                              message: "Your e-Transfers to \(who) look like rent. If they are, they count as Rent from now on, and \(Format.whole(q.amount)) a month is set aside.",
+                              primary: "Yes, it’s my rent", busyLabel: "Saving…", secondary: "No",
+                              failure: "Couldn’t save that. Nothing changed. Try again.",
+                              onClose: { rent = nil }) {
+                let reply: IncomeBills = try await app.api.post("api/income-bills/rent", ["key": q.key])
+                rent = nil
+                saved(reply)
+            }
         }
         .fullScreenCover(isPresented: $checking) {
             NavigationStack {
@@ -327,15 +332,6 @@ struct IncomeBillsView: View {
         do {
             let reply: IncomeBills = try await app.api.post("api/income-bills/pay/answer",
                                                             ["payer": c.payer, "answer": "no"])
-            saved(reply)
-        } catch {
-            self.error = app.handle(error)
-        }
-    }
-
-    private func answerRent(_ q: IncomeBills.RentQuestion) async {
-        do {
-            let reply: IncomeBills = try await app.api.post("api/income-bills/rent", ["key": q.key])
             saved(reply)
         } catch {
             self.error = app.handle(error)

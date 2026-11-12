@@ -96,7 +96,6 @@ struct SignInSecurityView: View {
     @State private var removingDevice: Device?
     /// SEC-08: recovery codes she has left; SEC-09: the new ones, shown once.
     @State private var codesLeft: Int?
-    @State private var askingCodes = false
     @State private var codes: RecoveryCodes?
     @State private var busy = false
     @State private var message: String?
@@ -192,31 +191,42 @@ struct SignInSecurityView: View {
             codesLeft = app.user?.recoveryCodes
             await load()
         }
-        .alert("Remove \(removingDevice?.label ?? "this device")?",
-               isPresented: Binding(get: { removingDevice != nil }, set: { if !$0 { removingDevice = nil } })) {
-            Button("Cancel", role: .cancel) {}
-            Button("Remove", role: .destructive) {
-                if let d = removingDevice { Task { await remove(d) } }
+        .sheet(item: $removingDevice) { d in
+            // SEC-12r (TEST-06): a Pearl sheet, not a stock alert.
+            let name = d.label ?? "this device"
+            PearlConfirmSheet(overline: "Your devices", title: "Remove \(name)?",
+                              message: "It’s signed out of Pearl and won’t be asked to approve sign-ins again.",
+                              primary: "Remove \(name)", busyLabel: "Removing…", secondary: "Keep it",
+                              failure: "Couldn’t remove \(name). Nothing changed. Try again.",
+                              onClose: { removingDevice = nil }) {
+                let _: OK = try await app.api.delete("api/auth/devices/\(d.id)")
+                removingDevice = nil
+                await load()
+                message = "\(d.label ?? "That device") is signed out."
             }
-        } message: {
-            Text("It’s signed out of Pearl and won’t be asked to approve sign-ins again.")
-        }
-        .alert("Make new recovery codes?", isPresented: $askingCodes) {
-            Button("Cancel", role: .cancel) {}
-            Button("Make new codes") { Task { await makeCodes() } }
-        } message: {
-            Text("Your old ones stop working.")
         }
         .sheet(item: $codes) { made in
             RecoveryCodesSheet(codes: made.codes)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        .alert("Sign out of other devices?", isPresented: $confirming) {
-            Button("Cancel", role: .cancel) {}
-            Button("Sign out") { Task { await signOutOthers() } }
-        } message: {
-            Text(othersLine)
+        .sheet(isPresented: $confirming) {
+            // SEC-04r (TEST-06): one other device by name, or how many.
+            PearlConfirmSheet(overline: "Your devices", title: "Sign out other devices?",
+                              message: othersLine + " This iPhone stays signed in.",
+                              primary: others.count == 1 ? "Sign out \(others[0].label ?? "the other device")"
+                                                         : "Sign out \(others.count) devices",
+                              busyLabel: "Signing out…",
+                              failure: "Couldn’t sign out every device. Try again.",
+                              onClose: { confirming = false }) {
+                let n = others.count
+                for d in others {
+                    let _: OK = try await app.api.delete("api/auth/devices/\(d.id)")
+                }
+                confirming = false
+                await load()
+                message = n == 1 ? "Signed out of 1 other device." : "Signed out of \(n) other devices."
+            }
         }
     }
 
@@ -242,7 +252,7 @@ struct SignInSecurityView: View {
 
     /// "Your iPad will be signed out of Pearl."
     private var othersLine: String {
-        if others.count == 1 { return "\(others[0].label ?? "Your other device") will be signed out of Pearl." }
+        if others.count == 1 { return "Your \(others[0].label ?? "other device") will be signed out of Pearl." }
         return "Your \(others.count) other devices will be signed out of Pearl."
     }
 
@@ -282,33 +292,6 @@ struct SignInSecurityView: View {
         error = nil
     }
 
-    private func remove(_ d: Device) async {
-        busy = true
-        defer { busy = false }
-        do {
-            let _: OK = try await app.api.delete("api/auth/devices/\(d.id)")
-            await load()
-            message = "\(d.label ?? "That device") is signed out."
-        } catch {
-            self.error = app.handle(error)
-        }
-    }
-
-    private func signOutOthers() async {
-        busy = true
-        defer { busy = false }
-        let n = others.count
-        do {
-            for d in others {
-                let _: OK = try await app.api.delete("api/auth/devices/\(d.id)")
-            }
-            await load()
-            message = n == 1 ? "Signed out of 1 other device." : "Signed out of \(n) other devices."
-        } catch {
-            self.error = app.handle(error)
-            await load()
-        }
-    }
 }
 
 // MARK: - S-02 Change password
@@ -438,6 +421,7 @@ struct RecoveryCodesSheet: View {
 struct ResetPearlCard: View {
     @EnvironmentObject private var app: AppModel
     @State private var confirming = false
+    @State private var typed = ""
     @State private var resetting = false
     @State private var error: String?
 
@@ -458,24 +442,28 @@ struct ResetPearlCard: View {
                 Text(error).font(Nacre.footnote).foregroundColor(Pearl.caution).padding(.horizontal, 16)
             }
         }
-        .confirmationDialog("Reset Pearl?", isPresented: $confirming, titleVisibility: .visible) {
-            Button("Reset", role: .destructive) { Task { await reset() } }
-        } message: {
-            Text("Your banks are unlinked and your transactions and setup are cleared. Your email, password and Face ID stay. This can't be undone.")
+        .sheet(isPresented: $confirming) {
+            // SO-06 (TEST-06): WHAT GOES / WHAT STAYS, and Type "reset".
+            PearlConfirmSheet(overline: "Reset Pearl", title: "Reset Pearl?",
+                              message: "Pearl goes back to the start, banks included. This can’t be undone.",
+                              field: .init(label: "Type \u{201C}reset\u{201D} to confirm", prompt: "reset",
+                                           note: "Nothing changes until you do.", needs: .words("reset"),
+                                           identifier: "reset-confirm"),
+                              text: $typed,
+                              goes: [.init(title: "Your bank connections", sub: "Unlinked from Pearl"),
+                                     .init(title: "Your transactions and setup", sub: "Sorting, rules, income, bills, goals")],
+                              stays: [.init(title: "Your email, password and Face ID", sub: "You stay signed in")],
+                              primary: "Reset Pearl", busyLabel: "Resetting…", secondary: "Keep everything",
+                              failure: "Couldn’t reset Pearl. Nothing changed. Try again.",
+                              onClose: { confirming = false; typed = "" }) {
+                struct Reply: Decodable { let user: PearlUser? }
+                let reply: Reply = try await app.api.post("api/account/reset", ["confirm": "reset"])
+                confirming = false
+                error = nil
+                app.justCreated = false
+                app.signedIn(reply.user)
+            }
         }
     }
 
-    private func reset() async {
-        resetting = true
-        defer { resetting = false }
-        do {
-            struct Reply: Decodable { let user: PearlUser? }
-            let reply: Reply = try await app.api.post("api/account/reset", ["confirm": "reset"])
-            error = nil
-            app.justCreated = false
-            app.signedIn(reply.user)
-        } catch {
-            self.error = app.handle(error)
-        }
-    }
 }

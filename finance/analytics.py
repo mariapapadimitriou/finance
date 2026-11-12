@@ -29,7 +29,9 @@ def share_amount(t: Transaction) -> float:
     e-transfers linked cost you $20.
     """
     if t.my_share is not None:
-        base = t.my_share
+        # Rule A (TEST-03): a split counts in full until it's paid back, so
+        # what the others still owe is hers for now (`split_owed`).
+        base = round(t.my_share + (getattr(t, "split_owed", 0.0) or 0.0), 2)
     elif t.paid_back:
         base = round(max(t.amount - t.paid_back, 0.0), 2)
     else:

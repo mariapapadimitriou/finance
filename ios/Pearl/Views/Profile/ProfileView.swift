@@ -131,9 +131,16 @@ struct ProfileView: View {
                 tab = .home
             })
         }
-        .confirmationDialog("Sign out of Pearl on this iPhone?", isPresented: $confirmSignOut,
-                            titleVisibility: .visible) {
-            Button("Sign out", role: .destructive) { Task { await app.signOut() } }
+        .sheet(isPresented: $confirmSignOut) {
+            // P-05 (TEST-06): a Pearl sheet, not an action sheet.
+            PearlConfirmSheet(overline: "Sign out", title: "Sign out on this iPhone?",
+                              message: "Pearl stays as it is. To come back, you’ll sign in again.",
+                              primary: "Sign out", busyLabel: "Signing out…", secondary: "Stay signed in",
+                              failure: "Couldn’t sign out. Try again.",
+                              onClose: { confirmSignOut = false }) {
+                confirmSignOut = false
+                await app.signOut()
+            }
         }
     }
 

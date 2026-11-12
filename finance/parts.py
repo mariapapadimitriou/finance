@@ -443,7 +443,9 @@ def owed(st, transactions: list[Transaction], today: date) -> dict:
         c = r["charge"]
         row = unsettled.setdefault(c.fingerprint, {"charge_id": c.fingerprint, "merchant": c.merchant,
                                                    "date": c.date[:10], "people": r["people"],
-                                                   "paid": r["paid_total"], "still": r["still"], "paid_by": []})
+                                                   "paid": r["paid_total"], "still": r["still"], "paid_by": [],
+                                                   # TEST-18 (S-14u4): she's in it.
+                                                   "me": (splits.get(c.fingerprint) or {}).get("me", True)})
         if r["paid"] >= 0.005:
             # H-00u0: "Sam has paid you $20.00 so far."
             row["paid_by"].append(r["name"])

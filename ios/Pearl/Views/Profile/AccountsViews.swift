@@ -122,7 +122,7 @@ struct UndoToast: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             if let undo = undo {
-                Button("Undo", action: undo).font(Nacre.textButton).foregroundColor(Pearl.action)
+                Button("Undo", action: undo).font(Nacre.textButton).foregroundColor(Pearl.link)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
@@ -641,12 +641,22 @@ struct AccountDetailView: View {
             if gone { dismiss() } else { syncState() }
         }
         .reloads { await refresh() }
-        .alert("Nickname", isPresented: $renaming) {
-            TextField(account.name, text: $nickname)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") { Task { await save(["nickname": nickname], saying: nil) } }
-        } message: {
-            Text("A name you’ll recognise. It shows everywhere in Pearl.")
+        .sheet(isPresented: $renaming) {
+            // AM-09n (TEST-06): a Pearl sheet; Save stays off while it's empty.
+            PearlConfirmSheet(overline: [account.name, (account.mask ?? "").isEmpty ? nil : "••\(account.mask!)"]
+                                .compactMap { $0 }.joined(separator: " "),
+                              title: "Nickname", message: "A name you’ll recognise. It shows everywhere in Pearl.",
+                              field: .init(label: "Nickname", prompt: account.name, identifier: "nickname"),
+                              text: $nickname, primary: "Save", busyLabel: "Saving…",
+                              failure: "Couldn’t save the nickname. Nothing changed. Try again.",
+                              onClose: { renaming = false }) {
+                let reply: AccountSaved = try await app.api.put("api/accounts/\(account.id)/settings",
+                                                                 ["nickname": nickname])
+                if let a = reply.account { account = a }
+                syncState()
+                renaming = false
+                app.changed()
+            }
         }
         .sheet(isPresented: $removing) {
             RemoveAccountSheet(account: account, lastAtBank: sameBank.count == 1) { removed in
@@ -1050,10 +1060,22 @@ struct ManualAccountView: View {
             if let toast = toast { UndoToast(text: toast) { withAnimation { self.toast = nil } } }
         }
         .onAppear { counted = account.counted ?? true; anchor = account.anchor == true }
-        .alert("Name", isPresented: $renaming) {
-            TextField("Name", text: $name)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") { Task { await save(["nickname": name], saying: nil) } }
+        .sheet(isPresented: $renaming) {
+            // AM-14n (TEST-06).
+            PearlConfirmSheet(overline: "Added by hand", title: "Name",
+                              message: "What you call this account. It shows everywhere in Pearl.",
+                              field: .init(label: "Name", prompt: account.name, identifier: "account-name"),
+                              text: $name, primary: "Save", busyLabel: "Saving…",
+                              failure: "Couldn’t save the name. Nothing changed. Try again.",
+                              onClose: { renaming = false }) {
+                let reply: AccountSaved = try await app.api.put("api/accounts/\(account.id)/settings",
+                                                                 ["nickname": name])
+                if let a = reply.account { account = a }
+                counted = account.counted ?? true
+                anchor = account.anchor == true
+                renaming = false
+                app.changed()
+            }
         }
         .sheet(isPresented: $updating) {
             UpdateBalanceSheet(account: account) { a in

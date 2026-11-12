@@ -61,6 +61,103 @@ def _reshare(st, t, split: dict) -> None:
     st.set_share(t.fingerprint, sp.your_part(t, people))
 
 
+def _gifts_on(st, charge_id: str, name: str) -> list[tuple[str, int, int]]:
+    """TEST-18b: deposits whose parts pay this person's share here with a
+    gift beside it: (deposit id, gift cents, payback cents)."""
+    out = []
+    for deposit, parts in st.parts().items():
+        mine = [x for x in parts if x["kind"] == "payback" and (x.get("detail") or {}).get("charge") == charge_id
+                and sp.same_person((x.get("detail") or {}).get("person") or "", name)]
+        gift = [x for x in parts if x["kind"] == "gift"]
+        if mine and gift:
+            out.append((deposit, sum(sp._cents(x["amount"]) for x in gift),
+                        sum(sp._cents(x["amount"]) for x in mine)))
+    return out
+
+
+def extra_gift(st, charge_id: str, name: str) -> float:
+    """What of this person's money on this purchase she called a gift."""
+    bank = sum(g for _, g, _ in _gifts_on(st, charge_id, name))
+    cash = sum(sp._cents(c["amount"]) for c in st.split_cash()
+               if c["txn_id"] == charge_id and sp.same_person(c["name"], name) and c.get("kind") == "gift")
+    return (bank + cash) / 100
+
+
+@bp.post("/transactions/<txn_id>/split/answer")
+def split_answer(txn_id: str):
+    """S-48e (TEST-18b, approved section 19): change what she answered for a
+    payer after settling. `answer` is "ask" (they owe the rest; for one who
+    paid less), "share" (their share is what they sent; the difference is
+    spread over her and the others), "owe" (she owes them the extra) or
+    "gift" (the extra is a gift, a part on the deposit). Any gift she had
+    said before comes off first, so the money is theirs again to answer."""
+    st = store()
+    t, split, err = _split_or_error(st, txn_id)
+    if err:
+        return err
+    if split["mode"] == sp.UNSURE:
+        return jsonify({"error": "Settle it first."}), 400
+    body = _body()
+    p = _person(split, str(body.get("name") or ""))
+    if p is None:
+        return jsonify({"error": "They aren’t in this split."}), 404
+    answer = body.get("answer")
+    if answer not in ("ask", "share", "owe", "gift"):
+        return jsonify({"error": "Ask, their share, you owe them, or a gift?"}), 400
+    name = p["name"]
+    if any(c["txn_id"] == txn_id and sp.same_person(c["name"], name) and c.get("kind") == "gift"
+           for c in st.split_cash()):
+        # A cash gift is part of the payment record; Unlink and mark it again.
+        return jsonify({"error": f"{possessive(name)} gift was cash. Unlink the payment to change it."}), 400
+    gifts = _gifts_on(st, txn_id, name)
+    for deposit, gift, payback in gifts:
+        dp.undo(st, deposit)
+        st.link_payback(txn_id, deposit, name, amount=(gift + payback) / 100)
+    if gifts:
+        core._reclassify(st)
+    split = st.splits()[txn_id]
+    p = _person(split, name)
+    status = next(s for s in sp.people_status(t, split, st.all_transactions(), st.payback_people())
+                  if s["name"] == name)
+    sent, share = sp._cents(status["paid"]), sp._cents(p["amount"])
+    if sent < 1:
+        return jsonify({"error": f"{name} hasn’t paid anything yet."}), 400
+    if answer == "share" and sent != share:
+        # The difference goes to her and the others (S-48a: "spread over
+        # you and Priya"; S-48b: "you and Sam carry less").
+        others = [q for q in split["people"] if q is not p]
+        rows = len(others) + (1 if split.get("me", True) else 0)
+        delta = share - sent
+        each, odd = divmod(abs(delta), max(rows, 1))
+        sign = 1 if delta > 0 else -1
+        # More to carry: the odd cent goes to the others first, so someone
+        # who sent that much comes out matching (Priya's $40.00). Less to
+        # carry: the odd cent comes off her, who had the extra cent.
+        lead = odd if sign > 0 or rows == len(others) else 0
+        for i, q in enumerate(others):
+            q["amount"] = round(q["amount"] + sign * (each + (1 if i < lead else 0)) / 100, 2)
+        p["amount"] = round(sent / 100, 2)
+        if any(q["amount"] < 0 for q in split["people"]):
+            return jsonify({"error": "That would leave someone below nothing."}), 400
+    elif answer == "ask" and sent >= share:
+        return jsonify({"error": f"{name} didn’t pay less than their share."}), 400
+    elif answer in ("owe", "gift") and sent <= share:
+        return jsonify({"error": f"{name} didn’t pay more than their share."}), 400
+    _reshare(st, t, split)
+    if answer == "gift":
+        core._settle_extra(st, txn_id, {name: [{"kind": "gift", "amount": round((sent - share) / 100, 2)}]})
+    core._reclassify(st)
+    words = {"ask": f"{name} owes you ${(share - sent) / 100:,.2f}",
+             "share": f"{possessive(name)} share is ${sent / 100:,.2f}",
+             "owe": f"You owe {name} ${(sent - share) / 100:,.2f}",
+             "gift": f"${(sent - share) / 100:,.2f} from {name} is a gift"}[answer]
+    return jsonify({"ok": True, "toast": words, "detail": core.transaction_detail(txn_id).get_json()})
+
+
+def possessive(name: str) -> str:
+    return f"{name}’" if name.lower().endswith("s") else f"{name}’s"
+
+
 @bp.post("/transactions/<txn_id>/split/let-go")
 def split_let_go(txn_id: str):
     """S-08 / S-20: what they still owe becomes hers. Their part shrinks to

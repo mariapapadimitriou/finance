@@ -74,7 +74,7 @@ struct CategoryPage: View {
     }
 
     private var tone: Color {
-        counts == "spending" ? Pearl.moneyOut : counts == "income" ? Pearl.moneyIn : Pearl.ink
+        counts == "spending" ? Pearl.ink : counts == "income" ? Pearl.moneyIn : Pearl.ink
     }
 
     private func stat(_ label: String, _ value: String, _ tone: Color) -> some View {

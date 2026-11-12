@@ -131,9 +131,9 @@ class TestSplitMyPart:
         s = detail(client, pn)["splitting"]
         assert s["you"] == 16.68 and s["base"] == 50.0
         assert s["joint"]["people"] == ["Sam Lee"] and s["joint"]["theirs"] == 50.0
-        # Allowance and spending count only her share of her part.
-        assert counted(client, pn) == 16.68
-        assert round(before - spent(client), 2) == 33.32
+        # Rule A (TEST-03): her part counts in full until Priya and Jo pay.
+        assert counted(client, pn) == 50.0
+        assert round(before - spent(client), 2) == 0.0
         adds_up(client, pn)
 
     def test_a_joint_holder_is_refused_by_name(self, client):
@@ -158,16 +158,16 @@ class TestSplitMyPart:
         client.put(f"/api/transactions/{pn}/share", json={"my_share": 30, "always": False})
         three_ways(client, pn)
         assert detail(client, pn)["splitting"]["base"] == 30.0
-        assert counted(client, pn) == 10.0
+        assert counted(client, pn) == 30.0
 
     def test_whose_was_it_changed_after_splitting_rescales(self, client):
         pn = joint_dinner(client)["PIZZA NOVA"]
         three_ways(client, pn)
         r = client.put(f"/api/transactions/{pn}/share", json={"my_share": 60, "always": False}).get_json()
-        assert r["ok"] and counted(client, pn) == 20.0
+        assert r["ok"] and counted(client, pn) == 60.0
         assert {p["amount"] for p in people(client, pn).values()} == {20.0}
         undo(client, r)
-        assert counted(client, pn) == 16.68
+        assert counted(client, pn) == 50.0
 
     def test_paybacks_link_and_unlink_and_add_up(self, client):
         i = joint_dinner(client, more=[tx("E-TRANSFER FROM JO", -16.66, account="fam", merchant="Jo",
@@ -177,7 +177,7 @@ class TestSplitMyPart:
         r = link(client, pn, jo, "Jo")
         assert people(client, pn)["Jo"]["owes"] == 0.0
         adds_up(client, pn)
-        assert counted(client, pn) == 16.68
+        assert counted(client, pn) == 33.34
         undo(client, r)
         assert people(client, pn)["Jo"]["owes"] == 16.66
 
@@ -200,22 +200,22 @@ class TestShareChanges:
         jo = next(p for p in change["people"] if p["name"] == "Jo")
         assert jo["paid"] == 16.66 and jo["share_now"] == 20.0
         # Nothing changed while it asked.
-        assert client.st.joint_shares()["fam"] == 50.0 and counted(client, pn) == 16.68
+        assert client.st.joint_shares()["fam"] == 50.0 and counted(client, pn) == 33.34
         r = client.put("/api/accounts/fam/settings", json={"joint_share": 60, "confirm": True}).get_json()
         assert r["ok"]
         assert people(client, pn)["Jo"]["owes"] == 3.34
-        assert counted(client, pn) == 20.0
+        assert counted(client, pn) == 43.34
         adds_up(client, pn)
         undo(client, r)
         assert client.st.joint_shares()["fam"] == 50.0
-        assert people(client, pn)["Jo"]["amount"] == 16.66 and counted(client, pn) == 16.68
+        assert people(client, pn)["Jo"]["amount"] == 16.66 and counted(client, pn) == 33.34
 
     def test_nobody_paid_changes_without_asking(self, client):
         pn = joint_dinner(client)["PIZZA NOVA"]
         three_ways(client, pn)
         r = client.put("/api/accounts/fam/settings", json={"joint_share": 60}).get_json()
         assert r["ok"] and "needs_confirm" not in r
-        assert counted(client, pn) == 20.0
+        assert counted(client, pn) == 60.0
 
     def test_typed_amounts_stay_and_her_share_takes_the_rest(self, client):
         pn = joint_dinner(client)["PIZZA NOVA"]
@@ -223,7 +223,7 @@ class TestShareChanges:
                                                            {"name": "Jo", "amount": 10}], "you": 30})
         client.put("/api/accounts/fam/settings", json={"joint_share": 60})
         assert {p["amount"] for p in people(client, pn).values()} == {10.0}
-        assert counted(client, pn) == 40.0
+        assert counted(client, pn) == 60.0
 
     def test_typed_amounts_over_her_new_part_are_refused(self, client):
         pn = joint_dinner(client)["PIZZA NOVA"]
@@ -239,7 +239,7 @@ class TestShareChanges:
         three_ways(client, pn)
         r = client.put("/api/accounts/fam/settings", json={"joint_share": 60, "apply": "from_today"}).get_json()
         assert r["ok"] and "needs_confirm" not in r
-        assert counted(client, pn) == 16.68
+        assert counted(client, pn) == 50.0
 
 
 class TestRemoveAndNotJoint:
@@ -256,7 +256,7 @@ class TestRemoveAndNotJoint:
         assert counted(client, pn) == 50.0
         assert client.st.get_transaction(jo).repays is None
         undo(client, reply)
-        assert counted(client, pn) == 16.68
+        assert counted(client, pn) == 33.34
         assert client.st.get_transaction(jo).repays == pn
         assert people(client, pn)["Jo"]["owes"] == 0.0
 
@@ -277,12 +277,12 @@ class TestRemoveAndNotJoint:
         assert r["ok"]
         ps = people(client, pn)
         assert ps["Priya"]["amount"] == 16.66 and ps["Jo"]["amount"] == 16.66
-        assert counted(client, pn) == 66.68
+        assert counted(client, pn) == 100.0
         assert "fam" not in client.st.joint_accounts()
         undo(client, r)
         assert client.st.joint_shares()["fam"] == 50.0
         assert client.st.joint_people()["fam"] == ["Sam Lee"]
-        assert counted(client, pn) == 16.68
+        assert counted(client, pn) == 50.0
 
 
 # ── JOINT-A: Shared with ────────────────────────────────────────────────
@@ -453,11 +453,12 @@ class TestSettleUp:
                       ok=False)
         assert r["error"] == "$40.00 left to assign."
         put_split(client, pn, {"mode": "even", "people": [{"name": "Sam"}, {"name": "Priya"}]})
-        assert counted(client, pn) == 33.34
+        assert counted(client, pn) == 100.0
         adds_up(client, pn)
 
     def test_a_share_below_what_they_paid_says_what_the_extra_was(self, client):
-        """Decision 6 (S-45e): the SPLIT-19 extra step, here a gift."""
+        """TEST-18b (S-48b, which replaces S-45e): a share below what someone
+        paid saves with what the extra is, here a gift."""
         i = unsure_dinner(client, more=[sam_paid(client)])
         pn, sam = i["PIZZA NOVA"], i["E-TRANSFER FROM SAM"]
         link(client, pn, sam, "Sam")
@@ -493,6 +494,17 @@ class TestSettleUp:
         assert people(client, pn)["Sam"]["over"] == 10.0
         you_owe = client.get("/api/owed").get_json()["you_owe"]
         assert you_owe[0]["name"] == "Sam" and you_owe[0]["total"] == 10.0
+
+    def test_a_share_above_what_they_paid_needs_ask(self, client):
+        """TEST-18b (S-48a): more than they paid saves only as "Ask Sam"."""
+        i = unsure_dinner(client, more=[sam_paid(client)])
+        pn = i["PIZZA NOVA"]
+        link(client, pn, i["E-TRANSFER FROM SAM"], "Sam")
+        body = {"mode": "amount", "you": 40, "people": [{"name": "Sam", "amount": 30}, {"name": "Priya", "amount": 30}]}
+        r = put_split(client, pn, body, ok=False)
+        assert r["error"] == "Sam paid $20.00. Ask Sam for $10.00, or make Sam’s share $20.00."
+        put_split(client, pn, {**body, "ask": ["Sam"]})
+        assert people(client, pn)["Sam"]["owes"] == 10.0
 
 
 class TestThatsEverything:
