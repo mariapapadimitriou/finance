@@ -328,6 +328,10 @@ class Transaction:
     # SPLIT-C: on a Not sure yet split, what's come back so far (paybacks
     # linked to it, and cash or app payments marked on it).
     unsure_paid: float | None = None
+    # Rule A (TEST-03, THL-291/THL-289, product owner 2026-11-10): what the
+    # others on a split still owe. Until they pay it back it counts as her
+    # spending; each payback, cash or app payment takes its part off.
+    split_owed: float = 0.0
     # Why you left this row out, if you did: one transaction, or every row a
     # rule of yours matches. An excluded row counts as nothing — not spending,
     # not income, not savings — and never pairs with another as a transfer.

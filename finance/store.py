@@ -1178,7 +1178,34 @@ class Store:
                      LEFT JOIN txn_joint_parts jpx ON jpx.txn_id = t.id
                      LEFT JOIN txn_splits spx ON spx.txn_id = t.id
                     ORDER BY t.date DESC, t.id""").fetchall()
-        return self._loaded(rows)
+        out = self._loaded(rows)
+        self._split_owed(out)
+        return out
+
+    def _split_owed(self, rows: list[Transaction]) -> None:
+        """Rule A (TEST-03; THL-291 "the full purchase counts until paid
+        back", THL-289; product owner 2026-11-10): on a split with shares,
+        what each person still owes counts as hers until they pay it, so
+        the Allowance drops by the whole purchase when she splits it and
+        rises by each payback as it comes. Their share as split, less what
+        people_status credits them with (linked paybacks, cash, another
+        app), never below nothing; a share let go is already hers. Not sure
+        yet has its own rule (`_unsure_shares`). `rows` is the whole ledger,
+        which paybacks are found in."""
+        splits = self.splits()
+        if not splits:
+            return
+        from .splits import people_status
+        payer = None
+        for t in rows:
+            s = splits.get(t.fingerprint)
+            if not s or s.get("mode") == UNSURE or t.amount <= 0 or t.my_share is None:
+                continue
+            if payer is None:
+                payer = self.payback_people()
+            # A closed split still counts what's unpaid: closing lets it go.
+            status = people_status(t, {**s, "closed_at": None}, rows, payer)
+            t.split_owed = round(sum(max(p["amount"] - p["paid"], 0.0) for p in status), 2)
 
     def all_transactions(self) -> list[Transaction]:
         """Every row (`_all_transactions`), read once per request (2026-11-08).
@@ -1308,7 +1335,15 @@ class Store:
                      LEFT JOIN txn_joint_parts jpx ON jpx.txn_id = t.id
                      LEFT JOIN txn_splits spx ON spx.txn_id = t.id
                     WHERE t.id = ?""", (txn_id,)).fetchone()
-        return self._loaded([row])[0] if row else None
+        if not row:
+            return None
+        t = self._loaded([row])[0]
+        if t.split_mode and t.split_mode != UNSURE and t.my_share is not None:
+            # Rule A: what's still owed needs the paybacks, which are
+            # elsewhere in the ledger.
+            t.split_owed = next((x.split_owed for x in self.all_transactions()
+                                 if x.fingerprint == t.fingerprint), 0.0)
+        return t
 
     def _loaded(self, rows) -> list[Transaction]:
         """Rows as transactions, with each joint charge carrying the part of
