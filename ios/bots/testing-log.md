@@ -1513,3 +1513,147 @@ Pizza Nova, Priya and Sam paid $25.00 each, and you $17:
 - The two T-01r3 edge cases that are waiting on designBOT.
 - Offline and error states.
 - engBOT's own UI checks.
+
+### [engBOT] 2026-11-11 · Round 3 replies · where the fixes are
+Pushed to the open PRs (no new PRs, no merge, no rebase):
+- **#326** `fix/testing-round-2`: `11757fe` (TEST-24, TEST-25, TEST-26's halves for this stack, TEST-14, the link colour).
+- **#330** `fix/testing-round-2-a`: `8041f62` (TEST-25, TEST-22's card amounts, TEST-14's amount labels, the link colour).
+I used one simulator (iPhone 16 Pro, iOS 18.3) and shut it down at the end.
+
+### [engBOT → testingBOT] 2026-11-11 · TEST-24 · Fixed in 11757fe
+Reproduced on the demo ledger: after Ask Sam + It's a gift, the Allowance didn't move. My pytest planned with a typed income, and a typed income ignores what has arrived, so it passed. On the demo ledger the pay is detected, so what arrives counts. The gift part on Priya's deposit (Income · Gifts) counted as $6.67 received and cancelled the −$6.67. The Allowance's income now leaves out a split's extra that she called a gift: the gift part beside a payback to a split purchase on the same deposit (S-48b; Dad's $172 gift beside a $428 flight that isn't split is still income), and a cash or app gift row (S-11c). Ask + gift, ask + I owe, and I owe → gift later (S-48e) all lower it by $6.67, and Priya's share is $40.00 leaves it. S-48b's callout now reads "“I owe Priya” and “It’s a gift” lower your Allowance by $6.67. “Priya’s share is $40.00” doesn’t change it." (1249:26540).
+pytest: `tests/test_testing_round_2.py` on the demo ledger with detected pay (the gift and I owe cases fail without the fix). UI: `testItsAGiftLowersTheAllowance` (Gusto, four ways: the callout's words, then a gift lowers the Allowance by Priya's extra).
+
+### [engBOT → testingBOT] 2026-11-11 · TEST-25 · Fixed in 11757fe (and 8041f62)
+The Cash flow row made its own "Your share of $128" and showed what still counts. That was `TransactionRow.extra` in `TransactionsView.swift`. `Models.swift:1274` (`shareNote`) is only used on the sorting cards. A split row now shows the server's note in place of the category line ("Split with Priya +2 · $45.00 to come back", "Split 5 ways · not sure yet · $45.00 still counts"). While the note is a "Split …" one, the row shows the whole purchase (−$127.50). Once it's "Your share of … · all paid back", it shows her share. On #330 the server's notes are the older ones ("Split with Priya, Sam"), and the row shows those. UI: `testCashFlowRowSaysWhatsStillToComeBack` (#326) and `testCashFlowRowUsesTheServersSplitNote` (#330) read the row itself.
+
+### [engBOT → testingBOT] 2026-11-11 · TEST-26 · Both halves on each stack
+- **TEST-09 on #326:** the split stack now has S-04r v2s's inline title and the solid bar once the hero scrolls away, the same code as #330. `testTheBarTakesTheMerchantOnceItScrolls` runs on both.
+- **TEST-22 on #330:** card amounts stay on one line, shrink to fit, and go under the name at AX sizes, the same code as #326. I checked a screenshot at accessibility-extra-large (no "$19." over "77").
+- **TEST-14 on #326:** OPTIONS and DETAILS, the hero ("spent $120.00") and How to split's header are the same as on #330.
+The two stacks still conflict where both changed the same lines (`SplitFlow.swift`, `TransactionDetailView.swift`, `Models.swift`, `SplitMenus.swift`, `Theme.swift` and the UI test file). Where I ported a fix, I made the edit identical on both branches to keep the merge small. Please run Round 3 again on the merged build.
+
+### [engBOT → testingBOT] 2026-11-11 · TEST-14 · Fixed in 11757fe and 8041f62
+- **How to split's amounts:** on Evenly, each amount is a bare "$42.50" text. It now reads "Priya, $42.50". A payer's locked amount reads "Priya, paid $42.50, locked". S-47's Evenly amounts read "Jo owes $26.00".
+- **S-40y's overline:** the header wraps its overline (6ef1260). The audit on my simulator (iOS 18.3) finds no clipped text on S-40y (`testS40yAndHowToSplitPassTheAudit`, the textClipped audit). Your flag was on iOS 26.5, so please re-run it there.
+- **Link colour:** `color/text/link` is now published (Pearl Design System: light rose/800 #9C1F4B, dark rose/300 #FF8FB1). Text links and text buttons use it on both stacks: See everyone who owes you, Edit split, Add someone new, Split the rest evenly, Take $x from your share, Sort, Select, Add and the rest. Filled buttons keep the action colour, as the variable's note says.
+
+### [engBOT → testingBOT] 2026-11-11 · TEST-20 · Reopened sheet checked, no change needed
+I couldn't make the app pre-tick someone else's money on a reopened sheet. The server marks only the person's own payment as likely (after Priya's $42.50 is linked, her list has Jo's $25.00 and Sam's $30.00, neither likely), and the app ticks only a likely row that names her. The sheet is a new one each time it opens. Your `testFriendsPayBackForDinner-09` shows "Link $25.00" with Jo selected and "Paid back $25.00 of Priya's $42.50". That looks like the journey's tap landing on Jo's row after Priya's row left the list, not a pre-tick. `testAReopenedPaymentSheetTicksNoOneElse` covers it: Priya on $50.00, her $42.50 linked, then her sheet again, and nothing of Sam's or Jo's is ticked.
+
+### [engBOT → designBOT] 2026-11-11 · TEST-05 · T-01r3 · Product owner's decision
+The product owner decided to keep T-01r3 as built:
+1. When the Allowance has no payday (her income is a figure she typed, or her usual month), the summary keeps "Came in $X" on the right, with "Pay to come $X" under the bar.
+2. "Spent so far" stays until all of the month's expected pay is in. With two paydays (Nov 15 and Nov 30), the first one arriving doesn't bring back Leftover / Over. "Pay expected" moves to the next payday.
+Please note both cases on T-01r3 (1266:27822) so the frame matches what's built.
+
+---
+
+### [testingBOT] 2026-11-11 · Round 4 start
+- **Builds:** my two detached worktrees at **A'' = `8041f62`** (`fix/testing-round-2-a`, PR #330) and **B'' = `11757fe`** (`fix/testing-round-2`, PR #326). Debug, Xcode 26.6.
+- **Simulator:** one only, the stock iPhone 16 (`5C99309E…`, iOS 26.5), passed in with `PEARL_SIM_UDID`. A'' ran first, then B'', never in parallel. I shut it down after the main run and again after a short probe run.
+- **Data and ports:** demo data only, with `DATABASE_URL` removed. My own ports (5061, 5071, and 5092 for curl). The seed is Round 3's (Pizza Nova and the Bar Isabel $100 dinner).
+- **Journeys:**
+  - The Round 3 suite plus four Round 4 tests in `Round3JourneysUITests.swift`: the link colour (sampled from the screenshot), the reopened payment sheet checked without tapping a row, joint Change Sam's share with a relaunch, and a How to split / S-40y probe.
+  - Round 2's Rule A and Pizza Nova journeys and Round 1's Quick sort journey as regressions.
+- **Curl checks:** `round4/curl-b-gift.txt`.
+- **Screenshots:** `/private/tmp/claude-501/-Users-mariapapadimitriou-GitHub-finance/47dab3d8-05be-4db9-b3fc-84667327b935/scratchpad/testing-run/round4/`. `a/`, `a-ax/` and `probe-a/` are A''. `b/`, `b-ax/` and `probe-b/` are B''.
+
+### [testingBOT] 2026-11-11 · TEST-24 · Fixed
+On Bar Isabel, Sam's $20.00 and Priya's $40.00 are linked. In the app:
+- **Ask Sam + It's a gift:** the Allowance moves **−$6.67**, from $15,002.27 to $14,995.60.
+- **Ask Sam + I owe Priya:** −$6.67.
+- **S-48e from I owe to a gift:** no further move.
+- **Sam's share is $20.00:** no move.
+- **Undo:** back to Not sure yet, with no move.
+
+S-48b's callout now reads "“I owe Priya” and “It’s a gift” lower your Allowance by $6.67. “Priya’s share is $40.00” doesn’t change it." (`run-b.log`, `b/testR3OptionCSamsShareAndUndo-*`, `b/testR3OptionCAnswers-*`). Curl agrees: ask + gift 14,995.60; S-48e to I owe 14,995.60; to a gift 14,995.60; to Priya's share $40 15,002.27; Undo 15,002.27 (`curl-b-gift.txt`).
+
+### [testingBOT] 2026-11-11 · TEST-25 · Fixed
+**B'':** Cash flow rows now carry the server's note and the whole purchase:
+- "Gusto · Split with Priya +2 · $45.00 to come back · −$127.50"
+- "Pizza Nova · Split 5 ways · not sure yet · $45.00 still counts · −$120.00"
+- after Alex pays: "… $17.00 still counts · −$120.00"
+
+(`b/testR3CashFlowSplitNotes-11-light-cash-flow-pizza-note.png`, `run-b.log`)
+
+**A'':** the row follows the server too ("Gusto · Priya paid you back · −$85.00", `run-a.log`). The A stack's server still has the pre-T-01r2 notes, which engBOT expected. The merged build will have T-01r2 on both.
+
+### [testingBOT] 2026-11-11 · TEST-26 · Fixed
+- **TEST-09 on B'':** the solid bar with the merchant ("Costco Wholesale") sits behind Back and the clock once the page scrolls (`b/testR4JointChangeSamSaves-05-light-joint-card-after-relaunch.png`).
+- **TEST-22 on A'':** at accessibility-extra-large, the card amounts sit under the name on one line ("$19.77"), with no "$19." / "77" (`a-ax/testR3LargestTextSplit-03-light-split-card-large.png`).
+- **TEST-14's labels on both:** the hero reads "spent $127.50", and How to split's amounts read "Priya, $42.50".
+- Each stack still keeps the other's server-side words until merge, as noted under TEST-25. Please re-run the Round 3 and 4 suites on the merged build.
+
+### [testingBOT] 2026-11-11 · TEST-14 · Fixed (the audit still reports "Text clipped", but nothing is clipped on screen)
+- **Link colour:** the dominant text colour sampled from the screenshot:
+
+  | Link | A'' light | A'' dark | B'' light | B'' dark |
+  |---|---|---|---|---|
+  | Add someone new | #9C1F4B | #FF8FB1 | #9C1F4B | #FFC2D4 (see note) |
+  | Edit split | #9C1F4B | #FF8FB1 | #9C1F4B | #FF8FB1 |
+  | See everyone who owes you | #9C1F4B | #FF8FB1 | #9C1F4B | #FF8FB1 |
+
+  On B'' dark, "Add someone new" is the same pink as the other links in the screenshot (`probe-b/testR4ProbeHowToSplitAndS40y-04-dark-how-to-split-evenly-dark.png`). My sample there was taken over the whole row, which includes B'' dark's pink card outline, so #FFC2D4 is the outline, not the text.
+- **S-40y on iOS 26.5:** the overline "PIZZA NOVA · NOT SURE YET" is whole on screen (`probe-b/testR4ProbeHowToSplitAndS40y-09-light-S-40y-light.png`), but `performAccessibilityAudit` still reports **Text clipped** for it.
+- **The new amount labels:** "Priya, $42.50" on How to split and "Jo owes $26.00" on S-47 are also reported as Text clipped on both builds. The text field is 55 pt wide and shows "$42.50" in full (`probe-a/…-02`), so the audit is comparing the longer spoken label with the shorter text on screen. That's TEST-27.
+- **Contrast:** the audit still flags muted text on the see-through background. designBOT judged those false alarms in Round 1.
+
+### [testingBOT] 2026-11-11 · The reopened payment sheet · Not a bug (engBOT is right)
+Gusto split by amounts, Priya's $42.50 linked, then Priya's ••• opened twice by hand, with no row tapped. Her sheet reads "Paid back in full · Nov 10" with View the e-Transfer and Unlink…. There's **no Mark paid back**, so a payment sheet for Priya can't be reopened to tick anyone else's money (`a/testR4ReopenedPaymentSheetByHand-04-light-priya-options-1.png`; the same on B''). The Round 3 shot was my Round 1 journey tapping on after Priya's row had gone.
+
+### [testingBOT] 2026-11-11 · TEST-19 (A'' half) · Fixed
+On A'', Nopa → Not sure yet → Save split: the card is there within 4 s ("Options for Priya", and no "Split with others"). After That's everything, **Reopen split** shows at once (`run-a.log`, "TEST-19 Nopa: card at once true", "Reopen split shown true").
+
+### [testingBOT] 2026-11-11 · Joint "Change Sam's share" · Saves (B'')
+On B'', Costco joint $50.00 Split my part evenly, then Sam → $20:
+- your share gives way to $13.34
+- the server has you $13.34, Priya $16.66 and Sam $20.00
+- after relaunching, the card shows Sam $20.00 (`b/testR4JointChangeSamSaves-05`, `run-b.log`)
+
+On A'', raising Sam still shows "That's $3.34 too much" (`a/testR4JointChangeSamSaves-02`), because section 20 (S-03rg) is only on the B stack. That's expected before the merge, not a new finding.
+
+### [testingBOT → engBOT] 2026-11-11 · TEST-27 · The audit reports "Text clipped" for the new spoken labels
+**Kind:** Suggestion   **Severity:** Minor
+**Where:** How to split (Evenly), S-47, S-40y, on both builds, iOS 26.5   **Code:** the `accessibilityLabel` on the amount `Text` views (TEST-14's change) and S-40y's header overline
+**Steps:**
+1. Run `performAccessibilityAudit` on How to split (Evenly), S-47c and S-40y.
+**Saw:** "Text clipped · Priya, $42.50", "Jo owes $26.00" and "PIZZA NOVA · NOT SURE YET". On screen nothing is cut (`probe-a/testR4ProbeHowToSplitAndS40y-02-light-how-to-split-evenly-light.png`, `probe-b/…-09-light-S-40y-light.png`).
+**Expected:** a clean audit, so that real clipping isn't hidden among false alarms.
+**Advice:** put the spoken label on the combined row (`.accessibilityElement(children: .combine)` with the label on the row) rather than on the short amount text. Or tell `testS40yAndHowToSplitPassTheAudit` to ignore textClipped for these elements and say why. I can't see what makes S-40y's overline trigger it on 26.5 and not on 18.3. It isn't visible to a person, so this doesn't block the merge.
+
+### [testingBOT] 2026-11-11 · Round 4 regressions
+- **Option C (B''):** Ask, I owe, Sam's share (Priya skipped), one Undo, Owed to you, S-48e, and the Allowance at every step all match.
+- **Rule A (A'' and B''):** the split doesn't move the Allowance, then +$42.50, +$30.00, Let it go 0, Undo 0. Owed to you ends at Jo $15.00.
+- **The You row (B''):** Pizza Nova end to end, five ways: three pay, you set $17, Alex owes $28, Undo, Alex pays cash +$28.00.
+- **Quick sort:**
+  - On B'': Yes, Undo and the tile work, and "11 to sort" goes to 8.
+  - On A'': Sort now opens the T-93n questions, and Cash flow says "Spent so far · Pay expected Nov 15" (T-01r3) in light and dark.
+- **TEST-16 (A''):** with the pad up, the status line sits above Save and the Done bar.
+- **The link colour** looks right in light and dark on every screen I opened.
+- I found no regressions on either build.
+
+### [testingBOT] 2026-11-11 · Round 4 summary
+
+| ID | Round 4 | Build |
+|---|---|---|
+| TEST-24 | **Fixed** (app and curl: a gift −$6.67, new S-48b wording) | B'' |
+| TEST-25 | **Fixed** (the row uses the server's note; T-01r2 words on B'', the older notes on A'' until merge) | A'', B'' |
+| TEST-26 | **Fixed** (TEST-09 bar on B'', TEST-22 amounts on A'', TEST-14 labels on both) | A'', B'' |
+| TEST-14 | **Fixed** (link colour #9C1F4B / #FF8FB1 on both, overlines, hero and amount labels). The audit still says "Text clipped" though nothing is clipped on screen: TEST-27 | A'', B'' |
+| Reopened payment sheet | **Not a bug**: Priya has no Mark paid back once paid in full | A'', B'' |
+| TEST-19 (A'' half) | **Fixed** | A'' |
+| Joint Change Sam's share | **Saves** on B'' (survives a relaunch); A'' lacks section 20 until merge | B'' |
+
+| New | Kind | Severity | To | Title |
+|---|---|---|---|---|
+| TEST-27 | Suggestion | Minor | engBOT | The audit reports "Text clipped" for the new spoken labels |
+
+**Verdict: clean.**
+- Every re-test is Fixed.
+- No new Bug, Major or Blocker. The one new finding, TEST-27, is a Minor Suggestion about audit noise; nothing a person sees.
+- Two things to know before merging:
+  1. A'' and B'' each still miss the other stack's half (the T-01r2 notes, section 20, the Done bar on B''), so the merge needs care.
+  2. Please re-run Rounds 3 and 4 on the merged build.
+
+**Not covered:** the merged build, which doesn't exist yet. Offline and error states. The audit on Home and Cash flow, which timed out in earlier rounds and wasn't re-run.
