@@ -42,7 +42,12 @@ from http.server import ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path[:0] = [HERE]
-from run_ui_tests import DEVICE, PORT, SERVER_PORT, SlowProxy, newest_ios_runtime, wait_for_server  # noqa: E402
+import run_ui_tests as _R  # noqa: E402
+from run_ui_tests import DEVICE, SlowProxy, newest_ios_runtime, wait_for_server  # noqa: E402
+# testingBOT: its own ports, so it never meets engBOT's runs.
+PORT = int(os.environ.get("PEARL_TBOT_PORT", "5051"))
+SERVER_PORT = PORT + 1
+_R.PORT, _R.SERVER_PORT = PORT, SERVER_PORT
 
 SUITE = "PearlUITests/PersonJourneysUITests"
 SIM_NAME = "Pearl journeys"
@@ -90,6 +95,17 @@ def seed(db_path: str) -> None:
           (day(6), "CITY PARKING 0042", 12.00, low),
           (day(7), "BRIGHT DENTAL CLINIC", 140.00, low)],
          "amex_1004", "American Express ••1004", "credit")
+    # testingBOT (TEST-18): Pizza Nova $120.00 split five ways; Priya, Sam
+    # and Jo each send $25.00, Alex never does. TEST-18b: a $100.00 dinner
+    # where Sam sends $20.00 and Priya $40.00.
+    load([(day(3), "PIZZA NOVA #112", 120.00, None),
+          (day(2), "BAR ISABEL TORONTO", 100.00, None)], "amex_1004", "American Express ••1004", "credit")
+    load([(day(2), "E-TRANSFER FROM PRIYA SHAH", -25.00, None),
+          (day(2), "INTERAC E-TRF FROM SAM LEE", -25.00, None),
+          (day(1), "E-TRANSFER FROM JO PARK", -25.00, None),
+          (day(1), "INTERAC E-TRF FROM SAM LEE", -20.00, None),
+          (day(1), "E-TRANSFER FROM PRIYA SHAH", -40.00, None)],
+         "td_chq_2210", "TD Chequing ••2210", "depository")
     store.set_setting("monthly_income", 5200.0)
     store.set_setting("savings_target", 900.0)
     # Today's Quick sort offer already used, so it doesn't open on launch
@@ -158,7 +174,7 @@ def main() -> int:
                 try:
                     wait_for_server(server)
                     only = f"{args.suite}/{journey}" if journey else args.suite
-                    test_env = {**env_base, "TEST_RUNNER_PEARL_SHOTS": args.out,
+                    test_env = {**env_base, "TEST_RUNNER_PEARL_SHOTS": args.out, "TEST_RUNNER_PEARL_PORT": str(PORT),
                                 "TEST_RUNNER_PEARL_TEXT": args.text}
                     started = time.time()
                     r = subprocess.run(["xcodebuild", "test-without-building", "-project", "Pearl.xcodeproj",

@@ -68,8 +68,11 @@
 		959B46154061EE62EAB76049 /* Fraunces-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 65A3C8DF5AC5DCF94ADBAF19 /* Fraunces-Regular.ttf */; };
 		90C363208D3502F31EE967BE /* Fraunces-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5123041A452F1AE9E3CD559D /* Fraunces-SemiBold.ttf */; };
 		436E75E984B4850BBF8D916E /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = A8318EFB1C654A8D1F922D04 /* LinkKit */; };
+		C4D449BAF44C6DF24B4410D9 /* PersonJourneysUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33A599E2CA5F3A2F441A0DAE /* PersonJourneysUITests.swift */; };
 		B8087047BA447D15D66176FC /* QuickSortCategoryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAE25B547263E40ECA3F49B2 /* QuickSortCategoryUITests.swift */; };
 		DB15C81FC4A131F96F4F13CA /* Round1FixesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F271FC7A3EC42E811888B1 /* Round1FixesUITests.swift */; };
+		BA9E5294F99E4AEE528CF0A1 /* Round2JourneysUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACEB884AD42DE3FD47663A6D /* Round2JourneysUITests.swift */; };
+		4D6C75F8459E0A6620AB208A /* Round3JourneysUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B99716DE63C4303C7C7240C4 /* Round3JourneysUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -85,8 +88,11 @@
 /* Begin PBXFileReference section */
 		95D653871703BB6B6441A16C /* Pearl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pearl.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A887B5D29B4EAB09648BF16 /* PearlUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PearlUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		33A599E2CA5F3A2F441A0DAE /* PersonJourneysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonJourneysUITests.swift; sourceTree = "<group>"; };
 		AAE25B547263E40ECA3F49B2 /* QuickSortCategoryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSortCategoryUITests.swift; sourceTree = "<group>"; };
 		18F271FC7A3EC42E811888B1 /* Round1FixesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round1FixesUITests.swift; sourceTree = "<group>"; };
+		ACEB884AD42DE3FD47663A6D /* Round2JourneysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round2JourneysUITests.swift; sourceTree = "<group>"; };
+		B99716DE63C4303C7C7240C4 /* Round3JourneysUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round3JourneysUITests.swift; sourceTree = "<group>"; };
 		9B9447FB87C39BED247C466A /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		CEC593419BBFC2C02400C055 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		9C5660576F12049C54E11ECA /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -190,8 +196,11 @@
 		9F83B95509D2F8A0124A86DF /* PearlUITests */ = {
 			isa = PBXGroup;
 			children = (
+				33A599E2CA5F3A2F441A0DAE /* PersonJourneysUITests.swift */,
 				AAE25B547263E40ECA3F49B2 /* QuickSortCategoryUITests.swift */,
 				18F271FC7A3EC42E811888B1 /* Round1FixesUITests.swift */,
+				ACEB884AD42DE3FD47663A6D /* Round2JourneysUITests.swift */,
+				B99716DE63C4303C7C7240C4 /* Round3JourneysUITests.swift */,
 			);
 			path = PearlUITests;
 			sourceTree = "<group>";
@@ -515,8 +524,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C4D449BAF44C6DF24B4410D9 /* PersonJourneysUITests.swift in Sources */,
 				B8087047BA447D15D66176FC /* QuickSortCategoryUITests.swift in Sources */,
 				DB15C81FC4A131F96F4F13CA /* Round1FixesUITests.swift in Sources */,
+				BA9E5294F99E4AEE528CF0A1 /* Round2JourneysUITests.swift in Sources */,
+				4D6C75F8459E0A6620AB208A /* Round3JourneysUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
