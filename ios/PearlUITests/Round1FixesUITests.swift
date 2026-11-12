@@ -442,7 +442,8 @@ final class Round1FixesUITests: XCTestCase {
         tap(button("Type amounts"), "Type amounts")
         tap(app.buttons["Shares"], "the Shares segment")
         // TEST-18b: Shares runs over everyone; a payer shows what they paid.
-        let amount = app.staticTexts["$42.50"].firstMatch
+        // TEST-14 (round 3): it reads "Priya, paid $42.50, locked".
+        let amount = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Priya, paid $42.50, locked'")).firstMatch
         XCTAssertTrue(amount.waitForExistence(timeout: 5), "Priya's payment should show as text")
         // TEST-23: you, Priya and Sam, one share each; not Priya's dollars counted as shares.
         XCTAssertTrue(text(containing: "3 shares · adds up to").waitForExistence(timeout: 4),
@@ -598,5 +599,204 @@ final class Round1FixesUITests: XCTestCase {
         tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Sam,'")).firstMatch, "Sam's row")
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'Unlink'")).firstMatch
                         .waitForExistence(timeout: 8), "Sam's row should open his S-40u, with Unlink")
+    }
+
+    // MARK: Round 3 (testingBOT, ios/bots/testing-log.md)
+
+    /// S-04r v2s: once the hero scrolls away, the bar says the merchant.
+    func testTheBarTakesTheMerchantOnceItScrolls() {
+        launch()
+        openTransaction("Gusto")
+        // A split makes the page long enough to scroll.
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        press("Save")
+        sleep(3)
+        app.swipeUp(); app.swipeUp(); app.swipeUp()
+        let title = app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label == 'Gusto'")).firstMatch
+        if !title.waitForExistence(timeout: 4), let dir = ProcessInfo.processInfo.environment["PEARL_SHOTS"] {
+            try? app.debugDescription.write(toFile: dir + "/inline-bar.txt", atomically: true, encoding: .utf8)
+        }
+        XCTAssertTrue(title.exists, "The inline bar should show Gusto once the hero is gone")
+        // TEST-09 (round 2): a solid bar behind Back and the title, so the
+        // scrolled content doesn't show through. The strip right of Back
+        // is one flat colour, not words passing under it.
+        let bar = app.navigationBars.firstMatch
+        let f = bar.frame
+        let shot = XCUIScreen.main.screenshot().image
+        if let cg = shot.cgImage {
+            let scale = CGFloat(cg.width) / shot.size.width
+            let r = CGRect(x: (f.minX + f.width * 0.16) * scale, y: (f.minY + 4) * scale,
+                           width: f.width * 0.18 * scale, height: (f.height - 8) * scale).integral
+            if let crop = cg.cropping(to: r) {
+                let w = crop.width, h = crop.height
+                var px = [UInt8](repeating: 0, count: w * h * 4)
+                let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                ctx?.draw(crop, in: CGRect(x: 0, y: 0, width: w, height: h))
+                var lum: [Double] = []
+                for i in stride(from: 0, to: px.count, by: 4) {
+                    lum.append((0.2126 * Double(px[i]) + 0.7152 * Double(px[i + 1]) + 0.0722 * Double(px[i + 2])) / 255)
+                }
+                lum.sort()
+                let spread = lum[Int(Double(lum.count - 1) * 0.98)] - lum[Int(Double(lum.count - 1) * 0.02)]
+                XCTAssertLessThan(spread, 0.2, "TEST-09: the content shows through the bar (spread \(spread))")
+            }
+        }
+        // TEST-14: the hero's amount reads as words, not an unread U+2212.
+        app.swipeDown(); app.swipeDown(); app.swipeDown()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'spent $'")).firstMatch
+                        .waitForExistence(timeout: 4), "TEST-14: the hero amount should say spent $127.50")
+    }
+
+    private func allowance() -> Double {
+        ((server("home") as? [String: Any])?["safe_to_spend"] as? [String: Any])?["amount"] as? Double ?? -1
+    }
+
+    /// Gusto Not sure yet with Priya, Sam and Jo; Priya's $42.50 and Sam's
+    /// $30.00 e-Transfers linked.
+    private func gustoWithPriyaAndSamPaid() {
+        gustoNotSureWithPriyaPaid(["Sam", "Jo"])
+        tap(app.buttons["Options for Sam"], "Options for Sam")
+        tap(button("Mark paid back"), "Mark paid back")
+        tap(button("Bank or e-Transfer"), "Bank or e-Transfer")
+        let sam = button("Sam Lee")
+        XCTAssertTrue(sam.waitForExistence(timeout: 10))
+        if !sam.isSelected { sam.tap() }
+        press("Link", prefix: true)
+        sleep(5)
+    }
+
+    /// TEST-24: S-48b says a gift lowers the Allowance, and it does. Evenly
+    /// four ways Priya ($42.50) paid more than her share.
+    func testItsAGiftLowersTheAllowance() {
+        launch()
+        gustoWithPriyaAndSamPaid()
+        let before = allowance()
+        tap(button("Settle up"), "Settle up")
+        tap(button("Type amounts"), "Type amounts")
+        tap(app.buttons["Evenly"].firstMatch, "Evenly")
+        tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Next · check'")).firstMatch, "Next · check")
+        // S-48a / S-48b, in whichever order Pearl asks: ask Sam for the
+        // rest; Priya's extra is a gift.
+        let settle = app.buttons.matching(NSPredicate(format: "label == 'Settle up'"))
+        var sawCallout = false
+        for _ in 0..<6 {
+            sleep(2)
+            if settle.allElementsBoundByIndex.contains(where: { $0.isHittable }) { break }
+            if text(containing: "Priya paid").exists && text(containing: "more").exists {
+                XCTAssertTrue(text(containing: "and “It’s a gift” lower your Allowance by").exists,
+                              "TEST-24: S-48b's callout should say a gift lowers the Allowance")
+                XCTAssertFalse(text(containing: "Only “I owe").exists, "TEST-24: the old callout")
+                sawCallout = true
+                tap(button("It’s a gift"), "It's a gift")
+                continue
+            }
+            let ask = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Ask '")).allElementsBoundByIndex.last
+            if let ask = ask, ask.isHittable { ask.tap() }
+        }
+        XCTAssertTrue(sawCallout, "S-48b for Priya never came")
+        if !settle.allElementsBoundByIndex.contains(where: { $0.isHittable }) {
+            XCTFail("No Settle up after the answers. Buttons: \(app.buttons.allElementsBoundByIndex.map(\.label).filter { !$0.isEmpty })")
+            return
+        }
+        press("Settle up")
+        XCTAssertTrue(text(containing: "Settled").waitForExistence(timeout: 8), "No Settled toast")
+        sleep(2)
+        let moved = allowance() - before
+        XCTAssertLessThan(moved, -10.5, "TEST-24: a gift should lower the Allowance by Priya's extra (moved \(moved))")
+        XCTAssertGreaterThan(moved, -10.8, "TEST-24: only by Priya's extra (moved \(moved))")
+    }
+
+    /// TEST-25 (T-01r2): Cash flow's Gusto row is the whole purchase with
+    /// the server's note, not "Your share of …" and what still counts.
+    func testCashFlowRowSaysWhatsStillToComeBack() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam", "Jo"])
+        tap(app.buttons["Amounts"], "Amounts")
+        for (who, amount) in [("Priya", "42.50"), ("Sam", "30"), ("Jo", "15")] {
+            let f = amountField(who)
+            tap(f, "\(who)'s amount")
+            f.typeText(amount)
+        }
+        app.staticTexts["How to split"].firstMatch.tap()
+        press("Save")
+        sleep(3)
+        tap(app.buttons["Options for Priya"], "Options for Priya")
+        tap(button("Mark paid back"), "Mark paid back")
+        tap(button("Bank or e-Transfer"), "Bank or e-Transfer")
+        XCTAssertTrue(button("Priya Shah").waitForExistence(timeout: 10))
+        if !button("Priya Shah").isSelected { button("Priya Shah").tap() }
+        press("Link", prefix: true)
+        sleep(4)
+        app.navigationBars.buttons["Back"].firstMatch.tap()
+        sleep(2)
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Gusto'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 8), "No Gusto row")
+        XCTAssertTrue(row.label.contains("Split with Priya +2 · $45.00 to come back"), "TEST-25: \(row.label)")
+        XCTAssertTrue(row.label.contains("127.50"), "TEST-25: the row should show the whole purchase: \(row.label)")
+        XCTAssertFalse(row.label.contains("Your share of"), "TEST-25: the app's own note: \(row.label)")
+    }
+
+    /// TEST-20: Priya's sheet, opened again after her $42.50 is linked and
+    /// she still owes $7.50, ticks nobody else's money.
+    func testAReopenedPaymentSheetTicksNoOneElse() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam", "Jo"])
+        tap(app.buttons["Amounts"], "Amounts")
+        for (who, amount) in [("Priya", "50"), ("Sam", "30"), ("Jo", "25")] {
+            let f = amountField(who)
+            tap(f, "\(who)'s amount")
+            f.typeText(amount)
+        }
+        app.staticTexts["How to split"].firstMatch.tap()
+        press("Save")
+        sleep(3)
+        for round in 0..<2 {
+            tap(app.buttons["Options for Priya"], "Options for Priya")
+            // "Mark the rest paid back" once part is in.
+            tap(button(round == 0 ? "Mark paid back" : "Mark the rest paid back"), "Mark paid back")
+            tap(button("Bank or e-Transfer"), "Bank or e-Transfer")
+            XCTAssertTrue(button("Sam Lee").waitForExistence(timeout: 10))
+            let ticked = app.buttons.matching(NSPredicate(format: "selected == true AND (label BEGINSWITH 'Sam' OR label BEGINSWITH 'Jo')"))
+            XCTAssertEqual(ticked.count, 0, "TEST-20: someone else's payment is ticked for Priya (round \(round))")
+            if round == 0 {
+                let priya = button("Priya Shah")
+                if !priya.isSelected { priya.tap() }
+                press("Link", prefix: true)
+                sleep(5)
+            }
+        }
+    }
+
+    /// TEST-14: no clipped text on S-40y, and How to split's amounts read as
+    /// words (the audit's "not human-readable").
+    func testS40yAndHowToSplitPassTheAudit() throws {
+        guard #available(iOS 17.0, *) else { throw XCTSkip("The audit needs iOS 17") }
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        var found: [String] = []
+        try app.performAccessibilityAudit(for: [.sufficientElementDescription]) { issue in
+            if let label = issue.element?.label, label.hasPrefix("$") { found.append(label) }
+            return true
+        }
+        XCTAssertTrue(found.isEmpty, "TEST-14: bare amounts on How to split: \(found)")
+        let unsure = app.buttons["Not sure yet, split method"].exists ? app.buttons["Not sure yet, split method"] : app.buttons["Not sure"]
+        tap(unsure, "Not sure")
+        press("Save split")
+        tap(app.buttons["Options for you"], "your •••")
+        XCTAssertTrue(button("Set your share").waitForExistence(timeout: 5))
+        var clipped: [String] = []
+        try app.performAccessibilityAudit(for: [.textClipped]) { issue in
+            clipped.append(issue.element?.label ?? issue.compactDescription)
+            return true
+        }
+        XCTAssertFalse(clipped.contains { $0.contains("NOT SURE YET") }, "TEST-14: S-40y's overline is clipped: \(clipped)")
     }
 }

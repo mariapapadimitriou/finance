@@ -22,6 +22,14 @@ enum Format {
     }()
 
     /// "$1,234.56".
+    /// TEST-14: what VoiceOver says for "−$127.50" or "+$42.50": the U+2212
+    /// minus isn't read, so the audit called the label not human-readable.
+    static func spoken(_ shown: String) -> String {
+        if shown.hasPrefix("\u{2212}") || shown.hasPrefix("-") { return "spent " + shown.dropFirst() }
+        if shown.hasPrefix("+") { return "came in " + shown.dropFirst() }
+        return shown
+    }
+
     static func amount(_ value: Double) -> String {
         money.string(from: NSNumber(value: abs(value))) ?? "$\(abs(value))"
     }

@@ -99,3 +99,84 @@ def test_two_senders_with_the_same_amount(client):
         rows = candidates(client, tid, who)
         assert [r["party"] for r in rows if r["likely"]] == [sender]
         assert rows[0]["party"] == sender
+
+
+# ── TEST-24: "It's a gift" lowers the Allowance, as "I owe Priya" does ──
+#
+# The settle-mismatch tests plan with a typed income, which ignores what has
+# arrived, so a gift counted as income received went unseen there. On the demo
+# ledger the pay is detected, as on testingBOT's phone: what arrives counts.
+
+@pytest.fixture()
+def demo(tmp_path, monkeypatch):
+    import os
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    here = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(os.path.dirname(here), "ios", "tools"))
+    import run_journeys
+    from finance.ingest.base import IngestResult
+    from finance.models import Transaction
+    from finance.pipeline import ingest
+    from finance.store import Store
+    db = str(tmp_path / "demo.db")
+    run_journeys.seed(db)
+    st = Store(db)
+    when = day(1)
+    ingest(st, IngestResult(transactions=[Transaction(
+        date=when, description="BAR ISABEL TORONTO", amount=100.0, account_id="amex_1004",
+        account_name="Amex", raw={"account_type": "credit"})], account_id="amex_1004"))
+    ingest(st, IngestResult(transactions=[
+        Transaction(date=when, description="INTERAC E-TRF FROM SAM LEE", amount=-20.0,
+                    account_id="td_chq_2210", account_name="TD", raw={"account_type": "depository"}),
+        Transaction(date=when, description="E-TRANSFER FROM PRIYA SHAH", amount=-40.0,
+                    account_id="td_chq_2210", account_name="TD", raw={"account_type": "depository"})],
+        account_id="td_chq_2210"))
+    from app import create_app
+    app = create_app(db)
+    app.config.update(TESTING=True)
+    with app.test_client() as c:
+        rows = c.get("/api/transactions/list?q=Bar%20Isabel").get_json()["transactions"]
+        tid = next(t["id"] for t in rows if "Isabel" in t["merchant"])
+        r = c.put(f"/api/transactions/{tid}/split", json={
+            "mode": "unknown", "watch": True, "include_me": True, "people": [{"name": "Sam"}, {"name": "Priya"}]})
+        assert r.status_code == 200, r.get_json()
+        for who, amount in (("Sam", 20.0), ("Priya", 40.0)):
+            pid = next(x["id"] for x in candidates(c, tid, who) if abs(abs(x["amount"]) - amount) < 0.005)
+            assert c.post(f"/api/transactions/{tid}/paybacks/{pid}", json={"person": who}).status_code == 200
+        c.tid = tid
+        yield c
+
+
+def allowance(c) -> float:
+    return c.get("/api/home").get_json()["safe_to_spend"]["amount"]
+
+
+def settle_bar(c, extra=None, sam=33.33, priya=33.33, you=33.34):
+    body = {"mode": "amount", "watch": True, "include_me": True, "you": you, "ask": ["Sam"] if sam > 20 else [],
+            "people": [{"name": "Sam", "amount": sam}, {"name": "Priya", "amount": priya}]}
+    if extra:
+        body["extra"] = {"Priya": [{"kind": extra, "amount": 6.67}]}
+    r = c.put(f"/api/transactions/{c.tid}/split", json=body)
+    assert r.status_code == 200, r.get_json()
+
+
+@pytest.mark.parametrize("kind", ["gift", "overpaid"])
+def test_a_gift_lowers_the_allowance_like_i_owe(demo, kind):
+    assert demo.get("/api/home").get_json()["safe_to_spend"]["income_source"] == "detected"
+    before = allowance(demo)
+    settle_bar(demo, extra=kind)
+    assert allowance(demo) == pytest.approx(before - 6.67, abs=0.01)
+
+
+def test_priyas_share_is_40_leaves_it(demo):
+    before = allowance(demo)
+    settle_bar(demo, sam=33.33, priya=40.00, you=26.67)
+    assert allowance(demo) == pytest.approx(before, abs=0.01)
+
+
+def test_changing_i_owe_to_a_gift_later_leaves_it_lowered(demo):
+    before = allowance(demo)
+    settle_bar(demo, extra="overpaid")
+    r = demo.post(f"/api/transactions/{demo.tid}/split/answer", json={"name": "Priya", "answer": "gift"})
+    assert r.status_code == 200, r.get_json()
+    assert allowance(demo) == pytest.approx(before - 6.67, abs=0.01)

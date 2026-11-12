@@ -112,10 +112,9 @@ def test_priyas_share_is_40_and_ask_sam(client):
 
 def test_its_a_gift(client):
     """"It's a gift": a gift part on Priya's deposit, so her payback is
-    $33.33 and the $6.67 is Gift income. As built the Allowance goes down
-    $6.67, as for "I owe Priya": the Allowance comes from take-home pay, so
-    Gift income doesn't add to it. designBOT's note expected no change; it's
-    in the testing log for the product owner."""
+    $33.33. The Allowance goes down $6.67, as for "I owe Priya" (product
+    owner, 2026-11-10). This plan's income is typed; TEST-24's case, with
+    detected pay, is in test_testing_round_2.py."""
     tid = dinner(client)
     before = allowance(client)
     settle(client, tid, 33.34, 33.33, 33.33, ask=["Sam"], extra={"Priya": [{"kind": "gift", "amount": 6.67}]})

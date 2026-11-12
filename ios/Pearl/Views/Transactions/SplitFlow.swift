@@ -341,7 +341,7 @@ struct SplitSheet: View {
                     .font(Nacre.body).textInputAutocapitalization(.words).autocorrectionDisabled()
                     .submitLabel(.done).onSubmit(addTyped)
                 if !typed.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Button("Add", action: addTyped).font(Nacre.textButton).foregroundColor(Pearl.action)
+                    Button("Add", action: addTyped).font(Nacre.textButton).foregroundColor(Pearl.link)
                 }
             }
             .padding(.horizontal, 14).frame(height: 44)
@@ -380,7 +380,7 @@ struct SplitSheet: View {
     private var addNewRow: some View {
         Button { adding = true } label: {
             HStack {
-                Text("Add someone new").font(Nacre.body).foregroundColor(Pearl.action)
+                Text("Add someone new").font(Nacre.body).foregroundColor(Pearl.link)
                 Spacer()
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
             }
@@ -460,7 +460,7 @@ struct SplitSheet: View {
             if let onRemoveSplit = onRemoveSplit, t.splitting != nil, !settling, focus == nil {
                 // S-41j: Edit split › Remove the split.
                 Button("Remove the split", action: onRemoveSplit)
-                    .font(Nacre.textButton).foregroundColor(Pearl.action)
+                    .font(Nacre.textButton).foregroundColor(Pearl.link)
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
         }
@@ -556,13 +556,19 @@ struct SplitSheet: View {
                             Text(mode == "percent" ? Self.plain(number(key)) + "%" : Format.amount(Double(lockedCents(key)) / 100))
                                 .font(Nacre.body).monospacedDigit().foregroundColor(Pearl.ink)
                                 .onTapGesture { showLock(key) }
+                                .accessibilityLabel("\(label(key)), paid \(Format.amount(Double(lockedCents(key)) / 100)), locked")
+                                .accessibilityAddTraits(.isButton)
                         } else if locked(key) {
                             Text(mode == "percent" ? Self.plain(number(key)) + "%" : Format.amount(Double(lockedCents(key)) / 100))
                                 .font(Nacre.body).monospacedDigit().foregroundColor(Pearl.ink)
                                 .onTapGesture { showLock(key) }
+                                .accessibilityLabel("\(label(key)), paid \(Format.amount(Double(lockedCents(key)) / 100)), locked")
+                                .accessibilityAddTraits(.isButton)
                         } else if mode == "even" {
                             Text(Format.amount(evenAmount(key))).font(Nacre.body).monospacedDigit()
                                 .foregroundColor(Pearl.ink)
+                                // TEST-14: "Priya, $42.50", not a bare amount.
+                                .accessibilityLabel("\(label(key)), \(Format.amount(evenAmount(key)))")
                         } else {
                             TextField("", text: binding(key), prompt: Text(placeholder(key)).foregroundColor(Pearl.muted))
                                 .font(Nacre.body).monospacedDigit().multilineTextAlignment(.trailing)
@@ -604,11 +610,11 @@ struct SplitSheet: View {
                             .multilineTextAlignment(.center)
                         if mode == "amount" && gapCents > 0 {
                             Button("Split the rest evenly", action: splitRest)
-                                .font(Nacre.textButton).foregroundColor(Pearl.action)
+                                .font(Nacre.textButton).foregroundColor(Pearl.link)
                         } else if let take = takeFromMine {
                             // S-03ri: one tap unpins her share; it gives way again.
                             Button("Take \(Format.amount(Double(take) / 100)) from your share") { values[Self.me] = nil }
-                                .font(Nacre.textButton).foregroundColor(Pearl.action)
+                                .font(Nacre.textButton).foregroundColor(Pearl.link)
                         }
                     }
                 }
@@ -1199,7 +1205,7 @@ struct SplitPeople: View {
                         Button(action: onEdit) {
                             Text("Edit split").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                         }
-                        .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.action)
+                        .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.link)
                         .buttonStyle(.plain)
                     }
                 }
@@ -1266,7 +1272,7 @@ struct SplitPeople: View {
                     Text("See everyone who owes you")
                         .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
                 }
-                .font(Nacre.textButton).foregroundColor(Pearl.action).buttonStyle(.plain)
+                .font(Nacre.textButton).foregroundColor(Pearl.link).buttonStyle(.plain)
                 .padding(.top, 6)
             }
         }
@@ -2397,7 +2403,8 @@ struct MismatchSheet: View {
                 }
             }
             InfoNote(text: share > paid ? "Either way, your Allowance doesn’t change now."
-                     : "Only “I owe \(name)” changes your Allowance: down \(diff), the money you’ll send back.")
+                     // S-48b 1249:26540 (TEST-24): a gift lowers it too.
+                     : "“I owe \(name)” and “It’s a gift” lower your Allowance by \(diff). “\(possessive(name)) share is \(Format.amount(paid))” doesn’t change it.")
         } footer: {
             Button(overline == nil ? "Back to amounts" : "Keep it as it is", action: onBack)
                 .buttonStyle(PearlSecondaryButtonStyle())
