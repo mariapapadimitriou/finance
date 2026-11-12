@@ -970,6 +970,10 @@ struct Transaction: Decodable, Identifiable, Hashable {
             && a.amount == b.amount && a.fullAmount == b.fullAmount && a.note == b.note && a.counts == b.counts
             && a.excluded == b.excluded && a.pending == b.pending && a.oneOff == b.oneOff && a.tags == b.tags
             && a.jointFrom == b.jointFrom && a.bankId == b.bankId && a.merchant == b.merchant
+            // TEST-19 (round 2): the page holds its Transaction in @State,
+            // and SwiftUI skips a redraw when the new value compares equal.
+            // A split saved, closed or paid back changes only these.
+            && a.split == b.split && a.splitting == b.splitting
     }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }

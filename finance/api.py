@@ -1535,7 +1535,25 @@ _PAYBACK_NAMES = ("e-transfer", "etransfer", "e-tfr", "etfr", "interac",
                   "transfer", "venmo", "zelle", "wise")
 
 
-def _payback_candidates(charge, txns) -> list[dict]:
+def _names_person(sender: str | None, person: str | None) -> bool:
+    """TEST-20: is this e-Transfer from them? "Priya Shah" is Priya's; Sam's
+    $30.00 never is, whatever the amount."""
+    if not sender or not person:
+        return False
+    s, p = sender.strip().lower(), person.strip().lower()
+    first = p.split()[0] if p.split() else p
+    return s == p or s.startswith(p) or first in s.replace(".", " ").split()
+
+
+def _payback_candidates(charge, txns, person: str | None = None,
+                        owes: float | None = None) -> list[dict]:
+    """The money in that could pay this charge back, best first.
+
+    TEST-20: for a person (S-06rb, "From Priya"), their own payments lead,
+    and only one of theirs is `likely` (pre-ticked): on a set split when it
+    is what they owe (`match` "amount", "Amount matches"), on Not sure yet
+    when it fits what still counts as hers. Someone else's money is never
+    likely, even when the amount would fit."""
     from datetime import date as _date
     from .splits import bought_on
     start = bought_on(charge)
@@ -1574,9 +1592,24 @@ def _payback_candidates(charge, txns) -> list[dict]:
         p = party(t)
         return (p or {}).get("name") or None
 
-    return [dict(_txn_brief(t), likely=(a == 0 and b == 0 and -t.amount <= remaining + 0.005),
-                 part=round(min(-t.amount, remaining), 2), party=who(t))
-            for a, b, _, t in out[:12]]
+    if person is None:
+        return [dict(_txn_brief(t), likely=(a == 0 and b == 0 and -t.amount <= remaining + 0.005),
+                     part=round(min(-t.amount, remaining), 2), party=who(t))
+                for a, b, _, t in out[:12]]
+    rows = []
+    for a, b, gap, t in out:
+        sender = who(t)
+        theirs = _names_person(sender, person) or _names_person(t.party, person)
+        amount = -t.amount
+        exact = owes is not None and abs(amount - owes) < 0.005
+        fits = amount <= remaining + 0.005
+        likely = theirs and fits and (exact if owes is not None else True)
+        rows.append(((0 if theirs else 1, 0 if exact else 1, a, b, gap), t, sender, likely,
+                     "amount" if (theirs and exact) else None))
+    rows.sort(key=lambda r: r[0])
+    return [dict(_txn_brief(t), likely=likely, match=match,
+                 part=round(min(-t.amount, remaining), 2), party=sender)
+            for _, t, sender, likely, match in rows[:12]]
 
 
 @bp.get("/transactions/<txn_id>/paybacks")
@@ -1587,12 +1620,21 @@ def list_paybacks(txn_id: str):
         return jsonify({"error": "No such transaction."}), 404
     txns = st.all_transactions()
     linked = [t for t in txns if t.repays == txn_id]
+    # TEST-20: "Which payment was it?" for one person: theirs first, and
+    # what they owe on a set split (none on Not sure yet: any amount).
+    person = (request.args.get("person") or "").strip() or None
+    owes = None
+    split = st.splits().get(txn_id) if person else None
+    if person and split and charge.split_mode != "unknown":
+        from . import splits as sp
+        owes = next((p["owes"] for p in sp.people_status(charge, split, txns, st.payback_people())
+                     if p["name"] == person), None)
     return jsonify({
         "charge": _txn_brief(charge),
         "paid_back": round(charge.paid_back or 0.0, 2),
         "share": round(share_amount(charge), 2) if charge.amount > 0 else None,
         "linked": [_txn_brief(t) for t in sorted(linked, key=lambda t: t.date)],
-        "candidates": (_payback_candidates(charge, txns)
+        "candidates": (_payback_candidates(charge, txns, person, owes)
                        if charge.amount > 0 else []),
     })
 

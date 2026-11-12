@@ -225,7 +225,7 @@ struct PaychequeNoteCard: View {
                 .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Got it", action: onDismiss)
-                .font(Nacre.textButton).foregroundColor(Pearl.action)
+                .font(Nacre.textButton).foregroundColor(Pearl.link)
                 .padding(.top, 4)
         }
     }

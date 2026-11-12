@@ -27,7 +27,7 @@ struct BulkTagSheet: View {
                             .font(Nacre.body).autocorrectionDisabled().textInputAutocapitalization(.never)
                             .submitLabel(.done).onSubmit(addTyped)
                         if !clean(typed).isEmpty {
-                            Button("Add", action: addTyped).font(Nacre.textButton).foregroundColor(Pearl.action)
+                            Button("Add", action: addTyped).font(Nacre.textButton).foregroundColor(Pearl.link)
                         }
                     }
                     .padding(.horizontal, 14).frame(height: 44)

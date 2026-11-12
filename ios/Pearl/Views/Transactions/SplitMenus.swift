@@ -208,6 +208,7 @@ struct PearlSectionLabel: View {
         Text(text.uppercased())
             .font(Pearl.text(.footnote, .medium)).tracking(0.78)
             .foregroundColor(Pearl.muted)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
     }
@@ -285,8 +286,10 @@ struct PearlSheetHeader: View {
                 PearlFace(name: face)
             }
             VStack(alignment: .leading, spacing: 1) {
+                // TEST-14: the overline wraps, never clipped ("PIZZA NOVA · NOT SURE YET").
                 Text(overline.uppercased())
                     .font(Pearl.text(.footnote, .medium)).tracking(0.78).foregroundColor(Pearl.muted)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(title)
                     .font(Pearl.heading(22, relativeTo: .title2)).foregroundColor(Pearl.ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -390,6 +393,14 @@ struct PearlSheetButtons: View {
 /// "Pearl/Toast with Undo" (S-44a–i): ink, with a 44-high action. It stays
 /// 6 s, longer while VoiceOver is on; it's announced, and its action is an
 /// accessibility action too (note 1096:4483).
+extension View {
+    /// TEST-22 (designBOT 2026-11-11): an amount never wraps inside the
+    /// number; it shrinks to fit, and rows move it under the name at AX sizes.
+    func pearlAmountFit() -> some View {
+        lineLimit(1).minimumScaleFactor(0.7).allowsTightening(true)
+    }
+}
+
 struct PearlToast: View {
     struct Model: Equatable {
         let id = UUID()
@@ -404,23 +415,26 @@ struct PearlToast: View {
 
     let model: Model
     let done: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: model.failed ? "info.circle" : "checkmark")
-                .font(.system(size: 17, weight: .semibold))
-                .accessibilityHidden(true)
-            Text(model.text).font(Pearl.text(.callout, .medium))
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            if let action = model.action, let run = model.run {
-                Button(action) { run() }
-                    .font(Pearl.text(.callout, .semibold))
-                    .padding(.horizontal, 14).frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                    .buttonStyle(.plain)
+        // TEST-22 (designBOT 2026-11-11): at AX sizes the words wrap to two
+        // or three lines and Undo goes on its own line under them.
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    words.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                    actionButton.padding(.leading, -14)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    words
+                    Spacer(minLength: 8)
+                    actionButton
+                }
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .foregroundColor(Pearl.onInk)
         .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 6)
         .frame(minHeight: 56)
@@ -438,6 +452,26 @@ struct PearlToast: View {
             let seconds: UInt64 = UIAccessibility.isVoiceOverRunning ? 15 : 6
             try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             if !Task.isCancelled { done() }
+        }
+    }
+
+    private var words: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: model.failed ? "info.circle" : "checkmark")
+                .font(.system(size: 17, weight: .semibold))
+                .accessibilityHidden(true)
+            Text(model.text).font(Pearl.text(.callout, .medium))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder private var actionButton: some View {
+        if let action = model.action, let run = model.run {
+            Button(action) { run() }
+                .font(Pearl.text(.callout, .semibold))
+                .padding(.horizontal, 14).frame(minHeight: 44)
+                .contentShape(Rectangle())
+                .buttonStyle(.plain)
         }
     }
 }

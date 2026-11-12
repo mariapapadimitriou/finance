@@ -131,7 +131,8 @@ struct SplitSheet: View {
                 // Opened again (2026-11-08): each share as it was saved, in
                 // Amounts, so nothing has to be typed twice.
                 _mode = State(initialValue: "amount")
-                v[Self.me] = Self.plain(yours)
+                // S-03rg (TEST-21): her share isn't filled in, so it gives way
+                // (what's left, which is what she saved) until she types it.
                 for p in s.people { v[p.name] = Self.plain(p.share) }
             }
             _values = State(initialValue: v)
@@ -340,7 +341,7 @@ struct SplitSheet: View {
                     .font(Nacre.body).textInputAutocapitalization(.words).autocorrectionDisabled()
                     .submitLabel(.done).onSubmit(addTyped)
                 if !typed.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Button("Add", action: addTyped).font(Nacre.textButton).foregroundColor(Pearl.action)
+                    Button("Add", action: addTyped).font(Nacre.textButton).foregroundColor(Pearl.link)
                 }
             }
             .padding(.horizontal, 14).frame(height: 44)
@@ -379,7 +380,7 @@ struct SplitSheet: View {
     private var addNewRow: some View {
         Button { adding = true } label: {
             HStack {
-                Text("Add someone new").font(Nacre.body).foregroundColor(Pearl.action)
+                Text("Add someone new").font(Nacre.body).foregroundColor(Pearl.link)
                 Spacer()
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
             }
@@ -459,7 +460,7 @@ struct SplitSheet: View {
             if let onRemoveSplit = onRemoveSplit, t.splitting != nil, !settling, focus == nil {
                 // S-41j: Edit split › Remove the split.
                 Button("Remove the split", action: onRemoveSplit)
-                    .font(Nacre.textButton).foregroundColor(Pearl.action)
+                    .font(Nacre.textButton).foregroundColor(Pearl.link)
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
         }
@@ -555,13 +556,19 @@ struct SplitSheet: View {
                             Text(mode == "percent" ? Self.plain(number(key)) + "%" : Format.amount(Double(lockedCents(key)) / 100))
                                 .font(Nacre.body).monospacedDigit().foregroundColor(Pearl.ink)
                                 .onTapGesture { showLock(key) }
+                                .accessibilityLabel("\(label(key)), paid \(Format.amount(Double(lockedCents(key)) / 100)), locked")
+                                .accessibilityAddTraits(.isButton)
                         } else if locked(key) {
                             Text(mode == "percent" ? Self.plain(number(key)) + "%" : Format.amount(Double(lockedCents(key)) / 100))
                                 .font(Nacre.body).monospacedDigit().foregroundColor(Pearl.ink)
                                 .onTapGesture { showLock(key) }
+                                .accessibilityLabel("\(label(key)), paid \(Format.amount(Double(lockedCents(key)) / 100)), locked")
+                                .accessibilityAddTraits(.isButton)
                         } else if mode == "even" {
                             Text(Format.amount(evenAmount(key))).font(Nacre.body).monospacedDigit()
                                 .foregroundColor(Pearl.ink)
+                                // TEST-14: "Priya, $42.50", not a bare amount.
+                                .accessibilityLabel("\(label(key)), \(Format.amount(evenAmount(key)))")
                         } else {
                             TextField("", text: binding(key), prompt: Text(placeholder(key)).foregroundColor(Pearl.muted))
                                 .font(Nacre.body).monospacedDigit().multilineTextAlignment(.trailing)
@@ -603,7 +610,11 @@ struct SplitSheet: View {
                             .multilineTextAlignment(.center)
                         if mode == "amount" && gapCents > 0 {
                             Button("Split the rest evenly", action: splitRest)
-                                .font(Nacre.textButton).foregroundColor(Pearl.action)
+                                .font(Nacre.textButton).foregroundColor(Pearl.link)
+                        } else if let take = takeFromMine {
+                            // S-03ri: one tap unpins her share; it gives way again.
+                            Button("Take \(Format.amount(Double(take) / 100)) from your share") { values[Self.me] = nil }
+                                .font(Nacre.textButton).foregroundColor(Pearl.link)
                         }
                     }
                 }
@@ -815,7 +826,11 @@ struct SplitSheet: View {
         var bits: [String] = []
         let cents = shareCents(key)
         let mineOdd = key == Self.me && oddToMe
-        if key == Self.me && withMe && gapCents > 0 {
+        if key == Self.me && withMe && mode == "amount" {
+            // S-03rg / S-03rh / S-03ri (TEST-21).
+            bits.append(givesWay ? (restCents < 0 ? "Your share · can’t go below $0.00" : "Your share · gives way · what’s left")
+                        : "Your share · you typed it")
+        } else if key == Self.me && withMe && gapCents > 0 {
             // S-03b v2 (REFRESH-03): "Your share $44.12", before saving; the
             // rest is said once, under the total.
             bits.append("Your share \(Format.amount(Double(mineCents) / 100))")
@@ -884,14 +899,40 @@ struct SplitSheet: View {
             if percentRounds { return 0 }
             return Int(((100 - rows.map { number($0) }.reduce(0, +)) * 100).rounded())
         default:
-            return totalCents - rows.map { Int((number($0) * 100).rounded()) }.reduce(0, +)
+            // S-03rg / S-03rh (TEST-21, section 20): until she types her own
+            // share it is what's left, so raising someone else adds up; it's
+            // only too much once her share would go below $0.00.
+            if givesWay { return min(restCents, 0) }
+            return restCents
         }
+    }
+
+    /// The amounts as typed against the total; an empty row is $0.00.
+    private var restCents: Int {
+        totalCents - rows.map { Int((number($0) * 100).rounded()) }.reduce(0, +)
+    }
+
+    /// S-03ri: she typed her own share, so it's pinned.
+    private var mineTyped: Bool {
+        !(values[Self.me] ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// S-03rg: on Amounts, her row gives way until she types in it. With
+    /// "I had some too" off there's no row of hers to give way.
+    private var givesWay: Bool { mode == "amount" && withMe && !mineTyped }
+
+    /// S-03ri: "Take $15.88 from your share", when taking it makes it add up.
+    private var takeFromMine: Int? {
+        guard mode == "amount", withMe, mineTyped, gapCents < 0 else { return nil }
+        return Int((number(Self.me) * 100).rounded()) >= -gapCents ? -gapCents : nil
     }
 
     private var addsUp: String {
         switch mode {
         case "shares":
-            let n = rows.map { number($0) }.reduce(0, +)
+            // TEST-23: a locked payer is "not in the shares"; their row's
+            // number is the dollars they paid, so it isn't counted.
+            let n = rows.filter { !locked($0) }.map { number($0) }.reduce(0, +)
             return "\(Self.plain(n)) shares · adds up to \(Format.amount(Double(totalCents) / 100)) ✓"
         default: return "Adds up to \(Format.amount(Double(totalCents) / 100)) ✓"
         }
@@ -906,6 +947,8 @@ struct SplitSheet: View {
         let g = Double(abs(gapCents)) / 100
         // S-03b: with "I had some too" off there's no "you" to keep the rest.
         if gapCents > 0 && blocksShort { return "\(Format.amount(g)) left to assign" }
+        // S-03rh: her share is already at $0.00.
+        if gapCents < 0 && givesWay { return "That’s \(Format.amount(g)) too much, even with your share at $0.00" }
         // S-03b v2 / S-03r / S-03re (REFRESH-03): "$4.12 left · stays yours".
         return gapCents > 0 ? "\(Format.amount(g)) left · stays yours"
             : "That’s \(Format.amount(g)) too much"
@@ -979,7 +1022,7 @@ struct SplitSheet: View {
             body["people"] = people.map { ["name": $0] }
         case "amount":
             body["people"] = people.map { ["name": $0, "amount": number($0)] }
-            body["you"] = withMe ? number(Self.me) : 0
+            body["you"] = withMe ? (givesWay ? Double(max(mineCents, 0)) / 100 : number(Self.me)) : 0
         case "percent":
             body["people"] = people.map { ["name": $0, "percent": number($0)] }
             if withMe { body["you"] = number(Self.me) }
@@ -1052,7 +1095,7 @@ struct SplitSheet: View {
         case "even": body["people"] = people.map { ["name": $0] }
         case "amount":
             body["people"] = people.map { ["name": $0, "amount": number($0)] }
-            body["you"] = withMe ? number(Self.me) : 0
+            body["you"] = withMe ? (givesWay ? Double(max(mineCents, 0)) / 100 : number(Self.me)) : 0
         case "percent":
             body["people"] = people.map { ["name": $0, "percent": number($0)] }
             if withMe { body["you"] = number(Self.me) }
@@ -1118,6 +1161,9 @@ struct SplitPeople: View {
     @State private var options: Transaction.Splitting.Person?
     @State private var afterOptions: (() -> Void)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// TEST-22: at AX sizes a row's amount goes under the name (S-03ax).
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var amountsUnder: Bool { typeSize.isAccessibilitySize }
 
     var body: some View {
         let open = split.people.filter { $0.owes >= 0.005 }
@@ -1159,7 +1205,7 @@ struct SplitPeople: View {
                         Button(action: onEdit) {
                             Text("Edit split").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                         }
-                        .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.action)
+                        .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.link)
                         .buttonStyle(.plain)
                     }
                 }
@@ -1209,7 +1255,10 @@ struct SplitPeople: View {
                         PearlOptionRow(symbol: "person.2", title: "Settle up", action: onSettle)
                             .accessibilityHint("Set what each person owes.")
                         PearlDivider()
-                        PearlOptionRow(symbol: "checkmark", title: "That’s everything", action: onClose)
+                        // S-04u8 (TEST-18, note 1238:25742): once everyone has paid.
+                        PearlOptionRow(symbol: "checkmark", title: "That’s everything",
+                                       sub: everyonePaid ? "Everyone has paid. \(Format.amount(split.still ?? split.you)) stays yours." : nil,
+                                       action: onClose)
                             .accessibilityHint("Keeps the rest as yours and closes the split.")
                     } else {
                         PearlOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Reopen split", action: onReopen)
@@ -1223,7 +1272,7 @@ struct SplitPeople: View {
                     Text("See everyone who owes you")
                         .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
                 }
-                .font(Nacre.textButton).foregroundColor(Pearl.action).buttonStyle(.plain)
+                .font(Nacre.textButton).foregroundColor(Pearl.link).buttonStyle(.plain)
                 .padding(.top, 6)
             }
         }
@@ -1237,10 +1286,10 @@ struct SplitPeople: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("You").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
                     Text("Your share").font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                    if amountsUnder { youAmount }
                 }
                 Spacer(minLength: 8)
-                Text(Format.amount(split.you)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                    .foregroundColor(Pearl.ink)
+                if !amountsUnder { youAmount }
             }
             .padding(.vertical, 10).frame(minHeight: 56).contentShape(Rectangle())
         }
@@ -1252,23 +1301,40 @@ struct SplitPeople: View {
         .accessibilityIdentifier("split-you-row")
     }
 
+    private var youAmount: some View {
+        Text(Format.amount(split.you)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
+            .foregroundColor(Pearl.ink).pearlAmountFit()
+    }
+
+    /// S-04u8 (note 1238:25742): everyone but you has a linked or cash
+    /// payment, and your share was never set.
+    private var everyonePaid: Bool {
+        split.unsure && split.closedAt == nil && !split.people.isEmpty && split.people.allSatisfy { $0.paid >= 0.005 }
+    }
+
+    private var leftAmount: some View {
+        Text(Format.amount(split.still ?? split.you)).font(Pearl.text(.headline, .semibold))
+            .monospacedDigit().foregroundColor(Pearl.ink).pearlAmountFit()
+    }
+
     /// S-04u6: "You · Your share · not set yet", and S-40y from its •••.
+    /// S-04u8: "Your share · what's left after paybacks · $17.00".
     private var youRow: some View {
         let closed = split.closedAt != nil
+        let left = closed || everyonePaid
         return HStack(spacing: 12) {
             Button { if !closed { youOptions = true } } label: {
                 HStack(spacing: 12) {
                     PearlFace(name: "Me", size: 40)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("You").font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
-                        Text(closed ? "Your share · what was left" : "Your share · not set yet")
+                        Text(closed ? "Your share · what was left"
+                             : everyonePaid ? "Your share · what’s left after paybacks" : "Your share · not set yet")
                             .font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                        if left && amountsUnder { leftAmount }
                     }
                     Spacer(minLength: 8)
-                    if closed {
-                        Text(Format.amount(split.still ?? split.you)).font(Pearl.text(.headline, .semibold))
-                            .monospacedDigit().foregroundColor(Pearl.ink)
-                    }
+                    if left && !amountsUnder { leftAmount }
                 }
                 .frame(minHeight: 44).contentShape(Rectangle())
             }
@@ -1329,13 +1395,11 @@ struct SplitPeople: View {
                         if paid, let how = how, p.links?.count == 1 {
                             Text(how).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
                         }
+                        if paid && amountsUnder { paidAmount(p) }
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
-                    if paid {
-                        Text(Format.amount(p.paid)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                            .foregroundColor(Pearl.moneyIn)
-                    }
+                    if paid && !amountsUnder { paidAmount(p) }
                 }
                 .frame(minHeight: 44).contentShape(Rectangle())
             }
@@ -1349,6 +1413,19 @@ struct SplitPeople: View {
             }
         }
         .padding(.vertical, 10)
+    }
+
+    private func paidAmount(_ p: Transaction.Splitting.Person) -> some View {
+        Text(Format.amount(p.paid)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
+            .foregroundColor(Pearl.moneyIn).pearlAmountFit()
+    }
+
+    /// What they still owe (ink); what they paid (money in); what she let go (muted).
+    private func owedAmount(_ p: Transaction.Splitting.Person) -> some View {
+        Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
+            .font(Pearl.text(.headline, .semibold)).monospacedDigit()
+            .foregroundColor(p.letGo != nil ? Pearl.muted : p.owes >= 0.005 ? Pearl.ink : Pearl.moneyIn)
+            .pearlAmountFit()
     }
 
     private func person(_ p: Transaction.Splitting.Person) -> some View {
@@ -1365,13 +1442,11 @@ struct SplitPeople: View {
                             if let line = deposited(p) {
                                 Text(line).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
                             }
+                            if amountsUnder { owedAmount(p) }
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 8)
-                        // What they still owe (ink); what they paid (money in); what she let go (muted).
-                        Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
-                            .font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                            .foregroundColor(p.letGo != nil ? Pearl.muted : p.owes >= 0.005 ? Pearl.ink : Pearl.moneyIn)
+                        if !amountsUnder { owedAmount(p) }
                     }
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
@@ -1550,9 +1625,12 @@ struct MarkPaidSheet: View {
         let part: Double?
         /// Who sent an e-Transfer, as Cash flow names them (TEST-13).
         let party: String?
+        /// TEST-20: "amount" when it's theirs and what they owe, so the
+        /// row can say "Amount matches"; nil otherwise.
+        var match: String? = nil
 
         enum CodingKeys: String, CodingKey {
-            case id, date, merchant, description, amount, likely, part, party
+            case id, date, merchant, description, amount, likely, part, party, match
             case accountName = "account_name"
         }
 
@@ -1707,7 +1785,8 @@ struct MarkPaidSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(d.name) · \(Format.short(d.date))").font(Pearl.text(.headline, .medium))
                         .foregroundColor(Pearl.ink)
-                    let sub = [d.likely == true ? "Amount matches" : d.accountName, how].compactMap { $0 }
+                    // TEST-20: "Amount matches" only when it's theirs and it does.
+                    let sub = [d.match == "amount" ? "Amount matches" : d.accountName, how].compactMap { $0 }
                     if !sub.isEmpty {
                         Text(sub.joined(separator: " · ")).font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
                     }
@@ -1855,6 +1934,15 @@ struct MarkPaidSheet: View {
     }
 
     private var paying: Double { uses.values.reduce(0, +) }
+
+    /// TEST-20: an e-Transfer that names this person ("Priya Shah" for Priya).
+    private func theirs(_ d: Candidate) -> Bool {
+        guard let party = d.party?.lowercased(), !party.isEmpty else { return false }
+        let name = person.name.lowercased()
+        let first = name.split(separator: " ").first.map(String.init) ?? name
+        return party == name || party.hasPrefix(name)
+            || party.replacingOccurrences(of: ".", with: " ").split(separator: " ").map(String.init).contains(first)
+    }
 
     /// S-26 when it takes more than one deposit (or part of one); S-29,
     /// one payment that looks like theirs, otherwise.
@@ -2125,14 +2213,17 @@ struct MarkPaidSheet: View {
                 if let onLinked = onLinked { onLinked(title, undos) } else { onDone(title) }
             } else if how == "bank" {
                 struct Reply: Decodable { let candidates: [Lenient<Candidate>]? }
-                let r: Reply = try await api.get("api/transactions/\(t.id)/paybacks")
+                // TEST-20: for this person, so their own money leads and
+                // nobody else's is suggested or ticked.
+                let r: Reply = try await api.get("api/transactions/\(t.id)/paybacks", query: ["person": person.name])
                 // Theirs first: deposits that name them, then the rest.
                 let first = person.name.split(separator: " ").first.map(String.init)?.lowercased() ?? ""
                 deposits = (r.candidates ?? []).compactMap { $0.value }.enumerated().sorted { a, b in
                     let x = a.element.name.lowercased().contains(first), y = b.element.name.lowercased().contains(first)
                     return x != y ? x : a.offset < b.offset
                 }.map(\.element)
-                picked = deposits.first(where: { $0.likely == true }).map { [$0.id] } ?? []
+                // TEST-20: pre-tick only one of theirs that fits.
+                picked = deposits.first(where: { $0.likely == true && theirs($0) }).map { [$0.id] } ?? []
                 finding = true
                 chosen = true
             } else {
@@ -2312,7 +2403,8 @@ struct MismatchSheet: View {
                 }
             }
             InfoNote(text: share > paid ? "Either way, your Allowance doesn’t change now."
-                     : "Only “I owe \(name)” changes your Allowance: down \(diff), the money you’ll send back.")
+                     // S-48b 1249:26540 (TEST-24): a gift lowers it too.
+                     : "“I owe \(name)” and “It’s a gift” lower your Allowance by \(diff). “\(possessive(name)) share is \(Format.amount(paid))” doesn’t change it.")
         } footer: {
             Button(overline == nil ? "Back to amounts" : "Keep it as it is", action: onBack)
                 .buttonStyle(PearlSecondaryButtonStyle())

@@ -40,6 +40,8 @@ struct YourShareSheet: View {
     let onSaved: (String, JSONValue?) -> Void
 
     @State private var lockToast: PearlToast.Model?
+    /// S-47g: "Who paid you back", from the folded Paid back line.
+    @State private var whoPaid = false
     @State private var mine = ""
     @State private var theirs: [String: String] = [:]
     /// S-47c (product owner 2026-11-10, S-47c2 rejected): Evenly, Amounts,
@@ -196,17 +198,26 @@ struct YourShareSheet: View {
                     }
                 } else if !paidPeople.isEmpty {
                     PearlDivider()
-                    Button { if paidPeople.count == 1 { showLock(paidPeople[0]) } } label: {
+                    // S-47f with one payer; S-47g (section 20) with several.
+                    Button { if paidPeople.count == 1 { showLock(paidPeople[0]) } else { whoPaid = true } } label: {
                         line("Paid back", "\(Format.andList(paidPeople.map(\.name))) · linked, locked",
                              "\u{2212}" + Format.amount(Double(paidCents) / 100))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityHint(paidPeople.count == 1 ? "Says how to change it" : "Shows who paid you back")
                 }
                 PearlDivider()
+                if tooMuch {
+                    // S-47e (note 1238:25742): while the share is too big, only
+                    // what she can have; no Your share or "owes you" rows.
+                    line(unpaid.isEmpty ? "Left for you" : "Left for you and \(Format.andList(unpaid.map(\.name)))", "Your share can be up to this",
+                         Format.amount(Double(roomCents) / 100))
+                } else {
                 line("Your share", "What you had",
                      mineCents.map { "\u{2212}" + Format.amount(Double($0) / 100) } ?? "—")
-                if unpaid.count > 1 {
+                }
+                if unpaid.count > 1 && !tooMuch {
                     PearlDivider()
                     // S-47c: the method for what's left.
                     Picker("How to split what’s left", selection: $method) {
@@ -218,7 +229,7 @@ struct YourShareSheet: View {
                     .pickerStyle(.segmented)
                     .padding(.vertical, 8)
                 }
-                ForEach(unpaid) { p in
+                ForEach(tooMuch ? [] : unpaid) { p in
                     PearlDivider()
                     if unpaid.count == 1 {
                         line("\(p.name) owes you", "Hasn’t paid · gets what’s left",
@@ -236,9 +247,11 @@ struct YourShareSheet: View {
                     .font(Nacre.footnote).foregroundColor(gapCents == 0 ? Nacre.teal : Pearl.ink)
                     .frame(maxWidth: .infinity)
             }
+            if !tooMuch {
             InfoNote(text: unpaid.count == 1
                      ? "Your Allowance doesn’t change now. When \(unpaid[0].name) pays, your \(mineCents.map { Format.amount(Double($0) / 100) } ?? "share") is what stays counted."
                      : "Your Allowance doesn’t change now. As they pay, it goes up; your share is what stays counted.")
+            }
             if let failed = failed { CautionBanner(text: failed) }
         } footer: {
             PearlSheetButtons(primary: failed != nil ? "Try again"
@@ -249,6 +262,13 @@ struct YourShareSheet: View {
                 .disabled(!ready)
         }
         .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { typing = Self.me } }
+        .sheet(isPresented: $whoPaid) {
+            WhoPaidBackSheet(merchant: t.merchant, payers: paidPeople, onClose: { whoPaid = false }) { name in
+                whoPaid = false
+                // Each row opens that person's S-40u, where Unlink is.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onPersonOptions?(name) }
+            }
+        }
     }
 
     private var field: some View {
@@ -266,7 +286,7 @@ struct YourShareSheet: View {
                 .accessibilityIdentifier("your-share")
                 .disabled(busy)
             // S-47e: more than what's left; S-47a: not typed yet.
-            Text(tooMuch ? "Your share can be up to \(Format.amount(Double(roomCents) / 100))"
+            Text(tooMuch ? "That’s more than what’s left. Paybacks cover \(Format.amount(Double(paidCents) / 100)), so your share can be up to \(Format.amount(Double(roomCents) / 100))."
                  : mineCents == nil ? "You can leave it and set it later." : "")
                 .font(Pearl.text(.footnote)).foregroundColor(tooMuch ? Pearl.action : Pearl.muted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -300,6 +320,8 @@ struct YourShareSheet: View {
             if method == "even" {
                 Text(Format.amount(Double(theirCents(p.name)) / 100))
                     .font(Pearl.text(.headline)).monospacedDigit().foregroundColor(Pearl.ink)
+                    // TEST-14: "Jo owes $26.00", not a bare amount.
+                    .accessibilityLabel("\(p.name) owes \(Format.amount(Double(theirCents(p.name)) / 100))")
             } else {
             TextField("", text: fieldBinding(p.name), prompt: Text(prompt(p.name)).foregroundColor(Pearl.ink))
                 .font(Pearl.text(.headline)).monospacedDigit().multilineTextAlignment(.trailing)
@@ -353,5 +375,58 @@ struct YourShareSheet: View {
         } catch {
             failed = "Couldn’t save your share. Nothing changed. Try again."
         }
+    }
+}
+
+/// S-47g (TEST-18, section 20 1266:28020): "Who paid you back". Each payer
+/// is locked; a row opens that person's S-40u, where Unlink is.
+struct WhoPaidBackSheet: View {
+    let merchant: String
+    let payers: [Transaction.Splitting.Person]
+    let onClose: () -> Void
+    let onOpen: (String) -> Void
+
+    var body: some View {
+        PearlSheet {
+            PearlSheetHeader(overline: "Paid back · \(merchant)", title: "Who paid you back", close: onClose)
+            Text("These payments are linked, so they’re locked. To change someone’s share, unlink their payback.")
+                .font(Pearl.text(.headline)).foregroundColor(Pearl.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            PearlOptionCard {
+                ForEach(Array(payers.enumerated()), id: \.element.id) { i, p in
+                    if i > 0 { PearlDivider() }
+                    row(p)
+                }
+            }
+        } footer: {
+            Button("Back to your share", action: onClose).buttonStyle(PearlSecondaryButtonStyle())
+                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
+        }
+    }
+
+    private func row(_ p: Transaction.Splitting.Person) -> some View {
+        let cash = (p.cash ?? 0) >= p.paid - 0.005
+        let sub = ["Paid back", p.paidOn.map { Format.short($0) }, cash ? "cash" : nil, "locked"]
+            .compactMap { $0 }.joined(separator: " · ")
+        return Button { onOpen(p.name) } label: {
+            HStack(spacing: 12) {
+                PearlFace(name: p.name, size: 40)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(p.name).font(Pearl.text(.headline, .semibold)).foregroundColor(Pearl.ink)
+                    Text(sub).font(Pearl.text(.subheadline)).foregroundColor(Pearl.muted)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Text(Format.amount(p.paid)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
+                    .foregroundColor(Pearl.ink).pearlAmountFit()
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
+                    .accessibilityHidden(true)
+            }
+            .padding(.vertical, 9).frame(minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(p.name), \(sub), \(Format.amount(p.paid))")
+        .accessibilityHint("Opens \(possessive(p.name)) options, where you can unlink it")
     }
 }

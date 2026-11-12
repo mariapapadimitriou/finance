@@ -371,12 +371,22 @@ struct TransactionDetailView: View {
     @State private var message: String?
     @State private var error: String?
 
+    /// S-04r v2s: the hero has scrolled under the bar.
+    @State private var heroGone = false
+
     private var t: Transaction { detail ?? transaction }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 header.padding(.bottom, 16)
+                    // S-04r v2s (TEST-09): once the hero scrolls under the bar,
+                    // the bar takes the merchant's name.
+                    .background(GeometryReader { g in
+                        Color.clear
+                            .onAppear { heroGone = g.frame(in: .global).maxY < 120 }
+                            .onChange(of: g.frame(in: .global).maxY) { heroGone = $0 < 120 }
+                    })
                 if let transfer = t.transfer, guessing == nil {
                     transferLegs(transfer)
                 } else {
@@ -424,9 +434,14 @@ struct TransactionDetailView: View {
                 }
             }
         }
-        .toolbarBackground(.hidden, for: .navigationBar)
+        // S-04r v2s (TEST-09, TEST-26): a real inline bar with the merchant's
+        // name once the hero has gone. The app's bars are see-through
+        // (PearlApp), so the page draws S-04r v2s's --surface-page bar itself
+        // then, behind Back, the title and the clock.
+        .toolbarBackground(Pearl.scrolledBar, for: .navigationBar)
+        .toolbarBackground(heroGone ? .visible : .hidden, for: .navigationBar)
         .navigationBarHidden(false)
-        .navigationTitle("")
+        .navigationTitle(heroGone ? t.merchant : "")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .onAppear {
@@ -862,6 +877,7 @@ struct TransactionDetailView: View {
                 .font(.custom("Fraunces-SemiBold", size: 44, relativeTo: .largeTitle))
                 .foregroundColor(t.tone)
                 .lineLimit(1).minimumScaleFactor(0.5)
+                .accessibilityLabel(Format.spoken(heroAmount))
             Text(t.transfer != nil ? "Doesn’t count · Between your accounts" : dateLine)
                 .font(Nacre.footnote).foregroundColor(Pearl.ink)
                 .multilineTextAlignment(.center)
@@ -1868,10 +1884,12 @@ struct TransactionDetailView: View {
     // MARK: Parts
 
     private func section(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(Nacre.caption2).tracking(0.4).foregroundColor(Pearl.muted)
+        // TEST-14 (round 2): the 11 pt caption didn't grow with Dynamic Type
+        // ("partially unsupported"); the overline is the sheets' section
+        // label, which does, and wraps rather than clips.
+        PearlSectionLabel(text: text)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 16).padding(.top, 12)
-            .accessibilityAddTraits(.isHeader)
     }
 
     private func row(title: String, sub: String? = nil, placeholder: Bool = false, chevron: Bool,
@@ -2422,7 +2440,7 @@ struct TagsSheet: View {
                     .font(Nacre.body).autocorrectionDisabled()
                     .submitLabel(.done)
                     .onSubmit(add)
-                Button("Add", action: add).font(Nacre.textButton).foregroundColor(Pearl.action)
+                Button("Add", action: add).font(Nacre.textButton).foregroundColor(Pearl.link)
                     .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 16).frame(height: 48)
