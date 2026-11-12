@@ -457,7 +457,8 @@ class TestSettleUp:
         adds_up(client, pn)
 
     def test_a_share_below_what_they_paid_says_what_the_extra_was(self, client):
-        """Decision 6 (S-45e): the SPLIT-19 extra step, here a gift."""
+        """TEST-18b (S-48b, which replaces S-45e): a share below what someone
+        paid saves with what the extra is, here a gift."""
         i = unsure_dinner(client, more=[sam_paid(client)])
         pn, sam = i["PIZZA NOVA"], i["E-TRANSFER FROM SAM"]
         link(client, pn, sam, "Sam")
@@ -493,6 +494,17 @@ class TestSettleUp:
         assert people(client, pn)["Sam"]["over"] == 10.0
         you_owe = client.get("/api/owed").get_json()["you_owe"]
         assert you_owe[0]["name"] == "Sam" and you_owe[0]["total"] == 10.0
+
+    def test_a_share_above_what_they_paid_needs_ask(self, client):
+        """TEST-18b (S-48a): more than they paid saves only as "Ask Sam"."""
+        i = unsure_dinner(client, more=[sam_paid(client)])
+        pn = i["PIZZA NOVA"]
+        link(client, pn, i["E-TRANSFER FROM SAM"], "Sam")
+        body = {"mode": "amount", "you": 40, "people": [{"name": "Sam", "amount": 30}, {"name": "Priya", "amount": 30}]}
+        r = put_split(client, pn, body, ok=False)
+        assert r["error"] == "Sam paid $20.00. Ask Sam for $10.00, or make Sam’s share $20.00."
+        put_split(client, pn, {**body, "ask": ["Sam"]})
+        assert people(client, pn)["Sam"]["owes"] == 10.0
 
 
 class TestThatsEverything:

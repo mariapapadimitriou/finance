@@ -137,3 +137,43 @@ def test_not_sure_yet_is_unchanged(client):
     assert allowance(client) == pytest.approx(before)
     client.post(f"/api/transactions/{tid}/paybacks/{ids['E-TRANSFER RECEIVED PRIYA SHAH']}")
     assert allowance(client) == pytest.approx(before + 42.50)
+
+
+class TestCashFlowNote:
+    """T-01r2 (product owner 2026-11-10): the split row says what's still to
+    come back, that it all has, or that it's not sure yet."""
+
+    def note(self, c, tid):
+        rows = c.get("/api/transactions/list", query_string={"month": TODAY.isoformat()[:7]}).get_json()
+        return next(x for x in rows["transactions"] if x["id"] == tid)["note"]
+
+    def test_people_still_owe(self, client):
+        tid, ids = gusto(client)
+        split_by_amounts(client, tid)
+        assert self.note(client, tid) == "Split with Priya +2 · $87.50 to come back"
+        client.post(f"/api/transactions/{tid}/paybacks/{ids['E-TRANSFER RECEIVED PRIYA SHAH']}")
+        assert self.note(client, tid) == "Split with Priya +2 · $45.00 to come back"
+
+    def test_two_people_by_name(self, client):
+        tid, _ = gusto(client)
+        client.put(f"/api/transactions/{tid}/split", json={"mode": "even", "watch": True,
+                                                           "people": [{"name": "Priya"}, {"name": "Sam"}]})
+        assert self.note(client, tid) == "Split with Priya and Sam · $85.00 to come back"
+
+    def test_all_paid_back(self, client):
+        ids = load(client.st, charge(59.33, "NOPA RESTAURANT", "Nopa Restaurant", when=day(0)),
+                   etransfer_in(19.77, "Priya Shah", when=day(0)), etransfer_in(19.77, "Sam Lee", when=day(0)))
+        tid = ids["NOPA RESTAURANT"]
+        client.put(f"/api/transactions/{tid}/split", json={"mode": "even", "watch": True,
+                                                           "people": [{"name": "Priya"}, {"name": "Sam"}]})
+        client.post(f"/api/transactions/{tid}/paybacks/{ids['E-TRANSFER RECEIVED PRIYA SHAH']}")
+        client.post(f"/api/transactions/{tid}/paybacks/{ids['E-TRANSFER RECEIVED SAM LEE']}")
+        assert self.note(client, tid) == "Your share of $59.33 · all paid back"
+
+    def test_not_sure_yet(self, client):
+        tid, ids = gusto(client)
+        client.put(f"/api/transactions/{tid}/split", json={"mode": "unknown", "watch": True,
+                                                           "people": [{"name": n} for n in ("Priya", "Sam", "Jo", "Alex")]})
+        assert self.note(client, tid) == "Split 5 ways · not sure yet · $127.50 still counts"
+        client.post(f"/api/transactions/{tid}/paybacks/{ids['E-TRANSFER RECEIVED PRIYA SHAH']}")
+        assert self.note(client, tid) == "Split 5 ways · not sure yet · $85.00 still counts"

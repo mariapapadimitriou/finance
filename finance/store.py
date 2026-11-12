@@ -546,6 +546,11 @@ CREATE TABLE IF NOT EXISTS txn_split_cash (
 );
 -- Let the rest go (THL-291): what someone's part was before she let the
 -- rest of it go, so it can be put back.
+-- TEST-18 (THL-303): a split she isn't in ("I had some too" off). Without
+-- a row she is in it, as every split before this was.
+CREATE TABLE IF NOT EXISTS txn_split_not_me (
+    txn_id TEXT PRIMARY KEY
+);
 CREATE TABLE IF NOT EXISTS txn_split_let_go (
     txn_id TEXT NOT NULL,
     name   TEXT NOT NULL,
@@ -712,7 +717,7 @@ _ROW_TABLES = ("txn_shares", "txn_invested", "piggy_allocations", "piggy_optouts
                "txn_exclusions", "txn_income_type", "txn_confirmed", "txn_notes",
                "txn_splits", "txn_split_people", "txn_oneoff", "txn_duplicates",
                "joint_deposits", "txn_party", "txn_tags", "txn_saved_to", "sorted_range_rows",
-               "txn_split_cash", "txn_split_let_go", "txn_parts", "txn_joint_parts")
+               "txn_split_cash", "txn_split_let_go", "txn_split_not_me", "txn_parts", "txn_joint_parts")
 
 # What friends have sent back for each charge, as a positive total.
 _PAYBACKS = """(
@@ -1904,9 +1909,12 @@ class Store:
             every = c.execute("SELECT id, txn_id, name, amount, day, deposit_id, via, app, origin, kind "
                               "FROM txn_split_cash ORDER BY id").fetchall()
             gone = c.execute("SELECT txn_id, name, was, day FROM txn_split_let_go").fetchall()
+            not_me = {r["txn_id"] for r in c.execute("SELECT txn_id FROM txn_split_not_me").fetchall()}
         out = {r["txn_id"]: {"mode": r["mode"], "watch": bool(r["watch"]), "people": [],
                              # SPLIT-C (S-46): That's everything, on this day.
-                             "closed_at": r["closed_at"] or None}
+                             "closed_at": r["closed_at"] or None,
+                             # TEST-18: is she in it ("I had some too")?
+                             "me": r["txn_id"] not in not_me}
                for r in heads}
         for r in people:
             if r["txn_id"] in out:
@@ -2068,10 +2076,15 @@ class Store:
             c.execute("DELETE FROM txn_parts WHERE txn_id = ?", (txn_id,))
 
     def set_split(self, txn_id: str, mode: str, people: list[dict], watch: bool,
-                  closed_at: str | None = None) -> None:
+                  closed_at: str | None = None, me: bool | None = None) -> None:
         """A split as given. Saving one opens it again unless `closed_at`
-        says it's closed (SPLIT-C, S-46: Undo puts a closed one back)."""
+        says it's closed (SPLIT-C, S-46: Undo puts a closed one back).
+        `me` (TEST-18): whether she's in it; None keeps what it was."""
         with self.conn() as c:
+            if me is not None:
+                c.execute("DELETE FROM txn_split_not_me WHERE txn_id = ?", (txn_id,))
+                if not me:
+                    c.execute("INSERT INTO txn_split_not_me (txn_id) VALUES (?)", (txn_id,))
             c.execute("DELETE FROM txn_split_people WHERE txn_id = ?", (txn_id,))
             c.execute("DELETE FROM txn_splits WHERE txn_id = ?", (txn_id,))
             c.execute("INSERT INTO txn_splits (txn_id, mode, watch, closed_at) VALUES (?, ?, ?, ?)",
@@ -2108,6 +2121,7 @@ class Store:
     def clear_split(self, txn_id: str) -> bool:
         with self.conn() as c:
             c.execute("DELETE FROM txn_split_people WHERE txn_id = ?", (txn_id,))
+            c.execute("DELETE FROM txn_split_not_me WHERE txn_id = ?", (txn_id,))
             cur = c.execute("DELETE FROM txn_splits WHERE txn_id = ?", (txn_id,))
             return (cur.rowcount or 0) > 0
 
@@ -2413,6 +2427,7 @@ class Store:
             ("txn_split_people", "people in split charges"),
             ("txn_split_cash", "cash you were paid back"),
             ("txn_split_let_go", "shares you let go"),
+            ("txn_split_not_me", "splits you weren't in"),
             ("txn_parts", "deposits split into parts"),
             ("transfer_destinations", "where transfers go"),
             ("joint_accounts", "joint accounts"),

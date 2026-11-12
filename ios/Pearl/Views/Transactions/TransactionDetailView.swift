@@ -283,6 +283,10 @@ struct TransactionDetailView: View {
     @State private var splitting = false
     /// SPLIT-C: S-45a Settle up, its Type amounts, S-46a That's everything.
     @State private var settlingUp = false
+    /// TEST-18 (S-47): What was your share?
+    @State private var settingShare = false
+    /// S-47f: whose S-40u to open once the sheet over the page has gone.
+    @State private var optionsFor: String?
     @State private var typingSettle = false
     @State private var closingSplit = false
     /// JOINT-B: S-41j Remove the split?
@@ -292,6 +296,8 @@ struct TransactionDetailView: View {
     /// REFRESH-02: S-07r Remind, S-03re Change their share, S-03fr Remove.
     @State private var reminding: Transaction.Splitting.Person?
     @State private var changingShare: Transaction.Splitting.Person?
+    /// S-48e (TEST-18b): S-48a / S-48b again for someone, after settling.
+    @State private var changingAnswer: Transaction.Splitting.Person?
     @State private var removingPerson: Transaction.Splitting.Person?
     /// S-44a–i: the split flow's ink toast, with Undo (or Try again, S-44h).
     @State private var splitToast: PearlToast.Model?
@@ -427,12 +433,10 @@ struct TransactionDetailView: View {
                 }
             }
         }
-        // S-04r v2s (TEST-09): a real inline bar; iOS draws its scroll-edge
-        // material behind Back and the clock once the page scrolls under it.
-        // TEST-09 (round 2): the app's bars are see-through (PearlApp), so
-        // iOS drew no scroll-edge material. Once the hero is under the bar,
-        // S-04r v2s's --surface-page bar sits behind Back, the title and
-        // the clock, and nothing scrolls under them.
+        // S-04r v2s (TEST-09, TEST-26): a real inline bar with the merchant's
+        // name once the hero has gone. The app's bars are see-through
+        // (PearlApp), so the page draws S-04r v2s's --surface-page bar itself
+        // then, behind Back, the title and the clock.
         .toolbarBackground(Pearl.scrolledBar, for: .navigationBar)
         .toolbarBackground(heroGone ? .visible : .hidden, for: .navigationBar)
         .navigationBarHidden(false)
@@ -536,19 +540,56 @@ struct TransactionDetailView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { removingSplit = true }
             })
         }
+        .sheet(isPresented: $settingShare) {
+            if let split = t.splitting {
+                // S-47a–e → S-04u7: a set split, "Alex owes you $28.00" with
+                // Undo back to Not sure yet.
+                YourShareSheet(t: t, split: split, api: app.api, onClose: { settingShare = false },
+                               onPersonOptions: { name in
+                                   settingShare = false
+                                   DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { optionsFor = name }
+                               }) { title, undo in
+                    settingShare = false
+                    Task {
+                        await load()
+                        app.changed()
+                        showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $settlingUp) {
             if let split = t.splitting {
                 // S-45a / S-45b → S-45g.
                 SettleUpSheet(t: t, split: split, onClose: { settlingUp = false }, onType: {
                     settlingUp = false
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { typingSettle = true }
-                }) {
+                }, run: {
                     let (title, undo) = try await settleWithWhatEachPaid(split)
                     settlingUp = false
                     await load()
                     app.changed()
                     showSplit(title, undo: undo)
-                }
+                }, onLeftTo: { last, left in
+                    // S-45a2 (TEST-18): payers at what they paid, the last one the rest.
+                    var people: [[String: Any]] = split.people.filter { $0.paid >= 0.005 }
+                        .map { ["name": $0.name, "amount": $0.paid] }
+                    people.append(["name": last.name, "amount": left])
+                    struct Reply: Decodable { let undo: JSONValue? }
+                    do {
+                        let reply: Reply = try await app.api.put("api/transactions/\(t.id)/split",
+                                                                 ["mode": "amount", "include_me": false, "watch": true,
+                                                                  "people": people])
+                        settlingUp = false
+                        await load()
+                        app.changed()
+                        showSplit("\(last.name) owes you \(Format.amount(left))",
+                                  undo: reply.undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
+                    } catch let e as APIError {
+                        if case .server = e { throw SplitMenuError(words: e.localizedDescription) }
+                        throw e
+                    }
+                })
             }
         }
         .sheet(isPresented: $typingSettle) {
@@ -564,6 +605,10 @@ struct TransactionDetailView: View {
                     await run { nil }
                     showSplit(title, undo: undo.map { u in { try await postUndo(u); return "Not sure yet again" } })
                 }
+            }, onPersonOptions: { name in
+                // S-47f: Options on the lock toast opens that person's S-40u.
+                typingSettle = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { optionsFor = name }
             })
         }
         .sheet(isPresented: $closingSplit) {
@@ -641,6 +686,18 @@ struct TransactionDetailView: View {
                     UIPasteboard.general.string = ""
                     return nil
                 })
+            }
+        }
+        .sheet(item: $changingAnswer) { p in
+            // S-48e: the same question, answered again; the server swaps a
+            // gift or "you owe" and spreads a changed share.
+            let others = (t.splitting?.people ?? []).map(\.name).filter { $0 != p.name }
+            MismatchSheet(name: p.name, paid: p.paid + (p.gift ?? 0), share: p.amount, even: false, step: 1, of: 1,
+                          others: ((t.splitting?.withMe ?? true) ? ["you"] : []) + others,
+                          onBack: { changingAnswer = nil },
+                          overline: "\(t.merchant) · \(p.name)") { answer in
+                changingAnswer = nil
+                Task { await answerAgain(p, answer) }
             }
         }
         .sheet(item: $changingShare) { person in
@@ -1357,7 +1414,9 @@ struct TransactionDetailView: View {
                         onCredit: { crediting = Crediting(id: $0.id) },
                         onSettle: { settlingUp = true },
                         onClose: { closingSplit = true },
-                        onReopen: { Task { await reopenSplit() } })
+                        onReopen: { Task { await reopenSplit() } },
+                        onSetShare: { settingShare = true },
+                        optionsFor: $optionsFor)
         }
     }
 
@@ -2084,12 +2143,34 @@ struct TransactionDetailView: View {
     // MARK: REFRESH-02 — S-40's choices, and the S-44 toasts
 
     /// What she picked on a person's S-40 (it has gone by now).
+    /// S-48e: POST the new answer; the toast says what it is now.
+    private func answerAgain(_ p: Transaction.Splitting.Person, _ answer: SplitSheet.Answer) async {
+        let word: String
+        switch answer {
+        case .ask: word = "ask"
+        case .theirShare: word = "share"
+        case .iOwe: word = "owe"
+        case .gift: word = "gift"
+        }
+        struct Reply: Decodable { let toast: String? }
+        do {
+            let reply: Reply = try await app.api.post("api/transactions/\(t.id)/split/answer",
+                                                       ["name": p.name, "answer": word])
+            await load()
+            app.changed()
+            showSplit(reply.toast ?? "Changed", undo: nil)
+        } catch {
+            showFailed(app.handle(error) ?? "Couldn’t change that. Nothing changed.") { Task { await answerAgain(p, answer) } }
+        }
+    }
+
     private func choose(_ p: Transaction.Splitting.Person, _ choice: PersonChoice) {
         switch choice {
         case .markPaid: marking = p
         case .remind: reminding = p
         case .letGo: lettingGo = p
         case .changeShare: changingShare = p
+        case .changeAnswer: changingAnswer = p
         case .view(let link): if let id = link.view?.id { Task { await open(id) } }
         case .unlink(let link): unlinkingLink = link
         case .undoLetGo:

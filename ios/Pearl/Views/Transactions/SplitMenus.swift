@@ -420,23 +420,26 @@ struct PearlToast: View {
 
     let model: Model
     let done: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: model.failed ? "info.circle" : "checkmark")
-                .font(.system(size: 17, weight: .semibold))
-                .accessibilityHidden(true)
-            Text(model.text).font(Pearl.text(.callout, .medium))
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            if let action = model.action, let run = model.run {
-                Button(action) { run() }
-                    .font(Pearl.text(.callout, .semibold))
-                    .padding(.horizontal, 14).frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                    .buttonStyle(.plain)
+        // TEST-22 (designBOT 2026-11-11): at AX sizes the words wrap to two
+        // or three lines and Undo goes on its own line under them.
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    words.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                    actionButton.padding(.leading, -14)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    words
+                    Spacer(minLength: 8)
+                    actionButton
+                }
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .foregroundColor(Pearl.onInk)
         .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 6)
         .frame(minHeight: 56)
@@ -456,6 +459,26 @@ struct PearlToast: View {
             if !Task.isCancelled { done() }
         }
     }
+
+    private var words: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: model.failed ? "info.circle" : "checkmark")
+                .font(.system(size: 17, weight: .semibold))
+                .accessibilityHidden(true)
+            Text(model.text).font(Pearl.text(.callout, .medium))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder private var actionButton: some View {
+        if let action = model.action, let run = model.run {
+            Button(action) { run() }
+                .font(Pearl.text(.callout, .semibold))
+                .padding(.horizontal, 14).frame(minHeight: 44)
+                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+        }
+    }
 }
 
 // MARK: - S-40 Person options (one sheet, sections by state)
@@ -464,6 +487,8 @@ struct PearlToast: View {
 /// sheet can open (handoff note 1096:4498).
 enum PersonChoice {
     case markPaid, remind, letGo, undoLetGo, changeShare, remove
+    /// S-48e (TEST-18b): change what she answered for a payer.
+    case changeAnswer
     case view(Transaction.LinkInfo), unlink(Transaction.LinkInfo)
 }
 
@@ -551,9 +576,24 @@ struct PersonOptionsSheet: View {
                                    sub: "The \(Format.amount(p.owes)) becomes your spending") { onChoose(.letGo) }
                 }
             }
+            if let extra = answerExtra {
+                // S-48e: "Change what the extra $6.67 is".
+                PearlOptionCard {
+                    PearlOptionRow(symbol: "arrow.triangle.2.circlepath", title: "Change what the extra \(Format.amount(extra)) is",
+                                   sub: (p.gift ?? 0) >= 0.005 ? "Now: a gift · or you owe \(p.name), or \(possessive(p.name)) share"
+                                       : "Now: you owe \(p.name) · or \(possessive(p.name)) share, or a gift") {
+                        onChoose(.changeAnswer)
+                    }
+                }
+            }
             PearlSectionLabel(text: "Change the split")
             PearlOptionCard {
-                PearlOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeShare) }
+                if p.paid >= 0.005 && p.owes >= 0.005 && p.letGo == nil {
+                    // S-48e: Sam paid less; his share reopens S-48a.
+                    PearlOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeAnswer) }
+                } else {
+                    PearlOptionRow(symbol: "person.2", title: "Change \(possessive(p.name)) share") { onChoose(.changeShare) }
+                }
                 PearlDivider()
                 PearlOptionRow(symbol: "person", title: "Remove \(p.name)", sub: removeSub) { onChoose(.remove) }
             }
@@ -561,6 +601,12 @@ struct PersonOptionsSheet: View {
     }
 
     private var paidInFull: Bool { p.owes < 0.005 && p.letGo == nil && p.paid >= 0.005 }
+
+    /// S-48e: the extra a payer sent, whether she owes it back or it's a gift.
+    private var answerExtra: Double? {
+        let extra = (p.over ?? 0) + (p.gift ?? 0)
+        return extra >= 0.005 ? extra : nil
+    }
 
     /// "Owes you $30.00 of $30.00", "Paid $10.00 of $30.00 · owes $20.00",
     /// "✓ Paid back in full · Nov 16", "You let $30.00 go · Nov 20".

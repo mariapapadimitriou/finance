@@ -175,7 +175,16 @@ def _splitting(t, split: dict, txns, payer) -> dict:
         "uncredited": sp.uncredited_rows(t, split, txns, payer),
         "base": sp.split_base(t),
         "closed_at": split.get("closed_at"),
+        # TEST-18 (THL-303): is she in it ("I had some too")?
+        "me": split.get("me", True),
     }
+    # TEST-18b (S-48e): what of each payer's money she called a gift, so
+    # their ••• can offer to change it.
+    from .parts_api import extra_gift
+    for person in out["people"]:
+        gift = extra_gift(store(), t.fingerprint, person["name"]) if person.get("paid") else 0.0
+        if gift >= 0.005:
+            person["gift"] = round(gift, 2)
     if split["mode"] == sp.UNSURE:
         out["still"] = sp.still_yours(t)
         out["paid"] = round(t.unsure_paid or 0.0, 2)
@@ -508,8 +517,16 @@ def set_transaction_split(txn_id: str):
                 # S-17j (REFRESH-03): "Sam Lee’s part is already off."
                 return jsonify({"error": f"{who}{'’' if who.lower().endswith('s') else '’s'} part is already off."}), 400
     mode = body.get("mode")
-    people, problem = sp.validate(t, mode, body.get("people"), body.get("you"),
-                                  body.get("include_me", True) is not False, base=base)
+    include_me = body.get("include_me", True) is not False
+    # S-47e first: "Your share can be up to $45.00" says more than "That's
+    # $1.00 more than the charge".
+    problem = _your_share_room(st, t, st.splits().get(txn_id), body, base)
+    if problem:
+        return jsonify({"error": problem}), 400
+    people, problem = sp.validate(t, mode, body.get("people"), body.get("you"), include_me, base=base)
+    if problem:
+        return jsonify({"error": problem}), 400
+    problem = _locked_problem(st, t, st.splits().get(txn_id), mode, people, body, include_me, base)
     if problem:
         return jsonify({"error": problem}), 400
     from .categorize import CATEGORIES, is_unsure
@@ -535,7 +552,7 @@ def set_transaction_split(txn_id: str):
         # Her Whose was it? answer is her part now; the split's result
         # takes its place in txn_shares (JOINT-B handoff).
         st.set_joint_part(txn_id, t.joint_part)
-    st.set_split(txn_id, mode, people, bool(body.get("watch", True)))
+    st.set_split(txn_id, mode, people, bool(body.get("watch", True)), me=include_me)
     if mode == sp.UNSURE:
         # SPLIT-C: no shares, so nothing is typed as hers; what it costs her
         # is what's left after paybacks (Store._unsure_shares).
@@ -565,6 +582,80 @@ def set_transaction_split(txn_id: str):
             toast = f"{len(gone)} people removed"
         return jsonify(dict(data, undo=undo, **({"toast": toast} if toast else {})))
     return out
+
+
+def _locked_problem(st, t, old: dict | None, mode: str, people: list[dict], body: dict,
+                    include_me: bool, base: float | None) -> str | None:
+    """THL-303 (TEST-18), product owner 2026-11-10: when a Not sure yet split
+    is settled (Settle up, or Set your share), anyone with a linked payback
+    or cash marked paid is locked at exactly what they paid; only she and
+    the people who haven't paid change. With `your_share` (S-47) her share
+    is what she typed: it can't be more than the purchase less the locked
+    paybacks, and the rest has to be given out in full."""
+    from . import splits as sp
+    if not old or old.get("mode") != sp.UNSURE or mode == sp.UNSURE:
+        return None
+    status = {p["name"]: p for p in sp.people_status(t, old, st.all_transactions(), st.payback_people())}
+    whole = sp._cents(base if base is not None else t.amount)
+    locked = 0
+    # TEST-18b (option C, product owner 2026-11-10): on Settle up a payer's
+    # share may differ from what they paid, but only as she answered when
+    # Pearl asked (S-48a/b): "Ask Sam for $13.33" (`ask`), or for money
+    # over the share, what the extra is (`extra`: they overpaid, a gift).
+    # S-47 (`your_share`) never asks, so there payers stay exactly as paid.
+    asked = {str(n) for n in (body.get("ask") or []) if isinstance(n, str)}
+    extra = body.get("extra") if isinstance(body.get("extra"), dict) else {}
+    for p in people:
+        paid = sp._cents((status.get(p["name"]) or {}).get("paid", 0.0))
+        if paid >= 1:
+            locked += paid
+            share = sp._cents(p["amount"])
+            if share == paid:
+                continue
+            name = p["name"]
+            if body.get("your_share"):
+                return (f"{possessive_name(name)} ${paid / 100:,.2f} is linked. "
+                        f"Unlink the payback to change {possessive_name(name)} share.")
+            if share > paid and name not in asked:
+                return (f"{name} paid ${paid / 100:,.2f}. Ask {name} for ${(share - paid) / 100:,.2f}, "
+                        f"or make {possessive_name(name)} share ${paid / 100:,.2f}.")
+            if share < paid and not extra.get(name):
+                return f"Say what {possessive_name(name)} extra ${(paid - share) / 100:,.2f} is."
+    if body.get("your_share"):
+        given = sum(sp._cents(p["amount"]) for p in people) + sp._cents(float(body.get("you")))
+        if given < whole:
+            return f"${(whole - given) / 100:,.2f} left to assign."
+    return None
+
+
+def _your_share_room(st, t, old: dict | None, body: dict, base: float | None) -> str | None:
+    """S-47 (TEST-18): her typed share against what's left, the purchase
+    less what's been paid back (S-47e)."""
+    from . import splits as sp
+    if not body.get("your_share"):
+        return None
+    if body.get("include_me", True) is False or body.get("you") is None:
+        return "What was your share?"
+    try:
+        mine = sp._cents(float(body.get("you")))
+    except (TypeError, ValueError):
+        return "What was your share?"
+    if mine < 0:
+        return "Your share can’t be less than nothing."
+    whole = sp._cents(base if base is not None else t.amount)
+    paid = 0
+    if old:
+        paid = sum(sp._cents(p["paid"]) for p in
+                   sp.people_status(t, old, st.all_transactions(), st.payback_people()))
+    room = max(whole - paid, 0)
+    if mine > room:
+        return f"Your share can be up to ${room / 100:,.2f}."
+    return None
+
+
+def possessive_name(name: str) -> str:
+    """"Priya’s", "James’"."""
+    return f"{name}’" if name.lower().endswith("s") else f"{name}’s"
 
 
 def _merge_marks(a: dict, b: dict) -> dict:
@@ -1471,7 +1562,25 @@ def _invested_in(txns, month: str) -> float:
     return invested_in(txns, month[:7])
 
 
-def _payback_candidates(charge, txns) -> list[dict]:
+def _names_person(sender: str | None, person: str | None) -> bool:
+    """TEST-20: is this e-Transfer from them? "Priya Shah" is Priya's; Sam's
+    $30.00 never is, whatever the amount."""
+    if not sender or not person:
+        return False
+    s, p = sender.strip().lower(), person.strip().lower()
+    first = p.split()[0] if p.split() else p
+    return s == p or s.startswith(p) or first in s.replace(".", " ").split()
+
+
+def _payback_candidates(charge, txns, person: str | None = None,
+                        owes: float | None = None) -> list[dict]:
+    """The money in that could pay this charge back, best first.
+
+    TEST-20: for a person (S-06rb, "From Priya"), their own payments lead,
+    and only one of theirs is `likely` (pre-ticked): on a set split when it
+    is what they owe (`match` "amount", "Amount matches"), on Not sure yet
+    when it fits what still counts as hers. Someone else's money is never
+    likely, even when the amount would fit."""
     from datetime import date as _date
     from .splits import bought_on
     start = bought_on(charge)
@@ -1510,9 +1619,24 @@ def _payback_candidates(charge, txns) -> list[dict]:
         p = party(t)
         return (p or {}).get("name") or None
 
-    return [dict(_txn_brief(t), likely=(a == 0 and b == 0 and -t.amount <= remaining + 0.005),
-                 part=round(min(-t.amount, remaining), 2), party=who(t))
-            for a, b, _, t in out[:12]]
+    if person is None:
+        return [dict(_txn_brief(t), likely=(a == 0 and b == 0 and -t.amount <= remaining + 0.005),
+                     part=round(min(-t.amount, remaining), 2), party=who(t))
+                for a, b, _, t in out[:12]]
+    rows = []
+    for a, b, gap, t in out:
+        sender = who(t)
+        theirs = _names_person(sender, person) or _names_person(t.party, person)
+        amount = -t.amount
+        exact = owes is not None and abs(amount - owes) < 0.005
+        fits = amount <= remaining + 0.005
+        likely = theirs and fits and (exact if owes is not None else True)
+        rows.append(((0 if theirs else 1, 0 if exact else 1, a, b, gap), t, sender, likely,
+                     "amount" if (theirs and exact) else None))
+    rows.sort(key=lambda r: r[0])
+    return [dict(_txn_brief(t), likely=likely, match=match,
+                 part=round(min(-t.amount, remaining), 2), party=sender)
+            for _, t, sender, likely, match in rows[:12]]
 
 
 @bp.get("/transactions/<txn_id>/paybacks")
@@ -1523,12 +1647,21 @@ def list_paybacks(txn_id: str):
         return jsonify({"error": "No such transaction."}), 404
     txns = st.all_transactions()
     linked = [t for t in txns if t.repays == txn_id]
+    # TEST-20: "Which payment was it?" for one person: theirs first, and
+    # what they owe on a set split (none on Not sure yet: any amount).
+    person = (request.args.get("person") or "").strip() or None
+    owes = None
+    split = st.splits().get(txn_id) if person else None
+    if person and split and charge.split_mode != "unknown":
+        from . import splits as sp
+        owes = next((p["owes"] for p in sp.people_status(charge, split, txns, st.payback_people())
+                     if p["name"] == person), None)
     return jsonify({
         "charge": _txn_brief(charge),
         "paid_back": round(charge.paid_back or 0.0, 2),
         "share": round(share_amount(charge), 2) if charge.amount > 0 else None,
         "linked": [_txn_brief(t) for t in sorted(linked, key=lambda t: t.date)],
-        "candidates": (_payback_candidates(charge, txns)
+        "candidates": (_payback_candidates(charge, txns, person, owes)
                        if charge.amount > 0 else []),
     })
 

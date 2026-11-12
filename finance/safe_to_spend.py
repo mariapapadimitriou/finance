@@ -133,11 +133,30 @@ def _counts_as_income(t: Transaction) -> bool:
                      and t.income_type_source != "user"))
 
 
+def _split_gift(t: Transaction, paid_back: set[str]) -> bool:
+    """A friend's extra on a split that she called a gift (TEST-24, THL-303):
+    the gift part beside a payback to a split purchase on their deposit
+    (S-48b), or the gift row from a cash or app payment's extra (S-11c). The
+    product owner decided (2026-11-10) that "It's a gift" lowers the
+    Allowance by the extra, as "I owe Priya" does, so it isn't income that
+    has arrived. A gift beside a payback of something not split (Dad's $172
+    with the $428 flight, S-33) is still income."""
+    raw = t.raw or {}
+    if raw.get("part_kind") == "gift" and raw.get("part_of") in paid_back:
+        return True
+    return bool(raw.get("split_gift"))
+
+
 def _received(transactions: list[Transaction], month: str, today: date) -> list[Transaction]:
-    """Income that has arrived this month (`_counts_as_income`)."""
+    """Income that has arrived this month (`_counts_as_income`), less a
+    split's extra she called a gift (`_split_gift`)."""
+    split = {t.fingerprint for t in transactions if t.split_mode}
+    paid_back = {(t.raw or {}).get("part_of") for t in transactions
+                 if (t.raw or {}).get("part_kind") == "payback" and t.repays in split}
     return sorted(
         (t for t in transactions
-         if t.month == month and t.date <= today.isoformat() and _counts_as_income(t)),
+         if t.month == month and t.date <= today.isoformat() and _counts_as_income(t)
+         and not _split_gift(t, paid_back)),
         key=lambda t: t.date)
 
 

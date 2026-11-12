@@ -59,6 +59,7 @@
 		014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63873676D9EA2C177703422C /* TransactionDetailView.swift */; };
 		8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */; };
 		A28FEF7ABDE1D9915D1327D2 /* WhoSentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DBC32D7A675A5534FC82999 /* WhoSentSheet.swift */; };
+		BF7612C5DA3BCEB047444B7E /* YourShareViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E28404433C4F1EA49E3B9C2 /* YourShareViews.swift */; };
 		1BB8E4A8EF14595F39E91CE8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D8703406E9B80F661A813DA6 /* Assets.xcassets */; };
 		BD5EB114D1EB1BE542EB08CC /* Figtree-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4F5C06D826B3B2F97FA3CD5D /* Figtree-Bold.ttf */; };
 		2E3C240D14D92767BB8B25F7 /* Figtree-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = EA019A3B8EDA8CB9DD51DE01 /* Figtree-Medium.ttf */; };
@@ -138,6 +139,7 @@
 		63873676D9EA2C177703422C /* TransactionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionDetailView.swift; sourceTree = "<group>"; };
 		4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsView.swift; sourceTree = "<group>"; };
 		1DBC32D7A675A5534FC82999 /* WhoSentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoSentSheet.swift; sourceTree = "<group>"; };
+		7E28404433C4F1EA49E3B9C2 /* YourShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YourShareViews.swift; sourceTree = "<group>"; };
 		D8703406E9B80F661A813DA6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4F5C06D826B3B2F97FA3CD5D /* Figtree-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Bold.ttf"; sourceTree = "<group>"; };
 		EA019A3B8EDA8CB9DD51DE01 /* Figtree-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Medium.ttf"; sourceTree = "<group>"; };
@@ -345,6 +347,7 @@
 				63873676D9EA2C177703422C /* TransactionDetailView.swift */,
 				4941CABD801BD86FF3E85FC7 /* TransactionsView.swift */,
 				1DBC32D7A675A5534FC82999 /* WhoSentSheet.swift */,
+				7E28404433C4F1EA49E3B9C2 /* YourShareViews.swift */,
 			);
 			path = Transactions;
 			sourceTree = "<group>";
@@ -504,6 +507,7 @@
 				014ED45326E8880E7B9F694D /* TransactionDetailView.swift in Sources */,
 				8DAA91D1295F238D6858DE8F /* TransactionsView.swift in Sources */,
 				A28FEF7ABDE1D9915D1327D2 /* WhoSentSheet.swift in Sources */,
+				BF7612C5DA3BCEB047444B7E /* YourShareViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
