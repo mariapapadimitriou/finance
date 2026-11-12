@@ -2357,7 +2357,7 @@ struct TagsSheet: View {
                     .font(Nacre.body).autocorrectionDisabled()
                     .submitLabel(.done)
                     .onSubmit(add)
-                Button("Add", action: add).font(Nacre.textButton).foregroundColor(Pearl.action)
+                Button("Add", action: add).font(Nacre.textButton).foregroundColor(Pearl.link)
                     .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 16).frame(height: 48)

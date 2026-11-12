@@ -200,7 +200,7 @@ struct NeedsALookCard: View {
             NavigationLink {
                 ReviewView()
             } label: {
-                Text("See the list").font(Nacre.textButton).foregroundColor(Pearl.action)
+                Text("See the list").font(Nacre.textButton).foregroundColor(Pearl.link)
                     .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -275,7 +275,7 @@ struct PaychequeNoteCard: View {
                 .font(Pearl.text(.subheadline, .medium)).foregroundColor(Pearl.ink)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Got it", action: onDismiss)
-                .font(Nacre.textButton).foregroundColor(Pearl.action)
+                .font(Nacre.textButton).foregroundColor(Pearl.link)
                 .padding(.top, 4)
         }
     }

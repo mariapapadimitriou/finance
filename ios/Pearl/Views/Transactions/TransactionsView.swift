@@ -101,7 +101,7 @@ struct TransactionsView: View {
                         list.padding(.top, 10)
                         if !inSearch && !selecting && loadedOnce {
                             Button("Add a transaction") { adding = true }
-                                .font(Nacre.textButton).foregroundColor(Pearl.action)
+                                .font(Nacre.textButton).foregroundColor(Pearl.link)
                                 .padding(.horizontal, 4).frame(minHeight: 44).padding(.top, 8)
                         }
                     }
@@ -429,7 +429,7 @@ struct TransactionsView: View {
                             .background(Capsule().fill(Pearl.action))
                         Text("need\(reviewCount == 1 ? "s" : "") a look").font(Nacre.body)
                         Spacer()
-                        Text("Sort").font(Nacre.textButton).foregroundColor(Pearl.action)
+                        Text("Sort").font(Nacre.textButton).foregroundColor(Pearl.link)
                         Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
                             .foregroundColor(Pearl.ink)
                     }
@@ -507,7 +507,7 @@ struct TransactionsView: View {
         case .failed:
             banner(symbol: "exclamationmark.triangle", text: "Couldn’t update just now.") {
                 Button("Try again") { Task { await runSync(force: true) } }
-                    .font(Nacre.textButton).foregroundColor(Pearl.action)
+                    .font(Nacre.textButton).foregroundColor(Pearl.link)
             }
         case .idle:
             EmptyView()
@@ -745,7 +745,7 @@ struct TransactionsView: View {
 
     private func barButton(_ title: String, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
-            Text(title).font(Nacre.textButton).foregroundColor(Pearl.action)
+            Text(title).font(Nacre.textButton).foregroundColor(Pearl.link)
                 .lineLimit(1).minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
         }
@@ -764,7 +764,7 @@ struct TransactionsView: View {
                 Spacer(minLength: 8)
                 if toast.undo != nil {
                     Button("Undo") { Task { await undo() } }
-                        .font(Nacre.textButton).foregroundColor(Pearl.action)
+                        .font(Nacre.textButton).foregroundColor(Pearl.link)
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
@@ -886,7 +886,7 @@ struct TransactionsView: View {
             Text(title).font(Nacre.title2).foregroundColor(Pearl.ink).multilineTextAlignment(.center)
             Text(line).font(Nacre.subheadline).foregroundColor(Pearl.muted).multilineTextAlignment(.center)
             if let action = action {
-                Button(action, action: run).font(Nacre.textButton).foregroundColor(Pearl.action).padding(.top, 4)
+                Button(action, action: run).font(Nacre.textButton).foregroundColor(Pearl.link).padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity)
@@ -1148,7 +1148,7 @@ struct TransactionRow: View {
             Initials(name: t.merchant)
             VStack(alignment: .leading, spacing: 3) {
                 Text(t.merchant).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
-                Text(meta).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(1)
+                Text(meta).font(Nacre.subheadline).foregroundColor(Pearl.muted).lineLimit(splitNote == nil ? 1 : 2)
                 if let extra = extra {
                     Text(extra).font(Nacre.footnote).foregroundColor(Pearl.muted).lineLimit(1)
                 }
@@ -1167,7 +1167,7 @@ struct TransactionRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text(Format.money(t))
+            Text(shownMoney)
                 .font(Nacre.headline).monospacedDigit()
                 .foregroundColor(t.tone)
                 .lineLimit(1).fixedSize()
@@ -1191,6 +1191,8 @@ struct TransactionRow: View {
         let when = Format.relativeDay(t.date)
         if let paidBack = paidBack { return "Paid back · \(paidBack)" }
         if let charge = t.refundOf { return "Refund · \(charge.merchant)" }
+        // T-01r2 (TEST-25): a split says what the server says.
+        if let note = splitNote { return note }
         // T-82 (THL-292): a transfer a recurring rule sorted says so.
         if t.recurring != nil, let note = t.note, note.hasPrefix("Recurring") { return note }
         if t.suggested { return t.pending ? "\(when) · Pending" : when }
@@ -1198,9 +1200,27 @@ struct TransactionRow: View {
             .joined(separator: " · ")
     }
 
+    /// T-01r2 (TEST-25): the server's note on a split row, "Split with Priya
+    /// +2 · $87.50 to come back", "Split 5 ways · not sure yet · $45.00 still
+    /// counts" or "Your share of $59.33 · all paid back". The app used to make
+    /// its own "Your share of …" and showed only what still counts.
+    private var splitNote: String? {
+        guard t.split, !t.inflow, let note = t.note, !note.isEmpty else { return nil }
+        return note
+    }
+
+    /// T-01r2 and Rule A: the whole purchase while some is still to come
+    /// back or not settled ("Split …"); her share once it's all paid back.
+    private var shownMoney: String {
+        if let note = splitNote, note.hasPrefix("Split "), let full = t.fullAmount {
+            return "\u{2212}" + Format.amount(full)
+        }
+        return Format.money(t)
+    }
+
     /// "Your share of $86", "Refunded in full · Nov 10".
     private var extra: String? {
-        if t.split, let full = t.fullAmount, abs(full - t.amount) >= 0.005 {
+        if splitNote == nil, t.split, let full = t.fullAmount, abs(full - t.amount) >= 0.005 {
             return "Your share of \(Format.compact(full))"
         }
         if !t.refundedBy.isEmpty {

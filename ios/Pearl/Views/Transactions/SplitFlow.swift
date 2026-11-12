@@ -304,7 +304,7 @@ struct SplitSheet: View {
                     .font(Nacre.body).textInputAutocapitalization(.words).autocorrectionDisabled()
                     .submitLabel(.done).onSubmit(addTyped)
                 if !typed.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Button("Add", action: addTyped).font(Nacre.textButton).foregroundColor(Pearl.action)
+                    Button("Add", action: addTyped).font(Nacre.textButton).foregroundColor(Pearl.link)
                 }
             }
             .padding(.horizontal, 14).frame(height: 44)
@@ -343,7 +343,7 @@ struct SplitSheet: View {
     private var addNewRow: some View {
         Button { adding = true } label: {
             HStack {
-                Text("Add someone new").font(Nacre.body).foregroundColor(Pearl.action)
+                Text("Add someone new").font(Nacre.body).foregroundColor(Pearl.link)
                 Spacer()
                 Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundColor(Pearl.muted)
             }
@@ -422,7 +422,7 @@ struct SplitSheet: View {
             if let onRemoveSplit = onRemoveSplit, t.splitting != nil, !settling, focus == nil {
                 // S-41j: Edit split › Remove the split.
                 Button("Remove the split", action: onRemoveSplit)
-                    .font(Nacre.textButton).foregroundColor(Pearl.action)
+                    .font(Nacre.textButton).foregroundColor(Pearl.link)
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
         }
@@ -500,6 +500,8 @@ struct SplitSheet: View {
                         if mode == "even" {
                             Text(Format.amount(evenAmount(key))).font(Nacre.body).monospacedDigit()
                                 .foregroundColor(Pearl.ink)
+                                // TEST-14: "Priya, $42.50", not a bare amount.
+                                .accessibilityLabel("\(label(key)), \(Format.amount(evenAmount(key)))")
                         } else {
                             TextField("", text: binding(key), prompt: Text(placeholder(key)).foregroundColor(Pearl.muted))
                                 .font(Nacre.body).monospacedDigit().multilineTextAlignment(.trailing)
@@ -549,7 +551,7 @@ struct SplitSheet: View {
                 .accessibilityElement(children: .combine)
                 if mode == "amount" && gapCents > 0 {
                     Button("Split the rest evenly", action: splitRest)
-                        .font(Nacre.textButton).foregroundColor(Pearl.action)
+                        .font(Nacre.textButton).foregroundColor(Pearl.link)
                         .frame(minHeight: 44)
                 }
             }
@@ -987,6 +989,9 @@ struct SplitPeople: View {
     @State private var options: Transaction.Splitting.Person?
     @State private var afterOptions: (() -> Void)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// TEST-22: at AX sizes a row's amount goes under the name (S-03ax).
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var amountsUnder: Bool { typeSize.isAccessibilitySize }
 
     var body: some View {
         let open = split.people.filter { $0.owes >= 0.005 }
@@ -1028,7 +1033,7 @@ struct SplitPeople: View {
                         Button(action: onEdit) {
                             Text("Edit split").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                         }
-                        .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.action)
+                        .font(Pearl.text(.callout, .medium)).foregroundColor(Pearl.link)
                         .buttonStyle(.plain)
                     }
                 }
@@ -1076,7 +1081,7 @@ struct SplitPeople: View {
                     Text("See everyone who owes you")
                         .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
                 }
-                .font(Nacre.textButton).foregroundColor(Pearl.action).buttonStyle(.plain)
+                .font(Nacre.textButton).foregroundColor(Pearl.link).buttonStyle(.plain)
                 .padding(.top, 6)
             }
         }
@@ -1122,13 +1127,11 @@ struct SplitPeople: View {
                         if paid, let how = how, p.links?.count == 1 {
                             Text(how).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
                         }
+                        if paid && amountsUnder { paidAmount(p) }
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
-                    if paid {
-                        Text(Format.amount(p.paid)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                            .foregroundColor(Pearl.moneyIn)
-                    }
+                    if paid && !amountsUnder { paidAmount(p) }
                 }
                 .frame(minHeight: 44).contentShape(Rectangle())
             }
@@ -1142,6 +1145,19 @@ struct SplitPeople: View {
             }
         }
         .padding(.vertical, 10)
+    }
+
+    private func paidAmount(_ p: Transaction.Splitting.Person) -> some View {
+        Text(Format.amount(p.paid)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
+            .foregroundColor(Pearl.moneyIn).pearlAmountFit()
+    }
+
+    /// What they still owe (ink); what they paid (money in); what she let go (muted).
+    private func owedAmount(_ p: Transaction.Splitting.Person) -> some View {
+        Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
+            .font(Pearl.text(.headline, .semibold)).monospacedDigit()
+            .foregroundColor(p.letGo != nil ? Pearl.muted : p.owes >= 0.005 ? Pearl.ink : Pearl.moneyIn)
+            .pearlAmountFit()
     }
 
     private func person(_ p: Transaction.Splitting.Person) -> some View {
@@ -1158,13 +1174,11 @@ struct SplitPeople: View {
                             if let line = deposited(p) {
                                 Text(line).font(Pearl.text(.footnote)).foregroundColor(Pearl.muted)
                             }
+                            if amountsUnder { owedAmount(p) }
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 8)
-                        // What they still owe (ink); what they paid (money in); what she let go (muted).
-                        Text(Format.amount(p.owes >= 0.005 ? p.owes : p.letGo.map { $0.was - p.paid } ?? p.paid))
-                            .font(Pearl.text(.headline, .semibold)).monospacedDigit()
-                            .foregroundColor(p.letGo != nil ? Pearl.muted : p.owes >= 0.005 ? Pearl.ink : Pearl.moneyIn)
+                        if !amountsUnder { owedAmount(p) }
                     }
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())

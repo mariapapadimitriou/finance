@@ -509,4 +509,41 @@ final class Round1FixesUITests: XCTestCase {
         }
         XCTAssertFalse(text(containing: "Over $").exists && text(containing: "Leftover $").exists)
     }
+
+    // MARK: Round 3 (testingBOT, ios/bots/testing-log.md)
+
+    /// TEST-25: Cash flow's split row shows the server's note, not the
+    /// app's own "Your share of $128".
+    func testCashFlowRowUsesTheServersSplitNote() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        press("Save")
+        sleep(3)
+        app.navigationBars.buttons["Back"].firstMatch.tap()
+        sleep(2)
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Gusto'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 8), "No Gusto row")
+        XCTAssertFalse(row.label.contains("Your share of $128"), "TEST-25: the app's own note: \(row.label)")
+        let month = String(ISO8601DateFormatter().string(from: Date()).prefix(7))
+        let rows = (server("transactions/list?month=\(month)&q=Gusto") as? [String: Any])?["transactions"] as? [[String: Any]]
+        let note = rows?.first { ($0["merchant"] as? String) == "Gusto" }?["note"] as? String ?? "?"
+        XCTAssertTrue(row.label.contains(note), "TEST-25: the row should carry the server's note \(note): \(row.label)")
+    }
+
+    /// TEST-22: at the largest text size the card's amounts never break
+    /// inside the number. Held on screen for the host to capture.
+    func testSplitCardAmountsAtTheLargestSize() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        press("Save")
+        sleep(3)
+        let card = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Priya'")).firstMatch
+        tap(card, "Priya's row")
+        app.buttons["Close"].firstMatch.tap()
+        sleep(12)
+    }
 }

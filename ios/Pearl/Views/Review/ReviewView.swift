@@ -407,7 +407,7 @@ struct ReviewView: View {
                 Spacer(minLength: 8)
                 if toast.undo != nil {
                     Button("Undo") { Task { await undo() } }
-                        .font(Nacre.textButton).foregroundColor(Pearl.action)
+                        .font(Nacre.textButton).foregroundColor(Pearl.link)
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 12)

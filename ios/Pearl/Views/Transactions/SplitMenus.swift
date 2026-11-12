@@ -398,6 +398,14 @@ struct PearlSheetButtons: View {
 /// "Pearl/Toast with Undo" (S-44a–i): ink, with a 44-high action. It stays
 /// 6 s, longer while VoiceOver is on; it's announced, and its action is an
 /// accessibility action too (note 1096:4483).
+extension View {
+    /// TEST-22 (designBOT 2026-11-11): an amount never wraps inside the
+    /// number; it shrinks to fit, and rows move it under the name at AX sizes.
+    func pearlAmountFit() -> some View {
+        lineLimit(1).minimumScaleFactor(0.7).allowsTightening(true)
+    }
+}
+
 struct PearlToast: View {
     struct Model: Equatable {
         let id = UUID()
