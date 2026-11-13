@@ -496,6 +496,72 @@ enum PersonChoice {
     case view(Transaction.LinkInfo), unlink(Transaction.LinkInfo)
 }
 
+/// TEST-31 S-40w: the ••• on her own reimbursed row. REIMBURSED BY with View
+/// the deposit and Unlink… (the S-34kr7 sheet), then Change your share. No
+/// Remove: she can't remove herself.
+struct MineOptionsSheet: View {
+    let t: Transaction
+    let split: Transaction.Splitting
+    let mine: Transaction.Splitting.Mine
+    let by: String
+    let onClose: () -> Void
+    let onChoose: (PersonChoice) -> Void
+
+    private var ways: Int { split.people.count + 1 }
+
+    var body: some View {
+        PearlSheet {
+            PearlSheetHeader(face: "Me", overline: "\(t.merchant) · split \(ways) ways", title: "You",
+                             sub: mine.full
+                                ? "✓ Reimbursed by \(by)" + (mine.on.map { " · \(Format.short($0))" } ?? "")
+                                : "Reimbursed \(Format.amount(mine.reimbursed)) of \(Format.amount(mine.amount)) · \(Format.amount(mine.stays)) stays yours",
+                             subTone: mine.full ? Pearl.moneyIn : Pearl.muted, close: onClose)
+            if let links = mine.links, !links.isEmpty {
+                PearlSectionLabel(text: "Reimbursed by")
+                ForEach(links) { link in card(link, only: links.count == 1) }
+            }
+            PearlSectionLabel(text: "Change the split")
+            PearlOptionCard {
+                PearlOptionRow(symbol: "person.2", title: "Change your share") { onChoose(.changeShare) }
+            }
+        }
+    }
+
+    /// "Northwind Ltd · Nov 14" over "Deposit · Work paying me back", $60.00.
+    private func card(_ link: Transaction.LinkInfo, only: Bool) -> some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                PearlBubble(symbol: "briefcase")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(link.sheet.face) · \(Format.short(link.date))")
+                        .font(Pearl.text(.headline, .medium)).foregroundColor(Pearl.ink)
+                    Text("Deposit · Work paying me back").font(Pearl.text(.callout)).foregroundColor(Pearl.muted)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Text(Format.amount(link.amount)).font(Pearl.text(.headline, .semibold)).monospacedDigit()
+                    .foregroundColor(Pearl.moneyIn)
+            }
+            .accessibilityElement(children: .combine)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { pills(link, only: only) }
+                VStack(spacing: 8) { pills(link, only: only) }
+            }
+        }
+        .padding(16)
+        .pearlCard(radius: Pearl.radiusTile)
+    }
+
+    @ViewBuilder private func pills(_ link: Transaction.LinkInfo, only: Bool) -> some View {
+        if let view = link.view {
+            Button(view.label) { onChoose(.view(link)) }.buttonStyle(PearlPillButtonStyle())
+                .accessibilityHint("Opens it here in Pearl")
+        }
+        Button(only ? "Unlink…" : "Unlink \(Format.amount(link.amount))…") { onChoose(.unlink(link)) }
+            .buttonStyle(PearlPillButtonStyle())
+    }
+}
+
 /// S-40a owes · S-40b paid part · S-40c / c2 paid in full · S-40d let go.
 /// Built from `Splitting.Person` and its `links` only (no new call).
 struct PersonOptionsSheet: View {

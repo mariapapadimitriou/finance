@@ -716,6 +716,8 @@ struct Transaction: Decodable, Identifiable, Hashable {
         var joint: Joint? = nil
         /// TEST-18 (THL-303): she's in it ("I had some too"); nil is yes.
         var me: Bool? = nil
+        /// TEST-31 (S-04w, S-04w2, S-40w): her own share, reimbursed by work.
+        var mine: Mine? = nil
 
         /// SPLIT-C: Not sure yet, with no amounts.
         var unsure: Bool { mode == "unknown" }
@@ -731,8 +733,21 @@ struct Transaction: Decodable, Identifiable, Hashable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case mode, you, people, uncredited, base, still, paid, joint, me
+            case mode, you, people, uncredited, base, still, paid, joint, me, mine
             case closedAt = "closed_at"
+        }
+
+        /// TEST-31: "✓ Reimbursed by Northwind · Nov 14", or "Reimbursed
+        /// $45.00 of $60.00 · $15.00 stays yours" (S-04w2), with what
+        /// reimbursed it for S-40w's REIMBURSED BY.
+        struct Mine: Decodable, Hashable {
+            let amount: Double
+            let reimbursed: Double
+            let on: String?
+            let stays: Double
+            var links: [LinkInfo]? = nil
+            /// Reimbursed in full.
+            var full: Bool { stays < 0.005 }
         }
 
         /// "$30.00 from an e-Transfer" over "Nov 16 · no name · paid back Loblaws".
@@ -1272,9 +1287,17 @@ struct BriefTransaction: Decodable, Hashable {
     var pair: Review.Pair? = nil
     /// What counts as hers, when she shared it or a piggy bank paid part.
     var myAmount: Double? = nil
+    /// TEST-31 T-09w: her share of a split purchase as its own match
+    /// (`share`, what's `left` of it), and who else it was split with.
+    var share: Bool? = nil
+    var left: Double? = nil
+    var whole: Double? = nil
+    var splitWith: [String]? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, date, merchant, description, amount, category, skipped, likely, to, learnable, mixed, pair
+        case share, left, whole
+        case splitWith = "split_with"
         case myAmount = "my_amount"
         case accountName = "account_name"
         case accountId = "account_id"
@@ -1686,6 +1709,16 @@ struct MarkReply: Decodable {
     let title: String?
     let detail: String?
     let undo: JSONValue?
+    /// TEST-31 S-11w: more than her share came in; what's extra, asked next.
+    var extra: ShareExtra? = nil
+
+    struct ShareExtra: Decodable, Hashable {
+        let amount: Double
+        let whole: Double
+        let share: Double
+        let charge: String
+        let merchant: String
+    }
 }
 
 // MARK: - Helpers

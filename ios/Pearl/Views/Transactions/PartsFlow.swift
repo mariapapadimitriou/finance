@@ -52,6 +52,10 @@ struct PartsSheet: View {
     /// opens on "What's the other $x?" (S-11 v2) with that payback as a part.
     /// Nothing is saved until the parts are.
     var credited: [Part] = []
+    /// TEST-31 S-11w: more than her share came in from work. The share is
+    /// the credited part; this asks "What's the extra $15.00?" with the
+    /// shared tiles, under "$60.00 pays back your share of Pai Northern Thai."
+    var shareLine: String? = nil
     /// S-11x (SPLIT-23 (1), THL-181): a payback linked to a purchase nobody
     /// still owed on. S-11 v2 opens for the whole amount, "The $30.00", with
     /// why it's extra; a tile moves it off the purchase and records the
@@ -327,7 +331,8 @@ struct PartsSheet: View {
     }
 
     private var extra: Bool {
-        leftCents > 0 && !owing.isEmpty && owing.filter { $0.theirs == true }.allSatisfy { o in
+        if shareLine != nil { return leftCents > 0 }
+        return leftCents > 0 && !owing.isEmpty && owing.filter { $0.theirs == true }.allSatisfy { o in
             parts.contains { $0.charge == o.charge && cents($0.amount) >= cents(o.owes) }
         } && parts.contains { $0.kind == "payback" }
     }
@@ -898,6 +903,11 @@ struct PartsSheet: View {
                     .accessibilityHint("All \(Format.amount(left)) unless you type less")
             }
             .padding(.horizontal, 4)
+            if let line = shareLine {
+                // TEST-31 S-11w: what the rest of it already did.
+                Text(line).font(Nacre.footnote).foregroundColor(Pearl.ink)
+                    .padding(.horizontal, 4).fixedSize(horizontal: false, vertical: true)
+            }
             if let w = whole {
                 // S-11x: why it's extra, in S-35c's "Why Pearl asks" style, before the tiles.
                 // S-11xm over: more than the extra turns it into the caution line.

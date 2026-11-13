@@ -55,6 +55,16 @@ struct AnswerSheet: View {
     @State private var then: Then = .category
     /// "A refund or payback": the deposit's parts (THL-291, S-09 to S-12).
     @State private var parting = false
+    /// TEST-31 S-11w: her share is saved and more came in; "What's the extra?".
+    @State private var shareExtra: ShareExtraAsk?
+    @State private var shareError: String?
+    @State private var heldShareReply: MarkReply?
+
+    struct ShareExtraAsk: Identifiable {
+        let reply: MarkReply
+        let extra: MarkReply.ShareExtra
+        var id: String { extra.charge }
+    }
     /// T-08 / T-12: which side of money in is showing.
     @State private var incomeSide = true
     @State private var intoChoice: String?
@@ -235,6 +245,22 @@ struct AnswerSheet: View {
                 parting = false
                 onAnswer(.done(reply))
             }
+        }
+        .sheet(item: $shareExtra, onDismiss: {
+            // Closed without answering: her share stays saved, the extra counts as money in.
+            if let held = heldShareReply { heldShareReply = nil; onAnswer(.done(held)) }
+        }) { ask in
+            // TEST-31 S-11w (1294:2157): "What's the extra $15.00?" with the
+            // shared tiles; her share is the part already sorted.
+            PartsSheet(deposit: PartsDeposit(id: t.id, name: who, amount: t.amount, date: t.date), api: api,
+                       credited: [PartsSheet.Part(kind: "reimbursement", amount: ask.extra.share,
+                                                  charge: ask.extra.charge, merchant: ask.extra.merchant)],
+                       shareLine: "\(Format.amount(ask.extra.share)) pays back your share of \(ask.extra.merchant).") { reply in
+                heldShareReply = nil
+                shareExtra = nil
+                onAnswer(.done(reply))
+            }
+            .onAppear { heldShareReply = ask.reply }
         }
     }
 
@@ -600,6 +626,10 @@ struct AnswerSheet: View {
                             Text("No purchases match.").font(Nacre.subheadline).foregroundColor(Pearl.muted)
                                 .padding(.horizontal, 16)
                         }
+                        if step == .charges, let shareError = shareError {
+                            Text(shareError).font(Nacre.footnote).foregroundColor(Pearl.caution)
+                                .padding(.horizontal, 16)
+                        }
                     }
                     if step == .joint {
                         // T-13 (THL-232, R-08): this deposit, or every one from them.
@@ -838,7 +868,20 @@ struct AnswerSheet: View {
             } + [Option(id: "elsewhere", label: "Another account", detail: "Not linked")]
         case .charges:
             return charges.map { c in
-                Option(id: c.id, label: "\(c.name) · \(Format.amount(c.amount))",
+                // TEST-31 T-09w: "Your share of Pai Northern Thai · $60.00"
+                // over "Wed, Nov 12 · $120.00 split with Sam", and the whole
+                // purchase as "Pai Northern Thai, all of it · $120.00" over
+                // "Your share and Sam’s".
+                if let others = c.splitWith, !others.isEmpty {
+                    if c.share == true {
+                        return Option(id: "share:" + c.id,
+                                      label: "Your share of \(c.name) · \(Format.amount(c.left ?? c.amount))",
+                                      detail: "\(Format.weekdayDay(c.date)) · \(Format.amount(c.whole ?? abs(c.amount))) split with \(Format.andList(others))")
+                    }
+                    return Option(id: c.id, label: "\(c.name), all of it · \(Format.amount(abs(c.amount)))",
+                                  detail: "Your share and " + Format.andList(others.map(possessive)))
+                }
+                return Option(id: c.id, label: "\(c.name) · \(Format.amount(c.amount))",
                        detail: [Format.weekdayDay(c.date), c.accountName].compactMap { $0 }.joined(separator: " · "))
             }
         case .cadence:
@@ -948,6 +991,10 @@ struct AnswerSheet: View {
                 onAnswer(.regularPay(t, cadence: choice == "changes" ? "irregular" : choice))
             }
         case .charges:
+            if choice.hasPrefix("share:") {
+                saveShare(String(choice.dropFirst(6)))
+                return
+            }
             guard let charge = charges.first(where: { $0.id == choice }) else { return }
             // The same shop sending money back is a refund; anyone else, a payback.
             let refund = charge.name.lowercased() == who.lowercased()
@@ -984,6 +1031,24 @@ struct AnswerSheet: View {
         }
     }
 
+    /// TEST-31 T-09w: work paid her share. Saved here so S-11w can follow
+    /// when more than her share came in; otherwise it's answered as any mark.
+    private func saveShare(_ charge: String) {
+        Task {
+            do {
+                let reply: MarkReply = try await api.post("api/transactions/\(t.id)/mark",
+                                                          ["case": "reimbursement", "charge": charge, "share": true])
+                if let extra = reply.extra {
+                    shareExtra = ShareExtraAsk(reply: reply, extra: extra)
+                } else {
+                    onAnswer(.done(reply))
+                }
+            } catch {
+                shareError = (error as? APIError)?.problem?.error ?? "Couldn’t save that. Try again."
+            }
+        }
+    }
+
     private func searchCharges() async {
         struct Reply: Decodable { let charges: [Lenient<BriefTransaction>] }
         let q = text.trimmingCharacters(in: .whitespaces)
@@ -991,7 +1056,8 @@ struct AnswerSheet: View {
             charges = candidates.sorted { ($0.likely == true ? 0 : 1) < ($1.likely == true ? 0 : 1) }
             return
         }
-        if let reply: Reply = try? await api.get("api/transactions/\(t.id)/charges", query: ["q": q]) {
+        if let reply: Reply = try? await api.get("api/transactions/\(t.id)/charges",
+                                                      query: ["q": q, "case": chargeCase ?? ""]) {
             charges = reply.charges.compactMap { $0.value }
         }
     }

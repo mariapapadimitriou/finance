@@ -940,6 +940,14 @@ struct TransactionDetailView: View {
         if let s = t.splitting, !t.inflow {
             if s.unsure {
                 lead = "Counts as \(Format.amount(s.still ?? s.you))" + (s.closedAt == nil ? " so far" : "")
+            } else if let mine = s.mine {
+                // TEST-31: S-04w "Your share $60.00 · reimbursed", S-04w2
+                // "Your share $60.00 · $45.00 reimbursed"; once Sam has paid
+                // too, S-04w3 "Costs you $0.00".
+                lead = s.people.allSatisfy({ $0.owes < 0.005 })
+                    ? "Costs you \(Format.amount(mine.stays))"
+                    : "Your share \(Format.amount(mine.amount)) · "
+                        + (mine.full ? "reimbursed" : "\(Format.amount(mine.reimbursed)) reimbursed")
             } else {
                 // S-04r v2: "Your share $30.00 · Wed, Nov 11"; S-04j the same.
                 lead = "Your share \(Format.amount(s.you))"
@@ -964,7 +972,7 @@ struct TransactionDetailView: View {
                 // T-03r (1074:698): "Change" by the chevron.
                 categoryRow(symbol: isIncome ? "Income" : (t.category ?? t.label),
                             title: isIncome ? Self.kindName(t.incomeType) : t.label, sub: countsLine,
-                            change: !isIncome)
+                            change: !isIncome && !t.inflow)
             }
             .buttonStyle(.plain)
             .disabled(busy)
@@ -1210,7 +1218,49 @@ struct TransactionDetailView: View {
                 }
             }
         }
-        if let charge = t.repaysCharge {
+        if let charge = t.repaysCharge, charge.person == "me" {
+            // TEST-31 T-41w (1297:64759, dark 1297:64849): work paid her
+            // share. PAID BACK, the purchase over "Your share · Nov 12",
+            // opening its split card; then Unlink.
+            let paid = charge.paid ?? abs(t.amount)
+            section("Paid back")
+            SolidCard {
+                Button { Task { await open(charge.id) } } label: {
+                    HStack(spacing: 14) {
+                        Initials(name: charge.merchant ?? charge.name)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(charge.merchant ?? charge.name).font(Nacre.body).foregroundColor(Pearl.ink).lineLimit(1)
+                            Text("Your share · \(Format.short(charge.date))").font(Nacre.subheadline)
+                                .foregroundColor(Pearl.muted).lineLimit(1)
+                        }
+                        Spacer(minLength: 8)
+                        Text(Format.amount(paid)).font(Nacre.headline).monospacedDigit().foregroundColor(Pearl.ink)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Paid back, your share of \(charge.merchant ?? charge.name), \(Format.amount(paid))")
+                .accessibilityHint("Opens its split")
+                .accessibilityAddTraits(.isButton)
+            }
+            section("Options")
+            GlassCard {
+                Button {
+                    if let link = charge.link {
+                        unlinkingLink = link
+                    } else {
+                        unlinkingPayback = PaybackLink(charge: charge.id, inflow: t.id, who: t.merchant,
+                                                       name: t.merchant, amount: paid, date: t.date)
+                    }
+                } label: {
+                    row(title: "Unlink", chevron: true)
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+        } else if let charge = t.repaysCharge {
             section("Pays back")
             if let split = charge.split {
                 // The split, not the whole purchase (2026-11-08): who it paid
@@ -1243,7 +1293,9 @@ struct TransactionDetailView: View {
             section("Options")
             GlassCard {
                 Button {
-                    unlinkingPayback = PaybackLink(charge: charge.id, inflow: t.id, who: charge.person ?? "They",
+                    // TEST-31: "all of it" is work's, not a person's.
+                    unlinkingPayback = PaybackLink(charge: charge.id, inflow: t.id,
+                                                   who: charge.person == "everyone" ? t.merchant : (charge.person ?? "They"),
                                                    name: t.merchant, amount: t.amount, date: t.date)
                 } label: {
                     row(title: "Unlink", sub: "It counts as money in again", chevron: true)
@@ -1438,7 +1490,8 @@ struct TransactionDetailView: View {
                         onClose: { closingSplit = true },
                         onReopen: { Task { await reopenSplit() } },
                         onSetShare: { settingShare = true },
-                        optionsFor: $optionsFor)
+                        optionsFor: $optionsFor,
+                        onMine: chooseMine)
         }
     }
 
@@ -1632,6 +1685,16 @@ struct TransactionDetailView: View {
         .disabled(busy)
         .padding(.horizontal, 16).frame(minHeight: 52).padding(.vertical, sub == nil ? 0 : 12)
         .accessibilityHint("New ones from \(t.merchant) sort the same way")
+    }
+
+    /// TEST-31 S-40w: what her reimbursed row's ••• chose.
+    private func chooseMine(_ choice: PersonChoice) {
+        switch choice {
+        case .view(let link): if let id = link.view?.id { Task { await open(id) } }
+        case .unlink(let link): unlinkingLink = link
+        case .changeShare: splitting = true
+        default: break
+        }
     }
 
     @ViewBuilder private var options: some View {
