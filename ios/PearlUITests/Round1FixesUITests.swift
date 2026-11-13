@@ -37,7 +37,11 @@ final class Round1FixesUITests: XCTestCase {
 
     private func tap(_ e: XCUIElement, _ what: String, timeout: TimeInterval = 15,
                      file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertTrue(e.waitForExistence(timeout: timeout), "Couldn't find \(what)", file: file, line: line)
+        if !e.waitForExistence(timeout: timeout) {
+            let seen = (app.buttons.allElementsBoundByIndex + app.staticTexts.allElementsBoundByIndex)
+                .prefix(40).map(\.label).filter { !$0.isEmpty }.joined(separator: " | ")
+            XCTFail("Couldn't find \(what). On screen: \(seen)", file: file, line: line)
+        }
         var n = 0
         while !e.isHittable && n < 8 { app.swipeUp(velocity: .slow); n += 1 }
         e.tap()
@@ -81,6 +85,21 @@ final class Round1FixesUITests: XCTestCase {
             }
         }
         tap(button(merchant), "the \(merchant) row")
+    }
+
+    /// S-06rb: tick exactly this payment ("Priya Shah", "+$42.50") and no
+    /// other. The seed has several from Priya and Sam (testingBOT's Pizza
+    /// Nova and Bar Isabel), and Not sure yet may pre-tick another of theirs.
+    @discardableResult
+    private func pickPayment(_ who: String, _ amount: String) -> XCUIElement {
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", who, "+$" + amount)).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "No \(who) +$\(amount) to link")
+        for other in app.buttons.matching(NSPredicate(format: "selected == true")).allElementsBoundByIndex
+        where other.label != row.label && other.label.contains("+$") && other.isHittable {
+            other.tap()
+        }
+        if !row.isSelected { tap(row, "\(who) +$\(amount)") }
+        return row
     }
 
     private func addPeople(_ names: [String]) {
@@ -163,10 +182,8 @@ final class Round1FixesUITests: XCTestCase {
         tap(button("Mark paid back"), "Mark paid back")
         tap(button("Bank or e-Transfer"), "Bank or e-Transfer")
         // TEST-13: the sender as Cash flow names them, not "E-transfer From Priya Shah".
-        let priya = button("Priya Shah")
-        XCTAssertTrue(priya.waitForExistence(timeout: 10), "Priya Shah's e-Transfer, named as in Cash flow")
-        // The suggested one comes ticked (S-06rb); tick it only if it isn't.
-        if !priya.isSelected { priya.tap() }
+        // TEST-13: named as in Cash flow; her $42.50 alone is ticked.
+        pickPayment("Priya Shah", "42.50")
         XCTAssertFalse(button("E-transfer From").exists, "S-06rb still names the bank's words")
         press("Link", prefix: true)
         // The toast goes, and any sheet still up is closed, before Settle up.
@@ -411,9 +428,7 @@ final class Round1FixesUITests: XCTestCase {
         tap(app.buttons["Options for Priya"], "Options for Priya")
         tap(button("Mark paid back"), "Mark paid back")
         tap(button("Bank or e-Transfer"), "Bank or e-Transfer")
-        let priya = button("Priya Shah")
-        XCTAssertTrue(priya.waitForExistence(timeout: 10))
-        if !priya.isSelected { priya.tap() }
+        pickPayment("Priya Shah", "42.50")
         press("Link", prefix: true)
         sleep(5)
         let before = home()
@@ -467,7 +482,8 @@ final class Round1FixesUITests: XCTestCase {
         // TEST-18b: Shares runs over everyone; a payer shows what they paid.
         // TEST-14 (round 3): it reads "Priya, paid $42.50, locked".
         let amount = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Priya, paid $42.50, locked'")).firstMatch
-        XCTAssertTrue(amount.waitForExistence(timeout: 5), "Priya's payment should show as text")
+        XCTAssertTrue(amount.waitForExistence(timeout: 5), "Priya's payment should show as text: "
+                      + app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Priya'")).allElementsBoundByIndex.map(\.label).joined(separator: " | "))
         // TEST-23: you, Priya and Sam, one share each; not Priya's dollars counted as shares.
         XCTAssertTrue(text(containing: "3 shares · adds up to").waitForExistence(timeout: 4),
                       "TEST-23: the shares count should be 3")
@@ -541,12 +557,12 @@ final class Round1FixesUITests: XCTestCase {
         tap(button("Mark paid back"), "Mark paid back")
         tap(button("Bank or e-Transfer"), "Bank or e-Transfer")
         XCTAssertTrue(button("Priya Shah").waitForExistence(timeout: 10), "The money in should be listed")
-        XCTAssertFalse(button("Priya Shah").isSelected || button("Sam Lee").isSelected,
-                       "TEST-20: someone else's payment is ticked for Jo")
+        // TEST-20: only Jo's own money may be ticked (the seed has Jo Park's
+        // $25.00 too); nobody else's, and no "Amount matches" on Not sure yet.
+        let ticked = app.buttons.matching(NSPredicate(format: "selected == true AND label CONTAINS '+$'")).allElementsBoundByIndex
+        XCTAssertTrue(ticked.allSatisfy { $0.label.hasPrefix("Jo") },
+                      "TEST-20: someone else's payment is ticked for Jo: \(ticked.map(\.label))")
         XCTAssertFalse(text(containing: "Amount matches").exists, "TEST-20: no amount to match on Not sure yet")
-        XCTAssertFalse(text(containing: "Suggested").exists, "TEST-20: nothing of Jo's to suggest")
-        let link = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Link'")).allElementsBoundByIndex.last
-        XCTAssertFalse(link?.isEnabled ?? false, "TEST-20: Link should wait for a pick")
     }
 
     /// TEST-19: after That's everything the page is S-46b at once (Reopen
@@ -683,9 +699,7 @@ final class Round1FixesUITests: XCTestCase {
         tap(app.buttons["Options for Sam"], "Options for Sam")
         tap(button("Mark paid back"), "Mark paid back")
         tap(button("Bank or e-Transfer"), "Bank or e-Transfer")
-        let sam = button("Sam Lee")
-        XCTAssertTrue(sam.waitForExistence(timeout: 10))
-        if !sam.isSelected { sam.tap() }
+        pickPayment("Sam Lee", "30.00")
         press("Link", prefix: true)
         sleep(5)
     }
@@ -750,8 +764,7 @@ final class Round1FixesUITests: XCTestCase {
         tap(app.buttons["Options for Priya"], "Options for Priya")
         tap(button("Mark paid back"), "Mark paid back")
         tap(button("Bank or e-Transfer"), "Bank or e-Transfer")
-        XCTAssertTrue(button("Priya Shah").waitForExistence(timeout: 10))
-        if !button("Priya Shah").isSelected { button("Priya Shah").tap() }
+        pickPayment("Priya Shah", "42.50")
         press("Link", prefix: true)
         sleep(4)
         app.navigationBars.buttons["Back"].firstMatch.tap()
@@ -788,8 +801,7 @@ final class Round1FixesUITests: XCTestCase {
             let ticked = app.buttons.matching(NSPredicate(format: "selected == true AND (label BEGINSWITH 'Sam' OR label BEGINSWITH 'Jo')"))
             XCTAssertEqual(ticked.count, 0, "TEST-20: someone else's payment is ticked for Priya (round \(round))")
             if round == 0 {
-                let priya = button("Priya Shah")
-                if !priya.isSelected { priya.tap() }
+                pickPayment("Priya Shah", "42.50")
                 press("Link", prefix: true)
                 sleep(5)
             }
@@ -810,6 +822,15 @@ final class Round1FixesUITests: XCTestCase {
             return true
         }
         XCTAssertTrue(found.isEmpty, "TEST-14: bare amounts on How to split: \(found)")
+        // TEST-27: the spoken row is the visible row, so nothing reads as clipped.
+        var rowsClipped: [String] = []
+        try app.performAccessibilityAudit(for: [.textClipped]) { issue in
+            rowsClipped.append(issue.element?.label ?? issue.compactDescription)
+            return true
+        }
+        XCTAssertFalse(rowsClipped.contains { $0.contains("$42.50") }, "TEST-27: How to split's amounts read as clipped: \(rowsClipped)")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Priya' AND label CONTAINS '$42.50'"))
+                        .firstMatch.exists, "TEST-14: Priya's row should read with her amount")
         let unsure = app.buttons["Not sure yet, split method"].exists ? app.buttons["Not sure yet, split method"] : app.buttons["Not sure"]
         tap(unsure, "Not sure")
         press("Save split")
@@ -821,6 +842,66 @@ final class Round1FixesUITests: XCTestCase {
             return true
         }
         XCTAssertFalse(clipped.contains { $0.contains("NOT SURE YET") }, "TEST-14: S-40y's overline is clipped: \(clipped)")
+    }
+
+    // MARK: Round 5 (testingBOT, ios/bots/testing-log.md)
+
+    /// The mean colour of a small square of the screen, as 0–255 RGB.
+    private func colour(at p: CGPoint) -> (Double, Double, Double) {
+        let shot = XCUIScreen.main.screenshot().image
+        guard let cg = shot.cgImage else { return (-1, -1, -1) }
+        let scale = CGFloat(cg.width) / shot.size.width
+        let r = CGRect(x: (p.x - 2) * scale, y: (p.y - 1) * scale, width: 4 * scale, height: 2 * scale).integral
+        guard let crop = cg.cropping(to: r) else { return (-1, -1, -1) }
+        let w = crop.width, h = crop.height
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        ctx?.draw(crop, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var t = (0.0, 0.0, 0.0)
+        for i in stride(from: 0, to: px.count, by: 4) { t.0 += Double(px[i]); t.1 += Double(px[i + 1]); t.2 += Double(px[i + 2]) }
+        let n = Double(w * h)
+        return (t.0 / n, t.1 / n, t.2 / n)
+    }
+
+    private func near(_ c: (Double, Double, Double), _ hex: Int, _ tol: Double = 28) -> Bool {
+        abs(c.0 - Double((hex >> 16) & 0xFF)) < tol && abs(c.1 - Double((hex >> 8) & 0xFF)) < tol && abs(c.2 - Double(hex & 0xFF)) < tol
+    }
+
+    /// TEST-28 (S-03rg): the meter shows the others' shares in the action
+    /// colour and her give-way share in blush; over the total it's solid.
+    func testTheMeterShowsYourShareInBlush() {
+        launch()
+        openTransaction("Gusto")
+        tap(app.buttons["Split with others"], "Split with others")
+        addPeople(["Priya", "Sam"])
+        tap(app.buttons["Amounts"], "Amounts")
+        for (who, amount) in [("Priya", "40"), ("Sam", "40")] {
+            let f = amountField(who)
+            tap(f, "\(who)'s amount")
+            f.typeText(amount)
+        }
+        app.staticTexts["How to split"].firstMatch.tap()
+        sleep(1)
+        // $80.00 of $127.50 is theirs (63%); $47.50 is hers, giving way (37%).
+        let status = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Adds up to $127.50'")).firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 4))
+        if !status.isHittable { app.swipeUp(); sleep(1) }
+        let f = status.frame
+        let y = f.minY - 12
+        let left = colour(at: CGPoint(x: 16 + (app.windows.firstMatch.frame.width - 32) * 0.3, y: y))
+        let right = colour(at: CGPoint(x: 16 + (app.windows.firstMatch.frame.width - 32) * 0.85, y: y))
+        XCTAssertTrue(near(left, 0xB22757), "TEST-28: the others' part should be the action colour: \(left)")
+        XCTAssertTrue(near(right, 0xFFE4EC), "TEST-28: her give-way part should be blush: \(right)")
+        // Over the total: one solid action bar.
+        let sam = amountField("Sam")
+        tap(sam, "Sam's amount")
+        sam.doubleTap()
+        sam.typeText("100")
+        app.staticTexts["How to split"].firstMatch.tap()
+        sleep(1)
+        let over = colour(at: CGPoint(x: 16 + (app.windows.firstMatch.frame.width - 32) * 0.85, y: y))
+        XCTAssertTrue(near(over, 0xB22757), "TEST-28: over the total the bar should be solid: \(over)")
     }
 
     // MARK: From the redesign line (sections 16 and 17, Sort now, T-01r / T-01r3, TEST-12, TEST-22)

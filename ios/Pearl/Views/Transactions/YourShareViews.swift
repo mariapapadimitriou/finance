@@ -320,8 +320,6 @@ struct YourShareSheet: View {
             if method == "even" {
                 Text(Format.amount(Double(theirCents(p.name)) / 100))
                     .font(Pearl.text(.headline)).monospacedDigit().foregroundColor(Pearl.ink)
-                    // TEST-14: "Jo owes $26.00", not a bare amount.
-                    .accessibilityLabel("\(p.name) owes \(Format.amount(Double(theirCents(p.name)) / 100))")
             } else {
             TextField("", text: fieldBinding(p.name), prompt: Text(prompt(p.name)).foregroundColor(Pearl.ink))
                 .font(Pearl.text(.headline)).monospacedDigit().multilineTextAlignment(.trailing)
@@ -335,6 +333,9 @@ struct YourShareSheet: View {
             }
         }
         .padding(.vertical, 8)
+        // TEST-27: on Evenly the row is one element, "Jo, Nothing paid yet,
+        // $26.00", so the spoken words are the visible ones.
+        .accessibilityElement(children: method == "even" ? .combine : .contain)
     }
 
     private func fieldBinding(_ name: String) -> Binding<String> {

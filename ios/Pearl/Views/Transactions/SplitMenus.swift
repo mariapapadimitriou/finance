@@ -132,6 +132,10 @@ struct PearlFace: View {
     var body: some View {
         Text(letters)
             .font(.custom("Figtree-Medium", size: size * 0.32, relativeTo: .footnote))
+            // TEST-30 (TEST-17's rule): the letters grow with Dynamic Type but
+            // never truncate to "…"; they shrink to fit the circle instead.
+            .lineLimit(1).minimumScaleFactor(0.4)
+            .padding(.horizontal, size * 0.12)
             .foregroundColor(Pearl.ink)
             .frame(width: size, height: size)
             .background(Circle().fill(Pearl.bubble))
